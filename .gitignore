@@ -1,0 +1,15 @@
+node_modules/
+dist/
+.output/
+.nitro/
+.vite/
+.turbo/
+coverage/
+playwright-report/
+test-results/
+*.log
+.env
+.env.*
+!.env.example
+.DS_Store
+lab/data/
