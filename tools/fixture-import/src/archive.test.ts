@@ -3,7 +3,7 @@ import { runArchive } from './archive.ts';
 
 // The archive of feddit.com never leaves the maintainer's machine, so CI has no
 // FEDDIT_ARCHIVE_DB_URL and skips this. Locally: restore piefed-db.dump into its own
-// database (LANE-NOTES.md) and point the variable at it.
+// database (the steps are in lane FIT's wave 1 notes) and point the variable at it.
 const url = process.env.FEDDIT_ARCHIVE_DB_URL;
 
 describe.skipIf(!url)('archive subset', () => {

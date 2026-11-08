@@ -133,3 +133,66 @@ Verification, on this tree:
 - Staging deploy on a peblish.com subdomain (described only, per the brief)
 - Outbox pruning and a poison-event skip (a failing event stalls only its consumer; visible in outbox_cursors)
 - Renovate config not run through renovate-config-validator (JSON parses; rules reviewed by hand)
+
+## Wave 1 integrated (2026-11-09)
+
+Branch `mvp-w1`. Five lanes, each cut from 790a03c; their notes are kept outside the repository in `/Users/admin/.agents/plans/feddit/lane-notes/wave-1/<lane>.md`, and `LANE-NOTES.md` is gone from the tree.
+
+| Lane | What it brought                                                                                       | Head    | Merge   |
+| ---- | ----------------------------------------------------------------------------------------------------- | ------- | ------- |
+| MUX  | `@muxui/react` 0.1.0-rc.6 vendored, `LocaleProvider` on `MuxProvider` (landed before the merges)      | 0c14d92 |         |
+| AZ   | target state and roles, the community `mod.*` policies and mutations, the moderator cache, the modlog | a7d4fe2 | 87bffb7 |
+| FIT  | the Lemmy and PieFed wire mapping, the round-trip corpus, fixture sets and `tools/fixture-import`     | 1517d2b | 645c9bc |
+| MD   | `renderMarkdown`, `sanitizeRemoteHtml`, the web renderer, the equivalence and XSS suites              | c219142 | c2a74c3 |
+| A    | better-auth, registration and invites, sessions, TOTP, account deletion, the auth pages and e2e       | 464472e | addb104 |
+
+Integration commits, after the merges:
+
+| Commit  | Change                                                                                                                                                                                                                     |
+| ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 6bd93be | Lockfile regenerated once (node_modules deleted first); `pnpm install --frozen-lockfile` is up to date                                                                                                                     |
+| 45664a7 | Migration `0002_wave_1` (below); `writeModlog` sets `modlog.public` and the read model filters on it; the new entity fields                                                                                                |
+| f2f8adf | Site settings `registration.cap` (integer >= 0, default 25) and `modlog.trusted_instances` (string[], default none); registration reads the cap from the contract; `readModlog` defaults `trustedInstances` to the setting |
+| d964ce8 | The recheck's principal refresh grants `siteRole: 'admin'` only with two-factor on                                                                                                                                         |
+| 14bab52 | The first-admin script ships in the image as `/app/processes/admin.mjs`; `image-smoke.sh` runs it                                                                                                                          |
+| 6110bd6 | README (fixture sets row, lock order, the narrowed `forNoKeyUpdate` rule), deploy README (auth and mail variables, the first admin), Renovate's Node description, Mailpit and `SMTP_URL` in CI                             |
+| (this)  | This section; `LANE-NOTES.md` removed                                                                                                                                                                                      |
+
+Migration `0002_wave_1`, generated once by drizzle-kit from the tables (lane A's stand-in `0002_age_declarations` from 021115b dropped):
+
+- New tables: `community_bans` (primary key community and actor; reason, expires_at, banned_by; index on actor) and `community_removals` (AZ, `c/moderation/tables.ts`); `age_declarations` (A, `c/identity/tables.ts`); `community_languages` (community actor and language, primary key on both, ON DELETE CASCADE; in `c/db/tables/actors.ts`).
+- New columns: `posts.url_content_type`, `posts.alt_text`, `posts.thumbnail_url` (text), `posts.nsfl` (boolean not null default false); `actors.nsfl` (default false), `actors.discoverable` and `actors.indexable` (default true), `actors.posting_warning` (text); `modlog.public` (boolean not null default true).
+- Seven foreign keys and one index. No trigger, function or 0001 statement. The modlog's append-only trigger compares `to_jsonb(NEW)` minus the references, so it covers `public`; `spine.test.ts` proves an update of it is refused.
+
+Decisions where the brief left room:
+
+1. Lane A's stand-in migration came in with A's merge and was dropped in the migration commit, so the merge shows what the lane brought. In A's merge the lockfile kept this branch's side; FIT's and MD's merged cleanly. `packages/core/package.json` kept both sides.
+2. `community_languages` sits in root's `c/db/tables/actors.ts`, beside the community it belongs to; no lane owns it.
+3. `modlog.public` is set from `details.public`, which stays the moderation mutations' input and stays in `details` too; the column is what the read model filters and returns.
+4. The site settings contract is typed per key (a mapped type), so `readSetting(key)` returns that key's value type now that values are no longer all booleans.
+5. Ban-target protection (`isSiteAdmin` in `c/authz/roles.ts`, `target.protected` in `bans.ts`) still goes by role alone: an admin without two-factor cannot act as admin but is still protected from bans. The admins seeded by `seed-az.ts` and `tx/interleaving.test.ts` now have two-factor on.
+6. The first-admin script is a third entry of the process bundle rather than shipped source: the runtime image has no sources or node_modules. It needs `BETTER_AUTH_SECRET` on a real host, because the password hash goes through better-auth.
+7. `BETTER_AUTH_URL` left the deploy README's reserved names: auth follows the origin migrate stored.
+8. Renovate keeps Node below 25 (the root engines field and `.nvmrc`); only the rule's description changed.
+9. The FIT mapping is unchanged: none of the new columns holds a field its records extract today.
+10. CI's Mailpit is pinned by digest like its Postgres; `compose.yaml` already had Mailpit on 18425 and 18426, and CI already migrated the database before e2e.
+
+Safety checks: FIT's secrets test passes (no private key block, key field or email address in the manifest, the wire documents or the fixture sets). In tracked and untracked files outside `node_modules` and build output, `PRIVATE KEY` appears only in tests and the guard's own pattern, `privateKeyPem` only as code identifiers, `"privateKey"` nowhere, and `@feddit.com` only in two docs (`plans/archive/`, `spikes/fedify-threadiverse/RESULT.md`). Nothing was removed.
+
+Verification, on this tree (lane root):
+
+- `pnpm install --frozen-lockfile`: up to date.
+- `pnpm check` is green: 936 tests in 55 files passed, 2 files skipped (FIT's opt-in build and archive tests), no boundary violations (298 modules), oxlint and Prettier clean. Nothing else ran on the shared Postgres, and the worker tests passed on the first run.
+- FIT's opt-in tests, run with `FIXTURE_CAPTURES_DIR` and `FEDDIT_ARCHIVE_DB_URL` before the archive was dropped: the corpus rebuilds byte for byte, and the archive subset round-trips with nothing unmappable or undocumented.
+- `pnpm db:drift`: none. `scripts/lane.sh root` applied 0002 to `peblish_root` (no MigrationHistoryError).
+- `pnpm e2e` on lane root (port 18399, Mailpit from `compose.yaml`): 30/30 (G0's 19 and lane A's 11).
+- `docker build`, then `scripts/image-smoke.sh` against a throwaway `peblish_root_image` (dropped after): the disagreeing command exits 64, migrate, the first admin created (role admin, email verified, 16+ declaration) and a second refused with `admin.exists`, worker SIGTERM exit 0, web `/healthz`, `/readyz` and the healthcheck, uid 1000. A rerun on the same database passed too.
+
+Still open from the lane notes (not in the integration brief):
+
+- FIT: `reports.category` is NOT NULL but a Flag has no category (REP needs a default); `published_at` is NOT NULL while peers may omit `published`; no Mbin, Mastodon or live-peer wire yet; the mapping does not yet extract the fields the new columns hold, and `test/vocabulary.ts` still words them as recommendations; later briefs should point at `packages/federation/src/test/fixtures/`, not the gitignored captures.
+- A: deny `post.create` and `comment.create` until the email is verified (a common refusal such as `auth.email_unverified`, B1 and D); no rate limit on sign-in, sign-up or reset; optionally move `getSessionView` to `packages/web/src/server/session.ts`.
+- MUX: optionally assert in `tests/boundaries.test.ts` that the resolved fixtures resolve.
+- MD: the 50 ms render bound in `perf.test.ts` was measured on Apple silicon and may need CI's own figure.
+
+Housekeeping: `peblish_fit_archive` (8.7 GB) dropped; the lane databases and worktrees stay.

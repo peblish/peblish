@@ -10,7 +10,7 @@ import { Refused } from '../tx/refused.ts';
 import { refusedAsResult, type Result } from './result.ts';
 
 /**
- * Deletes an account at once (no grace period; A05, decision recorded in LANE-NOTES.md).
+ * Deletes an account at once (no grace period; A05, decision 6 in lane A's wave 1 notes).
  * The actor row stays with its ap_id, keys and content, so the modlog, the invite chain and
  * FED-B's Delete keep naming it; its profile fields are scrubbed and deleted_at set. The
  * better-auth user goes, which revokes every session and removes the email and password
