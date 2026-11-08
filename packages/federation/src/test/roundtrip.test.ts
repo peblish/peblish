@@ -1,20 +1,17 @@
-import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { entityOf, roundTrip } from './corpus.ts';
 import { matches } from './diff.ts';
-import { Manifest } from './fixtures/manifest.schema.ts';
+import { readFixture, readManifest } from './manifest.ts';
 import { vocabularyByKey } from './vocabulary.ts';
 
 // Every captured wire document maps to its record and back with no difference except the
 // documented vocabulary its manifest entry allows. A failure names the entry and the field.
 
-const fixtures = new URL('./fixtures/', import.meta.url);
-const manifest = Manifest.assert(JSON.parse(readFileSync(new URL('manifest.json', fixtures), 'utf8')));
-const read = (path: string): unknown => JSON.parse(readFileSync(new URL(path, fixtures), 'utf8'));
+const manifest = readManifest();
 
 describe('every manifest entry round-trips', () => {
   it.each(manifest.entries.map((entry) => [entry.id, entry] as const))('%s', (_id, entry) => {
-    const { mapped, differences } = roundTrip(read(entry.fixture));
+    const { mapped, differences } = roundTrip(readFixture(entry.fixture));
     expect(entityOf(mapped)).toBe(entry.entity);
     const allowed = new Set(entry.allowed.map(({ change, path }) => `${change} ${path}`));
     const unexpected = differences
