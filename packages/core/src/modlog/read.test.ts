@@ -2,7 +2,9 @@ import { beforeEach, expect, test } from 'vitest';
 import { modlog } from '../db/tables/moderation.ts';
 import { siteSettings } from '../db/tables/site.ts';
 import { writer } from '../db/write.ts';
+import { removeContent } from '../moderation/remove.ts';
 import { truncateAll } from '../testing/db.ts';
+import { grantFor, seedPost } from '../testing/seed-az.ts';
 import { seedActor, seedInstance } from '../testing/seed.ts';
 import { readModlog } from './read.ts';
 import { writeModlog } from './write.ts';
@@ -95,4 +97,31 @@ test('a reason written on another instance is shown only when that instance is t
     .values({ key: 'modlog.trusted_instances', value: ['lemmy.test'] });
   expect((await reasons())[0]).toEqual({ reason: 'Spam', reasonWithheld: false });
   expect((await reasons([]))[0]).toEqual({ reason: null, reasonWithheld: true });
+});
+
+test("a reason relayed by a community's Announce is shown only when the actor's and the community's instances are both trusted", async () => {
+  await seedInstance('feddit.test');
+  const actorHost = await seedInstance('a.test', false);
+  const communityHost = await seedInstance('b.test', false);
+  const moderator = await seedActor(actorHost, 'Person', 'someone');
+  const community = await seedActor(communityHost, 'Group', 'technology');
+  const post = await seedPost(communityHost, community, moderator);
+  // b.test's community vouches for an action it attributes to a.test's actor.
+  const principal = {
+    kind: 'remote',
+    actorId: moderator.id,
+    announcedBy: { communityId: community.id, announceApId: 'https://b.test/activities/announce/1' },
+  } as const;
+  const grant = await grantFor('mod.remove', principal, { target: { kind: 'post', id: post.id } });
+  const { modlogId } = await removeContent(grant, { reason: 'Spam' });
+  const entry = async (trustedInstances: string[]) => (await readModlog({}, { audience: 'public', trustedInstances }))[0];
+  expect(await entry(['a.test'])).toMatchObject({
+    id: modlogId,
+    actorApId: moderator.apId,
+    details: { announcedBy: community.apId },
+    reason: null,
+    reasonWithheld: true,
+  });
+  expect(await entry(['b.test'])).toMatchObject({ reason: null, reasonWithheld: true });
+  expect(await entry(['a.test', 'b.test'])).toMatchObject({ reason: 'Spam', reasonWithheld: false });
 });

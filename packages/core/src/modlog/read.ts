@@ -10,11 +10,22 @@ import { readSetting } from '../settings/read.ts';
 const hostOf = (apId: string) => URL.parse(apId)?.host ?? null;
 
 /**
+ * The ap_ids that vouch for a row: its actor, plus the announcing community when that
+ * community's Announce was the authority (it may attribute the action to an actor on another
+ * instance). Null for such a row with no community on record, which is then never trusted.
+ */
+function vouchers(actorApId: string, authority: Authority, details: ModlogDetails): string[] | null {
+  if (authority.kind !== 'community-announce') return [actorApId];
+  return details.announcedBy ? [actorApId, details.announcedBy] : null;
+}
+
+/**
  * The modlog, newest first, filtered by community, actor, action and time range [since,
  * until). The public audience sees only public rows; staff (a community's moderators, site
  * admins: the caller decides) see all. A reason written on another instance is returned only
- * when that instance's domain is in `trustedInstances` (the actor's ap_id decides where a row
- * was written); otherwise it is withheld and reasonWithheld says so. `trustedInstances`
+ * when that instance's domain is in `trustedInstances`: the actor's instance (its ap_id decides
+ * where a row was written) and, under community-announce authority, the announcing
+ * community's too. Otherwise it is withheld and reasonWithheld says so. `trustedInstances`
  * defaults to the `modlog.trusted_instances` site setting; pass it to override.
  */
 export async function readModlog(
@@ -40,10 +51,14 @@ export async function readModlog(
     hostOf((await localInstance(q)).origin),
     ...(options.trustedInstances ?? (await readSetting('modlog.trusted_instances', q))).map((domain) => domain.toLowerCase()),
   ]);
+  const isTrusted = (apId: string) => {
+    const host = hostOf(apId);
+    return host !== null && trusted.has(host);
+  };
   return rows.map((row) => {
-    const host = hostOf(row.actorApId);
-    const shown = host !== null && trusted.has(host);
     const details = ModlogDetails.assert(row.details);
+    const authority = Authority.assert(row.authority);
+    const shown = vouchers(row.actorApId, authority, details)?.every(isTrusted) ?? false;
     return {
       id: row.id,
       action: row.action,
@@ -57,7 +72,7 @@ export async function readModlog(
       targetApId: row.targetApId,
       reason: shown ? row.reason : null,
       reasonWithheld: !shown && row.reason !== null,
-      authority: Authority.assert(row.authority),
+      authority,
       details,
       public: row.public,
       createdAt: row.createdAt.toISOString(),

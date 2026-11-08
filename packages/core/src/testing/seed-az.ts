@@ -47,7 +47,10 @@ export async function writeCounts() {
   return row;
 }
 
-/** A community_moderators row: a local moderator, confirmed now, unless `extra` says otherwise. */
+/**
+ * A community_moderators row: a local moderator, confirmed now, unless `extra` says otherwise
+ * (`source: 'remote'` for a row mirrored from a remote community's moderators collection).
+ */
 export async function seedModerator(community: Row, moderator: Row, extra: Partial<typeof communityModerators.$inferInsert> = {}) {
   await writer()
     .insert(communityModerators)
@@ -147,10 +150,48 @@ async function seedStates(where: { instance: Instance; live: Row; removed: Row }
 }
 
 /**
+ * The freshness cases of a remote moderator row (roles.ts: fresh). Unlike a local row, which
+ * grants until its expiry if it has one, a remote row grants only once verified and only until
+ * an expiry it must have.
+ */
+const remoteRowStates = ['unverified', 'verified, expired', 'verified, no expiry', 'verified, unexpired'] as const;
+export type RemoteRowState = (typeof remoteRowStates)[number];
+
+const remoteRowColumns = (state: RemoteRowState) => {
+  const hour = 3_600_000;
+  switch (state) {
+    case 'unverified':
+      return { verifiedAt: null, expiresAt: new Date(Date.now() + hour) };
+    case 'verified, expired':
+      return { expiresAt: new Date(Date.now() - hour) };
+    case 'verified, no expiry':
+      return { expiresAt: null };
+    case 'verified, unexpired':
+      return { expiresAt: new Date(Date.now() + hour) };
+  }
+};
+
+/** One remote Person per remote row state on `instance`, each with that row in every one of `communities`. */
+async function seedRemoteModerators(instance: Instance, communities: Row[]): Promise<Record<RemoteRowState, Row>> {
+  const seedOne = async (state: RemoteRowState) => {
+    const moderator = await seedActor(instance, 'Person', state.replaceAll(/\W+/g, '_'));
+    for (const community of communities) await seedModerator(community, moderator, { source: 'remote', ...remoteRowColumns(state) });
+    return moderator;
+  };
+  return {
+    unverified: await seedOne('unverified'),
+    'verified, expired': await seedOne('verified, expired'),
+    'verified, no expiry': await seedOne('verified, no expiry'),
+    'verified, unexpired': await seedOne('verified, unexpired'),
+  };
+}
+
+/**
  * The world of the role table: a local and a remote community, each with a post and comment
  * in every target state ('community removed' lives in a removed twin of each community), and:
  * - in both local communities: `moderator`, `owner`, and `expired` (a moderator row past its
  *   expiry);
+ * - in both remote communities: `remoteModerators`, one lemmy.test Person per remote row state;
  * - `banned` banned from all four communities; `victim` banned from none;
  * - `admin` a site admin; `user` and `author` plain local users (author wrote every post);
  * - `remoteUser` on lemmy.test, which hosts the remote community, and `elsewhere`, another
@@ -186,11 +227,57 @@ export async function seedModerationWorld() {
     await seedModerator(community, people.owner, { role: 'owner' });
     await seedModerator(community, people.expired, { expiresAt: new Date(Date.now() - 60_000) });
   }
+  const remoteModerators = await seedRemoteModerators(lemmy, [communities.remote.live, communities.remote.removed]);
   const subjects = {
     local: await seedStates(communities.local, people.author),
     remote: await seedStates(communities.remote, people.author),
   };
-  return { instances: { local, lemmy, other }, people, elsewhere, communities, subjects };
+  return { instances: { local, lemmy, other }, people, remoteModerators, elsewhere, communities, subjects };
+}
+
+/** Whom the ban target test has a community ban aim at. */
+export const banTargets = [
+  'self',
+  'the instance actor',
+  'a site admin',
+  'a moderator',
+  'an owner',
+  'a deleted actor',
+  'a Group',
+  'a missing actor',
+  'a member',
+] as const;
+export type BanTarget = (typeof banTargets)[number];
+
+/**
+ * The ban target test's world on `instance`: `moderator` (who acts), each of banTargets (a
+ * missing actor is an id with no row), and two communities that `moderator`, the target
+ * moderator and the target owner moderate: nobody is banned from `open`, and every target with
+ * a row except `moderator` is banned from `strict`.
+ */
+export async function seedBanTargets(instance: Instance) {
+  const moderator = await seedActor(instance, 'Person', 'ban_moderator');
+  const targets = {
+    self: moderator,
+    'the instance actor': await seedActor(instance, 'Application', 'ban_instance'),
+    'a site admin': await seedAdmin(instance, 'ban_admin'),
+    'a moderator': await seedActor(instance, 'Person', 'ban_other_moderator'),
+    'an owner': await seedActor(instance, 'Person', 'ban_owner'),
+    'a deleted actor': await seedActor(instance, 'Person', 'ban_deleted', { deletedAt: new Date() }),
+    'a Group': await seedActor(instance, 'Group', 'ban_group'),
+    'a member': await seedActor(instance, 'Person', 'ban_member'),
+  } satisfies Record<Exclude<BanTarget, 'a missing actor'>, Row>;
+  const open = await seedActor(instance, 'Group', 'ban_open');
+  const strict = await seedActor(instance, 'Group', 'ban_strict');
+  for (const community of [open, strict]) {
+    await seedModerator(community, moderator);
+    await seedModerator(community, targets['a moderator']);
+    await seedModerator(community, targets['an owner'], { role: 'owner' });
+  }
+  for (const target of Object.values(targets)) if (target !== moderator) await seedBan(strict, target);
+  const missing = uuidv7();
+  const targetId = (target: BanTarget) => (target === 'a missing actor' ? missing : targets[target].id);
+  return { moderator, open, strict, targetId };
 }
 
 /** A promise gate, so two connections interleave deterministically. */

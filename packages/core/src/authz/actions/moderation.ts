@@ -44,6 +44,13 @@ const content =
   async (request: PolicyRequest<{ target: ContentRef }>): Promise<PolicyResult> =>
     moderateContent(request, await contentState(request, request.subject.target), check);
 
+/**
+ * The post actions (lock, unlock, pin, unpin) refuse a removed or deleted post first
+ * (target.removed, target.deleted), unlock and unpin included: such a post takes no moderation
+ * but its restore. So inbound federation's mirror of an Undo(Lock), or of a Remove from the
+ * featured collection (unpin), on such a post must treat those two refusals as a no-op, or
+ * restore the post first.
+ */
 const post =
   (check: (target: PostState) => RefusalReason | null) =>
   async (request: PolicyRequest<{ postId: Uuid }>): Promise<PolicyResult> =>

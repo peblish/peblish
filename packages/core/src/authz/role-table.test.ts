@@ -2,7 +2,17 @@ import type { Principal } from '@peblish/schema/authz';
 import { beforeAll, describe, expect, test } from 'vitest';
 import type { Queryable } from '../db/read.ts';
 import { policies } from '../registry/policies.gen.ts';
-import { admin, seedModerationWorld, targetStates, type Subject, type TargetState } from '../testing/seed-az.ts';
+import {
+  admin,
+  banTargets,
+  seedBanTargets,
+  seedModerationWorld,
+  targetStates,
+  type BanTarget,
+  type RemoteRowState,
+  type Subject,
+  type TargetState,
+} from '../testing/seed-az.ts';
 import { localUser } from '../testing/seed.ts';
 import { tx } from '../tx/tx.ts';
 import { authorize, type Decision } from './authorize.ts';
@@ -16,8 +26,10 @@ import type { ActionName } from './policy.ts';
 
 type World = Awaited<ReturnType<typeof seedModerationWorld>>;
 let world: World;
+let bans: Awaited<ReturnType<typeof seedBanTargets>>;
 beforeAll(async () => {
   world = await seedModerationWorld();
+  bans = await seedBanTargets(world.instances.local);
 });
 
 const OK = 'allow';
@@ -33,6 +45,9 @@ const LCK = 'target.locked';
 const NLK = 'target.not_locked';
 const PIN = 'target.pinned';
 const NPN = 'target.not_pinned';
+const PRO = 'target.protected';
+const NBN = 'target.not_banned';
+const NF = 'target.not_found';
 
 type Options = { db?: Queryable; lock?: boolean };
 type Column = { name: string; decide: (principal: Principal, subject: Subject, options: Options) => Promise<Decision<ActionName>> };
@@ -94,6 +109,13 @@ const refused = (post: string, mod: string, removedPost = CRM, removedMod = CRM)
 
 type Role = { role: string; community: 'local' | 'remote'; principal: (subject: Subject) => Principal; expected: Expected };
 
+/** A remote moderator acting directly (no Announce), its row in the given state. */
+const remoteModerator = (state: RemoteRowState) => (): Principal => ({
+  kind: 'remote',
+  actorId: world.remoteModerators[state].id,
+  announcedBy: null,
+});
+
 const roles: Role[] = [
   { role: 'anonymous', community: 'local', principal: () => ({ kind: 'anonymous' }), expected: refused(REQ, REQ, REQ, REQ) },
   { role: 'local user', community: 'local', principal: () => localUser(world.people.user.id), expected: refused(OK, MOD) },
@@ -128,6 +150,38 @@ const roles: Role[] = [
     }),
     expected: refused(REQ, MIS, REQ),
   },
+  {
+    // A local community's Announce cannot have come from a peer.
+    role: 'remote actor, an Announce naming a local community',
+    community: 'local',
+    principal: (s) => ({
+      kind: 'remote',
+      actorId: world.people.remoteUser.id,
+      announcedBy: { communityId: s.communityId, announceApId: 'https://feddit.test/activities/announce/1' },
+    }),
+    expected: refused(REQ, MIS, REQ),
+  },
+  // Remote moderator rows (roles.ts: fresh). A local row with no expiry grants (community
+  // moderator above); a remote one grants only once verified and before an expiry it must have.
+  { role: 'remote moderator, unverified', community: 'remote', principal: remoteModerator('unverified'), expected: refused(REQ, MOD, REQ) },
+  {
+    role: 'remote moderator, verified, expired',
+    community: 'remote',
+    principal: remoteModerator('verified, expired'),
+    expected: refused(REQ, MOD, REQ),
+  },
+  {
+    role: 'remote moderator, verified, no expiry',
+    community: 'remote',
+    principal: remoteModerator('verified, no expiry'),
+    expected: refused(REQ, MOD, REQ),
+  },
+  {
+    role: 'remote moderator, verified, unexpired',
+    community: 'remote',
+    principal: remoteModerator('verified, unexpired'),
+    expected: moderates(REQ, REQ),
+  },
   { role: 'banned user', community: 'local', principal: () => localUser(world.people.banned.id), expected: refused(BAN, BAN) },
 ];
 
@@ -150,12 +204,46 @@ async function actual(role: Role, options: { lock: boolean }) {
   return Object.fromEntries(rows);
 }
 
+// Community ban targets (actions/moderation.ts: member). A moderator bans in a community where
+// nobody is banned and unbans in one where every target is. A ban protects yourself, the
+// instance actor, site admins, moderators and owners (demote them first) and refuses a deleted
+// actor; an unban checks no protection. A Group or a missing actor is no member at all.
+// prettier-ignore
+const banTable: Record<BanTarget, [ban: string, unban: string]> = {
+  //                      mod.ban  mod.unban
+  'self':                 [PRO,    NBN],
+  'the instance actor':   [PRO,    OK],
+  'a site admin':         [PRO,    OK],
+  'a moderator':          [PRO,    OK],
+  'an owner':             [PRO,    OK],
+  'a deleted actor':      [DEL,    OK],
+  'a Group':              [NF,     NF],
+  'a missing actor':      [NF,     NF],
+  'a member':             [OK,     OK],
+};
+
+async function actualBans(options: { lock: boolean }) {
+  const decide = (action: 'mod.ban' | 'mod.unban', communityId: string, target: BanTarget) => {
+    const run = (o: Options) => authorize(action, localUser(bans.moderator.id), { communityId, targetActorId: bans.targetId(target) }, o);
+    return options.lock ? tx((t) => run({ db: t.db, lock: true })) : run({});
+  };
+  const rows: [BanTarget, string[]][] = [];
+  for (const target of banTargets) {
+    const ban = outcome(await decide('mod.ban', bans.open.id, target));
+    rows.push([target, [ban, outcome(await decide('mod.unban', bans.strict.id, target))]]);
+  }
+  return Object.fromEntries(rows);
+}
+
 describe.each([
   { mode: 'precheck', lock: false },
   { mode: 'recheck', lock: true },
 ])('$mode', ({ lock }) => {
   test.each(roles)('$role', async (role) => {
     expect(await actual(role, { lock })).toEqual(role.expected);
+  });
+  test('community ban targets', async () => {
+    expect(await actualBans({ lock })).toEqual(banTable);
   });
 });
 

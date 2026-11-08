@@ -56,6 +56,11 @@ export const ModlogDetails = type({
   'removeContent?': 'boolean',
   'removedPosts?': 'number.integer >= 0',
   'removedComments?': 'number.integer >= 0',
+  /**
+   * The ap_id of the community whose Announce was the authority (community-announce), set by
+   * writeModlog. Its instance vouches for the row as much as the actor's does.
+   */
+  'announcedBy?': 'string',
 });
 export type ModlogDetails = typeof ModlogDetails.infer;
 
@@ -90,7 +95,7 @@ export const ModlogEntry = type({
   targetApId: 'string | null',
   /** Null when there is none or when it is withheld. */
   reason: 'string | null',
-  /** True when the row has a reason this view leaves out: it came from an instance not marked trusted. */
+  /** True when the row has a reason this view leaves out: its actor's instance, or the announcing community's, is not marked trusted. */
   reasonWithheld: 'boolean',
   authority: Authority,
   details: ModlogDetails,

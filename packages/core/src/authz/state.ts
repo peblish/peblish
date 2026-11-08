@@ -9,7 +9,9 @@ import { forNoKeyUpdate, forShare, type PolicyRequest, type PolicyResult } from 
 // Owned by lane AZ. Target state for policies, read with the caller's db and lock (a recheck
 // reads everything locked). Lock order, which every policy and write body keeps so two
 // rechecking writers never wait on each other in a cycle: the acting actor (the principal
-// refresh in authorize()), then the community's actor row, then the post, then the comment.
+// refresh in authorize(); FOR NO KEY UPDATE when a remote community acts as itself, since its
+// row is then also the community row), then the community's actor row, then the post, then
+// the comment.
 // So these readers find the community through an unlocked read of the post's community_id
 // first, and a policy calls them before its own locked reads of those rows.
 //
@@ -184,8 +186,8 @@ export async function postingDenial(read: StateRead, actorId: Uuid, communityId:
 /**
  * The guard for taking part in a thread: vote.cast (authz/actions/votes.ts) and comment.create
  * (lane D, through commentingDenial). The target and its community exist and are neither
- * deleted nor removed, and the actor is not banned from the community. Call it before the
- * policy's own locked reads (lock order above).
+ * deleted nor removed, nor is a comment's post, and the actor is not banned from the
+ * community. Call it before the policy's own locked reads (lock order above).
  */
 export async function participationDenial(read: StateRead, actorId: Uuid, target: ContentRef): Promise<Denial | null> {
   const state = await contentState(read, target);
@@ -196,7 +198,7 @@ async function participation(read: StateRead, actorId: Uuid, state: ContentState
   const closed = communityDenial(state.community);
   if (closed) return closed;
   if (await isBanned(read, state.community.id, actorId)) return refuse('community.banned');
-  return liveDenial(state);
+  return (state.kind === 'comment' ? liveDenial(state.post) : null) ?? liveDenial(state);
 }
 
 /** Why a post or comment can take no part any more (deleted, or removed by a moderator), if so. */
