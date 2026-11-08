@@ -16,4 +16,6 @@ export const refusals = {
   'password.too_long': 'A password may have at most PASSWORD_MAX (128) characters.',
   'admin.two_factor_required': 'Admin actions need two-factor authentication turned on (A03).',
   'admin.exists': 'The instance already has a site admin; the bootstrap runs once.',
+  /** For the post and comment policies (wave 2): an account cannot post until its email is verified. */
+  'auth.email_unverified': 'The acting account has not verified its email address (auth_user.email_verified) yet.',
 };
