@@ -16,6 +16,7 @@ import sub from 'markdown-it-sub';
 import sup from 'markdown-it-sup';
 import { contexts, type RenderContext } from './context.ts';
 import { emoji } from './emoji.ts';
+import { footnoteTailInPlace } from './footnotes.ts';
 import { highlight } from './highlight.ts';
 import { images } from './images.ts';
 import { mentions } from './mentions.ts';
@@ -34,6 +35,7 @@ const md = new MarkdownIt('default', { html: false, linkify: true, typographer: 
   .use(sub)
   .use(sup)
   .use(footnote)
+  .use(footnoteTailInPlace)
   .use(spoiler)
   .use(images)
   .use(emoji)
