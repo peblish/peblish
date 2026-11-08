@@ -61,7 +61,7 @@ export function renderMarkdown(source: string, options: RenderOptions & RenderHo
 
   // markdown-it-footnote prefixes its anchors with env.docId.
   const env: Env = checked.idPrefix ? { docId: checked.idPrefix } : {};
-  const context: RenderContext = { origin: base.origin, host: base.hostname, images, emoji: table, mentions: [] };
+  const context: RenderContext = { origin: base.origin, host: base.hostname, images, emoji: table, mentions: new Map() };
   contexts.set(env, context);
   const html = md.render(truncated ? source.slice(0, maxLength) : source, env);
 
@@ -76,5 +76,5 @@ export function renderMarkdown(source: string, options: RenderOptions & RenderHo
     },
     Number.MAX_SAFE_INTEGER,
   );
-  return { ...clean, truncated, mentions: context.mentions };
+  return { ...clean, truncated, mentions: [...context.mentions.values()] };
 }

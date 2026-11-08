@@ -1,3 +1,4 @@
+import { mentionMaxCount } from '@peblish/schema/markdown';
 import { expect, test } from 'vitest';
 import { renderMarkdown } from './render.ts';
 
@@ -22,6 +23,16 @@ test('mentions link to local pages and are collected once, outside code and link
   expect(result.html).toContain(`<a href="${origin}/c/tech@lemmy.example" class="u-url community"`);
   expect(result.html).toContain(`<a href="${origin}/u/bob" class="u-url mention"`);
   expect(result.html).toContain('<code>@c@d.example</code>');
+});
+
+test('only the first mentionMaxCount distinct mentions are linked and collected', () => {
+  const names = Array.from({ length: mentionMaxCount + 5 }, (_, i) => `@u${i}@lemmy.example`);
+  const result = render(`${names.join(' ')} @U0@lemmy.example`);
+  expect(result.mentions).toHaveLength(mentionMaxCount);
+  expect(result.mentions.at(-1)).toEqual({ kind: 'person', name: `u${mentionMaxCount - 1}`, host: 'lemmy.example' });
+  // The repeat of a collected mention is still linked; the new ones past the cap are text.
+  expect(result.html.match(/class="u-url mention"/g)).toHaveLength(mentionMaxCount + 1);
+  expect(result.html).toContain(` @u${mentionMaxCount}@lemmy.example @u${mentionMaxCount + 1}@lemmy.example`);
 });
 
 test('links are absolute, in order, without duplicates, mentions or footnote anchors', () => {

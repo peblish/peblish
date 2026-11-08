@@ -8,8 +8,8 @@ export interface RenderContext {
   host: string;
   images: ImagePolicy;
   emoji: EmojiTable;
-  /** Filled by the mentions rule. */
-  mentions: Mention[];
+  /** Filled by the mentions rule, keyed by kind, lowercased name and host, in order of appearance. */
+  mentions: Map<string, Mention>;
 }
 
 /** A WeakMap rather than fields on env, so the plugins read typed data without casts. */

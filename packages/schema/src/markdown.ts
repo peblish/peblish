@@ -13,6 +13,8 @@ export const remoteHtmlMaxLength = 500_000;
 export const htmlMaxDepth = 32;
 /** Default length of the plain-text excerpt, in characters. */
 export const excerptLength = 300;
+/** Distinct mentions collected and linked per body; a new one past this many stays plain text. */
+export const mentionMaxCount = 50;
 
 /** How images appear: inline `<img>` (through the rewrite hook), or as links to the image. */
 export const ImagePolicy = type("'inline' | 'link'");
@@ -68,5 +70,6 @@ export const SanitizedHtml = type({
 });
 export type SanitizedHtml = typeof SanitizedHtml.infer;
 
+/** mentions: the distinct mentions in order of appearance, at most mentionMaxCount. */
 export const RenderedMarkdown = SanitizedHtml.and({ mentions: Mention.array() });
 export type RenderedMarkdown = typeof RenderedMarkdown.infer;
