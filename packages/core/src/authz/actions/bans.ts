@@ -1,6 +1,7 @@
 import type { Uuid } from '@peblish/schema/ids';
 import { eq } from 'drizzle-orm';
 import { actors } from '../../db/tables/actors.ts';
+import { authUser } from '../../db/tables/auth.ts';
 import { allow, deny, forShare, type PolicyRequest } from '../policy.ts';
 
 // Stub owned by lane MODF: site-level ban and unban of a local or remote actor (M06).
@@ -9,8 +10,19 @@ import { allow, deny, forShare, type PolicyRequest } from '../policy.ts';
 
 async function siteAdminOver({ principal, subject, db, lock }: PolicyRequest<{ targetActorId: Uuid }>) {
   if (principal.kind !== 'local' || principal.siteRole !== 'admin') return deny('auth.admin_required');
-  const [target] = await forShare(db.select({ id: actors.id }).from(actors).where(eq(actors.id, subject.targetActorId)), lock);
+  const [target] = await forShare(
+    db
+      .select({ id: actors.id, kind: actors.kind, local: actors.local, userId: actors.userId })
+      .from(actors)
+      .where(eq(actors.id, subject.targetActorId)),
+    lock,
+  );
   if (!target) return deny('target.not_found');
+  if (target.id === principal.actorId || (target.local && target.kind === 'Application')) return deny('target.protected');
+  if (target.userId) {
+    const [user] = await forShare(db.select({ role: authUser.role }).from(authUser).where(eq(authUser.id, target.userId)), lock);
+    if (user?.role === 'admin') return deny('target.protected');
+  }
   return allow({ kind: 'site-admin', actorId: principal.actorId });
 }
 

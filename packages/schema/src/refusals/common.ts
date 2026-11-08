@@ -7,4 +7,5 @@ export const refusals = {
   'site.disabled': 'A site kill switch has turned this feature off.',
   'target.not_found': 'The object the action applies to does not exist here.',
   'target.deleted': 'The object the action applies to has been deleted.',
+  'target.protected': 'The action may not target this actor (yourself, the instance actor or a site admin).',
 };
