@@ -24,3 +24,22 @@ export function actorPagePath(kind: LocalActorKind, name: string): string {
 export function newObjectApId(origin: string, kind: 'post' | 'comment' | 'activity', id: string): string {
   return new URL(`/ap/${kind}/${id}`, origin).href;
 }
+
+/** Endpoints of the instance actor, which lives at the origin's root. */
+export function instanceActorUrls(origin: string) {
+  const root = new URL(origin).origin;
+  return { apId: `${root}/`, inbox: `${root}/inbox`, outbox: `${root}/outbox`, sharedInbox: `${root}/inbox`, keyId: `${root}/#main-key` };
+}
+
+/** Endpoints of a new local Person or Group, below its ap_id; every actor shares /inbox. */
+export function localActorUrls(origin: string, kind: LocalActorKind, name: string) {
+  const apId = newActorApId(origin, kind, name);
+  return {
+    apId,
+    inbox: `${apId}/inbox`,
+    outbox: `${apId}/outbox`,
+    followers: `${apId}/followers`,
+    sharedInbox: new URL('/inbox', origin).href,
+    keyId: `${apId}#main-key`,
+  };
+}
