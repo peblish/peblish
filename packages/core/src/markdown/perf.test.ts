@@ -86,6 +86,8 @@ test.each(Object.entries(shapes))('the sanitiser is linear in input size: %s', (
 const markdownShapes: Record<string, (n: number) => string> = {
   // The padded opening line is tested once per nesting level.
   'padded spoiler title, 40 deep': (n) => `${'::: spoiler a\n'.repeat(40)}::: spoiler x${' '.repeat(n)}y\n${':::\n'.repeat(41)}`,
+  // Image sizing splits the alt text at `::`.
+  'whitespace in image alt text': (n) => `![${' '.repeat(n)}](https://img.example/a.png)`,
 };
 
 test.each(Object.entries(markdownShapes))('rendering is linear in input size: %s', (_shape, make) => {

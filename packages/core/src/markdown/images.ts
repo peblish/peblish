@@ -7,7 +7,6 @@ import type { MarkdownIt, StateCore, Token } from 'markdown-it';
 // - Lemmy's custom emoji, `![alt](url "emoji shortcode")`, which lemmy-ui's emoji picker
 //   inserts: the image gets class="emoji" so it renders at text size.
 
-const sized = /^(.*?)\s*::\s*(\S.*)$/s;
 const dimension = /^(?:(\d{1,4})(?:px)?|(\d{1,3})%)$/;
 
 function size(value: string): string | undefined {
@@ -17,14 +16,25 @@ function size(value: string): string | undefined {
   return Number(match[2]) <= 100 ? `${Number(match[2])}%` : undefined;
 }
 
+/**
+ * The alt text and the sizing words of `alt :: words`, split at the first `::`, or
+ * undefined when only whitespace follows it. Found with indexOf: a pattern with a lazy alt
+ * beside whitespace backtracks quadratically on a long alt.
+ */
+function sizing(content: string): { alt: string; words: string } | undefined {
+  const at = content.indexOf('::');
+  const words = at < 0 ? '' : content.slice(at + 2).trim();
+  return words === '' ? undefined : { alt: content.slice(0, at).trimEnd(), words };
+}
+
 function attributes(state: StateCore, image: Token): void {
-  const match = sized.exec(image.content);
-  if (match) {
+  const sized = sizing(image.content);
+  if (sized) {
     const alt = new state.Token('text', '', 0);
-    alt.content = match[1]!;
+    alt.content = sized.alt;
     image.children = [alt];
-    image.content = match[1]!;
-    for (const word of match[2]!.split(/\s+/)) {
+    image.content = sized.alt;
+    for (const word of sized.words.split(/\s+/)) {
       const [name, value = ''] = word.split('=', 2);
       if (name === 'width' || name === 'height') {
         const pixels = size(value);
