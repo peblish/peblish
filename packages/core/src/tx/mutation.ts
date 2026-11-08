@@ -45,7 +45,7 @@ export function defineMutation<A extends ActionName, E extends EventType, I, O>(
     if (!Authorized.verify(grant, spec.action)) throw new TypeError(`${spec.action} needs a grant from authorize()`);
     let current = grant;
     if (spec.recheck) {
-      const decision = await authorize(spec.action, grant.principal, grant.subject, { db: t.db });
+      const decision = await authorize(spec.action, grant.principal, grant.subject, { db: t.db, lock: true });
       if (!decision.ok) throw new Refused(spec.action, decision.reason);
       current = decision.grant;
     }

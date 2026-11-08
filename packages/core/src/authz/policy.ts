@@ -18,6 +18,12 @@ export type PolicyRequest<S> = {
   subject: Frozen<S>;
   /** Read inside the caller's transaction when one is open, else the read pool. */
   db: Queryable;
+  /**
+   * True when the policy runs inside the writing transaction (a mutation's recheck). Every
+   * row the decision relies on (community, post, moderator, membership) must then be read
+   * with forShare(), so a revoking UPDATE in another transaction waits for this write.
+   */
+  lock: boolean;
 };
 
 export type Policy<S> = (request: PolicyRequest<S>) => Promise<PolicyResult>;
@@ -30,3 +36,8 @@ export type DuplicateActions = AssertNever<Overlap<typeof policyAreas>>;
 
 export const allow = (authority: Authority): PolicyResult => ({ ok: true, authority });
 export const deny = (reason: RefusalReason): PolicyResult => ({ ok: false, reason });
+
+/** Adds FOR SHARE to an authorization read when the policy runs with `lock` (see PolicyRequest). */
+export function forShare<R>(query: PromiseLike<R> & { for(strength: 'share'): PromiseLike<R> }, lock: boolean): PromiseLike<R> {
+  return lock ? query.for('share') : query;
+}
