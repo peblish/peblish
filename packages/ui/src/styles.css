@@ -1,7 +1,7 @@
 /* Layer order first, as the Mux UI README describes, so app rules rank above Mux UI. */
 @layer reset, muxui.tokens, muxui.components, muxui.utilities, app;
+/* styles.css carries the default palette; themes.css (the preset themes) is not offered. */
 @import '@muxui/react/styles.css';
-@import '@muxui/react/themes.css';
 
 @layer app {
   body {
