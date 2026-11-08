@@ -14,7 +14,7 @@
     }
   },
   "scripts": {
-    "gen": "node scripts/gen.ts",
+    "gen": "node scripts/gen.ts && pnpm --filter @peblish/web gen:routes",
     "typecheck": "pnpm gen && pnpm -r typecheck && tsc -p tsconfig.json",
     "lint": "pnpm gen && pnpm lint:boundaries && oxlint --deny-warnings",
     "lint:boundaries": "depcruise packages --config .dependency-cruiser.cjs",

@@ -1,0 +1,16 @@
+{
+  "en": {
+    "title": "peblish",
+    "tagline": "Communities on the fediverse.",
+    "sample": "Sample number",
+    "press": "Press",
+    "pressed": "Pressed {count} times"
+  },
+  "de": {
+    "title": "peblish",
+    "tagline": "Gemeinschaften im Fediverse.",
+    "sample": "Beispielzahl",
+    "press": "Drücken",
+    "pressed": "{count}-mal gedrückt"
+  }
+}
