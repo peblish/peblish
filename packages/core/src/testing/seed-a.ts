@@ -13,6 +13,7 @@ import { deletionLedger, invites, siteSettings } from '../db/tables/site.ts';
 import { writer } from '../db/write.ts';
 import { insertAccount } from '../identity/accounts.ts';
 import { auth } from '../identity/auth.ts';
+import { totpSteps } from '../identity/tables.ts';
 import { inviteCodeHash, newInviteCode } from '../registration/codes.ts';
 import { hashPassword } from '../registration/register.ts';
 import { REGISTRATION_CAP_KEY } from '../registration/settings.ts';
@@ -69,6 +70,8 @@ export async function seedTwoFactor(userId: Uuid, secret = 'peblish-seed-totp-se
   };
   await writer().transaction(async (tx) => {
     await tx.delete(authTwoFactor).where(eq(authTwoFactor.userId, userId));
+    // A new secret: codes of the old one no longer count as used.
+    await tx.delete(totpSteps).where(eq(totpSteps.userId, userId));
     await tx.insert(authTwoFactor).values({ userId, ...row });
     await tx.update(authUser).set({ twoFactorEnabled: true }).where(eq(authUser.id, userId));
   });

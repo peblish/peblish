@@ -1,6 +1,18 @@
 import { expect, test, type Browser, type Page } from '@playwright/test';
 import { gotoHydrated, recordConsole } from '../support/route-marker.ts';
-import { base32, expectAccessible, landed, mailCount, mailedLink, seed, signIn, signOut, totp, unique, type Admin } from './support.ts';
+import {
+  base32,
+  expectAccessible,
+  freshTotp,
+  landed,
+  mailCount,
+  mailedLink,
+  seed,
+  signIn,
+  signOut,
+  unique,
+  type Admin,
+} from './support.ts';
 
 // Lane A end to end, on the built server and the lane database: the admin invites, a person
 // signs up with the code and a date of birth, verifies by mail, turns on TOTP and signs in
@@ -23,11 +35,21 @@ async function freshPage(browser: Browser): Promise<Page> {
   return (await browser.newContext()).newPage();
 }
 
+/** The two-factor step with one of the recovery codes (each works once). */
+async function withRecoveryCode(page: Page, code: string | undefined): Promise<void> {
+  await landed(page, /\/auth\/two-factor/);
+  await page.getByRole('link', { name: 'Use a recovery code' }).click();
+  await landed(page, /recovery=yes/);
+  await page.getByRole('textbox', { name: 'Recovery code' }).fill(code ?? '');
+  await page.getByRole('button', { name: 'Verify' }).click();
+  await landed(page, '/');
+}
+
 test('the admin signs in with a TOTP code and creates an invite', async ({ page }) => {
   await gotoHydrated(page, '/auth/sign-in');
   await signIn(page, `@${admin.name}`, admin.password);
   await landed(page, /\/auth\/two-factor/);
-  await page.getByRole('textbox', { name: 'Code', exact: true }).fill(totp(admin.totpSecret));
+  await page.getByRole('textbox', { name: 'Code', exact: true }).fill(await freshTotp(admin.totpSecret));
   await page.getByRole('button', { name: 'Verify' }).click();
   await landed(page, '/');
 
@@ -83,7 +105,7 @@ test('TOTP turns on with a code and shows the recovery codes once', async ({ pag
   await expect(page.getByRole('img', { name: 'QR code for your authenticator app' })).toBeVisible();
   await expectAccessible(page);
   totpKey = base32((await page.getByTestId('totp-key').textContent()) ?? '');
-  await page.getByRole('textbox', { name: 'Code', exact: true }).fill(totp(totpKey));
+  await page.getByRole('textbox', { name: 'Code', exact: true }).fill(await freshTotp(totpKey));
   await page.getByRole('button', { name: 'Verify and turn on' }).click();
   await landed(page, '/settings/security');
   await expect(page.getByText('On.')).toBeVisible();
@@ -102,19 +124,14 @@ test('signing in asks for the code, or once for a recovery code', async ({ page 
   await page.getByRole('textbox', { name: 'Code', exact: true }).fill('000000');
   await page.getByRole('button', { name: 'Verify' }).click();
   await expect(page.getByRole('alert')).toHaveText('That code is wrong. Try the newest one.');
-  await page.getByRole('textbox', { name: 'Code', exact: true }).fill(totp(totpKey));
+  await page.getByRole('textbox', { name: 'Code', exact: true }).fill(await freshTotp(totpKey));
   await page.getByRole('button', { name: 'Verify' }).click();
   await landed(page, '/');
   await signOut(page);
 
   await gotoHydrated(page, '/auth/sign-in');
   await signIn(page, email, person.password);
-  await landed(page, /\/auth\/two-factor/);
-  await page.getByRole('link', { name: 'Use a recovery code' }).click();
-  await landed(page, /recovery=yes/);
-  await page.getByRole('textbox', { name: 'Recovery code' }).fill(recoveryCodes[0] ?? '');
-  await page.getByRole('button', { name: 'Verify' }).click();
-  await landed(page, '/');
+  await withRecoveryCode(page, recoveryCodes[0]);
   await gotoHydrated(page, '/settings/security');
   await expect(page.getByRole('heading', { name: 'Security' })).toBeVisible();
 });
@@ -123,17 +140,11 @@ test('a session signed in elsewhere can be revoked', async ({ page, browser }) =
   const other = await freshPage(browser);
   await gotoHydrated(other, '/auth/sign-in');
   await signIn(other, email, person.password);
-  await landed(other, /\/auth\/two-factor/);
-  await other.getByRole('textbox', { name: 'Code', exact: true }).fill(totp(totpKey));
-  await other.getByRole('button', { name: 'Verify' }).click();
-  await landed(other, '/');
+  await withRecoveryCode(other, recoveryCodes[1]);
 
   await gotoHydrated(page, '/auth/sign-in');
   await signIn(page, email, person.password);
-  await landed(page, /\/auth\/two-factor/);
-  await page.getByRole('textbox', { name: 'Code', exact: true }).fill(totp(totpKey));
-  await page.getByRole('button', { name: 'Verify' }).click();
-  await landed(page, '/');
+  await withRecoveryCode(page, recoveryCodes[2]);
   await gotoHydrated(page, '/settings/security');
   const sessions = page.getByTestId('session');
   const before = await sessions.count();
@@ -171,10 +182,7 @@ test('a password reset by mail replaces the password', async ({ page, baseURL })
 test('deleting the account signs out, blocks sign-in, and leaves the ledger row and event', async ({ page }) => {
   await gotoHydrated(page, '/auth/sign-in');
   await signIn(page, email, person.newPassword);
-  await landed(page, /\/auth\/two-factor/);
-  await page.getByRole('textbox', { name: 'Code', exact: true }).fill(totp(totpKey));
-  await page.getByRole('button', { name: 'Verify' }).click();
-  await landed(page, '/');
+  await withRecoveryCode(page, recoveryCodes[3]);
   await gotoHydrated(page, '/settings/account');
   await page.getByLabel('Type your username to confirm').fill(person.name);
   await page.getByLabel('Password', { exact: true }).fill(person.newPassword);
@@ -221,7 +229,7 @@ test.describe('without JavaScript', () => {
     await expect(page.getByRole('alert')).toHaveText('Email or password is wrong.');
     await signIn(page, `@${admin.name}`, admin.password);
     await page.waitForURL(/\/auth\/two-factor/);
-    await page.getByRole('textbox', { name: 'Code', exact: true }).fill(totp(admin.totpSecret));
+    await page.getByRole('textbox', { name: 'Code', exact: true }).fill(await freshTotp(admin.totpSecret));
     await page.getByRole('button', { name: 'Verify' }).click();
     await page.waitForURL('/');
   });

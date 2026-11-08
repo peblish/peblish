@@ -31,6 +31,22 @@ export function totp(secret: Uint8Array | string, at = Date.now()): string {
     .padStart(6, '0');
 }
 
+const usedSteps = new Map<string, number>();
+
+/**
+ * A TOTP code the server has not accepted yet. It takes each 30-second step once
+ * (core/identity/totp-replay.ts) and the next step early, so a second code within one step is
+ * the next step's, and a third waits for the clock.
+ */
+export async function freshTotp(secret: Uint8Array | string): Promise<string> {
+  const key = typeof secret === 'string' ? secret : Buffer.from(secret).toString('hex');
+  const now = Math.floor(Date.now() / 30_000);
+  const step = Math.max(now, (usedSteps.get(key) ?? now - 1) + 1);
+  if (step > now + 1) await new Promise((resolve) => setTimeout(resolve, (step - 1) * 30_000 - Date.now() + 100));
+  usedSteps.set(key, step);
+  return totp(secret, step * 30_000);
+}
+
 /** The authenticator key the security page shows (base32, in groups of four) as bytes. */
 export function base32(key: string): Uint8Array {
   const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
