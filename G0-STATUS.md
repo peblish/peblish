@@ -12,6 +12,7 @@ Lane G0 of peblish Phase 1, branch `mvp-w0`. Contracts freeze here, with the ame
 - M6 e2e: hydration marker in en-US and de-DE, negative control, axe on the shell (9889cac)
 - M7 Dockerfile, CI, Renovate, lane script, deploy README, vendor hook (302d3d8)
 - M8 generator test, README area guide (153bb55); verification from a clean tree: `pnpm check` green (38 tests), no drift, fresh migrate, e2e 8/8 on the build and on the image, image boots to /healthz
+- Wave 1 groundwork: `@muxui/react` 0.1.0-rc.6 vendored in `vendor/muxui/` (SHA-256 in its README); `LocaleProvider` mounts `MuxProvider`, and the React Aria hoist and `themes.css` are gone (cac1829)
 
 ## Contract freeze amendments (root decisions, 2026-11-08)
 
