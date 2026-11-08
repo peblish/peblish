@@ -308,3 +308,67 @@ Verification, on this tree (lane root):
 - `docker build -t peblish:w1`, then `scripts/image-smoke.sh` against a throwaway `peblish_root_image` (0003 applied; dropped after): the disagreeing command exits 64, migrate, the first admin, worker SIGTERM exit 0, web `/healthz`, `/readyz` and the healthcheck, uid 1000. A rerun on the same database passed too.
 
 Housekeeping: no push; the worktrees, the fix branches, the lane databases (`peblish_a` still carries its scratch 0003) and the `peblish:w1` image tag stay.
+
+## Wave 2 groundwork (2026-11-09)
+
+Branch `mvp-w2`, cut from `mvp-w1` at 8e2ff0c. Groundwork for the wave 2 lanes: the pin recheck, jobs (`defineJob`) beside the outbox consumers, the delivery-queue transaction exemption, `auth.email_unverified` (already in `refusals/identity.ts`), the post and vote events, the post and comment view fields, the inbound 503 seam and `PEBLISH_UI_KIT` in CI.
+
+| Item | Change                                                                                                                                                                                                                                                      | Commit  |
+| ---- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- |
+| 1    | Pins rechecked, nothing upgraded (below)                                                                                                                                                                                                                    | (this)  |
+| 2    | `defineJob({ name, everyMs, run })` and `runJobs` in `c/outbox/jobs.ts`; `pnpm gen` registers `packages/{core,federation}/src/**/job.ts` into `jobs.gen.ts`; the worker runs both lists beside the consumers; repo test over the names; lint and README row | 078de60 |
+| 3    | `core-tx-access` exempts `packages/federation/src/delivery/` (FED-A's delivery queue); an allowed fixture there, and a federation fixture outside `inbound/` and `delivery/` that still fails                                                               | a0ec33c |
+| 4    | Nothing added: `auth.email_unverified` is in `packages/schema/src/refusals/identity.ts` (lane A, 73c6dba), and `refusals/common.ts` does not repeat it                                                                                                      |         |
+| 5    | `post.updated`, `post.deleted`, `post.restored` with `post.created`'s fields; `vote.cast` gains `apId` and `previousApId` (`string \| null`), still `v: 1`                                                                                                  | 291eac1 |
+| 6    | `PostView` gains `excerpt`, `thumbnailUrl`, `urlContentType`, `nsfl`, `authorBadge`; `CommentView` gains `authorBadge`; `AuthorBadge` (`'admin' \| 'moderator' \| null`) exported from `views.ts`                                                           | 95c70a1 |
+| 7    | `receiveInbound(request)` in `packages/federation/src/inbound/receive.ts` answers 503 with `Retry-After: 300`                                                                                                                                               | 7041617 |
+| 8    | `PEBLISH_UI_KIT: '1'` in the `check` job's env                                                                                                                                                                                                              | fcbf3b3 |
+| 9    | This section                                                                                                                                                                                                                                                | (this)  |
+
+The job runner, as written:
+
+```ts
+export interface Job {
+  readonly name: string;
+  readonly everyMs: number;
+  run(signal: AbortSignal): Promise<void>;
+}
+export function defineJob(spec: { name: string; everyMs: number; run(signal: AbortSignal): Promise<void> }): Job;
+export function assertJobsRunnable(jobs: readonly Job[], consumers?: readonly Consumer[]): void;
+export function runJobs(options: {
+  signal: AbortSignal;
+  jobs: readonly Job[];
+  onError?: (job: Job, error: unknown) => void;
+}): Promise<void>;
+```
+
+Pin recheck (npm registry, 2026-11-09):
+
+- `drizzle-orm` 0.45.4 and `drizzle-kit` 0.31.11 are the `latest` tags and the newest on their lines. Drizzle 1.0 is at `1.0.0-rc.5` (2026-10-21) on the `rc` tag, beside `1.0.0-beta.22`; not taken.
+- `nitro` 3.0.261103-rc (2026-11-03) is the `latest` tag and the newest release.
+- `@fedify/fedify` 2.4.5 (2026-10-23) is `latest` and the newest stable 2.4.x. A `2.4.6-dev.2628` prerelease (2026-11-05) is on the patch line, and 2.5.0 is still at dev builds (`2.5.0-dev.2664`, 2026-11-07).
+
+Decisions where the brief left room:
+
+1. Item 4: the refusal kept lane A's wording ("The acting account has not verified its email address (auth_user.email_verified) yet."), not the brief's. Keys must be unique across the refusal files, so a second copy in `common.ts` would fail anyway.
+2. A job runs once when the worker starts, then `everyMs` after each run ends. `everyMs` must be a whole number from 1 to 2^31 - 1 ms, refused at definition: `setTimeout` fires a longer delay at once. A daily job (86,400,000) fits.
+3. A run that throws the abort after SIGTERM is not logged as a failure; any other error is, through `onError` (`job <name> failed`), and the job runs again `everyMs` later.
+4. The worker checks consumer names and job names (against each other) before either loop starts, so a clash exits 1 with nothing written. A crash in one loop aborts the other, and both settle before `shutdown()` closes the pools. `runJobs` refuses duplicate job names on its own too. The worker still logs `worker: running outbox consumers` from the consumers' `onReady` (image-smoke.sh waits for it) and nothing extra for jobs.
+5. The runner takes no lock: a job claims its own work (a lease, `FOR UPDATE SKIP LOCKED` or an advisory lock), as the brief and the `Job` doc comment say.
+6. `pnpm gen` keys a job by its directory, like a consumer (`delivery/job.ts` registers as `delivery`). The two lists are `jobs` (core) and `federationJobs`.
+7. The `core-tx-access` exemption is proven by an allowed fixture at `packages/federation/src/delivery/__fixtures__/opens-tx.ts`, inside FED-A's future directory; the boundary test owns it.
+8. `vote.cast`'s activity ids are `'string | null'` as the brief states, not `ApId` (`string.url`).
+9. The type test in `c/tx/mutation.test-d.ts` now emits a typed `EventOf<'vote.cast'>` value, so its `@ts-expect-error` stays on the emit line and the new fields are checked.
+10. Item 8: no config change is needed. Playwright 1.58.2's `lib/plugins/webServerPlugin.js` starts the server with `{ ...DEFAULT_ENVIRONMENT_VARIABLES, ...process.env, ...this._options.env }`, so `PEBLISH_UI_KIT` reaches the e2e server from the lane's shell or CI's job env.
+11. The README's glob sentence and the web rules name jobs, beside the new "A job" row.
+
+Verification, on this tree (lane root):
+
+- `pnpm install --frozen-lockfile`: up to date, no lockfile change.
+- `pnpm check` is green: 1,100 tests in 63 files passed, 1 file and 2 tests skipped (FIT's opt-in build and archive tests), no boundary violations (320 modules), oxlint and Prettier clean.
+- `pnpm db:drift`: none. `scripts/lane.sh root` found nothing pending on `peblish_root`.
+- `pnpm e2e` on lane root (port 18399): 33/33.
+- The built worker (`packages/web/dist/processes/worker.mjs`) on `peblish_root`, with no jobs registered: `worker: running outbox consumers`, then `worker: stopped` and exit 0 on SIGTERM.
+- `docker build -t peblish:w2-groundwork`, then `scripts/image-smoke.sh` against a throwaway `peblish_root_image` (dropped after): the disagreeing command exits 64, migrate, the first admin, the worker starts and stops on SIGTERM with exit 0, web `/healthz`, `/readyz` and the healthcheck, uid 1000. A rerun on the same database passed too.
+
+Housekeeping: no push; the `peblish:w2-groundwork` image tag stays.
