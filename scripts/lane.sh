@@ -2,11 +2,19 @@
 # Per-lane environment on the shared dev Postgres (compose.yaml). Creates the lane's
 # database peblish_<lane> if needed, applies the migrations, and prints the exports:
 #
-#   eval "$(sh scripts/lane.sh az)"
+#   lane_env=$(sh scripts/lane.sh az) && eval "$lane_env"
 #
+# (A bare eval "$(sh scripts/lane.sh az)" would hide a failure.) The S3 values are the
+# compose MinIO's root user and its default region.
 # Ports come from the Phase 1 plan's table (G0 18300 ... root 18399); spike ports
 # 18100-18299 are never used. Tests recreate peblish_<lane>_test themselves.
 set -eu
+# A failure prints nothing on stdout, so `eval` would succeed with no environment: say so.
+report_failure() {
+  status=$?
+  [ "$status" = 0 ] || echo "lane.sh: failed (exit $status); nothing was exported" >&2
+}
+trap report_failure EXIT
 
 lane=$(printf '%s' "${1:?usage: sh scripts/lane.sh <lane>}" | tr 'A-Z-' 'a-z_')
 case "$lane" in
@@ -38,4 +46,7 @@ export PUBLIC_ORIGIN=https://$host.peblish.test
 export SMTP_URL=smtp://127.0.0.1:18425
 export S3_ENDPOINT=http://127.0.0.1:18490
 export S3_BUCKET=peblish-$host
+export S3_REGION=us-east-1
+export S3_ACCESS_KEY_ID=peblish
+export S3_SECRET_ACCESS_KEY=peblish-dev-secret
 ENV

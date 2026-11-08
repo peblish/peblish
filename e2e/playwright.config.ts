@@ -6,6 +6,9 @@ import { defineConfig, devices } from '@playwright/test';
 // whose Chromium 145 headless shell is what the mux-start spike used.
 const port = Number(process.env.E2E_PORT ?? process.env.PORT ?? 18300);
 const baseURL = process.env.BASE_URL ?? `http://127.0.0.1:${port}`;
+/** The lane's database: scripts/lane.sh prints it, CI sets it. No default, so a lane never uses another's. */
+const databaseUrl = process.env.DATABASE_URL;
+if (!databaseUrl) throw new Error('DATABASE_URL is unset: run lane_env=$(sh scripts/lane.sh <lane>) && eval "$lane_env" first');
 
 export default defineConfig({
   testDir: '.',
@@ -27,7 +30,7 @@ export default defineConfig({
         env: {
           PORT: String(port),
           HOST: '127.0.0.1',
-          DATABASE_URL: process.env.DATABASE_URL ?? 'postgres://peblish:peblish@127.0.0.1:18432/peblish_g0',
+          DATABASE_URL: databaseUrl,
         },
         reuseExistingServer: !process.env.CI,
         timeout: 30_000,

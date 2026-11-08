@@ -54,7 +54,7 @@ Node 24 (`.nvmrc`), pnpm 10 (`packageManager`), Docker for the local services.
 ```sh
 pnpm install
 docker compose up -d --wait        # Postgres 17 on 18432, MinIO on 18490/18491, Mailpit on 18425/18426
-eval "$(sh scripts/lane.sh g0)"    # this lane's database, port and test database
+lane_env=$(sh scripts/lane.sh g0) && eval "$lane_env"   # this lane's database, port, test database, S3; stops on failure
 pnpm check                         # build, typecheck, lint (boundaries, oxlint, prettier), tests
 pnpm e2e                           # Playwright against the build, on $PORT
 pnpm --filter @peblish/web dev     # dev server on $PORT
