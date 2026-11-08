@@ -81,7 +81,8 @@ export const comments = pgTable(
     createdAt: createdAt(),
   },
   (t) => [
-    index('comments_post').on(t.postId),
+    index('comments_post_path').on(t.postId, t.path),
+    index('comments_parent').on(t.parentId),
     index('comments_path').using('gist', t.path),
     index('comments_author').on(t.authorId),
     check('comments_depth', sql`nlevel(${t.path}) between 1 and 50`),

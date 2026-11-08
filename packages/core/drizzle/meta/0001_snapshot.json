@@ -1,5 +1,5 @@
 {
-  "id": "95c7fe14-771c-4fec-bf38-641f84a83fc2",
+  "id": "ec29ca29-b9e5-432a-be90-89e89bafc8d4",
   "prevId": "a482f298-6d02-426b-a689-d9a87f584262",
   "version": "7",
   "dialect": "postgresql",
@@ -1013,11 +1013,32 @@
         }
       },
       "indexes": {
-        "comments_post": {
-          "name": "comments_post",
+        "comments_post_path": {
+          "name": "comments_post_path",
           "columns": [
             {
               "expression": "post_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "path",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "comments_parent": {
+          "name": "comments_parent",
+          "columns": [
+            {
+              "expression": "parent_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -1764,7 +1785,7 @@
         },
         "body": {
           "name": "body",
-          "type": "jsonb",
+          "type": "bytea",
           "primaryKey": false,
           "notNull": true
         },
@@ -2388,9 +2409,15 @@
           "primaryKey": false,
           "notNull": true
         },
-        "moderator_id": {
-          "name": "moderator_id",
+        "actor_id": {
+          "name": "actor_id",
           "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "actor_ap_id": {
+          "name": "actor_ap_id",
+          "type": "text",
           "primaryKey": false,
           "notNull": false
         },
@@ -2496,17 +2523,17 @@
         }
       },
       "foreignKeys": {
-        "modlog_moderator_id_actors_id_fk": {
-          "name": "modlog_moderator_id_actors_id_fk",
+        "modlog_actor_id_actors_id_fk": {
+          "name": "modlog_actor_id_actors_id_fk",
           "tableFrom": "modlog",
           "tableTo": "actors",
           "columnsFrom": [
-            "moderator_id"
+            "actor_id"
           ],
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
+          "onDelete": "set null",
           "onUpdate": "no action"
         },
         "modlog_community_id_actors_id_fk": {
@@ -2519,7 +2546,46 @@
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "modlog_target_actor_id_actors_id_fk": {
+          "name": "modlog_target_actor_id_actors_id_fk",
+          "tableFrom": "modlog",
+          "tableTo": "actors",
+          "columnsFrom": [
+            "target_actor_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "modlog_target_post_id_posts_id_fk": {
+          "name": "modlog_target_post_id_posts_id_fk",
+          "tableFrom": "modlog",
+          "tableTo": "posts",
+          "columnsFrom": [
+            "target_post_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "modlog_target_comment_id_comments_id_fk": {
+          "name": "modlog_target_comment_id_comments_id_fk",
+          "tableFrom": "modlog",
+          "tableTo": "comments",
+          "columnsFrom": [
+            "target_comment_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
           "onUpdate": "no action"
         }
       },

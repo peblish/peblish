@@ -18,6 +18,9 @@ export const raw = () => jsonb('raw');
 /** Postgres ltree: dot-separated labels. Comment paths use the comment ids as labels. */
 export const ltree = customType<{ data: string }>({ dataType: () => 'ltree' });
 
+/** Postgres bytea: exact bytes (postgres.js returns a Buffer). */
+export const bytea = customType<{ data: Uint8Array; driverData: Uint8Array }>({ dataType: () => 'bytea' });
+
 /** Postgres xid8 (64-bit transaction id), as its decimal string. */
 export const xid8 = customType<{ data: string; driverData: string }>({ dataType: () => 'xid8' });
 

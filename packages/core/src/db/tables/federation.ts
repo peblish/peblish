@@ -1,6 +1,6 @@
 import { sql } from 'drizzle-orm';
 import { boolean, index, integer, jsonb, pgTable, text } from 'drizzle-orm/pg-core';
-import { at, createdAt, enumCheck, id } from '../columns.ts';
+import { at, bytea, createdAt, enumCheck, id } from '../columns.ts';
 
 const stateValues = ['pending', 'applied', 'skipped', 'failed'] as const;
 
@@ -12,7 +12,8 @@ export const inboxRaw = pgTable(
     activityId: text('activity_id'),
     activityType: text('activity_type'),
     actorApId: text('actor_ap_id'),
-    body: jsonb('body').notNull(),
+    /** The request body's exact bytes, for signature digests and the byte-for-byte relay. */
+    body: bytea('body').notNull(),
     /** The request headers signature verification needs. */
     headers: jsonb('headers'),
     state: text('state', { enum: stateValues }).notNull().default('pending'),

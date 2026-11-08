@@ -43,13 +43,51 @@ describe('migration 0001 identity spine', () => {
     await seedActor(remote, 'Group', 'news');
   });
 
-  test('ap_id, local and instance_id are immutable', async () => {
+  test('ap_id, local and instance_id are immutable on actors, posts, comments and votes', async () => {
     const local = await seedInstance('feddit.test');
-    const actor = await seedActor(local, 'Person', 'Andrew');
-    for (const change of [{ apId: 'https://elsewhere.test/u/Andrew' }, { local: false }]) {
-      expect(await failure(writer().update(actors).set(change).where(eq(actors.id, actor.id)))).toMatchObject({ code: '23000' });
+    const remote = await seedInstance('lemmy.test', false);
+    const author = await seedActor(local, 'Person', 'Andrew');
+    const community = await seedActor(local, 'Group', 'announcements');
+    const spine = { local: true, instanceId: local.id };
+    const [post] = await writer()
+      .insert(posts)
+      .values({
+        ...spine,
+        apId: 'https://feddit.test/ap/post/1',
+        authorId: author.id,
+        communityId: community.id,
+        title: 't',
+        publishedAt: new Date(),
+      })
+      .returning();
+    const [comment] = await writer()
+      .insert(comments)
+      .values({
+        ...spine,
+        apId: 'https://feddit.test/ap/comment/1',
+        postId: post!.id,
+        authorId: author.id,
+        path: 'c1',
+        publishedAt: new Date(),
+      })
+      .returning();
+    const [vote] = await writer()
+      .insert(votes)
+      .values({ ...spine, apId: 'https://feddit.test/ap/activity/v1', voterId: author.id, postId: post!.id, value: 1 })
+      .returning();
+    const changes = [{ apId: 'https://elsewhere.test/x' }, { local: false }, { instanceId: remote.id }];
+    const rows = [
+      [actors, author.id],
+      [posts, post!.id],
+      [comments, comment!.id],
+      [votes, vote!.id],
+    ] as const;
+    for (const [table, rowId] of rows) {
+      for (const change of changes) {
+        expect(await failure(writer().update(table).set(change).where(eq(table.id, rowId)))).toMatchObject({ code: '23000' });
+      }
     }
-    await writer().update(actors).set({ displayName: 'Andrew T' }).where(eq(actors.id, actor.id));
+    await writer().update(actors).set({ displayName: 'Andrew T' }).where(eq(actors.id, author.id));
   });
 
   test('comment paths stop at depth 50 and votes have exactly one target', async () => {
@@ -88,15 +126,71 @@ describe('migration 0001 identity spine', () => {
     ).toMatchObject({ constraint: 'votes_one_target' });
   });
 
-  test('the modlog and the deletion ledger are append-only', async () => {
+  test('the modlog and the deletion ledger refuse update, delete and truncate', async () => {
     await writer()
       .insert(modlog)
-      .values({ action: 'post.remove', authority: { kind: 'site-admin' } });
+      .values({ action: 'mod.remove', authority: { kind: 'site-admin' } });
     await writer()
       .insert(deletionLedger)
       .values({ subjectKind: 'post', subjectId: '0192f5a0-0000-7000-8000-000000000001', reason: 'test' });
-    expect(await failure(writer().delete(modlog))).toMatchObject({ code: '23000' });
-    expect(await failure(writer().update(deletionLedger).set({ reason: 'changed' }))).toMatchObject({ code: '23000' });
+    for (const statement of [
+      writer().update(modlog).set({ reason: 'changed' }),
+      writer().delete(modlog),
+      writer().execute(sql`truncate modlog`),
+      writer().update(deletionLedger).set({ reason: 'changed' }),
+      writer().delete(deletionLedger),
+      writer().execute(sql`truncate deletion_ledger`),
+    ]) {
+      expect(await failure(statement)).toMatchObject({ code: '23000' });
+    }
+  });
+
+  test('the modlog outlives purged content: references go null, ap_ids stay', async () => {
+    const local = await seedInstance('feddit.test');
+    const moderator = await seedActor(local, 'Person', 'Andrew');
+    const community = await seedActor(local, 'Group', 'announcements');
+    const [post] = await writer()
+      .insert(posts)
+      .values({
+        apId: 'https://feddit.test/ap/post/9',
+        local: true,
+        instanceId: local.id,
+        authorId: moderator.id,
+        communityId: community.id,
+        title: 't',
+        publishedAt: new Date(),
+      })
+      .returning();
+    await writer()
+      .insert(modlog)
+      .values({
+        action: 'mod.remove',
+        actorId: moderator.id,
+        actorApId: moderator.apId,
+        communityId: community.id,
+        targetPostId: post!.id,
+        targetApId: post!.apId,
+        authority: { kind: 'site-admin', actorId: moderator.id },
+      });
+    await writer().delete(posts).where(eq(posts.id, post!.id));
+    const [entry] = await db().select().from(modlog);
+    expect(entry).toMatchObject({ targetPostId: null, targetApId: post!.apId, actorId: moderator.id, communityId: community.id });
+  });
+
+  test('every guard trigger is installed', async () => {
+    const triggers = await db().execute<{ name: string }>(
+      sql`select tgname as name from pg_trigger where not tgisinternal order by tgname`,
+    );
+    expect(triggers.map(({ name }) => name)).toEqual([
+      'actors_immutable_identity',
+      'comments_immutable_identity',
+      'deletion_ledger_append_only',
+      'deletion_ledger_no_truncate',
+      'modlog_append_only',
+      'modlog_no_truncate',
+      'posts_immutable_identity',
+      'votes_immutable_identity',
+    ]);
   });
 
   test('the read pool cannot write', async () => {

@@ -198,7 +198,7 @@ CREATE TABLE "inbox_raw" (
 	"activity_id" text,
 	"activity_type" text,
 	"actor_ap_id" text,
-	"body" jsonb NOT NULL,
+	"body" "bytea" NOT NULL,
 	"headers" jsonb,
 	"state" text DEFAULT 'pending' NOT NULL,
 	"attempts" integer DEFAULT 0 NOT NULL,
@@ -273,7 +273,8 @@ CREATE TABLE "community_moderators" (
 CREATE TABLE "modlog" (
 	"id" uuid PRIMARY KEY NOT NULL,
 	"action" text NOT NULL,
-	"moderator_id" uuid,
+	"actor_id" uuid,
+	"actor_ap_id" text,
 	"community_id" uuid,
 	"target_actor_id" uuid,
 	"target_post_id" uuid,
@@ -389,8 +390,11 @@ ALTER TABLE "follows" ADD CONSTRAINT "follows_followee_id_actors_id_fk" FOREIGN 
 ALTER TABLE "media" ADD CONSTRAINT "media_owner_id_actors_id_fk" FOREIGN KEY ("owner_id") REFERENCES "public"."actors"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "community_moderators" ADD CONSTRAINT "community_moderators_community_id_actors_id_fk" FOREIGN KEY ("community_id") REFERENCES "public"."actors"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "community_moderators" ADD CONSTRAINT "community_moderators_moderator_id_actors_id_fk" FOREIGN KEY ("moderator_id") REFERENCES "public"."actors"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "modlog" ADD CONSTRAINT "modlog_moderator_id_actors_id_fk" FOREIGN KEY ("moderator_id") REFERENCES "public"."actors"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "modlog" ADD CONSTRAINT "modlog_community_id_actors_id_fk" FOREIGN KEY ("community_id") REFERENCES "public"."actors"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "modlog" ADD CONSTRAINT "modlog_actor_id_actors_id_fk" FOREIGN KEY ("actor_id") REFERENCES "public"."actors"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "modlog" ADD CONSTRAINT "modlog_community_id_actors_id_fk" FOREIGN KEY ("community_id") REFERENCES "public"."actors"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "modlog" ADD CONSTRAINT "modlog_target_actor_id_actors_id_fk" FOREIGN KEY ("target_actor_id") REFERENCES "public"."actors"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "modlog" ADD CONSTRAINT "modlog_target_post_id_posts_id_fk" FOREIGN KEY ("target_post_id") REFERENCES "public"."posts"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "modlog" ADD CONSTRAINT "modlog_target_comment_id_comments_id_fk" FOREIGN KEY ("target_comment_id") REFERENCES "public"."comments"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "reports" ADD CONSTRAINT "reports_instance_id_instances_id_fk" FOREIGN KEY ("instance_id") REFERENCES "public"."instances"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "reports" ADD CONSTRAINT "reports_reporter_id_actors_id_fk" FOREIGN KEY ("reporter_id") REFERENCES "public"."actors"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "reports" ADD CONSTRAINT "reports_community_id_actors_id_fk" FOREIGN KEY ("community_id") REFERENCES "public"."actors"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
@@ -408,7 +412,8 @@ CREATE INDEX "auth_session_user" ON "auth_session" USING btree ("user_id");--> s
 CREATE INDEX "auth_two_factor_user" ON "auth_two_factor" USING btree ("user_id");--> statement-breakpoint
 CREATE INDEX "auth_two_factor_secret" ON "auth_two_factor" USING btree ("secret");--> statement-breakpoint
 CREATE INDEX "auth_verification_identifier" ON "auth_verification" USING btree ("identifier");--> statement-breakpoint
-CREATE INDEX "comments_post" ON "comments" USING btree ("post_id");--> statement-breakpoint
+CREATE INDEX "comments_post_path" ON "comments" USING btree ("post_id","path");--> statement-breakpoint
+CREATE INDEX "comments_parent" ON "comments" USING btree ("parent_id");--> statement-breakpoint
 CREATE INDEX "comments_path" ON "comments" USING gist ("path");--> statement-breakpoint
 CREATE INDEX "comments_author" ON "comments" USING btree ("author_id");--> statement-breakpoint
 CREATE INDEX "posts_community_published" ON "posts" USING btree ("community_id","published_at" DESC NULLS LAST);--> statement-breakpoint
@@ -448,12 +453,34 @@ CREATE TRIGGER comments_immutable_identity BEFORE UPDATE ON "comments" FOR EACH 
 --> statement-breakpoint
 CREATE TRIGGER votes_immutable_identity BEFORE UPDATE ON "votes" FOR EACH ROW EXECUTE FUNCTION peblish_immutable_identity();
 --> statement-breakpoint
--- The modlog and the deletion ledger are append-only.
+-- The modlog and the deletion ledger are append-only: no update, delete or truncate.
 CREATE FUNCTION peblish_append_only() RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
   RAISE EXCEPTION '% is append-only', TG_TABLE_NAME USING ERRCODE = 'integrity_constraint_violation';
 END $$;
 --> statement-breakpoint
-CREATE TRIGGER modlog_append_only BEFORE UPDATE OR DELETE ON "modlog" FOR EACH ROW EXECUTE FUNCTION peblish_append_only();
+-- The one update the modlog accepts: ON DELETE SET NULL from a purged actor, community, post
+-- or comment. Every other column must be unchanged and each reference unchanged or nulled.
+CREATE FUNCTION peblish_modlog_append_only() RETURNS trigger LANGUAGE plpgsql AS $$
+DECLARE
+  refs text[] := ARRAY['actor_id', 'community_id', 'target_actor_id', 'target_post_id', 'target_comment_id'];
+  ref text;
+BEGIN
+  IF TG_OP = 'UPDATE' AND (to_jsonb(NEW) - refs) = (to_jsonb(OLD) - refs) THEN
+    FOREACH ref IN ARRAY refs LOOP
+      IF NOT (to_jsonb(NEW) -> ref = 'null'::jsonb OR to_jsonb(NEW) -> ref = to_jsonb(OLD) -> ref) THEN
+        RAISE EXCEPTION 'modlog is append-only' USING ERRCODE = 'integrity_constraint_violation';
+      END IF;
+    END LOOP;
+    RETURN NEW;
+  END IF;
+  RAISE EXCEPTION 'modlog is append-only' USING ERRCODE = 'integrity_constraint_violation';
+END $$;
+--> statement-breakpoint
+CREATE TRIGGER modlog_append_only BEFORE UPDATE OR DELETE ON "modlog" FOR EACH ROW EXECUTE FUNCTION peblish_modlog_append_only();
+--> statement-breakpoint
+CREATE TRIGGER modlog_no_truncate BEFORE TRUNCATE ON "modlog" FOR EACH STATEMENT EXECUTE FUNCTION peblish_append_only();
 --> statement-breakpoint
 CREATE TRIGGER deletion_ledger_append_only BEFORE UPDATE OR DELETE ON "deletion_ledger" FOR EACH ROW EXECUTE FUNCTION peblish_append_only();
+--> statement-breakpoint
+CREATE TRIGGER deletion_ledger_no_truncate BEFORE TRUNCATE ON "deletion_ledger" FOR EACH STATEMENT EXECUTE FUNCTION peblish_append_only();
