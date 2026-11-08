@@ -354,9 +354,8 @@ class Sanitizer implements TokenizerCallbacks {
 
   private text(text: string): void {
     if (this.dropDepth > 0) return;
-    const clean = text.replaceAll('\0', '');
-    this.html += escapeText(clean);
-    if (this.quietDepth === 0) this.excerptText(clean);
+    this.html += escapeText(text);
+    if (this.quietDepth === 0) this.excerptText(text);
   }
 
   /** Collects excerpt text until there is enough to cut from. */
@@ -441,8 +440,10 @@ function excerpt(plain: string, length: number): string {
 
 /** Sanitises HTML with resolved options; renderMarkdown calls it on its own output. */
 export function sanitize(html: string, context: SanitizeContext, maxLength: number): SanitizedHtml {
-  const truncated = html.length > maxLength;
-  let input = truncated ? html.slice(0, maxLength) : html;
+  // NUL is dropped everywhere, attribute values and tag names included, before anything else.
+  const clean = html.replaceAll('\0', '');
+  const truncated = clean.length > maxLength;
+  let input = truncated ? clean.slice(0, maxLength) : clean;
   // A cut inside a tag drops the partial tag rather than leaving its start as text.
   if (truncated && input.lastIndexOf('<') > input.lastIndexOf('>')) input = input.slice(0, input.lastIndexOf('<'));
   const sanitizer = new Sanitizer(input, context);

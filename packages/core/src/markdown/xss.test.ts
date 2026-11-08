@@ -62,6 +62,7 @@ describe.each(Object.entries(paths))('the %s path', (_path, run) => {
     (_label, vector) => {
       const output = run(vector);
       expect(problems(output)).toEqual([]);
+      expect(output).not.toContain('\u0000');
       expect(sanitizeRemoteHtml(output, { baseUrl: base }).html).toBe(output);
     },
   );

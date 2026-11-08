@@ -38,6 +38,8 @@ export const htmlVectors: string[] = [
   '<a href="jav&Tab;ascript:alert(1)">named tab</a>',
   '<a href=" javascript:alert(1)">leading space</a>',
   '<a href="java\u0000script:alert(1)">nul</a>',
+  '<a href="https://ok.example/" title="a\u0000b">nul title</a><img src="https://ok.example/a.png" alt="c\u0000d" title="\u0000">',
+  '<scr\u0000ipt>alert(1)</scr\u0000ipt><p\u0000 class="x">nul in names</p>',
   '<a href="\u0001javascript:alert(1)">control prefix</a>',
   '<IMG SRC=\'vbscript:msgbox("XSS")\'>',
   '<a href="vbscript:msgbox(1)">vb</a><a href="file:///etc/passwd">file</a><a href="blob:https://ok.example/x">blob</a>',
@@ -180,6 +182,7 @@ export const markdownVectors: string[] = [
   '[x](java\u200Bscript:alert(1))',
   '[x](https://ok.example/\u202Egpj.exe)',
   'https://ok.example/\u0000x javascript:alert(1)',
+  '[x](https://ok.example/ "t\u0000t") ![a\u0000b](https://ok.example/a.png "\u0000")',
   // HTML in Markdown.
   '<script>alert(1)</script>',
   '<img src=x onerror=alert(1)>',
