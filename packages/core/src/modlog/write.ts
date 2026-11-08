@@ -14,30 +14,42 @@ export type ModlogEntryInput = {
   community: { id: Uuid; apId: string } | null;
   target: { actorId?: Uuid; postId?: Uuid; commentId?: Uuid; apId: string } | null;
   reason: string | null;
-  details?: ModlogDetails;
+  /** announcedBy comes from the grant, never the caller. */
+  details?: Omit<ModlogDetails, 'announcedBy'>;
   activityApId?: string | null;
 };
+
+async function apIdOf(db: WriteTx, actorId: Uuid): Promise<string> {
+  const [actor] = await db.select({ apId: actors.apId }).from(actors).where(eq(actors.id, actorId));
+  if (!actor) throw new Error(`modlog: no actor ${actorId}`);
+  return actor.apId;
+}
 
 /**
  * Appends the modlog row for a moderation mutation, inside its transaction (pass t.db): the
  * action, actor and authority come from the grant, so the log records exactly what was
  * authorized. Every mod.* mutation calls it once and puts the returned id in its event.
- * `details.public: false` also sets the modlog.public column the read model filters on.
+ * `details.public: false` also sets the modlog.public column the read model filters on. Under
+ * community-announce authority, `details.announcedBy` names the announcing community, whose
+ * instance the read model must trust as well as the actor's.
  */
 export async function writeModlog(
   db: WriteTx,
   grant: { action: ActionName; actorId: Uuid; authority: Frozen<Authority> },
   entry: ModlogEntryInput,
 ): Promise<Uuid> {
-  const [actor] = await db.select({ apId: actors.apId }).from(actors).where(eq(actors.id, grant.actorId));
-  if (!actor) throw new Error(`modlog: no actor ${grant.actorId}`);
+  const { authority } = grant;
+  const actorApId = await apIdOf(db, grant.actorId);
   const id = uuidv7();
-  const details = ModlogDetails.assert(entry.details ?? {});
+  const details = ModlogDetails.assert({
+    ...entry.details,
+    ...(authority.kind === 'community-announce' && { announcedBy: await apIdOf(db, authority.communityId) }),
+  });
   await db.insert(modlog).values({
     id,
     action: grant.action,
     actorId: grant.actorId,
-    actorApId: actor.apId,
+    actorApId,
     communityId: entry.community?.id ?? null,
     communityApId: entry.community?.apId ?? null,
     targetActorId: entry.target?.actorId ?? null,
@@ -45,7 +57,7 @@ export async function writeModlog(
     targetCommentId: entry.target?.commentId ?? null,
     targetApId: entry.target?.apId ?? null,
     reason: entry.reason,
-    authority: grant.authority,
+    authority,
     details,
     activityApId: entry.activityApId ?? null,
     public: details.public ?? true,
