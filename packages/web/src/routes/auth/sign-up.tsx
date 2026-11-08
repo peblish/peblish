@@ -10,7 +10,16 @@ import { getRequest, setResponseHeader } from '@tanstack/react-start/server';
 import { type } from 'arktype';
 import { useId } from 'react';
 import { useTranslate } from '../../i18n/use-translate.ts';
-import { ageGateCookie, ageGated, forbidden, forwardedHeaders, readForm, respond, sameOrigin } from '../../server/auth.ts';
+import {
+  ageGateCookie,
+  ageGated,
+  forbidden,
+  forwardedHeaders,
+  PRIVATE_NO_STORE,
+  readForm,
+  respond,
+  sameOrigin,
+} from '../../server/auth.ts';
 import { useRouteHydrated } from '../../shell/hydration.ts';
 import { asFormError } from './-ui/errors.ts';
 import { AuthForm, Field, rich } from './-ui/form.tsx';
@@ -21,8 +30,8 @@ const Search = type({ 'error?': SearchText, 'invite?': SearchText, 'username?': 
 const loadSignUp = createServerFn({ method: 'GET' })
   .validator(type({ 'invite?': 'string' }))
   .handler(async ({ data }) => {
-    // Per person (or per browser, for the age gate): never from a shared cache.
-    setResponseHeader('cache-control', 'private, no-store');
+    // Per browser (the age gate): the server function's own reply, on a client-side navigation, too.
+    setResponseHeader('cache-control', PRIVATE_NO_STORE);
     const { host } = await localHandles();
     // An under-16 answer blocks this browser for 24 hours (server/auth.ts).
     if (ageGated(getRequest())) return { host, blocked: true, invite: null };

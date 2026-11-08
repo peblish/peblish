@@ -6,7 +6,6 @@ import { InviteCreateBody, type InviteRow, type InviteStatus } from '@peblish/sc
 import { Button } from '@peblish/ui/components/button';
 import { createFileRoute, Link, redirect } from '@tanstack/react-router';
 import { createServerFn } from '@tanstack/react-start';
-import { setResponseHeader } from '@tanstack/react-start/server';
 import { type } from 'arktype';
 import { useState } from 'react';
 import { useTranslate } from '../../../i18n/use-translate.ts';
@@ -23,8 +22,6 @@ const Body = InviteCreateBody.and({ intent: "'create'" }).or({ intent: "'revoke'
 const CREATED = 'created-invite';
 
 const loadRegistration = createServerFn({ method: 'GET' }).handler(async () => {
-  // Per person (or per browser, for the age gate): never from a shared cache.
-  setResponseHeader('cache-control', 'private, no-store');
   const session = await pageSession();
   if (!session) throw redirect({ to: '/auth/sign-in', search: { redirect: '/admin/registration' } });
   const { origin, handle } = await localHandles();

@@ -6,7 +6,6 @@ import type { DeviceSession } from '@peblish/schema/session';
 import { Button } from '@peblish/ui/components/button';
 import { createFileRoute, redirect } from '@tanstack/react-router';
 import { createServerFn } from '@tanstack/react-start';
-import { setResponseHeader } from '@tanstack/react-start/server';
 import { type } from 'arktype';
 import { useState } from 'react';
 import { useTranslate } from '../../../i18n/use-translate.ts';
@@ -27,7 +26,6 @@ const Body = type({ intent: "'password'", current: 'string', next: 'string' })
   .or({ intent: "'revoke-others'" });
 
 const loadSecurity = createServerFn({ method: 'GET' }).handler(async () => {
-  setResponseHeader('cache-control', 'private, no-store');
   const session = await pageSession();
   if (!session) throw redirect({ to: '/auth/sign-in', search: { redirect: '/settings/security' } });
   const { userId, twoFactorEnabled } = session.view;

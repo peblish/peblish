@@ -53,6 +53,11 @@ test('the admin signs in with a TOTP code and creates an invite', async ({ page 
   await page.getByRole('button', { name: 'Verify' }).click();
   await landed(page, '/');
 
+  // Signed in, the admin and settings pages are personal: never cached.
+  for (const path of ['/admin/registration', '/settings/security', '/settings/account']) {
+    const response = await page.goto(path);
+    expect([path, response?.status(), response?.headers()['cache-control']]).toEqual([path, 200, 'private, no-store']);
+  }
   await gotoHydrated(page, '/admin/registration');
   await page.getByLabel('Label').fill(`e2e ${person.name}`);
   await page.getByLabel('Max uses').fill('2');

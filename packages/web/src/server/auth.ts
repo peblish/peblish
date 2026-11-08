@@ -1,9 +1,11 @@
 import { auth } from '@peblish/core/identity/auth';
-import { appendResponseHeader, getRequest } from '@tanstack/react-start/server';
+import { createMiddleware } from '@tanstack/react-start';
+import { appendResponseHeader, getRequest, setResponseHeader } from '@tanstack/react-start/server';
 import { currentSession, type CurrentSession } from '@peblish/core/identity/session';
 import type { ActingPrincipal } from '@peblish/schema/authz';
 import type { SessionView } from '@peblish/schema/session';
 import type { FormError } from '../routes/auth/-ui/errors.ts';
+import { editable } from './fetch.ts';
 
 // Lane A's server glue between the auth pages and core (better-auth lives in
 // core/identity/auth.ts). Only route server handlers and server functions import this
@@ -13,6 +15,30 @@ import type { FormError } from '../routes/auth/-ui/errors.ts';
 // handler answers 303 to the next page, or back with ?error=<code>; the enhanced form
 // (routes/auth/-ui/form.tsx) sends Accept: application/json and gets { redirect } or
 // { error } instead, keeping what was typed.
+
+/** For a response that depends on who asks, or carries a bearer secret (a reset token, an invite code). */
+export const PRIVATE_NO_STORE = 'private, no-store';
+
+/** `response` with cache-control: private, no-store; a copy when its headers cannot change. */
+export function privateResponse(response: Response): Response {
+  try {
+    response.headers.set('cache-control', PRIVATE_NO_STORE);
+    return response;
+  } catch {
+    const copy = editable(response);
+    copy.headers.set('cache-control', PRIVATE_NO_STORE);
+    return copy;
+  }
+}
+
+/**
+ * The cache rule for every response under /auth, /invite, /settings and /admin, in one place:
+ * each of those route groups' route.tsx runs it, for pages, form posts and redirects alike.
+ */
+export const privateResponses = createMiddleware().server(async ({ next }) => {
+  const result = await next();
+  return { ...result, response: privateResponse(result.response) };
+});
 
 /** The headers better-auth needs from the browser's request: cookies, device and address. */
 export function forwardedHeaders(request: Request): Headers {
@@ -55,7 +81,7 @@ type Outcome = {
 
 /** The form handler's answer: JSON for the enhanced form, otherwise 303 (PRG). */
 export function respond(request: Request, outcome: Outcome): Response {
-  const headers = new Headers({ 'cache-control': 'no-store' });
+  const headers = new Headers();
   for (const cookie of outcome.cookies ?? []) headers.append('set-cookie', cookie);
   let location: string;
   if ('redirect' in outcome) location = outcome.redirect;
@@ -85,9 +111,13 @@ export function sessionOf(request: Request): Promise<CurrentSession | null> {
 
 /**
  * The session for a page's server function, passing on the cookie better-auth refreshes
- * once a day (session.updateAge), so an active session's cookie keeps up with its row.
+ * once a day (session.updateAge), so an active session's cookie keeps up with its row. What
+ * it answers depends on the cookie, so it is never cached: the route groups' middleware says
+ * so for their pages, and this for the server function's own reply on a client-side
+ * navigation and for any page elsewhere that shows the signed-in person.
  */
 export async function pageSession(): Promise<CurrentSession | null> {
+  setResponseHeader('cache-control', PRIVATE_NO_STORE);
   const session = await sessionOf(getRequest());
   for (const cookie of session?.setCookies ?? []) appendResponseHeader('set-cookie', cookie);
   return session;

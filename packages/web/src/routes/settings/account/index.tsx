@@ -4,7 +4,6 @@ import { localHandles } from '@peblish/core/identity/handles';
 import { Button } from '@peblish/ui/components/button';
 import { createFileRoute, Link, redirect } from '@tanstack/react-router';
 import { createServerFn } from '@tanstack/react-start';
-import { setResponseHeader } from '@tanstack/react-start/server';
 import { type } from 'arktype';
 import { useTranslate } from '../../../i18n/use-translate.ts';
 import {
@@ -28,7 +27,6 @@ const Search = type({ 'error?': SearchText });
 const Body = type({ intent: "'delete'", confirm: 'string', password: 'string' });
 
 const loadAccount = createServerFn({ method: 'GET' }).handler(async () => {
-  setResponseHeader('cache-control', 'private, no-store');
   const session = await pageSession();
   if (!session) throw redirect({ to: '/auth/sign-in', search: { redirect: '/settings/account' } });
   const { handle } = await localHandles();
