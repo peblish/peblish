@@ -18,3 +18,15 @@ export const Authority = type({
     announceApId: 'string.url',
   });
 export type Authority = typeof Authority.infer;
+
+/** Who is asking. Anonymous principals are refused before any policy runs. */
+export const Principal = type({ kind: "'anonymous'" })
+  .or({ kind: "'local'", actorId: Uuid, siteRole: "'user' | 'admin'" })
+  .or({
+    kind: "'remote'",
+    actorId: Uuid,
+    /** Set when the activity reached us inside an Announce from this community. */
+    announcedBy: type({ communityId: Uuid, announceApId: 'string.url' }).or('null'),
+  });
+export type Principal = typeof Principal.infer;
+export type ActingPrincipal = Exclude<Principal, { kind: 'anonymous' }>;
