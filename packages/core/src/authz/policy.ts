@@ -20,8 +20,19 @@ export type PolicyRequest<S> = {
   db: Queryable;
   /**
    * True when the policy runs inside the writing transaction (a mutation's recheck). Every
-   * row the decision relies on (community, post, moderator, membership) must then be read
-   * with forShare(), so a revoking UPDATE in another transaction waits for this write.
+   * row the decision rests on is then read locked, so a revocation that updates an existing
+   * row (a soft delete, a demotion, a lock flag) either committed first and the recheck sees
+   * it, or waits until this write commits:
+   * - forShare(query, lock) for rows no write body updates;
+   * - forNoKeyUpdate(query, lock) for any row a write body updates (a counter, a vote tally,
+   *   a ban target). Reading such a row FOR SHARE and updating it later deadlocks two
+   *   concurrent writers (40P01), so every policy that reads it uses forNoKeyUpdate; mixing
+   *   the two modes on one row can still deadlock.
+   * A lock on a query that finds no row locks nothing. So a revocation recorded as an INSERT
+   * (a ban, a lock row, a removal marker) first takes FOR NO KEY UPDATE, in its own mutation,
+   * on the parent row the policies lock: the community actor row, or the target actor row
+   * for a site ban (the principal refresh locks the acting actor's row). Each policy it
+   * revokes locks that same parent row.
    */
   lock: boolean;
 };
@@ -37,7 +48,19 @@ export type DuplicateActions = AssertNever<Overlap<typeof policyAreas>>;
 export const allow = (authority: Authority): PolicyResult => ({ ok: true, authority });
 export const deny = (reason: RefusalReason): PolicyResult => ({ ok: false, reason });
 
-/** Adds FOR SHARE to an authorization read when the policy runs with `lock` (see PolicyRequest). */
-export function forShare<R>(query: PromiseLike<R> & { for(strength: 'share'): PromiseLike<R> }, lock: boolean): PromiseLike<R> {
+/** A Drizzle select that can take a row lock. */
+type Lockable<R> = PromiseLike<R> & { for(strength: 'share' | 'no key update'): PromiseLike<R> };
+
+/** FOR SHARE on an authorization read when the policy runs with `lock`: rows no write body updates. */
+export function forShare<R>(query: Lockable<R>, lock: boolean): PromiseLike<R> {
   return lock ? query.for('share') : query;
+}
+
+/**
+ * FOR NO KEY UPDATE on an authorization read when the policy runs with `lock`: rows a write
+ * body updates, and the parent rows an INSERT-recorded revocation locks (see PolicyRequest.lock).
+ * It still lets inserts that reference the row (their foreign-key checks) through.
+ */
+export function forNoKeyUpdate<R>(query: Lockable<R>, lock: boolean): PromiseLike<R> {
+  return lock ? query.for('no key update') : query;
 }

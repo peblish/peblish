@@ -48,7 +48,7 @@ async function seed() {
 }
 
 describe('recheck against a concurrent revocation', () => {
-  test('A rechecks first: B waits on the FOR SHARE lock until A commits', async () => {
+  test('A rechecks first: B waits on the row lock until A commits', async () => {
     const { community, grant } = await seed();
     const rechecked = gate();
     const release = gate();
@@ -142,5 +142,62 @@ describe('recheck refreshes the principal', () => {
   test('control: the same grant still works for an admin who stays one', async () => {
     const { grant } = await admin();
     expect(await siteBan(grant, null)).toBe('banned');
+  });
+});
+
+/** The Postgres error code behind a Drizzle query error, if any. */
+function postgresCode(error: unknown): unknown {
+  return error instanceof Error && typeof error.cause === 'object' && error.cause !== null && 'code' in error.cause
+    ? error.cause.code
+    : undefined;
+}
+
+describe('two rechecking writers that update the row their policy reads', () => {
+  test('control: reading the row FOR SHARE and then updating it deadlocks one of two writers', async () => {
+    const { community } = await seed();
+    let arrived = 0;
+    const bothHoldShare = gate();
+    const write = () =>
+      tx(async (t) => {
+        await t.db.select({ id: actors.id }).from(actors).where(eq(actors.id, community.id)).for('share');
+        if (++arrived === 2) bothHoldShare.open();
+        await bothHoldShare.opened;
+        await t.db.update(actors).set({ updatedAt: new Date() }).where(eq(actors.id, community.id));
+      });
+    const results = await Promise.allSettled([write(), write()]);
+    const failures = results.flatMap((result) => (result.status === 'rejected' ? [postgresCode(result.reason)] : []));
+    expect(failures).toEqual(['40P01']);
+  });
+
+  test("post.create's policy reads the community FOR NO KEY UPDATE: the second writer waits, neither deadlocks", async () => {
+    const { community, grant } = await seed();
+    const inBody = gate();
+    const release = gate();
+    let bodies = 0;
+    // A body that updates the row its policy locked, as post creation will (community counters).
+    const bumpingCreate = defineMutation({
+      action: 'post.create',
+      emits: ['post.created'],
+      recheck: true,
+      async run(t, g, input: { hold: boolean }) {
+        bodies += 1;
+        if (input.hold) {
+          inBody.open();
+          await release.opened;
+        }
+        await t.db.update(actors).set({ updatedAt: new Date() }).where(eq(actors.id, g.subject.communityId));
+      },
+    });
+    const first = bumpingCreate(grant, { hold: true });
+    await inBody.opened;
+    const second = bumpingCreate(grant, { hold: false });
+    // The second writer's recheck waits on the first's lock instead of sharing it.
+    await expect.poll(someoneWaitsOnALock).toBe(true);
+    expect(bodies).toBe(1);
+    release.open();
+    await expect(Promise.all([first, second])).resolves.toBeDefined();
+    expect(bodies).toBe(2);
+    const [row] = await db().select({ updatedAt: actors.updatedAt }).from(actors).where(eq(actors.id, community.id));
+    expect(row?.updatedAt).toBeInstanceOf(Date);
   });
 });

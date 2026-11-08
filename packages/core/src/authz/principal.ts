@@ -10,7 +10,10 @@ import { authUser } from '../db/tables/auth.ts';
  * session or grant issued earlier cannot outlive a deletion or a demotion: the actor must
  * still exist, match the principal's kind and not be deleted, and a local principal's site
  * role comes from auth_user.role, not the session. Rows are read FOR SHARE so a concurrent
- * demotion or deletion waits for the write. Lane MODF adds the site-ban check here.
+ * demotion or deletion waits for the write, and a site ban (which takes FOR NO KEY UPDATE on
+ * the actor row before inserting) does too. A write body therefore must not update the acting
+ * actor's own row; if one ever needs to, this read becomes FOR NO KEY UPDATE (PolicyRequest.lock).
+ * Lane MODF adds the site-ban check here.
  */
 export async function currentPrincipal(
   q: Queryable,

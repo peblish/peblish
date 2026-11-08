@@ -1,7 +1,7 @@
 import type { Uuid } from '@peblish/schema/ids';
 import { eq } from 'drizzle-orm';
 import { actors } from '../../db/tables/actors.ts';
-import { allow, deny, forShare, type PolicyRequest } from '../policy.ts';
+import { allow, deny, forNoKeyUpdate, type PolicyRequest } from '../policy.ts';
 
 // Owned by lane B1 after G0. Lane AZ's guard seam is packages/core/src/authz/state.ts: AZ adds
 // a single guard call line here and in votes.ts (bans, locks). Lane F adds
@@ -9,7 +9,9 @@ import { allow, deny, forShare, type PolicyRequest } from '../policy.ts';
 export const policies = {
   'post.create': async ({ principal, subject, db, lock }: PolicyRequest<{ communityId: Uuid }>) => {
     if (principal.kind !== 'local') return deny('auth.required');
-    const [community] = await forShare(
+    // FOR NO KEY UPDATE: post creation updates the community's counters (lane B1), and a
+    // community ban recorded as an INSERT (lane AZ) locks this row first (PolicyRequest.lock).
+    const [community] = await forNoKeyUpdate(
       db.select({ kind: actors.kind, deletedAt: actors.deletedAt }).from(actors).where(eq(actors.id, subject.communityId)),
       lock,
     );

@@ -2,7 +2,7 @@ import type { Uuid } from '@peblish/schema/ids';
 import { eq } from 'drizzle-orm';
 import { actors } from '../../db/tables/actors.ts';
 import { authUser } from '../../db/tables/auth.ts';
-import { allow, deny, forShare, type PolicyRequest } from '../policy.ts';
+import { allow, deny, forNoKeyUpdate, forShare, type PolicyRequest } from '../policy.ts';
 
 // Stub owned by lane MODF: site-level ban and unban of a local or remote actor (M06).
 // Community-scope moderation (remove, restore, lock, pin, community ban) lives in
@@ -10,7 +10,10 @@ import { allow, deny, forShare, type PolicyRequest } from '../policy.ts';
 
 async function siteAdminOver({ principal, subject, db, lock }: PolicyRequest<{ targetActorId: Uuid }>) {
   if (principal.kind !== 'local' || principal.siteRole !== 'admin') return deny('auth.admin_required');
-  const [target] = await forShare(
+  // FOR NO KEY UPDATE on the target actor row: the ban mutation locks it the same way before
+  // inserting the ban, and the banned actor's own rechecked writes lock it in the principal
+  // refresh (PolicyRequest.lock).
+  const [target] = await forNoKeyUpdate(
     db
       .select({ id: actors.id, kind: actors.kind, local: actors.local, userId: actors.userId })
       .from(actors)
