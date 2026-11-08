@@ -1,0 +1,30 @@
+{
+  "name": "@peblish/web",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "license": "AGPL-3.0-only",
+  "scripts": {
+    "dev": "vite dev --host 127.0.0.1 --port ${PORT:-18300}",
+    "build": "vite build && vite build --config vite.worker.config.ts",
+    "start": "node .output/server/index.mjs",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@peblish/core": "workspace:*",
+    "@peblish/federation": "workspace:*",
+    "@peblish/schema": "workspace:*",
+    "@peblish/ui": "workspace:*",
+    "@tanstack/react-router": "1.170.46",
+    "@tanstack/react-start": "1.169.4",
+    "react": "19.2.9",
+    "react-dom": "19.2.9"
+  },
+  "devDependencies": {
+    "@types/react": "19.2.17",
+    "@types/react-dom": "19.2.3",
+    "@vitejs/plugin-react": "6.2.1",
+    "nitro": "3.0.261103-rc",
+    "vite": "8.3.6"
+  }
+}

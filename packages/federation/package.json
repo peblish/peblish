@@ -1,0 +1,18 @@
+{
+  "name": "@peblish/federation",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "license": "AGPL-3.0-only",
+  "exports": {
+    "./*": "./src/*.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@fedify/fedify": "2.4.5",
+    "@peblish/core": "workspace:*",
+    "@peblish/schema": "workspace:*"
+  }
+}

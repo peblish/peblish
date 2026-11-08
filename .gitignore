@@ -22,3 +22,11 @@ spikes/*/e2e/artifacts/
 
 # federation captures stay on disk, not in git
 spikes/*/captures/
+
+# generated: route tree, glob registries and i18n catalogues (pnpm gen)
+*.gen.ts
+.tanstack/
+.pnpm-store/
+
+# e2e evidence stays on disk
+e2e/artifacts/
