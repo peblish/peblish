@@ -31,7 +31,7 @@ import * as db from "./db.ts";
 import { sql } from "./db.ts";
 import { contextForBackground, localGroup, stableCreateId } from "./federation.ts";
 import { enqueue } from "./outbox.ts";
-import { announceLocal, announceRaw } from "./relay.ts";
+import { announceLocal, announcePageCompat, announceRaw, followerInboxesAt } from "./relay.ts";
 
 export class ActionError extends Error {}
 
@@ -176,6 +176,26 @@ export async function createPost(input: {
   const create = createFor(ctx.getActorUri(author), page, community, stableCreateId(id));
   await deliver(ctx, author, community, create);
   return { uri, activity: create.id?.href, json: await create.toJsonLd({ format: "compact" }) };
+}
+
+/**
+ * Mastodon compatibility check: re-announces a local post as Announce(Page)
+ * to the followers of its community at the given origins only. Lemmy rejects
+ * this shape, so the caller names the microblog servers explicitly.
+ */
+export async function announcePage(input: { object: string; origins: string[] }) {
+  const ctx = contextForBackground();
+  const row = await db.getObject(input.object);
+  if (!row?.local || row.kind !== "Page") throw new ActionError(`${input.object} is not a local post`);
+  const community = localGroup(ctx, row.community_uri ? new URL(row.community_uri) : null);
+  if (!community) throw new ActionError(`${input.object} is not in a local community`);
+  const page = toVocab(row);
+  if (!(page instanceof Page)) throw new ActionError("cannot announce a deleted post");
+  if (input.origins.length === 0) throw new ActionError('"origins" is required');
+  const inboxes = await followerInboxesAt(community, input.origins);
+  if (inboxes.length === 0) throw new ActionError(`no follower of ${community} at ${input.origins.join(", ")}`);
+  await announcePageCompat(ctx, community, page, inboxes);
+  return { object: row.uri, community, inboxes };
 }
 
 export async function createComment(input: { author: string; inReplyTo: string; body: string }) {
