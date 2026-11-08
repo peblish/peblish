@@ -84,6 +84,9 @@ importers:
       '@peblish/schema':
         specifier: workspace:*
         version: link:../schema
+      react-aria-components:
+        specifier: 1.20.0
+        version: 1.20.0(react-dom@19.2.9(react@19.2.9))(react@19.2.9)
     devDependencies:
       '@types/react':
         specifier: 19.2.17

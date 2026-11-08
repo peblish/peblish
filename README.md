@@ -15,7 +15,7 @@ peblish is an open-source, ActivityPub-federated, Reddit-style community platfor
 | `deploy/`                   |               | Image entrypoint and the Easypanel shape                                                                                |
 | `spikes/`, `lab/`, `plans/` |               | Phase 0 experiments, the federation lab and the July 2026 plan; outside the workspace                                   |
 
-Packages export source through subpath wildcards (`@peblish/core/tx/tx`), with no barrel files. Areas register outbox consumers, feed predicates, authz policies, inbound handlers, refusals, events and i18n catalogues by adding a file that matches a glob; `pnpm gen` writes the gitignored `*.gen.ts` registries.
+Packages export source through subpath wildcards (`@peblish/core/tx/tx`), with no barrel files. In `@peblish/ui`, `.tsx` modules are imported without an extension (`@peblish/ui/components/button`) and `.ts` modules with it (`@peblish/ui/tokens/spacing.ts`). Areas register outbox consumers, feed predicates, authz policies, inbound handlers, refusals, events and i18n catalogues by adding a file that matches a glob; `pnpm gen` writes the gitignored `*.gen.ts` registries.
 
 ## Adding to an area
 

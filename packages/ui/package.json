@@ -6,6 +6,7 @@
   "license": "MIT",
   "exports": {
     "./*.css": "./src/*.css",
+    "./*.ts": "./src/*.ts",
     "./*": "./src/*.tsx"
   },
   "scripts": {
@@ -13,7 +14,8 @@
   },
   "dependencies": {
     "@muxui/react": "0.1.0-rc.5",
-    "@peblish/schema": "workspace:*"
+    "@peblish/schema": "workspace:*",
+    "react-aria-components": "1.20.0"
   },
   "peerDependencies": {
     "react": "19.2.9",
