@@ -1,8 +1,8 @@
 import { ActorKind, Uuid } from '@peblish/schema/ids';
 import { type } from 'arktype';
 
-// A named fixture set: rows for the public tables (instances, actors, posts, comments, votes,
-// follows) as JSON, written by tools/fixture-import from the federation corpus and loaded by
+// A named fixture set: rows for the public tables (instances, actors, community languages,
+// posts, comments, votes, follows) as JSON, written by tools/fixture-import from the federation corpus and loaded by
 // load.ts. Ids are deterministic uuidv7s, so a set loads the same rows every time. Counters
 // (upvotes, downvotes, comment_count, child_count) count the set's own votes and comments.
 // No row carries `local`: the loader derives it from the instance the caller names local.
@@ -42,11 +42,18 @@ export const FixtureActor = type({
   iconUrl: text,
   bannerUrl: text,
   sensitive: 'boolean',
+  nsfl: 'boolean',
+  discoverable: 'boolean',
+  indexable: 'boolean',
   bot: 'boolean',
   postingRestrictedToMods: 'boolean',
+  postingWarning: text,
   publishedAt: optionalDate,
   updatedAt: optionalDate,
 });
+
+/** A community_languages row. */
+export const FixtureCommunityLanguage = type({ communityId: Uuid, language: 'string' });
 
 export const FixturePost = type({
   ...content,
@@ -54,10 +61,14 @@ export const FixturePost = type({
   communityId: Uuid,
   title: 'string',
   url: text,
+  urlContentType: text,
+  altText: text,
+  thumbnailUrl: text,
   bodyMd: text,
   contentHtml: text,
   language: text,
   sensitive: 'boolean',
+  nsfl: 'boolean',
   locked: 'boolean',
   featuredCommunity: 'boolean',
   upvotes: 'number.integer >= 0',
@@ -113,6 +124,7 @@ export const FixtureSet = type({
   suggestedLocalDomain: text,
   instances: FixtureInstance.array(),
   actors: FixtureActor.array(),
+  communityLanguages: FixtureCommunityLanguage.array(),
   posts: FixturePost.array(),
   comments: FixtureComment.array(),
   votes: FixtureVote.array(),

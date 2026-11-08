@@ -20,6 +20,12 @@ export const Allowed = type({
   vocabulary: 'string',
 });
 
+/**
+ * A committed wire document, relative to this directory: a .json file beneath wire/ named by
+ * plain segments, so no traversal (`..`, escaped or not), absolute path or URL, or backslash.
+ */
+export const FixturePath = type(/^wire(?:\/[\w-][\w.-]*)+\.json$/).describe('a .json path beneath wire/ without traversal');
+
 export const ManifestEntry = type({
   id: 'string',
   software: Software,
@@ -38,8 +44,7 @@ export const ManifestEntry = type({
     /** When the capture was recorded. */
     at: 'string.date.iso',
   },
-  /** The committed wire document, relative to this directory. */
-  fixture: 'string',
+  fixture: FixturePath,
   entity: type.enumerated(...Entities),
   allowed: Allowed.array(),
 });

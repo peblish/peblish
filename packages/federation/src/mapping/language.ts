@@ -1,4 +1,4 @@
-import type { Json } from './json.ts';
+import type { JsonObject } from './json.ts';
 import { Language } from './wire.ts';
 
 // Lemmy and PieFed send `language: { identifier, name }` with the language's own name
@@ -16,8 +16,7 @@ export function languageFromWire(
   return keys.length === 1 ? (keys[0] ?? null) : null;
 }
 
-export function languageToWire(code: string | null): Json | undefined {
-  if (code === null) return undefined;
+export function languageToWire(code: string): JsonObject {
   return { identifier: code, name: nativeName(code) };
 }
 

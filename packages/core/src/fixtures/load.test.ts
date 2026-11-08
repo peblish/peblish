@@ -1,7 +1,7 @@
 import { eq } from 'drizzle-orm';
 import { beforeEach, expect, it } from 'vitest';
 import { db } from '../db/read.ts';
-import { actors } from '../db/tables/actors.ts';
+import { actors, communityLanguages } from '../db/tables/actors.ts';
 import { comments, posts, votes } from '../db/tables/content.ts';
 import { follows } from '../db/tables/follows.ts';
 import { instances } from '../db/tables/instances.ts';
@@ -29,6 +29,11 @@ it('loads lab-live into the public tables, every row remote', async () => {
     .where(eq(posts.id, id('https://lemmy.lab.test/post/10')));
   expect(lemmyPost).toMatchObject({ local: false, communityId: id('https://lemmy.lab.test/c/lab') });
   expect(lemmyPost?.raw).not.toBeNull();
+  const languages = await db()
+    .select({ language: communityLanguages.language })
+    .from(communityLanguages)
+    .where(eq(communityLanguages.communityId, id('https://piefed.lab.test/c/pflab')));
+  expect(languages.map(({ language }) => language).sort()).toEqual(['en', 'und']);
 });
 
 it('makes the instance named localDomain local, with its rows local and raw null', async () => {

@@ -3,8 +3,8 @@ import type { Change } from './diff.ts';
 // The documented vocabulary: every way a wire document may differ after a round trip
 // through the mapping (wire, record, wire). A manifest entry may only allow a difference
 // that one of these entries names. `schema` says what root should do about a field the
-// records cannot hold: a column or table (a schema delta for migration 0001), keep it in
-// `raw` only, or nothing because peblish derives it or does not use it.
+// records cannot hold: a column or table (a schema delta for a migration), keep it in
+// `raw` only, or nothing because peblish derives it, already stores it or does not use it.
 
 export type Vocabulary = {
   key: string;
@@ -17,7 +17,6 @@ export type Vocabulary = {
 
 const none = (detail: string) => ({ kind: 'none', detail }) as const;
 const raw = (detail: string) => ({ kind: 'raw', detail }) as const;
-const column = (detail: string) => ({ kind: 'column', detail }) as const;
 const table = (detail: string) => ({ kind: 'table', detail }) as const;
 
 export const vocabulary: Vocabulary[] = [
@@ -87,10 +86,31 @@ export const vocabulary: Vocabulary[] = [
   },
   {
     key: 'peblish.language-name',
-    paths: ['language.name', '**.language.name'],
+    paths: ['language.name', '**.language.name', 'language[].name', '**.language[].name'],
     changes: ['changed'],
     note: "The language's own name is derived from its code (Intl); peers spell some differently",
-    schema: none('derived from posts.language and comments.language'),
+    schema: none('derived from posts.language, comments.language and community_languages'),
+  },
+  {
+    key: 'peblish.nsfl',
+    paths: ['nsfl', '**.nsfl'],
+    changes: ['added'],
+    note: 'peblish sends nsfl (not safe for life) on every Page and Group, as PieFed does on Pages; Lemmy and Fedify leave it out',
+    schema: none('posts.nsfl and actors.nsfl'),
+  },
+  {
+    key: 'peblish.search-consent',
+    paths: ['discoverable', 'indexable', '**.discoverable', '**.indexable'],
+    changes: ['added'],
+    note: 'peblish sends discoverable and indexable on every actor, because Mastodon reads an absent flag as an opt-out; Lemmy leaves both out, read as true',
+    schema: none('actors.discoverable and actors.indexable'),
+  },
+  {
+    key: 'peblish.web-url',
+    paths: ['attachment[]', '**.attachment[]', 'image', '**.image'],
+    changes: ['dropped'],
+    note: "A post's link or preview image that is not http(s) (javascript:, data:, file:) is dropped, not the post",
+    schema: none('posts.url and posts.thumbnail_url hold http(s) URLs only'),
   },
 
   // Fields peers send that the records do not hold.
@@ -100,29 +120,6 @@ export const vocabulary: Vocabulary[] = [
     changes: ['dropped'],
     note: "Mention tags (Lemmy and PieFed replies), the community hashtag Lemmy adds to Pages, PieFed's post and community tags",
     schema: table('mentions and hashtags: no table yet; kept in raw'),
-  },
-  {
-    key: 'image-attachment',
-    paths: [
-      'attachment[].type',
-      'attachment[].href',
-      'attachment[].url',
-      'attachment[].name',
-      '**.attachment[].type',
-      '**.attachment[].href',
-      '**.attachment[].url',
-      '**.attachment[].name',
-    ],
-    changes: ['changed', 'added', 'dropped'],
-    note: 'An image post links its image as an Image attachment (url, alt text in name); peblish stores the URL only and sends a Link',
-    schema: column('posts.url_content_type and posts.alt_text (Lemmy has both), so image posts go out as Image with their alt text'),
-  },
-  {
-    key: 'thumbnail',
-    paths: ['image', '**.image'],
-    changes: ['dropped'],
-    note: "A link post's preview image (Lemmy, PieFed, Mbin, Mastodon cards)",
-    schema: column('posts.thumbnail_url, or a media row of kind thumbnail linked from the post (B2)'),
   },
   {
     key: 'lemmy.announce-page-actor',
@@ -137,13 +134,6 @@ export const vocabulary: Vocabulary[] = [
     changes: ['dropped'],
     note: 'Fedify marks Notes sensitive: false; a comment has no flag of its own (it follows its post)',
     schema: none('comments follow posts.sensitive'),
-  },
-  {
-    key: 'piefed.nsfl',
-    paths: ['nsfl', '**.nsfl'],
-    changes: ['dropped'],
-    note: 'PieFed: not safe for life, beside sensitive',
-    schema: column('posts.nsfl boolean (and actors.nsfl for communities), or fold into sensitive at import'),
   },
   {
     key: 'piefed.gen-ai',
@@ -202,13 +192,6 @@ export const vocabulary: Vocabulary[] = [
     schema: none('same value as expires'),
   },
   {
-    key: 'piefed.community-languages',
-    paths: ['language[]', 'language[].identifier', 'language[].name'],
-    changes: ['dropped'],
-    note: "A community's allowed languages (Lemmy and PieFed)",
-    schema: table('community_languages (community_id, language): not in 0001; kept in raw'),
-  },
-  {
     key: 'piefed.community-settings',
     paths: [
       'contentRetention',
@@ -223,20 +206,6 @@ export const vocabulary: Vocabulary[] = [
     changes: ['dropped'],
     note: 'PieFed community settings: content retention, default hashtag and post type, URL style, Q&A mode, wanting moderators, private moderator list, post tags',
     schema: raw('PieFed-only behaviour; privateMods matters if peblish lists moderators'),
-  },
-  {
-    key: 'piefed.posting-warning',
-    paths: ['postingWarning'],
-    changes: ['dropped'],
-    note: 'PieFed: a warning shown to anyone posting in the community',
-    schema: column('actors.posting_warning text, if the composer shows it'),
-  },
-  {
-    key: 'piefed.search-consent',
-    paths: ['discoverable', 'indexable'],
-    changes: ['dropped'],
-    note: 'Whether the actor may appear in directories and search (Mastodon semantics, PieFed sends both)',
-    schema: column('actors.discoverable and actors.indexable boolean: an opt-out that import and search must respect'),
   },
   {
     key: 'piefed.person-settings',
