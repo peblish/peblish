@@ -3,7 +3,7 @@ import "./capture.ts";
 import "./logging.ts";
 import { serve } from "@hono/node-server";
 import { getLogger } from "@logtape/logtape";
-import { ORIGIN, PORT } from "./config.ts";
+import { CONTROL_TOKEN, ORIGIN, PORT } from "./config.ts";
 import { migrate } from "./db.ts";
 import { contextForBackground, federation } from "./federation.ts";
 import "./inbox.ts";
@@ -11,6 +11,14 @@ import { migrateOutbox, runOutboxWorker } from "./outbox.ts";
 import { app } from "./routes.ts";
 
 const logger = getLogger(["feddit"]);
+
+// Without a token the /spike control surface is open. That is for the local lab
+// (*.lab.test) only.
+if (!CONTROL_TOKEN && !ORIGIN.hostname.endsWith(".lab.test")) {
+  logger.warn("FEDDIT_CONTROL_TOKEN is not set: /spike/* is open to anyone who can reach {origin}", {
+    origin: ORIGIN.href,
+  });
+}
 
 await migrate();
 await migrateOutbox();

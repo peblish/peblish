@@ -18,6 +18,7 @@ const ALLOWED = [
   "8.8.8.8",
   "2606:4700::1",
   "2a01:4f8::1",
+  "2001:4860:4860::8888",
   // IPv4-mapped IPv6 is judged as the IPv4 address inside it.
   "::ffff:172.64.80.1",
   "::ffff:ac40:5001",
@@ -47,6 +48,13 @@ const BLOCKED = [
   "ff02::1", // multicast
   "2001:db8::1", // documentation
   "64:ff9b::a00:1", // NAT64
+  "64:ff9b:1::a00:1", // local-use NAT64
+  "2002:7f00:1::1", // 6to4 around 127.0.0.1
+  "2002:808:808::1", // 6to4 around 8.8.8.8
+  "fec0::1", // deprecated site-local
+  "::127.0.0.1", // IPv4-compatible
+  "::8.8.8.8",
+  "::a00:1",
   "::ffff:10.0.0.1", // IPv4-mapped private, in both spellings
   "::ffff:a00:1",
   "::ffff:127.0.0.1",

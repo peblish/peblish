@@ -5,17 +5,46 @@
 //   rejected.jsonl  every inbound activity the authorization or origin rules refused
 // Importing this module patches globalThis.fetch, so it must be imported first.
 // Deliveries do not use fetch (outbox.ts, safe-post.ts) and record themselves.
-import { appendFileSync, mkdirSync } from "node:fs";
+import { appendFileSync, mkdirSync, statSync } from "node:fs";
 import { join } from "node:path";
+import { getLogger } from "@logtape/logtape";
 import { CAPTURE_DIR } from "./config.ts";
 
 mkdirSync(CAPTURE_DIR, { recursive: true });
 
 type Stream = "inbound" | "outbound" | "fetched" | "rejected";
 
+/** The largest inbound body the inboxes accept, and the largest body one capture record keeps. */
+export const MAX_BODY_BYTES = 512 * 1024;
+/** A stream file that reaches this size stops growing. */
+export const MAX_STREAM_BYTES = 64 * 1024 * 1024;
+
+const streamBytes = new Map<Stream, number>();
+const streamFull = new Set<Stream>();
+
 export function capture(stream: Stream, record: Record<string, unknown>): void {
-  const line = JSON.stringify({ ts: new Date().toISOString(), ...record });
-  appendFileSync(join(CAPTURE_DIR, `${stream}.jsonl`), `${line}\n`);
+  if (streamFull.has(stream)) return;
+  const file = join(CAPTURE_DIR, `${stream}.jsonl`);
+  const line = `${JSON.stringify({ ts: new Date().toISOString(), ...record })}\n`;
+  let size = streamBytes.get(stream);
+  if (size === undefined) {
+    try {
+      size = statSync(file).size;
+    } catch {
+      size = 0;
+    }
+  }
+  size += Buffer.byteLength(line);
+  if (size > MAX_STREAM_BYTES) {
+    streamFull.add(stream);
+    getLogger(["feddit", "capture"]).warn("{stream}.jsonl reached {limit} bytes; capture for it stops until restart", {
+      stream,
+      limit: MAX_STREAM_BYTES,
+    });
+    return;
+  }
+  streamBytes.set(stream, size);
+  appendFileSync(file, line);
 }
 
 const KEPT_HEADERS = [
@@ -40,6 +69,8 @@ export function pickHeaders(headers: Headers): Record<string, string> {
 }
 
 export function parseMaybeJson(text: string): unknown {
+  const bytes = Buffer.byteLength(text);
+  if (bytes > MAX_BODY_BYTES) return `${text.slice(0, 4000)}... [${bytes} bytes, truncated]`;
   try {
     return JSON.parse(text);
   } catch {

@@ -1,6 +1,6 @@
 # Fedify threadiverse spike: result (gate G2, slices 1 to 3)
 
-Run on 2026-11-08, in the local lab only. Nothing was sent to feddit.com or to any live server.
+Run on 2026-11-08. Slices 1 and 2 ran in the local lab only; slice 3 also ran live, against feddit.com, piefed.social, fedia.io and lemmy.world (see "Slice 3 (live peers)").
 
 Lab boundary:
 
@@ -124,7 +124,7 @@ Date 2026-11-08. Runner `scenarios/live.ts` from a laptop (see `LIVE.md`); lab a
 
 Lab outbox for the run: 19 deliveries, all `delivered` on attempt 1 with HTTP 200 (Accept, 8 Announce, Follow x4, Create, Delete, Undo x4). PieFed's outbound log to the lab: Follow, Create x2, Like, Undo, Accept, Announce, Delete x2, Undo, all 202 from the lab's Fedify inbox. feddit.com's app log shows no errors during the run. After cleanup feddit.com shows 0 visible posts in `!microblogs`, both test comments deleted, `peblish_test` with no memberships; the lab's L3 text post (198617) stays visible in feddit.com's copy of `!lab` by design.
 
-Lemmy first-contact retry: see the line appended at the end of this section.
+Lemmy first-contact retry: a second Follow to `!fediverse@lemmy.world`, sent about ten minutes after the first, was accepted in about 34 s (run 1108042615, `--only=L10`, 600 s window); the first Follow never received an Accept in more than six minutes, which confirms the slice 2 risk note.
 
 ### Defect found by the live run
 

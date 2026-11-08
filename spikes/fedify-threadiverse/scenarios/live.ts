@@ -127,7 +127,9 @@ const LAB_URI = labActor(`c.${LAB_COMMUNITY}`);
 const LAB_HANDLE = `!${LAB_COMMUNITY}@${LAB_HOST}`;
 const COMMUNITY_HANDLE = `!${COMMUNITY}@${PIEFED_HOST}`;
 const PIEFED_ACTOR = `${PIEFED_ORIGIN}/u/${PIEFED_USER}`;
-const title = (what: string) => `[peblish lab test ${RUN}] ${what}`;
+/** Starts every title, and every comment, this run creates; cleanup deletes nothing without it. */
+const PREFIX = `[peblish lab test ${RUN}]`;
+const title = (what: string) => `${PREFIX} ${what}`;
 
 // ---------------------------------------------------------------- the ids file
 
@@ -143,6 +145,8 @@ interface Follow {
  */
 interface Ids {
   run: string;
+  /** The deployment these ids belong to; a run is refused against any other. */
+  env: { lab: string; piefedOrigin: string; piefedUser: string; community: string };
   actors: {
     author: string;
     authorUri: string;
@@ -171,15 +175,32 @@ interface Ids {
   remoteCommentId?: number;
   /** L8 and L10: communities the lab author follows, by handle. */
   follows: Record<string, Follow>;
+  /** Posts the lab author has made. PieFed caps a remote account's first posts, so a run stops at MAX_POSTS_PER_AUTHOR. */
+  postsCreated: number;
+  /** L7 sets these before it locks the L3 text post and removes the L4 comment, and clears them once undone; L9 reverses what is left. */
+  textPostLocked?: boolean;
+  commentRemoved?: boolean;
 }
 
 const idsFile = new URL(`live-${RUN}-ids.json`, CAPTURES);
 if (cleanupOnly && !existsSync(idsFile)) die(`No ids file for run ${RUN} (${idsFile.pathname})`);
 const loaded: Partial<Ids> = existsSync(idsFile) ? JSON.parse(readFileSync(idsFile, "utf8")) : {};
+const ENV_BINDING = { lab: LAB, piefedOrigin: PIEFED_ORIGIN, piefedUser: PIEFED_USER, community: COMMUNITY };
+if (existsSync(idsFile)) {
+  if (!loaded.env) die(`${idsFile.pathname} has no env block, so it cannot be tied to this deployment. Add one by hand if you are sure.`);
+  const differing = (["lab", "piefedOrigin", "piefedUser", "community"] as const).filter(
+    (key) => loaded.env?.[key] !== ENV_BINDING[key],
+  );
+  if (differing.length > 0) {
+    die(`Run ${RUN} was recorded for a different deployment (${differing.join(", ")} differ from the current environment). Refusing to reuse or clean it up.`);
+  }
+}
 const ids: Ids = {
   follows: {},
+  postsCreated: 0,
   ...loaded,
   run: RUN,
+  env: ENV_BINDING,
   actors: {
     author: AUTHOR,
     authorUri: AUTHOR_URI,
@@ -316,6 +337,87 @@ const inboxFromHost = (inbox: InboxEntry[], host: string) =>
 
 const maxId = (rows: { id: string }[]) => Math.max(0, ...rows.map((row) => Number(row.id)));
 
+/** True when the lab holds the object and has not marked it deleted. */
+const liveOnLab = (s: FedditState, uri: string) => {
+  const object = labObject(s, uri);
+  return object !== undefined && !object.deleted;
+};
+
+const labModerate = (action: string, object: string, extra: Record<string, string> = {}) =>
+  lab.call<{ activity: string }>("moderate", { moderator: MODERATOR, action, object, community: LAB_COMMUNITY, ...extra });
+
+// ---- creating content: saved at once, reused on a rerun, and capped
+
+/**
+ * PieFed lets a remote account it first saw within 24 hours make 4 posts. A run
+ * makes 3 per lab author (two in L3, one in L8), so a rerun with --run stays
+ * under the cap or stops.
+ */
+const MAX_POSTS_PER_AUTHOR = 3;
+
+type PostKey = "textPostUri" | "linkPostUri" | "remotePostUri";
+
+/**
+ * A post by the lab author. A rerun reuses the one the ids already hold while
+ * the lab still has it; a new one is refused past MAX_POSTS_PER_AUTHOR, counted
+ * from the ids and from what the lab holds. The URI is saved before anything else happens.
+ */
+async function labPost(
+  key: PostKey,
+  post: { community: string; title: string; body: string; link?: string },
+): Promise<{ uri: string; activity?: string }> {
+  const s = await state();
+  const existing = ids[key];
+  if (existing && liveOnLab(s, existing)) return { uri: existing };
+  const held = s.objects.filter((o) => o.local && o.kind === "Page" && o.author_uri === AUTHOR_URI).length;
+  const made = Math.max(ids.postsCreated, held);
+  if (made >= MAX_POSTS_PER_AUTHOR) {
+    throw new Error(`refusing to create post number ${made + 1} for ${AUTHOR}: PieFed caps a new remote account's posts`);
+  }
+  const created = await lab.call<{ uri: string; activity: string }>("post", { author: AUTHOR, ...post });
+  ids[key] = created.uri;
+  remember({ postsCreated: ids.postsCreated + 1 });
+  return created;
+}
+
+/** What an earlier attempt created on PieFed, if the lab or PieFed still has it. */
+async function existingPiefedPost(uri?: string, id?: number) {
+  if (uri === undefined || id === undefined) return undefined;
+  return liveOnLab(await state(), uri) || !(await postGone(id)) ? { apId: uri, id } : undefined;
+}
+
+async function existingPiefedComment(postId: number, uri?: string, id?: number) {
+  if (uri === undefined || id === undefined) return undefined;
+  const onPiefed = await findComment(postId, uri);
+  return liveOnLab(await state(), uri) || (onPiefed && !onPiefed.deleted && !onPiefed.removed) ? { apId: uri, id } : undefined;
+}
+
+// ---- deleting content: only what this run made
+
+const OURS = new Set([PIEFED_ACTOR, AUTHOR_URI]);
+
+/** Throws unless PieFed's copy of the post is the test account's or the lab author's and carries this run's prefix. */
+async function assertOurPost(postId: number, uri: string): Promise<void> {
+  const post = await piefed.getPost(token, postId);
+  if (post.apId !== uri || !OURS.has(post.creatorApId) || !post.title.startsWith(PREFIX)) {
+    throw new Error(`refusing to touch PieFed post ${postId}: it is not this run's (${post.creatorApId}, "${post.title.slice(0, 60)}")`);
+  }
+}
+
+async function assertOurComment(postId: number, commentId: number, uri: string): Promise<void> {
+  const comment = (await piefed.listComments(token, postId)).find((c) => c.id === commentId);
+  if (!comment || comment.apId !== uri || !OURS.has(comment.creatorApId) || !comment.content.includes(PREFIX)) {
+    throw new Error(`refusing to touch PieFed comment ${commentId} on post ${postId}: not found or not this run's`);
+  }
+}
+
+/** Throws unless the object is local, by the lab author, and carries this run's prefix. */
+function assertOurLabPost(object: FedditState["objects"][number]): void {
+  if (!object.local || object.author_uri !== AUTHOR_URI || !object.title?.startsWith(PREFIX)) {
+    throw new Error(`refusing to delete ${object.uri} on the lab: it is not this run's`);
+  }
+}
+
 // ---------------------------------------------------------------- scenarios
 
 if (!cleanupOnly) await ensureFixtures();
@@ -356,18 +458,13 @@ await scenario("L2", PEER, async () => {
 // L3: lab posts (text, link) reach PieFed.
 await scenario("L3", PEER, async () => {
   const communityId = needed(ids.labCommunityId, "L1");
-  const post = (what: string, body: string, link?: string) =>
-    lab.call<{ uri: string; activity: string }>("post", {
-      author: AUTHOR,
-      community: LAB_COMMUNITY,
-      title: title(what),
-      body,
-      link,
-    });
   const link = `${LAB}/link-target?run=${RUN}`;
-  const text = await post("text post", "Hello from **peblish**. This is a text post.");
-  const linked = await post("link post", "A link post.", link);
-  remember({ textPostUri: text.uri, linkPostUri: linked.uri });
+  const text = await labPost("textPostUri", {
+    community: LAB_COMMUNITY,
+    title: title("text post"),
+    body: "Hello from **peblish**. This is a text post.",
+  });
+  const linked = await labPost("linkPostUri", { community: LAB_COMMUNITY, title: title("link post"), body: "A link post.", link });
   const seenOnPieFed = (uri: string) => async () => (await piefed.listPosts(token, communityId)).find((p) => p.apId === uri);
   const [seenText, seenLink] = await Promise.all([
     wait("the text post in PieFed's community", seenOnPieFed(text.uri)),
@@ -378,7 +475,7 @@ await scenario("L3", PEER, async () => {
   if (!seenText.body?.includes("Hello from **peblish**")) throw new Error(`body ${JSON.stringify(seenText.body)}`);
   if (seenText.creatorApId !== AUTHOR_URI) throw new Error(`creator ${seenText.creatorApId}`);
   if (seenLink.url !== link) throw new Error(`link url ${JSON.stringify(seenLink.url)}`);
-  const delivery = await delivered(text.activity);
+  const delivery = text.activity ? await delivered(text.activity) : "posts were already there";
   return `text post ${seenText.id} and link post ${seenLink.id} shown with title, markdown body, author and url; ${delivery}`;
 });
 
@@ -387,10 +484,16 @@ await scenario("L4", PEER, async () => {
   const communityId = needed(ids.labCommunityId, "L1");
   const textPostId = needed(ids.textPostId, "L3");
   const textPostUri = needed(ids.textPostUri, "L3");
-  const post = await piefed.createPost(token, communityId, title("post from PieFed"), "Posted from **PieFed** into the lab community.");
-  remember({ piefedPostUri: post.apId, piefedPostId: post.id });
-  const comment = await piefed.comment(token, textPostId, null, title("comment from PieFed"));
-  remember({ piefedCommentUri: comment.apId, piefedCommentId: comment.id });
+  let post = await existingPiefedPost(ids.piefedPostUri, ids.piefedPostId);
+  if (!post) {
+    post = await piefed.createPost(token, communityId, title("post from PieFed"), "Posted from **PieFed** into the lab community.");
+    remember({ piefedPostUri: post.apId, piefedPostId: post.id });
+  }
+  let comment = await existingPiefedComment(textPostId, ids.piefedCommentUri, ids.piefedCommentId);
+  if (!comment) {
+    comment = await piefed.comment(token, textPostId, null, title("comment from PieFed"));
+    remember({ piefedCommentUri: comment.apId, piefedCommentId: comment.id });
+  }
   const storedPost = await wait("the lab to store the post", async () => labObject(await state(), post.apId));
   const storedComment = await wait("the lab to store the comment", async () => labObject(await state(), comment.apId));
   if (storedPost.community_uri !== LAB_URI) throw new Error(`post community ${storedPost.community_uri}`);
@@ -449,34 +552,37 @@ await scenario("L6", PEER, async () => {
   return `Update applied (${editDelivery}); Delete applied (${removalDelivery})`;
 });
 
-// L7: the lab moderator locks a post and removes the test account's comment.
+// L7: the lab moderator locks and unlocks a post, then removes and restores the test account's comment.
 await scenario("L7", PEER, async () => {
   const textUri = needed(ids.textPostUri, "L3");
   const textId = needed(ids.textPostId, "L3");
   const commentUri = needed(ids.piefedCommentUri, "L4");
-  const moderate = (action: string, object: string, extra: Record<string, string> = {}) =>
-    lab.call<{ activity: string }>("moderate", { moderator: MODERATOR, action, object, community: LAB_COMMUNITY, ...extra });
   const locked = async (expected: boolean) => (await piefed.getPost(token, textId)).locked === expected;
 
-  await delivered((await moderate("lock", textUri)).activity);
+  // The flags are set before the action and cleared once it is undone, so L9 can reverse what a failed run left.
+  remember({ textPostLocked: true });
+  await delivered((await labModerate("lock", textUri)).activity);
   await wait("PieFed to show the lock", () => locked(true));
   if (!labObject(await state(), textUri)?.locked) throw new Error("the lab does not mark the post locked");
-  await delivered((await moderate("unlock", textUri)).activity);
+  await delivered((await labModerate("unlock", textUri)).activity);
   await wait("PieFed to show the unlock", () => locked(false));
+  remember({ textPostLocked: false });
 
   const reason = title("removed by the lab moderator");
-  await delivered((await moderate("remove", commentUri, { reason })).activity);
+  remember({ commentRemoved: true });
+  await delivered((await labModerate("remove", commentUri, { reason })).activity);
   await wait("PieFed to show the comment removed", async () => {
     const comment = await findComment(textId, commentUri);
     return !comment || comment.removed || comment.deleted;
   });
   if (!labObject(await state(), commentUri)?.removed) throw new Error("the lab does not mark the comment removed");
-  await delivered((await moderate("restore", commentUri)).activity);
+  await delivered((await labModerate("restore", commentUri)).activity);
   await wait("PieFed to show the comment restored", async () => {
     const comment = await findComment(textId, commentUri);
     return comment && !comment.removed && !comment.deleted;
   });
-  return "lock, unlock, removal with a reason and restore all shown on PieFed";
+  remember({ commentRemoved: false });
+  return "lock and unlock of the post, removal with a reason and restore of the comment, all shown on PieFed";
 });
 
 // L8: the lab author follows a PieFed community, posts into it, and hears of a PieFed comment.
@@ -484,21 +590,22 @@ await scenario("L8", PEER, async () => {
   const follow = await followRemote(COMMUNITY_HANDLE);
   const community = await piefed.resolveCommunity(token, COMMUNITY_HANDLE);
   remember({ remoteCommunityId: community.id });
-  const created = await lab.call<{ uri: string; activity: string }>("post", {
-    author: AUTHOR,
+  const created = await labPost("remotePostUri", {
     community: COMMUNITY_HANDLE,
     title: title(`post into ${COMMUNITY}`),
     body: "Posted from the **peblish** lab into a community it follows.",
   });
-  remember({ remotePostUri: created.uri });
   const seen = await wait(`the lab post in ${COMMUNITY_HANDLE}`, async () =>
     (await piefed.listPosts(token, community.id)).find((p) => p.apId === created.uri));
   remember({ remotePostId: seen.id });
   if (seen.title !== title(`post into ${COMMUNITY}`)) throw new Error(`title ${JSON.stringify(seen.title)}`);
   if (seen.creatorApId !== AUTHOR_URI) throw new Error(`creator ${seen.creatorApId}`);
-  const delivery = await delivered(created.activity);
-  const comment = await piefed.comment(token, seen.id, null, title("comment from PieFed"));
-  remember({ remoteCommentUri: comment.apId, remoteCommentId: comment.id });
+  const delivery = created.activity ? await delivered(created.activity) : "post was already there";
+  let comment = await existingPiefedComment(seen.id, ids.remoteCommentUri, ids.remoteCommentId);
+  if (!comment) {
+    comment = await piefed.comment(token, seen.id, null, title("comment from PieFed"));
+    remember({ remoteCommentUri: comment.apId, remoteCommentId: comment.id });
+  }
   const stored = await wait("the lab to receive the comment", async () => labObject(await state(), comment.apId));
   if (stored.in_reply_to !== created.uri) throw new Error(`comment inReplyTo ${stored.in_reply_to}`);
   if (stored.author_uri !== PIEFED_ACTOR) throw new Error(`comment author ${stored.author_uri}`);
@@ -531,60 +638,141 @@ for (const handle of FOLLOW_ONLY) {
   });
 }
 
-// L9: delete what the run created and leave every community it joined. Tolerates partial state.
+// L9: delete what the run created, undo what it left changed, leave every community it joined, then
+// assert the end state. Works from the ids file, so it tolerates a run that stopped half way.
 if (cleanupOnly || !keep) {
   await scenario("L9", PEER, async () => {
     const before = await state();
-    const onLab = (uri: string) => before.objects.some((o) => o.uri === uri && !o.deleted);
-    const deletedOnLab = (uri: string) => async () => labObject(await state(), uri)?.deleted;
-    const warnings: string[] = [];
+    const failures: string[] = [];
     const checks: [string, () => Promise<unknown>][] = [];
-    // A failed step is a warning; the checks below decide whether the state is clean.
-    const act = async (label: string, run: () => Promise<unknown>) => {
+    const check = (label: string, probe: () => Promise<unknown>) => checks.push([label, probe]);
+    /** One cleanup step. If it fails and nothing is left to undo, that is fine; otherwise it is a failure. */
+    const step = async (label: string, run: () => Promise<unknown>, nothingLeft: () => Promise<boolean>) => {
       try {
         await run();
       } catch (error) {
-        warnings.push(`${label}: ${errorMessage(error)}`);
-        console.log(`  cleanup warning, ${label}: ${errorMessage(error).slice(0, 200)}`);
+        if (await nothingLeft().catch(() => false)) return;
+        failures.push(`${label}: ${errorMessage(error)}`);
+        console.log(`  cleanup step failed, ${label}: ${errorMessage(error).slice(0, 200)}`);
       }
     };
+    const deletedOnLab = (uri: string) => async () => labObject(await state(), uri)?.deleted;
+    const commentHidden = async (postId: number, uri: string) => {
+      const comment = await findComment(postId, uri);
+      return !comment || comment.deleted || comment.removed;
+    };
 
-    const { remotePostId, remotePostUri, remoteCommentId, remoteCommentUri } = ids;
-    if (remoteCommentId !== undefined) {
-      await act("delete the L8 comment on PieFed", () => piefed.deleteComment(token, remoteCommentId));
-      if (remoteCommentUri && onLab(remoteCommentUri)) {
-        checks.push(["the lab to mark the L8 comment deleted", deletedOnLab(remoteCommentUri)]);
+    // What L7 may have left changed: the text post locked, the comment removed. The ids say so, and so does the lab.
+    const { textPostUri, textPostId, piefedCommentUri } = ids;
+    if (textPostUri && (ids.textPostLocked || labObject(before, textPostUri)?.locked)) {
+      const locked = async () =>
+        Boolean(labObject(await state(), textPostUri)?.locked) ||
+        (textPostId !== undefined && (await piefed.getPost(token, textPostId)).locked);
+      await step("unlock the L3 text post", async () => {
+        await labModerate("unlock", textPostUri);
+        await wait("PieFed to show the L3 text post unlocked", async () => !(await locked()));
+      }, async () => !(await locked()));
+      check("the L3 text post to be unlocked", async () => !(await locked()));
+    }
+    if (
+      piefedCommentUri && textPostId !== undefined && liveOnLab(before, piefedCommentUri) &&
+      (ids.commentRemoved || labObject(before, piefedCommentUri)?.removed)
+    ) {
+      const postId = textPostId;
+      const removed = async () => {
+        const object = labObject(await state(), piefedCommentUri);
+        return !object?.deleted && (Boolean(object?.removed) || (await commentHidden(postId, piefedCommentUri)));
+      };
+      await step("restore the L4 comment", async () => {
+        await labModerate("restore", piefedCommentUri);
+        await wait("PieFed to show the L4 comment restored", async () => !(await removed()));
+      }, async () => !(await removed()));
+      check("the L4 comment to be restored", async () => !(await removed()));
+    }
+
+    // Votes by the test account on this run's objects, before the objects go.
+    const targets: { uri?: string; id?: number; comment: boolean }[] = [
+      { uri: ids.textPostUri, id: ids.textPostId, comment: false },
+      { uri: ids.linkPostUri, id: ids.linkPostId, comment: false },
+      { uri: ids.piefedPostUri, id: ids.piefedPostId, comment: false },
+      { uri: ids.remotePostUri, id: ids.remotePostId, comment: false },
+      { uri: ids.piefedCommentUri, id: ids.piefedCommentId, comment: true },
+      { uri: ids.remoteCommentUri, id: ids.remoteCommentId, comment: true },
+    ];
+    const runUris = new Set(targets.flatMap((target) => (target.uri ? [target.uri] : [])));
+    const testVotes = (s: FedditState) => s.votes.filter((v) => v.voter_uri === PIEFED_ACTOR && runUris.has(v.object_uri));
+    for (const vote of testVotes(before)) {
+      const target = targets.find((t) => t.uri === vote.object_uri);
+      const id = target?.id;
+      await step(`undo the vote on ${vote.object_uri}`, async () => {
+        if (id === undefined) throw new Error("no PieFed id to undo it with");
+        await (target?.comment ? piefed.voteComment(token, id, 0) : piefed.votePost(token, id, 0));
+      }, async () => !testVotes(await state()).some((v) => v.object_uri === vote.object_uri));
+    }
+    check("the test account to have no votes on this run's objects", async () => testVotes(await state()).length === 0);
+
+    // The test account's comment on the L8 post, then the lab author's L8 post itself.
+    const deleteComment = async (what: string, postId?: number, commentId?: number, uri?: string) => {
+      if (commentId === undefined || !uri) return;
+      await step(`delete the ${what} comment on PieFed`, async () => {
+        if (postId === undefined) throw new Error("no post id to check the comment against");
+        await assertOurComment(postId, commentId, uri);
+        await piefed.deleteComment(token, commentId);
+      }, async () => postId !== undefined && (await commentHidden(postId, uri)));
+      if (liveOnLab(before, uri)) check(`the lab to mark the ${what} comment deleted`, deletedOnLab(uri));
+    };
+    await deleteComment("L8", ids.remotePostId, ids.remoteCommentId, ids.remoteCommentUri);
+    if (ids.remotePostUri) {
+      const uri = ids.remotePostUri;
+      const object = labObject(before, uri);
+      if (object && !object.deleted) {
+        await step("delete the L8 post from the lab", async () => {
+          assertOurLabPost(object);
+          await lab.call("delete", { object: uri });
+        }, async () => Boolean(labObject(await state(), uri)?.deleted));
       }
-    }
-    if (remotePostUri && onLab(remotePostUri)) {
-      await act("delete the L8 post from the lab", () => lab.call("delete", { object: remotePostUri }));
-    }
-    if (remotePostId !== undefined) checks.push(["PieFed to hide the L8 post", () => postGone(remotePostId)]);
-
-    for (const [what, id, uri, remove] of [
-      ["comment", ids.piefedCommentId, ids.piefedCommentUri, (id: number) => piefed.deleteComment(token, id)],
-      ["post", ids.piefedPostId, ids.piefedPostUri, (id: number) => piefed.deletePost(token, id)],
-    ] as const) {
-      if (id === undefined) continue;
-      await act(`delete the L4 ${what} on PieFed`, () => remove(id));
-      if (uri && onLab(uri)) checks.push([`the lab to mark the L4 ${what} deleted`, deletedOnLab(uri)]);
+      const postId = ids.remotePostId;
+      if (postId !== undefined) check("PieFed to hide the L8 post", () => postGone(postId));
     }
 
-    if (ids.labCommunityId !== undefined) {
-      const communityId = ids.labCommunityId;
-      await act("unfollow the lab community on PieFed", () => piefed.unfollow(token, communityId));
-      if (before.followers.some((f) => f.local_identifier === `c.${LAB_COMMUNITY}` && f.actor_uri === PIEFED_ACTOR)) {
-        checks.push(["the lab to drop PieFed's follower", async () =>
-          !(await state()).followers.some((f) => f.local_identifier === `c.${LAB_COMMUNITY}` && f.actor_uri === PIEFED_ACTOR)]);
-      }
+    // The test account's own post and comment in the lab community.
+    await deleteComment("L4", ids.textPostId, ids.piefedCommentId, ids.piefedCommentUri);
+    if (ids.piefedPostId !== undefined && ids.piefedPostUri) {
+      const [postId, uri] = [ids.piefedPostId, ids.piefedPostUri];
+      await step("delete the L4 post on PieFed", async () => {
+        await assertOurPost(postId, uri);
+        await piefed.deletePost(token, postId);
+      }, () => postGone(postId));
+      if (liveOnLab(before, uri)) check("the lab to mark the L4 post deleted", deletedOnLab(uri));
     }
 
-    for (const [handle, follow] of Object.entries(ids.follows)) {
-      const held = before.following.some((f) => f.local_identifier === `u.${AUTHOR}` && f.remote_uri === follow.actor);
-      if (held) await act(`unfollow ${handle} from the lab`, () => lab.call("unfollow", { follower: AUTHOR, target: follow.actor }));
+    // Leave the lab community (test account) and everything the lab author followed.
+    const testFollowers = (s: FedditState) => s.followers.filter((f) => f.actor_uri === PIEFED_ACTOR);
+    if (ids.labCommunityId !== undefined || testFollowers(before).length > 0) {
+      await step("unfollow the lab community on PieFed", async () => {
+        const id = ids.labCommunityId ?? (await piefed.resolveCommunity(token, LAB_HANDLE)).id;
+        await piefed.unfollow(token, id);
+      }, async () => testFollowers(await state()).length === 0);
+    }
+    check("the lab to hold no follower row for the test account", async () => testFollowers(await state()).length === 0);
+
+    const authorFollows = (s: FedditState) => s.following.filter((f) => f.local_identifier === `u.${AUTHOR}`);
+    const undos: string[] = [];
+    for (const { remote_uri: actor } of authorFollows(before)) {
+      await step(`unfollow ${actor} from the lab`, async () => {
+        undos.push((await lab.call<{ activity: string }>("unfollow", { follower: AUTHOR, target: actor })).activity);
+      }, async () => !authorFollows(await state()).some((f) => f.remote_uri === actor));
+    }
+    check("the lab author to follow nothing", async () => authorFollows(await state()).length === 0);
+    for (const undo of undos) {
+      check(`the lab to deliver Undo(Follow) ${undo}`, async () => {
+        const row = (await state()).outbox.recent.find((r) => r.activity_id === undo);
+        if (row?.status === "failed") throw new Error(`delivery to ${row.inbox} failed: ${row.last_status} ${row.last_error}`);
+        return row?.status === "delivered";
+      });
     }
 
-    const failures = (await Promise.all(checks.map(async ([label, probe]) => {
+    const unmet = (await Promise.all(checks.map(async ([label, probe]) => {
       try {
         await wait(label, probe);
         return [];
@@ -592,8 +780,10 @@ if (cleanupOnly || !keep) {
         return [errorMessage(error)];
       }
     }))).flat();
+    failures.push(...unmet);
     if (failures.length > 0) throw new Error(failures.join("; "));
-    return `${checks.length} checks passed${warnings.length ? `, ${warnings.length} step warning(s)` : ""}; the L3 posts stay in !${LAB_COMMUNITY}`;
+    remember({ textPostLocked: false, commentRemoved: false });
+    return `${checks.length} final-state checks passed; the L3 posts stay in !${LAB_COMMUNITY}`;
   });
 }
 
@@ -603,6 +793,11 @@ console.log("\nSummary");
 for (const result of results) console.log(`  ${result.scenario.padEnd(4)} ${result.status.toUpperCase().padEnd(5)} ${result.peer}`);
 try {
   const final = await state();
+  // The whole of /spike/state (outbox snapshot, followers, votes, inbox log) is the evidence for the run's claims.
+  writeFileSync(
+    new URL(`live-${RUN}${cleanupOnly ? "-cleanup" : ""}-state.json`, CAPTURES),
+    `${JSON.stringify(final, null, 2)}\n`,
+  );
   console.log(`\nRemote followers of the lab now (/spike/state.followers), ${final.followers.length}:`);
   for (const f of final.followers) {
     console.log(`  ${f.local_identifier}  ${f.actor_uri}${f.actor_uri === PIEFED_ACTOR ? "  (the PieFed test account)" : ""}`);
@@ -610,6 +805,6 @@ try {
 } catch (error) {
   console.log(`\nCould not read the lab's followers: ${errorMessage(error)}`);
 }
-console.log(`\nids: captures/live-${RUN}-ids.json`);
+console.log(`\nids: captures/live-${RUN}-ids.json; lab state: captures/live-${RUN}${cleanupOnly ? "-cleanup" : ""}-state.json`);
 
 finish(cleanupOnly ? `live-${RUN}-cleanup.json` : `live-${RUN}.json`, RUN);

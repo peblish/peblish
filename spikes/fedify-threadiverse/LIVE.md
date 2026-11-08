@@ -54,7 +54,7 @@ A missing required variable stops the run before any request.
 | Flag | Effect |
 |---|---|
 | `--only=L1,L3` | Run only these. Later scenarios need the ids of earlier ones, so combine with `--run` |
-| `--run=<id>` | Reuse a previous run's names and ids (`captures/live-<id>-ids.json`). Re-running a scenario that creates content creates new content and replaces its ids |
+| `--run=<id>` | Reuse a previous run's names and ids (`captures/live-<id>-ids.json`). The ids file records the lab, PieFed origin, test account and community it was made for, and `--run` and `--cleanup` refuse any other deployment. A rerun reuses content the lab or PieFed still has instead of creating it again |
 | `--keep` | Skip the automatic cleanup (L9) after a full run |
 | `--cleanup` | Run only L9 for `--run=<id>` |
 | `--help` | Usage |
@@ -71,32 +71,40 @@ Each one asserts on PieFed's API and on the lab's `/spike/state`. Titles are `[p
 | L4 PieFed to lab | The test account posts in the lab community and comments on the L3 text post | The lab stores both (author, community, inReplyTo); PieFed shows each once |
 | L5 votes | The test account upvotes the L3 text post, then undoes it | The lab stores the Like, then drops it; PieFed's score moves up one and back |
 | L6 edit, delete | The lab edits the text post and deletes the link post | PieFed shows the new title and body, and hides the link post |
-| L7 moderation | `labmod` locks, unlocks, removes (with a reason) and restores the L4 comment | PieFed shows each state |
+| L7 moderation | `labmod` locks and unlocks the L3 text post, then removes (with a reason) and restores the L4 comment | PieFed shows each state |
 | L8 reverse | The lab author follows `!<community>@<PieFed host>`, posts in it; the test account comments | PieFed lists the lab post; the lab stores the comment (arrives as an Announce) |
 | L9 cleanup | See below | Every check passes |
 | L10 follow only | The lab author follows each `LIVE_FOLLOW_ONLY` community and the lab watches `inbox_log` | The Accept arrives. The note counts inbound activities from that host and lists their types; zero is a pass |
 
 The run ends with the scenario statuses and the remote followers in `/spike/state.followers`, so a Mastodon follow by the owner shows up there.
 
-Results go to `captures/live-<run>.json` (`live-<run>-cleanup.json` for `--cleanup`). `captures/live-<run>-ids.json` lists everything created: lab actor names and URIs, lab post URIs, PieFed community, post and comment ids, followed communities.
+Results go to `captures/live-<run>.json` (`live-<run>-cleanup.json` for `--cleanup`). `captures/live-<run>-ids.json` lists everything created: lab actor names and URIs, lab post URIs, PieFed community, post and comment ids, followed communities, the post count and the L7 lock and removal flags. `captures/live-<run>-state.json` (`-cleanup-state.json` for `--cleanup`) is the lab's whole `/spike/state` at the end of the run: outbox rows, followers, votes and the inbox log, as evidence for the delivery and unfollow claims.
 
-PieFed refuses a remote account's fifth post in its first 24 hours. A run makes three posts per lab author, so it stays under the cap, and each run uses a new author.
+PieFed lets a remote account it first saw in the last 24 hours make 4 posts. A run makes three posts per lab author (two in L3, one in L8) and refuses to create a fourth, counting from the ids file and from what the lab holds. Each run uses a new author.
 
 ## Cleanup and teardown
 
-L9 runs after a full run unless `--keep` is given, and on its own with `--cleanup --run=<id>`. It tolerates partial state, using the ids file. In order:
+L9 runs after a full run unless `--keep` is given, and on its own with `--cleanup --run=<id>`. It works from the ids file, so it tolerates a run that stopped half way, and it fails unless the end state is clean. In order:
 
-1. The test account deletes its L8 comment on PieFed.
-2. The lab deletes the L8 post (Delete to the PieFed community); PieFed must hide it.
-3. The test account deletes the L4 comment and post on PieFed; the lab must mark them deleted.
-4. The test account unfollows the lab community; the lab must drop the follower.
-5. The lab author unfollows every community it followed (L8, L10) with `Undo(Follow)`, through `POST /spike/unfollow`.
+1. Reverse what L7 left: unlock the L3 text post and restore the L4 comment if the ids or the lab say they are still locked or removed.
+2. Undo any vote the test account still has on the run's objects.
+3. The test account deletes its L8 comment on PieFed; the lab deletes the L8 post (Delete to the PieFed community).
+4. The test account deletes the L4 comment and post on PieFed.
+5. The test account unfollows the lab community; the lab author unfollows every community it follows (`Undo(Follow)` through `POST /spike/unfollow`).
 
-The L3 posts and the `lab` community stay, so there is something to look at. Never touched: any content or community not in the ids file.
+Before it deletes anything, it fetches the object and refuses unless the creator is the test account or the lab author and the title (or comment body) starts with `[peblish lab test <run>]`; on the lab it also requires the object to be local. A step that fails counts as a failure unless there was nothing left to undo.
+
+Final checks, all of which must hold: the lab marks each deleted object deleted and PieFed hides the L8 post; the lab holds no follower row for the test account and no `following` row for the lab author, and each `Undo(Follow)` reached `delivered` in the lab's outbox; the test account has no votes on the run's objects; the L3 text post is unlocked and the L4 comment is not removed.
+
+The L3 posts and the `lab` community stay, so there is something to look at.
 
 Full teardown, in this order:
 
-1. `node scenarios/live.ts --cleanup --run=<id>` for each run.
+1. `node scenarios/live.ts --cleanup --run=<id>` for each run. An ids file made before the env block existed is refused; add the block by hand if you are sure it belongs to this deployment.
 2. Check `/spike/state.followers` and `.following` are empty of test accounts.
 3. Stop and delete the Easypanel app, then its database.
 4. Remove the `peblish_test` account and its subscriptions on PieFed.
+
+## Tests
+
+`npm test` runs the unit tests (delivery guard, inbox body limit, capture limits). `test/following.test.ts` also needs a throwaway Postgres and is skipped without it: `TEST_DATABASE_URL=postgres://user:pass@127.0.0.1:5432/db npm test`.

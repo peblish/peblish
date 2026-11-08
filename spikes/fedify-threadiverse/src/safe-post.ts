@@ -28,9 +28,13 @@ for (const [network, prefix] of [
   ["172.16.0.0", 12], ["192.0.0.0", 24], ["192.0.2.0", 24], ["192.88.99.0", 24], ["192.168.0.0", 16],
   ["198.18.0.0", 15], ["198.51.100.0", 24], ["203.0.113.0", 24], ["224.0.0.0", 4], ["240.0.0.0", 4],
 ] as const) BLOCKED.addSubnet(network, prefix, "ipv4");
+// `::/96` covers :: and ::1 and the deprecated IPv4-compatible form (::a.b.c.d),
+// blocked outright rather than judged by the IPv4 inside. `2002::/16` (6to4),
+// `64:ff9b::/96` (NAT64) and `64:ff9b:1::/48` (local-use NAT64) also embed IPv4
+// addresses; none is a destination for federation.
 for (const [network, prefix] of [
-  ["::", 127], ["64:ff9b::", 96], ["100::", 64], ["2001::", 23],
-  ["2001:db8::", 32], ["fc00::", 7], ["fe80::", 10], ["ff00::", 8],
+  ["::", 96], ["64:ff9b::", 96], ["64:ff9b:1::", 48], ["100::", 64], ["2001::", 23],
+  ["2001:db8::", 32], ["2002::", 16], ["fc00::", 7], ["fe80::", 10], ["fec0::", 10], ["ff00::", 8],
 ] as const) BLOCKED.addSubnet(network, prefix, "ipv6");
 
 const LAB = new BlockList();

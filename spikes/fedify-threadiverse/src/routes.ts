@@ -2,7 +2,7 @@ import { createHash, timingSafeEqual } from "node:crypto";
 import { federation as fedifyMiddleware } from "@fedify/hono";
 import { Hono } from "hono";
 import * as actions from "./actions.ts";
-import { capture, parseMaybeJson, pickHeaders } from "./capture.ts";
+import { capture, MAX_BODY_BYTES, parseMaybeJson, pickHeaders } from "./capture.ts";
 import { CONTROL_TOKEN, ORIGIN, SOFTWARE } from "./config.ts";
 import * as db from "./db.ts";
 import { sql } from "./db.ts";
@@ -14,9 +14,40 @@ export const app = new Hono();
 
 // ------------------------------------------------------------------ raw inbound capture
 
+// Only the real inboxes (the shared one and one per actor) are read and
+// captured: this runs before any authentication, so any other path ending in
+// /inbox must stay out of it.
+const INBOX_PATH = /^\/(ap\/[^/]+\/)?inbox$/;
+
+/**
+ * The body as text, or null once it passes `limit` bytes. Content-Length is only
+ * a shortcut: a chunked body has none, so the stream is counted as it is read.
+ */
+async function readLimited(request: Request, limit: number): Promise<string | null> {
+  if (Number(request.headers.get("content-length")) > limit) return null;
+  const reader = request.body?.getReader();
+  if (!reader) return "";
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    size += value.byteLength;
+    if (size > limit) {
+      // Not awaited: a tee's cancel settles only when both branches are cancelled.
+      reader.cancel().catch(() => {});
+      return null;
+    }
+    chunks.push(value);
+  }
+  return Buffer.concat(chunks).toString("utf8");
+}
+
 app.use(async (c, next) => {
-  if (c.req.method !== "POST" || !c.req.path.endsWith("/inbox")) return await next();
-  const text = await c.req.raw.clone().text();
+  if (c.req.method !== "POST" || !INBOX_PATH.test(c.req.path)) return await next();
+  // The clone is read here; the original stays whole for Fedify.
+  const text = await readLimited(c.req.raw.clone(), MAX_BODY_BYTES);
+  if (text === null) return c.json({ error: "payload too large" }, 413, { connection: "close" });
   await next();
   capture("inbound", {
     path: c.req.path,

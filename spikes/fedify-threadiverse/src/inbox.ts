@@ -525,6 +525,28 @@ async function onAnnounce(ctx: Context<void>, announce: Announce): Promise<Outco
   return null;
 }
 
+// ------------------------------------------------------------------ follow answers
+
+/**
+ * Marks a pending follow accepted. Only a row that exists, is still pending and
+ * carries both this Follow id and this community as its remote actor changes: a
+ * late or repeated Accept (after we sent Undo(Follow), say) never creates or
+ * revives a follow.
+ */
+export async function acceptFollow(followId: string, communityUri: string): Promise<boolean> {
+  const rows = await sql`
+    update following set accepted = true
+    where follow_id = ${followId} and remote_uri = ${communityUri} and not accepted returning 1`;
+  return rows.length > 0;
+}
+
+/** Drops the follow a community refused or ended; the Reject must come from the followed actor. */
+export async function rejectFollow(followId: string, communityUri: string): Promise<boolean> {
+  const rows = await sql`
+    delete from following where follow_id = ${followId} and remote_uri = ${communityUri} returning 1`;
+  return rows.length > 0;
+}
+
 // ------------------------------------------------------------------ listeners
 
 federation
@@ -554,18 +576,16 @@ federation
     await record(follow, "direct", `accepted follower of ${target.identifier}`);
   })
   .on(Accept, async (_ctx, accept) => {
+    if (!accept.actorId || !accept.objectId) return await record(accept, "direct", "rejected: missing fields");
     // Match on the Follow id: the embedded Follow is ours (cross-origin), so
     // Fedify would try to re-fetch it from us rather than trust the copy.
-    if (!accept.actorId || !accept.objectId) return await record(accept, "direct", "rejected: missing fields");
-    const rows = await sql`
-      update following set accepted = true
-      where follow_id = ${accept.objectId.href} and remote_uri = ${accept.actorId.href} returning 1`;
-    await record(accept, "direct", rows.length > 0 ? "follow accepted" : "ignored: no matching follow");
+    const matched = await acceptFollow(accept.objectId.href, accept.actorId.href);
+    await record(accept, "direct", matched ? "follow accepted" : "ignored: accept for unknown follow");
   })
   .on(Reject, async (_ctx, reject) => {
-    if (!reject.objectId) return await record(reject, "direct", "rejected: missing object");
-    await sql`delete from following where follow_id = ${reject.objectId.href}`;
-    await record(reject, "direct", "follow rejected");
+    if (!reject.actorId || !reject.objectId) return await record(reject, "direct", "rejected: missing fields");
+    const matched = await rejectFollow(reject.objectId.href, reject.actorId.href);
+    await record(reject, "direct", matched ? "follow rejected" : "ignored: reject for unknown follow");
   })
   .on(Announce, async (ctx, announce) => {
     const outcome = await onAnnounce(ctx, announce);
