@@ -1,0 +1,14 @@
+{
+  "id": "https://piefed.lab.test/activities/undo/Mq22K4cLJGxnT8i",
+  "type": "Undo",
+  "actor": "https://piefed.lab.test/u/pfuser",
+  "object": {
+    "id": "https://piefed.lab.test/activities/dislike/qejQiLm5Otowkoc",
+    "type": "Dislike",
+    "actor": "https://piefed.lab.test/u/pfuser",
+    "object": "https://feddit.lab.test/ap/comment/6",
+    "audience": "https://feddit.lab.test/ap/c.spike"
+  },
+  "@context": ["https://www.w3.org/ns/activitystreams", "https://w3id.org/security/v1"],
+  "audience": "https://feddit.lab.test/ap/c.spike"
+}

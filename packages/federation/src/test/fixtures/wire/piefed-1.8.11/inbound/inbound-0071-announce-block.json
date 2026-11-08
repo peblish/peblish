@@ -1,0 +1,22 @@
+{
+  "id": "https://piefed.lab.test/activities/announce/Evbu9nRYWhWhuqv",
+  "type": "Announce",
+  "actor": "https://piefed.lab.test/c/pflab",
+  "object": {
+    "id": "https://piefed.lab.test/activities/block/ZoFaHEFne6ZLFUv",
+    "type": "Block",
+    "actor": "https://piefed.lab.test/u/pfadmin",
+    "object": "https://feddit.lab.test/ap/u.m1108022723",
+    "target": "https://piefed.lab.test/c/pflab",
+    "to": ["https://www.w3.org/ns/activitystreams#Public"],
+    "cc": ["https://piefed.lab.test/c/pflab"],
+    "endTime": "2100-01-01T00:00:00+00:00",
+    "expires": "2100-01-01T00:00:00+00:00",
+    "removeData": false,
+    "summary": "M4 1108022723",
+    "audience": "https://piefed.lab.test/c/pflab"
+  },
+  "@context": ["https://www.w3.org/ns/activitystreams", "https://w3id.org/security/v1"],
+  "to": ["https://www.w3.org/ns/activitystreams#Public"],
+  "cc": ["https://piefed.lab.test/c/pflab/followers"]
+}

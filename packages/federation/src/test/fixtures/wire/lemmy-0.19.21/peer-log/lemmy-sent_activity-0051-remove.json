@@ -1,0 +1,10 @@
+{
+  "actor": "https://lemmy.lab.test/u/lemmyadmin",
+  "to": ["https://www.w3.org/ns/activitystreams#Public"],
+  "object": "https://lemmy.lab.test/post/15",
+  "cc": ["https://lemmy.lab.test/c/lab"],
+  "type": "Remove",
+  "target": "https://lemmy.lab.test/c/lab/featured",
+  "id": "https://lemmy.lab.test/activities/remove/e6808c17-f33c-4598-a95b-1b08290cb671",
+  "audience": "https://lemmy.lab.test/c/lab"
+}

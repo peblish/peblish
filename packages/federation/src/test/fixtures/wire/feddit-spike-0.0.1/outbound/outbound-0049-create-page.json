@@ -1,0 +1,45 @@
+{
+  "@context": [
+    "https://w3id.org/identity/v1",
+    "https://www.w3.org/ns/activitystreams",
+    "https://w3id.org/security/data-integrity/v1",
+    "https://gotosocial.org/ns",
+    {
+      "toot": "http://joinmastodon.org/ns#",
+      "misskey": "https://misskey-hub.net/ns#",
+      "fedibird": "http://fedibird.com/ns#",
+      "sensitive": "as:sensitive",
+      "votersCount": { "@id": "toot:votersCount", "@type": "http://www.w3.org/2001/XMLSchema#nonNegativeInteger" },
+      "Emoji": "toot:Emoji",
+      "Hashtag": "as:Hashtag",
+      "ChatMessage": "http://litepub.social/ns#ChatMessage",
+      "quote": { "@id": "https://w3id.org/fep/044f#quote", "@type": "@id" },
+      "quoteUrl": "as:quoteUrl",
+      "_misskey_quote": "misskey:_misskey_quote",
+      "quoteUri": "fedibird:quoteUri",
+      "QuoteAuthorization": "https://w3id.org/fep/044f#QuoteAuthorization",
+      "QuoteRequest": "https://w3id.org/fep/044f#QuoteRequest",
+      "quoteAuthorization": { "@id": "https://w3id.org/fep/044f#quoteAuthorization", "@type": "@id" },
+      "emojiReactions": { "@id": "fedibird:emojiReactions", "@type": "@id" }
+    }
+  ],
+  "id": "https://feddit.lab.test/ap/activities/create/object-16",
+  "type": "Create",
+  "actor": "https://feddit.lab.test/ap/u.t1108022622",
+  "audience": "https://lemmy.lab.test/c/lab",
+  "cc": "https://lemmy.lab.test/c/lab",
+  "object": {
+    "id": "https://feddit.lab.test/ap/post/16",
+    "type": "Page",
+    "attributedTo": "https://feddit.lab.test/ap/u.t1108022622",
+    "audience": "https://lemmy.lab.test/c/lab",
+    "content": "<p>Posted from <strong>Feddit</strong> into a remote community.</p>",
+    "mediaType": "text/html",
+    "name": "R6 Feddit post in !lab@lemmy.lab.test 1108022622",
+    "published": "2026-11-08T02:27:04.967Z",
+    "sensitive": false,
+    "source": { "content": "Posted from **Feddit** into a remote community.", "mediaType": "text/markdown" },
+    "to": ["https://lemmy.lab.test/c/lab", "https://www.w3.org/ns/activitystreams#Public"]
+  },
+  "to": "https://www.w3.org/ns/activitystreams#Public"
+}

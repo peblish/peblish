@@ -1,0 +1,10 @@
+{
+  "@context": ["https://join-lemmy.org/context.json", "https://www.w3.org/ns/activitystreams"],
+  "id": "https://lemmy.lab.test/activities/lock/b792afb1-5c66-432d-aa2a-2eb0be14b991",
+  "actor": "https://lemmy.lab.test/u/lemmyuser",
+  "to": ["https://www.w3.org/ns/activitystreams#Public"],
+  "object": "https://piefed.lab.test/c/spike@feddit.lab.test/p/14/p-target-piefed-1108022723",
+  "cc": ["https://feddit.lab.test/ap/c.spike"],
+  "type": "Lock",
+  "audience": "https://feddit.lab.test/ap/c.spike"
+}

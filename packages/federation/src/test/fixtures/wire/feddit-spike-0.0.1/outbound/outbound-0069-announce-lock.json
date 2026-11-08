@@ -1,0 +1,18 @@
+{
+  "@context": ["https://www.w3.org/ns/activitystreams", "https://w3id.org/security/v1"],
+  "id": "https://feddit.lab.test/ap/activities/announce/21f84a4e-4a54-4dbb-ba71-068ed3628709",
+  "type": "Announce",
+  "actor": "https://feddit.lab.test/ap/c.spike",
+  "to": ["https://www.w3.org/ns/activitystreams#Public"],
+  "cc": ["https://feddit.lab.test/ap/c.spike/followers"],
+  "object": {
+    "@context": "https://www.w3.org/ns/activitystreams",
+    "id": "https://feddit.lab.test/ap/activities/lock/763b6cd1-b97e-4747-af95-c122f41a9119",
+    "type": "Lock",
+    "object": "https://feddit.lab.test/ap/post/21",
+    "actor": "https://feddit.lab.test/ap/u.alice",
+    "to": ["https://www.w3.org/ns/activitystreams#Public"],
+    "cc": ["https://feddit.lab.test/ap/c.spike"],
+    "audience": "https://feddit.lab.test/ap/c.spike"
+  }
+}

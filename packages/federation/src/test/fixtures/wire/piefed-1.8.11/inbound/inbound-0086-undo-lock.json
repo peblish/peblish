@@ -1,0 +1,18 @@
+{
+  "id": "https://piefed.lab.test/activities/undo/iGQd2QHCnSxF7Iw",
+  "type": "Undo",
+  "actor": "https://piefed.lab.test/u/pfuser",
+  "object": {
+    "id": "https://piefed.lab.test/activities/lock/0NT6qrNxNLQfkvW",
+    "type": "Lock",
+    "actor": "https://piefed.lab.test/u/pfuser",
+    "object": "https://lemmy.lab.test/post/19",
+    "audience": "https://feddit.lab.test/ap/c.spike",
+    "to": ["https://www.w3.org/ns/activitystreams#Public"],
+    "cc": ["https://feddit.lab.test/ap/c.spike"]
+  },
+  "@context": ["https://www.w3.org/ns/activitystreams", "https://w3id.org/security/v1"],
+  "audience": "https://feddit.lab.test/ap/c.spike",
+  "to": ["https://www.w3.org/ns/activitystreams#Public"],
+  "cc": ["https://feddit.lab.test/ap/c.spike"]
+}

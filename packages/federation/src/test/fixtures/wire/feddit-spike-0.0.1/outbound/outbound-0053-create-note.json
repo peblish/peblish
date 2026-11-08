@@ -1,0 +1,46 @@
+{
+  "@context": [
+    "https://w3id.org/identity/v1",
+    "https://www.w3.org/ns/activitystreams",
+    "https://w3id.org/security/data-integrity/v1",
+    "https://gotosocial.org/ns",
+    {
+      "toot": "http://joinmastodon.org/ns#",
+      "misskey": "https://misskey-hub.net/ns#",
+      "fedibird": "http://fedibird.com/ns#",
+      "sensitive": "as:sensitive",
+      "votersCount": { "@id": "toot:votersCount", "@type": "http://www.w3.org/2001/XMLSchema#nonNegativeInteger" },
+      "Emoji": "toot:Emoji",
+      "Hashtag": "as:Hashtag",
+      "ChatMessage": "http://litepub.social/ns#ChatMessage",
+      "quote": { "@id": "https://w3id.org/fep/044f#quote", "@type": "@id" },
+      "quoteUrl": "as:quoteUrl",
+      "_misskey_quote": "misskey:_misskey_quote",
+      "quoteUri": "fedibird:quoteUri",
+      "QuoteAuthorization": "https://w3id.org/fep/044f#QuoteAuthorization",
+      "QuoteRequest": "https://w3id.org/fep/044f#QuoteRequest",
+      "quoteAuthorization": { "@id": "https://w3id.org/fep/044f#quoteAuthorization", "@type": "@id" },
+      "emojiReactions": { "@id": "fedibird:emojiReactions", "@type": "@id" }
+    }
+  ],
+  "id": "https://feddit.lab.test/ap/activities/create/object-19",
+  "type": "Create",
+  "actor": "https://feddit.lab.test/ap/u.t1108022622",
+  "audience": "https://piefed.lab.test/c/pflab",
+  "cc": "https://piefed.lab.test/c/pflab",
+  "object": {
+    "id": "https://feddit.lab.test/ap/comment/19",
+    "type": "Note",
+    "attributedTo": "https://feddit.lab.test/ap/u.t1108022622",
+    "audience": "https://piefed.lab.test/c/pflab",
+    "cc": "https://piefed.lab.test/c/pflab",
+    "content": "<p>R3 Feddit comment 1108022622</p>",
+    "inReplyTo": "https://piefed.lab.test/c/pflab@piefed.lab.test/p/7/r2-piefed-1108022622",
+    "mediaType": "text/html",
+    "published": "2026-11-08T02:27:10.689Z",
+    "sensitive": false,
+    "source": { "content": "R3 Feddit comment 1108022622", "mediaType": "text/markdown" },
+    "to": "https://www.w3.org/ns/activitystreams#Public"
+  },
+  "to": "https://www.w3.org/ns/activitystreams#Public"
+}

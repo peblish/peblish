@@ -1,0 +1,14 @@
+{
+  "@context": [
+    "https://w3id.org/identity/v1",
+    "https://www.w3.org/ns/activitystreams",
+    "https://w3id.org/security/data-integrity/v1",
+    "https://gotosocial.org/ns",
+    { "toot": "http://joinmastodon.org/ns#", "Emoji": "toot:Emoji" }
+  ],
+  "id": "https://feddit.lab.test/ap/activities/like/6ec440ab-51f9-41de-8df9-5fae58cf0de4",
+  "type": "Like",
+  "actor": "https://feddit.lab.test/ap/u.t1108022622",
+  "audience": "https://lemmy.lab.test/c/lab",
+  "object": "https://lemmy.lab.test/post/10"
+}

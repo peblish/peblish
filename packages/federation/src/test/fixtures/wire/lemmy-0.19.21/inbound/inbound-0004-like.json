@@ -1,0 +1,8 @@
+{
+  "@context": ["https://join-lemmy.org/context.json", "https://www.w3.org/ns/activitystreams"],
+  "id": "https://lemmy.lab.test/activities/like/5d38b83c-67b5-4f22-927c-6d294645dedb",
+  "actor": "https://lemmy.lab.test/u/lemmyuser",
+  "object": "https://feddit.lab.test/ap/post/1",
+  "type": "Like",
+  "audience": "https://feddit.lab.test/ap/c.spike"
+}

@@ -1,0 +1,52 @@
+{
+  "@context": [
+    "https://w3id.org/identity/v1",
+    "https://www.w3.org/ns/activitystreams",
+    "https://w3id.org/security/data-integrity/v1",
+    "https://gotosocial.org/ns",
+    {
+      "toot": "http://joinmastodon.org/ns#",
+      "misskey": "https://misskey-hub.net/ns#",
+      "fedibird": "http://fedibird.com/ns#",
+      "sensitive": "as:sensitive",
+      "votersCount": { "@id": "toot:votersCount", "@type": "http://www.w3.org/2001/XMLSchema#nonNegativeInteger" },
+      "Emoji": "toot:Emoji",
+      "Hashtag": "as:Hashtag",
+      "quote": { "@id": "https://w3id.org/fep/044f#quote", "@type": "@id" },
+      "quoteUrl": "as:quoteUrl",
+      "_misskey_quote": "misskey:_misskey_quote",
+      "quoteUri": "fedibird:quoteUri",
+      "QuoteAuthorization": "https://w3id.org/fep/044f#QuoteAuthorization",
+      "QuoteRequest": "https://w3id.org/fep/044f#QuoteRequest",
+      "quoteAuthorization": { "@id": "https://w3id.org/fep/044f#quoteAuthorization", "@type": "@id" },
+      "emojiReactions": { "@id": "fedibird:emojiReactions", "@type": "@id" }
+    }
+  ],
+  "id": "https://feddit.lab.test/ap/activities/announce/f8853095-c6bf-4a15-80d7-946cd7ad6545",
+  "type": "Announce",
+  "actor": "https://feddit.lab.test/ap/c.spike",
+  "cc": "https://feddit.lab.test/ap/c.spike/followers",
+  "object": {
+    "id": "https://feddit.lab.test/ap/activities/create/object-2",
+    "type": "Create",
+    "actor": "https://feddit.lab.test/ap/u.bob",
+    "audience": "https://feddit.lab.test/ap/c.spike",
+    "cc": "https://feddit.lab.test/ap/c.spike",
+    "object": {
+      "id": "https://feddit.lab.test/ap/comment/2",
+      "type": "Note",
+      "attributedTo": "https://feddit.lab.test/ap/u.bob",
+      "audience": "https://feddit.lab.test/ap/c.spike",
+      "cc": "https://feddit.lab.test/ap/c.spike",
+      "content": "<p>Seed comment from Feddit</p>",
+      "inReplyTo": "https://feddit.lab.test/ap/post/1",
+      "mediaType": "text/html",
+      "published": "2026-11-08T02:26:28.099Z",
+      "sensitive": false,
+      "source": { "content": "Seed comment from Feddit", "mediaType": "text/markdown" },
+      "to": "https://www.w3.org/ns/activitystreams#Public"
+    },
+    "to": "https://www.w3.org/ns/activitystreams#Public"
+  },
+  "to": "https://www.w3.org/ns/activitystreams#Public"
+}

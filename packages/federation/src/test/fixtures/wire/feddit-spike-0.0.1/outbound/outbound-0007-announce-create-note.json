@@ -1,0 +1,34 @@
+{
+  "@context": ["https://www.w3.org/ns/activitystreams", "https://w3id.org/security/v1"],
+  "id": "https://feddit.lab.test/ap/activities/announce/28b03e2d-8605-4a96-876f-3a4011d24e16",
+  "type": "Announce",
+  "actor": "https://feddit.lab.test/ap/c.spike",
+  "to": ["https://www.w3.org/ns/activitystreams#Public"],
+  "cc": ["https://feddit.lab.test/ap/c.spike/followers"],
+  "object": {
+    "cc": ["https://feddit.lab.test/ap/c.spike", "https://feddit.lab.test/ap/u.t1108022622"],
+    "id": "https://lemmy.lab.test/activities/create/af3ff0ea-ae31-48b6-b187-ba3285606791",
+    "to": ["https://www.w3.org/ns/activitystreams#Public"],
+    "tag": [{ "href": "https://feddit.lab.test/ap/u.t1108022622", "name": "@t1108022622@feddit.lab.test", "type": "Mention" }],
+    "type": "Create",
+    "actor": "https://lemmy.lab.test/u/lemmyuser",
+    "object": {
+      "cc": ["https://feddit.lab.test/ap/c.spike", "https://feddit.lab.test/ap/u.t1108022622"],
+      "id": "https://lemmy.lab.test/comment/2",
+      "to": ["https://www.w3.org/ns/activitystreams#Public"],
+      "tag": [{ "href": "https://feddit.lab.test/ap/u.t1108022622", "name": "@t1108022622@feddit.lab.test", "type": "Mention" }],
+      "type": "Note",
+      "source": { "content": "S3 comment from lemmy 1108022622", "mediaType": "text/markdown" },
+      "content": "<p>S3 comment from lemmy 1108022622</p>\n",
+      "audience": "https://feddit.lab.test/ap/c.spike",
+      "inReplyTo": "https://feddit.lab.test/ap/post/1",
+      "mediaType": "text/html",
+      "published": "2026-11-08T02:26:29.236873Z",
+      "attachment": [],
+      "attributedTo": "https://lemmy.lab.test/u/lemmyuser",
+      "distinguished": false
+    },
+    "@context": ["https://join-lemmy.org/context.json", "https://www.w3.org/ns/activitystreams"],
+    "audience": "https://feddit.lab.test/ap/c.spike"
+  }
+}

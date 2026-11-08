@@ -1,0 +1,25 @@
+{
+  "@context": ["https://join-lemmy.org/context.json", "https://www.w3.org/ns/activitystreams"],
+  "id": "https://lemmy.lab.test/activities/create/5b183f06-6a6c-4d9e-af7b-d5fc4a50401f",
+  "actor": "https://lemmy.lab.test/u/lemmyuser",
+  "to": ["https://www.w3.org/ns/activitystreams#Public"],
+  "object": {
+    "type": "Page",
+    "id": "https://lemmy.lab.test/post/5",
+    "attributedTo": "https://lemmy.lab.test/u/lemmyuser",
+    "to": ["https://feddit.lab.test/ap/c.spike", "https://www.w3.org/ns/activitystreams#Public"],
+    "name": "S8 from lemmy 1108022622",
+    "cc": [],
+    "content": "<p>Posted into the Feddit community from lemmy.</p>\n",
+    "mediaType": "text/html",
+    "source": { "content": "Posted into the Feddit community from lemmy.", "mediaType": "text/markdown" },
+    "attachment": [],
+    "sensitive": false,
+    "published": "2026-11-08T02:26:46.493265Z",
+    "audience": "https://feddit.lab.test/ap/c.spike",
+    "tag": [{ "href": "https://lemmy.lab.test/post/5", "name": "#spike", "type": "Hashtag" }]
+  },
+  "cc": ["https://feddit.lab.test/ap/c.spike"],
+  "type": "Create",
+  "audience": "https://feddit.lab.test/ap/c.spike"
+}

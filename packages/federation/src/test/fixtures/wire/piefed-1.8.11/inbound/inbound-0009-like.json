@@ -1,0 +1,8 @@
+{
+  "id": "https://piefed.lab.test/activities/like/PFpqzYcx2Bi4mfJ",
+  "type": "Like",
+  "actor": "https://piefed.lab.test/u/pfuser",
+  "object": "https://feddit.lab.test/ap/post/5",
+  "@context": ["https://www.w3.org/ns/activitystreams", "https://w3id.org/security/v1"],
+  "audience": "https://feddit.lab.test/ap/c.spike"
+}

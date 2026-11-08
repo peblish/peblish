@@ -1,0 +1,25 @@
+{
+  "@context": ["https://join-lemmy.org/context.json", "https://www.w3.org/ns/activitystreams"],
+  "actor": "https://lemmy.lab.test/c/lab",
+  "to": ["https://www.w3.org/ns/activitystreams#Public"],
+  "object": {
+    "id": "https://feddit.lab.test/ap/post/16",
+    "actor": "https://feddit.lab.test/ap/u.t1108022622",
+    "type": "Page",
+    "attributedTo": "https://feddit.lab.test/ap/u.t1108022622",
+    "to": ["https://lemmy.lab.test/c/lab", "https://www.w3.org/ns/activitystreams#Public"],
+    "name": "R6 Feddit post in !lab@lemmy.lab.test 1108022622",
+    "cc": [],
+    "content": "<p>Posted from <strong>Feddit</strong> into a remote community.</p>",
+    "mediaType": "text/html",
+    "source": { "content": "Posted from **Feddit** into a remote community.", "mediaType": "text/markdown" },
+    "attachment": [],
+    "sensitive": false,
+    "published": "2026-11-08T02:27:04.967Z",
+    "audience": "https://lemmy.lab.test/c/lab",
+    "tag": []
+  },
+  "cc": ["https://lemmy.lab.test/c/lab/followers"],
+  "type": "Announce",
+  "id": "https://lemmy.lab.test/activities/announce/page/569d1048-1b16-4d9c-a7f6-20d12e9f932d"
+}

@@ -1,0 +1,25 @@
+{
+  "@context": ["https://join-lemmy.org/context.json", "https://www.w3.org/ns/activitystreams"],
+  "id": "https://lemmy.lab.test/activities/create/2b0fba01-be2c-4547-baa0-9a0a7b64ffb8",
+  "actor": "https://lemmy.lab.test/u/lemmyuser",
+  "to": ["https://www.w3.org/ns/activitystreams#Public"],
+  "object": {
+    "type": "Page",
+    "id": "https://lemmy.lab.test/post/14",
+    "attributedTo": "https://lemmy.lab.test/u/lemmyuser",
+    "to": ["https://feddit.lab.test/ap/c.spike", "https://www.w3.org/ns/activitystreams#Public"],
+    "name": "Peer post lemmy 1108022723",
+    "cc": [],
+    "content": "<p>To be removed by Feddit’s moderator.</p>\n",
+    "mediaType": "text/html",
+    "source": { "content": "To be removed by Feddit's moderator.", "mediaType": "text/markdown" },
+    "attachment": [],
+    "sensitive": false,
+    "published": "2026-11-08T02:27:26.738436Z",
+    "audience": "https://feddit.lab.test/ap/c.spike",
+    "tag": [{ "href": "https://lemmy.lab.test/post/14", "name": "#spike", "type": "Hashtag" }]
+  },
+  "cc": ["https://feddit.lab.test/ap/c.spike"],
+  "type": "Create",
+  "audience": "https://feddit.lab.test/ap/c.spike"
+}

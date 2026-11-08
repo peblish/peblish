@@ -1,0 +1,8 @@
+{
+  "@context": ["https://join-lemmy.org/context.json", "https://www.w3.org/ns/activitystreams"],
+  "actor": "https://lemmy.lab.test/u/lemmyuser",
+  "to": ["https://feddit.lab.test/ap/c.spike"],
+  "object": "https://feddit.lab.test/ap/c.spike",
+  "type": "Follow",
+  "id": "https://lemmy.lab.test/activities/follow/2b38f83d-bafd-4dc4-b678-bbc4ac439fa3"
+}

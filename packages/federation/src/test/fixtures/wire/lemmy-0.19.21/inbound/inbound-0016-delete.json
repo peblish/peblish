@@ -1,0 +1,10 @@
+{
+  "@context": ["https://join-lemmy.org/context.json", "https://www.w3.org/ns/activitystreams"],
+  "id": "https://lemmy.lab.test/activities/delete/7c647d7c-1ffd-4985-8359-607be641346d",
+  "actor": "https://lemmy.lab.test/u/lemmyuser",
+  "to": ["https://www.w3.org/ns/activitystreams#Public"],
+  "object": "https://lemmy.lab.test/post/5",
+  "type": "Delete",
+  "audience": "https://feddit.lab.test/ap/c.spike",
+  "cc": ["https://feddit.lab.test/ap/c.spike"]
+}

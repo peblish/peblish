@@ -1,0 +1,52 @@
+{
+  "@context": [
+    "https://w3id.org/identity/v1",
+    "https://www.w3.org/ns/activitystreams",
+    "https://w3id.org/security/data-integrity/v1",
+    "https://gotosocial.org/ns",
+    {
+      "toot": "http://joinmastodon.org/ns#",
+      "misskey": "https://misskey-hub.net/ns#",
+      "fedibird": "http://fedibird.com/ns#",
+      "sensitive": "as:sensitive",
+      "votersCount": { "@id": "toot:votersCount", "@type": "http://www.w3.org/2001/XMLSchema#nonNegativeInteger" },
+      "Emoji": "toot:Emoji",
+      "Hashtag": "as:Hashtag",
+      "quote": { "@id": "https://w3id.org/fep/044f#quote", "@type": "@id" },
+      "quoteUrl": "as:quoteUrl",
+      "_misskey_quote": "misskey:_misskey_quote",
+      "quoteUri": "fedibird:quoteUri",
+      "QuoteAuthorization": "https://w3id.org/fep/044f#QuoteAuthorization",
+      "QuoteRequest": "https://w3id.org/fep/044f#QuoteRequest",
+      "quoteAuthorization": { "@id": "https://w3id.org/fep/044f#quoteAuthorization", "@type": "@id" },
+      "emojiReactions": { "@id": "fedibird:emojiReactions", "@type": "@id" }
+    }
+  ],
+  "id": "https://feddit.lab.test/ap/activities/announce/606e7c4d-a962-4f9d-9826-e62fd1a4a451",
+  "type": "Announce",
+  "actor": "https://feddit.lab.test/ap/c.spike",
+  "cc": "https://feddit.lab.test/ap/c.spike/followers",
+  "object": {
+    "id": "https://feddit.lab.test/ap/activities/update/26d17aad-8be6-4c8e-963b-6b03998d6af7",
+    "type": "Update",
+    "actor": "https://feddit.lab.test/ap/u.t1108022622",
+    "audience": "https://feddit.lab.test/ap/c.spike",
+    "cc": "https://feddit.lab.test/ap/c.spike",
+    "object": {
+      "id": "https://feddit.lab.test/ap/post/1",
+      "type": "Page",
+      "attributedTo": "https://feddit.lab.test/ap/u.t1108022622",
+      "audience": "https://feddit.lab.test/ap/c.spike",
+      "content": "<p>Edited body from <strong>Feddit</strong>.</p>",
+      "mediaType": "text/html",
+      "name": "S6 edited lemmy 1108022622",
+      "published": "2026-11-08T02:26:28.067Z",
+      "sensitive": false,
+      "source": { "content": "Edited body from **Feddit**.", "mediaType": "text/markdown" },
+      "to": ["https://feddit.lab.test/ap/c.spike", "https://www.w3.org/ns/activitystreams#Public"],
+      "updated": "2026-11-08T02:26:33.678Z"
+    },
+    "to": "https://www.w3.org/ns/activitystreams#Public"
+  },
+  "to": "https://www.w3.org/ns/activitystreams#Public"
+}

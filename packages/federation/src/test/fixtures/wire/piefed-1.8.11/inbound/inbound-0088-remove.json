@@ -1,0 +1,11 @@
+{
+  "id": "https://piefed.lab.test/activities/remove/yCwSitZha0a2FBn",
+  "type": "Remove",
+  "actor": "https://piefed.lab.test/u/pfuser",
+  "object": "https://lemmy.lab.test/post/19",
+  "target": "https://feddit.lab.test/ap/c.spike/featured",
+  "@context": ["https://www.w3.org/ns/activitystreams", "https://w3id.org/security/v1"],
+  "audience": "https://feddit.lab.test/ap/c.spike",
+  "to": ["https://www.w3.org/ns/activitystreams#Public"],
+  "cc": ["https://feddit.lab.test/ap/c.spike"]
+}

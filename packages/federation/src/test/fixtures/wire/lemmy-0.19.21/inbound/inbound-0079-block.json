@@ -1,0 +1,13 @@
+{
+  "@context": ["https://join-lemmy.org/context.json", "https://www.w3.org/ns/activitystreams"],
+  "id": "https://lemmy.lab.test/activities/block/9c867831-6bf6-477a-b486-6245ffc26f9b",
+  "actor": "https://lemmy.lab.test/u/lemmyuser",
+  "to": ["https://www.w3.org/ns/activitystreams#Public"],
+  "object": "https://piefed.lab.test/u/pfuser",
+  "cc": ["https://feddit.lab.test/ap/c.spike"],
+  "target": "https://feddit.lab.test/ap/c.spike",
+  "type": "Block",
+  "audience": "https://feddit.lab.test/ap/c.spike",
+  "removeData": false,
+  "summary": "P4 1108022723"
+}

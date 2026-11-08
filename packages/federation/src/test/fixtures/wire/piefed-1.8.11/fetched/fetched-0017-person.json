@@ -1,0 +1,22 @@
+{
+  "@context": ["https://www.w3.org/ns/activitystreams", "https://w3id.org/security/v1"],
+  "acceptPrivateMessages": 3,
+  "attributionDomains": ["piefed.lab.test"],
+  "discoverable": true,
+  "endpoints": { "sharedInbox": "https://piefed.lab.test/inbox" },
+  "id": "https://piefed.lab.test/u/pfadmin",
+  "inbox": "https://piefed.lab.test/u/pfadmin/inbox",
+  "indexable": true,
+  "manuallyApprovesFollowers": false,
+  "name": "pfadmin",
+  "outbox": "https://piefed.lab.test/u/pfadmin/outbox",
+  "preferredUsername": "pfadmin",
+  "publicKey": {
+    "id": "https://piefed.lab.test/u/pfadmin#main-key",
+    "owner": "https://piefed.lab.test/u/pfadmin",
+    "publicKeyPem": "-----BEGIN PUBLIC KEY-----\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAy+l+6POok5Jsj8MoMP4H\n+5YoJ3AKB26u+uV5JwU37xIVilXk40FTiWjQxjY3whkKULs3fZEfOYrlVSJjeHFS\nH8AQ8wdcUGyb7JFAL7/9TstcWBNNMnz5uLJ/gGc7ya2zZnucoJIGVnWY1DzDqwdZ\nvVz3+da5ctIz6lfBqCUoRgtROsQhF1RUTBDE5NCujTN+xKxCit80IDB1AG0F+Ez2\nRaia9GWu1zkVTY9SFBYDcVgzwc+aXl+pphmtezNTak4ZQ9hteqptkwcK87Z2BKcp\nrimU5dEXWm/TH2rC18fy3/yeVxmcV9VjuQND/ECzENFM3jybSK77tVJjB1gcbTGB\newIDAQAB\n-----END PUBLIC KEY-----\n"
+  },
+  "published": "2026-11-08T02:25:20.925305+00:00",
+  "reposter": false,
+  "type": "Person"
+}
