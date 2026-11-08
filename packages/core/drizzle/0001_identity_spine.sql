@@ -226,6 +226,7 @@ CREATE TABLE "follows" (
 CREATE TABLE "instances" (
 	"id" uuid PRIMARY KEY NOT NULL,
 	"domain" text NOT NULL,
+	"origin" text NOT NULL,
 	"local" boolean DEFAULT false NOT NULL,
 	"software" text,
 	"software_version" text,

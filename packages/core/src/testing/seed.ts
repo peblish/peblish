@@ -8,7 +8,10 @@ import { writer } from '../db/write.ts';
 // Test fixtures for any lane's database tests. Never imported by product code (lint).
 
 export async function seedInstance(domain = 'test.local', local = true) {
-  const [row] = await writer().insert(instances).values({ domain, local }).returning();
+  const [row] = await writer()
+    .insert(instances)
+    .values({ domain, origin: `https://${domain}`, local })
+    .returning();
   if (!row) throw new Error('instance insert returned nothing');
   return row;
 }

@@ -9,6 +9,8 @@ export const instances = pgTable(
     id: id(),
     /** Lowercase host, with the port when it is not the default. */
     domain: text('domain').notNull().unique(),
+    /** Canonical origin (https://host[:port]); local ap_ids are minted under the local row's. */
+    origin: text('origin').notNull(),
     local: boolean('local').notNull().default(false),
     software: text('software'),
     softwareVersion: text('software_version'),

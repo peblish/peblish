@@ -1,5 +1,5 @@
 {
-  "id": "bb41aacb-f3fb-4635-95f1-b9dddf67bd9c",
+  "id": "95c7fe14-771c-4fec-bf38-641f84a83fc2",
   "prevId": "a482f298-6d02-426b-a689-d9a87f584262",
   "version": "7",
   "dialect": "postgresql",
@@ -2004,6 +2004,12 @@
         },
         "domain": {
           "name": "domain",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "origin": {
+          "name": "origin",
           "type": "text",
           "primaryKey": false,
           "notNull": true

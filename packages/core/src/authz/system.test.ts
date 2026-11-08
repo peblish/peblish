@@ -13,7 +13,7 @@ beforeEach(truncateAll);
 test('migrate creates one instance actor, and system work runs as it', async () => {
   await ensureLocalInstance(writer(), 'https://feddit.test');
   await ensureLocalInstance(writer(), 'https://feddit.test');
-  await expect(ensureLocalInstance(writer(), 'https://elsewhere.test')).rejects.toThrow(/local instance is feddit.test/);
+  await expect(ensureLocalInstance(writer(), 'https://elsewhere.test')).rejects.toThrow(/local instance is https:\/\/feddit.test;/);
   const instanceActors = await db().select().from(actors).where(eq(actors.kind, 'Application'));
   expect(instanceActors).toMatchObject([{ apId: 'https://feddit.test/', name: 'feddit.test', local: true }]);
 
