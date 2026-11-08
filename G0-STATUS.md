@@ -174,7 +174,7 @@ Decisions where the brief left room:
 6. The first-admin script is a third entry of the process bundle rather than shipped source: the runtime image has no sources or node_modules. It needs `BETTER_AUTH_SECRET` on a real host, because the password hash goes through better-auth.
 7. `BETTER_AUTH_URL` left the deploy README's reserved names: auth follows the origin migrate stored.
 8. Renovate keeps Node below 25 (the root engines field and `.nvmrc`); only the rule's description changed.
-9. The FIT mapping is unchanged: none of the new columns holds a field its records extract today.
+9. The FIT mapping was left unchanged here, on the reading that its records extracted none of the new columns' fields. The review showed that Lemmy and PieFed send them; the review fixes now map every 0002 field in both directions (ebeefa0; see Wave 1 review fixes).
 10. CI's Mailpit is pinned by digest like its Postgres; `compose.yaml` already had Mailpit on 18425 and 18426, and CI already migrated the database before e2e.
 
 Safety checks: FIT's secrets test passes (no private key block, key field or email address in the manifest, the wire documents or the fixture sets). In tracked and untracked files outside `node_modules` and build output, `PRIVATE KEY` appears only in tests and the guard's own pattern, `privateKeyPem` only as code identifiers, `"privateKey"` nowhere, and `@feddit.com` only in two docs (`plans/archive/`, `spikes/fedify-threadiverse/RESULT.md`). Nothing was removed.
@@ -188,11 +188,123 @@ Verification, on this tree (lane root):
 - `pnpm e2e` on lane root (port 18399, Mailpit from `compose.yaml`): 30/30 (G0's 19 and lane A's 11).
 - `docker build`, then `scripts/image-smoke.sh` against a throwaway `peblish_root_image` (dropped after): the disagreeing command exits 64, migrate, the first admin created (role admin, email verified, 16+ declaration) and a second refused with `admin.exists`, worker SIGTERM exit 0, web `/healthz`, `/readyz` and the healthcheck, uid 1000. A rerun on the same database passed too.
 
-Still open from the lane notes (not in the integration brief):
+Still open from the lane notes (not in the integration brief; updated after the review fixes):
 
-- FIT: `reports.category` is NOT NULL but a Flag has no category (REP needs a default); `published_at` is NOT NULL while peers may omit `published`; no Mbin, Mastodon or live-peer wire yet; the mapping does not yet extract the fields the new columns hold, and `test/vocabulary.ts` still words them as recommendations; later briefs should point at `packages/federation/src/test/fixtures/`, not the gitignored captures.
-- A: deny `post.create` and `comment.create` until the email is verified (a common refusal such as `auth.email_unverified`, B1 and D); no rate limit on sign-in, sign-up or reset; optionally move `getSessionView` to `packages/web/src/server/session.ts`.
+- FIT: `reports.category` is NOT NULL but a Flag has no category (REP needs a default); `published_at` is NOT NULL while peers may omit `published`; no Mbin, Mastodon or live-peer wire yet; later briefs should point at `packages/federation/src/test/fixtures/`, not the gitignored captures.
+- A: deny `post.create` and `comment.create` until the email is verified (B1 and D, with the refusal `auth.email_unverified` that 73c6dba added); prune old `throttles` rows (a later lane's job); optionally move `getSessionView` to `packages/web/src/server/session.ts`. Sign-in, password checks, reset mail and invite codes at sign-up are throttled since 8c4a72f.
 - MUX: optionally assert in `tests/boundaries.test.ts` that the resolved fixtures resolve.
-- MD: the 50 ms render bound in `perf.test.ts` was measured on Apple silicon and may need CI's own figure.
 
 Housekeeping: `peblish_fit_archive` (8.7 GB) dropped; the lane databases and worktrees stay.
+
+## Wave 1 review fixes (2026-11-09)
+
+Branch `mvp-w1`. The review of 71ebf9f went to four fix lanes, each cut from 71ebf9f with a disjoint write set. Each lane's notes gained a "Review fixes (2026-11-09)" section in `/Users/admin/.agents/plans/feddit/lane-notes/wave-1/<lane>.md`. The merges had no conflicts, and neither the lockfile nor this file changed on any branch.
+
+| Lane | Branch           | Commits | Head    | Merge   |
+| ---- | ---------------- | ------- | ------- | ------- |
+| AZ   | `mvp-w1-fix-az`  | 7       | e82c41b | 68d7a6b |
+| FIT  | `mvp-w1-fix-fit` | 8       | 1062c58 | 72262b8 |
+| MD   | `mvp-w1-fix-md`  | 13      | f93eb13 | 6a3e967 |
+| A    | `mvp-w1-fix-a`   | 13      | 73c6dba | f483de7 |
+
+Integration commits, after the merges:
+
+| Commit  | Change                                                                                                                                                                                                                   |
+| ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 4d5d5e3 | Migration `0003_wave_1_fixes` (below)                                                                                                                                                                                    |
+| 07b6d82 | README lock order and the principal refresh comment (`c/authz/principal.ts`) name the self-deletion and self-announcing community exceptions; deploy README: `PEBLISH_TRUSTED_PROXY=traefik` on Easypanel, the SMTP line |
+| (this)  | This section; decision 9 and the open items above corrected                                                                                                                                                              |
+
+Migration `0003_wave_1_fixes`, generated once by drizzle-kit from lane A's tables in `c/identity/tables.ts`:
+
+- `throttles`: scope text, key text, window_start timestamptz, count integer, all NOT NULL; primary key `throttles_scope_key_pk` on scope and key.
+- `totp_steps`: user_id uuid primary key, step bigint NOT NULL; `totp_steps_user_id_auth_user_id_fk` references `auth_user` ON DELETE CASCADE.
+- Nothing else: the 0003 snapshot differs from 0002's only by those two tables. Lane databases built before it (`peblish_a` carries a scratch 0003) fail with `MigrationHistoryError`, and `lane.sh` prints the drop-and-recreate command. `peblish_root` had 0002 only and took 0003 cleanly.
+
+AZ (e82c41b):
+
+| Item | Fix                                                                                                                                                                                                | Commit  |
+| ---- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- |
+| 1    | A remote community acting as itself locks its own row FOR NO KEY UPDATE from the start of the principal refresh                                                                                    | 9375d18 |
+| 2    | `writeModlog` records `details.announcedBy`; `readModlog` shows a relayed reason only when the actor's and the announcing community's instances are both trusted; a missing community fails closed | de9b67d |
+| 3    | Tests: remote moderator freshness in the role table                                                                                                                                                | ccf490a |
+| 4    | A vote on a comment checks the post first                                                                                                                                                          | 1a2be18 |
+| 5    | Tests: an Announce that names a local community row                                                                                                                                                | d15e2c6 |
+| 6    | Tests: the targets of a community ban and unban, as a table                                                                                                                                        | 771ea14 |
+| 7    | Why lock, unlock, pin and unpin refuse a removed or deleted post                                                                                                                                   | e82c41b |
+
+FIT (1062c58):
+
+| Item   | Fix                                                                                                                                                                                                                                                       | Commit           |
+| ------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
+| 1      | The migration 0002 fields go through both directions; corpus and lab-live rebuilt; a Group stays an ActorRecord with Group-only fields; an Image without mediaType gets `url_content_type` `image/*`; missing search consent reads true; nsfl always sent | ebeefa0, 901fef6 |
+| 2      | The archive command exits 1 on an unmappable or undocumented document                                                                                                                                                                                     | 16003c9          |
+| 3      | Manifest fixture paths restricted and kept inside the wire corpus                                                                                                                                                                                         | a41dd1e          |
+| 4      | Embedded activities bounded: `MappingError` past level 3                                                                                                                                                                                                  | 9e9cdf9          |
+| 5      | https-only IRIs, http(s) icons and banners, a bad post link maps to null; `PEBLISH_ALLOW_HTTP_ORIGIN=1` for http in development                                                                                                                           | ca889c3          |
+| 6      | `publicKey.ownerApId` kept; the mapping README's "What the caller checks"                                                                                                                                                                                 | 071f232          |
+| README | Wording                                                                                                                                                                                                                                                   | 1062c58          |
+
+A (73c6dba):
+
+| Item   | Fix                                                                                                                                                                                                           | Commit  |
+| ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- |
+| 1      | A TOTP code is refused on replay, through `totp_steps`                                                                                                                                                        | 9abfd6c |
+| 2      | `safeRedirect(target, origin)`                                                                                                                                                                                | b6d1e0a |
+| 3      | invite.create reads the referrer FOR SHARE                                                                                                                                                                    | 2b8f018 |
+| 4      | Reset mail detached through better-auth's background task handler                                                                                                                                             | 03a9606 |
+| 5      | Recovery codes revealed once                                                                                                                                                                                  | 37d2039 |
+| 6      | A new invite code shown through an encrypted one-time flash; `?created=` gone                                                                                                                                 | 18fd7b3 |
+| 7      | `private, no-store` middleware for the auth, invite, settings and admin route groups; bare group paths 404                                                                                                    | 91bb298 |
+| 8      | `formSession().reply()` forwards refreshed cookies                                                                                                                                                            | 87435a0 |
+| 9      | Negative tests: spent and expired reset links, reused recovery codes, cross-site posts                                                                                                                        | e4827e8 |
+| 10     | Postgres limiter (`throttles`) with `PEBLISH_TRUSTED_PROXY`                                                                                                                                                   | 8c4a72f |
+| 11, 14 | `account.delete` rechecks after locking the owner's row FOR NO KEY UPDATE: the inner mutation is rechecked, the outer one registered without recheck; the delete policy's LEFT JOIN lock split into two reads | 44c9730 |
+| 12     | Invite codes hashed with HMAC under a key derived from `BETTER_AUTH_SECRET`                                                                                                                                   | 5f7f625 |
+| 13     | The `auth.email_unverified` refusal (no policy uses it yet)                                                                                                                                                   | 73c6dba |
+
+MD (f93eb13):
+
+| Item  | Fix                                                                                                                                                                   | Commit  |
+| ----- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- |
+| 1     | Linear text-align match; values over 200 characters skipped                                                                                                           | d9fad5a |
+| 2     | Spoiler marker lines parsed by hand                                                                                                                                   | 01df33b |
+| 3     | Image sizing split at the first `::`                                                                                                                                  | 618bd61 |
+| 4     | Mentions deduped through a Map, capped at `mentionMaxCount = 50` distinct (`packages/schema/src/markdown.ts`)                                                         | 230e17b |
+| 5     | The depth cap counts the tbody and tr a browser inserts; an image at the cap shows only its alt text                                                                  | 0d0b166 |
+| 6     | Highlighting capped at 2,000 characters per block and 8,000 per render; the limits are exported from `highlight.ts`                                                   | b573f94 |
+| 7     | Implied end tags at the innermost written element; 12 malformed-wrapper vectors with a browser round-trip check; the README no longer claims browser tree equivalence | e86ca3d |
+| 8     | Spoiler markers inside fenced code ignored; fences recognised within three columns of the spoiler's indent                                                            | 1bfe1fb |
+| 9     | `tg-spoiler` and `span.spoiler` kept out of the excerpt                                                                                                               | 5d92213 |
+| 10    | `//` and any backslash refused before URL resolution                                                                                                                  | d52f590 |
+| 11    | NUL stripped from the whole input first                                                                                                                               | e24c3fa |
+| extra | Footnotes appended in linear time (`footnotes.ts`)                                                                                                                    | a956ee4 |
+| 12    | A 400 ms ceiling, plus scaling-ratio checks with bound 20, for the sanitiser and the renderer                                                                         | f93eb13 |
+
+MD's timings, before and after: text-align 4,544 ms to 0.6 ms, a padded spoiler 1,090 ms to 0.7 ms, nested spoilers 7,949 ms to 0.5 ms, alt text 947 ms to 1.0 ms, 4,000 mentions 729 ms to 2.8 ms, two java blocks 4,479 ms to 0.3 ms.
+
+For later lanes:
+
+- FED-B builds the self-announced principal as `{ kind: 'remote', actorId: <community>, announcedBy: { communityId: <same>, announceApId } }`. It treats `target.removed` and `target.deleted` on Undo(Lock) and on unpin as no-ops, or restores first. A relayed modlog reason shows only when both instances are trusted. The origin checks in the mapping README's "What the caller checks" are FED-B's.
+- B1, D and FED: mentions, and so ActivityPub tags, stop at 50 distinct.
+- B1 and D: `auth.email_unverified` for post.create and comment.create.
+- Old `throttles` rows are not pruned yet; a later lane adds the job.
+
+Decisions where the brief left room:
+
+1. The migration is named `0003_wave_1_fixes` (`pnpm db:generate --name wave_1_fixes`, one run), after `0002_wave_1`.
+2. The deploy README tells staging and production on Easypanel to set `PEBLISH_TRUSTED_PROXY=traefik`, and adds what that means with Cloudflare proxying in front of Traefik: the address Traefik saw is a Cloudflare edge, so budgets per address apply per edge until the origin takes Cloudflare's traffic alone and the setting moves to `cloudflare`. The SMTP line also covers the verification link sign-up sends, which, like reset mail, fails only into the web log.
+3. The principal refresh comment no longer suggests making its read FOR NO KEY UPDATE when a write body must update the acting actor's row; it points at self-deletion's pattern (lock the row first, then the rechecked inner mutation) instead.
+4. Besides decision 9 and FIT's open item, the A and MD open items the fixes closed are corrected above: the rate limit landed, and MD's 50 ms bound is gone.
+5. The brief counted 14 commits on `mvp-w1-fix-a`; the branch has 13, and every one in its item map is there.
+
+Verification, on this tree (lane root):
+
+- `node_modules` deleted, then `pnpm install --frozen-lockfile`: up to date, no lockfile change.
+- `pnpm check` is green: 1,091 tests in 61 files passed, 1 file and 2 tests skipped (FIT's opt-in build test, which needs the captures, and the archive subset, which needs `FEDDIT_ARCHIVE_DB_URL`), no boundary violations (314 modules), oxlint and Prettier clean. Nothing else ran on the shared Postgres.
+- FIT's build test with `FIXTURE_CAPTURES_DIR` set to the primary checkout's captures: the corpus and lab-live rebuild byte for byte. The archive subset could not run again, since `peblish_fit_archive` was dropped after wave 1.
+- `pnpm db:drift`: none. `scripts/lane.sh root` applied 0003 to `peblish_root` (no MigrationHistoryError).
+- `pnpm e2e` on lane root (port 18399, Mailpit from `compose.yaml`): 33/33 (the 30 from wave 1 and lane A's three new specs).
+- `docker build -t peblish:w1`, then `scripts/image-smoke.sh` against a throwaway `peblish_root_image` (0003 applied; dropped after): the disagreeing command exits 64, migrate, the first admin, worker SIGTERM exit 0, web `/healthz`, `/readyz` and the healthcheck, uid 1000. A rerun on the same database passed too.
+
+Housekeeping: no push; the worktrees, the fix branches, the lane databases (`peblish_a` still carries its scratch 0003) and the `peblish:w1` image tag stay.
