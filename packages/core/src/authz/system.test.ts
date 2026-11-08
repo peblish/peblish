@@ -44,3 +44,18 @@ test('the instance actor gets its endpoints and one RSA-2048 keypair, idempotent
   await ensureLocalInstance(writer(), 'https://feddit.test');
   expect(await db().select().from(actorKeys)).toEqual([key]);
 });
+
+test('a re-run backfills endpoints an earlier bootstrap did not set, and keeps set ones', async () => {
+  await ensureLocalInstance(writer(), 'https://feddit.test');
+  await writer()
+    .update(actors)
+    .set({ inboxUrl: null, outboxUrl: 'https://feddit.test/custom-outbox', sharedInboxUrl: null })
+    .where(eq(actors.kind, 'Application'));
+  await ensureLocalInstance(writer(), 'https://feddit.test');
+  const [instanceActor] = await db().select().from(actors).where(eq(actors.kind, 'Application'));
+  expect(instanceActor).toMatchObject({
+    inboxUrl: 'https://feddit.test/inbox',
+    outboxUrl: 'https://feddit.test/custom-outbox',
+    sharedInboxUrl: 'https://feddit.test/inbox',
+  });
+});

@@ -1,5 +1,5 @@
 import { instanceActorUrls } from '@peblish/schema/actor-urls';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, isNull, or, sql } from 'drizzle-orm';
 import { newRsaKeyPair } from '../actor-keys.ts';
 import { canonicalOrigin } from '../config.ts';
 import { actorKeys, actors } from './tables/actors.ts';
@@ -9,7 +9,8 @@ import type { Writer } from './write.ts';
 /**
  * Creates the local instance row and the instance actor (kind Application, ap_id at the
  * origin's root, named after the host, with its inbox, outbox and shared inbox and an
- * RSA-2048 keypair) for `origin` once, and refuses a different canonical
+ * RSA-2048 keypair) for `origin` once, backfills missing endpoints on an instance actor
+ * created before it had them (set ones are kept), and refuses a different canonical
  * origin later (another host, or the same host under another scheme). A cutover import runs
  * migrate without PUBLIC_ORIGIN and inserts both from the archive instead, so the imported
  * instance actor keeps its URL and key.
@@ -40,6 +41,15 @@ export async function ensureLocalInstance(db: Writer, origin: string): Promise<v
       .from(actors)
       .where(and(eq(actors.local, true), eq(actors.kind, 'Application')));
     if (!instanceActor) throw new Error('the instance actor is missing');
+    // An instance actor bootstrapped before it had endpoints gets them; set ones are kept.
+    await tx
+      .update(actors)
+      .set({
+        inboxUrl: sql`coalesce(${actors.inboxUrl}, ${urls.inbox})`,
+        outboxUrl: sql`coalesce(${actors.outboxUrl}, ${urls.outbox})`,
+        sharedInboxUrl: sql`coalesce(${actors.sharedInboxUrl}, ${urls.sharedInbox})`,
+      })
+      .where(and(eq(actors.id, instanceActor.id), or(isNull(actors.inboxUrl), isNull(actors.outboxUrl), isNull(actors.sharedInboxUrl))));
     const [key] = await tx
       .select({ id: actorKeys.id })
       .from(actorKeys)
