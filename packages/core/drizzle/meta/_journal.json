@@ -15,6 +15,13 @@
       "when": 1794128586394,
       "tag": "0001_identity_spine",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1794130287341,
+      "tag": "0002_age_declarations",
+      "breakpoints": true
     }
   ]
 }
