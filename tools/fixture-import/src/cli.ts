@@ -14,7 +14,8 @@ import { findSecrets } from './secrets.ts';
 //   vocabulary does not document, or when any output would hold a secret.
 // node tools/fixture-import/src/cli.ts archive
 //   Reads the archive subset from FEDDIT_ARCHIVE_DB_URL, runs the same round trip and prints
-//   the schema deltas table. Writes nothing.
+//   the schema deltas table. Writes nothing. Exits 1 when a document could not map or a
+//   difference is undocumented, as the opt-in archive test fails.
 
 const usage = 'usage: node tools/fixture-import/src/cli.ts build [--captures <dir>] | archive';
 const { positionals, values } = parseArgs({ allowPositionals: true, options: { captures: { type: 'string' } } });
@@ -61,11 +62,12 @@ async function main(): Promise<number> {
       console.error('FEDDIT_ARCHIVE_DB_URL is unset: point it at the restored PieFed archive (peblish_fit_archive)');
       return 1;
     }
-    const { runArchive, deltasTable } = await import('./archive.ts');
+    const { archiveFailures, deltasTable, runArchive } = await import('./archive.ts');
     const report = await runArchive(url);
     console.log(deltasTable(report));
-    if (report.undocumented.length > 0) {
-      console.error(`undocumented differences:\n${report.undocumented.join('\n')}`);
+    const failures = archiveFailures(report);
+    if (failures.length > 0) {
+      console.error(`the archive round trip failed:\n${failures.join('\n')}`);
       return 1;
     }
     return 0;

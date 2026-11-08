@@ -313,7 +313,12 @@ export async function runArchive(url: string): Promise<ArchiveReport> {
   }
 }
 
-/** The schema deltas the archive shows, as a Markdown table (pasted into LANE-NOTES.md). */
+/** Why the archive run fails, if it does: documents that could not map and differences no vocabulary entry documents. */
+export function archiveFailures(report: Pick<ArchiveReport, 'unmappable' | 'undocumented'>): string[] {
+  return [...report.unmappable.map((line) => `unmappable ${line}`), ...report.undocumented.map((line) => `undocumented ${line}`)];
+}
+
+/** The schema deltas the archive shows, as a Markdown table (for the lane notes). */
 export function deltasTable(report: ArchiveReport): string {
   const lines = [
     `Archive subset: ${report.documents} documents (${[...report.bySoftware].map(([label, count]) => `${count} ${label}`).join(', ')}).`,
