@@ -3,6 +3,7 @@ import type { RefusalReason } from '@peblish/schema/refusal';
 import type { AssertNever, Overlap } from '@peblish/schema/registry';
 import type { Queryable } from '../db/read.ts';
 import type { policies, policyAreas } from '../registry/policies.gen.ts';
+import type { Frozen } from './frozen.ts';
 
 // Owned by lane AZ after G0. A policy decides one action. Policies are registered by glob
 // from authz/actions/<area>.ts (each exports `policies`, owned by the area's lane); the
@@ -11,9 +12,10 @@ import type { policies, policyAreas } from '../registry/policies.gen.ts';
 export type PolicyResult = { ok: true; authority: Authority } | { ok: false; reason: RefusalReason };
 
 export type PolicyRequest<S> = {
-  principal: ActingPrincipal;
+  /** Frozen snapshots taken before the policy runs; the grant stores the same objects. */
+  principal: Frozen<ActingPrincipal>;
   /** What the action applies to; the grant carries it so a service cannot swap targets. */
-  subject: S;
+  subject: Frozen<S>;
   /** Read inside the caller's transaction when one is open, else the read pool. */
   db: Queryable;
 };

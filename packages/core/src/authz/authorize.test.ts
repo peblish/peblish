@@ -72,4 +72,33 @@ describe('authorize', () => {
     const voteGrant = await authorize('vote.cast', localUser(andrew.id), { target: { kind: 'post', id: community.id } });
     expect(voteGrant).toEqual({ ok: false, reason: 'target.not_found' });
   });
+
+  test("changing the caller's objects after authorize() changes neither the grant nor the write", async () => {
+    const local = await seedInstance('feddit.test');
+    const andrew = await seedActor(local, 'Person', 'Andrew');
+    const mallory = await seedActor(local, 'Person', 'mallory');
+    const community = await seedActor(local, 'Group', 'announcements');
+    const otherCommunity = await seedActor(local, 'Group', 'elsewhere');
+    const principal: { kind: 'local'; actorId: string; siteRole: 'user' | 'admin' } = {
+      kind: 'local',
+      actorId: andrew.id,
+      siteRole: 'user',
+    };
+    const subject = { communityId: community.id };
+    const decision = await authorize('post.create', principal, subject);
+    if (!decision.ok) throw new Error(decision.reason);
+    principal.actorId = mallory.id;
+    principal.siteRole = 'admin';
+    subject.communityId = otherCommunity.id;
+
+    const { grant } = decision;
+    expect(grant.principal).toEqual({ kind: 'local', actorId: andrew.id, siteRole: 'user' });
+    expect(grant.subject).toEqual({ communityId: community.id });
+    for (const part of [grant.principal, grant.subject, grant.authority]) expect(Object.isFrozen(part)).toBe(true);
+    expect(() => Object.assign(grant.subject, { communityId: otherCommunity.id })).toThrow(TypeError);
+
+    const { id } = await createPost(grant, { title: 'Still mine' });
+    const [post] = await tx(async (t) => t.db.select().from(posts).where(eq(posts.id, id)));
+    expect(post).toMatchObject({ authorId: andrew.id, communityId: community.id });
+  });
 });
