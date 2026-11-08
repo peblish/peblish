@@ -1,14 +1,19 @@
 import { editable, type Fetch } from './fetch.ts';
 
 /**
- * The security baseline on every HTML response (src/server.ts). Lanes extend it here. The
- * CSP is report-only until the pages' sources are known; a route that sets one of these
- * headers itself keeps its own value.
+ * The security baseline on every HTML response (src/server.ts). Lanes extend it here. A route
+ * that sets one of these headers itself keeps its own value.
+ *
+ * Framing is refused for real: browsers ignore frame-ancestors in a report-only policy, so
+ * it is enforced on its own, with X-Frame-Options for browsers that predate it. The fuller
+ * policy stays report-only until the pages' script, style and media sources are known.
  */
 export const securityHeaders = {
   'x-content-type-options': 'nosniff',
   'referrer-policy': 'strict-origin-when-cross-origin',
-  'content-security-policy-report-only': "frame-ancestors 'none'",
+  'content-security-policy': "frame-ancestors 'none'",
+  'x-frame-options': 'DENY',
+  'content-security-policy-report-only': "default-src 'self'; frame-ancestors 'none'; object-src 'none'; base-uri 'self'",
   'permissions-policy': 'camera=(), microphone=(), geolocation=()',
 };
 

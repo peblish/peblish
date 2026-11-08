@@ -11,6 +11,12 @@ test('HTML responses get the baseline', async () => {
   expect(await response.text()).toBe('body');
 });
 
+test('framing is refused by an enforcing policy, not only a report-only one', async () => {
+  const response = await respond('text/html')(request);
+  expect(response.headers.get('content-security-policy')).toBe("frame-ancestors 'none'");
+  expect(response.headers.get('x-frame-options')).toBe('DENY');
+});
+
 test('other responses are left alone, and a route keeps its own value', async () => {
   expect((await respond('application/json')(request)).headers.get('x-content-type-options')).toBeNull();
   const own = await respond('text/html', { 'referrer-policy': 'no-referrer' })(request);

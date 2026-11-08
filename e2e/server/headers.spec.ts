@@ -6,7 +6,10 @@ test('HTML pages carry the security headers', async ({ request }) => {
   expect(headers).toMatchObject({
     'x-content-type-options': 'nosniff',
     'referrer-policy': 'strict-origin-when-cross-origin',
-    'content-security-policy-report-only': "frame-ancestors 'none'",
+    // Enforced: a report-only frame-ancestors does not stop framing.
+    'content-security-policy': "frame-ancestors 'none'",
+    'x-frame-options': 'DENY',
   });
+  expect(headers['content-security-policy-report-only']).toContain("default-src 'self'");
   expect(headers['permissions-policy']).toContain('camera=()');
 });
