@@ -21,6 +21,8 @@ export const ModAction = type({
   /** Statement of reasons shown to the affected user. */
   reason: 'string | null',
   authority: Authority,
+  /** False keeps the row out of the public modlog. */
+  public: 'boolean',
   createdAt: 'Date',
 });
 export type ModAction = typeof ModAction.infer;
@@ -46,7 +48,7 @@ export type BanInput = typeof BanInput.infer;
 
 /** Extra facts kept in modlog.details; other writers may add keys, which readers ignore. */
 export const ModlogDetails = type({
-  /** False keeps the row out of the public modlog; true when absent. */
+  /** False keeps the row out of the public modlog; true when absent. writeModlog copies it to modlog.public, which the read model filters on. */
   'public?': 'boolean',
   /** Bans: when the ban ends, null for permanent. */
   'expiresAt?': IsoDate.or('null'),

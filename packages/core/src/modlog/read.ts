@@ -1,11 +1,9 @@
 import { ModlogDetails, ModlogFilter, type ModlogAudience, type ModlogEntry } from '@peblish/schema/modlog';
 import { Authority } from '@peblish/schema/authz';
-import { and, desc, eq, gte, lt, sql, type SQL } from 'drizzle-orm';
+import { and, desc, eq, gte, lt, type SQL } from 'drizzle-orm';
 import { localInstance } from '../db/local-instance.ts';
 import { db as readDb, type Queryable } from '../db/read.ts';
 import { modlog } from '../db/tables/moderation.ts';
-
-const isPublic = sql`coalesce((${modlog.details}->>'public')::boolean, true)`;
 
 /** The host an actor's ap_id lives on, or null when it is not a URL. */
 const hostOf = (apId: string) => URL.parse(apId)?.host ?? null;
@@ -29,7 +27,7 @@ export async function readModlog(
   if (action) conditions.push(eq(modlog.action, action));
   if (since) conditions.push(gte(modlog.createdAt, new Date(since)));
   if (until) conditions.push(lt(modlog.createdAt, new Date(until)));
-  if (options.audience === 'public') conditions.push(isPublic);
+  if (options.audience === 'public') conditions.push(eq(modlog.public, true));
   const rows = await q
     .select()
     .from(modlog)
@@ -59,7 +57,7 @@ export async function readModlog(
       reasonWithheld: !shown && row.reason !== null,
       authority: Authority.assert(row.authority),
       details,
-      public: details.public ?? true,
+      public: row.public,
       createdAt: row.createdAt.toISOString(),
     };
   });

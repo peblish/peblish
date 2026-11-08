@@ -135,6 +135,8 @@ describe('migration 0001 identity spine', () => {
       .values({ subjectKind: 'post', subjectId: '0192f5a0-0000-7000-8000-000000000001', reason: 'test' });
     for (const statement of [
       writer().update(modlog).set({ reason: 'changed' }),
+      // modlog.public came in 0002; the trigger compares every column but the references.
+      writer().update(modlog).set({ public: false }),
       writer().delete(modlog),
       writer().execute(sql`truncate modlog`),
       writer().update(deletionLedger).set({ reason: 'changed' }),

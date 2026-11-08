@@ -4,6 +4,7 @@ import { writer } from '../db/write.ts';
 import { truncateAll } from '../testing/db.ts';
 import { seedActor, seedInstance } from '../testing/seed.ts';
 import { readModlog } from './read.ts';
+import { writeModlog } from './write.ts';
 
 beforeEach(truncateAll);
 
@@ -59,13 +60,11 @@ test('filters by community, actor, action and time range [since, until), newest 
 test('the public audience sees only public entries; staff see all', async () => {
   const { moderator, announcements, entry } = await setup();
   const open = await entry({ action: 'mod.remove', actor: moderator, community: announcements, at: '2026-11-01T10:00:00Z' });
-  const sensitive = await entry({
-    action: 'mod.remove',
-    actor: moderator,
-    community: announcements,
-    at: '2026-11-02T10:00:00Z',
-    details: { public: false },
-  });
+  // Through writeModlog, which copies details.public into the column the read model filters on.
+  const grant = { action: 'mod.remove', actorId: moderator.id, authority: { kind: 'site-admin', actorId: moderator.id } } as const;
+  const sensitive = await writer().transaction((t) =>
+    writeModlog(t, grant, { community: announcements, target: null, reason: null, details: { public: false } }),
+  );
   expect((await readModlog({}, { audience: 'public' })).map(({ id, public: shown }) => ({ id, shown }))).toEqual([
     { id: open, shown: true },
   ]);

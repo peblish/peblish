@@ -25,8 +25,15 @@ export const Actor = type({
   inboxUrl: 'string | null',
   sharedInboxUrl: 'string | null',
   sensitive: 'boolean',
+  /** Not safe for life (PieFed's nsfl); on a Group it marks every post. */
+  nsfl: 'boolean',
+  /** Search consent: false opts the actor out of discovery and of search indexing. */
+  discoverable: 'boolean',
+  indexable: 'boolean',
   /** Group only: only moderators may post (lane F enforces it in authz). */
   postingRestrictedToMods: 'boolean',
+  /** Group only: shown in the composer before posting. */
+  postingWarning: 'string | null',
   deletedAt: 'Date | null',
 });
 export type Actor = typeof Actor.infer;
@@ -37,9 +44,15 @@ export const Post = type({
   communityId: Uuid,
   title: 'string',
   url: 'string | null',
+  /** MIME type of what url points at; an image type makes it an image post. */
+  urlContentType: 'string | null',
+  altText: 'string | null',
+  /** Link preview image. */
+  thumbnailUrl: 'string | null',
   bodyMd: 'string | null',
   contentHtml: 'string | null',
   sensitive: 'boolean',
+  nsfl: 'boolean',
   locked: 'boolean',
   publishedAt: 'Date',
   editedAt: 'Date | null',

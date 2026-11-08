@@ -1,5 +1,5 @@
 {
-  "id": "c1413a29-9fef-4063-ac84-74136f9b14b5",
+  "id": "d4a7f952-a9d3-48ce-a697-313dbd6e35ed",
   "prevId": "c2949151-2339-4258-a4d4-2251b40a2fa8",
   "version": "7",
   "dialect": "postgresql",
@@ -228,6 +228,13 @@
           "notNull": true,
           "default": false
         },
+        "nsfl": {
+          "name": "nsfl",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
         "bot": {
           "name": "bot",
           "type": "boolean",
@@ -235,12 +242,32 @@
           "notNull": true,
           "default": false
         },
+        "discoverable": {
+          "name": "discoverable",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        },
+        "indexable": {
+          "name": "indexable",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        },
         "posting_restricted_to_mods": {
           "name": "posting_restricted_to_mods",
           "type": "boolean",
           "primaryKey": false,
           "notNull": true,
           "default": false
+        },
+        "posting_warning": {
+          "name": "posting_warning",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
         },
         "user_id": {
           "name": "user_id",
@@ -401,6 +428,53 @@
           "value": "\"actors\".\"user_id\" is null or (\"actors\".\"local\" and \"actors\".\"kind\" = 'Person')"
         }
       },
+      "isRLSEnabled": false
+    },
+    "public.community_languages": {
+      "name": "community_languages",
+      "schema": "",
+      "columns": {
+        "community_id": {
+          "name": "community_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "language": {
+          "name": "language",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "community_languages_community_id_actors_id_fk": {
+          "name": "community_languages_community_id_actors_id_fk",
+          "tableFrom": "community_languages",
+          "tableTo": "actors",
+          "columnsFrom": [
+            "community_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "community_languages_community_id_language_pk": {
+          "name": "community_languages_community_id_language_pk",
+          "columns": [
+            "community_id",
+            "language"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
       "isRLSEnabled": false
     },
     "public.auth_account": {
@@ -1211,6 +1285,24 @@
           "primaryKey": false,
           "notNull": false
         },
+        "url_content_type": {
+          "name": "url_content_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "alt_text": {
+          "name": "alt_text",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "thumbnail_url": {
+          "name": "thumbnail_url",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "body_md": {
           "name": "body_md",
           "type": "text",
@@ -1231,6 +1323,13 @@
         },
         "sensitive": {
           "name": "sensitive",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "nsfl": {
+          "name": "nsfl",
           "type": "boolean",
           "primaryKey": false,
           "notNull": true,
@@ -2502,6 +2601,13 @@
           "primaryKey": false,
           "notNull": false
         },
+        "public": {
+          "name": "public",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -3307,6 +3413,185 @@
             "id"
           ],
           "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.community_bans": {
+      "name": "community_bans",
+      "schema": "",
+      "columns": {
+        "community_id": {
+          "name": "community_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "actor_id": {
+          "name": "actor_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "reason": {
+          "name": "reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "expires_at": {
+          "name": "expires_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "banned_by": {
+          "name": "banned_by",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "community_bans_actor": {
+          "name": "community_bans_actor",
+          "columns": [
+            {
+              "expression": "actor_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "community_bans_community_id_actors_id_fk": {
+          "name": "community_bans_community_id_actors_id_fk",
+          "tableFrom": "community_bans",
+          "tableTo": "actors",
+          "columnsFrom": [
+            "community_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "community_bans_actor_id_actors_id_fk": {
+          "name": "community_bans_actor_id_actors_id_fk",
+          "tableFrom": "community_bans",
+          "tableTo": "actors",
+          "columnsFrom": [
+            "actor_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "community_bans_banned_by_actors_id_fk": {
+          "name": "community_bans_banned_by_actors_id_fk",
+          "tableFrom": "community_bans",
+          "tableTo": "actors",
+          "columnsFrom": [
+            "banned_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "community_bans_community_id_actor_id_pk": {
+          "name": "community_bans_community_id_actor_id_pk",
+          "columns": [
+            "community_id",
+            "actor_id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.community_removals": {
+      "name": "community_removals",
+      "schema": "",
+      "columns": {
+        "community_id": {
+          "name": "community_id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "reason": {
+          "name": "reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "removed_by": {
+          "name": "removed_by",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "removed_at": {
+          "name": "removed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "community_removals_community_id_actors_id_fk": {
+          "name": "community_removals_community_id_actors_id_fk",
+          "tableFrom": "community_removals",
+          "tableTo": "actors",
+          "columnsFrom": [
+            "community_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "community_removals_removed_by_actors_id_fk": {
+          "name": "community_removals_removed_by_actors_id_fk",
+          "tableFrom": "community_removals",
+          "tableTo": "actors",
+          "columnsFrom": [
+            "removed_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
           "onUpdate": "no action"
         }
       },

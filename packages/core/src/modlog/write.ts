@@ -22,6 +22,7 @@ export type ModlogEntryInput = {
  * Appends the modlog row for a moderation mutation, inside its transaction (pass t.db): the
  * action, actor and authority come from the grant, so the log records exactly what was
  * authorized. Every mod.* mutation calls it once and puts the returned id in its event.
+ * `details.public: false` also sets the modlog.public column the read model filters on.
  */
 export async function writeModlog(
   db: WriteTx,
@@ -31,6 +32,7 @@ export async function writeModlog(
   const [actor] = await db.select({ apId: actors.apId }).from(actors).where(eq(actors.id, grant.actorId));
   if (!actor) throw new Error(`modlog: no actor ${grant.actorId}`);
   const id = uuidv7();
+  const details = ModlogDetails.assert(entry.details ?? {});
   await db.insert(modlog).values({
     id,
     action: grant.action,
@@ -44,8 +46,9 @@ export async function writeModlog(
     targetApId: entry.target?.apId ?? null,
     reason: entry.reason,
     authority: grant.authority,
-    details: ModlogDetails.assert(entry.details ?? {}),
+    details,
     activityApId: entry.activityApId ?? null,
+    public: details.public ?? true,
   });
   return id;
 }
