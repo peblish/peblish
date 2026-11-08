@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { diff } from '../test/diff.ts';
 import { activityToWire, announceJson } from './activity.ts';
 import { actorFromWire } from './actor.ts';
@@ -144,5 +144,46 @@ describe('actor edits', () => {
       activity: { type: 'Update', object: { type: 'Actor', actor: { kind: 'Group', name: 'lab' } } },
     });
     expect(diff(update, toWire(mapped))).toEqual([]);
+  });
+});
+
+describe('URL schemes', () => {
+  afterEach(() => vi.unstubAllEnvs());
+  const person = { type: 'Person', id: 'https://x.test/u/a', preferredUsername: 'a', inbox: 'https://x.test/u/a/inbox' };
+  const page = { type: 'Page', id: 'https://x.test/post/1', attributedTo: person.id, name: 'x', audience: 'https://x.test/c/lab' };
+  const unsafe = ['javascript:alert(1)', 'data:text/html,<b>x</b>', 'file:///etc/passwd'];
+
+  it('accepts only https ids, inboxes, collections and addresses', () => {
+    for (const value of [...unsafe, 'http://x.test/u/a']) {
+      expect(() => actorFromWire({ ...person, id: value })).toThrow(/actor: id must be an https URL/);
+      expect(() => actorFromWire({ ...person, inbox: value })).toThrow(/actor: inbox must be an https URL/);
+      expect(() => actorFromWire({ ...person, followers: value })).toThrow(/actor: followers must be an https URL/);
+      expect(() => postFromPage({ ...page, cc: [value] })).toThrow(/Page: cc.* must be an https URL/);
+      expect(() => fromWire({ type: 'Like', id: 'https://x.test/like/1', actor: value, object: page.id })).toThrow(MappingError);
+    }
+    const { audience, ...addressedByTo } = page;
+    expect(postFromPage({ ...addressedByTo, to: ['as:Public', audience] }).communityApId).toBe(audience);
+  });
+
+  it('accepts http only in local development, for a localhost or .test host', () => {
+    vi.stubEnv('PEBLISH_ALLOW_HTTP_ORIGIN', '1');
+    expect(actorFromWire({ ...person, id: 'http://x.test/u/a' }).apId).toBe('http://x.test/u/a');
+    expect(() => actorFromWire({ ...person, id: 'http://example.org/u/a' })).toThrow(/must be an https URL/);
+    expect(() => actorFromWire({ ...person, id: 'javascript:alert(1)' })).toThrow(/must be an https URL/);
+  });
+
+  it('accepts http(s) icons and banners only', () => {
+    expect(actorFromWire({ ...person, icon: { type: 'Image', url: 'http://img.example/a.png' } }).iconUrl).toBe('http://img.example/a.png');
+    for (const value of unsafe) {
+      expect(() => actorFromWire({ ...person, icon: { type: 'Image', url: value } })).toThrow(/actor: icon.url must be an http\(s\) URL/);
+      expect(() => actorFromWire({ ...person, image: { type: 'Image', url: value } })).toThrow(/actor: image.url must be an http\(s\) URL/);
+    }
+  });
+
+  it('maps a post link that is not http(s) to no link instead of refusing the post', () => {
+    const link = (href: string) => postFromPage({ ...page, attachment: [{ type: 'Link', href }] }).url;
+    expect(link('http://example.org/a')).toBe('http://example.org/a');
+    expect(link('https://example.org/a')).toBe('https://example.org/a');
+    for (const value of [...unsafe, 'not a url']) expect(link(value)).toBeNull();
   });
 });

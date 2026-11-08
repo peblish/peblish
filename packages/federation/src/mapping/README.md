@@ -15,6 +15,16 @@ to other rows as ap_ids; the store resolves those, assigns ids and keeps `raw` a
 | `language.ts` | `language` objects and `contentMap`                                                                           |
 
 A document the mapping cannot read throws `MappingError` naming the field or the problem.
+Besides a wrong shape, it refuses:
+
+- **A URL scheme other than https** in an IRI: ids, inboxes, outboxes, collections, key ids
+  and owners, references and addressing (`Iri` in `wire.ts`). Plain http passes only in local
+  development, under the instance origin's rule: `PEBLISH_ALLOW_HTTP_ORIGIN=1` and a
+  localhost or `*.test` host. Actor icons and banners may be http or https. A post's link or
+  preview image in another scheme (`javascript:`, `data:`, `file:`) maps to `null` instead,
+  so the post still arrives without it (`webUrl()`).
+- **Activities nested more than three levels** below the top-level one; Announce(Undo(Like))
+  uses two (`activityFromWire()`).
 
 peblish speaks the Lemmy 0.19 dialect to every peer, because every threadiverse server reads
 it. The round-trip tests (`../test/roundtrip.test.ts`) map each captured document in
@@ -30,8 +40,9 @@ Each item: the difference, who shows it, and where the mapping deals with it.
   expands JSON-LD; outbound sends `LEMMY_CONTEXT` on the top-level document only
   (`vocabulary.ts`, `toWire`).
 - **One value or an array.** Fedify collapses one-element arrays; Lemmy sends arrays and its
-  parser requires them in places (`attachment`, the `to` and `cc` of Create). `Iris` and
-  `many()` read both (`wire.ts`); outbound always sends arrays.
+  parser requires them in places (`attachment`, the `to` and `cc` of Create). The address
+  schemas and `many()` read both (`wire.ts`); outbound always sends arrays. Some peers name the
+  Public collection `as:Public` or `Public`; `isPublic()` reads all three.
 - **The community of a post or comment.** `audience` (Lemmy, PieFed, Mbin), else the Group in
   `to` and `cc`: `communityOf()` in `content.ts`.
 - **A Group's moderators collection.** `attributedTo` (Lemmy), `moderators` (Mbin), both

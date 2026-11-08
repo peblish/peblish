@@ -1,8 +1,8 @@
 import { compact, MappingError, parse, type JsonObject } from './json.ts';
 import { languageFromWire, languageToWire } from './language.ts';
 import type { CommentRecord, PostRecord } from './records.ts';
-import { PUBLIC } from './vocabulary.ts';
-import { many, refId, WireNote, WirePage } from './wire.ts';
+import { isPublic, PUBLIC } from './vocabulary.ts';
+import { many, refId, webUrl, WireNote, WirePage } from './wire.ts';
 
 const date = (value: string | undefined) => (value === undefined ? null : new Date(value));
 const markdown = (source: { content: string; mediaType: string } | null | undefined) =>
@@ -23,10 +23,14 @@ function author(attributedTo: WirePage['attributedTo']): string {
 export function communityOf(object: { audience?: string | null; to?: unknown; cc?: unknown }, authorApId: string): string | null {
   if (object.audience) return object.audience;
   const addresses = [...many(object.to), ...many(object.cc)].filter((value): value is string => typeof value === 'string');
-  return addresses.find((address) => address !== PUBLIC && address !== authorApId && !address.endsWith('/followers')) ?? null;
+  return addresses.find((address) => !isPublic(address) && address !== authorApId && !address.endsWith('/followers')) ?? null;
 }
 
-/** Page (or Article, Video) to a posts row. The link of a link post is the first Link (or Image) attachment, as Lemmy reads it. */
+/**
+ * Page (or Article, Video) to a posts row. The link of a link post is the first Link (or Image)
+ * attachment, as Lemmy reads it; a link that is not http(s) (javascript:, data:, file:) maps to
+ * no link, so the post still arrives.
+ */
 export function postFromPage(json: unknown): PostRecord {
   const page = parse(WirePage, json, 'Page');
   const authorApId = author(page.attributedTo);
@@ -38,7 +42,7 @@ export function postFromPage(json: unknown): PostRecord {
     authorApId,
     communityApId,
     title: page.name,
-    url: link?.href ?? link?.url ?? null,
+    url: webUrl(link?.href ?? link?.url),
     bodyMd: markdown(page.source),
     contentHtml: page.content ?? null,
     language: languageFromWire(page.language, page.contentMap),
