@@ -31,6 +31,8 @@ const fixtures: Record<string, string> = {
   'packages/core/src/__fixtures__/imports-fixture.ts': 'no-test-helpers-in-product',
   'packages/core/src/outbox/__fixtures__/reexports-writer.ts': 'no-guarded-reexports',
   'packages/core/src/__fixtures__/cycle-a.ts': 'no-circular',
+  'packages/core/src/__fixtures__/imports-tool.ts': 'nothing-imports-tools',
+  'packages/core/src/__fixtures__/imports-missing.ts': 'not-to-unresolvable',
 };
 /** Fixtures that must pass: the exemptions the rules promise. */
 const allowed = ['packages/core/src/__fixtures__/writes-by-type.ts'];
@@ -43,7 +45,7 @@ async function violations(files: string[], { fixtures = false } = {}) {
     // Fixture runs follow fixture-to-fixture imports (the cycle), which the normal run does not.
     const { output } = await cruise(files, fixtures ? { ...options, doNotFollow: { path: ['node_modules'] } } : options);
     if (typeof output === 'string') throw new Error('expected a cruise result');
-    return output.summary.violations.filter(({ rule }) => rule.name !== 'not-to-unresolvable');
+    return output.summary.violations;
   } finally {
     process.chdir(cwd);
   }
@@ -56,6 +58,13 @@ describe('package boundaries', () => {
 
   test.each(allowed)('%s passes', async (file) => {
     expect(await violations([file], { fixtures: true })).toEqual([]);
+  });
+
+  test('every rule has a fixture that fails it', async () => {
+    const options = await extractDepcruiseOptions(join(root, '.dependency-cruiser.cjs'));
+    const rules = (options.ruleSet?.forbidden ?? []).map(({ name }) => name);
+    expect(rules.length).toBeGreaterThan(10);
+    expect(rules.filter((name) => !Object.values(fixtures).includes(name ?? ''))).toEqual([]);
   });
 
   for (const [file, rule] of Object.entries(fixtures)) {
