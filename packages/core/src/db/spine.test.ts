@@ -129,7 +129,7 @@ describe('migration 0001 identity spine', () => {
   test('the modlog and the deletion ledger refuse update, delete and truncate', async () => {
     await writer()
       .insert(modlog)
-      .values({ action: 'mod.remove', authority: { kind: 'site-admin' } });
+      .values({ action: 'mod.remove', actorApId: 'https://feddit.test/u/Andrew', authority: { kind: 'site-admin' } });
     await writer()
       .insert(deletionLedger)
       .values({ subjectKind: 'post', subjectId: '0192f5a0-0000-7000-8000-000000000001', reason: 'test' });
@@ -145,36 +145,108 @@ describe('migration 0001 identity spine', () => {
     }
   });
 
-  test('the modlog outlives purged content: references go null, ap_ids stay', async () => {
-    const local = await seedInstance('feddit.test');
-    const moderator = await seedActor(local, 'Person', 'Andrew');
-    const community = await seedActor(local, 'Group', 'announcements');
-    const [post] = await writer()
-      .insert(posts)
-      .values({
-        apId: 'https://feddit.test/ap/post/9',
-        local: true,
-        instanceId: local.id,
-        authorId: moderator.id,
-        communityId: community.id,
-        title: 't',
-        publishedAt: new Date(),
-      })
-      .returning();
-    await writer()
-      .insert(modlog)
-      .values({
-        action: 'mod.remove',
-        actorId: moderator.id,
-        actorApId: moderator.apId,
-        communityId: community.id,
-        targetPostId: post!.id,
-        targetApId: post!.apId,
-        authority: { kind: 'site-admin', actorId: moderator.id },
-      });
-    await writer().delete(posts).where(eq(posts.id, post!.id));
-    const [entry] = await db().select().from(modlog);
-    expect(entry).toMatchObject({ targetPostId: null, targetApId: post!.apId, actorId: moderator.id, communityId: community.id });
+  describe('the modlog outlives purges and refuses tampering', () => {
+    async function logged() {
+      const local = await seedInstance('feddit.test');
+      const moderator = await seedActor(local, 'Person', 'Andrew');
+      const target = await seedActor(local, 'Person', 'troll');
+      const community = await seedActor(local, 'Group', 'announcements');
+      const otherActor = await seedActor(local, 'Person', 'bystander');
+      const otherCommunity = await seedActor(local, 'Group', 'elsewhere');
+      const [post] = await writer()
+        .insert(posts)
+        .values({
+          apId: 'https://feddit.test/ap/post/9',
+          local: true,
+          instanceId: local.id,
+          authorId: target.id,
+          communityId: community.id,
+          title: 't',
+          publishedAt: new Date(),
+        })
+        .returning();
+      const [comment] = await writer()
+        .insert(comments)
+        .values({
+          apId: 'https://feddit.test/ap/comment/9',
+          local: true,
+          instanceId: local.id,
+          postId: post!.id,
+          authorId: target.id,
+          path: 'c9',
+          publishedAt: new Date(),
+        })
+        .returning();
+      const entry = (values: Partial<typeof modlog.$inferInsert>) =>
+        writer()
+          .insert(modlog)
+          .values({
+            action: 'mod.remove',
+            actorId: moderator.id,
+            actorApId: moderator.apId,
+            communityId: community.id,
+            communityApId: community.apId,
+            authority: { kind: 'site-admin', actorId: moderator.id },
+            ...values,
+          })
+          .returning()
+          .then(([row]) => row!);
+      return { moderator, target, community, otherActor, otherCommunity, post: post!, comment: comment!, entry };
+    }
+    const reread = async (id: string) => (await db().select().from(modlog).where(eq(modlog.id, id)))[0];
+
+    test('a purge nulls the reference and keeps the ap_id: post, comment, actor, community', async () => {
+      const { moderator, target, community, post, comment, entry } = await logged();
+      const onPost = await entry({ targetPostId: post.id, targetApId: post.apId });
+      const onComment = await entry({ targetCommentId: comment.id, targetApId: comment.apId });
+      const onActor = await entry({ targetActorId: target.id, targetApId: target.apId });
+
+      await writer().delete(comments).where(eq(comments.id, comment.id));
+      expect(await reread(onComment.id)).toMatchObject({ targetCommentId: null, targetApId: comment.apId });
+      await writer().delete(posts).where(eq(posts.id, post.id));
+      expect(await reread(onPost.id)).toMatchObject({ targetPostId: null, targetApId: post.apId });
+      await writer().delete(actors).where(eq(actors.id, target.id));
+      expect(await reread(onActor.id)).toMatchObject({ targetActorId: null, targetApId: target.apId });
+      await writer().delete(actors).where(eq(actors.id, moderator.id));
+      await writer().delete(actors).where(eq(actors.id, community.id));
+      for (const { id } of [onPost, onComment, onActor]) {
+        expect(await reread(id)).toMatchObject({
+          actorId: null,
+          actorApId: moderator.apId,
+          communityId: null,
+          communityApId: community.apId,
+        });
+      }
+    });
+
+    test('re-pointing a reference, or nulling one whose row still exists, is refused', async () => {
+      const { target, otherActor, otherCommunity, entry } = await logged();
+      const row = await entry({ targetActorId: target.id, targetApId: target.apId });
+      for (const change of [
+        { communityId: otherCommunity.id },
+        { actorId: otherActor.id },
+        { targetActorId: otherActor.id },
+        { communityId: null },
+        { actorId: null },
+        { targetActorId: null },
+      ]) {
+        expect(await failure(writer().update(modlog).set(change).where(eq(modlog.id, row.id)))).toMatchObject({ code: '23000' });
+      }
+      expect(await reread(row.id)).toMatchObject({ communityId: row.communityId, actorId: row.actorId, targetActorId: target.id });
+    });
+
+    test('every set reference needs its ap_id', async () => {
+      const { target, entry } = await logged();
+      expect(await failure(entry({ communityApId: null }))).toMatchObject({ constraint: 'modlog_community_ap_id' });
+      expect(await failure(entry({ targetActorId: target.id }))).toMatchObject({ constraint: 'modlog_target_ap_id' });
+      expect(
+        await failure(
+          writer()
+            .insert(modlog)
+            .values({ action: 'mod.remove', actorApId: sql`null`, authority: { kind: 'site-admin' } }),
+        ),
+      ).toMatchObject({ code: '23502' });
+    });
   });
 
   test('every guard trigger is installed', async () => {
@@ -194,7 +266,9 @@ describe('migration 0001 identity spine', () => {
   });
 
   test('the read pool cannot write', async () => {
-    expect(await failure(db().insert(modlog).values({ action: 'x', authority: {} }))).toMatchObject({ code: '25006' });
+    expect(await failure(db().insert(modlog).values({ action: 'x', actorApId: 'https://x.test/u/x', authority: {} }))).toMatchObject({
+      code: '25006',
+    });
     expect(await db().execute(sql`select 1 as one`)).toEqual([{ one: 1 }]);
   });
 });

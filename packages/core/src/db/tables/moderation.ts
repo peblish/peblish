@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm';
-import { boolean, index, jsonb, pgTable, primaryKey, text, uuid } from 'drizzle-orm/pg-core';
+import { boolean, check, index, jsonb, pgTable, primaryKey, text, uuid } from 'drizzle-orm/pg-core';
 import { at, createdAt, enumCheck, id, raw } from '../columns.ts';
 import { actors } from './actors.ts';
 import { comments, posts } from './content.ts';
@@ -40,18 +40,25 @@ export const communityModerators = pgTable(
 
 /**
  * Immutable moderation log: updates and deletes are refused by a trigger, except the
- * ON DELETE SET NULL a purge of the referenced actor, community, post or comment performs.
- * The ap_id columns keep naming them after that.
+ * ON DELETE SET NULL a purge of the referenced actor, community, post or comment performs
+ * (a reference may become null only once its row is gone, and never re-point). Every
+ * reference carries its ap_id, required by a CHECK whenever the id is set, so the log and
+ * each community's history still name everything after a purge.
  */
 export const modlog = pgTable(
   'modlog',
   {
     id: id(),
     action: text('action').notNull(),
-    /** Who acted: a moderator or admin, or the instance actor for system work. */
+    /**
+     * Who acted: a moderator or admin, or the instance actor for system work. When a remote
+     * community's Announce is the authority and the moderator is unknown, actorId is null and
+     * actorApId names the announcing community.
+     */
     actorId: uuid('actor_id').references(() => actors.id, { onDelete: 'set null' }),
-    actorApId: text('actor_ap_id'),
+    actorApId: text('actor_ap_id').notNull(),
     communityId: uuid('community_id').references(() => actors.id, { onDelete: 'set null' }),
+    communityApId: text('community_ap_id'),
     targetActorId: uuid('target_actor_id').references(() => actors.id, { onDelete: 'set null' }),
     targetPostId: uuid('target_post_id').references(() => posts.id, { onDelete: 'set null' }),
     targetCommentId: uuid('target_comment_id').references(() => comments.id, { onDelete: 'set null' }),
@@ -67,7 +74,15 @@ export const modlog = pgTable(
     activityApId: text('activity_ap_id'),
     createdAt: createdAt(),
   },
-  (t) => [index('modlog_created').on(t.createdAt.desc()), index('modlog_community_created').on(t.communityId, t.createdAt.desc())],
+  (t) => [
+    index('modlog_created').on(t.createdAt.desc()),
+    index('modlog_community_created').on(t.communityId, t.createdAt.desc()),
+    check('modlog_community_ap_id', sql`${t.communityId} is null or ${t.communityApId} is not null`),
+    check(
+      'modlog_target_ap_id',
+      sql`(${t.targetActorId} is null and ${t.targetPostId} is null and ${t.targetCommentId} is null) or ${t.targetApId} is not null`,
+    ),
+  ],
 );
 
 /** Reports (lane REP owns the category set and the flow; schema only in 0001). */

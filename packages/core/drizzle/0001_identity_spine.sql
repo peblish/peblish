@@ -274,8 +274,9 @@ CREATE TABLE "modlog" (
 	"id" uuid PRIMARY KEY NOT NULL,
 	"action" text NOT NULL,
 	"actor_id" uuid,
-	"actor_ap_id" text,
+	"actor_ap_id" text NOT NULL,
 	"community_id" uuid,
+	"community_ap_id" text,
 	"target_actor_id" uuid,
 	"target_post_id" uuid,
 	"target_comment_id" uuid,
@@ -284,7 +285,9 @@ CREATE TABLE "modlog" (
 	"authority" jsonb NOT NULL,
 	"details" jsonb DEFAULT '{}'::jsonb NOT NULL,
 	"activity_ap_id" text,
-	"created_at" timestamp with time zone DEFAULT now() NOT NULL
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	CONSTRAINT "modlog_community_ap_id" CHECK ("modlog"."community_id" is null or "modlog"."community_ap_id" is not null),
+	CONSTRAINT "modlog_target_ap_id" CHECK (("modlog"."target_actor_id" is null and "modlog"."target_post_id" is null and "modlog"."target_comment_id" is null) or "modlog"."target_ap_id" is not null)
 );
 --> statement-breakpoint
 CREATE TABLE "reports" (
@@ -460,18 +463,26 @@ BEGIN
 END $$;
 --> statement-breakpoint
 -- The one update the modlog accepts: ON DELETE SET NULL from a purged actor, community, post
--- or comment. Every other column must be unchanged and each reference unchanged or nulled.
+-- or comment. Every other column is unchanged, and a reference may only become null once the
+-- row it named is gone (the RI action runs after the delete), so a manual SET NULL or a
+-- re-pointed id is refused and community-indexed history cannot be erased.
 CREATE FUNCTION peblish_modlog_append_only() RETURNS trigger LANGUAGE plpgsql AS $$
 DECLARE
   refs text[] := ARRAY['actor_id', 'community_id', 'target_actor_id', 'target_post_id', 'target_comment_id'];
-  ref text;
 BEGIN
-  IF TG_OP = 'UPDATE' AND (to_jsonb(NEW) - refs) = (to_jsonb(OLD) - refs) THEN
-    FOREACH ref IN ARRAY refs LOOP
-      IF NOT (to_jsonb(NEW) -> ref = 'null'::jsonb OR to_jsonb(NEW) -> ref = to_jsonb(OLD) -> ref) THEN
-        RAISE EXCEPTION 'modlog is append-only' USING ERRCODE = 'integrity_constraint_violation';
-      END IF;
-    END LOOP;
+  IF TG_OP = 'UPDATE'
+    AND (to_jsonb(NEW) - refs) = (to_jsonb(OLD) - refs)
+    AND (NEW.actor_id IS NOT DISTINCT FROM OLD.actor_id
+      OR (NEW.actor_id IS NULL AND NOT EXISTS (SELECT 1 FROM actors WHERE id = OLD.actor_id)))
+    AND (NEW.community_id IS NOT DISTINCT FROM OLD.community_id
+      OR (NEW.community_id IS NULL AND NOT EXISTS (SELECT 1 FROM actors WHERE id = OLD.community_id)))
+    AND (NEW.target_actor_id IS NOT DISTINCT FROM OLD.target_actor_id
+      OR (NEW.target_actor_id IS NULL AND NOT EXISTS (SELECT 1 FROM actors WHERE id = OLD.target_actor_id)))
+    AND (NEW.target_post_id IS NOT DISTINCT FROM OLD.target_post_id
+      OR (NEW.target_post_id IS NULL AND NOT EXISTS (SELECT 1 FROM posts WHERE id = OLD.target_post_id)))
+    AND (NEW.target_comment_id IS NOT DISTINCT FROM OLD.target_comment_id
+      OR (NEW.target_comment_id IS NULL AND NOT EXISTS (SELECT 1 FROM comments WHERE id = OLD.target_comment_id)))
+  THEN
     RETURN NEW;
   END IF;
   RAISE EXCEPTION 'modlog is append-only' USING ERRCODE = 'integrity_constraint_violation';

@@ -7,13 +7,16 @@ export const ModAction = type({
   id: Uuid,
   /** The mod.* action name, such as 'mod.remove' or 'mod.site_ban' (recheck keys on the prefix). */
   action: 'string',
-  /** Who acted; null once that actor row is purged, when actorApId still names them. */
+  /** Who acted; null once that actor row is purged (or when only an announcing community is known), when actorApId still names them. */
   actorId: Uuid.or('null'),
-  actorApId: 'string | null',
+  actorApId: 'string',
+  /** Null once the community row is purged; communityApId keeps naming it (set whenever communityId was). */
   communityId: Uuid.or('null'),
+  communityApId: 'string | null',
   targetActorId: Uuid.or('null'),
   targetPostId: Uuid.or('null'),
   targetCommentId: Uuid.or('null'),
+  /** Names the target; set whenever one of the target ids was. */
   targetApId: 'string | null',
   /** Statement of reasons shown to the affected user. */
   reason: 'string | null',

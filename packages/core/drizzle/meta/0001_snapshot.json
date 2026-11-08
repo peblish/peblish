@@ -1,5 +1,5 @@
 {
-  "id": "ec29ca29-b9e5-432a-be90-89e89bafc8d4",
+  "id": "f02c075e-94f1-46da-bd50-7387aff78f37",
   "prevId": "a482f298-6d02-426b-a689-d9a87f584262",
   "version": "7",
   "dialect": "postgresql",
@@ -2419,11 +2419,17 @@
           "name": "actor_ap_id",
           "type": "text",
           "primaryKey": false,
-          "notNull": false
+          "notNull": true
         },
         "community_id": {
           "name": "community_id",
           "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "community_ap_id": {
+          "name": "community_ap_id",
+          "type": "text",
           "primaryKey": false,
           "notNull": false
         },
@@ -2592,7 +2598,16 @@
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {},
+      "checkConstraints": {
+        "modlog_community_ap_id": {
+          "name": "modlog_community_ap_id",
+          "value": "\"modlog\".\"community_id\" is null or \"modlog\".\"community_ap_id\" is not null"
+        },
+        "modlog_target_ap_id": {
+          "name": "modlog_target_ap_id",
+          "value": "(\"modlog\".\"target_actor_id\" is null and \"modlog\".\"target_post_id\" is null and \"modlog\".\"target_comment_id\" is null) or \"modlog\".\"target_ap_id\" is not null"
+        }
+      },
       "isRLSEnabled": false
     },
     "public.reports": {
