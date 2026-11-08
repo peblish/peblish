@@ -19,17 +19,29 @@ export type ActorRef = typeof ActorRef.infer;
 export const Counts = type({ upvotes: 'number.integer', downvotes: 'number.integer', comments: 'number.integer' });
 export type Counts = typeof Counts.infer;
 
+/** The badge beside an author's name: a site admin, or a moderator of the post's community. */
+export const AuthorBadge = type("'admin' | 'moderator' | null");
+export type AuthorBadge = typeof AuthorBadge.infer;
+
 export const PostView = type({
   id: Uuid,
   apId: ApId,
   title: 'string',
   url: 'string | null',
+  /** The link's media type when known (an image post), else null. */
+  urlContentType: 'string | null',
+  thumbnailUrl: 'string | null',
+  /** Rendered body. Loaders fill it only on the post page; feeds leave it null and show `excerpt`. */
   contentHtml: 'string | null',
+  /** Plain text for Card density, from the Markdown renderer's `excerpt`; null when there is no body. */
+  excerpt: 'string | null',
   author: ActorRef,
+  authorBadge: AuthorBadge,
   community: ActorRef,
   publishedAt: IsoDate,
   editedAt: IsoDate.or('null'),
   sensitive: 'boolean',
+  nsfl: 'boolean',
   locked: 'boolean',
   featured: 'boolean',
   deleted: 'boolean',
@@ -47,6 +59,7 @@ export const CommentView = type({
   depth: 'number.integer',
   contentHtml: 'string | null',
   author: ActorRef,
+  authorBadge: AuthorBadge,
   publishedAt: IsoDate,
   editedAt: IsoDate.or('null'),
   deleted: 'boolean',
