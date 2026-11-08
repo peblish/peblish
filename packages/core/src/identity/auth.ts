@@ -1,3 +1,4 @@
+import { createHmac } from 'node:crypto';
 import { betterAuth } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { twoFactor } from 'better-auth/plugins/two-factor';
@@ -126,6 +127,15 @@ export function auth(): Promise<Auth> {
     if (globalThis.peblishAuth?.auth === created) globalThis.peblishAuth = undefined;
   });
   return created;
+}
+
+/**
+ * A key for `purpose`, derived from the auth secret (HMAC-SHA-256 of the purpose), so what it
+ * keys means nothing without the secret and no two purposes share a key.
+ */
+export async function derivedKey(purpose: string): Promise<Buffer> {
+  const { secret } = await (await auth()).$context;
+  return createHmac('sha256', secret).update(`peblish:${purpose}`).digest();
 }
 
 /** The code a better-auth APIError carries (body.code, such as INVALID_CODE), or undefined. */

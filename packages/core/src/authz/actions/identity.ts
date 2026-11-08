@@ -8,7 +8,7 @@ import type { Queryable } from '../../db/read.ts';
 import { actors } from '../../db/tables/actors.ts';
 import { authUser } from '../../db/tables/auth.ts';
 import { invites } from '../../db/tables/site.ts';
-import { inviteCodeHash, inviteRefusal, inviteStatus } from '../../registration/codes.ts';
+import { hashInviteCode, inviteRefusal, inviteStatus } from '../../registration/codes.ts';
 import { accountCount, registrationSettings } from '../../registration/settings.ts';
 import type { Frozen } from '../frozen.ts';
 import { allow, deny, forNoKeyUpdate, forShare, type PolicyRequest, type PolicyResult } from '../policy.ts';
@@ -80,7 +80,7 @@ export const policies = {
           revokedAt: invites.revokedAt,
         })
         .from(invites)
-        .where(eq(invites.codeHash, inviteCodeHash(subject.inviteCode))),
+        .where(eq(invites.codeHash, await hashInviteCode(subject.inviteCode))),
       lock,
     );
     const status = inviteStatus(invite);

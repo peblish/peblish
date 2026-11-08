@@ -14,7 +14,7 @@ import { writer } from '../db/write.ts';
 import { insertAccount } from '../identity/accounts.ts';
 import { auth } from '../identity/auth.ts';
 import { throttles, totpSteps } from '../identity/tables.ts';
-import { inviteCodeHash, newInviteCode } from '../registration/codes.ts';
+import { hashInviteCode, newInviteCode } from '../registration/codes.ts';
 import { hashPassword } from '../registration/register.ts';
 import { REGISTRATION_CAP_KEY } from '../registration/settings.ts';
 
@@ -86,7 +86,7 @@ export async function seedInvite(
   const [row] = await writer()
     .insert(invites)
     .values({
-      codeHash: inviteCodeHash(code),
+      codeHash: await hashInviteCode(code),
       createdBy: referrerId,
       maxUses: options.maxUses ?? 1,
       useCount: options.useCount ?? 0,

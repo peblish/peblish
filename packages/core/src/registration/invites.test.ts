@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { eq, sql } from 'drizzle-orm';
 import { beforeEach, expect, test } from 'vitest';
 import { authorize } from '../authz/authorize.ts';
@@ -9,6 +10,7 @@ import { writer } from '../db/write.ts';
 import { truncateAll } from '../testing/db.ts';
 import { seedAccount, seedLocalInstance, seedTwoFactor } from '../testing/seed-a.ts';
 import { findLocalPerson, loginEmail } from '../identity/handles.ts';
+import { inviteCodeHash, normalizeInviteCode } from './codes.ts';
 import { createInvite, createInviteAs, listInvites, lookupInvite, revokeInvite } from './invites.ts';
 import { register } from './register.ts';
 
@@ -30,6 +32,8 @@ test('an admin with two-factor creates an invite for a referrer; only its hash i
   const [row] = await db().select().from(invites).where(eq(invites.id, id));
   expect(row).toMatchObject({ createdBy: mira.actorId, maxUses: 3, note: 'Mira, her friends' });
   expect(JSON.stringify(row)).not.toContain(code.replaceAll('-', ''));
+  // Keyed: the stored value is not a plain hash anyone could recompute from a guessed code.
+  expect(row?.codeHash).not.toBe(createHash('sha256').update(normalizeInviteCode(code)).digest('hex'));
   expect(await lookupInvite(code)).toEqual({
     status: 'valid',
     inviter: { name: 'mira', handle: 'mira@a.peblish.test' },
@@ -134,4 +138,10 @@ test('two invites at once by one admin who refers themselves: both made, no dead
   await holder;
   expect((await both).map((result) => result.ok)).toEqual([true, true]);
   expect(await db().select().from(invites)).toHaveLength(2);
+});
+
+test('the code hash ignores case and separators, and depends on the key', () => {
+  const [one, two] = [Buffer.alloc(32, 1), Buffer.alloc(32, 2)];
+  expect(inviteCodeHash('pb 7k2q xm4d', one)).toBe(inviteCodeHash('PB-7K2Q-XM4D', one));
+  expect(inviteCodeHash('PB-7K2Q-XM4D', one)).not.toBe(inviteCodeHash('PB-7K2Q-XM4D', two));
 });
