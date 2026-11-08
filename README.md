@@ -49,7 +49,7 @@ Rules for writes:
 Rules for the web server:
 
 - `packages/web/src/server.ts` is the server entry (root-owned). It sends federation requests to `@peblish/federation/http` before any UI route matches, then adds the security baseline from `packages/web/src/server/headers.ts` to every HTML response. Lanes extend that baseline there, not per route.
-- Federation answers the ActivityPub endpoints (`/ap/*`, WebFinger, NodeInfo, the inboxes and outboxes) always. It answers `/`, `/u/<name>` and `/c/<name>` only when Accept asks for ActivityPub JSON; otherwise those paths render the UI, with `Vary: Accept`. Imported feddit.com actors keep their ap_ids (contract 6), so `https://feddit.com/u/<name>` and `/c/<name>` are both the ActivityPub id and the human page.
+- Federation answers the ActivityPub endpoints (`/ap/*`, WebFinger, NodeInfo, the inboxes and outboxes) always. It answers `/`, `/u/<name>` and `/c/<name>` only when Accept asks for ActivityPub JSON; otherwise, or when federation declines (`null`), those paths render the UI page. Every response on them, from either side, carries `Vary: Accept`. Imported feddit.com actors keep their ap_ids (contract 6), so `https://feddit.com/u/<name>` and `/c/<name>` are both the ActivityPub id and the human page.
 - Lane FED-A owns `packages/federation/src/http.ts`, federation's consumers (`packages/federation/src/<area>/consumer.ts`, run by the worker beside core's) and the bridge `packages/web/src/server/federation.ts`. G0 created them. Web imports nothing else from federation (lint rule `web-federation-entry-points`).
 
 ## Ownership
