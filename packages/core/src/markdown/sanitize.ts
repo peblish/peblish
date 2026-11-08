@@ -170,11 +170,26 @@ function size(value: string | undefined): string | undefined {
   return Number(match[2]) <= 100 ? `${Number(match[2])}%` : undefined;
 }
 
+/**
+ * How many containers a browser inserts above a table part written inside `parent`: a
+ * tbody above a row in a table, and a row above a cell outside one. They count toward the
+ * depth cap, since the browser's tree is the one that has to stay within it.
+ */
+function insertedContainers(tag: string, parent: string | undefined): number {
+  if (tag === 'tr') return parent === 'table' ? 1 : 0;
+  if (tag !== 'td' && tag !== 'th') return 0;
+  return parent === 'table' ? 2 : parent === 'tbody' || parent === 'thead' || parent === 'tfoot' ? 1 : 0;
+}
+
 interface Frame {
   /** The source element name, matched by end tags. */
   name: string;
   /** The element written out, or undefined when this one is unwrapped or dropped. */
   out: string | undefined;
+  /** The innermost written frame at or below this one on the stack: the element a browser is in here. */
+  current: Frame | undefined;
+  /** A written frame's depth in the tree a browser builds (inserted table containers included). */
+  level: number;
   drop: boolean;
   quiet: boolean;
   /** A summary inside a quiet details: its text is excerpted again. */
@@ -189,7 +204,6 @@ class Sanitizer implements TokenizerCallbacks {
   private readonly stack: Frame[] = [];
   /** Open frames per source name, so an end tag with no open element costs O(1). */
   private readonly open = new Map<string, number>();
-  private depth = 0;
   private dropDepth = 0;
   private quietDepth = 0;
   private linkDepth = 0;
@@ -257,25 +271,33 @@ class Sanitizer implements TokenizerCallbacks {
     return this.stack[this.stack.length - 1];
   }
 
+  /** The depth of the innermost written element; a new element goes one (or more) below it. */
+  private get level(): number {
+    return this.top?.current?.level ?? 0;
+  }
+
   private start(name: string, attributes: Map<string, string>): void {
     const closes = implied.get(name);
     while (closes && this.top && closes.has(this.top.name)) this.pop();
     if (this.dropDepth > 0 || dropped.has(name)) {
-      if (!voids.has(name)) this.push({ name, out: undefined, drop: true, quiet: false, loud: false, link: false });
+      if (!voids.has(name))
+        this.push({ name, out: undefined, current: this.top?.current, level: 0, drop: true, quiet: false, loud: false, link: false });
       return;
     }
     if (blocks.has(name)) this.excerptText(' ');
     const out = kept.get(name);
     if (name === 'img') return this.image(attributes);
     if (voids.has(name)) {
-      if (out && this.depth < this.context.maxDepth) this.html += `<${out}${serialize(this.attributesOf(name, out, attributes))}>`;
+      if (out && this.level < this.context.maxDepth) this.html += `<${out}${serialize(this.attributesOf(name, out, attributes))}>`;
       return;
     }
     const sourceClasses = (attributes.get('class') ?? '').split(/\s+/);
     const quiet = name === 'details' || sourceClasses.some((c) => quietClasses.has(c));
     const loud = name === 'summary' && this.top?.name === 'details' && this.top.quiet;
+    const current = this.top?.current;
+    const level = (current?.level ?? 0) + 1 + (out ? insertedContainers(out, current?.out) : 0);
     let written: string | undefined;
-    if (out && this.depth < this.context.maxDepth && !(out === 'a' && this.linkDepth > 0)) {
+    if (out && level <= this.context.maxDepth && !(out === 'a' && this.linkDepth > 0)) {
       const pairs = this.attributesOf(name, out, attributes);
       // A link that lost its href (and is no footnote target) is unwrapped.
       if (out !== 'a' || pairs.some(([attribute]) => attribute === 'href' || attribute === 'id')) {
@@ -283,7 +305,9 @@ class Sanitizer implements TokenizerCallbacks {
         written = out;
       }
     }
-    this.push({ name, out: written, drop: false, quiet, loud, link: written === 'a' });
+    const frame: Frame = { name, out: written, current, level, drop: false, quiet, loud, link: written === 'a' };
+    if (written) frame.current = frame;
+    this.push(frame);
   }
 
   private end(name: string): void {
@@ -296,7 +320,6 @@ class Sanitizer implements TokenizerCallbacks {
   private push(frame: Frame): void {
     this.stack.push(frame);
     this.open.set(frame.name, (this.open.get(frame.name) ?? 0) + 1);
-    if (frame.out) this.depth++;
     if (frame.drop) this.dropDepth++;
     if (frame.quiet) this.quietDepth++;
     if (frame.loud) this.quietDepth--;
@@ -307,10 +330,7 @@ class Sanitizer implements TokenizerCallbacks {
     const frame = this.stack.pop();
     if (!frame) return undefined;
     this.open.set(frame.name, (this.open.get(frame.name) ?? 1) - 1);
-    if (frame.out) {
-      this.depth--;
-      this.html += `</${frame.out}>`;
-    }
+    if (frame.out) this.html += `</${frame.out}>`;
     if (frame.drop) this.dropDepth--;
     if (frame.quiet) this.quietDepth--;
     if (frame.loud) this.quietDepth++;
@@ -334,7 +354,8 @@ class Sanitizer implements TokenizerCallbacks {
   private image(attributes: Map<string, string>): void {
     const src = safeUrl(attributes.get('src') ?? '', this.context.baseUrl, true);
     const alt = (attributes.get('alt') ?? '').slice(0, 1000);
-    if (src && this.context.images === 'inline' && this.depth < this.context.maxDepth) {
+    const room = this.level < this.context.maxDepth;
+    if (src && this.context.images === 'inline' && room) {
       const loaded = this.context.rewriteImageUrl ? this.context.rewriteImageUrl(src) : src;
       const url = loaded === null ? undefined : rewritten(loaded);
       if (url) {
@@ -342,8 +363,9 @@ class Sanitizer implements TokenizerCallbacks {
         return;
       }
     }
-    // Shown as a link to the image, or as its alt text inside another link or without a src.
-    if (src && this.linkDepth === 0) this.html += `<a href="${escapeAttribute(src)}" rel="${rel}">${escapeText(alt || src)}</a>`;
+    // Shown as a link to the image, or as its alt text inside another link, without a src or
+    // where a link would pass the depth cap.
+    if (src && this.linkDepth === 0 && room) this.html += `<a href="${escapeAttribute(src)}" rel="${rel}">${escapeText(alt || src)}</a>`;
     else this.html += escapeText(alt);
   }
 

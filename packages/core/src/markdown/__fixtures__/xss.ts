@@ -118,6 +118,10 @@ export const htmlVectors: string[] = [
   '<tg-spoiler onclick="alert(1)">secret</tg-spoiler>',
   // Structure abuse.
   `${'<div>'.repeat(2000)}<a href="javascript:alert(1)">deep</a>`,
+  // At the depth cap: an image shown as a link, and table parts a browser wraps in tbody and tr.
+  `${'<div>'.repeat(32)}<img src="https://ok.example/a.png" alt="a">`,
+  `${'<div>'.repeat(29)}<table><tr><td>x</td></tr></table>`,
+  `${'<div>'.repeat(29)}<table><td>x</td></table>`,
   '<a href="https://ok.example/"><img src=x onerror=alert(1)',
   '<a href="https://ok.example/"><a href="javascript:alert(1)">nested</a></a>',
 ];

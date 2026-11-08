@@ -1,3 +1,4 @@
+import { htmlMaxDepth } from '@peblish/schema/markdown';
 import { parseFragment, type DefaultTreeAdapterTypes } from 'parse5';
 import { describe, expect, test } from 'vitest';
 import { htmlVectors, markdownVectors } from './__fixtures__/xss.ts';
@@ -6,8 +7,8 @@ import { sanitizeRemoteHtml } from './sanitize.ts';
 
 // The XSS corpus (test group b). Each output is parsed the way a browser parses innerHTML
 // (parse5 follows the HTML standard), and the tree must hold no script, no element outside
-// the allowlist, no event handler, no inline style and no URL other than http(s), mailto or
-// a same-page fragment. Re-sanitising an output must also leave it unchanged, so the tree
+// the allowlist, no event handler, no inline style, no URL other than http(s), mailto or a
+// same-page fragment, and no element deeper than htmlMaxDepth. Re-sanitising an output must also leave it unchanged, so the tree
 // our serialiser meant is the tree a parser builds.
 
 const elements = new Set(
@@ -22,9 +23,10 @@ type Node = DefaultTreeAdapterTypes.ChildNode;
 
 function problems(output: string): string[] {
   const found: string[] = [];
-  const visit = (nodes: Node[]) => {
+  const visit = (nodes: Node[], depth: number) => {
     for (const node of nodes) {
       if (!('tagName' in node)) continue;
+      if (depth > htmlMaxDepth) found.push(`${node.tagName} at depth ${depth}`);
       if (node.namespaceURI !== html || !elements.has(node.tagName)) found.push(`element ${node.tagName}`);
       for (const { name, value } of node.attrs) {
         if (!attributes.has(name)) found.push(`attribute ${name} on ${node.tagName}`);
@@ -39,10 +41,10 @@ function problems(output: string): string[] {
         const rel = node.attrs.find((a) => a.name === 'rel')?.value;
         if (rel !== 'noopener noreferrer nofollow ugc') found.push(`rel="${rel}"`);
       }
-      visit(node.childNodes);
+      visit(node.childNodes, depth + 1);
     }
   };
-  visit(parseFragment(output).childNodes);
+  visit(parseFragment(output).childNodes, 1);
   return found;
 }
 
