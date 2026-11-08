@@ -108,9 +108,18 @@ module.exports = {
     },
     {
       name: 'core-tx-access',
-      comment: 'Raw transactions are for mutations, the outbox worker and the inbound federation pipeline.',
+      comment:
+        "Raw transactions are for mutations, the outbox worker, the inbound federation pipeline and federation's delivery queue (FED-A).",
       severity: 'error',
-      from: { pathNot: ['^packages/core/src/(tx|outbox)/', '^packages/federation/src/inbound/', ...testSupport] },
+      from: {
+        pathNot: [
+          '^packages/core/src/(tx|outbox)/',
+          '^packages/federation/src/inbound/',
+          // Lane FED-A's delivery queue: its job claims and settles queue rows in transactions of its own.
+          '^packages/federation/src/delivery/',
+          ...testSupport,
+        ],
+      },
       to: { path: ['^packages/core/src/tx/tx\\.ts$', '^@peblish/core/tx/tx$'], dependencyTypesNot: ['type-only'] },
     },
     {
