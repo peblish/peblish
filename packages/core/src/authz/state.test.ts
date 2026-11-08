@@ -35,6 +35,7 @@ async function setup() {
   const post = await seedPost(instance, community, author);
   const lockedPost = await seedPost(instance, community, author, { locked: true });
   const removedPost = await seedPost(instance, community, author, { removedAt: past });
+  const deletedPost = await seedPost(instance, community, author, { deletedAt: past });
   return {
     instance,
     author,
@@ -48,6 +49,7 @@ async function setup() {
     comment: await seedComment(instance, post, author),
     removedComment: await seedComment(instance, post, author, { removedAt: past }),
     commentUnderRemovedPost: await seedComment(instance, removedPost, author),
+    commentUnderDeletedPost: await seedComment(instance, deletedPost, author),
   };
 }
 
@@ -115,6 +117,9 @@ describe('vote.cast through participationDenial', () => {
     expect(await vote(w.reader.id, 'post', w.lockedPost.id)).toBe('allow');
     expect(await vote(w.reader.id, 'post', w.removedPost.id)).toBe('target.removed');
     expect(await vote(w.reader.id, 'comment', w.removedComment.id)).toBe('target.removed');
+    // A comment takes no votes once its post is gone, as it takes no replies.
+    expect(await vote(w.reader.id, 'comment', w.commentUnderRemovedPost.id)).toBe('target.removed');
+    expect(await vote(w.reader.id, 'comment', w.commentUnderDeletedPost.id)).toBe('target.deleted');
     expect(await vote(w.reader.id, 'post', w.inRemovedCommunity.id)).toBe('community.removed');
     await seedBan(w.community, w.reader);
     expect(await vote(w.reader.id, 'comment', w.comment.id)).toBe('community.banned');

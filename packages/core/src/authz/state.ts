@@ -186,8 +186,8 @@ export async function postingDenial(read: StateRead, actorId: Uuid, communityId:
 /**
  * The guard for taking part in a thread: vote.cast (authz/actions/votes.ts) and comment.create
  * (lane D, through commentingDenial). The target and its community exist and are neither
- * deleted nor removed, and the actor is not banned from the community. Call it before the
- * policy's own locked reads (lock order above).
+ * deleted nor removed, nor is a comment's post, and the actor is not banned from the
+ * community. Call it before the policy's own locked reads (lock order above).
  */
 export async function participationDenial(read: StateRead, actorId: Uuid, target: ContentRef): Promise<Denial | null> {
   const state = await contentState(read, target);
@@ -198,7 +198,7 @@ async function participation(read: StateRead, actorId: Uuid, state: ContentState
   const closed = communityDenial(state.community);
   if (closed) return closed;
   if (await isBanned(read, state.community.id, actorId)) return refuse('community.banned');
-  return liveDenial(state);
+  return (state.kind === 'comment' ? liveDenial(state.post) : null) ?? liveDenial(state);
 }
 
 /** Why a post or comment can take no part any more (deleted, or removed by a moderator), if so. */
