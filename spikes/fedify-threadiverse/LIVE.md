@@ -78,6 +78,18 @@ Each one asserts on PieFed's API and on the lab's `/spike/state`. Titles are `[p
 
 The run ends with the scenario statuses and the remote followers in `/spike/state.followers`, so a Mastodon follow by the owner shows up there.
 
+### Mastodon
+
+A Mastodon account follows the group as `@lab@lab.feddit.com` (or the moderator as `@labmod@lab.feddit.com`) and the follower appears in `/spike/state.followers`. Mastodon shows nothing from the group's normal `Announce(Create(Page))` fan-out: it only turns an `Announce` whose object is the post itself into a boost, the second copy Lemmy sends to every follower and rejects on receipt (`CannotReceivePage`). To make one post visible there, send that shape to the followers at the named origins only:
+
+```sh
+curl -sS -X POST "$LIVE_LAB_ORIGIN/spike/announce-page" \
+  -H "Authorization: Bearer $LIVE_CONTROL_TOKEN" -H 'content-type: application/json' \
+  -d '{"object":"https://lab.feddit.com/ap/post/15","origins":["https://mastodon.social"]}'
+```
+
+`object` is a local post URI and `origins` lists follower origins; followers elsewhere get nothing. Check with Mastodon's public API: `GET https://mastodon.social/api/v1/accounts/lookup?acct=lab@lab.feddit.com`, then `/api/v1/accounts/<id>/statuses`, where the post appears as a boost by the group. A reply from Mastodon should reach the author's inbox as `Create(Note)` with `inReplyTo` set and show up in `/spike/state` (inbox log and objects).
+
 Results go to `captures/live-<run>.json` (`live-<run>-cleanup.json` for `--cleanup`). `captures/live-<run>-ids.json` lists everything created: lab actor names and URIs, lab post URIs, PieFed community, post and comment ids, followed communities, the post count and the L7 lock and removal flags. `captures/live-<run>-state.json` (`-cleanup-state.json` for `--cleanup`) is the lab's whole `/spike/state` at the end of the run: outbox rows, followers, votes and the inbox log, as evidence for the delivery and unfollow claims.
 
 PieFed lets a remote account it first saw in the last 24 hours make 4 posts. A run makes three posts per lab author (two in L3, one in L8) and refuses to create a fourth, counting from the ids file and from what the lab holds. Each run uses a new author.
