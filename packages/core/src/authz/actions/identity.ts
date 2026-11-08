@@ -13,8 +13,11 @@ import { accountCount, registrationSettings } from '../../registration/settings.
 import type { Frozen } from '../frozen.ts';
 import { allow, deny, forNoKeyUpdate, forShare, type PolicyRequest, type PolicyResult } from '../policy.ts';
 
-// Owned by lane A: accounts and invites (A01, A05, M20). Actor rows are read FOR NO KEY
-// UPDATE under lock because account.delete updates them (PolicyRequest.lock).
+// Owned by lane A: accounts and invites (A01, A05, M20). Under lock (PolicyRequest.lock), the
+// actor row account.delete updates is read FOR NO KEY UPDATE. invite.create's referrer is read
+// FOR SHARE: its body only inserts a reference to it, and the referrer is usually the admin,
+// whose row the principal refresh already holds FOR SHARE. Upgrading that lock would deadlock
+// two invite.create calls by one admin; FOR SHARE still makes a deletion wait for the write.
 
 /** Serialises account creation under lock, so two sign-ups cannot both take the last cap slot. */
 const accountsLock = sql`select pg_advisory_xact_lock(hashtext('peblish.accounts'))`;
@@ -126,7 +129,7 @@ export const policies = {
   'invite.create': async ({ principal, subject, db, lock }: PolicyRequest<{ referrerId: Uuid }>) => {
     const denied = await denyUnlessAdmin(principal, db, lock);
     if (denied) return denied;
-    const [referrer] = await forNoKeyUpdate(
+    const [referrer] = await forShare(
       db
         .select({ kind: actors.kind, local: actors.local, deletedAt: actors.deletedAt })
         .from(actors)
