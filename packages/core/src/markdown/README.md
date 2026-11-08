@@ -37,7 +37,7 @@ Unsafe links never become links: Markdown leaves `javascript:`, `data:` and simi
 
 ## Sanitiser allowlist
 
-Elements: `p br hr h1-h6 strong b em i u s del ins sub sup code pre kbd blockquote ul ol li table thead tbody tfoot tr th td details summary img a span div section ruby rt rp`. `strike` becomes `s`, PieFed's `tg-spoiler` becomes `span.spoiler`. Any other element is unwrapped: the tag goes and the text stays. A few elements are dropped with their whole content: `script style template textarea title iframe object applet noscript noembed noframes xmp plaintext svg math select datalist head audio video canvas frameset`.
+Elements: `p br hr h1-h6 strong b em i u s del ins sub sup code pre kbd blockquote ul ol li table thead tbody tfoot tr th td details summary img a span div section ruby rt rp`. `strike` becomes `s`, PieFed's `tg-spoiler` becomes `span.spoiler`, and the text of either stays out of the excerpt. Any other element is unwrapped: the tag goes and the text stays. A few elements are dropped with their whole content: `script style template textarea title iframe object applet noscript noembed noframes xmp plaintext svg math select datalist head audio video canvas frameset`.
 
 Attributes, and nothing else:
 

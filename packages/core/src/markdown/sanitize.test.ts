@@ -21,6 +21,14 @@ test('a Mastodon note keeps its mention, hashtag and link-shortening markup', ()
   expect(result.excerpt).toBe('@ann see news.example/a/very #fedi');
 });
 
+test("PieFed's inline spoilers, in both forms, stay out of the excerpt", () => {
+  for (const spoiler of ['<tg-spoiler>he lives</tg-spoiler>', '<span class="spoiler">he lives</span>']) {
+    const result = sanitizeRemoteHtml(`<p>The end: ${spoiler}.</p>`);
+    expect(result.html).toBe('<p>The end: <span class="spoiler">he lives</span>.</p>');
+    expect(result.excerpt).toBe('The end: .');
+  }
+});
+
 test('relative URLs resolve against baseUrl and must stay on its origin', () => {
   const html = '<a href="/c/tech">community</a> <a href="//evil.example/">away</a> <img src="/pictrs/a.png" alt="a">';
   expect(sanitizeRemoteHtml(html, { baseUrl: 'https://lemmy.example/post/1' }).html).toBe(

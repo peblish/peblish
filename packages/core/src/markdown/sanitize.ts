@@ -91,8 +91,8 @@ const classes: Record<string, readonly string[]> = {
   ol: ['footnotes-list'],
   li: ['footnote-item'],
 };
-/** Classes whose text stays out of the excerpt: footnotes and Mastodon's hidden link parts. */
-const quietClasses = new Set(['footnotes', 'footnote-ref', 'invisible']);
+/** Classes whose text stays out of the excerpt: footnotes, Mastodon's hidden link parts and PieFed's inline spoilers. */
+const quietClasses = new Set(['footnotes', 'footnote-ref', 'invisible', 'spoiler']);
 /** Links that are not "links found": mentions, hashtags and community references. */
 const referenceClasses = new Set(['mention', 'hashtag', 'community']);
 
@@ -303,7 +303,7 @@ class Sanitizer implements TokenizerCallbacks {
       return;
     }
     const sourceClasses = (attributes.get('class') ?? '').split(/\s+/);
-    const quiet = name === 'details' || sourceClasses.some((c) => quietClasses.has(c));
+    const quiet = name === 'details' || name === 'tg-spoiler' || sourceClasses.some((c) => quietClasses.has(c));
     const loud = name === 'summary' && this.top?.name === 'details' && this.top.quiet;
     const level = (current?.level ?? 0) + 1 + (out ? insertedContainers(out, current?.out) : 0);
     let written: string | undefined;
