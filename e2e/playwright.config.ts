@@ -1,0 +1,35 @@
+import { defineConfig, devices } from '@playwright/test';
+
+// End-to-end tests against the production build. By default Playwright starts the built web
+// server (pnpm build first) on the lane's port; BASE_URL points it at a running server
+// instead, such as the Docker image. Chromium only: @playwright/test is pinned to 1.58.2,
+// whose Chromium 145 headless shell is what the mux-start spike used.
+const port = Number(process.env.E2E_PORT ?? process.env.PORT ?? 18300);
+const baseURL = process.env.BASE_URL ?? `http://127.0.0.1:${port}`;
+
+export default defineConfig({
+  testDir: '.',
+  testMatch: '**/*.spec.ts',
+  outputDir: './artifacts/test-results',
+  timeout: 30_000,
+  expect: { timeout: 5_000 },
+  forbidOnly: Boolean(process.env.CI),
+  retries: 0,
+  reporter: process.env.CI ? [['list'], ['html', { outputFolder: './artifacts/report', open: 'never' }]] : 'list',
+  use: { baseURL, locale: 'en-US', trace: 'retain-on-failure' },
+  projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
+  webServer: process.env.BASE_URL
+    ? undefined
+    : {
+        command: 'node packages/web/.output/server/index.mjs',
+        cwd: '..',
+        url: `${baseURL}/healthz`,
+        env: {
+          PORT: String(port),
+          HOST: '127.0.0.1',
+          DATABASE_URL: process.env.DATABASE_URL ?? 'postgres://peblish:peblish@127.0.0.1:18432/peblish_g0',
+        },
+        reuseExistingServer: !process.env.CI,
+        timeout: 30_000,
+      },
+});
