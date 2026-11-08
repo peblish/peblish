@@ -17,7 +17,6 @@ export type Vocabulary = {
 
 const none = (detail: string) => ({ kind: 'none', detail }) as const;
 const raw = (detail: string) => ({ kind: 'raw', detail }) as const;
-const column = (detail: string) => ({ kind: 'column', detail }) as const;
 const table = (detail: string) => ({ kind: 'table', detail }) as const;
 
 export const vocabulary: Vocabulary[] = [
