@@ -2,10 +2,10 @@ import type { Uuid } from '@peblish/schema/ids';
 import { eq } from 'drizzle-orm';
 import { actors } from '../../db/tables/actors.ts';
 import { allow, deny, forNoKeyUpdate, type PolicyRequest } from '../policy.ts';
+import { postingDenial } from '../state.ts';
 
-// Owned by lane B1 after G0. Lane AZ's guard seam is packages/core/src/authz/state.ts: AZ adds
-// a single guard call line here and in votes.ts (bans, locks). Lane F adds
-// postingRestrictedToMods later.
+// Owned by lane B1. Lane AZ's guard (authz/state.ts: postingDenial) refuses removed
+// communities and community bans. Lane F adds postingRestrictedToMods later.
 export const policies = {
   'post.create': async ({ principal, subject, db, lock }: PolicyRequest<{ communityId: Uuid }>) => {
     if (principal.kind !== 'local') return deny('auth.required');
@@ -17,6 +17,8 @@ export const policies = {
     );
     if (community?.kind !== 'Group') return deny('target.not_found');
     if (community.deletedAt) return deny('target.deleted');
+    const denied = await postingDenial({ db, lock }, principal.actorId, subject.communityId);
+    if (denied) return denied;
     return allow({ kind: 'local-role', actorId: principal.actorId, role: 'user', communityId: subject.communityId });
   },
 };

@@ -1,102 +1,72 @@
-# Lane notes: wave 1 groundwork, Mux UI rc.6
+# Lane AZ notes (wave 1)
 
-Branch `mvp-w1`, worktree `/Users/admin/Projects/feddit-mvp-w1`, from 790a03c. Brief:
-`/Users/admin/.agents/plans/feddit/briefs/wave-1/mux-integration.md`.
+Authorization core, community moderation mutations and the modlog: plan row AZ (M02, M03 and the authz core). Branch `mvp-w1-az`, port 18301, database `peblish_az`.
 
 ## What landed
 
-- cac1829 Vendor the Mux UI 0.1.0-rc.6 release candidate: the tarball in `vendor/muxui/`, the
-  vendor README rewritten for the current state, `packages/ui` on the `file:` tarball, the
-  lockfile, `LocaleProvider` on `MuxProvider`, no direct `react-aria-components` in ui, no
-  hoist in `.npmrc`, `themes.css` dropped, the React Aria fixture moved to a resolved path, the
-  Dockerfile comments.
-- The commit after it: the G0-STATUS line and these notes.
+| Deliverable                        | Where                                                                                                                                                                              | Proof                                                                                                                                                                      |
+| ---------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 0. Locked reads under recheck      | `c/authz/state.ts`, `c/authz/roles.ts`, `c/moderation/ban.ts`                                                                                                                      | `c/moderation/interleaving.test.ts` (INSERT ban in both orders), `c/authz/state.test.ts` (a lock waits for a comment's recheck), the role table run with `lock`            |
+| 1. Role resolution, target state   | `c/authz/roles.ts`, `c/authz/state.ts`                                                                                                                                             | `c/authz/role-table.test.ts`                                                                                                                                               |
+| 2. Bounded moderator cache         | `c/authz/moderators-cache.ts`, invalidation consumer `c/authz/consumer.ts`                                                                                                         | `c/authz/moderators-cache.test.ts`: bound and LRU order, TTL and row expiry on a fake clock, a `mod.role` event through the consumer, a stale entry refused by the recheck |
+| 3. `mod.*` policies                | `c/authz/actions/moderation.ts`, refusals in `s/refusals/moderation.ts`                                                                                                            | the role table                                                                                                                                                             |
+| 4. Mutations, modlog row, event    | `c/moderation/{remove,lock,pin,ban}.ts`, events in `s/events/moderation.ts`                                                                                                        | `c/moderation/moderation.test.ts`; the mutation-registry test passes with all eight on `recheck: true`                                                                     |
+| 5. Modlog write helper, read model | `c/modlog/write.ts`, `c/modlog/read.ts`, types in `s/modlog.ts`                                                                                                                    | `c/modlog/read.test.ts`                                                                                                                                                    |
+| 6. Role x action x state table     | `c/authz/role-table.test.ts`: 11 roles x 11 columns (post.create, the eight `mod.*` policies, remove and restore on posts and comments) x 6 states, run as precheck and as recheck | 22 tests plus a check that every community `mod.*` policy has a column                                                                                                     |
+| 7. Locked-post proof               | `c/authz/__fixtures__/comment-create.ts` calling `commentingDenial`                                                                                                                | `c/authz/state.test.ts` (`post.locked`), `c/moderation/moderation.test.ts` (a lock between authorize and write: `Refused`, nothing written)                                |
+
+Plus: a guard call in `c/authz/actions/posts.ts` (`postingDenial`) and in `c/authz/actions/votes.ts` (`participationDenial`), two lines each (the call and its `if (denied) return denied;`); the stale ownership header in posts.ts fixed. Seeds in `c/testing/seed-az.ts`. The modlog web route waits for the R2 pick, as briefed.
+
+## Commits
+
+- ce8f707 Add the moderation refusals, events and modlog contracts
+- d49bd28 Add target state, role resolution and the community moderation policies
+- 76e5dcf Add the moderation mutations and the modlog
+- this file
+
+Each commit's tree passed `pnpm check` on its own (242, 270 and 284 tests).
 
 ## Verification
 
-Checksum, before copying and again in the worktree:
-
-```text
-879b9175ef8be95a73ba58d0ee2edc2dc306dfbf0616b769a5377104ed51f29f  /Users/admin/.agents/plans/feddit/vendor/muxui-react-0.1.0-rc.6.tgz
-879b9175ef8be95a73ba58d0ee2edc2dc306dfbf0616b769a5377104ed51f29f  /Users/admin/Projects/muxui-peblish-rc/dist/muxui-react-0.1.0-rc.6.tgz
-879b9175ef8be95a73ba58d0ee2edc2dc306dfbf0616b769a5377104ed51f29f  vendor/muxui/muxui-react-0.1.0-rc.6.tgz
-```
-
-The lockfile integrity (`sha512-l1PAu5JT...`) equals `openssl dgst -sha512` of the tarball.
-Licence: `package.json` `license` is `MIT`, and `LICENSE` is the MIT text.
-
-- One copy of `@muxui/react` (`pnpm why -r`: rc.6, from `@peblish/ui` only) and one copy of
-  `react-aria-components`; nothing resolves Mux from the registry.
-- `pnpm check`: green, 242 tests in 31 files, no dependency violations (163 modules), Prettier
-  clean. The first run failed 18 tests in `packages/core/src/outbox/worker.test.ts` with
-  "Matcher did not succeed in time" and one deadlock: lane FIT was restoring the archive in
-  `peblish_fit_archive` at that moment, which holds back the cluster-wide horizon the worker
-  reads below. The rerun on a quiet cluster passed; nothing in this change touches core.
-- `pnpm e2e` on the build (lane root, port 18399): 19 passed, including the hydration marker
-  in en-US and de-DE and axe on the shell without `themes.css`.
-- A server render of `MuxProvider` with a React Aria `useLocale()` probe gives `de-DE ltr`,
-  `ar-EG rtl`, and `en-US ltr` without a locale, so the locale reaches the copy Mux uses.
-- Client CSS is 599.86 kB raw, 61.36 kB gzip (the payload note's rc.6 button scenario).
-- Docker: `docker build --target build .` passed: `pnpm fetch --frozen-lockfile` read the
-  tarball from `vendor/muxui/`, and `pnpm install --offline --frozen-lockfile` was up to date.
-  The full `docker build .` and `scripts/image-smoke.sh` also passed against a throwaway
-  `peblish_root_image` database (dropped after), web as uid 1000. `BASE_URL=<image> pnpm e2e`:
-  15 passed, 4 lifecycle specs skipped.
-
-## The rc.6 MuxProvider contract
-
-From the installed `generated/mux-provider.d.ts`: `MuxProviderProps` is `locale?: string`,
-`navigate?: (href: string) => void`, `useHref?: (href: string) => string` and
-`children?: ReactNode`. It renders no element: it wraps React Aria's `I18nProvider`, and adds
-`RouterProvider` only when `navigate` is given. `LocaleProvider` passes `locale` and
-`children` only.
-
-## Decisions and deviations
-
-- `packages/web/src/__fixtures__/imports-rac-resolved.tsx` is outside the listed write set; step
-  3 of the brief asks for it. Without the hoist, `react-aria-components` no longer resolves from
-  web. The bare import still failed `mux-only-in-ui`, but as an unresolved specifier, which
-  `imports-mux.tsx` already covers. The fixture now imports
-  `node_modules/.pnpm/node_modules/react-aria-components/dist/exports/index.mjs`. That is
-  pnpm's private hoist directory (default `hoist-pattern=*`), with no version in the path, and
-  it resolves to the single copy Mux uses. `tests/boundaries.test.ts` is unchanged.
-- The Dockerfile already copied `vendor/muxui/` before `pnpm fetch` (round 1, item 9). I kept
-  that line rather than widening it to `vendor/`, because only Mux is vendored, and changed
-  only the comments.
-- No payload budget check, as the brief says (it awaits Andrew).
-- `packages/web/vite.config.ts` is unchanged; `exportConditions: ['!unwasm']` stays.
-
-## For the lanes and root at integration
-
-- `LocaleProvider({ locale, children })` in `@peblish/ui/locale` is unchanged; no web file needs
-  to change.
-- UI lane: wiring `navigate` and `useHref` to the TanStack router is still to do. It belongs
-  in ui's `LocaleProvider` (or a sibling provider) so web keeps importing only the facade.
-- UI lane: `packages/ui/src/theme/root.tsx` still sets `data-muxui-theme="standard-harbour"`.
-  Only `themes.css` had selectors for it, so the attribute is now inert (the default palette
-  in `styles.css` uses the same brand colour). `data-muxui-color-scheme` is still read by
-  `styles.css`. Drop the theme attribute or leave it for a later preset; nothing breaks either
-  way.
-- ui can no longer import React Aria directly; use the Mux export. Re-adding
-  `react-aria-components` to ui needs root.
-- The lane worktrees (az, a, fit, md) still install rc.5 with the hoist. After a rebase onto
-  this branch, delete `node_modules` before `pnpm install`: a plain `pnpm install` here kept
-  the stale root `node_modules/react-aria-components` symlink from the old hoist.
-- Worker tests are sensitive to any long write transaction on the shared cluster (an archive
-  restore, a stuck psql). A lane that sees `worker.test.ts` time out should check
-  `pg_stat_activity` and rerun before debugging.
-- Every lane writes `LANE-NOTES.md` at its root, so this file will conflict by name at
-  integration.
+- `pnpm check` green on the final tree (284 tests in 37 files; G0 had 242 in 31), with the lane's test database `peblish_az_test` recreated from the migrations plus the generated moderation migration (see request 1): build, typecheck, boundaries (no violations), oxlint, Prettier, all tests. The gated interleaving tests (G0's and mine) passed in every run.
+- My tests alone: `pnpm exec vitest run --project core src/authz src/moderation src/modlog`.
+- A negative control on the table: flipping one cell (`lock` on a locked post) fails the 8 rows that can moderate, in both modes.
 
 ## Requests to root
 
-- `renovate.json`: the Node rule's description says "Mux engines >=24.19 <25". rc.6 declares
-  `>=24.19.0 <27`, so only the root `engines` field holds Node below 25 now. Update the text,
-  or keep the rule as is.
-- Optional: the React Aria fixture would quietly become unresolved, and still pass, if
-  `.npmrc` ever disabled pnpm's private hoist. A check in `tests/boundaries.test.ts` that the
-  resolved fixtures resolve (no `not-to-unresolvable` hit) would catch that.
+1. Generate the migration for `packages/core/src/moderation/tables.ts` (`community_bans`, `community_removals`): `pnpm db:generate` (or fold it into 0001 as with FIT's deltas). Integrate it with this branch: without it 25 core tests fail, G0's own tx, recheck and authorize tests among them, because post.create's guard now reads `community_removals` and the test database is built from the committed migrations. I ran them with `PEBLISH_MIGRATIONS_DIR` pointing at a scratch copy of `packages/core/drizzle/` plus the generated `0002_moderation.sql` (two CREATE TABLEs, five foreign keys, one index; drizzle-kit 0.31.11 from the committed snapshots, nothing hand-written).
+2. Add a site settings key for trusted instances in `packages/schema/src/site-settings.ts`, for example `'modlog.trusted_instances': { schema: type('string[]'), default: [] }` (lowercase domains as in `instances.domain`). `readModlog` takes the list as `options.trustedInstances` and defaults to none, so remote reasons stay hidden until a caller passes `await readSetting('modlog.trusted_instances')`. Lane ADM would own the admin control. If peers get a trust level (MODF, M18), the list can come from there instead.
+3. Optional: a `public boolean not null default true` column on `modlog` (root's `db/tables/moderation.ts`). Until then the flag lives in `details.public` (absent means public), read with `coalesce((details->>'public')::boolean, true)`.
+4. README, rules for writes: add the lock order (acting actor, community actor row, post, comment) next to the two locking rules, and narrow "a ban target" in the `forNoKeyUpdate` list to "the target actor row of a site ban". A community ban must read its target's actor row FOR SHARE: the target's own rechecked writes hold that row FOR SHARE (principal refresh) and then wait for the community row, so a FOR NO KEY UPDATE on it, taken after the community row, deadlocks (decision 6).
+
+## Decisions and deviations
+
+1. New tables in my area: `community_bans` (primary key community and actor; reason, expires_at, banned_by) and `community_removals` (one row per removed community). No table for either existed. A ban is in force while `expires_at` is null or ahead, so no expiry job is needed; an expired row is replaced by the next ban (upsert); an unban deletes the row and the modlog keeps the history.
+2. "Community removed" is a row in `community_removals`, not a column on `actors` (root's table). If root prefers `actors.removed_at` beside `deleted_at`, only `communityState` in `state.ts` changes. Nothing in wave 1 writes it; the table test seeds it.
+3. "Community locked" is not built: no plan row writes it, and the closest real feature is lane F's `postingRestrictedToMods`. Deleted communities refuse with `community.deleted` (post.create keeps B1's `target.deleted`, because there the community is the target).
+4. Order of checks in every content policy: target exists (`target.not_found`), community not deleted or removed, authority (site admin; then the remote community's own Announce, any other Announce is `mod.announce_mismatch`; then `community.banned`; then a fresh moderator or owner row; else `mod.moderator_required`), then the target's state. Every action except restore refuses deleted (`target.deleted`) and removed (`target.removed`) targets, unlock and unpin included; restore refuses deleted and `target.not_removed`.
+5. Community-announce authority is accepted only for a remote community: an Announce naming a local community cannot be genuine, so it is `mod.announce_mismatch`. Site admins may moderate in remote communities. The system principal may not moderate (`mod.moderator_required`); an importer that needs it should ask.
+6. Lock order (state.ts header): the acting actor's row (principal refresh), then the community's actor row, then the post, then the comment. The readers find the community through an unlocked read of `posts.community_id` (and `comments.post_id`) first, then lock in order, then re-check the reference. So the guard in votes.ts runs before B1's own locked target read. The community-ban policy reads the target actor, its auth_user row and its moderator row FOR SHARE (request 4).
+7. Rows a write body updates are read FOR NO KEY UPDATE: the community row, posts, comments and ban rows (the ban upsert). Moderator rows and removal markers are read FOR SHARE, since no write body updates them yet; a future `mod.role` mutation that updates a moderator row its policy reads should switch `communityRole` to `forNoKeyUpdate`.
+8. Moderator freshness: a local row grants until its `expires_at` (if any); a remote row needs `verified_at` and a future `expires_at`, so a mirror never confirmed or not refreshed grants nothing.
+9. The moderator cache is positive only (it never remembers "not a moderator", so a new moderator is seen at once), 10,000 entries, 60 s TTL capped by the row's own expiry, on `globalThis`. Only authorize() without `lock` reads it; the recheck always reads the database. The invalidation consumer `authz.moderator-cache` (`mod.role`, `startAt: 'beginning'`) runs where consumers run, the worker; the web process relies on the TTL. A stale entry can at most pass a precheck that the mutation then refuses (tested). Cross-process invalidation (LISTEN on a channel) is possible later if a 60 s delay in hiding moderator controls matters.
+10. Locks stop comments, not votes (Lemmy's behaviour). `commentingDenial` refuses `post.locked` for everyone; whether moderators may still comment is lane D's call (check `communityRole` before treating `post.locked` as final).
+11. Bans protect yourself, the instance actor (any Application), site admins and the community's moderators and owner (`target.protected`; demote them first); a Group is `target.not_found`; a deleted actor cannot be banned (`target.deleted`) but can be unbanned. Unban does not check protection.
+12. A ban's expiry must be in the future (RangeError, nothing written). Remove-content removes the actor's live posts in the community and their live comments there, posts first; the ban's modlog row counts them in `details`; no per-item events (peers act on Block's removeData). Unban restores nothing.
+13. Events: new `mod.remove` (removed true or false) for remove and restore; `mod.ban` gained `targetApId` and `reason`; `mod.lock` gained `communityId`, `targetApId`, `reason`; `mod.feature` gained `communityId`, `targetApId`. They stay `v: 1`, since nothing has emitted them yet. `moderatorId` is always the acting actor in these mutations; `local` is false only for a remote principal.
+14. Inputs are ArkType-validated in the mutations (`ModInput`, `BanInput` in `s/modlog.ts`): reason up to 10,000 characters or null, `public` (default true), `activityApId` (stored in `modlog.activity_ap_id`), and for bans `expiresAt` (ISO) and `removeContent`.
+15. Modlog read model: filters are community, actor, action, `[since, until)` and `limit` (1 to 200, default 50), newest first; no pagination cursor yet (the route lane adds keyset paging when it needs it). The caller decides the audience (`public` or `staff`), for example with `communityRole` or the site role. A reason is shown when the host of the row's `actor_ap_id` is this instance or in `trustedInstances`; otherwise `reason` is null and `reasonWithheld` true. Entries carry the authority (plain data) and the typed details; `activity_ap_id` is not exposed.
+16. `seed-az.ts` has a few general helpers (`grantFor`, `outboxEvents`, `writeCounts`, `gate`, `someoneWaitsOnALock`) other lanes may import.
 
 ## Dependencies added
 
-None beyond the tarball. `react-aria-components` was removed from `packages/ui`.
+None.
+
+## For later lanes
+
+- B1 (posts, votes): keep `postingDenial` after the community checks in post.create and `participationDenial` first in vote.cast. If vote.cast sets `recheck: true`, votes in one community take turns on the community row (FOR NO KEY UPDATE); fine at beta scale, and the only cheaper safe option is FOR SHARE on that row for votes, whose bodies never update it.
+- D (comments): the real comment.create policy calls `commentingDenial(request, actorId, { postId, parentId })` before any locked read of its own, then `postState` for the community id of its authority (see the fixture). Counter updates follow the lock order: post, then parent comment.
+- MODF (site bans): use `writeModlog(t.db, grant, …)` for the modlog row and emit `mod.ban` with `communityId: null`, `targetApId` and `reason`. A site ban locks the target actor row first, so it must not lock a community row afterwards (a community ban holds the community row and then reads that actor row). The site-ban check goes in `principal.ts` as planned; `roles.ts` does not repeat it.
+- REP (reports): resolve a report through `removeContent`, `lockPost` or `banFromCommunity` with the report's text as the reason; the modlog entry is the statement of reasons.
+- FED-B (federation of moderation): inbound Delete with summary maps to `removeContent` with `{ reason: summary, activityApId }`, its Undo to `restoreContent`, Lock and Undo to `lockPost` and `unlockPost`, Block to `banFromCommunity` with `expiresAt` from endTime (skip a Block whose endTime has passed: the mutation throws RangeError) and `removeContent` from removeData. Build the remote principal with `announcedBy` when the activity came inside the community's Announce. Outbound: map the events above where `local` is true; every event names its target's ap_id and its modlog row.
+- The modlog route (after R2): `readModlog(filter, { audience, trustedInstances })`; `ModlogFilter` validates the query string.
