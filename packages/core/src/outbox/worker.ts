@@ -1,19 +1,20 @@
 import { and, eq, sql } from 'drizzle-orm';
-import { parseEvent } from '@peblish/schema/events';
+import { parseEvent, type OutboxEvent } from '@peblish/schema/events';
 import { consumers as registered } from '../registry/consumers.gen.ts';
 import { db } from '../db/read.ts';
 import { outbox, outboxCursors } from '../db/tables/outbox.ts';
 import { writePool } from '../db/pools.ts';
 import { writer } from '../db/write.ts';
+import { Refused } from '../tx/refused.ts';
 import { insideTransaction, OUTBOX_CHANNEL, outboxEmitter } from '../tx/tx.ts';
-import { assertUniqueNames, type Consumer } from './consumers.ts';
+import { assertRunnable, type Consumer } from './consumers.ts';
 
 /**
- * Creates missing cursor rows, each at its consumer's startAt (see ConsumerStart), and
- * rejects duplicate names. Existing cursors are kept.
+ * Creates missing cursor rows, each at its consumer's startAt (see ConsumerStart), after
+ * assertRunnable (unique names, no consumer feeding itself). Existing cursors are kept.
  */
 export async function ensureCursors(consumers: readonly Consumer[]): Promise<void> {
-  assertUniqueNames(consumers);
+  assertRunnable(consumers);
   if (consumers.length === 0) return;
   await writer()
     .insert(outboxCursors)
@@ -59,15 +60,38 @@ export async function processBatch(consumer: Consumer, limit = 100): Promise<num
           .orderBy(outbox.txId, outbox.id)
           .limit(limit);
         const events = outboxEmitter(db);
-        const t = { db, emit: events.emit };
+        const emit = async (event: OutboxEvent) => {
+          if (!consumer.emits.includes(event.type)) throw new TypeError(`outbox consumer ${consumer.name} may not emit ${event.type}`);
+          await events.emit(event);
+        };
+        let refused = 0;
         for (const row of rows) {
-          if (consumer.events.some((type) => type === row.type)) await consumer.handle(parseEvent(row.payload), t);
+          if (!consumer.events.some((type) => type === row.type)) continue;
+          const event = parseEvent(row.payload);
+          try {
+            // A savepoint per event, so a refused event leaves none of its handler's writes.
+            await db.transaction((savepoint) => consumer.handle(event, { db: savepoint, emit }));
+          } catch (error) {
+            if (!(error instanceof Refused)) throw error;
+            refused += 1;
+            console.error(
+              `outbox consumer ${consumer.name} skipped outbox event ${row.id} (${row.type}): ${error.action} refused with ${error.reason}`,
+            );
+          }
         }
         const last = rows.at(-1);
         if (last) {
           await db
             .update(outboxCursors)
-            .set({ txId: last.txId, eventId: last.id, attempts: 0, lastError: null, retryAt: null, updatedAt: new Date() })
+            .set({
+              txId: last.txId,
+              eventId: last.id,
+              attempts: 0,
+              lastError: null,
+              retryAt: null,
+              refused: sql`${outboxCursors.refused} + ${refused}`,
+              updatedAt: new Date(),
+            })
             .where(eq(outboxCursors.consumer, consumer.name));
         }
         await events.notify();
@@ -121,6 +145,8 @@ export type WorkerOptions = {
   /** Fallback poll interval; NOTIFY on commit wakes the worker sooner. */
   pollMs?: number;
   onError?: (consumer: Consumer, error: unknown) => void;
+  /** Called once the cursors exist and the NOTIFY listener is up: the worker is ready. */
+  onReady?: () => void;
   /** Warn when the oldest write transaction (the horizon) is older than this. */
   lagWarningSeconds?: number;
   onLag?: (oldest: OldestTransaction) => void;
@@ -139,6 +165,7 @@ export async function runOutboxWorker({
   onError = (consumer, error) => console.error(`outbox consumer ${consumer.name} failed`, error),
   lagWarningSeconds = 30,
   onLag = (oldest) => console.warn(describeLag(oldest)),
+  onReady,
 }: WorkerOptions): Promise<void> {
   await ensureCursors(consumers);
   const lagCheckMs = Math.max(lagWarningSeconds, 5) * 1_000;
@@ -151,6 +178,7 @@ export async function runOutboxWorker({
     woken = true;
     wake?.();
   });
+  onReady?.();
   try {
     while (!signal.aborted) {
       woken = false;
@@ -168,6 +196,8 @@ export async function runOutboxWorker({
         }
       }
       if (scanned > 0 || woken) continue;
+      if (signal.aborted) break;
+      // Sleeps until the poll timer, a NOTIFY or an abort, whichever comes first.
       await new Promise<void>((resolve) => {
         const timer = setTimeout(done, pollMs);
         signal.addEventListener('abort', done, { once: true });

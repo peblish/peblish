@@ -2,12 +2,13 @@ import { execFile } from 'node:child_process';
 import { join } from 'node:path';
 import type { EventType, OutboxEvent } from '@peblish/schema/events';
 import { eq, sql } from 'drizzle-orm';
-import { beforeEach, describe, expect, test } from 'vitest';
+import { beforeEach, describe, expect, test, vi } from 'vitest';
 import { db } from '../db/read.ts';
 import { inboxDedupe } from '../db/tables/federation.ts';
 import { outbox, outboxCursors } from '../db/tables/outbox.ts';
 import { writer } from '../db/write.ts';
 import { truncateAll } from '../testing/db.ts';
+import { Refused } from '../tx/refused.ts';
 import { tx } from '../tx/tx.ts';
 import { defineConsumer, type Consumer, type ConsumerStart, type ConsumerTx } from './consumers.ts';
 import { ensureCursors, oldestWriteTransaction, processBatch, runOutboxWorker, type OldestTransaction } from './worker.ts';
@@ -40,6 +41,7 @@ function recorder(
   options: {
     name?: string;
     events?: [EventType, ...EventType[]];
+    emits?: EventType[];
     startAt?: ConsumerStart;
     handle?: (event: OutboxEvent, t: ConsumerTx) => Promise<void>;
   } = {},
@@ -48,6 +50,7 @@ function recorder(
   const consumer = defineConsumer({
     name: options.name ?? 'test.recorder',
     events: options.events ?? ['post.created'],
+    emits: options.emits ?? [],
     startAt: options.startAt ?? 'beginning',
     async handle(event, t) {
       await options.handle?.(event, t);
@@ -136,6 +139,15 @@ describe('consumer start', () => {
     expect(await processBatch(consumer)).toBe(0);
     await slow.commit();
     await drain(consumer, seen, [uuid(1), uuid(2)]);
+  });
+
+  test('a consumer that emits a type it consumes is refused at worker start', async () => {
+    const { consumer } = recorder({ events: ['post.created'], emits: ['post.created'] });
+    const controller = new AbortController();
+    await expect(runOutboxWorker({ signal: controller.signal, consumers: [consumer] })).rejects.toThrow(
+      'outbox consumer test.recorder emits post.created, which it also consumes',
+    );
+    expect(await db().select().from(outboxCursors)).toEqual([]);
   });
 
   test('two consumers with one name are rejected', async () => {
@@ -310,6 +322,7 @@ describe('outbox worker', () => {
   test('a consumer can chain an event in its batch transaction', async () => {
     const first = recorder({
       name: 'test.first',
+      emits: ['comment.created'],
       async handle(event, t) {
         if (event.type === 'post.created') await t.emit(comment(Number(event.postId.slice(-12)) + 100));
       },
@@ -322,7 +335,87 @@ describe('outbox worker', () => {
   });
 });
 
+describe('what a handler may do', () => {
+  test('emitting a type the consumer did not declare fails the batch', async () => {
+    const { consumer } = recorder({
+      async handle(_event, t) {
+        await t.emit(comment(1));
+      },
+    });
+    await ensureCursors([consumer]);
+    await emit(post(1));
+    await expect.poll(horizonPassedOutbox).toBe(true);
+    await expect(processBatch(consumer)).rejects.toThrow('outbox consumer test.recorder may not emit comment.created');
+  });
+
+  test('a Refused event is skipped for good: its writes roll back, it is logged and counted, the batch goes on', async () => {
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const { seen, consumer } = recorder({
+        async handle(event, t) {
+          await t.db.insert(inboxDedupe).values({ activityId: `consumed:${idOf(event)}` });
+          if (idOf(event) === uuid(2)) throw new Refused('post.create', 'target.deleted');
+        },
+      });
+      await ensureCursors([consumer]);
+      await emit(post(1), post(2), post(3));
+      await drain(consumer, seen, [uuid(1), uuid(3)]);
+      expect((await db().select({ id: inboxDedupe.activityId }).from(inboxDedupe)).map(({ id }) => id).sort()).toEqual(
+        [`consumed:${uuid(1)}`, `consumed:${uuid(3)}`].sort(),
+      );
+      expect(await cursorOf(consumer)).toMatchObject({ eventId: 3, refused: 1, attempts: 0, lastError: null });
+      expect(errors).toHaveBeenCalledWith(
+        'outbox consumer test.recorder skipped outbox event 2 (post.created): post.create refused with target.deleted',
+      );
+    } finally {
+      errors.mockRestore();
+    }
+  });
+});
+
 describe('worker loop', () => {
+  test('reports ready only once its cursors exist', async () => {
+    const { consumer } = recorder();
+    const controller = new AbortController();
+    let cursorsAtReady = -1;
+    let resolveReady!: () => void;
+    const ready = new Promise<void>((resolve) => (resolveReady = resolve));
+    const running = runOutboxWorker({
+      signal: controller.signal,
+      consumers: [consumer],
+      pollMs: 60_000,
+      onReady: () => {
+        void db()
+          .select()
+          .from(outboxCursors)
+          .then((rows) => {
+            cursorsAtReady = rows.length;
+            resolveReady();
+          });
+      },
+    });
+    await ready;
+    expect(cursorsAtReady).toBe(1);
+    controller.abort();
+    await running;
+  });
+
+  test('an abort during a busy iteration ends the loop without waiting for the poll timer', async () => {
+    const controller = new AbortController();
+    const { consumer } = recorder({
+      async handle() {
+        throw new Error('always fails');
+      },
+    });
+    await ensureCursors([consumer]);
+    await emit(post(1));
+    await expect.poll(horizonPassedOutbox).toBe(true);
+    const started = Date.now();
+    // The failing batch scans nothing new; onError aborts mid-iteration, before the sleep.
+    await runOutboxWorker({ signal: controller.signal, consumers: [consumer], pollMs: 60_000, onError: () => controller.abort() });
+    expect(Date.now() - started).toBeLessThan(5_000);
+  });
+
   test('wakes on commit and stops on abort', async () => {
     const { seen, consumer } = recorder();
     const controller = new AbortController();

@@ -1,5 +1,5 @@
 {
-  "id": "c49f57a2-abdf-4b63-b91d-926ff35959e1",
+  "id": "c2949151-2339-4258-a4d4-2251b40a2fa8",
   "prevId": "a482f298-6d02-426b-a689-d9a87f584262",
   "version": "7",
   "dialect": "postgresql",
@@ -2943,6 +2943,13 @@
           "type": "text",
           "primaryKey": false,
           "notNull": false
+        },
+        "refused": {
+          "name": "refused",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
         },
         "retry_at": {
           "name": "retry_at",

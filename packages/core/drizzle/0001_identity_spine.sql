@@ -327,6 +327,7 @@ CREATE TABLE "outbox_cursors" (
 	"event_id" bigint DEFAULT 0 NOT NULL,
 	"attempts" integer DEFAULT 0 NOT NULL,
 	"last_error" text,
+	"refused" integer DEFAULT 0 NOT NULL,
 	"retry_at" timestamp with time zone,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
 );

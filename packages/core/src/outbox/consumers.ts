@@ -3,8 +3,14 @@ import type { OpenTx } from '../tx/tx.ts';
 
 /**
  * What a consumer's handler sees: the batch transaction, which also advances its cursor. emit
- * queues a follow-up event in that same transaction, and mutation.within(t, grant, input) runs
- * a mutation in it, so a chained effect commits with the cursor or not at all.
+ * queues a follow-up event of a type the consumer declared in `emits`, in that same
+ * transaction, and mutation.within(t, grant, input) runs a mutation in it (its events go
+ * through the same emit), so a chained effect commits with the cursor or not at all.
+ *
+ * A mutation that refuses (Refused, from its recheck) is permanent for that event: the worker
+ * rolls back that event's handler to a savepoint, logs it at error level with the consumer
+ * and the outbox id, counts it in outbox_cursors.refused and moves on. Retrying would stall
+ * the consumer behind it forever. Any other error rolls back the batch and is retried.
  */
 export type ConsumerTx = OpenTx;
 
@@ -28,6 +34,12 @@ export interface Consumer {
   /** Stable and unique; it keys the cursor row, so renaming restarts the consumer at startAt. */
   readonly name: string;
   readonly events: readonly EventType[];
+  /**
+   * The event types its handler may emit. The worker refuses to start a consumer that emits a
+   * type it consumes (it would feed itself forever); a cycle through other consumers is the
+   * authors' to avoid.
+   */
+  readonly emits: readonly EventType[];
   readonly startAt: ConsumerStart;
   handle(event: OutboxEvent, t: ConsumerTx): Promise<void>;
 }
@@ -39,12 +51,15 @@ function isOneOf<E extends EventType>(event: OutboxEvent, types: readonly E[]): 
 export function defineConsumer<E extends EventType>(spec: {
   name: string;
   events: readonly [E, ...E[]];
+  /** What the handler (or a mutation it runs) may emit; none when omitted. */
+  emits?: readonly EventType[];
   startAt: ConsumerStart;
   handle(event: Extract<OutboxEvent, { type: E }>, t: ConsumerTx): Promise<void>;
 }): Consumer {
   return {
     name: spec.name,
     events: spec.events,
+    emits: spec.emits ?? [],
     startAt: spec.startAt,
     handle: async (event, t) => {
       if (isOneOf(event, spec.events)) await spec.handle(event, t);
@@ -52,11 +67,16 @@ export function defineConsumer<E extends EventType>(spec: {
   };
 }
 
-/** Throws when two consumers share a name: they would share one cursor and skip each other's events. */
-export function assertUniqueNames(consumers: readonly Consumer[]): void {
+/**
+ * Throws, before the worker starts, when two consumers share a name (they would share one
+ * cursor and skip each other's events) or one emits a type it consumes (it would loop).
+ */
+export function assertRunnable(consumers: readonly Consumer[]): void {
   const seen = new Set<string>();
-  for (const { name } of consumers) {
+  for (const { name, events, emits } of consumers) {
     if (seen.has(name)) throw new Error(`two outbox consumers are named ${name}; each name keys its own cursor`);
     seen.add(name);
+    const loop = emits.find((type) => events.includes(type));
+    if (loop) throw new Error(`outbox consumer ${name} emits ${loop}, which it also consumes, so it would feed itself forever`);
   }
 }

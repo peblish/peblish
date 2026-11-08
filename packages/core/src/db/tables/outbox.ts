@@ -26,6 +26,8 @@ export const outboxCursors = pgTable('outbox_cursors', {
   eventId: bigint('event_id', { mode: 'number' }).notNull().default(0),
   attempts: integer('attempts').notNull().default(0),
   lastError: text('last_error'),
+  /** Events skipped because a mutation the handler ran refused them (permanent; see ConsumerTx). */
+  refused: integer('refused').notNull().default(0),
   retryAt: at('retry_at'),
   updatedAt: at('updated_at').notNull().defaultNow(),
 });
