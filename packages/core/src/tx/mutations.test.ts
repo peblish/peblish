@@ -6,16 +6,18 @@ import { policies } from '../registry/policies.gen.ts';
 import { mutationInfo } from './mutation.ts';
 
 // Mutation registry: every mutation exported anywhere in core names a registered authz
-// action and at least one outbox event type. defineMutation already enforces both at
-// compile time; this catches casts and keeps the catalogue honest. Writes outside
-// defineMutation are prevented by lint (core-writer-access, core-tx-access).
+// action and at least one outbox event type, and the actions a moderator or a lock can
+// revoke recheck their policy inside the transaction. defineMutation already enforces the
+// first two at compile time; this catches casts and keeps the catalogue honest. Writes
+// outside defineMutation are prevented by lint (core-writer-access, core-tx-access).
 
 const src = join(import.meta.dirname, '..');
+const mustRecheck = (action: string) => action === 'post.create' || action === 'comment.create' || action.startsWith('mod.');
 const modules = globSync('**/*.ts', { cwd: src }).filter(
   (file) => !/\.(test|test-d|gen)\.ts$/.test(file) && !/(^|\/)(testing|__fixtures__)\//.test(file) && !file.endsWith('-cli.ts'),
 );
 
-test('every exported core mutation has an authz action and an outbox event type', async () => {
+test('every exported core mutation has an authz action, an outbox event type and its required recheck', async () => {
   const found: string[] = [];
   const problems: string[] = [];
   for (const file of modules) {
@@ -27,6 +29,7 @@ test('every exported core mutation has an authz action and an outbox event type'
       if (!Object.hasOwn(policies, info.action)) problems.push(`${file}#${name}: no authz action ${info.action}`);
       if (info.emits.length === 0) problems.push(`${file}#${name}: emits no outbox event`);
       for (const type of info.emits) if (!eventTypes.includes(type)) problems.push(`${file}#${name}: unknown event ${type}`);
+      if (mustRecheck(info.action) && !info.recheck) problems.push(`${file}#${name}: ${info.action} must set recheck: true`);
     }
   }
   expect(problems).toEqual([]);

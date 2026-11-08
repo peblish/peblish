@@ -9,6 +9,8 @@ import { defineMutation } from '../tx/mutation.ts';
 export const createPost = defineMutation({
   action: 'post.create',
   emits: ['post.created'],
+  // A ban, a deleted community or a posting restriction can land after authorize().
+  recheck: true,
   async run(t, grant, input: { title: string; url?: string | null; bodyMd?: string | null; sensitive?: boolean }) {
     const instance = await localInstance(t.db);
     const id = uuidv7();
