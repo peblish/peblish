@@ -1,0 +1,18 @@
+{
+  "name": "@peblish/fixture-import",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "license": "AGPL-3.0-only",
+  "scripts": {
+    "fixtures": "node src/cli.ts"
+  },
+  "dependencies": {
+    "@peblish/core": "workspace:*",
+    "@peblish/federation": "workspace:*",
+    "@peblish/schema": "workspace:*",
+    "arktype": "2.2.9",
+    "postgres": "3.4.9",
+    "prettier": "3.9.10"
+  }
+}
