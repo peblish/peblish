@@ -6,6 +6,8 @@ name: peblish-dev
 services:
   postgres:
     image: postgres:17.11
+    # Five lanes at a time each run web, worker and tests, two pools of up to 10 each.
+    command: ['postgres', '-c', 'max_connections=300']
     environment:
       POSTGRES_USER: peblish
       POSTGRES_PASSWORD: peblish
