@@ -3,7 +3,8 @@ import { Route as adminGroup } from '../routes/admin/route.tsx';
 import { Route as authGroup } from '../routes/auth/route.tsx';
 import { Route as inviteGroup } from '../routes/invite/route.tsx';
 import { Route as settingsGroup } from '../routes/settings/route.tsx';
-import { privateResponse, privateResponses, safeRedirect } from './auth.ts';
+import type { CurrentSession } from '@peblish/core/identity/session';
+import { privateResponse, privateResponses, safeRedirect, withSession } from './auth.ts';
 
 const origin = 'https://feddit.test';
 
@@ -44,5 +45,43 @@ describe('responses under /auth, /invite, /settings and /admin are never cached'
     ['/admin', adminGroup],
   ])('%s runs the rule for every route below it', (_, group) => {
     expect(group.options.server?.middleware).toContain(privateResponses);
+  });
+});
+
+describe('form handlers pass on the session cookie better-auth refreshed', () => {
+  const session: CurrentSession = {
+    view: {
+      userId: '01a1bb85-1d50-7c45-8365-90817bf1be16',
+      actorId: '01a1bb85-1d50-7c45-8365-90817bf1be17',
+      name: 'mira',
+      displayName: null,
+      siteRole: 'user',
+      emailVerified: true,
+      twoFactorEnabled: false,
+      ageDeclaredAt: null,
+    },
+    sessionId: '01a1bb85-1d50-7c45-8365-90817bf1be18',
+    email: 'mira@example.test',
+    role: 'user',
+    sessionCreatedAt: new Date(),
+    setCookies: ['peblish.session_token=refreshed; Path=/; HttpOnly'],
+  };
+  const post = (accept?: string) =>
+    new Request('https://feddit.test/settings/security', { method: 'POST', headers: accept ? { accept } : {} });
+
+  test("on a redirect, an error and a JSON answer, before the answer's own cookies", () => {
+    const { reply } = withSession(post(), session);
+    expect(reply({ redirect: '/settings/security' }).headers.getSetCookie()).toEqual(session.setCookies);
+    expect(reply({ error: 'password.wrong', back: '/settings/security' }).headers.getSetCookie()).toEqual(session.setCookies);
+    const signedOut = 'peblish.session_token=; Path=/; Max-Age=0';
+    expect(
+      withSession(post('application/json'), session)
+        .reply({ redirect: '/', cookies: [signedOut] })
+        .headers.getSetCookie(),
+    ).toEqual([...session.setCookies, signedOut]);
+  });
+
+  test('signed out, nothing to pass on', () => {
+    expect(withSession(post(), null).reply({ redirect: '/auth/sign-in' }).headers.getSetCookie()).toEqual([]);
   });
 });

@@ -1,4 +1,7 @@
+import { eq } from 'drizzle-orm';
 import { beforeEach, expect, test } from 'vitest';
+import { authSession } from '../db/tables/auth.ts';
+import { writer } from '../db/write.ts';
 import { truncateAll } from '../testing/db.ts';
 import { seedAccount, seedLocalInstance, seedTwoFactor, totpCode } from '../testing/seed-a.ts';
 import { auth } from './auth.ts';
@@ -48,6 +51,19 @@ test('sessions list their device, and one can be revoked by its owner only', asy
   expect(await revokeSession(lena.userId, phone!.id)).toBe(false);
   expect(await revokeSession(mira.userId, phone!.id)).toBe(true);
   expect((await deviceSessions(mira.userId, current.sessionId)).map(({ id }) => id)).toEqual([current.sessionId]);
+});
+
+test('a session older than a day comes back with a refreshed cookie for the reply to pass on', async () => {
+  const mira = await seedAccount('mira');
+  const cookies = await signIn(mira.email, mira.password, firefoxMac);
+  expect((await currentSession(cookies))?.setCookies).toEqual([]);
+  // 30-day sessions refresh once a day (session.updateAge): make this one two days old.
+  await writer()
+    .update(authSession)
+    .set({ expiresAt: new Date(Date.now() + 28 * 86_400_000) })
+    .where(eq(authSession.userId, mira.userId));
+  const refreshed = await currentSession(cookies);
+  expect(refreshed?.setCookies.some((cookie) => cookie.includes('session_token='))).toBe(true);
 });
 
 test('an admin counts as one only with two-factor on', async () => {

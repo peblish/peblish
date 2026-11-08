@@ -9,7 +9,7 @@ import { createServerFn } from '@tanstack/react-start';
 import { type } from 'arktype';
 import { useState } from 'react';
 import { useTranslate } from '../../../i18n/use-translate.ts';
-import { forbidden, principalOf, readForm, pageSession, respond, sameOrigin, sessionOf } from '../../../server/auth.ts';
+import { forbidden, formSession, pageSession, principalOf, readForm, sameOrigin } from '../../../server/auth.ts';
 import { useRouteHydrated } from '../../../shell/hydration.ts';
 import { asFormError } from '../../auth/-ui/errors.ts';
 import { AuthForm, Field } from '../../auth/-ui/form.tsx';
@@ -44,22 +44,22 @@ export const Route = createFileRoute('/admin/registration/')({
     handlers: {
       POST: async ({ request }) => {
         if (!sameOrigin(request)) return forbidden();
-        const session = await sessionOf(request);
-        if (!session) return respond(request, { redirect: '/auth/sign-in?redirect=%2Fadmin%2Fregistration' });
+        const { session, reply } = await formSession(request);
+        if (!session) return reply({ redirect: '/auth/sign-in?redirect=%2Fadmin%2Fregistration' });
         const body = Body(await readForm(request));
         const back = { back: '/admin/registration' };
-        if (body instanceof type.errors) return respond(request, { error: 'form.invalid', ...back });
+        if (body instanceof type.errors) return reply({ error: 'form.invalid', ...back });
         const principal = principalOf(session.view);
         if (body.intent === 'revoke') {
           const revoked = await revokeInviteAs(principal, body.invite);
-          if (!revoked.ok) return respond(request, { error: asFormError(revoked.reason) ?? 'generic', ...back });
-          return respond(request, { redirect: '/admin/registration' });
+          if (!revoked.ok) return reply({ error: asFormError(revoked.reason) ?? 'generic', ...back });
+          return reply({ redirect: '/admin/registration' });
         }
         const maxUses = Number(body.maxUses);
-        if (!Number.isInteger(maxUses) || maxUses < 1) return respond(request, { error: 'form.invalid', ...back });
+        if (!Number.isInteger(maxUses) || maxUses < 1) return reply({ error: 'form.invalid', ...back });
         // The referrer defaults to the admin; the chain then starts at them.
         const referrer = await findLocalPerson(body.referrer.trim() || session.view.name);
-        if (!referrer) return respond(request, { error: 'target.not_found', ...back });
+        if (!referrer) return reply({ error: 'target.not_found', ...back });
         const expiryDays = days[body.expires];
         const created = await createInviteAs(principal, {
           referrerId: referrer.id,
@@ -67,10 +67,10 @@ export const Route = createFileRoute('/admin/registration/')({
           maxUses,
           expiresAt: expiryDays === null ? null : new Date(Date.now() + expiryDays * 86_400_000),
         });
-        if (!created.ok) return respond(request, { error: asFormError(created.reason) ?? 'generic', ...back });
+        if (!created.ok) return reply({ error: asFormError(created.reason) ?? 'generic', ...back });
         // The code is shown once, on the page this redirect opens, and never rides in its URL.
         await putFlash(session.sessionId, CREATED, created.code);
-        return respond(request, { redirect: '/admin/registration' });
+        return reply({ redirect: '/admin/registration' });
       },
     },
   },

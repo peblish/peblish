@@ -104,9 +104,25 @@ export function respond(request: Request, outcome: Outcome): Response {
 export const forbidden = () =>
   new Response('cross-site form posts are refused\n', { status: 403, headers: { 'content-type': 'text/plain' } });
 
-/** The session for a form handler; null when signed out. */
-export function sessionOf(request: Request): Promise<CurrentSession | null> {
-  return currentSession(forwardedHeaders(request));
+/** The session for a request's cookies; null when signed out. */
+const sessionOf = (request: Request): Promise<CurrentSession | null> => currentSession(forwardedHeaders(request));
+
+/** A form handler's session (null when signed out) and its reply. */
+export type FormSession = { session: CurrentSession | null; reply: (outcome: Outcome) => Response };
+
+/**
+ * The session for a form handler, with reply(): respond() passing on the cookie better-auth
+ * refreshed while reading the session (session.updateAge), so someone who only posts forms
+ * keeps a cookie as fresh as their session row. The outcome's own cookies come after it, so a
+ * newer session (a changed password) or a sign-out wins.
+ */
+export async function formSession(request: Request): Promise<FormSession> {
+  return withSession(request, await sessionOf(request));
+}
+
+export function withSession(request: Request, session: CurrentSession | null): FormSession {
+  const refreshed = session?.setCookies ?? [];
+  return { session, reply: (outcome) => respond(request, { ...outcome, cookies: [...refreshed, ...(outcome.cookies ?? [])] }) };
 }
 
 /**

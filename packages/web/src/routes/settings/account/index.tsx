@@ -8,13 +8,12 @@ import { type } from 'arktype';
 import { useTranslate } from '../../../i18n/use-translate.ts';
 import {
   forbidden,
+  formSession,
   forwardedHeaders,
   pageSession,
   principalOf,
   readForm,
-  respond,
   sameOrigin,
-  sessionOf,
   signedOutCookies,
 } from '../../../server/auth.ts';
 import { useRouteHydrated } from '../../../shell/hydration.ts';
@@ -43,21 +42,21 @@ export const Route = createFileRoute('/settings/account/')({
       // Deleting the account: the username typed again and the password, then account.delete.
       POST: async ({ request }) => {
         if (!sameOrigin(request)) return forbidden();
-        const session = await sessionOf(request);
-        if (!session) return respond(request, { redirect: '/auth/sign-in?redirect=%2Fsettings%2Faccount' });
+        const { session, reply } = await formSession(request);
+        if (!session) return reply({ redirect: '/auth/sign-in?redirect=%2Fsettings%2Faccount' });
         const body = Body(await readForm(request));
         const back = { back: '/settings/account' };
-        if (body instanceof type.errors) return respond(request, { error: 'form.invalid', ...back });
-        if (body.confirm.trim() !== session.view.name) return respond(request, { error: 'confirm.mismatch', ...back });
+        if (body instanceof type.errors) return reply({ error: 'form.invalid', ...back });
+        if (body.confirm.trim() !== session.view.name) return reply({ error: 'confirm.mismatch', ...back });
         try {
           await (await auth()).api.verifyPassword({ body: { password: body.password }, headers: forwardedHeaders(request) });
         } catch (error) {
           if (authErrorCode(error) === undefined) throw error;
-          return respond(request, { error: 'password.wrong', ...back });
+          return reply({ error: 'password.wrong', ...back });
         }
         const deleted = await deleteAccountAs(principalOf(session.view), session.view.actorId, 'owner request');
-        if (!deleted.ok) return respond(request, { error: asFormError(deleted.reason) ?? 'generic', ...back });
-        return respond(request, { redirect: '/', cookies: await signedOutCookies() });
+        if (!deleted.ok) return reply({ error: asFormError(deleted.reason) ?? 'generic', ...back });
+        return reply({ redirect: '/', cookies: await signedOutCookies() });
       },
     },
   },

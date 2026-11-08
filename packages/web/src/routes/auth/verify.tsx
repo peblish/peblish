@@ -5,7 +5,7 @@ import { createFileRoute, Link, redirect } from '@tanstack/react-router';
 import { createServerFn } from '@tanstack/react-start';
 import { type } from 'arktype';
 import { useTranslate } from '../../i18n/use-translate.ts';
-import { forbidden, mayResendVerification, pageSession, respond, sameOrigin, sessionOf } from '../../server/auth.ts';
+import { forbidden, formSession, mayResendVerification, pageSession, sameOrigin } from '../../server/auth.ts';
 import { useRouteHydrated } from '../../shell/hydration.ts';
 import { asFormError } from './-ui/errors.ts';
 import { AuthForm, rich } from './-ui/form.tsx';
@@ -41,17 +41,17 @@ export const Route = createFileRoute('/auth/verify')({
       // Send the link again: signed in, not yet verified, at most once a minute.
       POST: async ({ request }) => {
         if (!sameOrigin(request)) return forbidden();
-        const session = await sessionOf(request);
-        if (!session) return respond(request, { redirect: '/auth/sign-in?redirect=%2Fauth%2Fverify' });
-        if (session.view.emailVerified) return respond(request, { redirect: '/auth/verify' });
-        if (!mayResendVerification(session.view.userId)) return respond(request, { error: 'resend.too_soon', back: '/auth/verify' });
+        const { session, reply } = await formSession(request);
+        if (!session) return reply({ redirect: '/auth/sign-in?redirect=%2Fauth%2Fverify' });
+        if (session.view.emailVerified) return reply({ redirect: '/auth/verify' });
+        if (!mayResendVerification(session.view.userId)) return reply({ error: 'resend.too_soon', back: '/auth/verify' });
         try {
           await (await auth()).api.sendVerificationEmail({ body: { email: session.email } });
         } catch (error) {
           console.error('verify: sending the link failed', error);
-          return respond(request, { error: 'mail.failed', back: '/auth/verify' });
+          return reply({ error: 'mail.failed', back: '/auth/verify' });
         }
-        return respond(request, { redirect: '/auth/verify?sent=yes' });
+        return reply({ redirect: '/auth/verify?sent=yes' });
       },
     },
   },
