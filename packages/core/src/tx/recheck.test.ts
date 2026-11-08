@@ -7,7 +7,6 @@ import { posts } from '../db/tables/content.ts';
 import { outbox } from '../db/tables/outbox.ts';
 import { createPost } from '../posts/create.ts';
 import { truncateAll } from '../testing/db.ts';
-import { postWithFault } from '../testing/fault-mutation.ts';
 import { localUser, seedActor, seedInstance } from '../testing/seed.ts';
 import { Refused } from './refused.ts';
 import { tx } from './tx.ts';
@@ -43,10 +42,4 @@ test('a recheck mutation refuses a stale grant with the exact reason and writes 
   await expect(attempt).rejects.toBeInstanceOf(Refused);
   await expect(attempt).rejects.toMatchObject({ action: 'post.create', reason: 'target.deleted' });
   expect(await counts()).toEqual({ posts: 0, outbox: 0 });
-});
-
-test('control: without recheck the same stale grant would have written', async () => {
-  const grant = await staleGrant();
-  await postWithFault(async () => {})(grant, { id: '0192f5a0-0000-7000-8000-00000000c001' });
-  expect(await counts()).toEqual({ posts: 1, outbox: 1 });
 });

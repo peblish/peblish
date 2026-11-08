@@ -11,6 +11,13 @@ const defined = new WeakMap<object, MutationInfo>();
 
 export type MutationInfo = { action: ActionName; emits: readonly EventType[]; recheck: boolean };
 
+/** Actions a moderator or a lock can revoke; their mutations must set recheck: true. */
+export function requiresRecheck(action: string): boolean {
+  return action === 'post.create' || action === 'comment.create' || action.startsWith('mod.');
+}
+type RevocableAction = 'post.create' | 'comment.create' | `mod.${string}`;
+type RecheckOption<A extends string> = A extends RevocableAction ? { recheck: true } : { recheck?: boolean };
+
 /** What a mutation's body sees: the transaction's handle and an emit limited to its declared events. */
 export type MutationTx<E extends EventType> = {
   readonly db: WriteTx;
@@ -33,18 +40,23 @@ export interface Mutation<A extends ActionName, I, O> {
  * recheck re-runs the action's policy inside the transaction and hands the body the fresh
  * grant, so a ban, lock or removal that landed after authorize() is honoured; a deny throws
  * Refused and writes nothing. Required for actions a moderator or a lock can revoke (post
- * and comment create, every mod.* action; the registry test enforces it).
+ * and comment create, every mod.* action): the type demands it and definition throws
+ * without it, so an internal mutation behind a wrapper cannot skip it either.
  */
-export function defineMutation<A extends ActionName, E extends EventType, I, O>(spec: {
-  action: A;
-  emits: readonly [E, ...E[]];
-  recheck?: boolean;
-  run: (t: MutationTx<E>, grant: Authorized<A>, input: I) => Promise<O>;
-}): Mutation<A, I, O> {
+export function defineMutation<A extends ActionName, E extends EventType, I, O>(
+  spec: {
+    action: A;
+    emits: readonly [E, ...E[]];
+    run: (t: MutationTx<E>, grant: Authorized<A>, input: I) => Promise<O>;
+  } & RecheckOption<A>,
+): Mutation<A, I, O> {
+  const recheck = 'recheck' in spec && spec.recheck === true;
+  if (requiresRecheck(spec.action) && !recheck)
+    throw new TypeError(`${spec.action} can be revoked, so its mutation must set recheck: true`);
   const within = async (t: Tx, grant: Authorized<A>, input: I): Promise<O> => {
     if (!Authorized.verify(grant, spec.action)) throw new TypeError(`${spec.action} needs a grant from authorize()`);
     let current = grant;
-    if (spec.recheck) {
+    if (recheck) {
       const decision = await authorize(spec.action, grant.principal, grant.subject, { db: t.db, lock: true });
       if (!decision.ok) throw new Refused(spec.action, decision.reason);
       current = decision.grant;
@@ -56,7 +68,7 @@ export function defineMutation<A extends ActionName, E extends EventType, I, O>(
     return spec.run({ db: t.db, emit }, current, input);
   };
   const mutation = Object.assign((grant: Authorized<A>, input: I) => tx((t) => within(t, grant, input)), { within });
-  defined.set(mutation, { action: spec.action, emits: spec.emits, recheck: spec.recheck ?? false });
+  defined.set(mutation, { action: spec.action, emits: spec.emits, recheck });
   return mutation;
 }
 

@@ -7,6 +7,7 @@ export function postWithFault(fault: () => Promise<void>) {
   return defineMutation({
     action: 'post.create',
     emits: ['post.created'],
+    recheck: true,
     async run(t, grant, input: { id: string }) {
       const instance = await localInstance(t.db);
       await t.db.insert(posts).values({

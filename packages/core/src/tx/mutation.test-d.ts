@@ -36,6 +36,7 @@ defineMutation({
 
 defineMutation({
   action: 'post.create',
+  recheck: true,
   // @ts-expect-error: a mutation must emit at least one event
   emits: [],
   run: async () => {},
@@ -44,8 +45,15 @@ defineMutation({
 defineMutation({
   action: 'post.create',
   emits: ['post.created'],
+  recheck: true,
   run: async (t) => {
     // @ts-expect-error: emitting an event the mutation did not declare
     await t.emit({ type: 'vote.cast', v: 1, voterId: 'x', target: { kind: 'post', id: 'y' }, value: 1, previous: 0, local: true });
   },
 });
+
+// @ts-expect-error: post.create can be revoked, so recheck: true is required
+defineMutation({ action: 'post.create', emits: ['post.created'], run: async () => {} });
+
+// @ts-expect-error: recheck must be true, not false, for a mod.* action
+defineMutation({ action: 'mod.site_ban', emits: ['mod.ban'], recheck: false, run: async () => {} });
