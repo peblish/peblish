@@ -13,13 +13,16 @@ import { authUser } from '../db/tables/auth.ts';
  * is on (A03, as SessionView.siteRole). Rows are read FOR SHARE so a concurrent
  * demotion or deletion waits for the write, and a site ban (which takes FOR NO KEY UPDATE on
  * the actor row before inserting) does too. A write body therefore must not update the acting
- * actor's own row; if one ever needs to, this read becomes FOR NO KEY UPDATE (PolicyRequest.lock).
- * A Person's row stays FOR SHARE: a community ban reads its target's row FOR SHARE after
- * locking the community, which a stronger lock here would turn into a cycle.
+ * actor's own row, except self-deletion: deleteAccount (identity/delete.ts) locks the owner's
+ * row FOR NO KEY UPDATE before the recheck, then runs the rechecked inner mutation, so this
+ * read finds the row already held and a second request waits there instead of deadlocking.
+ * Any other write that must update it does the same. A Person's row stays FOR SHARE: a
+ * community ban reads its target's row FOR SHARE after locking the community, which a
+ * stronger lock here would turn into a cycle.
  *
- * One exception: a remote community acting as itself (actorId is the community its own
- * Announce names) is also the community row every policy then locks FOR NO KEY UPDATE
- * (state.ts). Two such requests holding it FOR SHARE would each wait for the other to
+ * One exception to FOR SHARE: a remote community acting as itself (actorId is the community
+ * its own Announce names) is also the community row every policy then locks FOR NO KEY
+ * UPDATE (state.ts). Two such requests holding it FOR SHARE would each wait for the other to
  * upgrade (40P01), so that row is read FOR NO KEY UPDATE from the start.
  * Lane MODF adds the site-ban check here.
  */

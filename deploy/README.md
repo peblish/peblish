@@ -44,7 +44,7 @@ idle.
 | `NODE_ENV`              | all                            | `production` (image default)                                                                                                                                                                                                                                                                                                                                                                                                    |
 | `PEBLISH_PROCESS`       | all                            | `web` (image default), `worker` or `migrate`: which process starts, and what the healthcheck probes                                                                                                                                                                                                                                                                                                                             |
 | `BETTER_AUTH_SECRET`    | web, the first-admin script    | Required: a random value of 32 characters or more, such as `openssl rand -base64 48`. Only `localhost` and `*.test` origins fall back to a development secret. Keep it stable: sessions are signed and stored two-factor secrets encrypted with it, so a new value signs everyone out, breaks every two-factor setup and voids every invite code not yet used                                                                   |
-| `SMTP_URL`              | web                            | Required for mail (email verification, password reset): `smtp://host:port` or `smtps://user:password@host`. Without it, sending a verification link again shows a mail error; reset mail goes out in the background (the form answers the same whether or not an account uses the address), so a failure there only shows in the web log. A sandbox sender on staging                                                           |
+| `SMTP_URL`              | web                            | Required for mail (email verification, password reset): `smtp://host:port` or `smtps://user:password@host`. Without it, asking for a verification link again shows a mail error, while the link sent at sign-up and reset mail (sent in the background, so the form answers the same whether or not an account uses the address) fail only into the web log. A sandbox sender on staging                                        |
 | `MAIL_FROM`             | web                            | Optional sender; default `<host> <no-reply@<host>>`                                                                                                                                                                                                                                                                                                                                                                             |
 | `PEBLISH_TRUSTED_PROXY` | web                            | Where the client's address comes from, for throttling and the session list. `none` (default): the connection's peer; behind a proxy that is the proxy, so every client would share one budget. `traefik` (Easypanel): the last `X-Forwarded-For` entry, the peer Traefik saw. `cloudflare`: `CF-Connecting-IP`, only when the origin takes traffic from Cloudflare alone, since anyone reaching it directly can set that header |
 
@@ -58,8 +58,11 @@ minutes; typing the password again while signed in (to change it, turn two-facto
 or delete the account), the same; reset mail, 3 per address typed and 10 per client address
 an hour; invite codes that match no invite, 10 per client address an hour; another
 verification link, one a minute per account. A refused attempt counts too, and an IPv6
-client is counted by its /64. Set `PEBLISH_TRUSTED_PROXY` before going live, or the budgets
-per address apply to the proxy.
+client is counted by its /64. On Easypanel, staging and production alike, set
+`PEBLISH_TRUSTED_PROXY=traefik` on `web` before going live; left at `none`, every client
+shares the proxy's budgets per address. With Cloudflare proxying in front of Traefik, the
+address Traefik saw is a Cloudflare edge, so budgets per address then apply per edge until
+the origin takes traffic from Cloudflare alone and the setting moves to `cloudflare`.
 
 Added by later lanes (names reserved here so environments stay consistent): `S3_ENDPOINT`,
 `S3_BUCKET`, `S3_REGION`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` (lane B2; Cloudflare R2
