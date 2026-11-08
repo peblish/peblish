@@ -1,11 +1,21 @@
 // Package boundaries (frozen G0 contract). Each rule matches both the resolved path and the
 // bare specifier, because pnpm's strict layout leaves an undeclared import unresolved.
-// tests/boundaries.test.ts cruises the deliberate violations under **/__fixtures__/ and
-// asserts that each one fails with its rule.
+// External modules stay in the graph (doNotFollow, not exclude), so a resolved import of a
+// forbidden package is an edge the rules see. tests/boundaries.test.ts cruises the
+// deliberate violations under **/__fixtures__/ and asserts that each one fails its rule.
 
 const pkg = (names) => [`^packages/(${names})/`, `^@peblish/(${names})(/|$)`];
 const npm = (names) => [`(^|/node_modules/)(${names})(/|$)`];
 const tests = '\\.(test|test-d)\\.tsx?$';
+/** Test support: core's helpers, the shared fixtures (lane FIT), the root tests and tools. */
+const testSupport = ['^packages/core/src/(testing|fixtures)/', tests, '^tests/', '^tools/'];
+/** Modules the rules below guard: a re-export would hand them past those rules. */
+const guarded = [
+  '^packages/core/src/db/(write|pools)\\.ts$',
+  '^packages/core/src/authz/brand\\.ts$',
+  '^packages/core/src/testing/',
+  '^@peblish/core/(db/write|db/pools|authz/brand|testing)(/|$)',
+];
 
 /** @type {import('dependency-cruiser').IConfiguration} */
 module.exports = {
@@ -42,14 +52,14 @@ module.exports = {
       name: 'mux-only-in-ui',
       comment: 'Mux UI and React Aria are reached only through the ui facade.',
       severity: 'error',
-      from: { pathNot: '^packages/ui/' },
+      from: { pathNot: ['^packages/ui/', '^tools/'] },
       to: { path: npm('@muxui/react|react-aria-components|react-aria') },
     },
     {
       name: 'fedify-only-in-federation',
       comment: '@fedify/* is confined to packages/federation.',
       severity: 'error',
-      from: { pathNot: '^packages/federation/' },
+      from: { pathNot: ['^packages/federation/', '^tools/'] },
       to: { path: npm('@fedify/[^/]+') },
     },
     {
@@ -62,6 +72,13 @@ module.exports = {
       },
     },
     {
+      name: 'driver-only-in-core-db',
+      comment: 'The Postgres driver is opened in core/db only; everything else queries through its handles.',
+      severity: 'error',
+      from: { pathNot: ['^packages/core/src/db/', ...testSupport] },
+      to: { path: npm('postgres|drizzle-orm/postgres-js') },
+    },
+    {
       name: 'authz-brand',
       comment: 'Only authorize() issues grants and only mutations verify them; everyone else imports brand.ts for types.',
       severity: 'error',
@@ -71,26 +88,40 @@ module.exports = {
     {
       name: 'core-writer-access',
       comment:
-        'The writable pool is for core/db, core/tx, core/outbox, test helpers and better-auth (core/identity, lane A). Everything else writes through a mutation.',
+        'The writable pool is for core/db, core/tx, core/outbox, test support and better-auth (core/identity, lane A). Everything else writes through a mutation.',
       severity: 'error',
-      from: {
-        pathNot: ['^packages/core/src/(db|tx|outbox|testing|identity)/', '^packages/core/src/lifecycle\\.ts$', tests, '^tests/'],
-      },
-      to: { path: ['^packages/core/src/db/(write|pools)\\.ts$', '^@peblish/core/db/(write|pools)$'] },
+      from: { pathNot: ['^packages/core/src/(db|tx|outbox|identity)/', '^packages/core/src/lifecycle\\.ts$', ...testSupport] },
+      to: { path: ['^packages/core/src/db/(write|pools)\\.ts$', '^@peblish/core/db/(write|pools)$'], dependencyTypesNot: ['type-only'] },
     },
     {
       name: 'core-tx-access',
       comment: 'Raw transactions are for mutations, the outbox worker and the inbound federation pipeline.',
       severity: 'error',
-      from: { pathNot: ['^packages/core/src/(tx|outbox|testing)/', '^packages/federation/src/inbound/', tests] },
+      from: { pathNot: ['^packages/core/src/(tx|outbox)/', '^packages/federation/src/inbound/', ...testSupport] },
       to: { path: ['^packages/core/src/tx/tx\\.ts$', '^@peblish/core/tx/tx$'], dependencyTypesNot: ['type-only'] },
     },
     {
       name: 'no-test-helpers-in-product',
-      comment: 'core/testing is for tests only.',
+      comment: 'Product code imports no test code: core/testing, core/fixtures, __fixtures__, test files or tools.',
+      severity: 'error',
+      from: { pathNot: testSupport },
+      to: {
+        path: ['^packages/core/src/(testing|fixtures)/', '^@peblish/core/(testing|fixtures)(/|$)', '/__fixtures__/', tests, '^tools/'],
+      },
+    },
+    {
+      name: 'no-guarded-reexports',
+      comment: 'The write pool, the grant brand and the test helpers are never re-exported, even by a module allowed to import them.',
       severity: 'error',
       from: { pathNot: ['^packages/core/src/testing/', tests, '^tests/'] },
-      to: { path: ['^packages/core/src/testing/', '^@peblish/core/testing(/|$)'] },
+      to: { path: guarded, dependencyTypes: ['export'], dependencyTypesNot: ['type-only'] },
+    },
+    {
+      name: 'nothing-imports-tools',
+      comment: 'tools/* may import any package; nothing imports a tool.',
+      severity: 'error',
+      from: { pathNot: '^tools/' },
+      to: { path: '^tools/' },
     },
     {
       name: 'no-circular',
@@ -108,8 +139,12 @@ module.exports = {
     },
   ],
   options: {
-    doNotFollow: { path: 'node_modules' },
-    exclude: { path: ['/__fixtures__/', '(^|/)node_modules/', '/\\.output/', '/dist/', '/\\.tanstack/'] },
+    // Fixtures stay visible as import targets (no-test-helpers-in-product) but are not cruised
+    // as sources by the normal run; tests/boundaries.test.ts cruises them on purpose.
+    doNotFollow: { path: ['node_modules', '/__fixtures__/'] },
+    // Build output of our own packages only: an unanchored /dist/ would also drop every
+    // resolved npm module (most resolve into a dist/ folder) and the edges to it.
+    exclude: { path: '^packages/[^/]+/(\\.output|dist|\\.tanstack)/' },
     tsPreCompilationDeps: true,
     enhancedResolveOptions: {
       exportsFields: ['exports'],
