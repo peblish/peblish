@@ -17,8 +17,10 @@ export interface Tx {
   /** Queues `event` in the outbox, validated against the event union. */
   emit(event: OutboxEvent): Promise<void>;
   /**
-   * Records the dedupe marker for an inbound activity id. Returns false when the activity
-   * was already applied (by this or a concurrent transaction): skip the change then.
+   * Records the dedupe marker for an inbound activity. Returns false when it was already
+   * applied (by this or a concurrent transaction): skip the change then. Pass the applied
+   * activity's id: the inner activity's when it arrived inside an Announce, so a direct and
+   * an announced copy apply once.
    */
   dedupe(activityId: string): Promise<boolean>;
 }

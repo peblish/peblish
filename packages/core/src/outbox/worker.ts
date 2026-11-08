@@ -1,6 +1,7 @@
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import { parseEvent } from '@peblish/schema/events';
 import { consumers as registered } from '../registry/consumers.gen.ts';
+import { db } from '../db/read.ts';
 import { outbox, outboxCursors } from '../db/tables/outbox.ts';
 import { writePool } from '../db/pools.ts';
 import { writer } from '../db/write.ts';
@@ -72,6 +73,24 @@ export async function processBatch(consumer: Consumer, limit = 100): Promise<num
   }
 }
 
+export type OldestTransaction = { pid: number; database: string | null; application: string; state: string | null; ageSeconds: number };
+
+/**
+ * The oldest open transaction on the cluster that holds a transaction id, and so holds back
+ * the outbox horizon for every consumer, in every database on that Postgres (a stuck psql
+ * session in one lane's database stalls every lane). Undefined when there is none.
+ */
+export async function oldestWriteTransaction(): Promise<OldestTransaction | undefined> {
+  const [oldest] = await db().execute<OldestTransaction>(sql`
+    select pid, datname as database, application_name as application, state,
+           extract(epoch from now() - xact_start)::float8 as "ageSeconds"
+    from pg_stat_activity
+    where backend_xid is not null and pid <> pg_backend_pid()
+    order by xact_start
+    limit 1`);
+  return oldest;
+}
+
 export type WorkerOptions = {
   signal: AbortSignal;
   consumers?: readonly Consumer[];
@@ -79,7 +98,14 @@ export type WorkerOptions = {
   /** Fallback poll interval; NOTIFY on commit wakes the worker sooner. */
   pollMs?: number;
   onError?: (consumer: Consumer, error: unknown) => void;
+  /** Warn when the oldest write transaction (the horizon) is older than this. */
+  lagWarningSeconds?: number;
+  onLag?: (oldest: OldestTransaction) => void;
 };
+
+const describeLag = ({ ageSeconds, pid, database, application, state }: OldestTransaction) =>
+  `outbox: consumers are waiting behind a write transaction open for ${Math.round(ageSeconds)} s ` +
+  `(pid ${pid}, database ${database ?? '?'}, application ${application || '?'}, state ${state ?? '?'})`;
 
 /** Runs the registered consumers until `signal` aborts. */
 export async function runOutboxWorker({
@@ -88,12 +114,21 @@ export async function runOutboxWorker({
   batchSize = 100,
   pollMs = 1_000,
   onError = (consumer, error) => console.error(`outbox consumer ${consumer.name} failed`, error),
+  lagWarningSeconds = 30,
+  onLag = (oldest) => console.warn(describeLag(oldest)),
 }: WorkerOptions): Promise<void> {
   await ensureCursors(consumers);
+  const lagCheckMs = Math.max(lagWarningSeconds, 5) * 1_000;
+  let lagCheckedAt = 0;
   let wake: (() => void) | undefined;
   const listener = await writePool().client.listen(OUTBOX_CHANNEL, () => wake?.());
   try {
     while (!signal.aborted) {
+      if (Date.now() - lagCheckedAt >= lagCheckMs) {
+        lagCheckedAt = Date.now();
+        const oldest = await oldestWriteTransaction().catch(() => undefined);
+        if (oldest && oldest.ageSeconds > lagWarningSeconds) onLag(oldest);
+      }
       let handled = 0;
       for (const consumer of consumers) {
         try {

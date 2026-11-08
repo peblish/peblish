@@ -48,6 +48,14 @@ production, a separate bucket for staging).
 - Cloudflare in front: no cache rules on `/u`, `/c`, `/post`; the WAF must not block
   `POST /inbox`; forward real client IPs.
 
+## Transactions and the outbox
+
+The worker hands consumers only events below the oldest open write transaction on the
+Postgres cluster, so one long transaction delays every consumer. Keep write transactions
+short, make no network calls inside them, and do not leave a psql session idle in a
+transaction against production. The worker logs a warning naming the transaction (pid,
+database, application, state) when that horizon lags more than 30 seconds.
+
 ## Checking an image locally
 
 ```sh

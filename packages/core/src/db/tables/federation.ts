@@ -31,7 +31,11 @@ export const inboxRaw = pgTable(
   ],
 );
 
-/** Activity ids already applied; written by Tx.dedupe in the same transaction as the change. */
+/**
+ * Ids of activities already applied, written by Tx.dedupe in the same transaction as the
+ * change. The id is the applied activity's: the inner activity when it arrives inside an
+ * Announce, so a direct copy and an announced copy of the same Create apply once.
+ */
 export const inboxDedupe = pgTable('inbox_dedupe', {
   activityId: text('activity_id').primaryKey(),
   seenAt: at('seen_at').notNull().defaultNow(),

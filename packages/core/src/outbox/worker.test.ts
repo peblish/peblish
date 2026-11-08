@@ -6,7 +6,7 @@ import { outboxCursors } from '../db/tables/outbox.ts';
 import { truncateAll } from '../testing/db.ts';
 import { tx } from '../tx/tx.ts';
 import { defineConsumer, type Consumer } from './consumers.ts';
-import { ensureCursors, processBatch, runOutboxWorker } from './worker.ts';
+import { ensureCursors, processBatch, runOutboxWorker, type OldestTransaction } from './worker.ts';
 
 const uuid = (n: number) => `0192f5a0-0000-7000-8000-${String(n).padStart(12, '0')}`;
 const created = (n: number): OutboxEvent => ({
@@ -124,5 +124,25 @@ describe('outbox worker', () => {
     await expect.poll(() => seen, { timeout: 2_000 }).toEqual([uuid(7)]);
     controller.abort();
     await running;
+  });
+
+  test('the worker warns when a long write transaction holds back the horizon', async () => {
+    const { consumer } = recorder();
+    const slow = heldOpen(created(1));
+    await slow.started;
+    const lags: OldestTransaction[] = [];
+    const controller = new AbortController();
+    const running = runOutboxWorker({
+      signal: controller.signal,
+      consumers: [consumer],
+      pollMs: 50,
+      lagWarningSeconds: 0,
+      onLag: (oldest) => lags.push(oldest),
+    });
+    await expect.poll(() => lags.length).toBeGreaterThan(0);
+    controller.abort();
+    await running;
+    await slow.commit();
+    expect(lags[0]).toMatchObject({ database: new URL(process.env.DATABASE_URL ?? '').pathname.slice(1), application: 'peblish-write' });
   });
 });
