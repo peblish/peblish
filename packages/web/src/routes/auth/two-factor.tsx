@@ -1,4 +1,5 @@
 import { auth, authErrorCode } from '@peblish/core/identity/auth';
+import { localHandles } from '@peblish/core/identity/handles';
 import { Button } from '@peblish/ui/components/button';
 import { createFileRoute, Link } from '@tanstack/react-router';
 import { type } from 'arktype';
@@ -34,7 +35,10 @@ export const Route = createFileRoute('/auth/two-factor')({
             body.method === 'totp'
               ? await api.verifyTOTP({ body: { code: code.replace(/\s/g, ''), trustDevice: false }, ...options })
               : await api.verifyBackupCode({ body: { code, trustDevice: false }, ...options });
-          return respond(request, { redirect: safeRedirect(body.redirect), cookies: headers.getSetCookie() });
+          return respond(request, {
+            redirect: safeRedirect(body.redirect, (await localHandles()).origin),
+            cookies: headers.getSetCookie(),
+          });
         } catch (error) {
           const code = authErrorCode(error);
           if (code === undefined) throw error;

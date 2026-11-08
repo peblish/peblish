@@ -1,5 +1,5 @@
 import { auth, authErrorCode } from '@peblish/core/identity/auth';
-import { loginEmail } from '@peblish/core/identity/handles';
+import { localHandles, loginEmail } from '@peblish/core/identity/handles';
 import { Button } from '@peblish/ui/components/button';
 import { createFileRoute, Link } from '@tanstack/react-router';
 import { type } from 'arktype';
@@ -35,7 +35,7 @@ export const Route = createFileRoute('/auth/sign-in')({
             returnHeaders: true,
           });
           const cookies = headers.getSetCookie();
-          const next = safeRedirect(body.redirect);
+          const next = safeRedirect(body.redirect, (await localHandles()).origin);
           // Two-factor accounts get a short-lived two-factor cookie instead of a session.
           if ('twoFactorRedirect' in response && response.twoFactorRedirect)
             return respond(request, { redirect: `/auth/two-factor?redirect=${encodeURIComponent(next)}`, cookies });

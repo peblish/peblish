@@ -122,8 +122,20 @@ export function ageGated(request: Request): boolean {
   return (request.headers.get('cookie') ?? '').split(/;\s*/).includes(`${AGE_GATE_COOKIE}=1`);
 }
 
-/** Only a path on this site: an open redirect would turn the sign-in page into a phishing aid. */
-export const safeRedirect = (target: string | undefined) => (target && /^\/(?!\/)/.test(target) && !target.includes('\\') ? target : '/');
+const hasControlCharacter = (text: string) => [...text].some((char) => char.charCodeAt(0) < 0x20 || char.charCodeAt(0) === 0x7f);
+
+/**
+ * Where to go after signing in: a path on this site, else '/'. An open redirect would turn the
+ * sign-in page into a phishing aid, and browsers drop tabs and line breaks from a URL, so
+ * `/\t/evil.example` would become `//evil.example`. So a control character or a backslash
+ * anywhere refuses it, it must start with one slash, and resolved against the instance's
+ * origin it must stay there.
+ */
+export function safeRedirect(target: string | undefined, origin: string): string {
+  if (!target || hasControlCharacter(target) || target.includes('\\') || !/^\/(?!\/)/.test(target)) return '/';
+  const url = new URL(target, origin);
+  return url.origin === new URL(origin).origin ? url.pathname + url.search + url.hash : '/';
+}
 
 declare global {
   // When each user last asked for a verification link (one per minute); on globalThis like the pools.
