@@ -31,6 +31,32 @@ test('a spoiler works inside a list item or quote, and not inside code', () => {
   expect(html('```\n::: spoiler t\n:::\n```')).toBe('<pre><code>::: spoiler t\n:::\n</code></pre>\n');
 });
 
+test('marker lines inside fenced code do not open or close a spoiler', () => {
+  const fenced = renderMarkdown('::: spoiler t\n```\n:::\n::: spoiler x\n```\nsecret\n:::\nafter', {
+    baseOrigin: 'https://feddit.example',
+  });
+  expect(fenced.html).toBe(
+    '<details><summary>t</summary>\n<pre><code>:::\n::: spoiler x\n</code></pre>\n<p>secret</p>\n</details>\n<p>after</p>\n',
+  );
+  expect(fenced.excerpt).toBe('t after');
+  // Tildes, and a closing line shorter than the opening one, which does not close it.
+  expect(html('::: spoiler t\n~~~~\n~~~\n:::\n~~~~\nsecret\n:::')).toBe(
+    '<details><summary>t</summary>\n<pre><code>~~~\n:::\n</code></pre>\n<p>secret</p>\n</details>\n',
+  );
+  // Fences in a list item and in a nested one, four columns past the spoiler.
+  expect(html('::: spoiler t\n- item\n  ```\n  :::\n  ```\n  - sub\n\n    ```\n    :::\n    ```\n:::\nafter')).toBe(
+    '<details><summary>t</summary>\n<ul>\n<li>item<pre><code>:::\n</code></pre>\n<ul>\n<li>\n<p>sub</p>\n<pre><code>:::\n</code></pre>\n</li>\n</ul>\n</li>\n</ul>\n</details>\n<p>after</p>\n',
+  );
+  // An indented code block that shows a fence is not one.
+  expect(html('::: spoiler t\n    ```\n:::\nafter')).toBe(
+    '<details><summary>t</summary>\n<pre><code>```\n</code></pre>\n</details>\n<p>after</p>\n',
+  );
+});
+
+test('a fence left open in a list item keeps the spoiler open: it runs on rather than ending early', () => {
+  expect(html('::: spoiler t\n- item\n  ```\n  code\n- next\n:::\nafter')).not.toMatch(/<\/details>\n<p>after/);
+});
+
 test('the toolbar wraps the selection in its own block and selects the title', () => {
   const value = 'Who did it? The butler. Really.';
   const start = value.indexOf('The butler.');
