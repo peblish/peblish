@@ -80,3 +80,17 @@ test.each(Object.entries(shapes))('the sanitiser is linear in input size: %s', (
   // Eight times the input: linear is about 8, quadratic about 64.
   expect(best(large) / best(small)).toBeLessThan(24);
 });
+
+// Markdown shapes that made a plugin superlinear. Each takes n, the size of the small input
+// in units of its repeated part.
+const markdownShapes: Record<string, (n: number) => string> = {
+  // The padded opening line is tested once per nesting level.
+  'padded spoiler title, 40 deep': (n) => `${'::: spoiler a\n'.repeat(40)}::: spoiler x${' '.repeat(n)}y\n${':::\n'.repeat(41)}`,
+};
+
+test.each(Object.entries(markdownShapes))('rendering is linear in input size: %s', (_shape, make) => {
+  const best = (input: string) =>
+    times(() => renderMarkdown(input, { baseOrigin: 'https://feddit.example', maxLength: 10_000_000 }), 5)[0]!;
+  // Eight times the input: linear is about 8, quadratic about 64.
+  expect(best(make(16_000)) / best(make(2_000))).toBeLessThan(24);
+});
