@@ -4,7 +4,7 @@ import { seedAccount, seedLocalInstance, seedTwoFactor, totpCode } from '../test
 import { auth } from './auth.ts';
 import { bootstrapAdmin } from './bootstrap.ts';
 import { currentSession, describeDevice, deviceSessions, maskIp, revokeSession } from './session.ts';
-import { pendingTotp, revealRecoveryCodesOnce, takeRecoveryCodes } from './two-factor.ts';
+import { confirmTotpSetup, pendingTotp, takeRecoveryCodes } from './two-factor.ts';
 
 beforeEach(async () => {
   await truncateAll();
@@ -79,7 +79,7 @@ test('device names and masked addresses', () => {
   expect(maskIp('2001:db8:85a3:8d3:1319:8a2e:370:7348')).toBe('2001:db8:85a3:8d3:x');
 });
 
-test('a two-factor setup shows its key until confirmed, then the recovery codes once', async () => {
+test('a two-factor setup shows its key until confirmed, then the recovery codes once, and a later code shows nothing', async () => {
   const mira = await seedAccount('mira');
   const cookies = await signIn(mira.email, mira.password, firefoxMac);
   const api = (await auth()).api;
@@ -90,10 +90,16 @@ test('a two-factor setup shows its key until confirmed, then the recovery codes 
   expect(pending?.key).toMatch(/^[A-Z2-7]{32,}$/);
 
   const secret = Buffer.from(base32Decode(pending!.key)).toString();
-  await api.verifyTOTP({ body: { code: totpCode(secret) }, headers: cookies });
+  const now = Date.now();
+  const confirmed = await confirmTotpSetup(mira.userId, cookies, totpCode(secret, now));
+  expect(confirmed?.some((cookie) => cookie.includes('session_token'))).toBe(true);
   expect(await pendingTotp(mira.userId, mira.email)).toBeNull();
-  await revealRecoveryCodesOnce(mira.userId);
   expect(await takeRecoveryCodes(mira.userId)).toEqual(enabled.backupCodes);
+  expect(await takeRecoveryCodes(mira.userId)).toBeNull();
+
+  // Posting a valid code again, with the new session, changes nothing and reveals nothing.
+  const session = new Headers({ cookie: (confirmed ?? []).map((value) => value.split(';')[0]).join('; ') });
+  expect(await confirmTotpSetup(mira.userId, session, totpCode(secret, now + 30_000))).toBeNull();
   expect(await takeRecoveryCodes(mira.userId)).toBeNull();
 });
 

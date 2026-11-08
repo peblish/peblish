@@ -3,7 +3,7 @@ import type { Uuid } from '@peblish/schema/ids';
 import { symmetricDecrypt } from 'better-auth/crypto';
 import { eq } from 'drizzle-orm';
 import { db } from '../db/read.ts';
-import { authTwoFactor } from '../db/tables/auth.ts';
+import { authTwoFactor, authUser } from '../db/tables/auth.ts';
 import { auth } from './auth.ts';
 
 // The security page's TOTP setup is three server-rendered steps (scan, confirm, save codes),
@@ -28,13 +28,31 @@ export async function pendingTotp(userId: Uuid, email: string): Promise<{ uri: s
 const revealKey = (userId: Uuid) => `peblish-recovery-codes:${userId}`;
 
 /** Lets the next security page view show the recovery codes, within ten minutes. */
-export async function revealRecoveryCodesOnce(userId: Uuid): Promise<void> {
+async function revealRecoveryCodesOnce(userId: Uuid): Promise<void> {
   const { internalAdapter } = await (await auth()).$context;
   await internalAdapter.createVerificationValue({
     identifier: revealKey(userId),
     value: userId,
     expiresAt: new Date(Date.now() + 10 * 60_000),
   });
+}
+
+/**
+ * Confirms a started TOTP setup with a code from the app (the security page's step 2), and
+ * lets the next page view show the recovery codes. Only a setup not yet confirmed can be, so
+ * a code posted again later shows nothing. Returns better-auth's Set-Cookie values (turning
+ * two-factor on replaces the session), or null when there was no setup to confirm.
+ */
+export async function confirmTotpSetup(userId: Uuid, headers: Headers, code: string): Promise<string[] | null> {
+  const [setup] = await db()
+    .select({ verified: authTwoFactor.verified, enabled: authUser.twoFactorEnabled })
+    .from(authTwoFactor)
+    .innerJoin(authUser, eq(authUser.id, authTwoFactor.userId))
+    .where(eq(authTwoFactor.userId, userId));
+  if (setup?.verified !== false || setup.enabled === true) return null;
+  const { headers: answer } = await (await auth()).api.verifyTOTP({ body: { code }, headers, returnHeaders: true });
+  await revealRecoveryCodesOnce(userId);
+  return answer.getSetCookie();
 }
 
 /** The recovery codes if a reveal is pending, consuming it: they are shown once. */

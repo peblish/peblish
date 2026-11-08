@@ -1,7 +1,7 @@
 import { auth, authErrorCode } from '@peblish/core/identity/auth';
 import { localHandles } from '@peblish/core/identity/handles';
 import { deviceSessions, revokeSession } from '@peblish/core/identity/session';
-import { pendingTotp, revealRecoveryCodesOnce, takeRecoveryCodes } from '@peblish/core/identity/two-factor';
+import { confirmTotpSetup, pendingTotp, takeRecoveryCodes } from '@peblish/core/identity/two-factor';
 import type { DeviceSession } from '@peblish/schema/session';
 import { Button } from '@peblish/ui/components/button';
 import { createFileRoute, redirect } from '@tanstack/react-router';
@@ -90,9 +90,9 @@ export const Route = createFileRoute('/settings/security/')({
               await api.enableTwoFactor({ body: { password: body.password }, headers });
               return respond(request, { redirect: page });
             case 'totp-verify': {
-              const result = await api.verifyTOTP({ body: { code: body.code.replace(/\s/g, '') }, headers, returnHeaders: true });
-              await revealRecoveryCodesOnce(session.view.userId);
-              return respond(request, { redirect: page, cookies: result.headers.getSetCookie() });
+              // Only confirms a setup in progress; once two-factor is on this changes nothing.
+              const cookies = await confirmTotpSetup(session.view.userId, headers, body.code.replace(/\s/g, ''));
+              return respond(request, { redirect: page, cookies: cookies ?? [] });
             }
             case 'totp-off': {
               const result = await api.disableTwoFactor({ body: { password: body.password }, headers, returnHeaders: true });
