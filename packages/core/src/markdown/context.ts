@@ -8,6 +8,8 @@ export interface RenderContext {
   host: string;
   images: ImagePolicy;
   emoji: EmojiTable;
+  /** Characters highlighted so far (highlight.ts keeps it within its budget). */
+  highlighted: number;
   /** Filled by the mentions rule, keyed by kind, lowercased name and host, in order of appearance. */
   mentions: Map<string, Mention>;
 }

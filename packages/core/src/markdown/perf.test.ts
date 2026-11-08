@@ -90,6 +90,8 @@ const markdownShapes: Record<string, (n: number) => string> = {
   'whitespace in image alt text': (n) => `![${' '.repeat(n)}](https://img.example/a.png)`,
   // Each new mention is checked against those already collected.
   'distinct mentions': (n) => Array.from({ length: n }, (_, i) => `@u${i}@lemmy.example`).join(' '),
+  // highlight.js is quadratic on a run of `$` in Java; these blocks are past the block cap.
+  'two java blocks of $': (n) => `\`\`\`java\n${'$'.repeat(n)}\n\`\`\`\n\n\`\`\`java\n${'$'.repeat(n)}\n\`\`\``,
 };
 
 test.each(Object.entries(markdownShapes))('rendering is linear in input size: %s', (_shape, make) => {
