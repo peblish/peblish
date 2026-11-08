@@ -1,0 +1,38 @@
+{
+  "id": "https://piefed.lab.test/activities/announce/M0jdQ2ibXcld68g",
+  "type": "Announce",
+  "actor": "https://piefed.lab.test/c/pflab",
+  "object": {
+    "id": "https://piefed.lab.test/activities/create/6vhQDPBzCGAoMiF",
+    "type": "Create",
+    "actor": "https://piefed.lab.test/u/pfuser",
+    "object": {
+      "id": "https://piefed.lab.test/c/pflab@piefed.lab.test/p/13/native-mod-target-1108022723",
+      "type": "Page",
+      "attributedTo": "https://piefed.lab.test/u/pfuser",
+      "to": ["https://piefed.lab.test/c/pflab", "https://www.w3.org/ns/activitystreams#Public"],
+      "cc": [],
+      "tag": [],
+      "audience": "https://piefed.lab.test/c/pflab",
+      "content": "<p>Moderated by the peer.</p>\n",
+      "mediaType": "text/html",
+      "source": { "content": "Moderated by the peer.", "mediaType": "text/markdown" },
+      "published": "2026-11-08T02:28:04.062158+00:00",
+      "language": { "identifier": "en", "name": "English" },
+      "name": "Native mod target 1108022723",
+      "attachment": [],
+      "commentsEnabled": true,
+      "sensitive": false,
+      "nsfl": false,
+      "genAI": false,
+      "stickied": false,
+      "interactionPolicy": { "canQuote": { "automaticApproval": ["https://www.w3.org/ns/activitystreams#Public"] } }
+    },
+    "to": ["https://piefed.lab.test/c/pflab", "https://www.w3.org/ns/activitystreams#Public"],
+    "cc": [],
+    "audience": "https://piefed.lab.test/c/pflab"
+  },
+  "to": ["https://piefed.lab.test/c/pflab", "https://www.w3.org/ns/activitystreams#Public"],
+  "cc": ["https://piefed.lab.test/c/pflab/followers"],
+  "@context": ["https://www.w3.org/ns/activitystreams", "https://w3id.org/security/v1"]
+}

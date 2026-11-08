@@ -1,0 +1,52 @@
+{
+  "@context": [
+    "https://w3id.org/identity/v1",
+    "https://www.w3.org/ns/activitystreams",
+    "https://w3id.org/security/data-integrity/v1",
+    "https://gotosocial.org/ns",
+    {
+      "toot": "http://joinmastodon.org/ns#",
+      "misskey": "https://misskey-hub.net/ns#",
+      "fedibird": "http://fedibird.com/ns#",
+      "sensitive": "as:sensitive",
+      "votersCount": { "@id": "toot:votersCount", "@type": "http://www.w3.org/2001/XMLSchema#nonNegativeInteger" },
+      "Emoji": "toot:Emoji",
+      "Hashtag": "as:Hashtag",
+      "quote": { "@id": "https://w3id.org/fep/044f#quote", "@type": "@id" },
+      "quoteUrl": "as:quoteUrl",
+      "_misskey_quote": "misskey:_misskey_quote",
+      "quoteUri": "fedibird:quoteUri",
+      "QuoteAuthorization": "https://w3id.org/fep/044f#QuoteAuthorization",
+      "QuoteRequest": "https://w3id.org/fep/044f#QuoteRequest",
+      "quoteAuthorization": { "@id": "https://w3id.org/fep/044f#quoteAuthorization", "@type": "@id" },
+      "emojiReactions": { "@id": "fedibird:emojiReactions", "@type": "@id" }
+    }
+  ],
+  "id": "https://feddit.lab.test/ap/activities/announce/e7b23a9c-42c2-4dec-85dd-1b81064a92e6",
+  "type": "Announce",
+  "actor": "https://feddit.lab.test/ap/c.spike",
+  "cc": "https://feddit.lab.test/ap/c.spike/followers",
+  "object": {
+    "id": "https://feddit.lab.test/ap/activities/create/object-8",
+    "type": "Create",
+    "actor": "https://feddit.lab.test/ap/u.alice",
+    "audience": "https://feddit.lab.test/ap/c.spike",
+    "cc": "https://feddit.lab.test/ap/c.spike",
+    "object": {
+      "id": "https://feddit.lab.test/ap/comment/8",
+      "type": "Note",
+      "attributedTo": "https://feddit.lab.test/ap/u.alice",
+      "audience": "https://feddit.lab.test/ap/c.spike",
+      "cc": "https://feddit.lab.test/ap/c.spike",
+      "content": "<p>S5 reply from Feddit 1108022622</p>",
+      "inReplyTo": "https://piefed.lab.test/comment/5",
+      "mediaType": "text/html",
+      "published": "2026-11-08T02:26:42.969Z",
+      "sensitive": false,
+      "source": { "content": "S5 reply from Feddit 1108022622", "mediaType": "text/markdown" },
+      "to": "https://www.w3.org/ns/activitystreams#Public"
+    },
+    "to": "https://www.w3.org/ns/activitystreams#Public"
+  },
+  "to": "https://www.w3.org/ns/activitystreams#Public"
+}

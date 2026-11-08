@@ -1,0 +1,8 @@
+{
+  "id": "https://piefed.lab.test/activities/follow/b518f652-2600-478d-a71f-b721f4d408f7",
+  "type": "Follow",
+  "actor": "https://piefed.lab.test/u/pfadmin",
+  "object": "https://feddit.lab.test/ap/c.spike",
+  "@context": ["https://www.w3.org/ns/activitystreams", "https://w3id.org/security/v1"],
+  "to": ["https://feddit.lab.test/ap/c.spike"]
+}

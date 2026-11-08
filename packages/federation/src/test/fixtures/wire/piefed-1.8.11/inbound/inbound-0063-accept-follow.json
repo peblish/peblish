@@ -1,0 +1,14 @@
+{
+  "@context": ["https://www.w3.org/ns/activitystreams", "https://w3id.org/security/v1"],
+  "actor": "https://piefed.lab.test/c/pflab",
+  "to": ["https://feddit.lab.test/ap/u.m1108022723"],
+  "object": {
+    "actor": "https://feddit.lab.test/ap/u.m1108022723",
+    "to": null,
+    "object": "https://piefed.lab.test/c/pflab",
+    "type": "Follow",
+    "id": "https://feddit.lab.test/ap/activities/follow/31cc57b8-aada-4f63-ab82-2dd939d9aaa9"
+  },
+  "type": "Accept",
+  "id": "https://piefed.lab.test/activities/accept/zIJzUyZL7LyQxIfCAvbN2uDjVDropsDv"
+}

@@ -1,0 +1,16 @@
+{
+  "@context": [
+    "https://w3id.org/identity/v1",
+    "https://www.w3.org/ns/activitystreams",
+    "https://w3id.org/security/v1",
+    "https://w3id.org/security/data-integrity/v1",
+    "https://www.w3.org/ns/did/v1",
+    "https://w3id.org/security/multikey/v1",
+    "https://gotosocial.org/ns"
+  ],
+  "id": "https://feddit.lab.test/ap/activities/follow/7a34b6cc-d0e9-44bc-9d92-979319ecf529",
+  "type": "Follow",
+  "actor": "https://feddit.lab.test/ap/u.t1108022622",
+  "object": "https://lemmy.lab.test/c/lab",
+  "to": "https://lemmy.lab.test/c/lab"
+}

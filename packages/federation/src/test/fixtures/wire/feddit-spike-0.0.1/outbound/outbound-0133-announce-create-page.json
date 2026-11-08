@@ -1,0 +1,33 @@
+{
+  "@context": ["https://www.w3.org/ns/activitystreams", "https://w3id.org/security/v1"],
+  "id": "https://feddit.lab.test/ap/activities/announce/555dbc7a-5b4e-498c-ad64-03d1d90ce701",
+  "type": "Announce",
+  "actor": "https://feddit.lab.test/ap/c.spike",
+  "to": ["https://www.w3.org/ns/activitystreams#Public"],
+  "cc": ["https://feddit.lab.test/ap/c.spike/followers"],
+  "object": {
+    "cc": ["https://feddit.lab.test/ap/c.spike"],
+    "id": "https://lemmy.lab.test/activities/create/583a839e-3156-47d1-b6a7-c153f2367bf3",
+    "to": ["https://www.w3.org/ns/activitystreams#Public"],
+    "type": "Create",
+    "actor": "https://lemmy.lab.test/u/lemmyuser",
+    "object": {
+      "cc": [],
+      "id": "https://lemmy.lab.test/post/20",
+      "to": ["https://feddit.lab.test/ap/c.spike", "https://www.w3.org/ns/activitystreams#Public"],
+      "tag": [{ "href": "https://lemmy.lab.test/post/20", "name": "#spike", "type": "Hashtag" }],
+      "name": "Authz T1 1108022858",
+      "type": "Page",
+      "source": { "content": "Target in !spike.", "mediaType": "text/markdown" },
+      "content": "<p>Target in !spike.</p>\n",
+      "audience": "https://feddit.lab.test/ap/c.spike",
+      "mediaType": "text/html",
+      "published": "2026-11-08T02:29:01.444578Z",
+      "sensitive": false,
+      "attachment": [],
+      "attributedTo": "https://lemmy.lab.test/u/lemmyuser"
+    },
+    "@context": ["https://join-lemmy.org/context.json", "https://www.w3.org/ns/activitystreams"],
+    "audience": "https://feddit.lab.test/ap/c.spike"
+  }
+}

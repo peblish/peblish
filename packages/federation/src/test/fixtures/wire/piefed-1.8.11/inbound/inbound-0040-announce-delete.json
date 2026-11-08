@@ -1,0 +1,17 @@
+{
+  "id": "https://piefed.lab.test/activities/announce/3PmZu3W2aDNBHI0",
+  "type": "Announce",
+  "actor": "https://piefed.lab.test/c/pflab",
+  "object": {
+    "id": "https://piefed.lab.test/activities/delete/mB0OA470szKq9aD",
+    "type": "Delete",
+    "actor": "https://piefed.lab.test/u/pfuser",
+    "object": "https://piefed.lab.test/comment/7",
+    "audience": "https://piefed.lab.test/c/pflab",
+    "to": ["https://www.w3.org/ns/activitystreams#Public"],
+    "cc": ["https://piefed.lab.test/c/pflab"]
+  },
+  "@context": ["https://www.w3.org/ns/activitystreams", "https://w3id.org/security/v1"],
+  "to": ["https://www.w3.org/ns/activitystreams#Public"],
+  "cc": ["https://piefed.lab.test/c/pflab/followers"]
+}

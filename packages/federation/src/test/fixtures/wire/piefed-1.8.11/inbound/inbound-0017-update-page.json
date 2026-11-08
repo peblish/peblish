@@ -1,0 +1,32 @@
+{
+  "id": "https://piefed.lab.test/activities/update/PJhCLD0s4Y8tAQd",
+  "type": "Update",
+  "actor": "https://piefed.lab.test/u/pfuser",
+  "object": {
+    "id": "https://piefed.lab.test/c/spike@feddit.lab.test/p/4/s8-from-piefed-1108022622",
+    "type": "Page",
+    "attributedTo": "https://piefed.lab.test/u/pfuser",
+    "to": ["https://feddit.lab.test/ap/c.spike", "https://www.w3.org/ns/activitystreams#Public"],
+    "cc": [],
+    "tag": [],
+    "audience": "https://feddit.lab.test/ap/c.spike",
+    "content": "<p>Edited inside the Feddit community.</p>\n",
+    "mediaType": "text/html",
+    "source": { "content": "Edited inside the Feddit community.", "mediaType": "text/markdown" },
+    "published": "2026-11-08T02:26:47.583476+00:00",
+    "language": { "identifier": "en", "name": "English" },
+    "name": "S8b edited piefed 1108022622",
+    "attachment": [],
+    "commentsEnabled": true,
+    "sensitive": false,
+    "nsfl": false,
+    "genAI": false,
+    "stickied": false,
+    "interactionPolicy": { "canQuote": { "automaticApproval": ["https://www.w3.org/ns/activitystreams#Public"] } },
+    "updated": "2026-11-08T02:26:50.963382+00:00"
+  },
+  "to": ["https://feddit.lab.test/ap/c.spike", "https://www.w3.org/ns/activitystreams#Public"],
+  "cc": [],
+  "@context": ["https://www.w3.org/ns/activitystreams", "https://w3id.org/security/v1"],
+  "audience": "https://feddit.lab.test/ap/c.spike"
+}

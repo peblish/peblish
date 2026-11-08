@@ -1,0 +1,26 @@
+{
+  "@context": ["https://join-lemmy.org/context.json", "https://www.w3.org/ns/activitystreams"],
+  "id": "https://lemmy.lab.test/activities/update/d79c62b8-0a0c-4398-8d3c-508ead4eb6be",
+  "actor": "https://lemmy.lab.test/u/lemmyuser",
+  "to": ["https://www.w3.org/ns/activitystreams#Public"],
+  "object": {
+    "type": "Page",
+    "id": "https://lemmy.lab.test/post/5",
+    "attributedTo": "https://lemmy.lab.test/u/lemmyuser",
+    "to": ["https://feddit.lab.test/ap/c.spike", "https://www.w3.org/ns/activitystreams#Public"],
+    "name": "S8b edited lemmy 1108022622",
+    "cc": [],
+    "content": "<p>Edited inside the Feddit community.</p>\n",
+    "mediaType": "text/html",
+    "source": { "content": "Edited inside the Feddit community.", "mediaType": "text/markdown" },
+    "attachment": [],
+    "sensitive": false,
+    "published": "2026-11-08T02:26:46.493265Z",
+    "updated": "2026-11-08T02:26:48.785957Z",
+    "audience": "https://feddit.lab.test/ap/c.spike",
+    "tag": [{ "href": "https://lemmy.lab.test/post/5", "name": "#spike", "type": "Hashtag" }]
+  },
+  "cc": ["https://feddit.lab.test/ap/c.spike"],
+  "type": "Update",
+  "audience": "https://feddit.lab.test/ap/c.spike"
+}

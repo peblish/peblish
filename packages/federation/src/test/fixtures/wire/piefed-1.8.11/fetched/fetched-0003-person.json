@@ -1,0 +1,22 @@
+{
+  "@context": ["https://www.w3.org/ns/activitystreams", "https://w3id.org/security/v1"],
+  "acceptPrivateMessages": 3,
+  "attributionDomains": ["piefed.lab.test"],
+  "discoverable": true,
+  "endpoints": { "sharedInbox": "https://piefed.lab.test/inbox" },
+  "id": "https://piefed.lab.test/u/pfuser",
+  "inbox": "https://piefed.lab.test/u/pfuser/inbox",
+  "indexable": true,
+  "manuallyApprovesFollowers": false,
+  "name": "pfuser",
+  "outbox": "https://piefed.lab.test/u/pfuser/outbox",
+  "preferredUsername": "pfuser",
+  "publicKey": {
+    "id": "https://piefed.lab.test/u/pfuser#main-key",
+    "owner": "https://piefed.lab.test/u/pfuser",
+    "publicKeyPem": "-----BEGIN PUBLIC KEY-----\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAsKPo7hcVcsYhgfV3N45S\nHu68n1f/rA7wbWDNoNdO+ogMB+9r27XbDx2nf0MdRsdAniAyUTZrHSjxmRYlrJ3C\nkvRql+MUsCV6KhTUDi70Pymb96fob5k9xJuhQ/2G0TSGvUsVus+KgktWMLfFmj6Z\nh/zBtwWWqhqe2Ts74emrq7FaXeWi5xBhwNkGxXUlOGoyMiLuzR650p9N2lJc8kJb\nIHyWu4JNTAiaHRqi/EZqSqM7VcFE2PSrmEWwU31E05bkXaLsMSB4LzujZwGBDRZL\nco7GPRvDRhAm+9bJCnbpSKXWS5XNYh0QEU9O8gIiJUCg/DoOkVbEiWfKbHa0iLH6\nYwIDAQAB\n-----END PUBLIC KEY-----\n"
+  },
+  "published": "2026-11-08T02:25:21.041037+00:00",
+  "reposter": false,
+  "type": "Person"
+}

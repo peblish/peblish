@@ -1,0 +1,25 @@
+{
+  "actor": "https://lemmy.lab.test/u/lemmyuser",
+  "to": ["https://www.w3.org/ns/activitystreams#Public"],
+  "object": {
+    "type": "Page",
+    "id": "https://lemmy.lab.test/post/10",
+    "attributedTo": "https://lemmy.lab.test/u/lemmyuser",
+    "to": ["https://lemmy.lab.test/c/lab", "https://www.w3.org/ns/activitystreams#Public"],
+    "name": "R4 edited lemmy 1108022622",
+    "cc": [],
+    "content": "<p>Edited on the peer.</p>\n",
+    "mediaType": "text/html",
+    "source": { "content": "Edited on the peer.", "mediaType": "text/markdown" },
+    "attachment": [],
+    "sensitive": false,
+    "published": "2026-11-08T02:26:55.294015Z",
+    "updated": "2026-11-08T02:27:00.709848Z",
+    "audience": "https://lemmy.lab.test/c/lab",
+    "tag": [{ "href": "https://lemmy.lab.test/post/10", "name": "#lab", "type": "Hashtag" }]
+  },
+  "cc": ["https://lemmy.lab.test/c/lab"],
+  "type": "Update",
+  "id": "https://lemmy.lab.test/activities/update/460008b5-1c58-4388-8c5d-c5f48ab1dc3a",
+  "audience": "https://lemmy.lab.test/c/lab"
+}

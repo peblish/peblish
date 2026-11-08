@@ -1,0 +1,7 @@
+{
+  "@context": ["https://www.w3.org/ns/activitystreams", "https://w3id.org/security/v1"],
+  "id": "https://piefed.lab.test/c/pflab/moderators",
+  "orderedItems": ["https://piefed.lab.test/u/pfadmin"],
+  "totalItems": 1,
+  "type": "OrderedCollection"
+}

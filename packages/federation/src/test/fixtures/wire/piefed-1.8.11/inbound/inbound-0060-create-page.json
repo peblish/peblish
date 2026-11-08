@@ -1,0 +1,31 @@
+{
+  "id": "https://piefed.lab.test/activities/create/GCvSHzAZReZ4qfW",
+  "type": "Create",
+  "actor": "https://piefed.lab.test/u/pfuser",
+  "object": {
+    "id": "https://piefed.lab.test/c/spike@feddit.lab.test/p/12/peer-post-piefed-1108022723",
+    "type": "Page",
+    "attributedTo": "https://piefed.lab.test/u/pfuser",
+    "to": ["https://feddit.lab.test/ap/c.spike", "https://www.w3.org/ns/activitystreams#Public"],
+    "cc": [],
+    "tag": [],
+    "audience": "https://feddit.lab.test/ap/c.spike",
+    "content": "<p>To be removed by Feddit’s moderator.</p>\n",
+    "mediaType": "text/html",
+    "source": { "content": "To be removed by Feddit's moderator.", "mediaType": "text/markdown" },
+    "published": "2026-11-08T02:27:52.145297+00:00",
+    "language": { "identifier": "en", "name": "English" },
+    "name": "Peer post piefed 1108022723",
+    "attachment": [],
+    "commentsEnabled": true,
+    "sensitive": false,
+    "nsfl": false,
+    "genAI": false,
+    "stickied": false,
+    "interactionPolicy": { "canQuote": { "automaticApproval": ["https://www.w3.org/ns/activitystreams#Public"] } }
+  },
+  "to": ["https://feddit.lab.test/ap/c.spike", "https://www.w3.org/ns/activitystreams#Public"],
+  "cc": [],
+  "@context": ["https://www.w3.org/ns/activitystreams", "https://w3id.org/security/v1"],
+  "audience": "https://feddit.lab.test/ap/c.spike"
+}

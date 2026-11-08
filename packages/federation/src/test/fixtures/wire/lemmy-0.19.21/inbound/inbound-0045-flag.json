@@ -1,0 +1,11 @@
+{
+  "@context": ["https://join-lemmy.org/context.json", "https://www.w3.org/ns/activitystreams"],
+  "actor": "https://lemmy.lab.test/u/lemmyuser",
+  "to": ["https://feddit.lab.test/ap/c.spike"],
+  "object": "https://feddit.lab.test/ap/post/21",
+  "summary": "S14 report 1108022723",
+  "content": null,
+  "type": "Flag",
+  "id": "https://lemmy.lab.test/activities/flag/148a24d1-56ee-4773-a372-48480b36721f",
+  "audience": "https://feddit.lab.test/ap/c.spike"
+}

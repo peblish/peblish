@@ -1,0 +1,27 @@
+{
+  "@context": ["https://join-lemmy.org/context.json", "https://www.w3.org/ns/activitystreams"],
+  "actor": "https://lemmy.lab.test/c/lab",
+  "to": ["https://www.w3.org/ns/activitystreams#Public"],
+  "object": {
+    "id": "https://lemmy.lab.test/activities/undo/a9c6096c-b9bb-4ff4-a04d-8c21cf95a060",
+    "actor": "https://lemmy.lab.test/u/lemmyadmin",
+    "to": ["https://www.w3.org/ns/activitystreams#Public"],
+    "object": {
+      "actor": "https://lemmy.lab.test/u/lemmyadmin",
+      "to": ["https://www.w3.org/ns/activitystreams#Public"],
+      "object": "https://feddit.lab.test/ap/u.m1108022723",
+      "cc": ["https://lemmy.lab.test/c/lab"],
+      "target": "https://lemmy.lab.test/c/lab",
+      "type": "Block",
+      "id": "https://lemmy.lab.test/activities/block/f90be301-6e81-4616-8535-89e0873802c8",
+      "audience": "https://lemmy.lab.test/c/lab",
+      "summary": "M4 1108022723"
+    },
+    "cc": ["https://lemmy.lab.test/c/lab"],
+    "type": "Undo",
+    "audience": "https://lemmy.lab.test/c/lab"
+  },
+  "cc": ["https://lemmy.lab.test/c/lab/followers"],
+  "type": "Announce",
+  "id": "https://lemmy.lab.test/activities/announce/undo/ee9e493d-73a6-4452-b273-472fa42fae45"
+}

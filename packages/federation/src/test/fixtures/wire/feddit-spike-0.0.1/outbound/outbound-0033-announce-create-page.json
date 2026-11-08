@@ -1,0 +1,33 @@
+{
+  "@context": ["https://www.w3.org/ns/activitystreams", "https://w3id.org/security/v1"],
+  "id": "https://feddit.lab.test/ap/activities/announce/c2e27346-e8f6-4ea3-ad58-abd6a3e4b79e",
+  "type": "Announce",
+  "actor": "https://feddit.lab.test/ap/c.spike",
+  "to": ["https://www.w3.org/ns/activitystreams#Public"],
+  "cc": ["https://feddit.lab.test/ap/c.spike/followers"],
+  "object": {
+    "cc": ["https://feddit.lab.test/ap/c.spike"],
+    "id": "https://lemmy.lab.test/activities/create/5b183f06-6a6c-4d9e-af7b-d5fc4a50401f",
+    "to": ["https://www.w3.org/ns/activitystreams#Public"],
+    "type": "Create",
+    "actor": "https://lemmy.lab.test/u/lemmyuser",
+    "object": {
+      "cc": [],
+      "id": "https://lemmy.lab.test/post/5",
+      "to": ["https://feddit.lab.test/ap/c.spike", "https://www.w3.org/ns/activitystreams#Public"],
+      "tag": [{ "href": "https://lemmy.lab.test/post/5", "name": "#spike", "type": "Hashtag" }],
+      "name": "S8 from lemmy 1108022622",
+      "type": "Page",
+      "source": { "content": "Posted into the Feddit community from lemmy.", "mediaType": "text/markdown" },
+      "content": "<p>Posted into the Feddit community from lemmy.</p>\n",
+      "audience": "https://feddit.lab.test/ap/c.spike",
+      "mediaType": "text/html",
+      "published": "2026-11-08T02:26:46.493265Z",
+      "sensitive": false,
+      "attachment": [],
+      "attributedTo": "https://lemmy.lab.test/u/lemmyuser"
+    },
+    "@context": ["https://join-lemmy.org/context.json", "https://www.w3.org/ns/activitystreams"],
+    "audience": "https://feddit.lab.test/ap/c.spike"
+  }
+}

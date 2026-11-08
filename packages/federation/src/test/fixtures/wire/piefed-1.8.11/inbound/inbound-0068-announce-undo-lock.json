@@ -1,0 +1,25 @@
+{
+  "id": "https://piefed.lab.test/activities/announce/Mtecp3ho9A5s0fL",
+  "type": "Announce",
+  "actor": "https://piefed.lab.test/c/pflab",
+  "object": {
+    "id": "https://piefed.lab.test/activities/undo/5jZh0wQT6I3YI8T",
+    "type": "Undo",
+    "actor": "https://piefed.lab.test/u/pfadmin",
+    "object": {
+      "id": "https://piefed.lab.test/activities/lock/9Z91osQ6bvL5pa2",
+      "type": "Lock",
+      "actor": "https://piefed.lab.test/u/pfadmin",
+      "object": "https://piefed.lab.test/c/pflab@piefed.lab.test/p/13/native-mod-target-1108022723",
+      "audience": "https://piefed.lab.test/c/pflab",
+      "to": ["https://www.w3.org/ns/activitystreams#Public"],
+      "cc": ["https://piefed.lab.test/c/pflab"]
+    },
+    "audience": "https://piefed.lab.test/c/pflab",
+    "to": ["https://www.w3.org/ns/activitystreams#Public"],
+    "cc": ["https://piefed.lab.test/c/pflab"]
+  },
+  "@context": ["https://www.w3.org/ns/activitystreams", "https://w3id.org/security/v1"],
+  "to": ["https://www.w3.org/ns/activitystreams#Public"],
+  "cc": ["https://piefed.lab.test/c/pflab/followers"]
+}

@@ -1,0 +1,8 @@
+{
+  "id": "https://piefed.lab.test/activities/dislike/7N15TS2xX1rtPaU",
+  "type": "Dislike",
+  "actor": "https://piefed.lab.test/u/pfuser",
+  "object": "https://feddit.lab.test/ap/comment/6",
+  "@context": ["https://www.w3.org/ns/activitystreams", "https://w3id.org/security/v1"],
+  "audience": "https://feddit.lab.test/ap/c.spike"
+}

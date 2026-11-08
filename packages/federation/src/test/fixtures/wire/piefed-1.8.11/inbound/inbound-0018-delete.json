@@ -1,0 +1,10 @@
+{
+  "id": "https://piefed.lab.test/activities/delete/EuDLpwWXIUIN3YJ",
+  "type": "Delete",
+  "actor": "https://piefed.lab.test/u/pfuser",
+  "object": "https://piefed.lab.test/c/spike@feddit.lab.test/p/4/s8-from-piefed-1108022622",
+  "@context": ["https://www.w3.org/ns/activitystreams", "https://w3id.org/security/v1"],
+  "audience": "https://feddit.lab.test/ap/c.spike",
+  "to": ["https://www.w3.org/ns/activitystreams#Public"],
+  "cc": ["https://feddit.lab.test/ap/c.spike"]
+}

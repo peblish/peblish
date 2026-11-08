@@ -1,0 +1,6 @@
+{
+  "@context": ["https://join-lemmy.org/context.json", "https://www.w3.org/ns/activitystreams"],
+  "type": "OrderedCollection",
+  "id": "https://lemmy.lab.test/c/lab/moderators",
+  "orderedItems": ["https://lemmy.lab.test/u/lemmyadmin"]
+}

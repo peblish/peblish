@@ -1,0 +1,32 @@
+{
+  "@context": [
+    "https://w3id.org/identity/v1",
+    "https://www.w3.org/ns/activitystreams",
+    "https://w3id.org/security/data-integrity/v1",
+    "https://gotosocial.org/ns",
+    {
+      "toot": "http://joinmastodon.org/ns#",
+      "misskey": "https://misskey-hub.net/ns#",
+      "fedibird": "http://fedibird.com/ns#",
+      "sensitive": "as:sensitive",
+      "votersCount": { "@id": "toot:votersCount", "@type": "http://www.w3.org/2001/XMLSchema#nonNegativeInteger" },
+      "Emoji": "toot:Emoji",
+      "Hashtag": "as:Hashtag",
+      "ChatMessage": "http://litepub.social/ns#ChatMessage",
+      "quote": { "@id": "https://w3id.org/fep/044f#quote", "@type": "@id" },
+      "quoteUrl": "as:quoteUrl",
+      "_misskey_quote": "misskey:_misskey_quote",
+      "quoteUri": "fedibird:quoteUri",
+      "QuoteAuthorization": "https://w3id.org/fep/044f#QuoteAuthorization",
+      "QuoteRequest": "https://w3id.org/fep/044f#QuoteRequest",
+      "quoteAuthorization": { "@id": "https://w3id.org/fep/044f#quoteAuthorization", "@type": "@id" }
+    }
+  ],
+  "id": "https://feddit.lab.test/ap/activities/delete/77d101f0-5dee-49ed-8b8b-5a9573347520",
+  "type": "Delete",
+  "actor": "https://feddit.lab.test/ap/u.t1108022622",
+  "audience": "https://lemmy.lab.test/c/lab",
+  "cc": "https://lemmy.lab.test/c/lab",
+  "object": "https://feddit.lab.test/ap/comment/15",
+  "to": "https://www.w3.org/ns/activitystreams#Public"
+}

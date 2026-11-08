@@ -1,0 +1,26 @@
+{
+  "id": "https://piefed.lab.test/activities/announce/u5ZHRGk08kbubZq",
+  "type": "Announce",
+  "actor": "https://piefed.lab.test/c/pflab",
+  "object": {
+    "id": "https://piefed.lab.test/activities/undo/5KYxtICy89TA4Yi",
+    "type": "Undo",
+    "actor": "https://piefed.lab.test/u/pfadmin",
+    "object": {
+      "id": "https://piefed.lab.test/activities/delete/wLpKo9ZD2hccoiP",
+      "type": "Delete",
+      "actor": "https://piefed.lab.test/u/pfadmin",
+      "object": "https://piefed.lab.test/c/pflab@piefed.lab.test/p/13/native-mod-target-1108022723",
+      "audience": "https://piefed.lab.test/c/pflab",
+      "to": ["https://www.w3.org/ns/activitystreams#Public"],
+      "cc": ["https://piefed.lab.test/c/pflab"],
+      "summary": "M1 1108022723"
+    },
+    "audience": "https://piefed.lab.test/c/pflab",
+    "to": ["https://www.w3.org/ns/activitystreams#Public"],
+    "cc": ["https://piefed.lab.test/c/pflab"]
+  },
+  "@context": ["https://www.w3.org/ns/activitystreams", "https://w3id.org/security/v1"],
+  "to": ["https://www.w3.org/ns/activitystreams#Public"],
+  "cc": ["https://piefed.lab.test/c/pflab/followers"]
+}
