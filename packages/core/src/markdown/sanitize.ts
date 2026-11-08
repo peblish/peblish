@@ -94,7 +94,8 @@ const footnoteId = /^(fn|fnref)[\w:-]{1,80}$/;
 const fragment = /^#[\w:.-]{1,100}$/;
 const schemes = new Set(['https:', 'http:', 'mailto:']);
 const align = /^(left|center|right)$/;
-const textAlign = /^\s*text-align\s*:\s*(left|center|right)\s*;?\s*$/i;
+// Matched against a trimmed value: no two whitespace runs meet, so it cannot backtrack.
+const textAlign = /^text-align\s*:\s*(left|center|right)\s*;?$/i;
 const dimension = /^\s*(?:(\d{1,4})(?:px)?|(\d{1,3})%)\s*$/;
 
 /** The rel every outgoing link carries; target is never kept. */
@@ -154,6 +155,12 @@ function classList(tag: string, value: string | undefined): string[] {
       rule.startsWith('*') ? name.endsWith(rule.slice(1)) : rule.endsWith('*') ? name.startsWith(rule.slice(0, -1)) : name === rule,
     );
   return [...new Set(value.split(/\s+/).filter((name) => name.length <= 64 && /^[\w+#.-]+$/.test(name) && keep(name)))];
+}
+
+/** Lemmy's table alignment, `text-align: left` and nothing else, from a style attribute. */
+function styleAlign(style: string | undefined): string | undefined {
+  if (style === undefined || style.length > 200) return undefined;
+  return textAlign.exec(style.trim())?.[1]?.toLowerCase();
 }
 
 function size(value: string | undefined): string | undefined {
@@ -377,10 +384,7 @@ class Sanitizer implements TokenizerCallbacks {
       }
       case 'th':
       case 'td':
-        add(
-          'align',
-          attributes.get('align')?.toLowerCase().match(align)?.[1] ?? attributes.get('style')?.match(textAlign)?.[1]?.toLowerCase(),
-        );
+        add('align', attributes.get('align')?.toLowerCase().match(align)?.[1] ?? styleAlign(attributes.get('style')));
         break;
       case 'span':
         add('class', source === 'tg-spoiler' ? 'spoiler' : classList(tag, attributes.get('class')).join(' '));

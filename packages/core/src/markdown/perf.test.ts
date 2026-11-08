@@ -69,6 +69,8 @@ const shapes: Record<string, (n: number) => string> = {
   'open inline elements': (n) => `${'<b><i>'.repeat(n)}x`,
   'many attributes': (n) => `<a ${'title="x" '.repeat(n)}href="https://a.example/">x</a>`,
   'links and text': (n) => '<p><a href="https://a.example/x?y=1">link</a> &amp; text</p>'.repeat(n),
+  // A text-align style padded with spaces, which a regex with two adjacent \s* runs backtracks on.
+  'padded cell style': (n) => `<table><tr><td style="text-align:left${' '.repeat(n)}x">c</td></tr></table>`,
 };
 
 test.each(Object.entries(shapes))('the sanitiser is linear in input size: %s', (_shape, make) => {
