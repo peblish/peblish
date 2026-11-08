@@ -83,7 +83,7 @@ Each item: the difference, who shows it, and where the mapping deals with it.
   The preview image is the Page's `image`. `postFromPage()` reads them into `url`,
   `urlContentType`, `altText` and `thumbnailUrl`; outbound sends an Image when the content
   type is an image type, else a Link, as Lemmy does.
-- **Not safe for life.** PieFed's `nsfl` on Pages (and in its archive, on communities):
+- **Not safe for life.** PieFed's `nsfl`, sent on every Page and kept per community too:
   `posts.nsfl` and, for a Group, `actors.nsfl`. Outbound sends it on every Page and Group.
 - **Search consent.** `discoverable` and `indexable` (Mastodon, PieFed Persons). Absent reads
   as true, the columns' default, because Lemmy never sends them; outbound sends both on every
