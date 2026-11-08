@@ -18,7 +18,7 @@ export default defineConfig({
     tanstackStart(),
     // Without '!unwasm', shiki/wasm (pulled in by @muxui/react through @peblish/ui) resolves to
     // onig.wasm, which the SSR environment's bundler cannot link. The JS loader works the same.
-    nitro({ preset: 'node-server', exportConditions: ['!unwasm'] }),
+    nitro({ preset: 'node-server', exportConditions: ['!unwasm'], plugins: ['./src/server/shutdown.ts'] }),
     viteReact(),
   ],
 });

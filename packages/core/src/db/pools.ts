@@ -16,15 +16,23 @@ function connect(readOnly: boolean) {
 }
 
 type Pool = ReturnType<typeof connect>;
-let read: Pool | undefined;
-let write: Pool | undefined;
+type Pools = { read?: Pool; write?: Pool };
 
-export const readPool = (): Pool => (read ??= connect(true));
-export const writePool = (): Pool => (write ??= connect(false));
+declare global {
+  var peblishPools: Pools | undefined;
+}
 
-/** Closes both pools (tests, worker shutdown, CLI scripts). */
+// One pair per process, kept on globalThis: a bundle can carry two copies of this module
+// (the web build has one in Nitro's server entry, which runs the shutdown hook, and one in
+// the SSR bundle, which serves requests), and closePools() from either must close both.
+const pools = (globalThis.peblishPools ??= {});
+
+export const readPool = (): Pool => (pools.read ??= connect(true));
+export const writePool = (): Pool => (pools.write ??= connect(false));
+
+/** Closes both pools (tests, worker shutdown, CLI scripts, the web server's close hook). */
 export async function closePools(): Promise<void> {
-  const open = [read, write].filter((pool) => pool !== undefined);
-  read = write = undefined;
+  const open = [pools.read, pools.write].filter((pool) => pool !== undefined);
+  pools.read = pools.write = undefined;
   await Promise.all(open.map(({ client }) => client.end({ timeout: 5 })));
 }
