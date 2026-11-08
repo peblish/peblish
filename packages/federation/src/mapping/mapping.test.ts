@@ -253,6 +253,22 @@ describe('the fields of migration 0002', () => {
   });
 });
 
+describe('caller preconditions', () => {
+  it("keeps the key's owner as sent: the inbound handler, not the mapping, checks it", () => {
+    const id = 'https://lemmy.test/u/a';
+    const pem = '-----BEGIN PUBLIC KEY-----\nMIIB\n-----END PUBLIC KEY-----\n';
+    const person = {
+      type: 'Person',
+      id,
+      preferredUsername: 'a',
+      inbox: `${id}/inbox`,
+      publicKey: { id: 'https://other.test/u/b#main-key', owner: 'https://other.test/u/b', publicKeyPem: pem },
+    };
+    expect(actorFromWire(person).publicKey).toEqual({ keyId: 'https://other.test/u/b#main-key', ownerApId: 'https://other.test/u/b', pem });
+    expect(diff(person, toWire(fromWire(person))).filter(({ path }) => path.startsWith('publicKey'))).toEqual([]);
+  });
+});
+
 describe('URL schemes', () => {
   afterEach(() => vi.unstubAllEnvs());
   const person = { type: 'Person', id: 'https://x.test/u/a', preferredUsername: 'a', inbox: 'https://x.test/u/a/inbox' };

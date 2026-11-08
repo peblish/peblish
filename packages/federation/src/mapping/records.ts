@@ -36,8 +36,11 @@ export type ActorRecord = Pick<
   bot: boolean;
   publishedAt: Date | null;
   updatedAt: Date | null;
-  /** The public half of the actor's signing key, for actor_keys. */
-  publicKey: { keyId: string; pem: string } | null;
+  /**
+   * The public half of the actor's signing key, for actor_keys, with the owner it names. The
+   * mapping does not check that the owner is this actor or shares its origin (README.md).
+   */
+  publicKey: { keyId: string; ownerApId: string; pem: string } | null;
 };
 
 /**

@@ -40,7 +40,7 @@ export function actorFromWire(json: unknown): ActorRecord {
     languages: group ? many(actor.language).map((language) => language.identifier) : [],
     publishedAt: date(actor.published),
     updatedAt: date(actor.updated),
-    publicKey: actor.publicKey ? { keyId: actor.publicKey.id, pem: actor.publicKey.publicKeyPem } : null,
+    publicKey: actor.publicKey ? { keyId: actor.publicKey.id, ownerApId: actor.publicKey.owner, pem: actor.publicKey.publicKeyPem } : null,
     raw: json,
   };
 }
@@ -61,7 +61,9 @@ export function actorToWire(actor: ActorRecord): JsonObject {
     inbox: actor.inboxUrl ?? undefined,
     outbox: actor.outboxUrl ?? undefined,
     followers: actor.followersUrl ?? undefined,
-    publicKey: actor.publicKey ? { id: actor.publicKey.keyId, owner: actor.apId, publicKeyPem: actor.publicKey.pem } : undefined,
+    publicKey: actor.publicKey
+      ? { id: actor.publicKey.keyId, owner: actor.publicKey.ownerApId, publicKeyPem: actor.publicKey.pem }
+      : undefined,
     name: actor.displayName ?? undefined,
     summary: actor.summaryHtml ?? undefined,
     source: actor.summaryMd === null ? undefined : { content: actor.summaryMd, mediaType: 'text/markdown' },

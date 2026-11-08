@@ -31,6 +31,23 @@ it. The round-trip tests (`../test/roundtrip.test.ts`) map each captured documen
 `../test/fixtures/manifest.json` to its record and back; the only differences allowed are the
 ones `../test/vocabulary.ts` documents, each with what the schema should do about it.
 
+## What the caller checks
+
+The mapping reads one document at a time and trusts none of it beyond its shape and URL
+schemes. It does not compare origins, so FED-B's inbound handler checks, before it stores a
+record or applies an activity:
+
+- **One origin per actor.** The actor's `id`, its `inbox` (and outbox and collections), its
+  key's `keyId` and the key's `owner` (`publicKey.ownerApId` in the record, kept as sent) are
+  on one origin, and the owner is the actor itself.
+- **Embedded activities.** An activity inside Announce, Undo, Accept or Reject is on the same
+  origin as its own actor, unless it is fetched from its origin; the outer actor of an Undo
+  is the inner activity's actor.
+- **The claimed community.** `communityApId` is what the activity claims (`audience`, or the
+  Group in `to` and `cc`); it must be the community of the target post or comment, and an
+  Announce's actor must be that community.
+- **The signer.** The HTTP signature's key belongs to the top-level activity's actor.
+
 ## Dialect differences and where they are handled
 
 Each item: the difference, who shows it, and where the mapping deals with it.
