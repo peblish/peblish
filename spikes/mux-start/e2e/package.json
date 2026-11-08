@@ -1,0 +1,15 @@
+{
+  "name": "feddit-spike-mux-e2e",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@10.33.0",
+  "scripts": {
+    "test": "playwright test",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.58.2",
+    "@types/node": "24.19.2",
+    "typescript": "6.0.3"
+  }
+}

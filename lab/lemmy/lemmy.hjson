@@ -1,0 +1,27 @@
+{
+  # Lemmy 0.19.21 lab instance. There is deliberately no `setup` block: the
+  # admin and site are created through the first-run API by `make seed`
+  # (first registered user becomes admin, then CreateSite).
+  hostname: "lemmy.lab.test"
+  bind: "0.0.0.0"
+  port: 8536
+  # Release builds reject http:// federation URLs, so the lab runs HTTPS via Caddy.
+  tls_enabled: true
+  database: {
+    host: "lemmy-db"
+    port: 5432
+    user: "lemmy"
+    password: "lemmy"
+    database: "lemmy"
+    pool_size: 10
+  }
+  pictrs: {
+    url: "http://lemmy-pictrs:8080/"
+    api_key: "lab-pictrs-key"
+    # Do not ask pict-rs to fetch remote images or link previews.
+    image_mode: "None"
+  }
+  federation: {
+    concurrent_sends_per_instance: 1
+  }
+}

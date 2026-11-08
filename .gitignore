@@ -13,3 +13,12 @@ test-results/
 !.env.example
 .DS_Store
 lab/data/
+
+# spike evidence stays on disk, not in git
+spikes/*/e2e/artifacts/
+
+# harness-managed lane worktrees
+.claude/worktrees/
+
+# federation captures stay on disk, not in git
+spikes/*/captures/

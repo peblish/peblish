@@ -1,0 +1,323 @@
+# Feddit federation lab: Lemmy 0.19.21, PieFed 1.8.11, the Fedify spike and a
+# rogue test peer, all behind one Caddy TLS front door on an internal network
+# (no route out of the lab). Host access is opt-in (`make ports`).
+# See README.md for why each knob exists.
+name: feddit-lab
+
+x-lab-ca: &lab-ca /lab-ca/root.crt
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "20m"
+    max-file: "3"
+
+networks:
+  # Used only by `host-ports` (profile `host`, started by `make ports`): Docker
+  # publishes ports only from non-internal networks. Without it, every running
+  # container is on `lab` alone.
+  edge: {}
+  # Every service lives here. `internal: true` gives it no route out of the lab.
+  # 192.88.99.0/24 (the retired 6to4 anycast prefix, RFC 7526) is classified as
+  # global by Python's ipaddress and Rust's Ipv4Addr, so Lemmy and PieFed keep
+  # their production SSRF guards on. Fedify lists it as non-public, so only the
+  # Feddit app needs a lab switch (FEDDIT_ALLOW_PRIVATE_ADDRESS).
+  lab:
+    internal: true
+    ipam:
+      config:
+        - subnet: 192.88.99.0/24
+
+volumes:
+  caddy-data: {}
+  # Holds only Caddy's root certificate, world-readable, for the peers' trust stores.
+  lab-ca: {}
+  caddy-config: {}
+  lemmy-db: {}
+  lemmy-pictrs: {}
+  piefed-db: {}
+  piefed-redis: {}
+  feddit-db: {}
+
+services:
+  caddy:
+    image: caddy:2.10-alpine
+    restart: unless-stopped
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    networks:
+      lab:
+        aliases:
+          - lemmy.lab.test
+          - piefed.lab.test
+          - feddit.lab.test
+          - rogue.lab.test
+    healthcheck:
+      test: ["CMD", "test", "-f", "/data/caddy/pki/authorities/local/root.crt"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+    logging: *logging
+
+  # Copies Caddy's root certificate (not its keys) into the lab-ca volume.
+  # Caddy's pki directory is 0700, and Lemmy and PieFed run as non-root users.
+  lab-ca:
+    image: caddy:2.10-alpine
+    volumes:
+      - caddy-data:/data:ro
+      - lab-ca:/lab-ca
+    command: ["sh", "-c", "cp /data/caddy/pki/authorities/local/root.crt /lab-ca/root.crt && chmod 644 /lab-ca/root.crt"]
+    network_mode: none
+    depends_on:
+      caddy:
+        condition: service_healthy
+    logging: *logging
+
+  # ---------------------------------------------------------------- Lemmy
+  lemmy-db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: lemmy
+      POSTGRES_PASSWORD: lemmy
+      POSTGRES_DB: lemmy
+    volumes:
+      - lemmy-db:/var/lib/postgresql/data
+    networks: [lab]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U lemmy"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+    logging: *logging
+
+  lemmy-pictrs:
+    image: asonix/pictrs:0.5.16
+    restart: unless-stopped
+    user: "991:991"
+    environment:
+      PICTRS__API_KEY: lab-pictrs-key
+      RUST_LOG: warn
+    volumes:
+      - lemmy-pictrs:/mnt
+    networks: [lab]
+    logging: *logging
+
+  lemmy:
+    image: dessalines/lemmy:0.19.21
+    restart: unless-stopped
+    environment:
+      RUST_LOG: "warn,lemmy_server=info,lemmy_apub=debug,lemmy_federate=info,activitypub_federation=debug"
+      # Lab-only: shortens the outbound queue recheck from 30-60 s to about 1 s.
+      # It changes timing, not the wire format.
+      LEMMY_TEST_FAST_FEDERATION: "1"
+      # rustls-native-certs honours SSL_CERT_FILE; the bundle holds only the lab CA.
+      SSL_CERT_FILE: *lab-ca
+    volumes:
+      - ./lemmy/lemmy.hjson:/config/config.hjson:ro
+      - lab-ca:/lab-ca:ro
+    networks: [lab]
+    depends_on:
+      lemmy-db:
+        condition: service_healthy
+      lab-ca:
+        condition: service_completed_successfully
+      lemmy-pictrs:
+        condition: service_started
+    logging: *logging
+
+  lemmy-ui:
+    image: dessalines/lemmy-ui:0.19.21
+    restart: unless-stopped
+    init: true
+    environment:
+      LEMMY_UI_LEMMY_INTERNAL_HOST: lemmy:8536
+      # The browser-facing API host is the plain-HTTP convenience port.
+      LEMMY_UI_LEMMY_EXTERNAL_HOST: localhost:18201
+      LEMMY_UI_HTTPS: "false"
+    networks: [lab]
+    depends_on: [lemmy]
+    logging: *logging
+
+  # ---------------------------------------------------------------- PieFed
+  piefed-db:
+    image: postgres:17
+    restart: unless-stopped
+    env_file: ./piefed/piefed.env
+    volumes:
+      - piefed-db:/var/lib/postgresql/data
+    networks: [lab]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U piefed"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+    logging: *logging
+
+  piefed-redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    volumes:
+      - piefed-redis:/data
+    networks: [lab]
+    logging: *logging
+
+  piefed-web:
+    # No official PieFed image is published; this builds the upstream
+    # Dockerfile at the v1.8.11 tag.
+    build:
+      context: https://codeberg.org/rimu/pyfedi.git#v1.8.11
+      target: runtime
+    image: feddit-lab/piefed:1.8.11
+    restart: unless-stopped
+    env_file: ./piefed/piefed.env
+    environment:
+      # httpx 0.28 (federation client) honours SSL_CERT_FILE; requests honours REQUESTS_CA_BUNDLE.
+      SSL_CERT_FILE: *lab-ca
+      REQUESTS_CA_BUNDLE: *lab-ca
+    entrypoint: ["/usr/bin/tini", "--", "bash", "/lab/entrypoint.sh"]
+    volumes:
+      - ./piefed/entrypoint.sh:/lab/entrypoint.sh:ro
+      - ./piefed/bootstrap.py:/lab/bootstrap.py:ro
+      - lab-ca:/lab-ca:ro
+    networks: [lab]
+    depends_on:
+      piefed-db:
+        condition: service_healthy
+      piefed-redis:
+        condition: service_started
+      lab-ca:
+        condition: service_completed_successfully
+    logging: *logging
+
+  piefed-celery:
+    image: feddit-lab/piefed:1.8.11
+    restart: unless-stopped
+    env_file: ./piefed/piefed.env
+    environment:
+      SSL_CERT_FILE: *lab-ca
+      REQUESTS_CA_BUNDLE: *lab-ca
+    entrypoint: ./entrypoint_celery.sh
+    # The image's HEALTHCHECK curls the web server on :5000, which this worker
+    # container does not run, so it always reported unhealthy. Upstream's
+    # compose.yaml overrides it with the same Celery ping.
+    healthcheck:
+      test: ["CMD", "celery", "-A", "celery_worker_docker.celery", "inspect", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    volumes:
+      - lab-ca:/lab-ca:ro
+    networks: [lab]
+    depends_on:
+      piefed-web:
+        condition: service_started
+    logging: *logging
+
+  # ---------------------------------------------------------------- Feddit (Fedify spike)
+  feddit-db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: feddit
+      POSTGRES_PASSWORD: feddit
+      POSTGRES_DB: feddit
+    volumes:
+      - feddit-db:/var/lib/postgresql/data
+    networks: [lab]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U feddit"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+    logging: *logging
+
+  feddit:
+    build: ../spikes/fedify-threadiverse
+    image: feddit-lab/feddit-spike:dev
+    restart: unless-stopped
+    environment: &feddit-env
+      DATABASE_URL: postgres://feddit:feddit@feddit-db:5432/feddit
+      FEDDIT_ORIGIN: https://feddit.lab.test
+      NODE_EXTRA_CA_CERTS: *lab-ca
+      CAPTURE_DIR: /app/captures
+      PORT: "8000"
+      # Lab only: Fedify's SSRF guard is all-or-nothing and rejects the lab
+      # subnet, so it is switched off for Fedify's own fetches (see README).
+      FEDDIT_ALLOW_PRIVATE_ADDRESS: "1"
+      # Deliveries (safe-post.ts) allow public space plus this one range;
+      # loopback, RFC 1918 and other special-purpose blocks stay refused.
+      FEDDIT_LAB_CIDR: 192.88.99.0/24
+      # Shorter retries so the delivery scenarios finish in seconds:
+      # attempts at 0, 1, 3 and 9 s; a delivery whose worker died is re-claimed
+      # after 20 s (the minimum: the 15 s request timeout plus 5 s).
+      FEDDIT_OUTBOX_MAX_ATTEMPTS: "4"
+      FEDDIT_OUTBOX_BASE_DELAY_MS: "1000"
+      FEDDIT_OUTBOX_LEASE_MS: "20000"
+    volumes:
+      # Mounted so edits apply with `make restart-feddit`; the image also contains them.
+      - ../spikes/fedify-threadiverse/src:/app/src:ro
+      - ../spikes/fedify-threadiverse/captures:/app/captures
+      - lab-ca:/lab-ca:ro
+    networks: [lab]
+    depends_on:
+      feddit-db:
+        condition: service_healthy
+      lab-ca:
+        condition: service_completed_successfully
+    logging: *logging
+
+  # A hostile or broken peer for the authorization and delivery scenarios
+  # (spikes/fedify-threadiverse/scenarios/rogue.ts), at https://rogue.lab.test.
+  rogue:
+    image: feddit-lab/feddit-spike:dev
+    restart: unless-stopped
+    environment:
+      NODE_EXTRA_CA_CERTS: *lab-ca
+    volumes:
+      - ../spikes/fedify-threadiverse/scenarios:/app/scenarios:ro
+      - lab-ca:/lab-ca:ro
+    networks: [lab]
+    command: ["node", "scenarios/rogue.ts"]
+    depends_on:
+      lab-ca:
+        condition: service_completed_successfully
+    logging: *logging
+
+  # Opt-in host access (`make ports`): plain TCP from 127.0.0.1 ports to Caddy.
+  # The only container on a network with a route out; it connects to Caddy
+  # and nothing else (lab/forward.mjs).
+  host-ports:
+    image: feddit-lab/feddit-spike:dev
+    profiles: [host]
+    restart: unless-stopped
+    volumes:
+      - ./forward.mjs:/lab/forward.mjs:ro
+    command: ["node", "/lab/forward.mjs"]
+    ports:
+      - "127.0.0.1:18243:8443"
+      - "127.0.0.1:18201:8201"
+      - "127.0.0.1:18202:8202"
+      - "127.0.0.1:18203:8203"
+    networks: [edge, lab]
+    depends_on: [caddy]
+    logging: *logging
+
+  # One-shot tool container for `make seed` and `make scenarios`.
+  runner:
+    image: feddit-lab/feddit-spike:dev
+    profiles: [tools]
+    environment:
+      <<: *feddit-env
+    volumes:
+      - ../spikes/fedify-threadiverse/src:/app/src:ro
+      - ../spikes/fedify-threadiverse/scenarios:/app/scenarios:ro
+      - ../spikes/fedify-threadiverse/captures:/app/captures
+      - lab-ca:/lab-ca:ro
+    networks: [lab]
+    depends_on: [feddit]
+    command: ["node", "scenarios/run.ts"]
+    logging: *logging

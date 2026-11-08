@@ -1,0 +1,78 @@
+# TLS front door for the federation lab.
+#
+# Lemmy 0.19.21 release builds refuse http:// peer URLs and explicit ports
+# (activitypub_federation 0.5.12 `verify_url_valid`), and PieFed hard-codes
+# `https://` in its local-content checks, so every peer is served as
+# https://<name>.lab.test on port 443 with a certificate from Caddy's internal CA.
+# Peers trust that CA through SSL_CERT_FILE / NODE_EXTRA_CA_CERTS (see compose.yaml).
+{
+	admin off
+	skip_install_trust
+	auto_https disable_redirects
+	pki {
+		ca local {
+			name "Feddit Lab Local CA"
+		}
+	}
+}
+
+# Lemmy's reference nginx.conf routes API, federation (POST and AP Accept
+# headers) to the backend and everything else to lemmy-ui.
+(lemmy_routes) {
+	@lemmy_backend path /api/* /pictrs/* /feeds/* /nodeinfo/* /version /.well-known/* /sitemap.xml
+	handle @lemmy_backend {
+		reverse_proxy lemmy:8536
+	}
+	@lemmy_post method POST
+	handle @lemmy_post {
+		reverse_proxy lemmy:8536
+	}
+	@lemmy_ap header_regexp Accept application/(activity|ld)\+json
+	handle @lemmy_ap {
+		reverse_proxy lemmy:8536
+	}
+	handle {
+		reverse_proxy lemmy-ui:1234
+	}
+}
+
+lemmy.lab.test {
+	tls internal
+	import lemmy_routes
+}
+
+piefed.lab.test {
+	tls internal
+	reverse_proxy piefed-web:5000
+}
+
+feddit.lab.test {
+	tls internal
+	reverse_proxy feddit:8000
+}
+
+# Test double for the authorization and delivery scenarios (scenarios/rogue.ts).
+rogue.lab.test {
+	tls internal
+	reverse_proxy rogue:8000
+}
+
+# Plain-HTTP convenience ports for the host, reached only through the opt-in
+# host-ports forwarder (`make ports`, 127.0.0.1 only).
+# They rewrite Host so each app sees its canonical name. Federation never uses them.
+http://:8201 {
+	import lemmy_routes
+}
+
+http://:8202 {
+	reverse_proxy piefed-web:5000 {
+		header_up Host piefed.lab.test
+	}
+}
+
+http://:8203 {
+	reverse_proxy feddit:8000 {
+		header_up Host feddit.lab.test
+		header_up X-Forwarded-Proto https
+	}
+}

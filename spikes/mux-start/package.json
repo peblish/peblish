@@ -1,0 +1,13 @@
+{
+  "name": "feddit-spike-mux",
+  "private": true,
+  "description": "Scripts only. The app lives in start/, the Playwright suite in e2e/.",
+  "scripts": {
+    "build:image": "docker compose -f start/compose.yaml build prod",
+    "run": "docker compose -f start/compose.yaml up -d --wait prod",
+    "dev": "docker compose -f start/compose.yaml --profile dev up -d --build dev",
+    "stop": "docker compose -f start/compose.yaml --profile dev down",
+    "test": "pnpm --dir e2e install --frozen-lockfile && pnpm --dir e2e test",
+    "test:dev": "BASE_URL=http://127.0.0.1:18111 ARTIFACT_PREFIX=start-dev pnpm --dir e2e test"
+  }
+}

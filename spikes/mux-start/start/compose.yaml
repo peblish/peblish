@@ -1,0 +1,29 @@
+name: feddit-spike-mux-start
+
+services:
+  prod:
+    build: { context: ., target: runtime }
+    image: feddit-spike-mux-start:local
+    container_name: feddit-spike-mux-start-prod
+    ports: ["127.0.0.1:18110:3000"]
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/').then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))"]
+      interval: 2s
+      retries: 15
+
+  # Vite dev server in the same image, source bind-mounted. node_modules stays in a
+  # volume so the macOS checkout never shadows the Linux install.
+  dev:
+    build: { context: ., target: dev }
+    image: feddit-spike-mux-start:dev
+    container_name: feddit-spike-mux-start-dev
+    profiles: [dev]
+    ports: ["127.0.0.1:18111:3000"]
+    environment:
+      VITE_USE_POLLING: "1"
+    volumes:
+      - .:/app
+      - node_modules:/app/node_modules
+
+volumes:
+  node_modules:
