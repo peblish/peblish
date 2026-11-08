@@ -6,7 +6,7 @@ import { ageOn, dateOfBirth, SignUpBody } from '@peblish/schema/identity';
 import { Button } from '@peblish/ui/components/button';
 import { createFileRoute, Link } from '@tanstack/react-router';
 import { createServerFn } from '@tanstack/react-start';
-import { getRequest } from '@tanstack/react-start/server';
+import { getRequest, setResponseHeader } from '@tanstack/react-start/server';
 import { type } from 'arktype';
 import { useId } from 'react';
 import { useTranslate } from '../../i18n/use-translate.ts';
@@ -21,6 +21,8 @@ const Search = type({ 'error?': SearchText, 'invite?': SearchText, 'username?': 
 const loadSignUp = createServerFn({ method: 'GET' })
   .validator(type({ 'invite?': 'string' }))
   .handler(async ({ data }) => {
+    // Per person (or per browser, for the age gate): never from a shared cache.
+    setResponseHeader('cache-control', 'private, no-store');
     const { host } = await localHandles();
     // An under-16 answer blocks this browser for 24 hours (server/auth.ts).
     if (ageGated(getRequest())) return { host, blocked: true, invite: null };

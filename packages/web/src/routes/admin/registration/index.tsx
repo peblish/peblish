@@ -5,11 +5,11 @@ import { InviteCreateBody, type InviteRow, type InviteStatus } from '@peblish/sc
 import { Button } from '@peblish/ui/components/button';
 import { createFileRoute, Link, redirect } from '@tanstack/react-router';
 import { createServerFn } from '@tanstack/react-start';
-import { getRequest } from '@tanstack/react-start/server';
+import { setResponseHeader } from '@tanstack/react-start/server';
 import { type } from 'arktype';
 import { useState } from 'react';
 import { useTranslate } from '../../../i18n/use-translate.ts';
-import { forbidden, principalOf, readForm, respond, sameOrigin, sessionOf } from '../../../server/auth.ts';
+import { forbidden, principalOf, readForm, pageSession, respond, sameOrigin, sessionOf } from '../../../server/auth.ts';
 import { useRouteHydrated } from '../../../shell/hydration.ts';
 import { asFormError } from '../../auth/-ui/errors.ts';
 import { AuthForm, Field } from '../../auth/-ui/form.tsx';
@@ -21,7 +21,9 @@ const Body = InviteCreateBody.and({ intent: "'create'" }).or({ intent: "'revoke'
 const loadRegistration = createServerFn({ method: 'GET' })
   .validator(type({ 'created?': 'string' }))
   .handler(async ({ data }) => {
-    const session = await sessionOf(getRequest());
+    // Per person (or per browser, for the age gate): never from a shared cache.
+    setResponseHeader('cache-control', 'private, no-store');
+    const session = await pageSession();
     if (!session) throw redirect({ to: '/auth/sign-in', search: { redirect: '/admin/registration' } });
     const { origin, handle } = await localHandles();
     const access = session.role !== 'admin' ? 'not-admin' : session.view.siteRole !== 'admin' ? 'needs-two-factor' : 'ok';

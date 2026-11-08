@@ -6,11 +6,11 @@ import type { DeviceSession } from '@peblish/schema/session';
 import { Button } from '@peblish/ui/components/button';
 import { createFileRoute, redirect } from '@tanstack/react-router';
 import { createServerFn } from '@tanstack/react-start';
-import { getRequest } from '@tanstack/react-start/server';
+import { setResponseHeader } from '@tanstack/react-start/server';
 import { type } from 'arktype';
 import { useState } from 'react';
 import { useTranslate } from '../../../i18n/use-translate.ts';
-import { forbidden, forwardedHeaders, readForm, respond, sameOrigin, sessionOf } from '../../../server/auth.ts';
+import { forbidden, forwardedHeaders, readForm, pageSession, respond, sameOrigin, sessionOf } from '../../../server/auth.ts';
 import { useRouteHydrated } from '../../../shell/hydration.ts';
 import { asFormError, type FormError } from '../../auth/-ui/errors.ts';
 import { AuthForm, Field } from '../../auth/-ui/form.tsx';
@@ -27,7 +27,8 @@ const Body = type({ intent: "'password'", current: 'string', next: 'string' })
   .or({ intent: "'revoke-others'" });
 
 const loadSecurity = createServerFn({ method: 'GET' }).handler(async () => {
-  const session = await sessionOf(getRequest());
+  setResponseHeader('cache-control', 'private, no-store');
+  const session = await pageSession();
   if (!session) throw redirect({ to: '/auth/sign-in', search: { redirect: '/settings/security' } });
   const { userId, twoFactorEnabled } = session.view;
   const { host } = await localHandles();

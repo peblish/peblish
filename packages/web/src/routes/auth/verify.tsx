@@ -3,10 +3,10 @@ import { maskEmail, verifyEmailToken } from '@peblish/core/identity/verify';
 import { Button } from '@peblish/ui/components/button';
 import { createFileRoute, Link, redirect } from '@tanstack/react-router';
 import { createServerFn } from '@tanstack/react-start';
-import { getRequest } from '@tanstack/react-start/server';
+import { setResponseHeader } from '@tanstack/react-start/server';
 import { type } from 'arktype';
 import { useTranslate } from '../../i18n/use-translate.ts';
-import { forbidden, mayResendVerification, respond, sameOrigin, sessionOf } from '../../server/auth.ts';
+import { forbidden, mayResendVerification, pageSession, respond, sameOrigin, sessionOf } from '../../server/auth.ts';
 import { useRouteHydrated } from '../../shell/hydration.ts';
 import { asFormError } from './-ui/errors.ts';
 import { AuthForm, rich } from './-ui/form.tsx';
@@ -21,7 +21,9 @@ const Search = type({ 'error?': SearchText, 'token?': SearchText, 'sent?': Searc
 const loadVerify = createServerFn({ method: 'POST' })
   .validator(type({ 'token?': 'string' }))
   .handler(async ({ data }) => {
-    const session = await sessionOf(getRequest());
+    // Per person (or per browser, for the age gate): never from a shared cache.
+    setResponseHeader('cache-control', 'private, no-store');
+    const session = await pageSession();
     if (data.token) return { state: await verifyEmailToken(data.token), email: null, signedIn: session !== null };
     if (!session) throw redirect({ to: '/auth/sign-in', search: { redirect: '/auth/verify' } });
     return {

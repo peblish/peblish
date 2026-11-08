@@ -1,4 +1,5 @@
 import { auth } from '@peblish/core/identity/auth';
+import { appendResponseHeader, getRequest } from '@tanstack/react-start/server';
 import { currentSession, type CurrentSession } from '@peblish/core/identity/session';
 import type { ActingPrincipal } from '@peblish/schema/authz';
 import type { SessionView } from '@peblish/schema/session';
@@ -80,6 +81,16 @@ export const forbidden = () =>
 /** The session for a form handler; null when signed out. */
 export function sessionOf(request: Request): Promise<CurrentSession | null> {
   return currentSession(forwardedHeaders(request));
+}
+
+/**
+ * The session for a page's server function, passing on the cookie better-auth refreshes
+ * once a day (session.updateAge), so an active session's cookie keeps up with its row.
+ */
+export async function pageSession(): Promise<CurrentSession | null> {
+  const session = await sessionOf(getRequest());
+  for (const cookie of session?.setCookies ?? []) appendResponseHeader('set-cookie', cookie);
+  return session;
 }
 
 /** The principal a signed-in person acts as. */
