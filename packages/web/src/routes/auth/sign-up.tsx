@@ -1,6 +1,6 @@
 import { auth } from '@peblish/core/identity/auth';
 import { localHandles } from '@peblish/core/identity/handles';
-import { lookupInvite } from '@peblish/core/registration/invites';
+import { attempt } from '@peblish/core/identity/throttle';
 import { register } from '@peblish/core/registration/register';
 import { ageOn, dateOfBirth, SignUpBody } from '@peblish/schema/identity';
 import { Button } from '@peblish/ui/components/button';
@@ -13,8 +13,10 @@ import { useTranslate } from '../../i18n/use-translate.ts';
 import {
   ageGateCookie,
   ageGated,
+  clientIp,
   forbidden,
   forwardedHeaders,
+  lookupInviteFor,
   PRIVATE_NO_STORE,
   readForm,
   respond,
@@ -35,7 +37,8 @@ const loadSignUp = createServerFn({ method: 'GET' })
     const { host } = await localHandles();
     // An under-16 answer blocks this browser for 24 hours (server/auth.ts).
     if (ageGated(getRequest())) return { host, blocked: true, invite: null };
-    return { host, blocked: false, invite: data.invite ? await lookupInvite(data.invite) : null };
+    // Over the budget of unknown codes, the hint is left out; the POST says why.
+    return { host, blocked: false, invite: data.invite ? await lookupInviteFor(getRequest(), data.invite) : null };
   });
 
 export const Route = createFileRoute('/auth/sign-up')({
@@ -53,6 +56,9 @@ export const Route = createFileRoute('/auth/sign-up')({
         if (body instanceof type.errors) return respond(request, { error: 'form.invalid', back: '/auth/sign-up' });
         const back = { back: '/auth/sign-up', keep: { invite: body.invite, username: body.username } };
         if (body.terms !== 'on') return respond(request, { error: 'terms.required', ...back });
+        // Guessing invite codes: a code that matches no invite counts against the address.
+        const counted = await attempt('invite-code', { ip: clientIp(request) });
+        if (!counted.allowed) return respond(request, { error: 'rate.limited', ...back });
         const dob = dateOfBirth(body.day, body.month, body.year);
         const result = await register({
           inviteCode: body.invite,
@@ -61,6 +67,7 @@ export const Route = createFileRoute('/auth/sign-up')({
           password: body.password,
           age: dob ? ageOn(dob) : null,
         });
+        if (result.ok || result.reason !== 'invite.unknown') await counted.refund();
         if (!result.ok) {
           if (result.reason === 'age.under_16') return respond(request, { redirect: '/auth/sign-up', cookies: [await ageGateCookie()] });
           return respond(request, { error: asFormError(result.reason) ?? 'generic', ...back });

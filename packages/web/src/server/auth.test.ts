@@ -4,7 +4,7 @@ import { Route as authGroup } from '../routes/auth/route.tsx';
 import { Route as inviteGroup } from '../routes/invite/route.tsx';
 import { Route as settingsGroup } from '../routes/settings/route.tsx';
 import type { CurrentSession } from '@peblish/core/identity/session';
-import { privateResponse, privateResponses, safeRedirect, sameOrigin, withSession } from './auth.ts';
+import { clientAddress, privateResponse, privateResponses, safeRedirect, sameOrigin, withSession } from './auth.ts';
 
 const origin = 'https://feddit.test';
 
@@ -105,4 +105,13 @@ describe('sameOrigin refuses cross-site form posts', () => {
       false,
     ],
   ])('%s', (_, request, allowed) => expect(sameOrigin(request)).toBe(allowed));
+});
+
+describe('the client address comes from a header only when its proxy is trusted', () => {
+  const headers = new Headers({ 'x-forwarded-for': '198.51.100.1, 203.0.113.7', 'cf-connecting-ip': '192.0.2.9' });
+  test('no proxy: the peer, whatever the headers claim', () => expect(clientAddress(headers, 'none', '10.0.0.5')).toBe('10.0.0.5'));
+  test('Traefik: the address it appended last, not one the client sent', () =>
+    expect(clientAddress(headers, 'traefik', '10.0.0.2')).toBe('203.0.113.7'));
+  test('Cloudflare: CF-Connecting-IP', () => expect(clientAddress(headers, 'cloudflare', '10.0.0.2')).toBe('192.0.2.9'));
+  test('a missing header falls back to the peer', () => expect(clientAddress(new Headers(), 'traefik', '10.0.0.2')).toBe('10.0.0.2'));
 });

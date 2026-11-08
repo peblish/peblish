@@ -1,9 +1,13 @@
 import { auth } from '@peblish/core/identity/auth';
-import { createMiddleware } from '@tanstack/react-start';
-import { appendResponseHeader, getRequest, setResponseHeader } from '@tanstack/react-start/server';
 import { currentSession, type CurrentSession } from '@peblish/core/identity/session';
+import { attempt } from '@peblish/core/identity/throttle';
+import { lookupInvite } from '@peblish/core/registration/invites';
 import type { ActingPrincipal } from '@peblish/schema/authz';
+import type { InviteLookup } from '@peblish/schema/invite';
 import type { SessionView } from '@peblish/schema/session';
+import { createMiddleware } from '@tanstack/react-start';
+import { appendResponseHeader, getRequest, getRequestIP, setResponseHeader } from '@tanstack/react-start/server';
+import { type } from 'arktype';
 import type { FormError } from '../routes/auth/-ui/errors.ts';
 import { editable } from './fetch.ts';
 
@@ -40,14 +44,58 @@ export const privateResponses = createMiddleware().server(async ({ next }) => {
   return { ...result, response: privateResponse(result.response) };
 });
 
-/** The headers better-auth needs from the browser's request: cookies, device and address. */
+/** Which proxy in front may name the client (PEBLISH_TRUSTED_PROXY, deploy/README.md); none by default. */
+export const TrustedProxy = type("'none' | 'traefik' | 'cloudflare'");
+
+function trustedProxy(): typeof TrustedProxy.infer {
+  const proxy = TrustedProxy(process.env.PEBLISH_TRUSTED_PROXY ?? 'none');
+  if (proxy instanceof type.errors) throw new Error(`PEBLISH_TRUSTED_PROXY: ${proxy.summary}`);
+  return proxy;
+}
+
+/**
+ * The client's address, from a header only when the setting names the proxy that sets it:
+ * Cloudflare's CF-Connecting-IP, or the entry Traefik appended last to X-Forwarded-For (any
+ * before it came from the client). Otherwise, and when that header is missing, the peer.
+ */
+export function clientAddress(headers: Headers, proxy: typeof TrustedProxy.infer, peer: string | undefined): string | null {
+  const named =
+    proxy === 'cloudflare'
+      ? headers.get('cf-connecting-ip')
+      : proxy === 'traefik'
+        ? headers.get('x-forwarded-for')?.split(',').at(-1)
+        : null;
+  return named?.trim() || peer || null;
+}
+
+/** The address of the client sending `request` (the handler's own request). */
+export const clientIp = (request: Request) => clientAddress(request.headers, trustedProxy(), getRequestIP());
+
+/**
+ * The headers better-auth needs from the browser's request: cookies, device, and the client's
+ * address as clientIp() sees it, so a session never records an address the client made up.
+ */
 export function forwardedHeaders(request: Request): Headers {
   const headers = new Headers();
-  for (const name of ['cookie', 'user-agent', 'x-forwarded-for', 'x-real-ip', 'accept-language']) {
+  for (const name of ['cookie', 'user-agent', 'accept-language']) {
     const value = request.headers.get(name);
     if (value) headers.set(name, value);
   }
+  const ip = clientIp(request);
+  if (ip) headers.set('x-forwarded-for', ip);
   return headers;
+}
+
+/**
+ * An invite code looked up for a page, counted against the client's budget of codes that
+ * match no invite (identity/throttle.ts); null when the client is over it.
+ */
+export async function lookupInviteFor(request: Request, code: string): Promise<InviteLookup | null> {
+  const counted = await attempt('invite-code', { ip: clientIp(request) });
+  if (!counted.allowed) return null;
+  const invite = await lookupInvite(code);
+  if (invite.status !== 'unknown') await counted.refund();
+  return invite;
 }
 
 /**
@@ -96,7 +144,8 @@ export function respond(request: Request, outcome: Outcome): Response {
   if (wantsJson(request)) {
     headers.set('content-type', 'application/json');
     const body = 'redirect' in outcome ? { redirect: outcome.redirect } : { error: outcome.error };
-    return new Response(JSON.stringify(body), { status: 'redirect' in outcome ? 200 : 400, headers });
+    const status = 'redirect' in outcome ? 200 : outcome.error === 'rate.limited' ? 429 : 400;
+    return new Response(JSON.stringify(body), { status, headers });
   }
   headers.set('location', location);
   return new Response(null, { status: 303, headers });
@@ -183,18 +232,4 @@ export function safeRedirect(target: string | undefined, origin: string): string
   if (!target || hasControlCharacter(target) || target.includes('\\') || !/^\/(?!\/)/.test(target)) return '/';
   const url = new URL(target, origin);
   return url.origin === new URL(origin).origin ? url.pathname + url.search + url.hash : '/';
-}
-
-declare global {
-  // When each user last asked for a verification link (one per minute); on globalThis like the pools.
-  var peblishVerifyResends: Map<string, number> | undefined;
-}
-
-/** True, and remembered, when the user may get another verification link now. */
-export function mayResendVerification(userId: string, now = Date.now()): boolean {
-  const resends = (globalThis.peblishVerifyResends ??= new Map());
-  const last = resends.get(userId);
-  if (last !== undefined && now - last < 60_000) return false;
-  resends.set(userId, now);
-  return true;
 }

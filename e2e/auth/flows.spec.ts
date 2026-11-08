@@ -245,3 +245,18 @@ test.describe('without JavaScript', () => {
     await page.waitForURL('/');
   });
 });
+
+test('five wrong sign-ins for one account, then the sixth is told to wait', async ({ page }) => {
+  const nobody = `${unique('nobody')}@example.test`;
+  await gotoHydrated(page, '/auth/sign-in');
+  const tryOnce = async () => {
+    const answer = page.waitForResponse(
+      (response) => response.request().method() === 'POST' && new URL(response.url()).pathname === '/auth/sign-in',
+    );
+    await signIn(page, nobody, 'not the password');
+    return (await answer).status();
+  };
+  for (let i = 0; i < 5; i++) expect(await tryOnce()).toBe(400);
+  expect(await tryOnce()).toBe(429);
+  await expect(page.getByRole('alert')).toHaveText('Too many attempts. Wait a few minutes and try again.');
+});

@@ -62,6 +62,8 @@
     "landing.revokedBody": "Ask the person who sent it for a new one.",
     "landing.unknownTitle": "This invite code is not valid",
     "landing.unknownBody": "Check the link, or ask the person who sent it for a new one.",
+    "landing.limitedTitle": "Too many invite codes tried",
+    "landing.limitedBody": "Wait an hour, then open the link you were sent again.",
     "landing.someone": "the person who sent it",
     "landing.otherCode": "Enter a different code",
     "landing.signIn": "Sign in"
@@ -129,6 +131,8 @@
     "landing.revokedBody": "Bitte die Person, die sie geschickt hat, um eine neue.",
     "landing.unknownTitle": "Dieser Einladungscode ist ungültig",
     "landing.unknownBody": "Prüfe den Link oder bitte die Person, die ihn geschickt hat, um einen neuen.",
+    "landing.limitedTitle": "Zu viele Einladungscodes ausprobiert",
+    "landing.limitedBody": "Warte eine Stunde und öffne dann den Link, den du bekommen hast, erneut.",
     "landing.someone": "die Person, die sie geschickt hat",
     "landing.otherCode": "Anderen Code eingeben",
     "landing.signIn": "Anmelden"

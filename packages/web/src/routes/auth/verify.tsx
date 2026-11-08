@@ -1,11 +1,12 @@
 import { auth } from '@peblish/core/identity/auth';
+import { attempt } from '@peblish/core/identity/throttle';
 import { maskEmail, verifyEmailToken } from '@peblish/core/identity/verify';
 import { Button } from '@peblish/ui/components/button';
 import { createFileRoute, Link, redirect } from '@tanstack/react-router';
 import { createServerFn } from '@tanstack/react-start';
 import { type } from 'arktype';
 import { useTranslate } from '../../i18n/use-translate.ts';
-import { forbidden, formSession, mayResendVerification, pageSession, sameOrigin } from '../../server/auth.ts';
+import { forbidden, formSession, pageSession, sameOrigin } from '../../server/auth.ts';
 import { useRouteHydrated } from '../../shell/hydration.ts';
 import { asFormError } from './-ui/errors.ts';
 import { AuthForm, rich } from './-ui/form.tsx';
@@ -44,7 +45,8 @@ export const Route = createFileRoute('/auth/verify')({
         const { session, reply } = await formSession(request);
         if (!session) return reply({ redirect: '/auth/sign-in?redirect=%2Fauth%2Fverify' });
         if (session.view.emailVerified) return reply({ redirect: '/auth/verify' });
-        if (!mayResendVerification(session.view.userId)) return reply({ error: 'resend.too_soon', back: '/auth/verify' });
+        if (!(await attempt('verify-mail', { id: session.view.userId })).allowed)
+          return reply({ error: 'resend.too_soon', back: '/auth/verify' });
         try {
           await (await auth()).api.sendVerificationEmail({ body: { email: session.email } });
         } catch (error) {

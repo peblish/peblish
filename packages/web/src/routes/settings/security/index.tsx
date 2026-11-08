@@ -1,6 +1,7 @@
 import { auth, authErrorCode } from '@peblish/core/identity/auth';
 import { localHandles } from '@peblish/core/identity/handles';
 import { deviceSessions, revokeSession } from '@peblish/core/identity/session';
+import { attempt } from '@peblish/core/identity/throttle';
 import { confirmTotpSetup, pendingTotp, takeRecoveryCodes } from '@peblish/core/identity/two-factor';
 import type { DeviceSession } from '@peblish/schema/session';
 import { Button } from '@peblish/ui/components/button';
@@ -9,7 +10,7 @@ import { createServerFn } from '@tanstack/react-start';
 import { type } from 'arktype';
 import { useState } from 'react';
 import { useTranslate } from '../../../i18n/use-translate.ts';
-import { forbidden, formSession, forwardedHeaders, pageSession, readForm, sameOrigin } from '../../../server/auth.ts';
+import { clientIp, forbidden, formSession, forwardedHeaders, pageSession, readForm, sameOrigin } from '../../../server/auth.ts';
 import { useRouteHydrated } from '../../../shell/hydration.ts';
 import { asFormError, type FormError } from '../../auth/-ui/errors.ts';
 import { AuthForm, Field } from '../../auth/-ui/form.tsx';
@@ -73,6 +74,13 @@ export const Route = createFileRoute('/settings/security/')({
           if (code === undefined) throw error;
           return reply({ error: pageError(code), back: page, keep: { form: body.intent } });
         };
+        // The intents that take the password: wrong ones count against the account and the
+        // address (identity/throttle.ts), a right one is refunded.
+        const counted =
+          body.intent === 'password' || body.intent === 'totp-start' || body.intent === 'totp-off'
+            ? await attempt('password', { ip: clientIp(request), id: session.view.userId })
+            : null;
+        if (counted?.allowed === false) return reply({ error: 'rate.limited', back: page, keep: { form: body.intent } });
         try {
           switch (body.intent) {
             case 'password': {
@@ -82,10 +90,12 @@ export const Route = createFileRoute('/settings/security/')({
                 headers,
                 returnHeaders: true,
               });
+              await counted?.refund();
               return reply({ redirect: `${page}?saved=password`, cookies: result.headers.getSetCookie() });
             }
             case 'totp-start':
               await api.enableTwoFactor({ body: { password: body.password }, headers });
+              await counted?.refund();
               return reply({ redirect: page });
             case 'totp-verify': {
               // Only confirms a setup in progress; once two-factor is on this changes nothing.
@@ -94,6 +104,7 @@ export const Route = createFileRoute('/settings/security/')({
             }
             case 'totp-off': {
               const result = await api.disableTwoFactor({ body: { password: body.password }, headers, returnHeaders: true });
+              await counted?.refund();
               return reply({ redirect: page, cookies: result.headers.getSetCookie() });
             }
             case 'revoke':

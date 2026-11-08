@@ -1,10 +1,11 @@
 import { auth, authErrorCode } from '@peblish/core/identity/auth';
+import { attempt } from '@peblish/core/identity/throttle';
 import { PASSWORD_MAX, PASSWORD_MIN } from '@peblish/schema/identity';
 import { Button } from '@peblish/ui/components/button';
 import { createFileRoute, Link } from '@tanstack/react-router';
 import { type } from 'arktype';
 import { useTranslate } from '../../i18n/use-translate.ts';
-import { forbidden, readForm, respond, sameOrigin } from '../../server/auth.ts';
+import { clientIp, forbidden, readForm, respond, sameOrigin } from '../../server/auth.ts';
 import { useRouteHydrated } from '../../shell/hydration.ts';
 import { asFormError } from './-ui/errors.ts';
 import { AuthForm, Field } from './-ui/form.tsx';
@@ -26,8 +27,12 @@ export const Route = createFileRoute('/auth/reset')({
         const api = (await auth()).api;
         if (body.intent === 'request') {
           // Answers the same, as fast, whether or not an account uses the address: the mail
-          // goes out in the background, and a failure to send is only logged.
-          await api.requestPasswordReset({ body: { email: body.email.trim().toLowerCase() } });
+          // goes out in the background, and a failure to send is only logged. The budget is per
+          // address typed, account or not, so being refused says nothing about an account either.
+          const email = body.email.trim().toLowerCase();
+          if (!(await attempt('reset-mail', { ip: clientIp(request), id: email })).allowed)
+            return respond(request, { error: 'rate.limited', back: '/auth/reset' });
+          await api.requestPasswordReset({ body: { email } });
           return respond(request, { redirect: '/auth/reset?sent=yes' });
         }
         const back = { back: '/auth/reset', keep: { token: body.token } };

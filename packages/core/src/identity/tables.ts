@@ -1,4 +1,4 @@
-import { bigint, pgTable, uuid } from 'drizzle-orm/pg-core';
+import { bigint, integer, pgTable, primaryKey, text, uuid } from 'drizzle-orm/pg-core';
 import { at } from '../db/columns.ts';
 import { actors } from '../db/tables/actors.ts';
 import { authUser } from '../db/tables/auth.ts';
@@ -26,3 +26,19 @@ export const totpSteps = pgTable('totp_steps', {
     .references(() => authUser.id, { onDelete: 'cascade' }),
   step: bigint('step', { mode: 'number' }).notNull(),
 });
+
+/**
+ * Attempts counted per scope and key in a fixed window (identity/throttle.ts). The key is a
+ * client address ('ip:203.0.113.7', an IPv6 address by its /64) or a normalised identifier
+ * ('id:mira@example.test', a user id).
+ */
+export const throttles = pgTable(
+  'throttles',
+  {
+    scope: text('scope').notNull(),
+    key: text('key').notNull(),
+    windowStart: at('window_start').notNull(),
+    count: integer('count').notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.scope, t.key] })],
+);

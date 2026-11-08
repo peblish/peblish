@@ -28,6 +28,7 @@ export const formErrors = [
   'reset.invalid',
   'mail.failed',
   'resend.too_soon',
+  'rate.limited',
   'confirm.mismatch',
   'auth.required',
   'auth.admin_required',

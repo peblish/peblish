@@ -1,12 +1,14 @@
 import { auth, authErrorCode } from '@peblish/core/identity/auth';
 import { deleteAccountAs } from '@peblish/core/identity/delete';
 import { localHandles } from '@peblish/core/identity/handles';
+import { attempt } from '@peblish/core/identity/throttle';
 import { Button } from '@peblish/ui/components/button';
 import { createFileRoute, Link, redirect } from '@tanstack/react-router';
 import { createServerFn } from '@tanstack/react-start';
 import { type } from 'arktype';
 import { useTranslate } from '../../../i18n/use-translate.ts';
 import {
+  clientIp,
   forbidden,
   formSession,
   forwardedHeaders,
@@ -48,8 +50,12 @@ export const Route = createFileRoute('/settings/account/')({
         const back = { back: '/settings/account' };
         if (body instanceof type.errors) return reply({ error: 'form.invalid', ...back });
         if (body.confirm.trim() !== session.view.name) return reply({ error: 'confirm.mismatch', ...back });
+        // Wrong passwords count against the account and the address; a right one is refunded.
+        const counted = await attempt('password', { ip: clientIp(request), id: session.view.userId });
+        if (!counted.allowed) return reply({ error: 'rate.limited', ...back });
         try {
           await (await auth()).api.verifyPassword({ body: { password: body.password }, headers: forwardedHeaders(request) });
+          await counted.refund();
         } catch (error) {
           if (authErrorCode(error) === undefined) throw error;
           return reply({ error: 'password.wrong', ...back });

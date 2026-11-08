@@ -13,7 +13,7 @@ import { deletionLedger, invites, siteSettings } from '../db/tables/site.ts';
 import { writer } from '../db/write.ts';
 import { insertAccount } from '../identity/accounts.ts';
 import { auth } from '../identity/auth.ts';
-import { totpSteps } from '../identity/tables.ts';
+import { throttles, totpSteps } from '../identity/tables.ts';
 import { inviteCodeHash, newInviteCode } from '../registration/codes.ts';
 import { hashPassword } from '../registration/register.ts';
 import { REGISTRATION_CAP_KEY } from '../registration/settings.ts';
@@ -105,7 +105,8 @@ export async function seedSetting(key: string, value: unknown): Promise<void> {
 
 /**
  * The e2e admin on the lane database, created once and reset on every run: known password,
- * two-factor on with a known secret, and a cap high enough for repeated runs.
+ * two-factor on with a known secret, a cap high enough for repeated runs, and no throttle
+ * counts left from earlier runs.
  */
 async function e2eAdmin() {
   const name = 'e2e_admin';
@@ -119,6 +120,8 @@ async function e2eAdmin() {
       .where(eq(authAccount.userId, userId));
   const { secret, backupCodes } = await seedTwoFactor(userId, 'peblish-e2e-admin-totp-secret-01');
   await seedSetting(REGISTRATION_CAP_KEY, 100_000);
+  // Every run signs in from 127.0.0.1 and tries wrong passwords: start each with fresh budgets.
+  await writer().delete(throttles);
   return { name, email: `${name}@example.test`, password: PASSWORD, totpSecret: secret, backupCodes };
 }
 
