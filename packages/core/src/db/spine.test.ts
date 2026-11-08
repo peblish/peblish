@@ -1,4 +1,5 @@
 import { eq, sql } from 'drizzle-orm';
+import postgres from 'postgres';
 import { beforeEach, describe, expect, test } from 'vitest';
 import { seedActor, seedInstance } from '../testing/seed.ts';
 import { truncateAll } from '../testing/db.ts';
@@ -9,14 +10,14 @@ import { modlog } from './tables/moderation.ts';
 import { deletionLedger } from './tables/site.ts';
 import { writer } from './write.ts';
 
-/** The Postgres error a statement fails with: code and constraint, for exact assertions. */
+/** The Postgres error a statement fails with (Drizzle wraps it as the cause), for exact assertions. */
 async function failure(statement: Promise<unknown>) {
   try {
     await statement;
   } catch (error) {
-    const cause = error instanceof Error && error.cause && typeof error.cause === 'object' ? error.cause : error;
-    const { code, constraint_name: constraint, message } = cause as { code?: string; constraint_name?: string; message?: string };
-    return { code, constraint, message };
+    const cause = error instanceof Error ? error.cause : undefined;
+    if (cause instanceof postgres.PostgresError) return { code: cause.code, constraint: cause.constraint_name };
+    throw error;
   }
   throw new Error('statement succeeded');
 }

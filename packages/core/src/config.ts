@@ -19,8 +19,8 @@ export function databaseUrl(): string {
   return env().DATABASE_URL;
 }
 
-export function publicOrigin(): string {
+/** The configured instance origin, if any (the migrate command creates the local instance from it). */
+export function publicOrigin(): string | undefined {
   const origin = env().PUBLIC_ORIGIN;
-  if (!origin) throw new Error('PUBLIC_ORIGIN is not set');
-  return new URL(origin).origin;
+  return origin && new URL(origin).origin;
 }

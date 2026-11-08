@@ -4,7 +4,8 @@
 import { globSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, relative } from 'node:path';
 
-const root = join(import.meta.dirname, '..');
+// GEN_ROOT points the generator at another tree (scripts/gen.test.ts).
+const root = process.env.GEN_ROOT ?? join(import.meta.dirname, '..');
 
 type Registry = {
   /** Generated file, relative to the repository root. */
