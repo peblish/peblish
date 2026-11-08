@@ -1,6 +1,5 @@
 import { handleFederationRequest, isFederationRequest, negotiatesByAccept } from '@peblish/federation/http';
-
-type Fetch<O> = (request: Request, opts?: O) => Promise<Response> | Response;
+import { editable, type Fetch } from './fetch.ts';
 
 /**
  * Puts federation in front of the UI routes (src/server.ts): its endpoints and the
@@ -16,7 +15,7 @@ export function withFederation<O>(ui: Fetch<O>, federation = handleFederationReq
     }
     const response = await ui(request, opts);
     if (!negotiatesByAccept(new URL(request.url).pathname)) return response;
-    const varied = new Response(response.body, response);
+    const varied = editable(response);
     varied.headers.append('Vary', 'Accept');
     return varied;
   };

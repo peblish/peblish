@@ -41,6 +41,10 @@ Rules for writes:
 - Work the instance does as itself (registration, imports, scheduled jobs) authorizes as `systemPrincipal(db, job)`, the local instance actor that migrate creates.
 - No network calls inside a write transaction, and keep transactions short: consumers read only below the oldest open write transaction on the whole Postgres cluster. On the shared dev cluster, a stuck psql transaction in one lane's database stalls every lane's consumers; the worker warns when that horizon lags more than 30 seconds.
 
+Rules for the web server:
+
+- `packages/web/src/server.ts` is the server entry. It sends federation requests to `@peblish/federation/http` before any UI route matches (lane FED-A owns that seam), then adds the security baseline from `packages/web/src/server/headers.ts` to every HTML response. Lanes extend that baseline there, not per route.
+
 Migrations, the lockfile, `packages/*/package.json`, the G0 files under `packages/schema/src/` and `packages/core/src/{db,tx,outbox}/`, `packages/core/src/authz/brand.ts` and the root configuration are root-owned: report a needed change instead of making it.
 
 ## Development
