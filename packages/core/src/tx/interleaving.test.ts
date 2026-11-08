@@ -105,10 +105,10 @@ describe('recheck refreshes the principal', () => {
     run: async () => 'banned',
   });
 
-  async function admin() {
+  async function admin({ twoFactorEnabled = true } = {}) {
     const instance = await seedInstance('feddit.test');
     const [user] = await tx(async (t) =>
-      t.db.insert(authUser).values({ name: 'Andrew', email: 'andrew@feddit.test', role: 'admin' }).returning(),
+      t.db.insert(authUser).values({ name: 'Andrew', email: 'andrew@feddit.test', role: 'admin', twoFactorEnabled }).returning(),
     );
     const andrew = await seedActor(instance, 'Person', 'Andrew', { userId: user!.id });
     const target = await seedActor(instance, 'Person', 'spammer');
@@ -129,6 +129,11 @@ describe('recheck refreshes the principal', () => {
     const attempt = siteBan(grant, null);
     await expect(attempt).rejects.toBeInstanceOf(Refused);
     await expect(attempt).rejects.toMatchObject({ reason: 'auth.admin_required' });
+  });
+
+  test('an admin without two-factor is refused: the recheck counts them as a user (A03)', async () => {
+    const { grant } = await admin({ twoFactorEnabled: false });
+    await expect(siteBan(grant, null)).rejects.toMatchObject({ name: 'Refused', reason: 'auth.admin_required' });
   });
 
   test('an actor deleted between authorize() and the write is refused', async () => {

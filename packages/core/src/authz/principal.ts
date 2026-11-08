@@ -9,7 +9,8 @@ import { authUser } from '../db/tables/auth.ts';
  * Re-reads the principal inside the writing transaction (authorize() with lock), so a
  * session or grant issued earlier cannot outlive a deletion or a demotion: the actor must
  * still exist, match the principal's kind and not be deleted, and a local principal's site
- * role comes from auth_user.role, not the session. Rows are read FOR SHARE so a concurrent
+ * role comes from auth_user, not the session: 'admin' only when role is admin and two-factor
+ * is on (A03, as SessionView.siteRole). Rows are read FOR SHARE so a concurrent
  * demotion or deletion waits for the write, and a site ban (which takes FOR NO KEY UPDATE on
  * the actor row before inserting) does too. A write body therefore must not update the acting
  * actor's own row; if one ever needs to, this read becomes FOR NO KEY UPDATE (PolicyRequest.lock).
@@ -34,9 +35,14 @@ export async function currentPrincipal(
     case 'local': {
       if (!actor.local || actor.kind !== 'Person') return { ok: false, reason: 'auth.required' };
       const [user] = actor.userId
-        ? await q.select({ role: authUser.role }).from(authUser).where(eq(authUser.id, actor.userId)).for('share')
+        ? await q
+            .select({ role: authUser.role, twoFactorEnabled: authUser.twoFactorEnabled })
+            .from(authUser)
+            .where(eq(authUser.id, actor.userId))
+            .for('share')
         : [];
-      return { ok: true, principal: { ...principal, siteRole: user?.role === 'admin' ? 'admin' : 'user' } };
+      const siteRole = user?.role === 'admin' && user.twoFactorEnabled === true ? 'admin' : 'user';
+      return { ok: true, principal: { ...principal, siteRole } };
     }
   }
 }
