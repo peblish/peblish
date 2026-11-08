@@ -1,0 +1,440 @@
+{
+  "about": "Federated content from the lab peers for each case, and peer pairs from the Phase 0 spike captures (capture.ts).",
+  "captured": "2026-11-08",
+  "peers": { "lemmy": "0.19.21", "piefed": "1.8.11" },
+  "cases": [
+    {
+      "id": "emphasis",
+      "source": "Plain **bold** *italic* ***both*** _under_ __strong__ and a_b_c",
+      "lemmy": "<p>Plain <strong>bold</strong> <em>italic</em> <em><strong>both</strong></em> <em>under</em> <strong>strong</strong> and a_b_c</p>\n",
+      "piefed": "<p>Plain <strong>bold</strong> <em>italic</em> <em><strong>both</strong></em> <em>under</em> <strong>strong</strong> and a_b_c</p>\n"
+    },
+    {
+      "id": "headings",
+      "source": "# One\n\n## Two\n\n### Three ###\n\n###### Six\n\nSetext\n===",
+      "lemmy": "<h1>One</h1>\n<h2>Two</h2>\n<h3>Three</h3>\n<h6>Six</h6>\n<h1>Setext</h1>\n",
+      "piefed": "<h1>One</h1>\n<h2>Two</h2>\n<h3>Three</h3>\n<h6>Six</h6>\n<h1>Setext</h1>\n"
+    },
+    {
+      "id": "lists",
+      "source": "- one\n- two\n  - nested\n- three\n\n3. third\n4. fourth\n\n* star\n+ plus",
+      "lemmy": "<ul>\n<li>one</li>\n<li>two\n<ul>\n<li>nested</li>\n</ul>\n</li>\n<li>three</li>\n</ul>\n<ol start=\"3\">\n<li>third</li>\n<li>fourth</li>\n</ol>\n<ul>\n<li>star</li>\n</ul>\n<ul>\n<li>plus</li>\n</ul>\n",
+      "piefed": "<ul>\n<li>one</li>\n<li><p>two</p>\n<ul>\n<li>nested</li>\n</ul></li>\n<li><p>three</p></li>\n</ul>\n<ol>\n<li>third</li>\n<li>fourth</li>\n</ol>\n<ul>\n<li>star</li>\n<li>plus</li>\n</ul>\n"
+    },
+    {
+      "id": "loose-list",
+      "source": "- one\n\n- two",
+      "lemmy": "<ul>\n<li>\n<p>one</p>\n</li>\n<li>\n<p>two</p>\n</li>\n</ul>\n",
+      "piefed": "<ul>\n<li><p>one</p></li>\n<li><p>two</p></li>\n</ul>\n"
+    },
+    {
+      "id": "blockquote",
+      "source": "> quoted\n> > nested\n\n> after",
+      "lemmy": "<blockquote>\n<p>quoted</p>\n<blockquote>\n<p>nested</p>\n</blockquote>\n</blockquote>\n<blockquote>\n<p>after</p>\n</blockquote>\n",
+      "piefed": "<blockquote>\n<p>quoted</p>\n<blockquote>\n<p>nested</p>\n</blockquote>\n</blockquote>\n<blockquote>\n<p>after</p>\n</blockquote>\n"
+    },
+    {
+      "id": "code-span-html",
+      "source": "Use `<b>bold</b>` and `a & b`",
+      "lemmy": "<p>Use <code>&lt;b&gt;bold&lt;/b&gt;</code> and <code>a &amp; b</code></p>\n",
+      "piefed": "<p>Use <code>&lt;b&gt;bold&lt;/b&gt;</code> and <code>a &amp; b</code></p>\n"
+    },
+    {
+      "id": "fenced-code",
+      "source": "```js\nconst a = 1 < 2 && \"x\";\n```",
+      "lemmy": "<pre style=\"background-color:#ffffff;\">\n<span style=\"font-weight:bold;color:#a71d5d;\">const </span><span style=\"color:#323232;\">a </span><span style=\"font-weight:bold;color:#a71d5d;\">= </span><span style=\"color:#0086b3;\">1 </span><span style=\"font-weight:bold;color:#a71d5d;\">&lt; </span><span style=\"color:#0086b3;\">2 </span><span style=\"font-weight:bold;color:#a71d5d;\">&amp;&amp; </span><span style=\"color:#183691;\">&quot;x&quot;</span><span style=\"color:#323232;\">;\n</span></pre>\n",
+      "piefed": "<div class=\"codehilite\">\n<pre><span></span><code><span class=\"kd\">const</span><span class=\"w\"> </span><span class=\"nx\">a</span><span class=\"w\"> </span><span class=\"o\">=</span><span class=\"w\"> </span><span class=\"mf\">1</span><span class=\"w\"> </span><span class=\"o\">&lt;</span><span class=\"w\"> </span><span class=\"mf\">2</span><span class=\"w\"> </span><span class=\"o\">&amp;&amp;</span><span class=\"w\"> </span><span class=\"s2\">\"x\"</span><span class=\"p\">;</span>\n</code></pre>\n</div>\n"
+    },
+    {
+      "id": "fenced-code-plain",
+      "source": "```\nplain <code>\n```",
+      "lemmy": "<pre style=\"background-color:#ffffff;\">\n<span style=\"color:#323232;\">plain &lt;code&gt;\n</span></pre>\n",
+      "piefed": "<pre><code>plain &lt;code&gt;\n</code></pre>\n"
+    },
+    {
+      "id": "indented-code",
+      "source": "para\n\n    indented <x>\n    line two",
+      "lemmy": "<p>para</p>\n<pre style=\"background-color:#ffffff;\">\n<span style=\"color:#323232;\">indented &lt;x&gt;\n</span><span style=\"color:#323232;\">line two\n</span></pre>\n",
+      "piefed": "<p>para</p>\n<pre><code>indented &lt;x&gt;\nline two&lt;/x&gt;</code></pre>\n"
+    },
+    {
+      "id": "table",
+      "source": "| Left | Center | Right |\n| :--- | :---: | ---: |\n| a | **b** | `c` |\n| d | e |",
+      "lemmy": "<table>\n<thead>\n<tr>\n<th style=\"text-align:left\">Left</th>\n<th style=\"text-align:center\">Center</th>\n<th style=\"text-align:right\">Right</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td style=\"text-align:left\">a</td>\n<td style=\"text-align:center\"><strong>b</strong></td>\n<td style=\"text-align:right\"><code>c</code></td>\n</tr>\n<tr>\n<td style=\"text-align:left\">d</td>\n<td style=\"text-align:center\">e</td>\n<td style=\"text-align:right\"></td>\n</tr>\n</tbody>\n</table>\n",
+      "piefed": "<table class=\"table\">\n<thead>\n<tr>\n<th>Left</th>\n<th>Center</th>\n<th>Right</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td>a</td>\n<td><strong>b</strong></td>\n<td><code>c</code></td>\n</tr>\n<tr>\n<td>d</td>\n<td>e</td>\n</tr>\n</tbody>\n</table>\n"
+    },
+    {
+      "id": "strikethrough",
+      "source": "This is ~~gone~~ now",
+      "lemmy": "<p>This is <s>gone</s> now</p>\n",
+      "piefed": "<p>This is <s>gone</s> now</p>\n"
+    },
+    {
+      "id": "footnote",
+      "source": "Text with a note[^1] and another[^n].\n\n[^1]: The note.\n[^n]: Named *note*.",
+      "lemmy": "<p>Text with a note[^1] and another[^n].</p>\n<p>[^1]: The note.\n[^n]: Named <em>note</em>.</p>\n",
+      "piefed": "<p>Text with a note<sup class=\"footnote-ref\" id=\"fnref-1-wRURdD\"><a href=\"#fn-1-wRURdD\">1</a></sup> and another<sup class=\"footnote-ref\" id=\"fnref-n-wRURdD\"><a href=\"#fn-n-wRURdD\">2</a></sup>.</p>\n<div class=\"footnotes\">\n<hr/>\n<ol>\n<li id=\"fn-1-wRURdD\">\n<p>The note. <a class=\"footnoteBackLink\" href=\"#fnref-1-wRURdD\">↩</a></p>\n</li>\n<li id=\"fn-n-wRURdD\">\n<p>Named <em>note</em>. <a class=\"footnoteBackLink\" href=\"#fnref-n-wRURdD\">↩</a></p>\n</li>\n</ol>\n</div>\n"
+    },
+    {
+      "id": "sub-sup",
+      "source": "H~2~O and x^2^ and ~~strike~~",
+      "lemmy": "<p>H~2~O and x^2^ and <s>strike</s></p>\n",
+      "piefed": "<p>H<sub>2</sub>O and x<sup>2</sup> and <s>strike</s></p>\n"
+    },
+    {
+      "id": "spoiler",
+      "source": "::: spoiler Title here\nhidden *text*\n:::",
+      "lemmy": "<details><summary>Title here</summary><p>hidden <em>text</em>\n</p></details>\n",
+      "piefed": "<details><summary>Title here</summary><div class=\"spoiler_block symmetric\">\n<p>hidden <em>text</em></p>\n</div></details>\n"
+    },
+    {
+      "id": "spoiler-untitled",
+      "source": "::: spoiler\nhidden\n:::",
+      "lemmy": "<p>::: spoiler\nhidden\n:::</p>\n",
+      "piefed": "<details><summary>Spoiler</summary><div class=\"spoiler_block symmetric\">\n<p>hidden</p>\n</div></details>\n"
+    },
+    {
+      "id": "spoiler-nested",
+      "source": "::: spoiler outer\nfirst\n\n::: spoiler inner\nsecond\n:::\n\nthird\n:::",
+      "lemmy": "<details><summary>outer</summary><p>first\n::: spoiler inner\nsecond\n</p></details>\n<p>third\n:::</p>\n",
+      "piefed": "<details><summary>outer</summary><div class=\"spoiler_block symmetric\">\n<p>first</p>\n<details><summary>inner</summary><div class=\"spoiler_block symmetric\">\n<p>second</p>\n</div></details>\n<p>third</p>\n</div></details>\n"
+    },
+    {
+      "id": "image",
+      "source": "![alt text](https://example.com/a.png \"A title\")",
+      "lemmy": "<p><img src=\"https://example.com/a.png\" alt=\"alt text\" title=\"A title\" /></p>\n",
+      "piefed": "<p><img alt=\"alt text\" loading=\"lazy\" src=\"https://example.com/a.png\" title=\"A title\"/></p>\n"
+    },
+    {
+      "id": "image-size-equals",
+      "source": "![alt](https://example.com/a.png =100x50)",
+      "lemmy": "<p>![alt](<a href=\"https://example.com/a.png\">example.com/a.png</a> =100x50)</p>\n",
+      "piefed": "<p><img alt=\"alt\" loading=\"lazy\" src=\"https://example.com/a.png =100x50\"/></p>\n"
+    },
+    {
+      "id": "image-size-equals-width",
+      "source": "![alt](https://example.com/a.png =100x)",
+      "lemmy": "<p>![alt](<a href=\"https://example.com/a.png\">example.com/a.png</a> =100x)</p>\n",
+      "piefed": "<p><img alt=\"alt\" loading=\"lazy\" src=\"https://example.com/a.png =100x\"/></p>\n"
+    },
+    {
+      "id": "image-size-braces",
+      "source": "![alt](https://example.com/a.png){width=100 height=50}",
+      "lemmy": "<p><img src=\"https://example.com/a.png\" alt=\"alt\" />{width=100 height=50}</p>\n",
+      "piefed": "<p><img alt=\"alt\" loading=\"lazy\" src=\"https://example.com/a.png\"/>{width=100 height=50}</p>\n"
+    },
+    {
+      "id": "image-size-title",
+      "source": "![alt](https://example.com/a.png \"t\" =100x50)",
+      "lemmy": "<p>![alt](<a href=\"https://example.com/a.png\">example.com/a.png</a> “t” =100x50)</p>\n",
+      "piefed": "<p><img alt=\"alt\" loading=\"lazy\" src='https://example.com/a.png \"t\" =100x50'/></p>\n"
+    },
+    {
+      "id": "image-in-link",
+      "source": "[![alt](https://example.com/a.png)](https://example.com/)",
+      "lemmy": "<p><a href=\"https://example.com/\" rel=\"nofollow\"><img src=\"https://example.com/a.png\" alt=\"alt\" /></a></p>\n",
+      "piefed": "<p><a href=\"https://example.com/\" rel=\"nofollow ugc\" target=\"_blank\"><img alt=\"alt\" loading=\"lazy\" src=\"https://example.com/a.png\"/></a></p>\n"
+    },
+    {
+      "id": "autolink-bare",
+      "source": "See https://example.com/path?q=1. And www.example.org too.",
+      "lemmy": "<p>See <a href=\"https://example.com/path?q=1\">example.com/path?q=1</a>. And www.example.org too.</p>\n",
+      "piefed": "<p>See <a href=\"https://example.com/path?q=1\" rel=\"nofollow ugc\" target=\"_blank\">https://example.com/path?q=1</a>. And <a href=\"https://www.example.org\" rel=\"nofollow ugc\" target=\"_blank\">www.example.org</a> too.</p>\n"
+    },
+    {
+      "id": "autolink-angle",
+      "source": "<https://example.com/a> and <me@example.com>",
+      "lemmy": "<p><a href=\"https://example.com/a\">example.com/a</a> and <a href=\"mailto:me@example.com\">me@example.com</a></p>\n",
+      "piefed": "<p><a href=\"https://example.com/a\" rel=\"nofollow ugc\" target=\"_blank\">https://example.com/a</a> and &lt;me@example.com&gt;</p>\n"
+    },
+    {
+      "id": "autolink-email",
+      "source": "Mail me@example.com please",
+      "lemmy": "<p>Mail me@example.com please</p>\n",
+      "piefed": "<p>Mail me@example.com please</p>\n"
+    },
+    {
+      "id": "link-title",
+      "source": "[text](https://example.com/ \"Title\") and [rel](/c/foo)",
+      "lemmy": "<p><a href=\"https://example.com/\" rel=\"nofollow\" title=\"Title\">text</a> and <a href=\"/c/foo\" rel=\"nofollow\">rel</a></p>\n",
+      "piefed": "<p><a href=\"https://example.com/\" rel=\"nofollow ugc\" target=\"_blank\">text</a> and <a href=\"/c/foo\" rel=\"nofollow ugc\" target=\"_blank\">rel</a></p>\n"
+    },
+    {
+      "id": "link-reference",
+      "source": "[ref][r]\n\n[r]: https://example.com/ref",
+      "lemmy": "<p><a href=\"https://example.com/ref\" rel=\"nofollow\">ref</a></p>\n",
+      "piefed": "<p><a href=\"https://example.com/ref\" rel=\"nofollow ugc\" target=\"_blank\">ref</a></p>\n"
+    },
+    { "id": "soft-break", "source": "line one\nline two", "lemmy": "<p>line one\nline two</p>\n", "piefed": "<p>line one\nline two</p>\n" },
+    {
+      "id": "hard-break-spaces",
+      "source": "line one  \nline two",
+      "lemmy": "<p>line one<br />\nline two</p>\n",
+      "piefed": "<p>line one<br/>\nline two</p>\n"
+    },
+    {
+      "id": "hard-break-backslash",
+      "source": "line one\\\nline two",
+      "lemmy": "<p>line one<br />\nline two</p>\n",
+      "piefed": "<p>line one<br/>\nline two</p>\n"
+    },
+    {
+      "id": "mention-user",
+      "source": "Hi @lemmyuser@lemmy.lab.test and @someone@example.com",
+      "lemmy": "<p>Hi @lemmyuser@lemmy.lab.test and @someone@example.com</p>\n",
+      "piefed": "<p>Hi @lemmyuser@lemmy.lab.test and @someone@example.com</p>\n"
+    },
+    {
+      "id": "mention-community",
+      "source": "Join !lab@lemmy.lab.test or !pflab@piefed.lab.test",
+      "lemmy": "<p>Join !lab@lemmy.lab.test or !pflab@piefed.lab.test</p>\n",
+      "piefed": "<p>Join !lab@lemmy.lab.test or !pflab@piefed.lab.test</p>\n"
+    },
+    {
+      "id": "emoji",
+      "source": "Smile :smile: and :custom_one: here",
+      "lemmy": "<p>Smile :smile: and :custom_one: here</p>\n",
+      "piefed": "<p>Smile :smile: and :custom_one: here</p>\n"
+    },
+    {
+      "id": "raw-html",
+      "source": "Raw <b>bold</b> and <script>alert(1)</script> end",
+      "lemmy": "<p>Raw &lt;b&gt;bold&lt;/b&gt; and &lt;script&gt;alert(1)&lt;/script&gt; end</p>\n",
+      "piefed": "<p>Raw &lt;b&gt;bold&lt;/b&gt; and &lt;script&gt;alert(1)&lt;/script&gt; end</p>\n"
+    },
+    {
+      "id": "raw-html-block",
+      "source": "<div onclick=\"x()\">block</div>\n\nafter",
+      "lemmy": "<p>&lt;div onclick=“x()”&gt;block&lt;/div&gt;</p>\n<p>after</p>\n",
+      "piefed": "<div>block</div>\n<p>after</p>\n"
+    },
+    {
+      "id": "hr",
+      "source": "above\n\n---\n\nbelow\n\n***",
+      "lemmy": "<p>above</p>\n<hr />\n<p>below</p>\n<hr />\n",
+      "piefed": "<p>above</p>\n<hr/>\n<p>below</p>\n<hr/>\n"
+    },
+    {
+      "id": "typographer",
+      "source": "\"Double\" and 'single' -- en --- em ... (c) (tm) +-",
+      "lemmy": "<p>“Double” and ‘single’ – en — em … © ™ ±</p>\n",
+      "piefed": "<p>“Double” and ‘single’ – en — em … (c) (tm) +-</p>\n"
+    },
+    {
+      "id": "escapes",
+      "source": "\\*not emphasis\\* &copy; &lt;tag&gt; 5 < 6 & 7",
+      "lemmy": "<p>*not emphasis* © &lt;tag&gt; 5 &lt; 6 &amp; 7</p>\n",
+      "piefed": "<p>*not emphasis* © &lt;tag&gt; 5 &lt; 6 &amp; 7</p>\n"
+    },
+    {
+      "id": "ruby",
+      "source": "{漢字|かんじ}",
+      "lemmy": "<p>{漢字|かんじ}</p>\n",
+      "piefed": "<p><ruby>漢字<rp>(</rp><rt>かんじ</rt><rp>)</rp></ruby></p>\n"
+    },
+    {
+      "id": "task-list",
+      "source": "- [ ] todo\n- [x] done",
+      "lemmy": "<ul>\n<li>[ ] todo</li>\n<li>[x] done</li>\n</ul>\n",
+      "piefed": "<ul>\n<li>[ ] todo</li>\n<li>[x] done</li>\n</ul>\n"
+    },
+    {
+      "id": "javascript-link",
+      "source": "[click](javascript:alert(1)) and ![x](javascript:alert(2))",
+      "lemmy": "<p>[click](javascript:alert(1)) and ![x](javascript:alert(2))</p>\n",
+      "piefed": "<p><a href=\"\" rel=\"nofollow ugc\" target=\"_blank\">click</a> and <img alt=\"x\" loading=\"lazy\" src=\"javascript:alert(2)\"/></p>\n"
+    },
+    {
+      "id": "data-link",
+      "source": "[d](data:text/html;base64,PHNjcmlwdD4=)",
+      "lemmy": "<p>[d](data:text/html;base64,PHNjcmlwdD4=)</p>\n",
+      "piefed": "<p><a href=\"data:text/html;base64,PHNjcmlwdD4=\" rel=\"nofollow ugc\" target=\"_blank\">d</a></p>\n"
+    },
+    {
+      "id": "table-inline-html",
+      "source": "| a | b |\n| - | - |\n| <img src=x onerror=alert(1)> | `|` |",
+      "lemmy": "<table>\n<thead>\n<tr>\n<th>a</th>\n<th>b</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td>&lt;img src=x onerror=alert(1)&gt;</td>\n<td>`</td>\n</tr>\n</tbody>\n</table>\n",
+      "piefed": "<table class=\"table\">\n<thead>\n<tr>\n<th>a</th>\n<th>b</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td><img loading=\"lazy\" src=\"x\"/>\n<td><code>|</code></td>\n</td></tr>\n</tbody>\n</table>\n"
+    },
+    {
+      "id": "heading-inline",
+      "source": "## Title with `code` and [link](https://example.com/)",
+      "lemmy": "<h2>Title with <code>code</code> and <a href=\"https://example.com/\" rel=\"nofollow\">link</a></h2>\n",
+      "piefed": "<h2>Title with <code>code</code> and <a href=\"https://example.com/\" rel=\"nofollow ugc\" target=\"_blank\">link</a></h2>\n"
+    },
+    {
+      "id": "nested-emphasis-link",
+      "source": "**[bold link](https://example.com/)** and *[em](https://example.com/)*",
+      "lemmy": "<p><strong><a href=\"https://example.com/\" rel=\"nofollow\">bold link</a></strong> and <em><a href=\"https://example.com/\" rel=\"nofollow\">em</a></em></p>\n",
+      "piefed": "<p><strong><a href=\"https://example.com/\" rel=\"nofollow ugc\" target=\"_blank\">bold link</a></strong> and <em><a href=\"https://example.com/\" rel=\"nofollow ugc\" target=\"_blank\">em</a></em></p>\n"
+    },
+    {
+      "id": "long-paragraphs",
+      "source": "First paragraph.\n\nSecond paragraph with *emphasis*.\n\n\n\nThird after blank lines.",
+      "lemmy": "<p>First paragraph.</p>\n<p>Second paragraph with <em>emphasis</em>.</p>\n<p>Third after blank lines.</p>\n",
+      "piefed": "<p>First paragraph.</p>\n<p>Second paragraph with <em>emphasis</em>.</p>\n<p>Third after blank lines.</p>\n"
+    },
+    {
+      "id": "unicode",
+      "source": "Ünïcödé — “quotes” 🙂 <3",
+      "lemmy": "<p>Ünïcödé — “quotes” 🙂 &lt;3</p>\n",
+      "piefed": "<p>Ünïcödé — “quotes” 🙂 &lt;3</p>\n"
+    },
+    {
+      "id": "image-size-piefed",
+      "source": "![A cat :: align-left width=200px height=100px](https://example.com/cat.jpg)",
+      "lemmy": "<p><img src=\"https://example.com/cat.jpg\" alt=\"A cat :: align-left width=200px height=100px\" /></p>\n",
+      "piefed": "<p><img align=\"left\" alt=\"A cat\" height=\"100px\" loading=\"lazy\" src=\"https://example.com/cat.jpg\" width=\"200px\"/></p>\n"
+    },
+    {
+      "id": "image-size-percent",
+      "source": "![Logo :: width=50%](https://example.com/logo.png)",
+      "lemmy": "<p><img src=\"https://example.com/logo.png\" alt=\"Logo :: width=50%\" /></p>\n",
+      "piefed": "<p><img alt=\"Logo\" loading=\"lazy\" src=\"https://example.com/logo.png\" width=\"50%\"/></p>\n"
+    },
+    {
+      "id": "emoji-custom-lemmy",
+      "source": "Hi ![blobcat](https://example.com/blobcat.png \"emoji blobcat\") there",
+      "lemmy": "<p>Hi <img src=\"https://example.com/blobcat.png\" alt=\"blobcat\" title=\"emoji blobcat\" /> there</p>\n",
+      "piefed": "<p>Hi <img alt=\"blobcat\" loading=\"lazy\" src=\"https://example.com/blobcat.png\" title=\"emoji blobcat\"/> there</p>\n"
+    },
+    {
+      "id": "link-parens",
+      "source": "[w](https://en.wikipedia.org/wiki/Foo_(bar)) and https://en.wikipedia.org/wiki/Foo_(bar)",
+      "lemmy": "<p><a href=\"https://en.wikipedia.org/wiki/Foo_(bar)\" rel=\"nofollow\">w</a> and <a href=\"https://en.wikipedia.org/wiki/Foo_(bar)\">en.wikipedia.org/wiki/Foo_(bar)</a></p>\n",
+      "piefed": "<p><a href=\"https://en.wikipedia.org/wiki/Foo_(bar)\" rel=\"nofollow ugc\" target=\"_blank\">w</a> and <a href=\"https://en.wikipedia.org/wiki/Foo_(bar)\" rel=\"nofollow ugc\" target=\"_blank\">https://en.wikipedia.org/wiki/Foo_(bar)</a></p>\n"
+    },
+    {
+      "id": "autolink-trailing",
+      "source": "(see https://example.com/a), or https://example.com/b!",
+      "lemmy": "<p>(see <a href=\"https://example.com/a\">example.com/a</a>), or <a href=\"https://example.com/b\">example.com/b</a>!</p>\n",
+      "piefed": "<p>(see <a href=\"https://example.com/a\" rel=\"nofollow ugc\" target=\"_blank\">https://example.com/a</a>), or <a href=\"https://example.com/b\" rel=\"nofollow ugc\" target=\"_blank\">https://example.com/b</a>!</p>\n"
+    },
+    {
+      "id": "blockquote-list",
+      "source": "> - a\n> - b\n>\n> text",
+      "lemmy": "<blockquote>\n<ul>\n<li>a</li>\n<li>b</li>\n</ul>\n<p>text</p>\n</blockquote>\n",
+      "piefed": "<blockquote>\n<ul>\n<li><p>a</p></li>\n<li><p>b</p></li>\n</ul>\n<p>text</p>\n</blockquote>\n"
+    },
+    {
+      "id": "hashtag",
+      "source": "#notheading and a #hashtag here",
+      "lemmy": "<p>#notheading and a #hashtag here</p>\n",
+      "piefed": "<p>#notheading and a #hashtag here</p>\n"
+    },
+    {
+      "id": "sup-spaces",
+      "source": "x^a b^ and x^a\\ b^",
+      "lemmy": "<p>x^a b^ and x^a\\ b^</p>\n",
+      "piefed": "<p>x^a b^ and x^a\\ b^</p>\n"
+    },
+    {
+      "id": "url-in-code",
+      "source": "Code `https://example.com/x` here",
+      "lemmy": "<p>Code <code>https://example.com/x</code> here</p>\n",
+      "piefed": "<p>Code <code>https://example.com/x</code> here</p>\n"
+    },
+    {
+      "id": "numeric-entities",
+      "source": "&#60;script&#62; and &#x3C;b&#x3E;",
+      "lemmy": "<p>&lt;script&gt; and &lt;b&gt;</p>\n",
+      "piefed": "<p>&lt;script&gt; and &lt;b&gt;</p>\n"
+    },
+    {
+      "id": "reddit-spoiler",
+      "source": "This is >!secret!< text",
+      "lemmy": "<p>This is &gt;!secret!&lt; text</p>\n",
+      "piefed": "<p>This is <tg-spoiler>secret</tg-spoiler> text</p>\n"
+    },
+    {
+      "id": "fenced-tilde",
+      "source": "~~~python\nprint(\"hi\")\n~~~",
+      "lemmy": "<pre style=\"background-color:#ffffff;\">\n<span style=\"color:#62a35c;\">print</span><span style=\"color:#323232;\">(</span><span style=\"color:#183691;\">&quot;hi&quot;</span><span style=\"color:#323232;\">)\n</span></pre>\n",
+      "piefed": "<p><s>~python\nprint(\"hi\")\n~</s></p>\n"
+    }
+  ],
+  "spike": [
+    {
+      "peer": "lemmy",
+      "file": "fedify.jsonl",
+      "source": "S3 comment from lemmy 1108022622",
+      "content": "<p>S3 comment from lemmy 1108022622</p>\n"
+    },
+    {
+      "peer": "piefed",
+      "file": "fedify.jsonl",
+      "source": "S3 comment from piefed 1108022622",
+      "content": "<p>S3 comment from piefed 1108022622</p>\n"
+    },
+    {
+      "peer": "lemmy",
+      "file": "fedify.jsonl",
+      "source": "Posted into the Feddit community from lemmy.",
+      "content": "<p>Posted into the Feddit community from lemmy.</p>\n"
+    },
+    {
+      "peer": "piefed",
+      "file": "fedify.jsonl",
+      "source": "Posted into the Feddit community from piefed.",
+      "content": "<p>Posted into the Feddit community from piefed.</p>\n"
+    },
+    {
+      "peer": "lemmy",
+      "file": "fedify.jsonl",
+      "source": "Edited inside the Feddit community.",
+      "content": "<p>Edited inside the Feddit community.</p>\n"
+    },
+    {
+      "peer": "piefed",
+      "file": "fedify.jsonl",
+      "source": "Edited inside the Feddit community.",
+      "content": "<p>Edited inside the Feddit community.</p>\n"
+    },
+    { "peer": "lemmy", "file": "fedify.jsonl", "source": "Native post on the peer.", "content": "<p>Native post on the peer.</p>\n" },
+    {
+      "peer": "lemmy",
+      "file": "fedify.jsonl",
+      "source": "R2 native comment 1108022622",
+      "content": "<p>R2 native comment 1108022622</p>\n"
+    },
+    { "peer": "lemmy", "file": "fedify.jsonl", "source": "Edited on the peer.", "content": "<p>Edited on the peer.</p>\n" },
+    { "peer": "piefed", "file": "fedify.jsonl", "source": "Native post on the peer.", "content": "<p>Native post on the peer.</p>\n" },
+    {
+      "peer": "piefed",
+      "file": "fedify.jsonl",
+      "source": "R2 native comment 1108022622",
+      "content": "<p>R2 native comment 1108022622</p>\n"
+    },
+    { "peer": "piefed", "file": "fedify.jsonl", "source": "Edited on the peer.", "content": "<p>Edited on the peer.</p>\n" },
+    {
+      "peer": "lemmy",
+      "file": "fedify.jsonl",
+      "source": "To be removed by Feddit's moderator.",
+      "content": "<p>To be removed by Feddit’s moderator.</p>\n"
+    },
+    { "peer": "lemmy", "file": "fedify.jsonl", "source": "ban probe 1794104852192", "content": "<p>ban probe 1794104852192</p>\n" },
+    { "peer": "lemmy", "file": "fedify.jsonl", "source": "Moderated by the peer.", "content": "<p>Moderated by the peer.</p>\n" },
+    {
+      "peer": "piefed",
+      "file": "fedify.jsonl",
+      "source": "To be removed by Feddit's moderator.",
+      "content": "<p>To be removed by Feddit’s moderator.</p>\n"
+    },
+    { "peer": "piefed", "file": "fedify.jsonl", "source": "ban probe 1794104879666", "content": "<p>ban probe 1794104879666</p>\n" },
+    { "peer": "piefed", "file": "fedify.jsonl", "source": "Moderated by the peer.", "content": "<p>Moderated by the peer.</p>\n" },
+    {
+      "peer": "piefed",
+      "file": "fedify.jsonl",
+      "source": "Moderated by a remote moderator.",
+      "content": "<p>Moderated by a remote moderator.</p>\n"
+    },
+    {
+      "peer": "lemmy",
+      "file": "fedify.jsonl",
+      "source": "Moderated by a remote moderator.",
+      "content": "<p>Moderated by a remote moderator.</p>\n"
+    },
+    { "peer": "lemmy", "file": "fedify.jsonl", "source": "Target in !spike.", "content": "<p>Target in !spike.</p>\n" },
+    { "peer": "lemmy", "file": "fedify.jsonl", "source": "Target in !lab.", "content": "<p>Target in !lab.</p>\n" }
+  ]
+}
