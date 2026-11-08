@@ -27,7 +27,9 @@ import { spoiler } from './spoiler.ts';
 // HTML, linkify without fuzzy links, typographer) and the plugin set lemmy-ui and PieFed
 // share: footnotes, sub and superscript, spoilers. One instance serves every render; the
 // per-call options travel in the env.
-const md = new MarkdownIt('default', { html: false, linkify: true, typographer: true, maxNesting: htmlMaxDepth, highlight })
+// markdown-it keeps its own nesting limit (100), which drops what lies deeper; the
+// sanitiser's lower depth cap unwraps instead, so deeply nested text survives.
+const md = new MarkdownIt('default', { html: false, linkify: true, typographer: true, highlight })
   .use(sub)
   .use(sup)
   .use(footnote)

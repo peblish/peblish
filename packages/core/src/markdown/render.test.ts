@@ -76,6 +76,12 @@ test('idPrefix namespaces footnote anchors', () => {
   expect(render('x[^1]\n\n[^1]: y', { idPrefix: 'c42' }).html).toContain('<a id="fnref-c42-1" href="#fn-c42-1">[1]</a>');
 });
 
+test('deeply nested Markdown keeps its text', () => {
+  const result = render(`${'> '.repeat(40)}deep quote\n\n${'- '.repeat(20)}deep list`);
+  expect(result.html).toContain('deep quote');
+  expect(result.html).toContain('deep list');
+});
+
 test('a source over maxLength is cut and flagged', () => {
   const result = render('abcdef', { maxLength: 3 });
   expect(result).toMatchObject({ html: '<p>abc</p>\n', truncated: true });
