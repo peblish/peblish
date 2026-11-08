@@ -41,7 +41,7 @@ CREATE TABLE "actors" (
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	CONSTRAINT "actors_ap_id_unique" UNIQUE("ap_id"),
 	CONSTRAINT "actors_user_id_unique" UNIQUE("user_id"),
-	CONSTRAINT "actors_local_name_chars" CHECK (not "actors"."local" or "actors"."imported_at" is not null or "actors"."name" ~ '^[A-Za-z0-9_]{1,50}$'),
+	CONSTRAINT "actors_local_name_chars" CHECK (not "actors"."local" or "actors"."imported_at" is not null or "actors"."kind" = 'Application' or "actors"."name" ~ '^[A-Za-z0-9_]{1,50}$'),
 	CONSTRAINT "actors_kind" CHECK ("actors"."kind" in ('Person', 'Group', 'Application', 'Service')),
 	CONSTRAINT "actors_user_is_local_person" CHECK ("actors"."user_id" is null or ("actors"."local" and "actors"."kind" = 'Person'))
 );
@@ -219,6 +219,7 @@ CREATE TABLE "follows" (
 	"accepted_at" timestamp with time zone,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	CONSTRAINT "follows_ap_id_unique" UNIQUE("ap_id"),
+	CONSTRAINT "follows_pair" UNIQUE("follower_id","followee_id"),
 	CONSTRAINT "follows_state" CHECK ("follows"."state" in ('pending', 'accepted'))
 );
 --> statement-breakpoint
@@ -400,6 +401,7 @@ ALTER TABLE "site_settings" ADD CONSTRAINT "site_settings_updated_by_actors_id_f
 CREATE UNIQUE INDEX "actor_keys_one_per_algorithm" ON "actor_keys" USING btree ("actor_id","algorithm");--> statement-breakpoint
 CREATE UNIQUE INDEX "actors_local_name_unique" ON "actors" USING btree (lower("name")) WHERE "actors"."local";--> statement-breakpoint
 CREATE INDEX "actors_instance_name" ON "actors" USING btree ("instance_id",lower("name"));--> statement-breakpoint
+CREATE UNIQUE INDEX "actors_one_instance_actor" ON "actors" USING btree ("kind") WHERE "actors"."local" and "actors"."kind" = 'Application';--> statement-breakpoint
 CREATE INDEX "auth_account_user" ON "auth_account" USING btree ("user_id");--> statement-breakpoint
 CREATE INDEX "auth_session_user" ON "auth_session" USING btree ("user_id");--> statement-breakpoint
 CREATE INDEX "auth_two_factor_user" ON "auth_two_factor" USING btree ("user_id");--> statement-breakpoint
@@ -418,7 +420,6 @@ CREATE INDEX "votes_comment" ON "votes" USING btree ("comment_id");--> statement
 CREATE INDEX "activities_object" ON "activities" USING btree ("object_ap_id");--> statement-breakpoint
 CREATE INDEX "inbox_raw_pending" ON "inbox_raw" USING btree ("received_at") WHERE "inbox_raw"."state" = 'pending';--> statement-breakpoint
 CREATE INDEX "inbox_raw_activity" ON "inbox_raw" USING btree ("activity_id");--> statement-breakpoint
-CREATE UNIQUE INDEX "follows_pair" ON "follows" USING btree ("follower_id","followee_id");--> statement-breakpoint
 CREATE INDEX "follows_followee" ON "follows" USING btree ("followee_id","state");--> statement-breakpoint
 CREATE UNIQUE INDEX "instances_one_local" ON "instances" USING btree ("local") WHERE "instances"."local";--> statement-breakpoint
 CREATE INDEX "media_scan_pending" ON "media" USING btree ("created_at") WHERE "media"."scan_state" = 'pending';--> statement-breakpoint

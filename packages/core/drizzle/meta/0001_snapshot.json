@@ -1,5 +1,5 @@
 {
-  "id": "8b726bc0-bab4-4492-8b89-28483cc35316",
+  "id": "bb41aacb-f3fb-4635-95f1-b9dddf67bd9c",
   "prevId": "a482f298-6d02-426b-a689-d9a87f584262",
   "version": "7",
   "dialect": "postgresql",
@@ -323,6 +323,22 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
+        },
+        "actors_one_instance_actor": {
+          "name": "actors_one_instance_actor",
+          "columns": [
+            {
+              "expression": "kind",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"actors\".\"local\" and \"actors\".\"kind\" = 'Application'",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
         }
       },
       "foreignKeys": {
@@ -374,7 +390,7 @@
       "checkConstraints": {
         "actors_local_name_chars": {
           "name": "actors_local_name_chars",
-          "value": "not \"actors\".\"local\" or \"actors\".\"imported_at\" is not null or \"actors\".\"name\" ~ '^[A-Za-z0-9_]{1,50}$'"
+          "value": "not \"actors\".\"local\" or \"actors\".\"imported_at\" is not null or \"actors\".\"kind\" = 'Application' or \"actors\".\"name\" ~ '^[A-Za-z0-9_]{1,50}$'"
         },
         "actors_kind": {
           "name": "actors_kind",
@@ -1899,27 +1915,6 @@
         }
       },
       "indexes": {
-        "follows_pair": {
-          "name": "follows_pair",
-          "columns": [
-            {
-              "expression": "follower_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "followee_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
         "follows_followee": {
           "name": "follows_followee",
           "columns": [
@@ -1977,6 +1972,14 @@
           "nullsNotDistinct": false,
           "columns": [
             "ap_id"
+          ]
+        },
+        "follows_pair": {
+          "name": "follows_pair",
+          "nullsNotDistinct": false,
+          "columns": [
+            "follower_id",
+            "followee_id"
           ]
         }
       },

@@ -1,4 +1,4 @@
-import { index, pgTable, text, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
+import { index, pgTable, text, unique, uuid } from 'drizzle-orm/pg-core';
 import { at, createdAt, enumCheck, id } from '../columns.ts';
 import { actors } from './actors.ts';
 
@@ -29,7 +29,7 @@ export const follows = pgTable(
   },
   (t) => [
     enumCheck('follows_state', t.state, stateValues),
-    uniqueIndex('follows_pair').on(t.followerId, t.followeeId),
+    unique('follows_pair').on(t.followerId, t.followeeId),
     index('follows_followee').on(t.followeeId, t.state),
   ],
 );

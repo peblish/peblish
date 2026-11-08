@@ -11,7 +11,8 @@ const algorithmValues = ['rsa', 'ed25519'] as const;
  * One table for every actor kind: Person, Group (communities are Group attributes here),
  * Application (the instance actor) and Service. Names of local actors are unique across
  * kinds, case-insensitively; new local actors match [A-Za-z0-9_]{1,50}, while imported ones
- * (imported_at set, such as feddit-admin) keep theirs. ap_id, local and instance_id never
+ * (imported_at set, such as feddit-admin) keep theirs and the one local instance actor
+ * (Application) is named after the host. ap_id, local and instance_id never
  * change (trigger in migration 0001).
  */
 export const actors = pgTable(
@@ -60,7 +61,14 @@ export const actors = pgTable(
       .on(sql`lower(${t.name})`)
       .where(sql`${t.local}`),
     index('actors_instance_name').on(t.instanceId, sql`lower(${t.name})`),
-    check('actors_local_name_chars', sql`not ${t.local} or ${t.importedAt} is not null or ${t.name} ~ '^[A-Za-z0-9_]{1,50}$'`),
+    check(
+      'actors_local_name_chars',
+      sql`not ${t.local} or ${t.importedAt} is not null or ${t.kind} = 'Application' or ${t.name} ~ '^[A-Za-z0-9_]{1,50}$'`,
+    ),
+    // The instance actor is named after the host, which no user or community name can match.
+    uniqueIndex('actors_one_instance_actor')
+      .on(t.kind)
+      .where(sql`${t.local} and ${t.kind} = 'Application'`),
     enumCheck('actors_kind', t.kind, kindValues),
     check('actors_user_is_local_person', sql`${t.userId} is null or (${t.local} and ${t.kind} = 'Person')`),
   ],
