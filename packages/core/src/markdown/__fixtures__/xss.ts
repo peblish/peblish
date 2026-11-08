@@ -49,6 +49,11 @@ export const htmlVectors: string[] = [
   // Protocol-relative and other off-origin tricks.
   '<a href="//evil.example/x">protocol relative</a><img src="//evil.example/a.png">',
   '<a href="\\\\evil.example/x">backslashes</a><a href="/\\evil.example/x">slash backslash</a>',
+  // The same onto the base's own host (https://ok.example in the test), and a backslashed scheme.
+  '<a href="//ok.example/x">a</a><a href="\\\\ok.example/x">b</a><a href="/\\ok.example/x">c</a><a href="\\/ok.example/x">d</a>',
+  '<a href="https:\\\\evil.example/x">e</a><a href="https:/\\evil.example/x">f</a><a href="https://ok.example\\@evil.example/">g</a>',
+  '<a href="&#47;&#47;ok.example/x">h</a><a href="&#92;&#92;ok.example/x">i</a><a href="/&#9;/ok.example/x">j</a><a href=" //ok.example/x">k</a>',
+  '<img src="//ok.example/a.png" alt="l"><img src="\\\\ok.example/b.png" alt="m"><img src="https:\\\\evil.example/c.png" alt="n">',
   '<a href="https://user:pass@evil.example/">credentials</a>',
   // Event handlers.
   '<a onmouseover="alert(document.cookie)">xxs link</a>',
@@ -167,6 +172,7 @@ export const markdownVectors: string[] = [
   '![x](data:image/png;base64,iVBORw0KGgo=)',
   '[x](//evil.example/x) ![y](//evil.example/a.png)',
   '[x](\\\\evil.example/x)',
+  '[x](//ok.example/x) ![y](//ok.example/a.png) [z](https:\\\\evil.example/x)',
   // Unicode and percent escapes.
   '[x](\\u006Aavascript:alert(1))',
   '[x](java%0ascript:alert(1)) [y](jav%61script:alert(1))',

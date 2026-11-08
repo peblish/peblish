@@ -102,6 +102,19 @@ test('hostile hooks cannot reintroduce what the allowlist removes', () => {
 test('the corpus exercises the cases it names', () => {
   // Spot checks that vectors reach the code they target, rather than failing to parse.
   expect(paths.remote('<a href="//evil.example/x">protocol relative</a>')).toBe('protocol relative');
+  // Protocol-relative and backslashed URLs are refused before resolution, even onto the base's host.
+  for (const href of [
+    '//ok.example/x',
+    '\\\\ok.example/x',
+    '/\\ok.example/x',
+    'https:\\\\evil.example/x',
+    '&#92;&#92;ok.example/x',
+    '/&#9;/ok.example/x',
+  ]) {
+    expect(paths.remote(`<a href="${href}">x</a>`)).toBe('x');
+  }
+  expect(paths.remote('<img src="//ok.example/a.png" alt="a">')).toBe('a');
+  expect(paths.markdown('[x](//ok.example/x) ![y](//ok.example/a.png)')).toBe('<p>x y</p>\n');
   expect(paths.remote('<a href="/c/foo">relative</a>')).toContain(`href="${base}/c/foo"`);
   expect(paths.remote('<IMG SRC="jav&#x09;ascript:alert(\'XSS\');">')).toBe('');
   expect(paths.markdown('[x](javascript:alert(1))')).toBe('<p>[x](javascript:alert(1))</p>\n');

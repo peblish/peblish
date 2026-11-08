@@ -113,9 +113,9 @@ const serialize = (pairs: [string, string][]) => pairs.map(([name, value]) => ` 
 
 /**
  * The URL a browser would follow for an href or src, canonical, or undefined when it is not
- * allowed: http, https and mailto only (http(s) for images), no credentials, and a relative
- * reference only against a base and only onto the base's own origin (so no
- * protocol-relative //host). Same-page fragments stay as they are.
+ * allowed: http, https and mailto only (http(s) for images), no credentials, no
+ * protocol-relative //host and no backslash anywhere, and a relative reference only against
+ * a base and only onto the base's own origin. Same-page fragments stay as they are.
  */
 function safeUrl(raw: string, base: string | undefined, image = false): string | undefined {
   // As the URL parser does: drop leading and trailing C0 controls and spaces, and every tab and newline.
@@ -123,6 +123,9 @@ function safeUrl(raw: string, base: string | undefined, image = false): string |
   // An empty href is the page itself: PieFed writes one in place of a javascript: URL.
   if (value === '') return undefined;
   if (value.startsWith('#')) return !image && fragment.test(value) ? value : undefined;
+  // Refused before resolution, even onto the base's own host: the URL parser reads a
+  // backslash as a slash, so \\host, /\host and https:\\host all name a host.
+  if (value.startsWith('//') || value.includes('\\')) return undefined;
   const absolute = /^[a-z][a-z\d+.-]*:/i.test(value);
   let url: URL;
   try {
