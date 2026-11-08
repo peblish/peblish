@@ -1,7 +1,7 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "description": "Delayed upgrades (7 days) with a security fast track. Root reviews every update; nothing automerges.",
-  "extends": ["config:recommended", "helpers:pinGitHubActionDigests", ":pinAllExceptPeerDependencies"],
+  "extends": ["config:recommended", "helpers:pinGitHubActionDigests", "docker:pinDigests", ":pinAllExceptPeerDependencies"],
   "minimumReleaseAge": "7 days",
   "internalChecksFilter": "strict",
   "schedule": ["before 6am on monday"],

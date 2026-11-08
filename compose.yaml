@@ -5,7 +5,7 @@ name: peblish-dev
 
 services:
   postgres:
-    image: postgres:17.11
+    image: postgres:17.11@sha256:ff87138949ad9a46f32ff23bd6852b52ce024a13dffe9b4087be98292cdd3b4f
     # Five lanes at a time each run web, worker and tests, two pools of up to 10 each.
     command: ['postgres', '-c', 'max_connections=300']
     environment:

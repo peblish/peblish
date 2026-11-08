@@ -1,7 +1,8 @@
 # syntax=docker/dockerfile:1
 # One image, three processes selected by command: web (default), worker, migrate.
-# node:24-bookworm-slim, pinned to the patch release the mux-start spike verified.
-FROM node:24.21.0-bookworm-slim AS base
+# node:24-bookworm-slim, pinned to the patch release the mux-start spike verified and to its
+# digest (Renovate docker:pinDigests moves both).
+FROM node:24.21.0-bookworm-slim@sha256:d6aa754f16b3197301076f047b5def2f02ea1dbbc2ca920407d46d7ec7f87b20 AS base
 # CI=true lets pnpm replace the modules directory pnpm fetch created without asking.
 ENV COREPACK_ENABLE_DOWNLOAD_PROMPT=0 CI=true
 RUN corepack enable
@@ -21,7 +22,7 @@ COPY . .
 RUN --mount=type=cache,id=pnpm-store,target=/root/.local/share/pnpm/store pnpm install --offline --frozen-lockfile
 RUN pnpm build
 
-FROM node:24.21.0-bookworm-slim AS runtime
+FROM node:24.21.0-bookworm-slim@sha256:d6aa754f16b3197301076f047b5def2f02ea1dbbc2ca920407d46d7ec7f87b20 AS runtime
 ENV NODE_ENV=production HOST=0.0.0.0 PORT=3000 PEBLISH_MIGRATIONS_DIR=/app/migrations
 WORKDIR /app
 COPY --from=build /app/packages/web/.output ./.output
