@@ -46,3 +46,12 @@ test('pages under /auth, /invite, /settings and /admin are never cached, redirec
   // A group's own path has no page.
   for (const path of ['/auth', '/invite', '/settings', '/admin']) expect([path, (await request.get(path)).status()]).toEqual([path, 404]);
 });
+
+test('a sign-in posted from another site is refused', async ({ request }) => {
+  const response = await request.post('/auth/sign-in', {
+    headers: { origin: 'https://attacker.example' },
+    form: { identifier: 'nobody@example.test', password: 'not the password' },
+    maxRedirects: 0,
+  });
+  expect(response.status()).toBe(403);
+});

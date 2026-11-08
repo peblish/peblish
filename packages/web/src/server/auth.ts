@@ -53,14 +53,16 @@ export function forwardedHeaders(request: Request): Headers {
 /**
  * Refuses cross-site form posts (login CSRF, settings changes): the Origin or the fetch
  * metadata must name this host. Compared by host, since a TLS proxy in front may hand us
- * plain http. A request with neither header is not from a browser and carries no ambient
- * cookies, so it passes.
+ * plain http. An opaque Origin ('null': a sandboxed frame, a data: URL) passes only with
+ * same-origin fetch metadata. A request with neither header is not from a browser and
+ * carries no ambient cookies, so it passes.
  */
 export function sameOrigin(request: Request): boolean {
   const host = request.headers.get('host') ?? new URL(request.url).host;
   const origin = request.headers.get('origin');
-  if (origin && origin !== 'null') return URL.canParse(origin) && new URL(origin).host === host;
   const site = request.headers.get('sec-fetch-site');
+  if (origin === 'null') return site === 'same-origin';
+  if (origin) return URL.canParse(origin) && new URL(origin).host === host;
   return site === null || site === 'same-origin';
 }
 

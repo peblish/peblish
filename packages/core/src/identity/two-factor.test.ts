@@ -51,3 +51,13 @@ test('two challenges racing with one code: one session', async () => {
   expect(outcomes.sort()).toEqual(['INVALID_CODE', 'accepted']);
   expect(await db().select().from(authSession).where(eq(authSession.userId, mira.userId))).toHaveLength(1);
 });
+
+test('a recovery code works once', async () => {
+  const mira = await seedAccount('mira');
+  const { backupCodes } = await seedTwoFactor(mira.userId);
+  const api = (await auth()).api;
+  const code = backupCodes[0] ?? '';
+  await api.verifyBackupCode({ body: { code }, headers: await challenge(mira.email, mira.password) });
+  const again = api.verifyBackupCode({ body: { code }, headers: await challenge(mira.email, mira.password) });
+  expect(await refusal(again)).toBe('INVALID_BACKUP_CODE');
+});

@@ -4,7 +4,7 @@ import { Route as authGroup } from '../routes/auth/route.tsx';
 import { Route as inviteGroup } from '../routes/invite/route.tsx';
 import { Route as settingsGroup } from '../routes/settings/route.tsx';
 import type { CurrentSession } from '@peblish/core/identity/session';
-import { privateResponse, privateResponses, safeRedirect, withSession } from './auth.ts';
+import { privateResponse, privateResponses, safeRedirect, sameOrigin, withSession } from './auth.ts';
 
 const origin = 'https://feddit.test';
 
@@ -84,4 +84,25 @@ describe('form handlers pass on the session cookie better-auth refreshed', () =>
   test('signed out, nothing to pass on', () => {
     expect(withSession(post(), null).reply({ redirect: '/auth/sign-in' }).headers.getSetCookie()).toEqual([]);
   });
+});
+
+describe('sameOrigin refuses cross-site form posts', () => {
+  const post = (headers: Record<string, string>, url = 'https://feddit.test/auth/sign-in') => new Request(url, { method: 'POST', headers });
+  test.each([
+    ['a matching Origin', post({ origin: 'https://feddit.test' }), true],
+    ['a foreign Origin', post({ origin: 'https://attacker.example' }), false],
+    ['a lookalike Origin', post({ origin: 'https://feddit.test.attacker.example' }), false],
+    ['an opaque Origin, cross-site', post({ origin: 'null', 'sec-fetch-site': 'cross-site' }), false],
+    ['an opaque Origin, same-origin', post({ origin: 'null', 'sec-fetch-site': 'same-origin' }), true],
+    ['an opaque Origin, no fetch metadata', post({ origin: 'null' }), false],
+    ['no Origin, a sibling site', post({ 'sec-fetch-site': 'same-site' }), false],
+    ['no headers (not a browser)', post({}), true],
+    // A TLS proxy hands over plain http on an internal address, with the public Host.
+    ['behind a TLS proxy', post({ host: 'feddit.test', origin: 'https://feddit.test' }, 'http://web:3000/auth/sign-in'), true],
+    [
+      'behind a TLS proxy, a foreign Origin',
+      post({ host: 'feddit.test', origin: 'https://attacker.example' }, 'http://web:3000/auth/sign-in'),
+      false,
+    ],
+  ])('%s', (_, request, allowed) => expect(sameOrigin(request)).toBe(allowed));
 });
