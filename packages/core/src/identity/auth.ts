@@ -55,6 +55,9 @@ function createAuth(origin: string) {
       database: { generateId: () => uuidv7() },
       cookiePrefix: 'peblish',
       useSecureCookies: origin.startsWith('https://'),
+      // Reset mail goes out detached (better-auth logs a failure), so a reset request answers
+      // as fast for an address with an account as for one without: no timing tells them apart.
+      backgroundTasks: { handler: (task) => void task },
     },
     emailAndPassword: {
       enabled: true,
@@ -65,6 +68,7 @@ function createAuth(origin: string) {
       // No breached-password check: the one on offer (haveibeenpwned) is a network call per password.
       revokeSessionsOnPasswordReset: true,
       resetPasswordTokenExpiresIn: 60 * 60,
+      // Runs as a background task (advanced.backgroundTasks).
       async sendResetPassword({ user, token }) {
         const link = new URL(`${resetPasswordPath}?token=${encodeURIComponent(token)}`, origin).href;
         await sendMail(

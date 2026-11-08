@@ -25,13 +25,9 @@ export const Route = createFileRoute('/auth/reset')({
         if (body instanceof type.errors) return respond(request, { error: 'form.invalid', back: '/auth/reset' });
         const api = (await auth()).api;
         if (body.intent === 'request') {
-          try {
-            // Answers the same whether or not an account uses the address.
-            await api.requestPasswordReset({ body: { email: body.email.trim().toLowerCase() } });
-          } catch (error) {
-            console.error('reset: sending the link failed', error);
-            return respond(request, { error: 'mail.failed', back: '/auth/reset' });
-          }
+          // Answers the same, as fast, whether or not an account uses the address: the mail
+          // goes out in the background, and a failure to send is only logged.
+          await api.requestPasswordReset({ body: { email: body.email.trim().toLowerCase() } });
           return respond(request, { redirect: '/auth/reset?sent=yes' });
         }
         const back = { back: '/auth/reset', keep: { token: body.token } };

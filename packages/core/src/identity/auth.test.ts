@@ -5,7 +5,7 @@ import { authSession, authUser } from '../db/tables/auth.ts';
 import { truncateAll } from '../testing/db.ts';
 import { seedAccount, seedLocalInstance } from '../testing/seed-a.ts';
 import { auth } from './auth.ts';
-import { recordingTransport, useMailTransport } from './mail.ts';
+import { recordingTransport, useMailTransport, type MailMessage, type MailTransport } from './mail.ts';
 import { maskEmail, verifyEmailToken } from './verify.ts';
 
 const mail = recordingTransport();
@@ -65,4 +65,36 @@ test('a verification link reads as verified, then as used; a forged or cut one a
   expect(await verifyEmailToken(`${token.slice(0, -4)}AAAA`)).toBe('invalid');
   expect(await verifyEmailToken('nonsense')).toBe('invalid');
   expect(maskEmail('nadia@example.com')).toBe('n****@example.com');
+});
+
+/** A transport that holds every message until release(), like a slow SMTP server. */
+function heldTransport() {
+  let release!: () => void;
+  const released = new Promise<void>((resolve) => (release = resolve));
+  const sent: MailMessage[] = [];
+  const transport: MailTransport = {
+    async send(message) {
+      await released;
+      sent.push(message);
+    },
+  };
+  return { transport, sent, release };
+}
+
+test('a reset request answers at once whether or not an account uses the address; the mail follows', async () => {
+  const mira = await seedAccount('mira');
+  const held = heldTransport();
+  useMailTransport(held.transport);
+  const api = (await auth()).api;
+  const timed = async (email: string) => {
+    const start = performance.now();
+    await api.requestPasswordReset({ body: { email } });
+    return performance.now() - start;
+  };
+  // The transport has not answered either call: both return within the same bound.
+  expect(await timed(mira.email)).toBeLessThan(1_000);
+  expect(await timed('nobody@example.test')).toBeLessThan(1_000);
+  expect(held.sent).toEqual([]);
+  held.release();
+  await expect.poll(() => held.sent.map(({ to }) => to)).toEqual([mira.email]);
 });
