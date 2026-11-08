@@ -1,4 +1,6 @@
+import { mentionMaxCount } from '@peblish/schema/markdown';
 import { expect, test } from 'vitest';
+import { highlightBlockMaxLength, highlightRenderBudget } from './highlight.ts';
 import { renderMarkdown } from './render.ts';
 
 // renderMarkdown's options and results. Equivalence with the peers, the XSS corpus,
@@ -22,6 +24,16 @@ test('mentions link to local pages and are collected once, outside code and link
   expect(result.html).toContain(`<a href="${origin}/c/tech@lemmy.example" class="u-url community"`);
   expect(result.html).toContain(`<a href="${origin}/u/bob" class="u-url mention"`);
   expect(result.html).toContain('<code>@c@d.example</code>');
+});
+
+test('only the first mentionMaxCount distinct mentions are linked and collected', () => {
+  const names = Array.from({ length: mentionMaxCount + 5 }, (_, i) => `@u${i}@lemmy.example`);
+  const result = render(`${names.join(' ')} @U0@lemmy.example`);
+  expect(result.mentions).toHaveLength(mentionMaxCount);
+  expect(result.mentions.at(-1)).toEqual({ kind: 'person', name: `u${mentionMaxCount - 1}`, host: 'lemmy.example' });
+  // The repeat of a collected mention is still linked; the new ones past the cap are text.
+  expect(result.html.match(/class="u-url mention"/g)).toHaveLength(mentionMaxCount + 1);
+  expect(result.html).toContain(` @u${mentionMaxCount}@lemmy.example @u${mentionMaxCount + 1}@lemmy.example`);
 });
 
 test('links are absolute, in order, without duplicates, mentions or footnote anchors', () => {
@@ -70,6 +82,18 @@ test('code blocks in a known language are highlighted; others stay plain', () =>
     '<pre><code class="language-ts"><span class="hljs-keyword">const</span> a = <span class="hljs-number">1</span>;\n</code></pre>\n',
   );
   expect(render('```nonsense\n<a>\n```').html).toBe('<pre><code class="language-nonsense">&lt;a&gt;\n</code></pre>\n');
+});
+
+test('highlighting stops past the block cap and the render budget', () => {
+  const fence = (lang: string, code: string) => `\`\`\`${lang}\n${code}\`\`\`\n\n`;
+  const highlighted = (html: string) => html.split('</pre>').filter((block) => block.includes('hljs-')).length;
+  // Two Java blocks of `$`, which highlight.js is slow on, past the block cap stay plain.
+  const dollars = `${'$'.repeat(highlightBlockMaxLength)}\n`;
+  expect(render(fence('java', dollars).repeat(2)).html).toBe(`<pre><code class="language-java">${dollars}</code></pre>\n`.repeat(2));
+  // Blocks within the cap are highlighted until the next would pass the budget.
+  const code = 'x = 1\n'.repeat(Math.floor(highlightBlockMaxLength / 6));
+  const fit = Math.floor(highlightRenderBudget / code.length);
+  expect(highlighted(render(fence('ts', code).repeat(fit + 2)).html)).toBe(fit);
 });
 
 test('idPrefix namespaces footnote anchors', () => {

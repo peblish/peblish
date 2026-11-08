@@ -38,6 +38,8 @@ export const htmlVectors: string[] = [
   '<a href="jav&Tab;ascript:alert(1)">named tab</a>',
   '<a href=" javascript:alert(1)">leading space</a>',
   '<a href="java\u0000script:alert(1)">nul</a>',
+  '<a href="https://ok.example/" title="a\u0000b">nul title</a><img src="https://ok.example/a.png" alt="c\u0000d" title="\u0000">',
+  '<scr\u0000ipt>alert(1)</scr\u0000ipt><p\u0000 class="x">nul in names</p>',
   '<a href="\u0001javascript:alert(1)">control prefix</a>',
   '<IMG SRC=\'vbscript:msgbox("XSS")\'>',
   '<a href="vbscript:msgbox(1)">vb</a><a href="file:///etc/passwd">file</a><a href="blob:https://ok.example/x">blob</a>',
@@ -49,6 +51,11 @@ export const htmlVectors: string[] = [
   // Protocol-relative and other off-origin tricks.
   '<a href="//evil.example/x">protocol relative</a><img src="//evil.example/a.png">',
   '<a href="\\\\evil.example/x">backslashes</a><a href="/\\evil.example/x">slash backslash</a>',
+  // The same onto the base's own host (https://ok.example in the test), and a backslashed scheme.
+  '<a href="//ok.example/x">a</a><a href="\\\\ok.example/x">b</a><a href="/\\ok.example/x">c</a><a href="\\/ok.example/x">d</a>',
+  '<a href="https:\\\\evil.example/x">e</a><a href="https:/\\evil.example/x">f</a><a href="https://ok.example\\@evil.example/">g</a>',
+  '<a href="&#47;&#47;ok.example/x">h</a><a href="&#92;&#92;ok.example/x">i</a><a href="/&#9;/ok.example/x">j</a><a href=" //ok.example/x">k</a>',
+  '<img src="//ok.example/a.png" alt="l"><img src="\\\\ok.example/b.png" alt="m"><img src="https:\\\\evil.example/c.png" alt="n">',
   '<a href="https://user:pass@evil.example/">credentials</a>',
   // Event handlers.
   '<a onmouseover="alert(document.cookie)">xxs link</a>',
@@ -118,8 +125,33 @@ export const htmlVectors: string[] = [
   '<tg-spoiler onclick="alert(1)">secret</tg-spoiler>',
   // Structure abuse.
   `${'<div>'.repeat(2000)}<a href="javascript:alert(1)">deep</a>`,
+  // At the depth cap: an image shown as a link, and table parts a browser wraps in tbody and tr.
+  `${'<div>'.repeat(32)}<img src="https://ok.example/a.png" alt="a">`,
+  `${'<div>'.repeat(29)}<table><tr><td>x</td></tr></table>`,
+  `${'<div>'.repeat(29)}<table><td>x</td></table>`,
   '<a href="https://ok.example/"><img src=x onerror=alert(1)',
   '<a href="https://ok.example/"><a href="javascript:alert(1)">nested</a></a>',
+];
+
+/**
+ * Unknown elements (unwrapped, so a browser reading the output never sees them) around an
+ * element that closes an open one: a block in a paragraph, a list item or cell after
+ * another. The sanitiser must close it as a browser reading the output would.
+ */
+export const wrapperVectors: string[] = [
+  '<p><x><div>x</div></x></p>',
+  '<p><font><blockquote>quote</blockquote></font>after</p>',
+  '<p><center><h1>title</h1></center></p>',
+  '<p><x><p>inner</p></x>outer</p>',
+  '<p>a<x><hr>b</x></p>',
+  '<p><x><table><tbody><tr><td>c</td></tr></tbody></table></x></p>',
+  '<ul><li>a<x><li>b</x></li></ul>',
+  '<ol><li><x><p>a</p><li>b</x></ol>',
+  '<table><tbody><tr><td>a<x><td>b</x></td></tr><x><tr><td>c</td></tr></x></tbody></table>',
+  '<table><thead><tr><th>h</th></tr><x><tbody><tr><td>c</td></tr></tbody></x></thead></table>',
+  '<ruby>a<x><rt>b<x><rt>c</ruby>',
+  // The span is unwrapped by the depth cap rather than the allowlist.
+  `${'<div>'.repeat(31)}<p><span><div>capped</div></span></p>`,
 ];
 
 export const markdownVectors: string[] = [
@@ -142,6 +174,7 @@ export const markdownVectors: string[] = [
   '![x](data:image/png;base64,iVBORw0KGgo=)',
   '[x](//evil.example/x) ![y](//evil.example/a.png)',
   '[x](\\\\evil.example/x)',
+  '[x](//ok.example/x) ![y](//ok.example/a.png) [z](https:\\\\evil.example/x)',
   // Unicode and percent escapes.
   '[x](\\u006Aavascript:alert(1))',
   '[x](java%0ascript:alert(1)) [y](jav%61script:alert(1))',
@@ -149,6 +182,7 @@ export const markdownVectors: string[] = [
   '[x](java\u200Bscript:alert(1))',
   '[x](https://ok.example/\u202Egpj.exe)',
   'https://ok.example/\u0000x javascript:alert(1)',
+  '[x](https://ok.example/ "t\u0000t") ![a\u0000b](https://ok.example/a.png "\u0000")',
   // HTML in Markdown.
   '<script>alert(1)</script>',
   '<img src=x onerror=alert(1)>',

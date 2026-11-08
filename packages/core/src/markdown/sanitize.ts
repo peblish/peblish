@@ -15,8 +15,12 @@ import { Tokenizer, type TokenizerCallbacks } from 'htmlparser2';
 // included) and keeps its own element stack instead of using htmlparser2's Parser, whose
 // stack handling is quadratic in nesting depth. Every step here is amortised O(1) per
 // token, so the time is linear in the input. The output is rebuilt from scratch: only the
-// elements and attributes below, each attribute checked and escaped, text escaped, so a
-// browser parses it into exactly the tree written here.
+// elements and attributes below, each attribute checked and escaped, text escaped, every
+// element closed. So a browser reads exactly the tags written here, and a second pass
+// returns the output unchanged. The stack models the HTML tree builder only in part, so a
+// browser may still rearrange those tags (insert a tbody, move text out of a table, close a
+// p around a block inside an inline element), but all it has to rearrange are allowlisted
+// elements with checked attributes.
 
 /**
  * Where an inline image loads from: the URL to use (the media proxy, or the URL itself for
@@ -56,7 +60,9 @@ const voids = new Set('area base br col embed hr img input link meta param sourc
 const blocks = new Set('p br hr h1 h2 h3 h4 h5 h6 li blockquote pre tr td th div section details summary ul ol table'.split(' '));
 
 // Implied end tags, enough for real-world remote HTML: opening an element closes the open
-// elements it may not sit in, looking only at the top of the stack (so O(1) amortised).
+// elements it may not sit in, looking only at the innermost written element (so O(1)
+// amortised). Unwrapped elements are passed over, as a browser reading the output never
+// sees them, so a second pass makes the same decisions as the first.
 const closesP = 'p div ul ol table h1 h2 h3 h4 h5 h6 blockquote pre details summary hr section';
 const implied = new Map<string, Set<string>>([
   ...closesP.split(' ').map((name) => [name, new Set(['p'])] as const),
@@ -85,8 +91,8 @@ const classes: Record<string, readonly string[]> = {
   ol: ['footnotes-list'],
   li: ['footnote-item'],
 };
-/** Classes whose text stays out of the excerpt: footnotes and Mastodon's hidden link parts. */
-const quietClasses = new Set(['footnotes', 'footnote-ref', 'invisible']);
+/** Classes whose text stays out of the excerpt: footnotes, Mastodon's hidden link parts and PieFed's inline spoilers. */
+const quietClasses = new Set(['footnotes', 'footnote-ref', 'invisible', 'spoiler']);
 /** Links that are not "links found": mentions, hashtags and community references. */
 const referenceClasses = new Set(['mention', 'hashtag', 'community']);
 
@@ -94,7 +100,8 @@ const footnoteId = /^(fn|fnref)[\w:-]{1,80}$/;
 const fragment = /^#[\w:.-]{1,100}$/;
 const schemes = new Set(['https:', 'http:', 'mailto:']);
 const align = /^(left|center|right)$/;
-const textAlign = /^\s*text-align\s*:\s*(left|center|right)\s*;?\s*$/i;
+// Matched against a trimmed value: no two whitespace runs meet, so it cannot backtrack.
+const textAlign = /^text-align\s*:\s*(left|center|right)\s*;?$/i;
 const dimension = /^\s*(?:(\d{1,4})(?:px)?|(\d{1,3})%)\s*$/;
 
 /** The rel every outgoing link carries; target is never kept. */
@@ -106,9 +113,9 @@ const serialize = (pairs: [string, string][]) => pairs.map(([name, value]) => ` 
 
 /**
  * The URL a browser would follow for an href or src, canonical, or undefined when it is not
- * allowed: http, https and mailto only (http(s) for images), no credentials, and a relative
- * reference only against a base and only onto the base's own origin (so no
- * protocol-relative //host). Same-page fragments stay as they are.
+ * allowed: http, https and mailto only (http(s) for images), no credentials, no
+ * protocol-relative //host and no backslash anywhere, and a relative reference only against
+ * a base and only onto the base's own origin. Same-page fragments stay as they are.
  */
 function safeUrl(raw: string, base: string | undefined, image = false): string | undefined {
   // As the URL parser does: drop leading and trailing C0 controls and spaces, and every tab and newline.
@@ -116,6 +123,9 @@ function safeUrl(raw: string, base: string | undefined, image = false): string |
   // An empty href is the page itself: PieFed writes one in place of a javascript: URL.
   if (value === '') return undefined;
   if (value.startsWith('#')) return !image && fragment.test(value) ? value : undefined;
+  // Refused before resolution, even onto the base's own host: the URL parser reads a
+  // backslash as a slash, so \\host, /\host and https:\\host all name a host.
+  if (value.startsWith('//') || value.includes('\\')) return undefined;
   const absolute = /^[a-z][a-z\d+.-]*:/i.test(value);
   let url: URL;
   try {
@@ -156,6 +166,12 @@ function classList(tag: string, value: string | undefined): string[] {
   return [...new Set(value.split(/\s+/).filter((name) => name.length <= 64 && /^[\w+#.-]+$/.test(name) && keep(name)))];
 }
 
+/** Lemmy's table alignment, `text-align: left` and nothing else, from a style attribute. */
+function styleAlign(style: string | undefined): string | undefined {
+  if (style === undefined || style.length > 200) return undefined;
+  return textAlign.exec(style.trim())?.[1]?.toLowerCase();
+}
+
 function size(value: string | undefined): string | undefined {
   const match = value === undefined ? null : dimension.exec(value);
   if (!match) return undefined;
@@ -163,11 +179,26 @@ function size(value: string | undefined): string | undefined {
   return Number(match[2]) <= 100 ? `${Number(match[2])}%` : undefined;
 }
 
+/**
+ * How many containers a browser inserts above a table part written inside `parent`: a
+ * tbody above a row in a table, and a row above a cell outside one. They count toward the
+ * depth cap, since the browser's tree is the one that has to stay within it.
+ */
+function insertedContainers(tag: string, parent: string | undefined): number {
+  if (tag === 'tr') return parent === 'table' ? 1 : 0;
+  if (tag !== 'td' && tag !== 'th') return 0;
+  return parent === 'table' ? 2 : parent === 'tbody' || parent === 'thead' || parent === 'tfoot' ? 1 : 0;
+}
+
 interface Frame {
   /** The source element name, matched by end tags. */
   name: string;
   /** The element written out, or undefined when this one is unwrapped or dropped. */
   out: string | undefined;
+  /** The innermost written frame at or below this one on the stack: the element a browser is in here. */
+  current: Frame | undefined;
+  /** A written frame's depth in the tree a browser builds (inserted table containers included). */
+  level: number;
   drop: boolean;
   quiet: boolean;
   /** A summary inside a quiet details: its text is excerpted again. */
@@ -182,7 +213,6 @@ class Sanitizer implements TokenizerCallbacks {
   private readonly stack: Frame[] = [];
   /** Open frames per source name, so an end tag with no open element costs O(1). */
   private readonly open = new Map<string, number>();
-  private depth = 0;
   private dropDepth = 0;
   private quietDepth = 0;
   private linkDepth = 0;
@@ -250,25 +280,37 @@ class Sanitizer implements TokenizerCallbacks {
     return this.stack[this.stack.length - 1];
   }
 
+  /** The depth of the innermost written element; a new element goes one (or more) below it. */
+  private get level(): number {
+    return this.top?.current?.level ?? 0;
+  }
+
   private start(name: string, attributes: Map<string, string>): void {
-    const closes = implied.get(name);
-    while (closes && this.top && closes.has(this.top.name)) this.pop();
+    // The innermost written element, once implied end tags have closed what this one may not
+    // sit in. Dropped content writes nothing, so it closes nothing.
+    const closes = this.dropDepth === 0 ? implied.get(name) : undefined;
+    let current = this.top?.current;
+    while (closes && current && closes.has(current.out!)) {
+      while (this.pop() !== current);
+      current = this.top?.current;
+    }
     if (this.dropDepth > 0 || dropped.has(name)) {
-      if (!voids.has(name)) this.push({ name, out: undefined, drop: true, quiet: false, loud: false, link: false });
+      if (!voids.has(name)) this.push({ name, out: undefined, current, level: 0, drop: true, quiet: false, loud: false, link: false });
       return;
     }
     if (blocks.has(name)) this.excerptText(' ');
     const out = kept.get(name);
     if (name === 'img') return this.image(attributes);
     if (voids.has(name)) {
-      if (out && this.depth < this.context.maxDepth) this.html += `<${out}${serialize(this.attributesOf(name, out, attributes))}>`;
+      if (out && this.level < this.context.maxDepth) this.html += `<${out}${serialize(this.attributesOf(name, out, attributes))}>`;
       return;
     }
     const sourceClasses = (attributes.get('class') ?? '').split(/\s+/);
-    const quiet = name === 'details' || sourceClasses.some((c) => quietClasses.has(c));
+    const quiet = name === 'details' || name === 'tg-spoiler' || sourceClasses.some((c) => quietClasses.has(c));
     const loud = name === 'summary' && this.top?.name === 'details' && this.top.quiet;
+    const level = (current?.level ?? 0) + 1 + (out ? insertedContainers(out, current?.out) : 0);
     let written: string | undefined;
-    if (out && this.depth < this.context.maxDepth && !(out === 'a' && this.linkDepth > 0)) {
+    if (out && level <= this.context.maxDepth && !(out === 'a' && this.linkDepth > 0)) {
       const pairs = this.attributesOf(name, out, attributes);
       // A link that lost its href (and is no footnote target) is unwrapped.
       if (out !== 'a' || pairs.some(([attribute]) => attribute === 'href' || attribute === 'id')) {
@@ -276,7 +318,9 @@ class Sanitizer implements TokenizerCallbacks {
         written = out;
       }
     }
-    this.push({ name, out: written, drop: false, quiet, loud, link: written === 'a' });
+    const frame: Frame = { name, out: written, current, level, drop: false, quiet, loud, link: written === 'a' };
+    if (written) frame.current = frame;
+    this.push(frame);
   }
 
   private end(name: string): void {
@@ -289,7 +333,6 @@ class Sanitizer implements TokenizerCallbacks {
   private push(frame: Frame): void {
     this.stack.push(frame);
     this.open.set(frame.name, (this.open.get(frame.name) ?? 0) + 1);
-    if (frame.out) this.depth++;
     if (frame.drop) this.dropDepth++;
     if (frame.quiet) this.quietDepth++;
     if (frame.loud) this.quietDepth--;
@@ -300,10 +343,7 @@ class Sanitizer implements TokenizerCallbacks {
     const frame = this.stack.pop();
     if (!frame) return undefined;
     this.open.set(frame.name, (this.open.get(frame.name) ?? 1) - 1);
-    if (frame.out) {
-      this.depth--;
-      this.html += `</${frame.out}>`;
-    }
+    if (frame.out) this.html += `</${frame.out}>`;
     if (frame.drop) this.dropDepth--;
     if (frame.quiet) this.quietDepth--;
     if (frame.loud) this.quietDepth++;
@@ -314,9 +354,8 @@ class Sanitizer implements TokenizerCallbacks {
 
   private text(text: string): void {
     if (this.dropDepth > 0) return;
-    const clean = text.replaceAll('\0', '');
-    this.html += escapeText(clean);
-    if (this.quietDepth === 0) this.excerptText(clean);
+    this.html += escapeText(text);
+    if (this.quietDepth === 0) this.excerptText(text);
   }
 
   /** Collects excerpt text until there is enough to cut from. */
@@ -327,7 +366,8 @@ class Sanitizer implements TokenizerCallbacks {
   private image(attributes: Map<string, string>): void {
     const src = safeUrl(attributes.get('src') ?? '', this.context.baseUrl, true);
     const alt = (attributes.get('alt') ?? '').slice(0, 1000);
-    if (src && this.context.images === 'inline' && this.depth < this.context.maxDepth) {
+    const room = this.level < this.context.maxDepth;
+    if (src && this.context.images === 'inline' && room) {
       const loaded = this.context.rewriteImageUrl ? this.context.rewriteImageUrl(src) : src;
       const url = loaded === null ? undefined : rewritten(loaded);
       if (url) {
@@ -335,8 +375,9 @@ class Sanitizer implements TokenizerCallbacks {
         return;
       }
     }
-    // Shown as a link to the image, or as its alt text inside another link or without a src.
-    if (src && this.linkDepth === 0) this.html += `<a href="${escapeAttribute(src)}" rel="${rel}">${escapeText(alt || src)}</a>`;
+    // Shown as a link to the image, or as its alt text inside another link, without a src or
+    // where a link would pass the depth cap.
+    if (src && this.linkDepth === 0 && room) this.html += `<a href="${escapeAttribute(src)}" rel="${rel}">${escapeText(alt || src)}</a>`;
     else this.html += escapeText(alt);
   }
 
@@ -377,10 +418,7 @@ class Sanitizer implements TokenizerCallbacks {
       }
       case 'th':
       case 'td':
-        add(
-          'align',
-          attributes.get('align')?.toLowerCase().match(align)?.[1] ?? attributes.get('style')?.match(textAlign)?.[1]?.toLowerCase(),
-        );
+        add('align', attributes.get('align')?.toLowerCase().match(align)?.[1] ?? styleAlign(attributes.get('style')));
         break;
       case 'span':
         add('class', source === 'tg-spoiler' ? 'spoiler' : classList(tag, attributes.get('class')).join(' '));
@@ -402,8 +440,10 @@ function excerpt(plain: string, length: number): string {
 
 /** Sanitises HTML with resolved options; renderMarkdown calls it on its own output. */
 export function sanitize(html: string, context: SanitizeContext, maxLength: number): SanitizedHtml {
-  const truncated = html.length > maxLength;
-  let input = truncated ? html.slice(0, maxLength) : html;
+  // NUL is dropped everywhere, attribute values and tag names included, before anything else.
+  const clean = html.replaceAll('\0', '');
+  const truncated = clean.length > maxLength;
+  let input = truncated ? clean.slice(0, maxLength) : clean;
   // A cut inside a tag drops the partial tag rather than leaving its start as text.
   if (truncated && input.lastIndexOf('<') > input.lastIndexOf('>')) input = input.slice(0, input.lastIndexOf('<'));
   const sanitizer = new Sanitizer(input, context);

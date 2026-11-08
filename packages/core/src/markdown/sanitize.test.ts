@@ -1,3 +1,5 @@
+import { htmlMaxDepth } from '@peblish/schema/markdown';
+import { parseFragment, type DefaultTreeAdapterTypes } from 'parse5';
 import { expect, test } from 'vitest';
 import { sanitizeRemoteHtml } from './sanitize.ts';
 
@@ -17,6 +19,14 @@ test('a Mastodon note keeps its mention, hashtag and link-shortening markup', ()
   );
   expect(result.links).toEqual(['https://news.example/a/very/long/path']);
   expect(result.excerpt).toBe('@ann see news.example/a/very #fedi');
+});
+
+test("PieFed's inline spoilers, in both forms, stay out of the excerpt", () => {
+  for (const spoiler of ['<tg-spoiler>he lives</tg-spoiler>', '<span class="spoiler">he lives</span>']) {
+    const result = sanitizeRemoteHtml(`<p>The end: ${spoiler}.</p>`);
+    expect(result.html).toBe('<p>The end: <span class="spoiler">he lives</span>.</p>');
+    expect(result.excerpt).toBe('The end: .');
+  }
 });
 
 test('relative URLs resolve against baseUrl and must stay on its origin', () => {
@@ -48,6 +58,28 @@ test('elements deeper than maxDepth are unwrapped, keeping their text', () => {
     sanitizeRemoteHtml('<blockquote><blockquote><blockquote><p><b>deep</b></p></blockquote></blockquote></blockquote>', { maxDepth: 2 })
       .html,
   ).toBe('<blockquote><blockquote>deep</blockquote></blockquote>');
+});
+
+/** The deepest element in the tree a browser builds from `html`. */
+function browserDepth(html: string): number {
+  const deepest = (nodes: DefaultTreeAdapterTypes.ChildNode[]): number =>
+    Math.max(0, ...nodes.map((node) => ('childNodes' in node ? 1 + deepest(node.childNodes) : 0)));
+  return deepest(parseFragment(html).childNodes);
+}
+
+test('the depth cap holds in the tree a browser builds, and a second pass changes nothing', () => {
+  const divs = (n: number, inner: string) => `${'<div>'.repeat(n)}${inner}${'</div>'.repeat(n)}`;
+  // At the cap an image shows its alt text, not a link one level deeper.
+  const image = divs(32, '<img src="https://ok.example/a.png" alt="a">');
+  expect(sanitizeRemoteHtml(image).html).toBe(divs(32, 'a'));
+  // The browser puts a tbody above the row, so the cell would be at depth 33.
+  const table = divs(29, '<table><tr><td>x</td></tr></table>');
+  expect(sanitizeRemoteHtml(table).html).toBe(divs(29, '<table><tr>x</tr></table>'));
+  for (const input of [image, table]) {
+    const once = sanitizeRemoteHtml(input).html;
+    expect(browserDepth(once)).toBeLessThanOrEqual(htmlMaxDepth);
+    expect(sanitizeRemoteHtml(once).html).toBe(once);
+  }
 });
 
 test('input over maxLength is cut (here inside a tag) and flagged, and nothing is left open', () => {
