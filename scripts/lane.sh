@@ -35,7 +35,17 @@ server="postgres://peblish:peblish@127.0.0.1:18432"
 $compose up -d --wait postgres >&2
 exists=$($compose exec -T postgres psql -U peblish -d peblish -tAc "select 1 from pg_database where datname = '$db'")
 [ "$exists" = 1 ] || $compose exec -T postgres createdb -U peblish "$db" >&2
-DATABASE_URL="$server/$db" PUBLIC_ORIGIN="https://$host.peblish.test" pnpm --dir "$root" --silent db:migrate >&2
+if ! migrated=$(DATABASE_URL="$server/$db" PUBLIC_ORIGIN="https://$host.peblish.test" pnpm --dir "$root" --silent db:migrate 2>&1); then
+  printf '%s\n' "$migrated" >&2
+  case "$migrated" in
+    *MigrationHistoryError*)
+      echo "lane.sh: $db was migrated from older migration files (0001 was regenerated since). Recreate it; this deletes its data:" >&2
+      echo "  $compose exec -T postgres dropdb -U peblish --force $db && sh scripts/lane.sh $1" >&2
+      ;;
+  esac
+  exit 1
+fi
+printf '%s\n' "$migrated" >&2
 
 cat <<ENV
 export PEBLISH_LANE=$lane
