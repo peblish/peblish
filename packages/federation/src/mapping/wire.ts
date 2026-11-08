@@ -67,7 +67,16 @@ export const WireActor = type({
   'icon?': Image.or('null'),
   'image?': Image.or('null'),
   'sensitive?': 'boolean',
+  /** PieFed: not safe for life. */
+  'nsfl?': 'boolean',
+  /** Search consent (Mastodon, PieFed): directory listing and search indexing. */
+  'discoverable?': 'boolean',
+  'indexable?': 'boolean',
   'postingRestrictedToMods?': 'boolean',
+  /** PieFed: shown to anyone posting in the community. */
+  'postingWarning?': 'string | null',
+  /** A Group's languages (Lemmy, PieFed). */
+  'language?': Language.or(Language.array()).or('null'),
   'published?': Timestamp,
   'updated?': Timestamp,
 });
@@ -95,6 +104,7 @@ export const WirePage = type({
   'attachment?': Attachment.array(),
   'image?': Preview.or('null'),
   'sensitive?': 'boolean',
+  'nsfl?': 'boolean',
   'commentsEnabled?': 'boolean',
   'stickied?': 'boolean',
 });

@@ -59,10 +59,21 @@ Each item: the difference, who shows it, and where the mapping deals with it.
   Like and Dislike carry `audience` only; Follow goes to the followee, Accept to the follower,
   Flag to the community, Announce to Public with the followers collection in `cc`:
   `addressing()` in `activity.ts`.
-- **Links and images.** A link post's link is the first `Link` attachment's `href`; an image
-  post sends an `Image` attachment with `url` and the alt text in `name` (Lemmy, PieFed, Mbin,
-  Mastodon). `postFromPage()` reads both; outbound sends a Link, because the posts table keeps
-  neither the content type nor the alt text (a schema delta).
+- **Links and images.** A link post's link is the first `Link` attachment's `href`, with
+  Lemmy's `mediaType` when sent; an image post sends an `Image` attachment with `url`, usually
+  `mediaType` and the alt text in `name` (Lemmy, PieFed, Mbin, Mastodon). PieFed leaves
+  `mediaType` off, which maps to `image/*` (`IMAGE_TYPE`) so the post stays an image post.
+  The preview image is the Page's `image`. `postFromPage()` reads them into `url`,
+  `urlContentType`, `altText` and `thumbnailUrl`; outbound sends an Image when the content
+  type is an image type, else a Link, as Lemmy does.
+- **Not safe for life.** PieFed's `nsfl` on Pages (and in its archive, on communities):
+  `posts.nsfl` and, for a Group, `actors.nsfl`. Outbound sends it on every Page and Group.
+- **Search consent.** `discoverable` and `indexable` (Mastodon, PieFed Persons). Absent reads
+  as true, the columns' default, because Lemmy never sends them; outbound sends both on every
+  actor, because Mastodon reads an absent flag as an opt-out.
+- **Community languages.** A Group's `language` array (Lemmy, PieFed) maps to the record's
+  `languages` codes, for `community_languages`; outbound sends it back with the native names.
+- **Posting warning.** PieFed's `postingWarning` on a Group: `actors.posting_warning`.
 - **Language.** `{ identifier, name }` with the language's own name (Lemmy, PieFed), or only
   `contentMap` (Mbin, Mastodon): `language.ts`.
 - **Timestamps.** Microseconds with `Z` (Lemmy), `+00:00` (PieFed). Read into `Date`, which
@@ -89,9 +100,9 @@ Each item: the difference, who shows it, and where the mapping deals with it.
   record's `reason`. The category is lane REP's to assign.
 - **PeerTube-style authors.** `attributedTo` as an array of Person and Group objects:
   `author()` in `content.ts` takes the Person.
-- **PieFed extras.** `nsfl`, `genAI`, `flair`, `interactionPolicy`, `contentMap`, `url`,
-  community settings and search consent are not mapped and stay in `raw`;
-  `../test/vocabulary.ts` says for each whether the schema should gain a column.
+- **PieFed extras.** `genAI`, `flair`, `interactionPolicy`, `contentMap`, `url` and the
+  community settings are not mapped and stay in `raw`; `../test/vocabulary.ts` says for each
+  whether the schema should gain a column.
 - **Lemmy's own log.** Its `sent_activity` table stores activities without `@context`; only
   the fixtures see this (`lemmy.stored-without-context`).
 

@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { type } from 'arktype';
-import { actors } from '../db/tables/actors.ts';
+import { actors, communityLanguages } from '../db/tables/actors.ts';
 import { comments, posts, votes } from '../db/tables/content.ts';
 import { follows } from '../db/tables/follows.ts';
 import { instances } from '../db/tables/instances.ts';
@@ -46,6 +46,7 @@ export async function loadFixtureSet(name: FixtureSetName, options: { localDomai
   await writer().transaction(async (t) => {
     await t.insert(instances).values(set.instances.map((instance) => ({ ...instance, local: localIds.has(instance.id) })));
     if (set.actors.length) await t.insert(actors).values(set.actors.map(spine));
+    if (set.communityLanguages.length) await t.insert(communityLanguages).values(set.communityLanguages);
     if (set.posts.length) await t.insert(posts).values(set.posts.map(spine));
     if (set.comments.length) await t.insert(comments).values(set.comments.map(spine));
     if (set.votes.length) await t.insert(votes).values(set.votes.map(spine));

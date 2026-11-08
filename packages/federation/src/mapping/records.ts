@@ -7,7 +7,20 @@ import type { Actor, Comment, Post, Vote } from '@peblish/schema/entities';
 
 export type ActorRecord = Pick<
   Actor,
-  'apId' | 'kind' | 'name' | 'displayName' | 'summaryHtml' | 'inboxUrl' | 'sharedInboxUrl' | 'sensitive' | 'postingRestrictedToMods' | 'raw'
+  | 'apId'
+  | 'kind'
+  | 'name'
+  | 'displayName'
+  | 'summaryHtml'
+  | 'inboxUrl'
+  | 'sharedInboxUrl'
+  | 'sensitive'
+  | 'nsfl'
+  | 'discoverable'
+  | 'indexable'
+  | 'postingRestrictedToMods'
+  | 'postingWarning'
+  | 'raw'
 > & {
   summaryMd: string | null;
   outboxUrl: string | null;
@@ -17,6 +30,8 @@ export type ActorRecord = Pick<
   moderatorsUrl: string | null;
   iconUrl: string | null;
   bannerUrl: string | null;
+  /** Group only: the community's languages as ISO 639 codes, for community_languages; empty when it names none. */
+  languages: string[];
   /** Lemmy and PieFed publish bot accounts as Service. */
   bot: boolean;
   publishedAt: Date | null;
@@ -25,7 +40,26 @@ export type ActorRecord = Pick<
   publicKey: { keyId: string; pem: string } | null;
 };
 
-export type PostRecord = Pick<Post, 'apId' | 'title' | 'url' | 'bodyMd' | 'contentHtml' | 'sensitive' | 'editedAt' | 'raw'> & {
+/**
+ * `urlContentType` is the attachment's mediaType, or `image/*` (IMAGE_TYPE in content.ts) for
+ * an Image attachment that names none, so an image post stays one; `altText` is an Image
+ * attachment's name and `thumbnailUrl` the Page's preview `image`.
+ */
+export type PostRecord = Pick<
+  Post,
+  | 'apId'
+  | 'title'
+  | 'url'
+  | 'urlContentType'
+  | 'altText'
+  | 'thumbnailUrl'
+  | 'bodyMd'
+  | 'contentHtml'
+  | 'sensitive'
+  | 'nsfl'
+  | 'editedAt'
+  | 'raw'
+> & {
   authorApId: string;
   communityApId: string;
   /** ISO 639 code; null when the peer sent none. */

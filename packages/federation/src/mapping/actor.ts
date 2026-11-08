@@ -1,14 +1,20 @@
 import { compact, parse, type JsonObject } from './json.ts';
+import { languageToWire } from './language.ts';
 import type { ActorRecord, ModeratorsRecord } from './records.ts';
-import { WireActor, WireModerators } from './wire.ts';
+import { many, WireActor, WireModerators } from './wire.ts';
 
 const date = (value: string | undefined) => (value === undefined ? null : new Date(value));
 const markdown = (source: { content: string; mediaType: string } | null | undefined) =>
   source?.mediaType === 'text/markdown' ? source.content : null;
 
-/** Person, Group, Application or Service document to an actors row (Group is a community). */
+/**
+ * Person, Group, Application or Service document to an actors row (Group is a community).
+ * Absent search consent reads as the columns' default, true: Lemmy never sends it. (Mastodon
+ * reads an absent flag as an opt-out, which is why the outbound mapping always sends both.)
+ */
 export function actorFromWire(json: unknown): ActorRecord {
   const actor = parse(WireActor, json, 'actor');
+  const group = actor.type === 'Group';
   return {
     apId: actor.id,
     kind: actor.type,
@@ -21,12 +27,17 @@ export function actorFromWire(json: unknown): ActorRecord {
     outboxUrl: actor.outbox ?? null,
     followersUrl: actor.followers ?? null,
     featuredUrl: actor.featured ?? null,
-    moderatorsUrl: actor.type === 'Group' ? (actor.attributedTo ?? actor.moderators ?? null) : null,
+    moderatorsUrl: group ? (actor.attributedTo ?? actor.moderators ?? null) : null,
     iconUrl: actor.icon?.url ?? null,
     bannerUrl: actor.image?.url ?? null,
     sensitive: actor.sensitive ?? false,
+    nsfl: group && (actor.nsfl ?? false),
+    discoverable: actor.discoverable ?? true,
+    indexable: actor.indexable ?? true,
     bot: actor.type === 'Service',
     postingRestrictedToMods: actor.postingRestrictedToMods ?? false,
+    postingWarning: group ? (actor.postingWarning ?? null) : null,
+    languages: group ? many(actor.language).map((language) => language.identifier) : [],
     publishedAt: date(actor.published),
     updatedAt: date(actor.updated),
     publicKey: actor.publicKey ? { keyId: actor.publicKey.id, pem: actor.publicKey.publicKeyPem } : null,
@@ -37,7 +48,8 @@ export function actorFromWire(json: unknown): ActorRecord {
 /**
  * An actors row to its document, in Lemmy's shape: a Group names its moderators collection in
  * `attributedTo`, carries `sensitive`, `postingRestrictedToMods` and `language`, and every
- * actor has `endpoints.sharedInbox` and its `publicKey`.
+ * actor has `endpoints.sharedInbox` and its `publicKey`. PieFed's vocabulary is added: `nsfl`
+ * and `postingWarning` on a Group, `discoverable` and `indexable` on every actor.
  */
 export function actorToWire(actor: ActorRecord): JsonObject {
   const group = actor.kind === 'Group';
@@ -56,11 +68,15 @@ export function actorToWire(actor: ActorRecord): JsonObject {
     icon: image(actor.iconUrl),
     image: image(actor.bannerUrl),
     sensitive: group ? actor.sensitive : undefined,
+    nsfl: group ? actor.nsfl : undefined,
     attributedTo: group ? (actor.moderatorsUrl ?? undefined) : undefined,
     postingRestrictedToMods: group ? actor.postingRestrictedToMods : undefined,
+    postingWarning: group ? (actor.postingWarning ?? undefined) : undefined,
     featured: actor.featuredUrl ?? undefined,
     endpoints: actor.sharedInboxUrl === null ? undefined : { sharedInbox: actor.sharedInboxUrl },
-    language: group ? [] : undefined,
+    language: group ? actor.languages.map(languageToWire) : undefined,
+    discoverable: actor.discoverable,
+    indexable: actor.indexable,
     published: actor.publishedAt?.toISOString(),
     updated: actor.updatedAt?.toISOString(),
   });

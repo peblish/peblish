@@ -24,6 +24,7 @@
         { "path": "object.object.attachment", "change": "added", "vocabulary": "peblish.attachment" },
         { "path": "object.object.cc", "change": "added", "vocabulary": "peblish.page-cc" },
         { "path": "object.object.commentsEnabled", "change": "added", "vocabulary": "peblish.page-flags" },
+        { "path": "object.object.nsfl", "change": "added", "vocabulary": "peblish.nsfl" },
         { "path": "object.object.stickied", "change": "added", "vocabulary": "peblish.page-flags" }
       ]
     },
@@ -126,6 +127,7 @@
         { "path": "object.object.attachment", "change": "added", "vocabulary": "peblish.attachment" },
         { "path": "object.object.cc", "change": "added", "vocabulary": "peblish.page-cc" },
         { "path": "object.object.commentsEnabled", "change": "added", "vocabulary": "peblish.page-flags" },
+        { "path": "object.object.nsfl", "change": "added", "vocabulary": "peblish.nsfl" },
         { "path": "object.object.stickied", "change": "added", "vocabulary": "peblish.page-flags" }
       ]
     },
@@ -152,6 +154,7 @@
         { "path": "object.object.attachment", "change": "added", "vocabulary": "peblish.attachment" },
         { "path": "object.object.cc", "change": "added", "vocabulary": "peblish.page-cc" },
         { "path": "object.object.commentsEnabled", "change": "added", "vocabulary": "peblish.page-flags" },
+        { "path": "object.object.nsfl", "change": "added", "vocabulary": "peblish.nsfl" },
         { "path": "object.object.stickied", "change": "added", "vocabulary": "peblish.page-flags" }
       ]
     },
@@ -230,6 +233,7 @@
         { "path": "@context", "change": "changed", "vocabulary": "peblish.context" },
         { "path": "object.@context", "change": "dropped", "vocabulary": "peblish.context.embedded" },
         { "path": "object.object.commentsEnabled", "change": "added", "vocabulary": "peblish.page-flags" },
+        { "path": "object.object.nsfl", "change": "added", "vocabulary": "peblish.nsfl" },
         { "path": "object.object.stickied", "change": "added", "vocabulary": "peblish.page-flags" },
         { "path": "object.object.tag", "change": "dropped", "vocabulary": "tags" }
       ]
@@ -248,7 +252,6 @@
         { "path": "object.cc", "change": "changed", "vocabulary": "peblish.addressing" },
         { "path": "object.object.genAI", "change": "dropped", "vocabulary": "piefed.gen-ai" },
         { "path": "object.object.interactionPolicy", "change": "dropped", "vocabulary": "piefed.interaction-policy" },
-        { "path": "object.object.nsfl", "change": "dropped", "vocabulary": "piefed.nsfl" },
         { "path": "object.object.tag", "change": "dropped", "vocabulary": "tags" },
         { "path": "object.to", "change": "changed", "vocabulary": "peblish.addressing" }
       ]
@@ -265,6 +268,7 @@
         { "path": "@context", "change": "changed", "vocabulary": "peblish.context" },
         { "path": "object.object.cc", "change": "added", "vocabulary": "peblish.page-cc" },
         { "path": "object.object.commentsEnabled", "change": "added", "vocabulary": "peblish.page-flags" },
+        { "path": "object.object.nsfl", "change": "added", "vocabulary": "peblish.nsfl" },
         { "path": "object.object.stickied", "change": "added", "vocabulary": "peblish.page-flags" }
       ]
     },
@@ -280,6 +284,7 @@
         { "path": "@context", "change": "changed", "vocabulary": "peblish.context" },
         { "path": "object.object.cc", "change": "added", "vocabulary": "peblish.page-cc" },
         { "path": "object.object.commentsEnabled", "change": "added", "vocabulary": "peblish.page-flags" },
+        { "path": "object.object.nsfl", "change": "added", "vocabulary": "peblish.nsfl" },
         { "path": "object.object.stickied", "change": "added", "vocabulary": "peblish.page-flags" }
       ]
     },
@@ -366,6 +371,7 @@
         { "path": "object.attachment", "change": "added", "vocabulary": "peblish.attachment" },
         { "path": "object.cc", "change": "added", "vocabulary": "peblish.page-cc" },
         { "path": "object.commentsEnabled", "change": "added", "vocabulary": "peblish.page-flags" },
+        { "path": "object.nsfl", "change": "added", "vocabulary": "peblish.nsfl" },
         { "path": "object.stickied", "change": "added", "vocabulary": "peblish.page-flags" }
       ]
     },
@@ -382,6 +388,7 @@
         { "path": "object.attachment", "change": "added", "vocabulary": "peblish.attachment" },
         { "path": "object.cc", "change": "added", "vocabulary": "peblish.page-cc" },
         { "path": "object.commentsEnabled", "change": "added", "vocabulary": "peblish.page-flags" },
+        { "path": "object.nsfl", "change": "added", "vocabulary": "peblish.nsfl" },
         { "path": "object.stickied", "change": "added", "vocabulary": "peblish.page-flags" }
       ]
     },
@@ -413,6 +420,7 @@
         { "path": "object.attachment", "change": "added", "vocabulary": "peblish.attachment" },
         { "path": "object.cc", "change": "added", "vocabulary": "peblish.page-cc" },
         { "path": "object.commentsEnabled", "change": "added", "vocabulary": "peblish.page-flags" },
+        { "path": "object.nsfl", "change": "added", "vocabulary": "peblish.nsfl" },
         { "path": "object.stickied", "change": "added", "vocabulary": "peblish.page-flags" }
       ]
     },
@@ -429,6 +437,7 @@
         { "path": "object.object.attachment", "change": "added", "vocabulary": "peblish.attachment" },
         { "path": "object.object.cc", "change": "added", "vocabulary": "peblish.page-cc" },
         { "path": "object.object.commentsEnabled", "change": "added", "vocabulary": "peblish.page-flags" },
+        { "path": "object.object.nsfl", "change": "added", "vocabulary": "peblish.nsfl" },
         { "path": "object.object.stickied", "change": "added", "vocabulary": "peblish.page-flags" }
       ]
     },
@@ -444,6 +453,7 @@
         { "path": "@context", "change": "changed", "vocabulary": "peblish.context" },
         { "path": "object.@context", "change": "dropped", "vocabulary": "peblish.context.embedded" },
         { "path": "object.object.commentsEnabled", "change": "added", "vocabulary": "peblish.page-flags" },
+        { "path": "object.object.nsfl", "change": "added", "vocabulary": "peblish.nsfl" },
         { "path": "object.object.stickied", "change": "added", "vocabulary": "peblish.page-flags" },
         { "path": "object.object.tag", "change": "dropped", "vocabulary": "tags" }
       ]
@@ -554,6 +564,7 @@
         { "path": "object.object.attachment", "change": "added", "vocabulary": "peblish.attachment" },
         { "path": "object.object.cc", "change": "added", "vocabulary": "peblish.page-cc" },
         { "path": "object.object.commentsEnabled", "change": "added", "vocabulary": "peblish.page-flags" },
+        { "path": "object.object.nsfl", "change": "added", "vocabulary": "peblish.nsfl" },
         { "path": "object.object.stickied", "change": "added", "vocabulary": "peblish.page-flags" }
       ]
     },
@@ -571,7 +582,6 @@
         { "path": "object.cc", "change": "changed", "vocabulary": "peblish.addressing" },
         { "path": "object.object.genAI", "change": "dropped", "vocabulary": "piefed.gen-ai" },
         { "path": "object.object.interactionPolicy", "change": "dropped", "vocabulary": "piefed.interaction-policy" },
-        { "path": "object.object.nsfl", "change": "dropped", "vocabulary": "piefed.nsfl" },
         { "path": "object.object.tag", "change": "dropped", "vocabulary": "tags" },
         { "path": "object.to", "change": "changed", "vocabulary": "peblish.addressing" }
       ]
@@ -610,7 +620,6 @@
         { "path": "object.cc", "change": "changed", "vocabulary": "peblish.addressing" },
         { "path": "object.object.genAI", "change": "dropped", "vocabulary": "piefed.gen-ai" },
         { "path": "object.object.interactionPolicy", "change": "dropped", "vocabulary": "piefed.interaction-policy" },
-        { "path": "object.object.nsfl", "change": "dropped", "vocabulary": "piefed.nsfl" },
         { "path": "object.object.tag", "change": "dropped", "vocabulary": "tags" },
         { "path": "object.to", "change": "changed", "vocabulary": "peblish.addressing" }
       ]
@@ -647,6 +656,7 @@
         { "path": "@context", "change": "changed", "vocabulary": "peblish.context" },
         { "path": "object.@context", "change": "dropped", "vocabulary": "peblish.context.embedded" },
         { "path": "object.object.commentsEnabled", "change": "added", "vocabulary": "peblish.page-flags" },
+        { "path": "object.object.nsfl", "change": "added", "vocabulary": "peblish.nsfl" },
         { "path": "object.object.stickied", "change": "added", "vocabulary": "peblish.page-flags" },
         { "path": "object.object.tag", "change": "dropped", "vocabulary": "tags" }
       ]
@@ -663,6 +673,7 @@
         { "path": "@context", "change": "changed", "vocabulary": "peblish.context" },
         { "path": "object.@context", "change": "dropped", "vocabulary": "peblish.context.embedded" },
         { "path": "object.object.commentsEnabled", "change": "added", "vocabulary": "peblish.page-flags" },
+        { "path": "object.object.nsfl", "change": "added", "vocabulary": "peblish.nsfl" },
         { "path": "object.object.stickied", "change": "added", "vocabulary": "peblish.page-flags" },
         { "path": "object.object.tag", "change": "dropped", "vocabulary": "tags" }
       ]
@@ -680,6 +691,7 @@
         { "path": "object.object.attachment", "change": "added", "vocabulary": "peblish.attachment" },
         { "path": "object.object.cc", "change": "added", "vocabulary": "peblish.page-cc" },
         { "path": "object.object.commentsEnabled", "change": "added", "vocabulary": "peblish.page-flags" },
+        { "path": "object.object.nsfl", "change": "added", "vocabulary": "peblish.nsfl" },
         { "path": "object.object.stickied", "change": "added", "vocabulary": "peblish.page-flags" }
       ]
     },
@@ -696,6 +708,7 @@
         { "path": "object.object.attachment", "change": "added", "vocabulary": "peblish.attachment" },
         { "path": "object.object.cc", "change": "added", "vocabulary": "peblish.page-cc" },
         { "path": "object.object.commentsEnabled", "change": "added", "vocabulary": "peblish.page-flags" },
+        { "path": "object.object.nsfl", "change": "added", "vocabulary": "peblish.nsfl" },
         { "path": "object.object.stickied", "change": "added", "vocabulary": "peblish.page-flags" }
       ]
     },
@@ -712,6 +725,7 @@
         { "path": "object.object.attachment", "change": "added", "vocabulary": "peblish.attachment" },
         { "path": "object.object.cc", "change": "added", "vocabulary": "peblish.page-cc" },
         { "path": "object.object.commentsEnabled", "change": "added", "vocabulary": "peblish.page-flags" },
+        { "path": "object.object.nsfl", "change": "added", "vocabulary": "peblish.nsfl" },
         { "path": "object.object.stickied", "change": "added", "vocabulary": "peblish.page-flags" }
       ]
     },
@@ -723,7 +737,10 @@
       "source": { "file": "fetched.jsonl", "line": 1, "pointer": "/response", "at": "2026-11-08T02:26:25.692Z" },
       "fixture": "wire/lemmy-0.19.21/fetched/fetched-0001-person.json",
       "entity": "actor",
-      "allowed": []
+      "allowed": [
+        { "path": "discoverable", "change": "added", "vocabulary": "peblish.search-consent" },
+        { "path": "indexable", "change": "added", "vocabulary": "peblish.search-consent" }
+      ]
     },
     {
       "id": "lemmy-0.19.21/fetched/fetched-0006-group",
@@ -733,7 +750,11 @@
       "source": { "file": "fetched.jsonl", "line": 6, "pointer": "/response", "at": "2026-11-08T02:26:54.251Z" },
       "fixture": "wire/lemmy-0.19.21/fetched/fetched-0006-group.json",
       "entity": "community",
-      "allowed": []
+      "allowed": [
+        { "path": "discoverable", "change": "added", "vocabulary": "peblish.search-consent" },
+        { "path": "indexable", "change": "added", "vocabulary": "peblish.search-consent" },
+        { "path": "nsfl", "change": "added", "vocabulary": "peblish.nsfl" }
+      ]
     },
     {
       "id": "lemmy-0.19.21/fetched/fetched-0013-person",
@@ -743,7 +764,10 @@
       "source": { "file": "fetched.jsonl", "line": 13, "pointer": "/response", "at": "2026-11-08T02:27:24.705Z" },
       "fixture": "wire/lemmy-0.19.21/fetched/fetched-0013-person.json",
       "entity": "actor",
-      "allowed": []
+      "allowed": [
+        { "path": "discoverable", "change": "added", "vocabulary": "peblish.search-consent" },
+        { "path": "indexable", "change": "added", "vocabulary": "peblish.search-consent" }
+      ]
     },
     {
       "id": "lemmy-0.19.21/fetched/fetched-0016-orderedcollection",
@@ -765,6 +789,7 @@
       "entity": "post",
       "allowed": [
         { "path": "commentsEnabled", "change": "added", "vocabulary": "peblish.page-flags" },
+        { "path": "nsfl", "change": "added", "vocabulary": "peblish.nsfl" },
         { "path": "stickied", "change": "added", "vocabulary": "peblish.page-flags" },
         { "path": "tag", "change": "dropped", "vocabulary": "tags" }
       ]
@@ -844,6 +869,7 @@
       "entity": "post",
       "allowed": [
         { "path": "object.commentsEnabled", "change": "added", "vocabulary": "peblish.page-flags" },
+        { "path": "object.nsfl", "change": "added", "vocabulary": "peblish.nsfl" },
         { "path": "object.stickied", "change": "added", "vocabulary": "peblish.page-flags" },
         { "path": "object.tag", "change": "dropped", "vocabulary": "tags" }
       ]
@@ -858,6 +884,7 @@
       "entity": "post",
       "allowed": [
         { "path": "object.commentsEnabled", "change": "added", "vocabulary": "peblish.page-flags" },
+        { "path": "object.nsfl", "change": "added", "vocabulary": "peblish.nsfl" },
         { "path": "object.stickied", "change": "added", "vocabulary": "peblish.page-flags" },
         { "path": "object.tag", "change": "dropped", "vocabulary": "tags" }
       ]
@@ -892,6 +919,7 @@
       "entity": "post",
       "allowed": [
         { "path": "object.object.commentsEnabled", "change": "added", "vocabulary": "peblish.page-flags" },
+        { "path": "object.object.nsfl", "change": "added", "vocabulary": "peblish.nsfl" },
         { "path": "object.object.stickied", "change": "added", "vocabulary": "peblish.page-flags" },
         { "path": "object.object.tag", "change": "dropped", "vocabulary": "tags" }
       ]
@@ -907,6 +935,7 @@
       "allowed": [
         { "path": "object.actor", "change": "dropped", "vocabulary": "lemmy.announce-page-actor" },
         { "path": "object.commentsEnabled", "change": "added", "vocabulary": "peblish.page-flags" },
+        { "path": "object.nsfl", "change": "added", "vocabulary": "peblish.nsfl" },
         { "path": "object.stickied", "change": "added", "vocabulary": "peblish.page-flags" },
         { "path": "object.tag", "change": "dropped", "vocabulary": "tags" }
       ]
@@ -971,6 +1000,7 @@
       "entity": "post",
       "allowed": [
         { "path": "object.object.commentsEnabled", "change": "added", "vocabulary": "peblish.page-flags" },
+        { "path": "object.object.nsfl", "change": "added", "vocabulary": "peblish.nsfl" },
         { "path": "object.object.stickied", "change": "added", "vocabulary": "peblish.page-flags" },
         { "path": "object.object.tag", "change": "dropped", "vocabulary": "tags" }
       ]
@@ -986,6 +1016,7 @@
       "allowed": [
         { "path": "object.actor", "change": "dropped", "vocabulary": "lemmy.announce-page-actor" },
         { "path": "object.commentsEnabled", "change": "added", "vocabulary": "peblish.page-flags" },
+        { "path": "object.nsfl", "change": "added", "vocabulary": "peblish.nsfl" },
         { "path": "object.stickied", "change": "added", "vocabulary": "peblish.page-flags" },
         { "path": "object.tag", "change": "dropped", "vocabulary": "tags" }
       ]
@@ -1038,6 +1069,7 @@
         { "path": "object.object.attachment", "change": "added", "vocabulary": "peblish.attachment" },
         { "path": "object.object.cc", "change": "added", "vocabulary": "peblish.page-cc" },
         { "path": "object.object.commentsEnabled", "change": "added", "vocabulary": "peblish.page-flags" },
+        { "path": "object.object.nsfl", "change": "added", "vocabulary": "peblish.nsfl" },
         { "path": "object.object.stickied", "change": "added", "vocabulary": "peblish.page-flags" }
       ]
     },
@@ -1052,6 +1084,7 @@
       "allowed": [
         { "path": "object.actor", "change": "dropped", "vocabulary": "lemmy.announce-page-actor" },
         { "path": "object.commentsEnabled", "change": "added", "vocabulary": "peblish.page-flags" },
+        { "path": "object.nsfl", "change": "added", "vocabulary": "peblish.nsfl" },
         { "path": "object.stickied", "change": "added", "vocabulary": "peblish.page-flags" },
         { "path": "object.tag", "change": "dropped", "vocabulary": "tags" }
       ]
@@ -1069,6 +1102,7 @@
         { "path": "object.object.attachment", "change": "added", "vocabulary": "peblish.attachment" },
         { "path": "object.object.cc", "change": "added", "vocabulary": "peblish.page-cc" },
         { "path": "object.object.commentsEnabled", "change": "added", "vocabulary": "peblish.page-flags" },
+        { "path": "object.object.nsfl", "change": "added", "vocabulary": "peblish.nsfl" },
         { "path": "object.object.stickied", "change": "added", "vocabulary": "peblish.page-flags" }
       ]
     },
@@ -1083,6 +1117,7 @@
       "allowed": [
         { "path": "object.actor", "change": "dropped", "vocabulary": "lemmy.announce-page-actor" },
         { "path": "object.commentsEnabled", "change": "added", "vocabulary": "peblish.page-flags" },
+        { "path": "object.nsfl", "change": "added", "vocabulary": "peblish.nsfl" },
         { "path": "object.stickied", "change": "added", "vocabulary": "peblish.page-flags" },
         { "path": "object.tag", "change": "dropped", "vocabulary": "tags" }
       ]
@@ -1117,6 +1152,7 @@
       "entity": "post",
       "allowed": [
         { "path": "object.commentsEnabled", "change": "added", "vocabulary": "peblish.page-flags" },
+        { "path": "object.nsfl", "change": "added", "vocabulary": "peblish.nsfl" },
         { "path": "object.stickied", "change": "added", "vocabulary": "peblish.page-flags" },
         { "path": "object.tag", "change": "dropped", "vocabulary": "tags" }
       ]
@@ -1181,6 +1217,7 @@
       "entity": "post",
       "allowed": [
         { "path": "object.object.commentsEnabled", "change": "added", "vocabulary": "peblish.page-flags" },
+        { "path": "object.object.nsfl", "change": "added", "vocabulary": "peblish.nsfl" },
         { "path": "object.object.stickied", "change": "added", "vocabulary": "peblish.page-flags" },
         { "path": "object.object.tag", "change": "dropped", "vocabulary": "tags" }
       ]
@@ -1196,6 +1233,7 @@
       "allowed": [
         { "path": "object.actor", "change": "dropped", "vocabulary": "lemmy.announce-page-actor" },
         { "path": "object.commentsEnabled", "change": "added", "vocabulary": "peblish.page-flags" },
+        { "path": "object.nsfl", "change": "added", "vocabulary": "peblish.nsfl" },
         { "path": "object.stickied", "change": "added", "vocabulary": "peblish.page-flags" },
         { "path": "object.tag", "change": "dropped", "vocabulary": "tags" }
       ]
@@ -1390,6 +1428,7 @@
       "entity": "post",
       "allowed": [
         { "path": "object.commentsEnabled", "change": "added", "vocabulary": "peblish.page-flags" },
+        { "path": "object.nsfl", "change": "added", "vocabulary": "peblish.nsfl" },
         { "path": "object.stickied", "change": "added", "vocabulary": "peblish.page-flags" },
         { "path": "object.tag", "change": "dropped", "vocabulary": "tags" }
       ]
@@ -1424,6 +1463,7 @@
       "entity": "post",
       "allowed": [
         { "path": "object.commentsEnabled", "change": "added", "vocabulary": "peblish.page-flags" },
+        { "path": "object.nsfl", "change": "added", "vocabulary": "peblish.nsfl" },
         { "path": "object.stickied", "change": "added", "vocabulary": "peblish.page-flags" },
         { "path": "object.tag", "change": "dropped", "vocabulary": "tags" }
       ]
@@ -1438,6 +1478,7 @@
       "entity": "post",
       "allowed": [
         { "path": "object.object.commentsEnabled", "change": "added", "vocabulary": "peblish.page-flags" },
+        { "path": "object.object.nsfl", "change": "added", "vocabulary": "peblish.nsfl" },
         { "path": "object.object.stickied", "change": "added", "vocabulary": "peblish.page-flags" },
         { "path": "object.object.tag", "change": "dropped", "vocabulary": "tags" }
       ]
@@ -1453,6 +1494,7 @@
       "allowed": [
         { "path": "object.actor", "change": "dropped", "vocabulary": "lemmy.announce-page-actor" },
         { "path": "object.commentsEnabled", "change": "added", "vocabulary": "peblish.page-flags" },
+        { "path": "object.nsfl", "change": "added", "vocabulary": "peblish.nsfl" },
         { "path": "object.stickied", "change": "added", "vocabulary": "peblish.page-flags" },
         { "path": "object.tag", "change": "dropped", "vocabulary": "tags" }
       ]
@@ -1478,6 +1520,7 @@
       "allowed": [
         { "path": "@context", "change": "added", "vocabulary": "lemmy.stored-without-context" },
         { "path": "object.commentsEnabled", "change": "added", "vocabulary": "peblish.page-flags" },
+        { "path": "object.nsfl", "change": "added", "vocabulary": "peblish.nsfl" },
         { "path": "object.stickied", "change": "added", "vocabulary": "peblish.page-flags" },
         { "path": "object.tag", "change": "dropped", "vocabulary": "tags" }
       ]
@@ -1509,6 +1552,7 @@
       "allowed": [
         { "path": "@context", "change": "added", "vocabulary": "lemmy.stored-without-context" },
         { "path": "object.commentsEnabled", "change": "added", "vocabulary": "peblish.page-flags" },
+        { "path": "object.nsfl", "change": "added", "vocabulary": "peblish.nsfl" },
         { "path": "object.stickied", "change": "added", "vocabulary": "peblish.page-flags" },
         { "path": "object.tag", "change": "dropped", "vocabulary": "tags" }
       ]
@@ -1534,6 +1578,7 @@
       "allowed": [
         { "path": "@context", "change": "added", "vocabulary": "lemmy.stored-without-context" },
         { "path": "object.commentsEnabled", "change": "added", "vocabulary": "peblish.page-flags" },
+        { "path": "object.nsfl", "change": "added", "vocabulary": "peblish.nsfl" },
         { "path": "object.stickied", "change": "added", "vocabulary": "peblish.page-flags" },
         { "path": "object.tag", "change": "dropped", "vocabulary": "tags" }
       ]
@@ -1609,6 +1654,7 @@
       "allowed": [
         { "path": "@context", "change": "added", "vocabulary": "lemmy.stored-without-context" },
         { "path": "object.commentsEnabled", "change": "added", "vocabulary": "peblish.page-flags" },
+        { "path": "object.nsfl", "change": "added", "vocabulary": "peblish.nsfl" },
         { "path": "object.stickied", "change": "added", "vocabulary": "peblish.page-flags" },
         { "path": "object.tag", "change": "dropped", "vocabulary": "tags" }
       ]
@@ -1625,8 +1671,6 @@
         { "path": "@context", "change": "changed", "vocabulary": "peblish.context" },
         { "path": "acceptPrivateMessages", "change": "dropped", "vocabulary": "piefed.person-settings" },
         { "path": "attributionDomains", "change": "dropped", "vocabulary": "piefed.person-settings" },
-        { "path": "discoverable", "change": "dropped", "vocabulary": "piefed.search-consent" },
-        { "path": "indexable", "change": "dropped", "vocabulary": "piefed.search-consent" },
         { "path": "manuallyApprovesFollowers", "change": "dropped", "vocabulary": "piefed.person-settings" },
         { "path": "reposter", "change": "dropped", "vocabulary": "piefed.person-settings" }
       ]
@@ -1643,12 +1687,13 @@
         { "path": "@context", "change": "changed", "vocabulary": "peblish.context" },
         { "path": "contentRetention", "change": "dropped", "vocabulary": "piefed.community-settings" },
         { "path": "defaultHashtag", "change": "dropped", "vocabulary": "piefed.community-settings" },
+        { "path": "discoverable", "change": "added", "vocabulary": "peblish.search-consent" },
         { "path": "genAI", "change": "dropped", "vocabulary": "piefed.gen-ai" },
-        { "path": "language[0]", "change": "dropped", "vocabulary": "piefed.community-languages" },
-        { "path": "language[1]", "change": "dropped", "vocabulary": "piefed.community-languages" },
+        { "path": "indexable", "change": "added", "vocabulary": "peblish.search-consent" },
         { "path": "lemmy:tagsForPosts", "change": "dropped", "vocabulary": "piefed.community-settings" },
         { "path": "moderators", "change": "dropped", "vocabulary": "piefed.moderators" },
         { "path": "newModsWanted", "change": "dropped", "vocabulary": "piefed.community-settings" },
+        { "path": "nsfl", "change": "added", "vocabulary": "peblish.nsfl" },
         { "path": "postUrlType", "change": "dropped", "vocabulary": "piefed.community-settings" },
         { "path": "privateMods", "change": "dropped", "vocabulary": "piefed.community-settings" },
         { "path": "questionAnswer", "change": "dropped", "vocabulary": "piefed.community-settings" },
@@ -1668,8 +1713,6 @@
         { "path": "@context", "change": "changed", "vocabulary": "peblish.context" },
         { "path": "acceptPrivateMessages", "change": "dropped", "vocabulary": "piefed.person-settings" },
         { "path": "attributionDomains", "change": "dropped", "vocabulary": "piefed.person-settings" },
-        { "path": "discoverable", "change": "dropped", "vocabulary": "piefed.search-consent" },
-        { "path": "indexable", "change": "dropped", "vocabulary": "piefed.search-consent" },
         { "path": "manuallyApprovesFollowers", "change": "dropped", "vocabulary": "piefed.person-settings" },
         { "path": "reposter", "change": "dropped", "vocabulary": "piefed.person-settings" }
       ]
@@ -1769,7 +1812,6 @@
         { "path": "cc", "change": "changed", "vocabulary": "peblish.addressing" },
         { "path": "object.genAI", "change": "dropped", "vocabulary": "piefed.gen-ai" },
         { "path": "object.interactionPolicy", "change": "dropped", "vocabulary": "piefed.interaction-policy" },
-        { "path": "object.nsfl", "change": "dropped", "vocabulary": "piefed.nsfl" },
         { "path": "object.tag", "change": "dropped", "vocabulary": "tags" },
         { "path": "to", "change": "changed", "vocabulary": "peblish.addressing" }
       ]
@@ -1787,7 +1829,6 @@
         { "path": "cc", "change": "changed", "vocabulary": "peblish.addressing" },
         { "path": "object.genAI", "change": "dropped", "vocabulary": "piefed.gen-ai" },
         { "path": "object.interactionPolicy", "change": "dropped", "vocabulary": "piefed.interaction-policy" },
-        { "path": "object.nsfl", "change": "dropped", "vocabulary": "piefed.nsfl" },
         { "path": "object.tag", "change": "dropped", "vocabulary": "tags" },
         { "path": "to", "change": "changed", "vocabulary": "peblish.addressing" }
       ]
@@ -1825,7 +1866,6 @@
         { "path": "object.cc", "change": "changed", "vocabulary": "peblish.addressing" },
         { "path": "object.object.genAI", "change": "dropped", "vocabulary": "piefed.gen-ai" },
         { "path": "object.object.interactionPolicy", "change": "dropped", "vocabulary": "piefed.interaction-policy" },
-        { "path": "object.object.nsfl", "change": "dropped", "vocabulary": "piefed.nsfl" },
         { "path": "object.object.tag", "change": "dropped", "vocabulary": "tags" },
         { "path": "object.to", "change": "changed", "vocabulary": "peblish.addressing" },
         { "path": "to", "change": "changed", "vocabulary": "peblish.addressing" }
@@ -1863,7 +1903,6 @@
         { "path": "object.cc", "change": "changed", "vocabulary": "peblish.addressing" },
         { "path": "object.object.genAI", "change": "dropped", "vocabulary": "piefed.gen-ai" },
         { "path": "object.object.interactionPolicy", "change": "dropped", "vocabulary": "piefed.interaction-policy" },
-        { "path": "object.object.nsfl", "change": "dropped", "vocabulary": "piefed.nsfl" },
         { "path": "object.object.tag", "change": "dropped", "vocabulary": "tags" },
         { "path": "object.to", "change": "changed", "vocabulary": "peblish.addressing" },
         { "path": "to", "change": "changed", "vocabulary": "peblish.addressing" }
@@ -1902,7 +1941,6 @@
         { "path": "cc", "change": "changed", "vocabulary": "peblish.addressing" },
         { "path": "object.genAI", "change": "dropped", "vocabulary": "piefed.gen-ai" },
         { "path": "object.interactionPolicy", "change": "dropped", "vocabulary": "piefed.interaction-policy" },
-        { "path": "object.nsfl", "change": "dropped", "vocabulary": "piefed.nsfl" },
         { "path": "object.tag", "change": "dropped", "vocabulary": "tags" },
         { "path": "to", "change": "changed", "vocabulary": "peblish.addressing" }
       ]
@@ -1959,7 +1997,6 @@
         { "path": "object.cc", "change": "changed", "vocabulary": "peblish.addressing" },
         { "path": "object.object.genAI", "change": "dropped", "vocabulary": "piefed.gen-ai" },
         { "path": "object.object.interactionPolicy", "change": "dropped", "vocabulary": "piefed.interaction-policy" },
-        { "path": "object.object.nsfl", "change": "dropped", "vocabulary": "piefed.nsfl" },
         { "path": "object.object.tag", "change": "dropped", "vocabulary": "tags" },
         { "path": "object.to", "change": "changed", "vocabulary": "peblish.addressing" },
         { "path": "to", "change": "changed", "vocabulary": "peblish.addressing" }
@@ -2051,7 +2088,6 @@
         { "path": "cc", "change": "changed", "vocabulary": "peblish.addressing" },
         { "path": "object.genAI", "change": "dropped", "vocabulary": "piefed.gen-ai" },
         { "path": "object.interactionPolicy", "change": "dropped", "vocabulary": "piefed.interaction-policy" },
-        { "path": "object.nsfl", "change": "dropped", "vocabulary": "piefed.nsfl" },
         { "path": "object.tag", "change": "dropped", "vocabulary": "tags" },
         { "path": "to", "change": "changed", "vocabulary": "peblish.addressing" }
       ]

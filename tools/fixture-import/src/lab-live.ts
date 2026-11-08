@@ -141,8 +141,13 @@ function synthesize(apId: string, group: boolean): ActorRecord {
     iconUrl: null,
     bannerUrl: null,
     sensitive: false,
+    nsfl: false,
+    discoverable: true,
+    indexable: true,
+    languages: [],
     bot: false,
     postingRestrictedToMods: false,
+    postingWarning: null,
     publishedAt: null,
     updatedAt: null,
     publicKey: null,
@@ -210,10 +215,14 @@ export function buildLabLive(candidates: Candidate[]): { set: FixtureSetJson; dr
       communityId: idOf(record.communityApId),
       title: record.title,
       url: record.url,
+      urlContentType: record.urlContentType,
+      altText: record.altText,
+      thumbnailUrl: record.thumbnailUrl,
       bodyMd: record.bodyMd,
       contentHtml: record.contentHtml,
       language: record.language,
       sensitive: record.sensitive,
+      nsfl: record.nsfl,
       locked,
       featuredCommunity: featured,
       upvotes: 0,
@@ -325,11 +334,18 @@ export function buildLabLive(candidates: Candidate[]): { set: FixtureSetJson; dr
     iconUrl: actor.iconUrl,
     bannerUrl: actor.bannerUrl,
     sensitive: actor.sensitive,
+    nsfl: actor.nsfl,
+    discoverable: actor.discoverable,
+    indexable: actor.indexable,
     bot: actor.bot,
     postingRestrictedToMods: actor.postingRestrictedToMods,
+    postingWarning: actor.postingWarning,
     publishedAt: iso(actor.publishedAt),
     updatedAt: iso(actor.updatedAt),
   }));
+  const communityLanguages = actors
+    .flatMap((actor) => actor.languages.map((language) => ({ communityId: idOf(actor.apId), language })))
+    .sort((a, b) => (a.communityId === b.communityId ? (a.language < b.language ? -1 : 1) : a.communityId < b.communityId ? -1 : 1));
 
   const depth = (row: CommentRow) => row.path.split('.').length;
   return {
@@ -340,6 +356,7 @@ export function buildLabLive(candidates: Candidate[]): { set: FixtureSetJson; dr
       suggestedLocalDomain: 'feddit.lab.test',
       instances,
       actors: actorRows.sort(byId),
+      communityLanguages,
       posts: posts.sort(byId),
       comments: comments.sort((a, b) => depth(a) - depth(b) || byId(a, b)),
       votes: votes.sort(byId),

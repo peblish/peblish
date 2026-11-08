@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { diff } from '../test/diff.ts';
 import { activityToWire, announceJson } from './activity.ts';
 import { actorFromWire } from './actor.ts';
-import { postFromPage, postToPage } from './content.ts';
+import { IMAGE_TYPE, postFromPage, postToPage } from './content.ts';
 import { fromWire, toWire } from './document.ts';
 import { MappingError } from './json.ts';
 import type { PostRecord } from './records.ts';
@@ -15,10 +15,14 @@ const post: PostRecord = {
   communityApId: community,
   title: 'Hallo',
   url: null,
+  urlContentType: null,
+  altText: null,
+  thumbnailUrl: null,
   bodyMd: 'Hallo **Welt**',
   contentHtml: '<p>Hallo <strong>Welt</strong></p>',
   language: 'de',
   sensitive: false,
+  nsfl: false,
   locked: null,
   featuredCommunity: null,
   publishedAt: new Date('2026-11-08T00:00:00.000Z'),
@@ -36,6 +40,7 @@ describe('outbound mapping', () => {
       sensitive: false,
       language: { identifier: 'de', name: 'Deutsch' },
       attachment: [],
+      nsfl: false,
       audience: community,
     });
     expect(postToPage({ ...post, locked: true, featuredCommunity: true })).toMatchObject({ commentsEnabled: false, stickied: true });
@@ -143,7 +148,108 @@ describe('actor edits', () => {
       kind: 'activity',
       activity: { type: 'Update', object: { type: 'Actor', actor: { kind: 'Group', name: 'lab' } } },
     });
-    expect(diff(update, toWire(mapped))).toEqual([]);
+    // Lemmy sends neither nsfl nor search consent; peblish always does (test/vocabulary.ts).
+    expect(diff(update, toWire(mapped)).map(({ change, path }) => `${change} ${path}`)).toEqual([
+      'added object.discoverable',
+      'added object.indexable',
+      'added object.nsfl',
+    ]);
+  });
+});
+
+describe('the fields of migration 0002', () => {
+  const page = {
+    type: 'Page',
+    id: 'https://lemmy.test/post/2',
+    attributedTo: 'https://lemmy.test/u/a',
+    to: ['https://lemmy.test/c/lab', PUBLIC],
+    cc: [],
+    name: 'A cat',
+    mediaType: 'text/html',
+    sensitive: false,
+    nsfl: false,
+    commentsEnabled: true,
+    stickied: false,
+    audience: 'https://lemmy.test/c/lab',
+  };
+  const roundTrip = (json: object) => diff(json, toWire(fromWire(json))).filter(({ path }) => path !== '@context');
+
+  it("maps Lemmy's Image attachment with its media type and alt text, and back", () => {
+    const image = {
+      ...page,
+      attachment: [{ type: 'Image', url: 'https://lemmy.test/pictrs/image/cat.webp', mediaType: 'image/webp', name: 'A cat asleep' }],
+    };
+    expect(postFromPage(image)).toMatchObject({
+      url: 'https://lemmy.test/pictrs/image/cat.webp',
+      urlContentType: 'image/webp',
+      altText: 'A cat asleep',
+    });
+    expect(roundTrip(image)).toEqual([]);
+  });
+
+  it("maps PieFed's Image attachment without a media type as an image post, and back", () => {
+    const image = { ...page, attachment: [{ type: 'Image', url: 'https://piefed.test/static/cat.png', name: 'A cat' }] };
+    expect(postFromPage(image)).toMatchObject({ urlContentType: IMAGE_TYPE, altText: 'A cat' });
+    expect(roundTrip(image)).toEqual([]);
+  });
+
+  it('sends an image post as an Image with mediaType and name, a link post as a Link', () => {
+    const image = postToPage({ ...post, url: 'https://feddit.test/pictrs/a.png', urlContentType: 'image/png', altText: 'A chart' });
+    expect(image.attachment).toEqual([{ type: 'Image', url: 'https://feddit.test/pictrs/a.png', mediaType: 'image/png', name: 'A chart' }]);
+    const link = postToPage({ ...post, url: 'https://example.org/a', urlContentType: 'text/html; charset=utf-8', altText: null });
+    expect(link.attachment).toEqual([{ href: 'https://example.org/a', type: 'Link', mediaType: 'text/html; charset=utf-8' }]);
+  });
+
+  it('maps the preview image and nsfl of a link post, and back', () => {
+    const linked = {
+      ...page,
+      nsfl: true,
+      attachment: [{ type: 'Link', href: 'https://example.org/story' }],
+      image: { type: 'Image', url: 'https://lemmy.test/pictrs/image/preview.jpg' },
+    };
+    expect(postFromPage(linked)).toMatchObject({
+      url: 'https://example.org/story',
+      urlContentType: null,
+      altText: null,
+      thumbnailUrl: 'https://lemmy.test/pictrs/image/preview.jpg',
+      nsfl: true,
+    });
+    expect(roundTrip(linked)).toEqual([]);
+  });
+
+  it("maps a PieFed Group's languages, nsfl, posting warning and search consent, and back", () => {
+    const id = 'https://piefed.test/c/cats';
+    const group = {
+      type: 'Group',
+      id,
+      preferredUsername: 'cats',
+      inbox: `${id}/inbox`,
+      attributedTo: `${id}/moderators`,
+      sensitive: false,
+      nsfl: true,
+      postingRestrictedToMods: false,
+      postingWarning: 'Cats only',
+      discoverable: false,
+      indexable: false,
+      language: [
+        { identifier: 'und', name: 'Undetermined' },
+        { identifier: 'en', name: 'English' },
+      ],
+    };
+    expect(actorFromWire(group)).toMatchObject({
+      nsfl: true,
+      postingWarning: 'Cats only',
+      discoverable: false,
+      indexable: false,
+      languages: ['und', 'en'],
+    });
+    expect(roundTrip(group)).toEqual([]);
+  });
+
+  it('reads absent search consent as the columns default and sends it on every actor', () => {
+    const person = { type: 'Person', id: 'https://lemmy.test/u/a', preferredUsername: 'a', inbox: 'https://lemmy.test/u/a/inbox' };
+    expect(actorFromWire(person)).toMatchObject({ discoverable: true, indexable: true, nsfl: false, languages: [] });
+    expect(roundTrip({ ...person, discoverable: false, indexable: true })).toEqual([]);
   });
 });
 
