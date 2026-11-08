@@ -30,12 +30,17 @@ jobs:
           --health-cmd "pg_isready -U peblish -d peblish"
           --health-interval 2s
           --health-retries 30
+      # The auth e2e flows read verification and reset mail from Mailpit's API on 18426, as locally.
+      mailpit:
+        image: axllent/mailpit:v1.31.4@sha256:b68349e3a014b90c5610bfb26b2ae36f3892d7b8cf25ee140c6c71c98d2fcf48
+        ports: ['18425:1025', '18426:8025']
     env:
       # Tests recreate the _test database from the migrations; DATABASE_URL is the fresh
       # database the service starts with, migrated below.
       TEST_DATABASE_URL: postgres://peblish:peblish@127.0.0.1:5432/peblish_ci_test
       DATABASE_URL: postgres://peblish:peblish@127.0.0.1:5432/peblish
       PUBLIC_ORIGIN: https://ci.peblish.test
+      SMTP_URL: smtp://127.0.0.1:18425
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

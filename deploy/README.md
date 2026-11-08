@@ -35,20 +35,46 @@ idle.
 
 ## Environment
 
-| Variable            | Services                       | Value                                                                                                                             |
-| ------------------- | ------------------------------ | --------------------------------------------------------------------------------------------------------------------------------- |
-| `DATABASE_URL`      | web, worker, migrate           | `postgres://<user>:<password>@<project>_postgres:5432/<db>` (Easypanel's internal host)                                           |
-| `PUBLIC_ORIGIN`     | migrate (later web and worker) | `https://staging.peblish.com`. Fixed at the first migrate: every local ap_id embeds it, and migrate refuses a different one later |
-| `PORT`, `HOST`      | web                            | `3000`, `0.0.0.0` (image defaults)                                                                                                |
-| `DATABASE_POOL_MAX` | web, worker                    | connections per pool, default 10 (each process has a read pool and a write pool)                                                  |
-| `NODE_ENV`          | all                            | `production` (image default)                                                                                                      |
-| `PEBLISH_PROCESS`   | all                            | `web` (image default), `worker` or `migrate`: which process starts, and what the healthcheck probes                               |
+| Variable             | Services                       | Value                                                                                                                                                                                                                                                                                                                   |
+| -------------------- | ------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `DATABASE_URL`       | web, worker, migrate           | `postgres://<user>:<password>@<project>_postgres:5432/<db>` (Easypanel's internal host)                                                                                                                                                                                                                                 |
+| `PUBLIC_ORIGIN`      | migrate (later web and worker) | `https://staging.peblish.com`. Fixed at the first migrate: every local ap_id embeds it, and migrate refuses a different one later                                                                                                                                                                                       |
+| `PORT`, `HOST`       | web                            | `3000`, `0.0.0.0` (image defaults)                                                                                                                                                                                                                                                                                      |
+| `DATABASE_POOL_MAX`  | web, worker                    | connections per pool, default 10 (each process has a read pool and a write pool)                                                                                                                                                                                                                                        |
+| `NODE_ENV`           | all                            | `production` (image default)                                                                                                                                                                                                                                                                                            |
+| `PEBLISH_PROCESS`    | all                            | `web` (image default), `worker` or `migrate`: which process starts, and what the healthcheck probes                                                                                                                                                                                                                     |
+| `BETTER_AUTH_SECRET` | web, the first-admin script    | Required: a random value of 32 characters or more, such as `openssl rand -base64 48`. Only `localhost` and `*.test` origins fall back to a development secret. Keep it stable: sessions are signed and stored two-factor secrets encrypted with it, so a new value signs everyone out and breaks every two-factor setup |
+| `SMTP_URL`           | web                            | Required for mail (email verification, password reset): `smtp://host:port` or `smtps://user:password@host`. Without it those flows fail with a mail error; a sandbox sender on staging                                                                                                                                  |
+| `MAIL_FROM`          | web                            | Optional sender; default `<host> <no-reply@<host>>`                                                                                                                                                                                                                                                                     |
 
-Added by later lanes (names reserved here so environments stay consistent):
-`BETTER_AUTH_SECRET`, `BETTER_AUTH_URL` (lane A), `SMTP_URL` or the transactional mail
-provider's API key (lane A; a sandbox sender on staging), `S3_ENDPOINT`, `S3_BUCKET`,
-`S3_REGION`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` (lane B2; Cloudflare R2 in
-production, a separate bucket for staging).
+Auth needs no base URL variable: links, cookies and the issuer follow the origin migrate
+stored from `PUBLIC_ORIGIN`.
+
+Added by later lanes (names reserved here so environments stay consistent): `S3_ENDPOINT`,
+`S3_BUCKET`, `S3_REGION`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` (lane B2; Cloudflare R2
+in production, a separate bucket for staging).
+
+## The first admin
+
+After the first migrate, create the instance's site admin with the bundled script
+`/app/processes/admin.mjs` (source `packages/core/src/identity/admin-cli.ts`). It reads the
+password (12 to 128 characters) from stdin, so it stays out of the process list. In the `web`
+service console, where `DATABASE_URL` and `BETTER_AUTH_SECRET` are already set:
+
+```sh
+printf '%s' "$ADMIN_PASSWORD" | node /app/processes/admin.mjs <name> <email>
+```
+
+Or as a one-off container (the entrypoint runs any command other than web, worker and migrate as given):
+
+```sh
+printf '%s' "$ADMIN_PASSWORD" | docker run -i --rm -e DATABASE_URL=... -e BETTER_AUTH_SECRET=... \
+  peblish:<tag> node /app/processes/admin.mjs <name> <email>
+```
+
+It refuses once an admin exists (`admin.exists`). It marks the email verified and records the
+16+ declaration. Then sign in and turn on two-factor at `/settings/security`: every admin
+action refuses an admin without it.
 
 ## Health and federation endpoints
 
