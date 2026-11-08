@@ -30,8 +30,12 @@ export function contentToWire(object: ContentObject): JsonObject {
   return object.type === 'Page' ? postToPage(object.post) : commentToNote(object.comment);
 }
 
-/** An activity document (top level or embedded) to the activity and the record it carries. */
-export function activityFromWire(json: unknown): Activity {
+/** How many activities may nest inside a top-level one: Announce(Undo(Like)) uses two. Deeper input is refused, not recursed into. */
+const MAX_DEPTH = 3;
+
+/** An activity document (top level or embedded, at `depth` levels down) to the activity and the record it carries. */
+export function activityFromWire(json: unknown, depth = 0): Activity {
+  if (depth > MAX_DEPTH) throw new MappingError(`activities nest more than ${MAX_DEPTH} deep`);
   const activity = parse(WireActivity, json, 'activity');
   const actorApId = refId(activity.actor);
   const id = activity.id;
@@ -70,13 +74,14 @@ export function activityFromWire(json: unknown): Activity {
       };
     case 'Accept':
     case 'Reject': {
-      const follow = activityFromWire(object);
+      const follow = activityFromWire(object, depth + 1);
       if (follow.type !== 'Follow') throw new MappingError(`${activity.type} must embed the Follow it answers`);
       return { ...envelope, type: activity.type, communityApId: null, object: follow };
     }
     case 'Announce': {
       if (!isObject(object)) throw new MappingError('Announce of a bare IRI: fetch the object, then map it');
-      const inner = typeof object.type === 'string' && contentTypes.has(object.type) ? contentFromWire(object) : activityFromWire(object);
+      const inner =
+        typeof object.type === 'string' && contentTypes.has(object.type) ? contentFromWire(object) : activityFromWire(object, depth + 1);
       return { ...envelope, type: 'Announce', communityApId: actorApId, object: inner };
     }
     case 'Delete':
@@ -89,7 +94,7 @@ export function activityFromWire(json: unknown): Activity {
       };
     case 'Undo': {
       if (!isObject(object)) throw new MappingError('Undo must embed the activity it reverses');
-      return { ...envelope, type: 'Undo', communityApId: community(true), object: activityFromWire(object) };
+      return { ...envelope, type: 'Undo', communityApId: community(true), object: activityFromWire(object, depth + 1) };
     }
     case 'Lock':
       return { ...envelope, type: 'Lock', communityApId: community(true), objectApId: objectId(object, 'Lock') };

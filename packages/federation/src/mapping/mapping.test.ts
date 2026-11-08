@@ -79,6 +79,33 @@ describe('inbound mapping', () => {
       /actor: id must be a URL/,
     );
   });
+
+  it('refuses activities nested past the depth bound instead of recursing into them', () => {
+    const like = {
+      type: 'Like',
+      id: 'https://lemmy.test/activities/like/1',
+      actor: 'https://lemmy.test/u/a',
+      object: 'https://lemmy.test/post/1',
+    };
+    const undo = (object: object, index: number) => ({
+      type: 'Undo',
+      id: `https://lemmy.test/activities/undo/${index}`,
+      actor: like.actor,
+      object,
+    });
+    const announce = (object: object) => ({
+      type: 'Announce',
+      id: 'https://lemmy.test/activities/announce/1',
+      actor: 'https://lemmy.test/c/lab',
+      object,
+    });
+    expect(fromWire(announce(undo(like, 1)))).toMatchObject({ kind: 'activity', activity: { type: 'Announce', object: { type: 'Undo' } } });
+    expect(fromWire(announce(undo(undo(like, 1), 2)))).toMatchObject({ kind: 'activity' });
+    expect(() => fromWire(announce(undo(undo(undo(like, 1), 2), 3)))).toThrow(new MappingError('activities nest more than 3 deep'));
+    let deep: object = like;
+    for (let index = 0; index < 100_000; index++) deep = undo(deep, index);
+    expect(() => fromWire(deep)).toThrow(MappingError);
+  });
 });
 
 describe('actor edits', () => {
