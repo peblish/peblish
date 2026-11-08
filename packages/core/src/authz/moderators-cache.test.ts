@@ -1,9 +1,13 @@
+import { and, eq } from 'drizzle-orm';
 import { beforeEach, describe, expect, test } from 'vitest';
+import { communityModerators } from '../db/tables/moderation.ts';
+import { lockPost } from '../moderation/lock.ts';
 import { ensureCursors, processBatch } from '../outbox/worker.ts';
 import { truncateAll } from '../testing/db.ts';
-import { seedModerator, seedPost } from '../testing/seed-az.ts';
-import { seedActor, seedInstance } from '../testing/seed.ts';
+import { grantFor, seedModerator, seedPost } from '../testing/seed-az.ts';
+import { localUser, seedActor, seedInstance } from '../testing/seed.ts';
 import { tx } from '../tx/tx.ts';
+import { authorize } from './authorize.ts';
 import { consumer } from './consumer.ts';
 import { ModeratorCache, moderatorCache } from './moderators-cache.ts';
 
@@ -71,4 +75,21 @@ test('a mod.role event drops the pair it names, through the registered consumer'
     })
     .toBeUndefined();
   expect(cache.get(group.id, actor(9))).toBe('moderator');
+});
+
+test('a stale cached role can pass a precheck, but the recheck reads the database and refuses', async () => {
+  const { moderator, group, post } = await setup();
+  const mod = localUser(moderator.id);
+  moderatorCache().clear();
+  // A precheck reads the row and caches the role; then the moderator is removed without an event.
+  expect(await authorize('mod.lock', mod, { postId: post.id })).toMatchObject({ ok: true });
+  await tx(async (t) => {
+    await t.db
+      .delete(communityModerators)
+      .where(and(eq(communityModerators.communityId, group.id), eq(communityModerators.moderatorId, moderator.id)));
+  });
+  const stale = await grantFor('mod.lock', mod, { postId: post.id });
+  const fresh = await tx((t) => authorize('mod.lock', mod, { postId: post.id }, { db: t.db, lock: true }));
+  expect(fresh).toEqual({ ok: false, reason: 'mod.moderator_required' });
+  await expect(lockPost(stale, {})).rejects.toMatchObject({ name: 'Refused', reason: 'mod.moderator_required' });
 });

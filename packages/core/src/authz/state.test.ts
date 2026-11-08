@@ -1,8 +1,19 @@
 import { beforeEach, describe, expect, test } from 'vitest';
 import { db } from '../db/read.ts';
+import { lockPost } from '../moderation/lock.ts';
 import { truncateAll } from '../testing/db.ts';
-import { seedBan, seedComment, seedCommunityRemoval, seedModerator, seedPost } from '../testing/seed-az.ts';
+import {
+  gate,
+  grantFor,
+  seedBan,
+  seedComment,
+  seedCommunityRemoval,
+  seedModerator,
+  seedPost,
+  someoneWaitsOnALock,
+} from '../testing/seed-az.ts';
 import { localUser, seedActor, seedInstance } from '../testing/seed.ts';
+import { tx } from '../tx/tx.ts';
 import { commentCreate } from './__fixtures__/comment-create.ts';
 import { authorize } from './authorize.ts';
 
@@ -55,6 +66,44 @@ test('comment.create (fixture): a comment on a locked post is refused with post.
   expect(await comment(w.reader.id, w.inRemovedCommunity.id)).toBe('community.removed');
   await seedBan(w.community, w.reader);
   expect(await comment(w.reader.id, w.post.id)).toBe('community.banned');
+});
+
+test("comment.create (fixture) under lock holds the post: a lock waits until the comment's transaction commits", async () => {
+  const w = await setup();
+  const lockGrant = await grantFor('mod.lock', localUser(w.moderator.id), { postId: w.post.id });
+  const decided = gate();
+  const release = gate();
+  const order: string[] = [];
+  const commenting = tx(async (t) => {
+    const decision = await commentCreate({
+      principal: localUser(w.reader.id),
+      subject: { postId: w.post.id, parentId: null },
+      db: t.db,
+      lock: true,
+    });
+    decided.open();
+    await release.opened;
+    return decision;
+  }).then((decision) => {
+    order.push('comment committed');
+    return decision;
+  });
+  await decided.opened;
+  const locking = lockPost(lockGrant, { reason: 'Heated' }).then(() => order.push('lock committed'));
+  try {
+    await expect.poll(someoneWaitsOnALock).toBe(true);
+    expect(order).toEqual([]);
+  } finally {
+    release.open();
+    await Promise.all([commenting, locking]);
+  }
+  expect(outcome(await commenting)).toBe('allow');
+  expect(order).toEqual(['comment committed', 'lock committed']);
+  // Once the lock has committed, the same recheck refuses.
+  const recheck = await tx((t) =>
+    commentCreate({ principal: localUser(w.reader.id), subject: { postId: w.post.id, parentId: null }, db: t.db, lock: true }),
+  );
+  expect(outcome(recheck)).toBe('post.locked');
 });
 
 describe('vote.cast through participationDenial', () => {
