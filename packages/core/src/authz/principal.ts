@@ -14,17 +14,25 @@ import { authUser } from '../db/tables/auth.ts';
  * demotion or deletion waits for the write, and a site ban (which takes FOR NO KEY UPDATE on
  * the actor row before inserting) does too. A write body therefore must not update the acting
  * actor's own row; if one ever needs to, this read becomes FOR NO KEY UPDATE (PolicyRequest.lock).
+ * A Person's row stays FOR SHARE: a community ban reads its target's row FOR SHARE after
+ * locking the community, which a stronger lock here would turn into a cycle.
+ *
+ * One exception: a remote community acting as itself (actorId is the community its own
+ * Announce names) is also the community row every policy then locks FOR NO KEY UPDATE
+ * (state.ts). Two such requests holding it FOR SHARE would each wait for the other to
+ * upgrade (40P01), so that row is read FOR NO KEY UPDATE from the start.
  * Lane MODF adds the site-ban check here.
  */
 export async function currentPrincipal(
   q: Queryable,
   principal: ActingPrincipal,
 ): Promise<{ ok: true; principal: ActingPrincipal } | { ok: false; reason: RefusalReason }> {
+  const actsAsCommunity = principal.kind === 'remote' && principal.announcedBy?.communityId === principal.actorId;
   const [actor] = await q
     .select({ kind: actors.kind, local: actors.local, deletedAt: actors.deletedAt, userId: actors.userId })
     .from(actors)
     .where(eq(actors.id, principal.actorId))
-    .for('share');
+    .for(actsAsCommunity ? 'no key update' : 'share');
   if (!actor) return { ok: false, reason: 'auth.required' };
   if (actor.deletedAt) return { ok: false, reason: 'auth.actor_deleted' };
   switch (principal.kind) {

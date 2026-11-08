@@ -9,7 +9,9 @@ import { forNoKeyUpdate, forShare, type PolicyRequest, type PolicyResult } from 
 // Owned by lane AZ. Target state for policies, read with the caller's db and lock (a recheck
 // reads everything locked). Lock order, which every policy and write body keeps so two
 // rechecking writers never wait on each other in a cycle: the acting actor (the principal
-// refresh in authorize()), then the community's actor row, then the post, then the comment.
+// refresh in authorize(); FOR NO KEY UPDATE when a remote community acts as itself, since its
+// row is then also the community row), then the community's actor row, then the post, then
+// the comment.
 // So these readers find the community through an unlocked read of the post's community_id
 // first, and a policy calls them before its own locked reads of those rows.
 //
