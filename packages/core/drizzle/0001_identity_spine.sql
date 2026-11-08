@@ -184,6 +184,7 @@ CREATE TABLE "activities" (
 	"object_ap_id" text,
 	"local" boolean NOT NULL,
 	"raw" jsonb NOT NULL,
+	"inbox_raw_id" uuid,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	CONSTRAINT "activities_ap_id_unique" UNIQUE("ap_id")
 );
@@ -388,6 +389,7 @@ ALTER TABLE "votes" ADD CONSTRAINT "votes_instance_id_instances_id_fk" FOREIGN K
 ALTER TABLE "votes" ADD CONSTRAINT "votes_voter_id_actors_id_fk" FOREIGN KEY ("voter_id") REFERENCES "public"."actors"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "votes" ADD CONSTRAINT "votes_post_id_posts_id_fk" FOREIGN KEY ("post_id") REFERENCES "public"."posts"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "votes" ADD CONSTRAINT "votes_comment_id_comments_id_fk" FOREIGN KEY ("comment_id") REFERENCES "public"."comments"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "activities" ADD CONSTRAINT "activities_inbox_raw_id_inbox_raw_id_fk" FOREIGN KEY ("inbox_raw_id") REFERENCES "public"."inbox_raw"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "follows" ADD CONSTRAINT "follows_follower_id_actors_id_fk" FOREIGN KEY ("follower_id") REFERENCES "public"."actors"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "follows" ADD CONSTRAINT "follows_followee_id_actors_id_fk" FOREIGN KEY ("followee_id") REFERENCES "public"."actors"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "media" ADD CONSTRAINT "media_owner_id_actors_id_fk" FOREIGN KEY ("owner_id") REFERENCES "public"."actors"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint

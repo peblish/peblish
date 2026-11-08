@@ -11,7 +11,11 @@ const defined = new WeakMap<object, MutationInfo>();
 
 export type MutationInfo = { action: ActionName; emits: readonly EventType[]; recheck: boolean };
 
-/** Actions a moderator or a lock can revoke; their mutations must set recheck: true. */
+/**
+ * The actions whose mutations must set recheck: true, exactly: post.create, comment.create and
+ * every action named mod.*. Other actions a ban or a lock revokes (vote.cast, say) may and
+ * should set it too; only these are enforced.
+ */
 export function requiresRecheck(action: string): boolean {
   return action === 'post.create' || action === 'comment.create' || action.startsWith('mod.');
 }
