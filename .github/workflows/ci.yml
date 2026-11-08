@@ -41,6 +41,9 @@ jobs:
       DATABASE_URL: postgres://peblish:peblish@127.0.0.1:5432/peblish
       PUBLIC_ORIGIN: https://ci.peblish.test
       SMTP_URL: smtp://127.0.0.1:18425
+      # The UI lane's component gallery at /kit answers 404 without it; Playwright's
+      # webServer.env is merged over this environment, so the e2e server sees it too.
+      PEBLISH_UI_KIT: '1'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
