@@ -1,15 +1,17 @@
 import { htmlMaxDepth } from '@peblish/schema/markdown';
 import { parseFragment, type DefaultTreeAdapterTypes } from 'parse5';
 import { describe, expect, test } from 'vitest';
-import { htmlVectors, markdownVectors } from './__fixtures__/xss.ts';
+import { htmlVectors, markdownVectors, wrapperVectors } from './__fixtures__/xss.ts';
 import { renderMarkdown } from './render.ts';
 import { sanitizeRemoteHtml } from './sanitize.ts';
 
 // The XSS corpus (test group b). Each output is parsed the way a browser parses innerHTML
 // (parse5 follows the HTML standard), and the tree must hold no script, no element outside
 // the allowlist, no event handler, no inline style, no URL other than http(s), mailto or a
-// same-page fragment, and no element deeper than htmlMaxDepth. Re-sanitising an output must also leave it unchanged, so the tree
-// our serialiser meant is the tree a parser builds.
+// same-page fragment, and no element deeper than htmlMaxDepth. Re-sanitising an output must
+// leave it unchanged. For the malformed wrappers, the tree a browser builds from the output
+// must also be the tree the sanitiser wrote; the sanitiser does not promise that for every
+// input (see sanitize.ts).
 
 const elements = new Set(
   'p br hr h1 h2 h3 h4 h5 h6 strong b em i u s del ins sub sup code pre kbd blockquote ul ol li table thead tbody tfoot tr th td details summary img a span div section ruby rt rp'.split(
@@ -55,11 +57,35 @@ const paths = {
 };
 
 describe.each(Object.entries(paths))('the %s path', (_path, run) => {
-  test.each([...htmlVectors, ...markdownVectors].map((vector) => [vector.slice(0, 80), vector]))('%s', (_label, vector) => {
+  test.each([...htmlVectors, ...wrapperVectors, ...markdownVectors].map((vector) => [vector.slice(0, 80), vector]))(
+    '%s',
+    (_label, vector) => {
+      const output = run(vector);
+      expect(problems(output)).toEqual([]);
+      expect(sanitizeRemoteHtml(output, { baseUrl: base }).html).toBe(output);
+    },
+  );
+});
+
+// Writes a parsed tree out again the way the sanitiser writes its output.
+const escapeText = (text: string) => text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+const write = (nodes: Node[]): string =>
+  nodes
+    .map((node) => {
+      if ('value' in node) return escapeText(node.value);
+      if (!('tagName' in node)) return '';
+      const attrs = node.attrs.map(({ name, value }) => ` ${name}="${escapeText(value).replace(/"/g, '&quot;')}"`).join('');
+      return ['br', 'hr', 'img'].includes(node.tagName)
+        ? `<${node.tagName}${attrs}>`
+        : `<${node.tagName}${attrs}>${write(node.childNodes)}</${node.tagName}>`;
+    })
+    .join('');
+
+test.each(wrapperVectors)('a browser builds the tree written for the malformed wrapper %s', (vector) => {
+  for (const run of Object.values(paths)) {
     const output = run(vector);
-    expect(problems(output)).toEqual([]);
-    expect(sanitizeRemoteHtml(output, { baseUrl: base }).html).toBe(output);
-  });
+    expect(write(parseFragment(output).childNodes)).toBe(output);
+  }
 });
 
 test('hostile hooks cannot reintroduce what the allowlist removes', () => {

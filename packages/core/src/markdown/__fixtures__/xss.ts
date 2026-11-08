@@ -126,6 +126,27 @@ export const htmlVectors: string[] = [
   '<a href="https://ok.example/"><a href="javascript:alert(1)">nested</a></a>',
 ];
 
+/**
+ * Unknown elements (unwrapped, so a browser reading the output never sees them) around an
+ * element that closes an open one: a block in a paragraph, a list item or cell after
+ * another. The sanitiser must close it as a browser reading the output would.
+ */
+export const wrapperVectors: string[] = [
+  '<p><x><div>x</div></x></p>',
+  '<p><font><blockquote>quote</blockquote></font>after</p>',
+  '<p><center><h1>title</h1></center></p>',
+  '<p><x><p>inner</p></x>outer</p>',
+  '<p>a<x><hr>b</x></p>',
+  '<p><x><table><tbody><tr><td>c</td></tr></tbody></table></x></p>',
+  '<ul><li>a<x><li>b</x></li></ul>',
+  '<ol><li><x><p>a</p><li>b</x></ol>',
+  '<table><tbody><tr><td>a<x><td>b</x></td></tr><x><tr><td>c</td></tr></x></tbody></table>',
+  '<table><thead><tr><th>h</th></tr><x><tbody><tr><td>c</td></tr></tbody></x></thead></table>',
+  '<ruby>a<x><rt>b<x><rt>c</ruby>',
+  // The span is unwrapped by the depth cap rather than the allowlist.
+  `${'<div>'.repeat(31)}<p><span><div>capped</div></span></p>`,
+];
+
 export const markdownVectors: string[] = [
   // javascript: URLs in links and images.
   '[x](javascript:alert(1))',

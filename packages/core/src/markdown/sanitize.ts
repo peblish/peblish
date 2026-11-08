@@ -15,8 +15,12 @@ import { Tokenizer, type TokenizerCallbacks } from 'htmlparser2';
 // included) and keeps its own element stack instead of using htmlparser2's Parser, whose
 // stack handling is quadratic in nesting depth. Every step here is amortised O(1) per
 // token, so the time is linear in the input. The output is rebuilt from scratch: only the
-// elements and attributes below, each attribute checked and escaped, text escaped, so a
-// browser parses it into exactly the tree written here.
+// elements and attributes below, each attribute checked and escaped, text escaped, every
+// element closed. So a browser reads exactly the tags written here, and a second pass
+// returns the output unchanged. The stack models the HTML tree builder only in part, so a
+// browser may still rearrange those tags (insert a tbody, move text out of a table, close a
+// p around a block inside an inline element), but all it has to rearrange are allowlisted
+// elements with checked attributes.
 
 /**
  * Where an inline image loads from: the URL to use (the media proxy, or the URL itself for
@@ -56,7 +60,9 @@ const voids = new Set('area base br col embed hr img input link meta param sourc
 const blocks = new Set('p br hr h1 h2 h3 h4 h5 h6 li blockquote pre tr td th div section details summary ul ol table'.split(' '));
 
 // Implied end tags, enough for real-world remote HTML: opening an element closes the open
-// elements it may not sit in, looking only at the top of the stack (so O(1) amortised).
+// elements it may not sit in, looking only at the innermost written element (so O(1)
+// amortised). Unwrapped elements are passed over, as a browser reading the output never
+// sees them, so a second pass makes the same decisions as the first.
 const closesP = 'p div ul ol table h1 h2 h3 h4 h5 h6 blockquote pre details summary hr section';
 const implied = new Map<string, Set<string>>([
   ...closesP.split(' ').map((name) => [name, new Set(['p'])] as const),
@@ -277,11 +283,16 @@ class Sanitizer implements TokenizerCallbacks {
   }
 
   private start(name: string, attributes: Map<string, string>): void {
-    const closes = implied.get(name);
-    while (closes && this.top && closes.has(this.top.name)) this.pop();
+    // The innermost written element, once implied end tags have closed what this one may not
+    // sit in. Dropped content writes nothing, so it closes nothing.
+    const closes = this.dropDepth === 0 ? implied.get(name) : undefined;
+    let current = this.top?.current;
+    while (closes && current && closes.has(current.out!)) {
+      while (this.pop() !== current);
+      current = this.top?.current;
+    }
     if (this.dropDepth > 0 || dropped.has(name)) {
-      if (!voids.has(name))
-        this.push({ name, out: undefined, current: this.top?.current, level: 0, drop: true, quiet: false, loud: false, link: false });
+      if (!voids.has(name)) this.push({ name, out: undefined, current, level: 0, drop: true, quiet: false, loud: false, link: false });
       return;
     }
     if (blocks.has(name)) this.excerptText(' ');
@@ -294,7 +305,6 @@ class Sanitizer implements TokenizerCallbacks {
     const sourceClasses = (attributes.get('class') ?? '').split(/\s+/);
     const quiet = name === 'details' || sourceClasses.some((c) => quietClasses.has(c));
     const loud = name === 'summary' && this.top?.name === 'details' && this.top.quiet;
-    const current = this.top?.current;
     const level = (current?.level ?? 0) + 1 + (out ? insertedContainers(out, current?.out) : 0);
     let written: string | undefined;
     if (out && level <= this.context.maxDepth && !(out === 'a' && this.linkDepth > 0)) {
