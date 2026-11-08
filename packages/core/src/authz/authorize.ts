@@ -18,11 +18,12 @@ const table: { [K in ActionName]: Policy<SubjectOf<K>> } = policies;
  * Decides `action` on `subject` for `principal`: Allow carries the grant every write
  * service requires, Deny carries exactly one closed RefusalReason. Pass `db` to read
  * inside an open transaction (the inbound pipeline), so the decision and the write agree.
- * The principal and subject are copied and deep-frozen before the policy runs, so a
- * caller changing its objects afterwards changes neither the decision nor the grant.
+ * The principal and subject are copied and deep-frozen before anything is awaited, so a
+ * caller changing its objects afterwards changes neither the decision nor the grant. They
+ * must be JSON-like plain data: anything else throws SnapshotError (frozen.ts).
  *
- * With `lock` (a mutation's recheck, inside its transaction) the principal is first
- * re-read from the database and the policy reads its rows FOR SHARE.
+ * With `lock` (a mutation's recheck, inside its transaction) the principal is then
+ * re-read from the database and the policy takes its row locks (see PolicyRequest.lock).
  */
 export async function authorize<A extends ActionName>(
   action: A,
@@ -31,17 +32,19 @@ export async function authorize<A extends ActionName>(
   options: { db?: Queryable; lock?: boolean } = {},
 ): Promise<Decision<A>> {
   if (principal.kind === 'anonymous') return { ok: false, reason: 'auth.required' };
+  // Snapshot first: nothing the caller does once this function yields can reach the decision.
+  const requested = frozenCopy(principal, 'principal');
+  const frozenSubject = frozenCopy(subject, 'subject');
   const q = options.db ?? db();
   const lock = options.lock ?? false;
-  let acting = principal;
+  let acting = requested;
   if (lock) {
-    const current = await currentPrincipal(q, principal);
+    const current = await currentPrincipal(q, requested);
     if (!current.ok) return current;
-    acting = current.principal;
+    acting = frozenCopy(current.principal, 'principal');
   }
-  const snapshot = { principal: frozenCopy(acting), subject: frozenCopy(subject) };
   const policy: Policy<SubjectOf<A>> = table[action];
-  const result = await policy({ ...snapshot, db: q, lock });
+  const result = await policy({ principal: acting, subject: frozenSubject, db: q, lock });
   if (!result.ok) return result;
-  return { ok: true, grant: issueGrant(action, snapshot.principal, snapshot.subject, frozenCopy(result.authority)) };
+  return { ok: true, grant: issueGrant(action, acting, frozenSubject, frozenCopy(result.authority, 'authority')) };
 }

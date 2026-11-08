@@ -8,6 +8,7 @@ import { localUser, seedActor, seedInstance } from '../testing/seed.ts';
 import { tx } from '../tx/tx.ts';
 import { authorize } from './authorize.ts';
 import { Authorized } from './brand.ts';
+import { SnapshotError } from './frozen.ts';
 
 beforeEach(truncateAll);
 
@@ -100,5 +101,28 @@ describe('authorize', () => {
     const { id } = await createPost(grant, { title: 'Still mine' });
     const [post] = await tx(async (t) => t.db.select().from(posts).where(eq(posts.id, id)));
     expect(post).toMatchObject({ authorId: andrew.id, communityId: community.id });
+  });
+
+  test('with lock, the snapshot is taken before the principal refresh awaits', async () => {
+    const { andrew, community } = await world();
+    const local = await seedInstance('second.test', false);
+    const otherCommunity = await seedActor(local, 'Group', 'elsewhere');
+    const subject = { communityId: community.id };
+    const grant = await tx(async (t) => {
+      const pending = authorize('post.create', localUser(andrew.id), subject, { db: t.db, lock: true });
+      // authorize() has yielded at its first await (the principal refresh); the snapshot must already exist.
+      subject.communityId = otherCommunity.id;
+      const decision = await pending;
+      if (!decision.ok) throw new Error(decision.reason);
+      return decision.grant;
+    });
+    expect(grant.subject).toEqual({ communityId: community.id });
+  });
+
+  test('input that is not JSON-like plain data is refused with SnapshotError', async () => {
+    const { andrew, community } = await world();
+    const subject = { communityId: community.id, at: new Date() };
+    await expect(authorize('post.create', localUser(andrew.id), subject)).rejects.toThrow(SnapshotError);
+    await expect(authorize('post.create', localUser(andrew.id), subject)).rejects.toMatchObject({ path: 'subject.at', found: 'Date' });
   });
 });
