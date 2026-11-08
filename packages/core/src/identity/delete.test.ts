@@ -10,7 +10,7 @@ import { writer } from '../db/write.ts';
 import { truncateAll } from '../testing/db.ts';
 import { seedAccount, seedLocalInstance, seedTwoFactor } from '../testing/seed-a.ts';
 import { auth } from './auth.ts';
-import { deleteAccount } from './delete.ts';
+import { deleteAccount, deleteAccountAs } from './delete.ts';
 import { currentSession } from './session.ts';
 
 beforeEach(async () => {
@@ -65,7 +65,8 @@ test('deleting your account keeps the actor, scrubs it, signs out everywhere, an
   );
   expect(same?.same).toBe(true);
 
-  await expect(deleteAccount(decision.grant, { reason: 'again' })).rejects.toMatchObject({ reason: 'target.deleted' });
+  // The same grant again: the recheck finds the acting actor deleted.
+  await expect(deleteAccount(decision.grant, { reason: 'again' })).rejects.toMatchObject({ reason: 'auth.actor_deleted' });
 });
 
 test("an admin may delete someone else's account, but not another admin's; nobody else may", async () => {
@@ -82,4 +83,53 @@ test("an admin may delete someone else's account, but not another admin's; nobod
     ok: false,
     reason: 'auth.admin_required',
   });
+});
+
+test("a site admin's grant to delete someone does not outlive a demotion or two-factor turned off", async () => {
+  const andrew = await seedAccount('andrew', { role: 'admin' });
+  await seedTwoFactor(andrew.userId);
+  const mira = await seedAccount('mira');
+  const asAdmin = { kind: 'local', actorId: andrew.actorId, siteRole: 'admin' } as const;
+  for (const revoke of [{ role: 'user' }, { twoFactorEnabled: false }]) {
+    const decision = await authorize('account.delete', asAdmin, { actorId: mira.actorId });
+    if (!decision.ok) throw new Error(decision.reason);
+    await writer().update(authUser).set(revoke).where(eq(authUser.id, andrew.userId));
+    await expect(deleteAccount(decision.grant, { reason: 'spam' })).rejects.toMatchObject({ reason: 'auth.admin_required' });
+    await writer().update(authUser).set({ role: 'admin', twoFactorEnabled: true }).where(eq(authUser.id, andrew.userId));
+  }
+  const [actor] = await db().select({ deletedAt: actors.deletedAt, userId: actors.userId }).from(actors).where(eq(actors.id, mira.actorId));
+  expect(actor).toEqual({ deletedAt: null, userId: mira.userId });
+});
+
+/** Backends in this database waiting on a lock. */
+const waitingOnLocks = async () => {
+  const [row] = await db().execute<{ waiting: number }>(
+    sql`select count(*)::int as waiting from pg_stat_activity where datname = current_database() and wait_event_type = 'Lock'`,
+  );
+  return row?.waiting ?? 0;
+};
+
+test('deleting your own account twice at once: one deletes, the other is refused, no deadlock', async () => {
+  const mira = await seedAccount('mira');
+  const asMira = { kind: 'local', actorId: mira.actorId, siteRole: 'user' } as const;
+  // A third transaction holds mira's row FOR SHARE, as a principal refresh does, until both
+  // deletions wait on a lock. Had each taken FOR SHARE in its refresh and only then asked for
+  // more, its commit would leave the two waiting for each other (40P01).
+  let release!: () => void;
+  const released = new Promise<void>((resolve) => (release = resolve));
+  const holder = writer().transaction(async (t) => {
+    await t.select({ id: actors.id }).from(actors).where(eq(actors.id, mira.actorId)).for('share');
+    await released;
+  });
+  const both = Promise.all([
+    deleteAccountAs(asMira, mira.actorId, 'owner request'),
+    deleteAccountAs(asMira, mira.actorId, 'owner request'),
+  ]);
+  await expect.poll(waitingOnLocks).toBeGreaterThanOrEqual(2);
+  release();
+  await holder;
+  const results = await both;
+  expect(results.filter((result) => result.ok)).toHaveLength(1);
+  expect(results.filter((result) => !result.ok)).toEqual([{ ok: false, reason: 'auth.actor_deleted' }]);
+  expect(await db().select().from(deletionLedger)).toHaveLength(1);
 });

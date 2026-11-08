@@ -61,7 +61,9 @@ export const Route = createFileRoute('/settings/account/')({
           return reply({ error: 'password.wrong', ...back });
         }
         const deleted = await deleteAccountAs(principalOf(session.view), session.view.actorId, 'owner request');
-        if (!deleted.ok) return reply({ error: asFormError(deleted.reason) ?? 'generic', ...back });
+        // A second submit that lost the race to the first finds the account already gone: done too.
+        if (!deleted.ok && deleted.reason !== 'auth.actor_deleted')
+          return reply({ error: asFormError(deleted.reason) ?? 'generic', ...back });
         return reply({ redirect: '/', cookies: await signedOutCookies() });
       },
     },
