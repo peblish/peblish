@@ -135,6 +135,17 @@ const roles: Role[] = [
     }),
     expected: refused(REQ, MIS, REQ),
   },
+  {
+    // A local community's Announce cannot have come from a peer.
+    role: 'remote actor, an Announce naming a local community',
+    community: 'local',
+    principal: (s) => ({
+      kind: 'remote',
+      actorId: world.people.remoteUser.id,
+      announcedBy: { communityId: s.communityId, announceApId: 'https://feddit.test/activities/announce/1' },
+    }),
+    expected: refused(REQ, MIS, REQ),
+  },
   // Remote moderator rows (roles.ts: fresh). A local row with no expiry grants (community
   // moderator above); a remote one grants only once verified and before an expiry it must have.
   { role: 'remote moderator, unverified', community: 'remote', principal: remoteModerator('unverified'), expected: refused(REQ, MOD, REQ) },
