@@ -17,6 +17,11 @@ import { BlockList, isIP } from "node:net";
 const MAX_RESPONSE_BYTES = 64 * 1024;
 
 // IANA special-purpose registries (RFC 6890 and updates).
+//
+// No `::ffff:0:0/96` (IPv4-mapped) rule belongs in the IPv6 list: Node's
+// BlockList tests an IPv4 address against every IPv6 rule through its mapped
+// form, so that one rule blocked all of IPv4. Mapped addresses are unmapped
+// and checked as IPv4 instead (see `classify`).
 const BLOCKED = new BlockList();
 for (const [network, prefix] of [
   ["0.0.0.0", 8], ["10.0.0.0", 8], ["100.64.0.0", 10], ["127.0.0.0", 8], ["169.254.0.0", 16],
@@ -24,7 +29,7 @@ for (const [network, prefix] of [
   ["198.18.0.0", 15], ["198.51.100.0", 24], ["203.0.113.0", 24], ["224.0.0.0", 4], ["240.0.0.0", 4],
 ] as const) BLOCKED.addSubnet(network, prefix, "ipv4");
 for (const [network, prefix] of [
-  ["::", 127], ["::ffff:0:0", 96], ["64:ff9b::", 96], ["100::", 64], ["2001::", 23],
+  ["::", 127], ["64:ff9b::", 96], ["100::", 64], ["2001::", 23],
   ["2001:db8::", 32], ["fc00::", 7], ["fe80::", 10], ["ff00::", 8],
 ] as const) BLOCKED.addSubnet(network, prefix, "ipv6");
 
@@ -37,12 +42,25 @@ if (labCidr) {
 
 export class BlockedDestinationError extends Error {}
 
-export function isAllowedAddress(address: string): boolean {
+const IPV4_MAPPED = /^\[::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})\]$/;
+
+/** The address's family, with an IPv4-mapped IPv6 address (::ffff:a.b.c.d) reduced to the IPv4 a.b.c.d. */
+function classify(address: string): { address: string; type: "ipv4" | "ipv6" } | null {
   const family = isIP(address);
-  if (family === 0) return false;
-  const type = family === 4 ? "ipv4" : "ipv6";
-  if (LAB.check(address, type)) return true;
-  return !BLOCKED.check(address, type);
+  if (family === 4) return { address, type: "ipv4" };
+  if (family !== 6) return null;
+  // The URL parser gives every spelling of a mapped address one form, ::ffff:xxxx:xxxx.
+  const mapped = IPV4_MAPPED.exec(new URL(`http://[${address.replace(/%.*$/, "")}]`).hostname);
+  if (!mapped) return { address, type: "ipv6" };
+  const [high, low] = [parseInt(mapped[1]!, 16), parseInt(mapped[2]!, 16)];
+  return { address: `${high >> 8}.${high & 255}.${low >> 8}.${low & 255}`, type: "ipv4" };
+}
+
+export function isAllowedAddress(address: string): boolean {
+  const ip = classify(address);
+  if (!ip) return false;
+  if (LAB.check(ip.address, ip.type)) return true;
+  return !BLOCKED.check(ip.address, ip.type);
 }
 
 /** dns.lookup that refuses when any address of the host is not allowed. */

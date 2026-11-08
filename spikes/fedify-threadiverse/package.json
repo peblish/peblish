@@ -10,6 +10,7 @@
   "scripts": {
     "start": "node src/main.ts",
     "typecheck": "tsc --noEmit",
+    "test": "node --test \"test/**/*.test.ts\"",
     "seed": "node scenarios/seed.ts",
     "scenarios": "node scenarios/run.ts"
   },
