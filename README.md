@@ -88,7 +88,7 @@ pnpm install
 docker compose up -d --wait        # Postgres 17 on 18432, MinIO on 18490/18491, Mailpit on 18425/18426
 lane_env=$(sh scripts/lane.sh g0) && eval "$lane_env"   # this lane's database, port, test database, S3; stops on failure
 pnpm check                         # build, typecheck, lint (boundaries, oxlint, prettier), tests
-pnpm e2e                           # Playwright against the build, on $PORT
+pnpm e2e                           # Playwright against the build, on $PORT; BASE_URL=<url> pnpm e2e targets a running server instead (no DATABASE_URL needed)
 pnpm dev                           # pnpm gen, then the dev server on $PORT
 ```
 

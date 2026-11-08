@@ -79,5 +79,5 @@ docker run --rm --network peblish-dev_default \
 docker run -d --name peblish-web --network peblish-dev_default -p 127.0.0.1:18300:3000 \
   -e DATABASE_URL=postgres://peblish:peblish@postgres:5432/peblish_g0 peblish:local
 curl http://127.0.0.1:18300/healthz
-BASE_URL=http://127.0.0.1:18300 pnpm e2e
+BASE_URL=http://127.0.0.1:18300 pnpm e2e   # needs no DATABASE_URL; the lifecycle specs skip
 ```

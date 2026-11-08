@@ -6,9 +6,16 @@ import { defineConfig, devices } from '@playwright/test';
 // whose Chromium 145 headless shell is what the mux-start spike used.
 const port = Number(process.env.E2E_PORT ?? process.env.PORT ?? 18300);
 const baseURL = process.env.BASE_URL ?? `http://127.0.0.1:${port}`;
-/** The lane's database: scripts/lane.sh prints it, CI sets it. No default, so a lane never uses another's. */
-const databaseUrl = process.env.DATABASE_URL;
-if (!databaseUrl) throw new Error('DATABASE_URL is unset: run lane_env=$(sh scripts/lane.sh <lane>) && eval "$lane_env" first');
+/**
+ * The lane's database, for the server Playwright starts (scripts/lane.sh prints it, CI sets
+ * it). No default, so a lane never uses another's. With BASE_URL nothing is started, no
+ * database is needed, and the specs that start their own servers (e2e/server/lifecycle.spec.ts) skip.
+ */
+function laneDatabaseUrl(): string {
+  const url = process.env.DATABASE_URL;
+  if (!url) throw new Error('DATABASE_URL is unset: run lane_env=$(sh scripts/lane.sh <lane>) && eval "$lane_env" first, or set BASE_URL');
+  return url;
+}
 
 export default defineConfig({
   testDir: '.',
@@ -30,7 +37,7 @@ export default defineConfig({
         env: {
           PORT: String(port),
           HOST: '127.0.0.1',
-          DATABASE_URL: databaseUrl,
+          DATABASE_URL: laneDatabaseUrl(),
         },
         reuseExistingServer: !process.env.CI,
         timeout: 30_000,

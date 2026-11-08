@@ -76,6 +76,9 @@ async function probe(origin: string, path: string) {
 }
 
 test.describe('server lifecycle', () => {
+  // These start their own servers from the local build; against BASE_URL there is no build to start.
+  test.skip(Boolean(process.env.BASE_URL), 'starts its own servers from packages/web/.output');
+
   test('a hanging database: /readyz is a bounded 503 with Retry-After, /healthz stays 200', async () => {
     const database = await silentDatabase();
     const server = await boot(database.url);
@@ -107,7 +110,7 @@ test.describe('server lifecycle', () => {
 
   test('a healthy database: /readyz is 200, and SIGTERM afterwards exits cleanly', async () => {
     const databaseUrl = process.env.DATABASE_URL;
-    if (!databaseUrl) throw new Error('DATABASE_URL is unset: run eval "$(sh scripts/lane.sh <lane>)" first');
+    if (!databaseUrl) throw new Error('DATABASE_URL is unset: run lane_env=$(sh scripts/lane.sh <lane>) && eval "$lane_env" first');
     const server = await boot(databaseUrl);
     expect(await probe(server.origin, '/readyz')).toMatchObject({ status: 200, retryAfter: null });
     expect(await stop(server)).toBe(0);
