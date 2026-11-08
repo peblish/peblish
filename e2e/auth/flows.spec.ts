@@ -57,13 +57,19 @@ test('the admin signs in with a TOTP code and creates an invite', async ({ page 
   await page.getByLabel('Label').fill(`e2e ${person.name}`);
   await page.getByLabel('Max uses').fill('2');
   await page.getByRole('button', { name: 'Create' }).click();
-  await landed(page, /created=/);
+  await expect(page.getByTestId('invite-code')).toBeVisible();
+  expect(new URL(page.url()).search).toBe('');
   inviteCode = (await page.getByTestId('invite-code').textContent()) ?? '';
   expect(inviteCode).toMatch(/^PB-[2-9A-Z]{4}-[2-9A-Z]{4}$/);
   const row = page.getByTestId('invite-row').filter({ hasText: `e2e ${person.name}` });
   await expect(row).toContainText('0 / 2');
   await expect(row).toContainText('Active');
   await expectAccessible(page);
+  // Shown once: a reload, or a URL naming the code, shows no code.
+  await gotoHydrated(page, '/admin/registration');
+  await expect(page.getByTestId('invite-code')).toHaveCount(0);
+  await gotoHydrated(page, `/admin/registration?created=${inviteCode}`);
+  await expect(page.getByTestId('invite-code')).toHaveCount(0);
 });
 
 test('the invite link leads to sign-up; the account needs its email verified', async ({ page, baseURL }) => {

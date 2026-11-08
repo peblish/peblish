@@ -1,3 +1,4 @@
+import { putFlash, takeFlash } from '@peblish/core/identity/flash';
 import { findLocalPerson, localHandles } from '@peblish/core/identity/handles';
 import { createInviteAs, listInvites, lookupInvite, revokeInviteAs } from '@peblish/core/registration/invites';
 import { registrationOverview } from '@peblish/core/registration/settings';
@@ -15,30 +16,31 @@ import { asFormError } from '../../auth/-ui/errors.ts';
 import { AuthForm, Field } from '../../auth/-ui/form.tsx';
 import { authHead, SearchText, useDate } from '../../auth/-ui/page.tsx';
 
-const Search = type({ 'error?': SearchText, 'created?': SearchText });
+const Search = type({ 'error?': SearchText });
 const Body = InviteCreateBody.and({ intent: "'create'" }).or({ intent: "'revoke'", invite: 'string.uuid' });
 
-const loadRegistration = createServerFn({ method: 'GET' })
-  .validator(type({ 'created?': 'string' }))
-  .handler(async ({ data }) => {
-    // Per person (or per browser, for the age gate): never from a shared cache.
-    setResponseHeader('cache-control', 'private, no-store');
-    const session = await pageSession();
-    if (!session) throw redirect({ to: '/auth/sign-in', search: { redirect: '/admin/registration' } });
-    const { origin, handle } = await localHandles();
-    const access = session.role !== 'admin' ? 'not-admin' : session.view.siteRole !== 'admin' ? 'needs-two-factor' : 'ok';
-    if (access !== 'ok') return { access } as const;
-    const [registration, invites] = await Promise.all([registrationOverview(), listInvites()]);
-    const created = data.created ? { code: data.created, ...(await lookupInvite(data.created)) } : null;
-    return { access, origin, me: handle(session.view.name).handle, registration, invites, created } as const;
-  });
+/** The flash (identity/flash.ts) that carries a new invite's code from the POST to this page, once. */
+const CREATED = 'created-invite';
+
+const loadRegistration = createServerFn({ method: 'GET' }).handler(async () => {
+  // Per person (or per browser, for the age gate): never from a shared cache.
+  setResponseHeader('cache-control', 'private, no-store');
+  const session = await pageSession();
+  if (!session) throw redirect({ to: '/auth/sign-in', search: { redirect: '/admin/registration' } });
+  const { origin, handle } = await localHandles();
+  const access = session.role !== 'admin' ? 'not-admin' : session.view.siteRole !== 'admin' ? 'needs-two-factor' : 'ok';
+  if (access !== 'ok') return { access } as const;
+  const [registration, invites, code] = await Promise.all([registrationOverview(), listInvites(), takeFlash(session.sessionId, CREATED)]);
+  // The code of the invite just made, on the first view after making it and never again.
+  const created = code ? { code, ...(await lookupInvite(code)) } : null;
+  return { access, origin, me: handle(session.view.name).handle, registration, invites, created } as const;
+});
 
 const days = { '7': 7, '30': 30, '90': 90, never: null } as const;
 
 export const Route = createFileRoute('/admin/registration/')({
   validateSearch: Search,
-  loaderDeps: ({ search }) => ({ created: search.created }),
-  loader: ({ deps }) => loadRegistration({ data: deps.created ? { created: deps.created } : {} }),
+  loader: () => loadRegistration(),
   head: authHead,
   component: Registration,
   server: {
@@ -69,8 +71,9 @@ export const Route = createFileRoute('/admin/registration/')({
           expiresAt: expiryDays === null ? null : new Date(Date.now() + expiryDays * 86_400_000),
         });
         if (!created.ok) return respond(request, { error: asFormError(created.reason) ?? 'generic', ...back });
-        // The code is shown once, on the page this redirect opens.
-        return respond(request, { redirect: `/admin/registration?created=${encodeURIComponent(created.code)}` });
+        // The code is shown once, on the page this redirect opens, and never rides in its URL.
+        await putFlash(session.sessionId, CREATED, created.code);
+        return respond(request, { redirect: '/admin/registration' });
       },
     },
   },
