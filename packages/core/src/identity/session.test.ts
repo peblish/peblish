@@ -1,9 +1,10 @@
 import { beforeEach, expect, test } from 'vitest';
 import { truncateAll } from '../testing/db.ts';
-import { seedAccount, seedLocalInstance, seedTwoFactor } from '../testing/seed-a.ts';
+import { seedAccount, seedLocalInstance, seedTwoFactor, totpCode } from '../testing/seed-a.ts';
 import { auth } from './auth.ts';
 import { bootstrapAdmin } from './bootstrap.ts';
 import { currentSession, describeDevice, deviceSessions, maskIp, revokeSession } from './session.ts';
+import { pendingTotp, revealRecoveryCodesOnce, takeRecoveryCodes } from './two-factor.ts';
 
 beforeEach(async () => {
   await truncateAll();
@@ -77,3 +78,28 @@ test('device names and masked addresses', () => {
   expect(describeDevice(null)).toEqual({ browser: null, os: null });
   expect(maskIp('2001:db8:85a3:8d3:1319:8a2e:370:7348')).toBe('2001:db8:85a3:8d3:x');
 });
+
+test('a two-factor setup shows its key until confirmed, then the recovery codes once', async () => {
+  const mira = await seedAccount('mira');
+  const cookies = await signIn(mira.email, mira.password, firefoxMac);
+  const api = (await auth()).api;
+  const enabled = await api.enableTwoFactor({ body: { password: mira.password }, headers: cookies });
+  if (enabled.method !== 'totp') throw new Error('expected a TOTP setup');
+  const pending = await pendingTotp(mira.userId, mira.email);
+  expect(pending?.uri).toMatch(/^otpauth:\/\/totp\/a\.peblish\.test:mira%40example\.test\?secret=[A-Z2-7]+&issuer=a\.peblish\.test/);
+  expect(pending?.key).toMatch(/^[A-Z2-7]{32,}$/);
+
+  const secret = Buffer.from(base32Decode(pending!.key)).toString();
+  await api.verifyTOTP({ body: { code: totpCode(secret) }, headers: cookies });
+  expect(await pendingTotp(mira.userId, mira.email)).toBeNull();
+  await revealRecoveryCodesOnce(mira.userId);
+  expect(await takeRecoveryCodes(mira.userId)).toEqual(enabled.backupCodes);
+  expect(await takeRecoveryCodes(mira.userId)).toBeNull();
+});
+
+function base32Decode(input: string): Uint8Array {
+  const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+  let bits = '';
+  for (const char of input) bits += alphabet.indexOf(char).toString(2).padStart(5, '0');
+  return Uint8Array.from(bits.match(/.{8}/g) ?? [], (byte) => parseInt(byte, 2));
+}

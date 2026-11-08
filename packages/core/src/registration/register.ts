@@ -1,6 +1,5 @@
 import { PASSWORD_MAX, PASSWORD_MIN } from '@peblish/schema/identity';
 import type { Uuid } from '@peblish/schema/ids';
-import type { RefusalReason } from '@peblish/schema/refusal';
 import { and, eq, gt, isNull, lt, or, sql } from 'drizzle-orm';
 import { newRsaKeyPair } from '../actor-keys.ts';
 import { authorize } from '../authz/authorize.ts';
@@ -9,6 +8,7 @@ import { db } from '../db/read.ts';
 import { inviteUses, invites } from '../db/tables/site.ts';
 import { insertAccount } from '../identity/accounts.ts';
 import { auth } from '../identity/auth.ts';
+import { refusedAsResult, type Result } from '../identity/result.ts';
 import { defineMutation } from '../tx/mutation.ts';
 import { Refused } from '../tx/refused.ts';
 
@@ -65,7 +65,7 @@ export type RegisterInput = {
   age: number | null;
 };
 
-export type RegisterResult = { ok: true; userId: Uuid; actorId: Uuid; email: string } | { ok: false; reason: RefusalReason };
+export type RegisterResult = Result<{ userId: Uuid; actorId: Uuid; email: string }>;
 
 /** better-auth's own hasher (scrypt), so its sign-in and password change verify the hash. */
 export async function hashPassword(password: string): Promise<string> {
@@ -91,11 +91,5 @@ export async function register(input: RegisterInput): Promise<RegisterResult> {
   });
   if (!decision.ok) return decision;
   const [passwordHash, keys] = await Promise.all([hashPassword(input.password), newRsaKeyPair()]);
-  try {
-    const account = await registerAccount(decision.grant, { passwordHash, keys });
-    return { ok: true, ...account, email };
-  } catch (error) {
-    if (error instanceof Refused) return { ok: false, reason: error.reason };
-    throw error;
-  }
+  return refusedAsResult(async () => ({ ...(await registerAccount(decision.grant, { passwordHash, keys })), email }));
 }

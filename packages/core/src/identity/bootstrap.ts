@@ -1,4 +1,3 @@
-import type { RefusalReason } from '@peblish/schema/refusal';
 import { PASSWORD_MAX, PASSWORD_MIN } from '@peblish/schema/identity';
 import { newRsaKeyPair } from '../actor-keys.ts';
 import { authorize } from '../authz/authorize.ts';
@@ -6,8 +5,8 @@ import { systemPrincipal } from '../authz/system.ts';
 import { db } from '../db/read.ts';
 import { hashPassword } from '../registration/register.ts';
 import { defineMutation } from '../tx/mutation.ts';
-import { Refused } from '../tx/refused.ts';
 import { insertAccount } from './accounts.ts';
+import { refusedAsResult, type Result } from './result.ts';
 
 /**
  * The instance's first site admin (the beta has one: Andrew). It is the root of the invite
@@ -31,22 +30,12 @@ export const bootstrapAdminAccount = defineMutation({
   },
 });
 
-export async function bootstrapAdmin(input: {
-  name: string;
-  email: string;
-  password: string;
-}): Promise<{ ok: true; actorId: string } | { ok: false; reason: RefusalReason }> {
+export async function bootstrapAdmin(input: { name: string; email: string; password: string }): Promise<Result<{ actorId: string }>> {
   if (input.password.length < PASSWORD_MIN) return { ok: false, reason: 'password.too_short' };
   if (input.password.length > PASSWORD_MAX) return { ok: false, reason: 'password.too_long' };
   const principal = await systemPrincipal(db(), 'registration');
   const decision = await authorize('account.bootstrap_admin', principal, { name: input.name, email: input.email.trim().toLowerCase() });
   if (!decision.ok) return decision;
   const [passwordHash, keys] = await Promise.all([hashPassword(input.password), newRsaKeyPair()]);
-  try {
-    const { actorId } = await bootstrapAdminAccount(decision.grant, { passwordHash, keys });
-    return { ok: true, actorId };
-  } catch (error) {
-    if (error instanceof Refused) return { ok: false, reason: error.reason };
-    throw error;
-  }
+  return refusedAsResult(async () => ({ actorId: (await bootstrapAdminAccount(decision.grant, { passwordHash, keys })).actorId }));
 }

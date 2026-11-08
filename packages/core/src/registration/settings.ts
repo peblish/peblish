@@ -2,7 +2,7 @@ import { siteSettings as contract } from '@peblish/schema/site-settings';
 import { type } from 'arktype';
 import { and, count, eq, inArray, isNotNull, isNull } from 'drizzle-orm';
 import { forShare } from '../authz/policy.ts';
-import type { Queryable } from '../db/read.ts';
+import { db, type Queryable } from '../db/read.ts';
 import { actors } from '../db/tables/actors.ts';
 import { siteSettings } from '../db/tables/site.ts';
 
@@ -43,4 +43,10 @@ export async function accountCount(q: Queryable): Promise<number> {
     .from(actors)
     .where(and(eq(actors.local, true), eq(actors.kind, 'Person'), isNotNull(actors.userId), isNull(actors.deletedAt)));
   return row?.n ?? 0;
+}
+
+/** The admin invites page's header: the kill switch, the cap and how many accounts count toward it. */
+export async function registrationOverview(): Promise<{ enabled: boolean; cap: number; accounts: number }> {
+  const [settings, accounts] = await Promise.all([registrationSettings(db()), accountCount(db())]);
+  return { ...settings, accounts };
 }

@@ -1,11 +1,14 @@
+import type { ActingPrincipal } from '@peblish/schema/authz';
 import type { Uuid } from '@peblish/schema/ids';
-import type { Handle, InviteLookup, InviteRow } from '@peblish/schema/invite';
-import { aliasedTable, and, desc, eq, inArray, sql } from 'drizzle-orm';
-import { localInstance } from '../db/local-instance.ts';
+import type { InviteLookup, InviteRow } from '@peblish/schema/invite';
+import { aliasedTable, desc, eq, inArray, sql } from 'drizzle-orm';
+import { authorize } from '../authz/authorize.ts';
 import { db } from '../db/read.ts';
 import { actors } from '../db/tables/actors.ts';
 import { authUser } from '../db/tables/auth.ts';
 import { inviteUses, invites } from '../db/tables/site.ts';
+import { localHandles } from '../identity/handles.ts';
+import { refusedAsResult, type Result } from '../identity/result.ts';
 import { defineMutation } from '../tx/mutation.ts';
 import { inviteCodeHash, inviteStatus, newInviteCode } from './codes.ts';
 
@@ -47,16 +50,9 @@ export const revokeInvite = defineMutation({
   },
 });
 
-/** name and name@host, the way the mocks show local people. */
-async function handles() {
-  const { origin } = await localInstance(db());
-  const host = new URL(origin).host;
-  return { host, handle: (name: string): Handle => ({ name, handle: `${name}@${host}` }) };
-}
-
 /** What a code would do now, without using it (the invite landing page and the sign-up form). */
 export async function lookupInvite(code: string): Promise<InviteLookup> {
-  const { handle } = await handles();
+  const { handle } = await localHandles();
   const [row] = await db()
     .select({
       maxUses: invites.maxUses,
@@ -80,7 +76,7 @@ export async function lookupInvite(code: string): Promise<InviteLookup> {
 
 /** Every invite, newest first, with who used it (the admin invites table). */
 export async function listInvites(): Promise<InviteRow[]> {
-  const { handle } = await handles();
+  const { handle } = await localHandles();
   const referrer = aliasedTable(actors, 'referrer');
   const rows = await db()
     .select({
@@ -133,17 +129,22 @@ export async function listInvites(): Promise<InviteRow[]> {
   }));
 }
 
-/**
- * The local person a handle names: name, @name or @name@host for this host. Null for anyone
- * else, a remote handle included.
- */
-export async function findLocalPerson(input: string): Promise<{ id: Uuid; name: string } | null> {
-  const { host } = await handles();
-  const [name, at] = input.trim().replace(/^@/, '').split('@');
-  if (!name || (at !== undefined && at.toLowerCase() !== host.toLowerCase())) return null;
-  const [actor] = await db()
-    .select({ id: actors.id, name: actors.name })
-    .from(actors)
-    .where(and(eq(actors.local, true), eq(actors.kind, 'Person'), sql`lower(${actors.name}) = ${name.toLowerCase()}`));
-  return actor ?? null;
+/** invite.create for web: authorize as `principal`, then create; the code comes back once. */
+export async function createInviteAs(
+  principal: ActingPrincipal,
+  input: { referrerId: Uuid; label: string | null; maxUses: number; expiresAt: Date | null },
+): Promise<Result<{ id: Uuid; code: string }>> {
+  const decision = await authorize('invite.create', principal, { referrerId: input.referrerId });
+  if (!decision.ok) return decision;
+  return refusedAsResult(() => createInvite(decision.grant, input));
+}
+
+/** invite.revoke for web. */
+export async function revokeInviteAs(principal: ActingPrincipal, inviteId: Uuid): Promise<Result<object>> {
+  const decision = await authorize('invite.revoke', principal, { inviteId });
+  if (!decision.ok) return decision;
+  return refusedAsResult(async () => {
+    await revokeInvite(decision.grant, undefined);
+    return {};
+  });
 }

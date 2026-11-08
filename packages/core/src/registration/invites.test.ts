@@ -6,7 +6,8 @@ import { outbox } from '../db/tables/outbox.ts';
 import { invites } from '../db/tables/site.ts';
 import { truncateAll } from '../testing/db.ts';
 import { seedAccount, seedLocalInstance, seedTwoFactor } from '../testing/seed-a.ts';
-import { createInvite, findLocalPerson, listInvites, lookupInvite, revokeInvite } from './invites.ts';
+import { findLocalPerson, loginEmail } from '../identity/handles.ts';
+import { createInvite, listInvites, lookupInvite, revokeInvite } from './invites.ts';
 import { register } from './register.ts';
 
 beforeEach(async () => {
@@ -92,9 +93,11 @@ test('a revoked invite stops working, and the table shows who used each invite',
   });
 });
 
-test('a referrer is named by a local handle in any of its spellings', async () => {
+test('a local handle in any of its spellings names a person and their login', async () => {
   const andrew = await seedAccount('Andrew');
   for (const input of ['andrew', '@Andrew', '@andrew@a.peblish.test'])
     expect(await findLocalPerson(input)).toEqual({ id: andrew.actorId, name: 'Andrew' });
   expect(await findLocalPerson('@andrew@lemmy.world')).toBeNull();
+  expect(await loginEmail('@andrew')).toBe('andrew@example.test');
+  expect(await loginEmail('Someone@Example.test')).toBe('someone@example.test');
 });

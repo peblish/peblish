@@ -6,6 +6,7 @@ import { truncateAll } from '../testing/db.ts';
 import { seedAccount, seedLocalInstance } from '../testing/seed-a.ts';
 import { auth } from './auth.ts';
 import { recordingTransport, useMailTransport } from './mail.ts';
+import { maskEmail, verifyEmailToken } from './verify.ts';
 
 const mail = recordingTransport();
 
@@ -53,4 +54,15 @@ test("better-auth's own sign-up is off: accounts come from account.register only
     (await auth()).api.signUpEmail({ body: { email: 'x@example.test', password: 'twelve chars ok', name: 'x' } }),
   ).rejects.toThrow();
   expect(await db().select().from(authUser)).toEqual([]);
+});
+
+test('a verification link reads as verified, then as used; a forged or cut one as invalid', async () => {
+  const mira = await seedAccount('mira', { emailVerified: false });
+  await (await auth()).api.sendVerificationEmail({ body: { email: mira.email } });
+  const token = linkIn(mail.sent[0]?.text).searchParams.get('token') ?? '';
+  expect(await verifyEmailToken(token)).toBe('verified');
+  expect(await verifyEmailToken(token)).toBe('used');
+  expect(await verifyEmailToken(`${token.slice(0, -4)}AAAA`)).toBe('invalid');
+  expect(await verifyEmailToken('nonsense')).toBe('invalid');
+  expect(maskEmail('nadia@example.com')).toBe('n****@example.com');
 });

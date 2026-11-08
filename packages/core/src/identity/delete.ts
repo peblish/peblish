@@ -1,9 +1,13 @@
+import type { ActingPrincipal } from '@peblish/schema/authz';
+import type { Uuid } from '@peblish/schema/ids';
 import { eq } from 'drizzle-orm';
+import { authorize } from '../authz/authorize.ts';
 import { actors } from '../db/tables/actors.ts';
 import { authUser } from '../db/tables/auth.ts';
 import { deletionLedger } from '../db/tables/site.ts';
 import { defineMutation } from '../tx/mutation.ts';
 import { Refused } from '../tx/refused.ts';
+import { refusedAsResult, type Result } from './result.ts';
 
 /**
  * Deletes an account at once (no grace period; A05, decision recorded in LANE-NOTES.md).
@@ -45,3 +49,13 @@ export const deleteAccount = defineMutation({
     await t.emit({ type: 'actor.deleted', v: 1, actorId, kind: 'Person', local: true });
   },
 });
+
+/** account.delete for web: the owner (or an admin) deletes the account of `actorId`. */
+export async function deleteAccountAs(principal: ActingPrincipal, actorId: Uuid, reason: string): Promise<Result<object>> {
+  const decision = await authorize('account.delete', principal, { actorId });
+  if (!decision.ok) return decision;
+  return refusedAsResult(async () => {
+    await deleteAccount(decision.grant, { reason });
+    return {};
+  });
+}

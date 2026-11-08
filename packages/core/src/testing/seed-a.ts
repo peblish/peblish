@@ -1,13 +1,15 @@
 import { createHmac } from 'node:crypto';
 import { symmetricEncrypt } from 'better-auth/crypto';
 import type { Uuid } from '@peblish/schema/ids';
-import { eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { newRsaKeyPair } from '../actor-keys.ts';
 import { ensureLocalInstance } from '../db/bootstrap.ts';
 import { closePools } from '../db/pools.ts';
+import { db } from '../db/read.ts';
 import { actors } from '../db/tables/actors.ts';
 import { authAccount, authTwoFactor, authUser } from '../db/tables/auth.ts';
-import { invites, siteSettings } from '../db/tables/site.ts';
+import { outbox } from '../db/tables/outbox.ts';
+import { deletionLedger, invites, siteSettings } from '../db/tables/site.ts';
 import { writer } from '../db/write.ts';
 import { insertAccount } from '../identity/accounts.ts';
 import { auth } from '../identity/auth.ts';
@@ -117,10 +119,27 @@ async function e2eAdmin() {
   return { name, email: `${name}@example.test`, password: PASSWORD, totpSecret: secret, backupCodes };
 }
 
+/** What account deletion left behind for `name`, for the e2e deletion check. */
+async function deletionRecord(name: string) {
+  const [actor] = await db()
+    .select({ id: actors.id, deletedAt: actors.deletedAt, userId: actors.userId })
+    .from(actors)
+    .where(eq(actors.name, name));
+  if (!actor) throw new Error(`no actor ${name}`);
+  const ledger = await db().select({ id: deletionLedger.id }).from(deletionLedger).where(eq(deletionLedger.subjectId, actor.id));
+  const events = await db()
+    .select({ id: outbox.id })
+    .from(outbox)
+    .where(and(eq(outbox.type, 'actor.deleted'), sql`${outbox.payload}->>'actorId' = ${actor.id}`));
+  return { deleted: actor.deletedAt !== null, login: actor.userId !== null, ledgerRows: ledger.length, deletedEvents: events.length };
+}
+
 if (import.meta.main) {
   try {
-    if (process.argv[2] !== 'e2e-admin') throw new Error('usage: node packages/core/src/testing/seed-a.ts e2e-admin');
-    console.log(JSON.stringify(await e2eAdmin()));
+    const [command, name] = process.argv.slice(2);
+    if (command === 'e2e-admin') console.log(JSON.stringify(await e2eAdmin()));
+    else if (command === 'deleted' && name) console.log(JSON.stringify(await deletionRecord(name)));
+    else throw new Error('usage: node packages/core/src/testing/seed-a.ts e2e-admin | deleted <name>');
   } finally {
     await closePools();
   }

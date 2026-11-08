@@ -121,3 +121,10 @@ export function auth(): Promise<Auth> {
   });
   return created;
 }
+
+/** The code a better-auth APIError carries (body.code, such as INVALID_CODE), or undefined. */
+export function authErrorCode(error: unknown): string | undefined {
+  if (typeof error !== 'object' || error === null || !('body' in error)) return undefined;
+  const body = error.body;
+  return typeof body === 'object' && body !== null && 'code' in body && typeof body.code === 'string' ? body.code : undefined;
+}
