@@ -15,6 +15,12 @@ One Docker image (the root `Dockerfile`) runs three processes, chosen by command
 | `web`      | App                          | Git `github.com/peblish/peblish`, branch `main`, build type Dockerfile, path `/` | `web` (image default) | container port 3000, domain such as `staging.peblish.com` with HTTPS | HTTP GET `/healthz`, expect 200 |
 | `worker`   | App                          | same source and image as `web`                                                   | `worker`              | no port, no domain                                                   | none (restart policy)           |
 
+The image's Docker `HEALTHCHECK` (`deploy/healthcheck.mjs`) probes `/healthz` only when the
+container runs `web`. For `worker` and `migrate` it reports healthy without probing anything:
+the worker's liveness is its process (set a restart policy), and `migrate` is a one-shot run
+that exits. Override it per service where the platform supports that, for example
+`healthcheck: { disable: true }` in compose or `--no-healthcheck` on `docker run`.
+
 Migrations run as a one-off before `web` and `worker` move to a new build: open the `web`
 service console and run `peblish migrate` (or run the image with command `migrate` once).
 It applies pending migrations and, on the first run, creates the local instance row from

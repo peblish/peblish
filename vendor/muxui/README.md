@@ -13,9 +13,10 @@ release candidate. The hook for swapping to it (root does this, not a lane):
 4. If that rc exports a locale provider, `packages/ui/src/locale.tsx` switches to it and the
    `public-hoist-pattern[]=react-aria-components` line leaves `.npmrc`.
 
-CI and the Docker image install from the tarball automatically: `vendor/` is part of the
-build context, and `pnpm install --frozen-lockfile` resolves the `file:` dependency. Swap
-back to the registry version when Andrew publishes it. Confirm the Mux licence permits
+The Dockerfile copies `vendor/muxui/` into the dependency stage before `pnpm fetch`, so the
+tarball is in place when the lockfile is read, and CI checks out `vendor/` with the source.
+Neither is proven until a tarball exists: after step 3, root runs `docker build .` and the CI
+image job before merging. Swap back to the registry version when Andrew publishes it. Confirm the Mux licence permits
 committing the tarball to this AGPL repository before step 2 (it is MIT at rc.5).
 
 | Tarball    | SHA-256 | Added |
