@@ -1,4 +1,4 @@
-# Fedify threadiverse spike: result (gate G2, slices 1 and 2)
+# Fedify threadiverse spike: result (gate G2, slices 1 to 3)
 
 Run on 2026-11-08, in the local lab only. Nothing was sent to feddit.com or to any live server.
 
@@ -64,6 +64,10 @@ What the product must carry from this spike:
 - **Raw-JSON handling** for the activity types Fedify cannot model, such as Lock.
 - **An instance actor** at `/`.
 
+### Slice 3: go, one live check still open
+
+The spike ran unchanged on the public internet as `https://lab.feddit.com` (Easypanel, Traefik TLS, the Dockerfile in this directory) against the production PieFed 1.8.11 at feddit.com behind Cloudflare, and follow-only against piefed.social (PieFed 1.8.11), fedia.io (Mbin 1.11.0) and lemmy.world (Lemmy 0.19.21). Run 1108042615 passed 11 of 12 checks: follow, post, comment, vote and undo, edit, delete, lock, unlock, remove with reason, restore, the reverse direction into a feddit.com community, and cleanup all round-trip with feddit.com, each delivery answered 200 on the first attempt; piefed.social and fedia.io accepted the lab's Follow. The open check is lemmy.world, which took the Follow (200) but sent no Accept within 180 s; a retry with a 600 s window is recorded below. The first run (1108035717) failed every outbound delivery and found a real defect: the delivery guard blocked all of IPv4 (fixed in `c185711`, unit test added). Details in "Slice 3 (live peers)".
+
 ## How to reproduce
 
 ```sh
@@ -96,6 +100,47 @@ make stats        # memory per container
 | refusals | 20 s |
 | collision | 4 s |
 | durability, including the SIGKILL and restart | 49 s |
+
+## Slice 3 (live peers)
+
+Date 2026-11-08. Runner `scenarios/live.ts` from a laptop (see `LIVE.md`); lab at `https://lab.feddit.com` on Andrew's Easypanel (project `feddit-lab`: app `lab` built from this directory's Dockerfile, Postgres 16; Traefik terminates TLS and forwards plain HTTP with the Host header; DNS-only A record in the feddit.com Cloudflare zone). Env: `FEDDIT_ORIGIN=https://lab.feddit.com`, `FEDDIT_CONTROL_TOKEN` set, production delivery policy, no lab switches. Peers: feddit.com (PieFed 1.8.11, Cloudflare proxied with Browser Integrity Check on), piefed.social (PieFed 1.8.11), fedia.io (Mbin 1.11.0), lemmy.world (Lemmy 0.19.21-8-g081ada9cf). No public Lemmy 1.0 instance existed to test against: lemmy.world, lemmy.ml, programming.dev, lemmy.ca, sh.itjust.works, lemmy.dbzer0.com, feddit.org and lemmy.zip all reported 0.19.21 on 2026-11-08. Test account: `peblish_test` (non-admin) on feddit.com. Posting only into `!lab@lab.feddit.com` and feddit.com's `!microblogs`; third-party instances were only followed.
+
+### Live matrix (run 1108042615)
+
+| ID | Check | Peer | Result | Seconds | Note |
+| --- | --- | --- | --- | --- | --- |
+| L1 | PieFed resolves `!lab@lab.feddit.com` | feddit.com | pass | 0.4 | community 167 |
+| L2 | Test account follows; lab stores follower; Accept delivered | feddit.com | pass | 2 | Accept to the follower's personal inbox, 200 |
+| L3 | Lab text and link posts appear with title, Markdown body, author, url | feddit.com | pass | 4.5 | posts 198617, 198618; Announce 200 |
+| L4 | PieFed post into the lab community and comment on the lab post, stored once | feddit.com | pass | 2.5 | post 198619, comment 3300444; both arrived direct |
+| L5 | Like from PieFed stored, then undone | feddit.com | pass | 2 | displayed score 1 to 2 to 1 (the author's own vote is the 1) |
+| L6 | Lab edit shows; lab delete hides | feddit.com | pass | 1.8 | Update and Delete via Announce, 200 |
+| L7 | Lab moderator locks, unlocks, removes with reason, restores | feddit.com | pass | 5.1 | all four states shown on PieFed |
+| L8 | Lab author follows `!microblogs@feddit.com`, posts into it; PieFed comment comes back | feddit.com | pass | 7.7 | post 198620; comment 3300445 arrived via the community's Announce |
+| L10 | Follow only | lemmy.world | fail | 182 | Follow POST answered 200; no Accept in 180 s; retry below |
+| L10 | Follow only | piefed.social | pass | 187 | Accept received; the only inbound activity in the 180 s window |
+| L10 | Follow only | fedia.io | pass | 186 | Accept received; Mbin shared inbox `/f/inbox` |
+| L9 | Cleanup: delete the run's content, unfollow everywhere | feddit.com | pass | 6.5 | 5 checks; PieFed marks the lab's deletions `deleted_by` the lab author's user row |
+
+Lab outbox for the run: 19 deliveries, all `delivered` on attempt 1 with HTTP 200 (Accept, 8 Announce, Follow x4, Create, Delete, Undo x4). PieFed's outbound log to the lab: Follow, Create x2, Like, Undo, Accept, Announce, Delete x2, Undo, all 202 from the lab's Fedify inbox. feddit.com's app log shows no errors during the run. After cleanup feddit.com shows 0 visible posts in `!microblogs`, both test comments deleted, `peblish_test` with no memberships; the lab's L3 text post (198617) stays visible in feddit.com's copy of `!lab` by design.
+
+Lemmy first-contact retry: see the line appended at the end of this section.
+
+### Defect found by the live run
+
+Run 1108035717 (2 of 12): PieFed resolved and followed the lab and its Follow was accepted, but every outbound delivery failed before any network call with `feddit.com resolves to a blocked address 172.64.80.1` (likewise lemmy.world 104.26.8.209, piefed.social 103.16.129.132, fedia.io 144.76.91.164). Cause: `net.BlockList` tests an IPv4 address against every IPv6 rule through its IPv4-mapped form, so the `::ffff:0:0/96` entry in `src/safe-post.ts` matched all of IPv4. The lab never showed it because `FEDDIT_LAB_CIDR` is checked first and every lab peer sits in that range, so the public branch of the guard had never run before this slice. Fix (`c185711`): drop the rule, unmap `::ffff:a.b.c.d` to IPv4 and judge it with the IPv4 rules; `test/safe-post.test.ts` (`npm test`) covers public, special-purpose, mapped and lab-subnet cases. Review finding 2 (incomplete IPv6 exclusions: `fec0::/10`, `64:ff9b:1::/48`, `2002::/16`, and `::/96` IPv4-compatible) stays open as the Phase 1 requirement for one shared public-address predicate.
+
+### What the live peers showed
+
+1. Cloudflare in front of feddit.com does not interfere with federation: Fedify-signed POSTs, actor fetches and the alpha API pass; the Browser Integrity Check blocks only the `Python-urllib` user agent.
+2. PieFed accepts a brand-new instance at once: actor fetch, Follow, Accept, Announce, direct Create, Like, Undo, Update, Delete, Lock, remove and restore from a community it had never seen, with no probation. Its instance row recorded `feddit-spike 0.0.1` from NodeInfo.
+3. The reverse direction works against a real PieFed community: the lab author's Follow of `!microblogs` was accepted, its post was accepted (PieFed delivered a Create-shaped record and lists it under the lab author's PieFed user row 91303), and a PieFed comment on it reached the lab through the community's Announce.
+4. The PieFed day-one cap (4 posts per new remote account) was not reached: a run makes 3 posts per fresh author. Measuring the cap would mean spamming production, so it stays unmeasured and the Phase 2 design keeps the per-run fresh author.
+5. Lemmy first contact: lemmy.world's inbox accepted the Follow POST at once, but no Accept arrived within 180 s and the lab saw no actor fetch from lemmy.world in that window, which matches the slice 2 risk note (Lemmy's outbound worker for a newly seen instance starts on a timer and may skip what was queued before it). piefed.social and fedia.io answered within their windows.
+6. Mbin 1.11.0 (fedia.io) accepted a Follow from a Fedify Person through its shared inbox `/f/inbox`; nothing else was exercised with Mbin.
+7. Mastodon: not yet exercised; the lab stays deployed until Andrew's account has followed `@labmod@lab.feddit.com` or `!lab@lab.feddit.com` and replied.
+
+Operational notes: the Easypanel GitHub integration built the Dockerfile from the private repository's `slice-3-live` branch in under a minute (layers cached); the runner needed a per-process DNS pin because the laptop's Tailscale MagicDNS kept a negative answer for the new name; `services/app/updateMounts` is gone in this Easypanel version (`mounts/createMount`), and the panel's `status` helper prints the service env unredacted, so inspect through a redacting wrapper. Teardown after the Mastodon check: `node scenarios/live.ts --cleanup --run=<id>` for any run left with `--keep`, delete the lab's remaining L3 posts, destroy the Easypanel project, delete the DNS record, delete `peblish_test`.
 
 ## Slice 2
 
