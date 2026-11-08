@@ -1,6 +1,7 @@
-// Shared helpers for the seed and scenario scripts. They run in the `runner`
-// container on the lab network and reach every peer through Caddy at
-// https://<name>.lab.test.
+// Shared helpers for the seed and scenario scripts. In the lab they run in the
+// `runner` container on the lab network and reach every peer through Caddy at
+// https://<name>.lab.test. live.ts reuses them against other origins through
+// makeFeddit and makePiefed.
 import { writeFileSync } from "node:fs";
 
 export const FEDDIT = "https://feddit.lab.test";
@@ -168,6 +169,7 @@ export interface OutboxEntry {
 }
 
 export interface FedditState {
+  actors: { identifier: string; kind: "Person" | "Group"; name: string; display_name: string }[];
   objects: FedditObject[];
   votes: { voter_uri: string; object_uri: string; kind: "Like" | "Dislike"; activity_id: string }[];
   followers: { local_identifier: string; actor_uri: string; inbox: string; shared_inbox: string | null }[];
@@ -188,11 +190,20 @@ export async function lastInboxId(): Promise<number> {
   return Math.max(0, ...(await feddit.state()).inbox.map((entry) => Number(entry.id)));
 }
 
-export const feddit = {
-  state: () => http<FedditState>("GET", `${FEDDIT}/spike/state`),
-  call: <T = { uri?: string; activity?: string; json?: unknown }>(path: string, body: unknown) =>
-    http<T>("POST", `${FEDDIT}/spike/${path}`, { body }),
-};
+/** The control surface of the Feddit at `origin`; `token` is its FEDDIT_CONTROL_TOKEN, if set. */
+export function makeFeddit(origin: string, token?: string) {
+  return {
+    /** `since`: only inbox_log rows with a greater id (the other tables are always complete). */
+    state: (since?: number) =>
+      http<FedditState>("GET", `${origin}/spike/state`, { token, query: since === undefined ? {} : { since } }),
+    call: <T = { uri?: string; activity?: string; json?: unknown }>(path: string, body: unknown) =>
+      http<T>("POST", `${origin}/spike/${path}`, { body, token }),
+  };
+}
+
+export type Feddit = ReturnType<typeof makeFeddit>;
+
+export const feddit = makeFeddit(FEDDIT);
 
 // ------------------------------------------------------------------ peers
 
@@ -228,6 +239,12 @@ async function communityModerators(origin: string, apiBase: string, token: strin
   return (moderators ?? []).map((entry) => entry.moderator.actor_id);
 }
 
+async function setFollow(origin: string, apiBase: string, token: string, communityId: number, follow: boolean): Promise<string> {
+  const { community_view } = await http<{ community_view: { subscribed: string } }>(
+    "POST", `${origin}${apiBase}/community/follow`, { token, body: { community_id: communityId, follow } });
+  return community_view.subscribed;
+}
+
 export interface PeerComment {
   id: number;
   apId: string;
@@ -239,13 +256,15 @@ export interface PeerComment {
 }
 
 export interface Peer {
-  readonly name: "lemmy" | "piefed";
+  /** Label in scenario output. */
+  readonly name: string;
   readonly origin: string;
   readonly user: string;
   readonly admin: string;
   login(username: string): Promise<string>;
   resolveCommunity(token: string, handle: string): Promise<{ id: number; subscribed: string }>;
   follow(token: string, communityId: number): Promise<string>;
+  unfollow(token: string, communityId: number): Promise<string>;
   createCommunity(token: string, name: string, title: string): Promise<number>;
   listPosts(token: string, communityId: number): Promise<PeerPost[]>;
   getPost(token: string, postId: number): Promise<PeerPost>;
@@ -334,11 +353,8 @@ export const lemmy: Peer = {
     if (!community) throw new Error(`lemmy could not resolve ${handle}`);
     return { id: community.community.id, subscribed: community.subscribed };
   },
-  async follow(token, communityId) {
-    const { community_view } = await http<{ community_view: { subscribed: string } }>(
-      "POST", `${LEMMY}/api/v3/community/follow`, { token, body: { community_id: communityId, follow: true } });
-    return community_view.subscribed;
-  },
+  follow: (token, communityId) => setFollow(LEMMY, "/api/v3", token, communityId, true),
+  unfollow: (token, communityId) => setFollow(LEMMY, "/api/v3", token, communityId, false),
   async createCommunity(token, name, title) {
     const { community_view } = await http<{ community_view: { community: { id: number } } }>(
       "POST", `${LEMMY}/api/v3/community`, { token, body: { name, title } });
@@ -414,106 +430,118 @@ export const lemmy: Peer = {
   },
 };
 
-export const piefed: Peer = {
-  name: "piefed",
-  origin: PIEFED,
-  user: "pfuser",
-  admin: "pfadmin",
+/** A PieFed `/api/alpha` peer. `admin` defaults to `user` where there is no separate admin account. */
+export const makePiefed = ({
+  origin,
+  user,
+  password,
+  name = "piefed",
+  admin = user,
+}: {
+  origin: string;
+  user: string;
+  password: string;
+  name?: string;
+  admin?: string;
+}): Peer => ({
+  name,
+  origin,
+  user,
+  admin,
   async login(username) {
-    const { jwt } = await http<{ jwt: string }>("POST", `${PIEFED}/api/alpha/user/login`, {
-      body: { username, password: PASSWORD },
+    const { jwt } = await http<{ jwt: string }>("POST", `${origin}/api/alpha/user/login`, {
+      body: { username, password },
     });
     return jwt;
   },
   async resolveCommunity(token, handle) {
     const { community } = await http<{ community?: { community: { id: number }; subscribed: string } }>(
-      "GET", `${PIEFED}/api/alpha/resolve_object`, { token, query: { q: handle } });
+      "GET", `${origin}/api/alpha/resolve_object`, { token, query: { q: handle } });
     if (!community) throw new Error(`piefed could not resolve ${handle}`);
     return { id: community.community.id, subscribed: community.subscribed };
   },
-  async follow(token, communityId) {
-    const { community_view } = await http<{ community_view: { subscribed: string } }>(
-      "POST", `${PIEFED}/api/alpha/community/follow`, { token, body: { community_id: communityId, follow: true } });
-    return community_view.subscribed;
-  },
+  follow: (token, communityId) => setFollow(origin, "/api/alpha", token, communityId, true),
+  unfollow: (token, communityId) => setFollow(origin, "/api/alpha", token, communityId, false),
   async createCommunity(token, name, title) {
     const { community_view } = await http<{ community_view: { community: { id: number } } }>(
-      "POST", `${PIEFED}/api/alpha/community`, { token, body: { name, title } });
+      "POST", `${origin}/api/alpha/community`, { token, body: { name, title } });
     return community_view.community.id;
   },
   async listPosts(token, communityId) {
-    const { posts } = await http<{ posts: PostViewWire[] }>("GET", `${PIEFED}/api/alpha/post/list`, {
+    const { posts } = await http<{ posts: PostViewWire[] }>("GET", `${origin}/api/alpha/post/list`, {
       token, query: { community_id: communityId, sort: "New", limit: 50 } });
     return posts.map(toPost);
   },
   async getPost(token, postId) {
-    const { post_view } = await http<{ post_view: PostViewWire }>("GET", `${PIEFED}/api/alpha/post`, {
+    const { post_view } = await http<{ post_view: PostViewWire }>("GET", `${origin}/api/alpha/post`, {
       token, query: { id: postId } });
     return toPost(post_view);
   },
   async resolvePost(token, apId) {
-    const { post } = await http<{ post?: PostViewWire }>("GET", `${PIEFED}/api/alpha/resolve_object`, {
+    const { post } = await http<{ post?: PostViewWire }>("GET", `${origin}/api/alpha/resolve_object`, {
       token, query: { q: apId } });
     return post ? toPost(post) : null;
   },
   async createPost(token, communityId, title, body) {
-    const { post_view } = await http<{ post_view: PostViewWire }>("POST", `${PIEFED}/api/alpha/post`, {
+    const { post_view } = await http<{ post_view: PostViewWire }>("POST", `${origin}/api/alpha/post`, {
       token, body: { title, body, community_id: communityId } });
     return toPost(post_view);
   },
   async editPost(token, postId, title, body) {
-    await http("PUT", `${PIEFED}/api/alpha/post`, { token, body: { post_id: postId, title, body } });
+    await http("PUT", `${origin}/api/alpha/post`, { token, body: { post_id: postId, title, body } });
   },
   async deletePost(token, postId) {
-    await http("POST", `${PIEFED}/api/alpha/post/delete`, { token, body: { post_id: postId, deleted: true } });
+    await http("POST", `${origin}/api/alpha/post/delete`, { token, body: { post_id: postId, deleted: true } });
   },
   async listComments(token, postId) {
-    const { comments } = await http<{ comments: CommentViewWire[] }>("GET", `${PIEFED}/api/alpha/comment/list`, {
+    const { comments } = await http<{ comments: CommentViewWire[] }>("GET", `${origin}/api/alpha/comment/list`, {
       token, query: { post_id: postId, sort: "New", limit: 50 } });
     return comments.map(toComment);
   },
   async comment(token, postId, parentId, content) {
-    const { comment_view } = await http<{ comment_view: CommentViewWire }>("POST", `${PIEFED}/api/alpha/comment`, {
+    const { comment_view } = await http<{ comment_view: CommentViewWire }>("POST", `${origin}/api/alpha/comment`, {
       token, body: { body: content, post_id: postId, ...(parentId ? { parent_id: parentId } : {}) } });
     return toComment(comment_view);
   },
   async editComment(token, commentId, content) {
-    await http("PUT", `${PIEFED}/api/alpha/comment`, { token, body: { comment_id: commentId, body: content } });
+    await http("PUT", `${origin}/api/alpha/comment`, { token, body: { comment_id: commentId, body: content } });
   },
   async deleteComment(token, commentId) {
-    await http("POST", `${PIEFED}/api/alpha/comment/delete`, { token, body: { comment_id: commentId, deleted: true } });
+    await http("POST", `${origin}/api/alpha/comment/delete`, { token, body: { comment_id: commentId, deleted: true } });
   },
   async votePost(token, postId, score) {
-    await http("POST", `${PIEFED}/api/alpha/post/like`, { token, body: { post_id: postId, score } });
+    await http("POST", `${origin}/api/alpha/post/like`, { token, body: { post_id: postId, score } });
   },
   async voteComment(token, commentId, score) {
-    await http("POST", `${PIEFED}/api/alpha/comment/like`, { token, body: { comment_id: commentId, score } });
+    await http("POST", `${origin}/api/alpha/comment/like`, { token, body: { comment_id: commentId, score } });
   },
   mod: {
-    resolvePerson: (token, actorUri) => resolvePersonId(PIEFED, "/api/alpha", token, actorUri),
+    resolvePerson: (token, actorUri) => resolvePersonId(origin, "/api/alpha", token, actorUri),
     async removePost(token, postId, removed, reason) {
-      await http("POST", `${PIEFED}/api/alpha/post/remove`, { token, body: { post_id: postId, removed, reason } });
+      await http("POST", `${origin}/api/alpha/post/remove`, { token, body: { post_id: postId, removed, reason } });
     },
     async lockPost(token, postId, locked) {
-      await http("POST", `${PIEFED}/api/alpha/post/lock`, { token, body: { post_id: postId, locked } });
+      await http("POST", `${origin}/api/alpha/post/lock`, { token, body: { post_id: postId, locked } });
     },
     async featurePost(token, postId, featured) {
-      await http("POST", `${PIEFED}/api/alpha/post/feature`, { token, body: { post_id: postId, featured, feature_type: "Community" } });
+      await http("POST", `${origin}/api/alpha/post/feature`, { token, body: { post_id: postId, featured, feature_type: "Community" } });
     },
     async ban(token, communityId, personId, ban, reason) {
       if (ban) {
-        await http("POST", `${PIEFED}/api/alpha/community/moderate/ban`, {
+        await http("POST", `${origin}/api/alpha/community/moderate/ban`, {
           token, body: { community_id: communityId, user_id: personId, reason, permanent: true } });
       } else {
-        await http("PUT", `${PIEFED}/api/alpha/community/moderate/unban`, {
+        await http("PUT", `${origin}/api/alpha/community/moderate/unban`, {
           token, body: { community_id: communityId, user_id: personId } });
       }
     },
     async reportPost(token, postId, reason) {
-      await http("POST", `${PIEFED}/api/alpha/post/report`, { token, body: { post_id: postId, reason } });
+      await http("POST", `${origin}/api/alpha/post/report`, { token, body: { post_id: postId, reason } });
     },
-    moderators: (token, communityId) => communityModerators(PIEFED, "/api/alpha", token, communityId),
+    moderators: (token, communityId) => communityModerators(origin, "/api/alpha", token, communityId),
   },
-};
+});
+
+export const piefed = makePiefed({ origin: PIEFED, user: "pfuser", admin: "pfadmin", password: PASSWORD });
 
 export const PEERS = { lemmy, piefed } as const;

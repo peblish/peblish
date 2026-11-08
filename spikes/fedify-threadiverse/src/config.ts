@@ -11,7 +11,13 @@ export const CAPTURE_DIR =
 export const SOFTWARE = { name: "feddit-spike", version: "0.0.1" } as const;
 
 /** The instance's display name: NodeInfo `nodeName` and the instance actor's `name`. */
-export const NODE_NAME = "Feddit spike (lab)";
+export const NODE_NAME = process.env.FEDDIT_NODE_NAME || "Feddit spike (lab)";
+
+/**
+ * When set, every `/spike/*` request must carry `Authorization: Bearer <token>`.
+ * Required on any deployment the internet can reach; the lab leaves it unset.
+ */
+export const CONTROL_TOKEN = process.env.FEDDIT_CONTROL_TOKEN || undefined;
 
 /**
  * Lab only. Fedify's SSRF guard rejects every IANA special-purpose block,

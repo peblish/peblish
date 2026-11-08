@@ -410,3 +410,28 @@ export async function follow(input: { follower: string; target: string }) {
   await enqueue(follower, activity, [await inboxOf(ctx, group.id)]);
   return { remote: group.id.href, activity: activity.id?.href, json: await activity.toJsonLd({ format: "compact" }) };
 }
+
+/**
+ * Leaves a remote community: Undo(Follow) embedding the stored Follow, sent to
+ * the community's inbox, then the local row is forgotten. Sent before the
+ * delete, so a failed inbox lookup leaves the follow in place to retry.
+ */
+export async function unfollow(input: { follower: string; target: string }) {
+  const ctx = contextForBackground();
+  const follower = await requireLocalUser(input.follower);
+  const groupUri = await resolveCommunity(ctx, input.target);
+  const [row] = await sql<{ follow_id: string }[]>`
+    select follow_id from following
+    where local_identifier = ${follower} and remote_uri = ${groupUri.href}`;
+  if (!row) throw new ActionError(`${input.follower} does not follow ${input.target}`);
+  const actor = ctx.getActorUri(follower);
+  const undo = new Undo({
+    id: newActivityUri("Undo"),
+    actor,
+    object: new Follow({ id: new URL(row.follow_id), actor, object: groupUri, to: groupUri }),
+    to: groupUri,
+  });
+  await enqueue(follower, undo, [await inboxOf(ctx, groupUri)]);
+  await sql`delete from following where local_identifier = ${follower} and remote_uri = ${groupUri.href}`;
+  return { remote: groupUri.href, activity: undo.id?.href, json: await undo.toJsonLd({ format: "compact" }) };
+}

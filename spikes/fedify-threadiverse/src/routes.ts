@@ -1,8 +1,9 @@
+import { createHash, timingSafeEqual } from "node:crypto";
 import { federation as fedifyMiddleware } from "@fedify/hono";
 import { Hono } from "hono";
 import * as actions from "./actions.ts";
 import { capture, parseMaybeJson, pickHeaders } from "./capture.ts";
-import { ORIGIN, SOFTWARE } from "./config.ts";
+import { CONTROL_TOKEN, ORIGIN, SOFTWARE } from "./config.ts";
 import * as db from "./db.ts";
 import { sql } from "./db.ts";
 import { buildNodeInfo, contextForBackground, federation } from "./federation.ts";
@@ -114,6 +115,19 @@ spike.onError((error, c) =>
   c.json({ error: error.message }, error instanceof actions.ActionError ? 400 : 500),
 );
 
+// A public deployment sets FEDDIT_CONTROL_TOKEN; the lab does not. Both sides
+// are hashed first, so timingSafeEqual gets equal-length buffers and the
+// token's length does not leak.
+if (CONTROL_TOKEN) {
+  const digest = (value: string) => createHash("sha256").update(value).digest();
+  const expected = digest(CONTROL_TOKEN);
+  spike.use(async (c, next) => {
+    const presented = /^Bearer (.+)$/.exec(c.req.header("authorization") ?? "")?.[1] ?? "";
+    if (!timingSafeEqual(digest(presented), expected)) return c.json({ error: "unauthorized" }, 401);
+    await next();
+  });
+}
+
 spike.post("/actors", async (c) => {
   const body = await c.req.json<Record<string, unknown>>();
   const kind = field(body, "kind");
@@ -201,6 +215,11 @@ spike.post("/follow", async (c) => {
   return c.json(await actions.follow({ follower: field(body, "follower"), target: field(body, "target") }));
 });
 
+spike.post("/unfollow", async (c) => {
+  const body = await c.req.json<Record<string, unknown>>();
+  return c.json(await actions.unfollow({ follower: field(body, "follower"), target: field(body, "target") }));
+});
+
 spike.post("/moderators", async (c) => {
   const body = await c.req.json<Record<string, unknown>>();
   return c.json(
@@ -225,7 +244,8 @@ spike.get("/outbox", async (c) => c.json(await outboxRows(c.req.query("object") 
 // Everything the scenarios assert on, in one read.
 spike.get("/state", async (c) => {
   const since = Number(c.req.query("since") ?? 0);
-  const [objects, votes, followers, following, inbox, moderators, bans, reports, outbox] = await Promise.all([
+  const [actors, objects, votes, followers, following, inbox, moderators, bans, reports, outbox] = await Promise.all([
+    sql`select identifier, kind, name, display_name from actors order by created_at`,
     sql`select id, uri, kind, local, author_uri, community_uri, in_reply_to, root_uri, title,
                content_html, source_md, link_url, deleted, removed, removed_reason, locked, stickied, via, updated
         from objects order by id`,
@@ -238,7 +258,7 @@ spike.get("/state", async (c) => {
     sql`select activity_id, reporter_uri, object_uri, community_uri, reason from reports order by id`,
     outboxSnapshot(200),
   ]);
-  return c.json({ objects, votes, followers, following, inbox, moderators, bans, reports, outbox });
+  return c.json({ actors, objects, votes, followers, following, inbox, moderators, bans, reports, outbox });
 });
 
 app.route("/spike", spike);
@@ -286,17 +306,17 @@ app.get("/u/:name", async (c) => {
 // S9 link-post target inside the lab, so peers' link-metadata fetches succeed.
 app.get("/link-target", (c) =>
   c.html(
-    `<!doctype html><html><head><meta charset="utf-8"><title>Feddit lab link target</title>` +
-      `<meta property="og:title" content="Feddit lab link target">` +
+    `<!doctype html><html><head><meta charset="utf-8"><title>peblish federation lab link target</title>` +
+      `<meta property="og:title" content="peblish federation lab link target">` +
       `<meta property="og:description" content="A page inside the lab for link-post metadata fetches."></head>` +
-      `<body><h1>Feddit lab link target</h1></body></html>`,
+      `<body><h1>peblish federation lab link target</h1></body></html>`,
   ),
 );
 
 // The instance actor (instance.ts) for ActivityPub clients, a page for people.
 app.get("/", async (c) => {
   if (!wantsActivityJson(c.req.header("accept"))) {
-    return c.html(page("Feddit spike", "<h1>Feddit spike</h1><p>Fedify threadiverse lab peer.</p>"));
+    return c.html(page("peblish federation lab", "<h1>peblish federation lab</h1><p>Fedify threadiverse lab peer.</p>"));
   }
   const actor = await instanceActor(contextForBackground());
   return c.body(JSON.stringify(await actor.toJsonLd({ format: "compact" })), 200, {
