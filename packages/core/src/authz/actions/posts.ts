@@ -3,7 +3,9 @@ import { eq } from 'drizzle-orm';
 import { actors } from '../../db/tables/actors.ts';
 import { allow, deny, forShare, type PolicyRequest } from '../policy.ts';
 
-// Owned by lane B1 after G0 (lane F adds postingRestrictedToMods, lane AZ bans and locks).
+// Owned by lane B1 after G0. Lane AZ's guard seam is packages/core/src/authz/state.ts: AZ adds
+// a single guard call line here and in votes.ts (bans, locks). Lane F adds
+// postingRestrictedToMods later.
 export const policies = {
   'post.create': async ({ principal, subject, db, lock }: PolicyRequest<{ communityId: Uuid }>) => {
     if (principal.kind !== 'local') return deny('auth.required');

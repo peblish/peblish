@@ -3,7 +3,7 @@ import { eq } from 'drizzle-orm';
 import { comments, posts } from '../../db/tables/content.ts';
 import { allow, deny, forShare, type PolicyRequest } from '../policy.ts';
 
-// Owned by lane B1 after G0.
+// Owned by lane B1 after G0. Lane AZ adds a single guard call line (authz/state.ts), as in posts.ts.
 export const policies = {
   'vote.cast': async ({ principal, subject, db, lock }: PolicyRequest<{ target: ContentRef }>) => {
     if (principal.kind !== 'local') return deny('auth.required');

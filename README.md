@@ -34,18 +34,27 @@ Each lane adds files in its own area; none of these needs an edit to a shared fi
 | A table             | `packages/core/src/<area>/tables.ts`; root generates the migration (`pnpm db:generate`)                                                                                                                                                                                                        | drizzle-kit schema glob                         |
 | UI strings          | `packages/web/src/i18n/<area>.json`, keyed by language                                                                                                                                                                                                                                         | glob                                            |
 | A page              | a route under `packages/web/src/routes/` whose content calls `useRouteHydrated()`                                                                                                                                                                                                              | TanStack Router                                 |
+| Test seeds          | `packages/core/src/testing/seed-<lane>.ts`, one per lane; the existing testing files (`db.ts`, `recreate.ts`, `crash-child.ts`, `crash-consumer.ts`, `fault-mutation.ts`, `seed.ts`) are root-owned                                                                                            | imported by tests                               |
 
 Rules for writes:
 
-- A mutation takes its target ids from `grant.subject`, never from input, and checks its invariants inside the transaction. Set `recheck: true` (the policy runs again in the transaction; a deny throws `Refused` and writes nothing) for every action a moderator or a lock can revoke: post and comment create and every `mod.*` action. The registry test enforces it.
+- A mutation takes its target ids from `grant.subject`, never from input, and checks its invariants inside the transaction.
+- Set `recheck: true` for every action a moderator, a ban or a lock can revoke: post and comment create and every `mod.*` action. The policy then runs again inside the transaction, and a deny throws `Refused` and writes nothing. `defineMutation` enforces this twice: the type demands it, and definition throws without it (so an internal mutation behind a wrapper cannot skip it). The registry test checks every exported mutation as well.
+- A policy reads every row its decision rests on (community, post, comment, membership, moderator and ban rows) through `forShare(query, lock)`. With `lock`, which recheck sets, those rows are read `FOR SHARE`, so a concurrent ban, lock or removal can't slip in between. Either it committed first and the recheck denies with its reason, or it waits until the write commits. With `lock`, `authorize()` also re-reads the principal from the database: the actor must exist and not be deleted, and the site role comes from `auth_user`. Each lane's policy helpers follow the same rule.
 - Work the instance does as itself (registration, imports, scheduled jobs) authorizes as `systemPrincipal(db, job)`, the local instance actor that migrate creates.
-- No network calls inside a write transaction, and keep transactions short: consumers read only below the oldest open write transaction on the whole Postgres cluster. On the shared dev cluster, a stuck psql transaction in one lane's database stalls every lane's consumers; the worker warns when that horizon lags more than 30 seconds.
+- No network calls inside a write transaction, and keep transactions short. Consumers read only below the oldest open write transaction on the whole Postgres cluster, so on the shared dev cluster a stuck psql transaction in one lane's database stalls every lane's consumers. The worker warns when that horizon lags more than 30 seconds.
 
 Rules for the web server:
 
-- `packages/web/src/server.ts` is the server entry. It sends federation requests to `@peblish/federation/http` before any UI route matches (lane FED-A owns that seam), then adds the security baseline from `packages/web/src/server/headers.ts` to every HTML response. Lanes extend that baseline there, not per route.
+- `packages/web/src/server.ts` is the server entry (root-owned). It sends federation requests to `@peblish/federation/http` before any UI route matches, then adds the security baseline from `packages/web/src/server/headers.ts` to every HTML response. Lanes extend that baseline there, not per route.
+- Federation answers the ActivityPub endpoints (`/ap/*`, WebFinger, NodeInfo, the inboxes and outboxes) always. It answers `/`, `/u/<name>` and `/c/<name>` only when Accept asks for ActivityPub JSON; otherwise those paths render the UI, with `Vary: Accept`. Imported feddit.com actors keep their ap_ids (contract 6), so `https://feddit.com/u/<name>` and `/c/<name>` are both the ActivityPub id and the human page.
+- Lane FED-A owns `packages/federation/src/http.ts`, federation's consumers (`packages/federation/src/<area>/consumer.ts`, run by the worker beside core's) and the bridge `packages/web/src/server/federation.ts`. G0 created them. Web imports nothing else from federation (lint rule `web-federation-entry-points`).
 
-Migrations, the lockfile, `packages/*/package.json`, the G0 files under `packages/schema/src/` and `packages/core/src/{db,tx,outbox}/`, `packages/core/src/authz/brand.ts` and the root configuration are root-owned: report a needed change instead of making it.
+## Ownership
+
+Root owns the lockfile, the drizzle journal and migrations, the root configuration, CI, the `Dockerfile`, `vendor/`, `packages/core/src/{db,tx,outbox}/**`, `packages/core/src/authz/brand.ts` and the shared schema files (`views.ts`, `entities.ts`, `ids.ts`, `registry.ts`, `site-settings.ts` in `packages/schema/src/`). Report a needed change there instead of making it.
+
+A lane edits the schema files its write set names: `authz.ts` and `modlog.ts` for AZ; `identity.ts`, `session.ts` and `invite.ts` for A; and each area's `refusals/<area>.ts` and `events/<area>.ts`. A lane may add dependencies to its own package's `package.json` with exact versions, listing each in `LANE-NOTES.md`. Root regenerates the lockfile and the migrations at integration.
 
 ## Development
 
@@ -57,7 +66,7 @@ docker compose up -d --wait        # Postgres 17 on 18432, MinIO on 18490/18491,
 lane_env=$(sh scripts/lane.sh g0) && eval "$lane_env"   # this lane's database, port, test database, S3; stops on failure
 pnpm check                         # build, typecheck, lint (boundaries, oxlint, prettier), tests
 pnpm e2e                           # Playwright against the build, on $PORT
-pnpm --filter @peblish/web dev     # dev server on $PORT
+pnpm dev                           # pnpm gen, then the dev server on $PORT
 ```
 
 Contributions are accepted under the [Developer Certificate of Origin](DCO): sign off every commit with `git commit -s`. Server and web app are AGPL-3.0-only, `schema` and `ui` are MIT; see `LICENSE`.
