@@ -16,6 +16,9 @@ describe('outbox event union', () => {
     expect(eventTypes).toEqual(
       expect.arrayContaining([
         'post.created',
+        'post.updated',
+        'post.deleted',
+        'post.restored',
         'vote.cast',
         'comment.created',
         'comment.updated',
