@@ -235,6 +235,51 @@ export async function seedModerationWorld() {
   return { instances: { local, lemmy, other }, people, remoteModerators, elsewhere, communities, subjects };
 }
 
+/** Whom the ban target test has a community ban aim at. */
+export const banTargets = [
+  'self',
+  'the instance actor',
+  'a site admin',
+  'a moderator',
+  'an owner',
+  'a deleted actor',
+  'a Group',
+  'a missing actor',
+  'a member',
+] as const;
+export type BanTarget = (typeof banTargets)[number];
+
+/**
+ * The ban target test's world on `instance`: `moderator` (who acts), each of banTargets (a
+ * missing actor is an id with no row), and two communities that `moderator`, the target
+ * moderator and the target owner moderate: nobody is banned from `open`, and every target with
+ * a row except `moderator` is banned from `strict`.
+ */
+export async function seedBanTargets(instance: Instance) {
+  const moderator = await seedActor(instance, 'Person', 'ban_moderator');
+  const targets = {
+    self: moderator,
+    'the instance actor': await seedActor(instance, 'Application', 'ban_instance'),
+    'a site admin': await seedAdmin(instance, 'ban_admin'),
+    'a moderator': await seedActor(instance, 'Person', 'ban_other_moderator'),
+    'an owner': await seedActor(instance, 'Person', 'ban_owner'),
+    'a deleted actor': await seedActor(instance, 'Person', 'ban_deleted', { deletedAt: new Date() }),
+    'a Group': await seedActor(instance, 'Group', 'ban_group'),
+    'a member': await seedActor(instance, 'Person', 'ban_member'),
+  } satisfies Record<Exclude<BanTarget, 'a missing actor'>, Row>;
+  const open = await seedActor(instance, 'Group', 'ban_open');
+  const strict = await seedActor(instance, 'Group', 'ban_strict');
+  for (const community of [open, strict]) {
+    await seedModerator(community, moderator);
+    await seedModerator(community, targets['a moderator']);
+    await seedModerator(community, targets['an owner'], { role: 'owner' });
+  }
+  for (const target of Object.values(targets)) if (target !== moderator) await seedBan(strict, target);
+  const missing = uuidv7();
+  const targetId = (target: BanTarget) => (target === 'a missing actor' ? missing : targets[target].id);
+  return { moderator, open, strict, targetId };
+}
+
 /** A promise gate, so two connections interleave deterministically. */
 export function gate() {
   let open!: () => void;
