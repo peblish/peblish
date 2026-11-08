@@ -12,8 +12,11 @@ import { findSecrets } from './secrets.ts';
 //   Rebuilds packages/federation/src/test/fixtures/{manifest.json,wire/} and the lab-live
 //   fixture set from the spike captures. Refuses when a round trip shows a difference the
 //   vocabulary does not document, or when any output would hold a secret.
+// node tools/fixture-import/src/cli.ts archive
+//   Reads the archive subset from FEDDIT_ARCHIVE_DB_URL, runs the same round trip and prints
+//   the schema deltas table. Writes nothing.
 
-const usage = 'usage: node tools/fixture-import/src/cli.ts build [--captures <dir>]';
+const usage = 'usage: node tools/fixture-import/src/cli.ts build [--captures <dir>] | archive';
 const { positionals, values } = parseArgs({ allowPositionals: true, options: { captures: { type: 'string' } } });
 
 async function build(capturesDir: string): Promise<number> {
@@ -52,6 +55,21 @@ async function build(capturesDir: string): Promise<number> {
 async function main(): Promise<number> {
   const [command] = positionals;
   if (command === 'build') return build(values.captures ?? process.env.FIXTURE_CAPTURES_DIR ?? defaultCapturesDir);
+  if (command === 'archive') {
+    const url = process.env.FEDDIT_ARCHIVE_DB_URL;
+    if (!url) {
+      console.error('FEDDIT_ARCHIVE_DB_URL is unset: point it at the restored PieFed archive (peblish_fit_archive)');
+      return 1;
+    }
+    const { runArchive, deltasTable } = await import('./archive.ts');
+    const report = await runArchive(url);
+    console.log(deltasTable(report));
+    if (report.undocumented.length > 0) {
+      console.error(`undocumented differences:\n${report.undocumented.join('\n')}`);
+      return 1;
+    }
+    return 0;
+  }
   console.error(usage);
   return 64;
 }
