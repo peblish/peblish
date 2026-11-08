@@ -17,7 +17,7 @@
     "gen": "node scripts/gen.ts && pnpm --filter @peblish/web gen:routes",
     "typecheck": "pnpm gen && pnpm -r typecheck && tsc -p tsconfig.json",
     "lint": "pnpm gen && pnpm lint:boundaries && oxlint --deny-warnings && prettier --check .",
-    "lint:boundaries": "depcruise packages --config .dependency-cruiser.cjs",
+    "lint:boundaries": "depcruise packages tools --config .dependency-cruiser.cjs",
     "test": "pnpm gen && vitest run",
     "build": "pnpm gen && pnpm -r build",
     "check": "pnpm build && pnpm typecheck && pnpm lint && pnpm test",
