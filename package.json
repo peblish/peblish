@@ -16,7 +16,7 @@
   "scripts": {
     "gen": "node scripts/gen.ts && pnpm --filter @peblish/web gen:routes",
     "typecheck": "pnpm gen && pnpm -r typecheck && tsc -p tsconfig.json",
-    "lint": "pnpm gen && pnpm lint:boundaries && oxlint --deny-warnings",
+    "lint": "pnpm gen && pnpm lint:boundaries && oxlint --deny-warnings && prettier --check .",
     "lint:boundaries": "depcruise packages --config .dependency-cruiser.cjs",
     "test": "pnpm gen && vitest run",
     "build": "pnpm gen && pnpm -r build",
@@ -25,7 +25,8 @@
     "db:migrate": "pnpm --filter @peblish/core db:migrate",
     "db:generate": "pnpm --filter @peblish/core db:generate",
     "db:drift": "pnpm --filter @peblish/core db:drift",
-    "lane": "sh scripts/lane.sh"
+    "lane": "sh scripts/lane.sh",
+    "format": "prettier --write ."
   },
   "devDependencies": {
     "@axe-core/playwright": "4.14.0",
@@ -33,6 +34,7 @@
     "@types/node": "24.19.2",
     "dependency-cruiser": "18.7.2",
     "oxlint": "1.92.0",
+    "prettier": "3.9.10",
     "typescript": "6.0.3",
     "vitest": "5.1.0"
   }

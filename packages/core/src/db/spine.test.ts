@@ -57,7 +57,15 @@ describe('migration 0001 identity spine', () => {
     const community = await seedActor(local, 'Group', 'announcements');
     const [post] = await writer()
       .insert(posts)
-      .values({ apId: 'https://feddit.test/ap/post/1', local: true, instanceId: local.id, authorId: author.id, communityId: community.id, title: 't', publishedAt: new Date() })
+      .values({
+        apId: 'https://feddit.test/ap/post/1',
+        local: true,
+        instanceId: local.id,
+        authorId: author.id,
+        communityId: community.id,
+        title: 't',
+        publishedAt: new Date(),
+      })
       .returning();
     const comment = (depth: number) => ({
       apId: `https://feddit.test/ap/comment/${depth}`,
@@ -71,13 +79,21 @@ describe('migration 0001 identity spine', () => {
     await writer().insert(comments).values(comment(50));
     expect(await failure(writer().insert(comments).values(comment(51)))).toMatchObject({ constraint: 'comments_depth' });
     expect(
-      await failure(writer().insert(votes).values({ apId: 'https://feddit.test/ap/activity/v', local: true, instanceId: local.id, voterId: author.id, value: 1 })),
+      await failure(
+        writer()
+          .insert(votes)
+          .values({ apId: 'https://feddit.test/ap/activity/v', local: true, instanceId: local.id, voterId: author.id, value: 1 }),
+      ),
     ).toMatchObject({ constraint: 'votes_one_target' });
   });
 
   test('the modlog and the deletion ledger are append-only', async () => {
-    await writer().insert(modlog).values({ action: 'post.remove', authority: { kind: 'site-admin' } });
-    await writer().insert(deletionLedger).values({ subjectKind: 'post', subjectId: '0192f5a0-0000-7000-8000-000000000001', reason: 'test' });
+    await writer()
+      .insert(modlog)
+      .values({ action: 'post.remove', authority: { kind: 'site-admin' } });
+    await writer()
+      .insert(deletionLedger)
+      .values({ subjectKind: 'post', subjectId: '0192f5a0-0000-7000-8000-000000000001', reason: 'test' });
     expect(await failure(writer().delete(modlog))).toMatchObject({ code: '23000' });
     expect(await failure(writer().update(deletionLedger).set({ reason: 'changed' }))).toMatchObject({ code: '23000' });
   });

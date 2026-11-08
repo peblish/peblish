@@ -32,7 +32,9 @@ export const communityModerators = pgTable(
   (t) => [
     primaryKey({ columns: [t.communityId, t.moderatorId] }),
     enumCheck('community_moderators_role', t.role, roleValues),
-    enumCheck('community_moderators_source', t.source, sourceValues), index('community_moderators_moderator').on(t.moderatorId)],
+    enumCheck('community_moderators_source', t.source, sourceValues),
+    index('community_moderators_moderator').on(t.moderatorId),
+  ],
 );
 
 /**
@@ -54,7 +56,9 @@ export const modlog = pgTable(
     reason: text('reason'),
     /** The Authority that granted the action. */
     authority: jsonb('authority').notNull(),
-    details: jsonb('details').notNull().default(sql`'{}'::jsonb`),
+    details: jsonb('details')
+      .notNull()
+      .default(sql`'{}'::jsonb`),
     /** The federated activity that carried or announced the action, when there is one. */
     activityApId: text('activity_ap_id'),
     createdAt: createdAt(),
@@ -86,5 +90,10 @@ export const reports = pgTable(
     resolvedAt: at('resolved_at'),
     createdAt: createdAt(),
   },
-  (t) => [enumCheck('reports_status', t.status, statusValues), index('reports_open').on(t.createdAt).where(sql`${t.status} = 'open'`)],
+  (t) => [
+    enumCheck('reports_status', t.status, statusValues),
+    index('reports_open')
+      .on(t.createdAt)
+      .where(sql`${t.status} = 'open'`),
+  ],
 );

@@ -24,7 +24,11 @@ export const inboxRaw = pgTable(
   },
   (t) => [
     enumCheck('inbox_raw_state', t.state, stateValues),
-    index('inbox_raw_pending').on(t.receivedAt).where(sql`${t.state} = 'pending'`), index('inbox_raw_activity').on(t.activityId)],
+    index('inbox_raw_pending')
+      .on(t.receivedAt)
+      .where(sql`${t.state} = 'pending'`),
+    index('inbox_raw_activity').on(t.activityId),
+  ],
 );
 
 /** Activity ids already applied; written by Tx.dedupe in the same transaction as the change. */

@@ -20,7 +20,14 @@ export function postWithFault(fault: () => Promise<void>) {
         publishedAt: new Date(),
       });
       await fault();
-      await t.emit({ type: 'post.created', v: 1, postId: input.id, communityId: grant.subject.communityId, authorId: grant.actorId, local: true });
+      await t.emit({
+        type: 'post.created',
+        v: 1,
+        postId: input.id,
+        communityId: grant.subject.communityId,
+        authorId: grant.actorId,
+        local: true,
+      });
     },
   });
 }

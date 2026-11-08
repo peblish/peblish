@@ -9,7 +9,14 @@ import { defineConsumer, type Consumer } from './consumers.ts';
 import { ensureCursors, processBatch, runOutboxWorker } from './worker.ts';
 
 const uuid = (n: number) => `0192f5a0-0000-7000-8000-${String(n).padStart(12, '0')}`;
-const created = (n: number): OutboxEvent => ({ type: 'post.created', v: 1, postId: uuid(n), communityId: uuid(0), authorId: uuid(0), local: true });
+const created = (n: number): OutboxEvent => ({
+  type: 'post.created',
+  v: 1,
+  postId: uuid(n),
+  communityId: uuid(0),
+  authorId: uuid(0),
+  local: true,
+});
 
 function recorder(fail?: (event: OutboxEvent) => boolean) {
   const seen: string[] = [];
@@ -24,7 +31,10 @@ function recorder(fail?: (event: OutboxEvent) => boolean) {
   return { seen, consumer };
 }
 
-const emit = (...events: OutboxEvent[]) => tx(async (t) => { for (const event of events) await t.emit(event); });
+const emit = (...events: OutboxEvent[]) =>
+  tx(async (t) => {
+    for (const event of events) await t.emit(event);
+  });
 
 /** Opens a transaction that emits and then waits for `release` before committing. */
 function heldOpen(event: OutboxEvent) {
@@ -36,7 +46,13 @@ function heldOpen(event: OutboxEvent) {
     ready();
     await new Promise<void>((resolve) => (release = resolve));
   });
-  return { started, commit: async () => { release(); await done; } };
+  return {
+    started,
+    commit: async () => {
+      release();
+      await done;
+    },
+  };
 }
 
 beforeEach(truncateAll);
@@ -69,7 +85,12 @@ describe('outbox worker', () => {
   test('a rolled-back transaction never reaches a consumer', async () => {
     const { seen, consumer } = recorder();
     await ensureCursors([consumer]);
-    await expect(tx(async (t) => { await t.emit(created(1)); throw new Error('rollback'); })).rejects.toThrow('rollback');
+    await expect(
+      tx(async (t) => {
+        await t.emit(created(1));
+        throw new Error('rollback');
+      }),
+    ).rejects.toThrow('rollback');
     expect(await processBatch(consumer)).toBe(0);
     expect(seen).toEqual([]);
   });
@@ -86,7 +107,9 @@ describe('outbox worker', () => {
     // Backing off: not retried before retry_at.
     failing = false;
     expect(await processBatch(consumer)).toBe(0);
-    await tx(async (t) => { await t.db.update(outboxCursors).set({ retryAt: null }).where(eq(outboxCursors.consumer, consumer.name)); });
+    await tx(async (t) => {
+      await t.db.update(outboxCursors).set({ retryAt: null }).where(eq(outboxCursors.consumer, consumer.name));
+    });
     expect(await processBatch(consumer)).toBe(1);
     expect(seen).toEqual([uuid(1)]);
   });

@@ -16,8 +16,16 @@ createPost(input);
 // @ts-expect-error: a grant for another action
 createPost(voteGrant, input);
 
+const lookAlike = {
+  action: 'post.create',
+  actorId: 'x',
+  principal: { kind: 'local', actorId: 'x', siteRole: 'user' },
+  subject: { communityId: 'c' },
+  authority: { kind: 'site-admin', actorId: 'x' },
+} as const;
+
 // @ts-expect-error: a look-alike object is not a grant (the brand is a private field)
-createPost({ action: 'post.create', actorId: 'x', principal: { kind: 'local', actorId: 'x', siteRole: 'user' }, subject: { communityId: 'c' }, authority: { kind: 'site-admin', actorId: 'x' } }, input);
+createPost(lookAlike, input);
 
 defineMutation({
   // @ts-expect-error: an action no policy registers

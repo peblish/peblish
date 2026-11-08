@@ -59,7 +59,9 @@ export const deletionLedger = pgTable(
     subjectApId: text('subject_ap_id'),
     reason: text('reason').notNull(),
     requestedBy: uuid('requested_by'),
-    details: jsonb('details').notNull().default(sql`'{}'::jsonb`),
+    details: jsonb('details')
+      .notNull()
+      .default(sql`'{}'::jsonb`),
     createdAt: createdAt(),
   },
   (t) => [enumCheck('deletion_ledger_subject_kind', t.subjectKind, subjectKindValues)],

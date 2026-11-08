@@ -13,7 +13,12 @@ export async function seedInstance(domain = 'test.local', local = true) {
   return row;
 }
 
-export async function seedActor(instance: { id: string; domain: string; local: boolean }, kind: ActorKind, name: string, extra: Partial<typeof actors.$inferInsert> = {}) {
+export async function seedActor(
+  instance: { id: string; domain: string; local: boolean },
+  kind: ActorKind,
+  name: string,
+  extra: Partial<typeof actors.$inferInsert> = {},
+) {
   const id = uuidv7();
   const path = kind === 'Group' ? `c.${name}` : `u.${name}`;
   const [row] = await writer()

@@ -16,5 +16,9 @@ export const instances = pgTable(
     createdAt: createdAt(),
     updatedAt: at('updated_at').notNull().defaultNow(),
   },
-  (t) => [uniqueIndex('instances_one_local').on(t.local).where(sql`${t.local}`)],
+  (t) => [
+    uniqueIndex('instances_one_local')
+      .on(t.local)
+      .where(sql`${t.local}`),
+  ],
 );

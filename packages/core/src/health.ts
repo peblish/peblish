@@ -6,6 +6,9 @@ export async function databaseReady(timeoutMs = 2_000): Promise<boolean> {
   const timeout = new Promise<false>((resolve) => setTimeout(resolve, timeoutMs, false));
   const query = db()
     .execute(sql`select 1`)
-    .then(() => true, () => false);
+    .then(
+      () => true,
+      () => false,
+    );
   return Promise.race([query, timeout]);
 }

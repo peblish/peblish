@@ -24,14 +24,27 @@ async function world() {
 describe('authorize', () => {
   test('refuses with exactly one closed reason', async () => {
     const { andrew, community, remoteUser } = await world();
-    expect(await authorize('post.create', { kind: 'anonymous' }, { communityId: community.id })).toEqual({ ok: false, reason: 'auth.required' });
-    expect(await authorize('post.create', { kind: 'remote', actorId: remoteUser.id, announcedBy: null }, { communityId: community.id })).toEqual({
+    expect(await authorize('post.create', { kind: 'anonymous' }, { communityId: community.id })).toEqual({
       ok: false,
       reason: 'auth.required',
     });
-    expect(await authorize('post.create', localUser(andrew.id), { communityId: andrew.id })).toEqual({ ok: false, reason: 'target.not_found' });
-    await tx(async (t) => { await t.db.update(actors).set({ deletedAt: new Date() }).where(eq(actors.id, community.id)); });
-    expect(await authorize('post.create', localUser(andrew.id), { communityId: community.id })).toEqual({ ok: false, reason: 'target.deleted' });
+    expect(
+      await authorize('post.create', { kind: 'remote', actorId: remoteUser.id, announcedBy: null }, { communityId: community.id }),
+    ).toEqual({
+      ok: false,
+      reason: 'auth.required',
+    });
+    expect(await authorize('post.create', localUser(andrew.id), { communityId: andrew.id })).toEqual({
+      ok: false,
+      reason: 'target.not_found',
+    });
+    await tx(async (t) => {
+      await t.db.update(actors).set({ deletedAt: new Date() }).where(eq(actors.id, community.id));
+    });
+    expect(await authorize('post.create', localUser(andrew.id), { communityId: community.id })).toEqual({
+      ok: false,
+      reason: 'target.deleted',
+    });
   });
 
   test('allows with a grant bound to the action, the subject and the authority', async () => {

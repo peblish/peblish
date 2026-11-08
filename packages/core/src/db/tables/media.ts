@@ -25,9 +25,7 @@ export const media = pgTable(
     height: integer('height'),
     sha256: text('sha256'),
     altText: text('alt_text'),
-    scanState: text('scan_state', { enum: scanStateValues })
-      .notNull()
-      .default('pending'),
+    scanState: text('scan_state', { enum: scanStateValues }).notNull().default('pending'),
     scannedAt: at('scanned_at'),
     deletedAt: at('deleted_at'),
     createdAt: createdAt(),
@@ -35,5 +33,9 @@ export const media = pgTable(
   (t) => [
     enumCheck('media_kind', t.kind, kindValues),
     enumCheck('media_scan_state', t.scanState, scanStateValues),
-    index('media_scan_pending').on(t.createdAt).where(sql`${t.scanState} = 'pending'`), index('media_sha256').on(t.sha256)],
+    index('media_scan_pending')
+      .on(t.createdAt)
+      .where(sql`${t.scanState} = 'pending'`),
+    index('media_sha256').on(t.sha256),
+  ],
 );

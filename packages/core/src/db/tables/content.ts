@@ -105,8 +105,12 @@ export const votes = pgTable(
     createdAt: createdAt(),
   },
   (t) => [
-    uniqueIndex('votes_voter_post').on(t.voterId, t.postId).where(sql`${t.postId} is not null`),
-    uniqueIndex('votes_voter_comment').on(t.voterId, t.commentId).where(sql`${t.commentId} is not null`),
+    uniqueIndex('votes_voter_post')
+      .on(t.voterId, t.postId)
+      .where(sql`${t.postId} is not null`),
+    uniqueIndex('votes_voter_comment')
+      .on(t.voterId, t.commentId)
+      .where(sql`${t.commentId} is not null`),
     index('votes_post').on(t.postId),
     index('votes_comment').on(t.commentId),
     check('votes_one_target', sql`num_nonnulls(${t.postId}, ${t.commentId}) = 1`),

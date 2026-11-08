@@ -12,7 +12,7 @@ import { mutationInfo } from './mutation.ts';
 
 const src = join(import.meta.dirname, '..');
 const modules = globSync('**/*.ts', { cwd: src }).filter(
-  (file) => !/\.(test|test-d|gen)\.ts$/.test(file) && !file.startsWith('testing/') && !file.endsWith('-cli.ts'),
+  (file) => !/\.(test|test-d|gen)\.ts$/.test(file) && !/(^|\/)(testing|__fixtures__)\//.test(file) && !file.endsWith('-cli.ts'),
 );
 
 test('every exported core mutation has an authz action and an outbox event type', async () => {

@@ -27,5 +27,9 @@ export const follows = pgTable(
     acceptedAt: at('accepted_at'),
     createdAt: createdAt(),
   },
-  (t) => [enumCheck('follows_state', t.state, stateValues), uniqueIndex('follows_pair').on(t.followerId, t.followeeId), index('follows_followee').on(t.followeeId, t.state)],
+  (t) => [
+    enumCheck('follows_state', t.state, stateValues),
+    uniqueIndex('follows_pair').on(t.followerId, t.followeeId),
+    index('follows_followee').on(t.followeeId, t.state),
+  ],
 );

@@ -15,4 +15,9 @@ export const siteSettings = {
 
 export type SiteSettingKey = keyof typeof siteSettings;
 export type SiteSettingValue<K extends SiteSettingKey> = (typeof siteSettings)[K]['default'];
-export const killSwitches = ['registration.enabled', 'remote_media.enabled', 'inbox.enabled', 'uploads.enabled'] as const satisfies readonly SiteSettingKey[];
+export const killSwitches = [
+  'registration.enabled',
+  'remote_media.enabled',
+  'inbox.enabled',
+  'uploads.enabled',
+] as const satisfies readonly SiteSettingKey[];

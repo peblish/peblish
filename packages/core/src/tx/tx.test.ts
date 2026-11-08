@@ -71,11 +71,8 @@ describe('tx plus emit', () => {
     const { author, community } = await seed();
     const child = join(import.meta.dirname, '../testing/crash-child.ts');
     const exit = await new Promise<{ signal: NodeJS.Signals | null; stdout: string; stderr: string }>((resolve) => {
-      execFile(
-        process.execPath,
-        [child, author.id, community.id, postId, activityId],
-        { env: process.env },
-        (error, stdout, stderr) => resolve({ signal: error?.signal ?? null, stdout, stderr }),
+      execFile(process.execPath, [child, author.id, community.id, postId, activityId], { env: process.env }, (error, stdout, stderr) =>
+        resolve({ signal: error?.signal ?? null, stdout, stderr }),
       );
     });
     expect(exit).toEqual({ signal: 'SIGKILL', stdout: 'applied\n', stderr: '' });

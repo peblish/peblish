@@ -1,0 +1,15 @@
+pnpm-lock.yaml
+**/*.gen.ts
+**/drizzle/meta/
+**/node_modules/
+**/.output/
+**/dist/
+**/.tanstack/
+spikes/
+lab/
+plans/
+e2e/artifacts/
+test-results/
+playwright-report/
+**/LICENSE
+DCO

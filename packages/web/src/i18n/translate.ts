@@ -12,7 +12,12 @@ function messagesFor(catalogue: Record<string, Record<string, string>>, locale: 
   return catalogue[locale] ?? catalogue[language] ?? {};
 }
 
-export function translate<A extends Area>(locale: string, area: A, key: MessageKey<A>, params: Record<string, string | number> = {}): string {
+export function translate<A extends Area>(
+  locale: string,
+  area: A,
+  key: MessageKey<A>,
+  params: Record<string, string | number> = {},
+): string {
   const catalogue: Record<string, Record<string, string>> = catalogues[area];
   const message = messagesFor(catalogue, locale)[key] ?? catalogue.en?.[key] ?? key;
   return message.replace(/\{(\w+)\}/g, (match, name: string) => String(params[name] ?? match));

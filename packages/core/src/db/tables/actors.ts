@@ -81,5 +81,8 @@ export const actorKeys = pgTable(
     privateKeyPem: text('private_key_pem'),
     createdAt: createdAt(),
   },
-  (t) => [enumCheck('actor_keys_algorithm', t.algorithm, algorithmValues), uniqueIndex('actor_keys_one_per_algorithm').on(t.actorId, t.algorithm)],
+  (t) => [
+    enumCheck('actor_keys_algorithm', t.algorithm, algorithmValues),
+    uniqueIndex('actor_keys_one_per_algorithm').on(t.actorId, t.algorithm),
+  ],
 );

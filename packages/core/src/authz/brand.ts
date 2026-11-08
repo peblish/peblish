@@ -2,12 +2,7 @@ import type { ActingPrincipal, Authority } from '@peblish/schema/authz';
 import type { Uuid } from '@peblish/schema/ids';
 import type { ActionName, SubjectOf } from './policy.ts';
 
-let issue: <A extends ActionName>(
-  action: A,
-  principal: ActingPrincipal,
-  subject: SubjectOf<A>,
-  authority: Authority,
-) => Authorized<A>;
+let issue: <A extends ActionName>(action: A, principal: ActingPrincipal, subject: SubjectOf<A>, authority: Authority) => Authorized<A>;
 
 /**
  * Proof that authorize() allowed `action` on `subject` for `principal`. Every core write
@@ -39,7 +34,7 @@ export class Authorized<A extends ActionName> {
 
   /** Runtime half of the guard: true only for grants authorize() issued for `action`. */
   static verify(grant: unknown, action: ActionName): boolean {
-    return typeof grant === 'object' && grant !== null && #genuine in grant && grant.action === action;
+    return typeof grant === 'object' && grant !== null && #genuine in grant && grant.#genuine && grant.action === action;
   }
 }
 
