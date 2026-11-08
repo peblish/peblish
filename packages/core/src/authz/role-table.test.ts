@@ -2,7 +2,7 @@ import type { Principal } from '@peblish/schema/authz';
 import { beforeAll, describe, expect, test } from 'vitest';
 import type { Queryable } from '../db/read.ts';
 import { policies } from '../registry/policies.gen.ts';
-import { admin, seedModerationWorld, targetStates, type Subject, type TargetState } from '../testing/seed-az.ts';
+import { admin, seedModerationWorld, targetStates, type RemoteRowState, type Subject, type TargetState } from '../testing/seed-az.ts';
 import { localUser } from '../testing/seed.ts';
 import { tx } from '../tx/tx.ts';
 import { authorize, type Decision } from './authorize.ts';
@@ -94,6 +94,13 @@ const refused = (post: string, mod: string, removedPost = CRM, removedMod = CRM)
 
 type Role = { role: string; community: 'local' | 'remote'; principal: (subject: Subject) => Principal; expected: Expected };
 
+/** A remote moderator acting directly (no Announce), its row in the given state. */
+const remoteModerator = (state: RemoteRowState) => (): Principal => ({
+  kind: 'remote',
+  actorId: world.remoteModerators[state].id,
+  announcedBy: null,
+});
+
 const roles: Role[] = [
   { role: 'anonymous', community: 'local', principal: () => ({ kind: 'anonymous' }), expected: refused(REQ, REQ, REQ, REQ) },
   { role: 'local user', community: 'local', principal: () => localUser(world.people.user.id), expected: refused(OK, MOD) },
@@ -127,6 +134,27 @@ const roles: Role[] = [
       announcedBy: { communityId: world.elsewhere.id, announceApId: 'https://other.test/activities/announce/1' },
     }),
     expected: refused(REQ, MIS, REQ),
+  },
+  // Remote moderator rows (roles.ts: fresh). A local row with no expiry grants (community
+  // moderator above); a remote one grants only once verified and before an expiry it must have.
+  { role: 'remote moderator, unverified', community: 'remote', principal: remoteModerator('unverified'), expected: refused(REQ, MOD, REQ) },
+  {
+    role: 'remote moderator, verified, expired',
+    community: 'remote',
+    principal: remoteModerator('verified, expired'),
+    expected: refused(REQ, MOD, REQ),
+  },
+  {
+    role: 'remote moderator, verified, no expiry',
+    community: 'remote',
+    principal: remoteModerator('verified, no expiry'),
+    expected: refused(REQ, MOD, REQ),
+  },
+  {
+    role: 'remote moderator, verified, unexpired',
+    community: 'remote',
+    principal: remoteModerator('verified, unexpired'),
+    expected: moderates(REQ, REQ),
   },
   { role: 'banned user', community: 'local', principal: () => localUser(world.people.banned.id), expected: refused(BAN, BAN) },
 ];
