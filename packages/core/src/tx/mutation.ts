@@ -4,7 +4,7 @@ import { Authorized } from '../authz/brand.ts';
 import type { ActionName } from '../authz/policy.ts';
 import type { WriteTx } from '../db/write.ts';
 import { Refused } from './refused.ts';
-import { tx, type Tx } from './tx.ts';
+import { tx, type OpenTx } from './tx.ts';
 
 /** Mutations defined so far, for mutationInfo() and the registry test. */
 const defined = new WeakMap<object, MutationInfo>();
@@ -27,8 +27,11 @@ export type MutationTx<E extends EventType> = {
 export interface Mutation<A extends ActionName, I, O> {
   /** Runs in its own transaction. */
   (grant: Authorized<A>, input: I): Promise<O>;
-  /** Runs inside an open transaction, such as the inbound pipeline's dedupe, apply, enqueue. */
-  within(t: Tx, grant: Authorized<A>, input: I): Promise<O>;
+  /**
+   * Runs inside an open transaction: the inbound pipeline's dedupe, apply, enqueue, another
+   * mutation's body, or an outbox consumer's batch.
+   */
+  within(t: OpenTx, grant: Authorized<A>, input: I): Promise<O>;
 }
 
 /**
@@ -53,7 +56,7 @@ export function defineMutation<A extends ActionName, E extends EventType, I, O>(
   const recheck = 'recheck' in spec && spec.recheck === true;
   if (requiresRecheck(spec.action) && !recheck)
     throw new TypeError(`${spec.action} can be revoked, so its mutation must set recheck: true`);
-  const within = async (t: Tx, grant: Authorized<A>, input: I): Promise<O> => {
+  const within = async (t: OpenTx, grant: Authorized<A>, input: I): Promise<O> => {
     if (!Authorized.verify(grant, spec.action)) throw new TypeError(`${spec.action} needs a grant from authorize()`);
     let current = grant;
     if (recheck) {

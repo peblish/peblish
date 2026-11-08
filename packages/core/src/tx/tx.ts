@@ -9,14 +9,21 @@ import { writer, type WriteTx } from '../db/write.ts';
 export const OUTBOX_CHANNEL = 'peblish_outbox';
 
 /**
+ * What a mutation body and an outbox consumer get from an open write transaction: its handle
+ * and an emit into the outbox in that same transaction. mutation.within accepts it.
+ */
+export interface OpenTx {
+  readonly db: WriteTx;
+  /** Queues `event` in the outbox, validated against the event union. */
+  emit(event: OutboxEvent): Promise<void>;
+}
+
+/**
  * A write transaction. The state change, its outbox rows (emit) and its dedupe marker
  * (dedupe) commit together or not at all. Only mutations (mutation.ts), the outbox worker
  * and the inbound federation pipeline may open one (lint rule core-tx-access).
  */
-export interface Tx {
-  readonly db: WriteTx;
-  /** Queues `event` in the outbox, validated against the event union. */
-  emit(event: OutboxEvent): Promise<void>;
+export interface Tx extends OpenTx {
   /**
    * Records the dedupe marker for an inbound activity. Returns false when it was already
    * applied (by this or a concurrent transaction): skip the change then. Pass the applied
@@ -37,20 +44,35 @@ export function insideTransaction<T>(fn: () => Promise<T>): Promise<T> {
   return openTransaction.run(true, fn);
 }
 
+/**
+ * An outbox emit bound to an open write transaction, shared by tx() and the outbox worker's
+ * batch transaction. Call notify() last, inside the transaction: Postgres delivers the NOTIFY
+ * at commit, so the worker wakes only for committed events.
+ */
+export function outboxEmitter(db: WriteTx) {
+  let emitted = false;
+  return {
+    async emit(event: OutboxEvent): Promise<void> {
+      const valid = parseEvent(event);
+      await db.insert(outbox).values({ type: valid.type, v: valid.v, payload: valid });
+      emitted = true;
+    },
+    async notify(): Promise<void> {
+      if (emitted) await db.execute(sql`select pg_notify(${OUTBOX_CHANNEL}, '')`);
+    },
+  };
+}
+
 export async function tx<T>(fn: (t: Tx) => Promise<T>): Promise<T> {
   if (openTransaction.getStore()) {
     throw new Error('tx() inside an open transaction: call the inner mutation with mutation.within(t, grant, input) instead');
   }
   return writer().transaction(async (db) =>
     insideTransaction(async () => {
-      let emitted = false;
+      const outboxEvents = outboxEmitter(db);
       const t: Tx = {
         db,
-        async emit(event) {
-          const valid = parseEvent(event);
-          await db.insert(outbox).values({ type: valid.type, v: valid.v, payload: valid });
-          emitted = true;
-        },
+        emit: outboxEvents.emit,
         async dedupe(activityId) {
           const inserted = await db
             .insert(inboxDedupe)
@@ -61,7 +83,7 @@ export async function tx<T>(fn: (t: Tx) => Promise<T>): Promise<T> {
         },
       };
       const result = await fn(t);
-      if (emitted) await db.execute(sql`select pg_notify(${OUTBOX_CHANNEL}, '')`);
+      await outboxEvents.notify();
       return result;
     }),
   );

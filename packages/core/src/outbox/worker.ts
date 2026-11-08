@@ -1,32 +1,39 @@
-import { and, eq, inArray, sql } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { parseEvent } from '@peblish/schema/events';
 import { consumers as registered } from '../registry/consumers.gen.ts';
 import { db } from '../db/read.ts';
 import { outbox, outboxCursors } from '../db/tables/outbox.ts';
 import { writePool } from '../db/pools.ts';
 import { writer } from '../db/write.ts';
-import { insideTransaction, OUTBOX_CHANNEL } from '../tx/tx.ts';
-import type { Consumer } from './consumers.ts';
+import { insideTransaction, OUTBOX_CHANNEL, outboxEmitter } from '../tx/tx.ts';
+import { assertUniqueNames, type Consumer } from './consumers.ts';
 
 /**
- * Creates missing cursor rows. A consumer seen for the first time starts at "now": it gets
- * every event from transactions still running or started later, none from before.
+ * Creates missing cursor rows, each at its consumer's startAt (see ConsumerStart), and
+ * rejects duplicate names. Existing cursors are kept.
  */
 export async function ensureCursors(consumers: readonly Consumer[]): Promise<void> {
+  assertUniqueNames(consumers);
   if (consumers.length === 0) return;
   await writer()
     .insert(outboxCursors)
-    .values(consumers.map(({ name }) => ({ consumer: name, txId: sql`pg_snapshot_xmin(pg_current_snapshot())` })))
+    .values(
+      consumers.map(({ name, startAt }) => ({
+        consumer: name,
+        txId: startAt === 'beginning' ? sql`'0'::xid8` : sql`pg_snapshot_xmin(pg_current_snapshot())`,
+      })),
+    )
     .onConflictDoNothing();
 }
 
 /**
- * Hands the next batch of events to `consumer` and advances its cursor, all in one
- * transaction. Only rows below the oldest running transaction id are read, so an earlier
- * transaction that commits later is never skipped. The cursor row is locked (skip locked),
- * so concurrent workers never run one consumer twice. On failure the batch rolls back and the
- * consumer backs off (capped at five minutes); later events wait behind the failing one.
- * Returns the number of events handled.
+ * Scans the next `limit` outbox rows after `consumer`'s cursor, hands it the ones of its event
+ * types and advances the cursor to the last row scanned, all in one transaction. Only rows
+ * below the oldest running transaction id are read, so an earlier transaction that commits
+ * later is never skipped. The cursor row is locked (skip locked), so concurrent workers never
+ * run one consumer twice. On failure the batch rolls back, the cursor stays and the consumer
+ * backs off (doubling, capped at five minutes); later events wait behind the failing one.
+ * Returns how many rows the cursor moved past, matching or not.
  */
 export async function processBatch(consumer: Consumer, limit = 100): Promise<number> {
   try {
@@ -41,18 +48,21 @@ export async function processBatch(consumer: Consumer, limit = 100): Promise<num
           .for('update', { skipLocked: true });
         if (!cursor) return 0;
         const rows = await db
-          .select({ id: outbox.id, txId: outbox.txId, payload: outbox.payload })
+          .select({ id: outbox.id, txId: outbox.txId, type: outbox.type, payload: outbox.payload })
           .from(outbox)
           .where(
             and(
               sql`(${outbox.txId}, ${outbox.id}) > (${cursor.txId}::xid8, ${cursor.eventId})`,
               sql`${outbox.txId} < pg_snapshot_xmin(pg_current_snapshot())`,
-              inArray(outbox.type, [...consumer.events]),
             ),
           )
           .orderBy(outbox.txId, outbox.id)
           .limit(limit);
-        for (const row of rows) await consumer.handle(parseEvent(row.payload), { db });
+        const events = outboxEmitter(db);
+        const t = { db, emit: events.emit };
+        for (const row of rows) {
+          if (consumer.events.some((type) => type === row.type)) await consumer.handle(parseEvent(row.payload), t);
+        }
         const last = rows.at(-1);
         if (last) {
           await db
@@ -60,21 +70,29 @@ export async function processBatch(consumer: Consumer, limit = 100): Promise<num
             .set({ txId: last.txId, eventId: last.id, attempts: 0, lastError: null, retryAt: null, updatedAt: new Date() })
             .where(eq(outboxCursors.consumer, consumer.name));
         }
+        await events.notify();
         return rows.length;
       }),
     );
   } catch (error) {
-    await writer()
-      .update(outboxCursors)
-      .set({
-        attempts: sql`${outboxCursors.attempts} + 1`,
-        lastError: error instanceof Error ? `${error.name}: ${error.message}` : String(error),
-        retryAt: sql`now() + least(interval '1 second' * power(2, ${outboxCursors.attempts}), interval '5 minutes')`,
-        updatedAt: new Date(),
-      })
-      .where(eq(outboxCursors.consumer, consumer.name));
+    await recordFailure(consumer, error).catch(() => {
+      // The consumer's error is the one worth reporting; the next attempt records again.
+    });
     throw error;
   }
+}
+
+/** Counts the failure and sets the next retry: 2^attempts seconds, the exponent capped before it can overflow. */
+function recordFailure(consumer: Consumer, error: unknown) {
+  return writer()
+    .update(outboxCursors)
+    .set({
+      attempts: sql`${outboxCursors.attempts} + 1`,
+      lastError: error instanceof Error ? `${error.name}: ${error.message}` : String(error),
+      retryAt: sql`now() + least(interval '1 second' * power(2, least(${outboxCursors.attempts}, 9)), interval '5 minutes')`,
+      updatedAt: new Date(),
+    })
+    .where(eq(outboxCursors.consumer, consumer.name));
 }
 
 export type OldestTransaction = { pid: number; database: string | null; application: string; state: string | null; ageSeconds: number };
@@ -82,14 +100,15 @@ export type OldestTransaction = { pid: number; database: string | null; applicat
 /**
  * The oldest open transaction on the cluster that holds a transaction id, and so holds back
  * the outbox horizon for every consumer, in every database on that Postgres (a stuck psql
- * session in one lane's database stalls every lane). Undefined when there is none.
+ * session in one lane's database stalls every lane). `database` narrows the search, for
+ * tests on a shared cluster. Undefined when there is none.
  */
-export async function oldestWriteTransaction(): Promise<OldestTransaction | undefined> {
+export async function oldestWriteTransaction(database?: string): Promise<OldestTransaction | undefined> {
   const [oldest] = await db().execute<OldestTransaction>(sql`
     select pid, datname as database, application_name as application, state,
            extract(epoch from now() - xact_start)::float8 as "ageSeconds"
     from pg_stat_activity
-    where backend_xid is not null and pid <> pg_backend_pid()
+    where backend_xid is not null and pid <> pg_backend_pid() and (${database ?? null}::text is null or datname = ${database ?? null})
     order by xact_start
     limit 1`);
   return oldest;
@@ -111,7 +130,7 @@ const describeLag = ({ ageSeconds, pid, database, application, state }: OldestTr
   `outbox: consumers are waiting behind a write transaction open for ${Math.round(ageSeconds)} s ` +
   `(pid ${pid}, database ${database ?? '?'}, application ${application || '?'}, state ${state ?? '?'})`;
 
-/** Runs the registered consumers until `signal` aborts. */
+/** Runs `consumers` (default: core's registered ones) until `signal` aborts. Throws on duplicate names. */
 export async function runOutboxWorker({
   signal,
   consumers = registered,
@@ -124,24 +143,31 @@ export async function runOutboxWorker({
   await ensureCursors(consumers);
   const lagCheckMs = Math.max(lagWarningSeconds, 5) * 1_000;
   let lagCheckedAt = 0;
+  // A NOTIFY that lands while a batch runs sets `woken`, so the loop goes round again
+  // instead of sleeping on an event it has not read.
+  let woken = false;
   let wake: (() => void) | undefined;
-  const listener = await writePool().client.listen(OUTBOX_CHANNEL, () => wake?.());
+  const listener = await writePool().client.listen(OUTBOX_CHANNEL, () => {
+    woken = true;
+    wake?.();
+  });
   try {
     while (!signal.aborted) {
+      woken = false;
       if (Date.now() - lagCheckedAt >= lagCheckMs) {
         lagCheckedAt = Date.now();
         const oldest = await oldestWriteTransaction().catch(() => undefined);
         if (oldest && oldest.ageSeconds > lagWarningSeconds) onLag(oldest);
       }
-      let handled = 0;
+      let scanned = 0;
       for (const consumer of consumers) {
         try {
-          handled += await processBatch(consumer, batchSize);
+          scanned += await processBatch(consumer, batchSize);
         } catch (error) {
           onError(consumer, error);
         }
       }
-      if (handled > 0) continue;
+      if (scanned > 0 || woken) continue;
       await new Promise<void>((resolve) => {
         const timer = setTimeout(done, pollMs);
         signal.addEventListener('abort', done, { once: true });
