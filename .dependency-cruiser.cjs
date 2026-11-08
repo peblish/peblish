@@ -49,6 +49,19 @@ module.exports = {
       to: { path: pkg('ui|web') },
     },
     {
+      name: 'web-federation-entry-points',
+      comment: 'web reaches federation only through its HTTP seam and its consumer registry (both owned by lane FED-A).',
+      severity: 'error',
+      from: { path: '^packages/web/' },
+      to: {
+        path: pkg('federation'),
+        pathNot: [
+          '^packages/federation/src/(http|registry/consumers\\.gen)\\.ts$',
+          '^@peblish/federation/(http|registry/consumers\\.gen)$',
+        ],
+      },
+    },
+    {
       name: 'mux-only-in-ui',
       comment: 'Mux UI and React Aria are reached only through the ui facade.',
       severity: 'error',

@@ -13,6 +13,7 @@ const fixtures: Record<string, string> = {
   'packages/ui/src/__fixtures__/imports-core.tsx': 'ui-imports-schema-only',
   'packages/core/src/__fixtures__/imports-federation.ts': 'core-imports-schema-only',
   'packages/federation/src/__fixtures__/imports-ui.ts': 'federation-imports-core-and-schema',
+  'packages/web/src/__fixtures__/imports-federation-internals.ts': 'web-federation-entry-points',
   'packages/web/src/__fixtures__/imports-mux.tsx': 'mux-only-in-ui',
   'packages/web/src/__fixtures__/imports-mux-resolved.tsx': 'mux-only-in-ui',
   'packages/web/src/__fixtures__/imports-mux-css.ts': 'mux-only-in-ui',

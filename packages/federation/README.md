@@ -16,3 +16,16 @@ activity being applied, which is the inner activity when it arrives inside an An
 A Create delivered directly by its author and the same Create relayed by the community's
 Announce are therefore applied once. Lane FED-A implements this rule where it unwraps
 Announces.
+
+## HTTP and consumers
+
+`src/http.ts` is the HTTP seam. Web's server entry (`packages/web/src/server.ts`, through
+`packages/web/src/server/federation.ts`) sends `isFederationRequest` matches to
+`handleFederationRequest` before any UI route matches. Those are the `/ap/*`,
+`/.well-known/webfinger`, `/.well-known/nodeinfo`, `/nodeinfo/*`, `/inbox` and `/outbox`
+paths, `/u/<name>` and `/c/<name>` with their `/inbox` and `/outbox`, and `/` when Accept
+prefers ActivityPub JSON. A `null` answer falls through to the UI route, so a page path
+still renders HTML. Federation's outbox consumers live in `src/<area>/consumer.ts`, and the
+worker runs them beside core's. G0 created these files and the web bridge; lane FED-A owns
+`http.ts` and its consumers from here. Web may import only `@peblish/federation/http` and the
+consumer registry (lint rule `web-federation-entry-points`).
