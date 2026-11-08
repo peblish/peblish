@@ -1,20 +1,17 @@
-// The image's Docker HEALTHCHECK. Only the web process has an HTTP liveness probe
-// (/healthz); a container running worker or migrate has no web process and reports
-// healthy, since it stops when its process exits. Detection reads /proc, so it needs no
-// writable filesystem and works behind an init process (docker run --init).
-import { readdirSync, readFileSync } from 'node:fs';
-
-const runsWeb = readdirSync('/proc')
-  .filter((entry) => /^\d+$/.test(entry))
-  .some((pid) => {
-    try {
-      return readFileSync(`/proc/${pid}/cmdline`, 'utf8').includes('/app/.output/server/index.mjs');
-    } catch {
-      return false;
-    }
-  });
-if (!runsWeb) process.exit(0);
-
+// The image's Docker HEALTHCHECK, by role: PEBLISH_PROCESS from the container environment,
+// which the entrypoint requires to match the process it starts.
+// - web: GET /healthz on $PORT must answer 200 within 4 s.
+// - worker: healthy without a probe. It serves no HTTP; its liveness is the process (the
+//   container stops when it exits, and the restart policy brings it back), and a stalled
+//   outbox shows in the worker's lag warning.
+// - migrate: healthy without a probe; a one-shot run that exits.
+// Anything else (unset, a typo) is unhealthy, so a misconfigured container is visible.
+const role = process.env.PEBLISH_PROCESS;
+if (role === 'worker' || role === 'migrate') process.exit(0);
+if (role !== 'web') {
+  console.error(`healthcheck: PEBLISH_PROCESS is ${role === undefined ? 'unset' : `'${role}'`}, not web, worker or migrate`);
+  process.exit(1);
+}
 const response = await fetch(`http://127.0.0.1:${process.env.PORT ?? 3000}/healthz`, { signal: AbortSignal.timeout(4_000) }).catch(
   () => undefined,
 );

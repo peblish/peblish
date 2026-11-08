@@ -7,22 +7,27 @@ or lab.feddit.com before the cutover gate.
 
 ## Services
 
-One Docker image (the root `Dockerfile`) runs three processes, chosen by command.
+One Docker image (the root `Dockerfile`) runs three processes, chosen by the `PEBLISH_PROCESS`
+environment variable (`web` by default, `worker`, `migrate`). A command argument may repeat it
+(`peblish worker`) but must agree, or the entrypoint exits 64: the healthcheck reads the variable.
 
-| Service    | Easypanel type               | Source                                                                           | Command               | Port, domain                                                         | Health check                    |
+| Service    | Easypanel type               | Source                                                                           | PEBLISH_PROCESS       | Port, domain                                                         | Health check                    |
 | ---------- | ---------------------------- | -------------------------------------------------------------------------------- | --------------------- | -------------------------------------------------------------------- | ------------------------------- |
 | `postgres` | Postgres service, version 17 | Easypanel template                                                               |                       | internal only                                                        | built in                        |
 | `web`      | App                          | Git `github.com/peblish/peblish`, branch `main`, build type Dockerfile, path `/` | `web` (image default) | container port 3000, domain such as `staging.peblish.com` with HTTPS | HTTP GET `/healthz`, expect 200 |
 | `worker`   | App                          | same source and image as `web`                                                   | `worker`              | no port, no domain                                                   | none (restart policy)           |
 
-The image's Docker `HEALTHCHECK` (`deploy/healthcheck.mjs`) probes `/healthz` only when the
-container runs `web`. For `worker` and `migrate` it reports healthy without probing anything:
-the worker's liveness is its process (set a restart policy), and `migrate` is a one-shot run
-that exits. Override it per service where the platform supports that, for example
+The image's Docker `HEALTHCHECK` (`deploy/healthcheck.mjs`) goes by `PEBLISH_PROCESS`. For `web`
+it requires `/healthz` to answer 200 within 4 s. For `worker` it passes without a probe: the
+worker serves no HTTP, so its liveness is the process (set a restart policy), and a stalled
+outbox shows in the worker's lag warning. For `migrate` it passes too, since that is a one-shot
+run that exits. Any other value, or none, fails, so a misconfigured container shows as
+unhealthy. Disable it per service where the platform's own check replaces it, for example
 `healthcheck: { disable: true }` in compose or `--no-healthcheck` on `docker run`.
 
 Migrations run as a one-off before `web` and `worker` move to a new build: open the `web`
-service console and run `peblish migrate` (or run the image with command `migrate` once).
+service console and run `PEBLISH_PROCESS=migrate peblish` (or run the image once with
+`PEBLISH_PROCESS=migrate`).
 It applies pending migrations and, on the first run, creates the local instance row from
 `PUBLIC_ORIGIN`. Run one replica of `web` and one of `worker` until a later lane adds
 leader election; consumers already lock their cursors, so a second worker is safe but
@@ -37,6 +42,7 @@ idle.
 | `PORT`, `HOST`      | web                            | `3000`, `0.0.0.0` (image defaults)                                                                                                |
 | `DATABASE_POOL_MAX` | web, worker                    | connections per pool, default 10 (each process has a read pool and a write pool)                                                  |
 | `NODE_ENV`          | all                            | `production` (image default)                                                                                                      |
+| `PEBLISH_PROCESS`   | all                            | `web` (image default), `worker` or `migrate`: which process starts, and what the healthcheck probes                               |
 
 Added by later lanes (names reserved here so environments stay consistent):
 `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL` (lane A), `SMTP_URL` or the transactional mail
@@ -69,7 +75,7 @@ docker build -t peblish:local .
 docker compose up -d --wait postgres
 docker run --rm --network peblish-dev_default \
   -e DATABASE_URL=postgres://peblish:peblish@postgres:5432/peblish_g0 \
-  -e PUBLIC_ORIGIN=https://g0.peblish.test peblish:local migrate
+  -e PUBLIC_ORIGIN=https://g0.peblish.test -e PEBLISH_PROCESS=migrate peblish:local
 docker run -d --name peblish-web --network peblish-dev_default -p 127.0.0.1:18300:3000 \
   -e DATABASE_URL=postgres://peblish:peblish@postgres:5432/peblish_g0 peblish:local
 curl http://127.0.0.1:18300/healthz
