@@ -1,10 +1,13 @@
+import { eq } from 'drizzle-orm';
 import { beforeEach, expect, test } from 'vitest';
+import { authSession } from '../db/tables/auth.ts';
+import { writer } from '../db/write.ts';
 import { truncateAll } from '../testing/db.ts';
 import { seedAccount, seedLocalInstance, seedTwoFactor, totpCode } from '../testing/seed-a.ts';
 import { auth } from './auth.ts';
 import { bootstrapAdmin } from './bootstrap.ts';
 import { currentSession, describeDevice, deviceSessions, maskIp, revokeSession } from './session.ts';
-import { pendingTotp, revealRecoveryCodesOnce, takeRecoveryCodes } from './two-factor.ts';
+import { confirmTotpSetup, pendingTotp, takeRecoveryCodes } from './two-factor.ts';
 
 beforeEach(async () => {
   await truncateAll();
@@ -50,6 +53,19 @@ test('sessions list their device, and one can be revoked by its owner only', asy
   expect((await deviceSessions(mira.userId, current.sessionId)).map(({ id }) => id)).toEqual([current.sessionId]);
 });
 
+test('a session older than a day comes back with a refreshed cookie for the reply to pass on', async () => {
+  const mira = await seedAccount('mira');
+  const cookies = await signIn(mira.email, mira.password, firefoxMac);
+  expect((await currentSession(cookies))?.setCookies).toEqual([]);
+  // 30-day sessions refresh once a day (session.updateAge): make this one two days old.
+  await writer()
+    .update(authSession)
+    .set({ expiresAt: new Date(Date.now() + 28 * 86_400_000) })
+    .where(eq(authSession.userId, mira.userId));
+  const refreshed = await currentSession(cookies);
+  expect(refreshed?.setCookies.some((cookie) => cookie.includes('session_token='))).toBe(true);
+});
+
 test('an admin counts as one only with two-factor on', async () => {
   const andrew = await seedAccount('andrew', { role: 'admin' });
   const cookies = await signIn(andrew.email, andrew.password, firefoxMac);
@@ -79,7 +95,7 @@ test('device names and masked addresses', () => {
   expect(maskIp('2001:db8:85a3:8d3:1319:8a2e:370:7348')).toBe('2001:db8:85a3:8d3:x');
 });
 
-test('a two-factor setup shows its key until confirmed, then the recovery codes once', async () => {
+test('a two-factor setup shows its key until confirmed, then the recovery codes once, and a later code shows nothing', async () => {
   const mira = await seedAccount('mira');
   const cookies = await signIn(mira.email, mira.password, firefoxMac);
   const api = (await auth()).api;
@@ -90,10 +106,16 @@ test('a two-factor setup shows its key until confirmed, then the recovery codes 
   expect(pending?.key).toMatch(/^[A-Z2-7]{32,}$/);
 
   const secret = Buffer.from(base32Decode(pending!.key)).toString();
-  await api.verifyTOTP({ body: { code: totpCode(secret) }, headers: cookies });
+  const now = Date.now();
+  const confirmed = await confirmTotpSetup(mira.userId, cookies, totpCode(secret, now));
+  expect(confirmed?.some((cookie) => cookie.includes('session_token'))).toBe(true);
   expect(await pendingTotp(mira.userId, mira.email)).toBeNull();
-  await revealRecoveryCodesOnce(mira.userId);
   expect(await takeRecoveryCodes(mira.userId)).toEqual(enabled.backupCodes);
+  expect(await takeRecoveryCodes(mira.userId)).toBeNull();
+
+  // Posting a valid code again, with the new session, changes nothing and reveals nothing.
+  const session = new Headers({ cookie: (confirmed ?? []).map((value) => value.split(';')[0]).join('; ') });
+  expect(await confirmTotpSetup(mira.userId, session, totpCode(secret, now + 30_000))).toBeNull();
   expect(await takeRecoveryCodes(mira.userId)).toBeNull();
 });
 

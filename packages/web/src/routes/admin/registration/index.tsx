@@ -1,3 +1,4 @@
+import { putFlash, takeFlash } from '@peblish/core/identity/flash';
 import { findLocalPerson, localHandles } from '@peblish/core/identity/handles';
 import { createInviteAs, listInvites, lookupInvite, revokeInviteAs } from '@peblish/core/registration/invites';
 import { registrationOverview } from '@peblish/core/registration/settings';
@@ -5,62 +6,60 @@ import { InviteCreateBody, type InviteRow, type InviteStatus } from '@peblish/sc
 import { Button } from '@peblish/ui/components/button';
 import { createFileRoute, Link, redirect } from '@tanstack/react-router';
 import { createServerFn } from '@tanstack/react-start';
-import { setResponseHeader } from '@tanstack/react-start/server';
 import { type } from 'arktype';
 import { useState } from 'react';
 import { useTranslate } from '../../../i18n/use-translate.ts';
-import { forbidden, principalOf, readForm, pageSession, respond, sameOrigin, sessionOf } from '../../../server/auth.ts';
+import { forbidden, formSession, pageSession, principalOf, readForm, sameOrigin } from '../../../server/auth.ts';
 import { useRouteHydrated } from '../../../shell/hydration.ts';
 import { asFormError } from '../../auth/-ui/errors.ts';
 import { AuthForm, Field } from '../../auth/-ui/form.tsx';
 import { authHead, SearchText, useDate } from '../../auth/-ui/page.tsx';
 
-const Search = type({ 'error?': SearchText, 'created?': SearchText });
+const Search = type({ 'error?': SearchText });
 const Body = InviteCreateBody.and({ intent: "'create'" }).or({ intent: "'revoke'", invite: 'string.uuid' });
 
-const loadRegistration = createServerFn({ method: 'GET' })
-  .validator(type({ 'created?': 'string' }))
-  .handler(async ({ data }) => {
-    // Per person (or per browser, for the age gate): never from a shared cache.
-    setResponseHeader('cache-control', 'private, no-store');
-    const session = await pageSession();
-    if (!session) throw redirect({ to: '/auth/sign-in', search: { redirect: '/admin/registration' } });
-    const { origin, handle } = await localHandles();
-    const access = session.role !== 'admin' ? 'not-admin' : session.view.siteRole !== 'admin' ? 'needs-two-factor' : 'ok';
-    if (access !== 'ok') return { access } as const;
-    const [registration, invites] = await Promise.all([registrationOverview(), listInvites()]);
-    const created = data.created ? { code: data.created, ...(await lookupInvite(data.created)) } : null;
-    return { access, origin, me: handle(session.view.name).handle, registration, invites, created } as const;
-  });
+/** The flash (identity/flash.ts) that carries a new invite's code from the POST to this page, once. */
+const CREATED = 'created-invite';
+
+const loadRegistration = createServerFn({ method: 'GET' }).handler(async () => {
+  const session = await pageSession();
+  if (!session) throw redirect({ to: '/auth/sign-in', search: { redirect: '/admin/registration' } });
+  const { origin, handle } = await localHandles();
+  const access = session.role !== 'admin' ? 'not-admin' : session.view.siteRole !== 'admin' ? 'needs-two-factor' : 'ok';
+  if (access !== 'ok') return { access } as const;
+  const [registration, invites, code] = await Promise.all([registrationOverview(), listInvites(), takeFlash(session.sessionId, CREATED)]);
+  // The code of the invite just made, on the first view after making it and never again.
+  const created = code ? { code, ...(await lookupInvite(code)) } : null;
+  return { access, origin, me: handle(session.view.name).handle, registration, invites, created } as const;
+});
 
 const days = { '7': 7, '30': 30, '90': 90, never: null } as const;
 
 export const Route = createFileRoute('/admin/registration/')({
   validateSearch: Search,
-  loaderDeps: ({ search }) => ({ created: search.created }),
-  loader: ({ deps }) => loadRegistration({ data: deps.created ? { created: deps.created } : {} }),
+  loader: () => loadRegistration(),
   head: authHead,
   component: Registration,
   server: {
     handlers: {
       POST: async ({ request }) => {
         if (!sameOrigin(request)) return forbidden();
-        const session = await sessionOf(request);
-        if (!session) return respond(request, { redirect: '/auth/sign-in?redirect=%2Fadmin%2Fregistration' });
+        const { session, reply } = await formSession(request);
+        if (!session) return reply({ redirect: '/auth/sign-in?redirect=%2Fadmin%2Fregistration' });
         const body = Body(await readForm(request));
         const back = { back: '/admin/registration' };
-        if (body instanceof type.errors) return respond(request, { error: 'form.invalid', ...back });
+        if (body instanceof type.errors) return reply({ error: 'form.invalid', ...back });
         const principal = principalOf(session.view);
         if (body.intent === 'revoke') {
           const revoked = await revokeInviteAs(principal, body.invite);
-          if (!revoked.ok) return respond(request, { error: asFormError(revoked.reason) ?? 'generic', ...back });
-          return respond(request, { redirect: '/admin/registration' });
+          if (!revoked.ok) return reply({ error: asFormError(revoked.reason) ?? 'generic', ...back });
+          return reply({ redirect: '/admin/registration' });
         }
         const maxUses = Number(body.maxUses);
-        if (!Number.isInteger(maxUses) || maxUses < 1) return respond(request, { error: 'form.invalid', ...back });
+        if (!Number.isInteger(maxUses) || maxUses < 1) return reply({ error: 'form.invalid', ...back });
         // The referrer defaults to the admin; the chain then starts at them.
         const referrer = await findLocalPerson(body.referrer.trim() || session.view.name);
-        if (!referrer) return respond(request, { error: 'target.not_found', ...back });
+        if (!referrer) return reply({ error: 'target.not_found', ...back });
         const expiryDays = days[body.expires];
         const created = await createInviteAs(principal, {
           referrerId: referrer.id,
@@ -68,9 +67,10 @@ export const Route = createFileRoute('/admin/registration/')({
           maxUses,
           expiresAt: expiryDays === null ? null : new Date(Date.now() + expiryDays * 86_400_000),
         });
-        if (!created.ok) return respond(request, { error: asFormError(created.reason) ?? 'generic', ...back });
-        // The code is shown once, on the page this redirect opens.
-        return respond(request, { redirect: `/admin/registration?created=${encodeURIComponent(created.code)}` });
+        if (!created.ok) return reply({ error: asFormError(created.reason) ?? 'generic', ...back });
+        // The code is shown once, on the page this redirect opens, and never rides in its URL.
+        await putFlash(session.sessionId, CREATED, created.code);
+        return reply({ redirect: '/admin/registration' });
       },
     },
   },

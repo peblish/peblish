@@ -8,13 +8,16 @@ import type { Queryable } from '../../db/read.ts';
 import { actors } from '../../db/tables/actors.ts';
 import { authUser } from '../../db/tables/auth.ts';
 import { invites } from '../../db/tables/site.ts';
-import { inviteCodeHash, inviteRefusal, inviteStatus } from '../../registration/codes.ts';
+import { hashInviteCode, inviteRefusal, inviteStatus } from '../../registration/codes.ts';
 import { accountCount, registrationSettings } from '../../registration/settings.ts';
 import type { Frozen } from '../frozen.ts';
 import { allow, deny, forNoKeyUpdate, forShare, type PolicyRequest, type PolicyResult } from '../policy.ts';
 
-// Owned by lane A: accounts and invites (A01, A05, M20). Actor rows are read FOR NO KEY
-// UPDATE under lock because account.delete updates them (PolicyRequest.lock).
+// Owned by lane A: accounts and invites (A01, A05, M20). Under lock (PolicyRequest.lock), the
+// actor row account.delete updates is read FOR NO KEY UPDATE. invite.create's referrer is read
+// FOR SHARE: its body only inserts a reference to it, and the referrer is usually the admin,
+// whose row the principal refresh already holds FOR SHARE. Upgrading that lock would deadlock
+// two invite.create calls by one admin; FOR SHARE still makes a deletion wait for the write.
 
 /** Serialises account creation under lock, so two sign-ups cannot both take the last cap slot. */
 const accountsLock = sql`select pg_advisory_xact_lock(hashtext('peblish.accounts'))`;
@@ -77,7 +80,7 @@ export const policies = {
           revokedAt: invites.revokedAt,
         })
         .from(invites)
-        .where(eq(invites.codeHash, inviteCodeHash(subject.inviteCode))),
+        .where(eq(invites.codeHash, await hashInviteCode(subject.inviteCode))),
       lock,
     );
     const status = inviteStatus(invite);
@@ -100,25 +103,29 @@ export const policies = {
     return allow({ kind: 'system', actorId: principal.actorId, job: 'registration', ref: null });
   },
 
-  /** A person deletes their own account, or a site admin deletes someone else's (not another admin's). */
+  /**
+   * A person deletes their own account, or a site admin deletes someone else's (not another
+   * admin's). The body updates the actor row and deletes the login, so both are read FOR NO
+   * KEY UPDATE under lock; for your own account, deleteAccount already holds the actor row.
+   */
   'account.delete': async ({ principal, subject, db, lock }: PolicyRequest<{ actorId: Uuid }>) => {
     if (principal.kind !== 'local') return deny('auth.required');
     const [target] = await forNoKeyUpdate(
       db
-        .select({ kind: actors.kind, local: actors.local, deletedAt: actors.deletedAt, role: authUser.role })
+        .select({ kind: actors.kind, local: actors.local, deletedAt: actors.deletedAt, userId: actors.userId })
         .from(actors)
-        .leftJoin(authUser, eq(authUser.id, actors.userId))
         .where(eq(actors.id, subject.actorId)),
       lock,
     );
     if (!target?.local || target.kind !== 'Person') return deny('target.not_found');
     if (target.deletedAt) return deny('target.deleted');
     // An imported person without a login has no account to delete.
-    if (target.role === null) return deny('target.not_found');
+    if (!target.userId) return deny('target.not_found');
     if (principal.actorId === subject.actorId) return allow({ kind: 'owner', actorId: principal.actorId });
     const denied = await denyUnlessAdmin(principal, db, lock);
     if (denied) return denied;
-    if (target.role === 'admin') return deny('target.protected');
+    const [login] = await forNoKeyUpdate(db.select({ role: authUser.role }).from(authUser).where(eq(authUser.id, target.userId)), lock);
+    if (login?.role === 'admin') return deny('target.protected');
     return allow({ kind: 'site-admin', actorId: principal.actorId });
   },
 
@@ -126,7 +133,7 @@ export const policies = {
   'invite.create': async ({ principal, subject, db, lock }: PolicyRequest<{ referrerId: Uuid }>) => {
     const denied = await denyUnlessAdmin(principal, db, lock);
     if (denied) return denied;
-    const [referrer] = await forNoKeyUpdate(
+    const [referrer] = await forShare(
       db
         .select({ kind: actors.kind, local: actors.local, deletedAt: actors.deletedAt })
         .from(actors)

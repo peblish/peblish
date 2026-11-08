@@ -1,10 +1,11 @@
 import { auth, authErrorCode } from '@peblish/core/identity/auth';
-import { loginEmail } from '@peblish/core/identity/handles';
+import { localHandles, loginEmail } from '@peblish/core/identity/handles';
+import { attempt } from '@peblish/core/identity/throttle';
 import { Button } from '@peblish/ui/components/button';
 import { createFileRoute, Link } from '@tanstack/react-router';
 import { type } from 'arktype';
 import { useTranslate } from '../../i18n/use-translate.ts';
-import { forbidden, forwardedHeaders, readForm, respond, safeRedirect, sameOrigin } from '../../server/auth.ts';
+import { clientIp, forbidden, forwardedHeaders, readForm, respond, safeRedirect, sameOrigin } from '../../server/auth.ts';
 import { useRouteHydrated } from '../../shell/hydration.ts';
 import { asFormError } from './-ui/errors.ts';
 import { AuthForm, Field } from './-ui/form.tsx';
@@ -25,6 +26,10 @@ export const Route = createFileRoute('/auth/sign-in')({
         if (body instanceof type.errors) return respond(request, { error: 'form.invalid', back: '/auth/sign-in' });
         const failed = { error: 'credentials.invalid', back: '/auth/sign-in', keep: { redirect: body.redirect } } as const;
         const email = await loginEmail(body.identifier);
+        // Counted by address and by account (or what was typed, when no account matches); a
+        // success is refunded, so only wrong passwords use the budget.
+        const counted = await attempt('sign-in', { ip: clientIp(request), id: email ?? body.identifier });
+        if (!counted.allowed) return respond(request, { ...failed, error: 'rate.limited' });
         if (!email) return respond(request, failed);
         try {
           const { headers, response } = await (
@@ -34,8 +39,9 @@ export const Route = createFileRoute('/auth/sign-in')({
             headers: forwardedHeaders(request),
             returnHeaders: true,
           });
+          await counted.refund();
           const cookies = headers.getSetCookie();
-          const next = safeRedirect(body.redirect);
+          const next = safeRedirect(body.redirect, (await localHandles()).origin);
           // Two-factor accounts get a short-lived two-factor cookie instead of a session.
           if ('twoFactorRedirect' in response && response.twoFactorRedirect)
             return respond(request, { redirect: `/auth/two-factor?redirect=${encodeURIComponent(next)}`, cookies });

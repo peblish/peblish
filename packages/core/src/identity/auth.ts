@@ -1,3 +1,4 @@
+import { createHmac } from 'node:crypto';
 import { betterAuth } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { twoFactor } from 'better-auth/plugins/two-factor';
@@ -8,6 +9,7 @@ import { db } from '../db/read.ts';
 import { authAccount, authSession, authTwoFactor, authUser, authVerification } from '../db/tables/auth.ts';
 import { writer } from '../db/write.ts';
 import { sendMail } from './mail.ts';
+import { totpReplayGuard } from './totp-replay.ts';
 
 // The better-auth instance (lane A). It lives in core because only core may hold the write
 // pool (lint rule core-writer-access names core/identity for it); web reaches it through
@@ -54,6 +56,9 @@ function createAuth(origin: string) {
       database: { generateId: () => uuidv7() },
       cookiePrefix: 'peblish',
       useSecureCookies: origin.startsWith('https://'),
+      // Reset mail goes out detached (better-auth logs a failure), so a reset request answers
+      // as fast for an address with an account as for one without: no timing tells them apart.
+      backgroundTasks: { handler: (task) => void task },
     },
     emailAndPassword: {
       enabled: true,
@@ -64,6 +69,7 @@ function createAuth(origin: string) {
       // No breached-password check: the one on offer (haveibeenpwned) is a network call per password.
       revokeSessionsOnPasswordReset: true,
       resetPasswordTokenExpiresIn: 60 * 60,
+      // Runs as a background task (advanced.backgroundTasks).
       async sendResetPassword({ user, token }) {
         const link = new URL(`${resetPasswordPath}?token=${encodeURIComponent(token)}`, origin).href;
         await sendMail(
@@ -91,7 +97,8 @@ function createAuth(origin: string) {
       },
     },
     session: { expiresIn: 30 * 24 * 60 * 60, updateAge: 24 * 60 * 60 },
-    plugins: [twoFactor({ issuer: host, backupCodeOptions: { amount: 10, length: 10 } })],
+    // The replay guard runs before the plugin's verify-totp: one code, one session.
+    plugins: [twoFactor({ issuer: host, backupCodeOptions: { amount: 10, length: 10 } }), totpReplayGuard()],
     // Direct auth.api calls skip better-auth's limiter anyway (it runs in its HTTP router).
     rateLimit: { enabled: false },
     telemetry: { enabled: false },
@@ -120,6 +127,15 @@ export function auth(): Promise<Auth> {
     if (globalThis.peblishAuth?.auth === created) globalThis.peblishAuth = undefined;
   });
   return created;
+}
+
+/**
+ * A key for `purpose`, derived from the auth secret (HMAC-SHA-256 of the purpose), so what it
+ * keys means nothing without the secret and no two purposes share a key.
+ */
+export async function derivedKey(purpose: string): Promise<Buffer> {
+  const { secret } = await (await auth()).$context;
+  return createHmac('sha256', secret).update(`peblish:${purpose}`).digest();
 }
 
 /** The code a better-auth APIError carries (body.code, such as INVALID_CODE), or undefined. */

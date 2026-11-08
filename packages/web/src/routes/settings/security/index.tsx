@@ -1,16 +1,16 @@
 import { auth, authErrorCode } from '@peblish/core/identity/auth';
 import { localHandles } from '@peblish/core/identity/handles';
 import { deviceSessions, revokeSession } from '@peblish/core/identity/session';
-import { pendingTotp, revealRecoveryCodesOnce, takeRecoveryCodes } from '@peblish/core/identity/two-factor';
+import { attempt } from '@peblish/core/identity/throttle';
+import { confirmTotpSetup, pendingTotp, takeRecoveryCodes } from '@peblish/core/identity/two-factor';
 import type { DeviceSession } from '@peblish/schema/session';
 import { Button } from '@peblish/ui/components/button';
 import { createFileRoute, redirect } from '@tanstack/react-router';
 import { createServerFn } from '@tanstack/react-start';
-import { setResponseHeader } from '@tanstack/react-start/server';
 import { type } from 'arktype';
 import { useState } from 'react';
 import { useTranslate } from '../../../i18n/use-translate.ts';
-import { forbidden, forwardedHeaders, readForm, pageSession, respond, sameOrigin, sessionOf } from '../../../server/auth.ts';
+import { clientIp, forbidden, formSession, forwardedHeaders, pageSession, readForm, sameOrigin } from '../../../server/auth.ts';
 import { useRouteHydrated } from '../../../shell/hydration.ts';
 import { asFormError, type FormError } from '../../auth/-ui/errors.ts';
 import { AuthForm, Field } from '../../auth/-ui/form.tsx';
@@ -27,7 +27,6 @@ const Body = type({ intent: "'password'", current: 'string', next: 'string' })
   .or({ intent: "'revoke-others'" });
 
 const loadSecurity = createServerFn({ method: 'GET' }).handler(async () => {
-  setResponseHeader('cache-control', 'private, no-store');
   const session = await pageSession();
   if (!session) throw redirect({ to: '/auth/sign-in', search: { redirect: '/settings/security' } });
   const { userId, twoFactorEnabled } = session.view;
@@ -62,10 +61,10 @@ export const Route = createFileRoute('/settings/security/')({
     handlers: {
       POST: async ({ request }) => {
         if (!sameOrigin(request)) return forbidden();
-        const session = await sessionOf(request);
-        if (!session) return respond(request, { redirect: '/auth/sign-in?redirect=%2Fsettings%2Fsecurity' });
+        const { session, reply } = await formSession(request);
+        if (!session) return reply({ redirect: '/auth/sign-in?redirect=%2Fsettings%2Fsecurity' });
         const body = Body(await readForm(request));
-        if (body instanceof type.errors) return respond(request, { error: 'form.invalid', back: '/settings/security' });
+        if (body instanceof type.errors) return reply({ error: 'form.invalid', back: '/settings/security' });
         const page = '/settings/security';
         const api = (await auth()).api;
         const headers = forwardedHeaders(request);
@@ -73,8 +72,15 @@ export const Route = createFileRoute('/settings/security/')({
         const failed = (error: unknown) => {
           const code = authErrorCode(error);
           if (code === undefined) throw error;
-          return respond(request, { error: pageError(code), back: page, keep: { form: body.intent } });
+          return reply({ error: pageError(code), back: page, keep: { form: body.intent } });
         };
+        // The intents that take the password: wrong ones count against the account and the
+        // address (identity/throttle.ts), a right one is refunded.
+        const counted =
+          body.intent === 'password' || body.intent === 'totp-start' || body.intent === 'totp-off'
+            ? await attempt('password', { ip: clientIp(request), id: session.view.userId })
+            : null;
+        if (counted?.allowed === false) return reply({ error: 'rate.limited', back: page, keep: { form: body.intent } });
         try {
           switch (body.intent) {
             case 'password': {
@@ -84,26 +90,29 @@ export const Route = createFileRoute('/settings/security/')({
                 headers,
                 returnHeaders: true,
               });
-              return respond(request, { redirect: `${page}?saved=password`, cookies: result.headers.getSetCookie() });
+              await counted?.refund();
+              return reply({ redirect: `${page}?saved=password`, cookies: result.headers.getSetCookie() });
             }
             case 'totp-start':
               await api.enableTwoFactor({ body: { password: body.password }, headers });
-              return respond(request, { redirect: page });
+              await counted?.refund();
+              return reply({ redirect: page });
             case 'totp-verify': {
-              const result = await api.verifyTOTP({ body: { code: body.code.replace(/\s/g, '') }, headers, returnHeaders: true });
-              await revealRecoveryCodesOnce(session.view.userId);
-              return respond(request, { redirect: page, cookies: result.headers.getSetCookie() });
+              // Only confirms a setup in progress; once two-factor is on this changes nothing.
+              const cookies = await confirmTotpSetup(session.view.userId, headers, body.code.replace(/\s/g, ''));
+              return reply({ redirect: page, cookies: cookies ?? [] });
             }
             case 'totp-off': {
               const result = await api.disableTwoFactor({ body: { password: body.password }, headers, returnHeaders: true });
-              return respond(request, { redirect: page, cookies: result.headers.getSetCookie() });
+              await counted?.refund();
+              return reply({ redirect: page, cookies: result.headers.getSetCookie() });
             }
             case 'revoke':
               await revokeSession(session.view.userId, body.session);
-              return respond(request, { redirect: page });
+              return reply({ redirect: page });
             case 'revoke-others':
               await api.revokeOtherSessions({ headers });
-              return respond(request, { redirect: page });
+              return reply({ redirect: page });
           }
         } catch (error) {
           return failed(error);

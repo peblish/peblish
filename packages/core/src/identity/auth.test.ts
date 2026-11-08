@@ -1,11 +1,12 @@
 import { eq } from 'drizzle-orm';
 import { afterEach, beforeEach, expect, test } from 'vitest';
 import { db } from '../db/read.ts';
-import { authSession, authUser } from '../db/tables/auth.ts';
+import { authSession, authUser, authVerification } from '../db/tables/auth.ts';
+import { writer } from '../db/write.ts';
 import { truncateAll } from '../testing/db.ts';
 import { seedAccount, seedLocalInstance } from '../testing/seed-a.ts';
-import { auth } from './auth.ts';
-import { recordingTransport, useMailTransport } from './mail.ts';
+import { auth, authErrorCode } from './auth.ts';
+import { recordingTransport, useMailTransport, type MailMessage, type MailTransport } from './mail.ts';
 import { maskEmail, verifyEmailToken } from './verify.ts';
 
 const mail = recordingTransport();
@@ -65,4 +66,72 @@ test('a verification link reads as verified, then as used; a forged or cut one a
   expect(await verifyEmailToken(`${token.slice(0, -4)}AAAA`)).toBe('invalid');
   expect(await verifyEmailToken('nonsense')).toBe('invalid');
   expect(maskEmail('nadia@example.com')).toBe('n****@example.com');
+});
+
+/** A transport that holds every message until release(), like a slow SMTP server. */
+function heldTransport() {
+  let release!: () => void;
+  const released = new Promise<void>((resolve) => (release = resolve));
+  const sent: MailMessage[] = [];
+  const transport: MailTransport = {
+    async send(message) {
+      await released;
+      sent.push(message);
+    },
+  };
+  return { transport, sent, release };
+}
+
+test('a reset request answers at once whether or not an account uses the address; the mail follows', async () => {
+  const mira = await seedAccount('mira');
+  const held = heldTransport();
+  useMailTransport(held.transport);
+  const api = (await auth()).api;
+  const timed = async (email: string) => {
+    const start = performance.now();
+    await api.requestPasswordReset({ body: { email } });
+    return performance.now() - start;
+  };
+  // The transport has not answered either call: both return within the same bound.
+  expect(await timed(mira.email)).toBeLessThan(1_000);
+  expect(await timed('nobody@example.test')).toBeLessThan(1_000);
+  expect(held.sent).toEqual([]);
+  held.release();
+  await expect.poll(() => held.sent.map(({ to }) => to)).toEqual([mira.email]);
+});
+
+/** A reset link mailed to `email`: its token. */
+async function resetToken(email: string): Promise<string> {
+  await (await auth()).api.requestPasswordReset({ body: { email } });
+  return linkIn(mail.sent.at(-1)?.text).searchParams.get('token') ?? '';
+}
+
+const outcome = (attempt: Promise<unknown>) => attempt.then(() => 'accepted', authErrorCode);
+
+test('a reset link works once: used again, or after its hour, it is refused', async () => {
+  const mira = await seedAccount('mira');
+  const api = (await auth()).api;
+  const token = await resetToken(mira.email);
+  await api.resetPassword({ body: { token, newPassword: 'a brand new passphrase' } });
+  expect(await outcome(api.resetPassword({ body: { token, newPassword: 'and yet another one' } }))).toBe('INVALID_TOKEN');
+
+  const expired = await resetToken(mira.email);
+  await writer()
+    .update(authVerification)
+    .set({ expiresAt: new Date(Date.now() - 1000) })
+    .where(eq(authVerification.identifier, `reset-password:${expired}`));
+  expect(await outcome(api.resetPassword({ body: { token: expired, newPassword: 'and yet another one' } }))).toBe('INVALID_TOKEN');
+  await api.signInEmail({ body: { email: mira.email, password: 'a brand new passphrase' } });
+});
+
+test('two resets racing with one link: one password wins, the other is refused', async () => {
+  const mira = await seedAccount('mira');
+  const api = (await auth()).api;
+  const token = await resetToken(mira.email);
+  const outcomes = await Promise.all(
+    ['first new passphrase', 'second new passphrase'].map((newPassword) => outcome(api.resetPassword({ body: { token, newPassword } }))),
+  );
+  expect([...outcomes].sort()).toEqual(['INVALID_TOKEN', 'accepted']);
+  const winner = outcomes[0] === 'accepted' ? 'first new passphrase' : 'second new passphrase';
+  await api.signInEmail({ body: { email: mira.email, password: winner } });
 });

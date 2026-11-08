@@ -1,21 +1,21 @@
 import { auth, authErrorCode } from '@peblish/core/identity/auth';
 import { deleteAccountAs } from '@peblish/core/identity/delete';
 import { localHandles } from '@peblish/core/identity/handles';
+import { attempt } from '@peblish/core/identity/throttle';
 import { Button } from '@peblish/ui/components/button';
 import { createFileRoute, Link, redirect } from '@tanstack/react-router';
 import { createServerFn } from '@tanstack/react-start';
-import { setResponseHeader } from '@tanstack/react-start/server';
 import { type } from 'arktype';
 import { useTranslate } from '../../../i18n/use-translate.ts';
 import {
+  clientIp,
   forbidden,
+  formSession,
   forwardedHeaders,
   pageSession,
   principalOf,
   readForm,
-  respond,
   sameOrigin,
-  sessionOf,
   signedOutCookies,
 } from '../../../server/auth.ts';
 import { useRouteHydrated } from '../../../shell/hydration.ts';
@@ -28,7 +28,6 @@ const Search = type({ 'error?': SearchText });
 const Body = type({ intent: "'delete'", confirm: 'string', password: 'string' });
 
 const loadAccount = createServerFn({ method: 'GET' }).handler(async () => {
-  setResponseHeader('cache-control', 'private, no-store');
   const session = await pageSession();
   if (!session) throw redirect({ to: '/auth/sign-in', search: { redirect: '/settings/account' } });
   const { handle } = await localHandles();
@@ -45,21 +44,27 @@ export const Route = createFileRoute('/settings/account/')({
       // Deleting the account: the username typed again and the password, then account.delete.
       POST: async ({ request }) => {
         if (!sameOrigin(request)) return forbidden();
-        const session = await sessionOf(request);
-        if (!session) return respond(request, { redirect: '/auth/sign-in?redirect=%2Fsettings%2Faccount' });
+        const { session, reply } = await formSession(request);
+        if (!session) return reply({ redirect: '/auth/sign-in?redirect=%2Fsettings%2Faccount' });
         const body = Body(await readForm(request));
         const back = { back: '/settings/account' };
-        if (body instanceof type.errors) return respond(request, { error: 'form.invalid', ...back });
-        if (body.confirm.trim() !== session.view.name) return respond(request, { error: 'confirm.mismatch', ...back });
+        if (body instanceof type.errors) return reply({ error: 'form.invalid', ...back });
+        if (body.confirm.trim() !== session.view.name) return reply({ error: 'confirm.mismatch', ...back });
+        // Wrong passwords count against the account and the address; a right one is refunded.
+        const counted = await attempt('password', { ip: clientIp(request), id: session.view.userId });
+        if (!counted.allowed) return reply({ error: 'rate.limited', ...back });
         try {
           await (await auth()).api.verifyPassword({ body: { password: body.password }, headers: forwardedHeaders(request) });
+          await counted.refund();
         } catch (error) {
           if (authErrorCode(error) === undefined) throw error;
-          return respond(request, { error: 'password.wrong', ...back });
+          return reply({ error: 'password.wrong', ...back });
         }
         const deleted = await deleteAccountAs(principalOf(session.view), session.view.actorId, 'owner request');
-        if (!deleted.ok) return respond(request, { error: asFormError(deleted.reason) ?? 'generic', ...back });
-        return respond(request, { redirect: '/', cookies: await signedOutCookies() });
+        // A second submit that lost the race to the first finds the account already gone: done too.
+        if (!deleted.ok && deleted.reason !== 'auth.actor_deleted')
+          return reply({ error: asFormError(deleted.reason) ?? 'generic', ...back });
+        return reply({ redirect: '/', cookies: await signedOutCookies() });
       },
     },
   },

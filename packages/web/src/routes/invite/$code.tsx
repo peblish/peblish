@@ -1,22 +1,24 @@
 import { localHandles } from '@peblish/core/identity/handles';
-import { lookupInvite } from '@peblish/core/registration/invites';
 import { Button } from '@peblish/ui/components/button';
 import { createFileRoute, Link } from '@tanstack/react-router';
 import { createServerFn } from '@tanstack/react-start';
-import { setResponseHeader } from '@tanstack/react-start/server';
+import { getRequest, setResponseHeader } from '@tanstack/react-start/server';
 import { type } from 'arktype';
 import { useTranslate } from '../../i18n/use-translate.ts';
+import { lookupInviteFor, PRIVATE_NO_STORE } from '../../server/auth.ts';
 import { useRouteHydrated } from '../../shell/hydration.ts';
 import { authHead, useDate } from '../auth/-ui/page.tsx';
 
 const loadInvite = createServerFn({ method: 'GET' })
   .validator(type({ code: 'string' }))
   .handler(async ({ data }) => {
-    // The code is a bearer secret: keep the page out of caches and search engines.
-    setResponseHeader('cache-control', 'no-store');
+    // The code is a bearer secret: keep the server function's reply (a client-side navigation)
+    // out of caches too, and the page out of search engines.
+    setResponseHeader('cache-control', PRIVATE_NO_STORE);
     setResponseHeader('x-robots-tag', 'noindex');
     const { host } = await localHandles();
-    return { host, code: data.code, invite: await lookupInvite(data.code) };
+    // null: this client tried too many codes that match no invite (identity/throttle.ts).
+    return { host, code: data.code, invite: await lookupInviteFor(getRequest(), data.code) };
   });
 
 export const Route = createFileRoute('/invite/$code')({
@@ -30,6 +32,13 @@ function InviteLanding() {
   const { host, code, invite } = Route.useLoaderData();
   const date = useDate();
   useRouteHydrated();
+  if (!invite)
+    return (
+      <main className="auth-page" data-state="limited">
+        <h1>{t('invites', 'landing.limitedTitle')}</h1>
+        <p>{t('invites', 'landing.limitedBody')}</p>
+      </main>
+    );
   const inviter = invite.inviter ? `@${invite.inviter.handle}` : t('invites', 'landing.someone');
   const elsewhere = (
     <div className="btns">

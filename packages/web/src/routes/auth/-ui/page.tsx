@@ -1,3 +1,4 @@
+import { notFound } from '@tanstack/react-router';
 import { type } from 'arktype';
 import type { ReactNode } from 'react';
 import { useTranslate } from '../../../i18n/use-translate.ts';
@@ -23,3 +24,13 @@ export function useDate() {
   const format = new Intl.DateTimeFormat(locale, { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
   return (iso: string) => format.format(new Date(iso));
 }
+
+/**
+ * A route group's beforeLoad (routes/{auth,invite,settings,admin}/route.tsx): the group's own
+ * path has no page, so /settings answers 404 like any unknown path, not an empty layout.
+ */
+export const noGroupPage =
+  (group: string) =>
+  ({ location }: { location: { pathname: string } }) => {
+    if (location.pathname.replace(/\/+$/, '') === group) throw notFound();
+  };

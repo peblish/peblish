@@ -17,12 +17,14 @@ import { refusedAsResult, type Result } from './result.ts';
  * (actors.user_id becomes null). The deletion ledger records it for re-application after a
  * backup restore, and actor.deleted is emitted, all in this one transaction.
  *
- * No recheck: nothing a moderator does revokes a deletion. The body locks the actor row and
- * checks it is still a live local person, so two deletions cannot both apply.
+ * The recheck re-reads the principal, so a site admin's grant does not outlive a demotion or
+ * two-factor turned off after authorize(). The body locks the actor row and checks it is
+ * still a live local person, so two deletions cannot both apply.
  */
-export const deleteAccount = defineMutation({
+const deleteAccountRow = defineMutation({
   action: 'account.delete',
   emits: ['actor.deleted'],
+  recheck: true,
   async run(t, grant, input: { reason: string }) {
     const { actorId } = grant.subject;
     const [actor] = await t.db
@@ -47,6 +49,25 @@ export const deleteAccount = defineMutation({
       details: { userId: actor.userId, authority: grant.authority.kind },
     });
     await t.emit({ type: 'actor.deleted', v: 1, actorId, kind: 'Person', local: true });
+  },
+});
+
+/**
+ * account.delete in its own transaction (deleteAccountRow, rechecked). Deleting your own
+ * account updates the acting actor's row, which the recheck's principal refresh reads FOR
+ * SHARE: two such requests at once (a double submit) would both hold it FOR SHARE and each
+ * wait for the other before updating it (40P01). So the owner's row is locked FOR NO KEY
+ * UPDATE first, before the recheck: a second request waits here, then its recheck finds the
+ * actor deleted and refuses with auth.actor_deleted. An admin deleting someone else locks the
+ * target in the policy, after its own row, as the lock order says.
+ */
+export const deleteAccount = defineMutation({
+  action: 'account.delete',
+  emits: ['actor.deleted'],
+  async run(t, grant, input: { reason: string }) {
+    if (grant.subject.actorId === grant.actorId)
+      await t.db.select({ id: actors.id }).from(actors).where(eq(actors.id, grant.actorId)).for('no key update');
+    return deleteAccountRow.within(t, grant, input);
   },
 });
 

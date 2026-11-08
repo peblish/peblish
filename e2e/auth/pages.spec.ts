@@ -33,3 +33,25 @@ for (const locale of ['en-US', 'de-DE'] as const) {
     });
   });
 }
+
+test('pages under /auth, /invite, /settings and /admin are never cached, redirects included', async ({ request }) => {
+  const paths = ['/auth/sign-in', '/auth/two-factor', '/auth/reset', '/auth/reset?token=x', '/auth/sign-up', '/invite/PB-2222-2222'];
+  // Signed out, the personal pages redirect to sign-in; the redirect is private too.
+  const redirects = ['/auth/verify', '/settings/account', '/settings/security', '/admin/registration'];
+  for (const path of [...paths, ...redirects]) {
+    const response = await request.get(path, { maxRedirects: 0 });
+    expect([path, response.status()]).toEqual([path, redirects.includes(path) ? 307 : 200]);
+    expect([path, response.headers()['cache-control']]).toEqual([path, 'private, no-store']);
+  }
+  // A group's own path has no page.
+  for (const path of ['/auth', '/invite', '/settings', '/admin']) expect([path, (await request.get(path)).status()]).toEqual([path, 404]);
+});
+
+test('a sign-in posted from another site is refused', async ({ request }) => {
+  const response = await request.post('/auth/sign-in', {
+    headers: { origin: 'https://attacker.example' },
+    form: { identifier: 'nobody@example.test', password: 'not the password' },
+    maxRedirects: 0,
+  });
+  expect(response.status()).toBe(403);
+});

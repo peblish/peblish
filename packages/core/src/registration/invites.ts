@@ -10,7 +10,7 @@ import { inviteUses, invites } from '../db/tables/site.ts';
 import { localHandles } from '../identity/handles.ts';
 import { refusedAsResult, type Result } from '../identity/result.ts';
 import { defineMutation } from '../tx/mutation.ts';
-import { inviteCodeHash, inviteStatus, newInviteCode } from './codes.ts';
+import { hashInviteCode, inviteStatus, newInviteCode } from './codes.ts';
 
 /**
  * A new invite from the referrer in grant.subject (the chain's parent, stored as created_by).
@@ -26,7 +26,7 @@ export const createInvite = defineMutation({
     const [row] = await t.db
       .insert(invites)
       .values({
-        codeHash: inviteCodeHash(code),
+        codeHash: await hashInviteCode(code),
         createdBy: grant.subject.referrerId,
         maxUses: input.maxUses,
         note: input.label,
@@ -63,7 +63,7 @@ export async function lookupInvite(code: string): Promise<InviteLookup> {
     })
     .from(invites)
     .leftJoin(actors, eq(actors.id, invites.createdBy))
-    .where(eq(invites.codeHash, inviteCodeHash(code)));
+    .where(eq(invites.codeHash, await hashInviteCode(code)));
   if (!row) return { status: 'unknown', inviter: null, usesLeft: 0, maxUses: 0, expiresAt: null };
   return {
     status: inviteStatus(row),
