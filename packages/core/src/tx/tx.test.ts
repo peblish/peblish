@@ -11,6 +11,7 @@ import { truncateAll } from '../testing/db.ts';
 import { postWithFault } from '../testing/fault-mutation.ts';
 import { localUser, seedActor, seedInstance } from '../testing/seed.ts';
 import type { Authorized } from '../authz/brand.ts';
+import { createPost } from '../posts/create.ts';
 import { tx } from './tx.ts';
 
 // Fault injection for the unit of work the inbound pipeline runs: dedupe marker, apply,
@@ -87,5 +88,15 @@ describe('tx plus emit', () => {
       }),
     ).rejects.toThrow();
     expect(await persisted()).toEqual({ posts: 0, outbox: 0, markers: 0 });
+  });
+
+  test('a nested tx(), or a mutation called by its call signature inside one, fails fast', async () => {
+    const { grant } = await seed();
+    await expect(tx(async () => tx(async () => 'inner'))).rejects.toThrow(/mutation\.within/);
+    await expect(tx(async () => createPost(grant, { title: 'Nested' }))).rejects.toThrow(/mutation\.within/);
+    expect(await persisted()).toEqual({ posts: 0, outbox: 0, markers: 0 });
+    // The intended composition: .within joins the open transaction.
+    await tx(async (t) => createPost.within(t, grant, { title: 'Composed' }));
+    expect(await persisted()).toMatchObject({ posts: 1, outbox: 1 });
   });
 });

@@ -5,7 +5,7 @@ import { db } from '../db/read.ts';
 import { outbox, outboxCursors } from '../db/tables/outbox.ts';
 import { writePool } from '../db/pools.ts';
 import { writer } from '../db/write.ts';
-import { OUTBOX_CHANNEL } from '../tx/tx.ts';
+import { insideTransaction, OUTBOX_CHANNEL } from '../tx/tx.ts';
 import type { Consumer } from './consumers.ts';
 
 /**
@@ -30,35 +30,39 @@ export async function ensureCursors(consumers: readonly Consumer[]): Promise<voi
  */
 export async function processBatch(consumer: Consumer, limit = 100): Promise<number> {
   try {
-    return await writer().transaction(async (db) => {
-      const [cursor] = await db
-        .select({ txId: outboxCursors.txId, eventId: outboxCursors.eventId })
-        .from(outboxCursors)
-        .where(and(eq(outboxCursors.consumer, consumer.name), sql`(${outboxCursors.retryAt} is null or ${outboxCursors.retryAt} <= now())`))
-        .for('update', { skipLocked: true });
-      if (!cursor) return 0;
-      const rows = await db
-        .select({ id: outbox.id, txId: outbox.txId, payload: outbox.payload })
-        .from(outbox)
-        .where(
-          and(
-            sql`(${outbox.txId}, ${outbox.id}) > (${cursor.txId}::xid8, ${cursor.eventId})`,
-            sql`${outbox.txId} < pg_snapshot_xmin(pg_current_snapshot())`,
-            inArray(outbox.type, [...consumer.events]),
-          ),
-        )
-        .orderBy(outbox.txId, outbox.id)
-        .limit(limit);
-      for (const row of rows) await consumer.handle(parseEvent(row.payload), { db });
-      const last = rows.at(-1);
-      if (last) {
-        await db
-          .update(outboxCursors)
-          .set({ txId: last.txId, eventId: last.id, attempts: 0, lastError: null, retryAt: null, updatedAt: new Date() })
-          .where(eq(outboxCursors.consumer, consumer.name));
-      }
-      return rows.length;
-    });
+    return await writer().transaction(async (db) =>
+      insideTransaction(async () => {
+        const [cursor] = await db
+          .select({ txId: outboxCursors.txId, eventId: outboxCursors.eventId })
+          .from(outboxCursors)
+          .where(
+            and(eq(outboxCursors.consumer, consumer.name), sql`(${outboxCursors.retryAt} is null or ${outboxCursors.retryAt} <= now())`),
+          )
+          .for('update', { skipLocked: true });
+        if (!cursor) return 0;
+        const rows = await db
+          .select({ id: outbox.id, txId: outbox.txId, payload: outbox.payload })
+          .from(outbox)
+          .where(
+            and(
+              sql`(${outbox.txId}, ${outbox.id}) > (${cursor.txId}::xid8, ${cursor.eventId})`,
+              sql`${outbox.txId} < pg_snapshot_xmin(pg_current_snapshot())`,
+              inArray(outbox.type, [...consumer.events]),
+            ),
+          )
+          .orderBy(outbox.txId, outbox.id)
+          .limit(limit);
+        for (const row of rows) await consumer.handle(parseEvent(row.payload), { db });
+        const last = rows.at(-1);
+        if (last) {
+          await db
+            .update(outboxCursors)
+            .set({ txId: last.txId, eventId: last.id, attempts: 0, lastError: null, retryAt: null, updatedAt: new Date() })
+            .where(eq(outboxCursors.consumer, consumer.name));
+        }
+        return rows.length;
+      }),
+    );
   } catch (error) {
     await writer()
       .update(outboxCursors)
