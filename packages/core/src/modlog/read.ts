@@ -4,6 +4,7 @@ import { and, desc, eq, gte, lt, type SQL } from 'drizzle-orm';
 import { localInstance } from '../db/local-instance.ts';
 import { db as readDb, type Queryable } from '../db/read.ts';
 import { modlog } from '../db/tables/moderation.ts';
+import { readSetting } from '../settings/read.ts';
 
 /** The host an actor's ap_id lives on, or null when it is not a URL. */
 const hostOf = (apId: string) => URL.parse(apId)?.host ?? null;
@@ -13,7 +14,8 @@ const hostOf = (apId: string) => URL.parse(apId)?.host ?? null;
  * until). The public audience sees only public rows; staff (a community's moderators, site
  * admins: the caller decides) see all. A reason written on another instance is returned only
  * when that instance's domain is in `trustedInstances` (the actor's ap_id decides where a row
- * was written); otherwise it is withheld and reasonWithheld says so.
+ * was written); otherwise it is withheld and reasonWithheld says so. `trustedInstances`
+ * defaults to the `modlog.trusted_instances` site setting; pass it to override.
  */
 export async function readModlog(
   filter: ModlogFilter,
@@ -36,7 +38,7 @@ export async function readModlog(
     .limit(limit);
   const trusted = new Set([
     hostOf((await localInstance(q)).origin),
-    ...(options.trustedInstances ?? []).map((domain) => domain.toLowerCase()),
+    ...(options.trustedInstances ?? (await readSetting('modlog.trusted_instances', q))).map((domain) => domain.toLowerCase()),
   ]);
   return rows.map((row) => {
     const host = hostOf(row.actorApId);

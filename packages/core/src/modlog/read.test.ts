@@ -1,5 +1,6 @@
 import { beforeEach, expect, test } from 'vitest';
 import { modlog } from '../db/tables/moderation.ts';
+import { siteSettings } from '../db/tables/site.ts';
 import { writer } from '../db/write.ts';
 import { truncateAll } from '../testing/db.ts';
 import { seedActor, seedInstance } from '../testing/seed.ts';
@@ -88,4 +89,10 @@ test('a reason written on another instance is shown only when that instance is t
     { reason: 'Spam', reasonWithheld: false },
     { reason: 'Rule 2', reasonWithheld: false },
   ]);
+  // The site setting is the default; the option still overrides it.
+  await writer()
+    .insert(siteSettings)
+    .values({ key: 'modlog.trusted_instances', value: ['lemmy.test'] });
+  expect((await reasons())[0]).toEqual({ reason: 'Spam', reasonWithheld: false });
+  expect((await reasons([]))[0]).toEqual({ reason: null, reasonWithheld: true });
 });

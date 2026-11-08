@@ -1,19 +1,12 @@
 import { siteSettings as contract } from '@peblish/schema/site-settings';
-import { type } from 'arktype';
 import { and, count, eq, inArray, isNotNull, isNull } from 'drizzle-orm';
 import { forShare } from '../authz/policy.ts';
 import { db, type Queryable } from '../db/read.ts';
 import { actors } from '../db/tables/actors.ts';
 import { siteSettings } from '../db/tables/site.ts';
 
-/**
- * The beta cap on accounts (decision 2026-11-08: default 25, the admin raises it). Not in the
- * settings contract yet (s/site-settings.ts is root's; requested in LANE-NOTES.md), so it is
- * read here with the same rules: a missing row means the default, ADM writes it.
- */
+/** The beta cap on accounts (decision 2026-11-08: default 25, the admin raises it through ADM). */
 export const REGISTRATION_CAP_KEY = 'registration.cap';
-const RegistrationCap = type('number.integer >= 0');
-export const DEFAULT_REGISTRATION_CAP = 25;
 
 /**
  * The registration kill switch and the cap, read FOR SHARE under `lock` so flipping either
@@ -32,7 +25,7 @@ export async function registrationSettings(q: Queryable, lock = false): Promise<
   const cap = value(REGISTRATION_CAP_KEY);
   return {
     enabled: enabled === undefined ? contract['registration.enabled'].default : contract['registration.enabled'].schema.assert(enabled),
-    cap: cap === undefined ? DEFAULT_REGISTRATION_CAP : RegistrationCap.assert(cap),
+    cap: cap === undefined ? contract[REGISTRATION_CAP_KEY].default : contract[REGISTRATION_CAP_KEY].schema.assert(cap),
   };
 }
 
