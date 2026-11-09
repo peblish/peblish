@@ -7,9 +7,9 @@ import { instanceActorUrls } from '@peblish/schema/actor-urls';
 import type { OutboxEvent } from '@peblish/schema/events';
 import { and, desc, eq } from 'drizzle-orm';
 import { deliverableInboxes, peerInboxes } from '../delivery/followers.ts';
-import { newActivityId, publishInCommunity, sendActivity } from '../delivery/publish.ts';
+import { newActivityId, publishInCommunity, sendActivity, type PublishOptions } from '../delivery/publish.ts';
 import { removedBoostedPosts, withdrawBoosts } from '../delivery/withdraw.ts';
-import { actorRefs, type ActorRef } from '../delivery/records.ts';
+import { actorRefs, mentionedBefore, type ActorRef } from '../delivery/records.ts';
 import { accountDeletion, ban, collectionChange, lock, removal, restoration, unban, unlock } from './moderation.ts';
 
 // Outbound moderation (the other half of lane FED-B's relay; announce.ts is the inbound half).
@@ -77,16 +77,21 @@ async function onModeration(
   const moderator = (await actorRefs(t.db, [event.moderatorId])).get(event.moderatorId);
   if (!community || !moderator) return;
   const as = (id: string) => ({ id, actorApId: moderator.apId, communityApId: community.apId });
-  const publish = (activity: Parameters<typeof publishInCommunity>[2], microblog?: { withdraw: string }) =>
-    publishInCommunity(t, { origin, author: moderator, community }, activity, { microblog });
+  const publish = (activity: Parameters<typeof publishInCommunity>[2], options: PublishOptions = {}) =>
+    publishInCommunity(t, { origin, author: moderator, community }, activity, options);
   const id = newActivityId(origin);
   switch (event.type) {
     case 'mod.remove': {
       const reason = await wireReason(t, event);
+      // The people a copy was sent to for a mention hear of the removal and the restoration too.
+      const earlier = await mentionedBefore(t.db, event.targetApId);
       // Mastodon-like followers cannot be told of a restoration: Mastodon keeps a Tombstone of what it deleted.
       return event.removed
-        ? publish(removal(as(id), event.targetApId, reason), event.target.kind === 'post' ? { withdraw: event.targetApId } : undefined)
-        : publish(restoration(as(id), await sentId(t, origin, 'Delete', event.targetApId), event.targetApId, reason));
+        ? publish(removal(as(id), event.targetApId, reason), {
+            earlier,
+            microblog: event.target.kind === 'post' ? { withdraw: event.targetApId } : undefined,
+          })
+        : publish(restoration(as(id), await sentId(t, origin, 'Delete', event.targetApId), event.targetApId, reason), { earlier });
     }
     case 'mod.lock':
       return publish(

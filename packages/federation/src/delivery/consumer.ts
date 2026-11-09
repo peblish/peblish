@@ -7,7 +7,7 @@ import { and, desc, eq } from 'drizzle-orm';
 import { accept, create, follow, note, page, remove, undoDelete, undoFollow, undoVote, update, updateActor, vote } from './activities.ts';
 import { followerInboxes, peerInboxes } from './followers.ts';
 import { newActivityId, publishInCommunity, sendActivity } from './publish.ts';
-import { actorRefs, loadComment, loadPost, localActorRecord, mentionsIn, voteTarget } from './records.ts';
+import { actorRefs, loadComment, loadPost, localActorRecord, mentionedBefore, mentionsIn, voteTarget } from './records.ts';
 
 // Turns the local things that happened (the outbox events with local content) into the
 // activities peers read, stores them in `activities`, and queues them for delivery. It runs in
@@ -52,13 +52,17 @@ async function onPost(event: Of<'post.created' | 'post.updated' | 'post.deleted'
     case 'post.updated': {
       if (!loaded.live) return;
       const { tags, people } = await mentionsIn(t.db, origin, loaded.bodyMd);
-      return publishInCommunity(t, context, update(as(id), page(record)), { tags, mentions: people, microblog: 'inner' });
+      const earlier = await mentionedBefore(t.db, record.apId);
+      return publishInCommunity(t, context, update(as(id), page(record)), { tags, mentions: people, earlier, microblog: 'inner' });
     }
-    case 'post.deleted':
-      return publishInCommunity(t, context, remove(as(id), record.apId), { microblog: { withdraw: record.apId } });
+    case 'post.deleted': {
+      const earlier = await mentionedBefore(t.db, record.apId);
+      return publishInCommunity(t, context, remove(as(id), record.apId), { earlier, microblog: { withdraw: record.apId } });
+    }
     case 'post.restored': {
       if (!loaded.live) return;
-      return publishInCommunity(t, context, undoDelete(as(id), await sentDeleteId(t, origin, record.apId, author.apId), record.apId));
+      const undo = undoDelete(as(id), await sentDeleteId(t, origin, record.apId, author.apId), record.apId);
+      return publishInCommunity(t, context, undo, { earlier: await mentionedBefore(t.db, record.apId) });
     }
   }
 }
@@ -74,11 +78,12 @@ async function onComment(event: Of<'comment.created' | 'comment.updated' | 'comm
     case 'comment.updated': {
       if (!loaded.live) return;
       const { tags, people } = await mentionsIn(t.db, origin, loaded.bodyMd);
-      const activity = event.type === 'comment.created' ? create(as, note(record)) : update(as, note(record));
-      return publishInCommunity(t, context, activity, { tags, mentions: people });
+      if (event.type === 'comment.created') return publishInCommunity(t, context, create(as, note(record)), { tags, mentions: people });
+      const earlier = await mentionedBefore(t.db, record.apId);
+      return publishInCommunity(t, context, update(as, note(record)), { tags, mentions: people, earlier });
     }
     case 'comment.deleted':
-      return publishInCommunity(t, context, remove(as, record.apId));
+      return publishInCommunity(t, context, remove(as, record.apId), { earlier: await mentionedBefore(t.db, record.apId) });
   }
 }
 

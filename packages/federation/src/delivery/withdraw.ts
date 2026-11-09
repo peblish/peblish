@@ -11,7 +11,7 @@ import { remove } from './activities.ts';
 import { followerInboxes } from './followers.ts';
 import { newActivityId, sendActivity } from './send.ts';
 import { enqueueDeliveries } from './queue.ts';
-import { actorRefs, type ActorRef } from './records.ts';
+import { actorRefs, mentionedBefore, type ActorRef } from './records.ts';
 
 // Taking a post back from Mastodon-like followers. Mastodon ignores a group's Announce(Delete)
 // as it ignores Announce(Create(Page)), so the boost of a post it was sent as Announce(Page)
@@ -87,8 +87,9 @@ export function undoAnnounce(id: string, communityApId: string, announceApId: st
 /**
  * Queues the Undo of each boost of `postApId` in a local community, to the inboxes it went to
  * and to the Mastodon-like followers now (an instance that unfollowed since still gets it), and,
- * when a local person wrote the post, that person's Delete to the same inboxes. A post never
- * boosted, or whose boosts were all undone, queues nothing: a second removal event is a no-op.
+ * when a local person wrote the post, that person's Delete to the same inboxes and to the
+ * Mastodon-like servers it was sent to directly for a mention. A post never boosted, or whose
+ * boosts were all undone, and mentioning nobody there, queues nothing: a second removal event is a no-op.
  *
  * `announced` is the activity already announced to threadiverse followers for this withdrawal.
  * When it is the author's own Delete without a summary, it is reused as the Delete (one id for
@@ -99,9 +100,12 @@ export async function withdrawBoosts(
   { origin, community, postApId, announced }: { origin: string; community: ActorRef; postApId: string; announced?: Activity },
 ): Promise<void> {
   const boosts = await boostsOf(t.db, community.apId, postApId);
-  if (boosts.length === 0) return;
+  // A Mastodon-like server that was sent the post directly, for a person it mentions, holds the
+  // status too: only the author's Delete takes it away.
+  const mentioned = (await mentionedBefore(t.db, postApId)).filter(({ shape }) => shape === 'page').map(({ inbox }) => inbox);
+  if (boosts.length === 0 && mentioned.length === 0) return;
   const current = (await followerInboxes(t.db, community.id)).page;
-  const everywhere = new Set(current);
+  const everywhere = new Set(mentioned);
   for (const boost of boosts) {
     const id = newActivityId(origin);
     const wire = undoAnnounce(id, community.apId, boost.announceApId, postApId);

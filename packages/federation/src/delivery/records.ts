@@ -9,6 +9,7 @@ import { and, eq, inArray, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import type { Json, JsonObject } from '../mapping/json.ts';
 import type { ActorRecord, CommentRecord, PostRecord } from '../mapping/records.ts';
+import { announceShape, type AnnounceShape } from './software.ts';
 
 // Reads local rows into the mapping's records: what an activity, an actor document or an
 // object document is built from. Shared by the delivery consumer and the documents we serve.
@@ -265,6 +266,30 @@ export async function mentionsIn(db: Queryable, origin: string, source: string |
     }
   }
   return found;
+}
+
+/** A remote person an earlier copy of a post or comment was addressed to, with the Announce shape their server's software wants. */
+export type MentionedBefore = Mentioned & { shape: AnnounceShape };
+
+/**
+ * The remote people an earlier copy of the post or comment `objectApId` was addressed to: the
+ * `cc` of each Create and Update of it we stored (where mentionsIn put them), read back as the
+ * remote people we hold, with their inboxes now. An edit, a deletion or a withdrawal must reach
+ * them too, also once the body no longer names them, or their copy keeps what was taken back.
+ */
+export async function mentionedBefore(db: Queryable, objectApId: string): Promise<MentionedBefore[]> {
+  const rows = await db.execute<{ apId: string; inbox: string | null; software: string | null }>(sql`
+    select a.ap_id as "apId", coalesce(a.shared_inbox_url, a.inbox_url) as inbox, i.software
+    from ${actors} a
+    join ${instances} i on i.id = a.instance_id
+    where a.kind = 'Person' and not a.local and a.deleted_at is null
+      and a.ap_id in (
+        select jsonb_array_elements_text(s.raw -> 'cc') from activities s
+        where s.local and s.type in ('Create', 'Update') and s.object_ap_id = ${objectApId}
+          and jsonb_typeof(s.raw -> 'cc') = 'array'
+      )
+    order by a.ap_id`);
+  return [...rows].flatMap(({ apId, inbox, software }) => (inbox ? [{ apId, inbox, shape: announceShape(software) }] : []));
 }
 
 /**

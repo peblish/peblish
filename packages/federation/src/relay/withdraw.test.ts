@@ -137,6 +137,32 @@ describe('a moderator’s removal of a post', () => {
     expect(toLemmy[0]!.json.object).toMatchObject({ type: 'Delete', actor: w.moderator.apId, object: p.apId, summary: 'spam' });
   });
 
+  test('reaches the people it was sent to for a mention: the moderator’s Delete, and on a Mastodon-like server the author’s Delete', async () => {
+    const w = await world();
+    const peer = async (domain: string, software: string) => {
+      const instance = await seedInstance(domain, false);
+      await writer().update(instances).set({ software }).where(eq(instances.id, instance.id));
+      return seedActor(instance, 'Person', 'eve', { inboxUrl: `https://${domain}/u/eve/inbox`, sharedInboxUrl: `https://${domain}/inbox` });
+    };
+    await peer('toot.test', 'mastodon');
+    await peer('other.test', 'lemmy');
+    const p = await seedPost(w.here, w.news, w.alice, { title: 'Hello', bodyMd: 'for @eve@toot.test and @eve@other.test' });
+    await tx((t) =>
+      delivery.handle({ type: 'post.created', v: 1, postId: p.id, communityId: w.news.id, authorId: w.alice.id, local: true }, t),
+    );
+    expect((await sentTo('https://toot.test/inbox')).map(({ shape: s }) => s)).toEqual(['Create(Page)']);
+    await clearQueue();
+    await runRelay(removal(w, p.apId));
+    expect((await sentTo('https://toot.test/inbox')).map(({ shape: s, senderId }) => [s, senderId])).toEqual([
+      ['Delete', w.moderator.id],
+      ['Delete', w.alice.id],
+    ]);
+    expect((await sentTo('https://other.test/inbox')).map(({ shape: s, senderId }) => [s, senderId])).toEqual([['Delete', w.moderator.id]]);
+    await clearQueue();
+    await runRelay(removal(w, p.apId, false, null));
+    expect((await sentTo('https://other.test/inbox')).map(({ shape: s }) => s)).toEqual(['Undo(Delete)']);
+  });
+
   test('of a remote author’s post reaches Mastodon as the Undo alone: there is no key for the author', async () => {
     const w = await world();
     const p = await boosted(w, w.lemmy.actor, w.lemmy.instance);

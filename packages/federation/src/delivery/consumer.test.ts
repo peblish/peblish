@@ -2,6 +2,7 @@ import { and, eq } from 'drizzle-orm';
 import { beforeEach, describe, expect, test } from 'vitest';
 import { db } from '@peblish/core/db/read';
 import { actors } from '@peblish/core/db/tables/actors';
+import { comments, posts } from '@peblish/core/db/tables/content';
 import { deliveries } from '@peblish/core/delivery/tables';
 import { activities } from '@peblish/core/db/tables/federation';
 import { follows } from '@peblish/core/db/tables/follows';
@@ -258,6 +259,38 @@ describe('a person a post or comment names', () => {
       ['https://lemmy.test/c/lab/inbox', 'Create(Note)', [w.lab.apId, zed.apId]],
       ['https://other.test/inbox', 'Create(Note)', [w.lab.apId, zed.apId]],
     ]);
+  });
+
+  test('who was named before still gets the edit that drops them, the deletion and the restoration; the edit does not cc them', async () => {
+    const w = await world();
+    const { zed } = await strangers();
+    const toZed = async () => {
+      const rows = (await queued()).filter((row) => row.inbox === 'https://other.test/inbox');
+      await writer().delete(deliveries);
+      return rows.map((row) => [shape(row.json), row.senderId, (row.json as Json).cc]);
+    };
+    const p = await seedPost(w.here, w.news, w.alice, { title: 'Hi', bodyMd: 'cc @zed@other.test' });
+    await run(post(p.id, w.news.id, w.alice.id, 'created'));
+    expect(await toZed()).toEqual([['Create(Page)', w.alice.id, [w.news.apId, zed.apId]]]);
+    await writer().update(posts).set({ bodyMd: 'never mind' }).where(eq(posts.id, p.id));
+    await run(post(p.id, w.news.id, w.alice.id, 'updated'));
+    expect(await toZed()).toEqual([['Update(Page)', w.alice.id, [w.news.apId]]]);
+    await writer().update(posts).set({ deletedAt: new Date() }).where(eq(posts.id, p.id));
+    await run(post(p.id, w.news.id, w.alice.id, 'deleted'));
+    expect((await toZed()).map(([s]) => s)).toEqual(['Delete']);
+    await writer().update(posts).set({ deletedAt: null }).where(eq(posts.id, p.id));
+    await run(post(p.id, w.news.id, w.alice.id, 'restored'));
+    expect((await toZed()).map(([s]) => s)).toEqual(['Undo(Delete)']);
+
+    const c = await seedComment(w.here, p, w.alice, { bodyMd: 'and @zed@other.test' });
+    await run(comment(c.id, p.id, w.alice.id, 'created'));
+    expect((await toZed()).map(([s]) => s)).toEqual(['Create(Note)']);
+    await writer().update(comments).set({ bodyMd: 'quiet now' }).where(eq(comments.id, c.id));
+    await run(comment(c.id, p.id, w.alice.id, 'updated'));
+    expect(await toZed()).toEqual([['Update(Note)', w.alice.id, [w.news.apId]]]);
+    await writer().update(comments).set({ deletedAt: new Date() }).where(eq(comments.id, c.id));
+    await run(comment(c.id, p.id, w.alice.id, 'deleted'));
+    expect((await toZed()).map(([s]) => s)).toEqual(['Delete']);
   });
 
   test('a Mastodon follower named in a comment gets the Create directly, though Announce never reaches it; an edit of the post goes once', async () => {
