@@ -1,5 +1,5 @@
 import { siteSettings as contract } from '@peblish/schema/site-settings';
-import { and, count, eq, inArray, isNotNull, isNull } from 'drizzle-orm';
+import { and, count, eq, inArray, isNotNull, isNull, sql } from 'drizzle-orm';
 import { forShare } from '../authz/policy.ts';
 import { db, type Queryable } from '../db/read.ts';
 import { actors } from '../db/tables/actors.ts';
@@ -17,7 +17,9 @@ export async function registrationSettings(q: Queryable, lock = false): Promise<
     q
       .select({ key: siteSettings.key, value: siteSettings.value })
       .from(siteSettings)
-      .where(inArray(siteSettings.key, ['registration.enabled', REGISTRATION_CAP_KEY])),
+      .where(inArray(siteSettings.key, ['registration.enabled', REGISTRATION_CAP_KEY]))
+      // Key order by code point, as the settings writer (settings/write.ts) sorts and locks them, so the two cannot deadlock.
+      .orderBy(sql`${siteSettings.key} collate "C"`),
     lock,
   );
   const value = (key: string) => rows.find((row) => row.key === key)?.value;
