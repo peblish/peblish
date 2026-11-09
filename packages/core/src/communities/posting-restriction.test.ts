@@ -1,4 +1,3 @@
-import { refusalReasons } from '@peblish/schema/refusal';
 import { eq } from 'drizzle-orm';
 import { beforeEach, describe, expect, test } from 'vitest';
 import { authorize } from '../authz/authorize.ts';
@@ -12,10 +11,8 @@ import { createCommunityAs } from './create.ts';
 import { setModeratorAs } from './moderators.ts';
 import { updateCommunityAs } from './update.ts';
 
-// Lane B1 enforces the flag in post.create and adds community.posting_restricted to
-// refusals/posts.ts; lane F sets it and proves it here, end to end. Until B1 has merged the
-// reason does not exist and this file skips; root runs it at integration.
-const enforced = new Set<string>(refusalReasons).has('community.posting_restricted');
+// Lane B1 enforces the flag in post.create (community.posting_restricted); lane F sets it and
+// proves it here, end to end.
 
 beforeEach(truncateAll);
 
@@ -39,7 +36,7 @@ async function setup() {
   };
 }
 
-describe.skipIf(!enforced)('postingRestrictedToMods end to end', () => {
+describe('postingRestrictedToMods end to end', () => {
   test('once a moderator sets the flag, a member is refused with community.posting_restricted while a moderator and the owner still post', async () => {
     const { people, admin, communityId, otherId, moderator, member } = await setup();
     const subject = { communityId };
