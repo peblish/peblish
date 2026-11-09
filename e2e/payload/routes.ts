@@ -86,6 +86,7 @@ export const notPages: Readonly<Record<string, string>> = {
   '/auth/sign-out': 'a form post that answers with a redirect',
   '/post/$id/comments/': 'the POST endpoint of the comment forms; a GET redirects to the post page',
   '/media/proxy/$signature/$target': 'an image endpoint, not a page',
+  '/media/$id': 'an uploaded image endpoint, not a page',
 };
 
 /** File routes that are neither budgeted nor listed as having no payload. */

@@ -10,9 +10,10 @@ import type { ObjectStore } from '../storage/store.ts';
 import { eq } from 'drizzle-orm';
 import { findBlocked } from './blocklist.ts';
 import { scanConfig, type ScanConfig } from './config.ts';
+import { purgeBytes } from './purge.ts';
 import { ScanError, type ScanProvider } from './provider.ts';
 import { configuredProviders } from './providers.ts';
-import { recordScan, scanLimits, type Claimed, type ScanOutcome } from './record.ts';
+import { claimScan, recordScan, scanLimits, type Claimed, type ScanOutcome } from './record.ts';
 import type { Verdict } from '../evidence/manifest.ts';
 
 // Owned by lane SAFE. Scanning an uploaded image: the local SHA-256 list first, then each external
@@ -107,4 +108,22 @@ export async function scanClaimed(claim: Claimed, deps: ScanDeps & { final?: boo
     return {};
   });
   return recorded.ok ? decided.outcome.state : 'settled-elsewhere';
+}
+
+/**
+ * The scan of a fresh upload, inline, within MEDIASCAN_TIMEOUT_MS: the caller answers its
+ * uploader with the result. `clean` is the only result that lets the upload stand. A `failed`
+ * scan deletes the object at once, so an image post exists only for a clean image (peers fetch
+ * /media/<id> on federation). The job is the backstop if this call never returns.
+ */
+export async function scanUpload(mediaId: Uuid, deps: ScanDeps = {}): Promise<'clean' | 'quarantined' | 'failed'> {
+  const decision = await authorize('media.scan_claim', await systemPrincipal(db(), 'scheduled'), { mediaId });
+  if (!decision.ok) throw new Error(`media.scan_claim refused: ${decision.reason}`);
+  const [claim] = await claimScan(decision.grant, { now: (deps.now ?? (() => new Date()))() });
+  // Not claimable: another worker has it or it is no longer pending. Nothing was decided here.
+  if (!claim) return 'failed';
+  const result = await scanClaimed(claim, { ...deps, final: true });
+  if (result === 'clean' || result === 'quarantined') return result;
+  if (result === 'failed') await purgeBytes(mediaId, { store: deps.store }).catch(() => undefined);
+  return 'failed';
 }
