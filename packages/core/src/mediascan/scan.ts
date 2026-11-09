@@ -8,7 +8,7 @@ import { refusedAsResult } from '../identity/result.ts';
 import { s3Store } from '../storage/s3.ts';
 import type { ObjectStore } from '../storage/store.ts';
 import { eq } from 'drizzle-orm';
-import { findBlocked } from './blocklist.ts';
+import { findBlocked, listVerdict } from './blocklist.ts';
 import { scanConfig, type ScanConfig } from './config.ts';
 import { purgeBytes } from './purge.ts';
 import { ScanError, type ScanProvider } from './provider.ts';
@@ -44,10 +44,7 @@ async function decide(
 ): Promise<Decided> {
   if (!row.storageKey || !row.mimeType || !row.sha256) return failed('the media row has no stored object');
   const listed = await findBlocked(db(), row.sha256);
-  if (listed) {
-    const verdict: Verdict = { source: 'list', entryId: listed.id, category: listed.category, listedAt: listed.createdAt.toISOString() };
-    return { outcome: { state: 'quarantined', verdict }, retryable: false };
-  }
+  if (listed) return { outcome: { state: 'quarantined', verdict: listVerdict(listed) }, retryable: false };
   if (config.localOnly) return { outcome: { state: 'clean' }, retryable: false };
   const providers = deps.providers ?? configuredProviders(config);
   if (providers.length === 0) return failed('no scan provider is configured');
@@ -107,11 +104,8 @@ export async function scanClaimed(claim: Claimed, deps: ScanDeps & { final?: boo
   const now = (deps.now ?? (() => new Date()))();
   const decision = await authorize('media.scan', await systemPrincipal(db(), 'scheduled'), { mediaId: claim.mediaId as Uuid });
   if (!decision.ok) throw new Error(`media.scan refused: ${decision.reason}`);
-  const recorded = await refusedAsResult(async () => {
-    await recordScan(decision.grant, { outcome: decided.outcome, now, token: claim.token });
-    return {};
-  });
-  return recorded.ok ? decided.outcome.state : 'settled-elsewhere';
+  const recorded = await refusedAsResult(() => recordScan(decision.grant, { outcome: decided.outcome, now, token: claim.token }));
+  return recorded.ok ? recorded.state : 'settled-elsewhere';
 }
 
 /**
