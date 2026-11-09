@@ -4,7 +4,8 @@ import { closePools } from '../db/pools.ts';
 import { db } from '../db/read.ts';
 import { comments, posts } from '../db/tables/content.ts';
 import { writer } from '../db/write.ts';
-import { seedModerator, seedPost } from './seed-az.ts';
+import { removeContent } from '../moderation/remove.ts';
+import { grantFor, seedModerator, seedPost } from './seed-az.ts';
 import { seedPostWorld } from './seed-b1.ts';
 import { seedActor } from './seed.ts';
 
@@ -169,6 +170,7 @@ export async function seedCommentWorld() {
  * - `thread`: top-level comments `first` (the best scored), `second` and `third`, a reply to
  *   `first`, and a chain under `second` that goes 8 levels deep (so "Continue this thread" shows);
  * - `tombstones`: a deleted comment and a removed one, each with a reply;
+ * - `removed`: a post a moderator removed, with a comment;
  * - `empty`: no comments; `locked`: a locked post with one comment;
  * - `big`: 500 comments reaching level 50.
  * Every run uses fresh names, so the lane database can keep earlier runs.
@@ -205,8 +207,31 @@ async function e2e() {
   const tombstonePost = await post('Tombstone post');
   const deleted = await seedReply(instance, tombstonePost, null, commenter, { ...body(`Deleted text ${suffix}`), deletedAt: past() });
   await seedReply(instance, tombstonePost, deleted, poster, body(`Reply under deleted ${suffix}`));
-  const removed = await seedReply(instance, tombstonePost, null, commenter, { ...body(`Removed text ${suffix}`), removedAt: past() });
+  // Removed through the real mutation, so the modlog holds the moderator's reason.
+  const removed = await seedReply(instance, tombstonePost, null, commenter, body(`Removed text ${suffix}`));
+  await removeContent(
+    await grantFor(
+      'mod.remove',
+      { kind: 'local', actorId: moderator.actorId, siteRole: 'user' },
+      { target: { kind: 'comment', id: removed.id } },
+    ),
+    {
+      reason: 'Rule 3: no ads',
+    },
+  );
   await seedReply(instance, tombstonePost, removed, poster, body(`Reply under removed ${suffix}`));
+
+  // A post a moderator removed keeps its comments from everyone but the moderators.
+  const removedPost = await post('Removed post');
+  await seedReply(instance, removedPost, null, commenter, body(`Under a removed post ${suffix}`));
+  await removeContent(
+    await grantFor(
+      'mod.remove',
+      { kind: 'local', actorId: moderator.actorId, siteRole: 'user' },
+      { target: { kind: 'post', id: removedPost.id } },
+    ),
+    { reason: 'Off topic' },
+  );
 
   const emptyPost = await post('Empty post');
   const lockedPost = await post('Locked post', { locked: true });
@@ -230,7 +255,14 @@ async function e2e() {
     replier: { name: replier.name, actorId: replier.actorId },
     moderator: { name: moderator.name },
     unverified: { name: unverified.name },
-    posts: { thread: threadPost.id, tombstones: tombstonePost.id, empty: emptyPost.id, locked: lockedPost.id, big: bigPost.id },
+    posts: {
+      thread: threadPost.id,
+      tombstones: tombstonePost.id,
+      removed: removedPost.id,
+      empty: emptyPost.id,
+      locked: lockedPost.id,
+      big: bigPost.id,
+    },
     comments: {
       first: first.id,
       firstReply: firstReply.id,
