@@ -41,7 +41,8 @@ export async function fetchJson(url: string, fetch: Fetcher, accept = activityAc
   if (response.status === 404) throw new FetchFailure('not_found', `${url} answered 404`, 404);
   if (response.status === 410) throw new FetchFailure('gone', `${url} answered 410`, 410);
   if (response.status !== 200) throw new FetchFailure('status', `${url} answered ${response.status}`, response.status);
-  if (response.body.byteLength >= documentLimits.maxBytes) throw new FetchFailure('too_large', `${url} is larger than the document limit`);
+  // Half a document is no document: a body cut at the cap is refused.
+  if (response.truncated) throw new FetchFailure('too_large', `${url} is larger than the document limit`);
   const type = response.headers.get('content-type') ?? '';
   if (!/json/i.test(type)) throw new FetchFailure('not_json', `${url} answered ${type || 'no content type'}`);
   try {

@@ -10,7 +10,8 @@ import { BlockList, isIP } from 'node:net';
 //   export { BlockedDestinationError, safeFetch } from '@peblish/core/net/fetch';
 //   export type { SafeFetchInit, SafeResponse } from '@peblish/core/net/fetch';
 //
-// and delete safe-fetch.test.ts. The names and shapes below are the contract B2's brief fixes.
+// and delete safe-fetch.test.ts. The names and shapes below are B2's (packages/core/src/net/fetch.ts
+// on branch mvp-w2-b2, commit 07813d8): SafeResponse.truncated and FetchTimeoutError included.
 // Until B2's commit is merged, this stand-in is the spike's reviewed guard (spikes/
 // fedify-threadiverse/src/safe-post.ts) behind that contract: the host is resolved once and
 // every address must be public, the checked address is the one connected to (no rebinding
@@ -28,10 +29,21 @@ export type SafeFetchInit = {
   maxBytes: number;
   timeoutMs: number;
 };
-export type SafeResponse = { status: number; headers: Headers; body: Uint8Array; url: string };
+export type SafeResponse = {
+  status: number;
+  headers: Headers;
+  body: Uint8Array;
+  /** The URL of the last hop. */
+  url: string;
+  /** True when the body was cut at `maxBytes`: a caller that cannot use half a body refuses it. */
+  truncated?: true;
+};
 
 /** A refused destination: permanent, a caller never retries it. */
 export class BlockedDestinationError extends Error {}
+
+/** The call outran `timeoutMs`; transient. */
+export class FetchTimeoutError extends Error {}
 
 // IANA special-purpose registries (RFC 6890 and updates). Node's BlockList tests an IPv4
 // address against IPv6 rules through its mapped form, so IPv4-mapped IPv6 addresses are
@@ -118,22 +130,34 @@ function once(target: URL, init: SafeFetchInit): Promise<SafeResponse> {
     const req = send(target, { method: init.method ?? 'GET', headers, lookup: guardedLookup }, (res) => {
       const chunks: Buffer[] = [];
       let size = 0;
+      let truncated = false;
       res.on('data', (chunk: Buffer) => {
-        size += chunk.length;
-        if (size <= init.maxBytes) chunks.push(chunk);
-        else res.destroy();
+        if (truncated) return;
+        const room = init.maxBytes - size;
+        chunks.push(chunk.length > room ? chunk.subarray(0, room) : chunk);
+        size += Math.min(chunk.length, room);
+        if (chunk.length > room) {
+          truncated = true;
+          res.destroy();
+        }
       });
       const settle = () => {
         const responseHeaders = new Headers();
         for (const [name, value] of Object.entries(res.headers)) {
           for (const item of Array.isArray(value) ? value : [value]) if (item !== undefined) responseHeaders.append(name, item);
         }
-        resolve({ status: res.statusCode ?? 0, headers: responseHeaders, body: new Uint8Array(Buffer.concat(chunks)), url: target.href });
+        resolve({
+          status: res.statusCode ?? 0,
+          headers: responseHeaders,
+          body: new Uint8Array(Buffer.concat(chunks)),
+          url: target.href,
+          ...(truncated && { truncated: true as const }),
+        });
       };
       res.on('end', settle);
       res.on('close', settle);
     });
-    const timer = setTimeout(() => req.destroy(new Error(`timed out after ${init.timeoutMs} ms`)), init.timeoutMs);
+    const timer = setTimeout(() => req.destroy(new FetchTimeoutError(`no complete answer within ${init.timeoutMs} ms`)), init.timeoutMs);
     req.on('error', (error) => {
       clearTimeout(timer);
       reject(error);
