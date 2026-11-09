@@ -46,12 +46,6 @@
     color: var(--pb-bg);
   }
 
-  /* A one-line title is a 20px link, under WCAG 2.2's 24px target when another link is within 12px of
-     its centre (axe target-size): a little room below it is enough. */
-  .feed-list .pb-post__title {
-    margin-bottom: 5px;
-  }
-
   .feed-list {
     margin: 0;
     padding: 0;

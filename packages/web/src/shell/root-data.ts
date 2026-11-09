@@ -22,6 +22,6 @@ export const getRootData = createServerFn({ method: 'GET' }).handler(async () =>
     locale: negotiateLocale(getRequestHeader('accept-language')),
     prefs: parsePrefs(getRequestHeader('cookie')),
     session: session?.view ?? null,
-    shell: await loadShellData(),
+    shell: await loadShellData(session?.view ?? null),
   };
 });

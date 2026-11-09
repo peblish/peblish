@@ -60,8 +60,12 @@ export function ReplyBar({
     if (!onSubmit) return;
     event.preventDefault();
     if (body.trim() === '') return;
-    await onSubmit(body);
-    setBody('');
+    try {
+      await onSubmit(body);
+      setBody('');
+    } catch {
+      // The caller shows the refusal (the `error` prop); the text stays.
+    }
   }
 
   function shortcut(event: KeyboardEvent<HTMLFormElement>) {

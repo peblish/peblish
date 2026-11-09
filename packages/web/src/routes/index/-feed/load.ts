@@ -32,11 +32,10 @@ export const loadFeed = createServerFn({ method: 'GET' })
     // Remote pictures reach the viewer only through the signed proxy (decision 5): own-origin
     // URLs pass, remote ones are signed, anything else is null. An image post shows its image.
     const renderer = await createMarkdownRenderer();
-    const items = page.items.map((post): FeedItem => {
-      const thumbnailSrc = renderer.image(post.thumbnailUrl ?? (isImageContentType(post.urlContentType) ? post.url : null));
-      // PostCard reads post.thumbnailUrl until the UI fix gives it thumbnailSrc; never hand it the raw URL meanwhile.
-      return { post: { ...post, thumbnailUrl: thumbnailSrc }, thumbnailSrc };
-    });
+    const items = page.items.map((post): FeedItem => ({
+      post,
+      thumbnailSrc: renderer.image(post.thumbnailUrl ?? (isImageContentType(post.urlContentType) ? post.url : null)),
+    }));
     return { ...base, signIn: false, items, next: page.next };
   });
 

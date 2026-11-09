@@ -90,9 +90,6 @@ importers:
 
   packages/federation:
     dependencies:
-      '@fedify/fedify':
-        specifier: 2.4.5
-        version: 2.4.5
       '@peblish/core':
         specifier: workspace:*
         version: link:../core
@@ -105,6 +102,10 @@ importers:
       drizzle-orm:
         specifier: 0.45.4
         version: 0.45.4(@opentelemetry/api@1.9.1)(kysely@0.29.8)(postgres@3.4.9)
+    devDependencies:
+      '@fedify/fedify':
+        specifier: 2.4.5
+        version: 2.4.5
 
   packages/schema:
     dependencies:

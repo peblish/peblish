@@ -33,8 +33,22 @@ const seededPost = () => {
   return `/post/${(JSON.parse(out) as { posts: { plain: string } }).posts.plain}`;
 };
 
+/** The permalink page needs a comment: lane D's seed (testing/seed-d.ts) puts a thread in the database. */
+const seededPermalink = () => {
+  const out = execFileSync('node', ['packages/core/src/testing/seed-d.ts', 'e2e'], {
+    cwd: join(import.meta.dirname, '../..'),
+    encoding: 'utf8',
+  });
+  const { posts, comments } = JSON.parse(out) as { posts: { thread: string }; comments: { first: string } };
+  return `/post/${posts.thread}/comments/${comments.first}`;
+};
+
 export const routes: readonly PayloadRoute[] = [
   { route: '/', path: '/' },
+  { route: '/all/', path: '/all' },
+  { route: '/local/', path: '/local' },
+  { route: '/popular/', path: '/popular' },
+  { route: '/moderating/', path: '/moderating' },
   { route: '/auth/sign-in', path: '/auth/sign-in' },
   { route: '/auth/sign-up', path: '/auth/sign-up' },
   {
@@ -52,6 +66,8 @@ export const routes: readonly PayloadRoute[] = [
   { route: '/settings/security/', path: '/settings/security', admin: true },
   { route: '/admin/registration/', path: '/admin/registration', admin: true },
   { route: '/post/$id/', path: '/post/<id>', target: seededPost },
+  { route: '/post/$id/comments/$commentId', path: '/post/<id>/comments/<commentId>', target: seededPermalink },
+  { route: '/submit/', path: '/submit', composer: true },
   { route: '/kit/', path: '/kit', fonts: true },
 ];
 
@@ -64,6 +80,7 @@ export const notPages: Readonly<Record<string, string>> = {
   '/healthz': 'a probe answering plain text',
   '/readyz': 'a probe answering plain text',
   '/auth/sign-out': 'a form post that answers with a redirect',
+  '/post/$id/comments/': 'the POST endpoint of the comment forms; a GET redirects to the post page',
   '/media/proxy/$signature/$target': 'an image endpoint, not a page',
 };
 

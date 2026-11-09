@@ -68,6 +68,10 @@ export const actors = pgTable(
       .on(sql`lower(${t.name})`)
       .where(sql`${t.local}`),
     index('actors_instance_name').on(t.instanceId, sql`lower(${t.name})`),
+    // The few NSFW or NSFL communities, for the feeds' gate predicate (it tests every post's community).
+    index('actors_gated')
+      .on(t.id)
+      .where(sql`${t.sensitive} or ${t.nsfl}`),
     check(
       'actors_local_name_chars',
       sql`not ${t.local} or ${t.importedAt} is not null or ${t.kind} = 'Application' or ${t.name} ~ '^[A-Za-z0-9_]{1,50}$'`,

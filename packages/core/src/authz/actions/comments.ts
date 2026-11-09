@@ -3,10 +3,9 @@ import type { RefusalReason } from '@peblish/schema/refusal';
 import { eq, sql } from 'drizzle-orm';
 import { maxCommentDepth } from '../../comments/input.ts';
 import { actors } from '../../db/tables/actors.ts';
-import { authUser } from '../../db/tables/auth.ts';
 import { comments } from '../../db/tables/content.ts';
-import { allow, deny, forNoKeyUpdate, forShare, type PolicyRequest, type PolicyResult } from '../policy.ts';
-import { ownerAuthority } from '../roles.ts';
+import { allow, deny, forNoKeyUpdate, type PolicyRequest, type PolicyResult } from '../policy.ts';
+import { emailUnverified, ownerAuthority } from '../roles.ts';
 import { commentState, commentingDenial, communityDenial, isBanned, liveDenial, postState, type CommentState } from '../state.ts';
 
 // Owned by lane D. Rows are read in the lock order of state.ts: the acting actor, the
@@ -14,22 +13,6 @@ import { commentState, commentingDenial, communityDenial, isBanned, liveDenial, 
 // state (commentingDenial for a new comment, commentState for the author's actions) and each
 // takes the rows a write body updates FOR NO KEY UPDATE: the post and the parent comment,
 // whose counters createComment updates, and the comment itself.
-
-/**
- * Whether the account behind a local Person has not verified its email yet (lane A's request).
- * The same read as post.create's (authz/actions/posts.ts): through actors.user_id, FOR SHARE
- * under lock, before the community is read. A Person without an account row cannot sign in,
- * so there is nothing to refuse.
- */
-async function emailUnverified(request: Pick<PolicyRequest<unknown>, 'db' | 'lock'>, actorId: Uuid): Promise<boolean> {
-  const [actor] = await forShare(request.db.select({ userId: actors.userId }).from(actors).where(eq(actors.id, actorId)), request.lock);
-  if (!actor?.userId) return false;
-  const [user] = await forShare(
-    request.db.select({ emailVerified: authUser.emailVerified }).from(authUser).where(eq(authUser.id, actor.userId)),
-    request.lock,
-  );
-  return user?.emailVerified === false;
-}
 
 /** Whether the actor is a community (a Group): its kind never changes, so the read needs no lock. */
 async function isCommunity(request: Pick<PolicyRequest<unknown>, 'db'>, actorId: Uuid): Promise<boolean> {

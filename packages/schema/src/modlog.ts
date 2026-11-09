@@ -5,7 +5,7 @@ import { IsoDate, Uuid } from './ids.ts';
 // Owned by lane AZ after G0. One immutable modlog row; the table refuses updates and deletes.
 export const ModAction = type({
   id: Uuid,
-  /** The mod.* action name, such as 'mod.remove' or 'mod.site_ban' (recheck keys on the prefix). */
+  /** The action name: mod.* such as 'mod.remove' or 'mod.site_ban' (recheck keys on that prefix), or a community change: 'community.create', 'community.update', 'community.set_moderator'. */
   action: 'string',
   /** Who acted; null once that actor row is purged (or when only an announcing community is known), when actorApId still names them. */
   actorId: Uuid.or('null'),
