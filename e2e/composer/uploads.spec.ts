@@ -95,8 +95,5 @@ test('with uploads on an image is cleaned, stored and posted, and a bad file is 
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('An uploaded image');
   // The post links the stored image on this instance; nothing serves it until the scanning lane lands.
   await expect(page.locator('.post-image img')).toHaveAttribute('src', /\/media\/[0-9a-f-]{36}$/);
-  // Delete it again: the feeds show every post, and the lane's public origin does not resolve, so a picture at /media/<id> breaks other specs' pages.
-  await page.getByRole('button', { name: 'Delete' }).click();
-  await expect(page.getByText('This post was deleted')).toBeVisible();
   await page.close();
 });

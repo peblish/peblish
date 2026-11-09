@@ -10,7 +10,8 @@ export type ImagePolicy = {
 
 /**
  * Where a page loads an image from, for a post's thumbnail as for an image inside a body: this
- * instance's own URL as it is, a remote one through the signed proxy so the viewer's address
+ * instance's own media as a root-relative path (the viewer may reach the instance under another
+ * host than the stored origin), a remote one through the signed proxy so the viewer's address
  * never reaches the remote host (decision 5), and null when it must not load (remote media is
  * off, no proxy, not http or https, too long to proxy). The caller then shows a link or nothing.
  */
@@ -23,7 +24,7 @@ export function imageSource(url: string | null | undefined, policy: ImagePolicy)
     return null;
   }
   if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') return null;
-  if (parsed.origin === policy.origin) return url;
+  if (parsed.origin === policy.origin) return `${parsed.pathname}${parsed.search}`;
   if (!policy.remoteMedia || !policy.proxy) return null;
   try {
     return policy.proxy(url);

@@ -78,9 +78,12 @@ test('the key comes from the auth secret under its own purpose label', async () 
   expect(proxy).toHaveLength(32);
 });
 
-test('where an image loads from: this instance as is, remote only through the proxy and the kill switch', () => {
+test('where an image loads from: this instance as a root-relative path, remote only through the proxy and the kill switch', () => {
   const policy = { origin: 'https://feddit.example', remoteMedia: true, proxy: build };
-  expect(imageSource('https://feddit.example/media/a.png', policy)).toBe('https://feddit.example/media/a.png');
+  // The viewer may reach the instance under another host than the stored origin, so the host is dropped.
+  expect(imageSource('https://feddit.example/media/a.png', policy)).toBe('/media/a.png');
+  expect(imageSource('https://feddit.example/media/a.png?v=2', policy)).toBe('/media/a.png?v=2');
+  expect(imageSource('https://feddit.example:8443/media/a.png', policy)).toBe(build('https://feddit.example:8443/media/a.png'));
   expect(imageSource(URL_, policy)).toBe(build(URL_));
   const refused = [
     imageSource(URL_, { ...policy, remoteMedia: false }),
@@ -94,9 +97,7 @@ test('where an image loads from: this instance as is, remote only through the pr
   ];
   expect(refused).toEqual(Array(refused.length).fill(null));
   // Own media stays loadable with the switch off.
-  expect(imageSource('https://feddit.example/media/a.png', { ...policy, remoteMedia: false, proxy: undefined })).toBe(
-    'https://feddit.example/media/a.png',
-  );
+  expect(imageSource('https://feddit.example/media/a.png', { ...policy, remoteMedia: false, proxy: undefined })).toBe('/media/a.png');
 });
 
 test('a post link is an image when its content type says so, including the image/* placeholder', () => {

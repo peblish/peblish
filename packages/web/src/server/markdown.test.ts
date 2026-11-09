@@ -12,10 +12,10 @@ test('each body renders once per renderer, keyed by its content and options', as
   expect((await createMarkdownRenderer(site)).render('**hi**')).not.toBe(md.render('**hi**'));
 });
 
-test('own images load inline; remote ones go through the proxy, or show as links without it', async () => {
+test('own images load inline as a path on this host; remote ones go through the proxy, or show as links without it', async () => {
   const link = '<a href="https://img.example/b.png" rel="noopener noreferrer nofollow ugc">remote</a>';
   expect((await createMarkdownRenderer(site)).render(images).html).toBe(
-    `<p><img src="https://feddit.example/media/a.png" alt="own" loading="lazy"> ${link}</p>\n`,
+    `<p><img src="/media/a.png" alt="own" loading="lazy"> ${link}</p>\n`,
   );
   const proxy = (url: string) => `/media/proxy?url=${encodeURIComponent(url)}`;
   expect((await createMarkdownRenderer({ ...site, proxy })).render(images).html).toContain(

@@ -10,10 +10,10 @@ const proxied = /^\/media\/proxy\/[\w-]+\/[\w-]+$/;
 const view = (extra: Partial<Parameters<typeof postMedia>[0]> = {}) => ({ url: null, urlContentType: null, thumbnailUrl: null, ...extra });
 
 describe('the post page media', () => {
-  test('a thumbnail is this instance’s own URL as it is, a root-relative path as it is, or a signed proxy path', async () => {
+  test('a thumbnail is this instance’s own media as a root-relative path, or a signed proxy path', async () => {
     const renderer = await createMarkdownRenderer(site);
     const thumbnail = (url: string) => postMedia(view({ thumbnailUrl: url }), renderer).thumbnail;
-    expect(thumbnail('https://feddit.example/media/a.png')).toBe('https://feddit.example/media/a.png');
+    expect(thumbnail('https://feddit.example/media/a.png')).toBe('/media/a.png');
     expect(thumbnail('/media/a.png')).toBe('/media/a.png');
     expect(thumbnail('https://img.example/a.png')).toMatch(proxied);
     // Not this instance's path: a protocol-relative URL and a script URL never load.
