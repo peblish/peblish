@@ -111,6 +111,34 @@ describe('what reaches a local community directly is announced to its followers'
     const piefed = (await queued()).find((row) => row.inbox === 'https://piefed.test/inbox')!;
     expect(piefed.body.endsWith(`,"object":${text}}`)).toBe(true);
   });
+
+  test('a microblog Note to the community is relayed as the Page it was stored as, not as the Note that arrived', async () => {
+    await followed();
+    const text = await receive({
+      id: activityId('https://piefed.test', 'create'),
+      type: 'Create',
+      actor: hosts.pfuser,
+      object: {
+        id: 'https://piefed.test/note/relay-2',
+        type: 'Note',
+        attributedTo: hosts.pfuser,
+        content: '<p>First line</p><p>and more</p>',
+        published: '2026-11-09T10:00:00Z',
+        to: [PUBLIC],
+        cc: [hosts.spike],
+      },
+      to: [PUBLIC],
+      cc: [hosts.spike],
+    });
+    expect(await shapes()).toEqual({
+      'https://lemmy.test/inbox': 'Announce(Create(Page))',
+      'https://mastodon.test/inbox': 'Announce(Page)',
+    });
+    const lemmy = (await queued()).find((row) => row.inbox === 'https://lemmy.test/inbox')!;
+    expect(lemmy.body.includes(text)).toBe(false);
+    const created = lemmy.json.object as Json;
+    expect(created.object).toMatchObject({ type: 'Page', id: 'https://piefed.test/note/relay-2', name: 'First line' });
+  });
 });
 
 /** This server with a community and a moderator, peers following the community, and a remote community. */

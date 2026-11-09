@@ -1,18 +1,19 @@
 import { eq } from 'drizzle-orm';
 import { beforeEach, describe, expect, test } from 'vitest';
 import { db } from '@peblish/core/db/read';
-import { actors } from '@peblish/core/db/tables/actors';
+import { actorKeys, actors } from '@peblish/core/db/tables/actors';
 import { posts, votes } from '@peblish/core/db/tables/content';
 import { activities, inboxDedupe, inboxRaw } from '@peblish/core/db/tables/federation';
 import { follows } from '@peblish/core/db/tables/follows';
 import { deliveries } from '@peblish/core/delivery/tables';
 import { outbox } from '@peblish/core/db/tables/outbox';
+import { writer } from '@peblish/core/db/write';
 import { truncateAll } from '@peblish/core/testing/db';
 import { seedAccount } from '@peblish/core/testing/seed-b1';
 import { deliverRow, inboxState, seedFollow, seedInboundWorld, seedInboxRow } from '@peblish/core/testing/seed-fed-b';
-import { stubFetch } from '@peblish/core/testing/seed-fed-a';
+import { rsaKeys, stubFetch } from '@peblish/core/testing/seed-fed-a';
 import { processPending } from './job.ts';
-import { processRow, type PipelineOptions } from './pipeline.ts';
+import { fetchesPerRow, processRow, type PipelineOptions } from './pipeline.ts';
 import { requeueSkippedFor } from './queue.ts';
 import { resetKeyFetchBudget } from './throttle.ts';
 import { activityId, addressedToCommunity, hosts, PUBLIC } from './test-support.ts';
@@ -121,14 +122,20 @@ describe('dedupe, apply and enqueue are one transaction', () => {
     await truncateVotes();
     const batch = { ...announceBy(lab, like(1)), object: [like(1), like(2)] };
     const batched = await deliver(batch);
-    // One vote counted, one skipped for want of its post: the row is applied, and the vote is there.
-    expect(batched.stored).toEqual({ state: 'applied', error: null });
+    // One vote counted, one waits for its post: the row is recorded for that post, not as applied.
+    expect(batched.stored).toEqual({ state: 'skipped', error: `target.missing ${lemmy}/post/none` });
     expect(await db().select().from(votes)).toHaveLength(1);
+
+    // The post arrives: the row goes back in line, the vote that applied is a duplicate, and the other applies.
+    await deliver(announceBy(lab, createPage('none', lab)));
+    expect((await inboxState(batched.row.id))?.state).toBe('pending');
+    await processPending();
+    expect(await inboxState(batched.row.id)).toEqual({ state: 'applied', error: null });
+    expect(await db().select().from(votes)).toHaveLength(2);
   });
 });
 
 async function truncateVotes() {
-  const { writer } = await import('@peblish/core/db/write');
   await writer().delete(votes);
   await writer().delete(inboxDedupe);
 }
@@ -405,5 +412,149 @@ describe('what a remote author may post', () => {
     const own = { id: activityId(lemmy, 'delete'), type: 'Delete', actor: lemmyuser, object: lemmyuser, to: [PUBLIC] };
     expect((await deliver(own)).stored?.state).toBe('applied');
     expect((await deliver(update())).stored).toEqual({ state: 'skipped', error: `target.deleted ${lemmyuser}` });
+  });
+});
+
+describe('what processing a delivery may fetch', () => {
+  test('a follow of a community that is not ours, and an Undo of one, fetch nothing', async () => {
+    const probe = stubFetch({});
+    const follow = (id: string, object: string) => ({
+      id: `${lemmy}/activities/follow/${id}`,
+      type: 'Follow',
+      actor: lemmyuser,
+      object,
+      to: [object],
+    });
+    for (const object of [lab, 'https://fed-b.test/ap/c.nowhere', 'https://elsewhere.test/c/new']) {
+      const followed = await deliver(follow('f', object), { fetch: probe.fetch });
+      expect(followed.stored?.error).toMatch(/^follow\.target_unsupported/);
+      const undone = await deliver(
+        { id: activityId(lemmy, 'undo'), type: 'Undo', actor: lemmyuser, object: follow('f', object), to: [object] },
+        { fetch: probe.fetch },
+      );
+      expect(undone.stored?.error).toMatch(/^follow\.target_unsupported/);
+    }
+    expect(probe.requests).toEqual([]);
+  });
+
+  test('content sent straight to a community we do not hold is unannounced before anything is fetched', async () => {
+    const probe = stubFetch({});
+    const stranger = 'https://elsewhere.test/c/new';
+    const direct = await deliver(createPage('400', stranger), { fetch: probe.fetch });
+    expect(direct.stored?.error).toMatch(/^community\.unannounced/);
+    const block = await deliver(
+      {
+        id: activityId(lemmy, 'block'),
+        type: 'Block',
+        actor: hosts.lemmyadmin,
+        object: lemmyuser,
+        target: stranger,
+        ...addressedToCommunity(stranger),
+      },
+      { fetch: probe.fetch },
+    );
+    expect(block.stored?.error).toMatch(/^community\.unannounced/);
+    expect(probe.requests).toEqual([]);
+  });
+
+  test('a delivery that needs more fetches than its share waits and is tried again, not dropped', async () => {
+    const probe = stubFetch({});
+    // Each member is a post of a stranger's server: reading it from its origin is one fetch.
+    const members = Array.from({ length: fetchesPerRow + 10 }, (_, n) => ({
+      id: `https://elsewhere.test/post/${n}`,
+      type: 'Page',
+      attributedTo: `https://elsewhere.test/u/${n}`,
+      name: `Post ${n}`,
+      audience: lab,
+      to: [lab, PUBLIC],
+    }));
+    const batch = { ...announceBy(lab, members[0]!), object: members };
+    const row = await seedInboxRow(JSON.stringify(batch), { activityId: batch.id, activityType: 'Announce', actorApId: lab });
+    await expect(processRow(row, { fetch: probe.fetch })).rejects.toThrow(/more fetches/);
+    expect(probe.requests).toHaveLength(fetchesPerRow);
+    expect((await inboxState(row.id))?.state).toBe('pending');
+  });
+});
+
+describe('an Announce of an Announce', () => {
+  test('is skipped before anything is read, so two origins cannot send each other in circles', async () => {
+    // lab (lemmy.test) announces rogue.test's Announce, which announces lab's Announce, which names the first again.
+    const first = `${lemmy}/activities/announce/a`;
+    const second = 'https://rogue.test/activities/announce/b';
+    const cycle = {
+      id: first,
+      type: 'Announce',
+      actor: lab,
+      to: [PUBLIC],
+      object: {
+        id: second,
+        type: 'Announce',
+        actor: hosts.fake,
+        to: [PUBLIC],
+        object: { id: first, type: 'Announce', actor: lab, to: [PUBLIC], object: second },
+      },
+    };
+    const probe = stubFetch({ [first]: { body: cycle }, [second]: { body: cycle.object } });
+    const result = await deliver(cycle, { fetch: probe.fetch });
+    expect(result.stored).toEqual({ state: 'skipped', error: `announce.nested ${second}` });
+    // The same inside a batched Announce.
+    const batched = await deliver({ ...cycle, id: `${lemmy}/activities/announce/c`, object: [cycle.object] }, { fetch: probe.fetch });
+    expect(batched.stored?.error).toMatch(/^announce\.nested/);
+    expect(probe.requests).toEqual([]);
+  });
+});
+
+describe('an Update of a community’s profile', () => {
+  const group = (publicKeyPem: string) => ({
+    id: lab,
+    type: 'Group',
+    preferredUsername: 'lab',
+    name: 'Lab, edited',
+    inbox: `${lab}/inbox`,
+    publicKey: { id: `${lab}#main-key`, owner: lab, publicKeyPem },
+  });
+  const updateBy = (actor: string, publicKeyPem: string) => ({
+    id: activityId(lemmy, 'update'),
+    type: 'Update',
+    actor,
+    object: group(publicKeyPem),
+    to: [PUBLIC],
+  });
+  const stored = async () => ({
+    name: (await db().select().from(actors).where(eq(actors.apId, lab)))[0]?.displayName,
+    key: (
+      await db()
+        .select()
+        .from(actorKeys)
+        .where(eq(actorKeys.keyId, `${lab}#main-key`))
+    )[0]?.publicKeyPem,
+  });
+
+  test('sent by a moderator and announced edits the profile but never the key; the community’s own Update changes the key', async () => {
+    const attacker = rsaKeys().publicKeyPem;
+    const moderator = await deliver(announceBy(lab, updateBy(hosts.lemmyadmin, attacker)));
+    expect(moderator.stored).toEqual({ state: 'applied', error: null });
+    expect(await stored()).toEqual({ name: 'Lab, edited', key: world.peers.lab.keys.publicKeyPem });
+
+    const own = await deliver(updateBy(lab, attacker));
+    expect(own.stored).toEqual({ state: 'applied', error: null });
+    expect((await stored()).key).toBe(attacker);
+  });
+});
+
+describe('a Delete or an Undo from an actor whose server says it is gone', () => {
+  test('is read with the copy we hold, however stale, and does not refetch the actor', async () => {
+    await writer()
+      .update(actors)
+      .set({ fetchedAt: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000) })
+      .where(eq(actors.apId, lemmyuser));
+    const gone = stubFetch({ [lemmyuser]: { status: 410 } });
+    const own = { id: activityId(lemmy, 'delete'), type: 'Delete', actor: lemmyuser, object: lemmyuser, to: [PUBLIC], removeData: true };
+    expect((await deliver(own, { fetch: gone.fetch })).stored).toEqual({ state: 'applied', error: null });
+    expect((await db().select().from(posts).where(eq(posts.apId, t1)))[0]?.deletedAt).not.toBeNull();
+    const undo = { id: activityId(lemmy, 'undo'), type: 'Undo', actor: lemmyuser, object: own, to: [PUBLIC] };
+    expect((await deliver(undo, { fetch: gone.fetch })).stored).toEqual({ state: 'applied', error: null });
+    expect((await db().select().from(actors).where(eq(actors.apId, lemmyuser)))[0]?.deletedAt).toBeNull();
+    expect(gone.requests).toEqual([]);
   });
 });

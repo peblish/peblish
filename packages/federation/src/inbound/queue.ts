@@ -8,6 +8,12 @@ import { missingTarget } from './reasons.ts';
 // FOR UPDATE SKIP LOCKED under a lease, so two workers never process one row, and a worker
 // that dies leaves a lease that runs out (at-least-once; the dedupe marker makes a second
 // apply a no-op).
+//
+// Every claim has a generation: `attempts`, which each lease raises by one. A worker whose
+// lease ran out and whose row was leased again holds a stale generation, so what it settles,
+// retries or renews matches no row and throws ClaimLost; inside the applying transaction that
+// rolls the apply back, and the worker that holds the row does it instead. Workers renew the
+// lease as they go, so a slow row is not taken from a worker that is still working on it.
 
 export type InboxRow = {
   id: string;
@@ -19,6 +25,17 @@ export type InboxRow = {
   attempts: number;
   receivedAt: Date;
 };
+
+/** The row a worker holds and the generation of its claim. */
+export type Claim = Pick<InboxRow, 'id' | 'attempts'>;
+
+/** The row was leased again after this worker's lease ran out: whatever it was doing is not its to settle. */
+export class ClaimLost extends Error {
+  override readonly name = 'ClaimLost';
+  constructor(claim: Claim) {
+    super(`the lease on inbox row ${claim.id} (attempt ${claim.attempts}) is no longer held`);
+  }
+}
 
 /** Most times a row is tried when its failures are transient (a peer down, a database error). */
 export const maxAttempts = 8;
@@ -62,28 +79,54 @@ export async function leasePending(limit: number): Promise<InboxRow[]> {
 
 export type Settled = { state: 'applied' | 'skipped' | 'failed'; error: string | null };
 
-/** Records how a row ended. */
-export async function settle(t: OpenTx, rowId: string, { state, error }: Settled): Promise<void> {
-  await t.db.update(inboxRaw).set({ state, error, processedAt: new Date(), leaseUntil: null }).where(eq(inboxRaw.id, rowId));
+/** The row only while this claim is the one held: still pending, at the generation it was leased with. */
+const held = (claim: Claim) => and(eq(inboxRaw.id, claim.id), eq(inboxRaw.attempts, claim.attempts), eq(inboxRaw.state, 'pending'));
+
+/** Records how a row ended. Throws ClaimLost when the claim is no longer held. */
+export async function settle(t: OpenTx, claim: Claim, { state, error }: Settled): Promise<void> {
+  const rows = await t.db
+    .update(inboxRaw)
+    .set({ state, error, processedAt: new Date(), leaseUntil: null })
+    .where(held(claim))
+    .returning({ id: inboxRaw.id });
+  if (rows.length === 0) throw new ClaimLost(claim);
 }
 
-export const settleAlone = (rowId: string, settled: Settled): Promise<void> => tx((t) => settle(t, rowId, settled));
+export const settleAlone = (claim: Claim, settled: Settled): Promise<void> => tx((t) => settle(t, claim, settled));
+
+/** Extends the lease by a full lease period. Throws ClaimLost when the claim is no longer held. */
+export async function renewLease(claim: Claim): Promise<void> {
+  const rows = await tx((t) =>
+    t.db
+      .update(inboxRaw)
+      .set({ leaseUntil: sql`now() + ${leaseSeconds} * interval '1 second'` })
+      .where(held(claim))
+      .returning({ id: inboxRaw.id }),
+  );
+  if (rows.length === 0) throw new ClaimLost(claim);
+}
 
 /**
  * A transient failure: the row waits (30 seconds, doubling, at most an hour) and is tried again,
- * until `maxAttempts`, when it fails for good with the last error.
+ * until `maxAttempts`, when it fails for good with the last error. A claim that is no longer
+ * held changes nothing: the worker that holds the row decides.
  */
-export async function retryLater(row: Pick<InboxRow, 'id' | 'attempts'>, error: unknown): Promise<void> {
+export async function retryLater(row: Claim, error: unknown): Promise<void> {
   const message = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
-  if (row.attempts >= maxAttempts)
-    return settleAlone(row.id, { state: 'failed', error: `gave up after ${row.attempts} attempts: ${message}` });
+  if (row.attempts >= maxAttempts) {
+    return settleAlone(row, { state: 'failed', error: `gave up after ${row.attempts} attempts: ${message}` }).catch(ignoreClaimLost);
+  }
   const delaySeconds = Math.min(30 * 2 ** (row.attempts - 1), 3600);
   await tx((t) =>
     t.db
       .update(inboxRaw)
       .set({ error: message, leaseUntil: sql`now() + ${delaySeconds} * interval '1 second'` })
-      .where(eq(inboxRaw.id, row.id)),
+      .where(held(row)),
   );
+}
+
+function ignoreClaimLost(error: unknown): void {
+  if (!(error instanceof ClaimLost)) throw error;
 }
 
 /**

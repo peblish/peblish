@@ -5,7 +5,7 @@ import { follows } from '@peblish/core/db/tables/follows';
 import { Refused } from '@peblish/core/tx/refused';
 import { tx } from '@peblish/core/tx/tx';
 import { and, eq, isNull } from 'drizzle-orm';
-import { ActorResolveError, resolveRemoteActor, type ResolvedActor } from '../actors/resolve.ts';
+import { ActorResolveError, resolveRemoteActor, type ResolvedActor, type ResolveOptions } from '../actors/resolve.ts';
 import type { Fetcher } from '../actors/document.ts';
 import { safeFetch } from '../actors/safe-fetch.ts';
 import { localOrigin } from '../federation.ts';
@@ -17,8 +17,9 @@ import { inboundHandlers } from '../registry/inbound-handlers.gen.ts';
 import { checkActivityOrigin, checkNotEcho } from './authorize.ts';
 import { classify, type ClassifyEnv, type Item } from './classify.ts';
 import type { AnnounceInfo, InboundContext, InboundHandler, Prepared } from './handler.ts';
-import { requeueWaiting, settle, settleAlone, type InboxRow, type Settled } from './queue.ts';
+import { renewLease, requeueWaiting, settle, settleAlone, type InboxRow, type Settled } from './queue.ts';
 import { Skipped, skip } from './reasons.ts';
+import { takePipelineFetch } from './throttle.ts';
 
 // One inbox_raw row from receipt to its end state. The signature was verified when the row was
 // stored (receive.ts), so the key's owner is the activity's actor. From there:
@@ -48,17 +49,37 @@ type ItemResult = { applied: true } | { skipped: Skipped } | { failed: string };
 type Env = {
   fetch: Fetcher;
   origin: string;
-  actor(apId: string): Promise<ResolvedActor>;
+  actor(apId: string, options?: Pick<ResolveOptions, 'maxAgeMs'>): Promise<ResolvedActor>;
   seen(activityId: string): Promise<boolean>;
   classify: ClassifyEnv;
   afterApply: (() => Promise<void>) | undefined;
 };
 
+/** Most fetches one delivery may cost, so a batched Announce naming many strangers cannot fan out without end. */
+export const fetchesPerRow = 60;
+
+/**
+ * `base` counted against this row's allowance and the pipeline's window (throttle.ts). A fetch
+ * past either fails like an unreachable peer, which the pipeline retries later, so a delivery
+ * that needs more than its share waits instead of being lost. Each fetch also renews the row's
+ * lease, so a delivery that spends minutes on slow peers is not taken from the worker doing it.
+ */
+function budgeted(base: Fetcher, row: InboxRow): Fetcher {
+  let left = fetchesPerRow;
+  return async (url, init) => {
+    if (left <= 0 || !takePipelineFetch(new URL(String(url)).host))
+      throw new Error('this delivery needs more fetches than it may make now');
+    left -= 1;
+    await renewLease(row);
+    return base(url, init);
+  };
+}
+
 const handlers = new Map<string, InboundHandler>(inboundHandlers.map((handler) => [handler.type, handler]));
 
-async function resolveActor(apId: string, fetch: Fetcher): Promise<ResolvedActor> {
+async function resolveActor(apId: string, fetch: Fetcher, options: Pick<ResolveOptions, 'maxAgeMs'> = {}): Promise<ResolvedActor> {
   try {
-    return await resolveRemoteActor(apId, { fetch });
+    return await resolveRemoteActor(apId, { fetch, ...options });
   } catch (error) {
     // A peer that is down is retried; an actor that is gone, blocked or malformed will not change.
     if (error instanceof ActorResolveError && !error.transient) throw skip('actor.unresolvable', apId);
@@ -66,12 +87,12 @@ async function resolveActor(apId: string, fetch: Fetcher): Promise<ResolvedActor
   }
 }
 
-async function makeEnv(options: PipelineOptions): Promise<Env> {
-  const fetch = options.fetch ?? safeFetch;
+async function makeEnv(options: PipelineOptions, row: InboxRow): Promise<Env> {
+  const fetch = budgeted(options.fetch ?? safeFetch, row);
   return {
     fetch,
     origin: await localOrigin(),
-    actor: (apId) => resolveActor(apId, fetch),
+    actor: (apId, options) => resolveActor(apId, fetch, options),
     seen: async (activityId) =>
       (await db().select({ id: inboxDedupe.activityId }).from(inboxDedupe).where(eq(inboxDedupe.activityId, activityId))).length > 0,
     classify: {
@@ -96,10 +117,14 @@ async function makeEnv(options: PipelineOptions): Promise<Env> {
 }
 
 async function contextFor(env: Env, activity: Activity, raw: JsonObject, announce: AnnounceInfo | null): Promise<InboundContext> {
+  // A Delete or an Undo comes from an actor that may be gone, and a stale copy refetched to
+  // answer 410 would be deleted before the activity is read, dropping a Delete with removeData.
+  // The copy we hold is enough to say who sent it.
+  const leaving = activity.type === 'Delete' || activity.type === 'Undo';
   return {
     activity,
     raw,
-    sender: await env.actor(activity.actorApId),
+    sender: await env.actor(activity.actorApId, leaving ? { maxAgeMs: Infinity } : undefined),
     announce,
     fetch: env.fetch,
     origin: env.origin,
@@ -111,7 +136,7 @@ async function contextFor(env: Env, activity: Activity, raw: JsonObject, announc
 }
 
 /** Dedupe, apply, record, relay and settle: the one transaction. */
-async function applyOnce(row: InboxRow, prepared: Prepared, env: Env, settleHere: boolean): Promise<void> {
+async function applyOnce(row: InboxRow, prepared: Prepared, env: Env, settleHere: boolean, rewritten: boolean): Promise<void> {
   const { activity, raw, apply, announced } = prepared;
   await tx(async (t) => {
     if (!(await t.dedupe(activity.id))) throw skip('duplicate');
@@ -133,18 +158,20 @@ async function applyOnce(row: InboxRow, prepared: Prepared, env: Env, settleHere
     if (applied.relay && applied.communityId && !announced) {
       await relayToFollowers(t, {
         communityId: applied.communityId,
-        body: row.body,
+        // A rewritten Note (a microblog post made into a Page) goes to threadiverse followers as the
+        // Page it was stored as: Lemmy and its kin read no top-level Note as a post.
+        body: rewritten ? new TextEncoder().encode(JSON.stringify(raw)) : row.body,
         json: raw,
         senderApId: activity.actorApId,
         page: applied.page,
       });
     }
     await requeueWaiting(t, applied.stored ?? []);
-    if (settleHere) await settle(t, row.id, { state: 'applied', error: null });
+    if (settleHere) await settle(t, row, { state: 'applied', error: null });
   });
 }
 
-async function processItem(row: InboxRow, json: JsonObject, env: Env, settleHere: boolean): Promise<ItemResult> {
+async function processItem(row: InboxRow, json: JsonObject, env: Env, settleHere: boolean, rewritten: boolean): Promise<ItemResult> {
   try {
     const activity = activityFromWire(json);
     checkActivityOrigin(activity);
@@ -154,7 +181,7 @@ async function processItem(row: InboxRow, json: JsonObject, env: Env, settleHere
     const handler = handlers.get(activity.type);
     if (!handler) throw skip('type.unhandled', activity.type);
     const prepared = await handler.prepare(await contextFor(env, activity, json, null));
-    await applyOnce(row, prepared, env, settleHere);
+    await applyOnce(row, prepared, env, settleHere, rewritten);
     return { applied: true };
   } catch (error) {
     if (error instanceof Skipped) return { skipped: error };
@@ -164,19 +191,24 @@ async function processItem(row: InboxRow, json: JsonObject, env: Env, settleHere
   }
 }
 
-/** One end state for a row that carried several activities: applied if any was, else why none were. */
+/**
+ * One end state for a row that carried several activities: applied if any was, else why none were.
+ * A member still waiting for its object keeps the row discoverable even when another member
+ * applied: the row is recorded as skipped for that object, goes back in line when the object
+ * arrives (queue.ts requeueWaiting), and is processed again with the members that applied
+ * protected by their dedupe markers (they come out as `duplicate`).
+ */
 function aggregate(results: readonly ItemResult[]): Settled {
+  const skipped = results.filter((result): result is { skipped: Skipped } => 'skipped' in result).map((result) => result.skipped);
+  // A missing object is recorded alone, so the requeue that matches it finds the row.
+  const missing = skipped.find((one) => one.reason === 'target.missing');
+  if (missing) return { state: 'skipped', error: missing.recorded };
   if (results.some((result) => 'applied' in result)) return { state: 'applied', error: null };
   const failed = results.find((result): result is { failed: string } => 'failed' in result);
   if (failed) return { state: 'failed', error: failed.failed };
-  const skipped = results.filter((result): result is { skipped: Skipped } => 'skipped' in result).map((result) => result.skipped);
-  // A missing object is recorded alone, so the requeue that matches it finds the row.
-  const lead = skipped.find((one) => one.reason === 'target.missing') ?? skipped[0];
+  const lead = skipped[0];
   if (!lead) return { state: 'skipped', error: 'announce.empty' };
-  return {
-    state: 'skipped',
-    error: skipped.length > 1 && lead.reason !== 'target.missing' ? `${lead.recorded} (+${skipped.length - 1} more)` : lead.recorded,
-  };
+  return { state: 'skipped', error: skipped.length > 1 ? `${lead.recorded} (+${skipped.length - 1} more)` : lead.recorded };
 }
 
 /**
@@ -184,9 +216,9 @@ function aggregate(results: readonly ItemResult[]): Settled {
  * throws: the caller (the job) hands it to retryLater.
  */
 export async function processRow(row: InboxRow, options: PipelineOptions = {}): Promise<Settled> {
-  const env = await makeEnv(options);
+  const env = await makeEnv(options, row);
   const end = async (settled: Settled) => {
-    await settleAlone(row.id, settled);
+    await settleAlone(row, settled);
     return settled;
   };
   let parsed: unknown;
@@ -205,7 +237,9 @@ export async function processRow(row: InboxRow, options: PipelineOptions = {}): 
   const single = items.length === 1;
   const results: ItemResult[] = [];
   for (const item of items) {
-    results.push('skipped' in item ? { skipped: item.skipped } : await processItem(row, item.json, env, single));
+    // A batch can take a while: keep the lease while its members are worked through.
+    if (!single) await renewLease(row);
+    results.push('skipped' in item ? { skipped: item.skipped } : await processItem(row, item.json, env, single, item.rewritten === true));
   }
   // A lone applied activity settled the row in its own transaction.
   if (single && results[0] && 'applied' in results[0]) return { state: 'applied', error: null };

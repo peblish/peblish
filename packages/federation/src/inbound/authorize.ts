@@ -1,7 +1,7 @@
 import { authorize } from '@peblish/core/authz/authorize';
 import type { Authorized } from '@peblish/core/authz/brand';
 import type { ActionName, SubjectOf } from '@peblish/core/authz/policy';
-import type { Queryable } from '@peblish/core/db/read';
+import { db, type Queryable } from '@peblish/core/db/read';
 import { actors } from '@peblish/core/db/tables/actors';
 import { comments, posts } from '@peblish/core/db/tables/content';
 import type { Tx } from '@peblish/core/tx/tx';
@@ -112,6 +112,8 @@ export type Stored = {
   authorId: string;
   communityId: string;
   postId: string;
+  /** The comment this one replies to; null for a post and for a top-level comment. */
+  parentId: string | null;
   deleted: boolean;
   removed: boolean;
 };
@@ -137,6 +139,7 @@ export async function storedContent(q: Queryable, apId: string): Promise<Stored 
       authorId: post.authorId,
       communityId: post.communityId,
       postId: post.id,
+      parentId: null,
       deleted: post.deletedAt !== null,
       removed: post.removedAt !== null,
     };
@@ -147,6 +150,7 @@ export async function storedContent(q: Queryable, apId: string): Promise<Stored 
       apId: comments.apId,
       authorId: comments.authorId,
       postId: comments.postId,
+      parentId: comments.parentId,
       communityId: posts.communityId,
       deletedAt: comments.deletedAt,
       removedAt: comments.removedAt,
@@ -162,6 +166,7 @@ export async function storedContent(q: Queryable, apId: string): Promise<Stored 
     authorId: comment.authorId,
     communityId: comment.communityId,
     postId: comment.postId,
+    parentId: comment.parentId,
     deleted: comment.deletedAt !== null,
     removed: comment.removedAt !== null,
   };
@@ -174,25 +179,57 @@ export async function requireContent(q: Queryable, apId: string): Promise<Stored
   return stored;
 }
 
+const actorColumns = {
+  id: actors.id,
+  apId: actors.apId,
+  name: actors.name,
+  kind: actors.kind,
+  local: actors.local,
+  deletedAt: actors.deletedAt,
+  inboxUrl: actors.inboxUrl,
+  sharedInboxUrl: actors.sharedInboxUrl,
+  instanceId: actors.instanceId,
+};
+
+const resolved = ({ deletedAt, ...rest }: { deletedAt: Date | null } & Omit<ResolvedActor, 'deleted'>): ResolvedActor => ({
+  ...rest,
+  deleted: deletedAt !== null,
+});
+
 /** The community actor with this uuid, as the context resolves actors. */
 export async function communityById(q: Queryable, id: string): Promise<ResolvedActor> {
-  const [row] = await q
-    .select({
-      id: actors.id,
-      apId: actors.apId,
-      name: actors.name,
-      kind: actors.kind,
-      local: actors.local,
-      deletedAt: actors.deletedAt,
-      inboxUrl: actors.inboxUrl,
-      sharedInboxUrl: actors.sharedInboxUrl,
-      instanceId: actors.instanceId,
-    })
-    .from(actors)
-    .where(eq(actors.id, id));
+  const [row] = await q.select(actorColumns).from(actors).where(eq(actors.id, id));
   if (!row) throw skip('target.missing', id);
-  const { deletedAt, ...rest } = row;
-  return { ...rest, deleted: deletedAt !== null };
+  return resolved(row);
+}
+
+/** A stored actor by ap_id, as the context resolves actors; null when we hold none. Never fetches. */
+export async function storedActor(q: Queryable, apId: string): Promise<ResolvedActor | null> {
+  const [row] = await q.select(actorColumns).from(actors).where(eq(actors.apId, apId));
+  return row ? resolved(row) : null;
+}
+
+/** A community of ours by ap_id, for a Follow or an Undo(Follow): an id on this origin that we hold as a Group. Never fetched. */
+export async function localCommunity(ctx: InboundContext, apId: string): Promise<ResolvedActor> {
+  const held = new URL(apId).origin === ctx.origin ? await storedActor(db(), apId) : null;
+  if (!held || !held.local || held.kind !== 'Group') throw skip('follow.target_unsupported', apId);
+  return held;
+}
+
+/**
+ * The community an activity names, resolved without a fetch: the community whose Announce
+ * carried it, the sender when it is the community itself, or one we hold. A community we do not
+ * hold cannot have announced anything here, so the activity is `community.unannounced` before
+ * any network call (checkCommunity says the same for a held remote community). An Announce
+ * vouches for its own community only, checked first.
+ */
+export async function claimedCommunity(ctx: InboundContext, apId: string): Promise<ResolvedActor> {
+  checkAnnouncer(ctx, apId);
+  if (ctx.announce) return ctx.announce.community;
+  if (ctx.sender.apId === apId) return ctx.sender;
+  const held = await storedActor(db(), apId);
+  if (!held) throw skip('community.unannounced', apId);
+  return held;
 }
 
 /**

@@ -12,7 +12,15 @@ import { truncateAll } from '../testing/db.ts';
 import { seedActor, seedInstance } from '../testing/seed.ts';
 import { outboxEvents, seedModerator } from '../testing/seed-az.ts';
 import { seedLocalInstance } from '../testing/seed-fed-a.ts';
-import { communitiesDueForMirror, mirrorModerators, moderatorsTtlMs, refreshWithinMs } from './moderators.ts';
+import {
+  communitiesDueForMirror,
+  deferMirror,
+  emptyMirrorBackoffMs,
+  forgetDeferredMirrors,
+  mirrorModerators,
+  moderatorsTtlMs,
+  refreshWithinMs,
+} from './moderators.ts';
 
 const collection = 'https://lemmy.test/c/lab/moderators';
 
@@ -37,7 +45,10 @@ const roleEvents = async () =>
     local: boolean;
   }[];
 
-beforeEach(truncateAll);
+beforeEach(async () => {
+  forgetDeferredMirrors();
+  await truncateAll();
+});
 
 describe('mirroring a remote community’s moderators', () => {
   test('adds the listed, confirms the kept, removes the dropped, each change a mod.role event and a non-public modlog row', async () => {
@@ -167,5 +178,28 @@ describe('communities due for a refresh', () => {
       .set({ expiresAt: new Date(Date.now() + refreshWithinMs - 60_000) })
       .where(eq(communityModerators.communityId, spare.id));
     expect((await communitiesDueForMirror(db())).map((row) => row.id)).toEqual([spare.id]);
+  });
+
+  test('a community deferred for a while is left out until the time has passed, and the others still come', async () => {
+    const w = await world();
+    const follower = await seedActor(w.instance, 'Person', 'alice');
+    const other = await seedActor(w.lemmy, 'Group', 'other', { moderatorsUrl: 'https://lemmy.test/c/other/moderators' });
+    for (const [n, community] of [w.lab, other].entries()) {
+      await writer()
+        .insert(follows)
+        .values({
+          followerId: follower.id,
+          followeeId: community.id,
+          apId: `https://fed-a.test/follow/${n}`,
+          state: 'accepted',
+          acceptedAt: new Date(),
+        });
+    }
+    const now = Date.now();
+    deferMirror(w.lab.id, emptyMirrorBackoffMs, now);
+    expect((await communitiesDueForMirror(db(), 20, now)).map((row) => row.id)).toEqual([other.id]);
+    expect(new Set((await communitiesDueForMirror(db(), 20, now + emptyMirrorBackoffMs)).map((row) => row.id))).toEqual(
+      new Set([w.lab.id, other.id]),
+    );
   });
 });
