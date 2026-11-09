@@ -11,7 +11,7 @@ import { throttles } from './tables.ts';
 
 export type Budget = { max: number; seconds: number };
 
-export type Scope = 'sign-in' | 'password' | 'reset-mail' | 'invite-code' | 'verify-mail';
+export type Scope = 'sign-in' | 'password' | 'reset-mail' | 'invite-code' | 'verify-mail' | 'link-preview' | 'comment';
 
 const minutes = (count: number) => count * 60;
 
@@ -27,6 +27,10 @@ export const budgets: Record<Scope, { ip?: Budget; id?: Budget }> = {
   'invite-code': { ip: { max: 10, seconds: minutes(60) } },
   /** Another email verification link for the same account. */
   'verify-mail': { id: { max: 1, seconds: 60 } },
+  /** A link preview makes the server fetch an address a person chose, so it is counted per address and per account before the fetch. */
+  'link-preview': { ip: { max: 30, seconds: minutes(10) }, id: { max: 20, seconds: minutes(10) } },
+  /** A comment form post (reply, edit or delete), per account. */
+  comment: { id: { max: 30, seconds: minutes(10) } },
 };
 
 /** An address as its key: IPv4 as is (also when mapped into IPv6), IPv6 by its /64, one subscriber's block. */

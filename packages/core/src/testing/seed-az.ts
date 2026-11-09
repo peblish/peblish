@@ -17,11 +17,11 @@ import { seedActor, seedInstance } from './seed.ts';
 type Instance = { id: string; domain: string; local: boolean };
 type Row = { id: string };
 
-/** A local Person whose account is a site admin, with two-factor on (an admin counts as one only then). */
+/** A local Person whose account is a site admin, with two-factor on (an admin counts as one only then) and a verified email (posting needs it). */
 export async function seedAdmin(instance: Instance, name: string) {
   const [user] = await writer()
     .insert(authUser)
-    .values({ name, email: `${name.toLowerCase()}@${instance.domain}`, role: 'admin', twoFactorEnabled: true })
+    .values({ name, email: `${name.toLowerCase()}@${instance.domain}`, role: 'admin', twoFactorEnabled: true, emailVerified: true })
     .returning();
   return seedActor(instance, 'Person', name, { userId: user!.id });
 }

@@ -1,5 +1,11 @@
-import { describe, expect, test } from 'vitest';
+import { describe, expect, test, vi } from 'vitest';
 import { withFederation } from './federation.ts';
+
+// The connection's peer, as TanStack Start's getRequestIP gives it inside a request.
+vi.mock('@tanstack/react-start/server', async (original) => ({
+  ...(await original<typeof import('@tanstack/react-start/server')>()),
+  getRequestIP: () => '10.0.0.2',
+}));
 
 const ui = async (request: Request) =>
   new Response(`<!doctype html> accept=${request.headers.get('accept')}`, { headers: { 'content-type': 'text/html' } });
@@ -38,5 +44,46 @@ describe('federation bridge', () => {
     const page = await fetch(get('/u/andrew'));
     expect(await page.text()).toBe('<!doctype html> accept=text/html');
     expect(page.headers.get('vary')).toBe('Accept');
+  });
+
+  describe('the address an inbox POST is counted by', () => {
+    const forwarded = { 'x-forwarded-for': '10.9.9.9, 203.0.113.1', 'cf-connecting-ip': '192.0.2.9' };
+    const postFrom = async (proxy: string | undefined, path = '/inbox', method = 'POST') => {
+      if (proxy) vi.stubEnv('PEBLISH_TRUSTED_PROXY', proxy);
+      try {
+        const peers: (string | undefined)[] = [];
+        const fetch = withFederation(ui, async (_request, context) => {
+          peers.push(context?.peer);
+          return new Response(null, { status: 202 });
+        });
+        await fetch(new Request(`https://feddit.test${path}`, { method, headers: forwarded, body: method === 'POST' ? '{}' : undefined }));
+        return peers;
+      } finally {
+        vi.unstubAllEnvs();
+      }
+    };
+
+    test('behind Traefik it is the forwarded client, behind Cloudflare its header', async () => {
+      expect(await postFrom('traefik')).toEqual(['203.0.113.1']);
+      expect(await postFrom('cloudflare')).toEqual(['192.0.2.9']);
+    });
+
+    test('with no proxy named it is the connection’s peer, whatever the headers claim', async () => {
+      expect(await postFrom(undefined)).toEqual(['10.0.0.2']);
+    });
+
+    test('a misconfigured proxy setting is logged and the inbox still answers', async () => {
+      const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
+      try {
+        expect(await postFrom('nginx')).toEqual([undefined]);
+        expect(logged).toHaveBeenCalledOnce();
+      } finally {
+        logged.mockRestore();
+      }
+    });
+
+    test('a document request is handed none', async () => {
+      expect(await postFrom('traefik', '/ap/u.alice', 'GET')).toEqual([undefined]);
+    });
   });
 });

@@ -1,0 +1,79 @@
+/* The thread under a post and the permalink page, after the R1 mocks thread-nested and
+   thread-docked: structure and states, not final styling. The comment tree and the reply bar
+   are lane UI's (comment-thread.css, reply-bar.css). */
+@layer app {
+  .cm-thread {
+    margin-top: 28px;
+    scroll-margin-top: 16px;
+  }
+  .cm-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px 16px;
+    margin-bottom: 8px;
+  }
+  .cm-head h2 {
+    margin: 0;
+    font-size: 16px;
+  }
+  .cm-title {
+    margin: 0 0 8px;
+    font-size: 18px;
+    line-height: 1.3;
+    overflow-wrap: anywhere;
+  }
+  .cm-empty,
+  .cm-notice,
+  .cm-trail {
+    margin: 12px 0;
+    color: var(--pb-muted);
+  }
+  .cm-notice {
+    padding: 8px 0;
+    border-top: 1px solid var(--pb-fg);
+  }
+  .cm-error {
+    margin: 12px 0 0;
+    color: var(--pb-error);
+  }
+  .cm-removed {
+    margin: 16px 0 0;
+    font-size: 13px;
+  }
+  .cm-removed summary {
+    cursor: pointer;
+    color: var(--pb-muted);
+  }
+  .cm-removed ul {
+    margin: 6px 0 0;
+    padding-left: 20px;
+  }
+  .cm-more {
+    margin: 12px 0;
+  }
+  .cm-more a,
+  .cm-trail a,
+  .cm-removed a {
+    color: var(--pb-accent);
+  }
+  .cm-own {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    gap: 8px 12px;
+    margin: 12px 0;
+  }
+  .cm-own details {
+    flex: 1 1 100%;
+  }
+  .cm-own form {
+    display: grid;
+    gap: 8px;
+    margin-top: 8px;
+  }
+  .cm-notice a {
+    color: var(--pb-accent);
+  }
+}

@@ -48,6 +48,13 @@ const registries: Registry[] = [
     kind: { merge: 'list', list: 'consumers', itemType: { name: 'Consumer', from: 'packages/core/src/outbox/consumers.ts' } },
   },
   {
+    // Periodic work outside the outbox (defineJob); the worker runs core's and federation's.
+    out: 'packages/core/src/registry/jobs.gen.ts',
+    files: 'packages/core/src/**/job.ts',
+    exportName: 'job',
+    kind: { merge: 'list', list: 'jobs', itemType: { name: 'Job', from: 'packages/core/src/outbox/jobs.ts' } },
+  },
+  {
     out: 'packages/core/src/registry/feed-predicates.gen.ts',
     files: 'packages/core/src/*/feed-predicate.ts',
     exportName: 'feedPredicate',
@@ -71,6 +78,13 @@ const registries: Registry[] = [
     kind: { merge: 'list', list: 'federationConsumers', itemType: { name: 'Consumer', from: '@peblish/core/outbox/consumers' } },
   },
   {
+    // Federation's own jobs (the delivery queue, Follow retries: lane FED-A).
+    out: 'packages/federation/src/registry/jobs.gen.ts',
+    files: 'packages/federation/src/**/job.ts',
+    exportName: 'job',
+    kind: { merge: 'list', list: 'federationJobs', itemType: { name: 'Job', from: '@peblish/core/outbox/jobs' } },
+  },
+  {
     out: 'packages/web/src/registry/i18n.gen.ts',
     files: 'packages/web/src/i18n/*.json',
     exportName: 'default',
@@ -85,7 +99,7 @@ const ignored = (file: string) => /\.(test|test-d|gen|spec)\.tsx?$/.test(file) |
 function identifier(file: string, base: string): string {
   const stem = relative(base, file)
     .replace(/\.(tsx?|json)$/, '')
-    .replace(/\/(consumer|feed-predicate)$/, '');
+    .replace(/\/(consumer|job|feed-predicate)$/, '');
   return stem.replace(/[^A-Za-z0-9]+(.)?/g, (_, next: string | undefined) => (next ? `_${next}` : ''));
 }
 

@@ -29,6 +29,11 @@ export const inboxRaw = pgTable(
       .on(t.receivedAt)
       .where(sql`${t.state} = 'pending'`),
     index('inbox_raw_activity').on(t.activityId),
+    // Whether any actor of an instance sent something lately (dormancy), and the hourly prune of settled rows.
+    index('inbox_raw_actor').on(t.actorApId, t.receivedAt),
+    index('inbox_raw_processed')
+      .on(t.processedAt)
+      .where(sql`${t.state} <> 'pending'`),
   ],
 );
 
@@ -37,10 +42,15 @@ export const inboxRaw = pgTable(
  * change. The id is the applied activity's: the inner activity when it arrives inside an
  * Announce, so a direct copy and an announced copy of the same Create apply once.
  */
-export const inboxDedupe = pgTable('inbox_dedupe', {
-  activityId: text('activity_id').primaryKey(),
-  seenAt: at('seen_at').notNull().defaultNow(),
-});
+export const inboxDedupe = pgTable(
+  'inbox_dedupe',
+  {
+    activityId: text('activity_id').primaryKey(),
+    seenAt: at('seen_at').notNull().defaultNow(),
+  },
+  // The prune job (remote/prune.ts) deletes by age.
+  (t) => [index('inbox_dedupe_seen').on(t.seenAt)],
+);
 
 /**
  * Activity documents served at their ids. `raw` is a parsed jsonb copy and does not keep

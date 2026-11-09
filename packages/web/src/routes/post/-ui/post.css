@@ -1,0 +1,127 @@
+/* The post page after the R1 mock thread-nested.html: structure and states, not final styling. */
+@layer app {
+  .post-page {
+    --post-line: var(--muxui-semantic-border-default);
+    --post-muted: var(--muxui-semantic-content-muted);
+    --post-err: #b00020;
+    max-width: 860px;
+    margin: 0 auto;
+    padding: 20px 16px 48px;
+    font-size: 14px;
+    line-height: 1.5;
+  }
+  [data-muxui-color-scheme='dark'] .post-page {
+    --post-err: #ff7a8a;
+  }
+  .post {
+    display: grid;
+    grid-template-columns: 44px minmax(0, 1fr);
+    gap: 12px;
+  }
+  .post-meta,
+  .post-flags,
+  .post-hint {
+    margin: 0 0 6px;
+    color: var(--post-muted);
+  }
+  .post-page a {
+    color: var(--muxui-semantic-content-link);
+  }
+  .post-badge,
+  .post-flags span {
+    margin-left: 6px;
+    padding: 0 5px;
+    border: 1px solid var(--post-line);
+    border-radius: 3px;
+    font-size: 12px;
+  }
+  .post-flags span {
+    margin: 0 6px 0 0;
+  }
+  .post h1 {
+    margin: 0 0 8px;
+    font-size: 22px;
+    line-height: 1.25;
+    overflow-wrap: anywhere;
+  }
+  .post-notice h1 {
+    font-size: 18px;
+  }
+  .post-link,
+  .post-image {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    margin: 0 0 10px;
+    max-width: 100%;
+  }
+  .post-link {
+    padding: 6px 10px;
+    border: 1px solid var(--post-line);
+    border-radius: 4px;
+  }
+  .post-link img {
+    width: 64px;
+    height: 64px;
+    object-fit: cover;
+    border-radius: 3px;
+  }
+  .post-image img {
+    max-width: 100%;
+    height: auto;
+    border-radius: 4px;
+  }
+  .post-text {
+    overflow-wrap: anywhere;
+  }
+  .post-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 16px;
+    margin-top: 12px;
+  }
+  .post-own,
+  .post-mod {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 12px;
+  }
+  .post-mod label {
+    display: block;
+    font-weight: 600;
+  }
+  .post-mod textarea {
+    display: block;
+    width: 100%;
+    max-width: 480px;
+    margin: 4px 0 8px;
+    font: inherit;
+    box-sizing: border-box;
+  }
+  .post-error {
+    margin: 8px 0 0;
+    color: var(--post-err);
+  }
+  /* The gate: a sensitive post stays blurred until the checkbox is on (no JavaScript needed).
+     The base styles reset native controls, so the checkbox gets its box back (as the auth pages do). */
+  .post-reveal {
+    appearance: auto;
+    block-size: 16px;
+    inline-size: 16px;
+    margin: 0 6px 0 0;
+    vertical-align: middle;
+  }
+  .post-sensitive label {
+    font-weight: 600;
+  }
+  .post-reveal:not(:checked) ~ .post-sensitive__content {
+    filter: blur(14px);
+    user-select: none;
+    pointer-events: none;
+  }
+  .post-thread {
+    margin-top: 24px;
+  }
+}

@@ -1,0 +1,345 @@
+/* The application frame (shell-sidebar). Structure and states after the R1 mock; the
+   wireframe's styling is not the product's visual design. */
+@layer app {
+  .pb-app {
+    display: grid;
+    grid-template-columns: var(--pb-sidebar-width) minmax(0, 1fr);
+    min-height: 100vh;
+  }
+
+  .pb-skip {
+    position: absolute;
+    top: -48px;
+    left: 8px;
+    z-index: 100;
+    padding: 6px 12px;
+    background: var(--pb-bg);
+    border: 2px solid var(--pb-fg);
+  }
+
+  .pb-skip:focus {
+    top: 8px;
+  }
+
+  .pb-side {
+    position: sticky;
+    top: 0;
+    align-self: start;
+    height: 100vh;
+    overflow: auto;
+    padding-bottom: 16px;
+    border-right: 1px solid var(--pb-line);
+    background: var(--pb-bg);
+  }
+
+  .pb-side a {
+    text-decoration: none;
+  }
+
+  .pb-brand {
+    display: block;
+    padding: 12px 14px;
+    font-size: 18px;
+  }
+
+  .pb-side__title {
+    margin: 0;
+    padding: 12px 14px 4px;
+    font-size: 12px;
+    font-weight: 700;
+  }
+
+  .pb-side ul {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .pb-side li a {
+    display: flex;
+    align-items: center;
+    min-height: 28px;
+    padding: 4px 14px;
+  }
+
+  .pb-side li a:hover {
+    background: var(--pb-hover);
+  }
+
+  .pb-side li a[aria-current='page'] {
+    background: var(--pb-hover);
+    box-shadow: inset 3px 0 var(--pb-fg);
+    font-weight: 700;
+  }
+
+  .pb-side__filter {
+    box-sizing: border-box;
+    width: calc(100% - 28px);
+    margin: 4px 14px 6px;
+    padding: 5px 7px;
+    border: 1px solid var(--pb-line);
+    border-radius: 2px;
+    background: var(--pb-bg);
+    color: var(--pb-fg);
+    font: inherit;
+  }
+
+  .pb-side__group > summary {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 14px;
+    font-weight: 600;
+    cursor: pointer;
+    list-style: none;
+  }
+
+  .pb-side__group > summary::-webkit-details-marker {
+    display: none;
+  }
+
+  /* The open and closed marker, drawn in CSS (a text arrow would pull in a second font file). */
+  .pb-side__group > summary::before {
+    content: '';
+    border: solid transparent;
+    border-width: 4px 0 4px 6px;
+    border-left-color: var(--pb-muted);
+    transition: none;
+  }
+
+  .pb-side__group[open] > summary::before {
+    border-width: 6px 4px 0;
+    border-color: var(--pb-muted) transparent transparent;
+  }
+
+  .pb-side__foot {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0 12px;
+    padding: 6px 14px;
+    font-size: 12px;
+    color: var(--pb-muted);
+  }
+
+  /* Each footer link is a 24 px target on its own, so wrapped rows (German labels
+     wrap on narrow fonts) keep WCAG 2.2 target size without relying on spacing. */
+  .pb-side__foot a {
+    display: inline-block;
+    min-block-size: 24px;
+    line-height: 24px;
+  }
+
+  .pb-side__close,
+  .pb-top__menu {
+    display: none;
+  }
+
+  .pb-app__body {
+    min-width: 0;
+  }
+
+  .pb-top {
+    position: sticky;
+    top: 0;
+    z-index: 30;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 16px;
+    border-bottom: 1px solid var(--pb-line);
+    background: var(--pb-bg);
+  }
+
+  .pb-top__space {
+    flex: 1;
+  }
+
+  .pb-app__content:focus {
+    outline: none;
+  }
+
+  .pb-create {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    border: 1px solid var(--pb-fg);
+    border-radius: 2px;
+    background: var(--pb-fg);
+    color: var(--pb-bg);
+    font-weight: 600;
+    text-decoration: none;
+    white-space: nowrap;
+  }
+
+  .pb-create:hover {
+    opacity: 0.85;
+    text-decoration: none;
+  }
+
+  .pb-account {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .pb-menu {
+    position: relative;
+  }
+
+  .pb-menu > summary {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 8px;
+    border: 1px solid transparent;
+    cursor: pointer;
+    list-style: none;
+    white-space: nowrap;
+  }
+
+  .pb-menu > summary::-webkit-details-marker {
+    display: none;
+  }
+
+  .pb-menu > summary:hover,
+  .pb-menu[open] > summary {
+    border-color: var(--pb-line);
+  }
+
+  .pb-menu__panel {
+    position: absolute;
+    top: calc(100% + 4px);
+    right: 0;
+    z-index: 40;
+    min-width: 200px;
+    border: 1px solid var(--pb-fg);
+    background: var(--pb-bg);
+  }
+
+  .pb-menu__panel a,
+  .pb-menu__panel button {
+    display: block;
+    box-sizing: border-box;
+    width: 100%;
+    padding: 6px 12px;
+    border: 0;
+    border-bottom: 1px solid var(--pb-line);
+    background: none;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    text-decoration: none;
+    cursor: pointer;
+  }
+
+  .pb-menu__panel a:hover,
+  .pb-menu__panel button:hover {
+    background: var(--pb-hover);
+  }
+
+  .pb-menu__panel form {
+    margin: 0;
+  }
+
+  .pb-menu__panel button[aria-pressed='true'] {
+    font-weight: 700;
+    box-shadow: inset 3px 0 var(--pb-fg);
+  }
+
+  .pb-avatar {
+    display: inline-grid;
+    place-items: center;
+    width: 24px;
+    height: 24px;
+    border: 1px solid var(--pb-fg);
+    font-size: 12px;
+    font-weight: 700;
+  }
+
+  /* Under the sticky top bar, so a jump to #pb-main (the drawer's close link) lands below it. */
+  .pb-app__content {
+    scroll-margin-top: 4rem;
+  }
+
+  /* Shown only while the drawer is open (see the phone rules below). */
+  .pb-scrim {
+    position: fixed;
+    inset: 0;
+    z-index: 70;
+    display: none;
+    background: rgb(0 0 0 / 0.5);
+  }
+
+  @media (max-width: 860px) {
+    .pb-app {
+      grid-template-columns: minmax(0, 1fr);
+    }
+
+    .pb-side {
+      position: fixed;
+      inset: 0 auto 0 0;
+      /* The desktop rule's align-self: start would size the drawer to its content, taller than
+         the screen with many communities and not scrollable; stretch pins it to the top and bottom. */
+      align-self: stretch;
+      z-index: 80;
+      display: none;
+      width: min(86vw, 300px);
+      height: auto;
+      border-right: 1px solid var(--pb-fg);
+    }
+
+    /* The drawer is open through :target (the menu link to #pb-side, before hydration and
+       without scripts) or through the shell's state once hydrated. */
+    .pb-side:target,
+    .pb-app[data-drawer] .pb-side {
+      display: block;
+    }
+
+    .pb-side:target ~ .pb-scrim,
+    .pb-app[data-drawer] .pb-scrim {
+      display: block;
+    }
+
+    /* Once the shell runs the drawer (data-managed) its state alone decides: a :target left
+       from before hydration, which dropping the hash does not clear, must not hold it open. */
+    .pb-app[data-managed]:not([data-drawer]) .pb-side,
+    .pb-app[data-managed]:not([data-drawer]) .pb-scrim {
+      display: none;
+    }
+
+    .pb-side__close,
+    .pb-top__menu {
+      display: inline-grid;
+      place-items: center;
+      min-width: 36px;
+      min-height: 36px;
+      padding: 0;
+      border: 1px solid var(--pb-line);
+      border-radius: 2px;
+      background: none;
+      color: inherit;
+      font-size: 18px;
+      text-decoration: none;
+      cursor: pointer;
+    }
+
+    .pb-side__close {
+      margin: 10px 14px 0;
+    }
+
+    .pb-top {
+      padding: 8px 10px;
+    }
+
+    /* The name stays for assistive technology; only the avatar shows. */
+    .pb-account__name {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      clip-path: inset(50%);
+      white-space: nowrap;
+    }
+  }
+}

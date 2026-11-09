@@ -1,0 +1,314 @@
+/* Styles for the HTML renderMarkdown and sanitizeRemoteHtml emit (packages/core/src/markdown/README.md). */
+@layer app {
+  .pb-prose {
+    max-width: 75ch;
+    line-height: 1.5;
+  }
+
+  .pb-prose > :first-child {
+    margin-top: 0;
+  }
+
+  .pb-prose > :last-child {
+    margin-bottom: 0;
+  }
+
+  .pb-prose p,
+  .pb-prose ul,
+  .pb-prose ol,
+  .pb-prose blockquote,
+  .pb-prose pre,
+  .pb-prose table,
+  .pb-prose details {
+    margin: 0.6em 0;
+  }
+
+  .pb-prose h1,
+  .pb-prose h2,
+  .pb-prose h3,
+  .pb-prose h4,
+  .pb-prose h5,
+  .pb-prose h6 {
+    margin: 0.9em 0 0.4em;
+    font-size: 1.05em;
+    line-height: 1.3;
+  }
+
+  .pb-prose a {
+    color: var(--pb-accent);
+    text-decoration: underline;
+  }
+
+  .pb-prose a.mention,
+  .pb-prose a.community {
+    font-weight: 600;
+  }
+
+  .pb-prose ul,
+  .pb-prose ol {
+    padding-left: 1.5em;
+  }
+
+  .pb-prose blockquote {
+    padding-left: 0.9em;
+    border-left: 3px solid var(--pb-line);
+    color: var(--pb-muted);
+  }
+
+  .pb-prose hr {
+    border: 0;
+    border-top: 1px solid var(--pb-line);
+  }
+
+  .pb-prose code {
+    padding: 0 3px;
+    font-family: var(--pb-mono);
+    font-size: 0.9em;
+    background: var(--pb-hover);
+  }
+
+  .pb-prose pre {
+    overflow: auto;
+    padding: 0.7em 0.9em;
+    background: var(--pb-hover);
+    border-radius: 3px;
+  }
+
+  .pb-prose pre code {
+    padding: 0;
+    background: none;
+  }
+
+  .pb-prose table {
+    display: block;
+    max-width: 100%;
+    overflow: auto;
+    border-collapse: collapse;
+  }
+
+  .pb-prose th,
+  .pb-prose td {
+    padding: 4px 8px;
+    border: 1px solid var(--pb-line);
+  }
+
+  .pb-prose [align='center'] {
+    text-align: center;
+  }
+
+  .pb-prose [align='right'] {
+    text-align: right;
+  }
+
+  .pb-prose img {
+    max-width: 100%;
+    height: auto;
+  }
+
+  /* Custom emoji sit in the line of text. */
+  .pb-prose img.emoji {
+    width: auto;
+    height: 1.25em;
+    vertical-align: text-bottom;
+  }
+
+  /*
+   * Spoilers: PieFed's span.spoiler stays blacked out until it is clicked, or focused and
+   * activated with Enter or Space (Prose makes a leaf spoiler a button, and gives a compound
+   * one a reveal control); a mouse can also hover it.
+   */
+  .pb-prose span.spoiler {
+    border-radius: 2px;
+    background: var(--pb-fg);
+    color: transparent;
+    cursor: pointer;
+  }
+
+  /* A link inside a spoiler takes the span's colour, so it is blacked out with the rest. */
+  .pb-prose span.spoiler a {
+    color: inherit;
+  }
+
+  /* Revealed. A spoiler that holds a link or another spoiler is not a button (Prose leaves it a span and inserts a reveal control before it), so focusing its link shows it. */
+  .pb-prose span.spoiler[data-revealed],
+  .pb-prose span.spoiler:has(a:focus-visible) {
+    background: var(--pb-hover);
+    color: inherit;
+  }
+
+  /* The reveal control before a compound spoiler: a small target of its own, pressed while the spoiler shows. */
+  .pb-prose button[data-spoiler-reveal] {
+    display: inline-grid;
+    place-items: center;
+    min-width: 24px;
+    min-height: 24px;
+    margin-inline-end: 0.2em;
+    padding: 0;
+    border: 1px solid var(--pb-line);
+    border-radius: 3px;
+    background: none;
+    color: var(--pb-muted);
+    font: inherit;
+    line-height: 1;
+    vertical-align: baseline;
+    cursor: pointer;
+  }
+
+  .pb-prose button[data-spoiler-reveal]::before {
+    content: '…';
+  }
+
+  .pb-prose button[data-spoiler-reveal][aria-pressed='true'] {
+    background: var(--pb-hover);
+    color: var(--pb-fg);
+  }
+
+  @media (hover: hover) {
+    .pb-prose span.spoiler:hover {
+      background: var(--pb-hover);
+      color: inherit;
+    }
+  }
+
+  /* The summary is the spoiler's title; the body stays closed until it is opened. */
+  .pb-prose details {
+    padding: 0.4em 0.8em;
+    border: 1px solid var(--pb-line);
+    border-radius: 3px;
+  }
+
+  .pb-prose summary {
+    cursor: pointer;
+    font-weight: 600;
+  }
+
+  /* Mastodon's markup for shortened links. */
+  .pb-prose span.invisible {
+    display: none;
+  }
+
+  .pb-prose span.ellipsis::after {
+    content: '…';
+  }
+
+  /* The back arrow is outside the Latin font slices: set in Inter it would pull the 468 kB full font file onto every page with a footnote (e2e/payload checks for it). The system's own arrow costs nothing. */
+  .pb-prose a.footnote-backref {
+    font-family: system-ui, sans-serif;
+  }
+
+  .pb-prose sup.footnote-ref a {
+    text-decoration: none;
+  }
+
+  .pb-prose hr.footnotes-sep {
+    margin-top: 1.2em;
+  }
+
+  .pb-prose section.footnotes {
+    font-size: 0.9em;
+    color: var(--pb-muted);
+  }
+
+  .pb-prose section.footnotes ol {
+    margin: 0.4em 0;
+  }
+
+  /* highlight.js classes, on the page's own surface so the colours hold in all three schemes. */
+  .pb-prose .hljs {
+    color: var(--pb-fg);
+  }
+
+  /* No italics in code: the italic monospace face is a 41 kB font file the budget has no room for. */
+  .pb-prose .hljs-comment,
+  .pb-prose .hljs-quote {
+    color: var(--pb-muted);
+  }
+
+  .pb-prose .hljs-keyword,
+  .pb-prose .hljs-selector-tag,
+  .pb-prose .hljs-doctag,
+  .pb-prose .hljs-literal {
+    color: #a5226f;
+  }
+
+  .pb-prose .hljs-string,
+  .pb-prose .hljs-regexp,
+  .pb-prose .hljs-addition {
+    color: #0b6b2f;
+  }
+
+  .pb-prose .hljs-number,
+  .pb-prose .hljs-symbol,
+  .pb-prose .hljs-bullet,
+  .pb-prose .hljs-attr,
+  .pb-prose .hljs-attribute {
+    color: #8a4b00;
+  }
+
+  .pb-prose .hljs-title,
+  .pb-prose .hljs-section,
+  .pb-prose .hljs-built_in,
+  .pb-prose .hljs-type,
+  .pb-prose .hljs-class .hljs-title {
+    color: #0a4fc4;
+  }
+
+  .pb-prose .hljs-variable,
+  .pb-prose .hljs-template-variable,
+  .pb-prose .hljs-name,
+  .pb-prose .hljs-tag,
+  .pb-prose .hljs-meta,
+  .pb-prose .hljs-link {
+    color: #5b3fc8;
+  }
+
+  .pb-prose .hljs-deletion {
+    color: #b00020;
+  }
+
+  .pb-prose .hljs-strong {
+    font-weight: 700;
+  }
+
+  [data-muxui-color-scheme='dark'] .pb-prose .hljs-keyword,
+  [data-muxui-color-scheme='dark'] .pb-prose .hljs-selector-tag,
+  [data-muxui-color-scheme='dark'] .pb-prose .hljs-doctag,
+  [data-muxui-color-scheme='dark'] .pb-prose .hljs-literal {
+    color: #ff8fd0;
+  }
+
+  [data-muxui-color-scheme='dark'] .pb-prose .hljs-string,
+  [data-muxui-color-scheme='dark'] .pb-prose .hljs-regexp,
+  [data-muxui-color-scheme='dark'] .pb-prose .hljs-addition {
+    color: #7ee4a0;
+  }
+
+  [data-muxui-color-scheme='dark'] .pb-prose .hljs-number,
+  [data-muxui-color-scheme='dark'] .pb-prose .hljs-symbol,
+  [data-muxui-color-scheme='dark'] .pb-prose .hljs-bullet,
+  [data-muxui-color-scheme='dark'] .pb-prose .hljs-attr,
+  [data-muxui-color-scheme='dark'] .pb-prose .hljs-attribute {
+    color: #f5b84a;
+  }
+
+  [data-muxui-color-scheme='dark'] .pb-prose .hljs-title,
+  [data-muxui-color-scheme='dark'] .pb-prose .hljs-section,
+  [data-muxui-color-scheme='dark'] .pb-prose .hljs-built_in,
+  [data-muxui-color-scheme='dark'] .pb-prose .hljs-type,
+  [data-muxui-color-scheme='dark'] .pb-prose .hljs-class .hljs-title {
+    color: #8cc4ff;
+  }
+
+  [data-muxui-color-scheme='dark'] .pb-prose .hljs-variable,
+  [data-muxui-color-scheme='dark'] .pb-prose .hljs-template-variable,
+  [data-muxui-color-scheme='dark'] .pb-prose .hljs-name,
+  [data-muxui-color-scheme='dark'] .pb-prose .hljs-tag,
+  [data-muxui-color-scheme='dark'] .pb-prose .hljs-meta,
+  [data-muxui-color-scheme='dark'] .pb-prose .hljs-link {
+    color: #b8a5ff;
+  }
+
+  [data-muxui-color-scheme='dark'] .pb-prose .hljs-deletion {
+    color: #ff7a8a;
+  }
+}

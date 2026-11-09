@@ -29,6 +29,27 @@
       "when": 1794150417800,
       "tag": "0003_wave_1_fixes",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1794189307647,
+      "tag": "0004_wave_2",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1794197014976,
+      "tag": "0005_wave_2_pass_two",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1794201670772,
+      "tag": "0006_wave_2_fixes",
+      "breakpoints": true
     }
   ]
 }

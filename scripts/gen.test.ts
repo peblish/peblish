@@ -36,6 +36,8 @@ test('pnpm gen registers files by glob, with prefixed bindings', () => {
     'packages/federation/src/inbound/handlers/create.ts': '',
     'packages/federation/src/inbound/handlers/delete.ts': '',
     'packages/federation/src/delivery/consumer.ts': '',
+    'packages/core/src/throttles/job.ts': '',
+    'packages/federation/src/delivery/job.ts': '',
     'packages/web/src/i18n/shell.json': '{}',
   });
   run();
@@ -61,6 +63,12 @@ test('pnpm gen registers files by glob, with prefixed bindings', () => {
   expect(read('packages/federation/src/registry/consumers.gen.ts')).toContain(
     'export const federationConsumers: readonly Consumer[] = [r_delivery];',
   );
+  // Jobs register like consumers, one list per package.
+  const jobs = read('packages/core/src/registry/jobs.gen.ts');
+  expect(jobs).toContain("import type { Job } from '../outbox/jobs.ts';");
+  expect(jobs).toContain("import { job as r_throttles } from '../throttles/job.ts';");
+  expect(jobs).toContain('export const jobs: readonly Job[] = [r_throttles];');
+  expect(read('packages/federation/src/registry/jobs.gen.ts')).toContain('export const federationJobs: readonly Job[] = [r_delivery];');
   expect(read('packages/web/src/registry/i18n.gen.ts')).toContain("import r_shell from '../i18n/shell.json';");
 });
 

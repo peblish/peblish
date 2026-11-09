@@ -1,4 +1,4 @@
-import { bigint, integer, pgTable, primaryKey, text, uuid } from 'drizzle-orm/pg-core';
+import { bigint, index, integer, pgTable, primaryKey, text, uuid } from 'drizzle-orm/pg-core';
 import { at } from '../db/columns.ts';
 import { actors } from '../db/tables/actors.ts';
 import { authUser } from '../db/tables/auth.ts';
@@ -40,5 +40,6 @@ export const throttles = pgTable(
     windowStart: at('window_start').notNull(),
     count: integer('count').notNull(),
   },
-  (t) => [primaryKey({ columns: [t.scope, t.key] })],
+  // The prune job (remote/prune.ts) deletes windows by age.
+  (t) => [primaryKey({ columns: [t.scope, t.key] }), index('throttles_window').on(t.windowStart)],
 );

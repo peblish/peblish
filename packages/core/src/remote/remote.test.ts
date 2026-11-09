@@ -1,0 +1,340 @@
+import { generateKeyPairSync } from 'node:crypto';
+import { count, eq } from 'drizzle-orm';
+import { beforeEach, describe, expect, test } from 'vitest';
+import { authorize } from '../authz/authorize.ts';
+import { systemPrincipal } from '../authz/system.ts';
+import { db } from '../db/read.ts';
+import { actorKeys, actors, communityLanguages } from '../db/tables/actors.ts';
+import { instances } from '../db/tables/instances.ts';
+import { truncateAll } from '../testing/db.ts';
+import { localUser, seedActor } from '../testing/seed.ts';
+import { outboxEvents } from '../testing/seed-az.ts';
+import { rsaKeys, seedLocalInstance } from '../testing/seed-fed-a.ts';
+import { checkRemoteActor, deleteRemoteActor, RemoteActorKindError, storeRemoteActor, type RemoteActorInput } from './actors.ts';
+import { isDormant, storeInstanceSoftware } from './instances.ts';
+
+const { publicKeyPem } = rsaKeys();
+const apId = 'https://lemmy.test/c/lab';
+const input = (extra: Partial<RemoteActorInput> = {}): RemoteActorInput => ({
+  apId,
+  kind: 'Group',
+  name: 'lab',
+  displayName: 'Lab',
+  summaryHtml: '<p>hi</p>',
+  inboxUrl: `${apId}/inbox`,
+  sharedInboxUrl: 'https://lemmy.test/inbox',
+  outboxUrl: `${apId}/outbox`,
+  followersUrl: `${apId}/followers`,
+  featuredUrl: null,
+  moderatorsUrl: `${apId}/moderators`,
+  iconUrl: null,
+  bannerUrl: null,
+  sensitive: false,
+  nsfl: false,
+  discoverable: true,
+  indexable: true,
+  postingRestrictedToMods: false,
+  postingWarning: null,
+  languages: ['en', 'de'],
+  bot: false,
+  publishedAt: new Date('2026-11-01T00:00:00Z'),
+  updatedAt: null,
+  publicKey: { keyId: `${apId}#main-key`, ownerApId: apId, pem: publicKeyPem },
+  raw: { type: 'Group' },
+  ...extra,
+});
+
+/** The local instance and the grants of the instance importing, one per action. */
+async function world() {
+  const local = await seedLocalInstance();
+  const principal = await local.importer();
+  return {
+    ...local,
+    store: async (subject = apId) => {
+      const decision = await authorize('remote.actor_store', principal, { apId: subject });
+      if (!decision.ok) throw new Error(decision.reason);
+      return decision.grant;
+    },
+    remove: async (subject = apId) => {
+      const decision = await authorize('remote.actor_delete', principal, { apId: subject });
+      if (!decision.ok) throw new Error(decision.reason);
+      return decision.grant;
+    },
+    software: async (origin = 'https://lemmy.test') => {
+      const decision = await authorize('remote.instance_store', principal, { origin });
+      if (!decision.ok) throw new Error(decision.reason);
+      return decision.grant;
+    },
+  };
+}
+
+const eventTypes = async () => (await outboxEvents()).map((event) => (event as { type: string }).type);
+
+beforeEach(truncateAll);
+
+describe('the remote actor store', () => {
+  test('stores an actor, its key, its languages and its instance, and says it was created', async () => {
+    const w = await world();
+    await storeRemoteActor(await w.store(), input());
+    const [actor] = await db().select().from(actors).where(eq(actors.apId, apId));
+    expect(actor).toMatchObject({
+      kind: 'Group',
+      local: false,
+      name: 'lab',
+      inboxUrl: `${apId}/inbox`,
+      sharedInboxUrl: 'https://lemmy.test/inbox',
+    });
+    expect(actor?.fetchedAt).toBeInstanceOf(Date);
+    const [key] = await db().select().from(actorKeys).where(eq(actorKeys.actorId, actor!.id));
+    expect(key).toMatchObject({ keyId: `${apId}#main-key`, algorithm: 'rsa', publicKeyPem, privateKeyPem: null });
+    const languages = await db().select().from(communityLanguages).where(eq(communityLanguages.communityId, actor!.id));
+    expect(languages.map((row) => row.language).sort()).toEqual(['de', 'en']);
+    const [instance] = await db().select().from(instances).where(eq(instances.domain, 'lemmy.test'));
+    expect(instance).toMatchObject({ local: false, origin: 'https://lemmy.test', software: null });
+    expect(await eventTypes()).toEqual(['actor.created']);
+    expect((await outboxEvents())[0]).toMatchObject({ actorId: actor!.id, kind: 'Group', local: false });
+  });
+
+  test('storing it again updates: one row, the new profile, a rotated key, fewer languages', async () => {
+    const w = await world();
+    await storeRemoteActor(await w.store(), input());
+    const rotated = rsaKeys().publicKeyPem;
+    const change = input({
+      displayName: 'Lab 2',
+      languages: ['de'],
+      publicKey: { keyId: `${apId}#main-key`, ownerApId: apId, pem: rotated },
+    });
+    await storeRemoteActor(await w.store(), change);
+    const rows = await db().select().from(actors).where(eq(actors.apId, apId));
+    expect(rows.map((row) => row.displayName)).toEqual(['Lab 2']);
+    const keys = await db().select().from(actorKeys).where(eq(actorKeys.actorId, rows[0]!.id));
+    expect(keys.map((key) => key.publicKeyPem)).toEqual([rotated]);
+    const languages = await db().select().from(communityLanguages).where(eq(communityLanguages.communityId, rows[0]!.id));
+    expect(languages.map((row) => row.language)).toEqual(['de']);
+    expect(await eventTypes()).toEqual(['actor.created', 'actor.updated']);
+  });
+
+  test('a key the document no longer advertises is removed, and an unusable one does not outlive it', async () => {
+    const w = await world();
+    const keysOf = async () => {
+      const [actor] = await db().select().from(actors).where(eq(actors.apId, apId));
+      return db().select().from(actorKeys).where(eq(actorKeys.actorId, actor!.id));
+    };
+    await storeRemoteActor(await w.store(), input());
+    expect(await keysOf()).toHaveLength(1);
+
+    // The peer drops its key: nothing it signed before may verify afterwards.
+    await storeRemoteActor(await w.store(), input({ publicKey: null }));
+    expect(await keysOf()).toEqual([]);
+
+    // A key of a kind we cannot verify with removes the one before it too.
+    await storeRemoteActor(await w.store(), input());
+    await storeRemoteActor(await w.store(), input({ publicKey: { keyId: `${apId}#main-key`, ownerApId: apId, pem: 'not a pem' } }));
+    expect(await keysOf()).toEqual([]);
+
+    // An Ed25519-only document replaces the RSA key: the actor is stored with the key it has now.
+    await storeRemoteActor(await w.store(), input());
+    const ed = generateKeyPairSync('ed25519', {
+      publicKeyEncoding: { type: 'spki', format: 'pem' },
+      privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
+    });
+    await storeRemoteActor(await w.store(), input({ publicKey: { keyId: `${apId}#main-key`, ownerApId: apId, pem: ed.publicKey } }));
+    expect((await keysOf()).map(({ algorithm, keyId }) => ({ algorithm, keyId }))).toEqual([
+      { algorithm: 'ed25519', keyId: `${apId}#main-key` },
+    ]);
+  });
+
+  test('a document under a new key id replaces the old key rather than adding a second', async () => {
+    const w = await world();
+    await storeRemoteActor(await w.store(), input());
+    const fresh = rsaKeys().publicKeyPem;
+    await storeRemoteActor(await w.store(), input({ publicKey: { keyId: `${apId}#key-2`, ownerApId: apId, pem: fresh } }));
+    const keys = await db().select().from(actorKeys);
+    expect(keys.map(({ keyId, publicKeyPem }) => ({ keyId, publicKeyPem }))).toEqual([{ keyId: `${apId}#key-2`, publicKeyPem: fresh }]);
+  });
+
+  test('keys: false stores the profile and leaves the key rows alone, even when a key rotated after the document was read', async () => {
+    const w = await world();
+    await storeRemoteActor(await w.store(), input());
+    // A moderator's announced Update(Group) was read here, with the key we held then ...
+    const stale = input({ displayName: 'Lab, as the moderator sent it', languages: ['fr'] });
+    // ... and the Group's own Update rotated the key before it was stored.
+    const rotated = rsaKeys().publicKeyPem;
+    await storeRemoteActor(await w.store(), input({ publicKey: { keyId: `${apId}#key-2`, ownerApId: apId, pem: rotated } }));
+
+    const result = await storeRemoteActor(await w.store(), { ...stale, keys: false });
+    expect(result).toMatchObject({ created: false, deleted: false });
+    const [actor] = await db().select().from(actors).where(eq(actors.apId, apId));
+    expect(actor?.displayName).toBe('Lab, as the moderator sent it');
+    const keys = await db().select().from(actorKeys).where(eq(actorKeys.actorId, actor!.id));
+    expect(keys.map(({ keyId, publicKeyPem }) => ({ keyId, publicKeyPem }))).toEqual([{ keyId: `${apId}#key-2`, publicKeyPem: rotated }]);
+    const languages = await db().select().from(communityLanguages).where(eq(communityLanguages.communityId, actor!.id));
+    expect(languages.map((row) => row.language)).toEqual(['fr']);
+
+    // A document with no key, or one in another algorithm, removes nothing either.
+    await storeRemoteActor(await w.store(), { ...input({ publicKey: null }), keys: false });
+    expect(await db().select().from(actorKeys).where(eq(actorKeys.actorId, actor!.id))).toHaveLength(1);
+  });
+
+  test('keys: false for an actor not held yet creates it without a key', async () => {
+    const w = await world();
+    await storeRemoteActor(await w.store(), { ...input(), keys: false });
+    expect(await db().select().from(actors).where(eq(actors.apId, apId))).toHaveLength(1);
+    expect(await db().select().from(actorKeys)).toEqual([]);
+  });
+
+  test('three fetches of the same new actor racing end with one actor, one key and one created event', async () => {
+    const w = await world();
+    const grant = await w.store();
+    await Promise.all([storeRemoteActor(grant, input()), storeRemoteActor(grant, input()), storeRemoteActor(grant, input())]);
+    const [actorCount] = await db().select({ n: count() }).from(actors).where(eq(actors.apId, apId));
+    const [keyCount] = await db().select({ n: count() }).from(actorKeys);
+    expect({ actors: actorCount?.n, keys: keyCount?.n }).toEqual({ actors: 1, keys: 1 });
+    expect((await eventTypes()).sort()).toEqual(['actor.created', 'actor.updated', 'actor.updated']);
+  });
+
+  test('a document cannot take over a local actor, change a stored kind, or be stored under another grant', async () => {
+    const w = await world();
+    const local = 'https://fed-a.test/u/alice';
+    await seedActor(w.instance, 'Person', 'alice', { apId: local });
+    const claim = input({
+      apId: local,
+      kind: 'Person',
+      name: 'alice',
+      inboxUrl: `${local}/inbox`,
+      sharedInboxUrl: null,
+      outboxUrl: null,
+      followersUrl: null,
+      moderatorsUrl: null,
+      publicKey: null,
+    });
+    await expect(storeRemoteActor(await w.store(local), claim)).rejects.toThrow(/on this server/);
+    await storeRemoteActor(await w.store(), input());
+    await expect(storeRemoteActor(await w.store(), input({ kind: 'Person' }))).rejects.toThrow(/stored as a Group/);
+    await expect(storeRemoteActor(await w.store('https://lemmy.test/c/other'), input())).rejects.toThrow(/grant names/);
+    expect(await eventTypes()).toEqual(['actor.created']);
+  });
+
+  test.each([
+    ['an inbox on another origin', { inboxUrl: 'https://elsewhere.test/inbox' }],
+    ['a shared inbox on another origin', { sharedInboxUrl: 'https://elsewhere.test/inbox' }],
+    ['a followers collection on another origin', { followersUrl: 'https://elsewhere.test/f' }],
+    [
+      'a key owned by someone else',
+      { publicKey: { keyId: `${apId}#main-key`, ownerApId: 'https://lemmy.test/c/other', pem: publicKeyPem } },
+    ],
+    ['a key id on another origin', { publicKey: { keyId: 'https://elsewhere.test/k', ownerApId: apId, pem: publicKeyPem } }],
+    ['an id with credentials', { apId: 'https://user:pw@lemmy.test/c/lab' }],
+    ['an id that is not https', { apId: 'http://lemmy.test/c/lab' }],
+    ['an empty name', { name: ' ' }],
+  ] as const)('checkRemoteActor refuses %s', (_name, extra) => {
+    expect(checkRemoteActor(input(extra))).toEqual(expect.any(String));
+  });
+
+  test('checkRemoteActor accepts what a community and an instance actor look like', () => {
+    expect(checkRemoteActor(input())).toBeNull();
+    const instance = input({
+      apId: 'https://piefed.test/',
+      kind: 'Application',
+      inboxUrl: 'https://piefed.test/inbox',
+      sharedInboxUrl: null,
+      outboxUrl: null,
+      followersUrl: null,
+      moderatorsUrl: null,
+      publicKey: { keyId: 'https://piefed.test/#main-key', ownerApId: 'https://piefed.test/', pem: publicKeyPem },
+    });
+    expect(checkRemoteActor(instance)).toBeNull();
+  });
+
+  test('a person becomes a bot and back, and any other change of kind throws and writes nothing', async () => {
+    const w = await world();
+    const person = `https://lemmy.test/u/mira`;
+    const account = (kind: RemoteActorInput['kind'], extra: Partial<RemoteActorInput> = {}) =>
+      input({
+        apId: person,
+        kind,
+        name: 'mira',
+        inboxUrl: `${person}/inbox`,
+        outboxUrl: null,
+        followersUrl: null,
+        moderatorsUrl: null,
+        publicKey: null,
+        ...extra,
+      });
+    const kindOf = async () => (await db().select().from(actors).where(eq(actors.apId, person)))[0];
+
+    const created = await storeRemoteActor(await w.store(person), account('Person'));
+    await storeRemoteActor(await w.store(person), account('Service', { bot: true }));
+    expect(await kindOf()).toMatchObject({ id: created.id, kind: 'Service', bot: true });
+    await storeRemoteActor(await w.store(person), account('Person', { bot: false }));
+    expect(await kindOf()).toMatchObject({ kind: 'Person', bot: false });
+    const updates = (await outboxEvents()).filter((event) => (event as { type: string }).type === 'actor.updated');
+    expect(updates).toMatchObject([{ kind: 'Service' }, { kind: 'Person' }]);
+
+    // A community never becomes a person, nor a person a community or an instance actor.
+    for (const kind of ['Group', 'Application'] as const) {
+      const error = await storeRemoteActor(await w.store(person), account(kind, { displayName: 'Changed' })).catch(
+        (thrown: unknown) => thrown,
+      );
+      expect(error).toBeInstanceOf(RemoteActorKindError);
+      // fed-a's resolve code recognises the error by its name (it cannot import the class).
+      expect(error).toMatchObject({ name: 'RemoteActorKindError' });
+      expect(error).toMatchObject({ apId: person, stored: 'Person', incoming: kind });
+    }
+    expect(await kindOf()).toMatchObject({ kind: 'Person', displayName: 'Lab' });
+    await storeRemoteActor(await w.store(), input());
+    await expect(storeRemoteActor(await w.store(), input({ kind: 'Service' }))).rejects.toBeInstanceOf(RemoteActorKindError);
+    await expect(storeRemoteActor(await w.store(), input({ kind: 'Application' }))).rejects.toBeInstanceOf(RemoteActorKindError);
+  });
+
+  test('only the instance importing is authorized', async () => {
+    const w = await world();
+    const person = await seedActor(w.instance, 'Person', 'someone');
+    expect(await authorize('remote.actor_store', localUser(person.id), { apId })).toEqual({ ok: false, reason: 'auth.required' });
+    const scheduled = await systemPrincipal(db(), 'scheduled');
+    expect(await authorize('remote.actor_store', scheduled, { apId })).toEqual({ ok: false, reason: 'auth.required' });
+  });
+});
+
+describe('deleting an actor and recording instance software', () => {
+  test('a remote actor’s Delete scrubs the profile, keeps the id and key, and is recorded once', async () => {
+    const w = await world();
+    await storeRemoteActor(await w.store(), input());
+    expect(await deleteRemoteActor(await w.remove())).toMatchObject({ actorChanged: true });
+    expect(await deleteRemoteActor(await w.remove())).toMatchObject({ actorChanged: false });
+    const [actor] = await db().select().from(actors).where(eq(actors.apId, apId));
+    expect(actor).toMatchObject({ displayName: null, summaryHtml: null, raw: null, name: 'lab' });
+    expect(actor?.deletedAt).toBeInstanceOf(Date);
+    expect(await db().select().from(actorKeys).where(eq(actorKeys.actorId, actor!.id))).toHaveLength(1);
+    expect(await eventTypes()).toEqual(['actor.created', 'actor.deleted']);
+  });
+
+  test('a deleted actor stays deleted when its document is stored again', async () => {
+    const w = await world();
+    await storeRemoteActor(await w.store(), input());
+    await deleteRemoteActor(await w.remove());
+    const [deleted] = await db().select().from(actors).where(eq(actors.apId, apId));
+    const result = await storeRemoteActor(
+      await w.store(),
+      input({ displayName: 'Back again', summaryHtml: '<p>restored?</p>', publicKey: null, languages: ['fr'] }),
+    );
+    expect(result).toMatchObject({ id: deleted!.id, created: false, deleted: true });
+    const [after] = await db().select().from(actors).where(eq(actors.apId, apId));
+    expect(after).toMatchObject({ displayName: null, summaryHtml: null, raw: null });
+    expect(after?.deletedAt).toEqual(deleted?.deletedAt);
+    // The key is kept for the signed activities that still name it, and no event says the actor changed.
+    expect(await db().select().from(actorKeys).where(eq(actorKeys.actorId, deleted!.id))).toHaveLength(1);
+    expect(await eventTypes()).toEqual(['actor.created', 'actor.deleted']);
+  });
+
+  test('instance software is stored lowercase, with an event only when it changes; a new instance is not dormant', async () => {
+    const w = await world();
+    expect(await storeInstanceSoftware(await w.software(), { software: 'Lemmy', version: '0.19.21' })).toMatchObject({ changed: true });
+    expect(await storeInstanceSoftware(await w.software(), { software: 'lemmy', version: '0.19.21' })).toMatchObject({ changed: false });
+    expect(await storeInstanceSoftware(await w.software(), { software: 'lemmy', version: '0.19.22' })).toMatchObject({ changed: true });
+    const [instance] = await db().select().from(instances).where(eq(instances.domain, 'lemmy.test'));
+    expect(instance).toMatchObject({ software: 'lemmy', softwareVersion: '0.19.22' });
+    expect(await eventTypes()).toEqual(['instance.updated', 'instance.updated']);
+    expect(await isDormant(instance!.id)).toBe(false);
+  });
+});

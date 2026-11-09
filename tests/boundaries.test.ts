@@ -26,6 +26,7 @@ const fixtures: Record<string, string> = {
   'packages/core/src/__fixtures__/mints-grant.ts': 'authz-brand',
   'packages/core/src/__fixtures__/writes-directly.ts': 'core-writer-access',
   'packages/core/src/__fixtures__/opens-tx.ts': 'core-tx-access',
+  'packages/federation/src/__fixtures__/opens-tx.ts': 'core-tx-access',
   'packages/core/src/__fixtures__/imports-test-helper.ts': 'no-test-helpers-in-product',
   'packages/core/src/__fixtures__/imports-test-file.ts': 'no-test-helpers-in-product',
   'packages/core/src/__fixtures__/imports-fixture.ts': 'no-test-helpers-in-product',
@@ -35,7 +36,7 @@ const fixtures: Record<string, string> = {
   'packages/core/src/__fixtures__/imports-missing.ts': 'not-to-unresolvable',
 };
 /** Fixtures that must pass: the exemptions the rules promise. */
-const allowed = ['packages/core/src/__fixtures__/writes-by-type.ts'];
+const allowed = ['packages/core/src/__fixtures__/writes-by-type.ts', 'packages/federation/src/delivery/__fixtures__/opens-tx.ts'];
 
 async function violations(files: string[], { fixtures = false } = {}) {
   const options = await extractDepcruiseOptions(join(root, '.dependency-cruiser.cjs'));

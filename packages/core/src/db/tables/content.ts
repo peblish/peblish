@@ -59,6 +59,8 @@ export const posts = pgTable(
     index('posts_community_published').on(t.communityId, t.publishedAt.desc()),
     index('posts_author_published').on(t.authorId, t.publishedAt.desc()),
     index('posts_published').on(t.publishedAt.desc()),
+    // The score sorts (Top, Popular) walk this in order; the feeds' ORDER BY repeats the expression and null order.
+    index('posts_score').on(sql`(${t.upvotes} - ${t.downvotes}) desc nulls last`, sql`${t.id} desc nulls last`),
   ],
 );
 

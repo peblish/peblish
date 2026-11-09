@@ -10,7 +10,12 @@ function connect(readOnly: boolean) {
   const client = postgres(databaseUrl(), {
     max: Number(process.env.DATABASE_POOL_MAX ?? 10),
     onnotice: () => {},
-    connection: { application_name: readOnly ? 'peblish-read' : 'peblish-write', default_transaction_read_only: readOnly },
+    connection: {
+      application_name: readOnly ? 'peblish-read' : 'peblish-write',
+      default_transaction_read_only: readOnly,
+      // Reads are short statements; a misestimated feed plan once spent 166 of 301 ms on JIT. A string, because postgres.js drops a falsy startup value.
+      ...(readOnly && { jit: 'off' }),
+    },
   });
   return { client, db: drizzle({ client }) };
 }

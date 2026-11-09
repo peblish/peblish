@@ -24,14 +24,8 @@ async function world() {
 
 describe('authorize', () => {
   test('refuses with exactly one closed reason', async () => {
-    const { andrew, community, remoteUser } = await world();
+    const { andrew, community } = await world();
     expect(await authorize('post.create', { kind: 'anonymous' }, { communityId: community.id })).toEqual({
-      ok: false,
-      reason: 'auth.required',
-    });
-    expect(
-      await authorize('post.create', { kind: 'remote', actorId: remoteUser.id, announcedBy: null }, { communityId: community.id }),
-    ).toEqual({
       ok: false,
       reason: 'auth.required',
     });

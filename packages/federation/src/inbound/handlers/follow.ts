@@ -1,0 +1,33 @@
+import { receiveFollow, removeFollow } from '@peblish/core/follows/follow';
+import type { Activity } from '../../mapping/records.ts';
+import { grantFor, localCommunity } from '../authorize.ts';
+import { prepared, type InboundHandler } from '../handler.ts';
+
+// A remote actor follows a local community (accepted at once; the delivery consumer sends the
+// Accept), or takes the follow back. Only local communities take followers: the followee is read
+// from our own tables and never fetched, so a Follow cannot make us request anything.
+export const handler: InboundHandler = {
+  type: 'Follow',
+  async prepare(ctx) {
+    const { activity } = ctx;
+    if (activity.type !== 'Follow') throw new TypeError('the Follow handler was given another activity');
+    const { follow } = activity;
+    const community = await localCommunity(ctx, follow.followeeApId);
+    return prepared(ctx, async (t) => {
+      const grant = await grantFor(ctx, t, 'follow.receive', { communityId: community.id, followApId: follow.apId });
+      await receiveFollow.within(t, grant);
+      return { objectApId: community.apId };
+    });
+  },
+
+  /** Undo(Follow): by the follower, so its follow of that community goes (whatever Follow id it holds now). */
+  async undo(ctx, undone: Activity) {
+    if (undone.type !== 'Follow') throw new TypeError('the Follow handler was asked to undo another activity');
+    const community = await localCommunity(ctx, undone.follow.followeeApId);
+    return prepared(ctx, async (t) => {
+      const subject = { followerId: ctx.sender.id, followeeId: community.id, apId: null };
+      await removeFollow.within(t, await grantFor(ctx, t, 'follow.remove', subject));
+      return { objectApId: community.apId };
+    });
+  },
+};

@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm';
-import { bigint, check, integer, jsonb, pgTable, primaryKey, text, uuid } from 'drizzle-orm/pg-core';
+import { bigint, check, index, integer, jsonb, pgTable, primaryKey, text, uuid } from 'drizzle-orm/pg-core';
 import { at, createdAt, enumCheck, id } from '../columns.ts';
 import { actors } from './actors.ts';
 
@@ -64,5 +64,9 @@ export const deletionLedger = pgTable(
       .default(sql`'{}'::jsonb`),
     createdAt: createdAt(),
   },
-  (t) => [enumCheck('deletion_ledger_subject_kind', t.subjectKind, subjectKindValues)],
+  (t) => [
+    enumCheck('deletion_ledger_subject_kind', t.subjectKind, subjectKindValues),
+    // actorDeletionState (remote/ledger.ts) and the restore drill look a subject up.
+    index('deletion_ledger_subject').on(t.subjectKind, t.subjectId),
+  ],
 );

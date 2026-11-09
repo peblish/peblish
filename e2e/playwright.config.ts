@@ -19,6 +19,7 @@ function laneDatabaseUrl(): string {
 
 export default defineConfig({
   testDir: '.',
+  globalSetup: './global-setup.ts',
   testMatch: '**/*.spec.ts',
   outputDir: './artifacts/test-results',
   timeout: 30_000,
@@ -38,6 +39,11 @@ export default defineConfig({
           PORT: String(port),
           HOST: '127.0.0.1',
           DATABASE_URL: laneDatabaseUrl(),
+          // The component gallery at /kit (the UI specs and the payload budget's font route) answers 404 without it.
+          PEBLISH_UI_KIT: '1',
+          // A spec that must fail many sign-ins (e2e/auth/flows.spec.ts) names its own client address in
+          // X-Forwarded-For, so it does not spend the budget every other spec signs in under.
+          PEBLISH_TRUSTED_PROXY: 'traefik',
         },
         reuseExistingServer: !process.env.CI,
         timeout: 30_000,

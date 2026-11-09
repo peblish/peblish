@@ -1,5 +1,6 @@
 // Type-level tests, checked by tsc (pnpm typecheck), never run. Each @ts-expect-error must
 // be an error, or typecheck fails: an unauthorized write does not compile.
+import type { EventOf } from '@peblish/schema/events';
 import type { Authorized } from '../authz/brand.ts';
 import { createPost } from '../posts/create.ts';
 import { defineMutation } from './mutation.ts';
@@ -7,6 +8,17 @@ import { defineMutation } from './mutation.ts';
 declare const postGrant: Authorized<'post.create'>;
 declare const voteGrant: Authorized<'vote.cast'>;
 const input = { title: 'Hello' };
+const vote: EventOf<'vote.cast'> = {
+  type: 'vote.cast',
+  v: 1,
+  voterId: 'x',
+  target: { kind: 'post', id: 'y' },
+  value: 1,
+  previous: 0,
+  apId: 'https://example.test/activities/like/1',
+  previousApId: null,
+  local: true,
+};
 
 createPost(postGrant, input);
 
@@ -48,7 +60,7 @@ defineMutation({
   recheck: true,
   run: async (t) => {
     // @ts-expect-error: emitting an event the mutation did not declare
-    await t.emit({ type: 'vote.cast', v: 1, voterId: 'x', target: { kind: 'post', id: 'y' }, value: 1, previous: 0, local: true });
+    await t.emit(vote);
   },
 });
 
