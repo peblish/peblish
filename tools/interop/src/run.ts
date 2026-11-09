@@ -4,8 +4,9 @@
 //
 //   node src/run.ts [lemmy|piefed|mbin ...] [--only=F1,P1] [--slow]
 import { spawnSync } from 'node:child_process';
+import { readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { type Context, type Group } from './context.ts';
-import { recorder, runId } from './lab.ts';
+import { type Result, recorder, RESULTS_DIR, runId } from './lab.ts';
 import { ledger } from './ledger.ts';
 import { closeAll, localActorId, sql } from './peblish.ts';
 import { selectPeers } from './peers/index.ts';
@@ -44,11 +45,28 @@ if (groupArg) {
 } else {
   let failed = 0;
   const forwarded = [...peerNames, ...(only ? [`--only=${only.join(',')}`] : []), ...(slow ? ['--slow'] : [])];
+  const all: Result[] = [];
   for (const [name, group] of Object.entries(groups)) {
     if (only && !group.ids.some((id) => only.includes(id))) continue;
     console.log(`\n== ${name}`);
+    rmSync(`${RESULTS_DIR}/group-${name}.json`, { force: true });
     const child = spawnSync(process.execPath, [import.meta.filename, `--group=${name}`, ...forwarded], { stdio: 'inherit' });
     if (child.status !== 0) failed += 1;
+    try {
+      all.push(...(JSON.parse(readFileSync(`${RESULTS_DIR}/group-${name}.json`, 'utf8')) as { results: Result[] }).results);
+    } catch {
+      failed += 1;
+      console.log(`group ${name} wrote no results`);
+    }
   }
-  process.exitCode = failed > 0 ? 1 : 0;
+  const count = (status: string) => all.filter((r) => r.status === status).length;
+  const pending = all.filter((r) => r.status.startsWith('pending')).length;
+  writeFileSync(
+    `${RESULTS_DIR}/interop.json`,
+    `${JSON.stringify({ at: new Date().toISOString(), peers: peerNames, results: all }, null, 2)}\n`,
+  );
+  console.log(
+    `\nTotal: ${count('pass')} pass, ${count('fail')} fail, ${count('known')} known, ${count('n/a')} n/a, ${pending} pending (interop.json)`,
+  );
+  process.exitCode = failed > 0 || count('fail') > 0 ? 1 : 0;
 }

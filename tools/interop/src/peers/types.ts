@@ -87,5 +87,10 @@ export type Peer = {
   editCommunity(token: string, communityId: number, title: string, description: string): Promise<void>;
   /** Deletes the caller's own account; `deleteContent` is Lemmy's "delete my content". */
   deleteAccount(token: string, password: string, deleteContent: boolean): Promise<void>;
+  /**
+   * A new user for scenarios that cannot repeat with the seeded one: Mbin sends no Follow when a
+   * user subscribes again after unsubscribing, so F1 needs a fresh account each run.
+   */
+  freshUser?(run: string): Promise<string>;
   readonly mod: PeerModeration;
 };

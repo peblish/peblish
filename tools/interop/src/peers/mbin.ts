@@ -7,7 +7,7 @@
 //   votePost(-1)   downvote  -> Dislike
 //   boostPost()    upvote    -> Announce of a bare IRI by the user (peblish: announce.bare_iri)
 import { http, MBIN, NotApplicable } from '../lab.ts';
-import { mbinToken } from '../mbin-clients.ts';
+import { ensureClient, mbinToken } from '../mbin-clients.ts';
 import type { Peer, PeerComment, PeerPost, Subscription } from './types.ts';
 
 type UserWire = { username: string; apId: string | null; apProfileId: string | null };
@@ -60,7 +60,8 @@ const toPost = (e: EntryWire): PeerPost => ({
   body: e.body,
   url: e.url,
   creatorApId: userUri(e.user),
-  score: e.uv - e.dv,
+  // Mbin counts an incoming Like as a favourite, not an upvote; a favourite is the vote it can be given.
+  score: e.uv + e.favourites - e.dv,
   deleted: e.visibility === 'soft_deleted' || e.visibility === 'private',
   removed: e.visibility === 'trashed',
   locked: e.isLocked,
@@ -206,6 +207,15 @@ export const mbin: Peer = {
       token,
       body: { name: 'lab', title, description, isAdult: false, isPostingRestrictedToMods: false },
     });
+  },
+  async freshUser(run) {
+    const username = `mbinf${run}`;
+    await ensureClient(username);
+    // The new bot user starts unverified (no mail runs); the admin verifies it through the API.
+    const admin = await mbinToken('mbinadmin');
+    const { userId } = await http<{ userId: number }>('GET', `${api}/users/name/${username}`, { token: admin });
+    await http('PUT', `${api}/admin/users/${userId}/verify`, { token: admin });
+    return username;
   },
   async deleteAccount() {
     // The console does it (`mbin:user:delete <name>`), which the runner cannot reach; the lab

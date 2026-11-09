@@ -1,24 +1,23 @@
 // F1, F2: following in both directions. The Accept is the first signed round trip, so every
 // later scenario depends on these.
-import { followRow, peblish, sql as db } from '../peblish.ts';
-import { expectDelivery, expectInbound } from '../match.ts';
-import { sleep, waitFor } from '../lab.ts';
 import type { Group } from '../context.ts';
+import { sleep, waitFor } from '../lab.ts';
+import { expectDelivery, expectInbound, type Sql } from '../match.ts';
+import { followRow, peblish } from '../peblish.ts';
 import type { Peer } from '../peers/types.ts';
 
-/** Leaves the peblish community if `peer.user` still follows it from an earlier run, and waits for peblish to hear. */
-async function unfollowIfFollowing(peer: Peer, token: string, communityApId: string, communityId: string) {
-  const resolved = await peer.resolveCommunity(token, `!lab@peblish.lab.test`);
+/** Leaves the peblish community if `user` still follows it from an earlier run, and waits for peblish to hear. */
+async function unfollowIfFollowing(sql: Sql, peer: Peer, user: string, token: string, communityId: string, handle: string) {
+  const resolved = await peer.resolveCommunity(token, handle);
   if (resolved.subscribed === 'NotSubscribed') return;
   await peer.unfollow(token, resolved.id);
   await waitFor(
     `${peer.name} follower row to leave peblish`,
     async () =>
       (
-        await db()`select 1 from follows f join actors a on a.id = f.follower_id where f.followee_id = ${communityId} and a.ap_id = ${peer.actorUri(peer.user)}`
+        await sql`select 1 from follows f join actors a on a.id = f.follower_id where f.followee_id = ${communityId} and a.ap_id = ${peer.actorUri(user)}`
       ).length === 0,
   );
-  void communityApId;
 }
 
 export const follows: Group = {
@@ -26,16 +25,17 @@ export const follows: Group = {
   async run(ctx) {
     const { rec, community } = ctx;
     for (const peer of ctx.peers) {
-      const token = await peer.login(peer.user);
-
       // F1: a peer's user follows !lab@peblish.lab.test and the Accept arrives.
       await rec.scenario('F1', peer.name, async () => {
-        await unfollowIfFollowing(peer, token, community.apId, community.id);
+        // Mbin sends no Follow when a user subscribes again after unsubscribing, so it gets a new account.
+        const user = peer.freshUser ? await peer.freshUser(ctx.run) : peer.user;
+        const token = await peer.login(user);
+        if (!peer.freshUser) await unfollowIfFollowing(ctx.sql, peer, user, token, community.id, community.handle);
         const started = new Date();
         const resolved = await peer.resolveCommunity(token, community.handle);
         const initial = await peer.follow(token, resolved.id);
-        const actor = peer.actorUri(peer.user);
-        ctx.ledger.add({ kind: 'follow', side: peer.name, user: peer.user, community: community.handle });
+        ctx.ledger.add({ kind: 'follow', side: peer.name, user, community: community.handle });
+        const actor = peer.actorUri(user);
         await expectInbound(ctx.sql, { since: started, actor, type: 'Follow', contains: community.apId }, { state: 'applied' });
         await waitFor(
           `${peer.name} to show Subscribed`,
@@ -51,8 +51,11 @@ export const follows: Group = {
         const resolved = await peblish.resolve(handle);
         const existing = await followRow('alice', resolved.id as never);
         if (existing) {
+          const unfollowed = new Date();
           await peblish.unfollow('alice', resolved.id as never);
-          await sleep(1_000);
+          await expectDelivery(ctx.sql, { since: unfollowed, type: 'Undo', host: new URL(peer.origin).host }, { state: 'delivered' });
+          // PieFed handles inbox posts in a queue and drops a Follow that overtakes the Undo before it.
+          await sleep(8_000);
         }
         const started = new Date();
         const followed = await peblish.followRemote('alice', handle);
@@ -60,11 +63,7 @@ export const follows: Group = {
         if (followed.state !== 'pending') throw new Error(`expected a pending follow, got ${followed.state}`);
         await expectDelivery(ctx.sql, { since: started, type: 'Follow' }, { state: 'delivered' });
         await expectInbound(ctx.sql, { since: started, type: 'Accept' }, { state: 'applied' });
-        const accepted = await waitFor(
-          'the follow to read accepted',
-          async () => (await followRow('alice', followed.communityId))?.state === 'accepted',
-        );
-        void accepted;
+        await waitFor('the follow to read accepted', async () => (await followRow('alice', followed.communityId))?.state === 'accepted');
         const backfill = await waitFor(
           `the backfill of ${handle}`,
           async () => {
