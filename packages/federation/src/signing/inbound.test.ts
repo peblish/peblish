@@ -75,6 +75,24 @@ describe('verifying an inbox POST', () => {
     expect(rotated.requests.filter((request) => request.url === sender.id)).toHaveLength(1);
   });
 
+  test('a key refresh answered by a Tombstone for the actor deletes our copy and verifies nothing', async () => {
+    const old = rsaKeys();
+    const first = stubFetch({ [sender.id]: { body: document(old.publicKeyPem) } });
+    const held = await resolveRemoteActor(sender.id, { fetch: first.fetch });
+    await writer()
+      .update(actors)
+      .set({ fetchedAt: new Date(Date.now() - 5 * 60_000) })
+      .where(eq(actors.id, held.id));
+
+    const gone = stubFetch({ [sender.id]: { body: { type: 'Tombstone', id: sender.id } } });
+    expect(await verifyInboundSignature(await signed(rsaKeys().privateKeyPem), bytes(), { fetch: gone.fetch })).toEqual({
+      ok: false,
+      reason: 'invalid',
+    });
+    const [row] = await db().select({ deletedAt: actors.deletedAt }).from(actors).where(eq(actors.id, held.id));
+    expect(row?.deletedAt).not.toBeNull();
+  });
+
   test('a key the actor drops from its document stops verifying once the actor is refreshed', async () => {
     const keys = rsaKeys();
     const first = stubFetch({ [sender.id]: { body: document(keys.publicKeyPem) } });
@@ -117,6 +135,57 @@ describe('verifying an inbox POST', () => {
     const other = new Request(inbox, { method: 'POST', headers: otherHeaders, body });
     expect(await verifyInboundSignature(other, bytes(), { fetch: down.fetch, now })).toEqual({ ok: false, reason: 'key_unknown' });
     expect(down.requests.filter((request) => request.url === stranger.id)).toHaveLength(1);
+  });
+
+  test('the refresh throttle remembers a hash of the key id, however long the sender made it', async () => {
+    const longKeyId = `https://lemmy.test/u/${'x'.repeat(6000)}#main-key`;
+    const headers = signDelivery({ keyId: longKeyId, privateKeyPem: rsaKeys().privateKeyPem }, inbox, body);
+    const request = new Request(inbox, { method: 'POST', headers, body });
+    const down = stubFetch({});
+    expect(await verifyInboundSignature(request, bytes(), { fetch: down.fetch })).toEqual({ ok: false, reason: 'key_unknown' });
+    expect(down.requests.length).toBeGreaterThan(0);
+    const remembered = (globalThis as { __peblishKeyRefreshes?: Map<string, number> }).__peblishKeyRefreshes!;
+    expect([...remembered.keys()].map((key) => key.length)).toEqual([43]);
+  });
+
+  test('a key id that is a document of its own (GoToSocial) is resolved through the owner it names', async () => {
+    const keys = rsaKeys();
+    const actorId = 'https://gts.test/users/alice';
+    const gtsKeyId = `${actorId}/main-key`;
+    const actor = {
+      ...actorDocument('gts.test', 'alice', { publicKeyPem: keys.publicKeyPem }),
+      id: actorId,
+      inbox: `${actorId}/inbox`,
+      outbox: `${actorId}/outbox`,
+      followers: `${actorId}/followers`,
+      publicKey: { id: gtsKeyId, owner: actorId, publicKeyPem: keys.publicKeyPem },
+    };
+    const keyDocument = { id: gtsKeyId, owner: actorId, publicKeyPem: keys.publicKeyPem };
+    const { fetch, requests } = stubFetch({ [gtsKeyId]: { body: keyDocument }, [actorId]: { body: actor } });
+    const request = new Request(inbox, {
+      method: 'POST',
+      headers: signDelivery({ keyId: gtsKeyId, privateKeyPem: keys.privateKeyPem }, inbox, body),
+      body,
+    });
+    expect(await verifyInboundSignature(request, bytes(), { fetch })).toEqual({ ok: true, keyId: gtsKeyId, ownerApId: actorId });
+    expect(requests.map((each) => each.url).slice(0, 2)).toEqual([gtsKeyId, actorId]);
+  });
+
+  test('a key document on one origin cannot name an owner on another', async () => {
+    const keys = rsaKeys();
+    const victim = actorDocument('lemmy.test', 'victim', { publicKeyPem: keys.publicKeyPem });
+    const evilKeyId = 'https://evil.test/users/mallory/main-key';
+    const { fetch, requests } = stubFetch({
+      [evilKeyId]: { body: { id: evilKeyId, owner: victim.id, publicKeyPem: keys.publicKeyPem } },
+      [victim.id]: { body: victim },
+    });
+    const request = new Request(inbox, {
+      method: 'POST',
+      headers: signDelivery({ keyId: evilKeyId, privateKeyPem: keys.privateKeyPem }, inbox, body),
+      body,
+    });
+    expect(await verifyInboundSignature(request, bytes(), { fetch })).toEqual({ ok: false, reason: 'key_unknown' });
+    expect(requests.some((each) => each.url === victim.id)).toBe(false);
   });
 
   test('a stranger’s signature, an unreachable actor and one of our own keys are all refused', async () => {

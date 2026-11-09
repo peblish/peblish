@@ -49,7 +49,7 @@ function html(stored: string | null, source: string | null, origin: string): str
 }
 
 /** Whether a community still shows what it holds: not deleted, and not removed by a site admin. */
-async function communityOpen(db: Queryable, community: ActorRef): Promise<boolean> {
+async function communityOpen(db: Queryable, community: Pick<ActorRef, 'id' | 'deleted'>): Promise<boolean> {
   if (community.deleted) return false;
   const [removal] = await db
     .select({ communityId: communityRemovals.communityId })
@@ -137,6 +137,46 @@ export type LoadedComment = {
 };
 
 const parents = alias(comments, 'parent');
+
+/**
+ * Whether the post or comment `apId` can still be shown, local or remote: live, on a post that is
+ * live, in a community that is neither deleted nor removed. Null when no such row is held. Meant
+ * for the activities we serve, which can embed content someone else wrote (the community's
+ * Announce of a remote Page or Note); the objects themselves are served only when they are ours.
+ */
+export async function heldContent(db: Queryable, apId: string): Promise<{ servable: boolean; deletedAt: Date | null } | null> {
+  const [post] = await db
+    .select({
+      deletedAt: posts.deletedAt,
+      removedAt: posts.removedAt,
+      communityId: posts.communityId,
+      communityDeletedAt: actors.deletedAt,
+    })
+    .from(posts)
+    .innerJoin(actors, eq(actors.id, posts.communityId))
+    .where(eq(posts.apId, apId));
+  if (post) {
+    const live = post.deletedAt === null && post.removedAt === null;
+    const open = await communityOpen(db, { id: post.communityId, deleted: post.communityDeletedAt !== null });
+    return { servable: live && open, deletedAt: post.deletedAt };
+  }
+  const [comment] = await db
+    .select({
+      deletedAt: comments.deletedAt,
+      removedAt: comments.removedAt,
+      postGone: sql<boolean>`(${posts.deletedAt} is not null or ${posts.removedAt} is not null)`,
+      communityId: posts.communityId,
+      communityDeletedAt: actors.deletedAt,
+    })
+    .from(comments)
+    .innerJoin(posts, eq(posts.id, comments.postId))
+    .innerJoin(actors, eq(actors.id, posts.communityId))
+    .where(eq(comments.apId, apId));
+  if (!comment) return null;
+  const live = comment.deletedAt === null && comment.removedAt === null;
+  const open = await communityOpen(db, { id: comment.communityId, deleted: comment.communityDeletedAt !== null });
+  return { servable: live && !comment.postGone && open, deletedAt: comment.deletedAt };
+}
 
 /** A local comment as a record, in the community of its post. */
 export async function loadComment(db: Queryable, origin: string, commentId: string): Promise<LoadedComment | null> {

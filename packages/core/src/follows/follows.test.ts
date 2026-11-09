@@ -128,6 +128,40 @@ describe('following a community', () => {
   });
 });
 
+describe('the communities a viewer follows, for the sidebar and the composer', () => {
+  test('each carries its host and age gates, and a deleted or removed community is left out', async () => {
+    const w = await world();
+    const gated = await seedActor(w.there, 'Group', 'gated', { sensitive: true, nsfl: true });
+    const gone = await seedActor(w.there, 'Group', 'gone');
+    const closed = await seedActor(w.here, 'Group', 'closed');
+    await writer().update(actors).set({ postingRestrictedToMods: true }).where(eq(actors.id, w.local.id));
+    for (const community of [w.remote, w.local, gated, gone, closed]) {
+      await writer()
+        .insert(follows)
+        .values({ followerId: w.alice.id, followeeId: community.id, apId: `https://fed-a.test/f/${community.name}`, state: 'accepted' });
+    }
+    await writer().update(actors).set({ deletedAt: new Date() }).where(eq(actors.id, gone.id));
+    await seedCommunityRemoval(closed);
+    expect(await followedCommunities(w.alice.id)).toEqual([
+      expect.objectContaining({ name: 'gated', host: 'lemmy.test', local: false, sensitive: true, nsfl: true }),
+      expect.objectContaining({ name: 'lab', host: 'lemmy.test', postingRestrictedToMods: false, sensitive: false, nsfl: false }),
+      {
+        id: w.local.id,
+        communityId: w.local.id,
+        apId: w.local.apId,
+        name: 'news',
+        displayName: null,
+        host: 'fed-a.test',
+        local: true,
+        state: 'accepted',
+        postingRestrictedToMods: true,
+        sensitive: false,
+        nsfl: false,
+      },
+    ]);
+  });
+});
+
 describe('the answers that come back', () => {
   async function pendingFollow() {
     const w = await world();

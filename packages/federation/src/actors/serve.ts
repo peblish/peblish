@@ -8,7 +8,7 @@ import { communityModerators } from '@peblish/core/db/tables/moderation';
 import { communityRemovals } from '@peblish/core/moderation/tables';
 import { and, count, desc, eq, isNull, sql } from 'drizzle-orm';
 import { create, page } from '../delivery/activities.ts';
-import { loadCommentByApId, loadPost, loadPostByApId, localActorRecord, mentionTags, withTags } from '../delivery/records.ts';
+import { heldContent, loadCommentByApId, loadPost, loadPostByApId, localActorRecord, mentionTags, withTags } from '../delivery/records.ts';
 import { toWire } from '../mapping/document.ts';
 import type { Json, JsonObject } from '../mapping/json.ts';
 import { LEMMY_CONTEXT } from '../mapping/vocabulary.ts';
@@ -94,24 +94,17 @@ function tombstone(id: string, formerType: string, deleted: Date | null): Served
 
 /** The activity types that carry a post or comment; a Delete or an Undo only names it, so it outlives it. */
 const contentActivities: ReadonlySet<string> = new Set(['Create', 'Update', 'Announce']);
+/** The object types peers send as posts and comments (the inbox reads the same four). */
+const contentTypes: ReadonlySet<string> = new Set(['Page', 'Article', 'Video', 'Note']);
 
-/** The id of the Page or Note an activity carries, through Announce(Create(Page)) and the like; null when it carries none. */
+/** The id of the post or comment an activity carries, through Announce(Create(Page)) and the like; null when it carries none. */
 function carriedContentId(activity: JsonObject): string | null {
   let node: Json | undefined = activity.object;
   while (typeof node === 'object' && node !== null && !Array.isArray(node)) {
-    if ((node.type === 'Page' || node.type === 'Note') && typeof node.id === 'string') return node.id;
+    if (typeof node.type === 'string' && contentTypes.has(node.type) && typeof node.id === 'string') return node.id;
     node = node.object;
   }
   return null;
-}
-
-/** Whether the local post or comment `apId` can still be served; true when it is not one of ours to judge. */
-async function contentServable(db: Queryable, origin: string, apId: string): Promise<{ servable: boolean; deleted: Date | null }> {
-  const post = await loadPostByApId(db, origin, apId);
-  if (post) return { servable: post.servable, deleted: post.deletedAt };
-  const comment = await loadCommentByApId(db, origin, apId);
-  if (comment) return { servable: comment.servable, deleted: comment.deletedAt };
-  return { servable: true, deleted: null };
 }
 
 async function objectDocument(db: Queryable, origin: string, kind: 'post' | 'comment' | 'activity', apId: string): Promise<Served | null> {
@@ -122,11 +115,13 @@ async function objectDocument(db: Queryable, origin: string, kind: 'post' | 'com
       .where(and(eq(activities.apId, apId), eq(activities.local, true)));
     if (!row) return null;
     const stored = row.raw as JsonObject;
-    // What a Create, Update or Announce carried is gone: so is the activity, as far as peers can fetch it.
+    // What a Create, Update or Announce carried is gone, never held or no longer shown: so is the
+    // activity, as far as peers can fetch it. The community's Announce of a remote Page or Note is
+    // a local activity too, so authorship does not matter here.
     const carried = contentActivities.has(row.type) ? carriedContentId(stored) : null;
     if (carried) {
-      const content = await contentServable(db, origin, carried);
-      if (!content.servable) return tombstone(apId, row.type, content.deleted);
+      const content = await heldContent(db, carried);
+      if (!content?.servable) return tombstone(apId, row.type, content?.deletedAt ?? null);
     }
     return { status: 200, json: stored };
   }

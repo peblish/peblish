@@ -175,6 +175,35 @@ describe('delivering', () => {
     expect(requests).toHaveLength(maxAttempts);
   });
 
+  test('a row whose handling keeps throwing follows the retry schedule and ends failed at the cap, error kept', async () => {
+    const w = await world();
+    await w.send();
+    const { fetch, requests } = stubFetch({ [inbox]: { status: 202 } });
+    const broken: Pick<DeliveryOptions, 'refreshSoftware'> = {
+      refreshSoftware: async () => {
+        throw new Error('the software check broke');
+      },
+    };
+    const waits: number[] = [];
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      await w.makeDue();
+      await deliverDue({ fetch, ...broken });
+      const row = (await w.rows())[0]!;
+      if (row.state === 'pending') waits.push(Math.round((row.nextAttemptAt.getTime() - Date.now()) / 1000));
+    }
+    expect(waits).toEqual(retryDelaysMs.map((delay) => delay / 1000).map((seconds) => expect.closeTo(seconds, -1)));
+    expect((await w.rows())[0]).toMatchObject({
+      state: 'failed',
+      attempts: maxAttempts,
+      lastError: 'the software check broke',
+      leaseUntil: null,
+    });
+    expect((await w.rows())[0]?.settledAt).toBeInstanceOf(Date);
+    await w.makeDue();
+    await deliverDue({ fetch, ...quiet });
+    expect(requests).toHaveLength(0);
+  });
+
   test('a dormant instance is skipped without a request, and one that is not is sent', async () => {
     const w = await world();
     await w.send([inbox, 'https://other.test/inbox']);

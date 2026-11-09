@@ -207,9 +207,13 @@ export async function deliverDue(options: DeliveryOptions = {}): Promise<Deliver
     await Promise.all(
       rows.map(async (row) => {
         const outcome = await deliver(row, { ...deps, refreshSoftware }).catch((error: unknown): Outcome => {
-          // Something of ours broke; the row stays pending and is tried again later.
+          // Something of ours broke. The row follows the schedule of a send that failed, so one
+          // whose handling keeps throwing ends failed at the attempt cap with the error kept,
+          // not pending for ever.
           console.error(`delivery of ${row.activityApId} to ${row.inboxUrl} broke`, error);
-          return { state: 'pending', status: null, error: error instanceof Error ? error.message : String(error), delayMs: 60_000 };
+          const message = error instanceof Error ? error.message : String(error);
+          const decided = verdict(row.attempts, { error: message, permanent: false });
+          return { state: decided.state, status: null, error: message, delayMs: decided.state === 'pending' ? decided.delayMs : 0 };
         });
         if (!outcome) {
           console.warn(`delivery of ${row.activityApId} to ${row.inboxUrl} not sent: another worker took the row over`);

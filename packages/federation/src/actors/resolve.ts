@@ -56,6 +56,8 @@ export type ResolveOptions = {
 };
 
 export const actorMaxAgeMs = 24 * 60 * 60 * 1000;
+/** An actor document may have moved: this many redirects are followed to it (each hop checked again). */
+const actorRedirects = 3;
 
 function failure(error: FetchFailure): ActorResolveError {
   const transient =
@@ -87,10 +89,15 @@ async function stored(apId: string): Promise<(ResolvedActor & { fetchedAt: Date 
   return { ...rest, deleted: deletedAt !== null };
 }
 
-// Resolutions in flight, by actor id, so a burst of activities from one new actor fetches it
-// once. (Another process racing is fine: the store's upsert ends with one row.) On globalThis
+// Resolutions in flight, by actor id and the freshness asked for, so a burst of activities from
+// one new actor fetches it once. A caller that wants a fresher copy than the one in flight
+// (a refresh, a smaller maxAgeMs) does not join it: it would get back the copy it meant to
+// replace. (Another process racing is fine: the store's upsert ends with one row.) On globalThis
 // because the web build can hold two copies of a module.
 const running = ((globalThis as { __peblishActorResolves?: Map<string, Promise<ResolvedActor>> }).__peblishActorResolves ??= new Map());
+
+const inflightKey = (apId: string, { refresh, maxAgeMs }: ResolveOptions): string =>
+  `${apId} ${refresh ? 'refresh' : (maxAgeMs ?? actorMaxAgeMs)}`;
 
 /** An id without its fragment, as a comparable string. */
 function withoutFragment(id: string): string {
@@ -99,10 +106,40 @@ function withoutFragment(id: string): string {
   return url.href;
 }
 
+/**
+ * storeRemoteActor's refusal of a kind change (core's RemoteActorKindError), matched by name so
+ * this file does not depend on where that class is exported.
+ */
+function isKindError(error: unknown): error is Error {
+  return error instanceof Error && error.name === 'RemoteActorKindError';
+}
+
+/** Whether a fetched document is a Tombstone (`type` may be a list). */
+function isTombstone(json: unknown): json is { id?: unknown } {
+  if (typeof json !== 'object' || json === null || Array.isArray(json)) return false;
+  const { type } = json as { type?: unknown };
+  return type === 'Tombstone' || (Array.isArray(type) && type.includes('Tombstone'));
+}
+
 async function fetchAndStore(apId: string, fetch: Fetcher): Promise<string> {
-  const { json, url } = await fetchActivity(apId, fetch).catch((error: unknown) => {
+  const { json, url } = await fetchActivity(apId, fetch, { maxRedirects: actorRedirects }).catch((error: unknown) => {
     throw error instanceof FetchFailure ? failure(error) : error;
   });
+  // Some servers answer a deleted account with a 200 Tombstone instead of a 410. It counts as a
+  // 410 only when it names the address we asked for, or the one it was served from after a
+  // redirect, and everything stays on the origin of the actor asked for: a Tombstone about
+  // something else is some other document, and another origin cannot delete this actor.
+  if (isTombstone(json)) {
+    const named = typeof json.id === 'string' && URL.canParse(json.id) ? withoutFragment(json.id) : null;
+    const origin = new URL(apId).origin;
+    const bound =
+      named !== null &&
+      (named === withoutFragment(apId) || named === withoutFragment(url)) &&
+      new URL(named).origin === origin &&
+      new URL(url).origin === origin;
+    if (!bound) throw new ActorResolveError('invalid', `${url} serves a Tombstone that does not name ${apId}`);
+    throw new ActorResolveError('gone', `${url} serves a Tombstone for ${apId}`);
+  }
   let record;
   try {
     record = actorFromWire(json);
@@ -123,7 +160,13 @@ async function fetchAndStore(apId: string, fetch: Fetcher): Promise<string> {
   }
   const problem = checkRemoteActor(record);
   if (problem) throw new ActorResolveError('invalid', problem);
-  await storeRemoteActor(await importGrant('remote.actor_store', { apId: record.apId }), record);
+  try {
+    await storeRemoteActor(await importGrant('remote.actor_store', { apId: record.apId }), record);
+  } catch (error) {
+    // The document changed what kind of actor this id is (a Person that is now a Group): not an actor we can hold.
+    if (isKindError(error)) throw new ActorResolveError('invalid', error.message);
+    throw error;
+  }
   await refreshInstanceSoftware(new URL(record.apId).origin, { fetch });
   return record.apId;
 }
@@ -131,14 +174,16 @@ async function fetchAndStore(apId: string, fetch: Fetcher): Promise<string> {
 /**
  * A WebFinger answer is the host's claim about who a handle is; the actor's own document is what
  * settles it. The handle's name must be the actor's preferredUsername (case aside, as handles
- * are) and its sigil must be the actor's kind (@ a Person, ! a Group). The actor may live on
- * another host than the handle names, which split-domain setups (Mastodon's WEB_DOMAIN) need.
+ * are) and its sigil must be the actor's kind (@ a Person or a Service, a bot; ! a Group). The
+ * actor may live on another host than the handle names, which split-domain setups (Mastodon's
+ * WEB_DOMAIN) need.
  */
 function checkHandle(handle: Handle, actor: Pick<ResolvedActor, 'name' | 'kind'>): void {
   if (actor.name.toLowerCase() !== handle.name.toLowerCase()) {
     throw new ActorResolveError('invalid', `${handle.name}@${handle.host} resolved to an actor named ${actor.name}`);
   }
-  if (handle.kind && actor.kind !== handle.kind) {
+  const sigilMatches = handle.kind === 'Person' ? actor.kind === 'Person' || actor.kind === 'Service' : actor.kind === handle.kind;
+  if (handle.kind && !sigilMatches) {
     throw new ActorResolveError('invalid', `${handle.name}@${handle.host} names a ${handle.kind}, but the actor is a ${actor.kind}`);
   }
 }
@@ -168,7 +213,8 @@ export async function resolveRemoteActor(target: string, options: ResolveOptions
 }
 
 async function resolveId(apId: string, fetch: Fetcher, options: ResolveOptions): Promise<ResolvedActor> {
-  const inflight = running.get(apId);
+  const key = inflightKey(apId, options);
+  const inflight = running.get(key);
   if (inflight) return inflight;
   const work = (async () => {
     const held = await stored(apId);
@@ -194,11 +240,11 @@ async function resolveId(apId: string, fetch: Fetcher, options: ResolveOptions):
       if (held && error instanceof ActorResolveError && error.transient) return held;
       // A 410 for an actor we hold is its server saying it is gone: delete our copy, as a refetch does (remote-fetch/actor.ts).
       if (held && !held.local && error instanceof ActorResolveError && error.reason === 'gone') {
-        await deleteRemoteActor(await importGrant('remote.actor_delete', { apId }), { cause: 'Tombstone' });
+        await deleteRemoteActor(await importGrant('remote.actor_delete', { apId }), { removeContent: false, cause: 'Tombstone' });
       }
       throw error;
     }
-  })().finally(() => running.delete(apId));
-  running.set(apId, work);
+  })().finally(() => running.delete(key));
+  running.set(key, work);
   return work;
 }
