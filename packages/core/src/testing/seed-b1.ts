@@ -1,6 +1,8 @@
-import { sql } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
+import { closePools } from '../db/pools.ts';
 import { db } from '../db/read.ts';
 import { authUser } from '../db/tables/auth.ts';
+import { posts } from '../db/tables/content.ts';
 import { writer } from '../db/write.ts';
 import { ageDeclarations } from '../identity/tables.ts';
 import { seedAdmin, seedBan, seedCommunityRemoval, seedModerator, seedPost } from './seed-az.ts';
@@ -101,4 +103,63 @@ export async function sameTransaction(table: 'posts' | 'votes', id: string, type
     ) as same`,
   );
   return row?.same === true;
+}
+
+/**
+ * What e2e/post runs against: accounts that can sign in (lane A's seedAccount: known password,
+ * verified email, 16+ declaration), a community with a moderator, and posts in the states the
+ * page shows. Every run uses fresh names, so the lane database can keep earlier runs. `secret`
+ * is in the sensitive post's title, link and body: the signed-out page must never carry it.
+ */
+async function e2e() {
+  const { seedAccount: seedLogin, PASSWORD } = await import('./seed-a.ts');
+  const { localInstance } = await import('../db/local-instance.ts');
+  const suffix = Math.random().toString(36).slice(2, 8);
+  const secret = `Secret${suffix}`;
+  const host = new URL((await localInstance(db())).origin).host;
+  const instance = { ...(await localInstance(db())), domain: host, local: true };
+  const [author, moderator, viewer, undeclared] = await Promise.all(
+    ['author', 'mod', 'viewer', 'minor'].map((role) => seedLogin(`${role}_${suffix}`)),
+  );
+  if (!author || !moderator || !viewer || !undeclared) throw new Error('accounts');
+  await writer().delete(ageDeclarations).where(eq(ageDeclarations.actorId, undeclared.actorId));
+  const community = await seedActor(instance, 'Group', `e2e_${suffix}`);
+  await seedModerator(community, { id: moderator.actorId });
+  const post = (extra: Partial<typeof posts.$inferInsert>) => seedPost(instance, community, { id: author.actorId }, extra);
+  const body = (text: string) => ({ bodyMd: text, contentHtml: `<p>${text}</p>` });
+  const row = (value: { id: string }) => value.id;
+  return {
+    password: PASSWORD,
+    secret,
+    community: { name: community.name, handle: community.name },
+    author: { name: author.name, handle: author.name, actorId: author.actorId },
+    moderator: { name: moderator.name },
+    viewer: { name: viewer.name },
+    undeclared: { name: undeclared.name },
+    posts: {
+      plain: row(await post({ title: `Plain post ${suffix}`, url: 'https://example.test/article', ...body(`Plain **body** ${suffix}`) })),
+      deletable: row(await post({ title: `Deletable post ${suffix}`, ...body(`Deletable body ${suffix}`) })),
+      removable: row(await post({ title: `Removable post ${suffix}`, ...body(`Removable body ${suffix}`) })),
+      sensitive: row(
+        await post({
+          title: `${secret} title`,
+          url: `https://example.test/${secret}`,
+          sensitive: true,
+          thumbnailUrl: `https://example.test/${secret}.png`,
+          ...body(`${secret} body`),
+        }),
+      ),
+      deleted: row(await post({ title: `Deleted post ${suffix}`, deletedAt: new Date(), ...body(`Deleted body ${suffix}`) })),
+    },
+  };
+}
+
+if (import.meta.main) {
+  try {
+    const [command] = process.argv.slice(2);
+    if (command === 'e2e') console.log(JSON.stringify(await e2e()));
+    else throw new Error('usage: node packages/core/src/testing/seed-b1.ts e2e');
+  } finally {
+    await closePools();
+  }
 }
