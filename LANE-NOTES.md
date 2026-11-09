@@ -1,6 +1,6 @@
 # Lane FED-C notes (wave 3)
 
-Branch `mvp-w3-fed-c`, worktree `/Users/admin/Projects/feddit-mvp-w3-fed-c`, `lane.sh` name `fed_c` (port 18325). Status: step 1 done; step 2 (settings and site-ban Block) pending the `w3-groundwork` tag, which did not exist when I finished step 1.
+Branch `mvp-w3-fed-c`, worktree `/Users/admin/Projects/feddit-mvp-w3-fed-c`, `lane.sh` name `fed_c` (port 18325). Status: steps 1 and 2 done. Step 2 merged `w3-groundwork` (35fbc62) and added the `delivery.enabled` check, the site-ban Block and the served mention `cc`.
 
 ## 1. What landed
 
@@ -15,7 +15,7 @@ Branch `mvp-w3-fed-c`, worktree `/Users/admin/Projects/feddit-mvp-w3-fed-c`, `la
 | Outbound mentions: each stored mentioned remote person added to `cc` (activity and Page or Note) and sent the author's activity directly when no Announce reaches their inbox | `records.ts` (`mentionsIn`, `withCc`), `send.ts`, `publish.ts`, `consumer.ts`     | `consumer.test.ts` "a person a post or comment names"                                                                                                     |
 | README: shape table, restore and unlock rules, mentions                                                                                                                       | `packages/federation/README.md`                                                   | n/a                                                                                                                                                       |
 
-Pending (step 2, needs `w3-groundwork`): `deliverDue` honouring the `delivery.enabled` site setting, and the outbound site-ban `Block` from `mod.ban` events with `communityId: null`, skipping inboxes where `deliveryBlocked` is true.
+Step 2 is in the next section.
 
 ## 2. Commits
 
@@ -64,8 +64,53 @@ None.
 
 ## 9. Left open and risks
 
-- Step 2, pending: `deliverDue` skipping when `delivery.enabled` is false (`delivery/run.ts`), and the site-ban `Block` (`ban()` in `relay/moderation.ts`, target the instance actor at `/`, sent to `peerInboxes(t.db)` minus inboxes where `deliveryBlocked`, same shape as `accountDeletion`; the `mod.ban` branch in `relay/consumer.ts:onModeration` currently returns early for `communityId === null`). To start it: `git merge w3-groundwork`, delete `node_modules`, reinstall.
-- `actors/serve.ts` (not in this lane's write set) serves a post's Page with its Mention tags but without the mentioned people in `cc`, so the document fetched at its id differs slightly from the one we sent. Harmless for Lemmy and Mastodon; REM or the lane that owns `actors/serve.ts` could add `withCc` there.
+- Step 2 items are done (next section); its own open points are in section 14.
 - A Mastodon-like follower cannot see a restored post: Mastodon records a Tombstone for a deleted status and refuses a later Create. Decision 3 of `decisions.md` accepted this.
 - PieFed's day-one cap, `comment.restored`, the dormancy hook and the cap on rows one burst queues remain as listed in the brief, section 7 ("Waits, FED-C later").
 - Source readings of Mastodon in the brief are from `main` on 2026-11-09 and unverified against a live server until LAB runs its scenario.
+
+## Step 2
+
+Merged `w3-groundwork` (tag 35fbc62) into `mvp-w3-fed-c`: clean, no conflict (merge commit 9f26ddc). Reinstalled `node_modules`.
+
+### 10. What landed
+
+| Deliverable                                                                                                                                                                                                                                                                                                                     | Where                                                                                                                                        | Proof                                                                                                                                             |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `deliverDue` claims nothing while `delivery.enabled` is off, checked before each batch so a switch turned off mid-run stops the run; rows stay pending with `attempts` unchanged                                                                                                                                                | `delivery/run.ts`                                                                                                                            | `delivery/delivery.test.ts` "with delivery.enabled off ..."                                                                                       |
+| Site ban: a `mod.ban` with `communityId: null` from a local moderator is a `Block` of the person, target the instance actor (`<origin>/`), signed by the moderator, stored (served at its id) and sent to `peerInboxes` minus instances where `deliveryBlocked` is true; an unban is the `Undo` embedding the last stored Block | `relay/consumer.ts` (`onSiteBan`), `relay/moderation.ts` (doc only), `delivery/followers.ts` (`deliverableInboxes`)                          | `relay/withdraw.test.ts` "a site ban" (shape and signer, Undo, held-back instance, remote moderator)                                              |
+| Site ban with `removeContent`: boost withdrawal for the person's removed posts in every local community, a batch of 200 at a time until none is left                                                                                                                                                                            | `relay/consumer.ts`, `delivery/withdraw.ts` (`removedBoostedPosts` now takes `{ communityId?, limit? }` and returns `{ apId, communityId }`) | `relay/withdraw.test.ts` "with removeContent takes back ..." (205 posts, live and other people's posts stay, a second event sends only the Block) |
+| A served Page, Note, pinned Page and outbox Create carry the same `tag` and `cc` of mentioned remote people as the delivered copy                                                                                                                                                                                               | `actors/serve.ts` (`withMentions`)                                                                                                           | `actors/serve.test.ts` "a post and a comment name the remote people ..."                                                                          |
+| README: site bans, the kill switch, the served mention `cc`                                                                                                                                                                                                                                                                     | `packages/federation/README.md`                                                                                                              | n/a                                                                                                                                               |
+
+### 11. Commits
+
+1. `0550b0b` Hold deliveries while the delivery.enabled setting is off
+2. `e3c854f` Send a site ban to the peers as a Block and take the person's boosts back
+3. `cca5935` Serve a post's and comment's mentioned people in cc, as delivered
+4. `eb413a7` Document site bans, the delivery kill switch and the served mention cc
+5. This section.
+
+### 12. Verification
+
+- `pnpm check` green on the final tree: 2,127 passed, 3 skipped (160 files; step 1 was 2,107). The first full run had five timeouts and one worker assertion in `core` files (`comments/mutations`, `db/migrate`, `outbox/worker`) while the shared Postgres was busy; the same three files passed alone and the rerun was green. They are outside this lane.
+- No e2e: nothing in `web` or `e2e` changed.
+- Tests use fixtures and the lane's test database; no traffic to any real server.
+
+### 13. Decisions and deviations
+
+1. The site-ban Block is signed by the moderator and sent directly, not announced: there is no community. The wire is the mapping's `Block` with `communityApId: null` (so `to: [Public]`, no `cc`, no `audience`), `object` the person, `target` the instance actor, `summary` the reason, `removeData`, `expires`. Lemmy's own site-ban Block has the same fields.
+2. `deliveryBlocked` is read through `deliverableInboxes` (new, `delivery/followers.ts`): inboxes are mapped to instances by host, and a host with no `instances` row is sent to. The stub returns false, so today nothing is held back; the test mocks the gate to prove the skip. Only the Block uses it, as briefed; MODF decides whether the delivery queue itself should also refuse blocked instances.
+3. The Undo of a site ban embeds the id of the most recent stored local `Block` about that person (`sentId`), which can be a community ban's Block if that is newer. Receivers match the Undo by its object and target, so no wire effect; the same weakness the community unban already had.
+4. The site-ban loop skips posts in a community that is deleted or not local (they would come back for ever) by remembering which it has seen. If 200 of them fill a batch, the loop ends before the posts behind them. Rare enough to leave.
+5. The community-ban withdrawal is unchanged: one batch of 200 per event, a second event takes the rest (step 1 test pins it). Only the site ban loops, as the brief says.
+6. `removedBoostedPosts` changed signature: `(db, authorId, { communityId?, limit? })` returning `{ apId, communityId }[]`. Its only caller is `relay/consumer.ts`.
+7. `mentionTags` in `delivery/records.ts` had no caller once `serve.ts` used `mentionsIn`, so I removed it. Step 1 notes said it stayed for `serve.ts`; section 8 of the step 1 notes is superseded on that point.
+8. The "a site ban ... not federated" assertion in `relay/relay.test.ts` was replaced by the site-ban tests in `relay/withdraw.test.ts`, which has the fixtures for peers on both software kinds.
+9. Vitest must run from the repository root (`npx vitest run --project federation <file>`); from inside `packages/federation` it skips the root config and runs against the lane's dev database, which left a foreign local-instance row in `peblish_fed_c` twice. I dropped and recreated that database (this lane's own, scratch) both times.
+
+### 14. Requests to root and left open
+
+- None blocking. MODF: the site-ban event contract holds as `decisions.md` says; if MODF's inbound side later wants the Block to also go to the banned person's own instance when no follow links us, that is a one-line addition to the inbox list in `onSiteBan`.
+- A site ban by a local moderator whose action is itself an unban of a person who was never site-banned from here still sends an Undo(Block); harmless.
+- Still open from step 1: LAB's Mastodon scenario and the live check of the Mastodon source readings; PieFed's day-one cap; `comment.restored`; the dormancy hook; a cap on rows one burst queues.
