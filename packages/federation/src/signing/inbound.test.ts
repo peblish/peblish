@@ -7,7 +7,7 @@ import { truncateAll } from '@peblish/core/testing/db';
 import { actorDocument, rsaKeys, seedLocalInstance, stubFetch } from '@peblish/core/testing/seed-fed-a';
 import { resolveRemoteActor } from '../actors/resolve.ts';
 import { signDelivery } from './sign.ts';
-import { forgetKeyRefreshes, keyRefetchAfterMs, verifyInboundSignature } from './inbound.ts';
+import { FetchRefused, forgetKeyRefreshes, keyRefetchAfterMs, verifyInboundSignature } from './inbound.ts';
 
 const inbox = 'https://fed-a.test/inbox';
 const body = JSON.stringify({ type: 'Like', id: 'https://lemmy.test/activities/1' });
@@ -135,6 +135,34 @@ describe('verifying an inbox POST', () => {
     const other = new Request(inbox, { method: 'POST', headers: otherHeaders, body });
     expect(await verifyInboundSignature(other, bytes(), { fetch: down.fetch, now })).toEqual({ ok: false, reason: 'key_unknown' });
     expect(down.requests.filter((request) => request.url === stranger.id)).toHaveLength(1);
+  });
+
+  test('a lookup the fetcher refused to send does not spend the actor’s minute, a failed one does', async () => {
+    const keys = rsaKeys();
+    let refusals = 0;
+    const refused = () => {
+      refusals += 1;
+      throw new FetchRefused('too many lookups');
+    };
+    const now = Date.now();
+    const request = await signed(keys.privateKeyPem);
+    expect(await verifyInboundSignature(request.clone(), bytes(), { fetch: refused, now })).toEqual({ ok: false, reason: 'key_unknown' });
+    expect(refusals).toBe(1);
+
+    // A moment later, within the same minute, the actor is still looked for.
+    const server = stubFetch({ [sender.id]: { body: document(keys.publicKeyPem) } });
+    expect(await verifyInboundSignature(request.clone(), bytes(), { fetch: server.fetch, now: now + 1000 })).toMatchObject({ ok: true });
+    expect(server.requests.filter((one) => one.url === sender.id)).toHaveLength(1);
+
+    // A fetch that went out and failed is spent for the minute.
+    await truncateAll();
+    await seedLocalInstance();
+    const down = stubFetch({ [sender.id]: { status: 503 } });
+    await verifyInboundSignature(request.clone(), bytes(), { fetch: down.fetch, now });
+    expect(await verifyInboundSignature(request.clone(), bytes(), { fetch: server.fetch, now: now + 1000 })).toEqual({
+      ok: false,
+      reason: 'key_unknown',
+    });
   });
 
   test('the refresh throttle remembers a hash of the key id, however long the sender made it', async () => {

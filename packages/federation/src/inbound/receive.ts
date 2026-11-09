@@ -7,7 +7,7 @@ import { tx } from '@peblish/core/tx/tx';
 import { and, eq, gt, sql } from 'drizzle-orm';
 import type { Fetcher } from '../actors/document.ts';
 import { safeFetch } from '../actors/safe-fetch.ts';
-import { verifyInboundSignature } from '../signing/inbound.ts';
+import { FetchRefused, verifyInboundSignature } from '../signing/inbound.ts';
 import { parseSignature } from '../signing/verify.ts';
 import { clientAddress, peerOf } from './client.ts';
 import { takeIntake, takeKeyLookup } from './throttle.ts';
@@ -208,10 +208,10 @@ export async function receiveInbound(request: Request, options: ReceiveOptions =
         const kind = (await namesHeldSigner(request, body)) ? 'refresh' : 'discovery';
         if (!takeKeyLookup(kind, { address, host: new URL(String(url)).host })) {
           throttled = true;
-          throw new Error('too many lookups of signing keys');
+          throw new FetchRefused('too many lookups of signing keys');
         }
       }
-      if (++fetches > maxLookupFetches) throw new Error('this lookup needs more fetches than it may make');
+      if (++fetches > maxLookupFetches) throw new FetchRefused('this lookup needs more fetches than it may make');
       return base(url, init);
     };
     const signature = await verifyInboundSignature(request, body, { fetch: limited });

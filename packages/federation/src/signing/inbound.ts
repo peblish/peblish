@@ -56,6 +56,22 @@ function recordFetch(actorApId: string, now: number): void {
   if (refreshAttempts.size > refreshAttemptsMax) refreshAttempts.delete(refreshAttempts.keys().next().value!);
 }
 
+/** Takes back the attempt recorded at `at`, when nothing went out after all. */
+function forgetFetch(actorApId: string, at: number): void {
+  const key = attemptKey(actorApId);
+  if (refreshAttempts.get(key) === at) refreshAttempts.delete(key);
+}
+
+/**
+ * Thrown by a fetcher that declined to send a request at all (the inbox's admission limits,
+ * inbound/receive.ts). Nothing went out, so the refusal does not spend the actor's once-a-minute
+ * refresh: a lookup the inbox would not make must not keep a genuine signer's key from being
+ * looked for. Any other failure does spend it, since the request may have reached a host that is down.
+ */
+export class FetchRefused extends Error {
+  override readonly name = 'FetchRefused';
+}
+
 /** Forgets every recorded refresh attempt (tests). */
 export function forgetKeyRefreshes(): void {
   refreshAttempts.clear();
@@ -88,7 +104,8 @@ async function keyOwner(keyId: string, fetch: Fetcher): Promise<string | null> {
  * limits keep this from being a way to make us fetch: only the actor a key id names (or, for a
  * key id that is a document of its own, the owner on the same origin that document names) is
  * ever fetched, and an actor is not fetched for its key more than once a minute, whether or not the
- * last fetch worked (FED-B throttles the callers that make us fetch for an actor we do not hold).
+ * last fetch worked, unless the fetcher refused to send it (FetchRefused; FED-B throttles the
+ * callers that make us fetch for an actor we do not hold).
  *
  * This proves the signer holds the key of `ownerApId`; whether that actor may do what the
  * activity says is FED-B's (the mapping README's "What the caller checks").
@@ -106,11 +123,18 @@ export async function verifyInboundSignature(
     const actorApId = actorOf(parsed.keyId);
     if (recentlyFetched(actorApId, now)) return null;
     // A copy that is still fresh makes no request, and so records no attempt; a NodeInfo read is not
-    // a fetch of the actor.
+    // a fetch of the actor. The attempt is recorded before the request goes out, so concurrent bad
+    // signatures see it, and taken back if the fetcher refused to send it (FetchRefused).
     const send = options.fetch ?? safeFetch;
-    const recording: Fetcher = (url, init) => {
-      if (String(url) === actorApId) recordFetch(actorApId, now);
-      return send(url, init);
+    const recording: Fetcher = async (url, init) => {
+      const ofActor = String(url) === actorApId;
+      if (ofActor) recordFetch(actorApId, now);
+      try {
+        return await send(url, init);
+      } catch (error) {
+        if (ofActor && error instanceof FetchRefused) forgetFetch(actorApId, now);
+        throw error;
+      }
     };
     try {
       const owner = (await keyOwner(parsed.keyId, recording)) ?? actorApId;

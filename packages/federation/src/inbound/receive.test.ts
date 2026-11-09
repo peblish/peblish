@@ -172,6 +172,21 @@ describe('receiving an activity', () => {
     expect((await rows()).map((row) => row.actorApId)).toEqual([real.id]);
   });
 
+  test('a lookup the inbox refused does not spend the actor’s minute for the next client', async () => {
+    const host = 'genuine.test';
+    const real = actorDocument(host, 'real', { publicKeyPem: world.peers.mallory.keys.publicKeyPem });
+    const { fetch, requests } = stubFetch({ [real.id]: { body: real }, ...nodeInfoRoutes(host, 'lemmy') });
+    const genuine = { keyId: real.publicKey.id, privateKeyPem: world.peers.mallory.keys.privateKeyPem };
+    const body = JSON.stringify({ ...like(), actor: real.id });
+    // An address that has spent its discovery allowance is refused before anything is fetched.
+    for (let n = 0; n < discovery.perAddress; n++) takeKeyLookup('discovery', { address: '203.0.113.1', host });
+    expect((await receiveInbound(await signed(body, genuine), { fetch, peer: '203.0.113.1' })).status).toBe(429);
+    expect(requests).toHaveLength(0);
+    // The refusal burned nothing: another client's lookup of the same actor within the minute is made.
+    expect((await receiveInbound(await signed(body, genuine), { fetch, peer: '198.51.100.7' })).status).toBe(202);
+    expect(requests.some((request) => request.url === real.id)).toBe(true);
+  });
+
   test('behind Traefik the address is the one it saw, so clients behind one proxy are counted apart', async () => {
     vi.stubEnv('PEBLISH_TRUSTED_PROXY', 'traefik');
     try {
