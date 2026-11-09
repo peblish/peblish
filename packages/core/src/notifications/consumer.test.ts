@@ -1,5 +1,5 @@
 import { eq } from 'drizzle-orm';
-import { beforeEach, describe, expect, test } from 'vitest';
+import { beforeEach, describe, expect, test, vi } from 'vitest';
 import { actors } from '../db/tables/actors.ts';
 import { comments, posts } from '../db/tables/content.ts';
 import { outboxCursors } from '../db/tables/outbox.ts';
@@ -26,6 +26,10 @@ import { localUser } from '../testing/seed.ts';
 import { db } from '../db/read.ts';
 import { notifications } from './tables.ts';
 import { uuidv7 } from 'uuidv7';
+
+// drainNotices waits for the outbox horizon, which is the oldest transaction running anywhere on the
+// server; on a busy machine that takes longer than the default 5 s.
+vi.setConfig({ testTimeout: 60_000 });
 
 beforeEach(truncateAll);
 

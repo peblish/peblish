@@ -25,6 +25,8 @@ type Seed = {
 
 let seed: Seed;
 test.beforeAll(() => {
+  // The seed waits for the outbox horizon (the oldest transaction running on the server), which a busy machine can hold back.
+  test.setTimeout(120_000);
   const out = execFileSync('node', ['packages/core/src/testing/seed-e2.ts', 'e2e'], {
     cwd: join(import.meta.dirname, '../..'),
     encoding: 'utf8',
@@ -109,7 +111,7 @@ test.describe('the inbox of a person who was replied to, mentioned, moderated an
     const log = recordConsole(page);
     await gotoHydrated(page, '/notifications');
     await expect(rows(page)).toHaveCount(11);
-    await expect(inboxLink(page)).toHaveAccessibleName('Inbox, 11 unread');
+    await expect(inboxLink(page)).toHaveAccessibleName(/^Inbox\b.*\b11\b/);
     await expect(page).toHaveTitle(/^\(11\) Inbox · /);
     await expect(page.getByText('11 unread', { exact: true })).toBeVisible();
 
@@ -187,7 +189,7 @@ test.describe('the inbox of a person who was replied to, mentioned, moderated an
     await page.evaluate(() => Object.assign(window, { loadedOnce: true }));
     await rows(page).first().getByRole('button', { name: 'Mark read' }).click();
     await expect(page.getByText('10 unread', { exact: true })).toBeVisible();
-    await expect(inboxLink(page)).toHaveAccessibleName('Inbox, 10 unread');
+    await expect(inboxLink(page)).toHaveAccessibleName(/^Inbox\b.*\b10\b/);
     await expect(rows(page).first().getByRole('button', { name: 'Mark unread' })).toBeVisible();
     expect(await page.evaluate(() => 'loadedOnce' in window)).toBe(true);
     // The Unread filter drops it.

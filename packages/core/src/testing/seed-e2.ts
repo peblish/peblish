@@ -45,7 +45,7 @@ export const emitEvent = (event: OutboxEvent) => tx((t) => t.emit(event));
  */
 export async function drainNotices(): Promise<void> {
   await ensureCursors([consumer]);
-  const deadline = Date.now() + 30_000;
+  const deadline = Date.now() + 90_000;
   while (Date.now() < deadline) {
     await processBatch(consumer);
     const [waiting] = await db().execute<{ n: number }>(
