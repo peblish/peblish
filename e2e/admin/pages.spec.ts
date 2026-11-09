@@ -185,20 +185,25 @@ test('unpublishing takes the page off the site and keeps the draft', async ({ br
   await expect(page.locator('[data-slug="rules"] [data-language="en"]')).toContainText('Draft');
 });
 
-test('with no About page, /about shows the name and description from Settings and the list of live pages', async ({ browser }) => {
+test('with no About page, /about shows the name and description from Settings, in English and German', async ({ browser }) => {
   await gotoHydrated(page, '/admin/settings');
   await page.getByLabel('Site name').fill('About Feddit');
   await page.getByLabel('Description').fill('A quiet place.');
   await page.getByRole('button', { name: 'Save changes' }).click();
   await page.waitForURL(/saved=/);
-  const { context, page: reader } = await visitor(browser);
-  const console = recordConsole(reader);
-  await gotoHydrated(reader, '/about');
-  await expect(reader.getByRole('heading', { level: 1, name: 'About About Feddit' })).toBeVisible();
-  await expect(reader.getByText('A quiet place.')).toBeVisible();
-  await expectAccessible(reader);
-  expect(console.hydrationProblems()).toEqual([]);
-  await context.close();
+  for (const [locale, heading] of [
+    ['en-US', 'About About Feddit'],
+    ['de-DE', 'Über About Feddit'],
+  ] as const) {
+    const { context, page: reader } = await visitor(browser, locale);
+    const console = recordConsole(reader);
+    await gotoHydrated(reader, '/about');
+    await expect(reader.getByRole('heading', { level: 1, name: heading })).toBeVisible();
+    await expect(reader.getByText('A quiet place.')).toBeVisible();
+    await expectAccessible(reader);
+    expect(console.hydrationProblems()).toEqual([]);
+    await context.close();
+  }
 });
 
 test('a member without the admin role is turned away from the list and the editor, and an unknown page is a 404', async ({ browser }) => {

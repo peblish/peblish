@@ -76,6 +76,10 @@ export const updateSettings = defineMutation({
     const changes: Record<string, { before: unknown; after: unknown }> = {};
     for (const [key, after] of entries) {
       await t.db.insert(siteSettings).values({ key, value: contract[key].default }).onConflictDoNothing();
+      // A key that already has the value is left alone without taking its lock, so saving the
+      // other fields of a form does not wait on a reader that holds one of them.
+      const [current] = await t.db.select({ value: siteSettings.value }).from(siteSettings).where(eq(siteSettings.key, key));
+      if (current && isDeepStrictEqual(current.value, after)) continue;
       const [row] = await t.db
         .select({ value: siteSettings.value })
         .from(siteSettings)

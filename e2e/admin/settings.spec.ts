@@ -70,7 +70,9 @@ for (const [key, label, pause, resume] of switches) {
   test(`${label}: pausing is marked, resuming restores it, and both are logged`, async () => {
     await gotoHydrated(page, '/admin/settings');
     const row = page.locator(`[data-switch="${key}"]`);
-    const before = settingsLog().length;
+    // The Pages spec saves settings too, side by side: look only at this switch's rows.
+    const own = () => settingsLog().filter(({ changes }) => key in changes);
+    const before = own().length;
     await row.getByRole('button', { name: pause }).click();
     try {
       await page.waitForURL(/saved=/);
@@ -82,7 +84,7 @@ for (const [key, label, pause, resume] of switches) {
     }
     await page.waitForURL(/saved=/);
     await expect(page.locator(`[data-switch="${key}"]`).getByRole('button', { name: pause })).toBeVisible();
-    const log = settingsLog().slice(before);
+    const log = own().slice(before);
     expect(log).toEqual([
       { changes: { [key]: { before: true, after: false } }, public: false },
       { changes: { [key]: { before: false, after: true } }, public: false },

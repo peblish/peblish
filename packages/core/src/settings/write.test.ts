@@ -59,6 +59,7 @@ describe('updateSettings', () => {
       ['a boolean as text', { 'registration.enabled': 'yes' as never }],
       ['a negative cap', { 'registration.cap': -1 }],
       ['a fractional cap', { 'registration.cap': 2.5 }],
+      ['a cap that is not a number', { 'registration.cap': Number.NaN }],
       ['a contact that is not an email', { 'contact.email': 'not an email' }],
       ['a trusted domain with a path', { 'modlog.trusted_instances': ['lemmy.test/x'] }],
       ['a key the contract does not have', { 'no.such_key': true } as never],
