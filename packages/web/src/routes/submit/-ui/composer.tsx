@@ -137,8 +137,11 @@ export function Composer({ data, kept, error: initialError, onDone, onDiscard, k
     const request = ++panelRequest.current;
     setError(undefined);
     setPanel(null);
-    void loadCommunityPanel({ data: { id } }).then((next) => {
-      if (request === panelRequest.current) setPanel(next);
+    void loadCommunityPanel({ data: { id } }).then(({ panel: next }) => {
+      if (request !== panelRequest.current) return;
+      setPanel(next);
+      // Gone since the list was made (removed, deleted): it is not a choice any more.
+      if (next === null) setForm((current) => (current.community === id ? { ...current, community: null } : current));
     });
     // A community with a saved draft gets it back, unless something is already typed.
     const draft = pristine(form) ? readDraft({ actorId, community: id }) : null;

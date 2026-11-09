@@ -1,4 +1,4 @@
-import { followedCommunities } from '@peblish/core/follows/read';
+import { followedCommunities, type FollowedCommunity } from '@peblish/core/follows/read';
 import { listLocalCommunities, listModerators, readCommunity } from '@peblish/core/communities/read';
 import { localHandles } from '@peblish/core/identity/handles';
 import { readPost } from '@peblish/core/posts/read';
@@ -25,14 +25,34 @@ async function canPostIn(viewer: SessionView, community: { id: string; restricte
 }
 
 /**
+ * The age gate (C10, the feeds' rule): a sensitive or NSFL community is for someone who declared
+ * 16+; to anyone else it does not exist, in the picker and in its panel alike.
+ */
+const ageAllows = (viewer: SessionView, community: { sensitive: boolean; nsfl: boolean }) =>
+  viewer.ageDeclaredAt !== null || !(community.sensitive || community.nsfl);
+
+/**
+ * The accepted follows that are remote Groups, with what the picker needs of each: the handle's
+ * host, the posting restriction and the age flags. Removed and deleted communities are left out.
+ */
+// integration: replace with followedCommunities fields (host, postingRestrictedToMods, sensitive,
+// nsfl; it excludes removed communities). Until fed-a's change is in the tree these are read from
+// the community rows, one readCommunity (which also leaves out removed and deleted ones) each.
+async function followedRemote(followed: readonly FollowedCommunity[]) {
+  const accepted = followed.filter(({ local, state }) => !local && state === 'accepted');
+  const rows = await Promise.all(accepted.map(({ communityId }) => readCommunity({ id: communityId })));
+  return rows.filter((community) => community !== null);
+}
+
+/**
  * Local communities, then the remote ones the person follows (accepted follows only). A
- * community age-gated as sensitive is listed only for someone who declared 16+. A remote
- * community's own restriction is not known here; posting answers `community.posting_restricted`.
+ * community age-gated as sensitive or NSFL is listed only for someone who declared 16+, a
+ * removed one never, and a mods-only one is disabled for anyone who is not staff there.
  */
 async function pickable(viewer: SessionView): Promise<PickerCommunity[]> {
-  const [local, followed] = await Promise.all([
+  const [local, followedGroups] = await Promise.all([
     listLocalCommunities({ includeSensitive: viewer.ageDeclaredAt !== null }),
-    followedCommunities(viewer.actorId),
+    followedCommunities(viewer.actorId).then(followedRemote),
   ]);
   const rows = await Promise.all(
     local.map(async ({ actor, postingRestrictedToMods, subscribers }): Promise<PickerCommunity> => ({
@@ -44,24 +64,26 @@ async function pickable(viewer: SessionView): Promise<PickerCommunity[]> {
       canPost: await canPostIn(viewer, { id: actor.id, restricted: postingRestrictedToMods }),
     })),
   );
-  const remote = followed
-    .filter(({ local: isLocal, state }) => !isLocal && state === 'accepted')
-    .map(({ communityId, name, apId }): PickerCommunity => ({
-      id: communityId,
-      // The actor id is the community's own URL, so its host is the handle's host.
-      handle: `${name}@${new URL(apId).host}`,
-      local: false,
-      subscribers: null,
-      restricted: false,
-      canPost: true,
-    }));
+  const remote = await Promise.all(
+    followedGroups
+      .filter((community) => ageAllows(viewer, community))
+      .map(async ({ actor, postingRestrictedToMods }): Promise<PickerCommunity> => ({
+        id: actor.id,
+        handle: actor.handle,
+        local: false,
+        subscribers: null,
+        restricted: postingRestrictedToMods,
+        canPost: await canPostIn(viewer, { id: actor.id, restricted: postingRestrictedToMods }),
+      })),
+  );
   return [...rows, ...remote];
 }
 
 async function panelFor(communityId: string, viewer: SessionView, renderer: MarkdownRenderer): Promise<CommunityPanel | null> {
   if (!Uuid.allows(communityId)) return null;
   const community = await readCommunity({ id: communityId });
-  if (!community) return null;
+  // Removed, deleted, or age-gated for someone who has not declared 16+: it does not exist for them.
+  if (!community || !ageAllows(viewer, community)) return null;
   const restricted = community.postingRestrictedToMods;
   const summary = community.summaryMd
     ? renderer.render(community.summaryMd, { excerptLength: 240 }).excerpt
@@ -75,7 +97,8 @@ async function panelFor(communityId: string, viewer: SessionView, renderer: Mark
     summary: summary || null,
     warning: community.postingWarning,
     rules: community.rules.map(({ title, bodyMd }) => ({ title, html: bodyMd ? renderer.render(bodyMd).html : null })),
-    sensitive: community.sensitive,
+    // An NSFL community marks every post sensitive too (createPost).
+    sensitive: community.sensitive || community.nsfl,
     restricted,
     canPost: await canPostIn(viewer, { id: community.actor.id, restricted }),
   };
@@ -103,7 +126,7 @@ async function editTarget(
     url: view.url,
     bodyMd: page.body?.kind === 'markdown' ? page.body.source : '',
     // A community age-gated as sensitive marks every post in it; the post's own flag is the rest.
-    sensitive: view.sensitive || community?.sensitive === true,
+    sensitive: view.sensitive || community?.sensitive === true || community?.nsfl === true,
   };
 }
 
@@ -144,12 +167,16 @@ export const loadComposer = createServerFn({ method: 'GET' })
     };
   });
 
-/** The panel for a community picked in the form. Null for one that does not exist (or no session). */
+/**
+ * The panel for a community picked in the form; `panel` is null for one that does not exist for
+ * this viewer (removed, deleted, age-gated without a 16+ declaration) or without a session. Wrapped
+ * because a server function that returns a bare null is answered with a 500.
+ */
 export const loadCommunityPanel = createServerFn({ method: 'GET' })
   .validator(type({ id: 'string' }))
-  .handler(async ({ data }): Promise<CommunityPanel | null> => {
+  .handler(async ({ data }): Promise<{ panel: CommunityPanel | null }> => {
     const session = await pageSession();
-    return session ? panelFor(data.id, session.view, await createMarkdownRenderer()) : null;
+    return { panel: session ? await panelFor(data.id, session.view, await createMarkdownRenderer()) : null };
   });
 
 /**

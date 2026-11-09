@@ -15,19 +15,21 @@ let poster: BrowserContext;
 let moderator: BrowserContext;
 let unverified: BrowserContext;
 let banned: BrowserContext;
+let young: BrowserContext;
 
 test.beforeAll(async ({ browser, baseURL }) => {
   world = seed();
   const { password, people } = world;
-  [poster, moderator, unverified, banned] = await Promise.all([
+  [poster, moderator, unverified, banned, young] = await Promise.all([
     signedIn(browser, baseURL!, people.poster, password),
     signedIn(browser, baseURL!, people.moderator, password),
     signedIn(browser, baseURL!, people.unverified, password),
     signedIn(browser, baseURL!, people.banned, password),
+    signedIn(browser, baseURL!, people.young, password),
   ]);
 });
 test.afterAll(async () => {
-  await Promise.all([poster, moderator, unverified, banned].map((context) => context.close()));
+  await Promise.all([poster, moderator, unverified, banned, young].map((context) => context.close()));
 });
 
 const body = (page: Page) => page.getByRole('textbox', { name: 'Body', exact: true });
@@ -56,6 +58,70 @@ test('the page hydrates, lists the communities and has no axe violations', async
   await expectAccessible(page);
   expect(log.hydrationProblems()).toEqual([]);
   await page.close();
+});
+
+test('the picker leaves out removed communities, hides age-gated ones from someone without a 16+ declaration and disables a remote mods-only one', async () => {
+  const { open, remote, adult, gated, gone, remoteStaff } = world.communities;
+  const declared = await poster.newPage();
+  await gotoHydrated(declared, '/submit');
+  await expect(community(declared, adult.handle)).toBeEnabled();
+  await expect(community(declared, gated.handle)).toBeEnabled();
+  await expect(community(declared, gone.handle)).toHaveCount(0);
+  // A remote community's own restriction applies as it does for a local one, and its handle has the host.
+  await expect(community(declared, remoteStaff.handle)).toBeDisabled();
+  // An NSFL community marks every post sensitive, as an NSFW one does.
+  await community(declared, gated.handle).check();
+  await expect(declared.getByRole('checkbox', { name: 'NSFW' })).toBeChecked();
+  await expect(declared.getByRole('checkbox', { name: 'NSFW' })).toBeDisabled();
+  await declared.close();
+
+  const minor = await young.newPage();
+  await gotoHydrated(minor, '/submit');
+  await expect(community(minor, open.handle)).toBeEnabled();
+  await expect(community(minor, remote.handle)).toBeEnabled();
+  for (const hidden of [adult, gated, gone]) await expect(community(minor, hidden.handle)).toHaveCount(0);
+  await expect(community(minor, remoteStaff.handle)).toBeDisabled();
+  // Asking for one by name does not start its panel either.
+  await gotoHydrated(minor, `/submit?community=${adult.handle}`);
+  await expect(minor.getByRole('complementary', { name: 'Community rules' })).toContainText('Choose a community');
+  await minor.close();
+});
+
+test('the panel does not exist for an age-gated community when the viewer has not declared 16+', async () => {
+  const { open, adult, gated } = world.communities;
+  /** Chooses `open` in the picker, then asks for another community's panel the way the page does. */
+  async function askPanel(page: Page) {
+    const call = page.waitForRequest((request) => request.url().includes('/_serverFn/') && request.url().includes(open.id));
+    await community(page, open.handle).check();
+    const url = (await call).url();
+    await expect(page.getByRole('complementary', { name: 'Community rules' })).toContainText(open.handle);
+    return (id: string) =>
+      page.evaluate(
+        async (target) => {
+          const response = await fetch(target);
+          return { status: response.status, text: await response.text() };
+        },
+        url.replace(open.id, id),
+      );
+  }
+
+  const minor = await young.newPage();
+  await gotoHydrated(minor, '/submit');
+  const askAsMinor = await askPanel(minor);
+  // The call succeeds and carries no panel, so nothing says the community is there.
+  for (const gate of [adult, gated]) {
+    const answer = await askAsMinor(gate.id);
+    expect(answer.status).toBe(200);
+    expect(answer.text).not.toContain(gate.handle.split('@')[0]);
+  }
+  await minor.close();
+
+  const declared = await poster.newPage();
+  await gotoHydrated(declared, '/submit');
+  const askAsDeclared = await askPanel(declared);
+  // The same call for someone who declared 16+ answers with the panel.
+  expect((await askAsDeclared(adult.id)).text).toContain(adult.handle);
+  await declared.close();
 });
 
 test('a moderator can pick the restricted community', async () => {
