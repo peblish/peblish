@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, test } from 'vitest';
 import { authorize } from '../authz/authorize.ts';
 import { db } from '../db/read.ts';
 import { actors, communityLanguages } from '../db/tables/actors.ts';
-import { communityModerators } from '../db/tables/moderation.ts';
+import { communityModerators, modlog } from '../db/tables/moderation.ts';
 import { outbox } from '../db/tables/outbox.ts';
 import { writer } from '../db/write.ts';
 import { readModlog } from '../modlog/read.ts';
@@ -201,6 +201,29 @@ describe('community.update', () => {
       sql`select (select xmin::text from modlog where id = ${edits[0]!.id}) = (select xmin::text from actors where id = ${community.id}) as same`,
     );
     expect(same?.same).toBe(true);
+  });
+
+  test('discoverable and indexable can be set, and the modlog row names only the fields that changed', async () => {
+    const { people, community } = await setup();
+    const owner = person(people.member.id);
+    expect(await row(community.id)).toMatchObject({ discoverable: true, indexable: true });
+    // The form sends everything: only the differing fields are logged, in a stable order.
+    await updateCommunityAs(owner, community.id, {
+      displayName: 'Local news',
+      description: 'A new sidebar',
+      sensitive: false,
+      postingRestrictedToMods: true,
+      postingWarning: 'Read the rules before you post.',
+      discoverable: false,
+      indexable: true,
+      languages: ['de', 'en'],
+      rules: [{ title: 'Be civil', body: 'Changed' }, { title: 'Stay on topic' }, { title: 'No spam' }],
+    });
+    expect(await row(community.id)).toMatchObject({ discoverable: false, indexable: true, postingRestrictedToMods: true });
+    await updateCommunityAs(owner, community.id, { displayName: 'Local news' });
+    const entries = await db().select({ details: modlog.details }).from(modlog).orderBy(modlog.createdAt);
+    expect(entries.at(-2)?.details).toEqual({ fields: ['postingRestrictedToMods', 'discoverable', 'description', 'rules'] });
+    expect(entries.at(-1)?.details).toEqual({ fields: [] });
   });
 
   test('a moderator removed after authorize() is refused by the recheck, with nothing written', async () => {

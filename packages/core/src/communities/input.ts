@@ -33,6 +33,9 @@ export const CommunityInput = type({
   'nsfl?': 'boolean',
   'postingRestrictedToMods?': 'boolean',
   'postingWarning?': postingWarning.or('null'),
+  /** Search consent, federated as Mastodon's discoverable and indexable: false opts out of directories and search engines. */
+  'discoverable?': 'boolean',
+  'indexable?': 'boolean',
   'languages?': language.array().atMostLength(communityLanguagesMax),
   'rules?': CommunityRuleInput.array().atMostLength(communityRulesMax),
 });
