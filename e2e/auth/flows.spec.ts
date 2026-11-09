@@ -246,17 +246,23 @@ test.describe('without JavaScript', () => {
   });
 });
 
-test('five wrong sign-ins for one account, then the sixth is told to wait', async ({ page }) => {
-  const nobody = `${unique('nobody')}@example.test`;
-  await gotoHydrated(page, '/auth/sign-in');
-  const tryOnce = async () => {
-    const answer = page.waitForResponse(
-      (response) => response.request().method() === 'POST' && new URL(response.url()).pathname === '/auth/sign-in',
-    );
-    await signIn(page, nobody, 'not the password');
-    return (await answer).status();
-  };
-  for (let i = 0; i < 5; i++) expect(await tryOnce()).toBe(400);
-  expect(await tryOnce()).toBe(429);
-  await expect(page.getByRole('alert')).toHaveText('Too many attempts. Wait a few minutes and try again.');
+test.describe('the sign-in limit', () => {
+  // Six sign-ins from one address would leave little of its budget for the specs that sign in from 127.0.0.1
+  // (the web server trusts X-Forwarded-For in e2e, playwright.config.ts). This address is documentation space (RFC 5737).
+  test.use({ extraHTTPHeaders: { 'x-forwarded-for': '192.0.2.50' } });
+
+  test('five wrong sign-ins for one account, then the sixth is told to wait', async ({ page }) => {
+    const nobody = `${unique('nobody')}@example.test`;
+    await gotoHydrated(page, '/auth/sign-in');
+    const tryOnce = async () => {
+      const answer = page.waitForResponse(
+        (response) => response.request().method() === 'POST' && new URL(response.url()).pathname === '/auth/sign-in',
+      );
+      await signIn(page, nobody, 'not the password');
+      return (await answer).status();
+    };
+    for (let i = 0; i < 5; i++) expect(await tryOnce()).toBe(400);
+    expect(await tryOnce()).toBe(429);
+    await expect(page.getByRole('alert')).toHaveText('Too many attempts. Wait a few minutes and try again.');
+  });
 });

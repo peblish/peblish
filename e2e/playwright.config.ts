@@ -41,6 +41,9 @@ export default defineConfig({
           DATABASE_URL: laneDatabaseUrl(),
           // The component gallery at /kit (the UI specs and the payload budget's font route) answers 404 without it.
           PEBLISH_UI_KIT: '1',
+          // A spec that must fail many sign-ins (e2e/auth/flows.spec.ts) names its own client address in
+          // X-Forwarded-For, so it does not spend the budget every other spec signs in under.
+          PEBLISH_TRUSTED_PROXY: 'traefik',
         },
         reuseExistingServer: !process.env.CI,
         timeout: 30_000,
