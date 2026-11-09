@@ -59,7 +59,15 @@
     "you.queue": "Moderation queue",
     "you.queueOpen": "Moderation queue, {count} open",
     "account.admin": "Admin",
-    "page.blocks": "Blocks"
+    "page.blocks": "Blocks",
+    "admin.tabs": "Admin sections",
+    "admin.tab.settings": "Settings",
+    "admin.tab.pages": "Pages",
+    "admin.tab.reports": "Reports",
+    "admin.tab.bans": "Bans",
+    "admin.tab.peers": "Peers",
+    "admin.tab.media": "Media",
+    "admin.tab.registration": "Registration and invites"
   },
   "de": {
     "tagline": "Gemeinschaften im Fediverse.",
@@ -121,6 +129,14 @@
     "you.queue": "Moderationswarteschlange",
     "you.queueOpen": "Moderationswarteschlange, {count} offen",
     "account.admin": "Verwaltung",
-    "page.blocks": "Blockierungen"
+    "page.blocks": "Blockierungen",
+    "admin.tabs": "Verwaltungsbereiche",
+    "admin.tab.settings": "Einstellungen",
+    "admin.tab.pages": "Seiten",
+    "admin.tab.reports": "Meldungen",
+    "admin.tab.bans": "Sperren",
+    "admin.tab.peers": "Instanzen",
+    "admin.tab.media": "Medien",
+    "admin.tab.registration": "Registrierung und Einladungen"
   }
 }

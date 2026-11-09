@@ -11,6 +11,7 @@ import { useState } from 'react';
 import { useTranslate } from '../../../i18n/use-translate.ts';
 import { forbidden, formSession, pageSession, principalOf, readForm, sameOrigin } from '../../../server/auth.ts';
 import { useRouteHydrated } from '../../../shell/hydration.ts';
+import { adminPaths } from '../../../shell/paths.ts';
 import { asFormError } from '../../auth/-ui/errors.ts';
 import { AuthForm, Field } from '../../auth/-ui/form.tsx';
 import { authHead, SearchText, useDate } from '../../auth/-ui/page.tsx';
@@ -110,6 +111,8 @@ function Registration() {
           <b>{t('invites', 'admin.registration')}</b> {t('invites', data.registration.enabled ? 'admin.inviteOnly' : 'admin.paused')}
         </span>
         <span>{t('invites', 'admin.cap', { count: data.registration.accounts, cap: data.registration.cap })}</span>
+        {/* The switch and the cap are changed in the admin settings (lane ADM). */}
+        <a href={adminPaths.settings}>{t('invites', 'admin.settingsLink')}</a>
       </div>
       <AuthForm action="/admin/registration" label={t('invites', 'admin.createLabel')} error={asFormError(search.error)}>
         <div className="invite-create">

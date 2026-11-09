@@ -59,6 +59,15 @@ test('the admin signs in with a TOTP code and creates an invite', async ({ page 
     expect([path, response?.status(), response?.headers()['cache-control']]).toEqual([path, 200, 'private, no-store']);
   }
   await gotoHydrated(page, '/admin/registration');
+  // An admin sees every admin tab, the You group and the Admin entry in the account menu.
+  const tabs = page.getByRole('navigation', { name: 'Admin sections' });
+  await expect(tabs.getByRole('link')).toHaveText(['Settings', 'Pages', 'Reports', 'Bans', 'Peers', 'Media', 'Registration and invites']);
+  await expect(tabs.getByRole('link', { name: 'Registration and invites' })).toHaveAttribute('aria-current', 'page');
+  await expect(page.getByRole('navigation', { name: 'You' }).getByRole('link')).toHaveText(['Inbox', 'Moderation queue']);
+  await expect(page.locator('.pb-account .pb-menu__panel').getByRole('link', { name: 'Admin', exact: true })).toHaveAttribute(
+    'href',
+    '/admin/settings',
+  );
   await page.getByLabel('Label').fill(`e2e ${person.name}`);
   await page.getByLabel('Max uses').fill('2');
   await page.getByRole('button', { name: 'Create' }).click();
@@ -109,6 +118,10 @@ test('TOTP turns on with a code and shows the recovery codes once', async ({ pag
   await gotoHydrated(page, '/auth/sign-in');
   await signIn(page, person.name, person.password);
   await landed(page, '/');
+  // A member who moderates nothing: the Inbox and no Moderation queue; no admin tabs on an admin page.
+  await expect(page.getByRole('navigation', { name: 'You' }).getByRole('link')).toHaveText(['Inbox']);
+  await gotoHydrated(page, '/admin/registration');
+  await expect(page.getByRole('navigation', { name: 'Admin sections' })).toHaveCount(0);
   await gotoHydrated(page, '/settings/security');
   await page.getByLabel('Confirm your password to start').fill(person.password);
   await page.getByRole('button', { name: 'Turn on' }).click();

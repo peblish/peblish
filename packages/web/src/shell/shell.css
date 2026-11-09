@@ -66,6 +66,26 @@
     background: var(--pb-hover);
   }
 
+  /* The admin pages' tab bar (admin-tabs): plain links, the current one underlined. */
+  .admin-tabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 16px;
+    max-width: 960px;
+    margin: 16px auto 0;
+    padding: 0 16px;
+    border-bottom: 1px solid var(--pb-line);
+  }
+
+  .admin-tabs a {
+    padding: 6px 0;
+  }
+
+  .admin-tabs a[aria-current='page'] {
+    box-shadow: inset 0 -2px var(--pb-fg);
+    font-weight: 700;
+  }
+
   /* A count beside a link (Inbox, Moderation queue); the link's aria-label says it in words. */
   .pb-count {
     margin-left: auto;
