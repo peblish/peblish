@@ -13,6 +13,7 @@ import { decodeCursor, encodeCursor, type Cursor } from '../feeds/cursor.ts';
 import { defaultPageSize, maxPageSize } from '../feeds/input.ts';
 import { visible } from '../feeds/read.ts';
 import { postViews, type PostBody, type Viewer } from '../posts/read.ts';
+import type { ProfileSort, ProfileTab } from './input.ts';
 
 // The read model of a profile page (S18): who the person is, and their posts and comments for
 // the viewer. Activity goes through the feed query's own conditions (`visible`), so the NSFW
@@ -167,11 +168,6 @@ export async function readProfile(handle: string, viewer: Viewer, q: Queryable =
   };
 }
 
-export const profileTabs = ['overview', 'posts', 'comments'] as const;
-export type ProfileTab = (typeof profileTabs)[number];
-export const profileSorts = ['new', 'top'] as const;
-export type ProfileSort = (typeof profileSorts)[number];
-
 /** A comment in the activity list: its own view and text, and where it was said. */
 export type ProfileComment = { view: CommentView; body: PostBody | null; post: { id: Uuid; title: string }; community: ActorRef };
 export type ProfileItem = { kind: 'post'; post: PostView } | { kind: 'comment'; comment: ProfileComment };
@@ -205,18 +201,22 @@ function after(cursor: Cursor | null, sort: ProfileSort, c: { published: SQL; sc
 const order = (sort: ProfileSort, c: { published: SQL; score: SQL; id: SQL }) =>
   sort === 'top' ? [sql`${c.score} desc`, sql`${c.id} desc`] : [sql`${c.published} desc nulls last`, sql`${c.id} desc`];
 
-/** The person's posts the viewer may see: the feed's conditions, scoped to the author. */
-async function postsPage(q: Queryable, request: ActivityRequest, viewer: Viewer, cursor: Cursor | null, asOf: number, want: number) {
+/** The query for the person's posts the viewer may see: the feed's conditions, scoped to the author. */
+function postsQuery(q: Queryable, request: ActivityRequest, viewer: Viewer, cursor: Cursor | null, asOf: number, want: number) {
   const columns = { published: sql`${posts.publishedAt}`, score: sql`(${posts.upvotes} - ${posts.downvotes})`, id: sql`${posts.id}` };
   const conditions = visible('all', viewer, asOf, { authorId: request.personId });
   const next = after(cursor, request.sort, columns);
   if (next) conditions.push(next);
-  const rows = await q
+  return q
     .select({ ...getTableColumns(posts), pub: publishedMicros(sql`${posts.publishedAt}`) })
     .from(posts)
     .where(and(...conditions))
     .orderBy(...order(request.sort, columns))
     .limit(want);
+}
+
+async function postsPage(q: Queryable, request: ActivityRequest, viewer: Viewer, cursor: Cursor | null, asOf: number, want: number) {
+  const rows = await postsQuery(q, request, viewer, cursor, asOf, want);
   const views = new Map((await postViews(rows, viewer, q)).map((view) => [view.id, view]));
   return rows.flatMap((row) => {
     const post = views.get(row.id);
@@ -226,8 +226,8 @@ async function postsPage(q: Queryable, request: ActivityRequest, viewer: Viewer,
   });
 }
 
-/** The person's live comments on posts the viewer may see. */
-async function commentsPage(q: Queryable, request: ActivityRequest, viewer: Viewer, cursor: Cursor | null, asOf: number, want: number) {
+/** The query for the person's live comments on posts the viewer may see. */
+function commentsQuery(q: Queryable, request: ActivityRequest, viewer: Viewer, cursor: Cursor | null, asOf: number, want: number) {
   const columns = {
     published: sql`${comments.publishedAt}`,
     score: sql`(${comments.upvotes} - ${comments.downvotes})`,
@@ -241,7 +241,7 @@ async function commentsPage(q: Queryable, request: ActivityRequest, viewer: View
   ];
   const next = after(cursor, request.sort, columns);
   if (next) conditions.push(next);
-  const rows = await q
+  return q
     .select({
       id: comments.id,
       apId: comments.apId,
@@ -264,6 +264,10 @@ async function commentsPage(q: Queryable, request: ActivityRequest, viewer: View
     .where(and(...conditions))
     .orderBy(...order(request.sort, columns))
     .limit(want);
+}
+
+async function commentsPage(q: Queryable, request: ActivityRequest, viewer: Viewer, cursor: Cursor | null, asOf: number, want: number) {
+  const rows = await commentsQuery(q, request, viewer, cursor, asOf, want);
   if (rows.length === 0) return [];
 
   const [author, communities, mine] = await Promise.all([
@@ -343,6 +347,18 @@ async function commentsPage(q: Queryable, request: ActivityRequest, viewer: View
       },
     ];
   });
+}
+
+/**
+ * The two queries a page of activity runs for its first page, for the performance test to
+ * EXPLAIN the very statements.
+ */
+export function activityQueries(request: ActivityRequest, viewer: Viewer, q: Queryable = db()) {
+  const want = Math.min(Math.max(Math.trunc(request.limit ?? defaultPageSize), 1), maxPageSize) + 1;
+  return {
+    posts: postsQuery(q, request, viewer, null, Date.now(), want),
+    comments: commentsQuery(q, request, viewer, null, Date.now(), want),
+  };
 }
 
 /**
