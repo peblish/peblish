@@ -83,21 +83,23 @@ export async function fetchMissing(
   const since = new Date(now - lookbackMs).toISOString();
   const here = await localOrigin();
   // The latest skipped activity for each missing object and each community that announced it,
-  // newest first, in one read. Objects this process will not ask for now (our own, settled, backed
-  // off) are left out by the query itself, before the limit, so a crowd of newer ones that cannot
-  // be fetched never keeps an older one that can from being reached.
+  // newest first, in one read. A batch waiting for several objects names them all in one error
+  // (`target.missing <id1> <id2> ...`, inbound/reasons.ts), so each target gets a row of its own.
+  // Objects this process will not ask for now (our own, settled, backed off) are left out by the
+  // query itself, before the limit, so a crowd of newer ones that cannot be fetched never keeps
+  // an older one that can from being reached.
   const waiting: Waiting[] = await db().execute<Waiting>(sql`
     with skip(key) as (select * from jsonb_array_elements_text(${JSON.stringify(notDue(now))}::jsonb))
     select target, "communityId", community, announce from (
-      select distinct on (r.error, r.actor_ap_id)
-        substr(r.error, ${prefix.length + 1}::int) as target, a.id as "communityId", r.actor_ap_id as community,
-        r.activity_id as announce, r.received_at
+      select distinct on (t.target, r.actor_ap_id)
+        t.target, a.id as "communityId", r.actor_ap_id as community, r.activity_id as announce, r.received_at
       from ${inboxRaw} r
       join ${actors} a on a.ap_id = r.actor_ap_id and a.kind = 'Group' and not a.local and a.deleted_at is null
+      cross join lateral regexp_split_to_table(substr(r.error, ${prefix.length + 1}::int), ' ') as t(target)
       where r.state = 'skipped' and r.error like ${`${prefix}%`} and r.received_at > ${since}::timestamptz
-        and not starts_with(r.error, ${`${prefix}${here}/`})
-        and not exists (select 1 from skip where skip.key = r.actor_ap_id || chr(10) || substr(r.error, ${prefix.length + 1}::int))
-      order by r.error, r.actor_ap_id, r.received_at desc
+        and t.target <> '' and not starts_with(t.target, ${`${here}/`})
+        and not exists (select 1 from skip where skip.key = r.actor_ap_id || chr(10) || t.target)
+      order by t.target, r.actor_ap_id, r.received_at desc
     ) latest
     order by received_at desc, target desc, community desc
     limit ${scan}`);

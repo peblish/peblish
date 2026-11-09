@@ -96,6 +96,25 @@ describe('objects that skipped activities are waiting for', () => {
     expect(asked.has(own)).toBe(false);
   });
 
+  test('a batch waiting for several objects has each of them fetched', async () => {
+    const targets = [`${lemmy}/post/410`, `${lemmy}/post/411`];
+    const own = `${new URL(world.community.apId).origin}/ap/post/410`;
+    // One skipped row names all of the batch's missing objects, one space apart (inbound/reasons.ts).
+    await seedInboxRow('{}', {
+      state: 'skipped',
+      error: `target.missing ${targets[0]} ${own} ${targets[1]}`,
+      actorApId: lab,
+      activityId: activityId(lemmy, 'announce'),
+      activityType: 'Announce',
+    });
+    const server = peer({ [targets[0]!]: { body: lemmyPage(410) }, [targets[1]!]: { body: lemmyPage(411) } });
+    expect(await fetchMissing({ fetch: server.fetch, gapMs: 0 })).toEqual({ looked: 2, stored: 2 });
+    for (const target of targets) expect(server.requests.filter((request) => request.url === target)).toHaveLength(1);
+    // Our own object in the same row is never asked for.
+    expect(server.requests.some((request) => request.url === own)).toBe(false);
+    expect(await db().select().from(posts).where(eq(posts.apId, targets[1]!))).toHaveLength(1);
+  });
+
   test('are left alone when no remote community announced the activity', async () => {
     const target = `${lemmy}/post/420`;
     const direct = await deliverRow({ id: activityId(lemmy, 'like'), type: 'Like', actor: lemmyuser, object: target }, (row) =>
