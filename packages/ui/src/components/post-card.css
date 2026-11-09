@@ -75,6 +75,9 @@
   }
 
   .pb-post__title a {
+    /* A one-line title is a 20px link: WCAG 2.2's 24px target size when another link is within 12px. */
+    display: inline-block;
+    min-block-size: 24px;
     text-decoration: none;
   }
 
