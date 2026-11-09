@@ -2,6 +2,7 @@ import { contentCounts, findActorByHandle, listSiteBans, type SiteBanRow } from 
 import type { ActorRef } from '@peblish/schema/views';
 import { redirect } from '@tanstack/react-router';
 import { createServerFn } from '@tanstack/react-start';
+import { setResponseStatus } from '@tanstack/react-start/server';
 import { type } from 'arktype';
 import { pageSession } from '../../../server/auth.ts';
 import { adminPaths } from '../../../shell/paths.ts';
@@ -20,8 +21,11 @@ export const loadBans = createServerFn({ method: 'GET' })
   .handler(async ({ data }): Promise<BansData> => {
     const session = await pageSession();
     if (!session) throw redirect({ to: '/auth/sign-in', search: { redirect: adminPaths.bans } });
-    if (session.role !== 'admin') return { access: 'not-admin' };
-    if (session.view.siteRole !== 'admin') return { access: 'needs-two-factor' };
+    // Signed in but not an admin with two-factor on: the denial copy, answered as a 403 (as the report queue does).
+    if (session.role !== 'admin' || session.view.siteRole !== 'admin') {
+      setResponseStatus(403);
+      return { access: session.role !== 'admin' ? 'not-admin' : 'needs-two-factor' };
+    }
     const bans = await listSiteBans();
     const handle = data.person?.trim();
     if (!handle) return { access: 'ok', bans, candidate: null };

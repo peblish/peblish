@@ -89,6 +89,12 @@ test('a visitor signed out is sent to sign in, and a member without the admin ro
   await landed(visitor, '/admin/settings');
   await expect(visitor.getByRole('alert')).toHaveText('Only site admins can use this page.');
   await expect(visitor.getByRole('button', { name: 'Save changes' })).toHaveCount(0);
+  // Each admin tab answers its denial as a 403, as the report queue does.
+  for (const path of ['/admin/settings', '/admin/pages', '/admin/pages/rules/en', '/admin/bans', '/admin/peers']) {
+    const response = await visitor.goto(path);
+    expect(response?.status(), path).toBe(403);
+    await expect(visitor.getByRole('alert'), path).toBeVisible();
+  }
   await visitor.context().close();
 });
 
