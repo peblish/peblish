@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { db } from '@peblish/core/db/read';
+import { actors } from '@peblish/core/db/tables/actors';
 import { inboxRaw } from '@peblish/core/db/tables/federation';
 import { readSetting } from '@peblish/core/settings/read';
 import { tx } from '@peblish/core/tx/tx';
@@ -16,6 +17,9 @@ import { takeIntake, takeKeyFetch } from './throttle.ts';
 //   inbox.enabled off  503 + Retry-After   the one maintenance answer an inbox may give
 //   body over 512 KiB  413                 by Content-Length, or counted as a chunked body streams in
 //   bad signature      401                 draft-cavage, the key's owner is the activity's actor
+//   an account's own   202                 a Delete of an account we do not hold, signed with a key that can no
+//   Delete, no key                         longer be fetched (Mastodon sends it after the account is gone):
+//                                          nothing to apply, answered so the peer stops retrying
 //   not an activity    400
 //   throttled          429 + Retry-After   too many unknown keys at once, or the signer or its instance is over
 //                                          its request rate or has too many bytes waiting in inbox_raw
@@ -106,6 +110,25 @@ export type ReceiveOptions = {
   fetch?: Fetcher;
 };
 
+/**
+ * Whether `body` is an account's Delete of itself for an account we do not hold (or hold as
+ * deleted): there is nothing in it to apply, and no one to ask for the key of an actor that is
+ * gone. Nothing is stored: the body is not authenticated.
+ */
+async function isGoneAccountsDelete(body: Uint8Array): Promise<boolean> {
+  let json: unknown;
+  try {
+    json = JSON.parse(new TextDecoder().decode(body));
+  } catch {
+    return false;
+  }
+  if (!isObject(json) || json.type !== 'Delete') return false;
+  const actor = idOf(json.actor);
+  if (actor === null || idOf(json.object) !== actor) return false;
+  const [held] = await db().select({ deletedAt: actors.deletedAt }).from(actors).where(eq(actors.apId, actor));
+  return !held || held.deletedAt !== null;
+}
+
 /** Answers one inbox POST. */
 export async function receiveInbound(request: Request, options: ReceiveOptions = {}): Promise<Response> {
   try {
@@ -124,7 +147,9 @@ export async function receiveInbound(request: Request, options: ReceiveOptions =
     };
     const signature = await verifyInboundSignature(request, body, { fetch: limited });
     if (!signature.ok) {
-      return throttled ? refuse(429, 'slow down', retryAfter) : refuse(401, `signature: ${signature.reason}`);
+      if (throttled) return refuse(429, 'slow down', retryAfter);
+      if (signature.reason === 'key_unknown' && (await isGoneAccountsDelete(body))) return refuse(202, 'skipped: actor.unresolvable');
+      return refuse(401, `signature: ${signature.reason}`);
     }
 
     let activity: unknown;

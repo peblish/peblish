@@ -130,6 +130,37 @@ describe('receiving an activity', () => {
   });
 });
 
+describe('a Delete from an account whose key cannot be fetched', () => {
+  const gone = 'https://gone.test/users/x';
+  const accountDelete = (actor: string, object = actor) => ({
+    id: `${actor}#delete`,
+    type: 'Delete',
+    actor,
+    object,
+    to: ['https://www.w3.org/ns/activitystreams#Public'],
+  });
+  const signedAs = (actor: string) => ({ keyId: `${actor}#main-key`, privateKeyPem: world.peers.mallory.keys.privateKeyPem });
+
+  test('for an account we do not hold is answered 202 and nothing is stored, so the peer stops retrying', async () => {
+    const { fetch } = stubFetch({ [gone]: { status: 410 } });
+    const response = await receiveInbound(await signed(JSON.stringify(accountDelete(gone)), signedAs(gone)), { fetch });
+    expect(response.status).toBe(202);
+    expect(await rows()).toEqual([]);
+  });
+
+  test('is still 401 when we hold the account, when it deletes something else, or when it is not a Delete', async () => {
+    const { fetch } = stubFetch({ [gone]: { status: 410 } });
+    const attempt = async (activity: object, as: { keyId: string; privateKeyPem: string }) =>
+      (await receiveInbound(await signed(JSON.stringify(activity), as), { fetch })).status;
+    // A held, living account that signs with a key we do not know may be a rotated key: the peer should retry.
+    const held = { keyId: `${hosts.lemmyuser}#other-key`, privateKeyPem: world.peers.mallory.keys.privateKeyPem };
+    expect(await attempt(accountDelete(hosts.lemmyuser), held)).toBe(401);
+    expect(await attempt(accountDelete(gone, 'https://gone.test/post/1'), signedAs(gone))).toBe(401);
+    expect(await attempt({ ...accountDelete(gone), type: 'Like' }, signedAs(gone))).toBe(401);
+    expect(await rows()).toEqual([]);
+  });
+});
+
 describe('what one signer, and its instance, may send', () => {
   test('a repeat of a body, or of an activity id within the hour, is answered 202 and stored once', async () => {
     const body = JSON.stringify(like());
