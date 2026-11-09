@@ -21,7 +21,7 @@ import { addToBlocklist, removeFromBlocklist } from './list.ts';
 import { confirmQuarantined, holdQuarantined, releaseQuarantined } from './review.ts';
 import { findServable } from './serve.ts';
 import { scanUpload } from './scan.ts';
-import { mediaBlocklist } from './tables.ts';
+import { mediaBlocklist, mediaScans } from './tables.ts';
 import { mediaUrl } from './usage.ts';
 
 const store = memoryStore();
@@ -293,6 +293,38 @@ test('failed images lose their bytes in the purge pass', async () => {
   expect((await purgePass({ store })).purged).toBe(1);
   expect([(await rowOf(failed.id)).storageKey, store.objects.has(failed.storageKey!)]).toEqual([null, false]);
   expect((await outboxEvents()).at(-1)).toEqual({ type: 'media.purged', v: 1, mediaId: failed.id, cause: 'failed' });
+});
+
+test('held images and failing deletions cannot fill the purge batch', async () => {
+  const until = new Date(Date.now() + 365 * day);
+  // First in line: two confirmed images whose bytes a hold keeps.
+  for (const reference of ['AFP-1', 'AFP-2']) {
+    const held = await quarantined();
+    expect(await holdQuarantined(asAdmin(), { mediaId: held.id, reference, until })).toMatchObject({ ok: true });
+    expect((await confirmQuarantined(asAdmin(), { mediaId: held.id, removePosts: false }, { store })).ok).toBe(true);
+  }
+  // Then two failed images whose deletes keep failing, and one whose delete works.
+  const stuck = [await seedMedia(store, { state: 'failed' }), await seedMedia(store, { state: 'failed' })];
+  const fine = await seedMedia(store, { state: 'failed' });
+  const flaky = {
+    ...store,
+    async delete(key: string) {
+      if (stuck.some((row) => row.storageKey === key)) throw new Error('AccessDenied');
+      await store.delete(key);
+    },
+  };
+  const now = new Date();
+  // The held images are not candidates at all; the two stuck deletions take the batch once and back off.
+  expect((await purgePass({ store: flaky, now, batch: 2 })).purged).toBe(0);
+  expect((await purgePass({ store: flaky, now, batch: 2 })).purged).toBe(1);
+  expect((await rowOf(fine.id)).storageKey).toBeNull();
+  for (const row of stuck) {
+    const [scan] = await db().select().from(mediaScans).where(eq(mediaScans.mediaId, row.id));
+    expect(scan?.purgeAttempts).toBe(1);
+    expect(scan!.purgeRetryAt!.getTime()).toBeGreaterThan(now.getTime());
+  }
+  // After the back-off they are tried again.
+  expect((await purgePass({ store, now: new Date(now.getTime() + 3_600_000), batch: 2 })).purged).toBe(2);
 });
 
 test('adding a hash quarantines the clean copies, each with evidence; bad and repeated hashes are refused; removal leaves decided images alone', async () => {
