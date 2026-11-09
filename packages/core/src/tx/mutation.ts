@@ -66,10 +66,11 @@ export interface Mutation<A extends ActionName, I, O> {
  * (requiresRecheck): the type demands it and definition throws without it, so an internal
  * mutation behind a wrapper cannot skip it either.
  *
- * recheck: 'inner' is for an outer mutation that must lock a row before the recheck reads it
- * (the acting actor's row, which the principal refresh reads FOR SHARE): its body locks, then
- * runs a rechecked mutation of the same action with .within on the handle it was given. The
- * outer throws if its body returns without having done so.
+ * recheck: 'inner' is for an outer mutation that must take a lock before the recheck reads its
+ * rows (updateProfile locks the acting actor's row, which the principal refresh reads FOR SHARE;
+ * addBlock takes a per-blocker advisory lock): its body locks, then runs a rechecked mutation of
+ * the same action with .within on the handle it was given. The outer throws if its body returns
+ * without having done so.
  */
 export function defineMutation<A extends ActionName, E extends EventType, I, O>(
   spec: {
