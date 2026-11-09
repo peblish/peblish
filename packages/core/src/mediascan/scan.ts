@@ -51,7 +51,10 @@ async function decide(
   if (config.localOnly) return { outcome: { state: 'clean' }, retryable: false };
   const providers = deps.providers ?? configuredProviders(config);
   if (providers.length === 0) return failed('no scan provider is configured');
-  const object = await (deps.store ?? s3Store()).get(row.storageKey);
+  // A bucket outage is an outcome like a provider outage: retried, and final on the last attempt.
+  // The error itself is not kept (it can name the endpoint).
+  const object = await (deps.store ?? s3Store()).get(row.storageKey).catch(() => undefined);
+  if (object === undefined) return failed('the stored object could not be read', true);
   if (!object) return failed('the stored object is missing', true);
   const sha256 = createHash('sha256').update(object.body).digest('hex');
   if (sha256 !== row.sha256) return failed('the stored object does not match its recorded hash');

@@ -91,6 +91,21 @@ test('a provider outage leaves the row pending for later tries and the fifth fai
   expect(scan).toMatchObject({ attempts: scanLimits.maxAttempts, leaseUntil: null, lastError: 'arachnid: Arachnid answered HTTP 503' });
 });
 
+test('a bucket read failure is retried like an outage, and the fifth attempt settles the row as failed', async () => {
+  const row = await seedMedia(store, { createdAt: minutesAgo(5) });
+  const broken = { ...store, get: () => Promise.reject(new Error('connect ECONNREFUSED 127.0.0.1:18490')) };
+  const start = Date.now();
+  for (let attempt = 1; attempt < scanLimits.maxAttempts; attempt++) {
+    expect(await scanPending({ store: broken, config: config(), now: () => new Date(start + attempt * 2 * scanLimits.leaseMs) })).toBe(1);
+    expect([attempt, await stateOf(row.id)]).toEqual([attempt, 'pending']);
+  }
+  await scanPending({ store: broken, config: config(), now: () => new Date(start + scanLimits.maxAttempts * 2 * scanLimits.leaseMs) });
+  expect(await stateOf(row.id)).toBe('failed');
+  const [scan] = await db().select().from(mediaScans).where(eq(mediaScans.mediaId, row.id));
+  expect(scan).toMatchObject({ attempts: scanLimits.maxAttempts, leaseUntil: null, lastError: 'the stored object could not be read' });
+  expect(stub.requests).toEqual([]);
+});
+
 test('with no provider configured the backstop fails a row at once rather than retrying it', async () => {
   const row = await seedMedia(store, { createdAt: minutesAgo(5) });
   await scanPending({ store, config: scanConfig({}) });
