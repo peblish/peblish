@@ -16,7 +16,7 @@ import { banFromCommunity, unbanFromCommunity } from '@peblish/core/moderation/b
 import { lockPost, unlockPost } from '@peblish/core/moderation/lock';
 import { pinPost, unpinPost } from '@peblish/core/moderation/pin';
 import { removeContent, restoreContent } from '@peblish/core/moderation/remove';
-import { createPostAs, deletePostAs, removePostAs, updatePostAs } from '@peblish/core/posts/actions';
+import { createPostAs, deletePostAs, updatePostAs } from '@peblish/core/posts/actions';
 import { voteAs } from '@peblish/core/votes/service';
 import { resolveRemoteActor } from '@peblish/federation/actors/resolve';
 import { mirrorNow } from '@peblish/federation/inbound/moderators/refresh';
@@ -206,7 +206,8 @@ export const peblish = {
     return pinned ? pinPost(await grant('mod.pin', me, { postId }), {}) : unpinPost(await grant('mod.unpin', me, { postId }), {});
   },
   async removePost(who: string, postId: Uuid, reason = 'lab') {
-    return value('mod.remove', await removePostAs(await as(who), postId, reason));
+    const me = await as(who);
+    return removeContent(await grant('mod.remove', me, { target: { kind: 'post', id: postId } }), { reason });
   },
   async restorePost(who: string, postId: Uuid, reason = 'lab') {
     const me = await as(who);
