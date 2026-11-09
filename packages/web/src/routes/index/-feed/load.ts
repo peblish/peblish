@@ -1,15 +1,11 @@
 import { defaultPageSize, Period, Sort, type FeedName } from '@peblish/core/feeds/input';
 import { readFeed } from '@peblish/core/feeds/read';
-import { isImageContentType } from '@peblish/core/media/image-src';
 import type { Viewer } from '@peblish/core/posts/read';
-import type { PostView } from '@peblish/schema/views';
 import { createServerFn } from '@tanstack/react-start';
 import { type } from 'arktype';
 import { pageSession } from '../../../server/auth.ts';
 import { createMarkdownRenderer } from '../../../server/markdown.ts';
-
-/** One post of a page: the view, and the picture the card may load (already through the proxy rule). */
-export type FeedItem = { post: PostView; thumbnailSrc: string | null };
+import { feedItem, type FeedItem } from './items.ts';
 
 /**
  * A feed page for the route loader (a server function: it runs on the server for a document
@@ -32,11 +28,7 @@ export const loadFeed = createServerFn({ method: 'GET' })
     // Remote pictures reach the viewer only through the signed proxy (decision 5): own-origin
     // URLs pass, remote ones are signed, anything else is null. An image post shows its image.
     const renderer = await createMarkdownRenderer();
-    const items = page.items.map((post): FeedItem => ({
-      // The card draws thumbnailSrc; the picture's own address stays out of the page data.
-      post: { ...post, thumbnailUrl: null },
-      thumbnailSrc: renderer.image(post.thumbnailUrl ?? (isImageContentType(post.urlContentType) ? post.url : null)),
-    }));
+    const items = page.items.map((post) => feedItem(post, renderer.image));
     return { ...base, signIn: false, items, next: page.next };
   });
 
