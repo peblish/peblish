@@ -233,6 +233,19 @@ describe("updateRemotePost, and the author's delete and undo", () => {
     expect((await outboxEvents()).map((event) => parseEvent(event).type)).toEqual(['post.created', 'post.updated']);
   });
 
+  test('an Update that only changes who is mentioned is an edit: the tags are stored and post.updated goes out, once', async () => {
+    const { author, create } = await setup();
+    const { id } = await create(record());
+    const update = async (post: RemotePost) => updateRemotePost(await grantFor('post.update', author, { postId: id }), post);
+    const mention = { type: 'Mention', href: 'https://lemmy.test/u/reader', name: '@reader@lemmy.test' };
+    const tagged = { type: 'Page', id: 'https://lemmy.test/post/1', tag: [mention] };
+    await update(record({ raw: tagged }));
+    expect((await row(id)).raw).toEqual(tagged);
+    // The same tags again, repeated, change nothing.
+    await update(record({ raw: { ...tagged, tag: [mention, mention] } }));
+    expect((await outboxEvents()).map((event) => parseEvent(event).type)).toEqual(['post.created', 'post.updated']);
+  });
+
   test("the peer's own `updated` is kept as sent, a redelivery of it is a no-op, and an older Update arriving later is ignored", async () => {
     const { author, create } = await setup();
     const { id } = await create(record());
