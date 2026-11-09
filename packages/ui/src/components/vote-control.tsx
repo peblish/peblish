@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ArrowDown, ArrowUp } from './icons.tsx';
+import { createVoteQueue, type Vote } from './vote-queue.ts';
 
-export type Vote = -1 | 0 | 1;
+export type { Vote };
 
 export interface VoteControlLabels {
   /** The group's name for assistive technology: "Vote". */
@@ -16,8 +17,9 @@ export interface VoteControlProps {
   myVote: Vote;
   /**
    * Called with the vote the viewer now holds: 1 or -1, or 0 when they take their vote back by
-   * pressing the same arrow again. The score and arrows change at once; if the returned
-   * promise rejects they go back to what they were.
+   * pressing the same arrow again. The score and arrows change at once. Calls never overlap:
+   * a choice made while one is pending waits, and only the newest is sent after it settles. If
+   * the returned promise rejects, the arrows go back to the last vote the server accepted.
    */
   onVote?: (value: Vote) => void | Promise<void>;
   /** The arrows cannot be used (signed out, locked); they stay visible but inert. */
@@ -38,16 +40,9 @@ export function VoteControl({ score, myVote, onVote, disabled, orientation = 've
   // A new value from the server replaces the optimistic one (derived state, set while rendering).
   if (state.base !== myVote) setState({ base: myVote, vote: myVote });
 
-  async function cast(value: 1 | -1) {
-    const previous = state.vote;
-    const next: Vote = previous === value ? 0 : value;
-    setState({ base: myVote, vote: next });
-    try {
-      await onVote?.(next);
-    } catch {
-      setState({ base: myVote, vote: previous });
-    }
-  }
+  const save = (value: Vote) => onVote?.(value);
+  const [queue] = useState(() => createVoteQueue({ initial: myVote, onChange: (vote) => setState((current) => ({ ...current, vote })) }));
+  useEffect(() => queue.sync(myVote), [queue, myVote]);
 
   const shown = score - myVote + state.vote;
   const classes = ['pb-vote', orientation === 'horizontal' && 'pb-vote--row', className].filter(Boolean).join(' ');
@@ -59,7 +54,7 @@ export function VoteControl({ score, myVote, onVote, disabled, orientation = 've
         aria-label={labels.up}
         aria-pressed={state.vote === 1}
         disabled={disabled}
-        onClick={() => cast(1)}
+        onClick={() => queue.press(1, save)}
       >
         <ArrowUp />
       </button>
@@ -70,7 +65,7 @@ export function VoteControl({ score, myVote, onVote, disabled, orientation = 've
         aria-label={labels.down}
         aria-pressed={state.vote === -1}
         disabled={disabled}
-        onClick={() => cast(-1)}
+        onClick={() => queue.press(-1, save)}
       >
         <ArrowDown />
       </button>

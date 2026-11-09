@@ -24,6 +24,7 @@ import { useCommentThreadLabels, useDensityLabels, usePostCardLabels, useReplyBa
 import { commentPath, communityPath, postPath, userPath } from '../../shell/paths.ts';
 import { usePrefs } from '../../shell/prefs.tsx';
 import { kitEnabled } from './-enabled.ts';
+import { SlowVotes } from './-slow-votes.tsx';
 import { deepThread, feed, now, posts, proseSample, thread } from './-samples.ts';
 import kitCss from './-kit.css?url';
 
@@ -163,6 +164,7 @@ function KitPage() {
               locale={locale}
             />
           </div>
+          <SlowVotes />
         </div>
       </section>
 
