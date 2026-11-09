@@ -34,6 +34,11 @@ export const events = {
     posts: 'number.integer',
     comments: 'number.integer',
   }),
-  /** Old rows of a queue table were deleted (the retention windows are in core/remote/prune.ts). */
-  'remote.pruned': type({ type: "'remote.pruned'", v: '1', table: "'inbox_raw' | 'deliveries'", rows: 'number.integer' }),
+  /** Old rows of a queue or bookkeeping table were deleted (the retention windows are in core/remote/prune.ts). */
+  'remote.pruned': type({
+    type: "'remote.pruned'",
+    v: '1',
+    table: "'inbox_raw' | 'deliveries' | 'inbox_dedupe' | 'throttles'",
+    rows: 'number.integer',
+  }),
 };
