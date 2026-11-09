@@ -4,7 +4,8 @@ import { actors } from '../../db/tables/actors.ts';
 import { allow, deny, forNoKeyUpdate, type PolicyRequest } from '../policy.ts';
 
 // Owned by lane E1: a local person edits their own profile. The body updates the actor row, so
-// the policy reads it FOR NO KEY UPDATE. Nothing is revoked by it, so there is no recheck.
+// the policy reads it FOR NO KEY UPDATE. The mutation locks the acting row first and rechecks
+// (a site ban refuses it).
 
 export const policies = {
   'profile.update': async ({ principal, subject, db, lock }: PolicyRequest<{ actorId: Uuid }>) => {

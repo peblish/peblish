@@ -6,10 +6,10 @@ import type { NotificationKind } from '../../notifications/view.ts';
 import { allow, deny, forNoKeyUpdate, forShare, type PolicyRequest } from '../policy.ts';
 
 // Owned by lane E2: the inbox. The instance writes notices (the notifications consumer runs as
-// the `scheduled` system job); the person they belong to marks them read. No policy here
-// rechecks: nothing writes the acting actor's row, and a notice for a person deleted in
-// between is removed by the purge their deletion triggers. A write body updates or deletes
-// the notice rows, so the policies read them FOR NO KEY UPDATE.
+// the `scheduled` system job); the person they belong to marks them read. The person's marks
+// recheck (a site ban refuses them); create and purge are the scheduled job's and do not. A
+// notice for a person deleted in between is removed by the purge their deletion triggers. A
+// write body updates or deletes the notice rows, so the policies read them FOR NO KEY UPDATE.
 
 export const policies = {
   /** The consumer writes a notice for a live local person; a repeat of the same cause is the mutation's no-op. */

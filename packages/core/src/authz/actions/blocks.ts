@@ -7,8 +7,9 @@ import { allow, deny, forShare, type PolicyRequest } from '../policy.ts';
 import { communityDenial, communityState } from '../state.ts';
 
 // Owned by lane E1: a local person blocks or unblocks a person, a community or an instance.
-// A block revokes nothing from anyone, so neither mutation rechecks and the reads take only
-// FOR SHARE (the insert's foreign key takes the same lock on the target anyway).
+// Both mutations recheck, so a site-banned person cannot block or unblock; block.add locks the
+// blocker's row before its recheck. The reads take only FOR SHARE (the insert's foreign key
+// takes the same lock on the target anyway).
 
 /** What a block names: a person or a community by actor id, an instance by its id. */
 export type BlockTarget = { kind: 'person'; actorId: Uuid } | { kind: 'community'; actorId: Uuid } | { kind: 'instance'; instanceId: Uuid };

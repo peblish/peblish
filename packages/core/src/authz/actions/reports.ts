@@ -8,9 +8,10 @@ import { allow, deny, type PolicyRequest, type PolicyResult } from '../policy.ts
 import { moderationAuthority } from '../roles.ts';
 import { communityDenial, communityState, contentState, isBanned, liveDenial, type StateRead } from '../state.ts';
 
-// Owned by lane REP. Nothing revokes a report and no row is locked: a report is an INSERT that
-// names its target, and resolving or routing updates only rows that are still open, so the
-// mutations carry no recheck. Reads here are plain.
+// Owned by lane REP. Nothing revokes a report itself. createReport, resolveReports and
+// routeReports set recheck: true, so the policies here run again with lock inside the
+// transaction: the community row FOR NO KEY UPDATE, the moderator row FOR SHARE (no cache), and
+// the principal refresh for site bans.
 
 /** The open rows of one queue group: a reported target and an audience. */
 export function openGroup(target: ReportTarget, audience: ReportAudience) {
