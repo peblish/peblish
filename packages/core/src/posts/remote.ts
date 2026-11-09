@@ -6,7 +6,7 @@ import { posts } from '../db/tables/content.ts';
 import { defineMutation } from '../tx/mutation.ts';
 import { Refused } from '../tx/refused.ts';
 import { remoteBody } from './body.ts';
-import { peerAltText, peerLink, peerMediaType } from './input.ts';
+import { peerAltText, peerLanguage, peerLink, peerMediaType } from './input.ts';
 
 // A peer's post, stored by lane FED-B's inbound handler. The caller has verified the
 // activity (signature, origins, the claimed community; mapping/README.md, "What the caller
@@ -43,10 +43,10 @@ const remoteTitleMaxLength = 500;
 const cut = (text: string, max: number) => [...text.replace(/\s+/g, ' ').trim()].slice(0, max).join('');
 
 /**
- * The fields a peer's author may set, as they are stored: the title cut, the link, preview
- * and media type held to the limits a local post gets (what fails is null), the body sanitised
- * or rendered, and the flags following the community's. Store and update share it, so an
- * Update can tell whether anything changed after the same transforms, not on the raw record.
+ * The fields a peer's author may set, as they are stored: the title cut, the link, preview,
+ * media type, alt text and language held to limits (what fails is null), the body sanitised or
+ * rendered, and the flags following the community's. Store and update share it, so an Update
+ * can tell whether anything changed after the same transforms, not on the raw record.
  */
 function editable(
   post: RemotePost,
@@ -63,7 +63,7 @@ function editable(
     altText: peerAltText(post.altText),
     thumbnailUrl: peerLink(post.thumbnailUrl),
     ...remoteBody(post, origin, postId, apId),
-    language: post.language,
+    language: peerLanguage(post.language),
     sensitive: post.sensitive || nsfl || community?.sensitive === true,
     nsfl,
   };

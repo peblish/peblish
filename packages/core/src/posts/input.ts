@@ -63,3 +63,17 @@ export const peerMediaType = (value: string | null): string | null =>
   value !== null && !(MediaType(value) instanceof type.errors) ? value : null;
 export const peerAltText = (value: string | null): string | null =>
   value !== null && !(AltText(value) instanceof type.errors) ? value : null;
+
+const languageTag = /^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*$/;
+const languageTagMaxLength = 35;
+
+/**
+ * A peer's language as a plausible BCP 47 tag (en, pt-BR, zh-Hant-TW), its primary subtag
+ * lowercased; anything else, or a tag over 35 characters, is null. A local post is stricter
+ * (two or three letters), as the composer offers codes only.
+ */
+export const peerLanguage = (value: string | null): string | null => {
+  if (value === null || value.length > languageTagMaxLength || !languageTag.test(value)) return null;
+  const [primary = '', ...rest] = value.split('-');
+  return [primary.toLowerCase(), ...rest].join('-');
+};

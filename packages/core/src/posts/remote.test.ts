@@ -129,6 +129,43 @@ describe('storeRemotePost', () => {
     });
   });
 
+  test("a peer's language is kept as a plausible BCP 47 tag with a lowercase primary subtag; an oversized or malformed one is null", async () => {
+    const { author, create } = await setup();
+    const created = await create(record({ language: 'PT-BR' }));
+    expect((await row(created.id)).language).toBe('pt-BR');
+    const grant = await grantFor('post.update', author, { postId: created.id });
+    const languageAfter = async (language: string) => {
+      await updateRemotePost(grant, record({ language }));
+      return (await row(created.id)).language;
+    };
+    expect(await languageAfter('zh-Hant-TW')).toBe('zh-Hant-TW');
+    expect(await languageAfter(`en-${'a'.repeat(33)}`)).toBeNull();
+    expect(await languageAfter('en-US')).toBe('en-US');
+    for (const malformed of [
+      '',
+      'e',
+      'english',
+      'en_US',
+      'en--US',
+      'en-',
+      'en-x',
+      'not a language',
+      '<script>',
+      'en-US\n',
+      `${'a'.repeat(36)}`,
+    ]) {
+      expect(await languageAfter(malformed), malformed).toBeNull();
+      await languageAfter('en');
+    }
+    const oversized = await create(record({ apId: 'https://lemmy.test/post/2', language: `en-${'a'.repeat(40)}` }));
+    expect((await row(oversized.id)).language).toBeNull();
+    // The longest accepted tag is 35 characters; one more is null though its shape is fine.
+    const longest = `en-${'a'.repeat(8)}-${'b'.repeat(8)}-${'c'.repeat(8)}-${'d'.repeat(5)}`;
+    expect(longest).toHaveLength(35);
+    expect(await languageAfter(longest)).toBe(longest);
+    expect(await languageAfter(`${longest}e`)).toBeNull();
+  });
+
   test('the author cannot lock or pin their own post through the document', async () => {
     const { create } = await setup();
     // A PostRecord's locked and featuredCommunity are not read: only AZ's lock and pin mutations set them.
