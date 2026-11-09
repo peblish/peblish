@@ -135,8 +135,13 @@ export async function readQueue(viewer: ReportViewer, request: Request, q: Query
   const people = await readActors(q, [
     ...new Set(details.flatMap((row) => [row.reporterId, row.escalatedBy, row.resolvedBy]).filter((id) => id !== null)),
   ]);
-  const groups = page.map((head): QueueGroup => {
+  // The reports are a second read: a group closed or moved in between has none left and is
+  // left out of this page rather than shown empty.
+  const groups = page.flatMap((head): QueueGroup[] => {
     const mine = details.filter((row) => row.key === head.key && row.audience === head.audience);
+    const oldest = mine[0];
+    const newest = mine.at(-1);
+    if (!oldest || !newest) return [];
     const target: ReportTarget = head.post
       ? { kind: 'post', id: head.post }
       : head.comment
@@ -146,7 +151,7 @@ export async function readQueue(viewer: ReportViewer, request: Request, q: Query
     const subject = subjects.get(head.key) ?? { kind: 'gone' as const, id: head.key };
     const first = mine.find((row) => row.escalatedBy) ?? null;
     const closed = mine.find((row) => row.resolvedAt);
-    return {
+    const group: QueueGroup = {
       key: `${head.audience}.${head.key}`,
       target,
       audience: head.audience,
@@ -157,8 +162,8 @@ export async function readQueue(viewer: ReportViewer, request: Request, q: Query
           : subject,
       categories,
       count: mine.length,
-      oldestAt: mine[0]!.createdAt.toISOString(),
-      newestAt: mine.at(-1)!.createdAt.toISOString(),
+      oldestAt: oldest.createdAt.toISOString(),
+      newestAt: newest.createdAt.toISOString(),
       reports: mine.map((row) => ({
         id: row.id,
         number: row.number,
@@ -178,6 +183,7 @@ export async function readQueue(viewer: ReportViewer, request: Request, q: Query
           }
         : null,
     };
+    return [group];
   });
   return { ok: true, groups, next: heads.length > queuePageSize ? String(offset + queuePageSize) : null };
 }

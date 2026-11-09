@@ -1,6 +1,6 @@
 import { sql } from 'drizzle-orm';
 import { beforeEach, describe, expect, test } from 'vitest';
-import { db } from '../db/read.ts';
+import { db, type Queryable } from '../db/read.ts';
 import { posts } from '../db/tables/content.ts';
 import { communityModerators } from '../db/tables/moderation.ts';
 import { writer } from '../db/write.ts';
@@ -134,6 +134,51 @@ describe('the queue', () => {
     expect(subject(gone.id)).toMatchObject({ quote: null, withheld: 'removed' });
     const adminOnly = (await queue(w.boss, 'admins')).find((group) => group.target.id === w.local.id);
     expect(adminOnly?.subject).toMatchObject({ quote: null, withheld: 'admins' });
+  });
+});
+
+/**
+ * The read handle, with `between` run once the first query has its rows and before the next one
+ * starts: the queue's group list, then its reports.
+ */
+function pauseAfterFirstRead(between: () => Promise<unknown>): Queryable {
+  let first = true;
+  const read = db();
+  return new Proxy(read, {
+    get(target, property, receiver) {
+      const value: unknown = Reflect.get(target, property, receiver);
+      if (property !== 'select' || !first || typeof value !== 'function') return value;
+      first = false;
+      return (...args: Parameters<typeof read.select>) => {
+        const builder = read.select(...args);
+        const from = builder.from.bind(builder);
+        return Object.assign(builder, {
+          from: (...source: Parameters<typeof from>) => {
+            const query = from(...source);
+            const execute = query.execute.bind(query);
+            return Object.assign(query, {
+              execute: async (...rest: Parameters<typeof execute>) => {
+                const rows = await execute(...rest);
+                await between();
+                return rows;
+              },
+            });
+          },
+        });
+      };
+    },
+  });
+}
+
+describe('a queue read racing a resolution', () => {
+  test('a group resolved between the two reads is left out, not a crash', async () => {
+    const w = await world();
+    const q = pauseAfterFirstRead(() =>
+      resolveReportsAs(admin(w.people.admin.id), { target: w.local, audience: 'moderators' }, { resolution: 'resolved' }),
+    );
+    const result = await readQueue(w.boss, { tab: 'open', sort: 'oldest' }, q);
+    if (!result.ok) throw new Error(result.reason);
+    expect(targets(result.groups)).toEqual([`moderators:post:${w.remote.id}`]);
   });
 });
 
