@@ -215,12 +215,12 @@ describe('putting skipped rows back in line', () => {
 });
 
 describe('a community’s answers to our Follow', () => {
-  const accept = (follow: string, actor: string) => ({
+  const accept = (follow: string, actor: string, follower = world.alice.apId) => ({
     id: activityId(actor.startsWith(lemmy) ? lemmy : 'https://rogue.test', 'accept'),
     type: 'Accept',
     actor,
     to: [lemmyuser],
-    object: { id: follow, type: 'Follow', actor: world.alice.apId, object: lab },
+    object: { id: follow, type: 'Follow', actor: follower, object: lab },
   });
 
   test('an Accept or Reject from anyone but the followed community changes nothing', async () => {
@@ -233,11 +233,14 @@ describe('a community’s answers to our Follow', () => {
     expect(wrongAccept.stored).toEqual({ state: 'skipped', error: 'follow.mismatch' });
     const wrongReject = await deliver({ ...accept(followId, hosts.mallory), type: 'Reject' });
     expect(wrongReject.stored).toEqual({ state: 'skipped', error: 'follow.mismatch' });
+    // The community's own Accept must also name the follower whose Follow it answers.
+    const wrongFollower = await deliver(accept(followId, lab));
+    expect(wrongFollower.stored).toEqual({ state: 'skipped', error: 'follow.mismatch' });
     expect(await state()).toBe('pending');
 
-    expect((await deliver(accept(followId, lab))).stored).toEqual({ state: 'applied', error: null });
+    expect((await deliver(accept(followId, lab, bob.apId))).stored).toEqual({ state: 'applied', error: null });
     expect(await state()).toBe('accepted');
-    expect((await deliver({ ...accept(followId, lab), type: 'Reject' })).stored).toEqual({ state: 'applied', error: null });
+    expect((await deliver({ ...accept(followId, lab, bob.apId), type: 'Reject' })).stored).toEqual({ state: 'applied', error: null });
     expect(await state()).toBeUndefined();
   });
 
@@ -273,6 +276,13 @@ describe('what a remote author may post', () => {
     const nsfw = await deliver(createPage('300', spike, { sensitive: true }));
     expect(nsfw.stored?.error).toMatch(/^content\.nsfw_rejected/);
     expect(await postCount()).toBe(2);
+  });
+
+  test('a Create of an id already held under another community is refused with post.id_conflict, not stored twice', async () => {
+    const before = await postCount();
+    const conflict = await deliver(announceBy(lab, createPage('1', lab)));
+    expect(conflict.stored).toEqual({ state: 'skipped', error: 'post.id_conflict' });
+    expect(await postCount()).toBe(before);
   });
 
   test('a community never authors a post, comment or vote: skipped before anything is built', async () => {
@@ -355,5 +365,21 @@ describe('what a remote author may post', () => {
     const own = { id: activityId(lemmy, 'delete'), type: 'Delete', actor: lemmyuser, object: lemmyuser, to: [PUBLIC] };
     expect((await deliver(own)).stored?.state).toBe('applied');
     expect((await db().select().from(actors).where(eq(actors.apId, lemmyuser)))[0]?.deletedAt).not.toBeNull();
+  });
+
+  test('an actor edits its own profile, and an actor that sent a Delete stays deleted', async () => {
+    const profile = {
+      id: lemmyuser,
+      type: 'Person',
+      preferredUsername: 'lemmyuser',
+      name: 'Lemmy User',
+      inbox: `${lemmyuser}/inbox`,
+      publicKey: { id: `${lemmyuser}#main-key`, owner: lemmyuser, publicKeyPem: world.peers.lemmyuser.keys.publicKeyPem },
+    };
+    const update = () => ({ id: activityId(lemmy, 'update'), type: 'Update', actor: lemmyuser, object: profile, to: [PUBLIC] });
+    expect((await deliver(update())).stored).toEqual({ state: 'applied', error: null });
+    const own = { id: activityId(lemmy, 'delete'), type: 'Delete', actor: lemmyuser, object: lemmyuser, to: [PUBLIC] };
+    expect((await deliver(own)).stored?.state).toBe('applied');
+    expect((await deliver(update())).stored).toEqual({ state: 'skipped', error: `target.deleted ${lemmyuser}` });
   });
 });
