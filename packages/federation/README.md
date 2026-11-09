@@ -250,9 +250,15 @@ An inbox POST goes through two steps, so the sender gets its answer fast and not
 
 1. **Receipt** (`inbound/receive.ts`). The exact bytes are verified (draft-cavage, the key's
    owner is the activity's actor) and stored in `inbox_raw` with the request headers that were
-   signed. Answers: 202 stored, 401 bad signature, 400 not an activity, 413 over 512 KiB (also
-   counted while a chunked body streams in), 429 for too many unknown keys at once, 503 with
-   `Retry-After` while `inbox.enabled` is off or storage fails. Never 410, 418 or another 5xx.
+   signed. Answers: 202 stored, 401 bad signature, 400 not an activity or not strictly UTF-8
+   (the relay sends the exact bytes, which must be exactly the text that was read), 413 over
+   512 KiB (also counted while a chunked body streams in), 429 with `Retry-After` for too many
+   unknown keys at once or a signer or instance over its limits, 503 with `Retry-After` while
+   `inbox.enabled` is off or storage fails. Never 410, 418 or another 5xx. Two more 202s store
+   nothing: a repeat (the same body from the same signer, or an activity id already received from
+   it, within an hour) and an account's own Delete when we hold no live copy of the account and
+   its key cannot be fetched (Mastodon sends it after the account is gone; a held live actor
+   with an unknown key is still 401).
 2. **The pipeline** (`inbound/pipeline.ts`, run by the `federation.inbound` job, one second
    poll, rows claimed with `SKIP LOCKED`). Per row: classify the document (`classify.ts`: a
    type we do not read, a poll, a bare-IRI Announce and a microblog Note are decided here; a
@@ -270,6 +276,29 @@ the mapping cannot read, never retried). A transient failure (a peer down, a dat
 a unique violation from two first deliveries racing) leaves the row `pending` for a retry with
 backoff, `failed` after eight tries. Reasons are the closed set in `inbound/reasons.ts` plus
 core's `RefusalReason`s.
+
+### What the inbox costs us
+
+`inbound/throttle.ts` keeps three budgets in one-minute windows in memory, per process, none
+shared, so one kind of traffic cannot spend another's: key fetches (an unauthenticated request
+whose key we do not hold, per host the key names and in total; nothing authenticated spends it),
+the pipeline's fetches (120 a host and 1,200 in all a minute, plus 60 for any one delivery, spent
+only after the signature verified and never refunded) and intake (300 requests a minute per
+signer and 1,200 per instance, counted after the signature verifies). Every table is bounded.
+The pending bytes in `inbox_raw` (8 MiB per signer, 32 MiB per instance) are counted in the
+database, as are the repeats by activity id, so they hold across processes. The pipeline looks
+communities up by their stored row or the Announce's community and fetches one only when it is
+the sender, Follow and Undo(Follow) name stored local Groups and never fetch, and a Delete or
+Undo resolves its sender with the copy we hold however stale (a refetch answering 410 would
+delete the actor before its Delete is read and drop `removeData`).
+
+A row is claimed under a lease whose generation is `attempts`; settling, retrying and renewing
+match it, so a worker whose lease ran out gets `ClaimLost`, which rolls its apply back, and the
+worker that holds the row finishes it. Leases are renewed per row, per batch member and per
+fetch. A batched Announce settles as a whole, but each member keeps its own outcome: a member
+skipped as `target.missing` stays discoverable for the requeue even when another member applied,
+and reprocessing counts the applied members as duplicates. `inbound/corpus.expected.ts` pins the
+outcome and reason of every corpus fixture.
 
 ### Authorization
 
@@ -289,7 +318,16 @@ where the type can be undone); files starting with `_` are shared helpers and no
 `Create`, `Update`, `Delete`, `Undo`, `Like`, `Dislike`, `Announce`, `Lock`, `Add`, `Remove`,
 `Block`, `Follow`, `Accept`, `Reject`, `Flag`. `Flag` authorizes the report and records it as
 skipped `flag.not_handled`; the reports lane replaces its last line. Comments go through
-lane D's remote comment mutations (`storeRemoteComment`, `updateRemoteComment`, `deleteComment`).
+lane D's remote comment mutations (`storeRemoteComment`, `updateRemoteComment`, `deleteComment`,
+`restoreComment`). An Update is checked against the stored post or comment before anything else:
+a community (Page) or parent (Note) that differs from the stored row is skipped
+`community.mismatch` or `parent.mismatch`, and authorization and relay use the stored community.
+An Announce whose object is another Announce is skipped `announce.nested`. An author's Delete of a
+post or comment writes its `deletion_ledger` row in the same transaction
+(`@peblish/core/remote/ledger`: `recordDeletion`, and `recordRestoration` for the Undo); an
+account's Delete is `deleteRemoteActor`, called in `prepare` outside any transaction because it
+runs its own, and counts as applied when it removed content even if the account was already gone.
+A moderator's Delete of a whole community is skipped `community.delete_unsupported`.
 
 ### Relay and outbound moderation
 
@@ -297,7 +335,8 @@ What reaches a local community directly (a post, a comment, a vote, a remote mod
 action) is applied and then announced by the community to its remote followers except the
 sender's server (`relay/announce.ts`). The Announce embeds the received bytes exactly,
 spliced into the Announce text, because re-serialising parsed JSON changes what Lemmy's strict
-parser needs. A new post goes to Mastodon-like followers as `Announce(Page)` instead.
+parser needs. A new post goes to Mastodon-like followers as `Announce(Page)` instead, and a microblog Note
+rewritten into a post is relayed as the Page it was stored as, never as the original Note bytes.
 `relay/consumer.ts` turns a moderation event taken here (`local: true`, in a local community)
 into Delete, Lock, Add or Remove on the featured and moderators collections, Block, and their
 Undos, announced to followers; a local account's deletion becomes a Delete of the account.
@@ -309,7 +348,12 @@ A remote community's moderators are mirrored from its moderators collection into
 once verified and until `expires_at` (twelve hours after the last confirmation), so a
 moderator the peer removed loses authority within a bounded time even if the Remove never
 reached us. The mirror is refetched when the community announces an Add or Remove on the
-collection and by the `federation.moderators` job before a row runs out.
+collection and by the `federation.moderators` job before a row runs out. The collection is read
+without following a redirect (`fetchActivity(url, fetch, { maxRedirects: 0 })`) from the
+community's own origin and must name itself; a moderator who cannot be resolved is left out of
+that mirror instead of aborting it, and a collection with nobody in it is not asked again for six
+hours (in memory). A moderator's announced Update(Group) never replaces the stored key; the
+Group's own Update does.
 
 ## HTTP and consumers
 

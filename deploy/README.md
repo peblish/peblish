@@ -31,7 +31,10 @@ service console and run `PEBLISH_PROCESS=migrate peblish` (or run the image once
 It applies pending migrations and, on the first run, creates the local instance row from
 `PUBLIC_ORIGIN`. Run one replica of `web` and one of `worker` until a later lane adds
 leader election; consumers already lock their cursors, so a second worker is safe but
-idle.
+idle. The composer keeps a refused no-JavaScript submission's typed words in a flash held in
+the web process's memory (10 minutes, a few per person); a second web replica, or a restart,
+loses the kept values for that one redisplay (the post is not lost, only the words typed into
+the refused form).
 
 ## Environment
 
@@ -62,12 +65,19 @@ minutes; typing the password again while signed in (to change it, turn two-facto
 or delete the account), the same; reset mail, 3 per address typed and 10 per client address
 an hour; invite codes that match no invite, 10 per client address an hour; another
 verification link, one a minute per account; link previews (the server fetches an address a
-person typed), 30 per client address and 20 per account in ten minutes. A refused attempt counts too, and an IPv6
+person typed), 30 per client address and 20 per account in ten minutes; comments, 30 per
+account in ten minutes (`comment`). A refused attempt counts too, and an IPv6
 client is counted by its /64. On Easypanel, staging and production alike, set
 `PEBLISH_TRUSTED_PROXY=traefik` on `web` before going live; left at `none`, every client
 shares the proxy's budgets per address. With Cloudflare proxying in front of Traefik, the
 address Traefik saw is a Cloudflare edge, so budgets per address then apply per edge until
 the origin takes traffic from Cloudflare alone and the setting moves to `cloudflare`.
+
+The worker's `remote.prune` job (hourly) deletes what federation no longer needs, 2,000 rows
+a transaction and 25 transactions a run: settled `inbox_raw` rows after 14 days, settled
+`deliveries` after 30, `inbox_dedupe` after 90 days and ended `throttles` windows after one
+day. A pending row is never deleted. The inbox's request limits and the fetch politeness gaps
+are counted in memory per process.
 
 ## The first admin
 
