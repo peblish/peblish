@@ -5,7 +5,8 @@ import { renderMarkdown } from '../markdown/render.ts';
 import { truncateAll } from '../testing/db.ts';
 import { seedPostWorld } from '../testing/seed-b1.ts';
 import { seedBigThread } from '../testing/seed-d.ts';
-import { readThread, threadDisplayDepth, threadMaxComments } from './read.ts';
+import { threadDisplayDepth, threadMaxComments } from './limits.ts';
+import { readThread } from './read.ts';
 
 // The plan's "deep threads render in budget" (it names no figure; root's decision): a
 // 500-comment thread that reaches level 50 is read and its comments rendered in under 200 ms

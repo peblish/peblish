@@ -11,7 +11,8 @@ import { seedPostWorld } from '../testing/seed-b1.ts';
 import { seedChain, seedReply } from '../testing/seed-d.ts';
 import { localUser } from '../testing/seed.ts';
 import { castVote } from '../votes/cast.ts';
-import { readThread, threadDisplayDepth, threadMaxComments, type Thread } from './read.ts';
+import { threadDisplayDepth, threadMaxComments } from './limits.ts';
+import { readThread, type Thread } from './read.ts';
 
 beforeEach(truncateAll);
 

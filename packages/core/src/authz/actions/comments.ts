@@ -51,7 +51,7 @@ async function isCommunity(request: Pick<PolicyRequest<unknown>, 'db'>, actorId:
 const create = async (request: PolicyRequest<{ postId: Uuid; parentId: Uuid | null }>): Promise<PolicyResult> => {
   const { principal, subject, db, lock } = request;
   if (principal.kind === 'system') return deny('auth.required');
-  if (principal.kind === 'remote' && (await isCommunity(request, principal.actorId))) return deny('auth.required');
+  if (principal.kind === 'remote' && (await isCommunity(request, principal.actorId))) return deny('comment.group_cannot_act');
   if (principal.kind === 'local' && (await emailUnverified(request, principal.actorId))) return deny('auth.email_unverified');
   const denied = await commentingDenial(request, principal.actorId, subject);
   if (denied) return denied;

@@ -10,6 +10,7 @@ import { instances } from '../db/tables/instances.ts';
 import { communityModerators } from '../db/tables/moderation.ts';
 import { readModlog } from '../modlog/read.ts';
 import type { PostBody, Viewer } from '../posts/read.ts';
+import { threadDisplayDepth, threadFetchLimit, threadMaxComments } from './limits.ts';
 import { defaultThreadSort, inDisplayOrder, type ThreadSort } from './sort.ts';
 
 // The read model of a comment thread: the flat list of CommentView the thread component takes,
@@ -28,13 +29,6 @@ import { defaultThreadSort, inDisplayOrder, type ThreadSort } from './sort.ts';
 //   before its children, so what is read is always a whole tree.
 // - shown: at most `threadMaxComments` of them are sent, the first in display order.
 // `truncated` says that rows were left out by the last two.
-
-/** Levels sent and drawn (the thread component's maxDepth). A permalink page shows this many below its comment too. */
-export const threadDisplayDepth = 6;
-/** Comments a thread page sends, as Lemmy's default page size. */
-export const threadMaxComments = 300;
-/** Rows read for one thread, however many are then shown. */
-export const threadFetchLimit = 2_000;
 
 /** What to render for a comment's text: the web renderer takes Markdown through render, remote HTML through sanitize. */
 export type CommentBody = PostBody;

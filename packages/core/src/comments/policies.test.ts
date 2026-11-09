@@ -26,6 +26,7 @@ const BAN = 'community.banned';
 const CRM = 'community.removed';
 const MIS = 'mod.announce_mismatch';
 const AUT = 'comment.author_required';
+const GRP = 'comment.group_cannot_act';
 const DEEP = 'comment.depth_exceeded';
 const LCK = 'post.locked';
 const DEL = 'target.deleted';
@@ -126,7 +127,7 @@ describe.each([
     { who: 'anonymous', principal: anonymous, expected: everywhere(REQ) },
     { who: 'the instance itself', principal: () => system(world.instances.local.id), expected: everywhere(REQ) },
     // A community does not comment; refused before any lock.
-    { who: 'a remote community', principal: () => remote(world.communities.remote.id), expected: everywhere(REQ) },
+    { who: 'a remote community', principal: () => remote(world.communities.remote.id), expected: everywhere(GRP) },
     { who: 'unverified email', principal: () => localUser(world.people.unverified.id), expected: everywhere(UNV) },
     { who: 'local user', principal: () => localUser(world.people.reader.id), expected: verified },
     { who: 'author of the post', principal: () => localUser(world.people.author.id), expected: verified },
