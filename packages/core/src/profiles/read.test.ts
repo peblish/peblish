@@ -1,5 +1,6 @@
 import { eq } from 'drizzle-orm';
 import { beforeEach, describe, expect, test } from 'vitest';
+import { hideNsfw, showNsfw, type NsfwChoice } from '../communities/gate.ts';
 import { actors } from '../db/tables/actors.ts';
 import { writer } from '../db/write.ts';
 import { seedBlock } from '../testing/seed-e1.ts';
@@ -220,7 +221,27 @@ describe('readActivity', () => {
       (await readActivity({ personId: w.alice.id, tab: 'overview', sort: 'new' }, viewer && w.as(viewer))).items.length;
     expect(await titles(null)).toBe(1);
     expect(await titles(w.mod)).toBe(1);
-    expect(await titles(w.viewer)).toBe(3);
+    expect(await titles(w.viewer)).toBe(2);
+  });
+
+  test('Hide NSFW keeps a declared viewer from comments under a flagged post or community, unless this browser shows it', async () => {
+    const w = await world();
+    const inAdult = await seedFeedPost(w.local, w.adult, w.alice, { title: 'in adult' });
+    const flagged = await seedFeedPost(w.local, w.news, w.alice, { title: 'flagged', nsfl: true });
+    const plain = await seedFeedPost(w.local, w.news, w.alice, { title: 'plain' });
+    await seedComment(w.local, inAdult, w.alice, { bodyMd: 'in adult' });
+    await seedComment(w.local, flagged, w.alice, { bodyMd: 'flagged' });
+    await seedComment(w.local, plain, w.alice, { bodyMd: 'plain' });
+    await declareAge(w.viewer);
+    const shown = async (nsfw?: NsfwChoice) =>
+      (await readActivity({ personId: w.alice.id, tab: 'comments', sort: 'new', ...(nsfw && { nsfw }) }, w.as(w.viewer))).items.map(
+        (item) => (item.kind === 'comment' ? item.comment.post.title : item.post.title),
+      );
+    expect(await shown()).toEqual(['plain']);
+    expect(await shown(hideNsfw)).toEqual(['plain']);
+    expect(await shown({ always: false, once: [w.adult.id] })).toEqual(['plain', 'in adult']);
+    expect(await shown({ always: false, once: [w.news.id] })).toEqual(['plain', 'flagged']);
+    expect(await shown(showNsfw)).toEqual(['plain', 'flagged', 'in adult']);
   });
 
   test("a blocked person's activity is hidden from the blocker only", async () => {

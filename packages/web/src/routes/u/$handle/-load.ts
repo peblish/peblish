@@ -1,3 +1,4 @@
+import { parseNsfwChoice } from '@peblish/core/communities/gate';
 import { defaultPageSize } from '@peblish/core/feeds/input';
 import type { Viewer } from '@peblish/core/posts/read';
 import { profileSorts, profileTabs } from '@peblish/core/profiles/input';
@@ -66,7 +67,17 @@ async function buildProfile(
 
   const shown = withActivity && profile.state === 'live' && profile.blocked === null;
   const page = shown
-    ? await readActivity({ personId: profile.actor.id, tab: data.tab, sort: data.sort, cursor: data.after, limit: defaultPageSize }, viewer)
+    ? await readActivity(
+        {
+          personId: profile.actor.id,
+          tab: data.tab,
+          sort: data.sort,
+          cursor: data.after,
+          limit: defaultPageSize,
+          nsfw: parseNsfwChoice(getRequestHeader('cookie') ?? null),
+        },
+        viewer,
+      )
     : { items: [], next: null };
   const times: ProfileData['times'] = {};
   const entries = page.items.map((item): ProfileEntry => {
