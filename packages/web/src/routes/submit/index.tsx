@@ -7,9 +7,8 @@ import { useTranslate } from '../../i18n/use-translate.ts';
 import { clientIp, forbidden, formSession, privateResponses, principalOf, sameOrigin } from '../../server/auth.ts';
 import { openInRouter } from '../../shell/client-links.ts';
 import { useRouteHydrated } from '../../shell/hydration.ts';
-import { decodeKept } from './-kept.ts';
 import { loadComposer } from './-load.ts';
-import { answer, keptOf, parseSubmission, readSubmission, submit } from './-submit.ts';
+import { answer, parseSubmission, readSubmission, submit } from './-submit.ts';
 import { asComposerError } from './-types.ts';
 import { Composer } from './-ui/composer.tsx';
 import submitCss from './-ui/submit.css?url';
@@ -20,15 +19,19 @@ import submitCss from './-ui/submit.css?url';
 
 /** A search value as a string: the router parses ?a=1 into a number. */
 const Text = type('string | number').pipe((value) => String(value));
-const Search = type({ 'edit?': Text, 'community?': Text, 'error?': Text, 'kept?': Text });
+const Search = type({ 'edit?': Text, 'community?': Text, 'error?': Text, 'flash?': Text });
 
 export const Route = createFileRoute('/submit/')({
   validateSearch: Search,
-  loaderDeps: ({ search }) => ({ edit: search.edit, community: search.community }),
-  loader: async ({ deps, location, parentMatchPromise }) => {
+  loaderDeps: ({ search }) => ({ edit: search.edit, community: search.community, flash: search.flash }),
+  loader: async ({ deps, parentMatchPromise }) => {
     const [data, root] = await Promise.all([loadComposer({ data: deps }), parentMatchPromise]);
     if (data.status === 'unavailable' && data.reason === 'signed-out') {
-      throw redirect({ to: '/auth/sign-in', search: { redirect: location.pathname + location.searchStr } });
+      // Back to the form itself after signing in; a refusal's message and words belong to the person who was refused.
+      const form = new URLSearchParams();
+      if (deps.edit !== undefined) form.set('edit', deps.edit);
+      if (deps.community !== undefined) form.set('community', deps.community);
+      throw redirect({ to: '/auth/sign-in', search: { redirect: form.size > 0 ? `/submit?${form}` : '/submit' } });
     }
     // The page title follows the shell's convention (shell/title.ts); an edit has its own name.
     const { locale } = root.loaderData ?? { locale: DEFAULT_LOCALE };
@@ -49,8 +52,11 @@ export const Route = createFileRoute('/submit/')({
         const { session } = await formSession(request);
         const cookies = session?.setCookies ?? [];
         const read = await readSubmission(request);
-        const fields = read.ok ? read.fields : {};
-        const back = { edit: fields.edit ?? null, kept: keptOf(fields) };
+        const back = {
+          viewer: session?.view.actorId ?? null,
+          edit: read.ok ? (read.fields.edit ?? null) : null,
+          fields: read.ok ? read.fields : null,
+        };
         if (!session) return answer(request, cookies, { ok: false, error: 'auth.required' }, back);
         if (!read.ok) return answer(request, cookies, read, back);
         const parsed = parseSubmission(read.fields, read.image);
@@ -85,10 +91,9 @@ function Submit() {
         </>
       ) : (
         <Composer
-          // A different post (or none) is a different form.
-          key={data.edit?.id ?? 'new'}
+          // A different post (or none), or the words kept from another refusal, is a different form.
+          key={`${data.edit?.id ?? 'new'}:${search.flash ?? ''}`}
           data={data}
-          kept={decodeKept(search.kept)}
           error={asComposerError(search.error)}
           onDone={(path) => openInRouter(router, path)}
           onDiscard={() => openInRouter(router, '/')}

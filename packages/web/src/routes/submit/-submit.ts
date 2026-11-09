@@ -1,3 +1,4 @@
+import { authorize } from '@peblish/core/authz/authorize';
 import { attempt } from '@peblish/core/identity/throttle';
 import { fetchLinkPreview, type LinkPreview } from '@peblish/core/links/preview';
 import { localHandles } from '@peblish/core/identity/handles';
@@ -11,13 +12,14 @@ import type { ActingPrincipal } from '@peblish/schema/authz';
 import { Uuid } from '@peblish/schema/ids';
 import { type } from 'arktype';
 import { firstProblem } from './-fields.ts';
-import { encodeKept, type Kept } from './-kept.ts';
-import { asComposerError, type ComposerError, type PostType } from './-types.ts';
+import { keepFlash } from './-flash.ts';
+import { asComposerError, type ComposerError, type Kept, type PostType } from './-types.ts';
 
 // The server half of the composer's form (server only: imported by the route's POST handler and
 // its tests, never by the page). Like lane A's pages and the post page: without JavaScript the
-// form posts to /submit and the answer is a 303 (to the post, or back with ?error=<code>); once
-// hydrated it posts by fetch with Accept: application/json and reads { redirect } or { error }.
+// form posts to /submit and the answer is a 303 (to the post, or back with ?error=<code> and, for
+// the signed-in, ?flash=<id> naming the words they typed, -flash.ts); once hydrated it posts by
+// fetch with Accept: application/json and reads { redirect } or { error }.
 
 const Fields = type({
   'edit?': 'string',
@@ -123,24 +125,34 @@ type Who = { principal: ActingPrincipal; viewer: NonNullable<Viewer>; ip: string
 
 /** What a submission calls out to, so the order of its steps can be tested without a database or a network. */
 export interface Deps {
+  /** Whether this person may post there or edit that post: the refusal's reason, or null. Asked before anything is fetched or stored. */
+  precheck(principal: ActingPrincipal, target: { communityId: string } | { postId: string }): Promise<string | null>;
   /** Counts a link preview against the budget (client address and account); false when over it. */
   throttle(principal: ActingPrincipal, ip: string | null): Promise<boolean>;
   preview: typeof fetchLinkPreview;
   upload: typeof uploadImage;
   /** This instance's origin, where an uploaded image will be served. */
   origin(): Promise<string>;
-  /** The address a post links to now. */
-  currentUrl(postId: string, viewer: NonNullable<Viewer>): Promise<string | null>;
+  /** The post as saved: its address (null for a text post), or null when it cannot be read. */
+  current(postId: string, viewer: NonNullable<Viewer>): Promise<{ url: string | null } | null>;
   createPost: typeof createPostAs;
   updatePost: typeof updatePostAs;
 }
 
 const defaults: Deps = {
+  precheck: async (principal, target) => {
+    const decision =
+      'communityId' in target ? await authorize('post.create', principal, target) : await authorize('post.update', principal, target);
+    return decision.ok ? null : decision.reason;
+  },
   throttle: async (principal, ip) => (await attempt('link-preview', { ip, id: principal.actorId })).allowed,
   preview: fetchLinkPreview,
   upload: uploadImage,
   origin: async () => (await localHandles()).origin,
-  currentUrl: async (postId, viewer) => (await readPost(postId, viewer))?.view.url ?? null,
+  current: async (postId, viewer) => {
+    const page = await readPost(postId, viewer);
+    return page ? { url: page.view.url } : null;
+  },
   createPost: createPostAs,
   updatePost: updatePostAs,
 };
@@ -166,6 +178,9 @@ export async function submit(who: Who, input: Submission, deps: Deps = defaults)
 async function create(who: Who, input: Submission, deps: Deps): Promise<Outcome> {
   const { principal } = who;
   const communityId = Uuid.assert(input.community);
+  // Whether this person may post here comes first: a refused account costs no fetch and no upload.
+  const denied = await deps.precheck(principal, { communityId });
+  if (denied !== null) return refused(denied);
   let preview: LinkPreview | null = null;
   let image: { url: string; contentType: string } | null = null;
   if (input.type === 'link') {
@@ -197,8 +212,25 @@ async function create(who: Who, input: Submission, deps: Deps): Promise<Outcome>
 }
 
 async function edit(who: Who, postId: string, input: Submission, deps: Deps): Promise<Outcome> {
+  const denied = await deps.precheck(who.principal, { postId });
+  if (denied !== null) return refused(denied);
+  const current = await deps.current(postId, who.viewer);
+  if (current === null) return refused('target.not_found');
+  // The saved post decides what an edit can change, not the form's type field: a link post keeps
+  // a link and takes no body, a text post the reverse.
+  const kind: PostType = current.url === null ? 'text' : 'link';
+  const problem = firstProblem({
+    creating: false,
+    community: null,
+    type: kind,
+    title: input.title,
+    url: input.url,
+    body: input.body,
+    hasImage: false,
+  });
+  if (problem !== null) return { ok: false, error: problem };
   // A link post that now points somewhere else gets that page's preview; the old picture and type belong to the old page.
-  const moved = input.type === 'link' && input.url !== (await deps.currentUrl(postId, who.viewer));
+  const moved = kind === 'link' && input.url !== current.url;
   let preview: LinkPreview | null = null;
   if (moved) {
     const found = await previewOf(who, input.url, deps);
@@ -208,8 +240,8 @@ async function edit(who: Who, postId: string, input: Submission, deps: Deps): Pr
   const checked = PostEdit({
     title: input.title,
     sensitive: input.nsfw,
-    ...(input.type === 'text' && { bodyMd: input.body }),
-    ...(input.type === 'link' && { url: input.url }),
+    ...(kind === 'text' && { bodyMd: input.body }),
+    ...(kind === 'link' && { url: input.url }),
     ...(moved && { thumbnailUrl: preview?.thumbnailUrl ?? null, urlContentType: preview?.urlContentType ?? null }),
   });
   if (checked instanceof type.errors) return { ok: false, error: 'generic' };
@@ -220,11 +252,19 @@ async function edit(who: Who, postId: string, input: Submission, deps: Deps): Pr
 
 /** Where a refused form goes back to, and what it keeps of what was typed. */
 export interface Back {
+  /** The signed-in person the words are kept for; null when signed out. */
+  viewer: string | null;
   edit: string | null;
-  kept: Kept;
+  /** The form as posted; null when it could not be read. */
+  fields: Record<string, string> | null;
 }
 
-/** The route's answer: JSON for the hydrated form, otherwise 303 to the post or back to the form with the error. */
+/**
+ * The route's answer: JSON for the hydrated form, otherwise 303 to the post or back to the form
+ * with the error and, for the signed-in, what they typed. Signed out, it is the sign-in page and
+ * then a clean form: the refusal is not carried into the page after sign-in, and the words have
+ * no one to be kept for.
+ */
 export function answer(request: Request, cookies: readonly string[], outcome: Outcome, back: Back): Response {
   const headers = new Headers();
   for (const cookie of cookies) headers.append('set-cookie', cookie);
@@ -236,24 +276,30 @@ export function answer(request: Request, cookies: readonly string[], outcome: Ou
   }
   const search = new URLSearchParams();
   if (back.edit) search.set('edit', back.edit);
-  if (!outcome.ok) {
+  if (outcome.ok) headers.set('location', `/post/${outcome.id}`);
+  else if (outcome.error === 'auth.required') {
+    const form = search.size > 0 ? `/submit?${search}` : '/submit';
+    headers.set('location', `/auth/sign-in?${new URLSearchParams({ redirect: form })}`);
+  } else {
     search.set('error', outcome.error);
-    search.set('kept', encodeKept(back.kept));
+    const kept = back.viewer !== null && back.fields !== null ? keptOf(back.fields) : null;
+    if (back.viewer !== null && kept !== null) search.set('flash', keepFlash(back.viewer, kept));
+    headers.set('location', `/submit?${search}`);
   }
-  headers.set('location', outcome.ok ? `/post/${outcome.id}` : `/submit?${search}`);
   return new Response(null, { status: 303, headers });
 }
 
-/** What the form had, as the `kept` parameter carries it back after a refusal without JavaScript. */
-export function keptOf(raw: Record<string, string>): Kept {
+/** Everything the form had, as typed, for the refusal's way back (null when the fields are no form's). */
+export function keptOf(raw: Record<string, string>): Kept | null {
   const fields = Fields(raw);
-  if (fields instanceof type.errors) return {};
+  if (fields instanceof type.errors) return null;
   return {
-    ...(fields.community !== undefined && { community: fields.community }),
-    ...(fields.type !== undefined && { type: fields.type }),
+    community: fields.community !== undefined && Uuid.allows(fields.community) ? fields.community : null,
+    type: fields.type ?? 'text',
     title: fields.title ?? '',
     url: fields.url ?? '',
-    body: fields.body === undefined ? '' : lineFeeds(fields.body),
+    body: lineFeeds(fields.body ?? ''),
+    alt: lineFeeds(fields.alt ?? ''),
     nsfw: fields.nsfw !== undefined,
   };
 }

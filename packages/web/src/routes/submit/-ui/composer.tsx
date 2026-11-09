@@ -10,7 +10,6 @@ import { type } from 'arktype';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { useTranslate } from '../../../i18n/use-translate.ts';
 import { firstProblem } from '../-fields.ts';
-import type { Kept } from '../-kept.ts';
 import { loadCommunityPanel, previewBody } from '../-load.ts';
 import {
   asComposerError,
@@ -23,7 +22,7 @@ import {
 } from '../-types.ts';
 import { CommunityAside } from './community-aside.tsx';
 import { CommunityPicker } from './community-picker.tsx';
-import { clearDraft, readDraft, writeDraft } from './drafts.ts';
+import { clearDraft, readDraft, removeUnscopedDrafts, writeDraft } from './drafts.ts';
 import { ErrorText } from './error-text.tsx';
 import { useEditorLabels } from './labels.ts';
 
@@ -33,8 +32,7 @@ export type ReadyData = Extract<ComposerData, { status: 'ready' }>;
 
 export interface ComposerProps {
   data: ReadyData;
-  /** What the form starts with when it comes back from a refusal without JavaScript (or from nowhere). */
-  kept?: Kept;
+  /** The refusal the page was reached by, without JavaScript. */
   error?: ComposerError;
   /** Posted or saved: the page or sheet goes to this path. */
   onDone: (path: string) => void;
@@ -56,26 +54,33 @@ interface Form {
 
 const pristine = (form: Form) => form.title === '' && form.url === '' && form.body === '';
 
-function startingForm({ data, kept }: Pick<ComposerProps, 'data' | 'kept'>): Form {
-  const { edit } = data;
-  if (edit)
-    return {
-      community: edit.community,
-      type: edit.url ? 'link' : 'text',
-      title: edit.title,
-      url: edit.url ?? '',
-      body: edit.bodyMd,
-      alt: '',
-      nsfw: edit.sensitive,
-    };
+/**
+ * The post being edited or an empty form, with what was typed before a refusal (without
+ * JavaScript) laid over it: typed words win over the saved ones. An edit keeps its post's type,
+ * and a new post's community was already chosen by the loader from the words and the URL.
+ */
+function startingForm({ data }: Pick<ComposerProps, 'data'>): Form {
+  const { edit, kept } = data;
+  const base: Form = edit
+    ? {
+        community: edit.community,
+        type: edit.url ? 'link' : 'text',
+        title: edit.title,
+        url: edit.url ?? '',
+        body: edit.bodyMd,
+        alt: '',
+        nsfw: edit.sensitive,
+      }
+    : { community: data.selected, type: 'text', title: '', url: '', body: '', alt: '', nsfw: false };
+  if (!kept) return base;
   return {
-    community: kept?.community ?? data.selected,
-    type: kept?.type === 'image' && !data.uploads ? 'text' : (kept?.type ?? 'text'),
-    title: kept?.title ?? '',
-    url: kept?.url ?? '',
-    body: kept?.body ?? '',
-    alt: '',
-    nsfw: kept?.nsfw ?? false,
+    ...base,
+    ...(!edit && { type: kept.type === 'image' && !data.uploads ? 'text' : kept.type }),
+    title: kept.title,
+    url: kept.url,
+    body: kept.body,
+    alt: kept.alt,
+    nsfw: kept.nsfw,
   };
 }
 
@@ -86,11 +91,11 @@ function startingForm({ data, kept }: Pick<ComposerProps, 'data' | 'kept'>): For
  * posts by fetch, keeps what was typed through a refusal, and offers the toolbar, Preview and
  * drafts. The page and the sheet both render this.
  */
-export function Composer({ data, kept, error: initialError, onDone, onDiscard, keepOnClose }: ComposerProps) {
+export function Composer({ data, error: initialError, onDone, onDiscard, keepOnClose }: ComposerProps) {
   const { t, locale } = useTranslate();
   const editorLabels = useEditorLabels();
-  const { edit } = data;
-  const [form, setForm] = useState(() => startingForm({ data, kept }));
+  const { edit, actorId, kept } = data;
+  const [form, setForm] = useState(() => startingForm({ data }));
   const [panel, setPanel] = useState<CommunityPanel | null>(data.panel);
   const [error, setError] = useState(initialError);
   const [busy, setBusy] = useState(false);
@@ -108,8 +113,9 @@ export function Composer({ data, kept, error: initialError, onDone, onDiscard, k
 
   // Starting on a community that has a saved draft (a new post, nothing typed yet) restores it.
   useEffect(() => {
+    removeUnscopedDrafts();
     if (edit || kept || !pristine(form)) return;
-    const draft = readDraft(form.community);
+    const draft = readDraft({ actorId, community: form.community });
     if (draft) {
       setForm((current) => ({ ...current, ...draft }));
       setNote('restored');
@@ -123,21 +129,27 @@ export function Composer({ data, kept, error: initialError, onDone, onDiscard, k
     () => () => {
       const last = latest.current;
       if (keepOnClose && !finished.current && !edit && !pristine(last) && last.type !== 'image') {
-        writeDraft(last.community, { type: last.type, title: last.title, url: last.url, body: last.body, nsfw: last.nsfw });
+        writeDraft(
+          { actorId, community: last.community },
+          { type: last.type, title: last.title, url: last.url, body: last.body, nsfw: last.nsfw },
+        );
       }
     },
-    [keepOnClose, edit],
+    [keepOnClose, edit, actorId],
   );
 
   function choose(id: string) {
     const request = ++panelRequest.current;
     setError(undefined);
     setPanel(null);
-    void loadCommunityPanel({ data: { id } }).then((next) => {
-      if (request === panelRequest.current) setPanel(next);
+    void loadCommunityPanel({ data: { id } }).then(({ panel: next }) => {
+      if (request !== panelRequest.current) return;
+      setPanel(next);
+      // Gone since the list was made (removed, deleted): it is not a choice any more.
+      if (next === null) setForm((current) => (current.community === id ? { ...current, community: null } : current));
     });
     // A community with a saved draft gets it back, unless something is already typed.
-    const draft = pristine(form) ? readDraft(id) : null;
+    const draft = pristine(form) ? readDraft({ actorId, community: id }) : null;
     if (draft) setNote('restored');
     setForm({ ...form, ...draft, community: id });
   }
@@ -183,7 +195,7 @@ export function Composer({ data, kept, error: initialError, onDone, onDiscard, k
       if (!answer || answer instanceof type.errors) return setError('generic');
       if (answer.redirect) {
         finished.current = true;
-        clearDraft(form.community);
+        clearDraft({ actorId, community: form.community });
         onDone(answer.redirect);
       } else setError(asComposerError(answer.error) ?? 'generic');
     } catch {
@@ -196,7 +208,10 @@ export function Composer({ data, kept, error: initialError, onDone, onDiscard, k
   function saveDraft() {
     if (form.type === 'image') return;
     setNote(
-      writeDraft(form.community, { type: form.type, title: form.title, url: form.url, body: form.body, nsfw: form.nsfw })
+      writeDraft(
+        { actorId, community: form.community },
+        { type: form.type, title: form.title, url: form.url, body: form.body, nsfw: form.nsfw },
+      )
         ? 'saved'
         : 'not-saved',
     );
@@ -204,7 +219,7 @@ export function Composer({ data, kept, error: initialError, onDone, onDiscard, k
 
   function discard() {
     finished.current = true;
-    clearDraft(form.community);
+    clearDraft({ actorId, community: form.community });
     onDiscard();
   }
 

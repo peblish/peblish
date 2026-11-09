@@ -1,4 +1,4 @@
-import { followedCommunities } from '@peblish/core/follows/read';
+import { followedCommunities, type FollowedCommunity } from '@peblish/core/follows/read';
 import { listLocalCommunities, listModerators, readCommunity } from '@peblish/core/communities/read';
 import { localHandles } from '@peblish/core/identity/handles';
 import { readPost } from '@peblish/core/posts/read';
@@ -12,6 +12,7 @@ import { type } from 'arktype';
 import { pageSession, sameOrigin } from '../../server/auth.ts';
 import { createMarkdownRenderer, type MarkdownRenderer } from '../../server/markdown.ts';
 import { communityPath } from '../../shell/paths.ts';
+import { readFlash } from './-flash.ts';
 import type { CommunityPanel, ComposerData, EditTarget, PickerCommunity } from './-types.ts';
 
 // What the composer page and the sheet load: the communities the person may pick, the panel of
@@ -25,14 +26,53 @@ async function canPostIn(viewer: SessionView, community: { id: string; restricte
 }
 
 /**
+ * The age gate (C10, the feeds' rule): a sensitive or NSFL community is for someone who declared
+ * 16+; to anyone else it does not exist, in the picker and in its panel alike.
+ */
+const ageAllows = (viewer: SessionView, community: { sensitive: boolean; nsfl: boolean }) =>
+  viewer.ageDeclaredAt !== null || !(community.sensitive || community.nsfl);
+
+/** What the picker needs of a followed remote community. */
+interface FollowedRemote {
+  id: string;
+  /** `name@host` */
+  handle: string;
+  postingRestrictedToMods: boolean;
+  sensitive: boolean;
+  nsfl: boolean;
+}
+
+/**
+ * The accepted follows that are remote Groups, without the removed and deleted ones.
+ */
+// integration: replace with followedCommunities fields. It returns { id, apId, name, host, local,
+// postingRestrictedToMods, sensitive, nsfl } and excludes removed communities, so this becomes a
+// filter on `local` (and `state` if it stays) and a map to `handle: `${name}@${host}``. Until that
+// is in the tree the flags are read from the community rows, one readCommunity each (it leaves out
+// removed and deleted communities itself).
+async function followedRemote(followed: readonly FollowedCommunity[]): Promise<FollowedRemote[]> {
+  const accepted = followed.filter(({ local, state }) => !local && state === 'accepted');
+  const rows = await Promise.all(accepted.map(({ communityId }) => readCommunity({ id: communityId })));
+  return rows
+    .filter((community) => community !== null)
+    .map(({ actor, postingRestrictedToMods, sensitive, nsfl }) => ({
+      id: actor.id,
+      handle: actor.handle,
+      postingRestrictedToMods,
+      sensitive,
+      nsfl,
+    }));
+}
+
+/**
  * Local communities, then the remote ones the person follows (accepted follows only). A
- * community age-gated as sensitive is listed only for someone who declared 16+. A remote
- * community's own restriction is not known here; posting answers `community.posting_restricted`.
+ * community age-gated as sensitive or NSFL is listed only for someone who declared 16+, a
+ * removed one never, and a mods-only one is disabled for anyone who is not staff there.
  */
 async function pickable(viewer: SessionView): Promise<PickerCommunity[]> {
-  const [local, followed] = await Promise.all([
+  const [local, followedGroups] = await Promise.all([
     listLocalCommunities({ includeSensitive: viewer.ageDeclaredAt !== null }),
-    followedCommunities(viewer.actorId),
+    followedCommunities(viewer.actorId).then(followedRemote),
   ]);
   const rows = await Promise.all(
     local.map(async ({ actor, postingRestrictedToMods, subscribers }): Promise<PickerCommunity> => ({
@@ -44,24 +84,26 @@ async function pickable(viewer: SessionView): Promise<PickerCommunity[]> {
       canPost: await canPostIn(viewer, { id: actor.id, restricted: postingRestrictedToMods }),
     })),
   );
-  const remote = followed
-    .filter(({ local: isLocal, state }) => !isLocal && state === 'accepted')
-    .map(({ communityId, name, apId }): PickerCommunity => ({
-      id: communityId,
-      // The actor id is the community's own URL, so its host is the handle's host.
-      handle: `${name}@${new URL(apId).host}`,
-      local: false,
-      subscribers: null,
-      restricted: false,
-      canPost: true,
-    }));
+  const remote = await Promise.all(
+    followedGroups
+      .filter((community) => ageAllows(viewer, community))
+      .map(async ({ id, handle, postingRestrictedToMods }): Promise<PickerCommunity> => ({
+        id,
+        handle,
+        local: false,
+        subscribers: null,
+        restricted: postingRestrictedToMods,
+        canPost: await canPostIn(viewer, { id, restricted: postingRestrictedToMods }),
+      })),
+  );
   return [...rows, ...remote];
 }
 
 async function panelFor(communityId: string, viewer: SessionView, renderer: MarkdownRenderer): Promise<CommunityPanel | null> {
   if (!Uuid.allows(communityId)) return null;
   const community = await readCommunity({ id: communityId });
-  if (!community) return null;
+  // Removed, deleted, or age-gated for someone who has not declared 16+: it does not exist for them.
+  if (!community || !ageAllows(viewer, community)) return null;
   const restricted = community.postingRestrictedToMods;
   const summary = community.summaryMd
     ? renderer.render(community.summaryMd, { excerptLength: 240 }).excerpt
@@ -75,7 +117,8 @@ async function panelFor(communityId: string, viewer: SessionView, renderer: Mark
     summary: summary || null,
     warning: community.postingWarning,
     rules: community.rules.map(({ title, bodyMd }) => ({ title, html: bodyMd ? renderer.render(bodyMd).html : null })),
-    sensitive: community.sensitive,
+    // An NSFL community marks every post sensitive too (createPost).
+    sensitive: community.sensitive || community.nsfl,
     restricted,
     canPost: await canPostIn(viewer, { id: community.actor.id, restricted }),
   };
@@ -103,7 +146,7 @@ async function editTarget(
     url: view.url,
     bodyMd: page.body?.kind === 'markdown' ? page.body.source : '',
     // A community age-gated as sensitive marks every post in it; the post's own flag is the rest.
-    sensitive: view.sensitive || community?.sensitive === true,
+    sensitive: view.sensitive || community?.sensitive === true || community?.nsfl === true,
   };
 }
 
@@ -113,7 +156,7 @@ async function editTarget(
  * community.
  */
 export const loadComposer = createServerFn({ method: 'GET' })
-  .validator(type({ 'edit?': 'string | undefined', 'community?': 'string | undefined' }))
+  .validator(type({ 'edit?': 'string | undefined', 'community?': 'string | undefined', 'flash?': 'string | undefined' }))
   .handler(async ({ data }): Promise<ComposerData> => {
     const session = await pageSession();
     if (!session) return { status: 'unavailable', reason: 'signed-out' };
@@ -122,11 +165,15 @@ export const loadComposer = createServerFn({ method: 'GET' })
     const target = data.edit === undefined ? null : await editTarget(data.edit, view);
     if (typeof target === 'string') return { status: 'unavailable', reason: target };
     const communities = await pickable(view);
-    const wanted = data.community?.trim().toLowerCase();
-    const selected = target
-      ? target.community
-      : (communities.find(({ id, handle }) => wanted !== undefined && (id === wanted || handle.toLowerCase() === wanted.replace(/^!/, '')))
-          ?.id ?? null);
+    // What a refused post had typed (without JavaScript), kept for this person by the POST handler.
+    const kept = readFlash(data.flash, view.actorId);
+    // The community the words were meant for, if it is still one to pick, then the one asked for in the URL.
+    const pick = (key: string | null | undefined) => {
+      const wanted = key?.trim().toLowerCase();
+      if (!wanted) return undefined;
+      return communities.find(({ id, handle }) => id === wanted || handle.toLowerCase() === wanted.replace(/^!/, ''))?.id;
+    };
+    const selected = target ? target.community : (pick(kept?.community) ?? pick(data.community) ?? null);
     const [handles, uploads, panel] = await Promise.all([
       localHandles(),
       readSetting('uploads.enabled'),
@@ -134,21 +181,27 @@ export const loadComposer = createServerFn({ method: 'GET' })
     ]);
     return {
       status: 'ready',
+      actorId: view.actorId,
       me: `@${handles.handle(view.name).handle}`,
       communities,
       selected,
       panel,
       uploads,
       edit: target,
+      kept,
     };
   });
 
-/** The panel for a community picked in the form. Null for one that does not exist (or no session). */
+/**
+ * The panel for a community picked in the form; `panel` is null for one that does not exist for
+ * this viewer (removed, deleted, age-gated without a 16+ declaration) or without a session. Wrapped
+ * because a server function that returns a bare null is answered with a 500.
+ */
 export const loadCommunityPanel = createServerFn({ method: 'GET' })
   .validator(type({ id: 'string' }))
-  .handler(async ({ data }): Promise<CommunityPanel | null> => {
+  .handler(async ({ data }): Promise<{ panel: CommunityPanel | null }> => {
     const session = await pageSession();
-    return session ? panelFor(data.id, session.view, await createMarkdownRenderer()) : null;
+    return { panel: session ? await panelFor(data.id, session.view, await createMarkdownRenderer()) : null };
   });
 
 /**
