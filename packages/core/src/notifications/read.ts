@@ -92,7 +92,7 @@ export async function readInbox(
     filter === 'all' || filter === 'unread' ? undefined : inArray(notifications.kind, [...filterKinds[filter]]),
     filter === 'unread' ? isNull(notifications.readAt) : undefined,
     cursor !== null && Uuid.allows(cursor) ? lt(notifications.id, cursor) : undefined,
-    notBlocked(),
+    notBlocked(viewer.actorId),
     or(isNull(notifications.communityId), and(isNull(community.deletedAt), isNull(communityRemovals.communityId))),
   ];
   const [rows, unread, unreadByGroup] = await Promise.all([

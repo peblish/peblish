@@ -21,6 +21,7 @@ import {
   seedModlog,
   seedNotice,
 } from '../testing/seed-e2.ts';
+import { seedBlock } from '../testing/seed-e1.ts';
 import { localUser } from '../testing/seed.ts';
 import { db } from '../db/read.ts';
 import { notifications } from './tables.ts';
@@ -272,5 +273,53 @@ describe('account deletion', () => {
     await drainNotices();
     expect(await noticesOf(w.people.reader.id)).toEqual([]);
     expect(await noticesOf(w.people.author.id)).toHaveLength(1);
+  });
+});
+
+describe('blocks', () => {
+  test('a blocked author’s reply and mention create nothing, whether the person, their instance or the community is blocked', async () => {
+    const w = await seedInboxWorld();
+    const me = w.people.author;
+    const postId = w.posts.local.normal;
+    const mentionIn = (await seedPost(w.instances.local, w.communities.open, w.people.owner)).id;
+
+    // The person.
+    await seedBlock(me, w.people.reader);
+    await say(w.people.reader, postId, 'A reply');
+    await say(w.people.reader, mentionIn, 'Hello @author@feddit.test');
+    await drainNotices();
+    expect(await kindsOf(me.id)).toEqual([]);
+
+    // Their instance: a peer's reply.
+    await seedBlock(me, { instance: w.instances.lemmy });
+    await remoteSay(w.people.remoteAuthor, await postApId(postId));
+    await drainNotices();
+    expect(await kindsOf(me.id)).toEqual([]);
+
+    // The community: a person who is not blocked, replying in it.
+    await seedBlock(me, w.communities.open);
+    await say(w.people.moderator, postId, 'From a moderator');
+    await drainNotices();
+    expect(await kindsOf(me.id)).toEqual([]);
+  });
+
+  test('someone else’s block changes nothing for this recipient', async () => {
+    const w = await seedInboxWorld();
+    await seedBlock(w.people.owner, w.people.reader);
+    await say(w.people.reader, w.posts.local.normal, 'A reply');
+    await drainNotices();
+    expect(await kindsOf(w.people.author.id)).toEqual(['reply']);
+  });
+
+  test('a blocked moderator’s removal and ban still notify: the statement of reasons is owed', async () => {
+    const w = await seedInboxWorld();
+    const mod = localUser(w.people.moderator.id);
+    await seedBlock(w.people.reader, w.people.moderator);
+    await seedBlock(w.people.reader, w.communities.open);
+    const id = await say(w.people.reader, w.posts.local.normal, 'Rude');
+    await removeContent(await grantFor('mod.remove', mod, { target: { kind: 'comment', id } }), { reason: 'Rule 2' });
+    await banFromCommunity(await grantFor('mod.ban', mod, { communityId: w.communities.open.id, targetActorId: w.people.reader.id }), {});
+    await drainNotices();
+    expect(await kindsOf(w.people.reader.id)).toEqual(['mod_remove', 'ban']);
   });
 });

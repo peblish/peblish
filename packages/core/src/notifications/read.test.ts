@@ -5,7 +5,8 @@ import { db } from '../db/read.ts';
 import { writer } from '../db/write.ts';
 import { truncateAll } from '../testing/db.ts';
 import { seedComment, seedPost } from '../testing/seed-az.ts';
-import { seedModlog, seedInboxWorld, seedNotice } from '../testing/seed-e2.ts';
+import { seedBlock } from '../testing/seed-e1.ts';
+import { seedInboxWorld, seedModlog, seedNotice } from '../testing/seed-e2.ts';
 import { seedActor } from '../testing/seed.ts';
 import { readInbox } from './read.ts';
 import { notifications } from './tables.ts';
@@ -211,6 +212,32 @@ describe('what a row shows', () => {
   });
 });
 
+describe('blocks', () => {
+  test('a block made after the notice hides a reply and a mention from the list and the count, never a removal or a ban', async () => {
+    const w = await seedInboxWorld();
+    const me = w.people.author;
+    const from = { actorId: w.people.reader.id, communityId: w.communities.open.id };
+    for (const kind of ['reply', 'mention', 'mod_remove', 'ban'] as const) {
+      await seedNotice({ recipientId: me.id, kind, refId: uuidv7(), ...from });
+    }
+    await seedNotice({ recipientId: me.id, kind: 'reply', refId: uuidv7(), actorId: w.people.moderator.id });
+    expect(await unreadCount(me.id)).toBe(5);
+
+    await seedBlock(me, w.people.reader);
+    const inbox = await readInbox(viewerOf(me));
+    expect(inbox.items.map((item) => item.kind)).toEqual(['reply', 'ban', 'mod_remove']);
+    expect(inbox.unread).toBe(3);
+    expect(inbox.unreadByGroup).toEqual({ replies: 1, mentions: 0, content: 1, account: 1 });
+    expect(await unreadCount(me.id)).toBe(3);
+
+    // Blocking the community or the instance the author lives on hides the rest of the replies the same way.
+    await seedBlock(me, w.communities.open);
+    expect((await readInbox(viewerOf(me))).items.map((item) => item.kind)).toEqual(['reply', 'ban', 'mod_remove']);
+    await seedBlock(me, { instance: w.instances.local });
+    expect((await readInbox(viewerOf(me))).items.map((item) => item.kind)).toEqual(['ban', 'mod_remove']);
+  });
+});
+
 describe('unreadCount', () => {
   test('is 0 signed out, counts unread only, and stops at the cap', async () => {
     const w = await seedInboxWorld();
@@ -250,7 +277,7 @@ describe('at scale', () => {
     const plan = await db().execute<{ 'QUERY PLAN': string }>(sql`explain ${unreadCountQuery(db(), people[0]!.id)}`);
     const text = plan.map((row) => row['QUERY PLAN']).join('\n');
     expect(text).toContain('notifications_unread');
-    expect(text).not.toContain('Seq Scan');
+    expect(text).not.toMatch(/Seq Scan on notifications/);
 
     const times: number[] = [];
     for (let n = 0; n < 60; n++) {

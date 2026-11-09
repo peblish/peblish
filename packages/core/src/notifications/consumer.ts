@@ -42,12 +42,7 @@ const writeNotice = async (
 
 /** True when the recipient blocks the author of a reply or mention. */
 async function blocks(t: ConsumerTx, recipientId: Uuid, authorId: Uuid, communityId: Uuid): Promise<boolean> {
-  const blocked = noticeBlocked({
-    kind: sql`'reply'`,
-    recipientId: sql`${recipientId}::uuid`,
-    actorId: sql`${authorId}::uuid`,
-    communityId: sql`${communityId}::uuid`,
-  });
+  const blocked = noticeBlocked(recipientId, { actorId: sql`${authorId}::uuid`, communityId: sql`${communityId}::uuid` });
   const [row] = await t.db.execute<{ blocked: boolean }>(sql`select ${blocked} as blocked`);
   return row?.blocked === true;
 }

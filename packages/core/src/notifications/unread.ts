@@ -11,7 +11,7 @@ export const unreadWhere = (viewerId: Uuid, kinds?: readonly NotificationKind[])
     eq(notifications.recipientId, viewerId),
     isNull(notifications.readAt),
     kinds && inArray(notifications.kind, [...kinds]),
-    notBlocked(),
+    notBlocked(viewerId),
   );
 
 /** The count's query: a capped subselect, so it probes at most unreadCap index entries. */
