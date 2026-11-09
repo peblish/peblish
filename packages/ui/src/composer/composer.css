@@ -58,9 +58,11 @@
     background: none;
   }
 
+  /* At least 24 by 24 px per target (WCAG 2.5.8, axe target-size); the row has no gaps between them. */
   .pb-md__btn {
     position: relative;
     min-width: 30px;
+    min-height: 28px;
     padding: 3px 9px;
     border: 0;
     border-right: 1px solid var(--md-line);

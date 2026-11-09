@@ -1,6 +1,5 @@
 import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
-import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Browser, type Page } from '@playwright/test';
 import { expectAccessible, landed, signIn } from '../auth/support.ts';
 import { gotoHydrated, recordConsole } from '../support/route-marker.ts';
@@ -46,18 +45,6 @@ async function sameSession(browser: Browser, page: Page, options: { javaScriptEn
 }
 
 const profile = (name: string) => `/u/${name}`;
-
-/**
- * The shared axe check on the edit page, without the Markdown editor's formatting buttons: their
- * size is the UI package's (the composer's text posts share them), reported in the lane notes.
- */
-async function expectAccessibleBesidesToolbar(page: Page) {
-  const results = await new AxeBuilder({ page })
-    .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa', 'best-practice'])
-    .exclude('[role="toolbar"]')
-    .analyze();
-  expect(results.violations.map(({ id, nodes }) => ({ id, targets: nodes.map(({ target }) => target.join(' ')) }))).toEqual([]);
-}
 
 test.describe('anyone', () => {
   test('a local profile: card, tabs, posts and comments, and no axe violations', async ({ page }) => {
@@ -206,7 +193,7 @@ test.describe('signed in', () => {
     await signedIn(page, seed.owner.name);
     await gotoHydrated(page, `${profile(seed.owner.name)}/edit`);
     await expect(page.getByRole('heading', { level: 2, name: 'Edit profile' })).toBeVisible();
-    await expectAccessibleBesidesToolbar(page);
+    await expectAccessible(page);
     const name = page.getByLabel('Display name');
     await expect(name).toHaveValue('Pat Profile');
     await name.fill('Pat Q. Profile');
@@ -258,7 +245,7 @@ test.describe('signed in', () => {
     await expectAccessible(german);
     await gotoHydrated(german, `${profile(seed.owner.name)}/edit`);
     await expect(german.getByRole('heading', { level: 2, name: 'Profil bearbeiten' })).toBeVisible();
-    await expectAccessibleBesidesToolbar(german);
+    await expectAccessible(german);
     await german.context().close();
   });
 });
