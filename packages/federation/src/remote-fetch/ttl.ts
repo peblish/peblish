@@ -27,5 +27,11 @@ export const remoteTtls = {
     perRun: 25,
     /** Waits after the first, second, ... failed attempt on one object (a peer that is down); the last wait repeats. */
     retryAfterMs: [60_000, 5 * 60_000, 30 * 60_000, 2 * 60 * 60_000, 12 * 60 * 60_000, 24 * 60 * 60_000] as readonly number[],
+    /** Waiting activities looked at in one page of the query, and pages read in one run (older ones wait for the next). */
+    pageSize: 200,
+    maxPages: 10,
+    /** What the job remembers per (community, object) is kept this long once it is settled, and at most this many entries are kept. */
+    settledForMs: 24 * 60 * 60 * 1000,
+    memoryCap: 5000,
   },
 } as const;

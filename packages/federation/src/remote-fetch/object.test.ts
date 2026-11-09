@@ -146,6 +146,22 @@ describe('a comment fetched on demand', () => {
   });
 });
 
+describe('this server’s own ids', () => {
+  test('are never fetched: a comment replying to one of ours that we do not hold is refused with no request', async () => {
+    const own = `${new URL(world.community.apId).origin}/ap/post/does-not-exist`;
+    const note = lemmyNote(60, own);
+    const peer = serving({ [String(note.id)]: note, [own]: lemmyPage(61) });
+    expect(await fetchRemoteObject(String(note.id), { vouch, fetch: peer.fetch })).toEqual({
+      status: 'refused',
+      apId: String(note.id),
+      reason: 'parent.missing',
+    });
+    expect(peer.requests.some((request) => request.url === own)).toBe(false);
+    expect(await fetchRemoteObject(own, { vouch, fetch: peer.fetch })).toEqual({ status: 'refused', apId: own, reason: 'object.local' });
+    expect(peer.requests.some((request) => request.url === own)).toBe(false);
+  });
+});
+
 describe('an object its server answers with 410 or a Tombstone', () => {
   test('is soft-deleted in our copy and recorded in the ledger, once', async () => {
     const target = `${lemmy}/post/350`;

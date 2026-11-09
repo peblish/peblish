@@ -12,6 +12,7 @@ import { fetchActivity, FetchFailure, type Fetcher } from '../actors/document.ts
 import { importGrant } from '../actors/grants.ts';
 import { ActorResolveError, resolveRemoteActor, type ResolvedActor } from '../actors/resolve.ts';
 import { safeFetch } from '../actors/safe-fetch.ts';
+import { localOrigin } from '../federation.ts';
 import { checkObject } from '../inbound/authorize.ts';
 import { requeueSkippedFor } from '../inbound/queue.ts';
 import { Skipped } from '../inbound/reasons.ts';
@@ -79,9 +80,12 @@ function isBoundTo(json: unknown, requested: string, served: string): boolean {
 /**
  * GETs the object at `apId` from its own origin (signed as the instance, through safeFetch). A
  * 410, or a Tombstone, is an outcome of its own (`gone`), not an error. A document whose id is
- * not the requested URL's, or the one it was served from, is refused as `object.id_mismatch`.
+ * not the requested URL's, or the one it was served from, is refused as `object.id_mismatch`; an
+ * id on this server's own origin as `object.local`, with no request made.
  */
 export async function readObject(apId: string, fetch: Fetcher): Promise<{ json: unknown } | ObjectOutcome> {
+  // We never fetch ourselves: an id on this server's own origin that we do not hold is gone, whoever named it.
+  if (!URL.canParse(apId) || new URL(apId).origin === (await localOrigin())) return refused(apId, 'object.local');
   try {
     const { json, url } = await fetchActivity(apId, fetch);
     if (!isBoundTo(json, apId, url)) return refused(apId, 'object.id_mismatch');
