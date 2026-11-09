@@ -7,8 +7,9 @@ import { writer } from '../db/write.ts';
 import { ageDeclarations } from '../identity/tables.ts';
 import { truncateAll } from '../testing/db.ts';
 import { seedComment, seedModerationWorld, seedPost } from '../testing/seed-az.ts';
-import { localUser } from '../testing/seed.ts';
-import { readReportForm } from './form.ts';
+import { localUser, seedActor } from '../testing/seed.ts';
+import { createReportAs } from './actions.ts';
+import { readReportForm, readSentReport } from './form.ts';
 import type { ReportTarget } from './types.ts';
 
 beforeEach(truncateAll);
@@ -40,5 +41,29 @@ describe('the report form quotes only what the post page would show this viewer'
     // the NSFL flag gates the same way
     await writer().update(actors).set({ sensitive: false, nsfl: true }).where(eq(actors.id, community.id));
     expect(await quote(onPost)).toBeNull();
+  });
+});
+
+describe('a forwarded report names every host it goes to', () => {
+  test('the form lists the community host and the author host; the receipt drops the anonymity promise only when forwarded', async () => {
+    const w = await seedModerationWorld();
+    const stranger = await seedActor(w.instances.other, 'Person', 'stranger');
+    const both = await seedPost(w.instances.lemmy, w.communities.remote.live, stranger, { title: 'Two hosts' });
+    const authorOnly = await seedPost(w.instances.local, w.communities.local.live, stranger, { title: 'Author host' });
+    const user = localUser(w.people.user.id);
+    const hosts = async (id: string) => {
+      const form = await readReportForm(user, { kind: 'post', id });
+      if (!form.ok) throw new Error(form.reason);
+      return form.hosts;
+    };
+    expect(await hosts(both.id)).toEqual(['lemmy.test', 'other.test']);
+    expect(await hosts(authorOnly.id)).toEqual(['other.test']);
+    expect(await hosts(w.subjects.remote.normal.postId)).toEqual(['lemmy.test']);
+    expect(await hosts(w.subjects.local.normal.postId)).toEqual([]);
+    const sent = await createReportAs(user, { target: { kind: 'post', id: both.id }, category: 'spam', forward: true, details: '' });
+    const kept = await createReportAs(user, { target: { kind: 'post', id: authorOnly.id }, category: 'spam', forward: false, details: '' });
+    if (!sent.ok || !kept.ok) throw new Error('not filed');
+    expect(await readSentReport(w.people.user.id, sent.number)).toMatchObject({ forwardedTo: ['lemmy.test', 'other.test'] });
+    expect(await readSentReport(w.people.user.id, kept.number)).toMatchObject({ forwardedTo: [] });
   });
 });
