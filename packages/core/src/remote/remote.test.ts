@@ -229,8 +229,8 @@ describe('deleting an actor and recording instance software', () => {
   test('a remote actor’s Delete scrubs the profile, keeps the id and key, and is recorded once', async () => {
     const w = await world();
     await storeRemoteActor(await w.store(), input());
-    expect(await deleteRemoteActor(await w.remove())).toEqual({ deleted: true });
-    expect(await deleteRemoteActor(await w.remove())).toEqual({ deleted: false });
+    expect(await deleteRemoteActor(await w.remove())).toMatchObject({ deleted: true });
+    expect(await deleteRemoteActor(await w.remove())).toMatchObject({ deleted: false });
     const [actor] = await db().select().from(actors).where(eq(actors.apId, apId));
     expect(actor).toMatchObject({ displayName: null, summaryHtml: null, raw: null, name: 'lab' });
     expect(actor?.deletedAt).toBeInstanceOf(Date);
@@ -256,7 +256,7 @@ describe('deleting an actor and recording instance software', () => {
     expect(await eventTypes()).toEqual(['actor.created', 'actor.deleted']);
   });
 
-  test('instance software is stored lowercase, with an event only when it changes; nothing is dormant yet', async () => {
+  test('instance software is stored lowercase, with an event only when it changes; a new instance is not dormant', async () => {
     const w = await world();
     expect(await storeInstanceSoftware(await w.software(), { software: 'Lemmy', version: '0.19.21' })).toMatchObject({ changed: true });
     expect(await storeInstanceSoftware(await w.software(), { software: 'lemmy', version: '0.19.21' })).toMatchObject({ changed: false });

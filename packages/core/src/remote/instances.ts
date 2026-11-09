@@ -53,11 +53,4 @@ export const storeInstanceSoftware = defineMutation({
   },
 });
 
-/**
- * Whether deliveries to this instance are skipped because it has gone quiet. Always false until
- * lane REM fills in the policy (seven days of failed deliveries and silence, one probe a day);
- * the delivery job already asks.
- */
-export async function isDormant(_instanceId: Uuid): Promise<boolean> {
-  return false;
-}
+export { isDormant } from './dormant.ts';
