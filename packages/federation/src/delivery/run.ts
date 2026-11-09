@@ -2,6 +2,7 @@ import { db } from '@peblish/core/db/read';
 import { actorKeys } from '@peblish/core/db/tables/actors';
 import { deliveries } from '@peblish/core/delivery/tables';
 import { isDormant } from '@peblish/core/remote/instances';
+import { readSetting } from '@peblish/core/settings/read';
 import { tx } from '@peblish/core/tx/tx';
 import { and, eq, sql } from 'drizzle-orm';
 import type { Fetcher } from '../actors/document.ts';
@@ -180,7 +181,11 @@ async function deliver(
   return attempt(row, options.fetch, options.leaseMs);
 }
 
-/** Runs the queue until nothing is due (or `maxRows` rows were taken) and says how the rows ended. */
+/**
+ * Runs the queue until nothing is due (or `maxRows` rows were taken) and says how the rows ended.
+ * With the `delivery.enabled` site setting off it claims nothing: rows stay pending, and a switch
+ * turned off mid-run stops the run before its next batch.
+ */
 export async function deliverDue(options: DeliveryOptions = {}): Promise<DeliveryCounts> {
   const fetch = options.fetch ?? safeFetch;
   const leaseMs = options.leaseMs ?? defaultLeaseMs;
@@ -201,6 +206,7 @@ export async function deliverDue(options: DeliveryOptions = {}): Promise<Deliver
     await deps.refreshSoftware(origin);
   };
   for (let taken = 0; taken < maxRows && !options.signal?.aborted;) {
+    if (!(await readSetting('delivery.enabled'))) break;
     const rows = await claimDue(Math.min(batchSize, maxRows - taken), leaseMs);
     if (rows.length === 0) break;
     taken += rows.length;

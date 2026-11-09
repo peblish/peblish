@@ -230,20 +230,23 @@ async function commentFrom(db: Queryable, origin: string, where: ReturnType<type
   };
 }
 
+/** A remote person a body names and we hold: addressed in `cc` and sent the activity directly. */
+export type Mentioned = { apId: string; inbox: string };
+
 /**
- * The Mention tags for the people and communities a Markdown body names (`@name@host`,
- * `!name@host`), up to the renderer's cap. A mention whose actor we do not hold is left out:
- * we do not guess a remote actor's id, and nothing is fetched while a consumer holds its
- * transaction.
+ * The people and communities a Markdown body names (`@name@host`, `!name@host`), up to the
+ * renderer's cap: a Mention tag for each, and the remote people among them with an inbox. A
+ * mention whose actor we do not hold stays text: we do not guess a remote actor's id, and
+ * nothing is fetched while a consumer holds its transaction. Communities are tagged but never
+ * addressed: an activity sent to a community's inbox would be read as a post to it.
  */
-export async function mentionTags(db: Queryable, origin: string, source: string | null): Promise<Json[]> {
-  if (source === null) return [];
+export async function mentionsIn(db: Queryable, origin: string, source: string | null): Promise<{ tags: Json[]; people: Mentioned[] }> {
+  const found = { tags: [] as Json[], people: [] as Mentioned[] };
+  if (source === null) return found;
   const mentions = renderMarkdown(source, { baseOrigin: origin }).mentions;
-  if (mentions.length === 0) return [];
-  const tags: Json[] = [];
   for (const { kind, name, host } of mentions) {
     const [row] = await db
-      .select({ apId: actors.apId })
+      .select({ apId: actors.apId, local: actors.local, inboxUrl: actors.inboxUrl, sharedInboxUrl: actors.sharedInboxUrl })
       .from(actors)
       .innerJoin(instances, eq(instances.id, actors.instanceId))
       .where(
@@ -254,9 +257,14 @@ export async function mentionTags(db: Queryable, origin: string, source: string 
           sql`${actors.deletedAt} is null`,
         ),
       );
-    if (row) tags.push({ type: 'Mention', href: row.apId, name: `${kind === 'person' ? '@' : '!'}${name}@${host}` });
+    if (!row) continue;
+    found.tags.push({ type: 'Mention', href: row.apId, name: `${kind === 'person' ? '@' : '!'}${name}@${host}` });
+    const inbox = row.sharedInboxUrl ?? row.inboxUrl;
+    if (kind === 'person' && !row.local && inbox && !found.people.some((person) => person.apId === row.apId)) {
+      found.people.push({ apId: row.apId, inbox });
+    }
   }
-  return tags;
+  return found;
 }
 
 /**
@@ -272,6 +280,22 @@ export function withTags<T extends JsonObject>(wire: T, tags: readonly Json[]): 
       node.tag = [...tags];
       return wire;
     }
+    const next = node.object;
+    if (typeof next !== 'object' || next === null || Array.isArray(next)) return wire;
+    node = next;
+  }
+}
+
+/**
+ * Adds `addresses` to `cc` of the activity and of the post or comment it carries, leaving an
+ * Announce's own addressing (the community's followers) alone. Same walk as `withTags`.
+ */
+export function withCc<T extends JsonObject>(wire: T, addresses: readonly string[]): T {
+  if (addresses.length === 0) return wire;
+  let node: JsonObject = wire;
+  for (;;) {
+    if (node.type !== 'Announce') node.cc = [...new Set([...(Array.isArray(node.cc) ? node.cc : []), ...addresses])] as Json[];
+    if (node.type === 'Page' || node.type === 'Note') return wire;
     const next = node.object;
     if (typeof next !== 'object' || next === null || Array.isArray(next)) return wire;
     node = next;

@@ -171,6 +171,60 @@ instance's NodeInfo software (`delivery/software.ts`, lists as data):
 `Announce(Page)` for Mastodon-like software, only for a new post. Lemmy rejects
 `Announce(Page)`, Mastodon drops the other. Shared inboxes are used first and deduplicated.
 
+**What Mastodon-like inboxes get.** Mastodon drops an Announce of anything but a post it can
+resolve, so a local community's other traffic is not sent to them. A Mastodon-like inbox is
+sent posts only (`publishInCommunity`, `delivery/publish.ts`); threadiverse inboxes are
+unchanged.
+
+| Local event                                    | Threadiverse and unknown inboxes   | Mastodon-like inboxes                                               |
+| ---------------------------------------------- | ---------------------------------- | ------------------------------------------------------------------- |
+| new post                                       | `Announce(Create(Page))`           | `Announce(Page)`                                                    |
+| edit of a post                                 | `Announce(Update(Page))`           | `Update(Page)` signed by the author, direct, not announced          |
+| author delete                                  | `Announce(Delete)`                 | `Undo(Announce)` by the community, then the author's `Delete`       |
+| moderator removal, local author                | `Announce(Delete)` with the reason | the same as an author delete (the `Delete` has no summary)          |
+| moderator removal, remote author               | `Announce(Delete)` with the reason | `Undo(Announce)` only: there is no key for the author               |
+| remote `Delete` of a post, relayed             | the received bytes, origin skipped | `Undo(Announce)`, plus the author's `Delete` if the author is local |
+| ban with `removeContent`                       | `Announce(Block)`                  | the removal's withdrawal for each of the member's removed posts     |
+| restore, lock, unlock, pin, ban, comment, vote | as before                          | nothing                                                             |
+
+`delivery/withdraw.ts` does the withdrawal. The boost is the community's stored
+`Announce(Page)` of the post (`activities`: `type Announce`, `object_ap_id` the post's id);
+`boostsOf` lists the ones with no stored Undo, with the inboxes of their `deliveries` rows.
+`withdrawBoosts` queues an `Undo(Announce)` (raw JSON, `undoAnnounce`, served at its id) to those
+inboxes and to the Mastodon-like followers now, so an instance that unfollowed since still hears
+of it, then the author's `Delete` to the same inboxes when the author is local. The stored Undo
+(`object_ap_id` the Announce's id) marks the boost withdrawn, so a second event queues nothing,
+and a post never boosted queues nothing. It follows Mastodon's `undo.rb` (an Undo of an
+Announce is found by the Announce's id and the booster) and `delete.rb` (a Delete is found by
+the author, and `RemoveStatusService` takes the boosts with it).
+
+Restoring is not sent to Mastodon-like inboxes: Mastodon keeps a Tombstone of what it deleted
+and refuses a `Create` of it, so a restored post stays gone there. An unlock, a pin and a ban
+change nothing a Mastodon user sees. A ban with `removeContent` removes the member's posts
+without an event each, so the relay withdraws up to 200 of the member's removed, still boosted
+posts per event (`removedBoostedPosts`); a second event takes the rest.
+
+**Site bans.** A `mod.ban` with `communityId: null` (a local moderator banning a person from the
+whole site) is a `Block` of the person with the instance actor (`<origin>/`) as `target`, signed
+by the moderator and sent straight to every peer we trade follows with (`peerInboxes`), not
+announced, as an account's deletion is; an unban is the `Undo` embedding it. Inboxes of an
+instance where `deliveryBlocked` (`core/src/peers/gate.ts`, lane MODF's) is true are left out.
+With `removeContent` the person's removed posts are taken down without an event each, so the
+relay withdraws their boosts from Mastodon-like followers in batches of 200 until none is
+left, in every local community. A site ban by a remote moderator is not ours to send.
+
+**The kill switch.** With the `delivery.enabled` site setting off, `deliverDue` claims nothing:
+rows stay pending (attempts uncounted) and go out once it is on again. A run that is under way
+stops before its next batch.
+
+**Mentions.** A post or comment that names a remote person (`@name@host`) we hold adds that
+person to the `cc` of the activity and of the Page or Note, and the Mention `tag` as before.
+When no Announce reaches the person's inbox (it is not a follower inbox the activity goes to),
+the author's own activity is also sent to it directly, signed by the author, as Lemmy does. An
+unknown handle stays text, and a mentioned community (`!name@host`) is tagged but never
+addressed: an activity sent to a community's inbox is read as a post to it. The Page or Note served
+at its id (`actors/serve.ts`) has the same `tag` and `cc`, so what a peer fetches matches what was sent.
+
 **The worker.** `federation.delivery_queue` runs every two seconds. A row is claimed with
 `FOR UPDATE SKIP LOCKED` and a 60 second lease (the request times out at 15 seconds), the
 activity is signed once, POSTed with no redirects and a 64 KiB response cap, and the outcome
@@ -376,11 +430,14 @@ What reaches a local community directly (a post, a comment, a vote, a remote mod
 action) is applied and then announced by the community to its remote followers except the
 sender's server (`relay/announce.ts`). The Announce embeds the received bytes exactly,
 spliced into the Announce text, because re-serialising parsed JSON changes what Lemmy's strict
-parser needs. A new post goes to Mastodon-like followers as `Announce(Page)` instead, and a microblog Note
+parser needs. A new post goes to Mastodon-like followers as `Announce(Page)` instead, and a Delete of a
+post takes its boosts back there with an `Undo(Announce)` (above); nothing else is sent to them. A microblog Note
 rewritten into a post is relayed as the Page it was stored as, never as the original Note bytes.
 `relay/consumer.ts` turns a moderation event taken here (`local: true`, in a local community)
 into Delete, Lock, Add or Remove on the featured and moderators collections, Block, and their
-Undos, announced to followers; a local account's deletion becomes a Delete of the account.
+Undos, announced to followers, and, for the removal of a post and a ban with `removeContent`, the
+withdrawal of its boosts from Mastodon-like followers; a local account's deletion becomes a
+Delete of the account; a site ban becomes a `Block` to the peers (above).
 
 ### Remote moderators
 

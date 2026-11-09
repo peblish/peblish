@@ -66,7 +66,7 @@ describe('what reaches a local community directly is announced to its followers'
     return text;
   };
 
-  test('the Announce carries the received bytes exactly, and nothing goes back to the sender’s server', async () => {
+  test('the Announce carries the received bytes exactly, goes to no Mastodon-like inbox, and nothing goes back to the sender’s server', async () => {
     await followed();
     const text = await receive({
       id: activityId('https://lemmy.test', 'like'),
@@ -77,7 +77,7 @@ describe('what reaches a local community directly is announced to its followers'
       'urn:odd': ['kept'],
     });
     const rows = await queued();
-    expect(rows.map((row) => row.inbox)).toEqual(['https://mastodon.test/inbox', 'https://piefed.test/inbox']);
+    expect(rows.map((row) => row.inbox)).toEqual(['https://piefed.test/inbox']);
     for (const row of rows) {
       expect(row.body.endsWith(`,"object":${text}}`)).toBe(true);
       expect(row.json).toMatchObject({ type: 'Announce', actor: hosts.spike, to: [PUBLIC] });
@@ -241,7 +241,7 @@ describe('a moderation action taken here is federated through the community', ()
     expect(byType('Undo').map((a) => (a.object as Json).type)).toEqual(['Lock', 'Block']);
   });
 
-  test('what a peer did, a community we do not host, a site ban and a moderator no longer here are not federated', async () => {
+  test('what a peer did, a community we do not host and a moderator no longer here are not federated', async () => {
     const w = await outbound();
     const ref = { kind: 'post', id: uuidv7() } as const;
     await run({
@@ -253,17 +253,6 @@ describe('a moderation action taken here is federated through the community', ()
       reason: null,
     } as OutboxEvent);
     await run({ type: 'mod.remove', ...mod(w, w.lab.id), target: ref, targetApId: target, removed: true, reason: null } as OutboxEvent);
-    await run({
-      type: 'mod.ban',
-      ...mod(w),
-      communityId: null,
-      targetActorId: w.bob.id,
-      targetApId: w.bob.apId,
-      banned: true,
-      removeContent: false,
-      expiresAt: null,
-      reason: null,
-    } as OutboxEvent);
     await run({
       type: 'mod.lock',
       ...mod(w),

@@ -6,6 +6,7 @@ import { writer } from '@peblish/core/db/write';
 import { tx } from '@peblish/core/tx/tx';
 import { truncateAll } from '@peblish/core/testing/db';
 import { seedActor, seedInstance } from '@peblish/core/testing/seed';
+import { seedSetting } from '@peblish/core/testing/seed-a';
 import { seedLocalInstance, seedSigningKey, stubFetch } from '@peblish/core/testing/seed-fed-a';
 import { BlockedDestinationError } from '../actors/safe-fetch.ts';
 import { parseSignature, signatureVerifies } from '../signing/verify.ts';
@@ -202,6 +203,18 @@ describe('delivering', () => {
     await w.makeDue();
     await deliverDue({ fetch, ...quiet });
     expect(requests).toHaveLength(0);
+  });
+
+  test('with delivery.enabled off nothing is claimed or sent, and the rows go out once it is on again', async () => {
+    const w = await world();
+    await w.send();
+    const { fetch, requests } = stubFetch({ [inbox]: { status: 202 } });
+    await seedSetting('delivery.enabled', false);
+    expect(await deliverDue({ fetch, ...quiet })).toEqual({ delivered: 0, retried: 0, failed: 0, skipped: 0 });
+    expect(requests).toHaveLength(0);
+    expect((await w.rows())[0]).toMatchObject({ state: 'pending', attempts: 0 });
+    await seedSetting('delivery.enabled', true);
+    expect(await deliverDue({ fetch, ...quiet })).toMatchObject({ delivered: 1 });
   });
 
   test('a dormant instance is skipped without a request, and one that is not is sent', async () => {

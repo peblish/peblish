@@ -7,7 +7,7 @@ import { and, desc, eq } from 'drizzle-orm';
 import { accept, create, follow, note, page, remove, undoDelete, undoFollow, undoVote, update, updateActor, vote } from './activities.ts';
 import { followerInboxes, peerInboxes } from './followers.ts';
 import { newActivityId, publishInCommunity, sendActivity } from './publish.ts';
-import { actorRefs, loadComment, loadPost, localActorRecord, mentionTags, voteTarget } from './records.ts';
+import { actorRefs, loadComment, loadPost, localActorRecord, mentionsIn, voteTarget } from './records.ts';
 
 // Turns the local things that happened (the outbox events with local content) into the
 // activities peers read, stores them in `activities`, and queues them for delivery. It runs in
@@ -46,15 +46,16 @@ async function onPost(event: Of<'post.created' | 'post.updated' | 'post.deleted'
     case 'post.created': {
       // A post deleted or removed before we got here is not announced; its Delete follows.
       if (!loaded.live) return;
-      const tags = await mentionTags(t.db, origin, loaded.bodyMd);
-      return publishInCommunity(t, context, create(as(id), page(record)), { page: record, tags });
+      const { tags, people } = await mentionsIn(t.db, origin, loaded.bodyMd);
+      return publishInCommunity(t, context, create(as(id), page(record)), { page: record, tags, mentions: people });
     }
     case 'post.updated': {
       if (!loaded.live) return;
-      return publishInCommunity(t, context, update(as(id), page(record)), { tags: await mentionTags(t.db, origin, loaded.bodyMd) });
+      const { tags, people } = await mentionsIn(t.db, origin, loaded.bodyMd);
+      return publishInCommunity(t, context, update(as(id), page(record)), { tags, mentions: people, microblog: 'inner' });
     }
     case 'post.deleted':
-      return publishInCommunity(t, context, remove(as(id), record.apId));
+      return publishInCommunity(t, context, remove(as(id), record.apId), { microblog: { withdraw: record.apId } });
     case 'post.restored': {
       if (!loaded.live) return;
       return publishInCommunity(t, context, undoDelete(as(id), await sentDeleteId(t, origin, record.apId, author.apId), record.apId));
@@ -70,11 +71,12 @@ async function onComment(event: Of<'comment.created' | 'comment.updated' | 'comm
   const context = { origin, author, community };
   switch (event.type) {
     case 'comment.created':
+    case 'comment.updated': {
       if (!loaded.live) return;
-      return publishInCommunity(t, context, create(as, note(record)), { tags: await mentionTags(t.db, origin, loaded.bodyMd) });
-    case 'comment.updated':
-      if (!loaded.live) return;
-      return publishInCommunity(t, context, update(as, note(record)), { tags: await mentionTags(t.db, origin, loaded.bodyMd) });
+      const { tags, people } = await mentionsIn(t.db, origin, loaded.bodyMd);
+      const activity = event.type === 'comment.created' ? create(as, note(record)) : update(as, note(record));
+      return publishInCommunity(t, context, activity, { tags, mentions: people });
+    }
     case 'comment.deleted':
       return publishInCommunity(t, context, remove(as, record.apId));
   }
