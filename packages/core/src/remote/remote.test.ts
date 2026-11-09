@@ -189,8 +189,8 @@ describe('deleting an actor and recording instance software', () => {
   test('a remote actor’s Delete scrubs the profile, keeps the id and key, and is recorded once', async () => {
     const w = await world();
     await storeRemoteActor(await w.store(), input());
-    expect(await deleteRemoteActor(await w.remove(), undefined)).toEqual({ deleted: true });
-    expect(await deleteRemoteActor(await w.remove(), undefined)).toEqual({ deleted: false });
+    expect(await deleteRemoteActor(await w.remove())).toEqual({ deleted: true });
+    expect(await deleteRemoteActor(await w.remove())).toEqual({ deleted: false });
     const [actor] = await db().select().from(actors).where(eq(actors.apId, apId));
     expect(actor).toMatchObject({ displayName: null, summaryHtml: null, raw: null, name: 'lab' });
     expect(actor?.deletedAt).toBeInstanceOf(Date);

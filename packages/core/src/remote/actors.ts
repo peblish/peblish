@@ -172,7 +172,7 @@ export const storeRemoteActor = defineMutation({
 export const deleteRemoteActor = defineMutation({
   action: 'remote.actor_delete',
   emits: ['actor.deleted'],
-  async run(t, grant) {
+  async run(t, grant, _input: void) {
     const [actor] = await t.db
       .select({ id: actors.id, kind: actors.kind, deletedAt: actors.deletedAt })
       .from(actors)
