@@ -174,6 +174,18 @@ test.describe('anyone', () => {
     await expect.poll(() => topLevel(page)).toEqual(Array.from({ length: 25 }, (_, index) => `Comment ${27 - index}`));
     expect(log.hydrationProblems()).toEqual([]);
 
+    // The links go through the router once hydrated: the next page replaces the list with no page load.
+    await gotoHydrated(page, `${postUrl(seed.posts.paged)}?sort=old`);
+    await page.evaluate(() => Object.assign(window, { loadedOnce: true }));
+    await page.getByRole('link', { name: 'More comments' }).click();
+    await expect.poll(() => topLevel(page)).toEqual(['Comment 25', 'Comment 26', 'Comment 27']);
+    await expect(page).toHaveURL(/\?sort=old&after=[\w-]+#comments$/);
+    await page.getByRole('link', { name: 'Back to the first comments' }).click();
+    await expect.poll(() => topLevel(page)).toHaveLength(25);
+    await page.goBack();
+    await expect.poll(() => topLevel(page)).toEqual(['Comment 25', 'Comment 26', 'Comment 27']);
+    expect(await page.evaluate(() => 'loadedOnce' in window)).toBe(true);
+
     // A cursor that is not one starts at the first page; so does one that belongs to another sort.
     await page.goto(`${postUrl(seed.posts.paged)}?sort=old&after=nonsense`);
     expect(await topLevel(page)).toHaveLength(25);
@@ -397,6 +409,34 @@ test.describe('a signed-in person', () => {
     await page.locator('html[data-hydrated="1"]').waitFor({ state: 'attached' });
     await expect(score).toHaveText('4');
     await expect(second.getByRole('button', { name: 'Upvote' })).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  test("a reply being typed and a vote stay on their comment's page when the router opens another", async ({ page }) => {
+    await signedIn(page, seed.author.name);
+    await gotoHydrated(page, postUrl(seed.posts.thread));
+    await page.evaluate(() => Object.assign(window, { loadedOnce: true }));
+    // Both links go through the router, which reuses the permalink page's component.
+    await page.getByRole('link', { name: 'Continue this thread' }).first().click();
+    await page.waitForURL(commentUrl(seed.posts.thread, seed.comments.chain[5]!));
+    // The address changes before the page does; the permalink page is the one with its own title.
+    await expect(page.getByRole('heading', { level: 1 })).toContainText('Comment on');
+    const actions = (id: string) => page.locator(`#comment-${id} > .pb-comment__main > .pb-comment__actions`);
+    const voted = page.waitForResponse((response) => response.url().includes('/_serverFn/'));
+    await actions(seed.comments.chain[5]!).getByRole('button', { name: 'Upvote' }).click();
+    await voted;
+    await expect(actions(seed.comments.chain[5]!).getByRole('button', { name: 'Upvote' })).toHaveAttribute('aria-pressed', 'true');
+    await page.getByRole('textbox', { name: 'Reply' }).fill(`Draft for level 6 ${seed.suffix}`);
+
+    await page.getByRole('link', { name: 'View the comment above' }).click();
+    await page.waitForURL(commentUrl(seed.posts.thread, seed.comments.chain[4]!));
+    expect(await page.evaluate(() => 'loadedOnce' in window)).toBe(true);
+    // Nothing typed there is here, and the bar answers this page's comment.
+    const bar = page.getByRole('form', { name: 'Reply' });
+    await expect(bar.getByRole('textbox', { name: 'Reply' })).toHaveValue('');
+    await expect(bar).toContainText(`Chain level 5 ${seed.suffix}`);
+    // The votes are the server's: the comment voted on is a reply here, and this page's own comment is not voted.
+    await expect(actions(seed.comments.chain[5]!).getByRole('button', { name: 'Upvote' })).toHaveAttribute('aria-pressed', 'true');
+    await expect(actions(seed.comments.chain[4]!).getByRole('button', { name: 'Upvote' })).toHaveAttribute('aria-pressed', 'false');
   });
 
   test('replies without JavaScript: a plain form post, then the page again at the new comment', async ({ browser }) => {

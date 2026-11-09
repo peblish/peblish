@@ -33,5 +33,6 @@ export const Route = createFileRoute('/post/$id/comments/$commentId')({
 function PermalinkRoute() {
   const data = Route.useLoaderData();
   const { id, commentId } = Route.useParams();
-  return <PermalinkPage data={data} postId={id} commentId={commentId} />;
+  // Keyed, so the router reusing this component for another comment's page keeps nothing of the last: a reply being typed, the comment it answers, folds, optimistic votes, a fetched page.
+  return <PermalinkPage key={`${id}/${commentId}`} data={data} postId={id} commentId={commentId} />;
 }
