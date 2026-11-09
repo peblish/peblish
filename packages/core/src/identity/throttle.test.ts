@@ -48,3 +48,15 @@ test('addresses: IPv6 by its /64, however it is written; IPv4 also when mapped',
   expect(addressKey('::ffff:203.0.113.7')).toBe('203.0.113.7');
   expect(addressKey('203.0.113.7')).toBe('203.0.113.7');
 });
+
+test('link previews: 20 per account and 30 per address in ten minutes', async () => {
+  const run = async (count: number, keys: Parameters<typeof attempt>[1]) => {
+    const results: boolean[] = [];
+    for (let i = 0; i < count; i++) results.push((await attempt('link-preview', keys)).allowed);
+    return results;
+  };
+  expect((await run(21, { id: 'mira' })).filter(Boolean)).toHaveLength(20);
+  // Many accounts behind one address: the address is refused from its 31st preview.
+  for (let i = 0; i < 30; i++) expect((await attempt('link-preview', { ip: '203.0.113.9', id: `user${i}` })).allowed).toBe(true);
+  expect((await attempt('link-preview', { ip: '203.0.113.9', id: 'user30' })).allowed).toBe(false);
+});
