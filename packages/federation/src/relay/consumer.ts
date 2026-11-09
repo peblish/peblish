@@ -6,6 +6,7 @@ import type { OutboxEvent } from '@peblish/schema/events';
 import { and, desc, eq } from 'drizzle-orm';
 import { peerInboxes } from '../delivery/followers.ts';
 import { newActivityId, publishInCommunity, sendActivity } from '../delivery/publish.ts';
+import { removedBoostedPosts, withdrawBoosts } from '../delivery/withdraw.ts';
 import { actorRefs, type ActorRef } from '../delivery/records.ts';
 import { accountDeletion, ban, collectionChange, lock, removal, restoration, unban, unlock } from './moderation.ts';
 
@@ -60,16 +61,18 @@ async function onModeration(
   const moderator = (await actorRefs(t.db, [event.moderatorId])).get(event.moderatorId);
   if (!community || !moderator) return;
   const as = (id: string) => ({ id, actorApId: moderator.apId, communityApId: community.apId });
-  const publish = (activity: Parameters<typeof publishInCommunity>[2]) =>
-    publishInCommunity(t, { origin, author: moderator, community }, activity);
+  const publish = (activity: Parameters<typeof publishInCommunity>[2], microblog?: { withdraw: string }) =>
+    publishInCommunity(t, { origin, author: moderator, community }, activity, { microblog });
   const id = newActivityId(origin);
   switch (event.type) {
     case 'mod.remove':
-      return publish(
-        event.removed
-          ? removal(as(id), event.targetApId, event.reason)
-          : restoration(as(id), await sentId(t, origin, 'Delete', event.targetApId), event.targetApId, event.reason),
-      );
+      // Mastodon-like followers cannot be told of a restoration: Mastodon keeps a Tombstone of what it deleted.
+      return event.removed
+        ? publish(
+            removal(as(id), event.targetApId, event.reason),
+            event.target.kind === 'post' ? { withdraw: event.targetApId } : undefined,
+          )
+        : publish(restoration(as(id), await sentId(t, origin, 'Delete', event.targetApId), event.targetApId, event.reason));
     case 'mod.lock':
       return publish(
         event.locked ? lock(as(id), event.targetApId) : unlock(as(id), await sentId(t, origin, 'Lock', event.targetApId), event.targetApId),
@@ -87,7 +90,14 @@ async function onModeration(
         removeData: event.removeContent,
         expires: event.expiresAt ? new Date(event.expiresAt) : null,
       };
-      return publish(event.banned ? ban(as(id), details) : unban(as(id), await sentId(t, origin, 'Block', event.targetApId), details));
+      await publish(event.banned ? ban(as(id), details) : unban(as(id), await sentId(t, origin, 'Block', event.targetApId), details));
+      // A ban with removeContent removes the member's posts without an event each: take their boosts back.
+      if (event.banned && event.removeContent) {
+        for (const postApId of await removedBoostedPosts(t.db, community, event.targetActorId)) {
+          await withdrawBoosts(t, { origin, community, postApId });
+        }
+      }
+      return;
     }
     case 'mod.role': {
       const urls = await collections(t, community.id);

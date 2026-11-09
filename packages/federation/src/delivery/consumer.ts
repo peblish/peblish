@@ -51,10 +51,11 @@ async function onPost(event: Of<'post.created' | 'post.updated' | 'post.deleted'
     }
     case 'post.updated': {
       if (!loaded.live) return;
-      return publishInCommunity(t, context, update(as(id), page(record)), { tags: await mentionTags(t.db, origin, loaded.bodyMd) });
+      const tags = await mentionTags(t.db, origin, loaded.bodyMd);
+      return publishInCommunity(t, context, update(as(id), page(record)), { tags, microblog: 'inner' });
     }
     case 'post.deleted':
-      return publishInCommunity(t, context, remove(as(id), record.apId));
+      return publishInCommunity(t, context, remove(as(id), record.apId), { microblog: { withdraw: record.apId } });
     case 'post.restored': {
       if (!loaded.live) return;
       return publishInCommunity(t, context, undoDelete(as(id), await sentDeleteId(t, origin, record.apId, author.apId), record.apId));
@@ -70,11 +71,12 @@ async function onComment(event: Of<'comment.created' | 'comment.updated' | 'comm
   const context = { origin, author, community };
   switch (event.type) {
     case 'comment.created':
+    case 'comment.updated': {
       if (!loaded.live) return;
-      return publishInCommunity(t, context, create(as, note(record)), { tags: await mentionTags(t.db, origin, loaded.bodyMd) });
-    case 'comment.updated':
-      if (!loaded.live) return;
-      return publishInCommunity(t, context, update(as, note(record)), { tags: await mentionTags(t.db, origin, loaded.bodyMd) });
+      const tags = await mentionTags(t.db, origin, loaded.bodyMd);
+      const activity = event.type === 'comment.created' ? create(as, note(record)) : update(as, note(record));
+      return publishInCommunity(t, context, activity, { tags });
+    }
     case 'comment.deleted':
       return publishInCommunity(t, context, remove(as, record.apId));
   }

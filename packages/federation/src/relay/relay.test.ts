@@ -66,7 +66,7 @@ describe('what reaches a local community directly is announced to its followers'
     return text;
   };
 
-  test('the Announce carries the received bytes exactly, and nothing goes back to the sender’s server', async () => {
+  test('the Announce carries the received bytes exactly, goes to no Mastodon-like inbox, and nothing goes back to the sender’s server', async () => {
     await followed();
     const text = await receive({
       id: activityId('https://lemmy.test', 'like'),
@@ -77,7 +77,7 @@ describe('what reaches a local community directly is announced to its followers'
       'urn:odd': ['kept'],
     });
     const rows = await queued();
-    expect(rows.map((row) => row.inbox)).toEqual(['https://mastodon.test/inbox', 'https://piefed.test/inbox']);
+    expect(rows.map((row) => row.inbox)).toEqual(['https://piefed.test/inbox']);
     for (const row of rows) {
       expect(row.body.endsWith(`,"object":${text}}`)).toBe(true);
       expect(row.json).toMatchObject({ type: 'Announce', actor: hosts.spike, to: [PUBLIC] });

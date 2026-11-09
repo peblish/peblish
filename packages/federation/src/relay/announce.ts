@@ -3,9 +3,10 @@ import { activities } from '@peblish/core/db/tables/federation';
 import type { OpenTx } from '@peblish/core/tx/tx';
 import { announce } from '../delivery/activities.ts';
 import { followerInboxes } from '../delivery/followers.ts';
-import { newActivityId, sendActivity } from '../delivery/publish.ts';
+import { newActivityId, sendActivity } from '../delivery/send.ts';
 import { enqueueDeliveries } from '../delivery/queue.ts';
 import { actorRefs } from '../delivery/records.ts';
+import { withdrawBoosts } from '../delivery/withdraw.ts';
 import type { JsonObject } from '../mapping/json.ts';
 import type { PostRecord } from '../mapping/records.ts';
 import { followersOf, LEMMY_CONTEXT, PUBLIC } from '../mapping/vocabulary.ts';
@@ -29,7 +30,7 @@ export type Relayed = {
   json: JsonObject;
   /** The actor that sent it; its origin already has the activity. */
   senderApId: string;
-  /** Set for a new post: Mastodon-like followers get Announce(Page) instead (delivery/software.ts). */
+  /** Set for a new post: Mastodon-like followers get Announce(Page), the only thing they are sent (delivery/software.ts). */
   page?: PostRecord;
 };
 
@@ -57,8 +58,9 @@ function exactText(body: Uint8Array, fallback: JsonObject): string {
 }
 
 /**
- * Queues the community's Announce of `relayed` for every remote follower inbox but the sender's.
- * Does nothing for a community that is not local (it announces to its own followers).
+ * Queues the community's Announce of `relayed` for every threadiverse follower inbox but the
+ * sender's, and for Mastodon-like ones only what they can apply (the new post, the withdrawal of
+ * a deleted one). Does nothing for a community that is not local (it announces to its own followers).
  */
 export async function relayToFollowers(t: OpenTx, relayed: Relayed): Promise<void> {
   const community = (await actorRefs(t.db, [relayed.communityId])).get(relayed.communityId);
@@ -66,7 +68,8 @@ export async function relayToFollowers(t: OpenTx, relayed: Relayed): Promise<voi
   const { origin } = await localInstance(t.db);
   const targets = await followerInboxes(t.db, community.id, { skipOrigin: new URL(relayed.senderApId).origin });
   const innerId = typeof relayed.json.id === 'string' ? relayed.json.id : null;
-  const threadiverse = relayed.page ? targets.create : [...targets.create, ...targets.page];
+  // Mastodon-like inboxes are sent a new post only, and the withdrawal of a post when it is deleted.
+  const threadiverse = targets.create;
   if (threadiverse.length > 0) {
     const id = newActivityId(origin);
     const text = announceText(id, community.apId, exactText(relayed.body, relayed.json));
@@ -79,5 +82,12 @@ export async function relayToFollowers(t: OpenTx, relayed: Relayed): Promise<voi
   if (relayed.page && targets.page.length > 0) {
     const base = { id: newActivityId(origin), actorApId: community.apId, communityApId: community.apId };
     await sendActivity(t, community, announce(base, { type: 'Page', post: relayed.page }), targets.page);
+  }
+  // A Delete of a post takes its boosts back. Of a comment or an actor it finds none.
+  if (relayed.json.type === 'Delete') {
+    const object = relayed.json.object;
+    const deleted =
+      typeof object === 'string' ? object : typeof object === 'object' && object !== null && 'id' in object ? object.id : null;
+    if (typeof deleted === 'string') await withdrawBoosts(t, { origin, community, postApId: deleted });
   }
 }

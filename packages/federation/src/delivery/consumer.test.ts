@@ -203,27 +203,24 @@ describe('a new post in a local community', () => {
   });
 });
 
-describe('everything else in a local community is announced to every follower, in one shape', () => {
-  test('edits, deletes, restores, comments and votes', async () => {
+describe('everything else in a local community is announced to threadiverse followers; Mastodon-like ones are sent a post, not the rest', () => {
+  test('deletes, comments and votes go to Lemmy, PieFed and unknown inboxes as Announce, and to Mastodon nothing', async () => {
     const w = await world();
     const p = await seedPost(w.here, w.news, w.alice, { title: 'Hello' });
     const c = await seedComment(w.here, p, w.alice, { bodyMd: 'a comment' });
-    const all = [w.lemmy.shared, w.piefed.shared, w.mastodon.shared, w.unknown.shared];
-    const expectAll = async (expected: string) => {
-      expect(Object.values(await shapes())).toEqual(all.map(() => expected));
-      expect(Object.keys(await shapes()).sort()).toEqual([...all].sort());
+    const threadiverse = [w.lemmy.shared, w.piefed.shared, w.unknown.shared];
+    const expectThreadiverse = async (expected: string) => {
+      expect(await shapes()).toEqual(Object.fromEntries(threadiverse.map((inbox) => [inbox, expected])));
       await writer().delete(deliveries);
     };
-    await run(post(p.id, w.news.id, w.alice.id, 'updated'));
-    await expectAll('Announce(Update(Page))');
     await run(post(p.id, w.news.id, w.alice.id, 'deleted'));
-    await expectAll('Announce(Delete)');
+    await expectThreadiverse('Announce(Delete)');
     await run(comment(c.id, p.id, w.alice.id, 'created'));
-    await expectAll('Announce(Create(Note))');
+    await expectThreadiverse('Announce(Create(Note))');
     await run(comment(c.id, p.id, w.alice.id, 'updated'));
-    await expectAll('Announce(Update(Note))');
+    await expectThreadiverse('Announce(Update(Note))');
     await run(comment(c.id, p.id, w.alice.id, 'deleted'));
-    await expectAll('Announce(Delete)');
+    await expectThreadiverse('Announce(Delete)');
     await run({
       type: 'vote.cast',
       v: 1,
@@ -235,7 +232,28 @@ describe('everything else in a local community is announced to every follower, i
       previousApId: null,
       local: true,
     });
-    await expectAll('Announce(Like)');
+    await expectThreadiverse('Announce(Like)');
+  });
+
+  test('an edit is Announce(Update(Page)) for threadiverse followers and the author’s own Update(Page) for Mastodon, never both', async () => {
+    const w = await world();
+    const p = await seedPost(w.here, w.news, w.alice, { title: 'Hello', bodyMd: 'Edited **text**' });
+    await run(post(p.id, w.news.id, w.alice.id, 'updated'));
+    expect(await shapes()).toEqual({
+      [w.lemmy.shared]: 'Announce(Update(Page))',
+      [w.piefed.shared]: 'Announce(Update(Page))',
+      [w.unknown.shared]: 'Announce(Update(Page))',
+      [w.mastodon.shared]: 'Update(Page)',
+    });
+    const rows = await queued();
+    const direct = rows.find((row) => row.inbox === w.mastodon.shared)!;
+    expect(direct.senderId).toBe(w.alice.id);
+    expect(direct.json).toMatchObject({ type: 'Update', actor: w.alice.apId, object: { type: 'Page', id: p.apId } });
+    expect((direct.json.object as Json).content).toContain('<strong>text</strong>');
+    // The one stored Update is both what Mastodon is sent and what the others' Announce embeds.
+    const announced = (rows.find((row) => row.inbox === w.lemmy.shared)!.json.object as Json).id;
+    expect(direct.json.id).toBe(announced);
+    expect(rows.filter((row) => row.senderId === w.news.id)).toHaveLength(3);
   });
 
   test('restoring a post undoes the Delete we sent, by its own id', async () => {
@@ -262,7 +280,7 @@ describe('everything else in a local community is announced to every follower, i
       apId: 'https://fed-a.test/ap/activity/dislike-1',
       previousApId: 'https://fed-a.test/ap/activity/like-1',
     });
-    expect(Object.values(await shapes())).toEqual(['Announce(Dislike)', 'Announce(Dislike)', 'Announce(Dislike)', 'Announce(Dislike)']);
+    expect(Object.values(await shapes())).toEqual(['Announce(Dislike)', 'Announce(Dislike)', 'Announce(Dislike)']);
     await writer().delete(deliveries);
     await run({ ...base, value: 0, previous: -1, apId: null, previousApId: 'https://fed-a.test/ap/activity/dislike-1' });
     const row = (await queued())[0]!;
