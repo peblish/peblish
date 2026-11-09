@@ -91,6 +91,69 @@ describe('resolving an actor', () => {
     expect(await db().select().from(actors).where(eq(actors.apId, lab.id))).toHaveLength(0);
   });
 
+  test('a document whose id is not the one asked for is refused, even on the same origin', async () => {
+    const other = actorDocument('lemmy.test', 'other', { kind: 'Group', publicKeyPem });
+    const { fetch } = peer({ [lab.id]: { body: other } });
+    const error = await resolveRemoteActor(lab.id, { fetch }).catch((caught: unknown) => caught);
+    expect(error).toMatchObject({ reason: 'invalid', message: expect.stringContaining(other.id) });
+    expect(await db().select().from(actors)).toHaveLength(1);
+  });
+
+  test('a document served after a redirect may carry the address it ended at', async () => {
+    const old = 'https://lemmy.test/c/old';
+    const { fetch: plain } = peer({ [old]: { body: lab } });
+    const redirected: typeof plain = async (url, init) => ({ ...(await plain(url, init)), url: lab.id });
+    expect(await resolveRemoteActor(old, { fetch: redirected })).toMatchObject({ apId: lab.id });
+
+    // The final address is a different actor's: refused.
+    const elsewhere = stubFetch({ [old]: { body: actorDocument('lemmy.test', 'other', { kind: 'Group', publicKeyPem }) } });
+    const sent: typeof plain = async (url, init) => ({ ...(await elsewhere.fetch(url, init)), url: lab.id });
+    expect(await resolveRemoteActor(old, { fetch: sent, refresh: true }).catch((caught: unknown) => caught)).toMatchObject({
+      reason: 'invalid',
+    });
+  });
+
+  describe('a handle must be the actor its WebFinger answer leads to', () => {
+    const finger = (links: Parameters<typeof webfingerAnswer>[1], name = 'lab') =>
+      ({
+        [`https://lemmy.test/.well-known/webfinger?resource=acct%3A${name}%40lemmy.test`]: {
+          type: 'application/jrd+json',
+          body: webfingerAnswer(`acct:${name}@lemmy.test`, links),
+        },
+      }) as const;
+    const asked = async (handle: string, links: Parameters<typeof webfingerAnswer>[1], stubs = {}) => {
+      const { fetch } = peer({ ...finger(links, handle.replace(/^[@!]|@.*$/g, '')), ...stubs });
+      return resolveRemoteActor(handle, { fetch }).catch((caught: unknown) => caught);
+    };
+
+    test('the name is compared with the actor’s preferredUsername, ignoring case', async () => {
+      expect(await asked('!LAB@lemmy.test', [{ href: lab.id, type: 'Group' }])).toMatchObject({ apId: lab.id });
+      const error = await asked('!news@lemmy.test', [{ href: lab.id, type: 'Group' }]);
+      expect(error).toBeInstanceOf(ActorResolveError);
+      expect(error).toMatchObject({ reason: 'invalid', message: expect.stringContaining('named lab') });
+    });
+
+    test('the sigil is compared with the actor’s kind', async () => {
+      // A host that answers @lab with a community, or !lab with a person, is not describing who we asked for.
+      expect(await asked('@lab@lemmy.test', [{ href: lab.id, type: 'Group' }])).toMatchObject({ reason: 'invalid' });
+      const person = actorDocument('lemmy.test', 'lab', { publicKeyPem });
+      expect(await asked('!lab@lemmy.test', [{ href: person.id, type: 'Person' }], { [person.id]: { body: person } })).toMatchObject({
+        reason: 'invalid',
+      });
+      // No sigil means either kind.
+      expect(await asked('lab@lemmy.test', [{ href: lab.id, type: 'Group' }])).toMatchObject({ apId: lab.id, kind: 'Group' });
+    });
+
+    test('a copy we already hold is checked too, not trusted because it is fresh', async () => {
+      const { fetch } = peer(finger([{ href: lab.id, type: 'Group' }]));
+      await resolveRemoteActor(lab.id, { fetch });
+      expect(await resolveRemoteActor('@lab@lemmy.test', { fetch }).catch((caught: unknown) => caught)).toMatchObject({
+        reason: 'invalid',
+      });
+      expect(await resolveRemoteActor('!lab@lemmy.test', { fetch })).toMatchObject({ apId: lab.id });
+    });
+  });
+
   test('a blocked destination is permanent, a network failure is not, and a stale copy outlives an unreachable peer', async () => {
     const blocked = await resolveRemoteActor(lab.id, {
       fetch: async () => {

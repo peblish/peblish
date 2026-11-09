@@ -7,7 +7,7 @@ import { eq } from 'drizzle-orm';
 import { actorFromWire } from '../mapping/actor.ts';
 import { MappingError } from '../mapping/json.ts';
 import { refreshInstanceSoftware } from '../nodeinfo/client.ts';
-import { parseHandle, webfingerActorUrl } from '../webfinger/client.ts';
+import { parseHandle, webfingerActorUrl, type Handle } from '../webfinger/client.ts';
 import { FetchFailure, fetchJson, type Fetcher } from './document.ts';
 import { importGrant } from './grants.ts';
 import { safeFetch } from './safe-fetch.ts';
@@ -18,6 +18,8 @@ import { safeFetch } from './safe-fetch.ts';
 export type ResolvedActor = {
   id: string;
   apId: string;
+  /** The actor's preferredUsername. */
+  name: string;
   kind: ActorKind;
   local: boolean;
   /** A remote actor that sent a Delete (or a local account that was deleted). */
@@ -69,6 +71,7 @@ async function stored(apId: string): Promise<(ResolvedActor & { fetchedAt: Date 
     .select({
       id: actors.id,
       apId: actors.apId,
+      name: actors.name,
       kind: actors.kind,
       local: actors.local,
       deletedAt: actors.deletedAt,
@@ -89,6 +92,13 @@ async function stored(apId: string): Promise<(ResolvedActor & { fetchedAt: Date 
 // because the web build can hold two copies of a module.
 const running = ((globalThis as { __peblishActorResolves?: Map<string, Promise<ResolvedActor>> }).__peblishActorResolves ??= new Map());
 
+/** An id without its fragment, as a comparable string. */
+function withoutFragment(id: string): string {
+  const url = new URL(id);
+  url.hash = '';
+  return url.href;
+}
+
 async function fetchAndStore(apId: string, fetch: Fetcher): Promise<string> {
   const { json, url } = await fetchJson(apId, fetch).catch((error: unknown) => {
     throw error instanceof FetchFailure ? failure(error) : error;
@@ -100,7 +110,14 @@ async function fetchAndStore(apId: string, fetch: Fetcher): Promise<string> {
     if (error instanceof MappingError) throw new ActorResolveError('invalid', error.message);
     throw error;
   }
-  // The document must come from the origin it names itself under.
+  // The document must be the one asked for: its id is the requested id, or the address it was
+  // finally served from after a redirect (fragments aside). A same-origin /u/x serving the
+  // actor /u/y is some other actor's document, not x.
+  const claimed = withoutFragment(record.apId);
+  if (claimed !== withoutFragment(apId) && claimed !== withoutFragment(url)) {
+    throw new ActorResolveError('invalid', `${apId} serves the actor ${record.apId}, not the one asked for`);
+  }
+  // ...and it must come from the origin it names itself under.
   if (new URL(record.apId).origin !== new URL(url).origin) {
     throw new ActorResolveError('invalid', `${url} serves an actor of another origin, ${record.apId}`);
   }
@@ -112,10 +129,26 @@ async function fetchAndStore(apId: string, fetch: Fetcher): Promise<string> {
 }
 
 /**
+ * A WebFinger answer is the host's claim about who a handle is; the actor's own document is what
+ * settles it. The handle's name must be the actor's preferredUsername (case aside, as handles
+ * are) and its sigil must be the actor's kind (@ a Person, ! a Group). The actor may live on
+ * another host than the handle names, which split-domain setups (Mastodon's WEB_DOMAIN) need.
+ */
+function checkHandle(handle: Handle, actor: Pick<ResolvedActor, 'name' | 'kind'>): void {
+  if (actor.name.toLowerCase() !== handle.name.toLowerCase()) {
+    throw new ActorResolveError('invalid', `${handle.name}@${handle.host} resolved to an actor named ${actor.name}`);
+  }
+  if (handle.kind && actor.kind !== handle.kind) {
+    throw new ActorResolveError('invalid', `${handle.name}@${handle.host} names a ${handle.kind}, but the actor is a ${actor.kind}`);
+  }
+}
+
+/**
  * The actor at `target`, an ap_id or a handle (@name@host, !name@host). Handles go through
- * WebFinger. A stored copy fresher than `maxAgeMs` is returned without a request; an older one
- * is fetched again, and kept if the peer is merely unreachable. A local actor is returned as
- * stored. Throws ActorResolveError.
+ * WebFinger, and the actor found must be the one the handle names (checkHandle). A stored copy
+ * fresher than `maxAgeMs` is returned without a request; an older one is fetched again, and
+ * kept if the peer is merely unreachable. A local actor is returned as stored. Throws
+ * ActorResolveError.
  */
 export async function resolveRemoteActor(target: string, options: ResolveOptions = {}): Promise<ResolvedActor> {
   const fetch = options.fetch ?? safeFetch;
@@ -129,6 +162,12 @@ export async function resolveRemoteActor(target: string, options: ResolveOptions
     }
   }
   if (!URL.canParse(apId)) throw new ActorResolveError('invalid', `${target} is neither a URL nor a handle`);
+  const resolved = await resolveId(apId, fetch, options);
+  if (handle) checkHandle(handle, resolved);
+  return resolved;
+}
+
+async function resolveId(apId: string, fetch: Fetcher, options: ResolveOptions): Promise<ResolvedActor> {
   const inflight = running.get(apId);
   if (inflight) return inflight;
   const work = (async () => {
