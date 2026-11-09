@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm';
-import { boolean, check, index, jsonb, pgTable, primaryKey, text, uuid } from 'drizzle-orm/pg-core';
+import { bigint, boolean, check, index, jsonb, pgTable, primaryKey, text, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
 import { at, createdAt, enumCheck, id, raw } from '../columns.ts';
 import { actors } from './actors.ts';
 import { comments, posts } from './content.ts';
@@ -8,6 +8,8 @@ import { instances } from './instances.ts';
 const roleValues = ['owner', 'moderator'] as const;
 const sourceValues = ['local', 'remote'] as const;
 const statusValues = ['open', 'resolved', 'dismissed'] as const;
+const audienceValues = ['moderators', 'admins'] as const;
+const resolutionValues = ['resolved', 'dismissed', 'removed'] as const;
 
 /**
  * Moderators of a community. source 'local' rows are assigned here; 'remote' rows mirror the
@@ -87,11 +89,17 @@ export const modlog = pgTable(
   ],
 );
 
-/** Reports (lane REP owns the category set and the flow; schema only in 0001). */
+/**
+ * Reports (lane REP). A queue group is one reported target and audience; its rows are the
+ * individual reports. A local report that federates has an ap_id (its Flag); an inbound one
+ * keeps the Flag in raw.
+ */
 export const reports = pgTable(
   'reports',
   {
     id: id(),
+    /** The case number shown as "#N". */
+    number: bigint('number', { mode: 'number' }).notNull().generatedAlwaysAsIdentity().unique(),
     /** The Flag activity id, for reports that federate. */
     apId: text('ap_id').unique(),
     local: boolean('local').notNull(),
@@ -106,15 +114,30 @@ export const reports = pgTable(
     targetCommentId: uuid('target_comment_id'),
     category: text('category').notNull(),
     reason: text('reason'),
+    /** Who sees it: community moderators and admins, or admins alone. */
+    audience: text('audience', { enum: audienceValues }).notNull().default('moderators'),
     status: text('status', { enum: statusValues }).notNull().default('open'),
+    /** Set when a moderator sent the group to the admins; cleared when an admin sends it back. */
+    escalatedBy: uuid('escalated_by').references(() => actors.id),
+    escalatedAt: at('escalated_at'),
     resolvedBy: uuid('resolved_by').references(() => actors.id),
     resolvedAt: at('resolved_at'),
+    resolution: text('resolution', { enum: resolutionValues }),
+    resolutionNote: text('resolution_note'),
+    /** The modlog row of the removal, when the group was resolved by removing the content. */
+    modlogId: uuid('modlog_id'),
     createdAt: createdAt(),
   },
   (t) => [
     enumCheck('reports_status', t.status, statusValues),
+    enumCheck('reports_audience', t.audience, audienceValues),
+    enumCheck('reports_resolution', t.resolution, resolutionValues),
     index('reports_open')
       .on(t.createdAt)
+      .where(sql`${t.status} = 'open'`),
+    index('reports_queue').on(t.audience, t.communityId, t.status, t.createdAt),
+    uniqueIndex('reports_open_once')
+      .on(t.reporterId, sql`coalesce(${t.targetPostId}, ${t.targetCommentId}, ${t.targetActorId})`)
       .where(sql`${t.status} = 'open'`),
   ],
 );

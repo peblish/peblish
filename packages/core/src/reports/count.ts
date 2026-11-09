@@ -1,13 +1,22 @@
-import type { Uuid } from '@peblish/schema/ids';
+import { count, sql } from 'drizzle-orm';
 import { db, type Queryable } from '../db/read.ts';
+import { reports } from '../db/tables/moderation.ts';
+import { countedRows, targetKey, type ReportViewer } from './scope.ts';
 
-// Owned by lane REP, which replaces the body and keeps the signature. GW3's stub answers 0, so
-// the shell's Moderation queue badge is wired before reports exist.
+export type { ReportViewer } from './scope.ts';
 
-/** Who asks: the shell passes the signed-in person with their site role (admin only with two-factor on). */
-export type ReportViewer = { actorId: Uuid; siteRole: 'user' | 'admin' };
-
-/** The open report groups the viewer may act on: every group for an admin, their communities' moderator groups for a moderator. */
-export async function openReportCount(_viewer: ReportViewer, _q: Queryable = db()): Promise<number> {
-  return 0;
+/**
+ * The open report groups the viewer may act on: every open group for an admin (moderators',
+ * escalated and admins-only), the moderators' groups of the communities they moderate now for a
+ * moderator. A group is one reported target and audience, so three reports about one post count once.
+ */
+export async function openReportCount(viewer: ReportViewer, q: Queryable = db()): Promise<number> {
+  const groups = q
+    .select({ one: sql`1` })
+    .from(reports)
+    .where(countedRows(viewer, q))
+    .groupBy(reports.audience, targetKey)
+    .as('groups');
+  const [row] = await q.select({ n: count() }).from(groups);
+  return row?.n ?? 0;
 }

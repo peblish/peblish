@@ -51,6 +51,17 @@ const seededCommunity = (suffix = '') => {
   });
   return `/c/${(JSON.parse(out) as { communities: { open: { handle: string } } }).communities.open.handle}${suffix}`;
 };
+/** The report form and its receipt need a report the payload admin filed: lane REP's seed (testing/seed-rep.ts) makes one. */
+const seededReport = async (base: string) => {
+  const { admin } = await fixtures(base);
+  const out = execFileSync('node', ['packages/core/src/testing/seed-rep.ts', 'payload', admin.name], {
+    cwd: join(import.meta.dirname, '../..'),
+    encoding: 'utf8',
+  });
+  return JSON.parse(out) as { postId: string; number: number };
+};
+let reported: ReturnType<typeof seededReport> | undefined;
+const reportedOnce = (base: string) => (reported ??= seededReport(base));
 
 export const routes: readonly PayloadRoute[] = [
   { route: '/', path: '/' },
@@ -89,12 +100,25 @@ export const routes: readonly PayloadRoute[] = [
   { route: '/admin/bans/', path: '/admin/bans', admin: true },
   { route: '/admin/peers/', path: '/admin/peers', admin: true },
   { route: '/modlog/', path: '/modlog' },
+  { route: '/admin/reports/', path: '/admin/reports', admin: true },
   { route: '/post/$id/', path: '/post/<id>', target: seededPost },
   { route: '/post/$id/comments/$commentId', path: '/post/<id>/comments/<commentId>', target: seededPermalink },
   // Signed out, /submit is a redirect to sign-in, so this entry measures the sign-in page it lands on
   // and cannot show the composer's weight. The signed-in figure, with the sheet's lazy editor
   // chunk, is measured through the composer's own fixture (e2e/composer/payload.spec.ts).
   { route: '/submit/', path: '/submit', composer: true },
+  {
+    route: '/report/',
+    path: '/report?kind=post&id=<id>',
+    target: async (base) => `/report?kind=post&id=${(await reportedOnce(base)).postId}`,
+    admin: true,
+  },
+  {
+    route: '/report/sent/',
+    path: '/report/sent?n=<number>',
+    target: async (base) => `/report/sent?n=${(await reportedOnce(base)).number}`,
+    admin: true,
+  },
   { route: '/kit/', path: '/kit', fonts: true },
 ];
 

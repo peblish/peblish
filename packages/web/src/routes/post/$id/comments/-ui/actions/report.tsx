@@ -1,6 +1,7 @@
 import type { ContentActionProps } from '../../../../../-actions/props.ts';
+import { ContentReport } from '../../../../../report/-ui/slots.tsx';
 
-/** The Report action on a comment row. Lane REP fills it; until then it renders nothing. */
-export function CommentReport(_props: ContentActionProps) {
-  return null;
+/** The Report action on a comment row (lane REP). */
+export function CommentReport(props: ContentActionProps) {
+  return <ContentReport {...props} />;
 }
