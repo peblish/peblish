@@ -48,7 +48,7 @@ async function f5(ctx: Context): Promise<string> {
   if (onLemmy.subscribed === 'NotSubscribed') await lemmy.follow(token, onLemmy.id);
   const title = tag(ctx, 'F5', { name: 'rogue' });
   const post = await lemmy.createPost(token, onLemmy.id, title, 'Boosted to Mastodon, then banned at home.');
-  ctx.ledger.add({ kind: 'object', side: 'lemmy', user: username, type: 'post', apId: post.apId, peerId: post.id });
+  const entry = ctx.ledger.add({ kind: 'object', side: 'lemmy', user: username, type: 'post', apId: post.apId, peerId: post.id });
   await storedPost(ctx, post.apId);
   const boost = await awaitRogue(
     'the rogue to receive the boost',
@@ -59,6 +59,8 @@ async function f5(ctx: Context): Promise<string> {
   const personId = await lemmy.mod.resolvePerson(adminToken, lemmy.actorUri(username));
   const started = new Date();
   await lemmy.mod.siteBan!(adminToken, personId, true, `F5 ${ctx.run}`, true);
+  // The ban removes the post on Lemmy, and a banned account cannot log in to delete it.
+  ctx.ledger.done(entry, 'removed by the site ban');
   await expectInbound(
     ctx.sql,
     { since: started, actor: lemmy.actorUri(lemmy.admin), type: 'Block', contains: lemmy.actorUri(username) },
@@ -77,7 +79,7 @@ async function f3(ctx: Context): Promise<string> {
   const title = tag(ctx, 'F3', { name: 'rogue' });
   await rogue.reset();
   const created = await peblish.createPost('alice', ctx.community.id, { title, bodyMd: `For @mastofan@rogue.lab.test to see.` });
-  ctx.ledger.add({ kind: 'object', side: 'peblish', user: 'alice', type: 'post', apId: created.apId });
+  const entry = ctx.ledger.add({ kind: 'object', side: 'peblish', user: 'alice', type: 'post', apId: created.apId });
   const mention = await awaitRogue('the rogue to receive the mention', (r) => JSON.stringify(r.body).includes(created.apId));
   const { type, inner } = typesOf(mention.body);
   // Not a follower any more, so the only copy is the author's Create for the mention.
@@ -85,6 +87,8 @@ async function f3(ctx: Context): Promise<string> {
   if (!JSON.stringify(mention.body).includes(person)) throw new Error('the Create does not name the mentioned person');
   const stored = await storedPost(ctx, created.apId);
   await peblish.removePost('labadmin', stored.id, `F3 ${ctx.run}`);
+  // A removed post is held for its retention, not deleted by its author.
+  ctx.ledger.done(entry, 'removed by the scenario');
   const alice = await ctx.sql<{ ap_id: string }[]>`select ap_id from actors where local and name = 'alice'`;
   await awaitRogue(
     "the rogue to receive the author's Delete",
