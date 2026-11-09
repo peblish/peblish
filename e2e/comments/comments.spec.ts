@@ -439,7 +439,10 @@ test.describe('a signed-in person', () => {
     await gotoHydrated(page, postUrl(seed.posts.paged));
     await page.evaluate(() => Object.assign(window, { loadedOnce: true }));
     await page.getByRole('button', { name: 'Old' }).click();
-    await page.getByRole('link', { name: 'More comments' }).click();
+    // The address changes first; the default view, and its link to the default sort's next page, stay until the Old fetch arrives.
+    const more = page.getByRole('link', { name: 'More comments' });
+    await expect(more).toHaveAttribute('href', /sort=old/);
+    await more.click();
     await expect(page).toHaveURL(/\?sort=old&after=[\w-]+#comments$/);
     await expect.poll(() => topLevel(page)).toEqual(['Comment 25', 'Comment 26', 'Comment 27']);
     await replyAtPost(page, `Reply on the second page ${seed.suffix}`);
