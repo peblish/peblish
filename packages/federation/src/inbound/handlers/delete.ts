@@ -1,11 +1,11 @@
 import { db } from '@peblish/core/db/read';
 import { removeContent, restoreContent } from '@peblish/core/moderation/remove';
+import { deleteComment } from '@peblish/core/comments/delete';
 import { deletePost, restorePost } from '@peblish/core/posts/delete';
 import { deleteRemoteActor } from '@peblish/core/remote/actors';
 import type { Activity } from '../../mapping/records.ts';
 import { importGrant } from '../../actors/grants.ts';
 import { checkCommunity, communityById, grantFor, requireContent, type Stored } from '../authorize.ts';
-import { comments } from '../comments.ts';
 import { prepared, type InboundContext, type InboundHandler, type Prepared } from '../handler.ts';
 import { skip } from '../reasons.ts';
 
@@ -43,7 +43,7 @@ export const handler: InboundHandler = {
     const relayed = { communityId: community.id, objectApId: target.apId, relay: true };
     return prepared(ctx, async (t) => {
       if (isAuthorsOwn(ctx.sender, target, reason)) {
-        if (target.kind === 'comment') await comments.delete(ctx, t, target);
+        if (target.kind === 'comment') await deleteComment.within(t, await grantFor(ctx, t, 'comment.delete', { commentId: target.id }));
         else await deletePost.within(t, await grantFor(ctx, t, 'post.delete', { postId: target.id }));
       } else {
         const grant = await grantFor(ctx, t, 'mod.remove', { target: { kind: target.kind, id: target.id } });

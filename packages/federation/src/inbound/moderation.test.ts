@@ -12,7 +12,6 @@ import { readFixture } from '../test/manifest.ts';
 import { mirrorDue } from './moderators/refresh.ts';
 import { processRow } from './pipeline.ts';
 import { resetKeyFetchBudget } from './throttle.ts';
-import { useCommentDouble } from './test-support.ts';
 
 // Lock, featured and Block from the captured Lemmy and PieFed traffic: what peers sent when a
 // moderator locked, pinned and banned, once inside the community's Announce and once straight
@@ -23,7 +22,6 @@ let lab: Lab;
 beforeEach(async () => {
   await truncateAll();
   resetKeyFetchBudget();
-  useCommentDouble();
   lab = await seedLabWorld();
 });
 

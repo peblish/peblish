@@ -254,7 +254,7 @@ where the type can be undone); files starting with `_` are shared helpers and no
 `Create`, `Update`, `Delete`, `Undo`, `Like`, `Dislike`, `Announce`, `Lock`, `Add`, `Remove`,
 `Block`, `Follow`, `Accept`, `Reject`, `Flag`. `Flag` authorizes the report and records it as
 skipped `flag.not_handled`; the reports lane replaces its last line. Comments go through
-`inbound/comments.ts`, the seam to the comments lane's mutations.
+lane D's remote comment mutations (`storeRemoteComment`, `updateRemoteComment`, `deleteComment`).
 
 ### Relay and outbound moderation
 

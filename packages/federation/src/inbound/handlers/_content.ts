@@ -1,5 +1,6 @@
 import { db } from '@peblish/core/db/read';
 import { posts } from '@peblish/core/db/tables/content';
+import { storeRemoteComment, updateRemoteComment } from '@peblish/core/comments/remote';
 import { storeRemotePost, updateRemotePost } from '@peblish/core/posts/remote';
 import { eq } from 'drizzle-orm';
 import type { CommentRecord, ContentObject, PostRecord } from '../../mapping/records.ts';
@@ -13,7 +14,6 @@ import {
   requireContent,
   storedContent,
 } from '../authorize.ts';
-import { comments } from '../comments.ts';
 import { prepared, type InboundContext, type Prepared } from '../handler.ts';
 import { skip } from '../reasons.ts';
 
@@ -65,11 +65,16 @@ async function prepareNote(ctx: InboundContext, comment: CommentRecord, verb: 'C
   return prepared(ctx, async (t) => {
     const existing = await storedContent(t.db, comment.apId);
     if (existing && verb === 'Update') {
-      await comments.update(ctx, t, comment, existing);
+      const grant = await grantFor(ctx, t, 'comment.update', { commentId: existing.id });
+      await updateRemoteComment.within(t, grant, comment);
       return { communityId: community.id, objectApId: comment.apId, relay: true };
     }
     if (existing) throw skip('object.exists', comment.apId);
-    const stored = await comments.create(ctx, t, comment, parent);
+    const grant = await grantFor(ctx, t, 'comment.create', {
+      postId: parent.postId,
+      parentId: parent.kind === 'comment' ? parent.id : null,
+    });
+    const stored = await storeRemoteComment.within(t, grant, comment);
     if (!stored.created) throw skip('object.exists', comment.apId);
     return { communityId: community.id, objectApId: comment.apId, stored: [comment.apId], relay: true };
   });

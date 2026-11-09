@@ -14,7 +14,7 @@ import { signDelivery } from '../signing/sign.ts';
 import { receiveInbound } from './receive.ts';
 import { resetKeyFetchBudget } from './throttle.ts';
 import { processRow, type PipelineOptions } from './pipeline.ts';
-import { activityId, addressedToCommunity, hosts, PUBLIC, useCommentDouble } from './test-support.ts';
+import { activityId, addressedToCommunity, hosts, PUBLIC } from './test-support.ts';
 
 const deliver = (json: Record<string, unknown>, options: PipelineOptions = {}) => deliverRow(json, (row) => processRow(row, options));
 
@@ -319,7 +319,6 @@ describe('the authorization matrix', () => {
   });
 
   test.each(cases)('$id: $title', async (item) => {
-    useCommentDouble();
     await item.setup?.(world);
     const before = await snapshot();
     const outcome = await item.run(world);

@@ -6,7 +6,6 @@ import { shapeOf } from '../test/corpus.ts';
 import { readFixture, readManifest } from '../test/manifest.ts';
 import { processRow } from './pipeline.ts';
 import { resetKeyFetchBudget } from './throttle.ts';
-import { useCommentDouble } from './test-support.ts';
 
 // Every activity Lemmy 0.19.21 and PieFed 1.8.11 sent in the Phase 0 captures (the manifest's
 // inbound and peer-log entries, in the order they were captured), run through the pipeline in
@@ -19,7 +18,6 @@ const sequence = (id: string) => Number(/-(\d{4})-/.exec(id)?.[1] ?? 0);
 beforeEach(async () => {
   await truncateAll();
   resetKeyFetchBudget();
-  useCommentDouble();
 });
 
 describe('the captured inbound corpus', () => {

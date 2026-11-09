@@ -46,7 +46,6 @@ export const inboundReasons = {
   'undo.unsupported': 'This Undo reverses something peblish does not undo.',
   'report.not_local': 'A report counts only about content stored here, in a community hosted here.',
   'flag.not_handled': 'Reports are handled by the reports lane; the Flag is recorded and not acted on.',
-  'comments.unavailable': 'Comments are not wired into the inbound pipeline yet.',
 } as const;
 
 export type InboundReason = keyof typeof inboundReasons;
