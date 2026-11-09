@@ -112,14 +112,16 @@ export async function seedBudgetWorld({ communities = 300, reports: total = 5000
  * Every run uses fresh names, so the lane database can keep earlier runs.
  */
 async function e2e() {
-  const { seedAccount } = await import('./seed-a.ts');
-  const { PASSWORD } = await import('./seed-a.ts');
+  const { seedAccount, seedTwoFactor, PASSWORD } = await import('./seed-a.ts');
   const suffix = Math.random().toString(36).slice(2, 8);
   const here = await localInstance(db());
   const instance = { ...here, domain: new URL(here.origin).host, local: true };
   const [reporter, second, third, author, moderator, outsider] = await Promise.all(
     ['reporter', 'second', 'third', 'author', 'mod', 'outsider'].map((name) => seedAccount(`${name}_${suffix}`)),
   );
+  // An admin of this run's own, so signing in with a one-time code does not meet another spec's.
+  const boss = await seedAccount(`boss_${suffix}`, { role: 'admin' });
+  const { secret } = await seedTwoFactor(boss.userId, `peblish-rep-totp-secret-${suffix}-0123456789`);
   const community = await seedActor(instance, 'Group', `rep_${suffix}`);
   const other = await seedActor(instance, 'Group', `rep_other_${suffix}`);
   await seedModerator(community, { id: moderator!.actorId });
@@ -169,6 +171,7 @@ async function e2e() {
     author: { name: author!.name, actorId: author!.actorId },
     moderator: { name: moderator!.name },
     outsider: { name: outsider!.name },
+    admin: { name: boss.name, totpSecret: secret },
     community: { handle: community.name },
     other: { handle: other.name },
     posts,
