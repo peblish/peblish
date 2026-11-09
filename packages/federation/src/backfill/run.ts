@@ -2,6 +2,7 @@ import { authorize } from '@peblish/core/authz/authorize';
 import { systemPrincipal } from '@peblish/core/authz/system';
 import { db } from '@peblish/core/db/read';
 import { actors } from '@peblish/core/db/tables/actors';
+import { posts as postRows } from '@peblish/core/db/tables/content';
 import {
   backfillLimits,
   claimBackfill,
@@ -52,7 +53,9 @@ function entryOf(item: unknown): Entry | null {
   if (typeof item === 'string') return URL.canParse(item) ? { id: item, embedded: null } : null;
   if (!isObject(item)) return null;
   if (item.type === 'Create' || item.type === 'Announce' || item.type === 'Update') return entryOf(item.object);
-  if (typeof item.id === 'string' && typeof item.type === 'string' && contentTypes.has(item.type)) return { id: item.id, embedded: item };
+  if (typeof item.id === 'string' && URL.canParse(item.id) && typeof item.type === 'string' && contentTypes.has(item.type)) {
+    return { id: item.id, embedded: item };
+  }
   return null;
 }
 
@@ -114,10 +117,19 @@ export async function runBackfill(claimed: ClaimedBackfill, options: BackfillOpt
   let unreachable = 0;
   const seen = new Set<string>();
   const vouch = (collectionUrl: string): Vouch => ({ community, announceApId: collectionUrl });
+  const communityOrigin = originOf(community.apId);
 
-  /** An object's document: embedded when its own server is the community's, else read from where it lives. */
-  async function load(entry: Entry, owner: string) {
-    if (entry.embedded && originOf(entry.id) === originOf(owner)) return { json: entry.embedded as unknown };
+  /**
+   * An object's document: embedded when its id is on the origin of `owner` (the community, or
+   * the collection a post offers), else read from where it lives. Either way its id is the
+   * entry's (readObject checks that for a fetched one).
+   */
+  async function load(entry: Entry, owner: string): Promise<{ json: unknown } | ObjectOutcome> {
+    if (entry.embedded && originOf(entry.id) === originOf(owner)) {
+      return entry.embedded.id === entry.id
+        ? { json: entry.embedded }
+        : { status: 'refused', apId: entry.id, reason: 'object.id_mismatch' };
+    }
     return readObject(entry.id, fetch);
   }
 
@@ -125,20 +137,35 @@ export async function runBackfill(claimed: ClaimedBackfill, options: BackfillOpt
     if (outcome.status === 'unreachable') unreachable += 1;
   };
 
-  async function backfillComments(page: unknown, postId: string, post: Vouch) {
-    const source = offeredCollection(page);
+  /**
+   * The comments a stored post offers in its `context` or `replies` collection. The post's
+   * author controls that collection, so it is trusted for nothing but comments on that post:
+   * the post was listed by the community's own collection (the evidence that it belongs here),
+   * the collection is served by the post's or the community's server, and a comment is stored
+   * only once what it replies to is the post or a comment already stored from the collection.
+   * Pages and replies to anything else are refused, and every comment stored counts against the caps.
+   */
+  async function backfillComments(postJson: unknown, postApId: string, via: Vouch) {
+    const source = offeredCollection(postJson);
     if (!source) return;
     const room = Math.min(limits.commentsPerPost, limits.comments - comments);
     if (room <= 0) return;
+    if (typeof source === 'string' && ![originOf(postApId), communityOrigin].includes(originOf(source))) {
+      notes.push(`comments of ${postApId}: the collection is on another server`);
+      return;
+    }
+    const [post] = await db().select({ id: postRows.id }).from(postRows).where(eq(postRows.apId, postApId));
+    if (!post) return;
     let items: unknown[];
     try {
       items = await readCollection(source, fetch, { pages: limits.collectionPages, items: room });
     } catch (error) {
       if (!(error instanceof FetchFailure)) throw error;
-      notes.push(`comments of ${postId}: ${error.message}`);
+      notes.push(`comments of ${postApId}: ${error.message}`);
       return;
     }
-    const owner = typeof source === 'string' ? source : postId;
+    const owner = typeof source === 'string' ? source : postApId;
+    const waiting: { id: string; parent: string; json: unknown }[] = [];
     for (const item of items) {
       const entry = entryOf(item);
       if (!entry || budget.spent || options.signal?.aborted) continue;
@@ -147,9 +174,23 @@ export async function runBackfill(claimed: ClaimedBackfill, options: BackfillOpt
         tally(loaded);
         continue;
       }
-      const outcome = await storeObject(loaded.json, post, { fetch, depth: 0 });
-      tally(outcome);
-      if (outcome.status === 'stored' && outcome.created && outcome.kind === 'comment') comments += 1;
+      const parent = isObject(loaded.json) ? loaded.json.inReplyTo : undefined;
+      if (typeof parent === 'string') waiting.push({ id: entry.id, parent, json: loaded.json });
+    }
+    // Thread order, whatever order the collection lists them in.
+    const placed = new Set([postApId]);
+    for (let progress = true; progress && waiting.length > 0;) {
+      progress = false;
+      for (const next of waiting.filter((comment) => placed.has(comment.parent))) {
+        waiting.splice(waiting.indexOf(next), 1);
+        progress = true;
+        if (budget.spent || options.signal?.aborted) continue;
+        const outcome = await storeObject(next.json, via, { fetch, depth: 0, confine: { kind: 'comment', postId: post.id } });
+        tally(outcome);
+        if (outcome.status !== 'stored') continue;
+        placed.add(next.id);
+        if (outcome.created) comments += 1;
+      }
     }
   }
 
@@ -184,11 +225,11 @@ export async function runBackfill(claimed: ClaimedBackfill, options: BackfillOpt
         tally(loaded);
         continue;
       }
-      const outcome = await storeObject(loaded.json, vouch(url), { fetch, depth: 0 });
+      const outcome = await storeObject(loaded.json, vouch(url), { fetch, depth: 0, confine: { kind: 'post' } });
       tally(outcome);
       if (outcome.status !== 'stored') continue;
       if (outcome.created) posts += 1;
-      await backfillComments(loaded.json, entry.id, vouch(url));
+      await backfillComments(loaded.json, outcome.apId, vouch(url));
     }
   }
   if (budget.spent) notes.push(`stopped at ${limits.requests} requests`);

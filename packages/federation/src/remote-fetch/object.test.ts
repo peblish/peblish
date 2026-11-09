@@ -178,3 +178,52 @@ describe('an object its server answers with 410 or a Tombstone', () => {
     });
   });
 });
+
+describe('a document served under another id', () => {
+  const alice = 'https://good.test/u/alice';
+  const foreign = (extra: Record<string, unknown> = {}) =>
+    lemmyPage(1, { id: 'https://good.test/post/1', attributedTo: alice, audience: lab, ...extra });
+
+  test('is refused: another host’s post cannot be stored from this host’s URL, as that host’s author', async () => {
+    const asked = `${lemmy}/post/370`;
+    const peer = serving({ [asked]: foreign() });
+    expect(await fetchRemoteObject(asked, { vouch, fetch: peer.fetch })).toEqual({
+      status: 'refused',
+      apId: asked,
+      reason: 'object.id_mismatch',
+    });
+    expect(await storedPost('https://good.test/post/1')).toBeUndefined();
+    // Nothing was fetched on behalf of the claimed author.
+    expect(peer.requests.map((request) => request.url)).toEqual([asked]);
+  });
+
+  test('is refused on the same host too, and when it names no id', async () => {
+    const asked = `${lemmy}/post/371`;
+    expect(await fetchRemoteObject(asked, { vouch, fetch: serving({ [asked]: lemmyPage(372) }).fetch })).toMatchObject({
+      status: 'refused',
+      reason: 'object.id_mismatch',
+    });
+    const { id: _id, ...anonymous } = lemmyPage(371);
+    expect(await fetchRemoteObject(asked, { vouch, fetch: serving({ [asked]: anonymous }).fetch })).toMatchObject({
+      status: 'refused',
+      reason: 'object.id_mismatch',
+    });
+  });
+
+  test('is refused when it was served from another origin than its id, and a Tombstone of another id deletes nothing', async () => {
+    const asked = `${lemmy}/post/373`;
+    const peer = serving({ [asked]: lemmyPage(373) });
+    // The fetch ended on another server (a redirect): the document there cannot speak for this id.
+    const redirected: typeof peer.fetch = async (url, init) => ({
+      ...(await peer.fetch(url, init)),
+      url: 'https://elsewhere.test/post/373',
+    });
+    expect(await fetchRemoteObject(asked, { vouch, fetch: redirected })).toMatchObject({ status: 'refused', reason: 'object.id_mismatch' });
+
+    await fetchRemoteObject(asked, { vouch, fetch: peer.fetch });
+    const wrong = serving({ [asked]: { type: 'Tombstone', id: `${lemmy}/post/999` } });
+    expect(await fetchRemoteObject(asked, { fetch: wrong.fetch })).toMatchObject({ status: 'refused', reason: 'object.id_mismatch' });
+    expect((await storedPost(asked))?.deletedAt).toBeNull();
+    expect(await ledger()).toEqual([]);
+  });
+});

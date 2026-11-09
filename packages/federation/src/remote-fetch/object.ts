@@ -62,13 +62,29 @@ async function gone(apId: string): Promise<ObjectOutcome> {
   return { status: 'gone', apId, deleted };
 }
 
+const withoutFragment = (url: string): string => url.split('#')[0] ?? url;
+
+/**
+ * Whether the document served for `requested` (from `served`, where the fetch ended) speaks for
+ * that URL: its id, fragment stripped, is the requested URL or the one it was served from, and
+ * it lives on the origin that served it. A server can then answer only for ids of its own, so a
+ * community's listing of `evil.test/object` cannot make us store `good.test/post` from it.
+ */
+function isBoundTo(json: unknown, requested: string, served: string): boolean {
+  const id = typeof json === 'object' && json !== null && 'id' in json && typeof json.id === 'string' ? withoutFragment(json.id) : null;
+  if (id === null || !URL.canParse(id) || !URL.canParse(served)) return false;
+  return (id === withoutFragment(requested) || id === withoutFragment(served)) && new URL(id).origin === new URL(served).origin;
+}
+
 /**
  * GETs the object at `apId` from its own origin (signed as the instance, through safeFetch). A
- * 410, or a Tombstone, is an outcome of its own (`gone`), not an error.
+ * 410, or a Tombstone, is an outcome of its own (`gone`), not an error. A document whose id is
+ * not the requested URL's, or the one it was served from, is refused as `object.id_mismatch`.
  */
 export async function readObject(apId: string, fetch: Fetcher): Promise<{ json: unknown } | ObjectOutcome> {
   try {
-    const { json } = await fetchActivity(apId, fetch);
+    const { json, url } = await fetchActivity(apId, fetch);
+    if (!isBoundTo(json, apId, url)) return refused(apId, 'object.id_mismatch');
     return isTombstone(json) ? await gone(apId) : { json };
   } catch (error) {
     if (!(error instanceof FetchFailure)) throw error;
@@ -115,13 +131,26 @@ export async function fetchRemoteObject(
 }
 
 /**
+ * What code that reads a peer's collection in bulk accepts from it: posts, or comments on one
+ * given post. A comment is then stored only when what it replies to is that post or a comment
+ * of it we hold, and a parent we lack is never fetched for it, so a collection cannot widen
+ * what is stored beyond what the caller asked for.
+ */
+export type Confine = { kind: 'post' } | { kind: 'comment'; postId: string };
+
+/**
  * Stores the post or comment `json` describes under `vouch`. The document is held to the
  * inbound rules: it lives on its author's origin and names the author, a post names the
  * vouching community, remote sensitive content is refused, and the policies of post.create and
  * comment.create decide the rest (a banned author, a locked post, a removed community). A
- * comment whose parent we do not hold has the parent fetched first, up to `maxParentDepth`.
+ * comment whose parent we do not hold has the parent fetched first, up to `maxParentDepth`,
+ * unless the caller `confine`s what it accepts.
  */
-export async function storeObject(json: unknown, vouch: Vouch, options: { fetch: Fetcher; depth: number }): Promise<ObjectOutcome> {
+export async function storeObject(
+  json: unknown,
+  vouch: Vouch,
+  options: { fetch: Fetcher; depth: number; confine?: Confine },
+): Promise<ObjectOutcome> {
   let mapped;
   try {
     mapped = fromWire(json);
@@ -129,6 +158,7 @@ export async function storeObject(json: unknown, vouch: Vouch, options: { fetch:
     if (error instanceof MappingError) return refused(idOf(json), 'object.unsupported');
     throw error;
   }
+  if (options.confine && options.confine.kind !== mapped.kind) return refused(idOf(json), 'object.unexpected_kind');
   try {
     if (mapped.kind === 'post') return await storePost(mapped.post, vouch, options.fetch);
     if (mapped.kind === 'comment') return await storeComment(mapped.comment, vouch, options);
@@ -174,10 +204,17 @@ async function storePost(post: PostRecord, vouch: Vouch, fetch: Fetcher): Promis
   return { status: 'stored', kind: 'post', apId: post.apId, created };
 }
 
-async function storeComment(comment: CommentRecord, vouch: Vouch, options: { fetch: Fetcher; depth: number }): Promise<ObjectOutcome> {
+async function storeComment(
+  comment: CommentRecord,
+  vouch: Vouch,
+  options: { fetch: Fetcher; depth: number; confine?: Confine },
+): Promise<ObjectOutcome> {
   checkObject(comment.authorApId, comment);
   let target = await resolveReplyTarget(comment.inReplyToApId);
-  if (!target) {
+  if (options.confine?.kind === 'comment') {
+    if (!target) return refused(comment.apId, 'parent.missing');
+    if (target.postId !== options.confine.postId) return refused(comment.apId, 'parent.mismatch');
+  } else if (!target) {
     if (options.depth >= maxParentDepth) return refused(comment.apId, 'parent.missing');
     const parent = await fetchRemoteObject(comment.inReplyToApId, { vouch, fetch: options.fetch, depth: options.depth + 1 });
     if (parent.status === 'unreachable') return unreachable(comment.apId, parent.detail);
