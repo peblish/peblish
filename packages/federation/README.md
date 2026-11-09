@@ -104,12 +104,12 @@ activity is signed once, POSTed with no redirects and a 64 KiB response cap, and
 recorded. A worker that dies leaves a lease that runs out and the row is sent again, so
 delivery is at least once and receivers dedupe on the activity id.
 
-| Answer                                                 | Result                              |
-| ------------------------------------------------------ | ----------------------------------- |
-| 2xx                                                    | delivered                           |
-| 401, 408, 425, 429, 5xx, a timeout, a connection error | retried                             |
-| any other 4xx, any 3xx, a refused destination          | failed, never retried               |
-| an instance `isDormant` reports                        | skipped (lane REM fills the policy) |
+| Answer                                                            | Result                              |
+| ----------------------------------------------------------------- | ----------------------------------- |
+| 2xx                                                               | delivered                           |
+| 408, 429, 5xx, a timeout, a connection error                      | retried                             |
+| every other 4xx (401 and 425 too), any 3xx, a refused destination | failed, never retried               |
+| an instance `isDormant` reports                                   | skipped (lane REM fills the policy) |
 
 Retries wait 10 s, 30 s, 90 s, 270 s, 810 s, 2,430 s, 7,290 s, then 6 hours twice (the
 spike's schedule, in `delivery/policy.ts`): ten attempts over 54,130 seconds, about 15

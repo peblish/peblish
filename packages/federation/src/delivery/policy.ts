@@ -20,12 +20,13 @@ export const maxResponseBytes = 64 * 1024;
 export const leaseMs = 60_000;
 
 /**
- * Statuses worth another try: a peer that wants credentials we can fix by signing again (401),
- * one that is slow (408), too busy (429) or not ready (425, 5xx). Every other 4xx says the
- * activity itself was refused (400, 403, 404, 405, 410, 413, 422 and the rest), so asking
- * again cannot help; the same goes for PieFed's day-one cap on a new remote account's posts.
+ * The only 4xx worth another try: a peer that is slow (408) or too busy (429). Every other 4xx,
+ * 401 and 425 included, says the activity itself was refused (400, 401, 403, 404, 405, 410, 413,
+ * 422 and the rest), so asking again cannot help; the same goes for PieFed's day-one cap on a
+ * new remote account's posts. Signing again does not change a 401 either, since we never send a
+ * second scheme.
  */
-const retryableClientErrors = new Set([401, 408, 425, 429]);
+const retryableClientErrors = new Set([408, 429]);
 
 export type Attempt =
   | { status: number; retryAfterMs: number | null }

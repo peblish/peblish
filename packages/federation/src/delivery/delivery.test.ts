@@ -97,7 +97,7 @@ describe('delivering', () => {
     expect(await deliverDue({ fetch, ...quiet })).toEqual({ delivered: 0, retried: 0, failed: 0, skipped: 0 });
   });
 
-  test.each([400, 403, 404, 405, 410, 413, 422, 418, 301, 302, 307])('a %i stops the delivery for good', async (status) => {
+  test.each([400, 401, 403, 404, 405, 410, 413, 418, 422, 425, 301, 302, 307])('a %i stops the delivery for good', async (status) => {
     const w = await world();
     await w.send();
     const { fetch, requests } = stubFetch({
@@ -119,7 +119,7 @@ describe('delivering', () => {
     expect((await w.rows())[0]).toMatchObject({ state: 'failed', lastError: 'redirect to https://127.0.0.1/inbox not followed' });
   });
 
-  test.each([401, 408, 425, 429, 500, 502, 503, 504])('a %i is tried again later', async (status) => {
+  test.each([408, 429, 500, 502, 503, 504])('a %i is tried again later', async (status) => {
     const w = await world();
     await w.send();
     const { fetch } = stubFetch({ [inbox]: { status } });
@@ -337,8 +337,9 @@ describe('the retry policy', () => {
     expect(parseRetryAfter(null)).toBeNull();
   });
 
-  test('a day-one-cap style refusal (a 4xx) is final, not retried', () => {
-    expect(verdict(1, { status: 400, retryAfterMs: null })).toEqual({ state: 'failed' });
-    expect(verdict(1, { status: 429, retryAfterMs: null })).toMatchObject({ state: 'pending' });
+  test('every 4xx is final except 408 and 429, which retry', () => {
+    const final = Array.from({ length: 100 }, (_, index) => 400 + index).filter((status) => status !== 408 && status !== 429);
+    for (const status of final) expect(verdict(1, { status, retryAfterMs: null }), `${status}`).toEqual({ state: 'failed' });
+    for (const status of [408, 429]) expect(verdict(1, { status, retryAfterMs: null }), `${status}`).toMatchObject({ state: 'pending' });
   });
 });
