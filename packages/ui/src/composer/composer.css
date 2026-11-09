@@ -1,0 +1,146 @@
+/* The Markdown editor and the bottom sheet the composer opens in. Structure after the R1 mock
+   composer-page; the wireframe styling is not the product's visual design. */
+@layer app {
+  .pb-md {
+    --md-line: var(--pb-line);
+    display: grid;
+    gap: 6px;
+  }
+
+  .pb-md__views {
+    display: flex;
+    border-bottom: 1px solid var(--md-line);
+  }
+
+  .pb-md__view {
+    margin-bottom: -1px;
+    padding: 5px 12px;
+    border: 0;
+    border-bottom: 2px solid transparent;
+    background: none;
+    color: var(--pb-muted);
+    font: inherit;
+    cursor: pointer;
+  }
+
+  .pb-md__view[aria-pressed='true'] {
+    border-bottom-color: var(--pb-fg);
+    color: var(--pb-fg);
+    font-weight: 600;
+  }
+
+  .pb-md__view:disabled,
+  .pb-md__btn:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+  }
+
+  .pb-md__write {
+    border: 1px solid var(--md-line);
+  }
+
+  .pb-md__write:focus-within {
+    border-color: var(--pb-fg);
+  }
+
+  .pb-md__write[hidden] {
+    display: none;
+  }
+
+  /* Mux UI's toolbar is a rounded pill; here it is the flat row of the mock, joined to the textarea. */
+  .pb-md__bar.muxui-toolbar {
+    flex-wrap: wrap;
+    gap: 0;
+    padding: 0;
+    border: 0;
+    border-bottom: 1px solid var(--md-line);
+    border-radius: 0;
+    background: none;
+  }
+
+  .pb-md__btn {
+    position: relative;
+    min-width: 30px;
+    padding: 3px 9px;
+    border: 0;
+    border-right: 1px solid var(--md-line);
+    background: none;
+    color: var(--pb-muted);
+    font: inherit;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+
+  .pb-md__btn:hover:not(:disabled) {
+    color: var(--pb-fg);
+  }
+
+  /* The write pane's own border is the box; Mux UI's textarea draws its outline inside it otherwise. */
+  .pb-md__field .muxui-text-area__textarea {
+    min-height: 200px;
+    border-radius: 0;
+    outline: 0;
+    box-shadow: none;
+    background: transparent;
+    font-family: var(--pb-mono);
+    font-size: 13px;
+    line-height: 1.5;
+  }
+
+  .pb-md__field .muxui-text-area__description {
+    padding: 0 8px 4px;
+  }
+
+  .pb-md__preview {
+    min-height: 200px;
+    padding: 8px 10px;
+    border: 1px solid var(--md-line);
+  }
+
+  .pb-md__preview h3 {
+    margin-bottom: 6px;
+    font-size: 17px;
+  }
+
+  /* The sheet: the dialog panel moved to the bottom edge. The panel's own transform (centred, with
+     Mux UI's modal motion variables) is replaced; the slide uses the separate `translate` property,
+     so Mux UI's fade on the same element is not disturbed. One short transition, no looping animation. */
+  .pb-sheet {
+    top: auto;
+    bottom: 0;
+    left: 50%;
+    width: min(1020px, 100vw);
+    max-width: 100vw;
+    height: min(94dvh, 100dvh - 24px);
+    max-height: none;
+    padding: 0;
+    gap: 0;
+    transform: translateX(-50%);
+    border-radius: 12px 12px 0 0;
+    animation: pb-sheet-in 0.22s ease-out;
+  }
+
+  .pb-sheet__content {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 4px 16px 24px;
+  }
+
+  .pb-sheet .muxui-dialog__title {
+    padding: 14px 48px 6px 16px;
+    font-size: 18px;
+  }
+
+  @keyframes pb-sheet-in {
+    from {
+      translate: 0 100%;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .pb-sheet {
+      animation: none;
+    }
+  }
+}

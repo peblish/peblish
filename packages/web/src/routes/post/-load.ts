@@ -6,6 +6,7 @@ import { type } from 'arktype';
 import { negotiateLocale } from '../../i18n/negotiate.ts';
 import { pageSession } from '../../server/auth.ts';
 import { createMarkdownRenderer } from '../../server/markdown.ts';
+import { loadThread } from './$id/comments/-thread.ts';
 import { postMedia, postTime, threadVisible } from './-page-data.ts';
 
 /**
@@ -39,6 +40,7 @@ export const loadPost = createServerFn({ method: 'GET' })
       moderator: page.moderator,
       /** False while the gate withholds the post (signed out, or no 16+ declaration) or a moderator removed it: the thread must not be sent either. */
       threadVisible: threadVisible(page),
+      thread: await loadThread({ page, session, renderer }),
       /** The signed-in person, or null: who may see the author's and moderators' actions. */
       viewerId: session?.view.actorId ?? null,
       thumbnail,
