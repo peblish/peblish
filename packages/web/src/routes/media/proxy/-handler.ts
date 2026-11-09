@@ -12,10 +12,18 @@ import { verifyProxyPath } from '@peblish/core/media/proxy-url';
  */
 export const PROXY_MAX_AGE_SECONDS = 600;
 
+/** What a busy proxy tells the browser: the same image is worth asking for again in a moment. */
+export const PROXY_RETRY_AFTER_SECONDS = 2;
+
 const plain = (status: number, text: string) =>
   new Response(`${text}\n`, {
     status,
-    headers: { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' },
+    headers: {
+      'content-type': 'text/plain; charset=utf-8',
+      'cache-control': 'no-store',
+      'x-content-type-options': 'nosniff',
+      ...(status === 503 && { 'retry-after': String(PROXY_RETRY_AFTER_SECONDS) }),
+    },
   });
 
 export type ProxyDeps = {

@@ -29,12 +29,18 @@ const EMPTY_SHA256 = sha256(new Uint8Array());
 
 export class StorageError extends Error {}
 
+/**
+ * A call (connecting, any retry, and reading the answer) still running after this long is
+ * abandoned with a TimeoutError, so a stalled bucket cannot hold an upload or a request open.
+ */
+export const S3_TIMEOUT_MS = 30_000;
+
 export type S3Store = ObjectStore & {
   /** Creates the bucket when it is missing (development and tests; production buckets exist). */
   ensureBucket(): Promise<void>;
 };
 
-export function s3Store(config: S3Config = s3ConfigFromEnv()): S3Store {
+export function s3Store(config: S3Config = s3ConfigFromEnv(), { timeoutMs = S3_TIMEOUT_MS }: { timeoutMs?: number } = {}): S3Store {
   const client = new AwsClient({
     accessKeyId: config.S3_ACCESS_KEY_ID,
     secretAccessKey: config.S3_SECRET_ACCESS_KEY,
@@ -46,6 +52,7 @@ export function s3Store(config: S3Config = s3ConfigFromEnv()): S3Store {
   const call = (method: string, path: string, body?: Uint8Array, contentType?: string) =>
     client.fetch(`${base}${path}`, {
       method,
+      signal: AbortSignal.timeout(timeoutMs),
       ...(body && { body: Buffer.from(body) }),
       headers: { 'x-amz-content-sha256': body ? sha256(body) : EMPTY_SHA256, ...(contentType && { 'content-type': contentType }) },
     });

@@ -6,13 +6,63 @@ import { expectThat, type Cleaned } from './types.ts';
 // its GPS position and camera, XMP, IPTC, Photoshop resources, ICC profiles, JFIF thumbnails),
 // comments, and anything after EOI. A phone photo's Exif orientation is the one thing the
 // picture needs, so a 34-byte Exif segment holding only the orientation is written back.
+// A kept segment must be exactly as long as its fields say (`expectPayload`), since bytes after
+// the defined fields are where a marker would hide, so a table or header with a suffix is
+// refused. Adobe APP14 is the exception: some Adobe tools append private bytes to it, and real
+// files carry them, so it is written again at its defined 12 bytes. Only the entropy-coded scan
+// data stays opaque (it cannot be judged without decoding it).
 
 const SOI = 0xd8;
 const EOI = 0xd9;
 const SOS = 0xda;
+const DHT = 0xc4;
+const DAC = 0xcc;
+const DQT = 0xdb;
+const DRI = 0xdd;
+const APP14 = 0xee;
 const isRestart = (marker: number) => marker >= 0xd0 && marker <= 0xd7;
-const isFrame = (marker: number) => marker >= 0xc0 && marker <= 0xcf && marker !== 0xc4 && marker !== 0xc8 && marker !== 0xcc;
-const keptTable = (marker: number) => marker === 0xc4 || marker === 0xcc || marker === 0xdb || marker === 0xdd;
+const isFrame = (marker: number) => marker >= 0xc0 && marker <= 0xcf && marker !== DHT && marker !== 0xc8 && marker !== DAC;
+const keptTable = (marker: number) => marker === DHT || marker === DAC || marker === DQT || marker === DRI;
+
+/** Adobe APP14: "Adobe", a version, two flag words and the colour transform byte. */
+const ADOBE_PAYLOAD = 12;
+
+/** Whether the tables in a DQT or DHT payload fill it exactly, with no byte left over. */
+function tablesFillPayload(marker: number, payload: Buffer): boolean {
+  let at = 0;
+  while (at < payload.length) {
+    const info = payload[at] ?? 0;
+    if (marker === DQT) {
+      // High nibble: 0 for 8-bit entries (64 bytes), 1 for 16-bit entries (128 bytes).
+      if (info >> 4 > 1) return false;
+      at += 1 + 64 * ((info >> 4) + 1);
+    } else {
+      // Sixteen counts of codes per length, then one symbol per code.
+      if (at + 17 > payload.length) return false;
+      let symbols = 0;
+      for (let length = 1; length <= 16; length++) symbols += payload[at + length] ?? 0;
+      if (symbols > 256) return false;
+      at += 17 + symbols;
+    }
+  }
+  return at === payload.length && payload.length > 0;
+}
+
+/**
+ * Throws unless a kept segment's payload (the bytes after its length field) is exactly the
+ * size its fields define. Frame and scan headers count their components; DQT and DHT count their
+ * tables; DRI is one word; DAC is pairs of bytes.
+ */
+function expectPayload(marker: number, payload: Buffer): void {
+  const components = payload[isFrame(marker) ? 5 : 0] ?? 0;
+  let exact: boolean;
+  if (isFrame(marker)) exact = components > 0 && payload.length === 6 + 3 * components;
+  else if (marker === SOS) exact = components > 0 && payload.length === 4 + 2 * components;
+  else if (marker === DQT || marker === DHT) exact = tablesFillPayload(marker, payload);
+  else if (marker === DRI) exact = payload.length === 2;
+  else exact = payload.length > 0 && payload.length % 2 === 0; // DAC
+  expectThat(exact, `JPEG: the 0x${marker.toString(16)} segment does not match the size its fields define`);
+}
 
 /** The Exif orientation (2 to 8; 1 means upright) of an APP1 payload, or null. */
 function exifOrientation(exif: Buffer): number | null {
@@ -98,12 +148,15 @@ export function cleanJpeg(input: Buffer): Cleaned {
     const end = pos + 2 + input.readUInt16BE(pos + 2);
     expectThat(end >= pos + 4 && end <= input.length, 'JPEG: segment length out of range');
     const segment = input.subarray(pos, end);
+    const payload = segment.subarray(4);
     if (isFrame(marker)) {
-      expectThat(size === null && segment.length >= 10, 'JPEG: a second or short frame header');
+      expectThat(size === null, 'JPEG: a second frame header');
+      expectPayload(marker, payload);
       size = { height: segment.readUInt16BE(5), width: segment.readUInt16BE(7) };
       kept.push(segment);
     } else if (marker === SOS) {
       expectThat(size !== null, 'JPEG: a scan before the frame');
+      expectPayload(marker, payload);
       kept.push(segment);
       scans++;
       // The entropy-coded data runs to the next marker that is not a stuffed 0xFF00, a restart or a fill byte.
@@ -118,9 +171,11 @@ export function cleanJpeg(input: Buffer): Cleaned {
       pos = scanEnd;
       continue;
     } else if (keptTable(marker)) {
+      expectPayload(marker, payload);
       kept.push(segment);
-    } else if (marker === 0xee && segment.toString('latin1', 4, 9) === 'Adobe') {
-      kept.push(segment);
+    } else if (marker === APP14 && segment.toString('latin1', 4, 9) === 'Adobe') {
+      expectThat(payload.length >= ADOBE_PAYLOAD, 'JPEG: the Adobe segment is shorter than its fields');
+      kept.push(Buffer.from([0xff, APP14, 0x00, 2 + ADOBE_PAYLOAD]), payload.subarray(0, ADOBE_PAYLOAD));
     } else if (marker === 0xe1) {
       orientation ??= exifOrientation(segment.subarray(4));
     }

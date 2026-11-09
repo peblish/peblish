@@ -1,12 +1,13 @@
 import http from 'node:http';
 import type { AddressInfo } from 'node:net';
-import { afterEach, expect, test } from 'vitest';
+import { afterEach, expect, test, vi } from 'vitest';
 import { db } from '../db/read.ts';
 import { media } from '../db/tables/media.ts';
 import { outbox } from '../db/tables/outbox.ts';
-import { createSafeFetch } from '../net/fetch.ts';
+import { createSafeFetch, type SafeResponse } from '../net/fetch.ts';
 import { bytes } from './__fixtures__/images.ts';
 import { fetchProxiedImage, proxyLimits } from './proxy.ts';
+import { createSlots } from './slots.ts';
 
 // A stub "remote host" on loopback. The proxy's own client refuses loopback, so tests that
 // need to reach the stub use a client that calls ::1 public; the refusal test uses the real one.
@@ -90,4 +91,56 @@ test('nothing of the viewer goes upstream, and nothing fetched is stored', async
   expect(Object.keys(seen[0]?.headers ?? {}).sort()).toEqual(['accept', 'accept-encoding', 'connection', 'host', 'user-agent']);
   expect(seen[0]?.headers['user-agent']).toBe('peblish-media-proxy/1');
   expect([(await db().select().from(media)).length, (await db().select().from(outbox)).length]).toEqual([0, 0]);
+});
+
+/** A fetch whose answers are released by hand, to hold requests in flight. */
+function held() {
+  const releases: (() => void)[] = [];
+  const fetch = (url: string) =>
+    new Promise<SafeResponse>((resolve) => {
+      releases.push(() => resolve({ status: 200, headers: new Headers(), body: bytes('png'), url }));
+    });
+  return { fetch, releases, started: () => releases.length };
+}
+
+test('upstream fetches are bounded: past the running slots requests queue, past the queue they get a 503', async () => {
+  expect([proxyLimits.concurrent, proxyLimits.queued]).toEqual([32, 64]);
+  const { fetch, releases, started } = held();
+  // The default slots, as the route uses them.
+  const requests = Array.from({ length: proxyLimits.concurrent + proxyLimits.queued }, (_, i) =>
+    fetchProxiedImage(`https://img.test/${i}`, fetch),
+  );
+  await vi.waitFor(() => expect(started()).toBe(proxyLimits.concurrent));
+  // Slots and queue are full: the next one is refused at once and starts nothing.
+  expect(await fetchProxiedImage('https://img.test/over', fetch)).toEqual({ ok: false, status: 503, why: 'busy' });
+  expect(started()).toBe(proxyLimits.concurrent);
+  // Each finished fetch hands its slot to the next waiter, in order, until all have run.
+  for (let done = 0; done < requests.length; done++) {
+    await vi.waitFor(() => expect(releases.length).toBeGreaterThan(done));
+    releases[done]?.();
+  }
+  expect((await Promise.all(requests)).every((result) => result.ok)).toBe(true);
+  expect(started()).toBe(requests.length);
+  // And the slots are free again.
+  const again = held();
+  const next = fetchProxiedImage('https://img.test/again', again.fetch);
+  await vi.waitFor(() => expect(again.started()).toBe(1));
+  again.releases[0]?.();
+  expect(await next).toMatchObject({ ok: true });
+});
+
+test('a fetch that fails, or throws, gives its slot back', async () => {
+  const slots = createSlots(1, 0);
+  const failing = async (): Promise<SafeResponse> => {
+    throw new Error('connection reset');
+  };
+  for (let attempt = 0; attempt < 3; attempt++) {
+    expect(await fetchProxiedImage('https://img.test/a', failing, slots)).toMatchObject({ ok: false, status: 502 });
+  }
+  const { fetch, releases } = held();
+  const running = fetchProxiedImage('https://img.test/b', fetch, slots);
+  await vi.waitFor(() => expect(releases).toHaveLength(1));
+  expect(await fetchProxiedImage('https://img.test/c', fetch, slots)).toMatchObject({ ok: false, status: 503 });
+  releases[0]?.();
+  expect(await running).toMatchObject({ ok: true });
 });

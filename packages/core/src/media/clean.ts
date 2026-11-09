@@ -9,6 +9,9 @@ import { sniffRaster } from './sniff.ts';
 // container is parsed strictly and rebuilt from the parts that decide what is drawn (see the
 // format files), so Exif (GPS position, camera, owner), XMP, IPTC, ICC profiles, comments and
 // anything appended after the image are gone, and a file that is not well formed is refused.
+// Each format checks that what it keeps has exactly the size its fields define and that every
+// animation frame is non-empty and inside the canvas, so the limits below judge the canvas
+// and no frame is larger than it.
 // The pixel data itself is not decoded or re-encoded: no native or wasm codec ships in the
 // image (G0-STATUS wave 1 decision 6), and nothing here allocates per pixel, so a decompression
 // bomb costs nothing. A thumbnail is therefore the image as sent, not a resized copy.

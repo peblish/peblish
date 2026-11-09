@@ -1,4 +1,6 @@
 import { randomUUID } from 'node:crypto';
+import http from 'node:http';
+import type { AddressInfo } from 'node:net';
 import { describe, expect, test } from 'vitest';
 import { memoryStore } from './memory.ts';
 import { s3Store } from './s3.ts';
@@ -20,7 +22,38 @@ test('the in-memory store used by tests keeps the same contract', async () => {
   expect(await store.get('a/b.png')).toBeNull();
 });
 
-// Needs the compose MinIO and the lane's S3_* variables (scripts/lane.sh exports them); CI has no object store yet.
+test('a bucket that never answers is abandoned: every call times out instead of hanging', async () => {
+  // A server that accepts the request and says nothing.
+  const server = http.createServer(() => undefined);
+  await new Promise<void>((done) => server.listen(0, '127.0.0.1', done));
+  try {
+    const { port } = server.address() as AddressInfo;
+    const config = {
+      S3_ENDPOINT: `http://127.0.0.1:${port}`,
+      S3_BUCKET: 'timeouts',
+      S3_REGION: 'us-east-1',
+      S3_ACCESS_KEY_ID: 'key',
+      S3_SECRET_ACCESS_KEY: 'secret',
+    };
+    const store = s3Store(config, { timeoutMs: 150 });
+    const started = Date.now();
+    for (const call of [
+      () => store.put('test/slow.bin', new Uint8Array([1]), 'application/octet-stream'),
+      () => store.get('test/slow.bin'),
+      () => store.delete('test/slow.bin'),
+      () => store.ensureBucket(),
+    ]) {
+      await expect(call()).rejects.toMatchObject({ name: 'TimeoutError' });
+    }
+    expect(Date.now() - started).toBeLessThan(5_000);
+  } finally {
+    server.closeAllConnections();
+    await new Promise((done) => server.close(done));
+  }
+});
+
+// Needs the MinIO of compose.yaml and the S3_* variables: scripts/lane.sh exports them for a lane, and CI starts the same
+// image and sets them (.github/workflows/ci.yml), so the suite is skipped only when they are missing.
 describe.skipIf(!process.env.S3_ENDPOINT)('the S3 adapter against MinIO', () => {
   test('puts, gets and deletes an object, and creates its bucket when missing', async () => {
     const store = s3Store();

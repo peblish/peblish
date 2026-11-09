@@ -1,5 +1,5 @@
-import { crc32 } from 'node:zlib';
 import { describe, expect, test } from 'vitest';
+import { pngChunk as chunk, riff, subBlocks, webpChunk } from './__fixtures__/containers.ts';
 import { dirtyJpeg, exifSegment, has, secret, SECRET } from './__fixtures__/dirty.ts';
 import { bytes } from './__fixtures__/images.ts';
 import { cleanImage, ImageError } from './clean.ts';
@@ -62,15 +62,6 @@ describe('JPEG', () => {
   });
 });
 
-function chunk(type: string, data: Buffer): Buffer {
-  const out = Buffer.alloc(12 + data.length);
-  out.writeUInt32BE(data.length, 0);
-  out.write(type, 4, 'latin1');
-  data.copy(out, 8);
-  out.writeUInt32BE(crc32(out.subarray(4, 8 + data.length)), 8 + data.length);
-  return out;
-}
-
 describe('PNG', () => {
   const original = bytes('png');
   /** Splits the fixture before IDAT to plant chunks there. */
@@ -121,20 +112,6 @@ describe('PNG', () => {
 });
 
 describe('WebP', () => {
-  const riff = (chunks: Buffer[]) => {
-    const body = Buffer.concat(chunks);
-    const head = Buffer.alloc(12);
-    head.write('RIFF', 0, 'latin1');
-    head.writeUInt32LE(4 + body.length, 4);
-    head.write('WEBP', 8, 'latin1');
-    return Buffer.concat([head, body]);
-  };
-  const webpChunk = (type: string, data: Buffer) => {
-    const head = Buffer.alloc(8);
-    head.write(type, 0, 'latin1');
-    head.writeUInt32LE(data.length, 4);
-    return Buffer.concat([head, data, Buffer.alloc(data.length & 1)]);
-  };
   const vp8x = (flags: number) => {
     const data = Buffer.alloc(10);
     data[0] = flags;
@@ -186,7 +163,6 @@ describe('GIF', () => {
   const original = bytes('gif');
 
   test('comments, plain text and XMP extensions are gone; frames and the loop count stay', () => {
-    const subBlocks = (data: Buffer) => Buffer.concat([Buffer.from([data.length]), data, Buffer.from([0])]);
     const comment = Buffer.concat([Buffer.from([0x21, 0xfe]), subBlocks(Buffer.from(SECRET))]);
     const xmp = Buffer.concat([Buffer.from([0x21, 0xff, 11]), Buffer.from('XMP DataXMP'), subBlocks(Buffer.from(SECRET))]);
     const loop = Buffer.concat([Buffer.from([0x21, 0xff, 11]), Buffer.from('NETSCAPE2.0'), subBlocks(Buffer.from([1, 0, 0]))]);
