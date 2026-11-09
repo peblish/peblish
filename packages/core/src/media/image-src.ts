@@ -1,3 +1,5 @@
+import { hostUnder } from '../peers/domains.ts';
+
 /** The settings an image source depends on; web's SiteMarkdown has exactly these. */
 export type ImagePolicy = {
   /** This instance's origin. */
@@ -6,6 +8,8 @@ export type ImagePolicy = {
   remoteMedia: boolean;
   /** The proxy URL builder (proxy-url.ts); without it remote images are never loaded. */
   proxy?: (url: string) => string;
+  /** Peer domains whose media is denied (peers/gate.ts deniedMediaDomains): a host at or under one is treated like remote media switched off. */
+  deniedDomains?: readonly string[];
 };
 
 /**
@@ -20,7 +24,7 @@ const ROOT_RELATIVE = /^\/(?![/\\])/;
  * instance's own media as a root-relative path (the viewer may reach the instance under another
  * host than the stored origin), a remote one through the signed proxy so the viewer's address
  * never reaches the remote host (decision 5), and null when it must not load (remote media is
- * off, no proxy, not http or https, too long to proxy). The caller then shows a link or nothing.
+ * off, no proxy, a peer whose media is denied, not http or https, too long to proxy). The caller then shows a link or nothing.
  * An own-origin URL whose path would not be root-relative (`https://<origin>//evil.example/x.png`)
  * is treated like any other URL, so it is never an `<img src>` that leaves the host.
  */
@@ -36,6 +40,7 @@ export function imageSource(url: string | null | undefined, policy: ImagePolicy)
   const path = `${parsed.pathname}${parsed.search}`;
   if (parsed.origin === policy.origin && ROOT_RELATIVE.test(path)) return path;
   if (!policy.remoteMedia || !policy.proxy) return null;
+  if (policy.deniedDomains?.some((domain) => hostUnder(parsed.host, domain))) return null;
   try {
     return policy.proxy(url);
   } catch {

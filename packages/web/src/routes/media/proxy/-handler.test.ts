@@ -1,5 +1,8 @@
 import { proxyUrlBuilder } from '@peblish/core/media/proxy-url';
 import { expect, test, vi } from 'vitest';
+// The peer gate reads the database; these tests are about the handler, so every peer is approved unless a test says otherwise.
+vi.mock('@peblish/core/peers/gate', () => ({ mediaAllowed: async () => true }));
+
 import { PROXY_MAX_AGE_SECONDS, PROXY_RETRY_AFTER_SECONDS, proxyResponse } from './-handler.ts';
 
 const key = Buffer.from('k'.repeat(32));
@@ -81,4 +84,21 @@ test('a busy proxy answers 503 with Retry-After and no caching', async () => {
     fetchImage: async () => ({ ok: false, status: 415, why: 'not_a_raster_image' }),
   });
   expect(refused.headers.get('retry-after')).toBeNull();
+});
+
+test('media of a quarantined, purged or blocked peer is a 404 and fetches nothing', async () => {
+  const fetchImage = image();
+  const asked: string[] = [];
+  const response = await proxyResponse(signature, target, {
+    key,
+    enabled: true,
+    fetchImage,
+    mediaAllowed: async (host) => {
+      asked.push(host);
+      return false;
+    },
+  });
+  expect([response.status, response.headers.get('cache-control')]).toEqual([404, 'no-store']);
+  expect(asked).toEqual(['img.example']);
+  expect(fetchImage).not.toHaveBeenCalled();
 });

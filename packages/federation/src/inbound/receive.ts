@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { db, type Queryable } from '@peblish/core/db/read';
 import { actorKeys, actors } from '@peblish/core/db/tables/actors';
 import { inboxRaw } from '@peblish/core/db/tables/federation';
+import { intakeFor } from '@peblish/core/peers/gate';
 import { readSetting } from '@peblish/core/settings/read';
 import { tx } from '@peblish/core/tx/tx';
 import { and, eq, gt, sql } from 'drizzle-orm';
@@ -22,6 +23,8 @@ import { takeIntake, takeKeyLookup } from './throttle.ts';
 //   an account's own   202                 a Delete of an account we do not hold, signed with a key that can no
 //   Delete, no key                         longer be fetched (Mastodon sends it after the account is gone):
 //                                          nothing to apply, answered so the peer stops retrying
+//   blocked peer       403                 the signer's instance is blocked here (peers/gate.ts); nothing is stored
+//   paused peer        503 + Retry-After   the signer's instance has its inbox paused; it retries, nothing is lost
 //   not an activity    400                 or a body that is not strictly UTF-8: the relay sends the exact bytes, which
 //                                          must then be exactly the text that was read
 //   throttled          429 + Retry-After   too many key lookups from this address or for this host (throttle.ts), or
@@ -231,6 +234,10 @@ export async function receiveInbound(request: Request, options: ReceiveOptions =
     if (!isObject(activity) || typeof activity.type !== 'string' || actor === null) return refuse(400, 'not an activity');
     // The key must be the actor's own: a server speaks for its own people, and nobody else's.
     if (signature.ownerApId !== actor) return refuse(401, 'signature: the key does not belong to the actor');
+    // What the admin decided about this peer (M18): a paused inbox asks it to come back, a blocked one is refused. Nothing is stored either way.
+    const intake = await intakeFor(db(), signature.ownerApId);
+    if (intake === 'blocked') return refuse(403, 'this instance is blocked here');
+    if (intake === 'paused') return refuse(503, 'the inbox is paused for your instance', retryAfter);
     // From here the sender is authenticated, so its allowance is spent by its own key only. A
     // repeat is recognised first and costs none of it: a peer retrying what it got no answer to
     // must not be told to slow down for it.

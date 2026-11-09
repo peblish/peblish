@@ -38,22 +38,28 @@ const target = (request: PolicyRequest<Subject>) =>
     request.lock,
   );
 
-/** Whether the target is banned from the site now (a row that has not expired). */
-async function siteBanned(request: PolicyRequest<Subject>): Promise<boolean> {
+/** Whether the target is banned from the site now (a row that has not expired), by a ban of this source when one is asked for. */
+async function siteBanned(request: PolicyRequest<Subject>, source?: 'remote'): Promise<boolean> {
   const [row] = await forNoKeyUpdate(
     request.db
       .select({ actorId: siteBans.actorId })
       .from(siteBans)
-      .where(and(eq(siteBans.actorId, request.subject.targetActorId), or(isNull(siteBans.expiresAt), gt(siteBans.expiresAt, sql`now()`)))),
+      .where(
+        and(
+          eq(siteBans.actorId, request.subject.targetActorId),
+          or(isNull(siteBans.expiresAt), gt(siteBans.expiresAt, sql`now()`)),
+          source ? eq(siteBans.source, source) : undefined,
+        ),
+      ),
     request.lock,
   );
   return !!row;
 }
 
-const banState = async (request: PolicyRequest<Subject>, banning: boolean): Promise<PolicyResult | null> => {
-  const banned = await siteBanned(request);
-  if (banning) return banned ? deny('target.site_banned') : null;
-  return banned ? null : deny('target.not_site_banned');
+/** The refusal the ban state calls for, or null when the action may go on; `source` limits which bans an unban can see. */
+const banState = async (request: PolicyRequest<Subject>, banning: boolean, source?: 'remote'): Promise<PolicyResult | null> => {
+  if (banning) return (await siteBanned(request)) ? deny('target.site_banned') : null;
+  return (await siteBanned(request, source)) ? null : deny('target.not_site_banned');
 };
 
 const siteBanBy =
@@ -86,7 +92,8 @@ async function remoteSiteBan(request: PolicyRequest<Subject>, banning: boolean):
   const [actor] = await forShare(db.select({ instanceId: actors.instanceId }).from(actors).where(eq(actors.id, principal.actorId)), lock);
   if (actor?.instanceId !== person.instanceId) return deny('ban.origin_mismatch');
   if (banning && person.deletedAt) return deny('target.deleted');
-  return (await banState(request, banning)) ?? allow({ kind: 'owner', actorId: principal.actorId });
+  // An Undo from the peer lifts only a ban a peer set: ours stays.
+  return (await banState(request, banning, 'remote')) ?? allow({ kind: 'owner', actorId: principal.actorId });
 }
 
 export const policies = {

@@ -72,7 +72,7 @@ export async function mediaAllowed(host: string, q: Queryable = db()): Promise<b
  * resolve many image URLs at once: a host at or under one of them is treated like remote media
  * switched off. The local instance is never listed.
  */
-export async function deniedMediaDomains(q: Queryable): Promise<string[]> {
+export async function deniedMediaDomains(q: Queryable = db()): Promise<string[]> {
   const rows = await q
     .select({ domain: instances.domain })
     .from(instances)
