@@ -30,9 +30,11 @@ export type CommunityDetail = CommunityView & {
   postingWarning: string | null;
   summaryMd: string | null;
   /**
-   * The stored image URLs. Nothing here sets them yet (uploads are off), but imported and
-   * remote communities have them; a remote one must reach viewers only through the media
-   * proxy (decision 5), never hotlinked.
+   * The stored image URLs, raw. Nothing here sets them yet (uploads are off), but imported and
+   * remote communities have them. A page must not put either in an `<img>` as it is: pass it
+   * through `createMarkdownRenderer(site).image()` (web/server/markdown.ts), which keeps this
+   * instance's own URLs, sends a remote one through the signed media proxy and answers null when
+   * it must not load (decision 5: viewers' addresses never reach remote hosts).
    */
   iconUrl: string | null;
   bannerUrl: string | null;
