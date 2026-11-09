@@ -1,5 +1,5 @@
 import { expect, test, type BrowserContext, type Page } from '@playwright/test';
-import { expectAccessible } from '../auth/support.ts';
+import { expectAccessible, landed, signIn } from '../auth/support.ts';
 import { gotoHydrated, recordConsole } from '../support/route-marker.ts';
 import { community, seed, signedIn, type Seed } from './support.ts';
 
@@ -288,4 +288,45 @@ test('a draft is kept in this browser per community, restored, and cleared by po
   await community(page, world.communities.open.handle).check();
   await expect(page.getByLabel('Title')).toHaveValue('');
   await page.close();
+});
+
+test("a draft is the signed-in person's: someone else on the same browser does not get it, and an unscoped one is removed", async ({
+  browser,
+  baseURL,
+}) => {
+  const { open } = world.communities;
+  // One browser (one localStorage) that two people sign in to in turn.
+  const shared = await signedIn(browser, baseURL!, world.people.poster, world.password);
+  const page = await shared.newPage();
+  const legacy = `peblish.draft.${open.id}`;
+  await gotoHydrated(page, '/submit');
+  await page.evaluate(
+    ([key]) => localStorage.setItem(key!, JSON.stringify({ type: 'text', title: 'Unscoped', url: '', body: 'old', nsfw: false })),
+    [legacy],
+  );
+  // The unscoped draft is never offered, and the next visit removes it.
+  await gotoHydrated(page, '/submit');
+  await community(page, open.handle).check();
+  await expect(page.getByLabel('Title')).toHaveValue('');
+  expect(await page.evaluate((key) => localStorage.getItem(key), legacy)).toBeNull();
+
+  await fill(page, open.handle, "Ann's draft", 'Private words');
+  await page.getByRole('button', { name: 'Save draft' }).click();
+  await expect(page.getByRole('status')).toHaveText('Draft saved in this browser.');
+  await page.reload();
+  await page.locator('html[data-hydrated="1"]').waitFor({ state: 'attached' });
+  await community(page, open.handle).check();
+  await expect(page.getByLabel('Title')).toHaveValue("Ann's draft");
+
+  // The moderator signs in on the same browser: the draft stays with the poster.
+  await shared.clearCookies();
+  await gotoHydrated(page, '/auth/sign-in');
+  await signIn(page, `@${world.people.moderator}`, world.password);
+  await landed(page, '/');
+  await gotoHydrated(page, '/submit');
+  await community(page, open.handle).check();
+  await expect(page.getByLabel('Title')).toHaveValue('');
+  await expect(body(page)).toHaveValue('');
+  await expect(page.getByRole('status')).toHaveText('');
+  await shared.close();
 });

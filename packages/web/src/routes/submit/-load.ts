@@ -134,6 +134,7 @@ export const loadComposer = createServerFn({ method: 'GET' })
     ]);
     return {
       status: 'ready',
+      actorId: view.actorId,
       me: `@${handles.handle(view.name).handle}`,
       communities,
       selected,

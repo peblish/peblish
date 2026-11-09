@@ -53,6 +53,8 @@ export type ComposerData =
   | { status: 'unavailable'; reason: Unavailable }
   | {
       status: 'ready';
+      /** The viewer's actor id: what browser-kept drafts are scoped to. */
+      actorId: string;
       /** `@name@host`, for "Posting as". */
       me: string;
       communities: PickerCommunity[];

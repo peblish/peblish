@@ -23,7 +23,7 @@ import {
 } from '../-types.ts';
 import { CommunityAside } from './community-aside.tsx';
 import { CommunityPicker } from './community-picker.tsx';
-import { clearDraft, readDraft, writeDraft } from './drafts.ts';
+import { clearDraft, readDraft, removeUnscopedDrafts, writeDraft } from './drafts.ts';
 import { ErrorText } from './error-text.tsx';
 import { useEditorLabels } from './labels.ts';
 
@@ -89,7 +89,7 @@ function startingForm({ data, kept }: Pick<ComposerProps, 'data' | 'kept'>): For
 export function Composer({ data, kept, error: initialError, onDone, onDiscard, keepOnClose }: ComposerProps) {
   const { t, locale } = useTranslate();
   const editorLabels = useEditorLabels();
-  const { edit } = data;
+  const { edit, actorId } = data;
   const [form, setForm] = useState(() => startingForm({ data, kept }));
   const [panel, setPanel] = useState<CommunityPanel | null>(data.panel);
   const [error, setError] = useState(initialError);
@@ -108,8 +108,9 @@ export function Composer({ data, kept, error: initialError, onDone, onDiscard, k
 
   // Starting on a community that has a saved draft (a new post, nothing typed yet) restores it.
   useEffect(() => {
+    removeUnscopedDrafts();
     if (edit || kept || !pristine(form)) return;
-    const draft = readDraft(form.community);
+    const draft = readDraft({ actorId, community: form.community });
     if (draft) {
       setForm((current) => ({ ...current, ...draft }));
       setNote('restored');
@@ -123,10 +124,13 @@ export function Composer({ data, kept, error: initialError, onDone, onDiscard, k
     () => () => {
       const last = latest.current;
       if (keepOnClose && !finished.current && !edit && !pristine(last) && last.type !== 'image') {
-        writeDraft(last.community, { type: last.type, title: last.title, url: last.url, body: last.body, nsfw: last.nsfw });
+        writeDraft(
+          { actorId, community: last.community },
+          { type: last.type, title: last.title, url: last.url, body: last.body, nsfw: last.nsfw },
+        );
       }
     },
-    [keepOnClose, edit],
+    [keepOnClose, edit, actorId],
   );
 
   function choose(id: string) {
@@ -137,7 +141,7 @@ export function Composer({ data, kept, error: initialError, onDone, onDiscard, k
       if (request === panelRequest.current) setPanel(next);
     });
     // A community with a saved draft gets it back, unless something is already typed.
-    const draft = pristine(form) ? readDraft(id) : null;
+    const draft = pristine(form) ? readDraft({ actorId, community: id }) : null;
     if (draft) setNote('restored');
     setForm({ ...form, ...draft, community: id });
   }
@@ -183,7 +187,7 @@ export function Composer({ data, kept, error: initialError, onDone, onDiscard, k
       if (!answer || answer instanceof type.errors) return setError('generic');
       if (answer.redirect) {
         finished.current = true;
-        clearDraft(form.community);
+        clearDraft({ actorId, community: form.community });
         onDone(answer.redirect);
       } else setError(asComposerError(answer.error) ?? 'generic');
     } catch {
@@ -196,7 +200,10 @@ export function Composer({ data, kept, error: initialError, onDone, onDiscard, k
   function saveDraft() {
     if (form.type === 'image') return;
     setNote(
-      writeDraft(form.community, { type: form.type, title: form.title, url: form.url, body: form.body, nsfw: form.nsfw })
+      writeDraft(
+        { actorId, community: form.community },
+        { type: form.type, title: form.title, url: form.url, body: form.body, nsfw: form.nsfw },
+      )
         ? 'saved'
         : 'not-saved',
     );
@@ -204,7 +211,7 @@ export function Composer({ data, kept, error: initialError, onDone, onDiscard, k
 
   function discard() {
     finished.current = true;
-    clearDraft(form.community);
+    clearDraft({ actorId, community: form.community });
     onDiscard();
   }
 
