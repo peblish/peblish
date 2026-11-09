@@ -11,10 +11,12 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@fedify/fedify": "2.4.5",
     "@peblish/core": "workspace:*",
     "@peblish/schema": "workspace:*",
     "arktype": "2.2.9",
     "drizzle-orm": "0.45.4"
+  },
+  "devDependencies": {
+    "@fedify/fedify": "2.4.5"
   }
 }
