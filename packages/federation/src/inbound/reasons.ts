@@ -49,8 +49,7 @@ export const inboundReasons = {
   'accept.unverifiable': 'An Accept that names its Follow by IRI only cannot be matched to the follower it accepts, so it is not read.',
   'follow.target_unsupported': 'Only local communities take followers.',
   'undo.unsupported': 'This Undo reverses something peblish does not undo.',
-  'report.not_local': 'A report counts only about content stored here, in a community hosted here.',
-  'flag.not_handled': 'Reports are handled by the reports lane; the Flag is recorded and not acted on.',
+  'report.not_local': 'A report counts only about content stored here, in a community hosted here, or about a person of this instance.',
 } as const;
 
 export type InboundReason = keyof typeof inboundReasons;
