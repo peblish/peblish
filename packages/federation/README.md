@@ -168,6 +168,14 @@ queues one `deliveries` row per (activity, inbox) with the body fixed at that mo
 nothing for `local: false` events. A post or comment in a remote community goes to that
 community's inbox; in a local community the community announces it.
 
+**A community's edit** goes out as Lemmy, PieFed and Mbin send theirs: an `Update(Group)` by the
+local person on the newest `community.update` modlog row (else the owner or a moderator),
+announced by the community to its threadiverse followers. Lemmy 0.19 reads an `Update(Group)`
+whose actor is the Group as a Person and answers 400. Mastodon-like followers get the
+community's own `Update(Group)` (they read an actor's Update only from the actor), and so does
+everyone when the community has no local staff. A person's edit is their own `Update(Person)` to
+every peer.
+
 **Announce shape.** Each follower inbox gets exactly one shape, chosen by the follower
 instance's NodeInfo software (`delivery/software.ts`, lists as data):
 `Announce(Create(Page))` (FEP-1b12) for Lemmy, PieFed, Mbin and unknown software, and
