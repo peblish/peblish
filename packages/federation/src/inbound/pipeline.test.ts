@@ -8,10 +8,14 @@ import { follows } from '@peblish/core/db/tables/follows';
 import { deliveries } from '@peblish/core/delivery/tables';
 import { outbox } from '@peblish/core/db/tables/outbox';
 import { writer } from '@peblish/core/db/write';
+import { storeRemoteActor } from '@peblish/core/remote/actors';
+import { tx } from '@peblish/core/tx/tx';
 import { truncateAll } from '@peblish/core/testing/db';
 import { seedAccount } from '@peblish/core/testing/seed-b1';
 import { deliverRow, inboxState, seedFollow, seedInboundWorld, seedInboxRow } from '@peblish/core/testing/seed-fed-b';
 import { actorDocument, nodeInfoRoutes, rsaKeys, stubFetch } from '@peblish/core/testing/seed-fed-a';
+import { importGrant } from '../actors/grants.ts';
+import { actorFromWire } from '../mapping/actor.ts';
 import { processPending } from './job.ts';
 import { fetchesPerRow, memberReserve, processRow, type PipelineOptions } from './pipeline.ts';
 import { leasePending, maxAttempts, requeueSkippedFor } from './queue.ts';
@@ -617,6 +621,37 @@ describe('an Update of a community’s profile', () => {
     const own = await deliver(updateBy(lab, attacker));
     expect(own.stored).toEqual({ state: 'applied', error: null });
     expect((await stored()).key).toBe(attacker);
+  });
+
+  test('a key the community rotated while a moderator’s announced Update was being applied is not rolled back', async () => {
+    const rotated = rsaKeys().publicKeyPem;
+    const rotation = actorFromWire({
+      ...actorDocument('lemmy.test', 'lab', { kind: 'Group', publicKeyPem: rotated }),
+      name: 'Lab',
+    });
+    let opened!: () => void;
+    const rotating = new Promise<void>((resolve) => (opened = resolve));
+    let commit!: () => void;
+    const gate = new Promise<void>((resolve) => (commit = resolve));
+    // The rotation holds the community's row, as a refresh of the actor does between its upsert and its commit.
+    const rotationTx = tx(async (t) => {
+      await storeRemoteActor.within(t, await importGrant('remote.actor_store', { apId: lab }), rotation);
+      opened();
+      await gate;
+    });
+    await rotating;
+
+    let finished = false;
+    const update = deliver(announceBy(lab, updateBy(hosts.lemmyadmin, rsaKeys().publicKeyPem))).then((done) => {
+      finished = true;
+      return done;
+    });
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    expect(finished).toBe(false);
+    commit();
+    await rotationTx;
+    expect((await update).stored).toEqual({ state: 'applied', error: null });
+    expect(await stored()).toEqual({ name: 'Lab, edited', key: rotated });
   });
 });
 
