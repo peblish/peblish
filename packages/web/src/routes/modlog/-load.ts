@@ -3,6 +3,7 @@ import { describeTargets, labelActors, type ActorLabel, type ModlogLine, type Mo
 import type { ModlogViewer } from '@peblish/core/modlog/filters';
 import { actionGroups, isActionGroup, type ActionGroup } from '@peblish/core/modlog/groups';
 import { modlogFacets, readModlogPage, type ModlogFacets } from '@peblish/core/modlog/page';
+import { Uuid } from '@peblish/schema/ids';
 import type { ModlogFilter } from '@peblish/schema/modlog';
 import { createServerFn } from '@tanstack/react-start';
 import { type } from 'arktype';
@@ -75,6 +76,9 @@ export type ModlogData = {
   signedIn: boolean;
 };
 
+/** Whether an `entry` value can name a row: a malformed id is a 404 before anything is queried. */
+export const modlogEntryValid = (entry: string): boolean => Uuid.allows(entry);
+
 export const loadModlog = createServerFn({ method: 'GET' })
   .validator(ModlogSearch)
   .handler(async ({ data }): Promise<ModlogData> => {
@@ -86,8 +90,8 @@ export const loadModlog = createServerFn({ method: 'GET' })
     const group = data.action && isActionGroup(data.action) ? data.action : null;
     const filter: ModlogFilter = {
       limit: pageSize,
-      // An id that is not one matches nothing, as an unknown community does.
-      ...(data.entry ? { id: /^[0-9a-f-]{36}$/.test(data.entry) ? data.entry : nothing } : {}),
+      // The route answers 404 for an id that is not one (modlogEntryValid); called directly, it matches nothing.
+      ...(data.entry ? { id: modlogEntryValid(data.entry) ? data.entry : nothing } : {}),
       // A community nobody holds matches nothing, rather than everything.
       ...(data.community ? { communityId: community?.id ?? nothing } : {}),
       ...(group ? { actions: [...actionGroups[group]] } : {}),

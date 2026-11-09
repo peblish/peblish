@@ -1,13 +1,13 @@
 import { isActionGroup, type ActionGroup } from '@peblish/core/modlog/groups';
 import { Handle } from '@peblish/ui/components/handle';
-import { createFileRoute } from '@tanstack/react-router';
+import { createFileRoute, notFound } from '@tanstack/react-router';
 import { DEFAULT_LOCALE } from '../../i18n/negotiate.ts';
 import { translate } from '../../i18n/translate.ts';
 import { useTranslate } from '../../i18n/use-translate.ts';
 import { useRouteHydrated } from '../../shell/hydration.ts';
 import { commentPath, communityPath, postPath, userPath } from '../../shell/paths.ts';
 import { rootTitleData } from '../../shell/title.ts';
-import { loadModlog, type LineView, type ModlogData, type ModlogSearch } from './-load.ts';
+import { loadModlog, modlogEntryValid, type LineView, type ModlogData, type ModlogSearch } from './-load.ts';
 import { actionKey, banLength } from './-ui/labels.ts';
 import modlogCss from './-ui/modlog.css?url';
 
@@ -52,7 +52,10 @@ function href(choice: {
 export const Route = createFileRoute('/modlog/')({
   validateSearch: parseModlogSearch,
   loaderDeps: ({ search }) => search,
-  loader: ({ deps }) => loadModlog({ data: deps }),
+  loader: ({ deps }) => {
+    if (deps.entry !== undefined && !modlogEntryValid(deps.entry)) throw notFound();
+    return loadModlog({ data: deps });
+  },
   head: ({ matches }: { matches: readonly { routeId: string; loaderData?: unknown }[] }) => {
     const { locale, site } = rootTitleData(matches.find((match) => match.routeId === '__root__')?.loaderData, DEFAULT_LOCALE);
     return { meta: [{ title: `${translate(locale, 'modlog', 'title')} · ${site}` }], links: [{ rel: 'stylesheet', href: modlogCss }] };
