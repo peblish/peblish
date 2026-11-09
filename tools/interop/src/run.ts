@@ -11,10 +11,13 @@ import { type Result, recorder, RESULTS_DIR, runId } from './lab.ts';
 import { ledger } from './ledger.ts';
 import { closeAll, localActorId, sql } from './peblish.ts';
 import { selectPeers } from './peers/index.ts';
+import { backdatePiefedRemoteUsers } from './peers/piefed-db.ts';
 import { durability, type Phase } from './scenarios/durability.ts';
 import { groups } from './scenarios/index.ts';
 
 const args = process.argv.slice(2);
+/** PieFed is under test: no names selects every peer. */
+const usesPiefed = (names: readonly string[]) => names.length === 0 || names.includes('piefed');
 const only = args
   .find((a) => a.startsWith('--only='))
   ?.slice('--only='.length)
@@ -34,6 +37,7 @@ async function runGroup(name: string, phase?: Phase): Promise<number> {
     return { id, apId: row!.ap_id, handle: '!lab@peblish.lab.test', name: 'lab' };
   });
   const run = runId();
+  if (usesPiefed(peerNames)) await backdatePiefedRemoteUsers();
   const ctx: Context = { rec, peers: selectPeers(peerNames), run, since: new Date(), sql: sql(), ledger: ledger(run), community, slow };
   try {
     await group.run(ctx);

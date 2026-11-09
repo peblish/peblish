@@ -68,18 +68,15 @@ seed:
 	@echo "Lab CA written to lab/data/lab-ca.crt"
 
 ## Run the scenarios: make interop [PEERS="lemmy piefed mbin"] [ONLY=F1,P1].
-# PieFed caps posts by accounts it first saw under 24 h ago (can_create_post, hard-coded), so
-# remote accounts are aged first. This is a peer-side lab setting; peblish has none.
+# PieFed caps posts by accounts it first saw under 24 h ago (can_create_post, hard-coded), so the
+# runner ages PieFed's remote accounts before each scenario group (peers/piefed-db.ts); X1 is the exception.
 interop:
 	@mkdir -p data/results
 	# Mbin sends one activity per id and inbox per 45 minutes (ApHttpClient::post), so a Follow after
 	# an unfollow in an earlier run would never leave. Valkey holds that cache and the API rate limits.
 	$(COMPOSE) exec -T mbin-valkey valkey-cli -a mbin --no-auth-warning flushall
-	$(COMPOSE) exec -T piefed-db psql -U piefed -q -c \
-	  "update \"user\" set created = now() - interval '2 days' where instance_id <> 1"
 	$(COMPOSE) run --rm runner node src/run.ts $(PEERS) $(if $(ONLY),--only=$(ONLY),)
 
-## The slow tier: the Follow resend at 5 and 15 minutes (F3).
 # Puts the lab back from the ledger (data/results/ledger.jsonl): deletes what runs created, unfollows,
 # clears votes, and confirms the Undo(Follow) deliveries peblish owed.
 cleanup:
@@ -101,6 +98,7 @@ interop-d1:
 check:
 	$(MAKE) -k reset up seed interop interop-d1 cleanup
 
+## The slow tier: the Follow resend at 5 and 15 minutes (F3).
 interop-slow:
 	@mkdir -p data/results
 	$(COMPOSE) run --rm runner node src/run.ts $(PEERS) --slow --only=F3

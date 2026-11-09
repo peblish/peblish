@@ -99,10 +99,19 @@ export function threadiversePeer({ flavor, origin, user, admin, community, passw
     actorUri: (username) => `${origin}/u/${username}`,
     communityHandle: () => `!${community}@${host}`,
     async login(username) {
-      const { jwt } = await http<{ jwt: string }>('POST', `${base}/user/login`, {
-        body: lemmy ? { username_or_email: username, password } : { username, password },
-      });
-      return jwt;
+      // Lemmy derives the token from a second-resolution iat: two logins of one user in the same
+      // second collide on login_token_pkey. Try again a moment later.
+      for (let attempt = 0; ; attempt += 1) {
+        try {
+          const { jwt } = await http<{ jwt: string }>('POST', `${base}/user/login`, {
+            body: lemmy ? { username_or_email: username, password } : { username, password },
+          });
+          return jwt;
+        } catch (error) {
+          if (attempt >= 3 || !String(error).includes('login_token_pkey')) throw error;
+          await new Promise((resolve) => setTimeout(resolve, 1_100));
+        }
+      }
     },
     async resolveCommunity(token, handle) {
       const { community: found } = await http<{ community?: { community: { id: number }; subscribed: Subscription } }>(
