@@ -3,11 +3,11 @@ import { chooseNsfw, nsfwSetCookies, parseNsfwChoice } from '@peblish/core/commu
 import { findCommunityId } from '@peblish/core/communities/read';
 import { followAs, unfollowAs } from '@peblish/core/follows/service';
 import { localHandles } from '@peblish/core/identity/handles';
-import type { RefusalReason } from '@peblish/schema/refusal';
 import { type } from 'arktype';
 import { ageGateCookie, forbidden, formSession, principalOf, readForm, safeRedirect, sameOrigin } from '../../server/auth.ts';
 import { communityPath } from '../../shell/paths.ts';
 import { secureCookies } from './-gate.ts';
+import { reply, wantsJson } from './-reply.ts';
 
 // The form posts of /c/<handle>: Join and Leave, the 16+ declaration and the Hide NSFW choices.
 // Post pages post their gate forms here too, because Show once is per community. Like the other
@@ -16,28 +16,6 @@ import { secureCookies } from './-gate.ts';
 // with Accept: application/json and reads { ok } or { error }.
 
 const Body = type({ intent: "'follow' | 'unfollow' | 'declare' | 'nsfw-once' | 'nsfw-always' | 'nsfw-hide'" });
-
-type Outcome = { ok: true } | { ok: false; reason: RefusalReason };
-
-const wantsJson = (request: Request) => request.headers.get('accept')?.includes('application/json') ?? false;
-
-/** `back` with ?error=<reason> set (and any query it had kept). */
-function withError(back: string, reason: string): string {
-  const url = new URL(back, 'http://local');
-  url.searchParams.set('error', reason);
-  return url.pathname + url.search + url.hash;
-}
-
-function reply(request: Request, cookies: readonly string[], outcome: Outcome, back: string): Response {
-  const headers = new Headers();
-  for (const cookie of cookies) headers.append('set-cookie', cookie);
-  if (wantsJson(request)) {
-    headers.set('content-type', 'application/json');
-    return new Response(JSON.stringify(outcome.ok ? { ok: true } : { error: outcome.reason }), { status: outcome.ok ? 200 : 400, headers });
-  }
-  headers.set('location', outcome.ok ? back : withError(back, outcome.reason));
-  return new Response(null, { status: 303, headers });
-}
 
 /** POST /c/<handle>. */
 export async function communityPost(request: Request, handle: string): Promise<Response> {

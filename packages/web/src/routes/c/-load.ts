@@ -5,7 +5,7 @@ import { readFeed } from '@peblish/core/feeds/read';
 import type { Viewer } from '@peblish/core/posts/read';
 import type { ActorRef } from '@peblish/schema/views';
 import { createServerFn } from '@tanstack/react-start';
-import { appendResponseHeader, getRequestHeader } from '@tanstack/react-start/server';
+import { getRequestHeader } from '@tanstack/react-start/server';
 import { type } from 'arktype';
 import { negotiateLocale } from '../../i18n/negotiate.ts';
 import { translate, translatePlural, type MessageKey } from '../../i18n/translate.ts';
@@ -15,7 +15,7 @@ import { communityPath } from '../../shell/paths.ts';
 import type { SlotViewer } from '../-actions/props.ts';
 import { feedItem } from '../index/-feed/items.ts';
 import { agoText, dateText, languageName } from './-format.ts';
-import { gateData, requestNsfw } from './-gate.ts';
+import { gateData, requestNsfw, varyByAccept } from './-gate.ts';
 
 /** No such community (unknown, deleted or removed): the route throws notFound with the handle for its own not-found page. */
 const missing = (handle: string) => ({ kind: 'missing' as const, handle });
@@ -31,10 +31,7 @@ const missing = (handle: string) => ({ kind: 'missing' as const, handle });
 export const loadCommunityPage = createServerFn({ method: 'GET' })
   .validator(type({ handle: 'string', sort: Sort, period: Period, 'cursor?': 'string <= 400' }))
   .handler(async ({ data }) => {
-    // /c/<handle> negotiates by Accept (federation serves the Group there). The bridge adds this
-    // header itself by copying the response, which loses a 404's status (server/federation.ts), so
-    // the page says it first and the copy is skipped.
-    appendResponseHeader('vary', 'Accept');
+    varyByAccept();
     const session = await pageSession();
     const viewer: Viewer = session ? { actorId: session.view.actorId, siteRole: session.view.siteRole } : null;
     const id = await findCommunityId(data.handle);

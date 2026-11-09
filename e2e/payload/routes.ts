@@ -76,6 +76,8 @@ export const routes: readonly PayloadRoute[] = [
   { route: '/settings/blocks/', path: '/settings/blocks', admin: true },
   { route: '/admin/registration/', path: '/admin/registration', admin: true },
   { route: '/c/$handle/', path: '/c/<handle>', target: () => seededCommunity() },
+  { route: '/c/new', path: '/c/new', admin: true },
+  { route: '/c/$handle/edit', path: '/c/<handle>/edit', target: () => seededCommunity('/edit'), admin: true },
   { route: '/post/$id/', path: '/post/<id>', target: seededPost },
   { route: '/post/$id/comments/$commentId', path: '/post/<id>/comments/<commentId>', target: seededPermalink },
   // Signed out, /submit is a redirect to sign-in, so this entry measures the sign-in page it lands on

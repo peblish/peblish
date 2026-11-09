@@ -3,12 +3,12 @@ import { Button } from '@peblish/ui/components/button';
 import { useRouter } from '@tanstack/react-router';
 import { useState, type FormEvent } from 'react';
 import { useTranslate } from '../../../i18n/use-translate.ts';
-import type { MessageKey } from '../../../i18n/translate.ts';
 import { useRouteHydrated } from '../../../shell/hydration.ts';
 import { communityPath, createPostPath, editCommunityPath, modlogPath, reportQueuePath, userPath } from '../../../shell/paths.ts';
 import type { CommunityActionProps } from '../../-actions/props.ts';
 import { FeedCards, FeedToolbar } from '../../index/-feed/feed-page.tsx';
 import type { FeedSearch } from '../../index/-feed/search.ts';
+import { errorKey } from '../-errors.ts';
 import type { CommunityPageData } from '../-load.ts';
 import { CommunityBlock } from './actions/block.tsx';
 import { CommunityModerate } from './actions/moderate.tsx';
@@ -20,11 +20,6 @@ import { HideNsfwForm } from './gate.tsx';
 // phone (with a jump link). Counts are local: what this server holds. Join, Leave and Cancel are
 // plain form posts to this page (c/-intents.ts); hydrated, they post by fetch and reload the
 // loader. Mod tools are a <details> (no menu component on the first-tap path).
-
-// The refusals a Join or Leave can come back with; the catalogue has all of them.
-const joinErrors = new Set(['auth.required', 'community.banned', 'community.removed', 'community.deleted', 'target.not_found']);
-const errorKey = (reason: string): MessageKey<'communities'> =>
-  joinErrors.has(reason) ? (`error.${reason}` as MessageKey<'communities'>) : 'error.generic';
 
 export function CommunityPage({ data, search, error }: { data: CommunityPageData; search: FeedSearch; error?: string | undefined }) {
   const { t } = useTranslate();

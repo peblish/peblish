@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
-import { expect, test, type Browser, type Page } from '@playwright/test';
+import { expect, test, type Browser, type BrowserContext, type Page } from '@playwright/test';
 import { expectAccessible, freshTotp, landed, signIn } from '../auth/support.ts';
 import { gotoHydrated, recordConsole } from '../support/route-marker.ts';
 
@@ -51,6 +51,19 @@ async function signedInAdmin(page: Page) {
   await page.getByRole('textbox', { name: 'Code', exact: true }).fill(await freshTotp(seed.admin.totpSecret));
   await page.getByRole('button', { name: 'Verify' }).click();
   await landed(page, '/');
+}
+
+let adminState: Awaited<ReturnType<BrowserContext['storageState']>> | undefined;
+
+/** A page signed in as the admin. Signing in spends a two-factor code and a 30 second step, so it happens once and every test borrows the session. */
+async function adminPage(browser: Browser, options: { locale?: string; javaScriptEnabled?: boolean } = {}) {
+  if (!adminState) {
+    const context = await browser.newContext({ locale: 'en-US' });
+    await signedInAdmin(await context.newPage());
+    adminState = await context.storageState();
+    await context.close();
+  }
+  return (await browser.newContext({ storageState: adminState, ...options })).newPage();
 }
 
 /** The server-rendered HTML a page (and its session) receives, before any script runs. */
@@ -235,6 +248,8 @@ test.describe('the community page', () => {
   });
 
   test('a remote community: the strip, every moderator state and Pending, which a click cancels', async ({ page }) => {
+    // Axe reads colours mid-transition otherwise, as the Join button changes state.
+    await page.emulateMedia({ reducedMotion: 'reduce' });
     await signedIn(page, seed.people.member);
     const { remote } = seed.communities;
     await gotoHydrated(page, community(remote.handle));
@@ -277,8 +292,7 @@ test.describe('the community page', () => {
     await expect(moderator.getByText('Mod tools')).toHaveCount(0);
     await moderator.context().close();
 
-    const admin = await (await browser.newContext()).newPage();
-    await signedInAdmin(admin);
+    const admin = await adminPage(browser);
     await gotoHydrated(admin, community(remote.handle));
     await admin.getByText('Mod tools').click();
     await expect(admin.getByText('Local actions only on this copy')).toBeVisible();
@@ -299,6 +313,106 @@ test.describe('the community page', () => {
   });
 });
 
+test.describe('the community form', () => {
+  test('a member is refused in place with a 403, and signed out goes to sign-in', async ({ page, context }) => {
+    await signedIn(page, seed.people.member);
+    const refused = await html(page, '/c/new');
+    expect(refused.status).toBe(403);
+    expect(refused.text).toContain('Only site admins can create communities.');
+    const edit = await html(page, `/c/${seed.communities.restricted.handle}/edit`);
+    expect(edit.status).toBe(403);
+    expect(edit.text).toContain('Only the owners, the moderators and site admins can edit this community.');
+    const remote = await html(page, `/c/${seed.communities.remote.handle}/edit`);
+    expect([remote.status, remote.text.includes('This community lives on another server.')]).toEqual([403, true]);
+    await context.clearCookies();
+    await page.goto('/c/new');
+    await page.waitForURL('**/auth/sign-in?redirect=%2Fc%2Fnew');
+  });
+
+  test('the admin creates a community: field problems show in place and keep what was typed, then a 303 to the page', async ({
+    browser,
+  }) => {
+    const page = await adminPage(browser);
+    await gotoHydrated(page, '/c/new');
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText('New community');
+    await expect(page.getByRole('navigation', { name: 'Sections' }).getByRole('link')).toHaveText([
+      'Basics',
+      'Rules',
+      'Icon and banner',
+      'Content and posting',
+      'Visibility',
+    ]);
+    await expect(page.getByText('uploads off')).toHaveCount(2);
+    await expectAccessible(page);
+
+    await page.getByLabel('Name', { exact: true }).fill('bad name');
+    await page.getByLabel('Title').fill('A new place');
+    await page.locator('textarea[name="description"]').fill('x'.repeat(10_001));
+    await page.getByRole('button', { name: 'Create community' }).click();
+    await expect(page.getByText('Some fields need a change.')).toBeVisible();
+    await expect(page.getByText('The description is longer than 10,000 characters.')).toBeVisible();
+    await expect(page.getByText('Use letters, numbers and underscores, 50 at most.')).toBeVisible();
+    await expect(page.getByLabel('Title')).toHaveValue('A new place');
+
+    const name = `made_${seed.suffix}`;
+    await page.getByLabel('Name', { exact: true }).fill(name);
+    await page.locator('textarea[name="description"]').fill('A **fresh** sidebar.');
+    await page.getByRole('textbox', { name: 'Rule 1', exact: true }).fill('Be kind');
+    await page.getByRole('button', { name: 'Add rule' }).click();
+    await page.getByRole('textbox', { name: 'Rule 2', exact: true }).fill('No spam');
+    await page.getByRole('button', { name: 'Move rule 2 up' }).click();
+    await expect(page.getByText('2 of 15.')).toBeVisible();
+    await page.getByText('German', { exact: true }).click();
+    await page.getByText('Posting restricted to moderators', { exact: true }).click();
+    await page.getByRole('button', { name: 'Create community' }).click();
+    await page.waitForURL(`**${community(name)}`);
+    await page.locator('html[data-hydrated="1"]').waitFor({ state: 'attached' });
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText('A new place');
+    await expect(page.locator('.cm-rules > li')).toHaveText(['No spam', 'Be kind']);
+    await expect(page.locator('.cm-side')).toContainText('fresh');
+    await expect(page.locator('.cm-side')).toContainText('German');
+    // A site admin posts in a restricted community; the header still says it is restricted.
+    await expect(page.locator('.cm-address')).toContainText('Only moderators can post here');
+  });
+
+  test('a duplicate name without JavaScript comes back as ?error=name.taken and loses what was typed', async ({ browser }) => {
+    const plain = await adminPage(browser, { javaScriptEnabled: false });
+    await plain.goto('/c/new');
+    await plain.getByLabel('Name', { exact: true }).fill(seed.communities.open.handle);
+    await plain.getByLabel('Title').fill('Typed and lost');
+    await plain.getByRole('button', { name: 'Create community' }).click();
+    await plain.waitForURL('**/c/new?error=name.taken');
+    await expect(plain.getByText('A person or a community already has this name.')).toBeVisible();
+    await expect(plain.getByLabel('Title')).toHaveValue('');
+    await plain.context().close();
+  });
+
+  test("a moderator's edit persists; the name is fixed and the modlog sentence is there", async ({ page }) => {
+    const { restricted } = seed.communities;
+    await signedIn(page, seed.people.moderator);
+    await gotoHydrated(page, `/c/${restricted.handle}/edit`);
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText('Edit community');
+    await expect(page.getByLabel('Name', { exact: true })).toHaveCount(0);
+    await expect(page.getByText('cannot be changed')).toBeVisible();
+    await expect(page.getByText('Edits are logged in the modlog with your handle and the fields you changed.')).toBeVisible();
+    await expect(page.getByLabel('Title')).toHaveValue(`Notices ${seed.suffix}`);
+    await expect(page.getByRole('checkbox', { name: 'Posting restricted to moderators' })).toBeChecked();
+    await page.getByLabel('Title').fill('Renamed notices');
+    await page.getByRole('textbox', { name: 'Rule 1', exact: true }).fill('Read first');
+    await page.getByText('Posting restricted to moderators', { exact: true }).click();
+    await expect(page.getByText('Unsaved changes')).toBeVisible();
+    await expectAccessible(page);
+    await page.getByRole('button', { name: 'Save changes' }).click();
+    await page.waitForURL(`**${community(restricted.handle)}`);
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText('Renamed notices');
+    await expect(page.getByRole('link', { name: 'New post' })).toBeVisible();
+    await expect(page.locator('.cm-rules > li')).toHaveText(['Read first']);
+    await gotoHydrated(page, `/c/${restricted.handle}/edit`);
+    await expect(page.getByLabel('Title')).toHaveValue('Renamed notices');
+    await expect(page.getByRole('checkbox', { name: 'Posting restricted to moderators' })).not.toBeChecked();
+  });
+});
+
 test.describe('a German browser', () => {
   test.use({ locale: 'de-DE' });
 
@@ -309,6 +423,14 @@ test.describe('a German browser', () => {
     await expect(page.locator('.cm-stats')).toContainText('Beiträge');
     await page.waitForLoadState('networkidle');
     expect(log.hydrationProblems()).toEqual([]);
+    await expectAccessible(page);
+  });
+
+  test('the community form speaks German and passes axe', async ({ browser }) => {
+    const page = await adminPage(browser, { locale: 'de-DE' });
+    await gotoHydrated(page, '/c/new');
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText('Neue Community');
+    await expect(page.getByRole('button', { name: 'Community anlegen' })).toBeVisible();
     await expectAccessible(page);
   });
 
