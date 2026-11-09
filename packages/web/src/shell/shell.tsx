@@ -1,6 +1,6 @@
 import { MenuIcon } from '@peblish/ui/components/icons';
 import { getRouteApi, useRouterState } from '@tanstack/react-router';
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { useTranslate } from '../i18n/use-translate.ts';
 import { Account } from './account.tsx';
 import { CreatePost } from './create-post.tsx';
@@ -13,8 +13,13 @@ const root = getRouteApi('__root__');
 /**
  * The application frame (shell-sidebar): a persistent sidebar on the left, a top bar with the
  * create-post entry, the appearance menu and the account area, and the page centred in the
- * width that is left. Below 860 px the sidebar is a drawer behind the menu button. Each
+ * width that is left. Below 860 px the sidebar is a drawer behind the menu link. Each
  * route renders its own <main>; the frame only supplies the landmarks around it.
+ *
+ * The drawer works before the page hydrates, and without scripts: the menu link goes to
+ * #pb-side, which shell.css shows as a drawer through :target, and the close link and the
+ * scrim go to #pb-main. Once hydrated, React takes the links over (no history entries, focus
+ * handling, Escape, inert page) and adopts a drawer that was already opened that way.
  */
 export function Shell({ children }: { children: ReactNode }) {
   const { session, shell } = root.useLoaderData();
@@ -24,11 +29,29 @@ export function Shell({ children }: { children: ReactNode }) {
   const [openAt, setOpenAt] = useState<string | null>(null);
   const drawer = openAt === pathname;
   const setDrawer = (open: boolean) => setOpenAt(open ? pathname : null);
-  const frame = useRef<HTMLDivElement>(null);
-  const menuButton = useRef<HTMLButtonElement>(null);
+  const frame = useRef<HTMLDivElement | null>(null);
+  const menuButton = useRef<HTMLAnchorElement>(null);
   const opened = useRef(false);
+  // Set once React runs the drawer: from then on shell.css ignores :target.
+  const [managed, setManaged] = useState(false);
 
   useMenuDismiss(frame, pathname);
+
+  // Runs when React attaches to the frame, which after hydration is the server's markup: a
+  // drawer opened through the #pb-side link by then stays open (the shell takes it over and
+  // drops the hash so the URL does not reopen it), and from here on the shell runs the drawer.
+  const attach = useCallback(
+    (node: HTMLDivElement | null) => {
+      frame.current = node;
+      if (!node) return;
+      if (node.querySelector('#pb-side:target')) {
+        history.replaceState(history.state, '', window.location.pathname + window.location.search);
+        setOpenAt(pathname);
+      }
+      setManaged(true);
+    },
+    [pathname],
+  );
 
   // The drawer is modal while open: focus goes in and Escape closes it; focus returns to the button.
   useEffect(() => {
@@ -46,24 +69,27 @@ export function Shell({ children }: { children: ReactNode }) {
   }, [drawer]);
 
   return (
-    <div className="pb-app" ref={frame} data-drawer={drawer || undefined}>
+    <div className="pb-app" ref={attach} data-drawer={drawer || undefined} data-managed={managed || undefined}>
       <a className="pb-skip" href="#pb-main">
         {t('shell', 'skip')}
       </a>
       <Sidebar session={session} shell={shell} pathname={pathname} open={drawer} onClose={() => setDrawer(false)} />
       <div className="pb-app__body" inert={drawer || undefined}>
         <header className="pb-top">
-          <button
-            type="button"
+          <a
             ref={menuButton}
             className="pb-top__menu"
+            href="#pb-side"
             aria-label={t('shell', 'menu.open')}
             aria-expanded={drawer}
             aria-controls="pb-side"
-            onClick={() => setDrawer(true)}
+            onClick={(event) => {
+              event.preventDefault();
+              setDrawer(true);
+            }}
           >
             <MenuIcon />
-          </button>
+          </a>
           <span className="pb-top__space" />
           {session && <CreatePost />}
           <ThemeMenu />
@@ -73,7 +99,16 @@ export function Shell({ children }: { children: ReactNode }) {
           {children}
         </div>
       </div>
-      {drawer && <div className="pb-scrim" onClick={() => setDrawer(false)} aria-hidden="true" />}
+      <a
+        className="pb-scrim"
+        href="#pb-main"
+        tabIndex={-1}
+        aria-hidden="true"
+        onClick={(event) => {
+          event.preventDefault();
+          setDrawer(false);
+        }}
+      />
     </div>
   );
 }
