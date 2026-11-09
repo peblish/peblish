@@ -3,6 +3,20 @@ import { clientIp } from './auth.ts';
 import { editable, type Fetch } from './fetch.ts';
 
 /**
+ * The address an inbox POST is counted by. A misconfigured PEBLISH_TRUSTED_PROXY throws in
+ * clientIp (it fails every sign-in too); an inbox never answers an unexpected 5xx, so here it is
+ * logged and federation falls back to the request's own peer.
+ */
+function inboxPeer(request: Request): string | undefined {
+  try {
+    return clientIp(request) ?? undefined;
+  } catch (error) {
+    console.error('federation: the client address could not be resolved', error);
+    return undefined;
+  }
+}
+
+/**
  * Puts federation in front of the UI routes (src/server.ts): its endpoints and the
  * ActivityPub-negotiated page requests go to handleFederationRequest first. A null answer
  * falls through to the UI, which renders the page the path names: a declined GET or HEAD
@@ -17,9 +31,7 @@ import { editable, type Fetch } from './fetch.ts';
 export function withFederation<O>(ui: Fetch<O>, federation = handleFederationRequest) {
   const route = async (request: Request, opts?: O): Promise<Response> => {
     if (!isFederationRequest(request)) return ui(request, opts);
-    // Only the inbox counts by the address; a document GET needs none.
-    const peer = request.method === 'POST' ? (clientIp(request) ?? undefined) : undefined;
-    const answer = await federation(request, { peer });
+    const answer = await federation(request, { peer: request.method === 'POST' ? inboxPeer(request) : undefined });
     if (answer) return answer;
     if (request.method !== 'GET' && request.method !== 'HEAD') return ui(request, opts);
     // A fresh Request: the server's own request class cannot be copied with new Request(request).

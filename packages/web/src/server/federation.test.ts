@@ -72,6 +72,16 @@ describe('federation bridge', () => {
       expect(await postFrom(undefined)).toEqual(['10.0.0.2']);
     });
 
+    test('a misconfigured proxy setting is logged and the inbox still answers', async () => {
+      const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
+      try {
+        expect(await postFrom('nginx')).toEqual([undefined]);
+        expect(logged).toHaveBeenCalledOnce();
+      } finally {
+        logged.mockRestore();
+      }
+    });
+
     test('a document request is handed none', async () => {
       expect(await postFrom('traefik', '/ap/u.alice', 'GET')).toEqual([undefined]);
     });
