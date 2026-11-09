@@ -146,9 +146,9 @@ function checkHandle(handle: Handle, actor: Pick<ResolvedActor, 'name' | 'kind'>
 /**
  * The actor at `target`, an ap_id or a handle (@name@host, !name@host). Handles go through
  * WebFinger, and the actor found must be the one the handle names (checkHandle). A stored copy
- * fresher than `maxAgeMs` is returned without a request; an older one is fetched again, and
- * kept if the peer is merely unreachable. A local actor is returned as stored. Throws
- * ActorResolveError.
+ * fresher than `maxAgeMs` is returned without fetching the actor (its instance's NodeInfo is
+ * read if that is missing or a day old); an older one is fetched again, and kept if the peer is
+ * merely unreachable. A local actor is returned as stored. Throws ActorResolveError.
  */
 export async function resolveRemoteActor(target: string, options: ResolveOptions = {}): Promise<ResolvedActor> {
   const fetch = options.fetch ?? safeFetch;
@@ -176,7 +176,14 @@ async function resolveId(apId: string, fetch: Fetcher, options: ResolveOptions):
     if ((await localInstance(db())).origin === new URL(apId).origin)
       throw new ActorResolveError('not_found', `${apId} is a local id with no actor`);
     const fresh = held?.fetchedAt && Date.now() - held.fetchedAt.getTime() < (options.maxAgeMs ?? actorMaxAgeMs);
-    if (held && fresh && !options.refresh) return held;
+    if (held && fresh && !options.refresh) {
+      // A copy we hold may have been stored by a path that never read its instance's NodeInfo, or
+      // when that read failed. The Announce shape for this actor's server hangs on it, so a
+      // resolution is also a chance to read it (a read that is current, or failed lately, costs
+      // one query).
+      await refreshInstanceSoftware(new URL(held.apId).origin, { fetch });
+      return held;
+    }
     try {
       const storedId = await fetchAndStore(apId, fetch);
       const now = await stored(storedId);

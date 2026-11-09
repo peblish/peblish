@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, test } from 'vitest';
 import { db } from '@peblish/core/db/read';
 import { actorKeys, actors } from '@peblish/core/db/tables/actors';
 import { instances } from '@peblish/core/db/tables/instances';
+import { storeRemoteActor } from '@peblish/core/remote/actors';
 import { truncateAll } from '@peblish/core/testing/db';
 import {
   actorDocument,
@@ -13,8 +14,10 @@ import {
   stubFetch,
   webfingerAnswer,
 } from '@peblish/core/testing/seed-fed-a';
+import { actorFromWire } from '../mapping/actor.ts';
 import { signatureVerifies } from '../signing/verify.ts';
 import { readFixture } from '../test/manifest.ts';
+import { importGrant } from './grants.ts';
 import { ActorResolveError, resolveRemoteActor } from './resolve.ts';
 import { BlockedDestinationError } from './safe-fetch.ts';
 
@@ -75,6 +78,18 @@ describe('resolving an actor', () => {
     ]) {
       expect(byUrl(url).headers.has('signature'), url).toBe(false);
     }
+  });
+
+  test('an actor stored without a NodeInfo read gets its instance’s software read when it is resolved again', async () => {
+    await storeRemoteActor(await importGrant('remote.actor_store', { apId: lab.id }), actorFromWire(lab));
+    const [before] = await db().select().from(instances).where(eq(instances.domain, 'lemmy.test'));
+    expect(before?.software).toBeNull();
+    const { fetch, requests } = peer();
+    expect(await resolveRemoteActor(lab.id, { fetch })).toMatchObject({ apId: lab.id });
+    // The actor is fresh, so only NodeInfo was asked.
+    expect(requests.map((request) => request.url)).toEqual(['https://lemmy.test/.well-known/nodeinfo', 'https://lemmy.test/nodeinfo/2.1']);
+    const [after] = await db().select().from(instances).where(eq(instances.domain, 'lemmy.test'));
+    expect(after).toMatchObject({ software: 'lemmy', softwareVersion: '0.19.21' });
   });
 
   test('reads a real Lemmy Person from the corpus', async () => {
