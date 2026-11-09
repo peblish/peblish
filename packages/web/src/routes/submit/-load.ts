@@ -1,6 +1,7 @@
 import { followedCommunities } from '@peblish/core/follows/read';
 import { listLocalCommunities, listModerators, readCommunity } from '@peblish/core/communities/read';
 import { localHandles } from '@peblish/core/identity/handles';
+import { showNsfw } from '@peblish/core/communities/gate';
 import { readPost } from '@peblish/core/posts/read';
 import { readSetting } from '@peblish/core/settings/read';
 import { Uuid } from '@peblish/schema/ids';
@@ -97,7 +98,7 @@ async function editTarget(
   id: string,
   viewer: SessionView,
 ): Promise<EditTarget | 'not-found' | 'not-author' | 'deleted' | 'removed' | 'gated'> {
-  const page = await readPost(id, { actorId: viewer.actorId, siteRole: viewer.siteRole });
+  const page = await readPost(id, { actorId: viewer.actorId, siteRole: viewer.siteRole }, undefined, showNsfw);
   if (!page) return 'not-found';
   const { view } = page;
   // Someone else's post is not the viewer's to see in an edit form, whatever the page shows them.

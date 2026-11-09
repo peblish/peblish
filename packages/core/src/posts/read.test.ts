@@ -1,3 +1,4 @@
+import type { Uuid } from '@peblish/schema/ids';
 import { eq } from 'drizzle-orm';
 import { beforeEach, describe, expect, test } from 'vitest';
 import { db } from '../db/read.ts';
@@ -11,6 +12,7 @@ import { declareAge, seedPostWorld } from '../testing/seed-b1.ts';
 import { seedActor } from '../testing/seed.ts';
 import { feedPredicates } from '../registry/feed-predicates.gen.ts';
 import { feedPredicate } from './feed-predicate.ts';
+import { hideNsfw, showNsfw, type NsfwChoice } from '../communities/gate.ts';
 import { postViews, readPost, type Viewer } from './read.ts';
 
 beforeEach(truncateAll);
@@ -206,15 +208,61 @@ describe('the sensitive-content gate', () => {
     expect(JSON.stringify(page)).not.toContain(secret);
   });
 
-  test('a declared viewer gets the content, to be shown blurred behind "show"', async () => {
+  test('a declared viewer has the content withheld while Hide NSFW is on, with or without a cookie', async () => {
     const { world, secret, sensitive } = await setup();
     await declareAge(world.people.reader);
     const page = await readPost(sensitive.id, user(world.people.reader));
-    expect(page).toMatchObject({
-      gate: 'blur',
-      view: { title: `${secret} title`, url: `https://example.test/${secret}` },
+    expect(page).toMatchObject({ gate: 'hidden', body: null, view: { sensitive: true } });
+    expect(withheld(page!.view)).toEqual({ title: '', url: null, thumbnailUrl: null, excerpt: null, contentHtml: null });
+    expect(JSON.stringify(page)).not.toContain(secret);
+    expect(await readPost(sensitive.id, user(world.people.reader), undefined, hideNsfw)).toMatchObject({ gate: 'hidden' });
+  });
+
+  test('the exact gate for each flag, viewer and Hide NSFW choice', async () => {
+    const { world, plain, sensitive, nsfl } = await setup();
+    const flaggedCommunity = world.communities.restricted;
+    await writer().update(actors).set({ sensitive: true }).where(eq(actors.id, flaggedCommunity.id));
+    const byCommunity = await seedPost(world.instances.local, flaggedCommunity, world.people.author);
+    const both = await seedPost(world.instances.local, flaggedCommunity, world.people.author, { sensitive: true });
+    const flagged = { post: sensitive, nsfl, community: byCommunity, both };
+    const open = world.communities.open.id as Uuid;
+    const reader = user(world.people.reader);
+
+    for (const post of Object.values(flagged)) {
+      expect((await readPost(post.id, null, undefined, showNsfw))?.gate).toBe('sign-in');
+      expect((await readPost(post.id, reader, undefined, showNsfw))?.gate).toBe('age');
+    }
+    expect((await readPost(plain.id, null))?.gate).toBe('none');
+
+    await declareAge(world.people.reader);
+    const gateOf = async (post: { id: string }, choice: NsfwChoice) => (await readPost(post.id, reader, undefined, choice))?.gate;
+    for (const post of Object.values(flagged)) expect(await gateOf(post, hideNsfw)).toBe('hidden');
+    expect(await gateOf(plain, hideNsfw)).toBe('none');
+
+    // Show always opens every flagged post.
+    for (const post of Object.values(flagged)) expect(await gateOf(post, { always: true, once: [] })).toBe('none');
+    // Show once opens only the community named: the post and nsfl flags live in `open`, the others in the flagged community.
+    const once = { always: false, once: [open] };
+    expect(await gateOf(sensitive, once)).toBe('none');
+    expect(await gateOf(nsfl, once)).toBe('none');
+    expect(await gateOf(byCommunity, once)).toBe('hidden');
+    expect(await gateOf(both, once)).toBe('hidden');
+    const other = { always: false, once: [flaggedCommunity.id as Uuid] };
+    expect(await gateOf(sensitive, other)).toBe('hidden');
+    expect(await gateOf(byCommunity, other)).toBe('none');
+    // An opened post gives its content back.
+    expect(await readPost(sensitive.id, reader, undefined, once)).toMatchObject({
+      view: { title: 'SECRET-TEXT title' },
       body: { kind: 'markdown' },
     });
+  });
+
+  test('postViews leaves feeds unchanged for a declared viewer', async () => {
+    const { world, secret, sensitive } = await setup();
+    await declareAge(world.people.reader);
+    const rows = await db().select().from(posts).where(eq(posts.id, sensitive.id));
+    const [view] = await postViews(rows, user(world.people.reader));
+    expect(view).toMatchObject({ title: `${secret} title`, sensitive: true });
   });
 
   test('postViews applies the gate to every row, so a list that forgot the predicate still withholds', async () => {

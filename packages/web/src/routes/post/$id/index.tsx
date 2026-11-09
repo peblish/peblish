@@ -7,6 +7,7 @@ import { loadPost } from '../-load.ts';
 import { answer, type Outcome } from '../-form.ts';
 import { PostPage } from '../-ui/post-page.tsx';
 import postCss from '../-ui/post.css?url';
+import gateCss from '../../c/-ui/gate.css?url';
 
 // /post/<id>: one post, its actions and (lane D) its thread. The page is personal (the gate,
 // a tombstone and the actions depend on who looks), so loadPost sets cache-control: no-store.
@@ -24,8 +25,16 @@ export const Route = createFileRoute('/post/$id/')({
     return data;
   },
   head: ({ loaderData }) => ({
-    meta: loaderData?.post.title ? [{ title: `${loaderData.post.title} | !${loaderData.post.community.handle}` }] : [],
-    links: [{ rel: 'stylesheet', href: postCss }],
+    meta:
+      loaderData?.kind === 'gate'
+        ? [{ name: 'robots', content: 'noindex' }]
+        : loaderData?.post.title
+          ? [{ title: `${loaderData.post.title} | !${loaderData.post.community.handle}` }]
+          : [],
+    links: [
+      { rel: 'stylesheet', href: postCss },
+      { rel: 'stylesheet', href: gateCss },
+    ],
   }),
   component: PostRoute,
   server: {

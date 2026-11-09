@@ -1,7 +1,7 @@
 import { ACTOR_NAME } from '@peblish/schema/actor-urls';
 import type { ActingPrincipal } from '@peblish/schema/authz';
 import type { Uuid } from '@peblish/schema/ids';
-import { RESERVED_NAMES } from '@peblish/schema/identity';
+import { MINIMUM_AGE, RESERVED_NAMES } from '@peblish/schema/identity';
 import { and, eq, sql } from 'drizzle-orm';
 import type { Queryable } from '../../db/read.ts';
 import { actors } from '../../db/tables/actors.ts';
@@ -43,6 +43,18 @@ async function denyUnlessAdmin(principal: Frozen<ActingPrincipal>, db: Queryable
 type Role = 'owner' | 'moderator';
 
 export const policies = {
+  /**
+   * A signed-in local person declares they are 16 or older on the NSFW gate page. The caller
+   * computes `age` from the date of birth it never stores, as account.register does: null when
+   * the date is not a real one. The body writes only the person's own declaration row.
+   */
+  'age.declare': async ({ principal, subject }: PolicyRequest<{ age: number | null }>) => {
+    if (principal.kind !== 'local') return deny('auth.required');
+    if (subject.age === null) return deny('age.declaration_required');
+    if (subject.age < MINIMUM_AGE) return deny('age.under_16');
+    return allow({ kind: 'owner', actorId: principal.actorId });
+  },
+
   /**
    * A site admin with two-factor creates a community under a name that is valid, not reserved
    * and free among all local actors, Persons included, in any case. The insert's unique index

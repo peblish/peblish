@@ -1,0 +1,60 @@
+/* The NSFW gate after the R2 mock nsfw-gate-page.html: structure and states, not final styling. */
+@layer app {
+  .gate {
+    max-width: 520px;
+    margin: 0 auto;
+    padding: 48px 16px;
+    font-size: 14px;
+    line-height: 1.5;
+  }
+  .gate h1 {
+    margin: 0 0 8px;
+    font-size: 22px;
+    line-height: 1.25;
+  }
+  .gate p {
+    margin: 0 0 12px;
+  }
+  .gate a {
+    color: var(--muxui-semantic-content-link);
+  }
+  .gate-flag {
+    display: inline-block;
+    padding: 0 5px;
+    border: 1px solid var(--muxui-semantic-border-default);
+    border-radius: 3px;
+    font-size: 12px;
+  }
+  .gate-note,
+  .gate-links {
+    color: var(--muxui-semantic-content-muted);
+  }
+  .gate-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 12px 16px;
+    margin: 16px 0;
+  }
+  .gate-declare fieldset {
+    display: grid;
+    grid-template-columns: 5rem minmax(0, 1fr) 6rem;
+    gap: 12px;
+    align-items: end;
+    margin: 0 0 12px;
+    padding: 0;
+    border: 0;
+  }
+  .gate-declare legend {
+    margin-bottom: 8px;
+    padding: 0;
+    font-weight: 600;
+  }
+  .gate-error {
+    color: var(--muxui-semantic-content-danger, #b00020);
+  }
+  .gate-hide {
+    display: inline-block;
+    margin: 0 0 0 8px;
+  }
+}

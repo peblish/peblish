@@ -3,6 +3,7 @@ import { excerptLength } from '@peblish/schema/markdown';
 import type { ActorRef, AuthorBadge, PostView } from '@peblish/schema/views';
 import { and, eq, inArray } from 'drizzle-orm';
 import { freshModerator } from '../authz/roles.ts';
+import { hideNsfw, showNsfw, shows, type NsfwChoice } from '../communities/gate.ts';
 import { db, type Queryable } from '../db/read.ts';
 import { localInstance } from '../db/local-instance.ts';
 import { actors } from '../db/tables/actors.ts';
@@ -19,7 +20,8 @@ import { communityRemovals } from '../moderation/tables.ts';
 // post page's data (readPost). It decides what a viewer may see, in one place, so no caller can
 // forget a gate: a deleted post is a tombstone, a removed one shows only that to everyone but
 // the community's moderators and site admins, and a sensitive or NSFL post reaches a viewer
-// who has not declared 16+ (or is signed out) without its title, link, preview or body.
+// without its title, link, preview or body unless they declared 16+ and chose to show NSFW
+// (Hide NSFW is on by default; the choice is the browser's, see communities/gate.ts).
 // Withheld fields are '' or null; the flags (deleted, removed, sensitive, nsfl) stay true.
 // A post in a deleted or removed community is not shown at all: postViews leaves it out and
 // readPost answers null, for every viewer.
@@ -33,11 +35,11 @@ export type PostRow = typeof posts.$inferSelect;
 export type PostBody = { kind: 'markdown'; source: string } | { kind: 'html'; html: string; baseUrl: string };
 
 /**
- * Where the sensitive-content gate stands for this viewer: none (the post is not sensitive),
- * sign-in (signed out), age (signed in without a 16+ declaration: the content is withheld), or
- * blur (declared: the content is sent, behind "show").
+ * Where the sensitive-content gate stands for this viewer: none (the post is not sensitive, or
+ * the viewer declared 16+ and chose to show it), sign-in (signed out), age (signed in without a
+ * 16+ declaration) or hidden (declared, Hide NSFW on). Every gate but none withholds the content.
  */
-export type Gate = 'none' | 'sign-in' | 'age' | 'blur';
+export type Gate = 'none' | 'sign-in' | 'age' | 'hidden';
 
 export type PostPage = {
   view: PostView;
@@ -173,15 +175,15 @@ function excerptOf(row: PostRow, origin: string): string | null {
   return text || null;
 }
 
-function describe(row: PostRow, c: Context): PostPage {
+function describe(row: PostRow, c: Context, nsfw: NsfwChoice): PostPage {
   const author = c.known.get(row.authorId);
   const community = c.known.get(row.communityId);
   if (!author || !community) throw new Error(`post ${row.id} names an actor that is gone`);
   const moderator = c.moderated.has(row.communityId);
   const flagged = row.sensitive || row.nsfl || community.sensitive || community.nsfl;
-  const gate: Gate = !flagged ? 'none' : !c.viewer ? 'sign-in' : !c.declared ? 'age' : 'blur';
+  const gate: Gate = !flagged ? 'none' : !c.viewer ? 'sign-in' : !c.declared ? 'age' : shows(nsfw, row.communityId) ? 'none' : 'hidden';
   const removedForViewer = row.removedAt !== null && !moderator;
-  const show = row.deletedAt === null && !removedForViewer && (gate === 'none' || gate === 'blur');
+  const show = row.deletedAt === null && !removedForViewer && gate === 'none';
   const body: PostBody | null = !show
     ? null
     : row.bodyMd
@@ -230,19 +232,20 @@ function describe(row: PostRow, c: Context): PostPage {
  */
 export async function postViews(rows: readonly PostRow[], viewer: Viewer, q: Queryable = db()): Promise<PostView[]> {
   const context = await load(q, rows, viewer);
-  return rows.filter((row) => !context.closed.has(row.communityId)).map((row) => describe(row, context).view);
+  return rows.filter((row) => !context.closed.has(row.communityId)).map((row) => describe(row, context, showNsfw).view);
 }
 
 /**
  * One post for its page; null when there is none, the id is not a uuid, or the post's community
  * is deleted or removed. A deleted post is a tombstone (view.deleted, content withheld) and a
  * removed one is withheld from all but moderators; the page answers 200 for both and still
- * lists the comments.
+ * lists the comments. `nsfw` is the browser's Hide NSFW choice (default: hide); a page passes
+ * the one its cookies carry.
  */
-export async function readPost(id: string, viewer: Viewer, q: Queryable = db()): Promise<PostPage | null> {
+export async function readPost(id: string, viewer: Viewer, q: Queryable = db(), nsfw: NsfwChoice = hideNsfw): Promise<PostPage | null> {
   if (!Uuid.allows(id)) return null;
   const [row] = await q.select().from(posts).where(eq(posts.id, id));
   if (!row) return null;
   const context = await load(q, [row], viewer);
-  return context.closed.has(row.communityId) ? null : describe(row, context);
+  return context.closed.has(row.communityId) ? null : describe(row, context, nsfw);
 }

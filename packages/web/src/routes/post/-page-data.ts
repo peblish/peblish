@@ -29,7 +29,7 @@ export function postMedia(view: Pick<PostView, 'url' | 'urlContentType' | 'thumb
 
 /**
  * Whether the thread may be sent with the post: not while the gate withholds the post (signed
- * out, or no 16+ declaration), and not under a post a moderator removed, except to the
+ * out, no 16+ declaration, or Hide NSFW on), and not under a post a moderator removed, except to the
  * moderators and admins who still read that post. A deleted post is a tombstone whose comments
  * stay listed.
  */
@@ -41,7 +41,7 @@ export const threadVisible = ({
   gate: PostPage['gate'];
   view: Pick<PostView, 'removed'>;
   moderator: boolean;
-}): boolean => (gate === 'none' || gate === 'blur') && (!view.removed || moderator);
+}): boolean => gate === 'none' && (!view.removed || moderator);
 
 const timeFormats = new Map<string, Intl.DateTimeFormat>();
 

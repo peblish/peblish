@@ -6,6 +6,7 @@ import { maxUploadBytes } from '@peblish/core/media/save';
 import { uploadImage } from '@peblish/core/media/upload';
 import { createPostAs, updatePostAs } from '@peblish/core/posts/actions';
 import { NewPost, normalizeTitle, PostEdit } from '@peblish/core/posts/input';
+import { showNsfw } from '@peblish/core/communities/gate';
 import { readPost, type Viewer } from '@peblish/core/posts/read';
 import { readSetting } from '@peblish/core/settings/read';
 import type { ActingPrincipal } from '@peblish/schema/authz';
@@ -150,7 +151,7 @@ const defaults: Deps = {
   upload: uploadImage,
   origin: async () => (await localHandles()).origin,
   current: async (postId, viewer) => {
-    const page = await readPost(postId, viewer);
+    const page = await readPost(postId, viewer, undefined, showNsfw);
     return page ? { url: page.view.url } : null;
   },
   createPost: createPostAs,

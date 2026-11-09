@@ -48,7 +48,7 @@ export type ThreadData = {
  * The same rule as the post page's data.threadVisible.
  */
 export const threadShown = (page: Pick<PostPage, 'gate' | 'moderator'> & { view: Pick<PostPage['view'], 'removed'> }) =>
-  (page.gate === 'none' || page.gate === 'blur') && (!page.view.removed || page.moderator);
+  page.gate === 'none' && (!page.view.removed || page.moderator);
 
 /** The `sort` of the page being requested: the document request's query. A server function called from the browser has no page query. */
 export const requestedSort = (): ThreadSort => parseSort(URL.parse(getRequest().url)?.searchParams.get('sort'));
