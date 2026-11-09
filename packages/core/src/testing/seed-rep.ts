@@ -106,6 +106,7 @@ export async function seedBudgetWorld({ communities = 300, reports: total = 5000
  * What e2e/reports runs against: accounts that can sign in (lane A's seedAccount), two
  * communities with a moderator each, and posts with open reports in every state the specs need:
  * - `form`: posts to report through the form (with and without JavaScript, and the dialog);
+ * - `forwarded`: a post by a person on a remote instance (`farHost`), so a report can be sent on;
  * - `queue.hate`: a post with two reports; `queue.sensitive`: a sensitive post; `queue.other`: a
  *   post in the other community; `queue.adminOnly`: a child-safety report; `queue.remove`,
  *   `queue.escalate`, `queue.dismiss`: posts for the actions; `person`: a report about the author.
@@ -147,7 +148,14 @@ async function e2e() {
     remove: await post('Remove me'),
     escalate: await post('Escalate me'),
     dismiss: await post('Dismiss me'),
+    forwarded: '',
   };
+  // A remote author on a host that never resolves (.example): a forwarded Flag fails to deliver, harmlessly.
+  const far = await seedInstance(`far-${suffix}.example`, false);
+  const farAuthor = await seedActor({ ...far, local: false }, 'Person', `far_${suffix}`);
+  posts.forwarded = (
+    await seedPost(far, community, farAuthor, { title: `Forward me ${suffix}`, bodyMd: 'Forward me', contentHtml: '<p>Forward me</p>' })
+  ).id;
   await report(reporter!, posts.hate, 'hate', 'Slurs in the second paragraph');
   await report(second!, posts.hate, 'hate');
   await report(reporter!, posts.sensitive, 'sexual_content');
@@ -174,6 +182,7 @@ async function e2e() {
     admin: { name: boss.name, totpSecret: secret },
     community: { handle: community.name },
     other: { handle: other.name },
+    farHost: far.domain,
     posts,
     titles: {
       hate: `Hateful words ${suffix}`,

@@ -21,6 +21,7 @@ type Seed = {
   admin: { name: string; totpSecret: string };
   community: { handle: string };
   other: { handle: string };
+  farHost: string;
   posts: {
     form: string[];
     hate: string;
@@ -30,6 +31,7 @@ type Seed = {
     remove: string;
     escalate: string;
     dismiss: string;
+    forwarded: string;
   };
   titles: Record<'hate' | 'sensitive' | 'other' | 'adminOnly' | 'remove' | 'escalate' | 'dismiss', string>;
 };
@@ -129,6 +131,28 @@ test.describe('the report form', () => {
     await page.waitForURL(/\/report\/sent\?n=\d+/);
     await expect(page.getByRole('heading', { name: /^Report #\d+ sent$/ })).toBeVisible();
     expect(console.hydrationProblems()).toEqual([]);
+  });
+
+  test('a forwarded report names the remote host and drops the anonymity promise; a back address off the site becomes /', async ({
+    browser,
+  }) => {
+    const page = await plain(browser);
+    await signedIn(page, seed.reporter.name);
+    await page.goto(formUrl(seed.posts.forwarded));
+    await page.getByRole('radio', { name: /^Spam/ }).check();
+    await page
+      .getByRole('checkbox', { name: `Also send to the moderators of ${seed.farHost}. They will see the report and your handle.` })
+      .check();
+    await page.getByRole('button', { name: 'Send report' }).click();
+    await expect(page).toHaveURL(/\/report\/sent\?n=\d+/);
+    await expect(page.getByText(`The moderators of ${seed.farHost} can also see the report, including your handle.`)).toBeVisible();
+    await expect(page.getByText(/will not learn who you are/)).toHaveCount(0);
+    // A back address that leaves the site (a tab between the slashes) becomes / on the receipt and the form.
+    const evil = '%2F%09%2Fevil.example';
+    await page.goto(`/report/sent?n=${new URL(page.url()).searchParams.get('n')}&back=${evil}`);
+    await expect(page.getByRole('link', { name: 'Done' })).toHaveAttribute('href', '/');
+    await page.goto(`/report?kind=post&id=${seed.posts.form[3]}&back=${evil}`);
+    await expect(page.getByRole('link', { name: 'Cancel' })).toHaveAttribute('href', '/');
   });
 
   test('the form page is accessible', async ({ page }) => {
