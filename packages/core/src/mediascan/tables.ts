@@ -46,6 +46,8 @@ export const mediaScans = pgTable(
       .references(() => media.id, { onDelete: 'cascade' }),
     attempts: integer('attempts').notNull().default(0),
     leaseUntil: at('lease_until'),
+    /** A fresh token per claim: only the claim holding it may settle the row (recordScan), so a worker whose lease ran out changes nothing. */
+    claimToken: uuid('claim_token'),
     lastError: text('last_error'),
   },
   (t) => [index('media_scans_lease').on(t.leaseUntil)],

@@ -11,6 +11,7 @@ import { seedLocalInstance } from '../testing/seed-a.ts';
 import { seedMedia, startArachnidStub, type ArachnidStub } from '../testing/seed-safe.ts';
 import { scanConfig } from './config.ts';
 import { scanPending } from './job.ts';
+import { scanClaimed } from './scan.ts';
 import { claimScan, dueBatch, scanLimits } from './record.ts';
 import { mediaScans } from './tables.ts';
 
@@ -54,9 +55,11 @@ test('the backstop takes only pending rows over 30 seconds old, oldest first', a
 test('a leased row is not taken again until the lease ends, and each take counts an attempt', async () => {
   const row = await seedMedia(store, { createdAt: minutesAgo(5) });
   const now = new Date();
-  expect(await claim(now)).toEqual([{ mediaId: row.id, attempts: 1 }]);
+  expect(await claim(now)).toEqual([{ mediaId: row.id, attempts: 1, token: expect.any(String) }]);
   expect(await claim(new Date(now.getTime() + scanLimits.leaseMs - 1))).toEqual([]);
-  expect(await claim(new Date(now.getTime() + scanLimits.leaseMs + 1))).toEqual([{ mediaId: row.id, attempts: 2 }]);
+  expect(await claim(new Date(now.getTime() + scanLimits.leaseMs + 1))).toEqual([
+    { mediaId: row.id, attempts: 2, token: expect.any(String) },
+  ]);
 });
 
 test('two workers claiming at once take disjoint rows and together take every due row once', async () => {
@@ -73,8 +76,28 @@ test('two workers claiming at once take disjoint rows and together take every du
 test('the inline claim takes one named row of any age, and only while it is pending', async () => {
   const fresh = await seedMedia(store, { createdAt: new Date() });
   const clean = await seedMedia(store, { state: 'clean' });
-  expect(await claim(new Date(), fresh.id)).toEqual([{ mediaId: fresh.id, attempts: 1 }]);
+  expect(await claim(new Date(), fresh.id)).toEqual([{ mediaId: fresh.id, attempts: 1, token: expect.any(String) }]);
   expect(await claim(new Date(), clean.id)).toEqual([]);
+});
+
+test('a claim whose lease ran out settles nothing once another worker has claimed the row again', async () => {
+  const row = await seedMedia(store, { createdAt: minutesAgo(5) });
+  const now = new Date();
+  const [stale] = await claim(now);
+  // The first worker stalls past its lease; a second worker claims the row.
+  const [fresh] = await claim(new Date(now.getTime() + scanLimits.leaseMs + 1));
+  expect([stale?.mediaId, fresh?.mediaId, fresh?.attempts]).toEqual([row.id, row.id, 2]);
+  expect(fresh!.token).not.toBe(stale!.token);
+  // The stalled worker finishes late with a failure: it changes nothing, and the lease stays the second worker's.
+  const broken = { ...store, get: () => Promise.resolve(null) };
+  expect(await scanClaimed(stale!, { store: broken, config: config(), final: true })).toBe('settled-elsewhere');
+  expect(await stateOf(row.id)).toBe('pending');
+  const [lease] = await db().select().from(mediaScans).where(eq(mediaScans.mediaId, row.id));
+  expect(lease).toMatchObject({ attempts: 2, lastError: null, claimToken: fresh!.token });
+  expect(lease!.leaseUntil).not.toBeNull();
+  // The current claim settles it.
+  expect(await scanClaimed(fresh!, { store, config: config() })).toBe('clean');
+  expect(await stateOf(row.id)).toBe('clean');
 });
 
 test('a provider outage leaves the row pending for later tries and the fifth failure makes it failed', async () => {

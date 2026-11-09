@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { eq } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, expect, test } from 'vitest';
 import { authorize } from '../authz/authorize.ts';
@@ -56,10 +57,14 @@ async function scanNow(id: string, deps: ScanDeps) {
   return scanClaimed(claim, { ...deps, final: true });
 }
 
+/** Claims the row (a row that is not pending cannot be claimed: any token then) and records `outcome` under that claim. */
 async function record(id: string, outcome: ScanOutcome) {
-  const decision = await authorize('media.scan', await systemPrincipal(db(), 'scheduled'), { mediaId: id });
-  if (!decision.ok) throw new Error(decision.reason);
-  return recordScan(decision.grant, { outcome, now: new Date() });
+  const principal = await systemPrincipal(db(), 'scheduled');
+  const claiming = await authorize('media.scan_claim', principal, { mediaId: id });
+  const decision = await authorize('media.scan', principal, { mediaId: id });
+  if (!claiming.ok || !decision.ok) throw new Error('refused');
+  const [claim] = await claimScan(claiming.grant, { now: new Date() });
+  return recordScan(decision.grant, { outcome, now: new Date(), token: claim?.token ?? randomUUID() });
 }
 
 test('a pending row with no match becomes clean, and the provider saw exactly the stored bytes', async () => {

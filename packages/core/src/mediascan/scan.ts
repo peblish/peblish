@@ -93,7 +93,8 @@ export type ScanResult = ScanOutcome['state'] | 'retry' | 'settled-elsewhere';
  * Scans one claimed row and records the outcome. A failure that may pass leaves the row pending
  * under its lease for the job to try again, unless `final` (the inline scan of an upload, which
  * answers its uploader now) or the row is out of attempts. `settled-elsewhere`: another worker
- * recorded a result first, and nothing changed here.
+ * recorded a result first, or claimed the row again after this claim's lease ran out, and nothing
+ * changed here.
  */
 export async function scanClaimed(claim: Claimed, deps: ScanDeps & { final?: boolean } = {}): Promise<ScanResult> {
   const config = deps.config ?? scanConfig();
@@ -107,7 +108,7 @@ export async function scanClaimed(claim: Claimed, deps: ScanDeps & { final?: boo
   const decision = await authorize('media.scan', await systemPrincipal(db(), 'scheduled'), { mediaId: claim.mediaId as Uuid });
   if (!decision.ok) throw new Error(`media.scan refused: ${decision.reason}`);
   const recorded = await refusedAsResult(async () => {
-    await recordScan(decision.grant, { outcome: decided.outcome, now });
+    await recordScan(decision.grant, { outcome: decided.outcome, now, token: claim.token });
     return {};
   });
   return recorded.ok ? decided.outcome.state : 'settled-elsewhere';
