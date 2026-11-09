@@ -4,13 +4,17 @@
     "error.media.invalid_image": "That image file looks damaged. Try another one.",
     "error.media.too_large": "That image is too large. Images can weigh up to 10 MB and measure up to 8192 pixels a side.",
     "error.upload.disabled": "Image uploads are switched off for now. Link to an image instead.",
-    "error.preview.disabled": "Link previews are switched off for now."
+    "error.preview.disabled": "Link previews are switched off for now.",
+    "error.media.rejected": "This image cannot be posted.",
+    "error.media.scan_unavailable": "Images cannot be checked right now. Try again later."
   },
   "de": {
     "error.media.unsupported_type": "Hochgeladen werden können nur JPEG-, PNG-, WebP- und GIF-Bilder.",
     "error.media.invalid_image": "Diese Bilddatei scheint beschädigt zu sein. Versuche es mit einer anderen.",
     "error.media.too_large": "Das Bild ist zu groß. Bilder dürfen bis zu 10 MB groß und bis zu 8192 Pixel pro Seite breit sein.",
     "error.upload.disabled": "Bild-Uploads sind vorerst ausgeschaltet. Verlinke stattdessen ein Bild.",
-    "error.preview.disabled": "Linkvorschauen sind vorerst ausgeschaltet."
+    "error.preview.disabled": "Linkvorschauen sind vorerst ausgeschaltet.",
+    "error.media.rejected": "Dieses Bild kann nicht veröffentlicht werden.",
+    "error.media.scan_unavailable": "Bilder können gerade nicht geprüft werden. Versuche es später noch einmal."
   }
 }

@@ -1,9 +1,11 @@
 import { instanceActorUrls } from '@peblish/schema/actor-urls';
+import { killSwitches, siteSettings as contract } from '@peblish/schema/site-settings';
 import { and, eq, isNull, or, sql } from 'drizzle-orm';
 import { newRsaKeyPair } from '../actor-keys.ts';
 import { canonicalOrigin } from '../config.ts';
 import { actorKeys, actors } from './tables/actors.ts';
 import { instances } from './tables/instances.ts';
+import { siteSettings } from './tables/site.ts';
 import type { Writer } from './write.ts';
 
 /**
@@ -62,4 +64,19 @@ export async function ensureLocalInstance(db: Writer, origin: string): Promise<v
         .onConflictDoNothing();
     }
   });
+}
+
+/** The settings whose readers lock their row: every kill switch and the registration cap. */
+export const lockedSettings = [...killSwitches, 'registration.cap'] as const;
+
+/**
+ * Writes the default row of every setting a policy reads FOR SHARE, where none exists, and
+ * keeps stored ones. A lock on a row that is missing locks nothing, so without the row the first
+ * change of a switch could miss a write in flight.
+ */
+export async function ensureSettingRows(db: Writer): Promise<void> {
+  await db
+    .insert(siteSettings)
+    .values(lockedSettings.map((key) => ({ key, value: contract[key].default })))
+    .onConflictDoNothing();
 }

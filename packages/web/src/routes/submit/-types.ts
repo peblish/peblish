@@ -109,6 +109,9 @@ export const composerErrors = [
   'media.unsupported_type',
   'media.invalid_image',
   'media.too_large',
+  // Lane SAFE's scan of an upload: the image matched (the uploader is not told why), or no scanner answered.
+  'media.rejected',
+  'media.scan_unavailable',
   'generic',
   'network',
 ] as const;
@@ -140,6 +143,8 @@ export function errorField(code: ComposerError): 'community' | 'title' | 'url' |
     case 'media.unsupported_type':
     case 'media.invalid_image':
     case 'media.too_large':
+    case 'media.rejected':
+    case 'media.scan_unavailable':
       return 'image';
     default:
       return null;
@@ -154,6 +159,8 @@ export function errorMessageKey(
     case 'media.unsupported_type':
     case 'media.invalid_image':
     case 'media.too_large':
+    case 'media.rejected':
+    case 'media.scan_unavailable':
       return { area: 'media', key: `error.${code}` };
     case 'site.disabled':
       return { area: 'media', key: 'error.upload.disabled' };

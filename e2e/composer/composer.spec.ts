@@ -2,6 +2,7 @@ import { expect, test, type BrowserContext, type Page } from '@playwright/test';
 import { expectAccessible, landed, signIn } from '../auth/support.ts';
 import { gotoHydrated, recordConsole } from '../support/route-marker.ts';
 import { community, seed, signedIn, type Seed } from './support.ts';
+import { siteName } from '../support/site-name.ts';
 
 // The composer as a page, end to end on the built server and the lane database: the picker and
 // the community's rules, the editor's toolbar, Preview against what is published, the refusals
@@ -47,7 +48,7 @@ test('the page hydrates, lists the communities and has no axe violations', async
   const log = recordConsole(page);
   await gotoHydrated(page, '/submit');
   await expect(page.getByRole('heading', { level: 1, name: 'Create post' })).toBeVisible();
-  await expect(page).toHaveTitle('Create post \u00b7 peblish');
+  await expect(page).toHaveTitle(`Create post \u00b7 ${await siteName(page)}`);
   // Local communities, and the remote one the person follows.
   await expect(community(page, world.communities.open.handle)).toBeEnabled();
   await expect(community(page, world.communities.remote.handle)).toBeEnabled();
@@ -224,7 +225,7 @@ test('editing: the author changes the post, and Preview already carries the publ
   await page.getByRole('link', { name: 'Edit' }).click();
   await page.waitForURL(/\/submit\?edit=/);
   await page.locator('html[data-hydrated="1"]').waitFor({ state: 'attached' });
-  await expect(page).toHaveTitle('Edit post \u00b7 peblish');
+  await expect(page).toHaveTitle(`Edit post \u00b7 ${await siteName(page)}`);
   await expect(page.getByLabel('Title')).toHaveValue('Before the edit');
   await expect(body(page)).toHaveValue('First[^1] version.\n\n[^1]: The note.');
   await expect(page.getByText(`Editing a post in !${world.communities.open.handle}`)).toBeVisible();

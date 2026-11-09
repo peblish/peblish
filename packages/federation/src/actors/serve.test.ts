@@ -361,6 +361,15 @@ describe('posts, comments and activities', () => {
     expect(await get('/ap/activity/0190b7a8-0000-7000-8000-000000000003')).toBeNull();
   });
 
+  test('a stored local Flag is never served: it names the reporter and their reason', async () => {
+    const w = await world();
+    const id = `${origin}/ap/activity/0190b7a8-0000-7000-8000-000000000004`;
+    await writer()
+      .insert(activities)
+      .values({ apId: id, type: 'Flag', actorApId: w.alice.apId, local: true, raw: { type: 'Flag', id, actor: w.alice.apId } });
+    expect(await get('/ap/activity/0190b7a8-0000-7000-8000-000000000004')).toBeNull();
+  });
+
   describe('nothing is served once what it belongs to is gone', () => {
     const tombstone = (id: string, formerType: string) => ({
       status: 410,

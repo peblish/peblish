@@ -5,6 +5,7 @@ import { actors } from '@peblish/core/db/tables/actors';
 import { comments, posts } from '@peblish/core/db/tables/content';
 import { storeRemotePost } from '@peblish/core/posts/remote';
 import { deleteRemoteObject } from '@peblish/core/remote/objects';
+import { readSetting } from '@peblish/core/settings/read';
 import { Refused } from '@peblish/core/tx/refused';
 import type { ActingPrincipal } from '@peblish/schema/authz';
 import { eq } from 'drizzle-orm';
@@ -197,8 +198,8 @@ const principalOf = (author: ResolvedActor, vouch: Vouch): ActingPrincipal => ({
 async function storePost(post: PostRecord, vouch: Vouch, fetch: Fetcher): Promise<ObjectOutcome> {
   checkObject(post.authorApId, post);
   if (post.communityApId !== vouch.community.apId) return refused(post.apId, 'community.mismatch');
-  // The inbound rule, until the setting that relaxes it comes with the admin controls (handlers/_content.ts).
-  if (post.sensitive || post.nsfl) return refused(post.apId, 'content.nsfw_rejected');
+  // The inbound rule (handlers/_content.ts): NSFL never, NSFW only while remote_nsfw.accepted is on.
+  if (post.nsfl || (post.sensitive && !(await readSetting('remote_nsfw.accepted')))) return refused(post.apId, 'content.nsfw_rejected');
   const author = await authorOf(post.authorApId, post.apId, fetch);
   if ('outcome' in author) return author.outcome;
   const decision = await authorize('post.create', principalOf(author.actor, vouch), { communityId: vouch.community.id });

@@ -35,7 +35,8 @@ export const inboundReasons = {
   'actor.update_unauthorized': 'Only the actor itself, or its community announcing the change, may update an actor.',
   'type.unhandled': 'The activity type is not one peblish reads.',
   'type.question': 'Polls (Question) are not stored yet.',
-  'content.nsfw_rejected': 'Remote sensitive content is refused by default; a setting to accept it comes with the admin controls.',
+  'content.nsfw_rejected':
+    'Remote NSFL content is refused, and NSFW content too while the site setting remote_nsfw.accepted is off (its default).',
   'note.no_local_community': 'A top-level Note that is not addressed to a community here is not a post.',
   'vote.unchanged': 'The voter already has this vote, or has none to take back.',
   'moderators.local_collection': 'A local community’s moderators change here, not by a peer’s Add or Remove.',

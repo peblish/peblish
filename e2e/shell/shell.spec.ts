@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { gotoHydrated } from '../support/route-marker.ts';
+import { siteName } from '../support/site-name.ts';
 
 // The application frame (shell-sidebar): the sidebar, the top bar, the centred body and the
 // drawer on a phone. Signed in, the account menu is covered by lane A's end-to-end flows.
@@ -38,18 +39,28 @@ test('the sidebar holds the feeds, the directory links and the site pages, and t
 test('an unknown address answers with the shell and a page not found message', async ({ page }) => {
   await gotoHydrated(page, '/no-such-page');
   await expect(page.getByRole('heading', { name: 'Page not found' })).toBeVisible();
-  await expect(page).toHaveTitle('peblish');
+  await expect(page).toHaveTitle(await siteName(page));
 });
 
-test('every page has a title: the shell names the route, a route may name itself', async ({ page }) => {
+test('every page has a title: the shell names the route, a route may name itself; the site is named, never the software', async ({
+  page,
+}) => {
   for (const [path, title] of [
-    ['/', 'Home · peblish'],
-    ['/auth/sign-in', 'Sign in · peblish'],
-    ['/auth/sign-up', 'Create your account · peblish'],
+    ['/', 'Home'],
+    ['/auth/sign-in', 'Sign in'],
+    ['/auth/sign-up', 'Create your account'],
   ] as const) {
     await gotoHydrated(page, path);
-    await expect(page).toHaveTitle(title);
+    const site = await siteName(page);
+    await expect(page).toHaveTitle(`${title} · ${site}`);
   }
+});
+
+test('the brand is the site name, or the host when none is set, and never the software', async ({ page }) => {
+  await gotoHydrated(page, '/');
+  const site = await siteName(page);
+  expect(site).not.toBe('');
+  expect(site).not.toMatch(/^peblish$|on peblish/i);
 });
 
 test.describe('in German', () => {
@@ -57,7 +68,7 @@ test.describe('in German', () => {
 
   test('the title is in the request locale', async ({ page }) => {
     await gotoHydrated(page, '/auth/sign-in');
-    await expect(page).toHaveTitle('Anmelden · peblish');
+    await expect(page).toHaveTitle(`Anmelden · ${await siteName(page)}`);
   });
 });
 

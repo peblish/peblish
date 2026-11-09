@@ -1,4 +1,5 @@
 import type { FeedName, Period, Sort } from '@peblish/core/feeds/input';
+import type { ReactNode } from 'react';
 import { periods, sorts } from '@peblish/core/feeds/input';
 import { PostCard } from '@peblish/ui/components/post-card';
 import { DensityControl } from '@peblish/ui/density/density-control';
@@ -13,7 +14,8 @@ import { feedHref, resolveFeedSearch, type FeedSearch } from './search.ts';
 
 // A feed after feed-segmented.html: the feed's name, the sort as links (so the toolbar works
 // before the page hydrates and without JavaScript), the always-visible density switch, the posts
-// as cards, and a link to the next page. No Mux collection component sits on the toolbar or
+// as cards, and a link to the next page. FeedToolbar and FeedCards are the same parts without
+// the heading, for other pages that list posts (a community page, a profile). No Mux collection component sits on the toolbar or
 // the rows (first-tap condition).
 
 const feedTitleKeys = {
@@ -32,41 +34,79 @@ function Choice({ href, current, children }: { href: string; current: boolean; c
   );
 }
 
-export function FeedPage({ path, data, search: address }: { path: string; data: FeedData; search: FeedSearch }) {
-  const search = resolveFeedSearch(address);
-  const { t, locale } = useTranslate();
-  const { prefs, setPrefs } = usePrefs();
-  const postLabels = usePostCardLabels();
-  const densityLabels = useDensityLabels();
+export function FeedPage({ path, data, search }: { path: string; data: FeedData; search: FeedSearch }) {
+  const { t } = useTranslate();
   useRouteHydrated();
-  const { feed } = data;
+  return (
+    <main className="pb-page feed" data-feed={data.feed}>
+      <FeedToolbar path={path} search={search}>
+        <h1>{t('shell', feedTitleKeys[data.feed])}</h1>
+      </FeedToolbar>
+      <FeedCards path={path} data={data} search={search} empty={<Empty feed={data.feed} />} />
+    </main>
+  );
+}
+
+/**
+ * The sort and Top period as links to `path`, and the density switch. `children` come first in
+ * the bar (a feed's heading). For any page that lists posts the feed way (a community, a profile).
+ */
+export function FeedToolbar({ path, search: address, children }: { path: string; search: FeedSearch; children?: ReactNode }) {
+  const search = resolveFeedSearch(address);
+  const { t } = useTranslate();
+  const { prefs, setPrefs } = usePrefs();
+  const densityLabels = useDensityLabels();
   const sort = search.sort;
   const periodOf = (period: Period) => t('feeds', `period.${period}`);
-
   return (
-    <main className="pb-page feed" data-feed={feed}>
-      <div className="feed-toolbar">
-        <h1>{t('shell', feedTitleKeys[feed])}</h1>
-        <div className="feed-seg" role="group" aria-label={t('feeds', 'sort.group')}>
-          {sorts.map((value: Sort) => (
-            <Choice key={value} href={feedHref(path, { ...search, sort: value, cursor: undefined })} current={sort === value}>
-              {t('feeds', `sort.${value}`)}
+    <div className="feed-toolbar">
+      {children}
+      <div className="feed-seg" role="group" aria-label={t('feeds', 'sort.group')}>
+        {sorts.map((value: Sort) => (
+          <Choice key={value} href={feedHref(path, { ...search, sort: value, cursor: undefined })} current={sort === value}>
+            {t('feeds', `sort.${value}`)}
+          </Choice>
+        ))}
+      </div>
+      {sort === 'top' && (
+        <div className="feed-seg" role="group" aria-label={t('feeds', 'period.group')}>
+          {periods.map((value) => (
+            <Choice key={value} href={feedHref(path, { sort, period: value })} current={search.period === value}>
+              {periodOf(value)}
             </Choice>
           ))}
         </div>
-        {sort === 'top' && (
-          <div className="feed-seg" role="group" aria-label={t('feeds', 'period.group')}>
-            {periods.map((value) => (
-              <Choice key={value} href={feedHref(path, { sort, period: value })} current={search.period === value}>
-                {periodOf(value)}
-              </Choice>
-            ))}
-          </div>
-        )}
-        <span className="feed-space" />
-        <DensityControl value={prefs.density} onChange={(density) => setPrefs({ density })} labels={densityLabels} />
-      </div>
+      )}
+      <span className="feed-space" />
+      <DensityControl value={prefs.density} onChange={(density) => setPrefs({ density })} labels={densityLabels} />
+    </div>
+  );
+}
 
+/** What the cards need of a page's data: the posts, the clock their ages print against, the next cursor. */
+export type FeedCardsData = Pick<FeedData, 'items' | 'next' | 'now' | 'signedIn'> & { signIn?: boolean };
+
+/**
+ * The posts as cards and the links to the first and next page, under `path`. `empty` shows when
+ * there are no posts; a Moderating feed without a viewer (`signIn`) asks to sign in instead.
+ */
+export function FeedCards({
+  path,
+  data,
+  search: address,
+  empty,
+}: {
+  path: string;
+  data: FeedCardsData;
+  search: FeedSearch;
+  empty: ReactNode;
+}) {
+  const search = resolveFeedSearch(address);
+  const { t, locale } = useTranslate();
+  const { prefs } = usePrefs();
+  const postLabels = usePostCardLabels();
+  return (
+    <>
       {data.signIn ? (
         <section className="feed-empty">
           <h2>{t('feeds', 'moderating.signIn.title')}</h2>
@@ -76,7 +116,7 @@ export function FeedPage({ path, data, search: address }: { path: string; data: 
           </p>
         </section>
       ) : data.items.length === 0 ? (
-        <Empty feed={feed} />
+        empty
       ) : (
         <ul className="feed-list" aria-label={t('feeds', 'list.label')}>
           {data.items.map(({ post, thumbnailSrc }) => (
@@ -111,7 +151,7 @@ export function FeedPage({ path, data, search: address }: { path: string; data: 
           )}
         </nav>
       )}
-    </main>
+    </>
   );
 }
 

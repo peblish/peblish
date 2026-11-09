@@ -28,6 +28,10 @@ export const outboxCursors = pgTable('outbox_cursors', {
   lastError: text('last_error'),
   /** Events skipped because a mutation the handler ran refused them (permanent; see ConsumerTx). */
   refused: integer('refused').notNull().default(0),
+  /** The event whose handler failed last, with how many times in a row and since when (worker.ts skips a poison event). */
+  failingEventId: bigint('failing_event_id', { mode: 'number' }),
+  failures: integer('failures').notNull().default(0),
+  firstFailureAt: at('first_failure_at'),
   retryAt: at('retry_at'),
   updatedAt: at('updated_at').notNull().defaultNow(),
 });

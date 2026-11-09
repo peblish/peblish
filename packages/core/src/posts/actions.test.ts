@@ -7,7 +7,7 @@ import { outboxEvents } from '../testing/seed-az.ts';
 import { seedPostWorld } from '../testing/seed-b1.ts';
 import { localUser } from '../testing/seed.ts';
 import { voteAs } from '../votes/service.ts';
-import { createPostAs, deletePostAs, removePostAs, restorePostAs, restoreRemovedPostAs, updatePostAs } from './actions.ts';
+import { createPostAs, deletePostAs, restorePostAs, updatePostAs } from './actions.ts';
 
 // voteAs runs as it is, except where a test makes it fail.
 vi.mock('../votes/service.ts', async (importOriginal) => {
@@ -79,19 +79,6 @@ test('a failed or refused author upvote still returns the post, with a warning n
   } finally {
     warn.mockRestore();
   }
-});
-
-test('a moderator removes and restores a post with a reason; anyone else is refused', async () => {
-  const world = await seedPostWorld();
-  const id = world.posts.local.normal;
-  const moderator = localUser(world.people.moderator.id);
-  expect(await removePostAs(localUser(world.people.reader.id), id, 'spam')).toEqual({ ok: false, reason: 'mod.moderator_required' });
-  expect(await removePostAs(moderator, id, 'Rule 2: off topic')).toMatchObject({ ok: true });
-  const [removed] = await db().select({ removedAt: posts.removedAt }).from(posts).where(eq(posts.id, id));
-  expect(removed?.removedAt).toBeInstanceOf(Date);
-  expect(await restoreRemovedPostAs(moderator, id, null)).toMatchObject({ ok: true });
-  const [restored] = await db().select({ removedAt: posts.removedAt }).from(posts).where(eq(posts.id, id));
-  expect(restored?.removedAt).toBeNull();
 });
 
 test('a vote answers with the vote held and the tally', async () => {

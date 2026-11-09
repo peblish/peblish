@@ -61,6 +61,12 @@ export const ModlogDetails = type({
    * writeModlog. Its instance vouches for the row as much as the actor's does.
    */
   'announcedBy?': 'string',
+  /** community.update: the names of the fields the edit changed. */
+  'fields?': 'string[]',
+  /** settings.update: each changed key with its value before and after. */
+  'changes?': type.Record('string', { before: 'unknown', after: 'unknown' }),
+  /** page.publish: the page and the revision that went live. */
+  'page?': { slug: 'string', language: 'string', revision: Uuid },
 });
 export type ModlogDetails = typeof ModlogDetails.infer;
 

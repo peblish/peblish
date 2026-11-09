@@ -50,14 +50,15 @@ module.exports = {
     },
     {
       name: 'web-federation-entry-points',
-      comment: 'web reaches federation only through its HTTP seam (lane FED-A) and the consumer and job registries the worker runs.',
+      comment:
+        'web reaches federation only through its HTTP seam (lane FED-A), the resolver entry (lane DISC) and the consumer and job registries the worker runs.',
       severity: 'error',
       from: { path: '^packages/web/' },
       to: {
         path: pkg('federation'),
         pathNot: [
-          '^packages/federation/src/(http|registry/(consumers|jobs)\\.gen)\\.ts$',
-          '^@peblish/federation/(http|registry/(consumers|jobs)\\.gen)$',
+          '^packages/federation/src/(http|resolve/web|registry/(consumers|jobs)\\.gen)\\.ts$',
+          '^@peblish/federation/(http|resolve/web|registry/(consumers|jobs)\\.gen)$',
         ],
       },
     },

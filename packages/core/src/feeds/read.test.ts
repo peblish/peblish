@@ -117,6 +117,21 @@ describe('who sees what', () => {
       for (const sort of sorts) expect(await titles({ feed, sort }, viewerOf(people.viewer)), `${feed} ${sort}`).toEqual(['shown']);
   });
 
+  test('a scope narrows a feed to one community or one author in every sort, and the feed rules still apply', async () => {
+    const { instances, people, communities } = await seedFeedWorld();
+    await seedFeedPost(instances.local, communities.news, people.author, { title: 'news by author', up: 3 });
+    await seedFeedPost(instances.local, communities.news, people.remoteAuthor, { title: 'news by remote', up: 3 });
+    await seedFeedPost(instances.local, communities.art, people.author, { title: 'art by author', up: 3 });
+    await seedFeedPost(instances.local, communities.adult, people.author, { title: 'adult by author', up: 3 });
+    for (const sort of sorts) {
+      const community = await titles({ feed: 'all', sort, scope: { communityId: communities.news.id } }, null);
+      expect(new Set(community), sort).toEqual(new Set(['news by author', 'news by remote']));
+      // The sensitive community's post stays out for a signed-out viewer.
+      const author = await titles({ feed: 'all', sort, scope: { authorId: people.author.id } }, null);
+      expect(new Set(author), sort).toEqual(new Set(['news by author', 'art by author']));
+    }
+  });
+
   test('a post by a banned author or in a community the viewer was banned from still shows: bans gate writes, not reads', async () => {
     const { instances, people, communities } = await seedFeedWorld();
     await seedBan(communities.news, people.viewer);

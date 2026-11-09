@@ -113,7 +113,8 @@ async function objectDocument(db: Queryable, origin: string, kind: 'post' | 'com
       .select({ type: activities.type, raw: activities.raw })
       .from(activities)
       .where(and(eq(activities.apId, apId), eq(activities.local, true)));
-    if (!row) return null;
+    // A Flag names its reporter and their reason, for the moderators it was sent to only: never served.
+    if (!row || row.type === 'Flag') return null;
     const stored = row.raw as JsonObject;
     // What a Create, Update or Announce carried is gone, never held or no longer shown: so is the
     // activity, as far as peers can fetch it. The community's Announce of a remote Page or Note is

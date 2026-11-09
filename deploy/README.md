@@ -66,7 +66,9 @@ or delete the account), the same; reset mail, 3 per address typed and 10 per cli
 an hour; invite codes that match no invite, 10 per client address an hour; another
 verification link, one a minute per account; link previews (the server fetches an address a
 person typed), 30 per client address and 20 per account in ten minutes; comments, 30 per
-account in ten minutes (`comment`). A refused attempt counts too, and an IPv6
+account in ten minutes (`comment`); looking up a remote handle or address, 20 per client
+address and 10 per account in ten minutes (`resolve`); reports, 60 per client address and 30
+per account in ten minutes (`report`). A refused attempt counts too, and an IPv6
 client is counted by its /64. On Easypanel, staging and production alike, set
 `PEBLISH_TRUSTED_PROXY=traefik` on `web` before going live; left at `none`, every client
 shares the proxy's budgets per address. With Cloudflare proxying in front of Traefik, the

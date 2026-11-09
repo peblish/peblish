@@ -64,6 +64,7 @@ export const routes: readonly PayloadRoute[] = [
   { route: '/invite/$code', path: '/invite/<code>', target: async (base) => `/invite/${(await fixtures(base)).inviteCode}` },
   { route: '/settings/account/', path: '/settings/account', admin: true },
   { route: '/settings/security/', path: '/settings/security', admin: true },
+  { route: '/settings/blocks/', path: '/settings/blocks', admin: true },
   { route: '/admin/registration/', path: '/admin/registration', admin: true },
   { route: '/post/$id/', path: '/post/<id>', target: seededPost },
   { route: '/post/$id/comments/$commentId', path: '/post/<id>/comments/<commentId>', target: seededPermalink },

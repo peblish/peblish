@@ -81,24 +81,11 @@
     gap: 6px 16px;
     margin-top: 12px;
   }
-  .post-own,
-  .post-mod {
+  .post-own {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
     gap: 8px 12px;
-  }
-  .post-mod label {
-    display: block;
-    font-weight: 600;
-  }
-  .post-mod textarea {
-    display: block;
-    width: 100%;
-    max-width: 480px;
-    margin: 4px 0 8px;
-    font: inherit;
-    box-sizing: border-box;
   }
   .post-error {
     margin: 8px 0 0;

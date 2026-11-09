@@ -66,7 +66,8 @@
     "landing.limitedBody": "Wait an hour, then open the link you were sent again.",
     "landing.someone": "the person who sent it",
     "landing.otherCode": "Enter a different code",
-    "landing.signIn": "Sign in"
+    "landing.signIn": "Sign in",
+    "admin.settingsLink": "Registration settings"
   },
   "de": {
     "admin.title": "Einladungen",
@@ -135,6 +136,7 @@
     "landing.limitedBody": "Warte eine Stunde und öffne dann den Link, den du bekommen hast, erneut.",
     "landing.someone": "die Person, die sie geschickt hat",
     "landing.otherCode": "Anderen Code eingeben",
-    "landing.signIn": "Anmelden"
+    "landing.signIn": "Anmelden",
+    "admin.settingsLink": "Registrierungseinstellungen"
   }
 }

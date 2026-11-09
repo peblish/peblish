@@ -50,6 +50,13 @@
       "when": 1794201670772,
       "tag": "0006_wave_2_fixes",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1794220905182,
+      "tag": "0007_wave_3_groundwork",
+      "breakpoints": true
     }
   ]
 }
