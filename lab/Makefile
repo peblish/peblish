@@ -68,13 +68,11 @@ seed:
 	@echo "Lab CA written to lab/data/lab-ca.crt"
 
 ## Run the scenarios: make interop [PEERS="lemmy piefed mbin"] [ONLY=F1,P1].
-# PieFed caps posts by accounts it first saw under 24 h ago (can_create_post, hard-coded), so the
-# runner ages PieFed's remote accounts before each scenario group (peers/piefed-db.ts); X1 is the exception.
+# Before each scenario group the runner works around two peer limits a lab run would hit: PieFed caps
+# posts by accounts it first saw under 24 h ago (peers/piefed-db.ts, X1 excepted), and Mbin rate-limits
+# bots and sends each activity id to an inbox once per 45 minutes (peers/mbin-cache.ts clears Valkey).
 interop:
 	@mkdir -p data/results
-	# Mbin sends one activity per id and inbox per 45 minutes (ApHttpClient::post), so a Follow after
-	# an unfollow in an earlier run would never leave. Valkey holds that cache and the API rate limits.
-	$(COMPOSE) exec -T mbin-valkey valkey-cli -a mbin --no-auth-warning flushall
 	$(COMPOSE) run --rm runner node src/run.ts $(PEERS) $(if $(ONLY),--only=$(ONLY),)
 
 # Puts the lab back from the ledger (data/results/ledger.jsonl): deletes what runs created, unfollows,

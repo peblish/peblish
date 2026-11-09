@@ -11,19 +11,20 @@ import { type Result, recorder, RESULTS_DIR, runId } from './lab.ts';
 import { ledger } from './ledger.ts';
 import { closeAll, localActorId, sql } from './peblish.ts';
 import { selectPeers } from './peers/index.ts';
+import { clearMbinCache } from './peers/mbin-cache.ts';
 import { backdatePiefedRemoteUsers } from './peers/piefed-db.ts';
 import { durability, type Phase } from './scenarios/durability.ts';
 import { groups } from './scenarios/index.ts';
 
 const args = process.argv.slice(2);
-/** PieFed is under test: no names selects every peer. */
-const usesPiefed = (names: readonly string[]) => names.length === 0 || names.includes('piefed');
 const only = args
   .find((a) => a.startsWith('--only='))
   ?.slice('--only='.length)
   .split(',');
 const slow = args.includes('--slow');
 const peerNames = args.filter((a) => !a.startsWith('--'));
+/** Whether a peer is under test: no names on the command line selects every peer. */
+const usesPeer = (peer: string) => peerNames.length === 0 || peerNames.includes(peer);
 const d1Phase = args.find((a) => a.startsWith('--d1='))?.slice('--d1='.length) as Phase | undefined;
 const groupArg = args.find((a) => a.startsWith('--group='))?.slice('--group='.length);
 
@@ -37,7 +38,9 @@ async function runGroup(name: string, phase?: Phase): Promise<number> {
     return { id, apId: row!.ap_id, handle: '!lab@peblish.lab.test', name: 'lab' };
   });
   const run = runId();
-  if (usesPiefed(peerNames)) await backdatePiefedRemoteUsers();
+  // Peer-side limits that a lab run would otherwise hit (see each module).
+  if (usesPeer('piefed')) await backdatePiefedRemoteUsers();
+  if (usesPeer('mbin')) await clearMbinCache();
   const ctx: Context = { rec, peers: selectPeers(peerNames), run, since: new Date(), sql: sql(), ledger: ledger(run), community, slow };
   try {
     await group.run(ctx);

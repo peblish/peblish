@@ -31,7 +31,7 @@ const FIXTURE_INBOX: Record<Fixture | (typeof UNREACHABLE)[number], string> = {
   slow: `${rogue.origin}/fixture/slow`,
 };
 
-type State = { inFlight: { title: string; apId: string }; queued?: { title: string; apId: string } };
+type State = { inFlight: { activity: string }; queued?: { title: string; apId: string } };
 const STATE = `${RESULTS_DIR}/d1-state.json`;
 
 export const SLOW_MS = 30_000;
@@ -135,10 +135,14 @@ export async function durability(ctx: Context, phase: Phase): Promise<void> {
     // A POST held open at the slow inbox when the Makefile kills the worker.
     await rogue.mode({ slowMs: SLOW_MS });
     const inFlight = await post(`D1 in flight ${ctx.run}`);
-    await waitFor('the slow inbox to hold the request open', async () =>
-      (await rogue.received()).some((x) => x.path === '/fixture/slow (started)' && JSON.stringify(x.body).includes(inFlight.apId)),
+    // The slow inbox gets more than one activity per post (the Announce of the Page and another); it holds
+    // whichever arrives first, so follow the activity id of the request it holds.
+    const held = await waitFor('the slow inbox to hold the request open', async () =>
+      (await rogue.received()).find((x) => x.path === '/fixture/slow (started)' && JSON.stringify(x.body).includes(inFlight.apId)),
     );
-    writeFileSync(STATE, `${JSON.stringify({ inFlight: { title: `D1 in flight ${ctx.run}`, apId: inFlight.apId } } satisfies State)}\n`);
+    const activity = (held.body as { id?: string }).id;
+    if (!activity) throw new Error('the held request has no activity id');
+    writeFileSync(STATE, `${JSON.stringify({ inFlight: { activity } } satisfies State)}\n`);
     console.log('READY for SIGKILL: one delivery in flight');
     return;
   }
@@ -168,7 +172,7 @@ export async function durability(ctx: Context, phase: Phase): Promise<void> {
           since: new Date(0), // the row was made in the `before` phase
           type: 'Announce',
           inbox: FIXTURE_INBOX.slow,
-          contains: state.inFlight.title,
+          activity: state.inFlight.activity,
         });
         return found?.state === 'delivered' && found;
       },

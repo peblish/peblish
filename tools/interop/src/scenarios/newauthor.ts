@@ -11,9 +11,10 @@ const POSTS = 6;
 /**
  * Measured on 2026-11-09 (Lemmy 0.19.21, PieFed 1.8.11, Mbin 1.11): Lemmy and Mbin list every post
  * from a new peblish author (software `peblish` is no obstacle); PieFed answers 200 to all six and
- * lists four. Which two it drops varies run to run, so the count is what is pinned.
+ * lists four or five. Which it drops varies run to run (its two workers race on the daily count), so a
+ * range is what is pinned.
  */
-const PINNED = { lemmy: POSTS, mbin: POSTS, piefed: 4 } as const;
+const PINNED = { lemmy: [POSTS, POSTS], mbin: [POSTS, POSTS], piefed: [4, 5] } as const;
 
 export const newAuthor: Group = {
   ids: ['X1'],
@@ -42,7 +43,8 @@ export const newAuthor: Group = {
           select state, last_status as status from deliveries where inbox_url like ${`${peer.origin}/%`} and body like ${pattern}`;
         const accepted = sent.filter((d) => d.state === 'delivered' && d.status === 200).length;
         const note = `${count} of ${POSTS} posts listed on ${peer.name}, ${accepted} of ${sent.length} deliveries answered 200`;
-        if (count !== PINNED[peer.name]) throw new Error(`${note}; expected ${PINNED[peer.name]} listed`);
+        const [least, most] = PINNED[peer.name];
+        if (count < least || count > most) throw new Error(`${note}; expected ${least} to ${most} listed`);
         return note;
       });
     }
