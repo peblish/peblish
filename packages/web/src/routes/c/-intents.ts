@@ -4,7 +4,7 @@ import { findCommunityId } from '@peblish/core/communities/read';
 import { followAs, unfollowAs } from '@peblish/core/follows/service';
 import { localHandles } from '@peblish/core/identity/handles';
 import { type } from 'arktype';
-import { ageGateCookie, forbidden, formSession, principalOf, readForm, safeRedirect, sameOrigin } from '../../server/auth.ts';
+import { ageGateCookie, ageGated, forbidden, formSession, principalOf, readForm, safeRedirect, sameOrigin } from '../../server/auth.ts';
 import { communityPath } from '../../shell/paths.ts';
 import { secureCookies } from './-gate.ts';
 import { reply, wantsJson } from './-reply.ts';
@@ -43,6 +43,9 @@ export async function communityPost(request: Request, handle: string): Promise<R
   if (intent === 'follow') return reply(request, cookies, await followAs(principal, communityId), back);
   if (intent === 'unfollow') return reply(request, cookies, await unfollowAs(principal, communityId), back);
 
+  // A browser that answered under 16 in the last 24 hours may not declare again until the
+  // sign-up gate's cookie runs out: the same answer as the under-16 one, and nothing is checked.
+  if (ageGated(request)) return reply(request, cookies, { ok: true }, back);
   const declared = await declareAgeAs(principal, { day: form.day ?? '', month: form.month ?? '', year: form.year ?? '' });
   // Under 16: nothing is saved and this browser may not try again for 24 hours (the sign-up gate's cookie).
   if (!declared.ok && declared.reason === 'age.under_16') return reply(request, [...cookies, await ageGateCookie()], { ok: true }, back);
