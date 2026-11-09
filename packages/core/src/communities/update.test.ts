@@ -7,6 +7,7 @@ import { actors, communityLanguages } from '../db/tables/actors.ts';
 import { communityModerators } from '../db/tables/moderation.ts';
 import { outbox } from '../db/tables/outbox.ts';
 import { writer } from '../db/write.ts';
+import { readModlog } from '../modlog/read.ts';
 import { truncateAll } from '../testing/db.ts';
 import { grantFor, outboxEvents, seedCommunityRemoval, seedModerator } from '../testing/seed-az.ts';
 import { person, remote, sampleCommunity, seedCommunityWorld } from '../testing/seed-f.ts';
@@ -159,6 +160,49 @@ describe('community.update', () => {
     expect(same?.same).toBe(true);
   });
 
+  test('logs each edit in the modlog under whoever made it, in the update transaction', async () => {
+    const { people, admin, community } = await setup();
+    await updateCommunityAs(person(people.member.id), community.id, { displayName: 'By the owner' });
+    await updateCommunityAs(person(people.moderator.id), community.id, { postingWarning: null });
+    await updateCommunityAs(admin, community.id, { rules: [] });
+    const edits = await readModlog({ communityId: community.id, action: 'community.update' }, { audience: 'public' });
+    expect(
+      edits.map(({ actorId, authority, communityApId, targetActorId, reason }) => ({
+        actorId,
+        authority,
+        communityApId,
+        targetActorId,
+        reason,
+      })),
+    ).toEqual([
+      {
+        actorId: people.admin.id,
+        authority: { kind: 'site-admin', actorId: people.admin.id },
+        communityApId: 'https://feddit.test/ap/c.news',
+        targetActorId: null,
+        reason: null,
+      },
+      {
+        actorId: people.moderator.id,
+        authority: { kind: 'local-role', actorId: people.moderator.id, role: 'moderator', communityId: community.id },
+        communityApId: 'https://feddit.test/ap/c.news',
+        targetActorId: null,
+        reason: null,
+      },
+      {
+        actorId: people.member.id,
+        authority: { kind: 'local-role', actorId: people.member.id, role: 'owner', communityId: community.id },
+        communityApId: 'https://feddit.test/ap/c.news',
+        targetActorId: null,
+        reason: null,
+      },
+    ]);
+    const [same] = await db().execute<{ same: boolean }>(
+      sql`select (select xmin::text from modlog where id = ${edits[0]!.id}) = (select xmin::text from actors where id = ${community.id}) as same`,
+    );
+    expect(same?.same).toBe(true);
+  });
+
   test('a moderator removed after authorize() is refused by the recheck, with nothing written', async () => {
     const { people, community } = await setup();
     const grant = await grantFor('community.update', person(people.moderator.id), { communityId: community.id });
@@ -167,6 +211,7 @@ describe('community.update', () => {
       new Refused('community.update', 'mod.moderator_required'),
     );
     expect((await row(community.id)).displayName).toBe('Local news');
+    expect(await readModlog({ communityId: community.id, action: 'community.update' }, { audience: 'staff' })).toEqual([]);
     expect(await outboxEvents()).toEqual([]);
   });
 
@@ -176,6 +221,7 @@ describe('community.update', () => {
       ok: false,
       reason: 'community.invalid',
     });
+    expect(await readModlog({ communityId: community.id, action: 'community.update' }, { audience: 'staff' })).toEqual([]);
     expect(await outboxEvents()).toEqual([]);
   });
 });
