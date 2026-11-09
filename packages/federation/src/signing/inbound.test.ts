@@ -16,7 +16,7 @@ const keyId = `${sender.id}#main-key`;
 
 /** A POST to our inbox signed with `privateKeyPem` as the sender's key. */
 async function signed(privateKeyPem: string, content = body) {
-  const headers = await signDelivery({ keyId, privateKeyPem }, inbox, content);
+  const headers = signDelivery({ keyId, privateKeyPem }, inbox, content);
   return new Request(inbox, { method: 'POST', headers, body: content });
 }
 const bytes = (text = body) => new TextEncoder().encode(text);
@@ -107,7 +107,7 @@ describe('verifying an inbox POST', () => {
       .values({ actorId: instanceActor!.id, keyId: 'https://fed-a.test/#main-key', algorithm: 'rsa', publicKeyPem: keys.publicKeyPem });
     const ours = new Request(inbox, {
       method: 'POST',
-      headers: await signDelivery({ keyId: 'https://fed-a.test/#main-key', privateKeyPem: keys.privateKeyPem }, inbox, body),
+      headers: signDelivery({ keyId: 'https://fed-a.test/#main-key', privateKeyPem: keys.privateKeyPem }, inbox, body),
       body,
     });
     expect(await verifyInboundSignature(ours, bytes(), { fetch: gone.fetch })).toEqual({ ok: false, reason: 'key_unknown' });

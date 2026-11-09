@@ -101,7 +101,7 @@ async function attempt(row: Claimed, fetch: Fetcher): Promise<Outcome> {
   if (!key) return { state: 'failed', status: null, error: 'the sender has no signing key', delayMs: 0 };
   let headers: Headers;
   try {
-    headers = await signDelivery(key, row.inboxUrl, row.body);
+    headers = signDelivery(key, row.inboxUrl, row.body);
   } catch (error) {
     // A key that will not load stays broken on every retry.
     return {

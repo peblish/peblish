@@ -31,7 +31,7 @@ function verdict(request: Request, content = body, pem = publicKey, now?: number
 
 describe('signing and verifying', () => {
   test('a delivery we sign verifies, and names its key', async () => {
-    const request = received(await signDelivery(signingKey, inbox, body));
+    const request = received(signDelivery(signingKey, inbox, body));
     expect(verdict(request)).toBe('ok');
     expect(parseSignature(request, bytes(body))).toMatchObject({ keyId });
   });
@@ -39,7 +39,7 @@ describe('signing and verifying', () => {
   test('a PKCS#1 private key (an imported actor) signs the same way', async () => {
     const old = pair(2048, 'pkcs1');
     expect(old.privateKey).toContain('BEGIN RSA PRIVATE KEY');
-    const request = received(await signDelivery({ keyId, privateKeyPem: old.privateKey }, inbox, body));
+    const request = received(signDelivery({ keyId, privateKeyPem: old.privateKey }, inbox, body));
     expect(verdict(request, body, old.publicKey)).toBe('ok');
   });
 
@@ -61,7 +61,7 @@ describe('signing and verifying', () => {
   });
 
   test('Fedify verifies what we send, with a loader that serves the actor and its key', async () => {
-    const request = received(await signDelivery(signingKey, inbox, body));
+    const request = received(signDelivery(signingKey, inbox, body));
     const result = await verifyRequestDetailed(request, {
       documentLoader: async (url) => ({
         contextUrl: null,
@@ -78,8 +78,22 @@ describe('signing and verifying', () => {
     expect(result.verified).toBe(true);
   });
 
+  test('the signature covers the complete request target, query string included, and six headers', () => {
+    const target = 'https://receiver.test/inbox?shard=2&tag=a%20b';
+    const headers = signDelivery(signingKey, target, body);
+    expect(headers.get('signature')).toContain('headers="(request-target) accept content-type date digest host"');
+    const request = received(headers, body, target);
+    expect(verdict(request)).toBe('ok');
+    expect(parseSignature(request, bytes(body))).toMatchObject({
+      signingString: expect.stringContaining('(request-target): post /inbox?shard=2&tag=a%20b\n'),
+    });
+    // The same headers do not vouch for the inbox without its query, or with another one.
+    expect(verdict(received(headers, body, 'https://receiver.test/inbox'))).toBe('invalid');
+    expect(verdict(received(headers, body, 'https://receiver.test/inbox?shard=3&tag=a%20b'))).toBe('invalid');
+  });
+
   test('every way a request can fail names its reason', async () => {
-    const good = await signDelivery(signingKey, inbox, body);
+    const good = signDelivery(signingKey, inbox, body);
     const without = (name: string) => {
       const headers = new Headers(good);
       headers.delete(name);
@@ -92,7 +106,7 @@ describe('signing and verifying', () => {
     };
     const other = pair(2048);
     const small = pair(1024);
-    const smallSigned = await signDelivery({ keyId, privateKeyPem: small.privateKey }, inbox, body);
+    const smallSigned = signDelivery({ keyId, privateKeyPem: small.privateKey }, inbox, body);
     const table: [string, 'ok' | SignatureFailure][] = [
       ['no signature header', verdict(received(without('signature')))],
       ['a body changed in transit', verdict(received(good, `${body} `), `${body} `)],
