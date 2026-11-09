@@ -51,6 +51,7 @@ const seededCommunity = (suffix = '') => {
   });
   return `/c/${(JSON.parse(out) as { communities: { open: { handle: string } } }).communities.open.handle}${suffix}`;
 };
+
 /** The report form and its receipt need a report the payload admin filed: lane REP's seed (testing/seed-rep.ts) makes one. */
 const seededReport = async (base: string) => {
   const { admin } = await fixtures(base);
@@ -107,6 +108,7 @@ export const routes: readonly PayloadRoute[] = [
   { route: '/admin/pages/', path: '/admin/pages', admin: true },
   { route: '/admin/pages/$slug/$language', path: '/admin/pages/<slug>/<language>', target: () => '/admin/pages/rules/en', admin: true },
   { route: '/$slug', path: '/about', target: () => '/about' },
+  { route: '/admin/media/', path: '/admin/media', admin: true },
   { route: '/post/$id/', path: '/post/<id>', target: seededPost },
   { route: '/post/$id/comments/$commentId', path: '/post/<id>/comments/<commentId>', target: seededPermalink },
   // Signed out, /submit is a redirect to sign-in, so this entry measures the sign-in page it lands on
@@ -141,6 +143,7 @@ export const notPages: Readonly<Record<string, string>> = {
   '/post/$id/comments/': 'the POST endpoint of the comment forms; a GET redirects to the post page',
   '/media/proxy/$signature/$target': 'an image endpoint, not a page',
   '/modlog/act': 'the POST endpoint of the moderator forms; it answers with a redirect or JSON',
+  '/media/$id': 'an uploaded image endpoint, not a page',
 };
 
 /** File routes that are neither budgeted nor listed as having no payload. */

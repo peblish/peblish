@@ -1,0 +1,286 @@
+import { eq } from 'drizzle-orm';
+import { beforeEach, expect, test } from 'vitest';
+import { db } from '../db/read.ts';
+import { localInstance } from '../db/local-instance.ts';
+import { media } from '../db/tables/media.ts';
+import { posts } from '../db/tables/content.ts';
+import { modlog } from '../db/tables/moderation.ts';
+import { deletionLedger } from '../db/tables/site.ts';
+import { writer } from '../db/write.ts';
+import { mediaEvidence, mediaEvidenceLog } from '../evidence/tables.ts';
+import { purgePass } from '../evidence/purge.ts';
+import { memoryStore } from '../storage/memory.ts';
+import { truncateAll } from '../testing/db.ts';
+import { seedLocalInstance } from '../testing/seed-a.ts';
+import { admin, outboxEvents, seedAdmin, seedPost } from '../testing/seed-az.ts';
+import { seedMedia, sha256Of } from '../testing/seed-safe.ts';
+import { seedActor, localUser } from '../testing/seed.ts';
+import { scanConfig } from './config.ts';
+import { addToBlocklist, removeFromBlocklist } from './list.ts';
+import { confirmQuarantined, holdQuarantined, releaseQuarantined } from './review.ts';
+import { findServable } from './serve.ts';
+import { scanUpload } from './scan.ts';
+import { mediaBlocklist } from './tables.ts';
+import { mediaUrl } from './usage.ts';
+
+const store = memoryStore();
+const local = { config: scanConfig({ MEDIASCAN_LOCAL_ONLY: '1' }), store };
+const day = 86_400_000;
+
+let instance: { id: string; domain: string; local: boolean; origin: string };
+let adminId: string;
+let uploaderId: string;
+beforeEach(async () => {
+  await truncateAll();
+  await seedLocalInstance();
+  const row = await localInstance(db());
+  instance = { ...row, domain: new URL(row.origin).host, local: true };
+  adminId = (await seedAdmin(instance, 'reviewer')).id;
+  uploaderId = (await seedActor(instance, 'Person', 'uploader')).id;
+});
+
+const asAdmin = () => admin(adminId);
+const rowOf = async (id: string) => (await db().select().from(media).where(eq(media.id, id)))[0]!;
+const evidenceOf = async (id: string) => (await db().select().from(mediaEvidence).where(eq(mediaEvidence.mediaId, id)))[0]!;
+const logOf = async (evidenceId: string) =>
+  (await db().select().from(mediaEvidenceLog).where(eq(mediaEvidenceLog.evidenceId, evidenceId))).map((l) => l.event);
+
+/** A real quarantine: an upload whose hash is on the list, scanned by the inline path. */
+async function quarantined() {
+  const row = await seedMedia(store, { ownerId: uploaderId });
+  await writer().insert(mediaBlocklist).values({ kind: 'sha256', value: row.sha256!, category: 'csam' }).onConflictDoNothing();
+  expect(await scanUpload(row.id, local)).toBe('quarantined');
+  return row;
+}
+
+test('only a signed-in admin may review: a member, and an admin without two-factor (a session of role user), are refused', async () => {
+  const row = await quarantined();
+  const member = localUser(uploaderId);
+  for (const attempt of [
+    confirmQuarantined(member, { mediaId: row.id, removePosts: true }, { store }),
+    releaseQuarantined(member, { mediaId: row.id }),
+    holdQuarantined(member, { mediaId: row.id, reference: 'AFP-1', until: new Date(Date.now() + day) }),
+    addToBlocklist(member, { value: 'a'.repeat(64), category: 'spam' }),
+    removeFromBlocklist(member, row.id),
+    confirmQuarantined({ kind: 'anonymous' }, { mediaId: row.id, removePosts: false }),
+  ])
+    expect(await attempt).toEqual({ ok: false, reason: expect.stringMatching(/^auth\.(admin_required|required)$/) });
+  expect((await rowOf(row.id)).scanState).toBe('quarantined');
+  expect(await confirmQuarantined(asAdmin(), { mediaId: '0190a000-0000-7000-8000-000000000000', removePosts: false })).toEqual({
+    ok: false,
+    reason: 'target.not_found',
+  });
+});
+
+test('confirm blocks the image, lists its hash, writes the ledger and log, removes its posts, and leaves no bytes', async () => {
+  const row = await quarantined();
+  const community = await seedActor(instance, 'Group', 'pics');
+  const author = await seedActor(instance, 'Person', 'poster');
+  const using = await seedPost(instance, community, author, { url: mediaUrl(instance.origin, row.id) });
+  const other = await seedPost(instance, community, author, { url: 'https://example.com/x.png' });
+  const before = (await outboxEvents()).length;
+
+  const result = await confirmQuarantined(
+    asAdmin(),
+    { mediaId: row.id, removePosts: true, note: 'confirmed by eye on the manifest' },
+    { store },
+  );
+  expect(result).toEqual({ ok: true, removedPosts: 1, refusedPosts: 0 });
+
+  expect(await rowOf(row.id)).toMatchObject({ scanState: 'blocked', storageKey: null });
+  expect((await rowOf(row.id)).deletedAt).not.toBeNull();
+  expect(store.objects.has(row.storageKey!)).toBe(false);
+  expect(await findServable(row.id, { withBody: true, store })).toBeNull();
+  const evidence = await evidenceOf(row.id);
+  expect(evidence).toMatchObject({ status: 'confirmed', decidedBy: adminId, note: 'confirmed by eye on the manifest' });
+  // Retention: the decision plus 24 months.
+  expect(Math.round((evidence.retainUntil!.getTime() - evidence.decidedAt!.getTime()) / day)).toBeGreaterThanOrEqual(730);
+  expect(await logOf(evidence.id)).toEqual(['quarantined', 'confirmed']);
+  expect((await db().select().from(mediaBlocklist).where(eq(mediaBlocklist.value, row.sha256!)))[0]).toMatchObject({ category: 'csam' });
+  expect((await db().select().from(deletionLedger)).map((l) => [l.subjectKind, l.subjectId, l.reason, l.requestedBy])).toEqual([
+    ['media', row.id, 'media.blocked', adminId],
+  ]);
+  expect([
+    (await db().select().from(posts).where(eq(posts.id, using.id)))[0]?.removedAt === null,
+    (await db().select().from(posts).where(eq(posts.id, other.id)))[0]?.removedAt === null,
+  ]).toEqual([false, true]);
+  // Private modlog rows only: the removal and the decision are not public.
+  expect((await db().select().from(modlog).orderBy(modlog.id)).map((m) => [m.action, m.public])).toEqual([
+    ['media.review', false],
+    ['mod.remove', false],
+  ]);
+  expect((await outboxEvents()).slice(before).map((e) => (e as { type: string }).type)).toEqual([
+    'media.reviewed',
+    'media.purged',
+    'mod.remove',
+  ]);
+});
+
+test('a second decision on the same image is refused', async () => {
+  const row = await quarantined();
+  expect((await confirmQuarantined(asAdmin(), { mediaId: row.id, removePosts: false }, { store })).ok).toBe(true);
+  for (const second of [
+    confirmQuarantined(asAdmin(), { mediaId: row.id, removePosts: false }),
+    releaseQuarantined(asAdmin(), { mediaId: row.id }),
+  ])
+    expect(await second).toEqual({ ok: false, reason: 'media.not_quarantined' });
+  const clean = await seedMedia(store, { state: 'clean' });
+  const pending = await seedMedia(store, { state: 'pending' });
+  for (const other of [clean, pending])
+    expect(await confirmQuarantined(asAdmin(), { mediaId: other.id, removePosts: false })).toEqual({
+      ok: false,
+      reason: 'media.not_quarantined',
+    });
+});
+
+test('release returns a false positive to clean and it is served again', async () => {
+  const row = await quarantined();
+  expect(await findServable(row.id, { withBody: true, store })).toBeNull();
+  expect(await releaseQuarantined(asAdmin(), { mediaId: row.id, note: 'a holiday photo' })).toMatchObject({ ok: true });
+  expect((await rowOf(row.id)).scanState).toBe('clean');
+  expect(await findServable(row.id, { withBody: true, store })).not.toBeNull();
+  expect(await evidenceOf(row.id)).toMatchObject({ status: 'released', decidedBy: adminId, note: 'a holiday photo' });
+  expect(await logOf((await evidenceOf(row.id)).id)).toEqual(['quarantined', 'released']);
+});
+
+test('a hold keeps the bytes through confirmation and the undecided expiry, and ends with its date', async () => {
+  const now = new Date();
+  const held = await quarantined();
+  const plain = await quarantined();
+  // Refusals: no reference, a date in the past.
+  for (const bad of [
+    { reference: '  ', until: new Date(now.getTime() + day) },
+    { reference: 'AFP-9', until: new Date(now.getTime() - day) },
+  ])
+    expect(await holdQuarantined(asAdmin(), { mediaId: held.id, ...bad })).toEqual({ ok: false, reason: 'media.hold_invalid' });
+  const until = new Date(now.getTime() + 365 * day);
+  expect(await holdQuarantined(asAdmin(), { mediaId: held.id, reference: 'AFP-2026-114', until })).toMatchObject({ ok: true });
+  expect(await evidenceOf(held.id)).toMatchObject({ holdReference: 'AFP-2026-114', holdUntil: until });
+
+  // Eight days on, the undecided window (7 days) has ended for both; only the held one is spared.
+  const eightDays = new Date(now.getTime() + 8 * day);
+  const run = await purgePass({ store, now: eightDays, days: 7 });
+  expect(run).toMatchObject({ expired: 1, purged: 1 });
+  expect((await rowOf(held.id)).scanState).toBe('quarantined');
+  expect(store.objects.has(held.storageKey!)).toBe(true);
+  expect([(await rowOf(plain.id)).scanState, (await rowOf(plain.id)).storageKey]).toEqual(['blocked', null]);
+
+  // An admin confirms the held one: blocked, but the bytes stay while the hold stands.
+  expect((await confirmQuarantined(asAdmin(), { mediaId: held.id, removePosts: false }, { store, now: eightDays })).ok).toBe(true);
+  await purgePass({ store, now: eightDays, days: 7 });
+  expect([(await rowOf(held.id)).scanState, store.objects.has(held.storageKey!)]).toEqual(['blocked', true]);
+  // The manifest outlives the 24 months by the hold, and a purge after the date takes the bytes.
+  expect((await evidenceOf(held.id)).retainUntil!.getTime()).toBeGreaterThanOrEqual(until.getTime());
+  await purgePass({ store, now: new Date(until.getTime() + day), days: 7 });
+  expect([(await rowOf(held.id)).storageKey, store.objects.has(held.storageKey!)]).toEqual([null, false]);
+});
+
+test('a hold on a released image, or on bytes already purged, is refused as already decided', async () => {
+  const until = new Date(Date.now() + 30 * day);
+  const released = await quarantined();
+  await releaseQuarantined(asAdmin(), { mediaId: released.id });
+  expect(await holdQuarantined(asAdmin(), { mediaId: released.id, reference: 'R', until })).toEqual({
+    ok: false,
+    reason: 'media.not_quarantined',
+  });
+  const purged = await quarantined();
+  await confirmQuarantined(asAdmin(), { mediaId: purged.id, removePosts: false }, { store });
+  expect(await holdQuarantined(asAdmin(), { mediaId: purged.id, reference: 'R', until })).toEqual({
+    ok: false,
+    reason: 'media.already_decided',
+  });
+  const clean = await seedMedia(store, { state: 'clean' });
+  expect(await holdQuarantined(asAdmin(), { mediaId: clean.id, reference: 'R', until })).toEqual({
+    ok: false,
+    reason: 'media.not_quarantined',
+  });
+});
+
+test('an undecided quarantine ends after the window with no admin named, and not before', async () => {
+  const row = await quarantined();
+  const now = new Date();
+  await purgePass({ store, now: new Date(now.getTime() + 6 * day), days: 7 });
+  expect((await rowOf(row.id)).scanState).toBe('quarantined');
+  await purgePass({ store, now: new Date(now.getTime() + 8 * day), days: 7 });
+  expect([(await rowOf(row.id)).scanState, (await rowOf(row.id)).storageKey]).toEqual(['blocked', null]);
+  expect(await evidenceOf(row.id)).toMatchObject({ status: 'confirmed', decidedBy: null });
+  expect(await logOf((await evidenceOf(row.id)).id)).toEqual(['quarantined', 'expired']);
+  expect((await db().select().from(deletionLedger)).map((l) => [l.subjectId, l.requestedBy])).toEqual([[row.id, null]]);
+  expect((await outboxEvents()).map((e) => (e as { type: string }).type)).toEqual(['media.quarantined', 'media.scanned', 'media.purged']);
+});
+
+test('manifests are deleted after their retention, a hold postpones that, and the log keeps a line', async () => {
+  const row = await quarantined();
+  await confirmQuarantined(asAdmin(), { mediaId: row.id, removePosts: false }, { store });
+  const evidence = await evidenceOf(row.id);
+  const justBefore = new Date(evidence.retainUntil!.getTime() - day);
+  expect((await purgePass({ store, now: justBefore, days: 7 })).manifests).toBe(0);
+  const after = new Date(evidence.retainUntil!.getTime() + day);
+  expect((await purgePass({ store, now: after, days: 7 })).manifests).toBe(1);
+  expect(await db().select().from(mediaEvidence)).toEqual([]);
+  expect((await db().select().from(mediaEvidenceLog).where(eq(mediaEvidenceLog.evidenceId, evidence.id))).map((l) => l.event)).toEqual([
+    'quarantined',
+    'confirmed',
+    'manifest_expired',
+  ]);
+});
+
+test('failed images lose their bytes in the purge pass', async () => {
+  const failed = await seedMedia(store, { state: 'failed' });
+  expect((await purgePass({ store })).purged).toBe(1);
+  expect([(await rowOf(failed.id)).storageKey, store.objects.has(failed.storageKey!)]).toEqual([null, false]);
+  expect((await outboxEvents()).at(-1)).toEqual({ type: 'media.purged', v: 1, mediaId: failed.id, cause: 'failed' });
+});
+
+test('adding a hash quarantines the clean copies, each with evidence; bad and repeated hashes are refused; removal leaves decided images alone', async () => {
+  const a = await seedMedia(store, { state: 'clean', bytes: Buffer.from('same'), ownerId: uploaderId });
+  const b = await seedMedia(store, { state: 'clean', bytes: Buffer.from('same'), ownerId: uploaderId });
+  const pending = await seedMedia(store, { state: 'pending', bytes: Buffer.from('same') });
+  const deleted = await seedMedia(store, { state: 'clean', bytes: Buffer.from('same'), deleted: true });
+  const different = await seedMedia(store, { state: 'clean', bytes: Buffer.from('other') });
+  const value = sha256Of(Buffer.from('same'));
+
+  for (const bad of ['', 'xyz', 'a'.repeat(63), 'g'.repeat(64)])
+    expect(await addToBlocklist(asAdmin(), { value: bad, category: 'spam' })).toEqual({ ok: false, reason: 'media.hash_invalid' });
+  const added = await addToBlocklist(asAdmin(), { value: value.toUpperCase(), category: 'violent', reason: 'a known shock image' });
+  expect(added).toMatchObject({ ok: true, quarantined: 2 });
+  expect(await addToBlocklist(asAdmin(), { value, category: 'spam' })).toEqual({ ok: false, reason: 'media.hash_exists' });
+  expect((await db().select().from(mediaBlocklist))[0]).toMatchObject({
+    value,
+    category: 'violent',
+    reason: 'a known shock image',
+    addedBy: adminId,
+  });
+
+  expect([a, b, pending, deleted, different].map((m) => m.id)).toHaveLength(5);
+  expect(await Promise.all([a, b, pending, deleted, different].map(async (m) => (await rowOf(m.id)).scanState))).toEqual([
+    'quarantined',
+    'quarantined',
+    'pending',
+    'clean',
+    'clean',
+  ]);
+  expect((await db().select().from(mediaEvidence)).map((e) => [e.source, e.classification])).toEqual([
+    ['list', 'violent'],
+    ['list', 'violent'],
+  ]);
+  expect(await findServable(a.id, { withBody: true, store })).toBeNull();
+  // The pending copy meets the list when it is scanned.
+  expect(await scanUpload(pending.id, local)).toBe('quarantined');
+
+  if (!added.ok) throw new Error('unreachable');
+  expect(await removeFromBlocklist(asAdmin(), added.entryId)).toMatchObject({ ok: true });
+  expect(await removeFromBlocklist(asAdmin(), added.entryId)).toEqual({ ok: false, reason: 'target.not_found' });
+  expect(await db().select().from(mediaBlocklist)).toEqual([]);
+  expect((await rowOf(a.id)).scanState).toBe('quarantined');
+});
+
+test('a released image caught by a later list entry is quarantined again on the same evidence row', async () => {
+  const row = await quarantined();
+  await releaseQuarantined(asAdmin(), { mediaId: row.id });
+  const [entry] = await db().select().from(mediaBlocklist);
+  await removeFromBlocklist(asAdmin(), entry!.id);
+  expect(await addToBlocklist(asAdmin(), { value: row.sha256!, category: 'other' })).toMatchObject({ ok: true, quarantined: 1 });
+  expect(await evidenceOf(row.id)).toMatchObject({ status: 'open', classification: 'other', decidedBy: null });
+  expect(await logOf((await evidenceOf(row.id)).id)).toEqual(['quarantined', 'released', 'requarantined']);
+});
