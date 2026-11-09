@@ -56,6 +56,8 @@ export type ResolveOptions = {
 };
 
 export const actorMaxAgeMs = 24 * 60 * 60 * 1000;
+/** An actor document may have moved: this many redirects are followed to it (each hop checked again). */
+const actorRedirects = 3;
 
 function failure(error: FetchFailure): ActorResolveError {
   const transient =
@@ -115,7 +117,7 @@ function isTombstone(json: unknown): json is { id?: unknown } {
 }
 
 async function fetchAndStore(apId: string, fetch: Fetcher): Promise<string> {
-  const { json, url } = await fetchActivity(apId, fetch).catch((error: unknown) => {
+  const { json, url } = await fetchActivity(apId, fetch, { maxRedirects: actorRedirects }).catch((error: unknown) => {
     throw error instanceof FetchFailure ? failure(error) : error;
   });
   // Some servers answer a deleted account with a 200 Tombstone instead of a 410. It counts as a

@@ -24,7 +24,8 @@ export class FetchFailure extends Error {
   }
 }
 
-const documentLimits = { schemes: ['https:'] as const, maxRedirects: 3, maxBytes: 512 * 1024, timeoutMs: 10_000 };
+const documentLimits = { schemes: ['https:'] as const, maxBytes: 512 * 1024, timeoutMs: 10_000 };
+const redirectStatuses: ReadonlySet<number> = new Set([301, 302, 303, 307, 308]);
 
 /** The signature headers for a GET of `url`, or none when the instance has no key to sign with or it will not load. */
 async function signatures(url: string): Promise<Headers> {
@@ -40,32 +41,55 @@ async function signatures(url: string): Promise<Headers> {
 
 export const activityAccept = 'application/activity+json, application/ld+json; profile="https://www.w3.org/ns/activitystreams"';
 
-/** An ActivityPub object or actor document: fetched with `Accept: application/activity+json`, signed as the instance. */
-export const fetchActivity = (url: string, fetch: Fetcher) => fetchJson(url, fetch, activityAccept, { signed: true });
+/** A document read from a peer: `url` is where it finally came from and `hops` the redirects followed to get there. */
+export type FetchedDocument = { json: unknown; url: string; hops: number };
 
 /**
- * GETs `url` and parses the JSON body. Redirects are followed (each hop checked again) up to
- * three; `url` in the result is where the document finally came from, which is what its id
- * must live under. With `signed` the request carries the instance's HTTP signature, for peers
- * that only answer authenticated fetches (a redirected hop goes out unsigned: safeFetch drops
- * the signature, which vouches for one request).
+ * An ActivityPub object or actor document: fetched with `Accept: application/activity+json`,
+ * signed as the instance. No redirect is followed unless the caller allows some: an actor
+ * document may move (the caller passes 3), a collection or an object is where its id says.
+ */
+export const fetchActivity = (url: string, fetch: Fetcher, { maxRedirects = 0 }: { maxRedirects?: number } = {}) =>
+  fetchJson(url, fetch, activityAccept, { signed: true, maxRedirects });
+
+/**
+ * GETs `url` and parses the JSON body. Up to `maxRedirects` redirects are followed here, one
+ * request each through `fetch` (so every hop is resolved and checked again by safeFetch, and a
+ * caller that counts requests counts them), and `hops` says how many were followed; `url` in the
+ * result is where the document finally came from, which is what its id must live under. With
+ * `signed` the first request carries the instance's HTTP signature, for peers that only answer
+ * authenticated fetches; a redirected hop goes out unsigned, as the signature vouches for one
+ * request. The whole read has one deadline. WebFinger and NodeInfo keep three redirects.
  */
 export async function fetchJson(
   url: string,
   fetch: Fetcher,
   accept = activityAccept,
-  { signed = false }: { signed?: boolean } = {},
-): Promise<{ json: unknown; url: string }> {
+  { signed = false, maxRedirects = 3 }: { signed?: boolean; maxRedirects?: number } = {},
+): Promise<FetchedDocument> {
+  const deadline = Date.now() + documentLimits.timeoutMs;
+  let target = url;
+  let hops = 0;
   let response: SafeResponse;
-  try {
-    const headers = new Headers({ accept, 'user-agent': await userAgent() });
-    if (signed) {
-      for (const [name, value] of await signatures(url)) headers.set(name, value);
+  for (;;) {
+    try {
+      const headers = new Headers({ accept, 'user-agent': await userAgent() });
+      if (signed && hops === 0) {
+        for (const [name, value] of await signatures(target)) headers.set(name, value);
+      }
+      response = await fetch(target, { ...documentLimits, maxRedirects: 0, timeoutMs: Math.max(1, deadline - Date.now()), headers });
+    } catch (error) {
+      if (error instanceof BlockedDestinationError) throw new FetchFailure('blocked', error.message);
+      throw new FetchFailure('unreachable', error instanceof Error ? error.message : String(error));
     }
-    response = await fetch(url, { ...documentLimits, headers });
-  } catch (error) {
-    if (error instanceof BlockedDestinationError) throw new FetchFailure('blocked', error.message);
-    throw new FetchFailure('unreachable', error instanceof Error ? error.message : String(error));
+    const location = response.headers.get('location');
+    if (!redirectStatuses.has(response.status) || location === null || hops >= maxRedirects) break;
+    try {
+      target = new URL(location, response.url).href;
+    } catch {
+      throw new FetchFailure('status', `${response.url} redirected to something that is not a URL`, response.status);
+    }
+    hops++;
   }
   if (response.status === 404) throw new FetchFailure('not_found', `${url} answered 404`, 404);
   if (response.status === 410) throw new FetchFailure('gone', `${url} answered 410`, 410);
@@ -75,7 +99,7 @@ export async function fetchJson(
   const type = response.headers.get('content-type') ?? '';
   if (!/json/i.test(type)) throw new FetchFailure('not_json', `${url} answered ${type || 'no content type'}`);
   try {
-    return { json: JSON.parse(new TextDecoder().decode(response.body)), url: response.url };
+    return { json: JSON.parse(new TextDecoder().decode(response.body)), url: response.url, hops };
   } catch {
     throw new FetchFailure('not_json', `${url} is not JSON`);
   }
