@@ -1,8 +1,10 @@
 import type { Uuid } from '@peblish/schema/ids';
-import { and, asc, eq, isNull } from 'drizzle-orm';
+import { and, asc, eq, isNull, sql } from 'drizzle-orm';
 import { db } from '../db/read.ts';
 import { actors } from '../db/tables/actors.ts';
 import { follows } from '../db/tables/follows.ts';
+import { instances } from '../db/tables/instances.ts';
+import { communityRemovals } from '../moderation/tables.ts';
 
 // Owned by lane FED-A. What the UI asks about follows: is this one pending, and what do I follow.
 
@@ -18,27 +20,51 @@ export async function followState(actorId: Uuid, communityId: Uuid): Promise<Fol
 }
 
 export type FollowedCommunity = {
+  id: Uuid;
+  /** Same as `id`; the sidebar and the composer's picker read it under this name until they move to `id`. */
   communityId: Uuid;
   apId: string;
   name: string;
   displayName: string | null;
+  /** The community's server, lowercase, with the port when it is not the default: the handle's host. */
+  host: string;
   local: boolean;
   state: 'pending' | 'accepted';
+  postingRestrictedToMods: boolean;
+  /** Age-gated (NSFW): a viewer who has not declared 16+ is not offered it. */
+  sensitive: boolean;
+  nsfl: boolean;
 };
 
-/** The communities `actorId` follows, pending ones included, by name; for the sidebar. Deleted communities are left out. */
+/**
+ * The communities `actorId` follows, pending ones included, by name; for the sidebar and the
+ * composer's picker. Deleted and removed communities are left out.
+ */
 export async function followedCommunities(actorId: Uuid): Promise<FollowedCommunity[]> {
-  return db()
+  const rows = await db()
     .select({
-      communityId: actors.id,
+      id: actors.id,
       apId: actors.apId,
       name: actors.name,
       displayName: actors.displayName,
+      host: instances.domain,
       local: actors.local,
       state: follows.state,
+      postingRestrictedToMods: actors.postingRestrictedToMods,
+      sensitive: actors.sensitive,
+      nsfl: actors.nsfl,
     })
     .from(follows)
     .innerJoin(actors, eq(actors.id, follows.followeeId))
-    .where(and(eq(follows.followerId, actorId), eq(actors.kind, 'Group'), isNull(actors.deletedAt)))
+    .innerJoin(instances, eq(instances.id, actors.instanceId))
+    .where(
+      and(
+        eq(follows.followerId, actorId),
+        eq(actors.kind, 'Group'),
+        isNull(actors.deletedAt),
+        sql`not exists (select 1 from ${communityRemovals} where ${communityRemovals.communityId} = ${actors.id})`,
+      ),
+    )
     .orderBy(asc(actors.name));
+  return rows.map((row) => ({ ...row, communityId: row.id }));
 }
