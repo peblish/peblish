@@ -15,16 +15,11 @@ import { keyQueries, readFeed, type FeedRequest } from './read.ts';
 //
 // Opt-in, because it seeds 100,000 rows and a timing is not a check for a shared CI machine:
 //   PEBLISH_FEED_PERF=1 [FEED_PERF_PLANS=<file>] pnpm exec vitest run --project core packages/core/src/feeds/perf.test.ts
-// The indexes below are the ones lane C1 asks root to add to `posts` and `actors` (LANE-NOTES);
-// the test creates them in the test database when the migrations do not have them yet.
+// The indexes are the migrations' own (`posts_score`, `actors_gated` in 0005): the database is
+// migrated like production's, and the plan check below fails if a sort or a gate loses its index.
 
 const runs = 20;
 const budgetMs = 50;
-
-const indexes = [
-  'create index if not exists posts_score on posts (((upvotes - downvotes)) desc nulls last, id desc nulls last)',
-  'create index if not exists actors_gated on actors (id) where sensitive or nsfl',
-];
 
 type Viewer = { actorId: string; siteRole: 'user' } | null;
 type Case = { who: string; viewer: Viewer; feed: FeedName };
@@ -45,7 +40,6 @@ describe.skipIf(!process.env.PEBLISH_FEED_PERF)('feed performance', () => {
   beforeAll(async () => {
     const local = await seedInstance('feddit.test');
     const { heavy, sparse, moderator } = await seedBulk({ local });
-    for (const statement of indexes) await writer().execute(sql.raw(statement));
     await writer().execute(sql`analyze`);
     const user = (person: { id: string }): Viewer => ({ actorId: person.id, siteRole: 'user' });
     cases.push(

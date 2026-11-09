@@ -105,9 +105,13 @@ test.describe('anyone', () => {
     const text = await html(page, '/all?sort=top');
     expect(text).not.toContain(`Sensitive ${seed.suffix}`);
     expect(text).toContain(`Picture ${seed.suffix}`);
-    // The card shows the link's domain as text, but the picture's URL is never in the page.
+    // The card shows the link's domain as text, but the picture's URL (the thumbnail's and the image post's own link) is never in the page.
     expect(text).not.toContain(`images.example.test/${seed.suffix}.png`);
     expect(text).not.toMatch(/<img[^>]*images\.example\.test/);
+    // Cutting the address to its host keeps what the card draws from it: the image mark and the domain.
+    const card = page.locator('.feed-list article', { hasText: `Picture ${seed.suffix}` });
+    await expect(card).toHaveAttribute('data-kind', 'image');
+    await expect(card.locator('.pb-post__domain')).toHaveText('(images.example.test)');
   });
 });
 

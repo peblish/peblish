@@ -189,11 +189,12 @@ async function e2e() {
   posts.other = await make(community.other, `Other ${suffix}`, 20_000, { up: 3 });
   posts.sensitive = await make(community.adult, `Sensitive ${suffix}`, 10_000, { up: 500, sensitive: true });
   posts.zero = await make(community.other, `Unloved ${suffix}`, 5_000);
-  // The newest and the best-scored post: first in every sort of the followed feed. Its picture is on a remote host.
+  // The newest and the best-scored post: first in every sort of the followed feed. It is an image post whose picture is on a remote host.
   posts.thumb = await make(community.remote, `Picture ${suffix}`, 1_000, {
     up: 600,
     thumbnailUrl: `https://images.example.test/${suffix}.png`,
-    url: `https://images.example.test/${suffix}.html`,
+    url: `https://images.example.test/${suffix}.png`,
+    urlContentType: 'image/png',
   });
   return {
     password: PASSWORD,
