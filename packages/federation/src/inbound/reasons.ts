@@ -16,6 +16,8 @@ export const inboundReasons = {
   'object.exists': 'The object is already stored here (a redelivered Create).',
   'object.unsupported': 'The object type is not one peblish stores.',
   'community.mismatch': 'The activity claims a community other than the one its target belongs to.',
+  'parent.mismatch': 'The comment replies to something other than what the stored comment replies to.',
+  'community.delete_unsupported': 'A Delete of a whole community counts only from that community itself.',
   'community.unannounced': 'Content in a remote community counts only when that community announces it.',
   'announce.person': 'An Announce by a person is a boost, not a community’s relay, and is ignored.',
   'announce.bare_iri': 'An Announce of a bare IRI is not read yet (a boost, or a Mastodon share).',
