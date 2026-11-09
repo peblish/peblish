@@ -219,7 +219,7 @@ async function object(mediaId: string) {
 }
 
 /** The remote_media.enabled switch is lane ADM's to write in the product; the pause-switch check flips the row directly. */
-async function remoteMedia(on: boolean) {
+export async function remoteMedia(on: boolean) {
   await writer()
     .insert(siteSettings)
     .values({ key: 'remote_media.enabled', value: on })

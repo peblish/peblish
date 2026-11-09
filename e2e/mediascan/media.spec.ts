@@ -2,6 +2,8 @@ import { execFileSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { join } from 'node:path';
 import { expect, test } from '@playwright/test';
+import { closePools } from '../../packages/core/src/db/pools.ts';
+import { remoteMedia } from '../../packages/core/src/testing/seed-safe.ts';
 import { expectAccessible, freshTotp, landed, signIn } from '../auth/support.ts';
 import { gotoHydrated } from '../support/route-marker.ts';
 
@@ -21,8 +23,8 @@ let admin: Admin;
 test.beforeAll(() => {
   admin = seed<Admin>('admin');
 });
-test.afterAll(() => {
-  seed('remote-media', 'on');
+test.afterAll(async () => {
+  await closePools();
 });
 
 async function signInAdmin(page: import('@playwright/test').Page) {
@@ -94,18 +96,32 @@ test('a bad hash is refused with its reason and an added one is listed', async (
   await expect(page.getByTestId('hash-row').filter({ hasText: hash.slice(0, 8) })).toBeVisible();
 });
 
-test('the remote-media pause switch stops the proxy but not a clean upload; every other /media/<id> is the same 404', async ({
-  request,
-}) => {
-  const rows = seed<Record<'pending' | 'clean' | 'quarantined' | 'blocked' | 'failed' | 'deleted' | 'unknown', string>>('states');
+// This case flips remote_media.enabled on the lane database for a moment. Other specs render pages
+// and previews with that switch (composer's "what Preview shows is what is published" compares two
+// renders), so under the parallel runner it can land between them and fail an unrelated spec.
+// It is opt-in: E2E_PAUSE_SWITCH=1 pnpm e2e e2e/mediascan (see LANE-NOTES, request 3).
+test('the remote-media pause switch stops the proxy but not a clean upload', async ({ request }) => {
+  test.skip(!process.env.E2E_PAUSE_SWITCH, 'flips a shared setting; run with E2E_PAUSE_SWITCH=1 on its own');
+  const rows = seed<Record<'clean', string>>('states');
   const proxy = execFileSync('node', ['packages/core/src/testing/seed-b2.ts', 'proxy-path', 'https://img.example/a.png'], {
     cwd: root,
     encoding: 'utf8',
   });
-  seed('remote-media', 'off');
-  const proxied = await request.get(JSON.parse(proxy) as string);
+  await remoteMedia(false);
+  let proxied;
+  let clean;
+  try {
+    proxied = await request.get(JSON.parse(proxy) as string);
+    clean = await request.get(`/media/${rows.clean}`);
+  } finally {
+    await remoteMedia(true);
+  }
   expect([proxied.status(), proxied.headers()['cache-control']]).toEqual([404, 'no-store']);
+  expect(clean.status()).toBe(200);
+});
 
+test('a clean upload serves with its headers, and every other /media/<id> is the same 404', async ({ request }) => {
+  const rows = seed<Record<'pending' | 'clean' | 'quarantined' | 'blocked' | 'failed' | 'deleted' | 'unknown', string>>('states');
   const clean = await request.get(`/media/${rows.clean}`);
   expect(clean.status()).toBe(200);
   expect(clean.headers()).toMatchObject({
@@ -128,5 +144,4 @@ test('the remote-media pause switch stops the proxy but not a clean upload; ever
   }
   expect(answers[0]).toMatchObject({ status: 404, cache: 'no-store' });
   for (const answer of answers) expect(answer).toEqual(answers[0]);
-  seed('remote-media', 'on');
 });
