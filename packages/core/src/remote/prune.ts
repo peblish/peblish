@@ -1,5 +1,6 @@
 import { sql } from 'drizzle-orm';
-import { inboxDedupe, inboxRaw } from '../db/tables/federation.ts';
+import { posts } from '../db/tables/content.ts';
+import { activities, inboxDedupe, inboxRaw } from '../db/tables/federation.ts';
 import { deliveries } from '../delivery/tables.ts';
 import { throttles } from '../identity/tables.ts';
 import { defineMutation } from '../tx/mutation.ts';
@@ -12,7 +13,10 @@ import { defineMutation } from '../tx/mutation.ts';
 export const retention = {
   /** An inbox row that is applied, skipped or failed. A pending row is never deleted. */
   inboxRawMs: 14 * 24 * 60 * 60 * 1000,
-  /** A delivery that is delivered, failed or skipped. The health job reads the last week only. */
+  /**
+   * A delivery that is delivered, failed or skipped. The health job reads the last week only. A
+   * boost's deliveries stay until it is withdrawn (`openBoost`): the withdrawal goes to them.
+   */
   deliveriesMs: 30 * 24 * 60 * 60 * 1000,
   /** A marker that an activity was applied. Peers retry for days and the inbox refuses a stale request date, so a marker this old guards nothing. */
   inboxDedupeMs: 90 * 24 * 60 * 60 * 1000,
@@ -32,6 +36,18 @@ const keepMs = (table: PrunedTable): number =>
     inbox_dedupe: retention.inboxDedupeMs,
     throttles: retention.throttlesMs,
   })[table];
+
+/**
+ * Whether a delivery row (of the `deliveries` in scope) sent a boost that is not taken back yet:
+ * a local community's Announce of a post (Announce(Page), the Mastodon-like shape) with no local
+ * Undo of it. The withdrawal (federation delivery/withdraw.ts) sends the Undo and the author's
+ * Delete to the inboxes in these rows, so they stay until the boost is undone or the post is gone.
+ */
+const openBoost = sql`(
+  ${deliveries}.activity_type = 'Announce' and exists (
+    select 1 from ${activities} a join ${posts} p on p.ap_id = a.object_ap_id
+    where a.ap_id = ${deliveries}.activity_ap_id and a.local and a.type = 'Announce'
+      and not exists (select 1 from ${activities} u where u.local and u.type = 'Undo' and u.object_ap_id = a.ap_id)))`;
 
 /**
  * Deletes up to one batch of rows older than the grant's table keeps; returns how many went. The
@@ -62,9 +78,9 @@ export const pruneBatch = defineMutation({
           return t.db.execute<{ id: string }>(sql`
             delete from ${deliveries}
             where id in (
-              select id from ${deliveries} where state <> 'pending' and settled_at < ${cutoff}::timestamptz
+              select id from ${deliveries} where state <> 'pending' and settled_at < ${cutoff}::timestamptz and not ${openBoost}
               limit ${limit} for update skip locked)
-              and state <> 'pending' and settled_at < ${cutoff}::timestamptz
+              and state <> 'pending' and settled_at < ${cutoff}::timestamptz and not ${openBoost}
             returning id`);
         case 'inbox_dedupe':
           return t.db.execute<{ id: string }>(sql`

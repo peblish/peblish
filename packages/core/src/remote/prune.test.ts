@@ -7,7 +7,7 @@ import { deliveries } from '../delivery/tables.ts';
 import { throttles } from '../identity/tables.ts';
 import { truncateAll } from '../testing/db.ts';
 import { seedActor, seedInstance } from '../testing/seed.ts';
-import { outboxEvents } from '../testing/seed-az.ts';
+import { outboxEvents, seedPost } from '../testing/seed-az.ts';
 import { seedLocalInstance } from '../testing/seed-fed-a.ts';
 import { daysAgo, seedDelivery, seedInbound } from '../testing/seed-rem.ts';
 import { retention } from './prune.ts';
@@ -55,6 +55,38 @@ describe('retention', () => {
     // Nothing left to prune: no event.
     expect(await pruneOld({ now })).toEqual({ inbox_raw: 0, deliveries: 0, inbox_dedupe: 0, throttles: 0 });
     expect((await outboxEvents()).filter((event) => (event as { type: string }).type === 'remote.pruned')).toHaveLength(2);
+  });
+});
+
+describe('the deliveries a withdrawal needs', () => {
+  test('a boost’s deliveries outlive the window until an Undo takes it back; other old Announces go', async () => {
+    const { instance: here, instanceActor } = await seedLocalInstance('rem.test');
+    const masto = await seedInstance('masto.test', false);
+    const news = await seedActor(here, 'Group', 'news');
+    const author = await seedActor(here, 'Person', 'alice');
+    const old = daysAgo(days(retention.deliveriesMs) + 1, now);
+    const announce = async (objectApId: string) => {
+      const apId = `https://rem.test/ap/activity/${crypto.randomUUID()}`;
+      await writer().insert(activities).values({ apId, type: 'Announce', actorApId: news.apId, objectApId, local: true, raw: {} });
+      await seedDelivery(masto, instanceActor, {
+        activityApId: apId,
+        activityType: 'Announce',
+        objectApId,
+        state: 'delivered',
+        createdAt: old,
+      });
+      return apId;
+    };
+    const open = await announce((await seedPost(here, news, author)).apId);
+    const undone = await announce((await seedPost(here, news, author)).apId);
+    await writer()
+      .insert(activities)
+      .values({ apId: 'https://rem.test/ap/activity/undo', type: 'Undo', actorApId: news.apId, objectApId: undone, local: true, raw: {} });
+    // An Announce of an activity (Announce(Create(Note)), a relayed vote): nothing to withdraw.
+    await announce('https://rem.test/ap/activity/create-1');
+
+    expect(await pruneOld({ now })).toMatchObject({ deliveries: 2 });
+    expect((await db().select().from(deliveries)).map((row) => row.activityApId)).toEqual([open]);
   });
 });
 
