@@ -55,10 +55,22 @@ function parseHandle(handle: string): { name: string; host: string | null } | nu
   return hostPattern.test(host.toLowerCase()) ? { name, host: host.toLowerCase() } : null;
 }
 
-const refOf = ({ domain, ...actor }: Omit<ActorRef, 'handle'> & { domain: string }): ActorRef => ({
-  ...actor,
-  handle: actor.local ? actor.name : `${actor.name}@${domain}`,
+/**
+ * The public reference to an actor, field by field from an allowlist: the row it comes from may
+ * be the whole actor row (user id, raw JSON, the auth role), and none of that may reach a page.
+ */
+export const publicActorRef = (actor: ActorRef): ActorRef => ({
+  id: actor.id,
+  apId: actor.apId,
+  kind: actor.kind,
+  name: actor.name,
+  displayName: actor.displayName,
+  local: actor.local,
+  handle: actor.handle,
 });
+
+const refOf = (actor: Omit<ActorRef, 'handle'> & { domain: string }): ActorRef =>
+  publicActorRef({ ...actor, handle: actor.local ? actor.name : `${actor.name}@${actor.domain}` });
 
 /** Communities the viewer moderates where `personId` has a live post or comment. */
 async function moderatedWith(q: Queryable, viewerId: Uuid, personId: Uuid): Promise<ActorRef[]> {

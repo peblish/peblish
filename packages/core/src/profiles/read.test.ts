@@ -54,6 +54,18 @@ describe('readProfile', () => {
     expect((await readProfile('Alice', w.as(w.alice)))?.badges.you).toBe(true);
   });
 
+  test('the person and the moderated communities carry only the public reference fields', async () => {
+    const w = await world();
+    await seedModerator(w.news, w.viewer);
+    await seedPost(w.local, w.news, w.admin);
+    const profile = await readProfile('boss', w.as(w.viewer));
+    const publicKeys = ['apId', 'displayName', 'handle', 'id', 'kind', 'local', 'name'];
+    expect(Object.keys(profile!.actor).sort()).toEqual(publicKeys);
+    expect(profile!.moderatedCommunities.map((ref) => Object.keys(ref).sort())).toEqual([publicKeys]);
+    // Nothing of the account (user id, role, two-factor) or the stored row (raw JSON, keys, timestamps) is in it.
+    expect(JSON.stringify(profile)).not.toMatch(/userId|"role"|twoFactor|"raw"|createdAt|summaryMd/);
+  });
+
   test('a remote person has a home and refresh time; the bio is HTML', async () => {
     const w = await world();
     const profile = await readProfile('rem@lemmy.test', null);

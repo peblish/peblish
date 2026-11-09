@@ -1,7 +1,7 @@
 import { defaultPageSize } from '@peblish/core/feeds/input';
 import type { Viewer } from '@peblish/core/posts/read';
 import { profileSorts, profileTabs } from '@peblish/core/profiles/input';
-import { readActivity, readProfile, type Profile } from '@peblish/core/profiles/read';
+import { publicActorRef, readActivity, readProfile, type Profile } from '@peblish/core/profiles/read';
 import type { Uuid } from '@peblish/schema/ids';
 import type { ActorRef, CommentView } from '@peblish/schema/views';
 import { absoluteTime, compactAge } from '@peblish/ui/components/time';
@@ -79,7 +79,7 @@ async function buildProfile(
           ? renderer.sanitize(body.html, { baseUrl: body.baseUrl }).html
           : null;
     times[view.id] = { age: compactAge(view.publishedAt, now, locale), title: absoluteTime(view.publishedAt, locale) };
-    return { kind: 'comment', view: { ...view, contentHtml }, post, community };
+    return { kind: 'comment', view: { ...view, contentHtml }, post, community: publicActorRef(community) };
   });
 
   const bioHtml =
@@ -91,7 +91,8 @@ async function buildProfile(
   return {
     profile,
     data: {
-      person: profile.actor,
+      // Only the allowlisted fields are dehydrated into the page.
+      person: publicActorRef(profile.actor),
       avatarSrc: renderer.image(profile.iconUrl),
       bioHtml: bioHtml || null,
       joinedAt: profile.joinedAt,
@@ -103,7 +104,7 @@ async function buildProfile(
       },
       state: profile.state,
       blocked: profile.blocked,
-      moderatedCommunities: profile.moderatedCommunities,
+      moderatedCommunities: profile.moderatedCommunities.map(publicActorRef),
       indexable: profile.indexable,
       viewer: viewer && { actorId: viewer.actorId, admin: viewer.siteRole === 'admin' },
       tab: data.tab,
