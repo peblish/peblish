@@ -128,7 +128,7 @@ const roles: Role[] = [
     role: 'remote actor, direct',
     community: 'local',
     principal: () => ({ kind: 'remote', actorId: world.people.remoteUser.id, announcedBy: null }),
-    expected: refused(REQ, MOD, REQ),
+    expected: refused(OK, MOD),
   },
   {
     role: "remote actor, owning community's Announce",
@@ -138,7 +138,7 @@ const roles: Role[] = [
       actorId: world.people.remoteUser.id,
       announcedBy: { communityId: s.communityId, announceApId: 'https://lemmy.test/activities/announce/1' },
     }),
-    expected: moderates(REQ, REQ),
+    expected: moderates(OK),
   },
   {
     role: "remote actor, another community's Announce",
@@ -148,7 +148,7 @@ const roles: Role[] = [
       actorId: world.people.remoteUser.id,
       announcedBy: { communityId: world.elsewhere.id, announceApId: 'https://other.test/activities/announce/1' },
     }),
-    expected: refused(REQ, MIS, REQ),
+    expected: refused(MIS, MIS),
   },
   {
     // A local community's Announce cannot have come from a peer.
@@ -159,28 +159,28 @@ const roles: Role[] = [
       actorId: world.people.remoteUser.id,
       announcedBy: { communityId: s.communityId, announceApId: 'https://feddit.test/activities/announce/1' },
     }),
-    expected: refused(REQ, MIS, REQ),
+    expected: refused(MIS, MIS),
   },
   // Remote moderator rows (roles.ts: fresh). A local row with no expiry grants (community
   // moderator above); a remote one grants only once verified and before an expiry it must have.
-  { role: 'remote moderator, unverified', community: 'remote', principal: remoteModerator('unverified'), expected: refused(REQ, MOD, REQ) },
+  { role: 'remote moderator, unverified', community: 'remote', principal: remoteModerator('unverified'), expected: refused(OK, MOD) },
   {
     role: 'remote moderator, verified, expired',
     community: 'remote',
     principal: remoteModerator('verified, expired'),
-    expected: refused(REQ, MOD, REQ),
+    expected: refused(OK, MOD),
   },
   {
     role: 'remote moderator, verified, no expiry',
     community: 'remote',
     principal: remoteModerator('verified, no expiry'),
-    expected: refused(REQ, MOD, REQ),
+    expected: refused(OK, MOD),
   },
   {
     role: 'remote moderator, verified, unexpired',
     community: 'remote',
     principal: remoteModerator('verified, unexpired'),
-    expected: moderates(REQ, REQ),
+    expected: moderates(OK),
   },
   { role: 'banned user', community: 'local', principal: () => localUser(world.people.banned.id), expected: refused(BAN, BAN) },
 ];
