@@ -28,7 +28,7 @@ export function PostPage({ data, error }: { data: PostPageData; error?: string |
   const back = `/post/${post.id}`;
   const signInHref = `/auth/sign-in?redirect=${encodeURIComponent(back)}`;
   const isAuthor = viewerId === post.author.id;
-  const withheld = post.deleted ? 'deleted' : gate === 'sign-in' || gate === 'age' ? 'gate' : post.removed && !moderator ? 'removed' : null;
+  const withheld = post.deleted ? 'deleted' : gate !== 'none' ? 'gate' : post.removed && !moderator ? 'removed' : null;
   const count = post.counts.comments;
   const shownError = asPostError(error);
   const voteLabels = useVoteLabels();
@@ -54,7 +54,7 @@ export function PostPage({ data, error }: { data: PostPageData; error?: string |
         <p>{t('posts', 'deleted.body')}</p>
       </section>
     );
-  } else if (gate === 'sign-in' || gate === 'age') {
+  } else if (gate !== 'none') {
     body = (
       <section className="post-notice" data-state="gate">
         <h1>{t('posts', 'gate.title')}</h1>
@@ -77,7 +77,6 @@ export function PostPage({ data, error }: { data: PostPageData; error?: string |
       </section>
     );
   } else {
-    const blurred = gate === 'blur';
     const content = (
       <div className="post-sensitive__content">
         <h1 id="post-title">{post.title}</h1>
@@ -108,16 +107,7 @@ export function PostPage({ data, error }: { data: PostPageData; error?: string |
         {post.contentHtml && <Prose className="post-text" html={post.contentHtml} />}
       </div>
     );
-    body = blurred ? (
-      <div className="post-sensitive" data-gate="blur">
-        <input id="post-reveal" type="checkbox" className="post-reveal" />
-        <label htmlFor="post-reveal">{t('posts', 'gate.show')}</label>
-        <p className="post-hint">{t('posts', 'gate.blur')}</p>
-        {content}
-      </div>
-    ) : (
-      content
-    );
+    body = content;
   }
 
   return (

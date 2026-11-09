@@ -46,7 +46,7 @@ export const loadPermalinkFn = createServerFn({ method: 'GET' })
     if (!page) return null;
     const renderer = await createMarkdownRenderer(await siteMarkdown());
     // Under a removed post the comments are not shown, and the page is simply not there.
-    const gated = page.gate === 'sign-in' || page.gate === 'age';
+    const gated = page.gate !== 'none';
     if (!gated && !threadShown(page)) return null;
     const thread = await loadThread({ page, session, renderer, sort: data.sort, after: data.after ?? null, rootId: data.commentId });
     if (!gated && !thread) return null;
