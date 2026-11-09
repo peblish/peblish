@@ -2,7 +2,7 @@ import { execFile } from 'node:child_process';
 import { join } from 'node:path';
 import type { EventType, OutboxEvent } from '@peblish/schema/events';
 import { eq, sql } from 'drizzle-orm';
-import { beforeEach, describe, expect, test, vi } from 'vitest';
+import { beforeEach, describe, expect, onTestFinished, test, vi } from 'vitest';
 import { db } from '../db/read.ts';
 import { inboxDedupe } from '../db/tables/federation.ts';
 import { outbox, outboxCursors } from '../db/tables/outbox.ts';
@@ -12,11 +12,22 @@ import { Refused } from '../tx/refused.ts';
 import { tx } from '../tx/tx.ts';
 import { defineConsumer, type Consumer, type ConsumerStart, type ConsumerTx } from './consumers.ts';
 import { outboxSkipped } from './tables.ts';
-import { ensureCursors, oldestWriteTransaction, processBatch, runOutboxWorker, type OldestTransaction } from './worker.ts';
+import {
+  ensureCursors,
+  oldestWriteTransaction,
+  processBatch,
+  runOutboxWorker,
+  type OldestTransaction,
+  type WorkerOptions,
+} from './worker.ts';
 
 // The outbox horizon is cluster-wide, so another lane's open transaction can hold back what a
 // batch may read. Counts that depend on it are polled (drain); assertions that a batch reads
 // nothing are made only while this test itself holds the horizon back.
+// Other lanes' migrations and database drops hold it back for seconds at a time, so every wait
+// on it uses `horizon`, and each test gets 30 s.
+const horizon = { timeout: 20_000 };
+vi.setConfig({ testTimeout: 30_000 });
 
 const uuid = (n: number) => `0192f5a0-0000-7000-8000-${String(n).padStart(12, '0')}`;
 const post = (n: number): OutboxEvent => ({
@@ -82,13 +93,28 @@ function heldOpen(event: OutboxEvent) {
     started.open();
     await release.opened;
   });
-  return {
-    started: started.opened,
-    commit: async () => {
-      release.open();
-      await done;
-    },
+  const commit = async () => {
+    release.open();
+    await done;
   };
+  // Left open by a failed test, it would hold the horizon back for every test after it.
+  onTestFinished(commit);
+  return { started: started.opened, commit };
+}
+
+/**
+ * Runs the worker loop until the test calls stop() or ends, passed or failed. A worker left
+ * running would take the next tests' events and deadlock with their truncate (beforeEach).
+ */
+function startWorker(options: Omit<WorkerOptions, 'signal'>) {
+  const controller = new AbortController();
+  const running = runOutboxWorker({ ...options, signal: controller.signal });
+  const stop = async () => {
+    controller.abort();
+    await running;
+  };
+  onTestFinished(() => stop().catch(() => {}));
+  return { stop };
 }
 
 /** Runs batches until `seen` matches: the horizon may hold some rows back for a moment. */
@@ -97,7 +123,7 @@ const drain = (consumer: Consumer, seen: string[], expected: string[], limit?: n
     .poll(async () => {
       await processBatch(consumer, limit);
       return seen;
-    })
+    }, horizon)
     .toEqual(expected);
 
 const cursorOf = async (consumer: Consumer) =>
@@ -124,7 +150,7 @@ describe('consumer start', () => {
 
   test("'now' skips events committed before the horizon", async () => {
     await emit(post(1));
-    await expect.poll(horizonPassedOutbox).toBe(true);
+    await expect.poll(horizonPassedOutbox, horizon).toBe(true);
     const { seen, consumer } = recorder({ startAt: 'now' });
     await ensureCursors([consumer]);
     await emit(post(2));
@@ -205,7 +231,7 @@ describe('outbox worker', () => {
       .poll(async () => {
         counts.push(await processBatch(consumer, 2));
         return seen;
-      })
+      }, horizon)
       .toEqual([1, 2, 3, 4, 5, 6].map(uuid));
     expect(counts.every((count) => count <= 2)).toBe(true);
     expect(await processBatch(consumer, 2)).toBe(0);
@@ -217,8 +243,14 @@ describe('outbox worker', () => {
     await emit(post(1), comment(2), post(3));
     await emit(post(4), post(5));
     await drain(consumer, seen, [uuid(2)]);
-    // A rare-type consumer does not rescan the tail: its cursor sits on the last row scanned.
-    await expect.poll(async () => (await cursorOf(consumer))?.eventId).toBe(5);
+    // A rare-type consumer does not rescan the tail: its cursor sits on the last row scanned. The
+    // drain can end before the horizon passes the second transaction, so batches run until it has.
+    await expect
+      .poll(async () => {
+        await processBatch(consumer);
+        return (await cursorOf(consumer))?.eventId;
+      }, horizon)
+      .toBe(5);
     expect(await processBatch(consumer)).toBe(0);
   });
 
@@ -271,7 +303,7 @@ describe('outbox worker', () => {
     });
     await ensureCursors([consumer]);
     await emit(post(1), post(2));
-    await expect.poll(horizonPassedOutbox).toBe(true);
+    await expect.poll(horizonPassedOutbox, horizon).toBe(true);
     await expect(processBatch(consumer)).rejects.toThrow(/refused/);
     expect(await db().select().from(inboxDedupe)).toEqual([]);
     const cursor = await cursorOf(consumer);
@@ -295,7 +327,7 @@ describe('outbox worker', () => {
     await ensureCursors([consumer]);
     await writer().update(outboxCursors).set({ attempts: 60 }).where(eq(outboxCursors.consumer, consumer.name));
     await emit(post(1));
-    await expect.poll(horizonPassedOutbox).toBe(true);
+    await expect.poll(horizonPassedOutbox, horizon).toBe(true);
     await expect(processBatch(consumer)).rejects.toThrow('poison');
     const cursor = await cursorOf(consumer);
     expect(cursor?.attempts).toBe(61);
@@ -308,7 +340,7 @@ describe('outbox worker', () => {
     const { consumer } = recorder({ name: 'test.crash' });
     await ensureCursors([consumer]);
     await emit(post(1));
-    await expect.poll(horizonPassedOutbox).toBe(true);
+    await expect.poll(horizonPassedOutbox, horizon).toBe(true);
     const child = join(import.meta.dirname, '../testing/crash-consumer.ts');
     const exit = await new Promise<{ signal: NodeJS.Signals | null; stdout: string; stderr: string }>((resolve) => {
       execFile(process.execPath, [child, consumer.name], { env: process.env }, (error, stdout, stderr) =>
@@ -345,7 +377,7 @@ describe('what a handler may do', () => {
     });
     await ensureCursors([consumer]);
     await emit(post(1));
-    await expect.poll(horizonPassedOutbox).toBe(true);
+    await expect.poll(horizonPassedOutbox, horizon).toBe(true);
     await expect(processBatch(consumer)).rejects.toThrow('outbox consumer test.recorder may not emit comment.created');
   });
 
@@ -377,12 +409,10 @@ describe('what a handler may do', () => {
 describe('worker loop', () => {
   test('reports ready only once its cursors exist', async () => {
     const { consumer } = recorder();
-    const controller = new AbortController();
     let cursorsAtReady = -1;
     let resolveReady!: () => void;
     const ready = new Promise<void>((resolve) => (resolveReady = resolve));
-    const running = runOutboxWorker({
-      signal: controller.signal,
+    const worker = startWorker({
       consumers: [consumer],
       pollMs: 60_000,
       onReady: () => {
@@ -397,8 +427,7 @@ describe('worker loop', () => {
     });
     await ready;
     expect(cursorsAtReady).toBe(1);
-    controller.abort();
-    await running;
+    await worker.stop();
   });
 
   test('an abort during a busy iteration ends the loop without waiting for the poll timer', async () => {
@@ -410,7 +439,7 @@ describe('worker loop', () => {
     });
     await ensureCursors([consumer]);
     await emit(post(1));
-    await expect.poll(horizonPassedOutbox).toBe(true);
+    await expect.poll(horizonPassedOutbox, horizon).toBe(true);
     const started = Date.now();
     // The failing batch scans nothing new; onError aborts mid-iteration, before the sleep.
     await runOutboxWorker({ signal: controller.signal, consumers: [consumer], pollMs: 60_000, onError: () => controller.abort() });
@@ -419,26 +448,33 @@ describe('worker loop', () => {
 
   test('wakes on commit and stops on abort', async () => {
     const { seen, consumer } = recorder();
-    const controller = new AbortController();
-    const running = runOutboxWorker({ signal: controller.signal, consumers: [consumer], pollMs: 60_000 });
-    await expect.poll(async () => (await db().select().from(outboxCursors)).length).toBe(1);
-    await emit(post(7));
-    await expect.poll(() => seen, { timeout: 5_000 }).toEqual([uuid(7)]);
-    controller.abort();
-    await running;
+    const listening = gate();
+    const worker = startWorker({ consumers: [consumer], pollMs: 60_000, onReady: listening.open });
+    await listening.opened;
+    // With a 60 s poll only a commit's NOTIFY wakes the worker. Another lane's open transaction can
+    // hold the horizon back when it lands, and the batch it wakes then reads nothing, so commit again
+    // until one gets through.
+    await expect
+      .poll(
+        async () => {
+          if (seen.length === 0) await emit(post(7));
+          return seen.length > 0 && seen.every((id) => id === uuid(7));
+        },
+        { ...horizon, interval: 250 },
+      )
+      .toBe(true);
+    await worker.stop();
   });
 
   test('delivers by polling when no NOTIFY arrives', async () => {
     const { seen, consumer } = recorder();
-    const controller = new AbortController();
-    const running = runOutboxWorker({ signal: controller.signal, consumers: [consumer], pollMs: 50 });
+    const worker = startWorker({ consumers: [consumer], pollMs: 50 });
     await expect.poll(async () => (await db().select().from(outboxCursors)).length).toBe(1);
     // A raw insert, outside tx(): no pg_notify, so only the poll can find it.
     const event = post(8);
     await writer().insert(outbox).values({ type: event.type, v: event.v, payload: event });
-    await expect.poll(() => seen, { timeout: 5_000 }).toEqual([uuid(8)]);
-    controller.abort();
-    await running;
+    await expect.poll(() => seen, horizon).toEqual([uuid(8)]);
+    await worker.stop();
   });
 
   test('warns when a long write transaction holds back the horizon', async () => {
@@ -446,17 +482,9 @@ describe('worker loop', () => {
     const slow = heldOpen(post(1));
     await slow.started;
     const lags: OldestTransaction[] = [];
-    const controller = new AbortController();
-    const running = runOutboxWorker({
-      signal: controller.signal,
-      consumers: [consumer],
-      pollMs: 50,
-      lagWarningSeconds: 0,
-      onLag: (oldest) => lags.push(oldest),
-    });
+    const worker = startWorker({ consumers: [consumer], pollMs: 50, lagWarningSeconds: 0, onLag: (oldest) => lags.push(oldest) });
     await expect.poll(() => lags.length).toBeGreaterThan(0);
-    controller.abort();
-    await running;
+    await worker.stop();
     // The warning is cluster-wide (another lane's transaction may be the oldest); this database's oldest is the slow one.
     const database = new URL(process.env.DATABASE_URL ?? '').pathname.slice(1);
     expect(await oldestWriteTransaction(database)).toMatchObject({ database, application: 'peblish-write' });
@@ -481,7 +509,7 @@ describe('a poison event', () => {
     });
     await ensureCursors([consumer]);
     await emit(post(1), post(2), post(3));
-    await expect.poll(horizonPassedOutbox).toBe(true);
+    await expect.poll(horizonPassedOutbox, horizon).toBe(true);
     const [second] = await db()
       .select({ id: outbox.id })
       .from(outbox)
@@ -524,7 +552,7 @@ describe('a poison event', () => {
     });
     await ensureCursors([consumer]);
     await emit(post(1), post(2));
-    await expect.poll(horizonPassedOutbox).toBe(true);
+    await expect.poll(horizonPassedOutbox, horizon).toBe(true);
     await expect(processBatch(consumer)).rejects.toThrow('cannot handle 1');
     // Nine failures over an hour; the tenth cannot be written, as when the database is down.
     await ageFailures(consumer, 9, 60);
