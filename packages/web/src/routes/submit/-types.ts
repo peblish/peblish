@@ -47,6 +47,22 @@ export interface EditTarget {
   sensitive: boolean;
 }
 
+/**
+ * Everything typed into the form when the server refused it. Without JavaScript the refusal is a
+ * redirect and the form is built again from this (-flash.ts keeps it for the viewer); the file of
+ * an image post cannot come back.
+ */
+export interface Kept {
+  /** A community id, or null when none was chosen. */
+  community: string | null;
+  type: PostType;
+  title: string;
+  url: string;
+  body: string;
+  alt: string;
+  nsfw: boolean;
+}
+
 export type Unavailable = 'signed-out' | 'not-found' | 'not-author' | 'deleted' | 'removed' | 'gated';
 
 export type ComposerData =
@@ -64,6 +80,8 @@ export type ComposerData =
       /** uploads.enabled: the Image type is offered only while it is on. */
       uploads: boolean;
       edit: EditTarget | null;
+      /** What the form had when it was refused without JavaScript; it wins over the saved post and the empty form. */
+      kept: Kept | null;
     };
 
 /** The codes the composer has a message for: field problems, refusals a post can meet, and the web's own. */

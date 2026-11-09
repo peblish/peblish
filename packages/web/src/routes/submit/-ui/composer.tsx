@@ -10,7 +10,6 @@ import { type } from 'arktype';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { useTranslate } from '../../../i18n/use-translate.ts';
 import { firstProblem } from '../-fields.ts';
-import type { Kept } from '../-kept.ts';
 import { loadCommunityPanel, previewBody } from '../-load.ts';
 import {
   asComposerError,
@@ -33,8 +32,7 @@ export type ReadyData = Extract<ComposerData, { status: 'ready' }>;
 
 export interface ComposerProps {
   data: ReadyData;
-  /** What the form starts with when it comes back from a refusal without JavaScript (or from nowhere). */
-  kept?: Kept;
+  /** The refusal the page was reached by, without JavaScript. */
   error?: ComposerError;
   /** Posted or saved: the page or sheet goes to this path. */
   onDone: (path: string) => void;
@@ -56,26 +54,33 @@ interface Form {
 
 const pristine = (form: Form) => form.title === '' && form.url === '' && form.body === '';
 
-function startingForm({ data, kept }: Pick<ComposerProps, 'data' | 'kept'>): Form {
-  const { edit } = data;
-  if (edit)
-    return {
-      community: edit.community,
-      type: edit.url ? 'link' : 'text',
-      title: edit.title,
-      url: edit.url ?? '',
-      body: edit.bodyMd,
-      alt: '',
-      nsfw: edit.sensitive,
-    };
+/**
+ * The post being edited or an empty form, with what was typed before a refusal (without
+ * JavaScript) laid over it: typed words win over the saved ones. An edit keeps its post's type,
+ * and a new post's community was already chosen by the loader from the words and the URL.
+ */
+function startingForm({ data }: Pick<ComposerProps, 'data'>): Form {
+  const { edit, kept } = data;
+  const base: Form = edit
+    ? {
+        community: edit.community,
+        type: edit.url ? 'link' : 'text',
+        title: edit.title,
+        url: edit.url ?? '',
+        body: edit.bodyMd,
+        alt: '',
+        nsfw: edit.sensitive,
+      }
+    : { community: data.selected, type: 'text', title: '', url: '', body: '', alt: '', nsfw: false };
+  if (!kept) return base;
   return {
-    community: kept?.community ?? data.selected,
-    type: kept?.type === 'image' && !data.uploads ? 'text' : (kept?.type ?? 'text'),
-    title: kept?.title ?? '',
-    url: kept?.url ?? '',
-    body: kept?.body ?? '',
-    alt: '',
-    nsfw: kept?.nsfw ?? false,
+    ...base,
+    ...(!edit && { type: kept.type === 'image' && !data.uploads ? 'text' : kept.type }),
+    title: kept.title,
+    url: kept.url,
+    body: kept.body,
+    alt: kept.alt,
+    nsfw: kept.nsfw,
   };
 }
 
@@ -86,11 +91,11 @@ function startingForm({ data, kept }: Pick<ComposerProps, 'data' | 'kept'>): For
  * posts by fetch, keeps what was typed through a refusal, and offers the toolbar, Preview and
  * drafts. The page and the sheet both render this.
  */
-export function Composer({ data, kept, error: initialError, onDone, onDiscard, keepOnClose }: ComposerProps) {
+export function Composer({ data, error: initialError, onDone, onDiscard, keepOnClose }: ComposerProps) {
   const { t, locale } = useTranslate();
   const editorLabels = useEditorLabels();
-  const { edit, actorId } = data;
-  const [form, setForm] = useState(() => startingForm({ data, kept }));
+  const { edit, actorId, kept } = data;
+  const [form, setForm] = useState(() => startingForm({ data }));
   const [panel, setPanel] = useState<CommunityPanel | null>(data.panel);
   const [error, setError] = useState(initialError);
   const [busy, setBusy] = useState(false);

@@ -12,6 +12,7 @@ import { type } from 'arktype';
 import { pageSession, sameOrigin } from '../../server/auth.ts';
 import { createMarkdownRenderer, type MarkdownRenderer } from '../../server/markdown.ts';
 import { communityPath } from '../../shell/paths.ts';
+import { readFlash } from './-flash.ts';
 import type { CommunityPanel, ComposerData, EditTarget, PickerCommunity } from './-types.ts';
 
 // What the composer page and the sheet load: the communities the person may pick, the panel of
@@ -31,17 +32,36 @@ async function canPostIn(viewer: SessionView, community: { id: string; restricte
 const ageAllows = (viewer: SessionView, community: { sensitive: boolean; nsfl: boolean }) =>
   viewer.ageDeclaredAt !== null || !(community.sensitive || community.nsfl);
 
+/** What the picker needs of a followed remote community. */
+interface FollowedRemote {
+  id: string;
+  /** `name@host` */
+  handle: string;
+  postingRestrictedToMods: boolean;
+  sensitive: boolean;
+  nsfl: boolean;
+}
+
 /**
- * The accepted follows that are remote Groups, with what the picker needs of each: the handle's
- * host, the posting restriction and the age flags. Removed and deleted communities are left out.
+ * The accepted follows that are remote Groups, without the removed and deleted ones.
  */
-// integration: replace with followedCommunities fields (host, postingRestrictedToMods, sensitive,
-// nsfl; it excludes removed communities). Until fed-a's change is in the tree these are read from
-// the community rows, one readCommunity (which also leaves out removed and deleted ones) each.
-async function followedRemote(followed: readonly FollowedCommunity[]) {
+// integration: replace with followedCommunities fields. It returns { id, apId, name, host, local,
+// postingRestrictedToMods, sensitive, nsfl } and excludes removed communities, so this becomes a
+// filter on `local` (and `state` if it stays) and a map to `handle: `${name}@${host}``. Until that
+// is in the tree the flags are read from the community rows, one readCommunity each (it leaves out
+// removed and deleted communities itself).
+async function followedRemote(followed: readonly FollowedCommunity[]): Promise<FollowedRemote[]> {
   const accepted = followed.filter(({ local, state }) => !local && state === 'accepted');
   const rows = await Promise.all(accepted.map(({ communityId }) => readCommunity({ id: communityId })));
-  return rows.filter((community) => community !== null);
+  return rows
+    .filter((community) => community !== null)
+    .map(({ actor, postingRestrictedToMods, sensitive, nsfl }) => ({
+      id: actor.id,
+      handle: actor.handle,
+      postingRestrictedToMods,
+      sensitive,
+      nsfl,
+    }));
 }
 
 /**
@@ -67,13 +87,13 @@ async function pickable(viewer: SessionView): Promise<PickerCommunity[]> {
   const remote = await Promise.all(
     followedGroups
       .filter((community) => ageAllows(viewer, community))
-      .map(async ({ actor, postingRestrictedToMods }): Promise<PickerCommunity> => ({
-        id: actor.id,
-        handle: actor.handle,
+      .map(async ({ id, handle, postingRestrictedToMods }): Promise<PickerCommunity> => ({
+        id,
+        handle,
         local: false,
         subscribers: null,
         restricted: postingRestrictedToMods,
-        canPost: await canPostIn(viewer, { id: actor.id, restricted: postingRestrictedToMods }),
+        canPost: await canPostIn(viewer, { id, restricted: postingRestrictedToMods }),
       })),
   );
   return [...rows, ...remote];
@@ -136,7 +156,7 @@ async function editTarget(
  * community.
  */
 export const loadComposer = createServerFn({ method: 'GET' })
-  .validator(type({ 'edit?': 'string | undefined', 'community?': 'string | undefined' }))
+  .validator(type({ 'edit?': 'string | undefined', 'community?': 'string | undefined', 'flash?': 'string | undefined' }))
   .handler(async ({ data }): Promise<ComposerData> => {
     const session = await pageSession();
     if (!session) return { status: 'unavailable', reason: 'signed-out' };
@@ -145,11 +165,15 @@ export const loadComposer = createServerFn({ method: 'GET' })
     const target = data.edit === undefined ? null : await editTarget(data.edit, view);
     if (typeof target === 'string') return { status: 'unavailable', reason: target };
     const communities = await pickable(view);
-    const wanted = data.community?.trim().toLowerCase();
-    const selected = target
-      ? target.community
-      : (communities.find(({ id, handle }) => wanted !== undefined && (id === wanted || handle.toLowerCase() === wanted.replace(/^!/, '')))
-          ?.id ?? null);
+    // What a refused post had typed (without JavaScript), kept for this person by the POST handler.
+    const kept = readFlash(data.flash, view.actorId);
+    // The community the words were meant for, if it is still one to pick, then the one asked for in the URL.
+    const pick = (key: string | null | undefined) => {
+      const wanted = key?.trim().toLowerCase();
+      if (!wanted) return undefined;
+      return communities.find(({ id, handle }) => id === wanted || handle.toLowerCase() === wanted.replace(/^!/, ''))?.id;
+    };
+    const selected = target ? target.community : (pick(kept?.community) ?? pick(data.community) ?? null);
     const [handles, uploads, panel] = await Promise.all([
       localHandles(),
       readSetting('uploads.enabled'),
@@ -164,6 +188,7 @@ export const loadComposer = createServerFn({ method: 'GET' })
       panel,
       uploads,
       edit: target,
+      kept,
     };
   });
 
