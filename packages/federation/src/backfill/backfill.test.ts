@@ -352,7 +352,7 @@ describe('the backfill of a followed community', () => {
   });
 
   test('stops before its lease ends, keeps what it stored, and settles while it still owns the row', async () => {
-    let now = new Date('2026-11-09T12:00:00Z');
+    let now = new Date(Date.now() + 60_000);
     const server = peers({ ...featured(lemmyPage(550)), ...outbox(lemmyPage(551)) });
     // The featured collection is slow: by the time it answers the lease is nearly over.
     const slow: typeof server.fetch = async (url, init) => {
@@ -370,7 +370,7 @@ describe('the backfill of a followed community', () => {
 
   test('is tried again when the outbox is down, and fails for good after the last try', async () => {
     const server = peers({ [`${lab}/outbox`]: { status: 503 } });
-    let now = new Date('2026-11-09T12:00:00Z');
+    let now = new Date(Date.now() + 60_000);
     const clock = () => now;
     await queue();
     for (const [attempt, wait] of backfillLimits.retryAfterMs.entries()) {

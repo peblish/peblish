@@ -11,7 +11,8 @@ import { tx } from '../tx/tx.ts';
 import { backfillLimits, claimBackfill, queueBackfill, settleBackfill, type BackfillClaim } from './backfill.ts';
 import { backfills } from './tables.ts';
 
-const now = new Date('2026-11-09T12:00:00Z');
+// A minute ahead of the database clock, so rows queued with now() are already due.
+const now = new Date(Date.now() + 60_000);
 const later = (ms: number) => new Date(now.getTime() + ms);
 
 type SettleBody =
