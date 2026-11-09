@@ -4,6 +4,7 @@ import { addToBlocklist, blockCategories, removeFromBlocklist } from '@peblish/c
 import { confirmQuarantined, holdQuarantined, releaseQuarantined } from '@peblish/core/mediascan/review';
 import { createFileRoute, Link, redirect } from '@tanstack/react-router';
 import { createServerFn } from '@tanstack/react-start';
+import { setResponseStatus } from '@tanstack/react-start/server';
 import { type } from 'arktype';
 import { translatePlural } from '../../../i18n/translate.ts';
 import { useTranslate } from '../../../i18n/use-translate.ts';
@@ -55,7 +56,11 @@ const loadMedia = createServerFn({ method: 'GET' }).handler(async () => {
   const session = await pageSession();
   if (!session) throw redirect({ to: '/auth/sign-in', search: { redirect: '/admin/media' } });
   const access = session.role !== 'admin' ? 'not-admin' : session.view.siteRole !== 'admin' ? 'needs-two-factor' : 'ok';
-  if (access !== 'ok') return { access } as const;
+  if (access !== 'ok') {
+    // A denial is a 403 with no data, as the Reports tab answers one.
+    setResponseStatus(403);
+    return { access } as const;
+  }
   const [overview, flash] = await Promise.all([mediaOverview(), takeFlash(session.sessionId, NOTICE)]);
   const parsed = flash ? Notice(JSON.parse(flash)) : null;
   const notice = parsed instanceof type.errors ? null : parsed;
