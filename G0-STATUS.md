@@ -838,3 +838,37 @@ Left open (with the reason):
 - FX-INTEROP (root's decisions on LAB's questions) runs after integration. German review of FX-MEDIA's new strings and the extended hold message joins the German review item.
 
 Housekeeping: no push; the lane worktrees, branches and databases stay; the `peblish:w3-fixes` image tag stays.
+
+### Wave 3 review fixes, step 2: FX-FED (2026-11-10)
+
+FX-FED (D3, D7, S1, F1, F3, F5, F6, F7; head 09d54d0) merged in 541e963 with `git merge --no-ff`. There were no conflicts, and `LANE-NOTES.md` was dropped. It changed no schema: `pnpm db:drift` finds none, so `0010_wave_3_fixes` stays as generated. `pnpm gen` changed nothing.
+
+| Commit  | Change                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| ea4a0f9 | FX-FED's root item: a peer's post Update whose Mention tags alone changed is an edit (`sameMentions` in `posts/remote.ts`, as F7 did for comments); test in `posts/remote.test.ts`                                                                                                                                                                                                                                                                                                                                         |
+| aba1fda | `forwardHosts` (`reports/form.ts`) names only the hosts the outbound Flag reaches. It uses inbox hosts, shared inbox first, and nothing for an actor without an inbox, as `recipients()` in `delivery/reports/consumer.ts` does. It leaves out a host whose peer is blocked, using the delivery worker's own check (`instanceBlocked` on the inbox URL). The form test covers a blocked peer and an actor without an inbox. The REP e2e seed's remote author gets an inbox. A comment at `recipients()` points at the form |
+| (last)  | This section; tag `w3-fixes` (local) at the head                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+
+`federation.boost_withdrawals` (D7) is registered by glob in `federation/registry/jobs.gen.ts`, which only `packages/web/src/worker.ts` imports.
+
+- The built `dist/processes/worker.mjs` contains it; `.output/server` does not.
+- The built worker ran for 10 s against `peblish_root`, with statement logging on that database only (reset after). The job's `site_bans` read ran at start, and the worker stopped on SIGTERM with exit 0 and no job failure logged.
+- `tests/registries.test.ts` holds the job and consumer names unique.
+
+Verification on lane root, with load average 7 to 13:
+
+- `pnpm check`: green. 225 test files passed and 4 skipped; 2,586 tests passed and 7 skipped.
+- `pnpm db:drift`: none. A fresh `pnpm db:migrate` applies.
+- `pnpm e2e`: parallel run 323 passed and 1 skipped; serial run 33 passed; both exited 0. Payload unchanged: product pages at most 130.7 kB of 170, `/kit` 170.5 of 180, CSS 60.4 of 65, fonts 259.2 of 270.
+- Image job: `docker build -t peblish:w3-fixes .` and `scripts/image-smoke.sh` against a throwaway `peblish_root_image` (dropped after). It passed.
+- `PEBLISH_FEED_PERF=1` `feeds/perf.test.ts`: passed at load average 10, no row over 50 ms. Worst p95 24.3 ms; worst Subscribed 13.3 ms.
+- `profiles/perf.test.ts`: passed, worst p95 14.2 ms.
+
+Left open, from FX-FED's notes:
+
+- A site ban lifted while its withdrawal is still running leaves the remaining boosts. This is rare: the first batch of 200 goes out at once, and the job runs a minute later.
+- A comment removal sends no author Delete to Mastodon-like servers it mentioned, because there is no comment withdrawal yet.
+- The F6 prune exclusion grows with live boosts.
+- LAB scenarios for F5 and F3 on Mastodon.
+
+All of these are for FX-INTEROP or later. `deleteAccount` stays without `recheck: 'inner'` (root: a site-banned person may still delete their account).
