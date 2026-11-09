@@ -12,10 +12,12 @@ import { truncateAll } from '@peblish/core/testing/db';
 import { deliveryBlocked } from '@peblish/core/peers/gate';
 import { seedActor, seedInstance } from '@peblish/core/testing/seed';
 import { seedPost } from '@peblish/core/testing/seed-az';
+import { seedModlog } from '@peblish/core/testing/seed-e2';
 import { seedLocalInstance, seedSigningKey } from '@peblish/core/testing/seed-fed-a';
 import { inboxState, seedFollow, seedInboundWorld, seedInboxRow, seedPeerActor } from '@peblish/core/testing/seed-fed-b';
 import { tx } from '@peblish/core/tx/tx';
 import type { OutboxEvent } from '@peblish/schema/events';
+import { localDocument } from '../actors/serve.ts';
 import { consumer as delivery } from '../delivery/consumer.ts';
 import { BULK_WITHDRAWAL_CAP } from '../delivery/withdraw.ts';
 import { processRow } from '../inbound/pipeline.ts';
@@ -79,7 +81,12 @@ async function world() {
   };
   const lemmy = await follower('lemmy.test', 'lemmy');
   const mastodon = await follower('masto.test', 'mastodon');
-  return { here, moderator, alice, news, lemmy, mastodon };
+  // The modlog rows the events point at: one in the public log, one kept out of it.
+  const logs = {
+    public: (await seedModlog(moderator, alice)).id,
+    private: (await seedModlog(moderator, alice, { public: false })).id,
+  };
+  return { here, moderator, alice, news, lemmy, mastodon, logs };
 }
 type World = Awaited<ReturnType<typeof world>>;
 
@@ -92,7 +99,8 @@ async function boosted(w: World, author: { id: string }, instance = w.here, extr
     .values({ apId: announce, type: 'Announce', actorApId: w.news.apId, objectApId: p.apId, local: true, raw: {} });
   return p;
 }
-const mod = (w: World) => ({ v: 1, moderatorId: w.moderator.id, modlogId: randomUUID(), local: true, communityId: w.news.id }) as const;
+const mod = (w: World, log: 'public' | 'private' = 'public') =>
+  ({ v: 1, moderatorId: w.moderator.id, modlogId: w.logs[log], local: true, communityId: w.news.id }) as const;
 const removal = (w: World, apId: string, removed = true, reason: string | null = 'spam') =>
   ({ type: 'mod.remove', ...mod(w), target: { kind: 'post', id: randomUUID() }, targetApId: apId, removed, reason }) as OutboxEvent;
 const ban = (w: World, target: { id: string; apId: string }, removeContent = true) =>
@@ -279,6 +287,52 @@ describe('a site ban', () => {
     await clearQueue();
     await runRelay({ ...siteBan(w, w.alice), local: false } as OutboxEvent);
     expect(await sentTo(w.mastodon.inbox)).toEqual([]);
+  });
+});
+
+describe('a reason kept out of the public modlog', () => {
+  /** Each activity queued for Lemmy, as sent and as served at its id (the outer Announce and what it embeds). */
+  async function sentAndServed(w: World) {
+    const sent = (await sentTo(w.lemmy.inbox)).map(({ json }) => json);
+    const served = await Promise.all(
+      sent.map(async (json) => (await localDocument(db(), 'https://fed-a.test', new URL(String(json.id)).pathname))?.json),
+    );
+    const inner = sent.flatMap((json) => (json.object && typeof json.object === 'object' ? [json.object as Json] : []));
+    const servedInner = await Promise.all(
+      inner.map(async (json) => (await localDocument(db(), 'https://fed-a.test', new URL(String(json.id)).pathname))?.json),
+    );
+    return [...sent, ...served, ...inner, ...servedInner];
+  }
+  const summaries = (documents: unknown[]) => JSON.stringify(documents).match(/"summary":"[^"]*"/g) ?? [];
+
+  test('never leaves: a removal, its restoration, a community ban, its unban and a site ban carry no summary, sent or served', async () => {
+    const w = await world();
+    const p = await boosted(w, w.alice);
+    const remove = removal(w, p.apId, true, 'Statement of reasons, case 12');
+    await runRelay({ ...remove, modlogId: w.logs.private } as OutboxEvent);
+    await runRelay({ ...removal(w, p.apId, false, 'Restored after appeal'), modlogId: w.logs.private } as OutboxEvent);
+    await runRelay({ ...ban(w, w.lemmy.actor, false), modlogId: w.logs.private, reason: 'private ban' } as OutboxEvent);
+    await runRelay({ ...ban(w, w.lemmy.actor, false), modlogId: w.logs.private, banned: false, reason: 'private unban' } as OutboxEvent);
+    await runRelay({ ...ban(w, w.alice, false), communityId: null, modlogId: w.logs.private, reason: 'private site ban' } as OutboxEvent);
+    const documents = await sentAndServed(w);
+    expect(documents.map((json) => (json as Json | undefined)?.type)).not.toContain(undefined);
+    expect((await sentTo(w.lemmy.inbox)).map(({ shape: s }) => s)).toEqual([
+      'Announce(Delete)',
+      'Announce(Undo(Delete))',
+      'Announce(Block)',
+      'Announce(Undo(Block))',
+      'Block',
+    ]);
+    expect(summaries(documents)).toEqual([]);
+    expect(JSON.stringify(await db().select({ raw: activities.raw }).from(activities))).not.toMatch(/case 12|appeal|private/);
+  });
+
+  test('a public row’s reason still goes out', async () => {
+    const w = await world();
+    const p = await boosted(w, w.alice);
+    await runRelay(removal(w, p.apId, true, 'spam'));
+    await runRelay({ ...ban(w, w.alice, false), communityId: null } as OutboxEvent);
+    expect(new Set(summaries(await sentAndServed(w)))).toEqual(new Set(['"summary":"spam"', '"summary":"p4"']));
   });
 });
 

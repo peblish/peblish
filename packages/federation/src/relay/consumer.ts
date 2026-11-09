@@ -1,6 +1,7 @@
 import { localInstance } from '@peblish/core/db/local-instance';
 import { actors } from '@peblish/core/db/tables/actors';
 import { activities } from '@peblish/core/db/tables/federation';
+import { modlog } from '@peblish/core/db/tables/moderation';
 import { defineConsumer, type ConsumerTx } from '@peblish/core/outbox/consumers';
 import { instanceActorUrls } from '@peblish/schema/actor-urls';
 import type { OutboxEvent } from '@peblish/schema/events';
@@ -40,6 +41,18 @@ async function sentId(t: ConsumerTx, origin: string, type: string, objectApId: s
   return row?.apId ?? newActivityId(origin);
 }
 
+/**
+ * The reason a moderation event may carry onto the wire: its own when the event's modlog row is
+ * public, otherwise none. A private row (an admins-only report removal's statement, a private
+ * site ban) keeps its reason on this instance; the activity, as delivered and as served at its
+ * id, has no summary. No row (never expected) counts as private.
+ */
+async function wireReason(t: ConsumerTx, event: { modlogId: string; reason: string | null }): Promise<string | null> {
+  if (event.reason === null) return null;
+  const [row] = await t.db.select({ public: modlog.public }).from(modlog).where(eq(modlog.id, event.modlogId));
+  return row?.public ? event.reason : null;
+}
+
 /** The community's featured and moderators collections, as its document advertises them. */
 async function collections(t: ConsumerTx, communityId: string) {
   const [row] = await t.db
@@ -68,14 +81,13 @@ async function onModeration(
     publishInCommunity(t, { origin, author: moderator, community }, activity, { microblog });
   const id = newActivityId(origin);
   switch (event.type) {
-    case 'mod.remove':
+    case 'mod.remove': {
+      const reason = await wireReason(t, event);
       // Mastodon-like followers cannot be told of a restoration: Mastodon keeps a Tombstone of what it deleted.
       return event.removed
-        ? publish(
-            removal(as(id), event.targetApId, event.reason),
-            event.target.kind === 'post' ? { withdraw: event.targetApId } : undefined,
-          )
-        : publish(restoration(as(id), await sentId(t, origin, 'Delete', event.targetApId), event.targetApId, event.reason));
+        ? publish(removal(as(id), event.targetApId, reason), event.target.kind === 'post' ? { withdraw: event.targetApId } : undefined)
+        : publish(restoration(as(id), await sentId(t, origin, 'Delete', event.targetApId), event.targetApId, reason));
+    }
     case 'mod.lock':
       return publish(
         event.locked ? lock(as(id), event.targetApId) : unlock(as(id), await sentId(t, origin, 'Lock', event.targetApId), event.targetApId),
@@ -89,7 +101,7 @@ async function onModeration(
       const details = {
         objectApId: event.targetApId,
         communityApId: community.apId,
-        reason: event.reason,
+        reason: await wireReason(t, event),
         removeData: event.removeContent,
         expires: event.expiresAt ? new Date(event.expiresAt) : null,
       };
@@ -123,7 +135,7 @@ async function onSiteBan(event: Of<'mod.ban'>, moderatorId: string, t: ConsumerT
   const details = {
     objectApId: event.targetApId,
     communityApId: instanceActorUrls(origin).apId,
-    reason: event.reason,
+    reason: await wireReason(t, event),
     removeData: event.removeContent,
     expires: event.expiresAt ? new Date(event.expiresAt) : null,
   };
