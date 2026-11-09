@@ -198,6 +198,15 @@ describe('resolving an actor', () => {
       expect(await asked('lab@lemmy.test', [{ href: lab.id, type: 'Group' }])).toMatchObject({ apId: lab.id, kind: 'Group' });
     });
 
+    test('the @ sigil accepts a Service (a bot) as well as a Person, and ! still wants a Group', async () => {
+      const bot = actorDocument('lemmy.test', 'helper', { publicKeyPem, extra: { type: 'Service' } });
+      const links: Parameters<typeof webfingerAnswer>[1] = [{ href: bot.id, type: 'Person' }];
+      expect(await asked('@helper@lemmy.test', links, { [bot.id]: { body: bot } })).toMatchObject({ apId: bot.id, kind: 'Service' });
+      // Held now: the stored copy is checked against the sigil too.
+      expect(await asked('@helper@lemmy.test', links, { [bot.id]: { body: bot } })).toMatchObject({ kind: 'Service' });
+      expect(await asked('!helper@lemmy.test', links, { [bot.id]: { body: bot } })).toMatchObject({ reason: 'invalid' });
+    });
+
     test('a copy we already hold is checked too, not trusted because it is fresh', async () => {
       const { fetch } = peer(finger([{ href: lab.id, type: 'Group' }]));
       await resolveRemoteActor(lab.id, { fetch });

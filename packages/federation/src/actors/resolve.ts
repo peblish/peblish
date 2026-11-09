@@ -99,6 +99,14 @@ function withoutFragment(id: string): string {
   return url.href;
 }
 
+/**
+ * storeRemoteActor's refusal of a kind change (core's RemoteActorKindError), matched by name so
+ * this file does not depend on where that class is exported.
+ */
+function isKindError(error: unknown): error is Error {
+  return error instanceof Error && error.name === 'RemoteActorKindError';
+}
+
 /** Whether a fetched document is a Tombstone (`type` may be a list). */
 function isTombstone(json: unknown): json is { id?: unknown } {
   if (typeof json !== 'object' || json === null || Array.isArray(json)) return false;
@@ -145,7 +153,13 @@ async function fetchAndStore(apId: string, fetch: Fetcher): Promise<string> {
   }
   const problem = checkRemoteActor(record);
   if (problem) throw new ActorResolveError('invalid', problem);
-  await storeRemoteActor(await importGrant('remote.actor_store', { apId: record.apId }), record);
+  try {
+    await storeRemoteActor(await importGrant('remote.actor_store', { apId: record.apId }), record);
+  } catch (error) {
+    // The document changed what kind of actor this id is (a Person that is now a Group): not an actor we can hold.
+    if (isKindError(error)) throw new ActorResolveError('invalid', error.message);
+    throw error;
+  }
   await refreshInstanceSoftware(new URL(record.apId).origin, { fetch });
   return record.apId;
 }
@@ -153,14 +167,16 @@ async function fetchAndStore(apId: string, fetch: Fetcher): Promise<string> {
 /**
  * A WebFinger answer is the host's claim about who a handle is; the actor's own document is what
  * settles it. The handle's name must be the actor's preferredUsername (case aside, as handles
- * are) and its sigil must be the actor's kind (@ a Person, ! a Group). The actor may live on
- * another host than the handle names, which split-domain setups (Mastodon's WEB_DOMAIN) need.
+ * are) and its sigil must be the actor's kind (@ a Person or a Service, a bot; ! a Group). The
+ * actor may live on another host than the handle names, which split-domain setups (Mastodon's
+ * WEB_DOMAIN) need.
  */
 function checkHandle(handle: Handle, actor: Pick<ResolvedActor, 'name' | 'kind'>): void {
   if (actor.name.toLowerCase() !== handle.name.toLowerCase()) {
     throw new ActorResolveError('invalid', `${handle.name}@${handle.host} resolved to an actor named ${actor.name}`);
   }
-  if (handle.kind && actor.kind !== handle.kind) {
+  const sigilMatches = handle.kind === 'Person' ? actor.kind === 'Person' || actor.kind === 'Service' : actor.kind === handle.kind;
+  if (handle.kind && !sigilMatches) {
     throw new ActorResolveError('invalid', `${handle.name}@${handle.host} names a ${handle.kind}, but the actor is a ${actor.kind}`);
   }
 }
