@@ -2,14 +2,15 @@ import { sql } from 'drizzle-orm';
 import { beforeEach, describe, expect, test } from 'vitest';
 import { db } from '../db/read.ts';
 import { posts } from '../db/tables/content.ts';
+import { communityModerators } from '../db/tables/moderation.ts';
 import { writer } from '../db/write.ts';
 import { truncateAll } from '../testing/db.ts';
-import { seedModerationWorld, seedPost } from '../testing/seed-az.ts';
+import { admin, seedModerationWorld, seedPost } from '../testing/seed-az.ts';
 import { seedBudgetWorld } from '../testing/seed-rep.ts';
 import { localUser, seedActor } from '../testing/seed.ts';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import type { Principal } from '@peblish/schema/authz';
-import { createReportAs, routeReportsAs } from './actions.ts';
+import { createReportAs, resolveReportsAs, routeReportsAs } from './actions.ts';
 import type { ReportCategory } from './categories.ts';
 import { openReportCount } from './count.ts';
 import { readQueue, readQueueCommunities, type QueueGroup } from './read.ts';
@@ -42,6 +43,17 @@ async function world() {
   await file(localUser(people.user.id), person, 'spam');
   await file(localUser(people.admin.id), local, 'child_safety');
   return { ...base, local, remote, person, mod: viewer(people.moderator), boss: viewer(people.admin, 'admin') };
+}
+
+/** A second post, reported, escalated by the moderator and dismissed by the admin; returns the moderator's Dismissed tab. */
+async function escalateAndDismiss(w: Awaited<ReturnType<typeof world>>) {
+  const extra = await seedPost(w.instances.local, w.communities.local.live, w.people.author, { title: 'Second' });
+  const target: ReportTarget = { kind: 'post', id: extra.id };
+  await file(localUser(w.people.user.id), target);
+  await routeReportsAs(localUser(w.people.moderator.id), { target, audience: 'moderators' }, 'admins');
+  const done = await resolveReportsAs(admin(w.people.admin.id), { target, audience: 'admins' }, { resolution: 'dismissed' });
+  if (!done.ok) throw new Error(done.reason);
+  return queue(w.mod, 'dismissed');
 }
 
 describe('the queue', () => {
@@ -87,6 +99,24 @@ describe('the queue', () => {
     expect((await queue(w.boss, 'escalated')).map((group) => group.target)).toEqual([w.local]);
     expect(await openReportCount(w.mod)).toBe(0);
     expect((await readQueueCommunities(w.mod)).map((community) => community.handle)).toEqual(['announcements', 'closed']);
+  });
+
+  test('a former moderator no longer reads the groups they escalated, open or closed', async () => {
+    const w = await world();
+    const key = { target: w.local, audience: 'moderators' as const };
+    await routeReportsAs(localUser(w.people.moderator.id), key, 'admins');
+    const dismissed = await escalateAndDismiss(w);
+    // removed from announcements; still a moderator of closed, so the queue itself stays open to them
+    await writer()
+      .delete(communityModerators)
+      .where(
+        and(eq(communityModerators.communityId, w.communities.local.live.id), eq(communityModerators.moderatorId, w.people.moderator.id)),
+      );
+    expect(await queue(w.mod, 'escalated')).toEqual([]);
+    expect(await queue(w.mod, 'dismissed')).toEqual([]);
+    expect(dismissed).toHaveLength(1);
+    // the admins still see both
+    expect((await queue(w.boss, 'escalated')).map((group) => group.target)).toEqual([w.local]);
   });
 
   test('the quote is plain, short and withheld for sensitive, removed, deleted and admins-only content', async () => {
