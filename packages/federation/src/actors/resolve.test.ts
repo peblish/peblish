@@ -16,6 +16,7 @@ import {
   webfingerAnswer,
 } from '@peblish/core/testing/seed-fed-a';
 import { actorFromWire } from '../mapping/actor.ts';
+import { forgetNodeInfoFailures } from '../nodeinfo/client.ts';
 import { signatureVerifies } from '../signing/verify.ts';
 import { readFixture } from '../test/manifest.ts';
 import { importGrant } from './grants.ts';
@@ -29,6 +30,7 @@ const peer = (extra = {}) => stubFetch({ [lab.id]: { body: lab }, ...nodeInfoRou
 beforeEach(async () => {
   await truncateAll();
   await seedLocalInstance();
+  forgetNodeInfoFailures();
 });
 
 describe('resolving an actor', () => {
@@ -105,6 +107,21 @@ describe('resolving an actor', () => {
     expect(a.id).toBe(b.id);
     expect(requests.filter((request) => request.url === lab.id)).toHaveLength(1);
     expect(await db().select().from(actors).where(eq(actors.apId, lab.id))).toHaveLength(1);
+  });
+
+  test('a caller that wants a fresher copy does not join a resolution that would hand back the stale one', async () => {
+    const { fetch, requests } = peer();
+    await resolveRemoteActor(lab.id, { fetch });
+    const asked = () => requests.filter((request) => request.url === lab.id).length;
+    expect(asked()).toBe(1);
+    // Both start in the same tick: the first returns the held copy, the second must fetch.
+    await Promise.all([resolveRemoteActor(lab.id, { fetch }), resolveRemoteActor(lab.id, { fetch, refresh: true })]);
+    expect(asked()).toBe(2);
+    await Promise.all([resolveRemoteActor(lab.id, { fetch }), resolveRemoteActor(lab.id, { fetch, maxAgeMs: 0 })]);
+    expect(asked()).toBe(3);
+    // The same freshness still shares one resolution.
+    await Promise.all([resolveRemoteActor(lab.id, { fetch, refresh: true }), resolveRemoteActor(lab.id, { fetch, refresh: true })]);
+    expect(asked()).toBe(4);
   });
 
   test('a handle goes through WebFinger, and the sigil picks between a person and a community of one name', async () => {

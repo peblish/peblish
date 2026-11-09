@@ -89,10 +89,15 @@ async function stored(apId: string): Promise<(ResolvedActor & { fetchedAt: Date 
   return { ...rest, deleted: deletedAt !== null };
 }
 
-// Resolutions in flight, by actor id, so a burst of activities from one new actor fetches it
-// once. (Another process racing is fine: the store's upsert ends with one row.) On globalThis
+// Resolutions in flight, by actor id and the freshness asked for, so a burst of activities from
+// one new actor fetches it once. A caller that wants a fresher copy than the one in flight
+// (a refresh, a smaller maxAgeMs) does not join it: it would get back the copy it meant to
+// replace. (Another process racing is fine: the store's upsert ends with one row.) On globalThis
 // because the web build can hold two copies of a module.
 const running = ((globalThis as { __peblishActorResolves?: Map<string, Promise<ResolvedActor>> }).__peblishActorResolves ??= new Map());
+
+const inflightKey = (apId: string, { refresh, maxAgeMs }: ResolveOptions): string =>
+  `${apId} ${refresh ? 'refresh' : (maxAgeMs ?? actorMaxAgeMs)}`;
 
 /** An id without its fragment, as a comparable string. */
 function withoutFragment(id: string): string {
@@ -208,7 +213,8 @@ export async function resolveRemoteActor(target: string, options: ResolveOptions
 }
 
 async function resolveId(apId: string, fetch: Fetcher, options: ResolveOptions): Promise<ResolvedActor> {
-  const inflight = running.get(apId);
+  const key = inflightKey(apId, options);
+  const inflight = running.get(key);
   if (inflight) return inflight;
   const work = (async () => {
     const held = await stored(apId);
@@ -238,7 +244,7 @@ async function resolveId(apId: string, fetch: Fetcher, options: ResolveOptions):
       }
       throw error;
     }
-  })().finally(() => running.delete(apId));
-  running.set(apId, work);
+  })().finally(() => running.delete(key));
+  running.set(key, work);
   return work;
 }
