@@ -9,7 +9,7 @@ import { sanitizeRemoteHtml } from '../markdown/sanitize.ts';
 import { communityRemovals } from '../moderation/tables.ts';
 import { blockedHosts } from '../resolve/blocked.ts';
 import { parseLookup } from '../resolve/parse.ts';
-import { maxPage, pageSize, type DirectoryQuery } from './input.ts';
+import { effectiveNsfw, maxPage, pageSize, type DirectoryQuery } from './input.ts';
 import { actorRef } from './ref.ts';
 
 // The community directory (lane DISC): every community this server knows, local and remote, with
@@ -56,12 +56,6 @@ const flagged = sql`(${actors.sensitive} or ${actors.nsfl})`;
 
 /** `%`, `_` and `\` in a search are text, not patterns. */
 const like = (text: string) => `%${text.replace(/[\\%_]/g, '\\$&')}%`;
-
-/**
- * Whose NSFW setting applies: a viewer who has not declared 16+ (or is signed out) gets Hide
- * whatever was asked for.
- */
-export const effectiveNsfw = (query: Pick<DirectoryQuery, 'nsfw'>, viewer: DirectoryViewer) => (viewer?.declared ? query.nsfw : 'hide');
 
 async function conditions(query: DirectoryQuery, viewer: DirectoryViewer): Promise<SQL> {
   const blocked = await blockedHosts();

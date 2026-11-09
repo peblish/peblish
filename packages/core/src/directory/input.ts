@@ -36,7 +36,8 @@ export function parseDirectorySearch(raw: Record<string, unknown>): DirectorySea
   const scope = Scope(raw.scope);
   const sort = DirectorySort(raw.sort);
   const nsfw = NsfwMode(raw.nsfw);
-  const q = typeof raw.q === 'string' ? raw.q.trim().slice(0, maxSearchLength) : '';
+  // The router parses ?q=2024 into a number.
+  const q = typeof raw.q === 'string' || typeof raw.q === 'number' ? String(raw.q).trim().slice(0, maxSearchLength) : '';
   const page = Number(raw.page);
   return {
     scope: typeof scope === 'string' ? scope : undefined,
@@ -66,3 +67,10 @@ export function directoryHref(path: string, query: Partial<DirectoryQuery>): str
   const text = params.toString();
   return text ? `${path}?${text}` : path;
 }
+
+/**
+ * Whose NSFW setting applies: a viewer who has not declared 16+ (or is signed out) gets Hide
+ * whatever was asked for.
+ */
+export const effectiveNsfw = (query: Pick<DirectoryQuery, 'nsfw'>, viewer: { declared: boolean } | null): NsfwMode =>
+  viewer?.declared ? query.nsfw : 'hide';

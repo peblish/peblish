@@ -116,6 +116,8 @@ async function e2e() {
   return {
     password: PASSWORD,
     suffix,
+    /** This server's own host, as handles write it: a lookup of it is never asked of the network. */
+    localHost: instance.domain,
     viewer: { name: viewer.name },
     undeclared: { name: undeclared.name },
     host: remote.domain,
