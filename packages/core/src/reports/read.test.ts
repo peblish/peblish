@@ -5,7 +5,7 @@ import { posts } from '../db/tables/content.ts';
 import { communityModerators, reports } from '../db/tables/moderation.ts';
 import { writer } from '../db/write.ts';
 import { truncateAll } from '../testing/db.ts';
-import { admin, seedModerationWorld, seedPost } from '../testing/seed-az.ts';
+import { admin, seedComment, seedModerationWorld, seedModerator, seedPost } from '../testing/seed-az.ts';
 import { seedBudgetWorld } from '../testing/seed-rep.ts';
 import { localUser, seedActor } from '../testing/seed.ts';
 import { and, eq } from 'drizzle-orm';
@@ -136,6 +136,18 @@ describe('the queue', () => {
     expect(subject(post.id)).toMatchObject({ kind: 'post', withheld: null, quote: `${'x'.repeat(119)}…` });
     expect(subject(flagged.id)).toMatchObject({ quote: null, withheld: 'sensitive' });
     expect(subject(gone.id)).toMatchObject({ quote: null, withheld: 'removed' });
+    // the community's flags count, and a comment under a removed post is withheld as removed
+    const nsfwCommunity = await seedActor(w.instances.local, 'Group', 'after_dark', { sensitive: true });
+    await seedModerator(nsfwCommunity, w.people.moderator);
+    const inNsfw = await seedPost(w.instances.local, nsfwCommunity, w.people.author, { title: 'Plain title' });
+    const underGone = await seedComment(w.instances.local, post, w.people.author, { bodyMd: 'Plain words' });
+    await file(localUser(w.people.user.id), { kind: 'post', id: inNsfw.id });
+    await file(localUser(w.people.user.id), { kind: 'comment', id: underGone.id });
+    await writer().update(posts).set({ removedAt: new Date() }).where(eq(posts.id, post.id));
+    const later = await queue(w.mod);
+    const after = (id: string) => later.find((group) => group.target.id === id)?.subject;
+    expect(after(inNsfw.id)).toMatchObject({ quote: null, withheld: 'sensitive' });
+    expect(after(underGone.id)).toMatchObject({ quote: null, withheld: 'removed', removed: false });
     const adminOnly = (await queue(w.boss, 'admins')).find((group) => group.target.id === w.local.id);
     expect(adminOnly?.subject).toMatchObject({ quote: null, withheld: 'admins' });
   });

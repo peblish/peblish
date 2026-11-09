@@ -11,6 +11,7 @@ import { instances } from '../db/tables/instances.ts';
 import { communityModerators, reports } from '../db/tables/moderation.ts';
 import type { Result } from '../identity/result.ts';
 import { renderMarkdown } from '../markdown/render.ts';
+import { communityRemovals } from '../moderation/tables.ts';
 import { sanitizeRemoteHtml } from '../markdown/sanitize.ts';
 import { adminOnly, reportCategories, type ReportAudience, type ReportCategory } from './categories.ts';
 import { moderatesAny, targetKey, visibleRows, type QueueTab, type ReportViewer } from './scope.ts';
@@ -19,8 +20,8 @@ import type { ReportTarget } from './types.ts';
 // The queue's read model (lane REP): groups of reports, one per reported target and audience,
 // each with its totals, its newest reports and a summary of the target. Only staff call it.
 // The quote is plain text cut to 120 characters and left out for sensitive, removed or deleted
-// content and for admins-only categories (the evidence viewer is lane SAFE's); the page blurs it
-// until Show.
+// content (the post's and the community's flags and state included) and for admins-only
+// categories (the evidence viewer is lane SAFE's); the page blurs it until Show.
 
 export const quoteLength = 120;
 export const queuePageSize = 50;
@@ -289,22 +290,49 @@ async function readSubjects(q: Queryable, page: Head[]): Promise<Map<string, Que
             nsfl: posts.nsfl,
             removedAt: comments.removedAt,
             deletedAt: comments.deletedAt,
+            postRemovedAt: posts.removedAt,
+            postDeletedAt: posts.deletedAt,
           })
           .from(comments)
           .innerJoin(posts, eq(posts.id, comments.postId))
           .where(inArray(comments.id, commentIds)),
   ]);
-  const people = await readActors(q, [
-    ...new Set([...postRows, ...commentRows].flatMap((row) => [row.authorId, row.communityId]).concat(actorIds)),
+  const communityIds = [...new Set([...postRows, ...commentRows].map((row) => row.communityId))];
+  const [people, communityRows] = await Promise.all([
+    readActors(q, [...new Set([...postRows, ...commentRows].flatMap((row) => [row.authorId, row.communityId]).concat(actorIds))]),
+    communityIds.length === 0
+      ? []
+      : q
+          .select({
+            id: actors.id,
+            sensitive: actors.sensitive,
+            nsfl: actors.nsfl,
+            closed: sql<boolean>`${actors.deletedAt} is not null or exists (select 1 from ${communityRemovals} where ${communityRemovals.communityId} = ${actors.id})`,
+          })
+          .from(actors)
+          .where(inArray(actors.id, communityIds)),
   ]);
+  const communities = new Map(communityRows.map((row) => [row.id, row]));
   const subjects = new Map<string, QueueSubject>();
   const content = (kind: 'post' | 'comment', row: (typeof postRows)[number] | (typeof commentRows)[number]) => {
     const author = people.get(row.authorId);
     const community = people.get(row.communityId);
-    if (!author || !community) return;
+    const flags = communities.get(row.communityId);
+    if (!author || !community || !flags) return;
     const removed = row.removedAt !== null;
     const deleted = row.deletedAt !== null;
-    const withheld: Withheld = deleted ? 'deleted' : removed ? 'removed' : row.sensitive || row.nsfl ? 'sensitive' : null;
+    // The post page's gates, all applied, since the queue never asks who is looking: a comment
+    // under a removed or deleted post, a closed community, and the post's and the community's
+    // NSFW and NSFL flags withhold the quote.
+    const parent = 'postRemovedAt' in row ? row : null;
+    const withheld: Withheld =
+      deleted || parent?.postDeletedAt
+        ? 'deleted'
+        : removed || parent?.postRemovedAt || flags.closed
+          ? 'removed'
+          : row.sensitive || row.nsfl || flags.sensitive || flags.nsfl
+            ? 'sensitive'
+            : null;
     const text = kind === 'post' ? (row as (typeof postRows)[number]).title : plainText(row.bodyMd, row.contentHtml, row.apId);
     subjects.set(row.id, {
       kind,

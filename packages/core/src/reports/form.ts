@@ -2,11 +2,13 @@ import type { Principal } from '@peblish/schema/authz';
 import type { Uuid } from '@peblish/schema/ids';
 import { and, eq } from 'drizzle-orm';
 import { authorize } from '../authz/authorize.ts';
+import { hideNsfw, type NsfwChoice } from '../communities/gate.ts';
 import { db, type Queryable } from '../db/read.ts';
 import { actors } from '../db/tables/actors.ts';
 import { comments, posts } from '../db/tables/content.ts';
 import { reports } from '../db/tables/moderation.ts';
 import type { Result } from '../identity/result.ts';
+import { readPost } from '../posts/read.ts';
 import { audienceOf, categoriesFor, mayFederate, type ReportAudience, type ReportCategory } from './categories.ts';
 import { cut, plainText, readActors } from './read.ts';
 import type { ReportTarget } from './types.ts';
@@ -14,7 +16,8 @@ import type { ReportTarget } from './types.ts';
 // What the report form shows (lane REP): who and what is reported, the plain quote, the
 // categories for that kind of target with who sees each, and whether a report can also go to a
 // remote instance. The target is checked with the real policy, so the page and the submit
-// refuse alike.
+// refuse alike. The quote follows the post page's gate for this viewer (readPost): the post's
+// and the community's NSFW and NSFL flags, the age declaration and the browser's Hide NSFW.
 
 export type ReportCategoryOption = {
   key: ReportCategory;
@@ -26,15 +29,23 @@ export type ReportCategoryOption = {
 export type ReportForm = {
   target: ReportTarget;
   about: { kind: 'post' | 'comment' | 'person' | 'community'; handle: string; community: string | null };
-  /** At most 120 plain characters; null for sensitive, NSFL, removed or deleted content and for people. */
+  /** At most 120 plain characters; null for people, and wherever the post page would gate the content for this viewer. */
   quote: string | null;
   /** The remote host that would receive a forwarded report: the community's, else the author's; null when none does. */
   host: string | null;
   categories: ReportCategoryOption[];
 };
 
-/** The form for a target, or the policy's refusal (not found, deleted, removed, your own, banned, a report already open). */
-export async function readReportForm(principal: Principal, target: ReportTarget, q: Queryable = db()): Promise<Result<ReportForm>> {
+/**
+ * The form for a target, or the policy's refusal (not found, deleted, removed, your own, banned,
+ * a report already open). `nsfw` is the browser's Hide NSFW choice, as the post page reads it.
+ */
+export async function readReportForm(
+  principal: Principal,
+  target: ReportTarget,
+  q: Queryable = db(),
+  nsfw: NsfwChoice = hideNsfw,
+): Promise<Result<ReportForm>> {
   const decision = await authorize('report.create', principal, { target, category: 'other', forward: false }, { db: q });
   if (!decision.ok) return decision;
   const options = (host: string | null): ReportCategoryOption[] =>
@@ -60,27 +71,25 @@ export async function readReportForm(principal: Principal, target: ReportTarget,
     target.kind === 'post'
       ? await q
           .select({
+            postId: posts.id,
             apId: posts.apId,
             title: posts.title,
             bodyMd: posts.bodyMd,
             contentHtml: posts.contentHtml,
             authorId: posts.authorId,
             communityId: posts.communityId,
-            sensitive: posts.sensitive,
-            nsfl: posts.nsfl,
           })
           .from(posts)
           .where(eq(posts.id, target.id))
       : await q
           .select({
+            postId: posts.id,
             apId: comments.apId,
             title: posts.title,
             bodyMd: comments.bodyMd,
             contentHtml: comments.contentHtml,
             authorId: comments.authorId,
             communityId: posts.communityId,
-            sensitive: posts.sensitive,
-            nsfl: posts.nsfl,
           })
           .from(comments)
           .innerJoin(posts, eq(posts.id, comments.postId))
@@ -93,11 +102,15 @@ export async function readReportForm(principal: Principal, target: ReportTarget,
   const remote = !community.local ? community : !author.local ? author : null;
   const host = remote ? new URL(remote.apId).host : null;
   const text = target.kind === 'post' ? row.title : plainText(row.bodyMd, row.contentHtml, row.apId);
+  // The post page's own decision for this viewer; a comment is quoted only when its post is shown.
+  const viewer = principal.kind === 'local' ? { actorId: principal.actorId, siteRole: principal.siteRole } : null;
+  const page = await readPost(row.postId, viewer, q, nsfw);
+  const shown = page !== null && page.gate === 'none' && !page.view.deleted && !page.view.removed;
   return {
     ok: true,
     target,
     about: { kind: target.kind, handle: author.handle, community: community.handle },
-    quote: row.sensitive || row.nsfl ? null : cut(text),
+    quote: shown ? cut(text) : null,
     host,
     categories: options(host),
   };
