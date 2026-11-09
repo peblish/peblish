@@ -1,4 +1,4 @@
-import { deletePostAs, removePostAs, restorePostAs, restoreRemovedPostAs } from '@peblish/core/posts/actions';
+import { deletePostAs, restorePostAs } from '@peblish/core/posts/actions';
 import { Uuid } from '@peblish/schema/ids';
 import { createFileRoute, notFound } from '@tanstack/react-router';
 import { type } from 'arktype';
@@ -7,13 +7,15 @@ import { loadPost } from '../-load.ts';
 import { answer, type Outcome } from '../-form.ts';
 import { PostPage } from '../-ui/post-page.tsx';
 import postCss from '../-ui/post.css?url';
+import gateCss from '../../c/-ui/gate.css?url';
 
 // /post/<id>: one post, its actions and (lane D) its thread. The page is personal (the gate,
 // a tombstone and the actions depend on who looks), so loadPost sets cache-control: no-store.
-// Actions are plain form posts to this URL: 303 back to the page, or JSON once hydrated.
+// The author's actions are plain form posts to this URL: 303 back to the page, or JSON once
+// hydrated. Moderation is MODF's slot (-ui/actions/moderate.tsx), which posts elsewhere.
 
 const Search = type({ 'error?': 'string' });
-const Body = type({ intent: "'delete' | 'restore' | 'remove' | 'unremove'", 'reason?': 'string <= 10000' });
+const Body = type({ intent: "'delete' | 'restore'" });
 
 export const Route = createFileRoute('/post/$id/')({
   validateSearch: Search,
@@ -23,8 +25,16 @@ export const Route = createFileRoute('/post/$id/')({
     return data;
   },
   head: ({ loaderData }) => ({
-    meta: loaderData?.post.title ? [{ title: `${loaderData.post.title} | !${loaderData.post.community.handle}` }] : [],
-    links: [{ rel: 'stylesheet', href: postCss }],
+    meta:
+      loaderData?.kind === 'gate'
+        ? [{ name: 'robots', content: 'noindex' }]
+        : loaderData?.post.title
+          ? [{ title: `${loaderData.post.title} | !${loaderData.post.community.handle}` }]
+          : [],
+    links: [
+      { rel: 'stylesheet', href: postCss },
+      { rel: 'stylesheet', href: gateCss },
+    ],
   }),
   component: PostRoute,
   server: {
@@ -40,12 +50,9 @@ export const Route = createFileRoute('/post/$id/')({
         const body = Body(await readForm(request));
         if (body instanceof type.errors) return answer(request, cookies, { ok: false, reason: 'target.not_found' }, back);
         const principal = principalOf(session.view);
-        const reason = body.reason?.trim() || null;
         const outcome: Outcome = await {
           delete: () => deletePostAs(principal, params.id),
           restore: () => restorePostAs(principal, params.id),
-          remove: () => removePostAs(principal, params.id, reason),
-          unremove: () => restoreRemovedPostAs(principal, params.id, reason),
         }[body.intent]();
         return answer(request, cookies, outcome, back);
       },

@@ -8,7 +8,16 @@ import { communityModerators } from '@peblish/core/db/tables/moderation';
 import { communityRemovals } from '@peblish/core/moderation/tables';
 import { and, count, desc, eq, isNull, sql } from 'drizzle-orm';
 import { create, page } from '../delivery/activities.ts';
-import { heldContent, loadCommentByApId, loadPost, loadPostByApId, localActorRecord, mentionTags, withTags } from '../delivery/records.ts';
+import {
+  heldContent,
+  loadCommentByApId,
+  loadPost,
+  loadPostByApId,
+  localActorRecord,
+  mentionsIn,
+  withCc,
+  withTags,
+} from '../delivery/records.ts';
 import { toWire } from '../mapping/document.ts';
 import type { Json, JsonObject } from '../mapping/json.ts';
 import { LEMMY_CONTEXT } from '../mapping/vocabulary.ts';
@@ -107,13 +116,26 @@ function carriedContentId(activity: JsonObject): string | null {
   return null;
 }
 
+/**
+ * A post or comment's wire document with the Mention tags and the `cc` of the remote people its
+ * body names, as the copy we delivered has them, so the document a peer fetches matches it.
+ */
+async function withMentions<T extends JsonObject>(db: Queryable, origin: string, wire: T, bodyMd: string | null): Promise<T> {
+  const { tags, people } = await mentionsIn(db, origin, bodyMd);
+  return withCc(
+    withTags(wire, tags),
+    people.map((person) => person.apId),
+  );
+}
+
 async function objectDocument(db: Queryable, origin: string, kind: 'post' | 'comment' | 'activity', apId: string): Promise<Served | null> {
   if (kind === 'activity') {
     const [row] = await db
       .select({ type: activities.type, raw: activities.raw })
       .from(activities)
       .where(and(eq(activities.apId, apId), eq(activities.local, true)));
-    if (!row) return null;
+    // A Flag names its reporter and their reason, for the moderators it was sent to only: never served.
+    if (!row || row.type === 'Flag') return null;
     const stored = row.raw as JsonObject;
     // What a Create, Update or Announce carried is gone, never held or no longer shown: so is the
     // activity, as far as peers can fetch it. The community's Announce of a remote Page or Note is
@@ -129,14 +151,12 @@ async function objectDocument(db: Queryable, origin: string, kind: 'post' | 'com
     const loaded = await loadPostByApId(db, origin, apId);
     if (!loaded) return null;
     if (!loaded.servable) return tombstone(apId, 'Page', loaded.deletedAt);
-    const tags = await mentionTags(db, origin, loaded.bodyMd);
-    return { status: 200, json: withTags(toWire({ kind: 'post', post: loaded.record }), tags) };
+    return { status: 200, json: await withMentions(db, origin, toWire({ kind: 'post', post: loaded.record }), loaded.bodyMd) };
   }
   const loaded = await loadCommentByApId(db, origin, apId);
   if (!loaded) return null;
   if (!loaded.servable) return tombstone(apId, 'Note', loaded.deletedAt);
-  const tags = await mentionTags(db, origin, loaded.bodyMd);
-  return { status: 200, json: withTags(toWire({ kind: 'comment', comment: loaded.record }), tags) };
+  return { status: 200, json: await withMentions(db, origin, toWire({ kind: 'comment', comment: loaded.record }), loaded.bodyMd) };
 }
 
 /**
@@ -202,7 +222,7 @@ async function pinnedPages(db: Queryable, origin: string, community: ActorRow): 
     const loaded = await loadPost(db, origin, id);
     if (!loaded?.servable) continue;
     const { '@context': _context, ...wire } = toWire({ kind: 'post', post: loaded.record });
-    pages.push(withTags(wire, await mentionTags(db, origin, loaded.bodyMd)));
+    pages.push(await withMentions(db, origin, wire, loaded.bodyMd));
   }
   return pages;
 }
@@ -243,7 +263,7 @@ async function outboxCollection(db: Queryable, origin: string, actor: ActorRow, 
     if (!loaded?.servable) continue;
     const activity = create({ id, actorApId, communityApId: loaded.community.apId }, page(loaded.record));
     const { '@context': _context, ...wire } = toWire({ kind: 'activity', activity });
-    items.push(withTags(wire, await mentionTags(db, origin, loaded.bodyMd)));
+    items.push(await withMentions(db, origin, wire, loaded.bodyMd));
   }
   return { type: 'OrderedCollection', id: url, totalItems: row?.total ?? 0, orderedItems: items };
 }

@@ -5,7 +5,8 @@ import { CloseIcon } from '@peblish/ui/components/icons';
 import { useState, type ReactNode } from 'react';
 import { useTranslate } from '../i18n/use-translate.ts';
 import type { ShellData } from './data.ts';
-import { communityPath, directoryPaths, feedPaths, sitePaths } from './paths.ts';
+import { unreadCap } from '@peblish/core/notifications/view';
+import { communityPath, directoryPaths, feedPaths, inboxPath, reportQueuePath, sitePaths } from './paths.ts';
 
 function NavLink({ href, pathname, children }: { href: string; pathname: string; children: ReactNode }) {
   return (
@@ -14,6 +15,9 @@ function NavLink({ href, pathname, children }: { href: string; pathname: string;
     </a>
   );
 }
+
+/** A count as the badges print it: "99+" from the cap on. */
+const badgeText = (count: number) => (count >= unreadCap ? `${unreadCap - 1}+` : String(count));
 
 function CommunityGroup({ title, communities, pathname }: { title: string; communities: readonly ActorRef[]; pathname: string }) {
   if (communities.length === 0) return null;
@@ -76,7 +80,7 @@ export function Sidebar({
         <CloseIcon />
       </a>
       <a className="pb-brand" href="/">
-        <b>{t('shell', 'title')}</b>
+        <b>{shell.siteName}</b>
       </a>
       <nav aria-label={t('shell', 'nav.feeds')}>
         <p className="pb-side__title">{t('shell', 'nav.feeds')}</p>
@@ -112,6 +116,38 @@ export function Sidebar({
           )}
         </ul>
       </nav>
+      {session && (
+        <nav aria-label={t('shell', 'nav.you')}>
+          <p className="pb-side__title">{t('shell', 'nav.you')}</p>
+          <ul className="pb-side__links">
+            <li>
+              <a href={inboxPath} aria-current={pathname === inboxPath ? 'page' : undefined}>
+                {t('shell', 'you.inbox')}{' '}
+                {/* The count's word is hidden text, so the link's name starts with what it shows (axe label-content-name-mismatch). */}
+                {shell.unread > 0 && (
+                  <b className="pb-count">
+                    {badgeText(shell.unread)}
+                    <span className="pb-sr"> {t('shell', 'you.unread')}</span>
+                  </b>
+                )}
+              </a>
+            </li>
+            {shell.reportCount !== null && (
+              <li>
+                <a href={reportQueuePath()} aria-current={pathname === reportQueuePath() ? 'page' : undefined}>
+                  {t('shell', 'you.queue')}{' '}
+                  {shell.reportCount > 0 && (
+                    <b className="pb-count">
+                      {badgeText(shell.reportCount)}
+                      <span className="pb-sr"> {t('shell', 'you.open')}</span>
+                    </b>
+                  )}
+                </a>
+              </li>
+            )}
+          </ul>
+        </nav>
+      )}
       <nav aria-label={t('shell', 'nav.communities')}>
         <p className="pb-side__title">{t('shell', 'nav.communities')}</p>
         {hasCommunities && (

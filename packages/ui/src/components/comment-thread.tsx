@@ -26,6 +26,8 @@ export interface CommentThreadLabels {
   moreReplies: (replies: number) => string;
   removed: string;
   deleted: string;
+  /** The note in place of a comment by someone the viewer blocks: "Hidden: you blocked this person." */
+  blocked: string;
   edited: string;
   reply: string;
   share: string;
@@ -49,6 +51,8 @@ export interface CommentThreadProps {
   /** Shows a reply action when given. */
   onReply?: (comment: CommentView) => void;
   onShare?: (comment: CommentView) => void;
+  /** More actions after the built-in ones, per comment: the page's report, block and moderate slots. */
+  renderActions?: (comment: CommentView) => ReactNode;
   /** Levels drawn before the thread continues on its own page. */
   maxDepth?: number;
   /** A comment scoring below this starts folded. */
@@ -72,7 +76,8 @@ export const unloadedReplies = (node: CommentNode) =>
 /**
  * The comment tree (thread-nested): indented levels with a clickable thread line, a fold
  * button per comment, low-score comments folded, removed and deleted comments as a note (one
- * label for a comment that is both: removed), and a "Continue this thread" link wherever the
+ * label for a comment that is both: removed), a comment by someone the viewer blocks as a note
+ * under its author line (its replies stay), and a "Continue this thread" link wherever the
  * list leaves replies out, because the depth cap cuts the branch or the server cut a branch it
  * only partly sent. It fetches nothing: the page passes the list and the callbacks.
  */
@@ -88,6 +93,7 @@ export function CommentThread({
   voteDisabled,
   onReply,
   onShare,
+  renderActions,
   maxDepth = 6,
   lowScoreThreshold = -5,
   now,
@@ -102,8 +108,11 @@ export function CommentThread({
     const { comment } = node;
     const isFolded = folded(comment);
     const gone = comment.removed || comment.deleted;
+    // A comment by someone the viewer blocks keeps its place and its author line, without its text or the vote and reply.
+    const blocked = !gone && comment.blocked === true;
+    const quiet = gone || blocked;
     // Both flags show one label, removed.
-    const tombstone = comment.removed ? labels.removed : labels.deleted;
+    const tombstone = comment.removed ? labels.removed : comment.deleted ? labels.deleted : labels.blocked;
     const replies = node.descendants;
     const lowScore = scoreOf(comment) < lowScoreThreshold;
     // Past our own cap the replies the list holds are not drawn; above it, only the ones it leaves out count.
@@ -158,13 +167,13 @@ export function CommentThread({
           </div>
         ) : (
           <div className="pb-comment__main">
-            {gone || comment.contentHtml === null ? (
+            {quiet || comment.contentHtml === null ? (
               <p className="pb-comment__note">{tombstone}</p>
             ) : (
               <Prose html={comment.contentHtml} className="pb-comment__text" />
             )}
             <div className="pb-comment__actions">
-              {!gone && (
+              {!quiet && (
                 <VoteControl
                   orientation="horizontal"
                   score={scoreOf(comment)}
@@ -175,7 +184,7 @@ export function CommentThread({
                   locale={locale}
                 />
               )}
-              {onReply && !gone && (
+              {onReply && !quiet && (
                 <button type="button" className="pb-linkbutton" onClick={() => onReply(comment)}>
                   {labels.reply}
                 </button>
@@ -185,6 +194,7 @@ export function CommentThread({
                   {labels.share}
                 </button>
               )}
+              {renderActions?.(comment)}
             </div>
             {!capped && node.children.length > 0 && (
               <div className="pb-comment__kids">

@@ -9,6 +9,7 @@ import { writer } from '@peblish/core/db/write';
 import { tx } from '@peblish/core/tx/tx';
 import { truncateAll } from '@peblish/core/testing/db';
 import { seedActor, seedInstance } from '@peblish/core/testing/seed';
+import { seedModlog } from '@peblish/core/testing/seed-e2';
 import { seedLocalInstance, seedSigningKey } from '@peblish/core/testing/seed-fed-a';
 import { inboxState, seedFollow, seedInboundWorld, seedInboxRow, seedPeerActor } from '@peblish/core/testing/seed-fed-b';
 import type { OutboxEvent } from '@peblish/schema/events';
@@ -66,7 +67,7 @@ describe('what reaches a local community directly is announced to its followers'
     return text;
   };
 
-  test('the Announce carries the received bytes exactly, and nothing goes back to the sender’s server', async () => {
+  test('the Announce carries the received bytes exactly, goes to no Mastodon-like inbox, and nothing goes back to the sender’s server', async () => {
     await followed();
     const text = await receive({
       id: activityId('https://lemmy.test', 'like'),
@@ -77,7 +78,7 @@ describe('what reaches a local community directly is announced to its followers'
       'urn:odd': ['kept'],
     });
     const rows = await queued();
-    expect(rows.map((row) => row.inbox)).toEqual(['https://mastodon.test/inbox', 'https://piefed.test/inbox']);
+    expect(rows.map((row) => row.inbox)).toEqual(['https://piefed.test/inbox']);
     for (const row of rows) {
       expect(row.body.endsWith(`,"object":${text}}`)).toBe(true);
       expect(row.json).toMatchObject({ type: 'Announce', actor: hosts.spike, to: [PUBLIC] });
@@ -163,13 +164,14 @@ async function outbound() {
   await writer()
     .insert(follows)
     .values({ followerId: bob.id, followeeId: news.id, apId: 'https://lemmy.test/follow/bob', state: 'accepted', acceptedAt: new Date() });
-  return { here, moderator, news, bob, lab };
+  const log = (await seedModlog(moderator, bob)).id;
+  return { here, moderator, news, bob, lab, log };
 }
 type Outbound = Awaited<ReturnType<typeof outbound>>;
 
 const run = (event: OutboxEvent) => tx((t) => consumer.handle(event, t));
 const mod = (w: Outbound, community = w.news.id, local = true) =>
-  ({ v: 1, moderatorId: w.moderator.id, modlogId: uuidv7(), local, communityId: community }) as const;
+  ({ v: 1, moderatorId: w.moderator.id, modlogId: w.log, local, communityId: community }) as const;
 const target = 'https://fed-a.test/post/7';
 
 describe('a moderation action taken here is federated through the community', () => {
@@ -241,7 +243,7 @@ describe('a moderation action taken here is federated through the community', ()
     expect(byType('Undo').map((a) => (a.object as Json).type)).toEqual(['Lock', 'Block']);
   });
 
-  test('what a peer did, a community we do not host, a site ban and a moderator no longer here are not federated', async () => {
+  test('what a peer did, a community we do not host and a moderator no longer here are not federated', async () => {
     const w = await outbound();
     const ref = { kind: 'post', id: uuidv7() } as const;
     await run({
@@ -253,17 +255,6 @@ describe('a moderation action taken here is federated through the community', ()
       reason: null,
     } as OutboxEvent);
     await run({ type: 'mod.remove', ...mod(w, w.lab.id), target: ref, targetApId: target, removed: true, reason: null } as OutboxEvent);
-    await run({
-      type: 'mod.ban',
-      ...mod(w),
-      communityId: null,
-      targetActorId: w.bob.id,
-      targetApId: w.bob.apId,
-      banned: true,
-      removeContent: false,
-      expiresAt: null,
-      reason: null,
-    } as OutboxEvent);
     await run({
       type: 'mod.lock',
       ...mod(w),

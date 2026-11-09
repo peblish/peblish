@@ -66,6 +66,8 @@ export const CommentView = type({
   removed: 'boolean',
   counts: Counts,
   myVote: '-1 | 0 | 1',
+  /** True when the viewer blocks the author (or their instance): the thread keeps the place, without the text. */
+  'blocked?': 'boolean',
 });
 export type CommentView = typeof CommentView.infer;
 

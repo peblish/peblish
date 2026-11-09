@@ -1,0 +1,32 @@
+# Mbin's own FrankenPHP Caddyfile (docker/Caddyfile at v1.11.0) without the Mercure hub and
+# Vulcain. TLS is the lab front door's job; this listens on plain HTTP (SERVER_NAME=:80).
+{
+	{$CADDY_GLOBAL_OPTIONS}
+	auto_https off
+	frankenphp {
+		{$FRANKENPHP_CONFIG}
+		worker {
+			file ./public/index.php
+			env APP_RUNTIME Symfony\Component\Runtime\SymfonyRuntime
+			{$FRANKENPHP_WORKER_CONFIG}
+		}
+	}
+}
+
+{$SERVER_NAME} {
+	root /app/public
+	encode zstd br gzip
+	header ?Permissions-Policy "browsing-topics=()"
+
+	@phpRoute {
+		not file {path}
+	}
+	rewrite @phpRoute index.php
+
+	@frontController path index.php
+	php @frontController
+
+	file_server {
+		hide *.php
+	}
+}

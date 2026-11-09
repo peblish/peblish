@@ -1,5 +1,8 @@
 import { proxyUrlBuilder } from '@peblish/core/media/proxy-url';
 import { expect, test, vi } from 'vitest';
+// The peer gate reads the database; these tests are about the handler, so every peer is approved unless a test says otherwise.
+vi.mock('@peblish/core/peers/gate', () => ({ mediaAllowed: async () => true }));
+
 import { PROXY_MAX_AGE_SECONDS, PROXY_RETRY_AFTER_SECONDS, proxyResponse } from './-handler.ts';
 
 const key = Buffer.from('k'.repeat(32));
@@ -81,4 +84,54 @@ test('a busy proxy answers 503 with Retry-After and no caching', async () => {
     fetchImage: async () => ({ ok: false, status: 415, why: 'not_a_raster_image' }),
   });
   expect(refused.headers.get('retry-after')).toBeNull();
+});
+
+test('media of a quarantined, purged or blocked peer is a 404 and fetches nothing', async () => {
+  const fetchImage = image();
+  const asked: string[] = [];
+  const response = await proxyResponse(signature, target, {
+    key,
+    enabled: true,
+    fetchImage,
+    mediaAllowed: async (host) => {
+      asked.push(host);
+      return false;
+    },
+  });
+  expect([response.status, response.headers.get('cache-control')]).toEqual([404, 'no-store']);
+  expect(asked).toEqual(['img.example']);
+  expect(fetchImage).not.toHaveBeenCalled();
+});
+
+test('a redirect to a peer whose media is not allowed is a 404, and that host is never contacted', async () => {
+  const fetched: string[] = [];
+  const hop = (status: number, location?: string) => ({
+    status,
+    headers: new Headers(location ? { location } : {}),
+    body: status === 200 ? new Uint8Array(png) : new Uint8Array(),
+    url: '',
+  });
+  const fetch = vi.fn(async (url: string, init: { maxRedirects: number }) => {
+    fetched.push(url);
+    // The gate follows redirects itself, so the client is never asked to.
+    expect(init.maxRedirects).toBe(0);
+    if (url === remoteUrl) return hop(302, 'https://cdn.example/a.png');
+    if (url === 'https://cdn.example/a.png') return hop(301, '//quarantined.example/a.png');
+    return hop(200);
+  });
+  const asked: string[] = [];
+  const mediaAllowed = async (host: string) => {
+    asked.push(host);
+    return host !== 'quarantined.example';
+  };
+  const response = await proxyResponse(signature, target, { key, enabled: true, fetch, mediaAllowed });
+  expect([response.status, response.headers.get('cache-control')]).toEqual([404, 'no-store']);
+  expect(asked).toEqual(['img.example', 'cdn.example', 'quarantined.example']);
+  expect(fetched).toEqual([remoteUrl, 'https://cdn.example/a.png']);
+
+  // An allowed chain is followed to the image.
+  fetched.length = 0;
+  const allowed = await proxyResponse(signature, target, { key, enabled: true, fetch, mediaAllowed: async () => true });
+  expect(allowed.status).toBe(200);
+  expect(fetched).toEqual([remoteUrl, 'https://cdn.example/a.png', 'https://quarantined.example/a.png']);
 });

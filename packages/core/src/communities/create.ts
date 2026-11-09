@@ -63,6 +63,8 @@ export const createCommunity = defineMutation({
         nsfl,
         postingRestrictedToMods: fields.postingRestrictedToMods ?? false,
         postingWarning: fields.postingWarning || null,
+        discoverable: fields.discoverable ?? true,
+        indexable: fields.indexable ?? true,
         publishedAt: now,
       });
     } catch (error) {

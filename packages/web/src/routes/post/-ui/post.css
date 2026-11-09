@@ -81,45 +81,15 @@
     gap: 6px 16px;
     margin-top: 12px;
   }
-  .post-own,
-  .post-mod {
+  .post-own {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
     gap: 8px 12px;
   }
-  .post-mod label {
-    display: block;
-    font-weight: 600;
-  }
-  .post-mod textarea {
-    display: block;
-    width: 100%;
-    max-width: 480px;
-    margin: 4px 0 8px;
-    font: inherit;
-    box-sizing: border-box;
-  }
   .post-error {
     margin: 8px 0 0;
     color: var(--post-err);
-  }
-  /* The gate: a sensitive post stays blurred until the checkbox is on (no JavaScript needed).
-     The base styles reset native controls, so the checkbox gets its box back (as the auth pages do). */
-  .post-reveal {
-    appearance: auto;
-    block-size: 16px;
-    inline-size: 16px;
-    margin: 0 6px 0 0;
-    vertical-align: middle;
-  }
-  .post-sensitive label {
-    font-weight: 600;
-  }
-  .post-reveal:not(:checked) ~ .post-sensitive__content {
-    filter: blur(14px);
-    user-select: none;
-    pointer-events: none;
   }
   .post-thread {
     margin-top: 24px;

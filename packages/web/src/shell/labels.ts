@@ -60,6 +60,7 @@ export function useCommentThreadLabels(): CommentThreadLabels {
     moreReplies: (replies) => translatePlural(locale, 'ui', 'thread.more', replies),
     removed: t('ui', 'thread.removed'),
     deleted: t('ui', 'thread.deleted'),
+    blocked: t('ui', 'thread.blocked'),
     edited: t('ui', 'thread.edited'),
     reply: t('ui', 'thread.reply'),
     share: t('ui', 'thread.share'),

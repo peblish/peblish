@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { publicOrigin } from '@peblish/core/config';
 import { imageSource } from '@peblish/core/media/image-src';
 import { mediaProxyKey, proxyUrlBuilder } from '@peblish/core/media/proxy-url';
+import { deniedMediaDomains } from '@peblish/core/peers/gate';
 import { renderMarkdown } from '@peblish/core/markdown/render';
 import { sanitizeRemoteHtml } from '@peblish/core/markdown/sanitize';
 import { readSetting } from '@peblish/core/settings/read';
@@ -23,6 +24,8 @@ export interface SiteMarkdown {
    * as links: viewer IPs never reach remote hosts (decision 5).
    */
   proxy?: (url: string) => string;
+  /** Peer domains whose media is denied (new peers are quarantined until approved); their images show as links. */
+  deniedDomains?: readonly string[];
 }
 
 export interface MarkdownRenderer {
@@ -42,12 +45,17 @@ export interface MarkdownRenderer {
 export async function siteMarkdown(): Promise<SiteMarkdown> {
   const origin = publicOrigin();
   if (!origin) throw new Error('PUBLIC_ORIGIN is not set; Markdown links and mentions need the instance origin');
-  return { origin, remoteMedia: await readSetting('remote_media.enabled'), proxy: proxyUrlBuilder(await mediaProxyKey()) };
+  return {
+    origin,
+    remoteMedia: await readSetting('remote_media.enabled'),
+    proxy: proxyUrlBuilder(await mediaProxyKey()),
+    deniedDomains: await deniedMediaDomains(),
+  };
 }
 
 export async function createMarkdownRenderer(site?: SiteMarkdown): Promise<MarkdownRenderer> {
-  const { origin, remoteMedia, proxy } = site ?? (await siteMarkdown());
-  const image = (url: string | null | undefined) => imageSource(url, { origin, remoteMedia, proxy });
+  const { origin, remoteMedia, proxy, deniedDomains } = site ?? (await siteMarkdown());
+  const image = (url: string | null | undefined) => imageSource(url, { origin, remoteMedia, proxy, deniedDomains });
   const rendered = new Map<string, RenderedMarkdown>();
   const sanitized = new Map<string, SanitizedHtml>();
   // Keyed by a hash of the input and its options, so large bodies are not kept twice.

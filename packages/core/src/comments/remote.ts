@@ -5,6 +5,7 @@ import { db as readDb, type Queryable } from '../db/read.ts';
 import { localInstance } from '../db/local-instance.ts';
 import { actors } from '../db/tables/actors.ts';
 import { comments, posts } from '../db/tables/content.ts';
+import { sameMentions } from '../mentions/scan.ts';
 import { remoteBody } from '../posts/body.ts';
 import { defineMutation } from '../tx/mutation.ts';
 import { Refused } from '../tx/refused.ts';
@@ -111,8 +112,13 @@ export const updateRemoteComment = defineMutation({
     if (current.apId !== record.apId) throw new TypeError('updateRemoteComment: the record is not this comment');
     const { origin } = await localInstance(t.db);
     const body = remoteBody(record, origin, commentId, current.apId);
-    if (body.bodyMd === current.bodyMd && body.contentHtml === current.contentHtml && record.language === current.language)
-      return { id: commentId, changed: false };
+    // A peer's edit that only adds or drops a mention (the Mention tags in `raw`) changes who is notified: it is an edit too.
+    const same =
+      body.bodyMd === current.bodyMd &&
+      body.contentHtml === current.contentHtml &&
+      record.language === current.language &&
+      sameMentions(current.raw, record.raw);
+    if (same) return { id: commentId, changed: false };
     await t.db
       .update(comments)
       .set({ raw: record.raw, ...body, language: record.language, editedAt: record.editedAt ?? new Date() })

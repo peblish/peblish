@@ -5,28 +5,50 @@ import { VoteControl } from '@peblish/ui/components/vote-control';
 import { useTranslate } from '../../../i18n/use-translate.ts';
 import { useRouteHydrated } from '../../../shell/hydration.ts';
 import { useVoteLabels } from '../../../shell/labels.ts';
+import { GateNotice, HideNsfwForm } from '../../c/-ui/gate.tsx';
 import { castVoteFn } from '../-vote.ts';
 import type { PostPageData } from '../-load.ts';
+import type { ContentActionProps } from '../../-actions/props.ts';
 import { ThreadSection } from '../$id/comments/-ui/thread-section.tsx';
+import { PostBlock } from './actions/block.tsx';
+import { PostModerate } from './actions/moderate.tsx';
+import { PostReport } from './actions/report.tsx';
 import { ActionForm } from './action-form.tsx';
 import { asPostError, errorKey } from './errors.ts';
 
 // The post page after thread-nested.html's post part: vote column, title and link, community
-// and author, body, the actions the MVP has. Left out on purpose: lock and pin authoring, save,
-// crosspost, share and report. Sensitive and tombstone states withhold their content in core
-// (readPost); this only lays out what it was given.
+// and author, body, the author's own actions, and the action slots (./actions/: report for REP,
+// block for E1, moderate for MODF) for a signed-in viewer. Left out on purpose: lock and pin
+// authoring, save, crosspost and share. The NSFW gate replaces the whole page (GateNotice, from
+// the loader's `kind: 'gate'`), and tombstone states withhold their content in core (readPost);
+// this only lays out what it was given.
 
 export function PostPage({ data, error }: { data: PostPageData; error?: string | undefined }) {
-  const { t, locale } = useTranslate();
   useRouteHydrated();
-  const { post, gate, moderator, viewerId } = data;
+  return data.kind === 'gate' ? <GateNotice data={data} error={error} /> : <PostContent data={data} error={error} />;
+}
+
+function PostContent({ data, error }: { data: Extract<PostPageData, { kind: 'post' }>; error?: string | undefined }) {
+  const { t, locale } = useTranslate();
+  const { post, moderator, viewerId, viewerAdmin } = data;
   const back = `/post/${post.id}`;
-  const signInHref = `/auth/sign-in?redirect=${encodeURIComponent(back)}`;
   const isAuthor = viewerId === post.author.id;
-  const withheld = post.deleted ? 'deleted' : gate === 'sign-in' || gate === 'age' ? 'gate' : post.removed && !moderator ? 'removed' : null;
+  const withheld = post.deleted ? 'deleted' : post.removed && !moderator ? 'removed' : null;
   const count = post.counts.comments;
   const shownError = asPostError(error);
   const voteLabels = useVoteLabels();
+  // The slots get the post for a signed-in viewer; a removed or deleted post still has them (a moderator restores it).
+  const actions: ContentActionProps | null = viewerId
+    ? {
+        target: { kind: 'post', id: post.id },
+        author: post.author,
+        community: post.community,
+        removed: post.removed,
+        deleted: post.deleted,
+        viewer: { actorId: viewerId, moderator, admin: viewerAdmin },
+        back,
+      }
+    : null;
 
   let body: ReactNode;
   if (post.deleted) {
@@ -34,21 +56,6 @@ export function PostPage({ data, error }: { data: PostPageData; error?: string |
       <section className="post-notice" data-state="deleted">
         <h1>{t('posts', 'deleted.title')}</h1>
         <p>{t('posts', 'deleted.body')}</p>
-      </section>
-    );
-  } else if (gate === 'sign-in' || gate === 'age') {
-    body = (
-      <section className="post-notice" data-state="gate">
-        <h1>{t('posts', 'gate.title')}</h1>
-        {gate === 'sign-in' ? (
-          <p>
-            {t('posts', 'gate.signIn')} <a href={signInHref}>{t('posts', 'gate.signInLink')}</a>
-          </p>
-        ) : (
-          <p>
-            {t('posts', 'gate.age')} <a href="/settings/account">{t('posts', 'gate.ageLink')}</a>
-          </p>
-        )}
       </section>
     );
   } else if (post.removed && !moderator) {
@@ -59,12 +66,11 @@ export function PostPage({ data, error }: { data: PostPageData; error?: string |
       </section>
     );
   } else {
-    const blurred = gate === 'blur';
-    const content = (
-      <div className="post-sensitive__content">
+    body = (
+      <div className="post-content">
         <h1 id="post-title">{post.title}</h1>
         {(post.locked || post.featured || post.sensitive || post.nsfl) && (
-          <p className="post-flags">
+          <div className="post-flags">
             {post.locked && <span data-flag="locked">{t('posts', 'flag.locked')}</span>}
             {post.featured && <span data-flag="pinned">{t('posts', 'flag.pinned')}</span>}
             {post.nsfl ? (
@@ -72,7 +78,8 @@ export function PostPage({ data, error }: { data: PostPageData; error?: string |
             ) : (
               post.sensitive && <span data-flag="sensitive">{t('posts', 'flag.sensitive')}</span>
             )}
-          </p>
+            {(post.sensitive || post.nsfl) && viewerId && <HideNsfwForm handle={post.community.handle} back={back} />}
+          </div>
         )}
         {data.image ? (
           <a className="post-image" href={post.url ?? undefined} rel="noopener noreferrer nofollow ugc">
@@ -89,16 +96,6 @@ export function PostPage({ data, error }: { data: PostPageData; error?: string |
         {/* The HTML comes from the Markdown renderer or the sanitiser (-load.ts), never from anywhere else. */}
         {post.contentHtml && <Prose className="post-text" html={post.contentHtml} />}
       </div>
-    );
-    body = blurred ? (
-      <div className="post-sensitive" data-gate="blur">
-        <input id="post-reveal" type="checkbox" className="post-reveal" />
-        <label htmlFor="post-reveal">{t('posts', 'gate.show')}</label>
-        <p className="post-hint">{t('posts', 'gate.blur')}</p>
-        {content}
-      </div>
-    ) : (
-      content
     );
   }
 
@@ -151,24 +148,13 @@ export function PostPage({ data, error }: { data: PostPageData; error?: string |
                 )}
               </div>
             )}
-            {moderator && !post.deleted && (
-              <div className="post-mod" role="group" aria-label={t('posts', 'action.mod')}>
-                {post.removed ? (
-                  <ActionForm action={back} intent="unremove">
-                    <p className="post-hint">{t('posts', 'removed.banner')}</p>
-                    <Button type="submit">{t('posts', 'action.unremove')}</Button>
-                  </ActionForm>
-                ) : (
-                  <details>
-                    <summary>{t('posts', 'action.remove')}</summary>
-                    <ActionForm action={back} intent="remove">
-                      <label htmlFor="remove-reason">{t('posts', 'action.removeReason')}</label>
-                      <textarea id="remove-reason" name="reason" rows={3} maxLength={10000} />
-                      <Button type="submit">{t('posts', 'action.removeSubmit')}</Button>
-                    </ActionForm>
-                  </details>
-                )}
-              </div>
+            {moderator && post.removed && !post.deleted && <p className="post-hint">{t('posts', 'removed.banner')}</p>}
+            {actions && (
+              <>
+                <PostReport {...actions} />
+                <PostBlock {...actions} />
+                <PostModerate {...actions} />
+              </>
             )}
           </div>
         </div>

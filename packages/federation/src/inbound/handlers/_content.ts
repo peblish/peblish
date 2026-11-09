@@ -1,6 +1,7 @@
 import { db, type Queryable } from '@peblish/core/db/read';
 import { storeRemoteComment, updateRemoteComment } from '@peblish/core/comments/remote';
 import { storeRemotePost, updateRemotePost } from '@peblish/core/posts/remote';
+import { readSetting } from '@peblish/core/settings/read';
 import type { ResolvedActor } from '../../actors/resolve.ts';
 import type { CommentRecord, ContentObject, PostRecord } from '../../mapping/records.ts';
 import {
@@ -35,11 +36,12 @@ const audienceOf = (ctx: InboundContext): string | null => {
 
 /**
  * Whether remote sensitive content is stored, for a new post and an edit alike (an author could
- * otherwise post an ordinary page and edit it into one). Refused by default; the setting comes
- * with ADM, and this is the one place it is read.
+ * otherwise post an ordinary page and edit it into one). NSFL is always refused; NSFW only
+ * while the site setting `remote_nsfw.accepted` is off, its default. Read in the transaction
+ * that stores the post.
  */
-function checkSensitiveAccepted(post: Pick<PostRecord, 'apId' | 'sensitive' | 'nsfl'>): void {
-  if (post.sensitive || post.nsfl) throw skip('content.nsfw_rejected', post.apId);
+async function checkSensitiveAccepted(q: Queryable, post: Pick<PostRecord, 'apId' | 'sensitive' | 'nsfl'>): Promise<void> {
+  if (post.nsfl || (post.sensitive && !(await readSetting('remote_nsfw.accepted', q)))) throw skip('content.nsfw_rejected', post.apId);
 }
 
 /** The post a Page updates, when we hold it: a post, and the Page must name its community. */
@@ -63,12 +65,12 @@ async function preparePage(ctx: InboundContext, post: PostRecord, verb: 'Create'
     if (existing) {
       if ((await heldPostCommunity(t.db, existing, post)).id !== community.id) throw skip('community.mismatch', post.communityApId);
       const grant = await grantFor(ctx, t, 'post.update', { postId: existing.id });
-      checkSensitiveAccepted(post);
+      await checkSensitiveAccepted(t.db, post);
       await updateRemotePost.within(t, grant, post);
       return { communityId: existing.communityId, objectApId: post.apId, relay: true };
     }
     const grant = await grantFor(ctx, t, 'post.create', { communityId: community.id });
-    checkSensitiveAccepted(post);
+    await checkSensitiveAccepted(t.db, post);
     const stored = await storeRemotePost.within(t, grant, post);
     if (!stored.created) throw skip('object.exists', post.apId);
     return {

@@ -2,6 +2,7 @@ import { db } from '@peblish/core/db/read';
 import { actors } from '@peblish/core/db/tables/actors';
 import { activities, inboxDedupe } from '@peblish/core/db/tables/federation';
 import { follows } from '@peblish/core/db/tables/follows';
+import { instanceBlocked } from '@peblish/core/peers/gate';
 import { Refused } from '@peblish/core/tx/refused';
 import { tx } from '@peblish/core/tx/tx';
 import { and, eq, isNull } from 'drizzle-orm';
@@ -176,10 +177,13 @@ async function contextFor(env: Env, activity: Activity, raw: JsonObject, announc
   // answer 410 would be deleted before the activity is read, dropping a Delete with removeData.
   // The copy we hold is enough to say who sent it.
   const leaving = activity.type === 'Delete' || activity.type === 'Undo';
+  const sender = await env.actor(activity.actorApId, leaving ? { maxAgeMs: Infinity } : undefined);
+  // A peer blocked after its activity was taken in (or one an Announce carries) changes nothing here.
+  if (await instanceBlocked(db(), sender.apId)) throw skip('peer.blocked', sender.apId);
   return {
     activity,
     raw,
-    sender: await env.actor(activity.actorApId, leaving ? { maxAgeMs: Infinity } : undefined),
+    sender,
     announce,
     fetch: env.fetch,
     origin: env.origin,

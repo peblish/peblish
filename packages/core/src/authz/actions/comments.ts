@@ -4,6 +4,7 @@ import { eq, sql } from 'drizzle-orm';
 import { maxCommentDepth } from '../../comments/input.ts';
 import { actors } from '../../db/tables/actors.ts';
 import { comments } from '../../db/tables/content.ts';
+import { switchedOn } from '../../media/settings.ts';
 import { allow, deny, forNoKeyUpdate, type PolicyRequest, type PolicyResult } from '../policy.ts';
 import { emailUnverified, ownerAuthority } from '../roles.ts';
 import { commentState, commentingDenial, communityDenial, isBanned, liveDenial, postState, type CommentState } from '../state.ts';
@@ -36,6 +37,8 @@ const create = async (request: PolicyRequest<{ postId: Uuid; parentId: Uuid | nu
   if (principal.kind === 'system') return deny('auth.required');
   if (principal.kind === 'remote' && (await isCommunity(request, principal.actorId))) return deny('comment.group_cannot_act');
   if (principal.kind === 'local' && (await emailUnverified(request, principal.actorId))) return deny('auth.email_unverified');
+  // The posting kill switch stops local people only; what peers send keeps arriving. FOR SHARE, so a flip waits for this write.
+  if (principal.kind === 'local' && !(await switchedOn(db, 'posting.enabled', lock))) return deny('site.disabled');
   const denied = await commentingDenial(request, principal.actorId, subject);
   if (denied) return denied;
   const post = await postState(request, subject.postId);

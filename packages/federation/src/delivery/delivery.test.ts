@@ -5,7 +5,9 @@ import { deliveries } from '@peblish/core/delivery/tables';
 import { writer } from '@peblish/core/db/write';
 import { tx } from '@peblish/core/tx/tx';
 import { truncateAll } from '@peblish/core/testing/db';
+import { peerControls } from '@peblish/core/peers/tables';
 import { seedActor, seedInstance } from '@peblish/core/testing/seed';
+import { seedSetting } from '@peblish/core/testing/seed-a';
 import { seedLocalInstance, seedSigningKey, stubFetch } from '@peblish/core/testing/seed-fed-a';
 import { BlockedDestinationError } from '../actors/safe-fetch.ts';
 import { parseSignature, signatureVerifies } from '../signing/verify.ts';
@@ -204,6 +206,18 @@ describe('delivering', () => {
     expect(requests).toHaveLength(0);
   });
 
+  test('with delivery.enabled off nothing is claimed or sent, and the rows go out once it is on again', async () => {
+    const w = await world();
+    await w.send();
+    const { fetch, requests } = stubFetch({ [inbox]: { status: 202 } });
+    await seedSetting('delivery.enabled', false);
+    expect(await deliverDue({ fetch, ...quiet })).toEqual({ delivered: 0, retried: 0, failed: 0, skipped: 0 });
+    expect(requests).toHaveLength(0);
+    expect((await w.rows())[0]).toMatchObject({ state: 'pending', attempts: 0 });
+    await seedSetting('delivery.enabled', true);
+    expect(await deliverDue({ fetch, ...quiet })).toMatchObject({ delivered: 1 });
+  });
+
   test('a dormant instance is skipped without a request, and one that is not is sent', async () => {
     const w = await world();
     await w.send([inbox, 'https://other.test/inbox']);
@@ -215,6 +229,34 @@ describe('delivering', () => {
       state: 'skipped',
       lastError: 'the instance is dormant',
     });
+  });
+
+  test('a peer blocked after the rows were queued gets nothing, also when the row was queued before its instance was known', async () => {
+    const w = await world();
+    // other.test has no instances row yet, so its row is queued with a null instanceId.
+    await w.send([inbox, 'https://other.test/inbox', 'https://open.test/inbox']);
+    expect((await w.rows()).find((row) => row.inboxUrl === 'https://other.test/inbox')?.instanceId).toBeNull();
+    const other = await seedInstance('other.test', false);
+    await writer()
+      .insert(peerControls)
+      .values([
+        { instanceId: w.remote.id, blocked: true },
+        { instanceId: other.id, blocked: true },
+      ]);
+    const { fetch, requests } = stubFetch({ 'https://open.test/inbox': { status: 202 } });
+    const refreshed: string[] = [];
+    const counts = await deliverDue({ fetch, refreshSoftware: async (origin) => void refreshed.push(origin) });
+    expect(counts).toEqual({ delivered: 1, retried: 0, failed: 0, skipped: 2 });
+    expect(requests.map((request) => request.url)).toEqual(['https://open.test/inbox']);
+    expect(refreshed).toEqual(['https://open.test']);
+    const blocked = (await w.rows()).filter((row) => row.inboxUrl !== 'https://open.test/inbox');
+    expect(blocked.map((row) => [row.inboxUrl, row.state, row.lastError]).sort()).toEqual([
+      [inbox, 'skipped', 'the instance is blocked'],
+      ['https://other.test/inbox', 'skipped', 'the instance is blocked'],
+    ]);
+    await w.makeDue();
+    await deliverDue({ fetch, ...quiet });
+    expect(requests).toHaveLength(1);
   });
 
   test('a sender without a key, or with one that does not load, fails the delivery', async () => {

@@ -68,15 +68,15 @@ describe('the thread of a post page', () => {
     view: { removed: extra.removed ?? false, deleted: extra.deleted ?? false },
   });
 
-  test('is sent with a visible post, a blurred one and a tombstone', () => {
+  test('is sent with a visible post and a tombstone', () => {
     expect(threadVisible(page({}))).toBe(true);
-    expect(threadVisible(page({ gate: 'blur' }))).toBe(true);
     expect(threadVisible(page({ deleted: true }))).toBe(true);
   });
 
   test('is withheld with the gated post', () => {
     expect(threadVisible(page({ gate: 'sign-in' }))).toBe(false);
     expect(threadVisible(page({ gate: 'age' }))).toBe(false);
+    expect(threadVisible(page({ gate: 'hidden' }))).toBe(false);
     expect(threadVisible(page({ gate: 'age', moderator: true }))).toBe(false);
   });
 

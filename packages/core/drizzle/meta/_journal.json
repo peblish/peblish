@@ -50,6 +50,41 @@
       "when": 1794201670772,
       "tag": "0006_wave_2_fixes",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1794220905182,
+      "tag": "0007_wave_3_groundwork",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1794228162862,
+      "tag": "0008_wave_3",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1794228190556,
+      "tag": "0009_wave_3_guards",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1794237842110,
+      "tag": "0010_wave_3_fixes",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1794242546971,
+      "tag": "0011_wave_3_report_hosts",
+      "breakpoints": true
     }
   ]
 }

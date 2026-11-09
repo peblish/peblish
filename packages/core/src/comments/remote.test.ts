@@ -9,6 +9,7 @@ import { seedPostWorld } from '../testing/seed-b1.ts';
 import { seedChain, seedReply } from '../testing/seed-d.ts';
 import { localUser, seedActor } from '../testing/seed.ts';
 import { deleteComment } from './delete.ts';
+import { findMentioned } from '../mentions/scan.ts';
 import { maxCommentDepth } from './input.ts';
 import { resolveReplyTarget, storeRemoteComment, updateRemoteComment, type RemoteComment } from './remote.ts';
 
@@ -163,6 +164,31 @@ describe('updateRemoteComment and a peer deleting its own comment', () => {
     expect(await updateRemoteComment(again, record({ contentHtml: '<p>Edited</p>', editedAt: edited }))).toEqual({ id, changed: false });
     expect(await writeCounts()).toEqual(before);
     await expect(updateRemoteComment(again, record({ apId: 'https://lemmy.test/comment/other' }))).rejects.toThrow(/not this comment/);
+  });
+
+  test('an edit that only changes who is mentioned is an edit: the tags are stored and comment.updated goes out', async () => {
+    const { w, principal, record, id, postId } = await stored();
+    const mention = { type: 'Mention', href: w.people.reader.apId, name: `@${w.people.reader.name}@b1.test` };
+    const tagged = record({ raw: { id: 'https://lemmy.test/comment/1', type: 'Note', tag: [mention] } });
+    const grant = await grantFor('comment.update', principal, { commentId: id });
+    expect(await updateRemoteComment(grant, tagged)).toEqual({ id, changed: true });
+    const row = await commentRow(id);
+    expect(row.raw).toEqual(tagged.raw);
+    expect(await findMentioned(db(), { bodyMd: null, raw: row.raw, authorId: row.authorId })).toEqual([w.people.reader.id]);
+    expect((await outboxEvents()).at(-1)).toEqual({
+      type: 'comment.updated',
+      v: 1,
+      commentId: id,
+      postId,
+      authorId: w.people.remoteAuthor.id,
+      local: false,
+    });
+    // The same tags again, in another order and repeated, change nothing.
+    const again = await grantFor('comment.update', principal, { commentId: id });
+    const before = await writeCounts();
+    const repeated = record({ raw: { id: 'https://lemmy.test/comment/1', type: 'Note', tag: [mention, mention] } });
+    expect(await updateRemoteComment(again, repeated)).toEqual({ id, changed: false });
+    expect(await writeCounts()).toEqual(before);
   });
 
   test("the author's Delete is a soft delete, emitted as not local", async () => {

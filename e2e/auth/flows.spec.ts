@@ -59,6 +59,17 @@ test('the admin signs in with a TOTP code and creates an invite', async ({ page 
     expect([path, response?.status(), response?.headers()['cache-control']]).toEqual([path, 200, 'private, no-store']);
   }
   await gotoHydrated(page, '/admin/registration');
+  // An admin sees every admin tab, the You group and the Admin entry in the account menu.
+  const tabs = page.getByRole('navigation', { name: 'Admin sections' });
+  await expect(tabs.getByRole('link')).toHaveText(['Settings', 'Pages', 'Reports', 'Bans', 'Peers', 'Media', 'Registration and invites']);
+  await expect(tabs.getByRole('link', { name: 'Registration and invites' })).toHaveAttribute('aria-current', 'page');
+  // Each link may carry a count: the lane database keeps notices and open reports from other specs.
+  await expect(page.getByRole('navigation', { name: 'You' }).getByRole('link')).toHaveText([
+    /^Inbox(\s+\d+\+?\s+unread)?\s*$/,
+    /^Moderation queue(\s+\d+\+?\s+open)?\s*$/,
+  ]);
+  // The account menu is a closed <details>, so its links are matched by address, not by role.
+  await expect(page.locator('.pb-account a[href="/admin/settings"]')).toHaveText('Admin');
   await page.getByLabel('Label').fill(`e2e ${person.name}`);
   await page.getByLabel('Max uses').fill('2');
   await page.getByRole('button', { name: 'Create' }).click();
@@ -109,6 +120,10 @@ test('TOTP turns on with a code and shows the recovery codes once', async ({ pag
   await gotoHydrated(page, '/auth/sign-in');
   await signIn(page, person.name, person.password);
   await landed(page, '/');
+  // A member who moderates nothing: the Inbox and no Moderation queue; no admin tabs on an admin page.
+  await expect(page.getByRole('navigation', { name: 'You' }).getByRole('link')).toHaveText(['Inbox']);
+  await gotoHydrated(page, '/admin/registration');
+  await expect(page.getByRole('navigation', { name: 'Admin sections' })).toHaveCount(0);
   await gotoHydrated(page, '/settings/security');
   await page.getByLabel('Confirm your password to start').fill(person.password);
   await page.getByRole('button', { name: 'Turn on' }).click();

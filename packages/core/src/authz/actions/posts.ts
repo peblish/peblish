@@ -2,6 +2,7 @@ import type { Uuid } from '@peblish/schema/ids';
 import type { RefusalReason } from '@peblish/schema/refusal';
 import { eq } from 'drizzle-orm';
 import { actors } from '../../db/tables/actors.ts';
+import { switchedOn } from '../../media/settings.ts';
 import { allow, deny, forNoKeyUpdate, type PolicyRequest, type PolicyResult } from '../policy.ts';
 import { communityRole, emailUnverified, ownerAuthority } from '../roles.ts';
 import { communityDenial, isBanned, postState, postingDenial, type PostState } from '../state.ts';
@@ -39,6 +40,8 @@ const create = async (request: PolicyRequest<{ communityId: Uuid }>): Promise<Po
   if (principal.kind === 'system') return deny('auth.required');
   if (await isGroupPrincipal(request)) return deny('post.group_cannot_act');
   if (principal.kind === 'local' && (await emailUnverified(request, principal.actorId))) return deny('auth.email_unverified');
+  // The posting kill switch stops local people only; what peers send keeps arriving. FOR SHARE, so a flip waits for this write.
+  if (principal.kind === 'local' && !(await switchedOn(db, 'posting.enabled', lock))) return deny('site.disabled');
   // FOR NO KEY UPDATE: a community ban recorded as an INSERT (lane AZ) locks this row first
   // (PolicyRequest.lock), so a ban and a post take turns.
   const [community] = await forNoKeyUpdate(

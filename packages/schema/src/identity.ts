@@ -11,7 +11,7 @@ export const PASSWORD_MAX = 128;
 /** The youngest age that may hold an account (decision, 2026-11-08). */
 export const MINIMUM_AGE = 16;
 
-/** Names a new account may not take: they read as the instance or its staff. */
+/** Names a new account or community may not take: they read as the instance or its staff, or (new) are a page's path, as /c/new is. */
 export const RESERVED_NAMES: ReadonlySet<string> = new Set([
   'abuse',
   'admin',
@@ -22,6 +22,7 @@ export const RESERVED_NAMES: ReadonlySet<string> = new Set([
   'mod',
   'moderator',
   'moderators',
+  'new',
   'noreply',
   'official',
   'peblish',

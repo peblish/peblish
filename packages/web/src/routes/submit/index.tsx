@@ -36,9 +36,9 @@ export const Route = createFileRoute('/submit/')({
       throw redirect({ to: '/auth/sign-in', search: { redirect: form.size > 0 ? `/submit?${form}` : '/submit' } });
     }
     // The page title follows the shell's convention (shell/title.ts); an edit has its own name.
-    const { locale } = root.loaderData ?? { locale: DEFAULT_LOCALE };
+    const locale = root.loaderData?.locale ?? DEFAULT_LOCALE;
     const name = translate(locale, 'composer', deps.edit === undefined ? 'title.create' : 'title.edit');
-    return { ...data, title: `${name} \u00b7 ${translate(locale, 'shell', 'title')}` };
+    return { ...data, title: `${name} \u00b7 ${root.loaderData?.shell.siteName ?? ''}` };
   },
   head: ({ loaderData }) => ({
     meta: loaderData ? [{ title: loaderData.title }] : [],

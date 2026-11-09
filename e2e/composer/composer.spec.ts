@@ -2,11 +2,13 @@ import { expect, test, type BrowserContext, type Page } from '@playwright/test';
 import { expectAccessible, landed, signIn } from '../auth/support.ts';
 import { gotoHydrated, recordConsole } from '../support/route-marker.ts';
 import { community, seed, signedIn, type Seed } from './support.ts';
+import { siteName } from '../support/site-name.ts';
 
 // The composer as a page, end to end on the built server and the lane database: the picker and
-// the community's rules, the editor's toolbar, Preview against what is published, the refusals
-// by reason, drafts and the author's edit. The steps share seeded accounts and communities, so
-// they run in order. The sheet, no-JavaScript posting, uploads and the payload have their own specs.
+// the community's rules, the editor's toolbar, the refusals by reason, drafts and the author's
+// edit. The steps share seeded accounts and communities, so they run in order. The sheet,
+// no-JavaScript posting, uploads, Preview against what is published (preview.serial.spec.ts)
+// and the payload have their own specs.
 test.skip(Boolean(process.env.BASE_URL), 'needs the lane database for its seed (DATABASE_URL)');
 test.describe.configure({ mode: 'serial' });
 
@@ -47,7 +49,7 @@ test('the page hydrates, lists the communities and has no axe violations', async
   const log = recordConsole(page);
   await gotoHydrated(page, '/submit');
   await expect(page.getByRole('heading', { level: 1, name: 'Create post' })).toBeVisible();
-  await expect(page).toHaveTitle('Create post \u00b7 peblish');
+  await expect(page).toHaveTitle(`Create post \u00b7 ${await siteName(page)}`);
   // Local communities, and the remote one the person follows.
   await expect(community(page, world.communities.open.handle)).toBeEnabled();
   await expect(community(page, world.communities.remote.handle)).toBeEnabled();
@@ -172,49 +174,6 @@ test('the toolbar inserts Markdown at the selection, with a shortcut, and Undo s
   await page.close();
 });
 
-/** What the editor's Preview shows, then what the post page shows for the same text once posted. */
-async function previewThenPublish(page: Page, text: string) {
-  await body(page).fill(text);
-  await page.getByRole('button', { name: 'Preview' }).click();
-  const preview = page.locator('.pb-md__preview .pb-prose');
-  await expect(preview).toBeVisible();
-  const previewed = await preview.innerHTML();
-  await post(page).click();
-  await page.waitForURL(/\/post\/[0-9a-f-]{36}$/);
-  await page.locator('html[data-hydrated="1"]').waitFor({ state: 'attached' });
-  return { previewed, published: await page.locator('.post-text').innerHTML(), id: page.url().split('/').at(-1)! };
-}
-
-// The preview of a new post has no post id yet, so its footnote anchors lack the id the published
-// page gives them; everything else is byte for byte the same.
-const withoutFootnoteId = (html: string) => html.replace(/(fn|fnref)-[0-9a-f-]{36}-(\d+)/g, '$1$2');
-
-const corpus: Record<string, string> = {
-  'a spoiler, a table and code': [
-    '::: spoiler Ending\nThe *butler* did it.\n\nTwice.\n:::',
-    '| a | b |\n| - | -: |\n| 1 | 2 |',
-    '```ts\nconst answer: number = 42;\n```',
-    'Inline `code` and a [link](https://example.org/a?b=1&c=2).',
-  ].join('\n\n'),
-  'footnotes, lists and quotes':
-    'Claim[^1] and ~~strike~~.\n\n[^1]: The note.\n\n> quoted\n\n1. one\n2. two\n\n- a\n- b\n\n## Heading\n\n<b>raw</b> & <script>alert(1)</script>',
-  'mentions and images':
-    'Hello @someone@lemmy.world, see !tech@lemmy.world.\n\n![remote](https://10.0.0.5/pic.png) and ![own](/media/nothing.png)',
-};
-
-for (const [name, text] of Object.entries(corpus)) {
-  test(`what Preview shows is what is published: ${name}`, async () => {
-    const page = await poster.newPage();
-    await gotoHydrated(page, '/submit');
-    await community(page, world.communities.open.handle).check();
-    await page.getByLabel('Title').fill(`Preview ${name}`);
-    const { previewed, published } = await previewThenPublish(page, text);
-    expect(previewed.length).toBeGreaterThan(40);
-    expect(withoutFootnoteId(published)).toBe(withoutFootnoteId(previewed));
-    await page.close();
-  });
-}
-
 test('editing: the author changes the post, and Preview already carries the published footnote ids', async () => {
   const page = await poster.newPage();
   await gotoHydrated(page, '/submit');
@@ -224,7 +183,7 @@ test('editing: the author changes the post, and Preview already carries the publ
   await page.getByRole('link', { name: 'Edit' }).click();
   await page.waitForURL(/\/submit\?edit=/);
   await page.locator('html[data-hydrated="1"]').waitFor({ state: 'attached' });
-  await expect(page).toHaveTitle('Edit post \u00b7 peblish');
+  await expect(page).toHaveTitle(`Edit post \u00b7 ${await siteName(page)}`);
   await expect(page.getByLabel('Title')).toHaveValue('Before the edit');
   await expect(body(page)).toHaveValue('First[^1] version.\n\n[^1]: The note.');
   await expect(page.getByText(`Editing a post in !${world.communities.open.handle}`)).toBeVisible();

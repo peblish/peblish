@@ -37,5 +37,9 @@ export const media = pgTable(
       .on(t.createdAt)
       .where(sql`${t.scanState} = 'pending'`),
     index('media_sha256').on(t.sha256),
+    /** The evidence purge pass (lane SAFE) reads stored bytes of blocked and failed rows every minute. */
+    index('media_purge')
+      .on(t.scanState)
+      .where(sql`${t.storageKey} is not null and ${t.scanState} in ('blocked', 'failed')`),
   ],
 );

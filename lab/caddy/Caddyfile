@@ -46,12 +46,18 @@ piefed.lab.test {
 	reverse_proxy piefed-web:5000
 }
 
-feddit.lab.test {
+peblish.lab.test {
 	tls internal
-	reverse_proxy feddit:8000
+	reverse_proxy peblish-web:3000
 }
 
-# Test double for the authorization and delivery scenarios (scenarios/rogue.ts).
+# Mbin (FrankenPHP) serves plain HTTP behind this front door; see mbin/mbin.env.
+mbin.lab.test {
+	tls internal
+	reverse_proxy mbin-php:80
+}
+
+# Test double for the authorization and delivery scenarios (tools/interop/src/rogue.ts).
 rogue.lab.test {
 	tls internal
 	reverse_proxy rogue:8000
@@ -70,9 +76,16 @@ http://:8202 {
 	}
 }
 
-http://:8203 {
-	reverse_proxy feddit:8000 {
-		header_up Host feddit.lab.test
+http://:8204 {
+	reverse_proxy mbin-php:80 {
+		header_up Host mbin.lab.test
+		header_up X-Forwarded-Proto https
+	}
+}
+
+http://:8322 {
+	reverse_proxy peblish-web:3000 {
+		header_up Host peblish.lab.test
 		header_up X-Forwarded-Proto https
 	}
 }

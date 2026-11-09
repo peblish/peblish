@@ -302,6 +302,20 @@ describe('posts, comments and activities', () => {
     expect(fromWire(doc)).toMatchObject({ kind: 'post', post: { apId: post.apId, title: 'Hello', url: 'https://example.com/a' } });
   });
 
+  test('a post and a comment name the remote people they mention in cc, as the copies we delivered do', async () => {
+    const w = await world();
+    const other = await seedInstance('other.test', false);
+    const zed = await seedActor(other, 'Person', 'zed', { inboxUrl: 'https://other.test/u/zed/inbox' });
+    const post = await seedPost(w.here, w.news, w.alice, { title: 'Hi', bodyMd: 'cc @zed@other.test and @nobody@other.test' });
+    const comment = await seedComment(w.here, post, w.alice, { bodyMd: 'thanks @zed@other.test' });
+    const mention = { type: 'Mention', href: zed.apId, name: '@zed@other.test' };
+    expect(await json(`/ap/post/${post.id}`)).toMatchObject({ cc: [zed.apId], tag: [mention] });
+    expect(await json(`/ap/comment/${comment.id}`)).toMatchObject({ cc: [w.news.apId, zed.apId], tag: [mention] });
+    // A post that names nobody has no one added.
+    const plain = await seedPost(w.here, w.news, w.alice, { title: 'Plain' });
+    expect((await json(`/ap/post/${plain.id}`)).cc).toEqual([]);
+  });
+
   test('a deleted or removed post is a 410 Tombstone; a restored one is served again', async () => {
     const w = await world();
     const post = await seedPost(w.here, w.news, w.alice);
@@ -359,6 +373,15 @@ describe('posts, comments and activities', () => {
     expect(await json('/ap/activity/0190b7a8-0000-7000-8000-000000000001')).toEqual(stored);
     expect(await get('/ap/activity/0190b7a8-0000-7000-8000-000000000002')).toBeNull();
     expect(await get('/ap/activity/0190b7a8-0000-7000-8000-000000000003')).toBeNull();
+  });
+
+  test('a stored local Flag is never served: it names the reporter and their reason', async () => {
+    const w = await world();
+    const id = `${origin}/ap/activity/0190b7a8-0000-7000-8000-000000000004`;
+    await writer()
+      .insert(activities)
+      .values({ apId: id, type: 'Flag', actorApId: w.alice.apId, local: true, raw: { type: 'Flag', id, actor: w.alice.apId } });
+    expect(await get('/ap/activity/0190b7a8-0000-7000-8000-000000000004')).toBeNull();
   });
 
   describe('nothing is served once what it belongs to is gone', () => {

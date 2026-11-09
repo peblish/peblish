@@ -3,11 +3,12 @@ import { parseSort, type ThreadSort } from '@peblish/core/comments/sort';
 import type { PostPage, Viewer } from '@peblish/core/posts/read';
 import type { Uuid } from '@peblish/schema/ids';
 import type { SessionView } from '@peblish/schema/session';
-import type { CommentView } from '@peblish/schema/views';
+import type { ActorRef, CommentView } from '@peblish/schema/views';
 import { absoluteTime, compactAge } from '@peblish/ui/components/time';
 import { getRequest, getRequestHeader } from '@tanstack/react-start/server';
 import { negotiateLocale } from '../../../../i18n/negotiate.ts';
 import type { MarkdownRenderer } from '../../../../server/markdown.ts';
+import type { SlotViewer } from '../../../-actions/props.ts';
 
 // The thread's data for a page (server only): core's read model, with each comment's text
 // rendered by the page's Markdown renderer, and what the viewer can do beside reading. The post
@@ -33,6 +34,8 @@ export type ThreadData = {
   reply: 'yes' | 'sign-in' | 'verify' | 'locked' | 'closed';
   /** The signed-in person, or null. */
   viewerId: Uuid | null;
+  /** What the comment rows' action slots (-ui/actions/) need beside each comment; null when signed out, and then they are not drawn. */
+  actions: { community: ActorRef; viewer: SlotViewer } | null;
   /** For a moderator: the removed comments, with the modlog reason. */
   removals: { id: Uuid; handle: string; reason: string | null }[];
   /** The focus comment's Markdown, when the viewer wrote it and can still edit it. */
@@ -45,7 +48,7 @@ export type ThreadData = {
  * The same rule as the post page's data.threadVisible.
  */
 export const threadShown = (page: Pick<PostPage, 'gate' | 'moderator'> & { view: Pick<PostPage['view'], 'removed'> }) =>
-  (page.gate === 'none' || page.gate === 'blur') && (!page.view.removed || page.moderator);
+  page.gate === 'none' && (!page.view.removed || page.moderator);
 
 /** The `sort` of the page being requested: the document request's query. A server function called from the browser has no page query. */
 export const requestedSort = (): ThreadSort => parseSort(URL.parse(getRequest().url)?.searchParams.get('sort'));
@@ -108,6 +111,12 @@ export async function loadThread(options: {
     next: thread.next,
     reply: replyState(page, session),
     viewerId: viewer?.actorId ?? null,
+    actions: viewer
+      ? {
+          community: page.view.community,
+          viewer: { actorId: viewer.actorId, moderator: page.moderator, admin: viewer.siteRole === 'admin' },
+        }
+      : null,
     removals: thread.comments.flatMap(({ view, removal }) =>
       removal ? [{ id: view.id, handle: view.author.handle, reason: removal.reason }] : [],
     ),

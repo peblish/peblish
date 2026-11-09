@@ -1,6 +1,7 @@
 import type { ActingPrincipal } from '@peblish/schema/authz';
 import type { RefusalReason } from '@peblish/schema/refusal';
-import { eq } from 'drizzle-orm';
+import { and, eq, gt, isNull, or, sql } from 'drizzle-orm';
+import { siteBans } from '../bans/tables.ts';
 import type { Queryable } from '../db/read.ts';
 import { actors } from '../db/tables/actors.ts';
 import { authUser } from '../db/tables/auth.ts';
@@ -24,7 +25,11 @@ import { authUser } from '../db/tables/auth.ts';
  * its own Announce names) is also the community row every policy then locks FOR NO KEY
  * UPDATE (state.ts). Two such requests holding it FOR SHARE would each wait for the other to
  * upgrade (40P01), so that row is read FOR NO KEY UPDATE from the start.
- * Lane MODF adds the site-ban check here.
+ *
+ * A site ban (bans/site.ts) is refused here for every kind of principal but the instance
+ * itself (auth.site_banned): the ban took FOR NO KEY UPDATE on this actor row before inserting,
+ * so this read, after the FOR SHARE above, either waits for the ban to commit and sees it, or
+ * ran first and the ban waits for the write it guards. The ban row is read plain.
  */
 export async function currentPrincipal(
   q: Queryable,
@@ -38,6 +43,13 @@ export async function currentPrincipal(
     .for(actsAsCommunity ? 'no key update' : 'share');
   if (!actor) return { ok: false, reason: 'auth.required' };
   if (actor.deletedAt) return { ok: false, reason: 'auth.actor_deleted' };
+  if (principal.kind !== 'system') {
+    const [ban] = await q
+      .select({ actorId: siteBans.actorId })
+      .from(siteBans)
+      .where(and(eq(siteBans.actorId, principal.actorId), or(isNull(siteBans.expiresAt), gt(siteBans.expiresAt, sql`now()`))));
+    if (ban) return { ok: false, reason: 'auth.site_banned' };
+  }
   switch (principal.kind) {
     case 'remote':
       return actor.local ? { ok: false, reason: 'auth.required' } : { ok: true, principal };

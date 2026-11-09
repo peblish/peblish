@@ -1,10 +1,12 @@
 import { ModlogDetails, ModlogFilter, type ModlogAudience, type ModlogEntry } from '@peblish/schema/modlog';
 import { Authority } from '@peblish/schema/authz';
-import { and, desc, eq, gte, lt, type SQL } from 'drizzle-orm';
+import { and, desc, eq, inArray, type SQL } from 'drizzle-orm';
 import { localInstance } from '../db/local-instance.ts';
 import { db as readDb, type Queryable } from '../db/read.ts';
 import { modlog } from '../db/tables/moderation.ts';
+import type { Uuid } from '@peblish/schema/ids';
 import { readSetting } from '../settings/read.ts';
+import { allOf, modlogConditions, newestFirst } from './filters.ts';
 
 /** The host an actor's ap_id lives on, or null when it is not a URL. */
 const hostOf = (apId: string) => URL.parse(apId)?.host ?? null;
@@ -32,24 +34,50 @@ export async function readModlog(
   filter: ModlogFilter,
   options: { audience: ModlogAudience; trustedInstances?: readonly string[]; db?: Queryable },
 ): Promise<ModlogEntry[]> {
-  const { communityId, actorId, action, since, until, limit = 50 } = ModlogFilter.assert(filter);
+  const valid = ModlogFilter.assert(filter);
   const q = options.db ?? readDb();
-  const conditions: SQL[] = [];
-  if (communityId) conditions.push(eq(modlog.communityId, communityId));
-  if (actorId) conditions.push(eq(modlog.actorId, actorId));
-  if (action) conditions.push(eq(modlog.action, action));
-  if (since) conditions.push(gte(modlog.createdAt, new Date(since)));
-  if (until) conditions.push(lt(modlog.createdAt, new Date(until)));
+  const conditions = await modlogConditions(valid, q, { viewer: options.audience === 'staff' ? { admin: true, moderates: [] } : null });
+  const rows = await q
+    .select()
+    .from(modlog)
+    .where(allOf(conditions))
+    .orderBy(...newestFirst)
+    .limit(valid.limit ?? 50);
+  return entries(rows, q, options.trustedInstances);
+}
+
+/**
+ * The modlog rows with these ids, newest first, under readModlog's audience and trust rules:
+ * the public audience gets only public rows, and a reason from an untrusted instance is
+ * withheld. Ids with no row (or no row the audience may see) are left out. For readers that
+ * hold modlog ids already, such as notifications.
+ */
+export async function readModlogEntries(
+  ids: readonly Uuid[],
+  options: { audience: ModlogAudience; trustedInstances?: readonly string[]; db?: Queryable },
+): Promise<ModlogEntry[]> {
+  if (ids.length === 0) return [];
+  const q = options.db ?? readDb();
+  const conditions: SQL[] = [inArray(modlog.id, [...ids])];
   if (options.audience === 'public') conditions.push(eq(modlog.public, true));
   const rows = await q
     .select()
     .from(modlog)
     .where(and(...conditions))
-    .orderBy(desc(modlog.createdAt), desc(modlog.id))
-    .limit(limit);
+    .orderBy(desc(modlog.createdAt), desc(modlog.id));
+  return entries(rows, q, options.trustedInstances);
+}
+
+/** Rows as entries, each reason shown only when every instance that vouches for it is trusted. */
+export async function entries(
+  rows: (typeof modlog.$inferSelect)[],
+  q: Queryable,
+  trustedInstances: readonly string[] | undefined,
+): Promise<ModlogEntry[]> {
+  if (rows.length === 0) return [];
   const trusted = new Set([
     hostOf((await localInstance(q)).origin),
-    ...(options.trustedInstances ?? (await readSetting('modlog.trusted_instances', q))).map((domain) => domain.toLowerCase()),
+    ...(trustedInstances ?? (await readSetting('modlog.trusted_instances', q))).map((domain) => domain.toLowerCase()),
   ]);
   const isTrusted = (apId: string) => {
     const host = hostOf(apId);

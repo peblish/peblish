@@ -35,21 +35,20 @@ export const inboundReasons = {
   'actor.update_unauthorized': 'Only the actor itself, or its community announcing the change, may update an actor.',
   'type.unhandled': 'The activity type is not one peblish reads.',
   'type.question': 'Polls (Question) are not stored yet.',
-  'content.nsfw_rejected': 'Remote sensitive content is refused by default; a setting to accept it comes with the admin controls.',
+  'content.nsfw_rejected':
+    'Remote NSFL content is refused, and NSFW content too while the site setting remote_nsfw.accepted is off (its default).',
   'note.no_local_community': 'A top-level Note that is not addressed to a community here is not a post.',
   'vote.unchanged': 'The voter already has this vote, or has none to take back.',
   'moderators.local_collection': 'A local community’s moderators change here, not by a peer’s Add or Remove.',
   'moderators.unreachable': 'The community’s moderators collection could not be read.',
   'collection.unknown': 'The activity targets a collection peblish does not read.',
   'collection.mismatch': 'The target is not the featured collection of the post’s community.',
-  'block.instance_unsupported': 'A ban of a whole instance is read once site bans exist.',
   'block.expired': 'The ban had already ended when it arrived.',
   'delete.target_unsupported': 'A Delete of an actor counts only from that actor itself.',
   'accept.unverifiable': 'An Accept that names its Follow by IRI only cannot be matched to the follower it accepts, so it is not read.',
   'follow.target_unsupported': 'Only local communities take followers.',
   'undo.unsupported': 'This Undo reverses something peblish does not undo.',
-  'report.not_local': 'A report counts only about content stored here, in a community hosted here.',
-  'flag.not_handled': 'Reports are handled by the reports lane; the Flag is recorded and not acted on.',
+  'report.not_local': 'A report counts only about content stored here, in a community hosted here, or about a person of this instance.',
 } as const;
 
 export type InboundReason = keyof typeof inboundReasons;

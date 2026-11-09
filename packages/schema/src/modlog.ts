@@ -61,6 +61,12 @@ export const ModlogDetails = type({
    * writeModlog. Its instance vouches for the row as much as the actor's does.
    */
   'announcedBy?': 'string',
+  /** community.update: the names of the fields the edit changed. */
+  'fields?': 'string[]',
+  /** settings.update: each changed key with its value before and after. */
+  'changes?': type.Record('string', { before: 'unknown', after: 'unknown' }),
+  /** page.publish: the page and the revision that went live. */
+  'page?': { slug: 'string', language: 'string', revision: Uuid },
 });
 export type ModlogDetails = typeof ModlogDetails.infer;
 
@@ -70,10 +76,18 @@ export type ModlogAudience = typeof ModlogAudience.infer;
 
 /** Filters of the modlog read model; every one is optional. The time range is [since, until). */
 export const ModlogFilter = type({
+  /** One entry, as a notice's "Statement of reasons" links it. */
+  'id?': Uuid,
   'communityId?': Uuid,
   'actorId?': Uuid,
   /** One mod.* action name, such as 'mod.remove'. */
   'action?': 'string',
+  /** Several action names; a name ending in ".*" matches every action under that prefix (core's modlog/groups.ts names the groups). */
+  'actions?': 'string[]',
+  /** Only actions another instance took: the acting actor's id is not on this instance. */
+  'remote?': 'boolean',
+  /** Where a page left off: the `next` of the previous page (readModlogPage). */
+  'cursor?': 'string',
   'since?': IsoDate,
   'until?': IsoDate,
   /** Newest first; 50 when absent. */

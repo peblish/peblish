@@ -5,6 +5,8 @@ import { writer } from '../db/write.ts';
 const truncateGuards = [
   ['modlog', 'modlog_no_truncate'],
   ['deletion_ledger', 'deletion_ledger_no_truncate'],
+  ['media_evidence_log', 'media_evidence_log_no_truncate'],
+  ['page_revisions', 'page_revisions_no_truncate'],
 ] as const;
 
 /** Empties every application table (the migrations journal lives in the drizzle schema). */

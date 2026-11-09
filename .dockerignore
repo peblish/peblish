@@ -13,3 +13,4 @@ lab
 plans
 .env
 .env.*
+# content/ is not listed: the shipped legal pages are inlined into the web build.

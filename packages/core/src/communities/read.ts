@@ -27,6 +27,9 @@ export type CommunityRule = { position: number; title: string; bodyMd: string | 
  */
 export type CommunityDetail = CommunityView & {
   nsfl: boolean;
+  /** Search consent (Mastodon's discoverable and indexable); a page is `noindex` when `indexable` is false. */
+  discoverable: boolean;
+  indexable: boolean;
   postingWarning: string | null;
   summaryMd: string | null;
   /**
@@ -113,6 +116,8 @@ export async function readCommunity(
       bannerUrl: actors.bannerUrl,
       sensitive: actors.sensitive,
       nsfl: actors.nsfl,
+      discoverable: actors.discoverable,
+      indexable: actors.indexable,
       postingRestrictedToMods: actors.postingRestrictedToMods,
       postingWarning: actors.postingWarning,
       subscribers: subscriberCount,
@@ -153,12 +158,40 @@ export async function readCommunity(
     bannerUrl: row.bannerUrl,
     sensitive: row.sensitive,
     nsfl: row.nsfl,
+    discoverable: row.discoverable,
+    indexable: row.indexable,
     postingRestrictedToMods: row.postingRestrictedToMods,
     postingWarning: row.postingWarning,
     subscribers: row.subscribers,
     languages: languages.map((entry) => entry.language),
     rules,
   };
+}
+
+/**
+ * The id of the community a path names: `name` (any case) is a local community, `name@host` a
+ * remote one, and `name@<this instance's domain>` the local one again. Null when nothing matches.
+ * It does not look at deletion or removal: readCommunity and readCommunityPage answer for that.
+ */
+export async function findCommunityId(handle: string, q: Queryable = readDb()): Promise<Uuid | null> {
+  const at = handle.lastIndexOf('@');
+  const name = (at < 0 ? handle : handle.slice(0, at)).toLowerCase();
+  const host = at < 0 ? null : handle.slice(at + 1).toLowerCase();
+  if (!name || host === '') return null;
+  const [row] = await q
+    .select({ id: actors.id, local: actors.local })
+    .from(actors)
+    .innerJoin(instances, eq(instances.id, actors.instanceId))
+    .where(
+      and(
+        eq(actors.kind, 'Group'),
+        sql`lower(${actors.name}) = ${name}`,
+        host === null ? eq(actors.local, true) : sql`lower(${instances.domain}) = ${host}`,
+      ),
+    )
+    .orderBy(asc(actors.createdAt), asc(actors.id))
+    .limit(1);
+  return row?.id ?? null;
 }
 
 /**

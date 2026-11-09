@@ -2,6 +2,7 @@ import type { Uuid } from '@peblish/schema/ids';
 import type { ActorRef, AuthorBadge, CommentView } from '@peblish/schema/views';
 import { and, eq, inArray } from 'drizzle-orm';
 import { freshModerator } from '../authz/roles.ts';
+import { blockedAmong } from '../blocks/predicate.ts';
 import { db, type Queryable } from '../db/read.ts';
 import { actors } from '../db/tables/actors.ts';
 import { authUser } from '../db/tables/auth.ts';
@@ -42,7 +43,7 @@ export type CommentBody = PostBody;
 export type ThreadComment = {
   /** contentHtml is null: the page renders `body` (createMarkdownRenderer) and fills it. */
   view: CommentView;
-  /** Null when the comment has no text or the viewer is not shown it (deleted, removed). */
+  /** Null when the comment has no text or the viewer is not shown it (deleted, removed, or by someone the viewer blocks). */
   body: CommentBody | null;
   /** Set for a moderator looking at a removed comment: why, from the modlog (null when none was given or it is withheld). */
   removal: { reason: string | null } | null;
@@ -231,7 +232,15 @@ export async function readThread(
   const next = found.length > threadPageSize && last ? encodeCursor(cursorAfter(last, sort, rootId, asOf)) : null;
 
   const shown = await layout(q, focus, siblings, sort, asOf);
-  const [context, texts] = await Promise.all([loadContext(q, postId, post.communityId, shown, viewer), textsOf(q, shown)]);
+  const [context, texts, blocked] = await Promise.all([
+    loadContext(q, postId, post.communityId, shown, viewer),
+    textsOf(q, shown),
+    viewer ? blockedAmong(q, viewer.actorId, [...new Set(shown.map((row) => row.authorId))]) : new Set<Uuid>(),
+  ]);
+  // A live comment by someone the viewer blocks stays in place with its text withheld and its
+  // replies kept, so the parent's reply count still points at something. A permalink's own
+  // comment is read on purpose.
+  const hidden = (row: Row) => row.deletedAt === null && row.removedAt === null && blocked.has(row.authorId) && row.id !== focus?.id;
   const removed = new Set(shown.filter((row) => row.removedAt !== null).map((row) => row.id));
   const reasons = context.moderator && removed.size > 0 ? await removalReasons(q, post.communityId, removed) : new Map();
   const entries = shown.map((row): ThreadComment => {
@@ -254,8 +263,9 @@ export async function readThread(
         removed: row.removedAt !== null,
         counts: { upvotes: row.upvotes, downvotes: row.downvotes, comments: row.childCount },
         myVote: context.mine.get(row.id) ?? 0,
+        ...(hidden(row) ? { blocked: true } : {}),
       },
-      body: texts.get(row.id) ?? null,
+      body: hidden(row) ? null : (texts.get(row.id) ?? null),
       removal: removed.has(row.id) && context.moderator ? { reason: reasons.get(row.id) ?? null } : null,
     };
   });

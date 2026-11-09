@@ -11,6 +11,7 @@ import { writer } from '@peblish/core/db/write';
 import { storeRemoteActor } from '@peblish/core/remote/actors';
 import { tx } from '@peblish/core/tx/tx';
 import { truncateAll } from '@peblish/core/testing/db';
+import { seedSetting } from '@peblish/core/testing/seed-a';
 import { seedAccount } from '@peblish/core/testing/seed-b1';
 import { deliverRow, inboxState, seedFollow, seedInboundWorld, seedInboxRow } from '@peblish/core/testing/seed-fed-b';
 import { actorDocument, nodeInfoRoutes, rsaKeys, stubFetch } from '@peblish/core/testing/seed-fed-a';
@@ -331,6 +332,14 @@ describe('what a remote author may post', () => {
     const nsfw = await deliver(createPage('300', spike, { sensitive: true }));
     expect(nsfw.stored?.error).toMatch(/^content\.nsfw_rejected/);
     expect(await postCount()).toBe(2);
+  });
+
+  test('with remote_nsfw.accepted on, sensitive content is stored and NSFL is still refused', async () => {
+    await seedSetting('remote_nsfw.accepted', true);
+    expect((await deliver(createPage('301', spike, { sensitive: true }))).stored).toEqual({ state: 'applied', error: null });
+    const nsfl = await deliver(createPage('302', spike, { sensitive: true, nsfl: true }));
+    expect(nsfl.stored?.error).toMatch(/^content\.nsfw_rejected/);
+    expect(await postCount()).toBe(3);
   });
 
   test('a Create of an id already held under another community is refused with post.id_conflict, not stored twice', async () => {

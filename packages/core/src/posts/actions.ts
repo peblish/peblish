@@ -2,7 +2,6 @@ import type { Principal } from '@peblish/schema/authz';
 import type { Uuid } from '@peblish/schema/ids';
 import { authorize } from '../authz/authorize.ts';
 import { refusedAsResult, type Result } from '../identity/result.ts';
-import { removeContent, restoreContent } from '../moderation/remove.ts';
 import { voteAs } from '../votes/service.ts';
 import { createPost } from './create.ts';
 import { deletePost, restorePost } from './delete.ts';
@@ -51,18 +50,4 @@ export async function restorePostAs(principal: Principal, postId: Uuid): Promise
   const decision = await authorize('post.restore', principal, { postId });
   if (!decision.ok) return decision;
   return refusedAsResult(async () => (await restorePost(decision.grant), {}));
-}
-
-/** A moderator's removal of a post (lane AZ's mod.remove), with the statement of reasons shown to its author. */
-export async function removePostAs(principal: Principal, postId: Uuid, reason: string | null): Promise<Result<{ modlogId: Uuid }>> {
-  const decision = await authorize('mod.remove', principal, { target: { kind: 'post', id: postId } });
-  if (!decision.ok) return decision;
-  return refusedAsResult(() => removeContent(decision.grant, { reason }));
-}
-
-/** A moderator's restore of a removed post (mod.restore). */
-export async function restoreRemovedPostAs(principal: Principal, postId: Uuid, reason: string | null): Promise<Result<{ modlogId: Uuid }>> {
-  const decision = await authorize('mod.restore', principal, { target: { kind: 'post', id: postId } });
-  if (!decision.ok) return decision;
-  return refusedAsResult(() => restoreContent(decision.grant, { reason }));
 }

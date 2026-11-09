@@ -2,9 +2,10 @@ import { banFromCommunity, unbanFromCommunity } from '@peblish/core/moderation/b
 import { checkCommunity, claimedCommunity, grantFor } from '../authorize.ts';
 import { prepared, type InboundContext, type Prepared } from '../handler.ts';
 import { skip } from '../reasons.ts';
+import { prepareSiteBan } from './_site-ban.ts';
 
 // Block and Undo(Block) of a person in a community. The target is the community; a Block whose
-// target is a whole instance (a path of "/") is a site ban, read once site bans exist (MODF).
+// target is a whole instance (a path of "/") is a site ban (_site-ban.ts).
 // Lemmy's `expires` and PieFed's `endTime` both reach the mapping as `expires`, and a ban that
 // ended before it arrived is skipped (the mutation refuses a ban in the past).
 
@@ -17,7 +18,7 @@ export type BlockFields = {
 };
 
 export async function prepareBan(ctx: InboundContext, block: BlockFields, banning: boolean): Promise<Prepared> {
-  if (new URL(block.targetApId).pathname === '/') throw skip('block.instance_unsupported', block.targetApId);
+  if (new URL(block.targetApId).pathname === '/') return prepareSiteBan(ctx, block, banning);
   if (banning && block.expires && block.expires.getTime() <= Date.now()) throw skip('block.expired', block.targetApId);
   const community = await claimedCommunity(ctx, block.targetApId);
   if (community.kind !== 'Group') throw skip('community.mismatch', block.targetApId);

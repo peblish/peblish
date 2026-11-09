@@ -135,7 +135,7 @@ for (const route of routes) {
     const vendor = scripts.filter(({ path }) => vendorKind(path) === 'react' || vendorKind(path) === 'mux');
     const editor = scripts.filter(({ path }) => vendorKind(path) === 'editor');
     expect(vendor.length, 'the React and Mux chunks load').toBeGreaterThan(1);
-    expect(sum(vendor), `React and Mux UI JS ${kB(sum(vendor))}`).toBeLessThanOrEqual(budget.js);
+    expect(sum(vendor), `React and Mux UI JS ${kB(sum(vendor))}`).toBeLessThanOrEqual(route.js ?? budget.js);
     if (route.composer) expect(sum(editor), `the editor chunk ${kB(sum(editor))}`).toBeLessThanOrEqual(budget.editor);
     else
       expect(
@@ -162,7 +162,7 @@ for (const route of routes) {
     ).toEqual([]);
     expect(sum(fonts), `fonts ${kB(sum(fonts))}`).toBeLessThanOrEqual(budget.fonts);
     console.log(
-      `payload ${route.path}: js ${figures(vendor)} of ${kB(budget.js)}, css ${kB(mux!.bytes)} of ${kB(budget.css)}, fonts ${figures(fonts)} of ${kB(budget.fonts)}${editor.length ? `, editor ${figures(editor)}` : ''}`,
+      `payload ${route.path}: js ${figures(vendor)} of ${kB(route.js ?? budget.js)}, css ${kB(mux!.bytes)} of ${kB(budget.css)}, fonts ${figures(fonts)} of ${kB(budget.fonts)}${editor.length ? `, editor ${figures(editor)}` : ''}`,
     );
     if (route.fonts) expect(fonts.length, 'regular, italic and code faces are in use').toBeGreaterThanOrEqual(3);
   });
@@ -247,6 +247,7 @@ test.describe('the check catches', () => {
   });
 
   test('a page that is neither budgeted nor excused', () => {
-    expect(unaccounted(['/', '/auth/sign-in', '/healthz', '/communities/'])).toEqual(['/communities/']);
+    // A route that can never be a real page, so the example stays unbudgeted as pages are added.
+    expect(unaccounted(['/', '/auth/sign-in', '/healthz', '/nonexistent/'])).toEqual(['/nonexistent/']);
   });
 });

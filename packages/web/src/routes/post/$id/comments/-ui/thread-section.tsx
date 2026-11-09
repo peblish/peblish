@@ -11,6 +11,10 @@ import { useCommentThreadLabels, useReplyBarLabels } from '../../../../../shell/
 import { commentPath, postPath, userPath } from '../../../../../shell/paths.ts';
 import { castVoteFn } from '../../../-vote.ts';
 import { loadThreadFn } from '../-thread-fn.ts';
+import { CommentBlock } from './actions/block.tsx';
+import { CommentModerate } from './actions/moderate.tsx';
+import { CommentReport } from './actions/report.tsx';
+import type { ContentActionProps } from '../../../../-actions/props.ts';
 import type { ThreadData } from '../-thread.ts';
 import commentsCss from './comments.css?url';
 import { asCommentError, errorKey, type CommentError } from './errors.ts';
@@ -117,6 +121,26 @@ export function ThreadSection({ data: loaded }: { data: ThreadData }) {
     void router.navigate({ href: `${window.location.pathname}?sort=${sort}#comments` });
   }
 
+  // The action slots of one comment row; forms posted from them come back to this comment.
+  const renderActions = (actions: NonNullable<ThreadData['actions']>) => (comment: CommentView) => {
+    const props: ContentActionProps = {
+      target: { kind: 'comment', id: comment.id },
+      author: comment.author,
+      community: actions.community,
+      removed: comment.removed,
+      deleted: comment.deleted,
+      viewer: actions.viewer,
+      back: `${data.focus ? commentPath(data.postId, data.focus.id) : postPath(data.postId)}#comment-${comment.id}`,
+    };
+    return (
+      <>
+        <CommentReport {...props} />
+        <CommentBlock {...props} />
+        <CommentModerate {...props} />
+      </>
+    );
+  };
+
   const startReply = (comment: CommentView) => {
     setTargetId(comment.id);
     document.querySelector<HTMLTextAreaElement>('.pb-reply textarea')?.focus();
@@ -163,6 +187,7 @@ export function ThreadSection({ data: loaded }: { data: ThreadData }) {
             if (!result.ok) throw new Error(result.reason);
           }}
           {...(data.reply === 'yes' && { onReply: startReply })}
+          {...(data.actions && { renderActions: renderActions(data.actions) })}
         />
       )}
       {urlError && (

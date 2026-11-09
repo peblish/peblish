@@ -3,6 +3,7 @@ import { uuidv7 } from 'uuidv7';
 import { localInstance } from '../db/local-instance.ts';
 import { actors } from '../db/tables/actors.ts';
 import { posts } from '../db/tables/content.ts';
+import { sameMentions } from '../mentions/scan.ts';
 import { defineMutation } from '../tx/mutation.ts';
 import { Refused } from '../tx/refused.ts';
 import { remoteBody } from './body.ts';
@@ -149,7 +150,9 @@ export const updateRemotePost = defineMutation({
       .where(eq(actors.id, current.communityId));
     const { origin } = await localInstance(t.db);
     const fields = editable(post, community, origin, postId, current.apId);
-    const same = (Object.keys(fields) as (keyof typeof fields)[]).every((key) => fields[key] === current[key]);
+    // A changed Mention tag set is an edit too (who gets a notice depends on it), even with nothing else changed.
+    const same =
+      (Object.keys(fields) as (keyof typeof fields)[]).every((key) => fields[key] === current[key]) && sameMentions(current.raw, post.raw);
     if (same && (post.editedAt === null || post.editedAt.getTime() === current.editedAt?.getTime())) return { id: postId };
     await t.db
       .update(posts)

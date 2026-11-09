@@ -1,0 +1,159 @@
+/* The report queue (lane REP). Tokens come from the shell. */
+@layer app {
+  .rq-page {
+    padding: 16px;
+  }
+  .rq-page h1 {
+    margin: 0 0 12px;
+    font-size: 20px;
+  }
+  .rq-tabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 16px;
+    margin: 0 0 12px;
+    border-bottom: 1px solid var(--pb-line);
+  }
+  .rq-tabs a {
+    padding: 6px 0;
+    color: var(--pb-muted);
+    text-decoration: none;
+  }
+  .rq-tabs a[aria-current='page'] {
+    color: inherit;
+    font-weight: 600;
+    border-bottom: 2px solid currentColor;
+  }
+  .rq-filter {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 16px;
+    align-items: end;
+    margin: 0 0 12px;
+  }
+  .rq-filter label {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    font-size: 12px;
+    color: var(--pb-muted);
+  }
+  .rq-filter select {
+    font: inherit;
+    color: inherit;
+    background: transparent;
+    border: 1px solid var(--pb-line);
+    border-radius: 6px;
+    padding: 4px 6px;
+  }
+  .rq-table {
+    width: 100%;
+    border-collapse: collapse;
+    table-layout: fixed;
+  }
+  .rq-table th {
+    text-align: left;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--pb-muted);
+    padding: 4px 8px;
+    border-bottom: 1px solid var(--pb-line);
+  }
+  .rq-table td {
+    vertical-align: top;
+    padding: 10px 8px;
+    border-bottom: 1px solid var(--pb-line);
+    overflow-wrap: anywhere;
+  }
+  .rq-table th:nth-child(1) {
+    width: 42%;
+  }
+  .rq-table th:nth-child(3) {
+    width: 64px;
+  }
+  .rq-meta,
+  .rq-count {
+    margin: 0 0 4px;
+  }
+  .rq-hint {
+    margin: 0 0 4px;
+    font-size: 12px;
+    color: var(--pb-muted);
+  }
+  .rq-quote {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 12px;
+    align-items: baseline;
+  }
+  .rq-quote blockquote {
+    flex: 1 1 100%;
+    margin: 0;
+    padding-left: 10px;
+    border-left: 3px solid var(--pb-line);
+  }
+  /* Blur by default: the text is in the page but not readable, selectable or announced until Show. */
+  .rq-quote blockquote[data-hidden] {
+    filter: blur(6px);
+    user-select: none;
+    pointer-events: none;
+  }
+  /* WCAG 2.2 target size: a link standing alone in a cell is at least 24px tall. */
+  .rq-open,
+  .rq-quote .pb-linkbutton {
+    display: inline-flex;
+    align-items: center;
+    min-height: 24px;
+    min-width: 24px;
+  }
+  .rq-reporters {
+    margin: 6px 0 0;
+    padding-left: 18px;
+  }
+  .rq-reporters li {
+    margin-bottom: 6px;
+  }
+  .rq-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .rq-act {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .rq-note {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    font-size: 12px;
+  }
+  .rq-note input,
+  .rq-note textarea,
+  .rq-note select {
+    font: inherit;
+    color: inherit;
+    background: transparent;
+    border: 1px solid var(--pb-line);
+    border-radius: 6px;
+    padding: 4px 6px;
+  }
+  .rq-buttons {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .rq-remove summary {
+    cursor: pointer;
+    font-weight: 600;
+  }
+  .rq-error {
+    margin: 0;
+    color: var(--post-err, #d33);
+  }
+  .rq-empty {
+    margin: 24px 0;
+    color: var(--pb-muted);
+  }
+}

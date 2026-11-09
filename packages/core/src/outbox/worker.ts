@@ -8,6 +8,14 @@ import { writer } from '../db/write.ts';
 import { Refused } from '../tx/refused.ts';
 import { insideTransaction, OUTBOX_CHANNEL, outboxEmitter } from '../tx/tx.ts';
 import { assertRunnable, type Consumer } from './consumers.ts';
+import { outboxSkipped } from './tables.ts';
+
+/**
+ * A poison event: one that has failed (with anything but Refused) at least this many times, over
+ * at least `poisonWindow`, is skipped so the events behind it can go on (processBatch).
+ */
+export const poisonFailures = 10;
+export const poisonWindow = sql`interval '30 minutes'`;
 
 /**
  * Creates missing cursor rows, each at its consumer's startAt (see ConsumerStart), after
@@ -34,14 +42,33 @@ export async function ensureCursors(consumers: readonly Consumer[]): Promise<voi
  * later is never skipped. The cursor row is locked (skip locked), so concurrent workers never
  * run one consumer twice. On failure the batch rolls back, the cursor stays and the consumer
  * backs off (doubling, capped at five minutes); later events wait behind the failing one.
+ *
+ * A failure in a handler also records that event on the cursor row: its id, how many times in a
+ * row it failed and when it first did. Once the same event has failed `poisonFailures` times
+ * over at least `poisonWindow`, the next batch skips it: it is logged, written to
+ * outbox_skipped, counted in `refused`, and the cursor moves past it. Recording a failure is a
+ * write, so an outage of the database itself never reaches the threshold: when the write fails,
+ * nothing is counted.
  * Returns how many rows the cursor moved past, matching or not.
  */
 export async function processBatch(consumer: Consumer, limit = 100): Promise<number> {
+  // The event whose handler is running, so a failure can be pinned on it.
+  let failing: number | undefined;
   try {
     return await writer().transaction(async (db) =>
       insideTransaction(async () => {
         const [cursor] = await db
-          .select({ txId: outboxCursors.txId, eventId: outboxCursors.eventId })
+          .select({
+            txId: outboxCursors.txId,
+            eventId: outboxCursors.eventId,
+            failingEventId: outboxCursors.failingEventId,
+            failures: outboxCursors.failures,
+            firstFailureAt: outboxCursors.firstFailureAt,
+            // Only failures write the cursor while an event keeps failing, so its last write is the last failure.
+            lastFailureAt: outboxCursors.updatedAt,
+            lastError: outboxCursors.lastError,
+            poisoned: sql<boolean>`${outboxCursors.failures} >= ${poisonFailures} and ${outboxCursors.firstFailureAt} <= now() - ${poisonWindow}`,
+          })
           .from(outboxCursors)
           .where(
             and(eq(outboxCursors.consumer, consumer.name), sql`(${outboxCursors.retryAt} is null or ${outboxCursors.retryAt} <= now())`),
@@ -65,8 +92,32 @@ export async function processBatch(consumer: Consumer, limit = 100): Promise<num
           await events.emit(event);
         };
         let refused = 0;
-        for (const row of rows) {
+        // The rows this batch moves past: all of them, or up to a skipped poison event, so the skip
+        // commits on its own and a later event failing in the same batch cannot roll it back.
+        let scanned = rows.length;
+        for (const [index, row] of rows.entries()) {
           if (!consumer.events.some((type) => type === row.type)) continue;
+          if (cursor.poisoned && cursor.failingEventId === row.id && cursor.firstFailureAt) {
+            refused += 1;
+            console.error(
+              `outbox consumer ${consumer.name} skipped outbox event ${row.id} (${row.type}) after ${cursor.failures} failures: ${cursor.lastError ?? 'no error recorded'}`,
+            );
+            await db
+              .insert(outboxSkipped)
+              .values({
+                consumer: consumer.name,
+                eventId: row.id,
+                type: row.type,
+                error: cursor.lastError,
+                failures: cursor.failures,
+                firstFailureAt: cursor.firstFailureAt,
+                lastFailureAt: cursor.lastFailureAt,
+              })
+              .onConflictDoNothing();
+            scanned = index + 1;
+            break;
+          }
+          failing = row.id;
           const event = parseEvent(row.payload);
           try {
             // A savepoint per event, so a refused event leaves none of its handler's writes.
@@ -78,8 +129,9 @@ export async function processBatch(consumer: Consumer, limit = 100): Promise<num
               `outbox consumer ${consumer.name} skipped outbox event ${row.id} (${row.type}): ${error.action} refused with ${error.reason}`,
             );
           }
+          failing = undefined;
         }
-        const last = rows.at(-1);
+        const last = rows[scanned - 1];
         if (last) {
           await db
             .update(outboxCursors)
@@ -89,28 +141,42 @@ export async function processBatch(consumer: Consumer, limit = 100): Promise<num
               attempts: 0,
               lastError: null,
               retryAt: null,
+              failingEventId: null,
+              failures: 0,
+              firstFailureAt: null,
               refused: sql`${outboxCursors.refused} + ${refused}`,
               updatedAt: new Date(),
             })
             .where(eq(outboxCursors.consumer, consumer.name));
         }
         await events.notify();
-        return rows.length;
+        return scanned;
       }),
     );
   } catch (error) {
-    await recordFailure(consumer, error).catch(() => {
+    await recordFailure(consumer, error, failing).catch(() => {
       // The consumer's error is the one worth reporting; the next attempt records again.
     });
     throw error;
   }
 }
 
-/** Counts the failure and sets the next retry: 2^attempts seconds, the exponent capped before it can overflow. */
-function recordFailure(consumer: Consumer, error: unknown) {
+/**
+ * Counts the failure and sets the next retry: 2^attempts seconds, the exponent capped before it
+ * can overflow. A failure in a handler (`eventId`) counts against that event: one more for the
+ * event already failing, else a new count from 1. A failure outside any handler leaves the
+ * event's count as it was.
+ */
+function recordFailure(consumer: Consumer, error: unknown, eventId: number | undefined) {
+  const same = sql`${outboxCursors.failingEventId} is not distinct from ${eventId ?? null}::bigint`;
   return writer()
     .update(outboxCursors)
     .set({
+      ...(eventId !== undefined && {
+        failingEventId: eventId,
+        failures: sql`case when ${same} then ${outboxCursors.failures} + 1 else 1 end`,
+        firstFailureAt: sql`case when ${same} then ${outboxCursors.firstFailureAt} else now() end`,
+      }),
       attempts: sql`${outboxCursors.attempts} + 1`,
       lastError: error instanceof Error ? `${error.name}: ${error.message}` : String(error),
       retryAt: sql`now() + least(interval '1 second' * power(2, least(${outboxCursors.attempts}, 9)), interval '5 minutes')`,

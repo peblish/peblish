@@ -710,3 +710,202 @@ Verification on lane root with the four merged (head at the time of the last run
 - `pnpm install --frozen-lockfile` is up to date (no lockfile change). `pnpm check` is green: 157 test files (155 passed, 2 skipped), 2,089 tests passed and 3 skipped (FIT's opt-in build and archive tests, C1's opt-in performance test), no boundary violations (693 modules), oxlint and Prettier clean. `pnpm db:drift`: none, with no migration added.
 - `PEBLISH_UI_KIT=1 pnpm e2e`: the first run was 211 passed and 1 failed, then stopped (`comments.spec.ts` "a reply on a page the router opened shows on that page", four failures in six repeats alone): the test clicked "More comments" right after "Old", while the default view and its link to the default sort's next page are still shown until the Old fetch arrives, so it followed `sort=hot`. D's lane had passed it by timing. The test now waits for the link to name `sort=old` before following it (a test race; the product behaves as D documented: the address changes first and the default view stays until the fetch arrives). After that: 218 passed, 1 skipped. Payload is unchanged: 62.8 kB of script on the five feed pages; 126.3 kB on the auth, invite, settings, admin and signed-out `/submit` pages; 127.3 kB on `/post/<id>` and the permalink; 129.4 kB on `/submit` signed in (the sheet adds 105.8 kB lazily, of 200); 168.8 kB on `/kit`, 1.2 kB of room. CSS 60.4 of 65 kB, fonts 105.6 kB, 259.2 of 270 on `/kit`.
 - `docker build` (tagged `peblish:w2-batch-b-fix3`), then `scripts/image-smoke.sh` against a throwaway `peblish_root_image` (dropped after): the disagreeing command exits 64, migrate (seven migrations applied, `object_rechecks` and the three batch B indexes present), the first admin, the worker starts and stops on SIGTERM, web `/healthz`, `/readyz` and the healthcheck, uid 1000.
+
+## Wave 3 integrated (2026-11-10)
+
+Branch `mvp-w3`, from `w3-groundwork` plus the outbox worker test fix (df6f74d). Nine lanes merged with `git merge --no-ff`, after root's clock branch and `origin/main`; their notes are kept outside the repository in `/Users/admin/.agents/plans/feddit/lane-notes/wave-3/<lane>.md`, and `LANE-NOTES.md` was dropped from the tree in each merge. LAB (`mvp-w3-lab`) is not merged: root merges it later.
+
+| Lane        | What it brought                                                                                                                                                                    | Head    | Merge   |
+| ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- | ------- |
+| clock       | root's fixes: the backfill tests on a relative clock, the sidebar's counted links named by their text, `editable()` keeping a response's status                                    | 360984f | 6b39deb |
+| origin/main | PR #4 (spike folder only)                                                                                                                                                          | 69043ad | 9a2c015 |
+| FED-C       | Mastodon-like withdrawal (`Undo(Announce)`, author `Delete`), direct `Update(Page)`, outbound mentions, `delivery.enabled`, the outbound site-ban `Block`, the served mention `cc` | a578116 | a8a1b17 |
+| E1          | person, community and instance blocks and their feed predicate, the profile page and tabs, Edit profile                                                                            | 5e695aa | 417d3f2 |
+| E2          | `notifications`, the inbox with replies, mentions, removal and ban notices, the unread badge                                                                                       | 1d8b87e | 8722f7d |
+| COMM        | the community page, the community form, the NSFW gate page and Hide NSFW                                                                                                           | 2a14817 | f7fbc86 |
+| MODF        | site bans (in and out of the principal), peer controls, the modlog feed, remove, restore and ban flows, the Bans and Peers tabs, the moderate slots                                | cadc6f6 | 6205d2d |
+| REP         | eleven report categories, `/report` and its dialog, the queue at `/admin/reports`, inbound and outbound Flag                                                                       | e7b006d | 49ebad4 |
+| DISC        | the community directory and `/resolve`                                                                                                                                             | 1d18f0a | 66d8786 |
+| ADM         | the Settings and Pages tabs, the kill switches, the `pages` CMS seeded from `content/legal`, the public `/<slug>` pages                                                            | 3d8eeed | 0036755 |
+| SAFE        | upload scanning (local hash list, Arachnid adapter), the evidence log and purge, the admin Media tab, `/media/<id>`                                                                | 6be9f49 | 8482c89 |
+
+Conflicts: only `e2e/payload/routes.ts` (E2, MODF, REP, ADM, SAFE merges; every lane's entries kept, the seed helpers of COMM and REP both kept) and `LANE-NOTES.md` (dropped). No i18n, README or generated file conflicted; `pnpm gen` after the merges changed nothing. `rm -rf node_modules && pnpm install` left the lockfile as it was (no lane added a dependency).
+
+Migrations, generated once after the merges:
+
+- `0008_wave_3` (drizzle-kit): `person_blocks` (with `person_blocks_not_self`), `community_blocks`, `instance_blocks` (E1); `notifications` (E2, no foreign key on `modlog_id`); the `reports` delta (`number` identity, `audience`, `escalated_by`, `escalated_at`, `resolution`, `resolution_note`, `modlog_id`, indexes `reports_queue` and partial unique `reports_open_once`, checks `reports_audience` and `reports_resolution`; REP); `site_bans`, `peer_controls` (MODF); `pages`, `page_revisions` (ADM); `media_blocklist`, `media_scans`, `media_evidence`, `media_evidence_log` (SAFE); and two indexes added in schema code: `comments_author_published` on comments `(author_id, published_at desc)` (E1's profile lists) and the partial `media_purge` on media `(scan_state) where storage_key is not null and scan_state in ('blocked', 'failed')` (SAFE's purge pass). Compared statement by statement with the six lanes' scratch SQL: 59 statements, every lane statement present, the two indexes the only additions.
+- `0009_wave_3_guards` (custom, hand-written): `media_evidence_log` and `page_revisions` refuse update, delete and truncate with the 0001 function `peblish_append_only()`, as the deletion ledger does. `truncateAll` lists both truncate guards; `seed-adm.ts` suspends the row guard while it empties the revisions on a lane database. `db/spine.test.ts` checks both tables and the trigger list.
+- `pnpm db:drift`: none. `peblish_root` and `peblish_root_test` were dropped and recreated on the ten migrations.
+
+Integration commits, after the merges:
+
+| Commit  | Change                                                                                                                                                                                                                                           |
+| ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| f7bac97 | Migration `0008_wave_3`, the two indexes in schema code                                                                                                                                                                                          |
+| 4987d36 | Migration `0009_wave_3_guards`, `truncateGuards`, the spine test, the ADM seed's reset                                                                                                                                                           |
+| 774ee7b | The payload budget's self-test names `/nonexistent/` as its unaccounted route (`/communities/` is budgeted now)                                                                                                                                  |
+| 21e0c4b | `MEDIASCAN_LOCAL_ONLY: '1'` in Playwright's `webServer.env` and the CI Playwright step                                                                                                                                                           |
+| c5e1ef3 | The serial Playwright project (below); `PEBLISH_E2E_FLIP_ALL` and `E2E_PAUSE_SWITCH` are gone                                                                                                                                                    |
+| f1ccfd1 | COMM's `varyByAccept()` workaround removed; the profile spec asserts the 404 of an unknown `/u/<x>` (COMM's already did for `/c/<x>`)                                                                                                            |
+| 1099e29 | E2's and REP's sidebar axe exclusions removed; the auth flow accepts a count after the You links                                                                                                                                                 |
+| dccab01 | The Markdown editor's toolbar buttons are at least 28 px high; E1's axe exclusion on the edit page removed                                                                                                                                       |
+| 14f2ca3 | `resolve/blocked.ts` reads MODF's peer controls (`instanceBlocked`, and a new `blockedDomains` in `peers/gate.ts`)                                                                                                                               |
+| 422d47f | The directory spec follows the resolve redirects: a held remote community and person open on `/c/<name>@<host>` and `/u/<name>@<host>` with a 200                                                                                                |
+| 33d803a | The directory leaves out communities with `discoverable` false (COMM's request to DISC)                                                                                                                                                          |
+| 5e4b940 | Admins see "New community" in the directory (COMM's request to DISC)                                                                                                                                                                             |
+| 53360e1 | The inbox spec finds the unread count in the page (the sidebar badge now says "11 unread" too)                                                                                                                                                   |
+| dadbcda | A person sees the private modlog entries about them (a ban of them, a removal of their post or comment); `/modlog?entry=<id>` shows one entry, and the inbox links each statement of reasons there (E2 linked `/modlog/<id>`, which has no page) |
+| a76e2b0 | deploy/README.md: SAFE's six scanner variables, no variable turns uploads on, the two worker jobs                                                                                                                                                |
+| 92135db | `.dockerignore` says why `content/` stays in the build context                                                                                                                                                                                   |
+| c434786 | `registrationSettings` reads its rows in code point key order, as the settings writer locks them                                                                                                                                                 |
+| 3b8b34c | `spikes/README.md` points at `phase-0.complete.md`                                                                                                                                                                                               |
+| c11ddcd | README: how the serial e2e project runs                                                                                                                                                                                                          |
+| 37f7ef3 | The profile edit page links `composer.css` (the editor was unstyled there, which is what failed axe `target-size`)                                                                                                                               |
+| 7a10649 | The auth flow's You link pattern allows the space before the badge                                                                                                                                                                               |
+| 367de0a | The `/kit` gallery gets its own 180 kB JavaScript ceiling (it measured 170.5 kB once the vendor chunks split around the new pages; product pages keep 170 kB and measure 126.6 kB)                                                               |
+| 4378e9c | `seed-adm.ts` tolerates the other ADM spec creating `adm_member` first                                                                                                                                                                           |
+| 7e7a6cf | `db/migrate.test.ts` cases get 30 s (they migrate whole databases, ten migrations now)                                                                                                                                                           |
+| (last)  | This section                                                                                                                                                                                                                                     |
+
+The serial project: a spec named `*.serial.spec.ts` runs in the Playwright project `serial` (one worker, `dependencies: ['chromium']`) after the parallel one, which ignores those files. In it: ADM's kill switch cases and the inbox pause (`e2e/admin/switches.serial.spec.ts`, its own admin `adm_switch_admin`), SAFE's remote-media pause case (`e2e/mediascan/pause-switch.serial.spec.ts`), B2's `e2e/media/proxy.serial.spec.ts`, the composer's uploads spec (`e2e/composer/uploads.serial.spec.ts`: it flips `uploads.enabled`, which ADM's Settings row reads) and the composer's "what Preview shows is what is published" cases (`e2e/composer/preview.serial.spec.ts`). Playwright skips the serial project when the parallel one fails; `pnpm e2e --project serial --no-deps` runs it alone.
+
+Site-ban contract, checked on both sides: MODF's `banFromSite` emits one `mod.ban` with `communityId: null`, `banned`, `removeContent`, `targetActorId` and `targetApId`; FED-C's `onSiteBan` reads exactly those (types and code; no test drives both together).
+
+Verification on lane root (port 18399):
+
+- `rm -rf node_modules && pnpm install`: lockfile unchanged.
+- `pnpm install --frozen-lockfile`: up to date. `pnpm check` is green: 218 test files passed and 4 skipped, 2,508 tests passed and 7 skipped, no boundary violations (1,015 modules), oxlint and Prettier clean. The two full runs before 7e7a6cf each had one failure, `db/migrate.test.ts` past its 5 s default (load average 10 to 14; 1.6 to 3 s alone, three of three).
+- `pnpm build && pnpm e2e`: 353 passed and 1 skipped (the `/kit` 404 case that needs a server without `PEBLISH_UI_KIT`); the serial project's 15 cases among them. The first full run had four failures, each fixed above (37f7ef3, 7a10649, 367de0a, 4378e9c). Payload: product pages 126.6 kB script of 170 (`/submit` signed in 130.7), Mux CSS 60.4 of 65, fonts 259.2 of 270 on `/kit`.
+- `docker build -t peblish:w3 .`, then `scripts/image-smoke.sh` against a throwaway `peblish_root_image` (dropped after), as CI's image job: the disagreeing command is refused, migrate applies the ten migrations, the first admin, the worker starts and stops, web answers `/healthz` and `/readyz` as uid 1000.
+- `PEBLISH_FEED_PERF=1` `feeds/perf.test.ts`: fails on three of four runs at load average 11 to 21 (one run passed). It is a regression, not load: "follows 130 / subscribed" on New, Old and Top (year, all) measures p50 35 to 55 ms (p95 up to 70 ms; wave 2 C1 measured p95 4 to 5 ms). The plan reads every post of the 130 followed communities (`posts_community_published` per community, 43,793 rows, then a top-N sort) instead of walking `posts_published`: the planner estimates 20 rows, because E1's `blocks` and MODF's `blocked-peers` feed predicates add five `NOT IN (sub-select)` clauses it estimates at a flat selectivity each. With both predicates off the same rows measure 3.4 ms on `posts_published`; with either one alone they stay slow. A rewrite of both as correlated `NOT EXISTS` was tried and reverted (it fixed those rows but moved the cost to Top month and the Hot rows). Left for the review.
+
+Left open (with the reason):
+
+- The feed perf regression above: it needs a design choice across E1's and MODF's predicates (or the feed query), and its own perf pass.
+- Cross-lane requests that add UI states and copy without a mock: the community page's notice and Unblock for a community the viewer blocked (E1 to COMM), prefilling the People tab from `/settings/blocks?person=<handle>` (REP to E1), a Report link for signed-out visitors (REP's request 6), DISC hiding or marking blocked communities with `blockedAmong` (E1's "may").
+- Not built, as the brief says: FED-C's site-ban withdrawal edge case and E2's report outcome notices (`report.resolved`); the review decides.
+- Optional or not code: E2's `notification` throttle scope (optional), the bare `@name` launch gap line in `phase-1.md`, the cutover runbook items (`site.name` "Feddit", operator settings, publishing the pages, starting the notifications consumer at `'now'` if the outbox holds removal or ban history), German copy review of `mediascan.json`, Andrew's Cloudflare Cache Rule and the Arachnid auth scheme.
+- Other timing tests (`outbox/worker.test.ts` and the ones the lane notes name) can still time out on the busy shared Postgres; none did in the final run.
+- LAB's branch is not merged.
+
+Housekeeping: no push; the lane worktrees, branches and databases stay; the `peblish:w3` image tag stays.
+
+## Wave 3 review fixes (2026-11-10)
+
+Five Codex reviewers read tag `w3-review` (96d94dd). Root accepted every finding and fixed them in five lanes, each a branch `mvp-w3-fx-<lane>` cut from `w3-review` with its own worktree. PERF fixed the feed regression above, and LAB (cut at 264c9c9, before the groundwork) delivered the interop lab. All seven were merged here in this order with `git merge --no-ff`, and `LANE-NOTES.md` was dropped from the tree in each merge. The findings, root's responses and the lane briefs are in `/Users/admin/.agents/plans/feddit/briefs/wave-3/` (`review-findings.md`, `fix-lanes.md`); the lane notes are in `lane-notes/wave-3/<lane>.md`. FX-FED (D3, D7, S1, F1, F3, F5, F6, F7) merges in a second step.
+
+| Lane       | Findings                                                                                                           | Head    | Merge   |
+| ---------- | ------------------------------------------------------------------------------------------------------------------ | ------- | ------- |
+| PERF       | the Subscribed feed regression (follows as one array parameter, block and peer predicates as `<> all(array(...))`) | bcb46bf | 722e01a |
+| LAB        | Lemmy 0.19.21, PieFed 1.8.11 and Mbin 1.11 against the production image; `@peblish/interop`; `INTEROP.md`          | 870af48 | 36d1ca0 |
+| FX-MEDIA   | D1, D2, D4, D5, D6, S6, S7, S8, W10 (Media)                                                                        | 618d631 | 095ba07 |
+| FX-REPORTS | A1 (report creation), A2, A7, D8, D9, S10, F4, W4                                                                  | c8b1a75 | 84e89f6 |
+| FX-PEOPLE  | A1 (profiles, blocks, age, notification marks), A8, A9, D10, S9, S11, S13, S14, W7                                 | f89ee43 | 440dc02 |
+| FX-WEB     | S4, A4, W5, W6, W8, W9, W10 (Settings, Pages, Bans, Peers), W12                                                    | 18d1380 | a70fdb3 |
+
+Conflicts: none, not even in the i18n files, the e2e specs FX-WEB and FX-MEDIA touched, `e2e/payload/routes.ts` or the README. `pnpm gen` changed nothing. `rm -rf node_modules && pnpm install` left the lockfile as merged (LAB's `tools/interop` importer came with its merge), so there is no lockfile commit.
+
+Migration `0010_wave_3_fixes` (drizzle-kit, 8 statements, all FX-MEDIA's and identical to its scratch SQL): `media_evidence` drops `media_evidence_media_id_unique` and gains `hold_authority` (check `afp`, `ncmec`, `nca`), `purge_started_at` and the index `media_evidence_media` on `(media_id, created_at)`; `media_scans` gains `claim_token`, `purge_attempts` (not null, default 0) and `purge_retry_at`. `peblish_root` and `peblish_root_test` were dropped and recreated on the eleven migrations; `pnpm db:drift` finds none.
+
+Root's commits, after the merges:
+
+| Commit  | Change                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| abe2bfb | Migration `0010_wave_3_fixes`; the migrate test's comment counts eleven                                                                                                                                                                                                                                                                                                                                                             |
+| edabcc3 | The read pool sets `plan_cache_mode: 'force_custom_plan'` beside `jit: 'off'` (PERF: a cached generic plan cannot see the clock, the Top period or the follows)                                                                                                                                                                                                                                                                     |
+| cd4ed72 | The header comments of `authz/actions/{profiles,blocks,notifications,reports}.ts` say which writes recheck and what they lock                                                                                                                                                                                                                                                                                                       |
+| 825cff8 | `requiresRecheck` adds `profile.update`, `block.add`, `block.remove`, `age.declare`, `notification.read`, `notification.read_all`, `report.create`, `report.resolve` and `report.route`. `updateProfile` and `addBlock`, which lock the acting row before an inner rechecked mutation, declare `recheck: 'inner'`; that throws if the body ran no rechecked mutation of its action (test in `tx/mutations.test.ts`). README updated |
+| e6651fa | `auth.site_banned` copy ("You are banned from this instance.") on the profile edit form, the inbox, the NSFW gate and the blocks page, in en and de                                                                                                                                                                                                                                                                                 |
+| 9f07d61 | A hold cannot narrow: while an AFP hold is in force, a replacing NCMEC or NCA hold is `media.hold_invalid` (test in `mediascan/review.test.ts`)                                                                                                                                                                                                                                                                                     |
+| 42858bb | The `media.hold_invalid` message says so (en and de; the German joins the German review item)                                                                                                                                                                                                                                                                                                                                       |
+| 714eb19 | README: the serial e2e run is `e2e/run.ts`, a second run whether or not the first failed; the LAB row says the lab runs by hand with `make check` and CI runs only the package's unit tests                                                                                                                                                                                                                                         |
+| 1055222 | The interop driver removes a post through `mod.remove` directly: `removePostAs` left `posts/actions.ts` in the groundwork, after LAB's branch point, so the merged tree failed `tsc -p tsconfig.json`                                                                                                                                                                                                                               |
+| faeac79 | e2e: a forwarded report's receipt names the remote host and drops "will not learn who you are"; `back=%2F%09%2Fevil.example` becomes `/` on the receipt's Done and the form's Cancel. `seed-rep.ts` adds a post by a person on a `.example` host                                                                                                                                                                                    |
+| (last)  | This section                                                                                                                                                                                                                                                                                                                                                                                                                        |
+
+Verification on lane root (port 18399), with the federation fix lane running beside it (load average 7 to 11):
+
+- `pnpm check`: green. 225 test files passed and 4 skipped, 2,574 tests passed and 7 skipped. The first run stopped at the root typecheck on the interop driver (1055222).
+- `pnpm db:drift`: none. A fresh `pnpm db:migrate` applies.
+- `pnpm build && pnpm e2e`: parallel run 323 passed and 1 skipped (the `/kit` 404 case), serial run 33 passed, both exited 0, on the first full run. Payload: product pages at most 130.7 kB script of 170 (`/submit` signed in, `/c/new`), `/kit` 170.5 of 180, Mux CSS 60.4 of 65, fonts 259.2 of 270.
+- Image job: `docker build -t peblish:w3-fixes .`, then `scripts/image-smoke.sh` against a throwaway `peblish_root_image` (dropped after): the disagreeing command refused, migrate, first admin, worker start and stop, web healthy as uid 1000.
+- `PEBLISH_FEED_PERF=1` `feeds/perf.test.ts`: passed twice, at load average 9 to 10. 306 rows, none over 50 ms; worst p95 19.7 ms (blocked peers, 130 follows, All Hot), worst Subscribed p95 15.6 ms. `profiles/perf.test.ts`: passed, worst p95 13.1 ms.
+
+Left open (with the reason):
+
+- FX-FED is not merged yet; it comes in step 2, with the check that `forwardHosts` and its send-time peer-block gate agree, and its root item (F7 for posts in `posts/remote.ts`).
+- `deleteAccount` keeps its outer non-rechecked mutation without `recheck: 'inner'`: `account.delete` is not in `requiresRecheck`, and nothing asked to add it.
+- FX-INTEROP (root's decisions on LAB's questions) runs after integration. German review of FX-MEDIA's new strings and the extended hold message joins the German review item.
+
+Housekeeping: no push; the lane worktrees, branches and databases stay; the `peblish:w3-fixes` image tag stays.
+
+### Wave 3 review fixes, step 2: FX-FED (2026-11-10)
+
+FX-FED (D3, D7, S1, F1, F3, F5, F6, F7; head 09d54d0) merged in 541e963 with `git merge --no-ff`. There were no conflicts, and `LANE-NOTES.md` was dropped. It changed no schema: `pnpm db:drift` finds none, so `0010_wave_3_fixes` stays as generated. `pnpm gen` changed nothing.
+
+| Commit  | Change                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| ea4a0f9 | FX-FED's root item: a peer's post Update whose Mention tags alone changed is an edit (`sameMentions` in `posts/remote.ts`, as F7 did for comments); test in `posts/remote.test.ts`                                                                                                                                                                                                                                                                                                                                         |
+| aba1fda | `forwardHosts` (`reports/form.ts`) names only the hosts the outbound Flag reaches. It uses inbox hosts, shared inbox first, and nothing for an actor without an inbox, as `recipients()` in `delivery/reports/consumer.ts` does. It leaves out a host whose peer is blocked, using the delivery worker's own check (`instanceBlocked` on the inbox URL). The form test covers a blocked peer and an actor without an inbox. The REP e2e seed's remote author gets an inbox. A comment at `recipients()` points at the form |
+| (last)  | This section; tag `w3-fixes` (local) at the head                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+
+`federation.boost_withdrawals` (D7) is registered by glob in `federation/registry/jobs.gen.ts`, which only `packages/web/src/worker.ts` imports.
+
+- The built `dist/processes/worker.mjs` contains it; `.output/server` does not.
+- The built worker ran for 10 s against `peblish_root`, with statement logging on that database only (reset after). The job's `site_bans` read ran at start, and the worker stopped on SIGTERM with exit 0 and no job failure logged.
+- `tests/registries.test.ts` holds the job and consumer names unique.
+
+Verification on lane root, with load average 7 to 13:
+
+- `pnpm check`: green. 225 test files passed and 4 skipped; 2,586 tests passed and 7 skipped.
+- `pnpm db:drift`: none. A fresh `pnpm db:migrate` applies.
+- `pnpm e2e`: parallel run 323 passed and 1 skipped; serial run 33 passed; both exited 0. Payload unchanged: product pages at most 130.7 kB of 170, `/kit` 170.5 of 180, CSS 60.4 of 65, fonts 259.2 of 270.
+- Image job: `docker build -t peblish:w3-fixes .` and `scripts/image-smoke.sh` against a throwaway `peblish_root_image` (dropped after). It passed.
+- `PEBLISH_FEED_PERF=1` `feeds/perf.test.ts`: passed at load average 10, no row over 50 ms. Worst p95 24.3 ms; worst Subscribed 13.3 ms.
+- `profiles/perf.test.ts`: passed, worst p95 14.2 ms.
+
+Left open, from FX-FED's notes:
+
+- A site ban lifted while its withdrawal is still running leaves the remaining boosts. This is rare: the first batch of 200 goes out at once, and the job runs a minute later.
+- A comment removal sends no author Delete to Mastodon-like servers it mentioned, because there is no comment withdrawal yet.
+- The F6 prune exclusion grows with live boosts.
+- LAB scenarios for F5 and F3 on Mastodon.
+
+All of these are for FX-INTEROP or later. `deleteAccount` stays without `recheck: 'inner'` (root: a site-banned person may still delete their account).
+
+### Wave 3 review fixes, step 3: the follow-up review's fixes (2026-11-10)
+
+The follow-up review of `w3-review...w3-fixes` confirmed 37 of the 40 fixes. It found three partial fixes and four new findings, R1 to R6 in `briefs/wave-3/fix-review-findings.md` and `fix-round-2.md`. FR-A and FR-B fixed them on branches cut from `w3-fixes`. Both merged with `git merge --no-ff`, with no conflicts, and `LANE-NOTES.md` was dropped each time.
+
+| Lane | Findings                                                                                                                                                                                                                                                                                                                                                   | Head    | Merge   |
+| ---- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- | ------- |
+| FR-B | R4 (a guard at the top of `0010` refuses to run while a preservation hold is in force), R5 (an incident's byte status follows what is stored now), R6 (`addBlock` serialises on a per-blocker advisory lock, so no deadlock between two people's blocks or with a moderator's ban)                                                                         | 3a841e7 | 524d203 |
+| FR-A | R1 (`reports.forwarded_hosts` stores the hosts the form disclosed; Flags go only there, and the receipt reads them), R2 (site-ban withdrawal reaches posts sent to a Mastodon-like server for a mention alone, and earlier recipients are kept whatever their state now), R3 (mentions are compared after `findMentioned`'s cap of 50 and in-order dedupe) | b9b9875 | 23a03ab |
+
+Migrations:
+
+- `0010_wave_3_fixes` is kept exactly as FR-B committed it, guard included, and was not regenerated. The guard changed its hash, so `peblish_root` and `peblish_root_test` were dropped and recreated.
+- `0011_wave_3_report_hosts` (drizzle-kit) is one statement: `ALTER TABLE "reports" ADD COLUMN "forwarded_hosts" text[] DEFAULT '{}'::text[] NOT NULL;`.
+- `pnpm db:drift` finds none, and a fresh `pnpm db:migrate` applies all twelve migrations.
+
+| Commit  | Change                                                                                                              |
+| ------- | ------------------------------------------------------------------------------------------------------------------- |
+| 9b56bfd | Migration `0011_wave_3_report_hosts`; the migrate test's comment counts twelve                                      |
+| 5516888 | README: `updateProfile` locks the acting actor's row, `addBlock` takes a per-blocker advisory lock (FR-B's wording) |
+| b8f213d | The `recheck: 'inner'` comment in `tx/mutation.ts` says the same                                                    |
+| (last)  | This section; tag `w3-final` (local) at the head                                                                    |
+
+Verification on lane root:
+
+- `pnpm check`: green. 226 test files passed and 4 skipped; 2,595 tests passed and 7 skipped.
+- `pnpm db:drift`: none. A fresh `pnpm db:migrate` applies.
+- `pnpm e2e`: parallel run 323 passed and 1 skipped; serial run 33 passed; both exited 0. The forwarded-report case passes against the stored hosts.
+- Payload unchanged: product pages at most 130.7 kB of 170, `/kit` 170.5 of 180, CSS 60.4 of 65, fonts 259.2 of 270.
+- Image job: `docker build -t peblish:w3-final .` and `scripts/image-smoke.sh` against a throwaway `peblish_root_image` (dropped after). It passed.
+- `PEBLISH_FEED_PERF=1` `feeds/perf.test.ts`:
+  - The first run, at load average 13 just after e2e, failed on two signed-out rows: Popular Top all page 1 at p95 94.8 ms (p50 6.9) and Local Top all page 10 at p95 57.2 ms (p50 14.1). Postgres had no stuck sessions.
+  - Rerun alone at load average 10, it passed: 309 rows, none over 50 ms. Worst p95 was 29.0 ms and worst Subscribed 19.3 ms; the two rows measured 4.4 and 8.5 ms.
+  - Those are signed-out rows with no viewer predicates, and the p50 stayed low, so I read the failure as load spikes.
+- `profiles/perf.test.ts`: passed, worst p95 14.3 ms.
+
+Left open: FR-A's section 9. A site-banned local author's post in a remote community, sent to a Mastodon-like server only for a mention, is not withdrawn, because withdrawal needs a live local community. This is rare. For FX-INTEROP: keep the stored-hosts filter if it folds `forwardHosts` and `recipients()` into one function. Any database migrated with the earlier `0010` (other lanes, FX-INTEROP) needs recreating with the command `lane.sh` prints.

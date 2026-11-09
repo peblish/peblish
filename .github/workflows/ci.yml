@@ -76,6 +76,9 @@ jobs:
         run: pnpm exec playwright install --with-deps chromium
       - name: Playwright (hydration marker in en-US and de-DE, axe, payload budget)
         run: pnpm e2e
+        env:
+          # Uploads scan against the local hash list only (e2e/playwright.config.ts sets it too).
+          MEDIASCAN_LOCAL_ONLY: '1'
       - name: Bundle size summary (the budget itself is enforced by the Playwright step)
         run: node scripts/bundle-report.ts >> "$GITHUB_STEP_SUMMARY"
       - if: failure()

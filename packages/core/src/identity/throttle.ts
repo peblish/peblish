@@ -11,7 +11,8 @@ import { throttles } from './tables.ts';
 
 export type Budget = { max: number; seconds: number };
 
-export type Scope = 'sign-in' | 'password' | 'reset-mail' | 'invite-code' | 'verify-mail' | 'link-preview' | 'comment';
+export type Scope =
+  'sign-in' | 'password' | 'reset-mail' | 'invite-code' | 'verify-mail' | 'link-preview' | 'comment' | 'resolve' | 'report';
 
 const minutes = (count: number) => count * 60;
 
@@ -31,6 +32,10 @@ export const budgets: Record<Scope, { ip?: Budget; id?: Budget }> = {
   'link-preview': { ip: { max: 30, seconds: minutes(10) }, id: { max: 20, seconds: minutes(10) } },
   /** A comment form post (reply, edit or delete), per account. */
   comment: { id: { max: 30, seconds: minutes(10) } },
+  /** Looking up a remote handle or URL (lane DISC): one lookup is up to 12 fetches, so it is counted per address and per account before them. */
+  resolve: { ip: { max: 20, seconds: minutes(10) }, id: { max: 10, seconds: minutes(10) } },
+  /** A report form post (lane REP), per address and per account. */
+  report: { ip: { max: 60, seconds: minutes(10) }, id: { max: 30, seconds: minutes(10) } },
 };
 
 /** An address as its key: IPv4 as is (also when mapped into IPv6), IPv6 by its /64, one subscriber's block. */

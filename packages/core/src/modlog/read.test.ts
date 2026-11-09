@@ -6,7 +6,7 @@ import { removeContent } from '../moderation/remove.ts';
 import { truncateAll } from '../testing/db.ts';
 import { grantFor, seedPost } from '../testing/seed-az.ts';
 import { seedActor, seedInstance } from '../testing/seed.ts';
-import { readModlog } from './read.ts';
+import { readModlog, readModlogEntries } from './read.ts';
 import { writeModlog } from './write.ts';
 
 beforeEach(truncateAll);
@@ -124,4 +124,35 @@ test("a reason relayed by a community's Announce is shown only when the actor's 
   });
   expect(await entry(['b.test'])).toMatchObject({ reason: null, reasonWithheld: true });
   expect(await entry(['a.test', 'b.test'])).toMatchObject({ reason: 'Spam', reasonWithheld: false });
+});
+
+test('readModlogEntries reads the rows it is given under the same audience and trust rules', async () => {
+  const { moderator, remoteModerator, announcements, technology, entry } = await setup();
+  const local = await entry({
+    action: 'mod.remove',
+    actor: moderator,
+    community: announcements,
+    at: '2026-11-01T10:00:00Z',
+    reason: 'Rule 2',
+  });
+  const remote = await entry({
+    action: 'mod.remove',
+    actor: remoteModerator,
+    community: technology,
+    at: '2026-11-02T10:00:00Z',
+    reason: 'Spam',
+  });
+  const grant = { action: 'mod.ban', actorId: moderator.id, authority: { kind: 'site-admin', actorId: moderator.id } } as const;
+  const hidden = await writer().transaction((t) =>
+    writeModlog(t, grant, { community: announcements, target: null, reason: null, details: { public: false } }),
+  );
+  const unknown = '0192f5a0-0000-7000-8000-000000000999';
+  const read = async (audience: 'public' | 'staff') =>
+    (await readModlogEntries([local, remote, hidden, unknown], { audience })).map(({ id, reason }) => ({ id, reason }));
+  expect(await read('public')).toEqual([
+    { id: remote, reason: null },
+    { id: local, reason: 'Rule 2' },
+  ]);
+  expect((await read('staff')).map(({ id }) => id)).toEqual([hidden, remote, local]);
+  expect(await readModlogEntries([], { audience: 'staff' })).toEqual([]);
 });

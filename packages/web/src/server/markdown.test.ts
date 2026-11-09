@@ -26,3 +26,13 @@ test('own images load inline as a path on this host; remote ones go through the 
       .html,
   ).toBe(link);
 });
+
+test('an image on a peer whose media is denied shows as a link, like remote media switched off; other hosts still load', async () => {
+  const proxy = (url: string) => `/media/proxy?url=${encodeURIComponent(url)}`;
+  const md = await createMarkdownRenderer({ ...site, proxy, deniedDomains: ['quarantined.example'] });
+  expect(md.image('https://quarantined.example/a.png')).toBeNull();
+  expect(md.image('https://cdn.quarantined.example/a.png')).toBeNull();
+  expect(md.image('https://notquarantined.example/a.png')).toBe('/media/proxy?url=https%3A%2F%2Fnotquarantined.example%2Fa.png');
+  expect(md.image('https://feddit.example/media/a.png')).toBe('/media/a.png');
+  expect(md.render('![x](https://quarantined.example/a.png)').html).toContain('<a href="https://quarantined.example/a.png"');
+});
