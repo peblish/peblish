@@ -2,9 +2,10 @@ import { localInstance } from '@peblish/core/db/local-instance';
 import { actors } from '@peblish/core/db/tables/actors';
 import { activities } from '@peblish/core/db/tables/federation';
 import { defineConsumer, type ConsumerTx } from '@peblish/core/outbox/consumers';
+import { instanceActorUrls } from '@peblish/schema/actor-urls';
 import type { OutboxEvent } from '@peblish/schema/events';
 import { and, desc, eq } from 'drizzle-orm';
-import { peerInboxes } from '../delivery/followers.ts';
+import { deliverableInboxes, peerInboxes } from '../delivery/followers.ts';
 import { newActivityId, publishInCommunity, sendActivity } from '../delivery/publish.ts';
 import { removedBoostedPosts, withdrawBoosts } from '../delivery/withdraw.ts';
 import { actorRefs, type ActorRef } from '../delivery/records.ts';
@@ -54,8 +55,10 @@ async function onModeration(
   t: ConsumerTx,
   origin: string,
 ): Promise<void> {
-  // A site ban (no community, lane MODF's) and an action of someone no longer here are not federated from here.
-  if (!event.local || event.moderatorId === null || event.communityId === null) return;
+  // An action of someone no longer here is not federated from here.
+  if (!event.local || event.moderatorId === null) return;
+  if (event.type === 'mod.ban' && event.communityId === null) return onSiteBan(event, event.moderatorId, t, origin);
+  if (event.communityId === null) return;
   const { communityId } = event;
   const community = await localCommunity(t, communityId);
   const moderator = (await actorRefs(t.db, [event.moderatorId])).get(event.moderatorId);
@@ -93,9 +96,8 @@ async function onModeration(
       await publish(event.banned ? ban(as(id), details) : unban(as(id), await sentId(t, origin, 'Block', event.targetApId), details));
       // A ban with removeContent removes the member's posts without an event each: take their boosts back.
       if (event.banned && event.removeContent) {
-        for (const postApId of await removedBoostedPosts(t.db, community, event.targetActorId)) {
-          await withdrawBoosts(t, { origin, community, postApId });
-        }
+        const batch = await removedBoostedPosts(t.db, event.targetActorId, { communityId: community.id });
+        for (const { apId: postApId } of batch) await withdrawBoosts(t, { origin, community, postApId });
       }
       return;
     }
@@ -104,6 +106,42 @@ async function onModeration(
       const person = (await actorRefs(t.db, [event.actorId])).get(event.actorId);
       if (!urls || !person) return;
       return publish(collectionChange(as(id), event.role !== null, person.apId, urls.moderators));
+    }
+  }
+}
+
+/**
+ * A site ban (no community): a Block of the person with the instance actor as target, signed by
+ * the moderator, to every peer we trade follows with except those where deliveries are held back
+ * (lane MODF's gate), or its Undo. With removeContent the person's removed posts were taken down
+ * without an event each, so their boosts are withdrawn here, a batch at a time.
+ */
+async function onSiteBan(event: Of<'mod.ban'>, moderatorId: string, t: ConsumerTx, origin: string): Promise<void> {
+  const moderator = (await actorRefs(t.db, [moderatorId])).get(moderatorId);
+  if (!moderator) return;
+  const base = { id: newActivityId(origin), actorApId: moderator.apId, communityApId: null };
+  const details = {
+    objectApId: event.targetApId,
+    communityApId: instanceActorUrls(origin).apId,
+    reason: event.reason,
+    removeData: event.removeContent,
+    expires: event.expiresAt ? new Date(event.expiresAt) : null,
+  };
+  const activity = event.banned ? ban(base, details) : unban(base, await sentId(t, origin, 'Block', event.targetApId), details);
+  await sendActivity(t, moderator, activity, await deliverableInboxes(t.db, await peerInboxes(t.db)));
+  if (!event.banned || !event.removeContent) return;
+  const communities = new Map<string, ActorRef | null>();
+  const done = new Set<string>();
+  for (;;) {
+    // Withdrawn posts leave the query, so each batch is the next 200; `done` also ends the loop
+    // for a post in a community that is gone, which would come back every time.
+    const batch = (await removedBoostedPosts(t.db, event.targetActorId)).filter(({ apId }) => !done.has(apId));
+    if (batch.length === 0) return;
+    for (const { apId: postApId, communityId } of batch) {
+      done.add(postApId);
+      if (!communities.has(communityId)) communities.set(communityId, await localCommunity(t, communityId));
+      const community = communities.get(communityId);
+      if (community) await withdrawBoosts(t, { origin, community, postApId });
     }
   }
 }

@@ -2,7 +2,8 @@ import type { Queryable } from '@peblish/core/db/read';
 import { actors } from '@peblish/core/db/tables/actors';
 import { follows } from '@peblish/core/db/tables/follows';
 import { instances } from '@peblish/core/db/tables/instances';
-import { and, eq, isNull, sql } from 'drizzle-orm';
+import { deliveryBlocked } from '@peblish/core/peers/gate';
+import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { announceShape, type AnnounceShape } from './software.ts';
 
 /** Inbox URLs by Announce shape; an inbox is in exactly one list. */
@@ -59,4 +60,14 @@ export async function peerInboxes(db: Queryable): Promise<string[]> {
   return [
     ...new Set([...mine, ...theirs].map(({ inbox }) => inbox).filter((inbox): inbox is string => !!inbox && URL.canParse(inbox))),
   ].sort();
+}
+
+/** `inboxes` without those of instances where deliveries are held back (a blocked peer; lane MODF's gate). */
+export async function deliverableInboxes(db: Queryable, inboxes: readonly string[]): Promise<string[]> {
+  const hosts = [...new Set(inboxes.filter((inbox) => URL.canParse(inbox)).map((inbox) => new URL(inbox).host))];
+  if (hosts.length === 0) return [];
+  const known = await db.select({ id: instances.id, domain: instances.domain }).from(instances).where(inArray(instances.domain, hosts));
+  const held = new Set<string>();
+  for (const { id, domain } of known) if (await deliveryBlocked(id, db)) held.add(domain);
+  return inboxes.filter((inbox) => URL.canParse(inbox) && !held.has(new URL(inbox).host));
 }

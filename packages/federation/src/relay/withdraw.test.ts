@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { and, eq } from 'drizzle-orm';
-import { beforeEach, describe, expect, test } from 'vitest';
+import { beforeEach, describe, expect, test, vi } from 'vitest';
 import { db } from '@peblish/core/db/read';
 import { posts } from '@peblish/core/db/tables/content';
 import { activities } from '@peblish/core/db/tables/federation';
@@ -9,6 +9,7 @@ import { instances } from '@peblish/core/db/tables/instances';
 import { writer } from '@peblish/core/db/write';
 import { deliveries } from '@peblish/core/delivery/tables';
 import { truncateAll } from '@peblish/core/testing/db';
+import { deliveryBlocked } from '@peblish/core/peers/gate';
 import { seedActor, seedInstance } from '@peblish/core/testing/seed';
 import { seedPost } from '@peblish/core/testing/seed-az';
 import { seedLocalInstance, seedSigningKey } from '@peblish/core/testing/seed-fed-a';
@@ -36,7 +37,15 @@ async function sentTo(inbox: string) {
 }
 const clearQueue = () => writer().delete(deliveries);
 
+// Lane MODF fills the gate; the real one stays in place except where a test holds an instance back.
+vi.mock('@peblish/core/peers/gate', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@peblish/core/peers/gate')>();
+  return { ...actual, deliveryBlocked: vi.fn(actual.deliveryBlocked) };
+});
+
 beforeEach(async () => {
+  vi.mocked(deliveryBlocked).mockReset();
+  vi.mocked(deliveryBlocked).mockResolvedValue(false);
   await truncateAll();
   resetKeyFetchBudget();
 });
@@ -193,6 +202,83 @@ describe('a ban with removeContent', () => {
     await clearQueue();
     await runRelay(ban(w, w.lemmy.actor));
     expect(await sentTo(w.mastodon.inbox)).toHaveLength(1);
+  });
+});
+
+describe('a site ban', () => {
+  const siteBan = (w: World, target: { id: string; apId: string }, extra: Partial<Extract<OutboxEvent, { type: 'mod.ban' }>> = {}) =>
+    ({ ...ban(w, target, false), communityId: null, ...extra }) as OutboxEvent;
+
+  test('is a Block of the person with the instance actor as target, signed by the moderator and sent to every peer', async () => {
+    const w = await world();
+    const expiresAt = '2100-01-01T00:00:00.000Z';
+    await runRelay(siteBan(w, w.lemmy.actor, { expiresAt }));
+    for (const inbox of [w.lemmy.inbox, w.mastodon.inbox]) {
+      const [sent, ...rest] = await sentTo(inbox);
+      expect(rest).toEqual([]);
+      expect(sent!.senderId).toBe(w.moderator.id);
+      expect(sent!.json).toMatchObject({
+        type: 'Block',
+        actor: w.moderator.apId,
+        object: w.lemmy.actor.apId,
+        target: 'https://fed-a.test/',
+        to: [PUBLIC],
+        summary: 'p4',
+        removeData: false,
+      });
+      expect(new Date(String(sent!.json.endTime ?? sent!.json.expires)).toISOString()).toBe(expiresAt);
+    }
+    // Stored, so it is served at its id.
+    const [stored] = await db().select().from(activities).where(eq(activities.type, 'Block'));
+    expect(stored).toMatchObject({ local: true, actorApId: w.moderator.apId, objectApId: w.lemmy.actor.apId });
+  });
+
+  test('an unban is the Undo embedding that Block', async () => {
+    const w = await world();
+    await runRelay(siteBan(w, w.alice));
+    const [block] = await sentTo(w.lemmy.inbox);
+    await runRelay(siteBan(w, w.alice, { banned: false }));
+    const undo = (await sentTo(w.lemmy.inbox)).at(-1)!.json;
+    expect(undo).toMatchObject({
+      type: 'Undo',
+      actor: w.moderator.apId,
+      object: { type: 'Block', id: block!.json.id, target: 'https://fed-a.test/' },
+    });
+  });
+
+  test('skips the inboxes of an instance where deliveries are held back', async () => {
+    const w = await world();
+    vi.mocked(deliveryBlocked).mockImplementation(async (instanceId) => instanceId === w.lemmy.instance.id);
+    await runRelay(siteBan(w, w.alice));
+    expect(await sentTo(w.lemmy.inbox)).toEqual([]);
+    expect((await sentTo(w.mastodon.inbox)).map(({ shape: s }) => s)).toEqual(['Block']);
+  });
+
+  test('with removeContent takes back the boost of every removed post in every batch, and only the banned person’s', async () => {
+    const w = await world();
+    const removedAt = new Date();
+    for (let i = 0; i < BULK_WITHDRAWAL_CAP + 5; i++) await boosted(w, w.lemmy.actor, w.lemmy.instance, { removedAt });
+    await boosted(w, w.lemmy.actor, w.lemmy.instance); // live: stays
+    await boosted(w, w.alice, w.here, { removedAt }); // someone else's: stays
+    await runRelay(siteBan(w, w.lemmy.actor, { removeContent: true }));
+    const toMastodon = (await sentTo(w.mastodon.inbox)).map(({ shape: s }) => s);
+    expect(toMastodon.filter((s) => s === 'Undo(Announce)')).toHaveLength(BULK_WITHDRAWAL_CAP + 5);
+    expect(toMastodon.filter((s) => s === 'Block')).toHaveLength(1);
+    expect(toMastodon).toHaveLength(BULK_WITHDRAWAL_CAP + 6);
+
+    await clearQueue();
+    await runRelay(siteBan(w, w.lemmy.actor, { removeContent: true }));
+    expect((await sentTo(w.mastodon.inbox)).map(({ shape: s }) => s)).toEqual(['Block']);
+  });
+
+  test('a ban that keeps the content withdraws nothing, and a remote moderator’s ban is not ours to send', async () => {
+    const w = await world();
+    await boosted(w, w.alice, w.here, { removedAt: new Date() });
+    await runRelay(siteBan(w, w.alice));
+    expect((await sentTo(w.mastodon.inbox)).map(({ shape: s }) => s)).toEqual(['Block']);
+    await clearQueue();
+    await runRelay({ ...siteBan(w, w.alice), local: false } as OutboxEvent);
+    expect(await sentTo(w.mastodon.inbox)).toEqual([]);
   });
 });
 

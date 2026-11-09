@@ -241,7 +241,7 @@ describe('a moderation action taken here is federated through the community', ()
     expect(byType('Undo').map((a) => (a.object as Json).type)).toEqual(['Lock', 'Block']);
   });
 
-  test('what a peer did, a community we do not host, a site ban and a moderator no longer here are not federated', async () => {
+  test('what a peer did, a community we do not host and a moderator no longer here are not federated', async () => {
     const w = await outbound();
     const ref = { kind: 'post', id: uuidv7() } as const;
     await run({
@@ -253,17 +253,6 @@ describe('a moderation action taken here is federated through the community', ()
       reason: null,
     } as OutboxEvent);
     await run({ type: 'mod.remove', ...mod(w, w.lab.id), target: ref, targetApId: target, removed: true, reason: null } as OutboxEvent);
-    await run({
-      type: 'mod.ban',
-      ...mod(w),
-      communityId: null,
-      targetActorId: w.bob.id,
-      targetApId: w.bob.apId,
-      banned: true,
-      removeContent: false,
-      expiresAt: null,
-      reason: null,
-    } as OutboxEvent);
     await run({
       type: 'mod.lock',
       ...mod(w),

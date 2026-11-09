@@ -38,9 +38,10 @@ export const collectionChange = (base: Base, adding: boolean, objectApId: string
   targetApId,
 });
 
+/** `communityApId` is the target: the community, or the instance actor for a site ban. */
 export type Ban = { objectApId: string; communityApId: string; reason: string | null; removeData: boolean; expires: Date | null };
 
-/** A community ban: Block with the community as target, `expires` and `removeData` (Lemmy). */
+/** A community ban: Block with the community as target, `expires` and `removeData` (Lemmy). A site ban has the instance actor as target and no community in `base`. */
 export const ban = (base: Base, { objectApId, communityApId, reason, removeData, expires }: Ban): Activity => ({
   ...envelope(base),
   type: 'Block',

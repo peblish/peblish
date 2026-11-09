@@ -124,28 +124,33 @@ export async function withdrawBoosts(
 /** How many of a banned member's removed posts one ban event withdraws; the rest stay boosted until removed one by one. */
 export const BULK_WITHDRAWAL_CAP = 200;
 
+export type BoostedPost = { apId: string; communityId: string };
+
 /**
- * The ap_ids of the posts `authorId` has removed in a local community that still have a boost
- * to take back, newest removal first, at most `BULK_WITHDRAWAL_CAP` (a ban with removeContent
- * removes them without one event each).
+ * The posts `authorId` has removed that still have a boost to take back, newest removal first,
+ * at most `limit` (a ban with removeContent removes them without one event each), in
+ * `communityId` or, without it, in every local community.
  */
-export async function removedBoostedPosts(db: Queryable, community: ActorRef, authorId: string): Promise<string[]> {
-  const rows = await db
-    .select({ apId: posts.apId })
+export async function removedBoostedPosts(
+  db: Queryable,
+  authorId: string,
+  { communityId, limit = BULK_WITHDRAWAL_CAP }: { communityId?: string; limit?: number } = {},
+): Promise<BoostedPost[]> {
+  return db
+    .select({ apId: posts.apId, communityId: posts.communityId })
     .from(posts)
     .where(
       and(
-        eq(posts.communityId, community.id),
+        communityId ? eq(posts.communityId, communityId) : undefined,
         eq(posts.authorId, authorId),
         isNotNull(posts.removedAt),
         sql`exists (
-          select 1 from activities a
-          where a.type = 'Announce' and a.local and a.actor_ap_id = ${community.apId} and a.object_ap_id = ${posts.apId}
+          select 1 from activities a join actors c on c.ap_id = a.actor_ap_id and c.id = ${posts.communityId}
+          where a.type = 'Announce' and a.local and a.object_ap_id = ${posts.apId}
             and not exists (select 1 from activities u where u.type = 'Undo' and u.local and u.object_ap_id = a.ap_id)
         )`,
       ),
     )
     .orderBy(desc(posts.removedAt))
-    .limit(BULK_WITHDRAWAL_CAP);
-  return rows.map(({ apId }) => apId);
+    .limit(limit);
 }
