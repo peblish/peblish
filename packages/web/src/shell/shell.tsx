@@ -1,5 +1,5 @@
 import { MenuIcon } from '@peblish/ui/components/icons';
-import { getRouteApi, useRouterState } from '@tanstack/react-router';
+import { getRouteApi, useRouter, useRouterState } from '@tanstack/react-router';
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { useTranslate } from '../i18n/use-translate.ts';
 import { Account } from './account.tsx';
@@ -24,33 +24,40 @@ const root = getRouteApi('__root__');
 export function Shell({ children }: { children: ReactNode }) {
   const { session, shell } = root.useLoaderData();
   const { t } = useTranslate();
+  const router = useRouter();
   const pathname = useRouterState({ select: (state) => state.location.pathname });
-  // The drawer is open for the page it was opened on: a navigation closes it without an effect.
+  // The drawer is open for the page it was opened on: a navigation (a link tap, Back or
+  // Forward) closes it, and returning to that page does not open it again.
   const [openAt, setOpenAt] = useState<string | null>(null);
+  if (openAt !== null && openAt !== pathname) setOpenAt(null);
   const drawer = openAt === pathname;
   const setDrawer = (open: boolean) => setOpenAt(open ? pathname : null);
   const frame = useRef<HTMLDivElement | null>(null);
   const menuButton = useRef<HTMLAnchorElement>(null);
   const opened = useRef(false);
+  const adopted = useRef(false);
   // Set once React runs the drawer: from then on shell.css ignores :target.
   const [managed, setManaged] = useState(false);
 
   useMenuDismiss(frame, pathname);
 
-  // Runs when React attaches to the frame, which after hydration is the server's markup: a
-  // drawer opened through the #pb-side link by then stays open (the shell takes it over and
-  // drops the hash so the URL does not reopen it), and from here on the shell runs the drawer.
+  // Runs when React attaches to the frame, which after hydration is the server's markup. A
+  // drawer opened through the #pb-side link by then stays open: the shell takes it over once
+  // and replaces the history entry the link made with one without the hash, so the URL does not
+  // reopen it. The callback is stable and adopts only on the first attach, since a later one
+  // (a remount) would find that dropping the hash left :target set and reopen the drawer.
   const attach = useCallback(
     (node: HTMLDivElement | null) => {
       frame.current = node;
-      if (!node) return;
-      if (node.querySelector('#pb-side:target')) {
+      if (!node || adopted.current) return;
+      adopted.current = true;
+      if (window.location.hash === '#pb-side') {
         history.replaceState(history.state, '', window.location.pathname + window.location.search);
-        setOpenAt(pathname);
+        setOpenAt(router.state.location.pathname);
       }
       setManaged(true);
     },
-    [pathname],
+    [router],
   );
 
   // The drawer is modal while open: focus goes in and Escape closes it; focus returns to the button.

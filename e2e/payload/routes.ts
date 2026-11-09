@@ -67,6 +67,9 @@ export const routes: readonly PayloadRoute[] = [
   { route: '/admin/registration/', path: '/admin/registration', admin: true },
   { route: '/post/$id/', path: '/post/<id>', target: seededPost },
   { route: '/post/$id/comments/$commentId', path: '/post/<id>/comments/<commentId>', target: seededPermalink },
+  // Signed out, /submit is a redirect to sign-in, so this entry measures the sign-in page it lands on
+  // and cannot show the composer's weight. The signed-in figure, with the sheet's lazy editor
+  // chunk, is measured through the composer's own fixture (e2e/composer/payload.spec.ts).
   { route: '/submit/', path: '/submit', composer: true },
   { route: '/kit/', path: '/kit', fonts: true },
 ];

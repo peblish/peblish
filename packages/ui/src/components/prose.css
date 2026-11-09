@@ -114,8 +114,8 @@
 
   /*
    * Spoilers: PieFed's span.spoiler stays blacked out until it is clicked, or focused and
-   * activated with Enter or Space (Prose adds tabindex and button semantics); a mouse can also
-   * hover it.
+   * activated with Enter or Space (Prose makes a leaf spoiler a button, and gives a compound
+   * one a reveal control); a mouse can also hover it.
    */
   .pb-prose span.spoiler {
     border-radius: 2px;
@@ -129,11 +129,38 @@
     color: inherit;
   }
 
-  /* Revealed. A spoiler that contains a link is not a button (Prose leaves it a span), so focusing its link shows it. */
+  /* Revealed. A spoiler that holds a link or another spoiler is not a button (Prose leaves it a span and inserts a reveal control before it), so focusing its link shows it. */
   .pb-prose span.spoiler[data-revealed],
   .pb-prose span.spoiler:has(a:focus-visible) {
     background: var(--pb-hover);
     color: inherit;
+  }
+
+  /* The reveal control before a compound spoiler: a small target of its own, pressed while the spoiler shows. */
+  .pb-prose button[data-spoiler-reveal] {
+    display: inline-grid;
+    place-items: center;
+    min-width: 24px;
+    min-height: 24px;
+    margin-inline-end: 0.2em;
+    padding: 0;
+    border: 1px solid var(--pb-line);
+    border-radius: 3px;
+    background: none;
+    color: var(--pb-muted);
+    font: inherit;
+    line-height: 1;
+    vertical-align: baseline;
+    cursor: pointer;
+  }
+
+  .pb-prose button[data-spoiler-reveal]::before {
+    content: '…';
+  }
+
+  .pb-prose button[data-spoiler-reveal][aria-pressed='true'] {
+    background: var(--pb-hover);
+    color: var(--pb-fg);
   }
 
   @media (hover: hover) {
