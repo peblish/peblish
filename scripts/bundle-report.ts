@@ -1,5 +1,5 @@
-// Report-only bundle size table for the web client (CI writes it to the job summary).
-// Enforcement waits for the Mux payload budget Andrew approves (plan decision 11).
+// Bundle size table for the web client (CI writes it to the job summary). It only reports: the
+// payload budget is enforced per route by e2e/payload (pnpm e2e).
 import { globSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { gzipSync } from 'node:zlib';
@@ -20,7 +20,7 @@ const total = (kinds: string[]) =>
   rows
     .filter(({ kind }) => kinds.includes(kind))
     .reduce((sum, { raw, gzip }) => ({ raw: sum.raw + raw, gzip: sum.gzip + gzip }), { raw: 0, gzip: 0 });
-const lines = ['## Web bundle (report only)', '', '| Asset | Raw | Gzip |', '| --- | ---: | ---: |'];
+const lines = ['## Web bundle (sizes only; the budget is checked by e2e/payload)', '', '| Asset | Raw | Gzip |', '| --- | ---: | ---: |'];
 for (const [label, kinds] of [
   ['All JavaScript', ['js']],
   ['All CSS', ['css']],

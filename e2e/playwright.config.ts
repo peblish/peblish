@@ -38,6 +38,8 @@ export default defineConfig({
           PORT: String(port),
           HOST: '127.0.0.1',
           DATABASE_URL: laneDatabaseUrl(),
+          // The component gallery at /kit (the UI specs and the payload budget's font route) answers 404 without it.
+          PEBLISH_UI_KIT: '1',
         },
         reuseExistingServer: !process.env.CI,
         timeout: 30_000,

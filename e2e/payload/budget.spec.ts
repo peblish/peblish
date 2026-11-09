@@ -64,7 +64,8 @@ test('no vendor package sits outside its named chunk', () => {
 
 for (const route of routes) {
   test(`${route.path} first visit is inside the budget`, async ({ browser, baseURL }) => {
-    const { all, muxHref } = await firstVisit(browser, new URL(baseURL!).origin, route.path, 'en-US');
+    test.skip(Boolean(route.target) && Boolean(process.env.BASE_URL), 'needs the lane database for its seed (DATABASE_URL)');
+    const { all, muxHref } = await firstVisit(browser, new URL(baseURL!).origin, route.target?.() ?? route.path, 'en-US');
     const scripts = all.filter(({ path, type }) => path.endsWith('.js') && /javascript/.test(type));
     const sum = (list: Transfer[]) => list.reduce((total, { bytes }) => total + bytes, 0);
 

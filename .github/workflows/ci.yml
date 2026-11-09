@@ -62,9 +62,9 @@ jobs:
         run: pnpm db:migrate
       - name: Install Chromium for Playwright
         run: pnpm exec playwright install --with-deps chromium
-      - name: Playwright (hydration marker in en-US and de-DE, axe)
+      - name: Playwright (hydration marker in en-US and de-DE, axe, payload budget)
         run: pnpm e2e
-      - name: Bundle size report (report only)
+      - name: Bundle size summary (the budget itself is enforced by the Playwright step)
         run: node scripts/bundle-report.ts >> "$GITHUB_STEP_SUMMARY"
       - if: failure()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
