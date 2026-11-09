@@ -66,12 +66,15 @@ describe('readCommunity', () => {
       apId: 'https://feddit.test/c/announcements',
       importedAt: new Date(),
       summaryHtml: '<p>Imported sidebar</p>',
+      iconUrl: 'https://feddit.test/pictrs/icon.png',
     });
     const technology = await seedActor(instances.lemmy, 'Group', 'technology');
     expect(await readCommunity({ name: 'announcements' })).toMatchObject({
       actor: { id: announcements.id, apId: 'https://feddit.test/c/announcements', local: true, handle: 'announcements' },
       summaryHtml: '<p>Imported sidebar</p>',
       summaryMd: null,
+      iconUrl: 'https://feddit.test/pictrs/icon.png',
+      bannerUrl: null,
       rules: [],
       languages: [],
     });

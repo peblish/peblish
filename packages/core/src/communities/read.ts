@@ -26,6 +26,13 @@ export type CommunityDetail = CommunityView & {
   nsfl: boolean;
   postingWarning: string | null;
   summaryMd: string | null;
+  /**
+   * The stored image URLs. Nothing here sets them yet (uploads are off), but imported and
+   * remote communities have them; a remote one must reach viewers only through the media
+   * proxy (decision 5), never hotlinked.
+   */
+  iconUrl: string | null;
+  bannerUrl: string | null;
   /** ISO 639 codes, sorted. */
   languages: string[];
   rules: CommunityRule[];
@@ -78,6 +85,8 @@ export async function readCommunity(key: { id: Uuid } | { name: string }, q: Que
       ...refColumns,
       summaryMd: actors.summaryMd,
       summaryHtml: actors.summaryHtml,
+      iconUrl: actors.iconUrl,
+      bannerUrl: actors.bannerUrl,
       sensitive: actors.sensitive,
       nsfl: actors.nsfl,
       postingRestrictedToMods: actors.postingRestrictedToMods,
@@ -116,6 +125,8 @@ export async function readCommunity(key: { id: Uuid } | { name: string }, q: Que
     actor: actorRef(row),
     summaryHtml: row.summaryHtml,
     summaryMd: row.summaryMd,
+    iconUrl: row.iconUrl,
+    bannerUrl: row.bannerUrl,
     sensitive: row.sensitive,
     nsfl: row.nsfl,
     postingRestrictedToMods: row.postingRestrictedToMods,
