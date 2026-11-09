@@ -5,6 +5,8 @@ import { createServerFn } from '@tanstack/react-start';
 import { type } from 'arktype';
 import { pageSession } from '../../../../server/auth.ts';
 import { createMarkdownRenderer, siteMarkdown } from '../../../../server/markdown.ts';
+import { gateData, requestNsfw } from '../../../c/-gate.ts';
+import { commentPath } from '../../../../shell/paths.ts';
 import { loadThread, threadShown } from './-thread.ts';
 
 /**
@@ -17,7 +19,7 @@ export const loadThreadFn = createServerFn({ method: 'GET' })
   .handler(async ({ data }) => {
     const session = await pageSession();
     const viewer: Viewer = session ? { actorId: session.view.actorId, siteRole: session.view.siteRole } : null;
-    const page = await readPost(data.postId, viewer);
+    const page = await readPost(data.postId, viewer, undefined, requestNsfw());
     if (!page) return null;
     const renderer = await createMarkdownRenderer(await siteMarkdown());
     return loadThread({
@@ -32,9 +34,9 @@ export const loadThreadFn = createServerFn({ method: 'GET' })
 
 /**
  * What the permalink page (/post/<id>/comments/<commentId>) shows: the post's title and
- * community for the way back, and the thread under the comment. `thread` is null while the
- * post is withheld by the sensitive-content gate, and the whole answer is null when the post or
- * the comment does not exist.
+ * community for the way back, and the thread under the comment. While the NSFW gate withholds
+ * the post the answer is `kind: 'gate'` and nothing of the post or its comments, and it is null
+ * when the post or the comment does not exist.
  */
 export const loadPermalinkFn = createServerFn({ method: 'GET' })
   .validator(type({ postId: 'string', commentId: 'string', sort: ThreadSortParam, 'after?': 'string' }))
@@ -42,16 +44,22 @@ export const loadPermalinkFn = createServerFn({ method: 'GET' })
     if (!Uuid.allows(data.postId) || !Uuid.allows(data.commentId)) return null;
     const session = await pageSession();
     const viewer: Viewer = session ? { actorId: session.view.actorId, siteRole: session.view.siteRole } : null;
-    const page = await readPost(data.postId, viewer);
+    const page = await readPost(data.postId, viewer, undefined, requestNsfw());
     if (!page) return null;
+    if (page.gate !== 'none')
+      return gateData({
+        subject: 'post',
+        gate: page.gate,
+        handle: page.view.community.handle,
+        back: commentPath(data.postId, data.commentId),
+      });
     const renderer = await createMarkdownRenderer(await siteMarkdown());
     // Under a removed post the comments are not shown, and the page is simply not there.
-    const gated = page.gate !== 'none';
-    if (!gated && !threadShown(page)) return null;
+    if (!threadShown(page)) return null;
     const thread = await loadThread({ page, session, renderer, sort: data.sort, after: data.after ?? null, rootId: data.commentId });
-    if (!gated && !thread) return null;
+    if (!thread) return null;
     return {
-      gate: page.gate,
+      kind: 'thread' as const,
       postTitle: page.view.title,
       communityHandle: page.view.community.handle,
       thread,

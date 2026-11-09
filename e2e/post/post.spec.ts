@@ -136,8 +136,9 @@ test.describe('anyone', () => {
     expect(status).toBe(200);
     expect(text).not.toContain(seed.secret);
     expect(text).not.toContain('example.test');
-    expect(text).toContain('Sensitive content');
+    expect(text).toContain('This post is NSFW');
     expect(text).toContain(`/auth/sign-in?redirect=${encodeURIComponent(url(seed.posts.sensitive))}`);
+    expect(text).toContain('name="robots" content="noindex"');
     await gotoHydrated(page, url(seed.posts.sensitive));
     // The shell has its own Sign in link: the gate's is the one inside the page.
     await expect(page.locator('#pb-main').getByRole('link', { name: 'Sign in' })).toBeVisible();
@@ -191,14 +192,18 @@ test.describe('a viewer', () => {
     expect(text).toContain('16 or older');
   });
 
-  test('with a declaration gets the post blurred until they show it; votes stick', async ({ page }) => {
+  test('with a declaration gets the gate while Hide NSFW is on, shows the post once; votes stick', async ({ page }) => {
     await signedIn(page, seed.viewer.name);
+    const gated = await html(page, seed.posts.sensitive);
+    expect(gated.status).toBe(200);
+    expect(gated.text).not.toContain(seed.secret);
+    expect(gated.text).toContain('Hide NSFW is on');
     await gotoHydrated(page, url(seed.posts.sensitive));
-    const content = page.locator('.post-sensitive__content');
-    await expect(content).toContainText(seed.secret);
-    await expect(content).toHaveCSS('filter', /blur/);
-    await page.getByLabel('Show sensitive content').check();
-    await expect(content).toHaveCSS('filter', 'none');
+    await page.getByRole('button', { name: 'Show once' }).click();
+    await page.waitForURL(`**${url(seed.posts.sensitive)}`);
+    await page.locator('html[data-hydrated="1"]').waitFor({ state: 'attached' });
+    await expect(page.locator('.post-content')).toContainText(seed.secret);
+    await expect(page.getByRole('button', { name: 'Hide NSFW' })).toBeVisible();
     await expectAccessible(page);
 
     // Vote on the plain post: the first tap after hydration counts, and the server keeps it.

@@ -1,6 +1,7 @@
 import { parseSort } from '@peblish/core/comments/sort';
 import { createFileRoute, notFound } from '@tanstack/react-router';
 import { type } from 'arktype';
+import gateCss from '../../../c/-ui/gate.css?url';
 import postCss from '../../-ui/post.css?url';
 import { loadPermalinkFn } from './-thread-fn.ts';
 import { PermalinkPage } from './-ui/permalink-page.tsx';
@@ -9,9 +10,9 @@ import { PermalinkPage } from './-ui/permalink-page.tsx';
 // under it. The page is personal like the post's (the gate, tombstones and the author's forms
 // depend on who looks), so the server function sets cache-control: no-store through pageSession.
 // ?sort= picks the order of the replies and ?after= (a cursor the page handed out) the page of
-// them; ?commentError= carries a refusal of a form without JavaScript.
+// them; ?commentError= carries a refusal of a form without JavaScript, ?error= one of the NSFW gate's.
 
-const Search = type({ 'sort?': 'unknown', 'after?': 'unknown', 'commentError?': 'unknown' });
+const Search = type({ 'sort?': 'unknown', 'after?': 'unknown', 'commentError?': 'unknown', 'error?': 'unknown' });
 
 export const Route = createFileRoute('/post/$id/comments/$commentId')({
   validateSearch: Search,
@@ -24,8 +25,16 @@ export const Route = createFileRoute('/post/$id/comments/$commentId')({
     return data;
   },
   head: ({ loaderData }) => ({
-    meta: loaderData?.postTitle ? [{ title: `${loaderData.postTitle} | !${loaderData.communityHandle}` }] : [],
-    links: [{ rel: 'stylesheet', href: postCss }],
+    meta:
+      loaderData?.kind === 'gate'
+        ? [{ name: 'robots', content: 'noindex' }]
+        : loaderData?.postTitle
+          ? [{ title: `${loaderData.postTitle} | !${loaderData.communityHandle}` }]
+          : [],
+    links: [
+      { rel: 'stylesheet', href: postCss },
+      { rel: 'stylesheet', href: gateCss },
+    ],
   }),
   component: PermalinkRoute,
 });
@@ -33,6 +42,15 @@ export const Route = createFileRoute('/post/$id/comments/$commentId')({
 function PermalinkRoute() {
   const data = Route.useLoaderData();
   const { id, commentId } = Route.useParams();
+  const { error } = Route.useSearch();
   // Keyed, so the router reusing this component for another comment's page keeps nothing of the last: a reply being typed, the comment it answers, folds, optimistic votes, a fetched page.
-  return <PermalinkPage key={`${id}/${commentId}`} data={data} postId={id} commentId={commentId} />;
+  return (
+    <PermalinkPage
+      key={`${id}/${commentId}`}
+      data={data}
+      postId={id}
+      commentId={commentId}
+      error={typeof error === 'string' ? error : undefined}
+    />
+  );
 }
