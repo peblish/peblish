@@ -12,7 +12,7 @@ import { grantFor, outboxEvents, writeCounts } from '../testing/seed-az.ts';
 import { person, remote, seedCommunityWorld } from '../testing/seed-f.ts';
 import { Refused } from '../tx/refused.ts';
 import { readSetting } from './read.ts';
-import { updateSettings, updateSettingsAs } from './write.ts';
+import { invalidSetting, updateSettings, updateSettingsAs } from './write.ts';
 
 beforeEach(truncateAll);
 
@@ -139,4 +139,9 @@ describe('updateSettings', () => {
     const [entry] = await db().select({ details: modlog.details }).from(modlog);
     expect(entry?.details).toMatchObject({ changes: { 'uploads.enabled': { before: false, after: true } } });
   });
+});
+
+test('invalidSetting names the first key a patch would be refused for', () => {
+  expect(invalidSetting({ 'site.name': 'Feddit', 'registration.cap': 3 })).toBeNull();
+  expect(invalidSetting({ 'contact.email': 'nope', 'registration.cap': -2 })).toBe('contact.email');
 });

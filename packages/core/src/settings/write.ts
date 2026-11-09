@@ -30,18 +30,29 @@ function normalised(key: SiteSettingKey, value: unknown): unknown {
   return value;
 }
 
-/** Each patched key checked against its contract, or null for an unknown key or a value that fails it. */
-function checked(patch: SettingsPatch): [SiteSettingKey, unknown][] | null {
+/** The first patched key (in sorted order) that is unknown or whose value fails its contract, else each key with its stored value. */
+function check(patch: SettingsPatch): { invalid: string } | { entries: [SiteSettingKey, unknown][] } {
   const entries: [SiteSettingKey, unknown][] = [];
-  for (const [key, raw] of Object.entries(patch)) {
-    if (!isKey(key)) return null;
-    const value = normalised(key, raw);
-    if (contract[key].schema(value) instanceof type.errors) return null;
-    if (key === 'modlog.trusted_instances' && !(value as string[]).every((domain) => DOMAIN.test(domain))) return null;
+  for (const key of Object.keys(patch).sort()) {
+    if (!isKey(key)) return { invalid: key };
+    const value = normalised(key, patch[key]);
+    if (contract[key].schema(value) instanceof type.errors) return { invalid: key };
+    if (key === 'modlog.trusted_instances' && !(value as string[]).every((domain) => DOMAIN.test(domain))) return { invalid: key };
     entries.push([key, value]);
   }
-  return entries.sort(([a], [b]) => (a < b ? -1 : 1));
+  return { entries };
 }
+
+const checked = (patch: SettingsPatch) => {
+  const result = check(patch);
+  return 'entries' in result ? result.entries : null;
+};
+
+/** The first key of a patch that settings.update would refuse with settings.invalid, for a form to mark; null when all pass. */
+export const invalidSetting = (patch: SettingsPatch): string | null => {
+  const result = check(patch);
+  return 'invalid' in result ? result.invalid : null;
+};
 
 /**
  * Changes site settings: the only writer of `site_settings`. The keys come from the grant's
