@@ -121,30 +121,25 @@ export function Sidebar({
           <p className="pb-side__title">{t('shell', 'nav.you')}</p>
           <ul className="pb-side__links">
             <li>
-              <a
-                href={inboxPath}
-                aria-current={pathname === inboxPath ? 'page' : undefined}
-                aria-label={shell.unread > 0 ? t('shell', 'you.inboxUnread', { count: badgeText(shell.unread) }) : undefined}
-              >
-                {t('shell', 'you.inbox')}
+              <a href={inboxPath} aria-current={pathname === inboxPath ? 'page' : undefined}>
+                {t('shell', 'you.inbox')}{' '}
+                {/* The count's word is hidden text, so the link's name starts with what it shows (axe label-content-name-mismatch). */}
                 {shell.unread > 0 && (
-                  <b className="pb-count" aria-hidden="true">
+                  <b className="pb-count">
                     {badgeText(shell.unread)}
+                    <span className="pb-sr"> {t('shell', 'you.unread')}</span>
                   </b>
                 )}
               </a>
             </li>
             {shell.reportCount !== null && (
               <li>
-                <a
-                  href={reportQueuePath()}
-                  aria-current={pathname === reportQueuePath() ? 'page' : undefined}
-                  aria-label={shell.reportCount > 0 ? t('shell', 'you.queueOpen', { count: badgeText(shell.reportCount) }) : undefined}
-                >
-                  {t('shell', 'you.queue')}
+                <a href={reportQueuePath()} aria-current={pathname === reportQueuePath() ? 'page' : undefined}>
+                  {t('shell', 'you.queue')}{' '}
                   {shell.reportCount > 0 && (
-                    <b className="pb-count" aria-hidden="true">
+                    <b className="pb-count">
                       {badgeText(shell.reportCount)}
+                      <span className="pb-sr"> {t('shell', 'you.open')}</span>
                     </b>
                   )}
                 </a>
