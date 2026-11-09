@@ -6,6 +6,7 @@ import { seedAdm, signInAdmin } from './support.ts';
 
 // The admin Settings tab on the built server and the lane database: saving, the brand, the kill
 // switches, and who may see the page. The steps share one signed-in admin, so they run in order.
+// It saves site settings every page reads, so it is a serial spec (e2e/playwright.config.ts).
 test.skip(Boolean(process.env.BASE_URL), 'needs the lane database for its seed (DATABASE_URL)');
 test.describe.configure({ mode: 'serial' });
 

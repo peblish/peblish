@@ -7,7 +7,7 @@ import { seedAdm, signInAdmin } from './support.ts';
 // The admin Pages tab and the public pages at /<slug>, on the built server and the lane database:
 // adding the shipped drafts, the editor, the tokens that refuse a publish, what a signed-out visitor
 // reads, and the German version. The steps share one signed-in admin and one page's history, so they
-// run in order.
+// run in order. It saves the operator details in site settings, so it is a serial spec (e2e/playwright.config.ts).
 test.skip(Boolean(process.env.BASE_URL), 'needs the lane database for its seed (DATABASE_URL)');
 test.describe.configure({ mode: 'serial' });
 
