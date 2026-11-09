@@ -9,6 +9,7 @@ import type { ActingPrincipal } from '@peblish/schema/authz';
 import { and, eq, inArray } from 'drizzle-orm';
 import type { ResolvedActor } from '../actors/resolve.ts';
 import type { Activity } from '../mapping/records.ts';
+import { many } from '../mapping/wire.ts';
 import type { InboundContext } from './handler.ts';
 import { skip } from './reasons.ts';
 
@@ -68,13 +69,40 @@ export function checkAnnouncer(ctx: InboundContext, communityApId: string): void
   if (ctx.announce && ctx.announce.community.apId !== communityApId) throw skip('mod.announce_mismatch');
 }
 
+type CommunityRef = { id: string; apId: string; local: boolean };
+
+const isObject = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
+
+/** Every address a document names: `to`, `cc` and `audience`. */
+function addresses(document: unknown): string[] {
+  if (!isObject(document)) return [];
+  return [...many(document.to), ...many(document.cc), ...many(document.audience)].filter(
+    (value): value is string => typeof value === 'string',
+  );
+}
+
+/**
+ * The community an activity claims, read from every addressee rather than the first: its
+ * `audience` when it has one, else `community` itself when `to` or `cc` names it anywhere, else
+ * the mapping's pick (the first address that is not Public, a followers collection or the
+ * actor). Mbin addresses a comment's Delete to the post's author before the community.
+ */
+export function claimFor(ctx: InboundContext, community: { apId: string }): string | null {
+  if (typeof ctx.raw.audience === 'string') return ctx.raw.audience;
+  return addresses(ctx.raw).includes(community.apId) ? community.apId : ctx.activity.communityApId;
+}
+
+function checkClaim(community: CommunityRef, claimed: string | null): void {
+  if (claimed !== null && claimed !== community.apId) throw skip('community.mismatch', `${claimed} is not ${community.apId}`);
+}
+
 /**
  * The checks every activity about content in `community` shares: the community it claims is the
  * target's, an Announce is the target community's own, and content in a remote community
  * arrives in that community's Announce or from the community itself.
  */
-export function checkCommunity(ctx: InboundContext, community: { id: string; apId: string; local: boolean }, claimed: string | null): void {
-  if (claimed !== null && claimed !== community.apId) throw skip('community.mismatch', `${claimed} is not ${community.apId}`);
+export function checkCommunity(ctx: InboundContext, community: CommunityRef, claimed: string | null): void {
+  checkClaim(community, claimed);
   if (ctx.announce) {
     if (ctx.announce.community.id !== community.id) throw skip('mod.announce_mismatch');
   } else if (!community.local && ctx.sender.id !== community.id) {
