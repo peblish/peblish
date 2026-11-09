@@ -9,7 +9,7 @@ LAB_HOSTS := piefed.lab.test lemmy.lab.test mbin.lab.test peblish.lab.test
 # Lemmy opens one outbound worker per federating instance it has met (peblish, PieFed, Mbin).
 LEMMY_WORKERS := 3
 
-.PHONY: up ports down reset ps logs stats guard seed interop interop-slow
+.PHONY: up ports down reset ps logs stats guard seed interop interop-slow interop-d1 cleanup check
 
 # Refuses to start when containers of this project are running from another worktree's lab/:
 # two labs would fight over the same volumes, network and names.
@@ -80,6 +80,27 @@ interop:
 	$(COMPOSE) run --rm runner node src/run.ts $(PEERS) $(if $(ONLY),--only=$(ONLY),)
 
 ## The slow tier: the Follow resend at 5 and 15 minutes (F3).
+# Puts the lab back from the ledger (data/results/ledger.jsonl): deletes what runs created, unfollows,
+# clears votes, and confirms the Undo(Follow) deliveries peblish owed.
+cleanup:
+	$(COMPOSE) run --rm runner node src/cleanup-main.ts $(PEERS)
+
+# D1, the delivery schedule, in three phases around a SIGKILL of the worker (a runner cannot kill a
+# container). `before` leaves one POST held open at the slow rogue inbox; `mid` makes a post while no
+# worker runs; `after` expects both to arrive once the worker is back and its 60 s lease has run out.
+interop-d1:
+	@mkdir -p data/results
+	$(COMPOSE) run --rm runner node src/run.ts $(PEERS) --d1=before
+	$(COMPOSE) kill -s KILL peblish-worker
+	$(COMPOSE) run --rm runner node src/run.ts $(PEERS) --d1=mid
+	$(COMPOSE) up -d --wait peblish-worker
+	$(COMPOSE) run --rm runner node src/run.ts $(PEERS) --d1=after
+
+# The whole lab from nothing, as the brief's budget counts it: reset, up, seed, the fast tier, D1, cleanup.
+# `-k` runs every step even when one fails; the exit status is still non-zero.
+check:
+	$(MAKE) -k reset up seed interop interop-d1 cleanup
+
 interop-slow:
 	@mkdir -p data/results
 	$(COMPOSE) run --rm runner node src/run.ts $(PEERS) --slow --only=F3

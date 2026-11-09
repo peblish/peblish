@@ -9,6 +9,7 @@ import { missing } from './missing.ts';
 import { newAuthor } from './newauthor.ts';
 import { moderation } from './moderation.ts';
 import { pending } from './pending.ts';
+import { resend } from './slow.ts';
 import { protocol } from './protocol.ts';
 import { posts } from './posts.ts';
 import { votes } from './votes.ts';
@@ -28,4 +29,5 @@ export const groups: Record<string, Group> = {
   accounts,
   newAuthor,
   pending,
+  resend,
 };

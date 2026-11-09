@@ -3,6 +3,7 @@
 // caches (moderators, roles) live in the process and a group must see peblish as the worker left it.
 //
 //   node src/run.ts [lemmy|piefed|mbin ...] [--only=F1,P1] [--slow]
+//   node src/run.ts [peers] --d1=before|mid|after    D1, around the worker kill (make interop-d1)
 import { spawnSync } from 'node:child_process';
 import { readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { type Context, type Group } from './context.ts';
@@ -10,6 +11,7 @@ import { type Result, recorder, RESULTS_DIR, runId } from './lab.ts';
 import { ledger } from './ledger.ts';
 import { closeAll, localActorId, sql } from './peblish.ts';
 import { selectPeers } from './peers/index.ts';
+import { durability, type Phase } from './scenarios/durability.ts';
 import { groups } from './scenarios/index.ts';
 
 const args = process.argv.slice(2);
@@ -19,11 +21,12 @@ const only = args
   .split(',');
 const slow = args.includes('--slow');
 const peerNames = args.filter((a) => !a.startsWith('--'));
+const d1Phase = args.find((a) => a.startsWith('--d1='))?.slice('--d1='.length) as Phase | undefined;
 const groupArg = args.find((a) => a.startsWith('--group='))?.slice('--group='.length);
 
 /** Child mode: run one group in this process and write its results to a numbered file. */
-async function runGroup(name: string): Promise<number> {
-  const group: Group | undefined = groups[name];
+async function runGroup(name: string, phase?: Phase): Promise<number> {
+  const group: Group | undefined = phase ? { ids: ['D1'], run: (ctx) => durability(ctx, phase) } : groups[name];
   if (!group) throw new Error(`no scenario group ${name}`);
   const rec = recorder(only);
   const community = await localActorId('Group', 'lab').then(async (id) => {
@@ -37,10 +40,12 @@ async function runGroup(name: string): Promise<number> {
   } finally {
     await closeAll();
   }
-  return rec.finish(`group-${name}.json`, run);
+  return rec.finish(phase ? `group-durability-${phase}.json` : `group-${name}.json`, run);
 }
 
-if (groupArg) {
+if (d1Phase) {
+  process.exitCode = await runGroup('durability', d1Phase);
+} else if (groupArg) {
   process.exitCode = await runGroup(groupArg);
 } else {
   let failed = 0;

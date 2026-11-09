@@ -67,7 +67,7 @@ export const posts: Group = {
         const started = new Date();
         const post = await peer.createPost(side.token, side.labOnPeer, title, `Posted from ${peer.name}.`);
         const apId = post.apId;
-        ctx.ledger.add({ kind: 'object', side: peer.name, user: peer.user, type: 'post', apId, peerId: post.id });
+        const entry = ctx.ledger.add({ kind: 'object', side: peer.name, user: peer.user, type: 'post', apId, peerId: post.id });
         const actor = peer.actorUri(peer.user);
         await expectInbound(ctx.sql, { since: started, actor, type: 'Create', contains: title }, { state: 'applied' });
         const stored = await storedPost(ctx, apId);
@@ -83,6 +83,7 @@ export const posts: Group = {
           await postOnPeer(other, other.labOnPeer, apId);
         }
         await peer.deletePost(side.token, post.id);
+        ctx.ledger.done(entry, 'deleted by the scenario');
         await waitFor('peblish to mark the post deleted', async () => {
           const [row] = await ctx.sql<{ deleted_at: Date | null }[]>`select deleted_at from posts where ap_id = ${apId}`;
           return row?.deleted_at && row;

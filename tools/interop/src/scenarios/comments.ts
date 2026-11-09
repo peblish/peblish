@@ -36,7 +36,14 @@ export const comments: Group = {
 
           const started = new Date();
           const comment = await peer.comment(side.token, onPeer.id, null, `Top comment from ${peer.name} ${ctx.run}`);
-          ctx.ledger.add({ kind: 'object', side: peer.name, user: peer.user, type: 'comment', apId: comment.apId, peerId: comment.id });
+          const entry = ctx.ledger.add({
+            kind: 'object',
+            side: peer.name,
+            user: peer.user,
+            type: 'comment',
+            apId: comment.apId,
+            peerId: comment.id,
+          });
           await expectInbound(
             ctx.sql,
             { since: started, actor: peer.actorUri(peer.user), type: 'Create', contains: comment.apId },
@@ -63,6 +70,7 @@ export const comments: Group = {
           // Last, because it is where the known Mbin defect shows.
           const deleting = new Date();
           await peer.deleteComment(side.token, comment.id);
+          ctx.ledger.done(entry, 'deleted by the scenario');
           await expectInbound(
             ctx.sql,
             { since: deleting, actor: peer.actorUri(peer.user), type: 'Delete', contains: comment.apId },
