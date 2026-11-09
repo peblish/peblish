@@ -78,6 +78,13 @@
       "when": 1794237842110,
       "tag": "0010_wave_3_fixes",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1794242546971,
+      "tag": "0011_wave_3_report_hosts",
+      "breakpoints": true
     }
   ]
 }
