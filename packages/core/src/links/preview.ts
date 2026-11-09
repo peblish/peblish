@@ -1,10 +1,12 @@
 import type { Principal } from '@peblish/schema/authz';
+import { type } from 'arktype';
 import { authorize } from '../authz/authorize.ts';
 import { localInstance } from '../db/local-instance.ts';
 import { db } from '../db/read.ts';
 import type { Result } from '../identity/result.ts';
 import { sniffRaster } from '../media/sniff.ts';
 import { safeFetch, type SafeResponse } from '../net/fetch.ts';
+import { NewPost } from '../posts/input.ts';
 import { readPageMeta } from './html.ts';
 
 // Link previews (C02), fetched when a person writes a link post, before createPost: no
@@ -41,6 +43,21 @@ export const previewLimits = {
 type Fetcher = (url: string, init: Parameters<typeof safeFetch>[1]) => Promise<SafeResponse>;
 
 const mediaType = (headers: Headers) => headers.get('content-type')?.split(';')[0]?.trim().toLowerCase() || null;
+
+// createPost refuses a post whose thumbnailUrl or urlContentType fails NewPost's checks (a URL
+// over 2,000 characters, a content type that is not a media type), and both come from a stranger's
+// page. They are checked here with NewPost's own validators, and a value that fails is null.
+const thumbnailField = NewPost.get('thumbnailUrl');
+const contentTypeField = NewPost.get('urlContentType');
+const accepted = (field: (value: string) => unknown, value: string | null) =>
+  value !== null && !(field(value) instanceof type.errors) ? value : null;
+
+/** A preview whose two post fields are ones createPost takes. */
+const forPost = (preview: LinkPreview): LinkPreview => ({
+  ...preview,
+  urlContentType: accepted(contentTypeField, preview.urlContentType),
+  thumbnailUrl: accepted(thumbnailField, preview.thumbnailUrl),
+});
 
 /** The page as text, in the charset its headers or its first meta tag name (UTF-8 otherwise). */
 function decodePage(response: SafeResponse): string {
@@ -92,8 +109,8 @@ export async function fetchLinkPreview(principal: Principal, url: string, option
   const sniffed = sniffRaster(page.body);
   const type = sniffed ?? mediaType(page.headers);
   // A link straight to an image is an image post: there is no page to read.
-  if (sniffed || !type?.includes('html')) return { ok: true, ...noPreview, urlContentType: type };
+  if (sniffed || !type?.includes('html')) return { ok: true, ...forPost({ ...noPreview, urlContentType: type }) };
 
   const meta = readPageMeta(decodePage(page), page.url);
-  return { ok: true, title: meta.title, description: meta.description, urlContentType: type, thumbnailUrl: meta.image };
+  return { ok: true, ...forPost({ title: meta.title, description: meta.description, urlContentType: type, thumbnailUrl: meta.image }) };
 }

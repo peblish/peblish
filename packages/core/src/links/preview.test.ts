@@ -5,6 +5,7 @@ import { db } from '../db/read.ts';
 import { media } from '../db/tables/media.ts';
 import { bytes } from '../media/__fixtures__/images.ts';
 import { BlockedDestinationError, createSafeFetch, type SafeFetchInit, type SafeResponse } from '../net/fetch.ts';
+import { NewPost } from '../posts/input.ts';
 import { truncateAll } from '../testing/db.ts';
 import { seedAccount, seedLocalInstance, seedSetting } from '../testing/seed-a.ts';
 import { outboxEvents } from '../testing/seed-az.ts';
@@ -105,6 +106,34 @@ test('a page that cannot be fetched, or is not a page, gives an empty preview an
     urlContentType: 'application/json',
   });
   expect((await mediaRows()).length).toBe(0);
+});
+
+test('what a preview returns always passes createPost: an over-long picture URL and a malformed type become null', async () => {
+  const user = await principal();
+  const longImage = `https://cdn.example/${'a'.repeat(2100)}.jpg`;
+  const { fetch } = table({
+    [PAGE]: html(`<title>Story</title><meta property="og:image" content="${longImage}">`),
+    'https://odd.example/page': { type: 'text/html, text/plain', body: story.body },
+    'https://odd.example/data': { type: 'nonsense', body: '{}' },
+    'https://odd.example/long': { type: `application/${'a'.repeat(300)}`, body: '{}' },
+  });
+  const accepts = (preview: { thumbnailUrl: string | null; urlContentType: string | null }) =>
+    NewPost.allows({ title: 'Story', url: PAGE, thumbnailUrl: preview.thumbnailUrl, urlContentType: preview.urlContentType });
+  // The control: the raw values are what createPost refuses.
+  expect(accepts({ thumbnailUrl: longImage, urlContentType: null })).toBe(false);
+  expect(accepts({ thumbnailUrl: null, urlContentType: 'text/html, text/plain' })).toBe(false);
+
+  const expected = {
+    [PAGE]: { title: 'Story', urlContentType: 'text/html', thumbnailUrl: null },
+    'https://odd.example/page': { title: 'The story', urlContentType: null, thumbnailUrl: 'https://odd.example/cover.jpg' },
+    'https://odd.example/data': { title: null, urlContentType: null, thumbnailUrl: null },
+    'https://odd.example/long': { title: null, urlContentType: null, thumbnailUrl: null },
+  };
+  for (const [url, fields] of Object.entries(expected)) {
+    const result = await fetchLinkPreview(user, url, { fetch });
+    expect(result, url).toMatchObject({ ok: true, ...fields });
+    expect(result.ok && accepts(result), url).toBe(true);
+  }
 });
 
 test('pages in a legacy charset are decoded as they declare themselves', async () => {
