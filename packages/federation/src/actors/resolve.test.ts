@@ -228,6 +228,22 @@ describe('resolving an actor', () => {
     expect(await resolveRemoteActor(lab.id, { fetch: down, maxAgeMs: 0 })).toMatchObject({ id: held.id });
   });
 
+  test('a 410 for an actor we hold deletes our copy; one we never held is only refused', async () => {
+    const never = await resolveRemoteActor(lab.id, { fetch: stubFetch({ [lab.id]: { status: 410 } }).fetch }).catch(
+      (caught: unknown) => caught,
+    );
+    expect(never).toMatchObject({ reason: 'gone' });
+    expect(await db().select().from(actors).where(eq(actors.apId, lab.id))).toHaveLength(0);
+
+    const held = await resolveRemoteActor(lab.id, { fetch: peer().fetch });
+    const gone = stubFetch({ [lab.id]: { status: 410 } }).fetch;
+    expect(await resolveRemoteActor(lab.id, { fetch: gone, refresh: true }).catch((caught: unknown) => caught)).toMatchObject({
+      reason: 'gone',
+    });
+    const [row] = await db().select({ deletedAt: actors.deletedAt, raw: actors.raw }).from(actors).where(eq(actors.id, held.id));
+    expect(row?.deletedAt).not.toBeNull();
+  });
+
   test('an id on this server is never fetched, and one we hold is returned as stored', async () => {
     const { fetch, requests } = stubFetch({});
     const error = await resolveRemoteActor('https://fed-a.test/u/nobody', { fetch }).catch((caught: unknown) => caught);

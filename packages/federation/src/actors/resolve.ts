@@ -1,7 +1,7 @@
 import { db } from '@peblish/core/db/read';
 import { localInstance } from '@peblish/core/db/local-instance';
 import { actors } from '@peblish/core/db/tables/actors';
-import { checkRemoteActor, storeRemoteActor } from '@peblish/core/remote/actors';
+import { checkRemoteActor, deleteRemoteActor, storeRemoteActor } from '@peblish/core/remote/actors';
 import type { ActorKind } from '@peblish/schema/ids';
 import { eq } from 'drizzle-orm';
 import { actorFromWire } from '../mapping/actor.ts';
@@ -192,6 +192,10 @@ async function resolveId(apId: string, fetch: Fetcher, options: ResolveOptions):
     } catch (error) {
       // A peer that is down does not make the copy we hold wrong.
       if (held && error instanceof ActorResolveError && error.transient) return held;
+      // A 410 for an actor we hold is its server saying it is gone: delete our copy, as a refetch does (remote-fetch/actor.ts).
+      if (held && !held.local && error instanceof ActorResolveError && error.reason === 'gone') {
+        await deleteRemoteActor(await importGrant('remote.actor_delete', { apId }), { cause: 'Tombstone' });
+      }
       throw error;
     }
   })().finally(() => running.delete(apId));
