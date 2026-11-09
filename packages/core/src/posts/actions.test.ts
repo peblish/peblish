@@ -1,5 +1,5 @@
 import { eq } from 'drizzle-orm';
-import { beforeEach, expect, test } from 'vitest';
+import { beforeEach, expect, test, vi } from 'vitest';
 import { db } from '../db/read.ts';
 import { posts, votes } from '../db/tables/content.ts';
 import { truncateAll } from '../testing/db.ts';
@@ -8,6 +8,12 @@ import { seedPostWorld } from '../testing/seed-b1.ts';
 import { localUser } from '../testing/seed.ts';
 import { voteAs } from '../votes/service.ts';
 import { createPostAs, deletePostAs, removePostAs, restorePostAs, restoreRemovedPostAs, updatePostAs } from './actions.ts';
+
+// voteAs runs as it is, except where a test makes it fail.
+vi.mock('../votes/service.ts', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../votes/service.ts')>();
+  return { ...actual, voteAs: vi.fn(actual.voteAs) };
+});
 
 beforeEach(truncateAll);
 
@@ -53,6 +59,26 @@ test('a new post starts with its author upvote, as Lemmy and PieFed give it', as
     { type: 'post.created', postId: created.id, authorId: world.people.author.id },
     { type: 'vote.cast', voterId: world.people.author.id, target: { kind: 'post', id: created.id }, value: 1, local: true },
   ]);
+});
+
+test('a failed or refused author upvote still returns the post, with a warning naming the post and the reason', async () => {
+  const world = await seedPostWorld();
+  const author = localUser(world.people.author.id);
+  const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+  try {
+    vi.mocked(voteAs).mockResolvedValueOnce({ ok: false, reason: 'community.banned' });
+    const refused = await createPostAs(author, world.communities.open.id, { title: 'Refused vote' });
+    vi.mocked(voteAs).mockRejectedValueOnce(new Error('connection lost'));
+    const failed = await createPostAs(author, world.communities.open.id, { title: 'Failed vote' });
+    if (!refused.ok || !failed.ok) throw new Error('the posts exist either way');
+    expect(warn).toHaveBeenCalledTimes(2);
+    expect(warn.mock.calls[0]?.[0]).toContain(refused.id);
+    expect(warn.mock.calls[0]?.[0]).toContain('community.banned');
+    expect(warn.mock.calls[1]?.[0]).toContain(failed.id);
+    expect(warn.mock.calls[1]?.[1]).toEqual(new Error('connection lost'));
+  } finally {
+    warn.mockRestore();
+  }
 });
 
 test('a moderator removes and restores a post with a reason; anyone else is refused', async () => {

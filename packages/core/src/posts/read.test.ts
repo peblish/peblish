@@ -8,6 +8,7 @@ import { writer } from '../db/write.ts';
 import { truncateAll } from '../testing/db.ts';
 import { seedModerator, seedPost } from '../testing/seed-az.ts';
 import { declareAge, seedPostWorld } from '../testing/seed-b1.ts';
+import { seedActor } from '../testing/seed.ts';
 import { feedPredicates } from '../registry/feed-predicates.gen.ts';
 import { feedPredicate } from './feed-predicate.ts';
 import { postViews, readPost, type Viewer } from './read.ts';
@@ -149,6 +150,33 @@ describe('the post view', () => {
     expect(await readPost(world.posts.local['community removed'], null)).toBeNull();
     await writer().update(actors).set({ deletedAt: new Date() }).where(eq(actors.id, world.communities.open.id));
     expect(await readPost(plain.id, null)).toBeNull();
+  });
+
+  test('a post in a removed or deleted community reaches no viewer through a feed either, moderators and admins included', async () => {
+    const { world, secret, plain } = await setup();
+    const gone = await seedActor(world.instances.local, 'Group', 'gone');
+    const inDeleted = await seedPost(world.instances.local, gone, world.people.author, { title: `${secret} title` });
+    const inRemoved = world.posts.local['community removed'];
+    const everyone = [
+      null,
+      user(world.people.reader),
+      user(world.people.moderator),
+      { actorId: world.people.admin.id, siteRole: 'admin' as const },
+    ];
+    const feed = async (viewer: Viewer) => (await postViews(await db().select().from(posts), viewer)).map(({ id }) => id);
+    for (const viewer of everyone) {
+      // The community is still live: the post is in the feed. The removed community's never is.
+      expect(await feed(viewer)).toContain(inDeleted.id);
+    }
+    await writer().update(actors).set({ deletedAt: new Date() }).where(eq(actors.id, gone.id));
+    for (const viewer of everyone) {
+      const ids = await feed(viewer);
+      expect(ids).toContain(plain.id);
+      expect(ids).not.toContain(inRemoved);
+      expect(ids).not.toContain(inDeleted.id);
+      expect(await readPost(inRemoved, viewer)).toBeNull();
+      expect(await readPost(inDeleted.id, viewer)).toBeNull();
+    }
   });
 });
 

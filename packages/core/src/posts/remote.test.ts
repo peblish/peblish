@@ -1,11 +1,14 @@
 import type { Principal } from '@peblish/schema/authz';
+import { parseEvent } from '@peblish/schema/events';
 import { eq } from 'drizzle-orm';
 import { beforeEach, describe, expect, test } from 'vitest';
 import { authorize } from '../authz/authorize.ts';
 import { db } from '../db/read.ts';
 import { posts } from '../db/tables/content.ts';
+import { writer } from '../db/write.ts';
 import { truncateAll } from '../testing/db.ts';
 import { grantFor, outboxEvents } from '../testing/seed-az.ts';
+import { seedActor } from '../testing/seed.ts';
 import { seedPostWorld } from '../testing/seed-b1.ts';
 import { deletePost, restorePost } from './delete.ts';
 import { storeRemotePost, updateRemotePost, type RemotePost } from './remote.ts';
@@ -82,6 +85,87 @@ describe('storeRemotePost', () => {
     expect(await outboxEvents()).toHaveLength(1);
   });
 
+  test('an id that is already stored under another author or community is refused, and reads nothing of the stored post', async () => {
+    const { world, community, create } = await setup();
+    const first = await create(record());
+    const other = await seedActor(world.instances.lemmy, 'Person', 'someone_else');
+    const byOther = await grantFor('post.create', { kind: 'remote', actorId: other.id, announcedBy: null }, { communityId: community.id });
+    await expect(storeRemotePost(byOther, record())).rejects.toMatchObject({ name: 'Refused', reason: 'post.id_conflict' });
+    const elsewhere = await grantFor(
+      'post.create',
+      { kind: 'remote', actorId: world.people.remoteAuthor.id, announcedBy: null },
+      { communityId: world.communities.remoteRestricted.id },
+    );
+    await expect(storeRemotePost(elsewhere, record())).rejects.toMatchObject({ name: 'Refused', reason: 'post.id_conflict' });
+    expect(await db().select({ id: posts.id }).from(posts).where(eq(posts.apId, record().apId))).toEqual([{ id: first.id }]);
+    expect(await outboxEvents()).toHaveLength(1);
+  });
+
+  test("a peer's link, preview, media type and alt text are held to the limits a local post gets; what fails is null", async () => {
+    const { create } = await setup();
+    const bad = await create(
+      record({
+        url: `https://example.test/${'x'.repeat(2_000)}`,
+        thumbnailUrl: 'javascript:alert(1)',
+        urlContentType: 'not a media type',
+        altText: 'x'.repeat(1_001),
+      }),
+    );
+    expect(await row(bad.id)).toMatchObject({ url: null, thumbnailUrl: null, urlContentType: null, altText: null });
+    const good = await create(
+      record({
+        apId: 'https://lemmy.test/post/2',
+        url: 'https://example.test/a.png',
+        thumbnailUrl: 'https://example.test/a.png?w=100',
+        urlContentType: 'image/*',
+        altText: 'A picture',
+      }),
+    );
+    expect(await row(good.id)).toMatchObject({
+      url: 'https://example.test/a.png',
+      thumbnailUrl: 'https://example.test/a.png?w=100',
+      urlContentType: 'image/*',
+      altText: 'A picture',
+    });
+  });
+
+  test("a peer's language is kept as a plausible BCP 47 tag with a lowercase primary subtag; an oversized or malformed one is null", async () => {
+    const { author, create } = await setup();
+    const created = await create(record({ language: 'PT-BR' }));
+    expect((await row(created.id)).language).toBe('pt-BR');
+    const grant = await grantFor('post.update', author, { postId: created.id });
+    const languageAfter = async (language: string) => {
+      await updateRemotePost(grant, record({ language }));
+      return (await row(created.id)).language;
+    };
+    expect(await languageAfter('zh-Hant-TW')).toBe('zh-Hant-TW');
+    expect(await languageAfter(`en-${'a'.repeat(33)}`)).toBeNull();
+    expect(await languageAfter('en-US')).toBe('en-US');
+    for (const malformed of [
+      '',
+      'e',
+      'english',
+      'en_US',
+      'en--US',
+      'en-',
+      'en-x',
+      'not a language',
+      '<script>',
+      'en-US\n',
+      `${'a'.repeat(36)}`,
+    ]) {
+      expect(await languageAfter(malformed), malformed).toBeNull();
+      await languageAfter('en');
+    }
+    const oversized = await create(record({ apId: 'https://lemmy.test/post/2', language: `en-${'a'.repeat(40)}` }));
+    expect((await row(oversized.id)).language).toBeNull();
+    // The longest accepted tag is 35 characters; one more is null though its shape is fine.
+    const longest = `en-${'a'.repeat(8)}-${'b'.repeat(8)}-${'c'.repeat(8)}-${'d'.repeat(5)}`;
+    expect(longest).toHaveLength(35);
+    expect(await languageAfter(longest)).toBe(longest);
+    expect(await languageAfter(`${longest}e`)).toBeNull();
+  });
+
   test('the author cannot lock or pin their own post through the document', async () => {
     const { create } = await setup();
     // A PostRecord's locked and featuredCommunity are not read: only AZ's lock and pin mutations set them.
@@ -129,6 +213,51 @@ describe("updateRemotePost, and the author's delete and undo", () => {
       authorId: world.people.remoteAuthor.id,
       local: false,
     });
+  });
+
+  test('a redelivered Update (direct, then announced) changes nothing: no write, no second event, the edit time stays', async () => {
+    const { author, create } = await setup();
+    const { id } = await create(record());
+    const update = async (post: RemotePost) => updateRemotePost(await grantFor('post.update', author, { postId: id }), post);
+    // Nothing the peer sends differs from what is stored: not an edit.
+    await update(record());
+    expect((await row(id)).editedAt).toBeNull();
+    // A real change without `updated` takes the receive time, once.
+    await update(record({ title: 'Edited title' }));
+    const stamped = (await row(id)).editedAt;
+    expect(stamped).toBeInstanceOf(Date);
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    await update(record({ title: 'Edited title' }));
+    await update(record({ title: 'Edited title', raw: { type: 'Page', announced: true } }));
+    expect((await row(id)).editedAt).toEqual(stamped);
+    expect((await outboxEvents()).map((event) => parseEvent(event).type)).toEqual(['post.created', 'post.updated']);
+    // The peer's own `updated` is kept as sent, and a redelivery of it is a no-op too.
+    const sent = new Date('2026-11-03T00:00:00Z');
+    await update(record({ title: 'Edited title', editedAt: sent }));
+    await update(record({ title: 'Edited title', editedAt: sent }));
+    expect((await row(id)).editedAt).toEqual(sent);
+    expect((await outboxEvents()).map((event) => parseEvent(event).type)).toEqual(['post.created', 'post.updated', 'post.updated']);
+  });
+
+  test('locked and featuredCommunity on a mapped record are ignored on update; the stored flags stay', async () => {
+    const { author, create } = await setup();
+    const { id } = await create(record());
+    await writer().update(posts).set({ locked: true, featuredCommunity: true }).where(eq(posts.id, id));
+    const grant = await grantFor('post.update', author, { postId: id });
+    await updateRemotePost(grant, { ...record({ title: 'Edited title' }), locked: false, featuredCommunity: false } as RemotePost);
+    expect(await row(id)).toMatchObject({ title: 'Edited title', locked: true, featuredCommunity: true });
+    await updateRemotePost(grant, { ...record({ title: 'Edited again' }), locked: true, featuredCommunity: true } as RemotePost);
+    expect(await row(id)).toMatchObject({ title: 'Edited again', locked: true, featuredCommunity: true });
+  });
+
+  test('an Update is held to the same limits as a Create', async () => {
+    const { author, create } = await setup();
+    const { id } = await create(record({ url: 'https://example.test/a', urlContentType: 'text/html' }));
+    await updateRemotePost(
+      await grantFor('post.update', author, { postId: id }),
+      record({ url: 'ftp://example.test/a', urlContentType: 'x'.repeat(256), thumbnailUrl: `https://example.test/${'x'.repeat(2_000)}` }),
+    );
+    expect(await row(id)).toMatchObject({ url: null, urlContentType: null, thumbnailUrl: null });
   });
 
   test('refuses an update by anyone but the author, and a record for another post', async () => {

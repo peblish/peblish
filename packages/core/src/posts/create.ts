@@ -5,6 +5,7 @@ import { localInstance } from '../db/local-instance.ts';
 import { actors } from '../db/tables/actors.ts';
 import { posts } from '../db/tables/content.ts';
 import { defineMutation } from '../tx/mutation.ts';
+import { Refused } from '../tx/refused.ts';
 import { renderLocalBody } from './body.ts';
 import { NewPost, normalizeTitle } from './input.ts';
 
@@ -24,6 +25,8 @@ export const createPost = defineMutation({
   emits: ['post.created'],
   recheck: true,
   async run(t, grant, raw: NewPost) {
+    // A peer's post goes through storeRemotePost (sanitised, with the peer's id and times); this one writes a local post.
+    if (grant.principal.kind !== 'local') throw new Refused('post.create', 'auth.required');
     const input = NewPost.assert(raw);
     const instance = await localInstance(t.db);
     const id = uuidv7();

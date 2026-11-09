@@ -36,6 +36,18 @@ async function create(input: Parameters<typeof createPost>[1], community: 'open'
 }
 
 describe('createPost', () => {
+  test("refuses a remote author's grant: a peer's post goes through storeRemotePost, and nothing is written", async () => {
+    const world = await seedPostWorld();
+    const grant = await grantFor(
+      'post.create',
+      { kind: 'remote', actorId: world.people.remoteAuthor.id, announcedBy: null },
+      { communityId: world.communities.remote.id },
+    );
+    await expect(createPost(grant, { title: 'From a peer' })).rejects.toMatchObject({ name: 'Refused', reason: 'auth.required' });
+    expect(await db().select({ id: posts.id }).from(posts).where(eq(posts.title, 'From a peer'))).toEqual([]);
+    expect(await outboxEvents()).toEqual([]);
+  });
+
   test('writes the post and post.created in one transaction, rendering the body once', async () => {
     const { world, grant } = await create({ title: 'Hello' });
     const { id, apId } = await createPost(grant, {
