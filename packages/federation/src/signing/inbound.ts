@@ -81,10 +81,11 @@ export async function verifyInboundSignature(
   const fetched = async (): Promise<StoredKey | null> => {
     const actorApId = actorOf(parsed.keyId);
     if (recentlyFetched(actorApId, now)) return null;
-    // A copy that is still fresh makes no request, and so records no attempt.
+    // A copy that is still fresh makes no request, and so records no attempt; a NodeInfo read is not
+    // a fetch of the actor.
     const send = options.fetch ?? safeFetch;
     const recording: Fetcher = (url, init) => {
-      recordFetch(actorApId, now);
+      if (String(url) === actorApId) recordFetch(actorApId, now);
       return send(url, init);
     };
     try {
