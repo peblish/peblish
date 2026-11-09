@@ -83,6 +83,8 @@ export type Peer = {
   voteComment(token: string, commentId: number, score: -1 | 0 | 1): Promise<void>;
   /** The caller's own vote on a post, from the peer (the cleanup ledger reads this). */
   myPostVote(token: string, postId: number): Promise<-1 | 0 | 1>;
+  /** The community's description as this peer shows it. */
+  communityDescription(token: string, communityId: number): Promise<string | null>;
   /** The community's local edit (Update(Group) to followers). */
   editCommunity(token: string, communityId: number, title: string, description: string): Promise<void>;
   /** Deletes the caller's own account; `deleteContent` is Lemmy's "delete my content". */
@@ -92,5 +94,7 @@ export type Peer = {
    * user subscribes again after unsubscribing, so F1 needs a fresh account each run.
    */
   freshUser?(run: string): Promise<string>;
+  /** Registers a throwaway account (Lemmy only; S2 deletes it). */
+  registerUser?(username: string): Promise<void>;
   readonly mod: PeerModeration;
 };

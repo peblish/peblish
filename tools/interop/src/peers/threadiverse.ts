@@ -186,9 +186,27 @@ export function threadiversePeer({ flavor, origin, user, admin, community, passw
       const vote = post_view.my_vote ?? 0;
       return vote > 0 ? 1 : vote < 0 ? -1 : 0;
     },
+    async communityDescription(token, communityId) {
+      const { community_view } = await http<{ community_view: { community: { description?: string | null } } }>(
+        'GET',
+        `${base}/community`,
+        {
+          token,
+          query: { id: communityId },
+        },
+      );
+      return community_view.community.description ?? null;
+    },
     async editCommunity(token, communityId, title, description) {
       await http('PUT', `${base}/community`, { token, body: { community_id: communityId, title, description } });
     },
+    registerUser: lemmy
+      ? async (username) => {
+          await http('POST', `${base}/user/register`, { body: { username, password, password_verify: password, show_nsfw: false } });
+          // Lemmy's JWT carries a second-resolution iat; a login in the same second collides.
+          await new Promise((resolve) => setTimeout(resolve, 1_200));
+        }
+      : undefined,
     async deleteAccount(token, pw, deleteContent) {
       if (!lemmy) throw new NotApplicable('PieFed deletes an account through its settings form only; the API stub does nothing');
       await http('POST', `${base}/user/delete_account`, { token, body: { password: pw, delete_content: deleteContent } });

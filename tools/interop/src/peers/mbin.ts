@@ -202,6 +202,10 @@ export const mbin: Peer = {
     const entry = await getEntry(token, postId);
     return entry.userVote === -1 ? -1 : entry.isFavourited || entry.userVote === 1 ? 1 : 0;
   },
+  async communityDescription(token, communityId) {
+    const magazine = await http<{ description: string | null }>('GET', `${api}/magazine/${communityId}`, { token });
+    return magazine.description;
+  },
   async editCommunity(token, communityId, title, description) {
     await http('PUT', `${api}/moderate/magazine/${communityId}`, {
       token,
@@ -218,9 +222,9 @@ export const mbin: Peer = {
     return username;
   },
   async deleteAccount() {
-    // The console does it (`mbin:user:delete <name>`), which the runner cannot reach; the lab
-    // Makefile runs it between the two halves of S2 (see scenarios/accounts.ts).
-    throw new NotApplicable('Mbin account deletion is a console command, run from make');
+    // Mbin deletes an account with a console command (`mbin:user:delete`) and the runner has no
+    // shell in the Mbin container, so S2 does not drive it.
+    throw new NotApplicable('Mbin deletes an account by console command only; not driven from the runner');
   },
   mod: {
     async resolvePerson(token, actorUri) {
