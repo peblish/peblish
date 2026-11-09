@@ -198,10 +198,18 @@ describe.each([
     ['a community moderator', () => localUser(world.people.moderator.id), AUT],
     ['a site admin', () => admin(world.people.admin.id), AUT],
     ['a remote actor', () => remote(world.people.remoteAuthor.id), AUT],
+    // A community does not act on comments; refused before any comment or community row is read under a lock.
+    ['a remote community', () => remote(world.communities.remote.id), GRP],
     ['the instance itself', () => system(world.instances.local.id), REQ],
   ] as const)('nobody else acts on the comment: %s', async (_who, principal, refusal) => {
     const actual = await each(authorActions, (action) => act(action, principal(), world.comments.local.normal));
     expect(actual).toEqual([refusal, refusal, refusal]);
+  });
+
+  test('a remote community is refused whatever the state of the comment', async () => {
+    const principal = remote(world.communities.remote.id);
+    for (const commentId of Object.values(world.comments.local))
+      expect(await each(authorActions, (action) => act(action, principal, commentId))).toEqual([GRP, GRP, GRP]);
   });
 
   test('a comment that does not exist is target.not_found', async () => {
