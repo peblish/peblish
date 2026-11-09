@@ -83,6 +83,13 @@ carrying it and stay served. `LoadedPost.servable` and `LoadedComment.servable`
 itself is still there. The outbox is rebuilt from the posts as they are now, so an edit shows
 and nothing gone lingers.
 
+A local activity can carry content someone else wrote: the community's Announce of a remote
+Page or Note (`relay/announce.ts`) embeds it. The check for the activities (`heldContent`)
+therefore reads any held post or comment whoever authored it, and an activity whose embedded
+content is deleted, removed, on a gone post, in a deleted or removed community, or not held at
+all answers the `410` Tombstone. The post and comment documents themselves are still served
+only when they are ours: a remote object is not ours to serve.
+
 ## Signing
 
 One signature per request, draft-cavage-http-signatures-12 with `rsa-sha256` (`hs2019` is
@@ -95,15 +102,18 @@ refusal. `sign.ts` signs ourselves (see above):
 - **A document fetch (GET)** covers `(request-target) host date`, signed with the instance
   actor's key (`signing/instance.ts`), for peers that only answer authenticated fetches. Actor
   documents are fetched this way (`fetchActivity`); WebFinger and NodeInfo are public and are
-  not signed. A redirected hop goes out unsigned (safeFetch drops the signature, which vouches
-  for one request). An instance with no usable key fetches unsigned.
+  not signed. A redirected hop goes out unsigned (the signature vouches for one request). An
+  instance with no usable key fetches unsigned.
 
 `verify.ts` parses an inbox request and checks it against a PEM (the POST must cover
 `(request-target) host date digest`; RSA of 2048 bits or more, a Date within an hour, the digest
 of the body); `inbound.ts` finds the key (stored, or the actor fetched when the key is unknown
 or fails) and returns the key's owner or a typed failure. An actor is fetched for its key at
 most once a minute, successful or not, by an attempt log kept per process and bounded
-(`refreshAttempts`), since `fetched_at` only moves when a fetch works. A local actor's key is
+(`refreshAttempts`, which holds a SHA-256 of the key id, since the sender chose the string),
+because `fetched_at` only moves when a fetch works. A key id with no fragment whose document is
+a key naming an `owner` on its own origin (GoToSocial's `actor/main-key`) is resolved through
+that owner; the key itself is still taken from the owner's document. A local actor's key is
 never accepted for an inbound request.
 
 ## Remote actors and every outbound fetch
@@ -115,15 +125,31 @@ as the system principal `import`. The network is never touched inside a transact
 concurrent fetches store one actor, and a stale copy is returned when the peer is down.
 
 - The document must be the one asked for: its id is the requested id, or where it was finally
-  served from after a redirect (fragments aside), on the origin it names.
+  served from after a redirect (fragments aside), on the origin it names. An actor document
+  may be reached through up to three redirects, each hop its own request through the fetcher.
+- A 200 `Tombstone` is the 410 answer when it names the requested id (or the address it was
+  served from) on the requested actor's origin: the copy we hold is deleted with cause
+  `Tombstone`, in ordinary resolution and in the inbound key refresh alike. A Tombstone for an
+  actor we never held is refused (`gone`), and one about anything else is `invalid`.
 - A handle's WebFinger answer is only a claim: the actor found must have the handle's name
-  (case aside) and the sigil's kind (`@` a Person, `!` a Group), or the resolution is
-  `invalid`. The actor may live on another host than the handle's (split domains).
+  (case aside) and the sigil's kind (`@` a Person or a Service, the bots; `!` a Group), or the
+  resolution is `invalid`. The actor may live on another host than the handle's (split
+  domains). A document that changes what kind of actor an id is (the store throws
+  `RemoteActorKindError`) is `invalid` too.
+- Resolutions in flight are shared by actor id and the freshness asked for: a refresh does not
+  join a resolution that would return the held copy.
 - The stored keys follow the document: a key it drops, or one we cannot use, is removed at the
   next refresh and a changed one replaced. An actor that sent a Delete stays deleted: a later
   fetch does not restore the profile.
 - Resolving an actor also reads its instance's NodeInfo when that is missing or a day old, so
   the Announce shape for its server is known before its first post.
+
+`fetchActivity(url, fetch, { maxRedirects = 0 })` (`actors/document.ts`) reads any ActivityPub
+document and returns `{ json, url, hops }`: `url` is where it finally came from and `hops` the
+redirects followed. Redirects are followed here, one request per hop with safeFetch's own
+following switched off, so every hop is checked again and a caller that counts requests counts
+them. Only actor documents allow redirects (three); collections and objects are where their id
+says and follow none. WebFinger and NodeInfo reads keep three.
 
 Every request we make goes through `src/actors/safe-fetch.ts`, the seam to lane B2's
 `@peblish/core/net/fetch`: https only, `maxRedirects: 0` on deliveries, a size and time cap,
@@ -170,12 +196,19 @@ hours. A `Retry-After` can lengthen a wait, up to 6 hours. A peer down longer mi
 activity. An instance's NodeInfo is read (`instances.software`, name and version cleaned and
 capped at 64 characters) when one of its actors is resolved, which is before its Follow is
 accepted, again before the first delivery to it, and once a day after. A server whose NodeInfo
-cannot be read gets the FEP-1b12 shape until it can be.
+cannot be read gets the FEP-1b12 shape until it can be. A failed read is remembered for ten
+minutes in a map that forgets expired entries and holds at most 5,000 origins, and callers that
+ask for one origin while its read is running share it.
+
+A row whose handling throws in our own code (not a failed send) follows the same schedule and
+ends `failed` at the tenth attempt with the error in `last_error`; it is not retried for ever.
 
 ## Follows
 
 `packages/core/src/follows/` holds the service (`requestFollow`, `acceptFollow`,
-`removeFollow`, `receiveFollow`) and `followState`, `followedCommunities` for the UI. A
+`removeFollow`, `receiveFollow`) and `followState`, `followedCommunities` for the UI
+(`id`, `apId`, `name`, `host`, `local`, `state`, `postingRestrictedToMods`, `sensitive`, `nsfl`;
+deleted and removed communities are left out). A
 follow of a remote community is pending until its Accept. The job `follows.retry` re-sends an
 unanswered Follow with a fresh Follow id 5 and 15 minutes after the first, then leaves it
 pending (lemmy.world accepted a second Follow about ten minutes after the first). The job
