@@ -1,2 +1,0 @@
-CREATE INDEX "actors_gated" ON "actors" USING btree ("id") WHERE "actors"."sensitive" or "actors"."nsfl";--> statement-breakpoint
-CREATE INDEX "posts_score" ON "posts" USING btree (("upvotes" - "downvotes") desc nulls last,"id" desc nulls last);
