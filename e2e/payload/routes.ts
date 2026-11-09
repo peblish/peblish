@@ -103,6 +103,10 @@ export const routes: readonly PayloadRoute[] = [
   { route: '/admin/peers/', path: '/admin/peers', admin: true },
   { route: '/modlog/', path: '/modlog' },
   { route: '/admin/reports/', path: '/admin/reports', admin: true },
+  { route: '/admin/settings/', path: '/admin/settings', admin: true },
+  { route: '/admin/pages/', path: '/admin/pages', admin: true },
+  { route: '/admin/pages/$slug/$language', path: '/admin/pages/<slug>/<language>', target: () => '/admin/pages/rules/en', admin: true },
+  { route: '/$slug', path: '/about', target: () => '/about' },
   { route: '/post/$id/', path: '/post/<id>', target: seededPost },
   { route: '/post/$id/comments/$commentId', path: '/post/<id>/comments/<commentId>', target: seededPermalink },
   // Signed out, /submit is a redirect to sign-in, so this entry measures the sign-in page it lands on
