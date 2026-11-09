@@ -17,7 +17,7 @@ import { inboundHandlers } from '../registry/inbound-handlers.gen.ts';
 import { checkActivityOrigin, checkNotEcho } from './authorize.ts';
 import { classify, type ClassifyEnv, type Item } from './classify.ts';
 import type { AnnounceInfo, InboundContext, InboundHandler, Prepared } from './handler.ts';
-import { renewLease, requeueWaiting, settle, settleAlone, type InboxRow, type Settled } from './queue.ts';
+import { renewLease, requeueWaiting, settle, settleAlone, yieldLater, type InboxRow, type Settled } from './queue.ts';
 import { Skipped, skip } from './reasons.ts';
 import { takePipelineFetch } from './throttle.ts';
 
@@ -37,6 +37,14 @@ import { takePipelineFetch } from './throttle.ts';
 //
 // Anything else that throws is transient (a peer down, the database): the row is tried again
 // later (queue.ts retryLater) and, past maxAttempts, fails with the last error.
+//
+// A fetch the budget refuses (below) is not a failure but a turn given up. A batch of many
+// activities from strangers needs more fetches than one claim may make, so the row stops where
+// it is, goes back to pending after a short wait with its attempt given back (queue.ts
+// yieldLater), and the next claim resumes: members that applied are skipped by their dedupe
+// markers and cost nothing. The members cannot be told apart in the row, so a claim that applied
+// nothing new before running out of its own allowance is a delivery that needs more than it may
+// have, and fails like any transient failure.
 
 export type PipelineOptions = {
   fetch?: Fetcher;
@@ -44,9 +52,13 @@ export type PipelineOptions = {
   afterApply?: () => Promise<void>;
 };
 
+/** The row stepped aside and is pending again (see giveWay). */
+export type Yielded = { state: 'pending'; error: string };
+
 type ItemResult = { applied: true } | { skipped: Skipped } | { failed: string };
 
 type Env = {
+  budget: FetchBudget;
   fetch: Fetcher;
   origin: string;
   actor(apId: string, options?: Pick<ResolveOptions, 'maxAgeMs'>): Promise<ResolvedActor>;
@@ -55,24 +67,65 @@ type Env = {
   afterApply: (() => Promise<void>) | undefined;
 };
 
-/** Most fetches one delivery may cost, so a batched Announce naming many strangers cannot fan out without end. */
+/** Most fetches one claim of a delivery may make, so a batched Announce naming many strangers cannot fan out without end. */
 export const fetchesPerRow = 60;
+/**
+ * A member of a batch is started only while this many fetches are left. A new origin costs about
+ * four (the object, the actor and two NodeInfo reads); a member cut off halfway wastes what it
+ * fetched, and a NodeInfo read the budget refuses is remembered as that peer's failure.
+ */
+export const memberReserve = 6;
+
+/** Which budget said no: the claim's own allowance, or the process-wide window every delivery shares (throttle.ts). */
+type Refusal = 'allowance' | 'window';
+
+/** Seconds a row waits before its next claim after each kind of refusal (the window lasts a minute). */
+const waitSeconds: Record<Refusal, number> = { allowance: 5, window: 30 };
+const spentMessage = 'this delivery needs more fetches than it may make now';
+
+/** Thrown to stop a row's work for now: a fetch was refused, which is a wait, not a failure. */
+class FetchYield extends Error {
+  override readonly name = 'FetchYield';
+  readonly refusal: Refusal;
+  constructor(refusal: Refusal) {
+    super(spentMessage);
+    this.refusal = refusal;
+  }
+}
+
+type FetchBudget = {
+  /** Set once a fetch was refused. Callers further down turn a failed fetch into an unreachable peer, an unknown NodeInfo or a member left out, so the flag, not the error, says it happened. */
+  refused: Refusal | null;
+  /** Whether a typical member fits in what is left. */
+  roomForMember(): boolean;
+  fetch: Fetcher;
+};
 
 /**
- * `base` counted against this row's allowance and the pipeline's window (throttle.ts). A fetch
- * past either fails like an unreachable peer, which the pipeline retries later, so a delivery
- * that needs more than its share waits instead of being lost. Each fetch also renews the row's
- * lease, so a delivery that spends minutes on slow peers is not taken from the worker doing it.
+ * `base` counted against this claim's allowance and the pipeline's window (throttle.ts). Each
+ * fetch also renews the row's lease, so a delivery that spends minutes on slow peers is not taken
+ * from the worker doing it.
  */
-function budgeted(base: Fetcher, row: InboxRow): Fetcher {
+function fetchBudget(base: Fetcher, row: InboxRow): FetchBudget {
   let left = fetchesPerRow;
-  return async (url, init) => {
-    if (left <= 0 || !takePipelineFetch(new URL(String(url)).host))
-      throw new Error('this delivery needs more fetches than it may make now');
-    left -= 1;
-    await renewLease(row);
-    return base(url, init);
+  const budget: FetchBudget = {
+    refused: null,
+    roomForMember: () => left >= memberReserve,
+    fetch: async (url, init) => {
+      if (left <= 0) {
+        budget.refused ??= 'allowance';
+        throw new Error(spentMessage);
+      }
+      if (!takePipelineFetch(new URL(String(url)).host)) {
+        budget.refused ??= 'window';
+        throw new Error(spentMessage);
+      }
+      left -= 1;
+      await renewLease(row);
+      return base(url, init);
+    },
   };
+  return budget;
 }
 
 const handlers = new Map<string, InboundHandler>(inboundHandlers.map((handler) => [handler.type, handler]));
@@ -88,8 +141,10 @@ async function resolveActor(apId: string, fetch: Fetcher, options: Pick<ResolveO
 }
 
 async function makeEnv(options: PipelineOptions, row: InboxRow): Promise<Env> {
-  const fetch = budgeted(options.fetch ?? safeFetch, row);
+  const budget = fetchBudget(options.fetch ?? safeFetch, row);
+  const fetch = budget.fetch;
   return {
+    budget,
     fetch,
     origin: await localOrigin(),
     actor: (apId, options) => resolveActor(apId, fetch, options),
@@ -181,9 +236,14 @@ async function processItem(row: InboxRow, json: JsonObject, env: Env, settleHere
     const handler = handlers.get(activity.type);
     if (!handler) throw skip('type.unhandled', activity.type);
     const prepared = await handler.prepare(await contextFor(env, activity, json, null));
+    // A refused fetch may have been swallowed on the way (a NodeInfo check, a moderator left out
+    // of a mirror): what was prepared is not to be applied on top of it.
+    if (env.budget.refused) throw new FetchYield(env.budget.refused);
     await applyOnce(row, prepared, env, settleHere, rewritten);
     return { applied: true };
   } catch (error) {
+    // Whatever came of the member after a refusal is not its outcome: it is tried again.
+    if (env.budget.refused) throw new FetchYield(env.budget.refused);
     if (error instanceof Skipped) return { skipped: error };
     if (error instanceof Refused) return { skipped: skip(error.reason) };
     if (error instanceof MappingError) return { failed: error.message };
@@ -212,10 +272,27 @@ function aggregate(results: readonly ItemResult[]): Settled {
 }
 
 /**
- * Processes one leased row and records how it ended. Returns that end state. A transient failure
- * throws: the caller (the job) hands it to retryLater.
+ * A row whose fetches ran out steps aside: pending again after a short wait, with its attempt
+ * given back. The window is shared with every delivery, so running out of it is nobody's fault.
+ * A claim that spent its own allowance without applying anything new is a delivery that needs
+ * more than it may have: that throws, and the caller counts an attempt.
  */
-export async function processRow(row: InboxRow, options: PipelineOptions = {}): Promise<Settled> {
+async function giveWay(row: InboxRow, refusal: Refusal, results: readonly ItemResult[]): Promise<Yielded> {
+  if (refusal === 'allowance' && !results.some((result) => 'applied' in result)) throw new Error(spentMessage);
+  const error =
+    refusal === 'window'
+      ? 'the server is fetching as much as it may; this delivery waits'
+      : 'the rest of this delivery waits for a turn to fetch';
+  await yieldLater(row, waitSeconds[refusal], error);
+  return { state: 'pending', error };
+}
+
+/**
+ * Processes one leased row and records how it ended. Returns that end state, or `pending` when
+ * the row stepped aside for its fetches (giveWay). A transient failure throws: the caller (the
+ * job) hands it to retryLater.
+ */
+export async function processRow(row: InboxRow, options: PipelineOptions = {}): Promise<Settled | Yielded> {
   const env = await makeEnv(options, row);
   const end = async (settled: Settled) => {
     await settleAlone(row, settled);
@@ -237,9 +314,17 @@ export async function processRow(row: InboxRow, options: PipelineOptions = {}): 
   const single = items.length === 1;
   const results: ItemResult[] = [];
   for (const item of items) {
-    // A batch can take a while: keep the lease while its members are worked through.
-    if (!single) await renewLease(row);
-    results.push('skipped' in item ? { skipped: item.skipped } : await processItem(row, item.json, env, single, item.rewritten === true));
+    if (!single) {
+      if (!env.budget.roomForMember()) return giveWay(row, 'allowance', results);
+      // A batch can take a while: keep the lease while its members are worked through.
+      await renewLease(row);
+    }
+    try {
+      results.push('skipped' in item ? { skipped: item.skipped } : await processItem(row, item.json, env, single, item.rewritten === true));
+    } catch (error) {
+      if (error instanceof FetchYield) return giveWay(row, error.refusal, results);
+      throw error;
+    }
   }
   // A lone applied activity settled the row in its own transaction.
   if (single && results[0] && 'applied' in results[0]) return { state: 'applied', error: null };

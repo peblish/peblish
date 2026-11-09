@@ -125,6 +125,29 @@ export async function retryLater(row: Claim, error: unknown): Promise<void> {
   );
 }
 
+/**
+ * The row steps aside without having failed (a fetch was refused, so what is left of it waits for
+ * the next turn): it is pending again after `delaySeconds`, and the attempt this claim used is
+ * given back, so a delivery that keeps waiting for fetches cannot run out of attempts by waiting.
+ * Throws ClaimLost when the claim is no longer held. The generation (`attempts`) a worker whose
+ * lease ran out holds can then match again only until the next lease raises it; whatever such a
+ * worker settles is the complete result of its own pass, so nothing it does conflicts.
+ */
+export async function yieldLater(claim: Claim, delaySeconds: number, note: string): Promise<void> {
+  const rows = await tx((t) =>
+    t.db
+      .update(inboxRaw)
+      .set({
+        attempts: sql`${inboxRaw.attempts} - 1`,
+        error: note,
+        leaseUntil: sql`now() + ${delaySeconds} * interval '1 second'`,
+      })
+      .where(held(claim))
+      .returning({ id: inboxRaw.id }),
+  );
+  if (rows.length === 0) throw new ClaimLost(claim);
+}
+
 function ignoreClaimLost(error: unknown): void {
   if (!(error instanceof ClaimLost)) throw error;
 }
