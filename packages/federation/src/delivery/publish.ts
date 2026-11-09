@@ -4,7 +4,7 @@ import type { Activity, ContentObject, PostRecord } from '../mapping/records.ts'
 import { announce } from './activities.ts';
 import { followerInboxes } from './followers.ts';
 import { newActivityId, sendActivity, storeActivity } from './send.ts';
-import type { ActorRef } from './records.ts';
+import type { ActorRef, Mentioned } from './records.ts';
 import { withdrawBoosts } from './withdraw.ts';
 
 // Publishing what a local actor did in a community. Storing and queueing live in send.ts and
@@ -18,6 +18,8 @@ export type PublishOptions = {
   page?: PostRecord;
   /** Mention objects for the post or comment `inner` carries. */
   tags?: readonly Json[];
+  /** The remote people the body names: addressed in `cc`, and sent `inner` directly when no Announce reaches them. */
+  mentions?: readonly Mentioned[];
   /**
    * What Mastodon-like followers get besides the new-post Announce(Page); by default nothing, as
    * Mastodon drops what an Announce wraps. `'inner'` sends `inner` itself, signed by the author
@@ -35,6 +37,8 @@ export type PublishOptions = {
  *   outbox) and the community announces it to each threadiverse follower inbox, and to
  *   anything unknown, as Announce(activity). A Mastodon-like inbox is sent only a new post
  *   (Announce(Page)) and what `options.microblog` asks for, never an Announce of anything else.
+ * - A remote person the body mentions gets `inner` directly when none of the above reaches
+ *   their inbox.
  */
 export async function publishInCommunity(
   t: OpenTx,
@@ -43,12 +47,15 @@ export async function publishInCommunity(
   options: PublishOptions = {},
 ): Promise<void> {
   const tags = options.tags ?? [];
+  const mentions = options.mentions ?? [];
+  const cc = mentions.map(({ apId }) => apId);
   if (!community.local) {
     if (!community.inboxUrl) return;
-    await sendActivity(t, author, inner, [community.inboxUrl], tags);
+    const direct = mentions.map(({ inbox }) => inbox).filter((inbox) => inbox !== community.inboxUrl);
+    await sendActivity(t, author, inner, [community.inboxUrl, ...direct], tags, cc);
     return;
   }
-  await storeActivity(t, inner, tags);
+  await storeActivity(t, inner, tags, cc);
   const targets = await followerInboxes(t.db, community.id);
   const announceTo = async (object: Activity | ContentObject, inboxes: readonly string[]) =>
     sendActivity(
@@ -57,10 +64,16 @@ export async function publishInCommunity(
       announce({ id: newActivityId(origin), actorApId: community.apId, communityApId: community.apId }, object),
       inboxes,
       tags,
+      cc,
     );
   await announceTo(inner, targets.create);
   if (options.page) await announceTo({ type: 'Page', post: options.page }, targets.page);
   const { microblog } = options;
-  if (microblog === 'inner') await sendActivity(t, author, inner, targets.page, tags);
+  const reached = new Set([...targets.create, ...(options.page || microblog === 'inner' ? targets.page : [])]);
+  const direct = [
+    ...(microblog === 'inner' ? targets.page : []),
+    ...mentions.map(({ inbox }) => inbox).filter((inbox) => !reached.has(inbox)),
+  ];
+  await sendActivity(t, author, inner, [...new Set(direct)], tags, cc);
   if (typeof microblog === 'object') await withdrawBoosts(t, { origin, community, postApId: microblog.withdraw, announced: inner });
 }

@@ -6,7 +6,7 @@ import { toWire } from '../mapping/document.ts';
 import type { Json, JsonObject } from '../mapping/json.ts';
 import type { Activity } from '../mapping/records.ts';
 import { enqueueDeliveries } from './queue.ts';
-import { withTags, type ActorRef } from './records.ts';
+import { withCc, withTags, type ActorRef } from './records.ts';
 
 // Storing an activity we sent (so it is served at its id) and queueing it for the inboxes it
 // goes to. Runs in a consumer's transaction: the activity row and its delivery rows commit
@@ -56,10 +56,16 @@ export type StoredActivity = { wire: JsonObject; body: string };
 
 /**
  * Serialises `activity` in the Lemmy dialect (the one text every inbox gets), with `tags`
- * (Mention objects) on the post or comment it carries, and stores it in `activities`.
+ * (Mention objects) on the post or comment it carries and `cc` (the people it mentions) added
+ * to its addressing, and stores it in `activities`.
  */
-export async function storeActivity(t: OpenTx, activity: Activity, tags: readonly Json[] = []): Promise<StoredActivity> {
-  const wire = withTags(toWire({ kind: 'activity', activity }), tags);
+export async function storeActivity(
+  t: OpenTx,
+  activity: Activity,
+  tags: readonly Json[] = [],
+  cc: readonly string[] = [],
+): Promise<StoredActivity> {
+  const wire = withCc(withTags(toWire({ kind: 'activity', activity }), tags), cc);
   await t.db
     .insert(activities)
     .values({
@@ -81,8 +87,9 @@ export async function sendActivity(
   activity: Activity,
   inboxes: readonly string[],
   tags: readonly Json[] = [],
+  cc: readonly string[] = [],
 ): Promise<void> {
   if (inboxes.length === 0) return;
-  const { body } = await storeActivity(t, activity, tags);
+  const { body } = await storeActivity(t, activity, tags, cc);
   await enqueueDeliveries(t, { activityApId: activity.id, senderId: sender.id, body, inboxes });
 }

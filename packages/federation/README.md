@@ -204,6 +204,13 @@ change nothing a Mastodon user sees. A ban with `removeContent` removes the memb
 without an event each, so the relay withdraws up to 200 of the member's removed, still boosted
 posts per event (`removedBoostedPosts`); a second event takes the rest.
 
+**Mentions.** A post or comment that names a remote person (`@name@host`) we hold adds that
+person to the `cc` of the activity and of the Page or Note, and the Mention `tag` as before.
+When no Announce reaches the person's inbox (it is not a follower inbox the activity goes to),
+the author's own activity is also sent to it directly, signed by the author, as Lemmy does. An
+unknown handle stays text, and a mentioned community (`!name@host`) is tagged but never
+addressed: an activity sent to a community's inbox is read as a post to it.
+
 **The worker.** `federation.delivery_queue` runs every two seconds. A row is claimed with
 `FOR UPDATE SKIP LOCKED` and a 60 second lease (the request times out at 15 seconds), the
 activity is signed once, POSTed with no redirects and a 64 KiB response cap, and the outcome

@@ -203,6 +203,76 @@ describe('a new post in a local community', () => {
   });
 });
 
+describe('a person a post or comment names', () => {
+  /** A remote person on a server that does not follow the community, and a remote group. */
+  async function strangers() {
+    const other = await seedInstance('other.test', false);
+    await writer().update(instances).set({ software: 'lemmy' }).where(eq(instances.id, other.id));
+    const zed = await seedActor(other, 'Person', 'zed', {
+      inboxUrl: 'https://other.test/u/zed/inbox',
+      sharedInboxUrl: 'https://other.test/inbox',
+    });
+    const club = await seedActor(other, 'Group', 'club', { inboxUrl: 'https://other.test/c/club/inbox' });
+    return { zed, club };
+  }
+
+  test('is addressed in cc and sent the author’s own Create when no Announce reaches their inbox; unknown handles and groups get neither', async () => {
+    const w = await world();
+    const { zed, club } = await strangers();
+    const p = await seedPost(w.here, w.news, w.alice, {
+      title: 'Hi',
+      bodyMd: 'cc @zed@other.test, @nobody@other.test and !club@other.test',
+    });
+    await run(post(p.id, w.news.id, w.alice.id, 'created'));
+
+    const direct = (await queued()).filter((row) => row.inbox.startsWith('https://other.test'));
+    expect(direct.map((row) => [row.inbox, row.senderId, shape(row.json)])).toEqual([
+      ['https://other.test/inbox', w.alice.id, 'Create(Page)'],
+    ]);
+    const create = direct[0]!.json as Json & { object: Json };
+    expect(create.cc).toEqual([w.news.apId, zed.apId]);
+    expect(create.object.cc).toEqual([zed.apId]);
+    expect(create.object.tag).toEqual([
+      { type: 'Mention', href: zed.apId, name: '@zed@other.test' },
+      { type: 'Mention', href: club.apId, name: '!club@other.test' },
+    ]);
+    // The community's Announce carries the same Create, and keeps its own addressing.
+    const announce = (await queued()).find((row) => row.inbox === w.lemmy.shared)!.json as Json & { object: Json };
+    expect(announce.cc).toEqual([`${w.news.apId}/followers`]);
+    expect(announce.object).toMatchObject({ id: create.id, cc: [w.news.apId, zed.apId] });
+  });
+
+  test('is not sent a second copy when their inbox is already a target; a comment in a remote community goes to the community and to them', async () => {
+    const w = await world();
+    const p = await seedPost(w.here, w.news, w.alice, { title: 'Hi', bodyMd: 'hello @bob@lemmy.test' });
+    await run(post(p.id, w.news.id, w.alice.id, 'created'));
+    expect((await queued()).filter((row) => row.inbox === w.lemmy.shared)).toHaveLength(1);
+    expect((await queued()).filter((row) => row.senderId === w.alice.id)).toEqual([]);
+    await writer().delete(deliveries);
+
+    const { zed } = await strangers();
+    const remote = await seedPost(w.here, w.lab, w.alice, { title: 'There' });
+    const c = await seedComment(w.here, remote, w.alice, { bodyMd: 'thanks @zed@other.test' });
+    await run(comment(c.id, remote.id, w.alice.id, 'created'));
+    expect((await queued()).map((row) => [row.inbox, shape(row.json), (row.json as Json).cc])).toEqual([
+      ['https://lemmy.test/c/lab/inbox', 'Create(Note)', [w.lab.apId, zed.apId]],
+      ['https://other.test/inbox', 'Create(Note)', [w.lab.apId, zed.apId]],
+    ]);
+  });
+
+  test('a Mastodon follower named in a comment gets the Create directly, though Announce never reaches it; an edit of the post goes once', async () => {
+    const w = await world();
+    const p = await seedPost(w.here, w.news, w.alice, { title: 'Hi', bodyMd: 'edited, ping @dave@masto.test' });
+    const c = await seedComment(w.here, p, w.alice, { bodyMd: 'a word for @dave@masto.test' });
+    await run(comment(c.id, p.id, w.alice.id, 'created'));
+    const toDave = (await queued()).filter((row) => row.inbox === w.mastodon.shared);
+    expect(toDave.map((row) => [shape(row.json), row.senderId])).toEqual([['Create(Note)', w.alice.id]]);
+    await writer().delete(deliveries);
+    await run(post(p.id, w.news.id, w.alice.id, 'updated'));
+    expect((await queued()).filter((row) => row.inbox === w.mastodon.shared).map((row) => shape(row.json))).toEqual(['Update(Page)']);
+  });
+});
+
 describe('everything else in a local community is announced to threadiverse followers; Mastodon-like ones are sent a post, not the rest', () => {
   test('deletes, comments and votes go to Lemmy, PieFed and unknown inboxes as Announce, and to Mastodon nothing', async () => {
     const w = await world();
