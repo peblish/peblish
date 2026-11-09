@@ -1,7 +1,7 @@
 import { defineJob } from '@peblish/core/outbox/jobs';
 import { readSetting } from '@peblish/core/settings/read';
 import { processRow } from './pipeline.ts';
-import { leasePending, retryLater } from './queue.ts';
+import { ClaimLost, leasePending, renewLease, retryLater } from './queue.ts';
 
 // The inbound worker: takes the rows receive.ts stored, oldest first, and runs each through
 // the pipeline. It polls, so an activity is applied within a second of arriving. Every worker
@@ -21,8 +21,14 @@ export async function processPending(options: { signal?: AbortSignal; maxRows?: 
     for (const row of rows) {
       if (options.signal?.aborted) break;
       try {
+        // Rows behind others in the batch have waited with their lease running.
+        await renewLease(row);
         await processRow(row);
       } catch (error) {
+        if (error instanceof ClaimLost) {
+          console.warn(`inbound: ${error.message}; the worker that holds it settles it`);
+          continue;
+        }
         console.error(`inbound: activity ${row.activityId ?? row.id} will be tried again`, error);
         await retryLater(row, error);
       }

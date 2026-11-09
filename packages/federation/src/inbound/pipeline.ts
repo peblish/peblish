@@ -17,7 +17,7 @@ import { inboundHandlers } from '../registry/inbound-handlers.gen.ts';
 import { checkActivityOrigin, checkNotEcho } from './authorize.ts';
 import { classify, type ClassifyEnv, type Item } from './classify.ts';
 import type { AnnounceInfo, InboundContext, InboundHandler, Prepared } from './handler.ts';
-import { requeueWaiting, settle, settleAlone, type InboxRow, type Settled } from './queue.ts';
+import { renewLease, requeueWaiting, settle, settleAlone, type InboxRow, type Settled } from './queue.ts';
 import { Skipped, skip } from './reasons.ts';
 import { takePipelineFetch } from './throttle.ts';
 
@@ -61,14 +61,16 @@ export const fetchesPerRow = 60;
 /**
  * `base` counted against this row's allowance and the pipeline's window (throttle.ts). A fetch
  * past either fails like an unreachable peer, which the pipeline retries later, so a delivery
- * that needs more than its share waits instead of being lost.
+ * that needs more than its share waits instead of being lost. Each fetch also renews the row's
+ * lease, so a delivery that spends minutes on slow peers is not taken from the worker doing it.
  */
-function budgeted(base: Fetcher): Fetcher {
+function budgeted(base: Fetcher, row: InboxRow): Fetcher {
   let left = fetchesPerRow;
   return async (url, init) => {
     if (left <= 0 || !takePipelineFetch(new URL(String(url)).host))
       throw new Error('this delivery needs more fetches than it may make now');
     left -= 1;
+    await renewLease(row);
     return base(url, init);
   };
 }
@@ -85,8 +87,8 @@ async function resolveActor(apId: string, fetch: Fetcher, options: Pick<ResolveO
   }
 }
 
-async function makeEnv(options: PipelineOptions): Promise<Env> {
-  const fetch = budgeted(options.fetch ?? safeFetch);
+async function makeEnv(options: PipelineOptions, row: InboxRow): Promise<Env> {
+  const fetch = budgeted(options.fetch ?? safeFetch, row);
   return {
     fetch,
     origin: await localOrigin(),
@@ -163,7 +165,7 @@ async function applyOnce(row: InboxRow, prepared: Prepared, env: Env, settleHere
       });
     }
     await requeueWaiting(t, applied.stored ?? []);
-    if (settleHere) await settle(t, row.id, { state: 'applied', error: null });
+    if (settleHere) await settle(t, row, { state: 'applied', error: null });
   });
 }
 
@@ -212,9 +214,9 @@ function aggregate(results: readonly ItemResult[]): Settled {
  * throws: the caller (the job) hands it to retryLater.
  */
 export async function processRow(row: InboxRow, options: PipelineOptions = {}): Promise<Settled> {
-  const env = await makeEnv(options);
+  const env = await makeEnv(options, row);
   const end = async (settled: Settled) => {
-    await settleAlone(row.id, settled);
+    await settleAlone(row, settled);
     return settled;
   };
   let parsed: unknown;
@@ -233,6 +235,8 @@ export async function processRow(row: InboxRow, options: PipelineOptions = {}): 
   const single = items.length === 1;
   const results: ItemResult[] = [];
   for (const item of items) {
+    // A batch can take a while: keep the lease while its members are worked through.
+    if (!single) await renewLease(row);
     results.push('skipped' in item ? { skipped: item.skipped } : await processItem(row, item.json, env, single));
   }
   // A lone applied activity settled the row in its own transaction.
