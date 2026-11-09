@@ -47,6 +47,34 @@ test('a vote can be taken back, and a refused vote goes back to what it was', as
   await expect(refused.getByRole('button', { name: 'Upvote' })).toHaveAttribute('aria-pressed', 'false');
 });
 
+test('votes made while one is being saved are sent one at a time, newest last', async ({ page }) => {
+  await gotoHydrated(page, '/kit');
+  const slow = page.getByTestId('kit-vote-slow');
+  const vote = slow.getByRole('group', { name: 'Vote' });
+  // Up, down, up, down in quick succession: the arrows follow every press at once ...
+  await vote.getByRole('button', { name: 'Upvote' }).click();
+  await vote.getByRole('button', { name: 'Downvote' }).click();
+  await vote.getByRole('button', { name: 'Upvote' }).click();
+  await vote.getByRole('button', { name: 'Downvote' }).click();
+  await expect(vote.getByRole('button', { name: 'Downvote' })).toHaveAttribute('aria-pressed', 'true');
+  await expect(vote).toContainText('4');
+  // ... and the server sees the first vote, then only the newest, with no request overlapping another.
+  await expect(page.getByTestId('kit-vote-slow-log')).toHaveText('1,-1');
+  await expect(vote.getByRole('button', { name: 'Downvote' })).toHaveAttribute('aria-pressed', 'true');
+  await expect(vote).toContainText('4');
+});
+
+test('a refusal that arrives after a newer choice does not undo it', async ({ page }) => {
+  await gotoHydrated(page, '/kit');
+  const vote = page.getByTestId('kit-vote-slow-refusing').getByRole('group', { name: 'Vote' });
+  await vote.getByRole('button', { name: 'Upvote' }).click();
+  await vote.getByRole('button', { name: 'Downvote' }).click();
+  await expect(page.getByTestId('kit-vote-slow-refusing-log')).toHaveText('1!,-1');
+  await expect(vote.getByRole('button', { name: 'Downvote' })).toHaveAttribute('aria-pressed', 'true');
+  await expect(vote.getByRole('button', { name: 'Upvote' })).toHaveAttribute('aria-pressed', 'false');
+  await expect(vote).toContainText('4');
+});
+
 test(`the first tap on the density control works at 6x CPU throttling (${attempts} cold loads)`, async ({ browser }) => {
   for (let attempt = 0; attempt < attempts; attempt += 1) {
     const context = await browser.newContext();

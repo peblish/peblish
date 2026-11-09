@@ -28,9 +28,19 @@ export const communities = {
   art: actor('art', null, 'Group'),
 };
 
-/** A hatched picture as a data URI, so the gallery loads nothing from the network. */
+/**
+ * A hatched picture as a data URI, so the gallery loads nothing from the network. It stands for
+ * what a page gets from the renderer's image() helper for a thumbnail: PostCard shows only that
+ * resolved source, never the post's own thumbnailUrl (see thumbnailSrc below).
+ */
 const picture =
   "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='90'%3E%3Cdefs%3E%3Cpattern id='p' width='8' height='8' patternUnits='userSpaceOnUse' patternTransform='rotate(45)'%3E%3Crect width='4' height='8' fill='%23888'/%3E%3C/pattern%3E%3C/defs%3E%3Crect width='160' height='90' fill='url(%23p)'/%3E%3C/svg%3E";
+
+/** What a feed loader would pass PostCard as `thumbnailSrc`: the post's thumbnail, resolved (here a local picture) or null. */
+export const thumbnailSrc = (post: PostView): string | null => (post.thumbnailUrl ? picture : null);
+
+/** The host of the thumbnail the withheld post names; e2e asserts nothing is requested from it. */
+export const withheldHost = 'tracker.example';
 
 let counter = 0;
 const base = (title: string, over: Partial<PostView>): PostView => ({
@@ -61,7 +71,7 @@ const base = (title: string, over: Partial<PostView>): PostView => ({
 export const posts = {
   link: base('Lemmy 1.0 changes how Lock and Flag federate: what to test on Mbin and PieFed', {
     url: 'https://www.join-lemmy.org/news/lock-and-flag',
-    thumbnailUrl: picture,
+    thumbnailUrl: 'https://www.join-lemmy.org/assets/lock-and-flag.png',
   }),
   pinned: base('Welcome to feddit.com on peblish: what changed and what did not', {
     community: communities.announcements,
@@ -87,7 +97,7 @@ export const posts = {
   image: base('Rack day: finally labelled every cable', {
     url: 'https://lemmy.ml/pictrs/image/rack.jpg',
     urlContentType: 'image/jpeg',
-    thumbnailUrl: picture,
+    thumbnailUrl: 'https://lemmy.ml/pictrs/image/rack-thumb.jpg',
     publishedAt: ago(30),
     counts: { upvotes: 410, downvotes: 0, comments: 27 },
   }),
@@ -97,11 +107,16 @@ export const posts = {
     authorBadge: 'moderator',
     url: 'https://feddit.test/media/hands.png',
     urlContentType: 'image/png',
-    thumbnailUrl: picture,
+    thumbnailUrl: 'https://feddit.test/media/hands-thumb.png',
     sensitive: true,
     excerpt: 'Charcoal on newsprint, forty minutes.',
     publishedAt: ago(8),
     counts: { upvotes: 95, downvotes: 0, comments: 12 },
+  }),
+  /** A remote thumbnail the page chose not to load (remote media off): the card must show its type mark and request nothing. */
+  withheld: base('A link whose picture is not loaded', {
+    url: 'https://news.example/story',
+    thumbnailUrl: `https://${withheldHost}/pixel.png`,
   }),
 };
 
@@ -113,69 +128,105 @@ type CommentOptions = Partial<Pick<CommentView, 'removed' | 'deleted' | 'authorB
   replies?: number;
 };
 
-const comment = (id: string, parentId: string | null, depth: number, html: string | null, options: CommentOptions = {}): CommentView => {
+/** A comment view without its body, and the Markdown the server renders into `contentHtml`. */
+export interface CommentSample {
+  view: CommentView;
+  source: string | null;
+}
+
+const comment = (
+  id: string,
+  parentId: string | null,
+  depth: number,
+  source: string | null,
+  options: CommentOptions = {},
+): CommentSample => {
   const { author = people.kofi, score = 12, replies = 0, ...flags } = options;
   return {
-    id,
-    apId: `https://feddit.test/comment/${id}`,
-    postId: posts.link.id,
-    parentId,
-    depth,
-    contentHtml: html,
-    author,
-    authorBadge: null,
-    publishedAt: ago(2),
-    editedAt: null,
-    deleted: false,
-    removed: false,
-    counts: { upvotes: Math.max(score, 0), downvotes: Math.max(-score, 0), comments: replies },
-    myVote: 0,
-    ...flags,
+    source,
+    view: {
+      id,
+      apId: `https://feddit.test/comment/${id}`,
+      postId: posts.link.id,
+      parentId,
+      depth,
+      contentHtml: null,
+      author,
+      authorBadge: null,
+      publishedAt: ago(2),
+      editedAt: null,
+      deleted: false,
+      removed: false,
+      counts: { upvotes: Math.max(score, 0), downvotes: Math.max(-score, 0), comments: replies },
+      myVote: 0,
+      ...flags,
+    },
   };
 };
 
 /** A varied thread: the post's author (OP), a moderator, a low-score comment with replies, a removed one, a deleted one. */
-export const thread: CommentView[] = [
-  comment('c1', null, 0, '<p>OP here. Short version: <b>Lock</b> moves to a first class <code>Lock</code> activity.</p>', {
+export const threadSamples: CommentSample[] = [
+  comment('c1', null, 0, 'OP here. Short version: **Lock** moves to a first class `Lock` activity.', {
     author: people.jun,
     score: 214,
     replies: 4,
   }),
-  comment('c1a', 'c1', 1, '<p>Pinned the test checklist in the sidebar.</p>', {
+  comment('c1a', 'c1', 1, 'Pinned the test checklist in the sidebar.', {
     author: people.mira,
     authorBadge: 'moderator',
     score: 188,
     replies: 3,
   }),
-  comment('c1a1', 'c1a', 2, '<p>Mbin already accepts both forms.</p>', { score: 61, replies: 2 }),
-  comment('c1a1a', 'c1a1', 3, '<p>Rejected how? PieFed retries on 5xx for a day.</p>', { author: people.jun, score: 30, replies: 1 }),
-  comment('c1a1a1', 'c1a1a', 4, '<p>400, no retry. It shows up in the peer panel.</p>', { score: 22, replies: 5 }),
-  comment('c1b', null, 0, '<p>Buy followers cheap.</p>', { score: -9, replies: 1 }),
-  comment('c1b1', 'c1b', 1, '<p>Reported.</p>', { score: -2 }),
+  comment('c1a1', 'c1a', 2, 'Mbin already accepts both forms.', { score: 61, replies: 2 }),
+  comment('c1a1a', 'c1a1', 3, 'Rejected how? PieFed retries on 5xx for a day.', { author: people.jun, score: 30, replies: 1 }),
+  comment('c1a1a1', 'c1a1a', 4, '400, no retry. It shows up in the peer panel.', { score: 22, replies: 5 }),
+  comment('c1b', null, 0, 'Buy followers cheap.', { score: -9, replies: 1 }),
+  comment('c1b1', 'c1b', 1, 'Reported.', { score: -2 }),
   comment('c1c', null, 0, null, { removed: true, score: 0 }),
   comment('c1d', null, 0, null, { deleted: true, score: 0 }),
-  comment('c1e', null, 0, '<p>Edited once.</p>', { editedAt: ago(1), score: 4 }),
+  comment('c1e', null, 0, 'Edited once.', { editedAt: ago(1), score: 4 }),
 ];
 
 /** A 50-level chain, the deepest thread the server allows. */
-export const deepThread: CommentView[] = Array.from({ length: 50 }, (_, index) =>
-  comment(`d${index + 1}`, index === 0 ? null : `d${index}`, index, `<p>Reply at depth ${index + 1}.</p>`, {
+export const deepThreadSamples: CommentSample[] = Array.from({ length: 50 }, (_, index) =>
+  comment(`d${index + 1}`, index === 0 ? null : `d${index}`, index, `Reply at depth ${index + 1}.`, {
     score: 3,
     replies: 49 - index,
   }),
 );
 
-/** HTML the Markdown pipeline emits, for the content styles. */
-export const proseSample = `
-<h2>Heading two</h2>
-<p>Plain text with <em>emphasis</em>, <strong>strong</strong>, <code>inline code</code>, <sup>sup</sup> and <sub>sub</sub>, a <a href="/kit">link</a>, <a class="u-url mention" href="/u/jun@lemmy.world">@jun@lemmy.world</a> and an emoji <img class="emoji" alt=":smile:" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16'%3E%3Ccircle cx='8' cy='8' r='7' fill='%23fc0'/%3E%3C/svg%3E">.</p>
-<blockquote><p>A quotation that is long enough to wrap onto a second line on a narrow screen, to show the bar.</p></blockquote>
-<pre><code class="hljs language-ts"><span class="hljs-keyword">const</span> answer: <span class="hljs-built_in">number</span> = <span class="hljs-number">42</span>; <span class="hljs-comment">// code face</span>
-<span class="hljs-keyword">function</span> <span class="hljs-title function_">greet</span>(<span class="hljs-params">name</span>) { <span class="hljs-keyword">return</span> <span class="hljs-string">\`hello \${name}\`</span>; }</code></pre>
-<p>A <span class="spoiler">hidden spoiler</span> inside a sentence, and a short link <a href="https://example.com/a/long/path"><span class="invisible">https://</span><span class="ellipsis">example.com/a/long</span></a>.</p>
-<details><summary>Spoiler title</summary><p>The body stays closed until it is opened.</p></details>
-<table><thead><tr><th align="left">Left</th><th align="center">Centre</th><th align="right">Right</th></tr></thead><tbody><tr><td align="left">a</td><td align="center">b</td><td align="right">c</td></tr></tbody></table>
-<p>A footnote reference<sup class="footnote-ref"><a href="#fn1" id="fnref1">[1]</a></sup>.</p>
-<hr class="footnotes-sep">
-<section class="footnotes"><ol class="footnotes-list"><li id="fn1"><p>The footnote text. <a href="#fnref1" class="footnote-backref">back</a></p></li></ol></section>
+/** The views with their bodies rendered by `render`: the server's Markdown renderer, as a thread page uses it. */
+export const withBodies = (samples: CommentSample[], render: (source: string, id: string) => string): CommentView[] =>
+  samples.map(({ view, source }) => ({ ...view, contentHtml: source === null ? null : render(source, view.id) }));
+
+/** Markdown for the content styles: every element and class the Markdown pipeline emits, rendered by the server. */
+export const proseMarkdown = `
+## Heading two
+
+Plain text with *emphasis*, **strong**, \`inline code\`, ^sup^ and ~sub~, ~~struck~~, a [link](/kit) and a mention @jun@lemmy.world.
+
+> A quotation that is long enough to wrap onto a second line on a narrow screen, to show the bar.
+
+\`\`\`ts
+const answer: number = 42; // code face
+function greet(name: string) { return \`hello \${name}\`; }
+\`\`\`
+
+::: spoiler Spoiler title
+The body stays closed until it is opened.
+:::
+
+| Left | Centre | Right |
+| :--- | :----: | ----: |
+| a | b | c |
+
+A footnote reference[^1].
+
+[^1]: The footnote text.
 `;
+
+/**
+ * A remote object's HTML (a PieFed or Mastodon post), which the server sanitises: inline
+ * spoilers (one holding a link, which stays a plain span) and Mastodon's shortened link.
+ */
+export const proseRemoteHtml = `<p>A <tg-spoiler>hidden spoiler</tg-spoiler> inside a sentence, a second <span class="spoiler">spoiler</span>, one that holds a <span class="spoiler">linked <a href="https://example.com/x">word</a></span>, and a short link <a href="https://example.com/a/long/path"><span class="invisible">https://</span><span class="ellipsis">example.com/a/long</span><span class="invisible">/path</span></a>.</p>`;

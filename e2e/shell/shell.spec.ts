@@ -61,22 +61,24 @@ test.describe('in German', () => {
   });
 });
 
-test('on a phone the sidebar is a drawer behind the menu button', async ({ page }) => {
+test('on a phone the sidebar is a drawer behind the menu link', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 800 });
   await gotoHydrated(page, '/');
   const side = page.getByRole('complementary', { name: 'Sidebar' });
   await expect(side).toBeHidden();
-  const open = page.getByRole('button', { name: 'Open menu' });
+  const open = page.getByRole('link', { name: 'Open menu' });
   await open.click();
   await expect(side).toBeVisible();
   await expect(open).toHaveAttribute('aria-expanded', 'true');
   // The page behind is inert while the drawer is open, and focus moved into the drawer.
   await expect(page.locator('.pb-app__body')).toHaveAttribute('inert', '');
-  await expect(page.getByRole('button', { name: 'Close menu' })).toBeFocused();
+  await expect(page.getByRole('link', { name: 'Close menu' })).toBeFocused();
 
   await page.keyboard.press('Escape');
   await expect(side).toBeHidden();
   await expect(open).toBeFocused();
+  // Once hydrated the drawer is state, not the URL: opening it leaves no hash or history entry behind.
+  expect(page.url()).not.toContain('#');
 
   // A link in the drawer navigates and closes it.
   await open.click();
