@@ -63,11 +63,17 @@ function jsonResponse(status: number, json: object): Response {
   });
 }
 
-async function answer(request: Request): Promise<Response | null> {
+/** What the server knows about the connection that the request itself does not carry. */
+export type FederationContext = {
+  /** The client's address as the server resolved it (web's clientIp). The inbox's admission counts by it, so it never depends on `request.ip`. */
+  peer?: string;
+};
+
+async function answer(request: Request, context: FederationContext): Promise<Response | null> {
   const url = new URL(request.url);
   const { pathname } = url;
   if (inboxPaths.some((path) => path.test(pathname))) {
-    if (request.method === 'POST') return receiveInbound(request);
+    if (request.method === 'POST') return receiveInbound(request, { peer: context.peer });
     return new Response('inboxes take POST', { status: 405, headers: { Allow: 'POST' } });
   }
   if (request.method !== 'GET' && request.method !== 'HEAD') {
@@ -93,9 +99,9 @@ async function answer(request: Request): Promise<Response | null> {
  * 503 with Retry-After, the one error answer peers retry; it is never a 500, which peers read
  * as a broken server, and never a 410, which they read as a deleted actor.
  */
-export async function handleFederationRequest(request: Request): Promise<Response | null> {
+export async function handleFederationRequest(request: Request, context: FederationContext = {}): Promise<Response | null> {
   try {
-    const response = await answer(request);
+    const response = await answer(request, context);
     // HEAD gets the headers of the GET and no body.
     if (response && request.method === 'HEAD') return new Response(null, { status: response.status, headers: response.headers });
     return response;

@@ -2,8 +2,10 @@ import { beforeEach, describe, expect, test, vi } from 'vitest';
 import { truncateAll } from '@peblish/core/testing/db';
 import { seedActor } from '@peblish/core/testing/seed';
 import { seedPost } from '@peblish/core/testing/seed-az';
-import { seedLocalInstance, seedSigningKey } from '@peblish/core/testing/seed-fed-a';
-import { handleFederationRequest, isFederationRequest, prefersActivityJson } from './http.ts';
+import { rsaKeys, seedLocalInstance, seedSigningKey } from '@peblish/core/testing/seed-fed-a';
+import { lookupBudgets, resetKeyFetchBudget, takeKeyLookup } from './inbound/throttle.ts';
+import { signDelivery } from './signing/sign.ts';
+import { handleFederationRequest, isFederationRequest, prefersActivityJson, type FederationContext } from './http.ts';
 
 const request = (path: string, accept?: string) => new Request(`https://feddit.test${path}`, { headers: accept ? { accept } : {} });
 const activity = 'application/activity+json';
@@ -91,6 +93,32 @@ describe('answering federation requests', () => {
       const response = (await ask(path, { method: 'POST', body: '{}', headers: { 'content-type': activity } }))!;
       expect(response.status, path).toBe(401);
     }
+  });
+
+  test('an inbox POST is counted by the address the caller resolved, a forwarded one behind Traefik included', async () => {
+    const inbox = `${origin}/inbox`;
+    const body = '{}';
+    const stranger = { keyId: 'https://unknown.test/u/someone#main-key', privateKeyPem: rsaKeys().privateKeyPem };
+    const post = (context: FederationContext, extra: Record<string, string> = {}) => {
+      const headers = signDelivery(stranger, inbox, body);
+      for (const [name, value] of Object.entries(extra)) headers.set(name, value);
+      return handleFederationRequest(new Request(inbox, { method: 'POST', body, headers }), context);
+    };
+    const spend = (address: string) => {
+      for (let n = 0; n < lookupBudgets.discovery.perAddress; n++) takeKeyLookup('discovery', { address, host: 'unknown.test' });
+    };
+    resetKeyFetchBudget();
+
+    // A spent address is refused before anything is fetched, so the stranger's key is never looked for.
+    spend('203.0.113.1');
+    expect((await post({ peer: '203.0.113.1' }))?.status).toBe(429);
+    vi.stubEnv('PEBLISH_TRUSTED_PROXY', 'traefik');
+    try {
+      expect((await post({ peer: '10.0.0.2' }, { 'x-forwarded-for': '10.9.9.9, 203.0.113.1' }))?.status).toBe(429);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+    resetKeyFetchBudget();
   });
 
   test('a GET of an inbox and a write to a document are 405, and never 410 or 418', async () => {
