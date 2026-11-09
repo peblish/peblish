@@ -358,6 +358,25 @@ describe('the first-contact retry', () => {
     expect(await removeFollow(current)).toEqual({ removed: true });
   });
 
+  test('a follow the job missed through the whole window is sent when the job runs again, once', async () => {
+    const w = await pending();
+    expect(await retryUnansweredFollows(w.at(180))).toBe(1);
+    const resent = (await follow(w.alice.id, w.remote.id))!;
+    expect(resent).toMatchObject({ state: 'pending', sentAt: w.at(180) });
+    expect(resent.apId).not.toBe(w.first.apId);
+    // That one send covered both stages; nothing is owed after it.
+    expect(await retryUnansweredFollows(w.at(181))).toBe(0);
+    expect(await types()).toEqual(['follow.requested', 'follow.requested']);
+  });
+
+  test('a follow that had its 5-minute resend but missed the 15-minute one is sent after the outage', async () => {
+    const w = await pending();
+    expect(await retryUnansweredFollows(w.at(6))).toBe(1);
+    expect(await retryUnansweredFollows(w.at(600))).toBe(1);
+    expect(await retryUnansweredFollows(w.at(601))).toBe(0);
+    expect(await types()).toEqual(['follow.requested', 'follow.requested', 'follow.requested']);
+  });
+
   test('an accepted follow, a local community and a removed follow are never sent again', async () => {
     const w = await pending();
     await requestFollow(await grantFor('follow.request', localUser(w.alice.id), { communityId: w.local.id }));
