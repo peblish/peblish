@@ -7,7 +7,7 @@ import { truncateAll } from '@peblish/core/testing/db';
 import { actorDocument, rsaKeys, seedLocalInstance, stubFetch } from '@peblish/core/testing/seed-fed-a';
 import { resolveRemoteActor } from '../actors/resolve.ts';
 import { signDelivery } from './sign.ts';
-import { verifyInboundSignature } from './inbound.ts';
+import { forgetKeyRefreshes, keyRefetchAfterMs, verifyInboundSignature } from './inbound.ts';
 
 const inbox = 'https://fed-a.test/inbox';
 const body = JSON.stringify({ type: 'Like', id: 'https://lemmy.test/activities/1' });
@@ -25,6 +25,7 @@ const document = (publicKeyPem: string) => actorDocument('lemmy.test', 'sender',
 beforeEach(async () => {
   await truncateAll();
   await seedLocalInstance();
+  forgetKeyRefreshes();
 });
 
 describe('verifying an inbox POST', () => {
@@ -88,6 +89,34 @@ describe('verifying an inbox POST', () => {
       ok: false,
       reason: 'key_unknown',
     });
+  });
+
+  test('a stale actor whose endpoint is down is fetched once a minute, however many bad signatures arrive', async () => {
+    const keys = rsaKeys();
+    const first = stubFetch({ [sender.id]: { body: document(keys.publicKeyPem) } });
+    await resolveRemoteActor(sender.id, { fetch: first.fetch });
+    await writer()
+      .update(actors)
+      .set({ fetchedAt: new Date(Date.now() - 5 * 60_000) })
+      .where(eq(actors.apId, sender.id));
+    forgetKeyRefreshes();
+
+    const down = stubFetch({ [sender.id]: { status: 503 } });
+    const forged = await signed(rsaKeys().privateKeyPem);
+    const now = Date.now();
+    const asks = (at: number) => verifyInboundSignature(forged.clone(), bytes(), { fetch: down.fetch, now: at });
+    for (let i = 0; i < 5; i++) expect(await asks(now + i * 1000)).toEqual({ ok: false, reason: 'invalid' });
+    expect(down.requests.filter((request) => request.url === sender.id)).toHaveLength(1);
+
+    // A minute on, one more try; and another actor is not held back by this one's.
+    expect(await asks(now + keyRefetchAfterMs + 1000)).toEqual({ ok: false, reason: 'invalid' });
+    expect(down.requests.filter((request) => request.url === sender.id)).toHaveLength(2);
+    const stranger = actorDocument('lemmy.test', 'stranger', { publicKeyPem: '' });
+    const strangerKey = `${stranger.id}#main-key`;
+    const otherHeaders = signDelivery({ keyId: strangerKey, privateKeyPem: rsaKeys().privateKeyPem }, inbox, body);
+    const other = new Request(inbox, { method: 'POST', headers: otherHeaders, body });
+    expect(await verifyInboundSignature(other, bytes(), { fetch: down.fetch, now })).toEqual({ ok: false, reason: 'key_unknown' });
+    expect(down.requests.filter((request) => request.url === stranger.id)).toHaveLength(1);
   });
 
   test('a stranger’s signature, an unreachable actor and one of our own keys are all refused', async () => {
