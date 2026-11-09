@@ -60,32 +60,69 @@ export async function fetchNodeInfo(origin: string, fetch: Fetcher): Promise<{ s
 }
 
 // Failed checks, per origin, so an unreachable or NodeInfo-less peer is asked once in a while,
-// not on every actor fetch. Per process; on globalThis because the web build can hold two copies of a module.
+// not on every actor fetch. Per process; on globalThis because the web build can hold two copies
+// of a module. An entry lives for `nodeInfoRetryMs` and the map holds at most `failuresMax`
+// origins (a peer chooses the hosts of the actors it makes us resolve), the oldest going first.
 const failures = ((globalThis as { __peblishNodeInfoFailures?: Map<string, number> }).__peblishNodeInfoFailures ??= new Map());
+const failuresMax = 5_000;
+// Reads in flight, per origin: callers that arrive while one is running share it, so a burst of
+// actors from one new server is one discovery request, not one each.
+const reading = ((globalThis as { __peblishNodeInfoReads?: Map<string, Promise<void>> }).__peblishNodeInfoReads ??= new Map());
 
-/**
- * Brings instances.software up to date for the peer at `origin` unless it was checked within
- * `nodeInfoMaxAgeMs`. A check that fails stores nothing and is not repeated for ten minutes; it
- * never throws, because no caller can act on it: an instance with unknown software gets the
- * default Announce shape.
- */
-export async function refreshInstanceSoftware(
-  origin: string,
-  { fetch, now = Date.now() }: { fetch: Fetcher; now?: number },
-): Promise<void> {
+/** Whether a check of `origin` failed within the retry window; an older entry is dropped. */
+function recentlyFailed(origin: string, now: number): boolean {
+  const failedAt = failures.get(origin);
+  if (failedAt === undefined) return false;
+  if (now - failedAt < nodeInfoRetryMs) return true;
+  failures.delete(origin);
+  return false;
+}
+
+/** Remembers a failed check, and forgets expired entries and, past the cap, the oldest. */
+function recordFailure(origin: string, now: number): void {
+  failures.delete(origin);
+  failures.set(origin, now);
+  for (const [key, failedAt] of failures) {
+    if (now - failedAt < nodeInfoRetryMs && failures.size <= failuresMax) break;
+    failures.delete(key);
+  }
+}
+
+/** How many origins have a failed check on record (tests). */
+export const nodeInfoFailureCount = (): number => failures.size;
+
+/** Forgets every failed check (tests). */
+export function forgetNodeInfoFailures(): void {
+  failures.clear();
+}
+
+async function refresh(origin: string, fetch: Fetcher, now: number): Promise<void> {
   const [row] = await db()
     .select({ software: instances.software, checkedAt: instances.updatedAt })
     .from(instances)
     .where(eq(instances.domain, new URL(origin).host));
   if (row?.software && now - row.checkedAt.getTime() < nodeInfoMaxAgeMs) return;
-  const failedAt = failures.get(origin);
-  if (failedAt !== undefined && now - failedAt < nodeInfoRetryMs) return;
+  if (recentlyFailed(origin, now)) return;
   try {
     const { software, version } = await fetchNodeInfo(origin, fetch);
     await storeInstanceSoftware(await importGrant('remote.instance_store', { origin }), { software, version });
     failures.delete(origin);
   } catch (error) {
-    failures.set(origin, now);
+    recordFailure(origin, now);
     console.warn(`nodeinfo: ${origin}: ${error instanceof Error ? error.message : String(error)}`);
   }
+}
+
+/**
+ * Brings instances.software up to date for the peer at `origin` unless it was checked within
+ * `nodeInfoMaxAgeMs`. A check that fails stores nothing and is not repeated for ten minutes; it
+ * never throws, because no caller can act on it: an instance with unknown software gets the
+ * default Announce shape. Concurrent calls for one origin share one check.
+ */
+export function refreshInstanceSoftware(origin: string, { fetch, now = Date.now() }: { fetch: Fetcher; now?: number }): Promise<void> {
+  const running = reading.get(origin);
+  if (running) return running;
+  const work = refresh(origin, fetch, now).finally(() => reading.delete(origin));
+  reading.set(origin, work);
+  return work;
 }

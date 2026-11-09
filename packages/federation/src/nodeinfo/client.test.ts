@@ -4,11 +4,20 @@ import { db } from '@peblish/core/db/read';
 import { instances } from '@peblish/core/db/tables/instances';
 import { truncateAll } from '@peblish/core/testing/db';
 import { nodeInfoRoutes, seedLocalInstance, stubFetch } from '@peblish/core/testing/seed-fed-a';
-import { cleanSoftware, fetchNodeInfo, refreshInstanceSoftware, softwareFieldMax } from './client.ts';
+import {
+  cleanSoftware,
+  fetchNodeInfo,
+  forgetNodeInfoFailures,
+  nodeInfoFailureCount,
+  nodeInfoRetryMs,
+  refreshInstanceSoftware,
+  softwareFieldMax,
+} from './client.ts';
 
 beforeEach(async () => {
   await truncateAll();
   await seedLocalInstance();
+  forgetNodeInfoFailures();
 });
 
 describe('the software a peer names', () => {
@@ -41,5 +50,48 @@ describe('the software a peer names', () => {
     const [row] = await db().select().from(instances).where(eq(instances.domain, 'peer.test'));
     expect(row?.software).toHaveLength(softwareFieldMax);
     expect(row?.softwareVersion).toHaveLength(softwareFieldMax);
+  });
+});
+
+describe('refreshing an instance’s software', () => {
+  const software = async (domain: string) => (await db().select().from(instances).where(eq(instances.domain, domain)))[0]?.software;
+
+  test('callers that arrive while a read is running share it', async () => {
+    const { fetch, requests } = stubFetch(nodeInfoRoutes('peer.test', 'lemmy'));
+    await Promise.all(Array.from({ length: 5 }, () => refreshInstanceSoftware('https://peer.test', { fetch })));
+    expect(requests.filter((request) => request.url.endsWith('/.well-known/nodeinfo'))).toHaveLength(1);
+    expect(await software('peer.test')).toBe('lemmy');
+  });
+
+  test('a failed check is not repeated for ten minutes, then is, and a success clears it', async () => {
+    const down = stubFetch({});
+    const t0 = Date.now();
+    await refreshInstanceSoftware('https://peer.test', { fetch: down.fetch, now: t0 });
+    await refreshInstanceSoftware('https://peer.test', { fetch: down.fetch, now: t0 + nodeInfoRetryMs - 1 });
+    expect(down.requests).toHaveLength(1);
+    expect(nodeInfoFailureCount()).toBe(1);
+
+    const up = stubFetch(nodeInfoRoutes('peer.test', 'piefed'));
+    await refreshInstanceSoftware('https://peer.test', { fetch: up.fetch, now: t0 + nodeInfoRetryMs });
+    expect(await software('peer.test')).toBe('piefed');
+    expect(nodeInfoFailureCount()).toBe(0);
+  });
+
+  test('expired entries are forgotten as new failures arrive, and the map stays bounded', async () => {
+    const down = stubFetch({});
+    const t0 = Date.now();
+    for (const host of ['a.test', 'b.test', 'c.test']) await refreshInstanceSoftware(`https://${host}`, { fetch: down.fetch, now: t0 });
+    expect(nodeInfoFailureCount()).toBe(3);
+    await refreshInstanceSoftware('https://d.test', { fetch: down.fetch, now: t0 + nodeInfoRetryMs });
+    expect(nodeInfoFailureCount()).toBe(1);
+
+    for (let batch = 0; batch < 51; batch++) {
+      await Promise.all(
+        Array.from({ length: 100 }, (_, i) =>
+          refreshInstanceSoftware(`https://flood${batch * 100 + i}.test`, { fetch: down.fetch, now: t0 + nodeInfoRetryMs + 1 }),
+        ),
+      );
+    }
+    expect(nodeInfoFailureCount()).toBeLessThanOrEqual(5_000);
   });
 });
