@@ -247,6 +247,8 @@ describe('the remote actor store', () => {
         (thrown: unknown) => thrown,
       );
       expect(error).toBeInstanceOf(RemoteActorKindError);
+      // fed-a's resolve code recognises the error by its name (it cannot import the class).
+      expect(error).toMatchObject({ name: 'RemoteActorKindError' });
       expect(error).toMatchObject({ apId: person, stored: 'Person', incoming: kind });
     }
     expect(await kindOf()).toMatchObject({ kind: 'Person', displayName: 'Lab' });

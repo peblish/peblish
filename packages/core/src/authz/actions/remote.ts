@@ -36,6 +36,8 @@ export const policies = {
   'remote.backfill_claim': async (request: PolicyRequest<Record<string, never>>) => scheduled(request),
   /** The backfill job records how its run ended. */
   'remote.backfill_settle': async (request: PolicyRequest<{ communityId: Uuid }>) => scheduled(request),
+  /** The recheck job takes the held remote posts and comments that are due to be asked after at their servers. */
+  'remote.object_recheck': async (request: PolicyRequest<Record<string, never>>) => scheduled(request),
   /** The retention job deletes old rows of one queue or bookkeeping table. */
   'remote.prune': async (request: PolicyRequest<{ table: 'inbox_raw' | 'deliveries' | 'inbox_dedupe' | 'throttles' }>) =>
     scheduled(request),

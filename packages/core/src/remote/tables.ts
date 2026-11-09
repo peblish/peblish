@@ -66,3 +66,19 @@ export const backfills = pgTable(
       .where(sql`${t.state} in ('pending', 'running')`),
   ],
 );
+
+/**
+ * When a held remote post or comment was last asked after at its own server
+ * (federation/src/remote-fetch/recheck.ts), so a 410 or a Tombstone for it is found a day
+ * after it happens at most and each object is asked about once a day. A row exists only for an
+ * object that has been rechecked; one with no row counts as checked when we stored it. The id is a
+ * posts.id or a comments.id (no foreign key: it names one of two tables).
+ */
+export const objectRechecks = pgTable(
+  'object_rechecks',
+  {
+    objectId: uuid('object_id').primaryKey(),
+    checkedAt: at('checked_at').notNull(),
+  },
+  (t) => [index('object_rechecks_checked').on(t.checkedAt)],
+);
