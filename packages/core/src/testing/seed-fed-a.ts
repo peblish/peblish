@@ -1,6 +1,8 @@
 import { generateKeyPairSync } from 'node:crypto';
 import { systemPrincipal } from '../authz/system.ts';
 import { db } from '../db/read.ts';
+import { actorKeys } from '../db/tables/actors.ts';
+import { writer } from '../db/write.ts';
 import { seedActor, seedInstance } from './seed.ts';
 
 // Lane FED-A's test support: the local instance with its instance actor, a peer that answers
@@ -91,4 +93,19 @@ export function nodeInfoRoutes(host: string, software: string, version = '1.0.0'
     },
     [document]: { type: 'application/json', body: { version: '2.1', software: { name: software, version } } },
   };
+}
+
+/** A local actor's signing key as actor_keys holds it (private half included), at `<ap_id>#main-key`. */
+export async function seedSigningKey(actor: { id: string; apId: string }) {
+  const keys = rsaKeys();
+  await writer()
+    .insert(actorKeys)
+    .values({
+      actorId: actor.id,
+      keyId: `${actor.apId}#main-key`,
+      algorithm: 'rsa',
+      publicKeyPem: keys.publicKeyPem,
+      privateKeyPem: keys.privateKeyPem,
+    });
+  return { keyId: `${actor.apId}#main-key`, ...keys };
 }
