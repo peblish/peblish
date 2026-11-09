@@ -71,6 +71,20 @@ async function post(page: Page, id: string, form: Record<string, string>) {
   );
 }
 
+/** Opens a post through the router in the same document, as a link inside the app does (shell/client-links.ts). */
+async function openPost(page: Page, id: string) {
+  await page.evaluate(
+    (target) =>
+      (
+        window as unknown as { __TSR_ROUTER__: { navigate(to: { to: string; params: { id: string } }): Promise<void> } }
+      ).__TSR_ROUTER__.navigate({
+        to: '/post/$id',
+        params: { id: target },
+      }),
+    id,
+  );
+}
+
 test.describe('anyone', () => {
   test('a post page hydrates, shows the post and has no axe violations', async ({ page }) => {
     const log = recordConsole(page);
@@ -209,6 +223,39 @@ test.describe('a viewer', () => {
     await expect(score).toHaveText('-1');
     voted = answered();
     await page.getByRole('button', { name: 'Downvote' }).click();
+    await voted;
+    await expect(score).toHaveText('0');
+  });
+
+  test('an optimistic vote stays with its post when a link goes to another post in the same document', async ({ page }) => {
+    await signedIn(page, seed.viewer.name);
+    await gotoHydrated(page, url(seed.posts.plain));
+    const score = page.getByRole('group', { name: 'Vote on this post' }).locator('.pb-vote__score');
+    const up = page.getByRole('button', { name: 'Upvote' });
+    const answered = () => page.waitForResponse((response) => response.url().includes('/_serverFn/'));
+    let voted = answered();
+    await up.click();
+    await voted;
+    await expect(score).toHaveText('1');
+    await expect(up).toHaveAttribute('aria-pressed', 'true');
+
+    // The router reuses the page component for the next post: the first post's vote must not show on it.
+    await page.evaluate(() => {
+      (window as unknown as { __survives: boolean }).__survives = true;
+    });
+    await openPost(page, seed.posts.deletable);
+    await expect(page.getByRole('heading', { level: 1 })).toContainText('Deletable post');
+    await expect(score).toHaveText('0');
+    await expect(up).toHaveAttribute('aria-pressed', 'false');
+    // Back to the first post: the server's vote, not a copy of the optimistic one.
+    await page.goBack();
+    await expect(page.getByRole('heading', { level: 1 })).toContainText('Plain post');
+    await expect(score).toHaveText('1');
+    await expect(up).toHaveAttribute('aria-pressed', 'true');
+    expect(await page.evaluate(() => (window as unknown as { __survives?: boolean }).__survives)).toBe(true);
+
+    voted = answered();
+    await up.click();
     await voted;
     await expect(score).toHaveText('0');
   });

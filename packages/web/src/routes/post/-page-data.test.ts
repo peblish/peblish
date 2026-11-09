@@ -21,6 +21,16 @@ describe('the post page media', () => {
     expect(thumbnail('javascript:alert(1)')).toBeNull();
   });
 
+  test('a path a browser would read as another host never loads as a path', async () => {
+    const renderer = await createMarkdownRenderer(site);
+    const thumbnail = (url: string) => postMedia(view({ thumbnailUrl: url }), renderer).thumbnail;
+    expect(thumbnail('/\\img.example/a.png')).toBeNull();
+    expect(thumbnail('/\\/img.example/a.png')).toBeNull();
+    // An encoded slash stays a path, and so does a query.
+    expect(thumbnail('/%2fimg.example/a.png')).toBe('/%2fimg.example/a.png');
+    expect(thumbnail('/media/a.png?w=64')).toBe('/media/a.png?w=64');
+  });
+
   test('a remote URL too long to proxy shows as a link instead of failing the page', async () => {
     const renderer = await createMarkdownRenderer(site);
     const long = `https://img.example/${'x'.repeat(3_000)}`;

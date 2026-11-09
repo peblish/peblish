@@ -6,8 +6,12 @@ import type { MarkdownRenderer } from '../../server/markdown.ts';
 // The two decisions of the post page's data that need no request (-load.ts has the rest), apart
 // from the server function so they are unit tested.
 
-/** Root-relative paths are this instance's own media; the renderer's image() resolves everything else. */
-const rootRelative = /^\/(?!\/)/;
+/**
+ * Root-relative paths are this instance's own media; the renderer's image() resolves everything
+ * else. The same pattern as core's imageSource: a second slash or a backslash after the first
+ * would make the browser read the path as another host.
+ */
+const rootRelative = /^\/(?![/\\])/;
 
 /**
  * The thumbnail and the picture of an image post, as the page may load them: this instance's own

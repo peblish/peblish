@@ -103,7 +103,9 @@ export function PostPage({ data, error }: { data: PostPageData; error?: string |
   }
 
   return (
-    <main className="post-page" data-state={withheld ?? 'visible'}>
+    // Keyed by the post: the router reuses this component when a link goes from one post to another, and
+    // the vote control's optimistic vote and queue, the thread's and the forms' state belong to one post.
+    <main key={post.id} className="post-page" data-state={withheld ?? 'visible'}>
       <article className="post" aria-labelledby={withheld ? undefined : 'post-title'}>
         <VoteControl
           score={post.counts.upvotes - post.counts.downvotes}
