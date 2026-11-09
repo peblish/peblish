@@ -71,6 +71,8 @@ async function conditions(query: DirectoryQuery, viewer: DirectoryViewer): Promi
   const term = query.q !== '' && parseLookup(query.q) === null ? like(query.q) : null;
   return and(
     eq(actors.kind, 'Group'),
+    // A community that opted out of search (the form's discoverable, or a peer's) is not listed.
+    eq(actors.discoverable, true),
     isNull(actors.deletedAt),
     sql`not exists (select 1 from ${communityRemovals} where ${communityRemovals.communityId} = ${actors.id})`,
     blocked.length > 0 ? notInArray(instances.domain, blocked) : undefined,
@@ -93,8 +95,8 @@ const order = {
 } as const;
 
 /**
- * One page of the directory. Listed: Groups that are not deleted, not removed by an admin and
- * not on a blocked host; none that is flagged sensitive or nsfl unless it is local and the viewer
+ * One page of the directory. Listed: Groups that are discoverable, not deleted, not removed by an
+ * admin and not on a blocked host; none that is flagged sensitive or nsfl unless it is local and the viewer
  * declared 16+ and asked for NSFW. Ordered by the sort key, then name, then id, so a page boundary
  * never repeats or skips a row; paged by offset to 500 rows. A `q` that parses as a handle or a
  * link filters nothing.

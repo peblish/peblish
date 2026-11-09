@@ -1,4 +1,7 @@
+import { inArray } from 'drizzle-orm';
 import { beforeEach, describe, expect, test, vi } from 'vitest';
+import { actors } from '../db/tables/actors.ts';
+import { writer } from '../db/write.ts';
 import { truncateAll } from '../testing/db';
 import { seedDirectoryWorld } from '../testing/seed-disc';
 import { defaultQuery, type DirectoryQuery } from './input.ts';
@@ -46,6 +49,14 @@ describe('what is listed', () => {
     expect((await list({ nsfw: 'show' }, declared())).counts).toEqual({ local: 3, all: 5 });
     expect((await list({ q: 'tech' })).counts).toEqual({ local: 0, all: 1 });
     expect(await names({ scope: 'local', sort: 'name' })).toEqual(['art', 'News']);
+  });
+
+  test('leaves out a community that opted out of search, local or remote', async () => {
+    await writer()
+      .update(actors)
+      .set({ discoverable: false })
+      .where(inArray(actors.id, [world.communities.art.id, world.communities.technology.id]));
+    expect((await names({ sort: 'name' })).sort()).toEqual(['News', 'quiet@piefed.test']);
   });
 
   test('leaves out the communities of a blocked host', async () => {
