@@ -267,11 +267,6 @@ export async function mentionsIn(db: Queryable, origin: string, source: string |
   return found;
 }
 
-/** The Mention tags of `mentionsIn`. */
-export async function mentionTags(db: Queryable, origin: string, source: string | null): Promise<Json[]> {
-  return (await mentionsIn(db, origin, source)).tags;
-}
-
 /**
  * Puts `tag` on the post or comment inside a wire document: on the document itself when it is
  * a Page or Note, otherwise on the one nested in its `object` chain (Create, Update, Announce).
