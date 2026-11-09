@@ -8,16 +8,18 @@ import { PermalinkPage } from './-ui/permalink-page.tsx';
 // /post/<id>/comments/<commentId>: the "Continue this thread" page, one comment and what is
 // under it. The page is personal like the post's (the gate, tombstones and the author's forms
 // depend on who looks), so the server function sets cache-control: no-store through pageSession.
-// ?sort= picks the order of the replies; ?commentError= carries a refusal of a form without
-// JavaScript.
+// ?sort= picks the order of the replies and ?after= (a cursor the page handed out) the page of
+// them; ?commentError= carries a refusal of a form without JavaScript.
 
-const Search = type({ 'sort?': 'unknown', 'commentError?': 'unknown' });
+const Search = type({ 'sort?': 'unknown', 'after?': 'unknown', 'commentError?': 'unknown' });
 
 export const Route = createFileRoute('/post/$id/comments/$commentId')({
   validateSearch: Search,
-  loaderDeps: ({ search }) => ({ sort: parseSort(search.sort) }),
+  loaderDeps: ({ search }) => ({ sort: parseSort(search.sort), after: typeof search.after === 'string' ? search.after : null }),
   loader: async ({ params, deps }) => {
-    const data = await loadPermalinkFn({ data: { postId: params.id, commentId: params.commentId, sort: deps.sort } });
+    const data = await loadPermalinkFn({
+      data: { postId: params.id, commentId: params.commentId, sort: deps.sort, ...(deps.after && { after: deps.after }) },
+    });
     if (!data) throw notFound();
     return data;
   },

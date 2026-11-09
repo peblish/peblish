@@ -5,7 +5,7 @@ import { expectAccessible, landed, signIn } from '../auth/support.ts';
 import { gotoHydrated, recordConsole } from '../support/route-marker.ts';
 
 // Lane D end to end, on the built server and the lane database: the thread under a post, its
-// sorts, the permalink page that continues a deep thread, tombstones, replying through the
+// sorts and pages, the permalink page that continues a deep thread, tombstones, replying through the
 // docked bar with and without JavaScript, the author's edit and delete, and the budget for a
 // 500-comment thread. The steps share seeded posts, so they run in order.
 test.skip(Boolean(process.env.BASE_URL), 'needs the lane database for its seed (DATABASE_URL)');
@@ -18,8 +18,26 @@ type Seed = {
   replier: { name: string };
   moderator: { name: string };
   unverified: { name: string };
-  posts: { thread: string; tombstones: string; removed: string; empty: string; locked: string; big: string };
-  comments: { first: string; firstReply: string; second: string; third: string; chain: string[]; deleted: string; removed: string };
+  posts: {
+    thread: string;
+    tombstones: string;
+    removed: string;
+    empty: string;
+    locked: string;
+    paged: string;
+    pagedReplies: string;
+    big: string;
+  };
+  comments: {
+    first: string;
+    firstReply: string;
+    second: string;
+    third: string;
+    chain: string[];
+    deleted: string;
+    removed: string;
+    pagedRoot: string;
+  };
 };
 
 let seed: Seed;
@@ -127,6 +145,56 @@ test.describe('anyone', () => {
     // A sort the server does not know is the default, not an error page.
     const odd = await html(page, `${postUrl(seed.posts.thread)}?sort=controversial`);
     expect(odd.status).toBe(200);
+  });
+
+  test('top-level comments page by a cursor in the address: plain links, in the sort order, none repeated', async ({ page, browser }) => {
+    const plain = await (await browser.newContext({ javaScriptEnabled: false })).newPage();
+    await plain.goto(`${postUrl(seed.posts.paged)}?sort=old`);
+    const first = await topLevel(plain);
+    expect(first).toEqual(Array.from({ length: 25 }, (_, index) => `Comment ${index}`));
+    await expect(plain.getByRole('link', { name: 'Back to the first comments' })).toHaveCount(0);
+    await plain.getByRole('link', { name: 'More comments' }).click();
+    await expect(plain).toHaveURL(/\?sort=old&after=[\w-]+#comments$/);
+    expect(await topLevel(plain)).toEqual(['Comment 25', 'Comment 26', 'Comment 27']);
+    await expect(plain.getByRole('link', { name: 'More comments' })).toHaveCount(0);
+    await plain.getByRole('link', { name: 'Back to the first comments' }).click();
+    await expect(plain).toHaveURL(/\?sort=old#comments$/);
+    expect(await topLevel(plain)).toEqual(first);
+    await plain.getByRole('link', { name: 'More comments' }).click();
+    const second = plain.url();
+    await plain.close();
+
+    // Hydrated, the second page is the same page, and sorting starts over at the first.
+    const log = recordConsole(page);
+    await gotoHydrated(page, second);
+    expect(await topLevel(page)).toEqual(['Comment 25', 'Comment 26', 'Comment 27']);
+    await expectAccessible(page);
+    await page.getByRole('button', { name: 'New' }).click();
+    await expect(page).toHaveURL(/\?sort=new#comments$/);
+    await expect.poll(() => topLevel(page)).toEqual(Array.from({ length: 25 }, (_, index) => `Comment ${27 - index}`));
+    expect(log.hydrationProblems()).toEqual([]);
+
+    // A cursor that is not one starts at the first page; so does one that belongs to another sort.
+    await page.goto(`${postUrl(seed.posts.paged)}?sort=old&after=nonsense`);
+    expect(await topLevel(page)).toHaveLength(25);
+    await page.goto(second.replace('sort=old', 'sort=new'));
+    expect(await topLevel(page)).toHaveLength(25);
+  });
+
+  test('the replies under a comment page on its own page too, with the comment itself on every page', async ({ browser }) => {
+    const plain = await (await browser.newContext({ javaScriptEnabled: false })).newPage();
+    await plain.goto(`${commentUrl(seed.posts.pagedReplies, seed.comments.pagedRoot)}?sort=old`);
+    await expect(plain.locator('.pb-comment')).toHaveCount(1 + 25);
+    // The comment's own page pages its replies, so it offers no link to itself.
+    await expect(plain.getByRole('link', { name: 'Continue this thread' })).toHaveCount(0);
+    await plain.getByRole('link', { name: 'More replies' }).click();
+    await expect(plain).toHaveURL(/\?sort=old&after=[\w-]+#comments$/);
+    await expect(plain.locator('.pb-comment')).toHaveCount(1 + 3);
+    await expect(plain.locator(`#comment-${seed.comments.pagedRoot} > .pb-comment__main > .pb-comment__text`)).toHaveText('Comment 0');
+    await expect(plain.getByRole('link', { name: 'More replies' })).toHaveCount(0);
+    await plain.getByRole('link', { name: 'Back to the first replies' }).click();
+    await expect(plain.locator('.pb-comment')).toHaveCount(1 + 25);
+    await plain.close();
   });
 
   test('a branch cut at the depth cap continues on its own page', async ({ page }) => {
@@ -244,8 +312,12 @@ test.describe('a 500-comment thread that reaches level 50', () => {
 
     await gotoHydrated(page, path);
     const shown = await page.locator('.pb-comment').count();
-    expect(shown).toBeGreaterThan(50);
+    // A page of top-level comments and the first replies under them; the rest is a "continue" or a "more" away.
+    expect(shown).toBeGreaterThan(25);
     expect(shown).toBeLessThanOrEqual(300);
+    await expect(page.getByRole('link', { name: 'More comments' })).toBeVisible();
+    // Oldest first starts down the chain the seed makes: the page draws six levels of it and continues.
+    await gotoHydrated(page, `${path}?sort=old`);
     const deepest = await page.locator('.pb-comment').evaluateAll((items) =>
       Math.max(
         ...items.map((item) => {

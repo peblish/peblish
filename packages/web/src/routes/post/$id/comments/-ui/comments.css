@@ -25,7 +25,6 @@
     overflow-wrap: anywhere;
   }
   .cm-empty,
-  .cm-hint,
   .cm-notice,
   .cm-trail {
     margin: 12px 0;
@@ -51,6 +50,10 @@
     margin: 6px 0 0;
     padding-left: 20px;
   }
+  .cm-more {
+    margin: 12px 0;
+  }
+  .cm-more a,
   .cm-trail a,
   .cm-removed a {
     color: var(--pb-accent);

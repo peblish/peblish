@@ -4,6 +4,7 @@ import { closePools } from '../db/pools.ts';
 import { db } from '../db/read.ts';
 import { comments, posts } from '../db/tables/content.ts';
 import { writer } from '../db/write.ts';
+import { threadPageSize } from '../comments/limits.ts';
 import { removeContent } from '../moderation/remove.ts';
 import { grantFor, seedModerator, seedPost } from './seed-az.ts';
 import { seedPostWorld } from './seed-b1.ts';
@@ -125,6 +126,46 @@ export async function seedBigThread(instance: Instance, post: Row, authors: read
 }
 
 /**
+ * A complete tree in a few bulk inserts: `shape[0]` top-level comments, each with `shape[1]`
+ * replies, each with `shape[2]`, and so on. Scores vary and times rise with the insert order.
+ * Counts are set at the end. Returns every comment, parents before children.
+ */
+export async function seedTree(instance: Instance, post: Row, authors: readonly Row[], shape: readonly number[]) {
+  const made: (typeof comments.$inferInsert & { id: string; path: string })[] = [];
+  const start = Date.now() - 100_000_000;
+  const grow = (parent: (typeof made)[number] | null, levels: readonly number[]) => {
+    const [width = 0, ...rest] = levels;
+    for (let child = 0; child < width; child++) {
+      const id = uuidv7();
+      const index = made.length;
+      const row = {
+        id,
+        apId: `https://${instance.domain}/ap/comment/${id}`,
+        local: instance.local,
+        instanceId: instance.id,
+        postId: post.id,
+        parentId: parent?.id ?? null,
+        authorId: authors[index % authors.length]!.id,
+        path: parent ? `${parent.path}.${id}` : id,
+        bodyMd: `Comment ${index}`,
+        upvotes: (index * 7) % 23,
+        downvotes: index % 5,
+        publishedAt: new Date(start + index * 1_000),
+      };
+      made.push(row);
+      grow(row, rest);
+    }
+  };
+  grow(null, shape);
+  for (let from = 0; from < made.length; from += 200)
+    await writer()
+      .insert(comments)
+      .values(made.slice(from, from + 200));
+  await recount(post.id);
+  return made;
+}
+
+/**
  * The world of the comment policy table: B1's people and communities, and the comments the
  * table asks about.
  * - `local` are `reader`'s comments on the author's posts in the open community: `normal`,
@@ -172,6 +213,8 @@ export async function seedCommentWorld() {
  * - `tombstones`: a deleted comment and a removed one, each with a reply;
  * - `removed`: a post a moderator removed, with a comment;
  * - `empty`: no comments; `locked`: a locked post with one comment;
+ * - `paged`: a page of top-level comments and three more, `Comment 0` to `Comment N` oldest first;
+ *   `pagedReplies`: one comment (`pagedRoot`) with a page of replies and three more;
  * - `big`: 500 comments reaching level 50.
  * Every run uses fresh names, so the lane database can keep earlier runs.
  */
@@ -237,6 +280,11 @@ async function e2e() {
   const lockedPost = await post('Locked post', { locked: true });
   await seedReply(instance, lockedPost, null, commenter, body(`Comment on locked ${suffix}`));
 
+  const pagedPost = await post('Paged post');
+  await seedTree(instance, pagedPost, [commenter, poster], [threadPageSize + 3]);
+  const pagedRepliesPost = await post('Paged replies post');
+  const [pagedRoot] = await seedTree(instance, pagedRepliesPost, [commenter, poster], [1, threadPageSize + 3]);
+
   const bigPost = await post('Big post');
   const crowd = await Promise.all(Array.from({ length: 5 }, (_, index) => seedLogin(`crowd${index}_${suffix}`)));
   await seedBigThread(
@@ -261,6 +309,8 @@ async function e2e() {
       removed: removedPost.id,
       empty: emptyPost.id,
       locked: lockedPost.id,
+      paged: pagedPost.id,
+      pagedReplies: pagedRepliesPost.id,
       big: bigPost.id,
     },
     comments: {
@@ -271,6 +321,7 @@ async function e2e() {
       chain: chain.map(({ id }) => id),
       deleted: deleted.id,
       removed: removed.id,
+      pagedRoot: pagedRoot!.id,
     },
   };
 }

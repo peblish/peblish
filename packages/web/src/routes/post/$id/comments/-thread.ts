@@ -4,7 +4,9 @@ import type { PostPage, Viewer } from '@peblish/core/posts/read';
 import type { Uuid } from '@peblish/schema/ids';
 import type { SessionView } from '@peblish/schema/session';
 import type { CommentView } from '@peblish/schema/views';
-import { getRequest } from '@tanstack/react-start/server';
+import { absoluteTime, compactAge } from '@peblish/ui/components/time';
+import { getRequest, getRequestHeader } from '@tanstack/react-start/server';
+import { negotiateLocale } from '../../../../i18n/negotiate.ts';
 import type { MarkdownRenderer } from '../../../../server/markdown.ts';
 
 // The thread's data for a page (server only): core's read model, with each comment's text
@@ -17,12 +19,16 @@ export type ThreadData = {
   postId: Uuid;
   postAuthorId: Uuid;
   sort: ThreadSort;
+  /** The `after` this was loaded for, as the page asked for it (null for the first page): the section reloads when the address names another. */
+  after: string | null;
   /** In display order. contentHtml is the rendered text, null for a tombstone. */
   comments: CommentView[];
+  /** Each comment's time as text in the request's locale, so hydration formats nothing (the post page's rule). */
+  times: Record<string, { age: string; title: string }>;
   /** The comment a permalink page starts from. */
   focus: { id: Uuid; parentId: Uuid | null } | null;
-  /** The thread has more comments than a page holds. */
-  truncated: boolean;
+  /** The cursor for the next page of the siblings this page lists (the top-level comments, or the replies to the focus), or null on the last. */
+  next: string | null;
   /** Whether the viewer can reply, or why not. */
   reply: 'yes' | 'sign-in' | 'verify' | 'locked' | 'closed';
   /** The signed-in person, or null. */
@@ -43,6 +49,9 @@ export const threadShown = (page: Pick<PostPage, 'gate' | 'moderator'> & { view:
 
 /** The `sort` of the page being requested: the document request's query. A server function called from the browser has no page query. */
 export const requestedSort = (): ThreadSort => parseSort(URL.parse(getRequest().url)?.searchParams.get('sort'));
+
+/** The `after` cursor of the page being requested, in the same way. */
+export const requestedAfter = (): string | null => URL.parse(getRequest().url)?.searchParams.get('after') ?? null;
 
 function render(renderer: MarkdownRenderer, { view, body }: ThreadComment): CommentView {
   const contentHtml =
@@ -71,22 +80,32 @@ export async function loadThread(options: {
   session: { view: SessionView } | null;
   renderer: MarkdownRenderer;
   sort?: ThreadSort;
+  after?: string | null;
   rootId?: Uuid;
 }): Promise<ThreadData | null> {
-  const { page, session, renderer, sort = requestedSort(), rootId } = options;
+  const { page, session, renderer, sort = requestedSort(), after = requestedAfter(), rootId } = options;
   if (!threadShown(page)) return null;
   const viewer: Viewer = session ? { actorId: session.view.actorId, siteRole: session.view.siteRole } : null;
-  const thread = await readThread(page.view.id, viewer, { sort, rootId: rootId ?? null });
+  const thread = await readThread(page.view.id, viewer, { sort, after, rootId: rootId ?? null });
   if (!thread) return null;
+  const locale = negotiateLocale(getRequestHeader('accept-language'));
+  const now = new Date();
   const focused = thread.focus ? thread.comments.find(({ view }) => view.id === thread.focus?.id) : undefined;
   const mine = focused && viewer?.actorId === focused.view.author.id && !focused.view.deleted && !focused.view.removed;
   return {
     postId: page.view.id,
     postAuthorId: page.view.author.id,
     sort: thread.sort,
+    after,
     comments: thread.comments.map((comment) => render(renderer, comment)),
+    times: Object.fromEntries(
+      thread.comments.map(({ view }) => [
+        view.id,
+        { age: compactAge(view.publishedAt, now, locale), title: absoluteTime(view.publishedAt, locale) },
+      ]),
+    ),
     focus: thread.focus,
-    truncated: thread.truncated,
+    next: thread.next,
     reply: replyState(page, session),
     viewerId: viewer?.actorId ?? null,
     removals: thread.comments.flatMap(({ view, removal }) =>
