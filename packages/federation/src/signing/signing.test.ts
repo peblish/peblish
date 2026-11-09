@@ -1,7 +1,8 @@
 import { generateKeyPairSync } from 'node:crypto';
 import { signRequest, verifyRequestDetailed } from '@fedify/fedify';
 import { describe, expect, test } from 'vitest';
-import { signDelivery, type SigningKey } from './sign.ts';
+import { createPublicKey, verify } from 'node:crypto';
+import { signDelivery, signFetch, type SigningKey } from './sign.ts';
 import { dateWindowMs, parseSignature, signatureVerifies, type SignatureFailure } from './verify.ts';
 
 // The fixture key is generated once per run; nothing here is a real actor's.
@@ -90,6 +91,41 @@ describe('signing and verifying', () => {
     // The same headers do not vouch for the inbox without its query, or with another one.
     expect(verdict(received(headers, body, 'https://receiver.test/inbox'))).toBe('invalid');
     expect(verdict(received(headers, body, 'https://receiver.test/inbox?shard=3&tag=a%20b'))).toBe('invalid');
+  });
+
+  test('a signed GET covers the request target, host and date, and nothing else', () => {
+    const target = 'https://peer.test/c/lab?page=2';
+    const headers = signFetch(signingKey, target);
+    expect([...headers.keys()].sort()).toEqual(['date', 'signature']);
+    const signature = headers.get('signature')!;
+    expect(signature).toContain(`keyId="${keyId}"`);
+    expect(signature).toContain('algorithm="rsa-sha256"');
+    expect(signature).toContain('headers="(request-target) host date"');
+    // The string a peer rebuilds from the request it received.
+    const message = `(request-target): get /c/lab?page=2\nhost: peer.test\ndate: ${headers.get('date')}`;
+    const bytes64 = /signature="([^"]+)"/.exec(signature)![1]!;
+    expect(verify('sha256', Buffer.from(message), createPublicKey(publicKey), Buffer.from(bytes64, 'base64'))).toBe(true);
+    // A port stays in the Host, as a client writes it.
+    expect(signFetch(signingKey, 'https://peer.test:8443/u/x').get('signature')).toContain('headers="(request-target) host date"');
+  });
+
+  test('Fedify’s verifier accepts our signed GET', async () => {
+    const target = 'https://peer.test/c/lab';
+    const request = new Request(target, { headers: { ...Object.fromEntries(signFetch(signingKey, target)), host: 'peer.test' } });
+    const result = await verifyRequestDetailed(request, {
+      documentLoader: async (url) => ({
+        contextUrl: null,
+        documentUrl: url,
+        document: {
+          '@context': ['https://www.w3.org/ns/activitystreams', 'https://w3id.org/security/v1'],
+          id: owner,
+          type: 'Person',
+          inbox: `${owner}/inbox`,
+          publicKey: { id: keyId, owner, publicKeyPem: publicKey },
+        },
+      }),
+    });
+    expect(result.verified).toBe(true);
   });
 
   test('every way a request can fail names its reason', async () => {

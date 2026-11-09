@@ -4,7 +4,16 @@ import { db } from '@peblish/core/db/read';
 import { actorKeys, actors } from '@peblish/core/db/tables/actors';
 import { instances } from '@peblish/core/db/tables/instances';
 import { truncateAll } from '@peblish/core/testing/db';
-import { actorDocument, nodeInfoRoutes, rsaKeys, seedLocalInstance, stubFetch, webfingerAnswer } from '@peblish/core/testing/seed-fed-a';
+import {
+  actorDocument,
+  nodeInfoRoutes,
+  rsaKeys,
+  seedLocalInstance,
+  seedSigningKey,
+  stubFetch,
+  webfingerAnswer,
+} from '@peblish/core/testing/seed-fed-a';
+import { signatureVerifies } from '../signing/verify.ts';
 import { readFixture } from '../test/manifest.ts';
 import { ActorResolveError, resolveRemoteActor } from './resolve.ts';
 import { BlockedDestinationError } from './safe-fetch.ts';
@@ -37,6 +46,35 @@ describe('resolving an actor', () => {
     expect(requests).toHaveLength(3);
     await resolveRemoteActor(lab.id, { fetch, refresh: true });
     expect(requests).toHaveLength(4);
+  });
+
+  test('the actor document is fetched with the instance’s signature; WebFinger and NodeInfo are not signed', async () => {
+    const [instanceActor] = await db().select().from(actors).where(eq(actors.kind, 'Application'));
+    const key = await seedSigningKey(instanceActor!);
+    const finger = webfingerAnswer('acct:lab@lemmy.test', [{ href: lab.id, type: 'Group' }]);
+    const { fetch, requests } = peer({
+      'https://lemmy.test/.well-known/webfinger?resource=acct%3Alab%40lemmy.test': { type: 'application/jrd+json', body: finger },
+    });
+    await resolveRemoteActor('!lab@lemmy.test', { fetch });
+    const byUrl = (url: string) => requests.find((request) => request.url === url)!;
+    const get = byUrl(lab.id);
+    expect(get.headers.get('signature')).toContain(`keyId="${key.keyId}"`);
+    expect(get.headers.get('signature')).toContain('headers="(request-target) host date"');
+    expect(get.headers.get('accept')).toContain('application/activity+json');
+    // What the peer reconstructs from this request verifies under the instance's public key.
+    const received = new Request(lab.id, { headers: { ...Object.fromEntries(get.headers), host: 'lemmy.test' } });
+    const covered = ['(request-target): get /c/lab', 'host: lemmy.test', `date: ${get.headers.get('date')}`].join('\n');
+    const signature = /signature="([^"]+)"/.exec(received.headers.get('signature')!)![1]!;
+    expect(
+      signatureVerifies({ keyId: key.keyId, signingString: covered, signature: Buffer.from(signature, 'base64') }, key.publicKeyPem),
+    ).toBe(true);
+    for (const url of [
+      'https://lemmy.test/.well-known/webfinger?resource=acct%3Alab%40lemmy.test',
+      'https://lemmy.test/.well-known/nodeinfo',
+      'https://lemmy.test/nodeinfo/2.1',
+    ]) {
+      expect(byUrl(url).headers.has('signature'), url).toBe(false);
+    }
   });
 
   test('reads a real Lemmy Person from the corpus', async () => {

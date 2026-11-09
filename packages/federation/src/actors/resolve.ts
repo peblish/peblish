@@ -8,7 +8,7 @@ import { actorFromWire } from '../mapping/actor.ts';
 import { MappingError } from '../mapping/json.ts';
 import { refreshInstanceSoftware } from '../nodeinfo/client.ts';
 import { parseHandle, webfingerActorUrl, type Handle } from '../webfinger/client.ts';
-import { FetchFailure, fetchJson, type Fetcher } from './document.ts';
+import { FetchFailure, fetchActivity, type Fetcher } from './document.ts';
 import { importGrant } from './grants.ts';
 import { safeFetch } from './safe-fetch.ts';
 
@@ -100,7 +100,7 @@ function withoutFragment(id: string): string {
 }
 
 async function fetchAndStore(apId: string, fetch: Fetcher): Promise<string> {
-  const { json, url } = await fetchJson(apId, fetch).catch((error: unknown) => {
+  const { json, url } = await fetchActivity(apId, fetch).catch((error: unknown) => {
     throw error instanceof FetchFailure ? failure(error) : error;
   });
   let record;

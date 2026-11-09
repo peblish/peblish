@@ -63,3 +63,16 @@ export function signDelivery(key: SigningKey, inbox: string, body: string): Head
   });
   return signHeaders(key, 'post', url, headers, ['(request-target)', 'accept', 'content-type', 'date', 'digest', 'host']);
 }
+
+/**
+ * The Date and Signature headers to GET `url` with, signed over `(request-target) host date`
+ * (no body, so no Digest): what a peer that requires authenticated fetches (Mastodon's secure
+ * mode and its imitators) checks. Add them to the request; Host is the client's own.
+ */
+export function signFetch(key: SigningKey, url: string): Headers {
+  const target = new URL(url);
+  const headers = new Headers({ date: new Date().toUTCString(), host: target.host });
+  const signed = signHeaders(key, 'get', target, headers, ['(request-target)', 'host', 'date']);
+  signed.delete('host');
+  return signed;
+}
