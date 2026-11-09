@@ -20,7 +20,7 @@ export type StubRequest = {
   body: Buffer;
 };
 
-export type StubAnswer = { status?: number; json?: unknown; text?: string; delayMs?: number };
+export type StubAnswer = { status?: number; json?: unknown; text?: string; delayMs?: number; headers?: Record<string, string> };
 
 export type ArachnidStub = {
   baseUrl: string;
@@ -63,7 +63,7 @@ export async function startArachnidStub(options: { username?: string; password?:
               ? version
               : { status: 404, json: { error: 'not found' } };
       setTimeout(() => {
-        res.writeHead(answer.status ?? 200, { 'content-type': 'application/json' });
+        res.writeHead(answer.status ?? 200, { 'content-type': 'application/json', ...answer.headers });
         res.end(answer.text ?? JSON.stringify(answer.json ?? {}));
       }, answer.delayMs ?? 0);
     });
