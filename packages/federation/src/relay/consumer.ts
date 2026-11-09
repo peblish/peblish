@@ -68,10 +68,10 @@ async function onModeration(
   t: ConsumerTx,
   origin: string,
 ): Promise<void> {
+  // A site ban is withdrawn from Mastodon-like followers whoever set it (a peer's own ban of its person too).
+  if (event.type === 'mod.ban' && event.communityId === null) return onSiteBan(event, t, origin);
   // An action of someone no longer here is not federated from here.
-  if (!event.local || event.moderatorId === null) return;
-  if (event.type === 'mod.ban' && event.communityId === null) return onSiteBan(event, event.moderatorId, t, origin);
-  if (event.communityId === null) return;
+  if (!event.local || event.moderatorId === null || event.communityId === null) return;
   const { communityId } = event;
   const community = await localCommunity(t, communityId);
   const moderator = (await actorRefs(t.db, [event.moderatorId])).get(event.moderatorId);
@@ -127,12 +127,21 @@ async function onModeration(
 }
 
 /**
- * A site ban (no community): a Block of the person with the instance actor as target, signed by
- * the moderator, to every peer we trade follows with except those where deliveries are held back
- * (lane MODF's gate), or its Undo. With removeContent the person's removed posts were taken down
- * without an event each, so their boosts are withdrawn: the first batch here, the rest by a job.
+ * A site ban (no community). One a local moderator set is a Block of the person with the instance
+ * actor as target, signed by the moderator, to every peer we trade follows with except those
+ * where deliveries are held back (lane MODF's gate), or its Undo. With removeContent the person's
+ * removed posts were taken down without an event each, so their boosts are withdrawn, also for a
+ * ban a peer set on its own person (the Block came from there and goes nowhere): the first batch
+ * here, the rest by a job.
  */
-async function onSiteBan(event: Of<'mod.ban'>, moderatorId: string, t: ConsumerTx, origin: string): Promise<void> {
+async function onSiteBan(event: Of<'mod.ban'>, t: ConsumerTx, origin: string): Promise<void> {
+  // The Block is ours to send only for a ban a local moderator set; the withdrawal is due either way.
+  if (event.local && event.moderatorId !== null) await sendSiteBan(event, event.moderatorId, t, origin);
+  // One batch here, in the outbox transaction; the withdrawal job (delivery/withdrawals/job.ts) takes the rest.
+  if (event.banned && event.removeContent) await withdrawRemovedPosts(t, { origin, authorId: event.targetActorId });
+}
+
+async function sendSiteBan(event: Of<'mod.ban'>, moderatorId: string, t: ConsumerTx, origin: string): Promise<void> {
   const moderator = (await actorRefs(t.db, [moderatorId])).get(moderatorId);
   if (!moderator) return;
   const base = { id: newActivityId(origin), actorApId: moderator.apId, communityApId: null };
@@ -145,8 +154,6 @@ async function onSiteBan(event: Of<'mod.ban'>, moderatorId: string, t: ConsumerT
   };
   const activity = event.banned ? ban(base, details) : unban(base, await sentId(t, origin, 'Block', event.targetApId), details);
   await sendActivity(t, moderator, activity, await deliverableInboxes(t.db, await peerInboxes(t.db)));
-  // One batch here, in the outbox transaction; the withdrawal job (delivery/withdrawals/job.ts) takes the rest.
-  if (event.banned && event.removeContent) await withdrawRemovedPosts(t, { origin, authorId: event.targetActorId });
 }
 
 async function onAccountDeleted(event: Of<'actor.deleted'>, t: ConsumerTx, origin: string): Promise<void> {

@@ -12,7 +12,7 @@ import { deliveries } from '@peblish/core/delivery/tables';
 import { truncateAll } from '@peblish/core/testing/db';
 import { deliveryBlocked } from '@peblish/core/peers/gate';
 import { seedActor, seedInstance } from '@peblish/core/testing/seed';
-import { seedPost } from '@peblish/core/testing/seed-az';
+import { outboxEvents, seedPost } from '@peblish/core/testing/seed-az';
 import { seedModlog } from '@peblish/core/testing/seed-e2';
 import { seedLocalInstance, seedSigningKey } from '@peblish/core/testing/seed-fed-a';
 import { inboxState, seedFollow, seedInboundWorld, seedInboxRow, seedPeerActor } from '@peblish/core/testing/seed-fed-b';
@@ -116,6 +116,8 @@ const ban = (w: World, target: { id: string; apId: string }, removeContent = tru
     reason: 'p4',
   }) as OutboxEvent;
 const runRelay = (e: OutboxEvent) => tx((t) => relay.handle(e, t));
+/** The tests that seed over 200 boosted posts, which the shared Postgres can slow past the default 5 seconds. */
+const bulkTimeoutMs = 30_000;
 
 describe('a moderator’s removal of a post', () => {
   test('of a local author’s post reaches Mastodon as the Undo of the boost and the author’s Delete without the reason; Lemmy keeps the Delete with it', async () => {
@@ -227,17 +229,21 @@ describe('a ban with removeContent', () => {
     expect(await sentTo(w.mastodon.inbox)).toEqual([]);
   });
 
-  test(`one event withdraws at most ${BULK_WITHDRAWAL_CAP} posts`, async () => {
-    const w = await world();
-    const removedAt = new Date();
-    for (let i = 0; i < BULK_WITHDRAWAL_CAP + 1; i++) await boosted(w, w.lemmy.actor, w.lemmy.instance, { removedAt });
-    await runRelay(ban(w, w.lemmy.actor));
-    expect(await sentTo(w.mastodon.inbox)).toHaveLength(BULK_WITHDRAWAL_CAP);
-    // The next event takes the one left.
-    await clearQueue();
-    await runRelay(ban(w, w.lemmy.actor));
-    expect(await sentTo(w.mastodon.inbox)).toHaveLength(1);
-  });
+  test(
+    `one event withdraws at most ${BULK_WITHDRAWAL_CAP} posts`,
+    async () => {
+      const w = await world();
+      const removedAt = new Date();
+      for (let i = 0; i < BULK_WITHDRAWAL_CAP + 1; i++) await boosted(w, w.lemmy.actor, w.lemmy.instance, { removedAt });
+      await runRelay(ban(w, w.lemmy.actor));
+      expect(await sentTo(w.mastodon.inbox)).toHaveLength(BULK_WITHDRAWAL_CAP);
+      // The next event takes the one left.
+      await clearQueue();
+      await runRelay(ban(w, w.lemmy.actor));
+      expect(await sentTo(w.mastodon.inbox)).toHaveLength(1);
+    },
+    bulkTimeoutMs,
+  );
 });
 
 describe('a site ban', () => {
@@ -289,55 +295,63 @@ describe('a site ban', () => {
     expect((await sentTo(w.mastodon.inbox)).map(({ shape: s }) => s)).toEqual(['Block']);
   });
 
-  test('with removeContent takes back one batch in the event’s transaction and the rest in the job’s, only the banned person’s', async () => {
-    const w = await world();
-    const removedAt = new Date();
-    for (let i = 0; i < BULK_WITHDRAWAL_CAP + 5; i++) await boosted(w, w.lemmy.actor, w.lemmy.instance, { removedAt });
-    await boosted(w, w.lemmy.actor, w.lemmy.instance); // live: stays
-    await boosted(w, w.alice, w.here, { removedAt }); // someone else's: stays
-    await writer().insert(siteBans).values({ actorId: w.lemmy.actor.id, source: 'local', removeContent: true });
-    await runRelay(siteBan(w, w.lemmy.actor, { removeContent: true }));
-    const undos = async () => (await sentTo(w.mastodon.inbox)).filter(({ shape: s }) => s === 'Undo(Announce)').length;
-    expect(await undos()).toBe(BULK_WITHDRAWAL_CAP);
-    expect((await sentTo(w.mastodon.inbox)).filter(({ shape: s }) => s === 'Block')).toHaveLength(1);
+  test(
+    'with removeContent takes back one batch in the event’s transaction and the rest in the job’s, only the banned person’s',
+    async () => {
+      const w = await world();
+      const removedAt = new Date();
+      for (let i = 0; i < BULK_WITHDRAWAL_CAP + 5; i++) await boosted(w, w.lemmy.actor, w.lemmy.instance, { removedAt });
+      await boosted(w, w.lemmy.actor, w.lemmy.instance); // live: stays
+      await boosted(w, w.alice, w.here, { removedAt }); // someone else's: stays
+      await writer().insert(siteBans).values({ actorId: w.lemmy.actor.id, source: 'local', removeContent: true });
+      await runRelay(siteBan(w, w.lemmy.actor, { removeContent: true }));
+      const undos = async () => (await sentTo(w.mastodon.inbox)).filter(({ shape: s }) => s === 'Undo(Announce)').length;
+      expect(await undos()).toBe(BULK_WITHDRAWAL_CAP);
+      expect((await sentTo(w.mastodon.inbox)).filter(({ shape: s }) => s === 'Block')).toHaveLength(1);
 
-    // The job resumes from what is left: the five, in a transaction of its own, then nothing.
-    expect(await withdrawRemaining({ maxBatches: 1 })).toBe(5);
-    expect(await undos()).toBe(BULK_WITHDRAWAL_CAP + 5);
-    expect(await withdrawRemaining()).toBe(0);
-    expect(await sentTo(w.mastodon.inbox)).toHaveLength(BULK_WITHDRAWAL_CAP + 6);
+      // The job resumes from what is left: the five, in a transaction of its own, then nothing.
+      expect(await withdrawRemaining({ maxBatches: 1 })).toBe(5);
+      expect(await undos()).toBe(BULK_WITHDRAWAL_CAP + 5);
+      expect(await withdrawRemaining()).toBe(0);
+      expect(await sentTo(w.mastodon.inbox)).toHaveLength(BULK_WITHDRAWAL_CAP + 6);
 
-    await clearQueue();
-    await runRelay(siteBan(w, w.lemmy.actor, { removeContent: true }));
-    expect((await sentTo(w.mastodon.inbox)).map(({ shape: s }) => s)).toEqual(['Block']);
-  });
+      await clearQueue();
+      await runRelay(siteBan(w, w.lemmy.actor, { removeContent: true }));
+      expect((await sentTo(w.mastodon.inbox)).map(({ shape: s }) => s)).toEqual(['Block']);
+    },
+    bulkTimeoutMs,
+  );
 
-  test('the job takes at most one batch per transaction, and skips a person another transaction is withdrawing', async () => {
-    const w = await world();
-    const removedAt = new Date();
-    for (let i = 0; i < BULK_WITHDRAWAL_CAP + 1; i++) await boosted(w, w.lemmy.actor, w.lemmy.instance, { removedAt });
-    await writer().insert(siteBans).values({ actorId: w.lemmy.actor.id, source: 'local', removeContent: true });
-    const undos = async () => (await sentTo(w.mastodon.inbox)).length;
+  test(
+    'the job takes at most one batch per transaction, and skips a person another transaction is withdrawing',
+    async () => {
+      const w = await world();
+      const removedAt = new Date();
+      for (let i = 0; i < BULK_WITHDRAWAL_CAP + 1; i++) await boosted(w, w.lemmy.actor, w.lemmy.instance, { removedAt });
+      await writer().insert(siteBans).values({ actorId: w.lemmy.actor.id, source: 'local', removeContent: true });
+      const undos = async () => (await sentTo(w.mastodon.inbox)).length;
 
-    // Another transaction holds the person's withdrawal lock: the job leaves them alone.
-    let release!: () => void;
-    let locked!: () => void;
-    const held = new Promise<void>((resolve) => (locked = resolve));
-    const holder = tx(async (t) => {
-      await t.db.execute(sql`select pg_advisory_xact_lock(hashtextextended(${withdrawalLock(w.lemmy.actor.id)}, 0))`);
-      locked();
-      await new Promise<void>((resolve) => (release = resolve));
-    });
-    await held;
-    expect(await withdrawRemaining()).toBe(0);
-    expect(await undos()).toBe(0);
-    release();
-    await holder;
+      // Another transaction holds the person's withdrawal lock: the job leaves them alone.
+      let release!: () => void;
+      let locked!: () => void;
+      const held = new Promise<void>((resolve) => (locked = resolve));
+      const holder = tx(async (t) => {
+        await t.db.execute(sql`select pg_advisory_xact_lock(hashtextextended(${withdrawalLock(w.lemmy.actor.id)}, 0))`);
+        locked();
+        await new Promise<void>((resolve) => (release = resolve));
+      });
+      await held;
+      expect(await withdrawRemaining()).toBe(0);
+      expect(await undos()).toBe(0);
+      release();
+      await holder;
 
-    expect(await withdrawRemaining({ maxBatches: 1 })).toBe(BULK_WITHDRAWAL_CAP);
-    expect(await undos()).toBe(BULK_WITHDRAWAL_CAP);
-    expect(await withdrawRemaining()).toBe(1);
-  });
+      expect(await withdrawRemaining({ maxBatches: 1 })).toBe(BULK_WITHDRAWAL_CAP);
+      expect(await undos()).toBe(BULK_WITHDRAWAL_CAP);
+      expect(await withdrawRemaining()).toBe(1);
+    },
+    bulkTimeoutMs,
+  );
 
   test('a ban that keeps the content withdraws nothing, and a remote moderator’s ban is not ours to send', async () => {
     const w = await world();
@@ -396,44 +410,44 @@ describe('a reason kept out of the public modlog', () => {
   });
 });
 
-describe('a Delete the community relays', () => {
-  /** The inbound world, with followers on Lemmy-like and Mastodon-like servers. */
-  async function followed() {
-    const world = await seedInboundWorld();
-    for (const [domain, software] of [
-      ['lemmy.test', 'lemmy'],
-      ['piefed.test', 'piefed'],
-      ['mastodon.test', 'mastodon'],
-    ] as const) {
-      await writer().update(instances).set({ software }).where(eq(instances.domain, domain));
-    }
-    await seedFollow(world.peers.pfuser, world.community, 'https://piefed.test/activities/follow-spike');
-    return world;
+/** The inbound world, with followers on Lemmy-like and Mastodon-like servers. */
+async function followed() {
+  const world = await seedInboundWorld();
+  for (const [domain, software] of [
+    ['lemmy.test', 'lemmy'],
+    ['piefed.test', 'piefed'],
+    ['mastodon.test', 'mastodon'],
+  ] as const) {
+    await writer().update(instances).set({ software }).where(eq(instances.domain, domain));
   }
-  const receive = async (document: Json) => {
-    const text = JSON.stringify(document, null, 1);
-    const row = await seedInboxRow(text, {
-      activityId: String(document.id),
-      activityType: String(document.type),
-      actorApId: String(document.actor),
-    });
-    expect(await processRow(row)).toEqual({ state: 'applied', error: null });
-    expect(await inboxState(row.id)).toEqual({ state: 'applied', error: null });
-    return text;
-  };
-  const page = {
-    id: 'https://lemmy.test/post/relay-1',
-    type: 'Page',
-    attributedTo: hosts.lemmyuser,
-    name: 'Relayed',
-    content: '<p>body</p>',
-    source: { content: 'body', mediaType: 'text/markdown' },
-    published: '2026-11-09T10:00:00Z',
-    audience: hosts.spike,
-    to: [hosts.spike, PUBLIC],
-  };
-  const mastodon = 'https://mastodon.test/inbox';
+  await seedFollow(world.peers.pfuser, world.community, 'https://piefed.test/activities/follow-spike');
+  return world;
+}
+const receive = async (document: Json) => {
+  const text = JSON.stringify(document, null, 1);
+  const row = await seedInboxRow(text, {
+    activityId: String(document.id),
+    activityType: String(document.type),
+    actorApId: String(document.actor),
+  });
+  expect(await processRow(row)).toEqual({ state: 'applied', error: null });
+  expect(await inboxState(row.id)).toEqual({ state: 'applied', error: null });
+  return text;
+};
+const page = {
+  id: 'https://lemmy.test/post/relay-1',
+  type: 'Page',
+  attributedTo: hosts.lemmyuser,
+  name: 'Relayed',
+  content: '<p>body</p>',
+  source: { content: 'body', mediaType: 'text/markdown' },
+  published: '2026-11-09T10:00:00Z',
+  audience: hosts.spike,
+  to: [hosts.spike, PUBLIC],
+};
+const mastodon = 'https://mastodon.test/inbox';
 
+describe('a Delete the community relays', () => {
   test('takes the boost of a remote post back with the Undo, to Mastodon only; the others get the received bytes, the origin none', async () => {
     await followed();
     await receive({
@@ -487,5 +501,40 @@ describe('a Delete the community relays', () => {
         .from(activities)
         .where(and(eq(activities.type, 'Undo'), eq(activities.local, true))),
     ).toEqual([]);
+  });
+});
+
+describe('a site ban a peer sets on its own person', () => {
+  test('with removeData takes the person’s boosts back from Mastodon-like followers, though the Block goes nowhere', async () => {
+    const world = await followed();
+    await receive({
+      id: activityId('https://lemmy.test', 'create'),
+      type: 'Create',
+      actor: hosts.lemmyuser,
+      object: page,
+      ...addressedToCommunity(hosts.spike),
+    });
+    expect((await sentTo(mastodon)).map(({ shape: s }) => s)).toEqual(['Announce(Page)']);
+    await clearQueue();
+
+    // Lemmy's site ban: a Block of its own user aimed at its instance, removeData set.
+    await receive({
+      id: activityId('https://lemmy.test', 'block'),
+      type: 'Block',
+      actor: hosts.lemmyadmin,
+      object: hosts.lemmyuser,
+      target: 'https://lemmy.test/',
+      to: [PUBLIC],
+      cc: ['https://lemmy.test/', 'https://fed-b.test/'],
+      summary: 'Spam',
+      removeData: true,
+    });
+    const [ban] = (await outboxEvents()).filter((event) => (event as { type: string }).type === 'mod.ban') as OutboxEvent[];
+    expect(ban).toMatchObject({ local: false, communityId: null, removeContent: true, targetActorId: world.peers.lemmyuser.id });
+    await runRelay(ban!);
+    const [undo, ...rest] = await sentTo(mastodon);
+    expect(rest).toEqual([]);
+    expect(undo).toMatchObject({ shape: 'Undo(Announce)', json: { actor: hosts.spike, object: { type: 'Announce', object: page.id } } });
+    expect((await db().select().from(deliveries)).map((row) => shape(JSON.parse(row.body)))).toEqual(['Undo(Announce)']);
   });
 });
