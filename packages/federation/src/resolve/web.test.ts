@@ -9,7 +9,10 @@ import { truncateAll } from '@peblish/core/testing/db';
 import { actorDocument, nodeInfoRoutes, rsaKeys, seedLocalInstance, stubFetch, webfingerAnswer } from '@peblish/core/testing/seed-fed-a';
 import { seedCommunityRemoval } from '@peblish/core/testing/seed-az';
 import { BlockedDestinationError } from '../actors/safe-fetch.ts';
+import { listCommunities } from '@peblish/core/directory/read';
+import { defaultQuery } from '@peblish/core/directory/input';
 import { forgetNodeInfoFailures } from '../nodeinfo/client.ts';
+import { readFixture } from '../test/manifest.ts';
 import { lab, lemmy, lemmyNote, lemmyPage, lemmyuser } from '../remote-fetch/test-support.ts';
 import { maxRequests } from './limit.ts';
 import { resolveLookup } from './web.ts';
@@ -114,6 +117,31 @@ describe('a handle', () => {
     expect(await resolveLookup(lookup('https://disc.test/c/nothing'), { fetch })).toEqual({ ok: false, error: 'target.not_found' });
     expect(requests).toEqual([]);
   });
+});
+
+describe('the Group documents Lemmy and PieFed serve', () => {
+  test.each([
+    ['lemmy', '0.19.21', 'lemmy.lab.test', 'lab', 'wire/lemmy-0.19.21/fetched/fetched-0006-group.json'],
+    ['piefed', '1.8.11', 'piefed.lab.test', 'pflab', 'wire/piefed-1.8.11/fetched/fetched-0010-group.json'],
+  ])(
+    '%s %s: a handle finds the community, and the directory lists it from the stored copy',
+    async (software, version, host, name, file) => {
+      const document = readFixture(file) as { id: string };
+      const peer = stubFetch({
+        [document.id]: { body: document },
+        [`https://${host}/.well-known/webfinger?resource=acct%3A${name}%40${host}`]: {
+          type: 'application/jrd+json',
+          body: webfingerAnswer(`acct:${name}@${host}`, [{ href: document.id, type: 'Group' }]),
+        },
+        ...nodeInfoRoutes(host, software, version),
+      });
+      const result = await resolveLookup(lookup(`!${name}@${host}`), { fetch: peer.fetch });
+      expect(result).toMatchObject({ ok: true, found: { kind: 'community', actor: { apId: document.id, handle: `${name}@${host}` } } });
+      const { rows } = await listCommunities(defaultQuery, null);
+      expect(rows.map((row) => row.actor.handle)).toEqual([`${name}@${host}`]);
+      expect(rows[0]?.refreshedAt).not.toBeNull();
+    },
+  );
 });
 
 describe('a link to an actor', () => {
