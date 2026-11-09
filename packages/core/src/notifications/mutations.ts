@@ -3,8 +3,9 @@ import { and, eq, isNotNull, isNull, sql } from 'drizzle-orm';
 import { notifications } from './tables.ts';
 import { defineMutation } from '../tx/mutation.ts';
 
-// The inbox's four writes. None sets recheck (nothing here is revoked by a ban or a lock), and
-// none writes the acting actor's row. Targets come from grant.subject; the context ids a notice
+// The inbox's four writes. A person's marks recheck, so a site-banned person writes nothing
+// (auth.site_banned); the consumer's create and purge run as the instance and do not. None
+// writes the acting actor's row. Targets come from grant.subject; the context ids a notice
 // carries for rendering come in as input.
 
 /** What a notice links to, for rendering. Plain ids: a purged row sets them null. */
@@ -37,6 +38,7 @@ export const createNotification = defineMutation({
 export const markNotification = defineMutation({
   action: 'notification.read',
   emits: ['notification.read'],
+  recheck: true,
   async run(t, grant, input: { read: boolean }) {
     const { notificationId } = grant.subject;
     const [row] = await t.db
@@ -54,6 +56,7 @@ export const markNotification = defineMutation({
 export const markAllNotificationsRead = defineMutation({
   action: 'notification.read_all',
   emits: ['notification.read'],
+  recheck: true,
   async run(t, grant) {
     const { recipientId } = grant.subject;
     const rows = await t.db

@@ -1,11 +1,13 @@
 import { eq, sql } from 'drizzle-orm';
 import { beforeEach, describe, expect, test } from 'vitest';
+import { siteBans } from '../bans/tables.ts';
+import { db } from '../db/read.ts';
 import { actors } from '../db/tables/actors.ts';
 import { follows } from '../db/tables/follows.ts';
 import { writer } from '../db/write.ts';
 import { truncateAll } from '../testing/db.ts';
 import { seedActor, seedInstance } from '../testing/seed.ts';
-import { admin, outboxEvents } from '../testing/seed-az.ts';
+import { admin, gate, outboxEvents } from '../testing/seed-az.ts';
 import { seedFollow } from '../testing/seed-c1.ts';
 import { seedPerson, person } from '../testing/seed-f.ts';
 import { addBlockAs, removeBlockAs } from './actions.ts';
@@ -163,5 +165,63 @@ describe('block.add', () => {
     expect(await writer().select().from(personBlocks)).toHaveLength(maxPersonBlocks);
     expect(await blockEvents()).toEqual([]);
     expect(await addBlockAs(w.me, { kind: 'person', actorId: people[0]!.id })).toMatchObject({ ok: true, created: false });
+  });
+});
+
+/** How many backends in this database wait on a lock. */
+async function lockWaiters() {
+  const [row] = await db().execute<{ n: number }>(
+    sql`select count(*)::int as n from pg_stat_activity where datname = current_database() and wait_event_type = 'Lock'`,
+  );
+  return row?.n ?? 0;
+}
+
+describe('a site-banned person cannot block or unblock', () => {
+  test('a ban that lands while the block waits for the blocker row refuses it', async () => {
+    const w = await world();
+    // The ban holds alice's row as bans/site.ts does and commits once the block waits on it.
+    const commit = gate();
+    const ban = writer().transaction(async (t) => {
+      await t.select({ id: actors.id }).from(actors).where(eq(actors.id, w.alice.id)).for('no key update');
+      await t.insert(siteBans).values({ actorId: w.alice.id, source: 'local' });
+      await commit.opened;
+    });
+    const block = addBlockAs(w.me, { kind: 'community', actorId: w.news.id });
+    await expect.poll(lockWaiters).toBe(1);
+    commit.open();
+    await ban;
+    expect(await block).toEqual({ ok: false, reason: 'auth.site_banned' });
+    expect(await writer().select().from(communityBlocks)).toEqual([]);
+    expect(await types()).toEqual([]);
+  });
+
+  test('removing a block is refused too, and the block stays', async () => {
+    const w = await world();
+    await addBlockAs(w.me, { kind: 'person', actorId: w.bob.id });
+    await writer().insert(siteBans).values({ actorId: w.alice.id, source: 'local' });
+    expect(await removeBlockAs(w.me, { kind: 'person', actorId: w.bob.id })).toEqual({ ok: false, reason: 'auth.site_banned' });
+    expect(await addBlockAs(w.me, { kind: 'person', actorId: w.remoteBob.id })).toEqual({ ok: false, reason: 'auth.site_banned' });
+    expect(await writer().select().from(personBlocks)).toHaveLength(1);
+  });
+
+  test('two blocks at once both apply, without a deadlock', async () => {
+    const w = await world();
+    // A third transaction holds alice's row FOR SHARE (as any recheck does) until both blocks wait on it.
+    const release = gate();
+    const holder = writer().transaction(async (t) => {
+      await t.select({ id: actors.id }).from(actors).where(eq(actors.id, w.alice.id)).for('share');
+      await release.opened;
+    });
+    const both = Promise.all([
+      addBlockAs(w.me, { kind: 'person', actorId: w.bob.id }),
+      addBlockAs(w.me, { kind: 'person', actorId: w.remoteBob.id }),
+    ]);
+    await expect.poll(lockWaiters).toBe(2);
+    release.open();
+    await holder;
+    expect(await both).toEqual([
+      { ok: true, created: true, unfollowed: 0 },
+      { ok: true, created: true, unfollowed: 0 },
+    ]);
   });
 });

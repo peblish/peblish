@@ -1,6 +1,8 @@
 import { eq } from 'drizzle-orm';
 import { beforeEach, describe, expect, test } from 'vitest';
+import { siteBans } from '../bans/tables.ts';
 import { db } from '../db/read.ts';
+import { writer } from '../db/write.ts';
 import { ageDeclarations } from '../identity/tables.ts';
 import { truncateAll } from '../testing/db.ts';
 import { localUser, seedActor } from '../testing/seed.ts';
@@ -48,5 +50,16 @@ describe('declareAgeAs', () => {
     expect(await declareAgeAs(localUser(sam.id), { day: '1', month: '1', year: '1980' }, now)).toEqual({ ok: true, created: false });
     expect(await rows()).toHaveLength(1);
     expect(await outboxEvents()).toHaveLength(1);
+  });
+
+  test('a site-banned person cannot declare', async () => {
+    const sam = await person();
+    await writer().insert(siteBans).values({ actorId: sam.id, source: 'local' });
+    expect(await declareAgeAs(localUser(sam.id), { day: '1', month: '1', year: '1980' }, now)).toEqual({
+      ok: false,
+      reason: 'auth.site_banned',
+    });
+    expect(await rows()).toEqual([]);
+    expect(await outboxEvents()).toEqual([]);
   });
 });

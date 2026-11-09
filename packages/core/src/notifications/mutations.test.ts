@@ -4,6 +4,7 @@ import { uuidv7 } from 'uuidv7';
 import { beforeEach, describe, expect, test } from 'vitest';
 import { authorize } from '../authz/authorize.ts';
 import { systemPrincipal } from '../authz/system.ts';
+import { siteBans } from '../bans/tables.ts';
 import { db } from '../db/read.ts';
 import { truncateAll } from '../testing/db.ts';
 import { writer } from '../db/write.ts';
@@ -147,6 +148,19 @@ describe('marking read', () => {
     const decision = await authorize('notification.read', other, { notificationId: notice.id });
     expect(decision).toEqual({ ok: false, reason: 'notification.not_yours' });
     expect((await noticesOf(world.people.author.id))[0]?.readAt).toBeNull();
+  });
+});
+
+describe('a site-banned person cannot mark', () => {
+  test('grants issued before the ban write nothing', async () => {
+    const { world, owner, notice } = await setup();
+    const one = await grantFor('notification.read', owner, { notificationId: notice.id });
+    const all = await grantFor('notification.read_all', owner, { recipientId: world.people.author.id });
+    await writer().insert(siteBans).values({ actorId: world.people.author.id, source: 'local' });
+    await expect(markNotification(one, { read: true })).rejects.toMatchObject({ name: 'Refused', reason: 'auth.site_banned' });
+    await expect(markAllNotificationsRead(all, undefined)).rejects.toMatchObject({ name: 'Refused', reason: 'auth.site_banned' });
+    expect((await noticesOf(world.people.author.id))[0]?.readAt).toBeNull();
+    expect((await events()).filter((e) => e.type === 'notification.read')).toEqual([]);
   });
 });
 

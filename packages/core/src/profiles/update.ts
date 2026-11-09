@@ -14,11 +14,13 @@ import { ProfileInput, type ProfilePatch } from './input.ts';
  * Edits the acting person's display name and bio. A field that is present replaces the stored
  * value (empty clears it), one that is absent stays. actor.updated with kind 'Person' is what
  * federation sends as Update(Person); it is emitted only when something changed. The bio is
- * stored as Markdown source and as the federation form of its HTML.
+ * stored as Markdown source and as the federation form of its HTML. The recheck refuses a
+ * person site-banned or deleted since authorize() (auth.site_banned, auth.actor_deleted).
  */
-export const updateProfile = defineMutation({
+const updateProfileRow = defineMutation({
   action: 'profile.update',
   emits: ['actor.updated'],
+  recheck: true,
   async run(t, grant, input: ProfilePatch) {
     const patch = ProfileInput.assert(input);
     const { actorId } = grant.subject;
@@ -39,6 +41,23 @@ export const updateProfile = defineMutation({
       .where(eq(actors.id, actorId));
     await t.emit({ type: 'actor.updated', v: 1, actorId, kind: 'Person', local: true });
     return { changed: true };
+  },
+});
+
+/**
+ * profile.update in its own transaction (updateProfileRow, rechecked). The body updates the
+ * acting person's own actor row, which the recheck's principal refresh reads FOR SHARE, so two
+ * edits at once (a double submit) would each hold it FOR SHARE and wait for the other to
+ * upgrade (40P01). The row is locked FOR NO KEY UPDATE first, as deleteAccount does: a second
+ * edit, or a site ban (which locks the same row before inserting), waits here, and the recheck
+ * then sees whatever committed first.
+ */
+export const updateProfile = defineMutation({
+  action: 'profile.update',
+  emits: ['actor.updated'],
+  async run(t, grant, input: ProfilePatch) {
+    await t.db.select({ id: actors.id }).from(actors).where(eq(actors.id, grant.actorId)).for('no key update');
+    return updateProfileRow.within(t, grant, input);
   },
 });
 
