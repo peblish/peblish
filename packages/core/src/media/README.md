@@ -2,10 +2,10 @@
 
 | Area                       | What                                                                                                                                                               |
 | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `../storage/`              | `ObjectStore` (put, get, delete), the S3 adapter `s3Store()` (MinIO, R2; `S3_*` variables) and `memoryStore()` for tests                                           |
+| `../storage/`              | `ObjectStore` (put, get, delete), the S3 adapter `s3Store()` (MinIO, R2; `S3_*` variables; every call times out after 30 s) and `memoryStore()` for tests          |
 | `clean.ts`, `image/`       | `cleanImage(bytes)`: JPEG, PNG, WebP and GIF rebuilt without metadata; never SVG                                                                                   |
 | `upload.ts`                | `uploadImage(principal, { bytes, altText })`: refused with `site.disabled` while `uploads.enabled` is false; stores, records a `pending` row, emits `media.stored` |
-| `../links/`                | `fetchLinkPreview(principal, url)`: title, description and the `og:image` URL (nothing stored); stopped by `remote_media.enabled`                                  |
+| `../links/`                | `fetchLinkPreview(principal, url)`: title, description and the `og:image` URL (nothing stored); stopped by `remote_media.enabled`; throttled by its caller (below) |
 | `proxy-url.ts`, `proxy.ts` | signed `/media/proxy/<signature>/<target>` paths and the fetch behind the route `packages/web/src/routes/media/proxy/`                                             |
 | `image-src.ts`             | `imageSource(url, policy)`: where a page loads an image from; `isImageContentType`                                                                                 |
 
@@ -13,7 +13,13 @@
 
 `cleanImage` parses the container strictly and writes it again from the parts that decide what is drawn. Exif (GPS, camera, owner), XMP, IPTC, ICC profiles, comments, PNG text and time chunks, GIF comment and XMP extensions, WebP `EXIF`, `XMP ` and `ICCP` chunks and any bytes after the image are gone. A JPEG keeps one 34-byte Exif segment with only its orientation (phone photos would display sideways without it). A damaged file is refused (`media.invalid_image`), and so is anything past 8192 pixels a side or 40 million pixels (`media.too_large`).
 
-The pixels are neither decoded nor re-encoded: no native or wasm codec ships in the image, and nothing allocates per pixel, so there is no decompression bomb to defend against. The price is that an upload is the image as sent, not a resized copy.
+Every kept structure must be exactly as long as its fields define, so no marker rides in the tail of a table, a header, an `IEND` payload, a loop-count block or a `VP8X` chunk; a JPEG's Adobe `APP14` segment is the one place real files carry extra private bytes, and it is written again at its 12 defined bytes. Every animation frame (a GIF frame, an APNG `fcTL`, a WebP `ANMF`) must be non-empty, inside the canvas and, for WebP, carry one raster chunk of its own size. The pixels are neither decoded nor re-encoded: no native or wasm codec ships in the image, and nothing allocates per pixel, so there is no decompression bomb to defend against. The price is that an upload is the image as sent, not a resized copy, and that the compressed bitstreams themselves (JPEG scan data, `IDAT`, GIF LZW data, `VP8`, `VP8L` and `ALPH` payloads) stay opaque: bytes hidden inside them are not found without decoding the pixels, lane SAFE's scan is the second line.
+
+Limits apply to uploads only: 8192 pixels a side and 40 million pixels in all, checked on the cleaned canvas. A proxied remote image is **not** dimension-limited, only size-limited (10 MiB, and it must be a raster type by its first bytes): the proxy never decodes it and the viewer's browser decides what to do with a huge canvas.
+
+## Link previews and their budget
+
+`fetchLinkPreview` makes the server fetch an address a person chose, but it does not count attempts itself. The composer's server function calls `attempt('link-preview', { ip, id })` (`identity/throttle.ts`: 30 a client address and 20 an account in ten minutes) first, and only then `fetchLinkPreview`; a caller that skips the throttle gets no protection from this module. What comes back is safe to hand to `createPost`: a thumbnail URL over 2,000 characters or a content type that is not a media type is returned as null, judged by `NewPost`'s own validators.
 
 ## Rows and serving
 
