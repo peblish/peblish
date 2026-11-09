@@ -2,7 +2,7 @@ import { budgets } from '@peblish/core/identity/throttle';
 import type { Held } from '@peblish/core/resolve/outcome';
 import { describe, expect, test } from 'vitest';
 import { answer } from './-answer.ts';
-import { pageOf, resolveForm, type Deps, type Who } from './-resolve.ts';
+import { pageOf, readLookupText, resolveForm, type Deps, type Who } from './-resolve.ts';
 
 const actor = {
   id: '0192f2c0-0000-7000-8000-000000000001',
@@ -99,6 +99,16 @@ test('each kind of thing found goes to its local page', () => {
   expect(pageOf({ kind: 'person', actor: { ...actor, kind: 'Person', handle: 'mira@lemmy.test' } })).toBe('/u/mira@lemmy.test');
   expect(pageOf({ kind: 'post', postId })).toBe(`/post/${postId}`);
   expect(pageOf({ kind: 'comment', postId, commentId })).toBe(`/post/${postId}/comments/${commentId}`);
+});
+
+test('the typed text is read from a small form and from nothing else', async () => {
+  const post = (body: BodyInit | null, headers: Record<string, string> = {}) =>
+    new Request('https://disc.test/resolve', { method: 'POST', body, headers });
+  expect(await readLookupText(post(new URLSearchParams({ q: '!lab@lemmy.test' })))).toBe('!lab@lemmy.test');
+  expect(await readLookupText(post(new URLSearchParams({ q: 'x'.repeat(5000) }), { 'content-length': '5004' }))).toBe('');
+  expect((await readLookupText(post(new URLSearchParams({ q: 'x'.repeat(900) })))).length).toBe(501);
+  expect(await readLookupText(post('not a form', { 'content-type': 'text/plain' }))).toBe('');
+  expect(await readLookupText(post(null))).toBe('');
 });
 
 describe('the answer', () => {

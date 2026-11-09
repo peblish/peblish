@@ -7,7 +7,7 @@ import { clientIp, forbidden, formSession, privateResponses, sameOrigin } from '
 import directoryCss from '../communities/-ui/directory.css?url';
 import { answer } from './-answer.ts';
 import { loadResolve } from './-load.ts';
-import { resolveForm } from './-resolve.ts';
+import { readLookupText, resolveForm } from './-resolve.ts';
 import { ResolvePage } from './-ui/resolve-page.tsx';
 
 // /resolve: find a community, person, post or comment on another server by handle or link. The
@@ -37,7 +37,8 @@ export const Route = createFileRoute('/resolve/')({
         if (!sameOrigin(request)) return forbidden();
         const { session } = await formSession(request);
         const cookies = session?.setCookies ?? [];
-        const q = ((await request.formData()).get('q') ?? '').toString().slice(0, maxLookupLength + 1);
+        // Nobody signed out gets their body read.
+        const q = session ? await readLookupText(request) : '';
         const who = session ? { actorId: session.view.actorId, emailVerified: session.view.emailVerified, ip: clientIp(request) } : null;
         return answer(request, cookies, await resolveForm(who, q), q.trim().slice(0, maxLookupLength));
       },

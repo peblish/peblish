@@ -1,7 +1,7 @@
 import { attempt } from '@peblish/core/identity/throttle';
 import { hostBlocked } from '@peblish/core/resolve/blocked';
 import { findHeld, pointsHere } from '@peblish/core/resolve/local';
-import type { Held, Lookup, ResolveError } from '@peblish/core/resolve/outcome';
+import { maxLookupLength, type Held, type Lookup, type ResolveError } from '@peblish/core/resolve/outcome';
 import { parseLookup } from '@peblish/core/resolve/parse';
 import { readSetting } from '@peblish/core/settings/read';
 import { resolveLookup } from '@peblish/federation/resolve/web';
@@ -24,6 +24,24 @@ export function pageOf(held: Held): string {
       return postPath(held.postId);
     case 'comment':
       return commentPath(held.postId, held.commentId);
+  }
+}
+
+/** The most a lookup form may weigh: the one field is at most 500 characters. */
+const maxFormBytes = 4096;
+
+/**
+ * What was typed in a request's form: the `q` field, cut a character past the limit so that a
+ * too-long lookup still fails to parse. A body that is too big, or no form, is nothing typed.
+ */
+export async function readLookupText(request: Request): Promise<string> {
+  const declared = Number(request.headers.get('content-length'));
+  if (Number.isFinite(declared) && declared > maxFormBytes) return '';
+  try {
+    const q = (await request.formData()).get('q');
+    return typeof q === 'string' ? q.slice(0, maxLookupLength + 1) : '';
+  } catch {
+    return '';
   }
 }
 
