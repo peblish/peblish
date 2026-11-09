@@ -3,7 +3,6 @@ import { randomBytes } from 'node:crypto';
 import { join } from 'node:path';
 import { expect, test } from '@playwright/test';
 import { closePools } from '../../packages/core/src/db/pools.ts';
-import { remoteMedia } from '../../packages/core/src/testing/seed-safe.ts';
 import { expectAccessible, freshTotp, landed, signIn } from '../auth/support.ts';
 import { gotoHydrated } from '../support/route-marker.ts';
 
@@ -94,30 +93,6 @@ test('a bad hash is refused with its reason and an added one is listed', async (
   await page.getByRole('button', { name: 'Add and quarantine matches' }).click();
   await expect(page.getByTestId('media-notice')).toContainText('0 existing images quarantined');
   await expect(page.getByTestId('hash-row').filter({ hasText: hash.slice(0, 8) })).toBeVisible();
-});
-
-// This case flips remote_media.enabled on the lane database for a moment. Other specs render pages
-// and previews with that switch (composer's "what Preview shows is what is published" compares two
-// renders), so under the parallel runner it can land between them and fail an unrelated spec.
-// It is opt-in: E2E_PAUSE_SWITCH=1 pnpm e2e e2e/mediascan (see LANE-NOTES, request 3).
-test('the remote-media pause switch stops the proxy but not a clean upload', async ({ request }) => {
-  test.skip(!process.env.E2E_PAUSE_SWITCH, 'flips a shared setting; run with E2E_PAUSE_SWITCH=1 on its own');
-  const rows = seed<Record<'clean', string>>('states');
-  const proxy = execFileSync('node', ['packages/core/src/testing/seed-b2.ts', 'proxy-path', 'https://img.example/a.png'], {
-    cwd: root,
-    encoding: 'utf8',
-  });
-  await remoteMedia(false);
-  let proxied;
-  let clean;
-  try {
-    proxied = await request.get(JSON.parse(proxy) as string);
-    clean = await request.get(`/media/${rows.clean}`);
-  } finally {
-    await remoteMedia(true);
-  }
-  expect([proxied.status(), proxied.headers()['cache-control']]).toEqual([404, 'no-store']);
-  expect(clean.status()).toBe(200);
 });
 
 test('a clean upload serves with its headers, and every other /media/<id> is the same 404', async ({ request }) => {

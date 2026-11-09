@@ -28,7 +28,20 @@ export default defineConfig({
   retries: 0,
   reporter: process.env.CI ? [['list'], ['html', { outputFolder: './artifacts/report', open: 'never' }]] : 'list',
   use: { baseURL, locale: 'en-US', trace: 'retain-on-failure' },
-  projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
+  // Specs that flip a shared site setting (kill switches, uploads, remote media) or render
+  // something such a flip changes are named *.serial.spec.ts: they run one at a time after the
+  // parallel project, so no flip lands in the middle of another spec. Playwright skips them when
+  // the parallel project fails; `pnpm e2e --project serial --no-deps` runs them alone.
+  projects: [
+    { name: 'chromium', use: { ...devices['Desktop Chrome'] }, testIgnore: '**/*.serial.spec.ts' },
+    {
+      name: 'serial',
+      use: { ...devices['Desktop Chrome'] },
+      testMatch: '**/*.serial.spec.ts',
+      dependencies: ['chromium'],
+      workers: 1,
+    },
+  ],
   webServer: process.env.BASE_URL
     ? undefined
     : {

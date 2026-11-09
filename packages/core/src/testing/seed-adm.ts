@@ -9,7 +9,7 @@ import { writer } from '../db/write.ts';
 import { pageRevisions, pages } from '../pages/tables.ts';
 import { PASSWORD, seedAccount, seedTwoFactor } from './seed-a.ts';
 
-// Lane ADM's seed, a CLI for the e2e run (`node packages/core/src/testing/seed-adm.ts e2e | e2e-pages`).
+// Lane ADM's seed, a CLI for the e2e run (`node packages/core/src/testing/seed-adm.ts e2e | e2e-pages | e2e-switches`).
 // Test code only.
 
 /** The settings the Settings spec saves, and those the Pages spec fills: back to their contract defaults (a missing row is the default). */
@@ -81,8 +81,10 @@ if (import.meta.main) {
       console.log(
         JSON.stringify({ admin: await seedAdmin('adm_pages_admin', 'peblish-e2e-adm-pages-secret-01'), member: await seedAdmMember() }),
       );
+    } else if (command === 'e2e-switches') {
+      console.log(JSON.stringify({ admin: await seedAdmin('adm_switch_admin', 'peblish-e2e-adm-switch-secret-01') }));
     } else if (command === 'settings-log') console.log(JSON.stringify(await settingsLog()));
-    else throw new Error('usage: node packages/core/src/testing/seed-adm.ts e2e | e2e-pages | settings-log');
+    else throw new Error('usage: node packages/core/src/testing/seed-adm.ts e2e | e2e-pages | e2e-switches | settings-log');
   } finally {
     await closePools();
   }
