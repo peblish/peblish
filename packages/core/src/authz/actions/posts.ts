@@ -2,30 +2,13 @@ import type { Uuid } from '@peblish/schema/ids';
 import type { RefusalReason } from '@peblish/schema/refusal';
 import { eq } from 'drizzle-orm';
 import { actors } from '../../db/tables/actors.ts';
-import { authUser } from '../../db/tables/auth.ts';
-import { allow, deny, forNoKeyUpdate, forShare, type PolicyRequest, type PolicyResult } from '../policy.ts';
-import { communityRole, ownerAuthority } from '../roles.ts';
+import { allow, deny, forNoKeyUpdate, type PolicyRequest, type PolicyResult } from '../policy.ts';
+import { communityRole, emailUnverified, ownerAuthority } from '../roles.ts';
 import { communityDenial, isBanned, postState, postingDenial, type PostState } from '../state.ts';
 
 // Owned by lane B1. Rows are read in the lock order of state.ts: the acting actor, the
 // community, the post. Lane AZ's guards refuse removed communities and community bans
 // (postingDenial, and communityDenial and isBanned for the author actions).
-
-/**
- * Whether the account behind a local Person has not verified its email yet (lane A's request).
- * Read through actors.user_id, FOR SHARE under lock, before the community is read: the
- * principal refresh holds the actor row and auth_user row the same way. A Person without an
- * account row cannot sign in, so there is no address to verify and nothing to refuse.
- */
-async function emailUnverified(request: Pick<PolicyRequest<unknown>, 'db' | 'lock'>, actorId: Uuid): Promise<boolean> {
-  const [actor] = await forShare(request.db.select({ userId: actors.userId }).from(actors).where(eq(actors.id, actorId)), request.lock);
-  if (!actor?.userId) return false;
-  const [user] = await forShare(
-    request.db.select({ emailVerified: authUser.emailVerified }).from(authUser).where(eq(authUser.id, actor.userId)),
-    request.lock,
-  );
-  return user?.emailVerified === false;
-}
 
 /**
  * Whether the acting principal is a remote community (a Group). A community neither authors

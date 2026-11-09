@@ -1,6 +1,7 @@
 import type { Authority } from '@peblish/schema/authz';
 import type { Uuid } from '@peblish/schema/ids';
 import { and, eq, gt, isNotNull, isNull, or, sql } from 'drizzle-orm';
+import { actors } from '../db/tables/actors.ts';
 import { authUser } from '../db/tables/auth.ts';
 import { communityModerators } from '../db/tables/moderation.ts';
 import { moderatorCache, type CommunityRole } from './moderators-cache.ts';
@@ -49,6 +50,22 @@ export async function isSiteAdmin(read: StateRead, userId: Uuid | null): Promise
   if (!userId) return false;
   const [user] = await forShare(read.db.select({ role: authUser.role }).from(authUser).where(eq(authUser.id, userId)), read.lock);
   return user?.role === 'admin';
+}
+
+/**
+ * Whether the account behind a local Person has not verified its email yet (lane A's request;
+ * post.create and comment.create refuse it). Read through actors.user_id, FOR SHARE under lock,
+ * before the community is read: the principal refresh holds the actor row and auth_user row the
+ * same way. A Person without an account row cannot sign in, so there is nothing to refuse.
+ */
+export async function emailUnverified(read: StateRead, actorId: Uuid): Promise<boolean> {
+  const [actor] = await forShare(read.db.select({ userId: actors.userId }).from(actors).where(eq(actors.id, actorId)), read.lock);
+  if (!actor?.userId) return false;
+  const [user] = await forShare(
+    read.db.select({ emailVerified: authUser.emailVerified }).from(authUser).where(eq(authUser.id, actor.userId)),
+    read.lock,
+  );
+  return user?.emailVerified === false;
 }
 
 /** The owner authority when the principal is the object's author; null otherwise. */
