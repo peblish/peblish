@@ -30,7 +30,7 @@ const like = () => ({
 });
 
 /** A POST to our inbox signed as lemmyuser. */
-async function signed(body: string, keys = world.peers.lemmyuser.keys) {
+async function signed(body: string, keys: { keyId: string; privateKeyPem: string } = world.peers.lemmyuser.keys) {
   return new Request(inbox, { method: 'POST', headers: await signDelivery(keys, inbox, body), body });
 }
 

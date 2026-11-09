@@ -120,7 +120,7 @@ describe('mirroring a remote community’s moderators', () => {
     };
     expect(await denied({ kind: 'anonymous' })).toBe('auth.required');
     expect(await denied({ kind: 'local', actorId: w.ann.id, siteRole: 'admin' })).toBe('auth.required');
-    expect(await denied(await systemPrincipal(db(), 'delivery'))).toBe('auth.required');
+    expect(await denied(await systemPrincipal(db(), 'scheduled'))).toBe('auth.required');
     expect(await denied(await w.importer())).toBe('allowed');
     const { localCommunity } = await localGroup(w);
     expect(await denied(await w.importer(), localCommunity.id)).toBe('target.not_found');

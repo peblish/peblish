@@ -141,7 +141,7 @@ type Outbound = Awaited<ReturnType<typeof outbound>>;
 
 const run = (event: OutboxEvent) => tx((t) => consumer.handle(event, t));
 const mod = (w: Outbound, community = w.news.id, local = true) =>
-  ({ v: '1', moderatorId: w.moderator.id, modlogId: uuidv7(), local, communityId: community }) as const;
+  ({ v: 1, moderatorId: w.moderator.id, modlogId: uuidv7(), local, communityId: community }) as const;
 const target = 'https://fed-a.test/post/7';
 
 describe('a moderation action taken here is federated through the community', () => {
@@ -250,12 +250,12 @@ describe('a moderation action taken here is federated through the community', ()
 
   test('a local account’s deletion is a Delete of the account to the peers; a remote one is not ours to send', async () => {
     const w = await outbound();
-    await run({ type: 'actor.deleted', v: '1', actorId: w.moderator.id, kind: 'Person', local: true } as OutboxEvent);
+    await run({ type: 'actor.deleted', v: 1, actorId: w.moderator.id, kind: 'Person', local: true } as OutboxEvent);
     const rows = await queued();
     expect(rows.map((row) => shape(row.json))).toEqual(['Delete']);
     expect(rows[0]?.json).toMatchObject({ actor: w.moderator.apId, object: w.moderator.apId });
-    await run({ type: 'actor.deleted', v: '1', actorId: w.bob.id, kind: 'Person', local: false } as OutboxEvent);
-    await run({ type: 'actor.deleted', v: '1', actorId: w.news.id, kind: 'Group', local: true } as OutboxEvent);
+    await run({ type: 'actor.deleted', v: 1, actorId: w.bob.id, kind: 'Person', local: false } as OutboxEvent);
+    await run({ type: 'actor.deleted', v: 1, actorId: w.news.id, kind: 'Group', local: true } as OutboxEvent);
     expect(await queued()).toHaveLength(1);
   });
 });
