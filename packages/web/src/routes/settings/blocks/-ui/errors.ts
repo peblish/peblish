@@ -16,6 +16,7 @@ export function blockError(
     case 'handle.invalid':
     case 'block.limit':
       return { key: `error.${code}.${tab}` as MessageKey<'blocks'>, params: { max: max[tab] } };
+    case 'auth.site_banned':
     case 'block.own_instance':
     case 'target.protected':
     case 'gone':

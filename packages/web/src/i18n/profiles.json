@@ -54,6 +54,7 @@
     "edit.view": "View profile",
     "edit.error.profile.invalid": "Not saved. The display name is limited to {name} characters and the bio to {bio}.",
     "edit.error.auth.required": "Your session ended. Sign in again, then save.",
+    "edit.error.auth.site_banned": "You are banned from this instance.",
     "edit.error.target.deleted": "This account was deleted, so nothing can be saved.",
     "edit.error.generic": "Could not save. Nothing was changed. Try again.",
     "edit.error.network": "Could not save. The server did not answer. Nothing was changed. Try again."
@@ -113,6 +114,7 @@
     "edit.view": "Profil ansehen",
     "edit.error.profile.invalid": "Nicht gespeichert. Der Anzeigename darf {name} Zeichen lang sein, die Beschreibung {bio}.",
     "edit.error.auth.required": "Deine Sitzung ist beendet. Melde dich neu an und speichere dann.",
+    "edit.error.auth.site_banned": "Du bist von dieser Instanz gesperrt.",
     "edit.error.target.deleted": "Dieses Konto wurde gelöscht, deshalb lässt sich nichts speichern.",
     "edit.error.generic": "Konnte nicht speichern. Nichts wurde geändert. Versuche es noch einmal.",
     "edit.error.network": "Konnte nicht speichern. Der Server hat nicht geantwortet. Nichts wurde geändert. Versuche es noch einmal."

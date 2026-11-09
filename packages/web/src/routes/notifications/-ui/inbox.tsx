@@ -26,7 +26,7 @@ function unreadFor(filter: InboxFilter, inbox: Signed): number {
   return inbox.unreadByGroup[filter];
 }
 
-const errorKeys = ['auth.required', 'notification.not_yours', 'target.not_found', 'invalid'] as const;
+const errorKeys = ['auth.required', 'auth.site_banned', 'notification.not_yours', 'target.not_found', 'invalid'] as const;
 
 export function Inbox({ data, search }: { data: InboxData; search: InboxSearch }) {
   const { t } = useTranslate();

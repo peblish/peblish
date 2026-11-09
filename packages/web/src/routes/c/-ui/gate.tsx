@@ -39,8 +39,8 @@ export function GateNotice({ data, error }: { data: GateData; error?: string | u
   const action = communityPath({ handle });
   const shown = `!${handle}`;
   const message =
-    error === 'age.declaration_required'
-      ? t('communities', 'gate.error.age.declaration_required')
+    error === 'age.declaration_required' || error === 'auth.site_banned'
+      ? t('communities', `gate.error.${error}`)
       : error && t('communities', 'gate.error.generic');
   const intentForm = (intent: string, label: string, primary = false) => (
     <form method="post" action={action}>

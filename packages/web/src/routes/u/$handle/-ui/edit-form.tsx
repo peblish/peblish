@@ -12,7 +12,7 @@ import { useEditorLabels } from '../../../submit/-ui/labels.ts';
 import type { EditData } from '../-load.ts';
 
 const Answer = type({ 'saved?': 'boolean', 'error?': 'string' });
-const known = new Set(['profile.invalid', 'auth.required', 'target.deleted', 'generic', 'network']);
+const known = new Set(['profile.invalid', 'auth.required', 'auth.site_banned', 'target.deleted', 'generic', 'network']);
 
 /** profile-edit-inline.html: the display name and the bio with Write and Preview. Posts by fetch once hydrated, else natively (303 back). */
 export function EditForm({ data, saved, error: initial }: { data: EditData; saved: boolean; error: string | undefined }) {
