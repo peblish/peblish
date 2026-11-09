@@ -11,6 +11,7 @@ import { truncateAll } from '../testing/db.ts';
 import { Refused } from '../tx/refused.ts';
 import { tx } from '../tx/tx.ts';
 import { defineConsumer, type Consumer, type ConsumerStart, type ConsumerTx } from './consumers.ts';
+import { outboxSkipped } from './tables.ts';
 import { ensureCursors, oldestWriteTransaction, processBatch, runOutboxWorker, type OldestTransaction } from './worker.ts';
 
 // The outbox horizon is cluster-wide, so another lane's open transaction can hold back what a
@@ -460,5 +461,90 @@ describe('worker loop', () => {
     const database = new URL(process.env.DATABASE_URL ?? '').pathname.slice(1);
     expect(await oldestWriteTransaction(database)).toMatchObject({ database, application: 'peblish-write' });
     await slow.commit();
+  });
+});
+
+describe('a poison event', () => {
+  const ready = (consumer: Consumer) =>
+    writer().update(outboxCursors).set({ retryAt: null }).where(eq(outboxCursors.consumer, consumer.name));
+  const ageFailures = (consumer: Consumer, failures: number, minutesAgo: number) =>
+    writer()
+      .update(outboxCursors)
+      .set({ failures, firstFailureAt: sql`now() - make_interval(mins => ${minutesAgo})`, retryAt: null })
+      .where(eq(outboxCursors.consumer, consumer.name));
+
+  test('an event that keeps failing is skipped after 10 failures over 30 minutes: logged, recorded and counted, and the rest go on', async () => {
+    const { seen, consumer } = recorder({
+      async handle(event) {
+        if (idOf(event) === uuid(2)) throw new Error('cannot handle 2');
+      },
+    });
+    await ensureCursors([consumer]);
+    await emit(post(1), post(2), post(3));
+    await expect.poll(horizonPassedOutbox).toBe(true);
+    const [second] = await db()
+      .select({ id: outbox.id })
+      .from(outbox)
+      .where(sql`${outbox.payload}->>'postId' = ${uuid(2)}`);
+    await expect(processBatch(consumer)).rejects.toThrow('cannot handle 2');
+    expect(await cursorOf(consumer)).toMatchObject({ eventId: 0, failingEventId: second?.id, failures: 1 });
+
+    // Ten failures, but the first only 20 minutes ago: retried, and counted once more.
+    await ageFailures(consumer, 10, 20);
+    await expect(processBatch(consumer)).rejects.toThrow('cannot handle 2');
+    expect(await cursorOf(consumer)).toMatchObject({ failingEventId: second?.id, failures: 11 });
+
+    await ageFailures(consumer, 10, 31);
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    let logged: string[];
+    try {
+      await drain(consumer, seen, [uuid(1), uuid(1), uuid(1), uuid(3)]);
+    } finally {
+      logged = error.mock.calls.map(([message]) => String(message));
+      error.mockRestore();
+    }
+    expect(logged.some((message) => message.includes(`skipped outbox event ${second?.id} (post.created) after 10 failures`))).toBe(true);
+    expect(await cursorOf(consumer)).toMatchObject({ refused: 1, failingEventId: null, failures: 0, firstFailureAt: null, attempts: 0 });
+    expect(await db().select().from(outboxSkipped)).toEqual([
+      expect.objectContaining({
+        consumer: consumer.name,
+        eventId: second?.id,
+        type: 'post.created',
+        error: 'Error: cannot handle 2',
+        failures: 10,
+      }),
+    ]);
+  });
+
+  test('a failure the worker cannot record never counts toward the skip', async () => {
+    const { seen, consumer } = recorder({
+      async handle(event) {
+        if (idOf(event) === uuid(1)) throw new Error('cannot handle 1');
+      },
+    });
+    await ensureCursors([consumer]);
+    await emit(post(1), post(2));
+    await expect.poll(horizonPassedOutbox).toBe(true);
+    await expect(processBatch(consumer)).rejects.toThrow('cannot handle 1');
+    // Nine failures over an hour; the tenth cannot be written, as when the database is down.
+    await ageFailures(consumer, 9, 60);
+    await writer().execute(sql`
+      create function test_refuse_cursor_writes() returns trigger language plpgsql as $$ begin raise exception 'cursor write refused'; end $$`);
+    await writer().execute(
+      sql`create trigger refuse_cursor_writes before update on outbox_cursors for each row execute function test_refuse_cursor_writes()`,
+    );
+    try {
+      for (let attempt = 0; attempt < 3; attempt += 1) await expect(processBatch(consumer)).rejects.toThrow('cannot handle 1');
+    } finally {
+      await writer().execute(sql`drop trigger refuse_cursor_writes on outbox_cursors`);
+      await writer().execute(sql`drop function test_refuse_cursor_writes()`);
+    }
+    expect(await cursorOf(consumer)).toMatchObject({ failures: 9 });
+    // Not skipped: the next failure is the tenth, which the next batch would act on.
+    await ready(consumer);
+    await expect(processBatch(consumer)).rejects.toThrow('cannot handle 1');
+    expect(await cursorOf(consumer)).toMatchObject({ failures: 10, refused: 0 });
+    expect(seen).toEqual([]);
+    expect(await db().select().from(outboxSkipped)).toEqual([]);
   });
 });
