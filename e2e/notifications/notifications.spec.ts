@@ -98,7 +98,7 @@ test.describe('the inbox of a person who was replied to, mentioned, moderated an
     await expect(rows(page)).toHaveCount(11);
     await expect(inboxLink(page)).toHaveAccessibleName(/^Inbox\b.*\b11\b/);
     await expect(page).toHaveTitle(/^\(11\) Inbox · /);
-    await expect(page.getByText('11 unread', { exact: true })).toBeVisible();
+    await expect(page.getByRole('main').getByText('11 unread', { exact: true })).toBeVisible();
 
     const text = (phrase: string) => rows(page).filter({ hasText: phrase });
     await expect(text('replied to your post')).toHaveCount(4);
@@ -160,10 +160,10 @@ test.describe('the inbox of a person who was replied to, mentioned, moderated an
     await expect(rows(page)).toHaveCount(5);
     await rows(page).first().getByRole('button', { name: 'Mark read' }).click();
     await expect(page).toHaveURL(/\/notifications\?filter=replies$/);
-    await expect(page.getByText('10 unread', { exact: true })).toBeVisible();
+    await expect(page.getByRole('main').getByText('10 unread', { exact: true })).toBeVisible();
     await expect(rows(page).first().getByRole('button', { name: 'Mark unread' })).toBeVisible();
     await rows(page).first().getByRole('button', { name: 'Mark unread' }).click();
-    await expect(page.getByText('11 unread', { exact: true })).toBeVisible();
+    await expect(page.getByRole('main').getByText('11 unread', { exact: true })).toBeVisible();
     await page.context().close();
   });
 
@@ -173,7 +173,7 @@ test.describe('the inbox of a person who was replied to, mentioned, moderated an
     await gotoHydrated(page, '/notifications');
     await page.evaluate(() => Object.assign(window, { loadedOnce: true }));
     await rows(page).first().getByRole('button', { name: 'Mark read' }).click();
-    await expect(page.getByText('10 unread', { exact: true })).toBeVisible();
+    await expect(page.getByRole('main').getByText('10 unread', { exact: true })).toBeVisible();
     await expect(inboxLink(page)).toHaveAccessibleName(/^Inbox\b.*\b10\b/);
     await expect(rows(page).first().getByRole('button', { name: 'Mark unread' })).toBeVisible();
     expect(await page.evaluate(() => 'loadedOnce' in window)).toBe(true);
