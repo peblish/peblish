@@ -74,6 +74,22 @@ describe('verifying an inbox POST', () => {
     expect(rotated.requests.filter((request) => request.url === sender.id)).toHaveLength(1);
   });
 
+  test('a key the actor drops from its document stops verifying once the actor is refreshed', async () => {
+    const keys = rsaKeys();
+    const first = stubFetch({ [sender.id]: { body: document(keys.publicKeyPem) } });
+    await resolveRemoteActor(sender.id, { fetch: first.fetch });
+    expect(await verifyInboundSignature(await signed(keys.privateKeyPem), bytes(), { fetch: first.fetch })).toMatchObject({ ok: true });
+
+    const { publicKey: _dropped, ...withoutKey } = document(keys.publicKeyPem);
+    const refreshed = stubFetch({ [sender.id]: { body: withoutKey } });
+    await resolveRemoteActor(sender.id, { fetch: refreshed.fetch, refresh: true });
+    expect(await db().select().from(actorKeys)).toEqual([]);
+    expect(await verifyInboundSignature(await signed(keys.privateKeyPem), bytes(), { fetch: refreshed.fetch })).toEqual({
+      ok: false,
+      reason: 'key_unknown',
+    });
+  });
+
   test('a stranger’s signature, an unreachable actor and one of our own keys are all refused', async () => {
     const keys = rsaKeys();
     const { fetch } = stubFetch({ [sender.id]: { body: document(rsaKeys().publicKeyPem) } });
