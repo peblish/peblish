@@ -19,6 +19,7 @@ type Seed = {
   undeclared: { name: string };
   host: string;
   communities: { local: string; adult: string; remote: string; remoteAdult: string };
+  remotePerson: string;
 };
 
 let seed: Seed;
@@ -291,6 +292,8 @@ test.describe('resolve', () => {
     await page.getByRole('textbox', { name: 'Handle or link' }).fill(`!${handle}`);
     await page.getByRole('button', { name: 'Find' }).click();
     await page.waitForURL(`**/c/${handle}`);
+    await page.locator('html[data-hydrated="1"]').waitFor({ state: 'attached' });
+    await expect(page.getByRole('heading', { level: 1, name: 'Page not found' })).toHaveCount(0);
 
     // The same without script, and a link to the community instead of its handle.
     for (const q of [`!${handle}`, `https://${seed.host}/c/${seed.communities.remote}`]) {
@@ -310,6 +313,26 @@ test.describe('resolve', () => {
     await expect(plain.page.getByRole('alert')).toContainText('That is not a handle or link we can use.');
     await expect(plain.page.getByRole('textbox', { name: 'Handle or link' })).toHaveValue('nonsense');
     await plain.context.close();
+    await context.close();
+  });
+
+  test('a held remote community and person open on their pages here, not a not-found page', async ({ browser }) => {
+    const { context, page } = await as(browser, viewerState);
+    await gotoHydrated(page, '/resolve');
+    const community = `${seed.communities.remote}@${seed.host}`;
+    const person = `${seed.remotePerson}@${seed.host}`;
+    for (const [q, path] of [
+      [`!${community}`, `/c/${community}`],
+      [`@${person}`, `/u/${person}`],
+    ] as const) {
+      const json = await post(page, '/resolve', { q }, true);
+      expect([q, json.status, JSON.parse(json.text)]).toEqual([q, 200, { redirect: path }]);
+      const response = await page.goto(path, { waitUntil: 'commit' });
+      expect([path, response?.status()]).toEqual([path, 200]);
+      await page.locator('html[data-hydrated="1"]').waitFor({ state: 'attached' });
+      await expect(page.getByRole('heading', { level: 1, name: 'Page not found' }), path).toHaveCount(0);
+      await expect(page.getByRole('heading', { level: 1 }), path).toBeVisible();
+    }
     await context.close();
   });
 });

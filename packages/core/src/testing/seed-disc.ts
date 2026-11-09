@@ -93,7 +93,8 @@ export async function seedDirectoryWorld() {
 /**
  * What the e2e spec reads, made fresh each run (names carry a suffix, so the lane database may
  * keep earlier runs): a signed-in account that declared 16+ and one that has not, a local
- * community, a local NSFW one, a remote one and a remote NSFW one that must not list. Prints
+ * community, a local NSFW one, a remote one, a remote NSFW one that must not list and a remote
+ * person. Prints
  * the names as JSON.
  */
 async function e2e() {
@@ -113,6 +114,10 @@ async function e2e() {
     }),
     remoteAdult: await seedActor(remote, 'Group', `disc_remote_adult_${suffix}`, { sensitive: true, fetchedAt: new Date() }),
   };
+  const person = await seedActor(remote, 'Person', `disc_person_${suffix}`, {
+    apId: `https://${remote.domain}/u/disc_person_${suffix}`,
+    fetchedAt: new Date(),
+  });
   return {
     password: PASSWORD,
     suffix,
@@ -127,6 +132,8 @@ async function e2e() {
       remote: community.remote.name,
       remoteAdult: community.remoteAdult.name,
     },
+    /** A remote person held here, whom a lookup sends to /u/<name>@<host>. */
+    remotePerson: person.name,
   };
 }
 
