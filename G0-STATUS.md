@@ -789,3 +789,52 @@ Left open (with the reason):
 - LAB's branch is not merged.
 
 Housekeeping: no push; the lane worktrees, branches and databases stay; the `peblish:w3` image tag stays.
+
+## Wave 3 review fixes (2026-11-10)
+
+Five Codex reviewers read tag `w3-review` (96d94dd). Root accepted every finding and fixed them in five lanes, each a branch `mvp-w3-fx-<lane>` cut from `w3-review` with its own worktree. PERF fixed the feed regression above, and LAB (cut at 264c9c9, before the groundwork) delivered the interop lab. All seven were merged here in this order with `git merge --no-ff`, and `LANE-NOTES.md` was dropped from the tree in each merge. The findings, root's responses and the lane briefs are in `/Users/admin/.agents/plans/feddit/briefs/wave-3/` (`review-findings.md`, `fix-lanes.md`); the lane notes are in `lane-notes/wave-3/<lane>.md`. FX-FED (D3, D7, S1, F1, F3, F5, F6, F7) merges in a second step.
+
+| Lane       | Findings                                                                                                           | Head    | Merge   |
+| ---------- | ------------------------------------------------------------------------------------------------------------------ | ------- | ------- |
+| PERF       | the Subscribed feed regression (follows as one array parameter, block and peer predicates as `<> all(array(...))`) | bcb46bf | 722e01a |
+| LAB        | Lemmy 0.19.21, PieFed 1.8.11 and Mbin 1.11 against the production image; `@peblish/interop`; `INTEROP.md`          | 870af48 | 36d1ca0 |
+| FX-MEDIA   | D1, D2, D4, D5, D6, S6, S7, S8, W10 (Media)                                                                        | 618d631 | 095ba07 |
+| FX-REPORTS | A1 (report creation), A2, A7, D8, D9, S10, F4, W4                                                                  | c8b1a75 | 84e89f6 |
+| FX-PEOPLE  | A1 (profiles, blocks, age, notification marks), A8, A9, D10, S9, S11, S13, S14, W7                                 | f89ee43 | 440dc02 |
+| FX-WEB     | S4, A4, W5, W6, W8, W9, W10 (Settings, Pages, Bans, Peers), W12                                                    | 18d1380 | a70fdb3 |
+
+Conflicts: none, not even in the i18n files, the e2e specs FX-WEB and FX-MEDIA touched, `e2e/payload/routes.ts` or the README. `pnpm gen` changed nothing. `rm -rf node_modules && pnpm install` left the lockfile as merged (LAB's `tools/interop` importer came with its merge), so there is no lockfile commit.
+
+Migration `0010_wave_3_fixes` (drizzle-kit, 8 statements, all FX-MEDIA's and identical to its scratch SQL): `media_evidence` drops `media_evidence_media_id_unique` and gains `hold_authority` (check `afp`, `ncmec`, `nca`), `purge_started_at` and the index `media_evidence_media` on `(media_id, created_at)`; `media_scans` gains `claim_token`, `purge_attempts` (not null, default 0) and `purge_retry_at`. `peblish_root` and `peblish_root_test` were dropped and recreated on the eleven migrations; `pnpm db:drift` finds none.
+
+Root's commits, after the merges:
+
+| Commit  | Change                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| abe2bfb | Migration `0010_wave_3_fixes`; the migrate test's comment counts eleven                                                                                                                                                                                                                                                                                                                                                             |
+| edabcc3 | The read pool sets `plan_cache_mode: 'force_custom_plan'` beside `jit: 'off'` (PERF: a cached generic plan cannot see the clock, the Top period or the follows)                                                                                                                                                                                                                                                                     |
+| cd4ed72 | The header comments of `authz/actions/{profiles,blocks,notifications,reports}.ts` say which writes recheck and what they lock                                                                                                                                                                                                                                                                                                       |
+| 825cff8 | `requiresRecheck` adds `profile.update`, `block.add`, `block.remove`, `age.declare`, `notification.read`, `notification.read_all`, `report.create`, `report.resolve` and `report.route`. `updateProfile` and `addBlock`, which lock the acting row before an inner rechecked mutation, declare `recheck: 'inner'`; that throws if the body ran no rechecked mutation of its action (test in `tx/mutations.test.ts`). README updated |
+| e6651fa | `auth.site_banned` copy ("You are banned from this instance.") on the profile edit form, the inbox, the NSFW gate and the blocks page, in en and de                                                                                                                                                                                                                                                                                 |
+| 9f07d61 | A hold cannot narrow: while an AFP hold is in force, a replacing NCMEC or NCA hold is `media.hold_invalid` (test in `mediascan/review.test.ts`)                                                                                                                                                                                                                                                                                     |
+| 42858bb | The `media.hold_invalid` message says so (en and de; the German joins the German review item)                                                                                                                                                                                                                                                                                                                                       |
+| 714eb19 | README: the serial e2e run is `e2e/run.ts`, a second run whether or not the first failed; the LAB row says the lab runs by hand with `make check` and CI runs only the package's unit tests                                                                                                                                                                                                                                         |
+| 1055222 | The interop driver removes a post through `mod.remove` directly: `removePostAs` left `posts/actions.ts` in the groundwork, after LAB's branch point, so the merged tree failed `tsc -p tsconfig.json`                                                                                                                                                                                                                               |
+| faeac79 | e2e: a forwarded report's receipt names the remote host and drops "will not learn who you are"; `back=%2F%09%2Fevil.example` becomes `/` on the receipt's Done and the form's Cancel. `seed-rep.ts` adds a post by a person on a `.example` host                                                                                                                                                                                    |
+| (last)  | This section                                                                                                                                                                                                                                                                                                                                                                                                                        |
+
+Verification on lane root (port 18399), with the federation fix lane running beside it (load average 7 to 11):
+
+- `pnpm check`: green. 225 test files passed and 4 skipped, 2,574 tests passed and 7 skipped. The first run stopped at the root typecheck on the interop driver (1055222).
+- `pnpm db:drift`: none. A fresh `pnpm db:migrate` applies.
+- `pnpm build && pnpm e2e`: parallel run 323 passed and 1 skipped (the `/kit` 404 case), serial run 33 passed, both exited 0, on the first full run. Payload: product pages at most 130.7 kB script of 170 (`/submit` signed in, `/c/new`), `/kit` 170.5 of 180, Mux CSS 60.4 of 65, fonts 259.2 of 270.
+- Image job: `docker build -t peblish:w3-fixes .`, then `scripts/image-smoke.sh` against a throwaway `peblish_root_image` (dropped after): the disagreeing command refused, migrate, first admin, worker start and stop, web healthy as uid 1000.
+- `PEBLISH_FEED_PERF=1` `feeds/perf.test.ts`: passed twice, at load average 9 to 10. 306 rows, none over 50 ms; worst p95 19.7 ms (blocked peers, 130 follows, All Hot), worst Subscribed p95 15.6 ms. `profiles/perf.test.ts`: passed, worst p95 13.1 ms.
+
+Left open (with the reason):
+
+- FX-FED is not merged yet; it comes in step 2, with the check that `forwardHosts` and its send-time peer-block gate agree, and its root item (F7 for posts in `posts/remote.ts`).
+- `deleteAccount` keeps its outer non-rechecked mutation without `recheck: 'inner'`: `account.delete` is not in `requiresRecheck`, and nothing asked to add it.
+- FX-INTEROP (root's decisions on LAB's questions) runs after integration. German review of FX-MEDIA's new strings and the extended hold message joins the German review item.
+
+Housekeeping: no push; the lane worktrees, branches and databases stay; the `peblish:w3-fixes` image tag stays.
