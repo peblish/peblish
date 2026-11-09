@@ -115,7 +115,10 @@ describe.skipIf(!process.env.PEBLISH_FEED_PERF)('feed performance', () => {
       }
     }
     console.log(report.join('\n'));
-    if (process.env.FEED_PERF_PLANS) writeFileSync(process.env.FEED_PERF_PLANS, plans.join('\n\n'));
+    if (process.env.FEED_PERF_PLANS) {
+      writeFileSync(process.env.FEED_PERF_PLANS, plans.join('\n\n'));
+      writeFileSync(`${process.env.FEED_PERF_PLANS}.timings`, report.join('\n'));
+    }
     expect(slow).toEqual([]);
   }, 1_800_000);
 });
