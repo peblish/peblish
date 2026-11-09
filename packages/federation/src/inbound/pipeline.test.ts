@@ -122,9 +122,16 @@ describe('dedupe, apply and enqueue are one transaction', () => {
     await truncateVotes();
     const batch = { ...announceBy(lab, like(1)), object: [like(1), like(2)] };
     const batched = await deliver(batch);
-    // One vote counted, one skipped for want of its post: the row is applied, and the vote is there.
-    expect(batched.stored).toEqual({ state: 'applied', error: null });
+    // One vote counted, one waits for its post: the row is recorded for that post, not as applied.
+    expect(batched.stored).toEqual({ state: 'skipped', error: `target.missing ${lemmy}/post/none` });
     expect(await db().select().from(votes)).toHaveLength(1);
+
+    // The post arrives: the row goes back in line, the vote that applied is a duplicate, and the other applies.
+    await deliver(announceBy(lab, createPage('none', lab)));
+    expect((await inboxState(batched.row.id))?.state).toBe('pending');
+    await processPending();
+    expect(await inboxState(batched.row.id)).toEqual({ state: 'applied', error: null });
+    expect(await db().select().from(votes)).toHaveLength(2);
   });
 });
 

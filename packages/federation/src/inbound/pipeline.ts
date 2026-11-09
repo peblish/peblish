@@ -187,19 +187,24 @@ async function processItem(row: InboxRow, json: JsonObject, env: Env, settleHere
   }
 }
 
-/** One end state for a row that carried several activities: applied if any was, else why none were. */
+/**
+ * One end state for a row that carried several activities: applied if any was, else why none were.
+ * A member still waiting for its object keeps the row discoverable even when another member
+ * applied: the row is recorded as skipped for that object, goes back in line when the object
+ * arrives (queue.ts requeueWaiting), and is processed again with the members that applied
+ * protected by their dedupe markers (they come out as `duplicate`).
+ */
 function aggregate(results: readonly ItemResult[]): Settled {
+  const skipped = results.filter((result): result is { skipped: Skipped } => 'skipped' in result).map((result) => result.skipped);
+  // A missing object is recorded alone, so the requeue that matches it finds the row.
+  const missing = skipped.find((one) => one.reason === 'target.missing');
+  if (missing) return { state: 'skipped', error: missing.recorded };
   if (results.some((result) => 'applied' in result)) return { state: 'applied', error: null };
   const failed = results.find((result): result is { failed: string } => 'failed' in result);
   if (failed) return { state: 'failed', error: failed.failed };
-  const skipped = results.filter((result): result is { skipped: Skipped } => 'skipped' in result).map((result) => result.skipped);
-  // A missing object is recorded alone, so the requeue that matches it finds the row.
-  const lead = skipped.find((one) => one.reason === 'target.missing') ?? skipped[0];
+  const lead = skipped[0];
   if (!lead) return { state: 'skipped', error: 'announce.empty' };
-  return {
-    state: 'skipped',
-    error: skipped.length > 1 && lead.reason !== 'target.missing' ? `${lead.recorded} (+${skipped.length - 1} more)` : lead.recorded,
-  };
+  return { state: 'skipped', error: skipped.length > 1 ? `${lead.recorded} (+${skipped.length - 1} more)` : lead.recorded };
 }
 
 /**
