@@ -3,7 +3,7 @@
 // no other connection, so the lab gets no route out through it.
 import net from "node:net";
 
-const ROUTES = { 8443: 443, 8201: 8201, 8202: 8202, 8203: 8203 };
+const ROUTES = { 8443: 443, 8201: 8201, 8202: 8202, 8204: 8204, 8322: 8322 };
 
 for (const [listen, target] of Object.entries(ROUTES)) {
   net

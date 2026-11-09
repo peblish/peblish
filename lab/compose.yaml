@@ -1,7 +1,7 @@
-# Feddit federation lab: Lemmy 0.19.21, PieFed 1.8.11, the Fedify spike and a
-# rogue test peer, all behind one Caddy TLS front door on an internal network
-# (no route out of the lab). Host access is opt-in (`make ports`).
-# See README.md for why each knob exists.
+# peblish federation lab: Lemmy 0.19.21, PieFed 1.8.11 and peblish itself (the production
+# image), all behind one Caddy TLS front door on an internal network (no route out of the
+# lab). Host access is opt-in (`make ports`). See README.md for why each knob exists and
+# INTEROP.md for what the lab has shown.
 name: feddit-lab
 
 x-lab-ca: &lab-ca /lab-ca/root.crt
@@ -12,21 +12,29 @@ x-logging: &logging
     max-size: "20m"
     max-file: "3"
 
+# One lab secret, shared by the web process and the runner: it keys sessions and encrypts
+# two-factor secrets, and the runner seeds two-factor through core.
+x-peblish-env: &peblish-env
+  DATABASE_URL: postgres://peblish:peblish@peblish-db:5432/peblish
+  PUBLIC_ORIGIN: https://peblish.lab.test
+  BETTER_AUTH_SECRET: lab-only-better-auth-secret-0123456789abcdef
+  NODE_EXTRA_CA_CERTS: *lab-ca
+
 networks:
   # Used only by `host-ports` (profile `host`, started by `make ports`): Docker
   # publishes ports only from non-internal networks. Without it, every running
   # container is on `lab` alone.
   edge: {}
   # Every service lives here. `internal: true` gives it no route out of the lab.
-  # 192.88.99.0/24 (the retired 6to4 anycast prefix, RFC 7526) is classified as
-  # global by Python's ipaddress and Rust's Ipv4Addr, so Lemmy and PieFed keep
-  # their production SSRF guards on. Fedify lists it as non-public, so only the
-  # Feddit app needs a lab switch (FEDDIT_ALLOW_PRIVATE_ADDRESS).
+  # 44.255.99.0/24 is ordinary public space (AMPRNet), not a special-purpose range:
+  # peblish's safeFetch has no private-address switch and refuses every range in
+  # `isPublicAddress`, Lemmy and PieFed keep their SSRF guards on, and nothing here
+  # can reach the real owner of the block because the network is internal.
   lab:
     internal: true
     ipam:
       config:
-        - subnet: 192.88.99.0/24
+        - subnet: 44.255.99.0/24
 
 volumes:
   caddy-data: {}
@@ -37,7 +45,7 @@ volumes:
   lemmy-pictrs: {}
   piefed-db: {}
   piefed-redis: {}
-  feddit-db: {}
+  peblish-db: {}
 
 services:
   caddy:
@@ -52,7 +60,8 @@ services:
         aliases:
           - lemmy.lab.test
           - piefed.lab.test
-          - feddit.lab.test
+          - mbin.lab.test
+          - peblish.lab.test
           - rogue.lab.test
     healthcheck:
       test: ["CMD", "test", "-f", "/data/caddy/pki/authorities/local/root.crt"]
@@ -217,73 +226,72 @@ services:
         condition: service_started
     logging: *logging
 
-  # ---------------------------------------------------------------- Feddit (Fedify spike)
-  feddit-db:
-    image: postgres:16-alpine
+  # ---------------------------------------------------------------- peblish (the production image)
+  # Built from the root Dockerfile with no lab switch: the same image deploys to Easypanel.
+  peblish-db:
+    image: postgres:17.11
     restart: unless-stopped
     environment:
-      POSTGRES_USER: feddit
-      POSTGRES_PASSWORD: feddit
-      POSTGRES_DB: feddit
+      POSTGRES_USER: peblish
+      POSTGRES_PASSWORD: peblish
+      POSTGRES_DB: peblish
     volumes:
-      - feddit-db:/var/lib/postgresql/data
+      - peblish-db:/var/lib/postgresql/data
     networks: [lab]
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U feddit"]
+      test: ["CMD-SHELL", "pg_isready -U peblish"]
       interval: 2s
       timeout: 2s
       retries: 30
     logging: *logging
 
-  feddit:
-    build: ../spikes/fedify-threadiverse
-    image: feddit-lab/feddit-spike:dev
-    restart: unless-stopped
-    environment: &feddit-env
-      DATABASE_URL: postgres://feddit:feddit@feddit-db:5432/feddit
-      FEDDIT_ORIGIN: https://feddit.lab.test
-      NODE_EXTRA_CA_CERTS: *lab-ca
-      CAPTURE_DIR: /app/captures
-      PORT: "8000"
-      # Lab only: Fedify's SSRF guard is all-or-nothing and rejects the lab
-      # subnet, so it is switched off for Fedify's own fetches (see README).
-      FEDDIT_ALLOW_PRIVATE_ADDRESS: "1"
-      # Deliveries (safe-post.ts) allow public space plus this one range;
-      # loopback, RFC 1918 and other special-purpose blocks stay refused.
-      FEDDIT_LAB_CIDR: 192.88.99.0/24
-      # Shorter retries so the delivery scenarios finish in seconds:
-      # attempts at 0, 1, 3 and 9 s; a delivery whose worker died is re-claimed
-      # after 20 s (the minimum: the 15 s request timeout plus 5 s).
-      FEDDIT_OUTBOX_MAX_ATTEMPTS: "4"
-      FEDDIT_OUTBOX_BASE_DELAY_MS: "1000"
-      FEDDIT_OUTBOX_LEASE_MS: "20000"
-    volumes:
-      # Mounted so edits apply with `make restart-feddit`; the image also contains them.
-      - ../spikes/fedify-threadiverse/src:/app/src:ro
-      - ../spikes/fedify-threadiverse/captures:/app/captures
-      - lab-ca:/lab-ca:ro
+  peblish-migrate:
+    build:
+      context: ..
+    image: peblish:lab
+    environment:
+      <<: *peblish-env
+      PEBLISH_PROCESS: migrate
     networks: [lab]
+    restart: "no"
     depends_on:
-      feddit-db:
+      peblish-db:
         condition: service_healthy
       lab-ca:
         condition: service_completed_successfully
+    volumes:
+      - lab-ca:/lab-ca:ro
     logging: *logging
 
-  # A hostile or broken peer for the authorization and delivery scenarios
-  # (spikes/fedify-threadiverse/scenarios/rogue.ts), at https://rogue.lab.test.
-  rogue:
-    image: feddit-lab/feddit-spike:dev
+  peblish-web:
+    image: peblish:lab
     restart: unless-stopped
     environment:
-      NODE_EXTRA_CA_CERTS: *lab-ca
+      <<: *peblish-env
+      PEBLISH_PROCESS: web
+      # Caddy appends the peer to X-Forwarded-For, as Traefik does on Easypanel, so inbox
+      # throttles count peers apart.
+      PEBLISH_TRUSTED_PROXY: traefik
     volumes:
-      - ../spikes/fedify-threadiverse/scenarios:/app/scenarios:ro
       - lab-ca:/lab-ca:ro
     networks: [lab]
-    command: ["node", "scenarios/rogue.ts"]
     depends_on:
-      lab-ca:
+      peblish-migrate:
+        condition: service_completed_successfully
+    logging: *logging
+
+  # The only process that delivers: the runner starts no consumer or job.
+  peblish-worker:
+    image: peblish:lab
+    restart: unless-stopped
+    environment:
+      <<: *peblish-env
+      PEBLISH_PROCESS: worker
+    volumes:
+      - lab-ca:/lab-ca:ro
+    networks: [lab]
+    depends_on:
+      peblish-migrate:
         condition: service_completed_successfully
     logging: *logging
 
@@ -291,7 +299,7 @@ services:
   # The only container on a network with a route out; it connects to Caddy
   # and nothing else (lab/forward.mjs).
   host-ports:
-    image: feddit-lab/feddit-spike:dev
+    image: node:24.21.0-bookworm-slim
     profiles: [host]
     restart: unless-stopped
     volumes:
@@ -301,23 +309,8 @@ services:
       - "127.0.0.1:18243:8443"
       - "127.0.0.1:18201:8201"
       - "127.0.0.1:18202:8202"
-      - "127.0.0.1:18203:8203"
+      - "127.0.0.1:18204:8204"
+      - "127.0.0.1:18322:8322"
     networks: [edge, lab]
     depends_on: [caddy]
-    logging: *logging
-
-  # One-shot tool container for `make seed` and `make scenarios`.
-  runner:
-    image: feddit-lab/feddit-spike:dev
-    profiles: [tools]
-    environment:
-      <<: *feddit-env
-    volumes:
-      - ../spikes/fedify-threadiverse/src:/app/src:ro
-      - ../spikes/fedify-threadiverse/scenarios:/app/scenarios:ro
-      - ../spikes/fedify-threadiverse/captures:/app/captures
-      - lab-ca:/lab-ca:ro
-    networks: [lab]
-    depends_on: [feddit]
-    command: ["node", "scenarios/run.ts"]
     logging: *logging
