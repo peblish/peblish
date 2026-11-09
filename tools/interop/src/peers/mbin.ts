@@ -254,6 +254,9 @@ export const mbin: Peer = {
     async reportPost(token, postId, reason) {
       await http('POST', `${api}/entry/${postId}/report`, { token, body: { reason } });
     },
+    async reported() {
+      return null;
+    },
     async moderators(token, communityId) {
       const m = await http<{ moderators: { apId: string | null; username: string }[] }>('GET', `${api}/magazine/${communityId}`, { token });
       return m.moderators.map((u) => (u.apId ? `https://${u.apId.split('@')[1]}/u/${u.apId.split('@')[0]}` : `${MBIN}/u/${u.username}`));
