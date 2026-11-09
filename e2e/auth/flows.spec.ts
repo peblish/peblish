@@ -65,8 +65,8 @@ test('the admin signs in with a TOTP code and creates an invite', async ({ page 
   await expect(tabs.getByRole('link', { name: 'Registration and invites' })).toHaveAttribute('aria-current', 'page');
   // Each link may carry a count: the lane database keeps notices and open reports from other specs.
   await expect(page.getByRole('navigation', { name: 'You' }).getByRole('link')).toHaveText([
-    /^Inbox( \d+\+? unread)?$/,
-    /^Moderation queue( \d+\+? open)?$/,
+    /^Inbox(\s+\d+\+?\s+unread)?\s*$/,
+    /^Moderation queue(\s+\d+\+?\s+open)?\s*$/,
   ]);
   // The account menu is a closed <details>, so its links are matched by address, not by role.
   await expect(page.locator('.pb-account a[href="/admin/settings"]')).toHaveText('Admin');
