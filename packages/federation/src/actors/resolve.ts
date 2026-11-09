@@ -1,0 +1,154 @@
+import { db } from '@peblish/core/db/read';
+import { localInstance } from '@peblish/core/db/local-instance';
+import { actors } from '@peblish/core/db/tables/actors';
+import { checkRemoteActor, storeRemoteActor } from '@peblish/core/remote/actors';
+import type { ActorKind } from '@peblish/schema/ids';
+import { eq } from 'drizzle-orm';
+import { actorFromWire } from '../mapping/actor.ts';
+import { MappingError } from '../mapping/json.ts';
+import { refreshInstanceSoftware } from '../nodeinfo/client.ts';
+import { parseHandle, webfingerActorUrl } from '../webfinger/client.ts';
+import { FetchFailure, fetchJson, type Fetcher } from './document.ts';
+import { importGrant } from './grants.ts';
+import { safeFetch } from './safe-fetch.ts';
+
+// Finds an actor by id or handle, fetching and storing it when we do not hold a fresh copy.
+// The network calls happen here, outside any transaction; storeRemoteActor is the one write.
+
+export type ResolvedActor = {
+  id: string;
+  apId: string;
+  kind: ActorKind;
+  local: boolean;
+  /** A remote actor that sent a Delete (or a local account that was deleted). */
+  deleted: boolean;
+  inboxUrl: string | null;
+  sharedInboxUrl: string | null;
+  instanceId: string;
+};
+
+/**
+ * Why an actor could not be resolved. `unreachable` is the peer being down or slow (retry
+ * later); every other reason is an answer or a document that will not change by asking again.
+ */
+export class ActorResolveError extends Error {
+  override readonly name = 'ActorResolveError';
+  readonly reason: 'blocked' | 'unreachable' | 'not_found' | 'gone' | 'invalid';
+
+  constructor(reason: ActorResolveError['reason'], message: string) {
+    super(message);
+    this.reason = reason;
+  }
+
+  get transient(): boolean {
+    return this.reason === 'unreachable';
+  }
+}
+
+export type ResolveOptions = {
+  fetch?: Fetcher;
+  /** Fetch even when the stored copy is fresh (a rotated key, an edited profile). */
+  refresh?: boolean;
+  /** How old a stored copy may be before it is fetched again; a day by default. */
+  maxAgeMs?: number;
+};
+
+export const actorMaxAgeMs = 24 * 60 * 60 * 1000;
+
+function failure(error: FetchFailure): ActorResolveError {
+  const transient =
+    error.reason === 'unreachable' || (error.status !== undefined && (error.status >= 500 || error.status === 429 || error.status === 408));
+  if (transient) return new ActorResolveError('unreachable', error.message);
+  if (error.reason === 'blocked' || error.reason === 'not_found' || error.reason === 'gone')
+    return new ActorResolveError(error.reason, error.message);
+  return new ActorResolveError('invalid', error.message);
+}
+
+async function stored(apId: string): Promise<(ResolvedActor & { fetchedAt: Date | null }) | null> {
+  const [row] = await db()
+    .select({
+      id: actors.id,
+      apId: actors.apId,
+      kind: actors.kind,
+      local: actors.local,
+      deletedAt: actors.deletedAt,
+      inboxUrl: actors.inboxUrl,
+      sharedInboxUrl: actors.sharedInboxUrl,
+      instanceId: actors.instanceId,
+      fetchedAt: actors.fetchedAt,
+    })
+    .from(actors)
+    .where(eq(actors.apId, apId));
+  if (!row) return null;
+  const { deletedAt, ...rest } = row;
+  return { ...rest, deleted: deletedAt !== null };
+}
+
+// Resolutions in flight, by actor id, so a burst of activities from one new actor fetches it
+// once. (Another process racing is fine: the store's upsert ends with one row.) On globalThis
+// because the web build can hold two copies of a module.
+const running = ((globalThis as { __peblishActorResolves?: Map<string, Promise<ResolvedActor>> }).__peblishActorResolves ??= new Map());
+
+async function fetchAndStore(apId: string, fetch: Fetcher): Promise<string> {
+  const { json, url } = await fetchJson(apId, fetch).catch((error: unknown) => {
+    throw error instanceof FetchFailure ? failure(error) : error;
+  });
+  let record;
+  try {
+    record = actorFromWire(json);
+  } catch (error) {
+    if (error instanceof MappingError) throw new ActorResolveError('invalid', error.message);
+    throw error;
+  }
+  // The document must come from the origin it names itself under.
+  if (new URL(record.apId).origin !== new URL(url).origin) {
+    throw new ActorResolveError('invalid', `${url} serves an actor of another origin, ${record.apId}`);
+  }
+  const problem = checkRemoteActor(record);
+  if (problem) throw new ActorResolveError('invalid', problem);
+  await storeRemoteActor(await importGrant('remote.actor_store', { apId: record.apId }), record);
+  await refreshInstanceSoftware(new URL(record.apId).origin, { fetch });
+  return record.apId;
+}
+
+/**
+ * The actor at `target`, an ap_id or a handle (@name@host, !name@host). Handles go through
+ * WebFinger. A stored copy fresher than `maxAgeMs` is returned without a request; an older one
+ * is fetched again, and kept if the peer is merely unreachable. A local actor is returned as
+ * stored. Throws ActorResolveError.
+ */
+export async function resolveRemoteActor(target: string, options: ResolveOptions = {}): Promise<ResolvedActor> {
+  const fetch = options.fetch ?? safeFetch;
+  const handle = parseHandle(target);
+  let apId = target;
+  if (handle) {
+    try {
+      apId = await webfingerActorUrl(handle, fetch);
+    } catch (error) {
+      throw error instanceof FetchFailure ? failure(error) : error;
+    }
+  }
+  if (!URL.canParse(apId)) throw new ActorResolveError('invalid', `${target} is neither a URL nor a handle`);
+  const inflight = running.get(apId);
+  if (inflight) return inflight;
+  const work = (async () => {
+    const held = await stored(apId);
+    if (held?.local) return held;
+    if ((await localInstance(db())).origin === new URL(apId).origin)
+      throw new ActorResolveError('not_found', `${apId} is a local id with no actor`);
+    const fresh = held?.fetchedAt && Date.now() - held.fetchedAt.getTime() < (options.maxAgeMs ?? actorMaxAgeMs);
+    if (held && fresh && !options.refresh) return held;
+    try {
+      const storedId = await fetchAndStore(apId, fetch);
+      const now = await stored(storedId);
+      if (!now) throw new Error(`actor ${storedId} vanished after it was stored`);
+      return now;
+    } catch (error) {
+      // A peer that is down does not make the copy we hold wrong.
+      if (held && error instanceof ActorResolveError && error.transient) return held;
+      throw error;
+    }
+  })().finally(() => running.delete(apId));
+  running.set(apId, work);
+  return work;
+}
