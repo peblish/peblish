@@ -75,8 +75,26 @@ const beyond = (direction: 'before' | 'after', micros: number, id: string) => {
 const hotRank = (asOf: number) =>
   sql`(log(greatest(1, ${score} + 3)::float8) / power(extract(epoch from (${msToInstant(asOf)} - ${posts.publishedAt}))::float8 / 3600 + 2, 1.8))`;
 
-/** What every feed shows: live posts of open communities, published by the page's clock, past the predicates. Exported for the profile activity. */
-export function visible(feed: FeedName, viewer: Viewer, asOf: number, scope?: FeedScope): SQL[] {
+/**
+ * The communities whose posts a viewer's Subscribed feed shows: their accepted follows. The feed
+ * reads them first and passes them as an array, so the planner knows how many there are and
+ * picks the plan for this viewer (walk the date or score index for many follows, read each
+ * community for a few). A sub-select here was estimated at a fixed share of communities, so a
+ * viewer with 130 follows read all 43,793 of their posts and sorted them (feeds/perf.test.ts).
+ */
+export async function followedCommunities(q: Queryable, viewer: NonNullable<Viewer>): Promise<Uuid[]> {
+  const rows = await q
+    .select({ id: follows.followeeId })
+    .from(follows)
+    .where(and(eq(follows.followerId, viewer.actorId), eq(follows.state, 'accepted')));
+  return rows.map(({ id }) => id);
+}
+
+/**
+ * What every feed shows: live posts of open communities, published by the page's clock, past the
+ * predicates. Subscribed needs `followed` from followedCommunities. Exported for the profile activity.
+ */
+export function visible(feed: FeedName, viewer: Viewer, asOf: number, scope?: FeedScope, followed?: readonly Uuid[]): SQL[] {
   const conditions: SQL[] = [
     isNull(posts.deletedAt),
     isNull(posts.removedAt),
@@ -88,13 +106,10 @@ export function visible(feed: FeedName, viewer: Viewer, asOf: number, scope?: Fe
     )`,
     sql`not exists (select 1 from ${communityRemovals} where ${communityRemovals.communityId} = ${posts.communityId})`,
   ];
-  if (viewer && feed === 'subscribed')
-    conditions.push(
-      sql`exists (
-        select 1 from ${follows}
-        where ${follows.followerId} = ${viewer.actorId} and ${follows.followeeId} = ${posts.communityId} and ${follows.state} = 'accepted'
-      )`,
-    );
+  if (viewer && feed === 'subscribed') {
+    if (!followed) throw new TypeError('visible: the Subscribed feed needs the followed communities');
+    conditions.push(sql`${posts.communityId} = any(${sql.param(followed)}::uuid[])`);
+  }
   if (viewer && feed === 'moderating')
     conditions.push(
       sql`exists (
@@ -120,6 +135,8 @@ type Reading = {
   asOf: number;
   cursor: Cursor | null;
   scope?: FeedScope | undefined;
+  /** Subscribed only: followedCommunities(viewer). */
+  followed?: readonly Uuid[] | undefined;
 };
 
 const keyColumns = (rank: SQL | null) => ({
@@ -130,8 +147,8 @@ const keyColumns = (rank: SQL | null) => ({
 });
 
 /** New and Old: by date, then id. */
-function byDate({ q, feed, viewer, asOf, cursor, scope }: Reading, direction: 'new' | 'old', want: number) {
-  const conditions = visible(feed, viewer, asOf, scope);
+function byDate({ q, feed, viewer, asOf, cursor, scope, followed }: Reading, direction: 'new' | 'old', want: number) {
+  const conditions = visible(feed, viewer, asOf, scope, followed);
   if (cursor) conditions.push(beyond(direction === 'new' ? 'before' : 'after', cursor.pub, cursor.id));
   return q
     .select(keyColumns(null))
@@ -142,8 +159,8 @@ function byDate({ q, feed, viewer, asOf, cursor, scope }: Reading, direction: 'n
 }
 
 /** Top: by score, then id, inside the period before `asOf`. */
-function byScore({ q, feed, viewer, period, asOf, cursor, scope }: Reading, want: number) {
-  const conditions = visible(feed, viewer, asOf, scope);
+function byScore({ q, feed, viewer, period, asOf, cursor, scope, followed }: Reading, want: number) {
+  const conditions = visible(feed, viewer, asOf, scope, followed);
   if (period !== 'all') conditions.push(sql`${posts.publishedAt} > ${msToInstant(asOf - periodMs[period])}`);
   if (cursor && cursor.score !== undefined)
     conditions.push(sql`${score} <= ${cursor.score} and (${score}, ${posts.id}) < (${cursor.score}, ${cursor.id}::uuid)`);
@@ -156,8 +173,8 @@ function byScore({ q, feed, viewer, period, asOf, cursor, scope }: Reading, want
 }
 
 /** Hot, first phase: the posts of the last week by rank, then date, then id. */
-function byRank({ q, feed, viewer, asOf, cursor, scope }: Reading, want: number) {
-  const conditions = visible(feed, viewer, asOf, scope);
+function byRank({ q, feed, viewer, asOf, cursor, scope, followed }: Reading, want: number) {
+  const conditions = visible(feed, viewer, asOf, scope, followed);
   conditions.push(sql`${posts.publishedAt} > ${msToInstant(asOf - hotWindowMs)}`);
   const rank = hotRank(asOf);
   if (cursor && typeof cursor.rank === 'number')
@@ -173,8 +190,8 @@ function byRank({ q, feed, viewer, asOf, cursor, scope }: Reading, want: number)
 }
 
 /** Hot, second phase: posts older than the window have no rank, so they follow newest first. */
-function afterWindow({ q, feed, viewer, asOf, cursor, scope }: Reading, want: number) {
-  const conditions = visible(feed, viewer, asOf, scope);
+function afterWindow({ q, feed, viewer, asOf, cursor, scope, followed }: Reading, want: number) {
+  const conditions = visible(feed, viewer, asOf, scope, followed);
   conditions.push(lte(posts.publishedAt, msToInstant(asOf - hotWindowMs)));
   if (cursor && cursor.rank === null) conditions.push(beyond('before', cursor.pub, cursor.id));
   return q
@@ -235,8 +252,14 @@ export async function readFeed(request: FeedRequest, viewer: Viewer, q: Queryabl
   const cursor = decoded && decoded.sort === request.sort && decoded.period === period ? decoded : null;
   if (!viewer && (request.feed === 'subscribed' || request.feed === 'moderating')) return { items: [], next: null };
 
+  const followed = viewer && request.feed === 'subscribed' ? await followedCommunities(q, viewer) : undefined;
+  if (followed?.length === 0) return { items: [], next: null };
+
   const asOf = cursor?.asOf ?? Date.now();
-  const keys = await readKeys({ q, feed: request.feed, sort: request.sort, period, viewer, asOf, cursor, scope: request.scope }, limit + 1);
+  const keys = await readKeys(
+    { q, feed: request.feed, sort: request.sort, period, viewer, asOf, cursor, scope: request.scope, followed },
+    limit + 1,
+  );
   const page = keys.slice(0, limit);
   const last = page.at(-1);
   const next = keys.length > limit && last ? encodeCursor(cursorAfter(last, request.sort, period, asOf)) : null;

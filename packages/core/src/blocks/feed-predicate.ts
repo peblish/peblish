@@ -8,25 +8,31 @@ import { communityBlocks, instanceBlocks, personBlocks } from './tables.ts';
  * posts in a community they blocked, or posts by or in anything on an instance they blocked.
  * Signed-out viewers block nothing.
  *
- * Each sub-select depends only on the viewer, so Postgres hashes it once per query; the
- * correlated part is the post's own author_id and community_id. A viewer with no instance
- * block skips the actor lookups altogether. Nothing here adds an index to `posts`.
+ * Each blocked set is read once per query into an array (`array(select ...)`, an InitPlan) and
+ * tested with `<> all(...)`. Postgres estimates that as keeping nearly every post, which is
+ * true; a `not in (select ...)` is estimated to keep half, so two of them made a Subscribed
+ * page read every post of the followed communities instead of walking the date index
+ * (feeds/perf.test.ts). The arrays are bounded by blocks/limits.ts. A community on a blocked
+ * instance joins the community array (only Groups hold posts); the author's instance is looked
+ * up per post only for a viewer with an instance block.
  */
 export const feedPredicate: FeedPredicate = {
   name: 'blocks',
   where(viewer) {
     if (!viewer) return undefined;
     const me = viewer.actorId;
-    const blockedInstances = sql`(select ${instanceBlocks.instanceId} from ${instanceBlocks} where ${instanceBlocks.blockerId} = ${me})`;
     return sql`(
-      ${posts.authorId} not in (select ${personBlocks.blockedId} from ${personBlocks} where ${personBlocks.blockerId} = ${me})
-      and ${posts.communityId} not in (select ${communityBlocks.communityId} from ${communityBlocks} where ${communityBlocks.blockerId} = ${me})
+      ${posts.authorId} <> all(array(select ${personBlocks.blockedId} from ${personBlocks} where ${personBlocks.blockerId} = ${me}))
+      and ${posts.communityId} <> all(array(
+        select ${communityBlocks.communityId} from ${communityBlocks} where ${communityBlocks.blockerId} = ${me}
+        union all
+        select blocked_community.id from ${instanceBlocks} as ib join actors as blocked_community on blocked_community.instance_id = ib.instance_id
+        where ib.blocker_id = ${me} and blocked_community.kind = 'Group'
+      ))
       and (
         not exists (select 1 from ${instanceBlocks} where ${instanceBlocks.blockerId} = ${me})
-        or (
-          (select author_actor.instance_id from actors as author_actor where author_actor.id = ${posts.authorId}) not in ${blockedInstances}
-          and (select community_actor.instance_id from actors as community_actor where community_actor.id = ${posts.communityId}) not in ${blockedInstances}
-        )
+        or (select author_actor.instance_id from actors as author_actor where author_actor.id = ${posts.authorId})
+          <> all(array(select ${instanceBlocks.instanceId} from ${instanceBlocks} where ${instanceBlocks.blockerId} = ${me}))
       )
     )`;
   },
