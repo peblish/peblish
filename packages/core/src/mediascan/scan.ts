@@ -8,7 +8,7 @@ import { refusedAsResult } from '../identity/result.ts';
 import { s3Store } from '../storage/s3.ts';
 import type { ObjectStore } from '../storage/store.ts';
 import { eq } from 'drizzle-orm';
-import { findBlocked } from './blocklist.ts';
+import { findBlocked, listVerdict } from './blocklist.ts';
 import { scanConfig, type ScanConfig } from './config.ts';
 import { purgeBytes } from './purge.ts';
 import { ScanError, type ScanProvider } from './provider.ts';
@@ -44,14 +44,14 @@ async function decide(
 ): Promise<Decided> {
   if (!row.storageKey || !row.mimeType || !row.sha256) return failed('the media row has no stored object');
   const listed = await findBlocked(db(), row.sha256);
-  if (listed) {
-    const verdict: Verdict = { source: 'list', entryId: listed.id, category: listed.category, listedAt: listed.createdAt.toISOString() };
-    return { outcome: { state: 'quarantined', verdict }, retryable: false };
-  }
+  if (listed) return { outcome: { state: 'quarantined', verdict: listVerdict(listed) }, retryable: false };
   if (config.localOnly) return { outcome: { state: 'clean' }, retryable: false };
   const providers = deps.providers ?? configuredProviders(config);
   if (providers.length === 0) return failed('no scan provider is configured');
-  const object = await (deps.store ?? s3Store()).get(row.storageKey);
+  // A bucket outage is an outcome like a provider outage: retried, and final on the last attempt.
+  // The error itself is not kept (it can name the endpoint).
+  const object = await (deps.store ?? s3Store()).get(row.storageKey).catch(() => undefined);
+  if (object === undefined) return failed('the stored object could not be read', true);
   if (!object) return failed('the stored object is missing', true);
   const sha256 = createHash('sha256').update(object.body).digest('hex');
   if (sha256 !== row.sha256) return failed('the stored object does not match its recorded hash');
@@ -90,7 +90,8 @@ export type ScanResult = ScanOutcome['state'] | 'retry' | 'settled-elsewhere';
  * Scans one claimed row and records the outcome. A failure that may pass leaves the row pending
  * under its lease for the job to try again, unless `final` (the inline scan of an upload, which
  * answers its uploader now) or the row is out of attempts. `settled-elsewhere`: another worker
- * recorded a result first, and nothing changed here.
+ * recorded a result first, or claimed the row again after this claim's lease ran out, and nothing
+ * changed here.
  */
 export async function scanClaimed(claim: Claimed, deps: ScanDeps & { final?: boolean } = {}): Promise<ScanResult> {
   const config = deps.config ?? scanConfig();
@@ -103,11 +104,8 @@ export async function scanClaimed(claim: Claimed, deps: ScanDeps & { final?: boo
   const now = (deps.now ?? (() => new Date()))();
   const decision = await authorize('media.scan', await systemPrincipal(db(), 'scheduled'), { mediaId: claim.mediaId as Uuid });
   if (!decision.ok) throw new Error(`media.scan refused: ${decision.reason}`);
-  const recorded = await refusedAsResult(async () => {
-    await recordScan(decision.grant, { outcome: decided.outcome, now });
-    return {};
-  });
-  return recorded.ok ? decided.outcome.state : 'settled-elsewhere';
+  const recorded = await refusedAsResult(() => recordScan(decision.grant, { outcome: decided.outcome, now, token: claim.token }));
+  return recorded.ok ? recorded.state : 'settled-elsewhere';
 }
 
 /**

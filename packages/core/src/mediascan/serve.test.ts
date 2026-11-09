@@ -6,7 +6,7 @@ import { memoryStore } from '../storage/memory.ts';
 import { truncateAll } from '../testing/db.ts';
 import { seedLocalInstance } from '../testing/seed-a.ts';
 import { seedMedia } from '../testing/seed-safe.ts';
-import { recordScan } from './record.ts';
+import { claimScan, recordScan } from './record.ts';
 import { findServable } from './serve.ts';
 import { scanStates } from './state.ts';
 
@@ -47,9 +47,11 @@ test('one recordScan flips a served image to the absence an unknown id gets', as
   const pending = await seedMedia(store, { state: 'pending' });
   expect(await findServable(pending.id, { withBody: true, store })).toBeNull();
   const principal = await systemPrincipal(db(), 'scheduled');
+  const claiming = await authorize('media.scan_claim', principal, { mediaId: pending.id });
   const decision = await authorize('media.scan', principal, { mediaId: pending.id });
-  if (!decision.ok) throw new Error(decision.reason);
-  await recordScan(decision.grant, { outcome: { state: 'clean' }, now: new Date() });
+  if (!claiming.ok || !decision.ok) throw new Error('refused');
+  const [claim] = await claimScan(claiming.grant, { now: new Date() });
+  await recordScan(decision.grant, { outcome: { state: 'clean' }, now: new Date(), token: claim!.token });
   expect(await findServable(pending.id, { withBody: true, store })).not.toBeNull();
   // A clean image caught by a later list entry is quarantined (review.ts, addBlockedHash) and
   // stops being served: its state test is the one above.

@@ -3,6 +3,8 @@ import { media } from '../db/tables/media.ts';
 import type { Verdict } from '../evidence/manifest.ts';
 import { defineMutation } from '../tx/mutation.ts';
 import { Refused } from '../tx/refused.ts';
+import { findBlocked, listVerdict } from './blocklist.ts';
+import { lockHash } from './hash-lock.ts';
 import { quarantine } from './quarantine.ts';
 import { assertMove } from './state.ts';
 import { mediaScans } from './tables.ts';
@@ -28,7 +30,7 @@ export const dueBatch = (now: Date) =>
 const dueRow = (mediaId: string, now: Date) =>
   sql`select m.id from ${media} m where m.id = ${mediaId} and m.scan_state = 'pending' and ${notLeased(now)} for update of m skip locked`;
 
-export type Claimed = { mediaId: string; attempts: number };
+export type Claimed = { mediaId: string; attempts: number; token: string };
 
 /**
  * Leases pending rows for scanning and counts the attempt. With a `mediaId` subject it takes that
@@ -44,11 +46,12 @@ export const claimScan = defineMutation({
     const { mediaId } = grant.subject;
     const lease = new Date(input.now.getTime() + scanLimits.leaseMs).toISOString();
     const due = mediaId === null ? dueBatch(input.now) : dueRow(mediaId, input.now);
-    const claimed = await t.db.execute<{ mediaId: string; attempts: number }>(sql`
-      insert into ${mediaScans} (media_id, attempts, lease_until)
-      select id, 1, ${lease}::timestamptz from (${due}) due
-      on conflict (media_id) do update set attempts = ${mediaScans}.attempts + 1, lease_until = excluded.lease_until
-      returning media_id as "mediaId", attempts`);
+    const claimed = await t.db.execute<Claimed>(sql`
+      insert into ${mediaScans} (media_id, attempts, lease_until, claim_token)
+      select id, 1, ${lease}::timestamptz, gen_random_uuid() from (${due}) due
+      on conflict (media_id) do update
+        set attempts = ${mediaScans}.attempts + 1, lease_until = excluded.lease_until, claim_token = excluded.claim_token
+      returning media_id as "mediaId", attempts, claim_token as token`);
     return [...claimed];
   },
 });
@@ -56,19 +59,40 @@ export const claimScan = defineMutation({
 /**
  * Records a scan's outcome for a pending row and ends its lease: clean, failed (no verdict; the
  * caller then deletes the bytes) or quarantined (evidence, manifest and log in this
- * transaction). Refuses a row that is not pending, so a second result for one row changes nothing.
+ * transaction). A clean or failed result for an image whose hash was listed meanwhile is recorded
+ * as the list match it now is. Returns the state recorded. Refuses a row that is not pending, so a second result for one row changes
+ * nothing, and a `token` that is not the row's current claim (a worker whose lease ran out and
+ * whose row was claimed again), so only the current claim settles it.
  */
 export const recordScan = defineMutation({
   action: 'media.scan',
   emits: ['media.scanned', 'media.quarantined'],
   recheck: true,
-  async run(t, grant, input: { outcome: ScanOutcome; now: Date }) {
+  async run(t, grant, input: { outcome: ScanOutcome; now: Date; token: string }) {
     const { mediaId } = grant.subject;
-    const [row] = await t.db.select({ scanState: media.scanState }).from(media).where(eq(media.id, mediaId)).for('no key update');
+    const [row] = await t.db
+      .select({ scanState: media.scanState, sha256: media.sha256 })
+      .from(media)
+      .where(eq(media.id, mediaId))
+      .for('no key update');
     if (!row) throw new Refused('media.scan', 'target.not_found');
-    const { outcome, now } = input;
+    const { now } = input;
+    let { outcome } = input;
     // A scan result is for a pending row only; a clean row reaches quarantine through addBlockedHash.
     if (row.scanState !== 'pending') throw new Refused('media.scan', 'media.not_pending');
+    const [claim] = await t.db
+      .select({ token: mediaScans.claimToken })
+      .from(mediaScans)
+      .where(eq(mediaScans.mediaId, mediaId))
+      .for('no key update');
+    if (claim?.token !== input.token) throw new Refused('media.scan', 'media.not_pending');
+    // The list may have gained this hash while the scan ran (outside any transaction): under the
+    // hash lock, a listed hash is a list match whatever the scan found, as at the start of a scan.
+    if (row.sha256 && outcome.state !== 'quarantined') {
+      await lockHash(t.db, row.sha256);
+      const listed = await findBlocked(t.db, row.sha256);
+      if (listed) outcome = { state: 'quarantined', verdict: listVerdict(listed) };
+    }
     if (outcome.state === 'quarantined') {
       await quarantine(t, { action: 'media.scan', mediaId, from: row.scanState, verdict: outcome.verdict, now });
     } else {
@@ -81,7 +105,8 @@ export const recordScan = defineMutation({
       .values({ mediaId, attempts: 0, lastError: outcome.state === 'failed' ? outcome.error.slice(0, 200) : null })
       .onConflictDoUpdate({
         target: mediaScans.mediaId,
-        set: { leaseUntil: null, lastError: outcome.state === 'failed' ? outcome.error.slice(0, 200) : null },
+        set: { leaseUntil: null, claimToken: null, lastError: outcome.state === 'failed' ? outcome.error.slice(0, 200) : null },
       });
+    return { state: outcome.state };
   },
 });

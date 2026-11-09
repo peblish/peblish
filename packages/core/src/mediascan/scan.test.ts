@@ -1,8 +1,10 @@
-import { eq } from 'drizzle-orm';
+import { randomUUID } from 'node:crypto';
+import { eq, sql } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, expect, test } from 'vitest';
 import { authorize } from '../authz/authorize.ts';
 import { systemPrincipal } from '../authz/system.ts';
 import { db } from '../db/read.ts';
+import { localInstance } from '../db/local-instance.ts';
 import { media } from '../db/tables/media.ts';
 import { writer } from '../db/write.ts';
 import { manifestDigest, type Manifest } from '../evidence/manifest.ts';
@@ -10,9 +12,12 @@ import { mediaEvidence, mediaEvidenceLog } from '../evidence/tables.ts';
 import { memoryStore } from '../storage/memory.ts';
 import { truncateAll } from '../testing/db.ts';
 import { seedAccount, seedLocalInstance } from '../testing/seed-a.ts';
-import { outboxEvents } from '../testing/seed-az.ts';
+import { admin, outboxEvents, seedAdmin } from '../testing/seed-az.ts';
 import { seedMedia, sha256Of, startArachnidStub, type ArachnidStub } from '../testing/seed-safe.ts';
 import { arachnidProvider } from './arachnid.ts';
+import { lockHash } from './hash-lock.ts';
+import { addToBlocklist } from './list.ts';
+import type { ScanProvider } from './provider.ts';
 import { scanConfig } from './config.ts';
 import { claimScan, recordScan, type ScanOutcome } from './record.ts';
 import { scanClaimed, type ScanDeps } from './scan.ts';
@@ -56,10 +61,14 @@ async function scanNow(id: string, deps: ScanDeps) {
   return scanClaimed(claim, { ...deps, final: true });
 }
 
+/** Claims the row (a row that is not pending cannot be claimed: any token then) and records `outcome` under that claim. */
 async function record(id: string, outcome: ScanOutcome) {
-  const decision = await authorize('media.scan', await systemPrincipal(db(), 'scheduled'), { mediaId: id });
-  if (!decision.ok) throw new Error(decision.reason);
-  return recordScan(decision.grant, { outcome, now: new Date() });
+  const principal = await systemPrincipal(db(), 'scheduled');
+  const claiming = await authorize('media.scan_claim', principal, { mediaId: id });
+  const decision = await authorize('media.scan', principal, { mediaId: id });
+  if (!claiming.ok || !decision.ok) throw new Error('refused');
+  const [claim] = await claimScan(claiming.grant, { now: new Date() });
+  return recordScan(decision.grant, { outcome, now: new Date(), token: claim?.token ?? randomUUID() });
 }
 
 test('a pending row with no match becomes clean, and the provider saw exactly the stored bytes', async () => {
@@ -222,4 +231,93 @@ test('the digest changes when the manifest does', async () => {
   const [evidence] = await db().select().from(mediaEvidence);
   const manifest = evidence!.manifest as Manifest;
   expect(manifestDigest({ ...manifest, byteSize: (manifest.byteSize ?? 0) + 1 })).not.toBe(evidence!.manifestSha256);
+});
+
+// D2: a scan in flight and a new list entry for the same hash. Each interleaving is forced: a gated
+// provider holds the scan between its list check and its result, and a raw transaction holds the
+// hash lock as a list insertion (or a scan's last step) does, until the other side is seen waiting.
+
+function gate() {
+  let open!: () => void;
+  const opened = new Promise<void>((resolve) => (open = resolve));
+  return { open, opened };
+}
+
+/** True while some backend in this database waits on a lock (the hash lock is an advisory lock). */
+const someoneWaitsOnALock = async () => {
+  const [row] = await db().execute<{ waiting: number }>(
+    sql`select count(*)::int as waiting from pg_stat_activity where datname = current_database() and wait_event_type = 'Lock'`,
+  );
+  return (row?.waiting ?? 0) > 0;
+};
+
+/** A site admin with two-factor on, as the blocklist policy requires. */
+async function lister() {
+  const row = await localInstance(db());
+  return admin((await seedAdmin({ ...row, domain: new URL(row.origin).host, local: true }, 'lister')).id);
+}
+
+const evidenceFor = async (id: string) => (await db().select().from(mediaEvidence).where(eq(mediaEvidence.mediaId, id)))[0];
+
+test('a list entry added while a scan is in flight wins over the scan finding nothing', async () => {
+  const row = await seedMedia(store, { ownerId: uploader });
+  const asked = gate();
+  const answer = gate();
+  const slow: ScanProvider = {
+    name: 'slow',
+    async scan() {
+      asked.open();
+      await answer.opened;
+      return { result: 'no-match' };
+    },
+  };
+  const scanning = scanNow(row.id, { store, config: scanConfig({}), providers: [slow] });
+  await asked.opened;
+  // The scan has checked the list and is waiting on its provider: the hash is listed now.
+  const added = await addToBlocklist(await lister(), { value: row.sha256!, category: 'violent' });
+  expect(added).toMatchObject({ ok: true, quarantined: 0 });
+  answer.open();
+  expect(await scanning).toBe('quarantined');
+  expect((await rowOf(row.id)).scanState).toBe('quarantined');
+  expect(await evidenceFor(row.id)).toMatchObject({ source: 'list', classification: 'violent', matchType: 'exact' });
+});
+
+test("a scan's last step waits for a list insertion in progress and then records the match", async () => {
+  const row = await seedMedia(store, { ownerId: uploader });
+  const inserted = gate();
+  const commit = gate();
+  const listing = writer().transaction(async (w) => {
+    await lockHash(w, row.sha256!);
+    await w.insert(mediaBlocklist).values({ kind: 'sha256', value: row.sha256!, category: 'spam' });
+    inserted.open();
+    await commit.opened;
+  });
+  await inserted.opened;
+  const recording = record(row.id, { state: 'clean' });
+  await expect.poll(someoneWaitsOnALock).toBe(true);
+  commit.open();
+  await listing;
+  await recording;
+  expect((await rowOf(row.id)).scanState).toBe('quarantined');
+  expect(await evidenceFor(row.id)).toMatchObject({ source: 'list', classification: 'spam' });
+});
+
+test("a list insertion waits for a scan's last step in progress and then quarantines the copy it made clean", async () => {
+  const row = await seedMedia(store, { ownerId: uploader });
+  const principal = await lister();
+  const recorded = gate();
+  const commit = gate();
+  const scanning = writer().transaction(async (w) => {
+    await lockHash(w, row.sha256!);
+    await w.update(media).set({ scanState: 'clean', scannedAt: new Date() }).where(eq(media.id, row.id));
+    recorded.open();
+    await commit.opened;
+  });
+  await recorded.opened;
+  const adding = addToBlocklist(principal, { value: row.sha256!, category: 'other' });
+  await expect.poll(someoneWaitsOnALock).toBe(true);
+  commit.open();
+  await scanning;
+  expect(await adding).toMatchObject({ ok: true, quarantined: 1 });
+  expect((await rowOf(row.id)).scanState).toBe('quarantined');
 });

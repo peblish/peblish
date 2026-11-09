@@ -1,18 +1,20 @@
 import type { Uuid } from '@peblish/schema/ids';
 import type { Principal } from '@peblish/schema/authz';
-import { eq } from 'drizzle-orm';
+import { desc, eq } from 'drizzle-orm';
 import { authorize } from '../authz/authorize.ts';
 import { db } from '../db/read.ts';
 import { media } from '../db/tables/media.ts';
 import { logEvidence } from '../evidence/log.ts';
-import { mediaEvidence } from '../evidence/tables.ts';
+import { holdAuthorities, mediaEvidence, type HoldAuthority } from '../evidence/tables.ts';
 import { refusedAsResult, type Result } from '../identity/result.ts';
 import { removeContent } from '../moderation/remove.ts';
 import { writeModlog } from '../modlog/write.ts';
+import type { WriteTx } from '../db/write.ts';
 import type { ObjectStore } from '../storage/store.ts';
 import { defineMutation } from '../tx/mutation.ts';
 import { Refused } from '../tx/refused.ts';
 import { blockMedia, retainUntil } from './block.ts';
+import { lockHash } from './hash-lock.ts';
 import { purgeBytes } from './purge.ts';
 import { assertMove } from './state.ts';
 import { livePostsUsing } from './usage.ts';
@@ -20,18 +22,24 @@ import { livePostsUsing } from './usage.ts';
 // Owned by lane SAFE. An admin's decisions on a quarantined image. The admin sees the image's
 // facts (the manifest), never the image: no UI route renders or links it.
 
-/** Locks the media row and its evidence and checks both are still undecided (or, for a hold, not released). */
-async function lockedEvidence(t: { db: Parameters<typeof blockMedia>[0] }, action: string, mediaId: Uuid) {
+/** Locks the media row and its current incident (the latest evidence row); earlier incidents are history. */
+async function lockedEvidence(t: { db: WriteTx }, action: string, mediaId: Uuid) {
   const [row] = await t.db.select().from(media).where(eq(media.id, mediaId)).for('no key update');
   if (!row) throw new Refused(action, 'target.not_found');
-  const [evidence] = await t.db.select().from(mediaEvidence).where(eq(mediaEvidence.mediaId, mediaId)).for('no key update');
+  const [evidence] = await t.db
+    .select()
+    .from(mediaEvidence)
+    .where(eq(mediaEvidence.mediaId, mediaId))
+    .orderBy(desc(mediaEvidence.createdAt), desc(mediaEvidence.id))
+    .limit(1)
+    .for('no key update');
   return { row, evidence };
 }
 
-/** Admin confirms the match: the image is blocked, its hash listed, the purge recorded. */
+/** Admin confirms the match: the image is blocked, its hash listed (clean copies are quarantined), the purge recorded. */
 export const confirmMatch = defineMutation({
   action: 'media.review',
-  emits: ['media.reviewed'],
+  emits: ['media.reviewed', 'media.quarantined'],
   recheck: true,
   async run(t, grant, input: { note?: string | null; now: Date }) {
     const { mediaId } = grant.subject;
@@ -39,7 +47,7 @@ export const confirmMatch = defineMutation({
     assertMove('media.review', row.scanState, 'blocked', 'media.not_quarantined');
     if (!evidence) throw new Refused('media.review', 'media.not_quarantined');
     if (evidence.status !== 'open') throw new Refused('media.review', 'media.already_decided');
-    await blockMedia(t.db, {
+    await blockMedia(t, {
       action: 'media.review',
       mediaId,
       sha256: row.sha256,
@@ -76,6 +84,9 @@ export const releaseMatch = defineMutation({
     assertMove('media.review', row.scanState, 'clean', 'media.not_quarantined');
     if (!evidence) throw new Refused('media.review', 'media.not_quarantined');
     if (evidence.status !== 'open') throw new Refused('media.review', 'media.already_decided');
+    // A confirmation of a copy quarantines the clean copies under the hash lock; a release takes it
+    // too, so it lands wholly before that sweep (and is swept) or after it.
+    if (row.sha256) await lockHash(t.db, row.sha256);
     await t.db.update(media).set({ scanState: 'clean', scannedAt: input.now }).where(eq(media.id, mediaId));
     await t.db
       .update(mediaEvidence)
@@ -97,28 +108,38 @@ export const releaseMatch = defineMutation({
 const maxReferenceLength = 200;
 
 /**
- * Records a hold: an AFP, NCMEC or NCA preservation direction names a reference and a date. While
- * it is in force the object is kept (neither the undecided expiry nor the purge touches it) and
- * the manifest outlives its date. Allowed on a quarantined image or a confirmed one whose bytes
- * are still there; a released image, or bytes already gone, are `media.already_decided`.
+ * Records a hold: an AFP, NCMEC or NCA preservation direction names a reference and a date, and
+ * the hold names which of them directed it. Any hold keeps the manifest, hashes and log past its
+ * date. Only an AFP direction keeps the image bytes (the CSAM SOP: imagery is kept on written AFP
+ * direction only): while it is in force neither the undecided expiry nor the purge touches them.
+ * Under an NCMEC or NCA hold the bytes follow the normal purge. Allowed on a quarantined image or a confirmed one whose bytes
+ * are still there and not yet claimed by the purge; a released image, or bytes the purge has
+ * claimed or deleted, are `media.already_decided`.
  */
 export const recordHold = defineMutation({
   action: 'media.review',
   emits: ['media.reviewed'],
   recheck: true,
-  async run(t, grant, input: { reference: string; until: Date; now: Date }) {
+  async run(t, grant, input: { authority: HoldAuthority; reference: string; until: Date; now: Date }) {
     const { mediaId } = grant.subject;
     const reference = input.reference.trim();
-    if (reference.length === 0 || reference.length > maxReferenceLength || !(input.until > input.now))
+    if (
+      !holdAuthorities.includes(input.authority) ||
+      reference.length === 0 ||
+      reference.length > maxReferenceLength ||
+      !(input.until > input.now)
+    )
       throw new Refused('media.review', 'media.hold_invalid');
     const { row, evidence } = await lockedEvidence(t, 'media.review', mediaId);
     if (!evidence || (row.scanState !== 'quarantined' && row.scanState !== 'blocked'))
       throw new Refused('media.review', 'media.not_quarantined');
-    if (evidence.status === 'released' || (row.scanState === 'blocked' && !row.storageKey))
+    // Once the purge has claimed the bytes (purge.ts) they are on their way out: too late for a hold.
+    if (evidence.status === 'released' || evidence.purgeStartedAt !== null || (row.scanState === 'blocked' && !row.storageKey))
       throw new Refused('media.review', 'media.already_decided');
     await t.db
       .update(mediaEvidence)
       .set({
+        holdAuthority: input.authority,
         holdReference: reference,
         holdUntil: input.until,
         ...(evidence.retainUntil && { retainUntil: retainUntil(evidence.decidedAt ?? input.now, input.until) }),
@@ -128,7 +149,7 @@ export const recordHold = defineMutation({
       evidenceId: evidence.id,
       actorId: grant.actorId,
       event: 'hold',
-      note: `${reference} until ${input.until.toISOString()}`,
+      note: `${input.authority.toUpperCase()} ${reference} until ${input.until.toISOString()}`,
     });
     await writeModlog(t.db, grant, { community: null, target: null, reason: null, details: { public: false } });
     await t.emit({ type: 'media.reviewed', v: 1, mediaId, evidenceId: evidence.id, adminId: grant.actorId, decision: 'held' });
@@ -182,10 +203,11 @@ export async function releaseQuarantined(
 
 export async function holdQuarantined(
   principal: Principal,
-  input: { mediaId: Uuid; reference: string; until: Date },
+  input: { mediaId: Uuid; authority: HoldAuthority; reference: string; until: Date },
   deps: ReviewDeps = {},
 ): Promise<Result<object>> {
   const decision = await granted(principal, input.mediaId);
   if (!decision.ok) return decision;
-  return refusedAsResult(() => recordHold(decision.grant, { reference: input.reference, until: input.until, now: deps.now ?? new Date() }));
+  const { authority, reference, until } = input;
+  return refusedAsResult(() => recordHold(decision.grant, { authority, reference, until, now: deps.now ?? new Date() }));
 }

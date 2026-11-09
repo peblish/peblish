@@ -1,31 +1,36 @@
+import type { Uuid } from '@peblish/schema/ids';
 import { and, eq } from 'drizzle-orm';
 import { media } from '../db/tables/media.ts';
 import { logEvidence } from '../evidence/log.ts';
 import { mediaEvidence } from '../evidence/tables.ts';
 import { defineMutation } from '../tx/mutation.ts';
 import { blockMedia, retainUntil } from './block.ts';
+import { holdKeepsBytes } from './purge.ts';
 
 // Owned by lane SAFE. What the instance does by itself with quarantined images nobody decided.
 
 /**
  * Ends the undecided window of one quarantined image: when its evidence is still open, older than
- * `days` and under no hold in force, the image is blocked exactly as an admin's confirmation
- * blocks it (hash listed, ledger row, row deleted) with no admin named. Anything else is left as
- * it is. The bytes are purged by the purge job.
+ * `days` and under no AFP hold in force (an NCMEC or NCA hold keeps the record, not the image), the image is blocked exactly as an admin's confirmation
+ * blocks it (hash listed, clean copies quarantined, ledger row, row deleted) with no admin
+ * named. Anything else is left as it is. The bytes are purged by the purge job.
  */
 export const expireUndecided = defineMutation({
   action: 'media.scan',
-  emits: ['media.scanned'],
+  emits: ['media.scanned', 'media.quarantined'],
   recheck: true,
   async run(t, grant, input: { now: Date; days: number }) {
     const { mediaId } = grant.subject;
     const [row] = await t.db.select().from(media).where(eq(media.id, mediaId)).for('no key update');
     if (row?.scanState !== 'quarantined') return { expired: false };
-    const [evidence] = await t.db.select().from(mediaEvidence).where(eq(mediaEvidence.mediaId, mediaId)).for('no key update');
+    const [evidence] = await t.db
+      .select()
+      .from(mediaEvidence)
+      .where(and(eq(mediaEvidence.mediaId, mediaId), eq(mediaEvidence.status, 'open')))
+      .for('no key update');
     const cutoff = new Date(input.now.getTime() - input.days * 86_400_000);
-    if (!evidence || evidence.status !== 'open' || evidence.createdAt > cutoff || (evidence.holdUntil && evidence.holdUntil > input.now))
-      return { expired: false };
-    await blockMedia(t.db, { action: 'media.scan', mediaId, sha256: row.sha256, from: 'quarantined', evidence, by: null, now: input.now });
+    if (!evidence || evidence.createdAt > cutoff || holdKeepsBytes(evidence, input.now)) return { expired: false };
+    await blockMedia(t, { action: 'media.scan', mediaId, sha256: row.sha256, from: 'quarantined', evidence, by: null, now: input.now });
     await t.db
       .update(mediaEvidence)
       .set({
@@ -42,16 +47,21 @@ export const expireUndecided = defineMutation({
 });
 
 /**
- * Deletes the evidence row of one image once its retention is over: decided, retain_until past and
- * no hold in force. The log line that says so outlives it (the log has no foreign key).
+ * Deletes one evidence row (an incident of the image) once its retention is over: decided,
+ * retain_until past and no hold in force. The log line that says so outlives it (the log has no
+ * foreign key).
  */
 export const expireManifest = defineMutation({
   action: 'media.scan',
   emits: ['media.purged'],
   recheck: true,
-  async run(t, grant, input: { now: Date }) {
+  async run(t, grant, input: { evidenceId: Uuid; now: Date }) {
     const { mediaId } = grant.subject;
-    const [evidence] = await t.db.select().from(mediaEvidence).where(eq(mediaEvidence.mediaId, mediaId)).for('no key update');
+    const [evidence] = await t.db
+      .select()
+      .from(mediaEvidence)
+      .where(and(eq(mediaEvidence.id, input.evidenceId), eq(mediaEvidence.mediaId, mediaId)))
+      .for('no key update');
     const over =
       evidence &&
       evidence.status !== 'open' &&

@@ -34,8 +34,8 @@ export const mediaBlocklist = pgTable(
 );
 
 /**
- * One row per media row the scan job has touched: how many times it was tried, the lease that
- * keeps two workers off one row, and the last failure (a class of error and a status, never a
+ * One row per media row the scan job (or the purge) has touched: how many times it was tried, the
+ * lease that keeps two workers off one row, and the last failure (a class of error and a status, never a
  * credential or a URL).
  */
 export const mediaScans = pgTable(
@@ -46,7 +46,12 @@ export const mediaScans = pgTable(
       .references(() => media.id, { onDelete: 'cascade' }),
     attempts: integer('attempts').notNull().default(0),
     leaseUntil: at('lease_until'),
+    /** A fresh token per claim: only the claim holding it may settle the row (recordScan), so a worker whose lease ran out changes nothing. */
+    claimToken: uuid('claim_token'),
     lastError: text('last_error'),
+    /** Failed bucket deletions of this row's bytes (purge.ts), and when the purge may try again, so a delete that keeps failing cannot fill every purge batch. */
+    purgeAttempts: integer('purge_attempts').notNull().default(0),
+    purgeRetryAt: at('purge_retry_at'),
   },
   (t) => [index('media_scans_lease').on(t.leaseUntil)],
 );

@@ -7,7 +7,8 @@ import { refusedAsResult, type Result } from '../identity/result.ts';
 import { writeModlog } from '../modlog/write.ts';
 import { defineMutation } from '../tx/mutation.ts';
 import { Refused } from '../tx/refused.ts';
-import { findBlocked, sha256Pattern } from './blocklist.ts';
+import { findBlocked, listVerdict, sha256Pattern } from './blocklist.ts';
+import { lockHash } from './hash-lock.ts';
 import { quarantine } from './quarantine.ts';
 import { mediaBlocklist } from './tables.ts';
 
@@ -29,6 +30,9 @@ export const addBlockedHash = defineMutation({
   async run(t, grant, input: { value: string; category: BlockCategory; reason?: string | null; now: Date }) {
     const value = input.value.trim().toLowerCase();
     if (!sha256Pattern.test(value)) throw new Refused('media.blocklist', 'media.hash_invalid');
+    // Under the hash lock, so a scan of a copy records either before this (and the copy is found
+    // clean below) or after it (and its own recheck finds the entry): hash-lock.ts.
+    await lockHash(t.db, value);
     if (await findBlocked(t.db, value)) throw new Refused('media.blocklist', 'media.hash_exists');
     const [entry] = await t.db
       .insert(mediaBlocklist)
@@ -52,7 +56,7 @@ export const addBlockedHash = defineMutation({
         action: 'media.blocklist',
         mediaId: copy.id,
         from: 'clean',
-        verdict: { source: 'list', entryId: entry.id, category: entry.category, listedAt: entry.createdAt.toISOString() },
+        verdict: listVerdict(entry),
         now: input.now,
       });
     await writeModlog(t.db, grant, { community: null, target: null, reason: null, details: { public: false } });

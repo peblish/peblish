@@ -3,6 +3,7 @@ import { randomBytes } from 'node:crypto';
 import { join } from 'node:path';
 import { expect, test } from '@playwright/test';
 import { closePools } from '../../packages/core/src/db/pools.ts';
+import { seedAccount } from '../../packages/core/src/testing/seed-a.ts';
 import { expectAccessible, freshTotp, landed, signIn } from '../auth/support.ts';
 import { gotoHydrated } from '../support/route-marker.ts';
 
@@ -38,6 +39,17 @@ async function signInAdmin(page: import('@playwright/test').Page) {
 test('signed out, the tab asks for a sign-in', async ({ page }) => {
   await page.goto('/admin/media');
   await expect(page).toHaveURL(/\/auth\/sign-in/);
+});
+
+test('a signed-in member who is not an admin gets a 403 with the denial and no data', async ({ page }) => {
+  const member = await seedAccount(`sm_${randomBytes(3).toString('hex')}`);
+  await gotoHydrated(page, '/auth/sign-in');
+  await signIn(page, `@${member.name}`, member.password);
+  await landed(page, '/');
+  const response = await page.goto('/admin/media');
+  expect(response?.status()).toBe(403);
+  await expect(page.getByRole('alert')).toHaveText('Only site admins can manage media.');
+  await expect(page.getByTestId('quarantine-row')).toHaveCount(0);
 });
 
 test('the Media tab shows the scanner state, never an image, and Confirm purges a quarantined upload', async ({ page }) => {
