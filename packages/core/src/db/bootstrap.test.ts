@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, test } from 'vitest';
 import { canonicalOrigin } from '../config.ts';
 import { truncateAll } from '../testing/db.ts';
-import { ensureLocalInstance } from './bootstrap.ts';
+import { ensureLocalInstance, ensureSettingRows, lockedSettings } from './bootstrap.ts';
+import { siteSettings } from './tables/site.ts';
 import { localInstance } from './local-instance.ts';
 import { db } from './read.ts';
 import { writer } from './write.ts';
@@ -33,4 +34,23 @@ describe('instance origin', () => {
       /local instance is http:\/\/g0.peblish.test:18300/,
     );
   });
+});
+
+test('the settings policies lock get their default rows, and stored values are kept', async () => {
+  await writer().insert(siteSettings).values({ key: 'registration.cap', value: 3 });
+  await ensureSettingRows(writer());
+  await ensureSettingRows(writer());
+  const rows = await db().select({ key: siteSettings.key, value: siteSettings.value }).from(siteSettings);
+  expect(new Map(rows.map(({ key, value }) => [key, value]))).toEqual(
+    new Map<string, unknown>([
+      ['registration.enabled', true],
+      ['remote_media.enabled', true],
+      ['inbox.enabled', true],
+      ['uploads.enabled', false],
+      ['posting.enabled', true],
+      ['delivery.enabled', true],
+      ['registration.cap', 3],
+    ]),
+  );
+  expect(rows).toHaveLength(lockedSettings.length);
 });
