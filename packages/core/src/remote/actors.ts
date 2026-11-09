@@ -1,12 +1,16 @@
 import { createPublicKey } from 'node:crypto';
-import type { ActorKind } from '@peblish/schema/ids';
-import { and, eq, isNull, ne, notInArray, sql } from 'drizzle-orm';
+import type { ActorKind, Uuid } from '@peblish/schema/ids';
+import { and, asc, eq, inArray, isNull, ne, notInArray, sql } from 'drizzle-orm';
+import type { Authorized } from '../authz/brand.ts';
 import { canonicalOrigin } from '../config.ts';
+import { db } from '../db/read.ts';
 import { actorKeys, actors, communityLanguages } from '../db/tables/actors.ts';
 import { comments, posts } from '../db/tables/content.ts';
-import { deletionLedger } from '../db/tables/site.ts';
 import { defineMutation } from '../tx/mutation.ts';
 import { ensureInstance } from './instances.ts';
+import { actorDeletionState, recordDeletion, recordUndeletion, type DeletionCause } from './ledger.ts';
+
+export type { DeletionCause } from './ledger.ts';
 
 // Owned by lane FED-A, then REM. The remote-actor store: federation fetches an actor document,
 // maps it to this shape and checks it (checkRemoteActor), then these write it. Every mutation
@@ -93,12 +97,32 @@ function keyAlgorithm(pem: string): 'rsa' | 'ed25519' | null {
   }
 }
 
+/** A stored actor's kind would change to one it may not: a community, an instance actor or a person cannot become another. */
+export class RemoteActorKindError extends Error {
+  override readonly name = 'RemoteActorKindError';
+  readonly apId: string;
+  readonly stored: ActorKind;
+  readonly incoming: ActorKind;
+
+  constructor(apId: string, stored: ActorKind, incoming: ActorKind) {
+    super(`${apId} is stored as a ${stored}, not a ${incoming}`);
+    this.apId = apId;
+    this.stored = stored;
+    this.incoming = incoming;
+  }
+}
+
+/** A person and a bot are one sort of account whose flag a server flips (Mastodon serves a bot as a Service); no other kind changes. */
+const accountKinds: readonly ActorKind[] = ['Person', 'Service'];
+const kindsThatMayBecome = (kind: ActorKind): readonly ActorKind[] => (accountKinds.includes(kind) ? accountKinds : [kind]);
+
 /**
  * Upserts a remote actor and its public key from a checked document, in one statement per
  * table, so two fetches racing for the same actor end with one row (the unique ap_id decides
  * which insert wins; the other updates). Creates the peer's instance row when it is new. Emits
  * actor.created or actor.updated with local false. A remote document can never replace a local
- * actor or change a stored actor's kind.
+ * actor. A Person may become a Service and back (an account's bot flag); any other change of a
+ * stored actor's kind throws RemoteActorKindError and writes nothing.
  *
  * The stored keys follow the document: a key it no longer advertises (or one we cannot use) is
  * removed and a changed one replaced, so a key the owner dropped stops verifying at the next
@@ -141,15 +165,22 @@ export const storeRemoteActor = defineMutation({
     const [row] = await t.db
       .insert(actors)
       .values({ apId: input.apId, kind: input.kind, local: false, instanceId: instance.id, ...fields })
-      .onConflictDoUpdate({ target: actors.apId, set: fields, setWhere: and(eq(actors.local, false), isNull(actors.deletedAt)) })
-      .returning({ id: actors.id, kind: actors.kind, created: sql<boolean>`(xmax = 0)` });
+      .onConflictDoUpdate({
+        target: actors.apId,
+        set: { ...fields, kind: input.kind },
+        setWhere: and(eq(actors.local, false), isNull(actors.deletedAt), inArray(actors.kind, [...kindsThatMayBecome(input.kind)])),
+      })
+      .returning({ id: actors.id, created: sql<boolean>`(xmax = 0)` });
     if (!row) {
-      // The upsert declined: a local actor, or a remote one that was deleted.
-      const [held] = await t.db.select({ id: actors.id, local: actors.local }).from(actors).where(eq(actors.apId, input.apId));
+      // The upsert declined: a local actor, a remote one that was deleted, or a kind that may not change.
+      const [held] = await t.db
+        .select({ id: actors.id, local: actors.local, kind: actors.kind, deletedAt: actors.deletedAt })
+        .from(actors)
+        .where(eq(actors.apId, input.apId));
       if (!held || held.local) throw new TypeError(`${input.apId} is a local actor`);
-      return { id: held.id, instanceId: instance.id, created: false, deleted: true };
+      if (held.deletedAt) return { id: held.id, instanceId: instance.id, created: false, deleted: true };
+      throw new RemoteActorKindError(input.apId, held.kind, input.kind);
     }
-    if (row.kind !== input.kind) throw new TypeError(`${input.apId} is stored as a ${row.kind}, not a ${input.kind}`);
 
     const algorithm = input.publicKey ? keyAlgorithm(input.publicKey.pem) : null;
     // Whatever the document no longer advertises goes first (a key id is unique, so a replaced
@@ -178,108 +209,209 @@ export const storeRemoteActor = defineMutation({
   },
 });
 
-/** Where a remote deletion came from: the actor's own Delete activity, or its server answering 410 or a Tombstone. */
-export type DeletionCause = 'Delete' | 'Tombstone';
-
 export type RemoteActorDeletion = {
   /**
    * Also mark every post and comment the actor wrote deleted (Lemmy's account deletion with
    * `removeData`). Ignored for a community: its content is withheld with the community.
    */
   removeContent?: boolean;
+  /** Defaults to `Delete`, the actor's own signed activity. */
   cause?: DeletionCause;
 };
 
 /**
- * A remote actor's deletion: the row stays with its ap_id, endpoints and key (so a signed
- * activity of theirs still verifies and their content keeps its author), the profile is
- * scrubbed and deleted_at is set. With `removeContent` the actor's posts and comments are
- * soft-deleted too, each with its post.deleted or comment.deleted event. Either way one
- * `deletion_ledger` row records it, so a backup restore re-applies it (details.removeContent
- * says to delete the actor's content as well). Nothing happens, and nothing is emitted or
- * recorded, for an actor we do not hold or one already deleted.
+ * The first step of a remote actor's deletion, in its own transaction: the row stays with its
+ * ap_id, endpoints and key (so a signed activity of theirs still verifies and their content
+ * keeps its author), the profile is scrubbed and deleted_at is set. Writes one
+ * `deletion_ledger` row for a request that adds something to what is recorded (a first
+ * deletion, a signed Delete over a Tombstone, content removal over a plain deletion), so a
+ * backup restore re-applies the strongest of them, and emits actor.deleted when the actor
+ * changed. Returns null for an actor we do not hold. Once it commits no new content of the actor
+ * is accepted (authorize refuses a deleted principal), so the content removal that follows
+ * (removeActorContent) works on a closed set.
  */
-export const deleteRemoteActor = defineMutation({
+export const tombstoneRemoteActor = defineMutation({
   action: 'remote.actor_delete',
-  emits: ['actor.deleted', 'post.deleted', 'comment.deleted'],
-  async run(t, grant, input: RemoteActorDeletion | void) {
+  emits: ['actor.deleted'],
+  async run(t, grant, input: RemoteActorDeletion) {
     const [actor] = await t.db
       .select({ id: actors.id, kind: actors.kind, deletedAt: actors.deletedAt })
       .from(actors)
       .where(and(eq(actors.apId, grant.subject.apId), eq(actors.local, false)))
       .for('no key update');
-    if (!actor || actor.deletedAt) return { deleted: false, posts: 0, comments: 0 };
-    const now = new Date();
-    await t.db
-      .update(actors)
-      .set({ displayName: null, summaryHtml: null, iconUrl: null, bannerUrl: null, postingWarning: null, raw: null, deletedAt: now })
-      .where(eq(actors.id, actor.id));
-
-    const removeContent = input?.removeContent === true && actor.kind !== 'Group';
-    let removedPosts = 0;
-    let removedComments = 0;
-    if (removeContent) {
-      // Posts, then comments: the lock order of the content rows (README, "Rules for writes").
-      const gonePosts = await t.db
-        .update(posts)
-        .set({ deletedAt: now })
-        .where(and(eq(posts.authorId, actor.id), isNull(posts.deletedAt)))
-        .returning({ id: posts.id, communityId: posts.communityId });
-      for (const post of gonePosts) {
-        await t.emit({ type: 'post.deleted', v: 1, postId: post.id, communityId: post.communityId, authorId: actor.id, local: false });
-      }
-      const goneComments = await t.db
-        .update(comments)
-        .set({ deletedAt: now })
-        .where(and(eq(comments.authorId, actor.id), isNull(comments.deletedAt)))
-        .returning({ id: comments.id, postId: comments.postId });
-      for (const comment of goneComments) {
-        await t.emit({ type: 'comment.deleted', v: 1, commentId: comment.id, postId: comment.postId, authorId: actor.id, local: false });
-      }
-      removedPosts = gonePosts.length;
-      removedComments = goneComments.length;
+    if (!actor) return null;
+    const cause = input.cause ?? 'Delete';
+    const removeContent = input.removeContent === true && actor.kind !== 'Group';
+    const actorChanged = actor.deletedAt === null;
+    if (actorChanged) {
+      await t.db
+        .update(actors)
+        .set({
+          displayName: null,
+          summaryHtml: null,
+          iconUrl: null,
+          bannerUrl: null,
+          postingWarning: null,
+          raw: null,
+          deletedAt: new Date(),
+        })
+        .where(eq(actors.id, actor.id));
     }
-    await t.db.insert(deletionLedger).values({
-      subjectKind: 'actor',
-      subjectId: actor.id,
-      subjectApId: grant.subject.apId,
-      reason: 'remote.actor_deleted',
-      requestedBy: grant.actorId,
-      details: { remote: true, cause: input?.cause ?? 'Delete', removeContent, posts: removedPosts, comments: removedComments },
-    });
-    await t.emit({ type: 'actor.deleted', v: 1, actorId: actor.id, kind: actor.kind, local: false });
-    return { deleted: true, posts: removedPosts, comments: removedComments };
+    const recorded = await actorDeletionState(t.db, actor.id);
+    const stronger = !recorded || (cause === 'Delete' && !recorded.signedDelete) || (removeContent && !recorded.removeContent);
+    if (actorChanged || stronger) {
+      await recordDeletion(t, { kind: 'actor', id: actor.id, cause, actorId: grant.actorId, removeContent });
+    }
+    if (actorChanged) await t.emit({ type: 'actor.deleted', v: 1, actorId: actor.id, kind: actor.kind, local: false });
+    return { id: actor.id, actorChanged, removeContent };
   },
 });
 
 /**
- * Takes a remote actor's deletion back, for a server that answers with a valid document for an
- * actor we hold as deleted (a restored account, a 410 that was a mistake). The profile was
- * scrubbed, so the caller stores the fresh document next; content that a deletion removed stays
- * deleted (it cannot be told from content the author deleted one by one). The ledger gets a
+ * Soft-deletes what a deleted remote actor wrote under one post, in one transaction that locks
+ * as every other comment writer does: the community's row, then the post, then the actor's
+ * comments under it in path order (README, "Rules for writes"; comments/insert.ts relies on
+ * it). The actor's own row is not touched, so nothing here holds it while waiting for those
+ * locks. Does nothing unless the actor is already deleted (tombstoneRemoteActor ran first).
+ * Each deletion emits post.deleted or comment.deleted with `local: false`.
+ */
+export const removeActorContentUnderPost = defineMutation({
+  action: 'remote.actor_delete',
+  emits: ['post.deleted', 'comment.deleted'],
+  async run(t, grant, input: { postId: Uuid }) {
+    const [actor] = await t.db
+      .select({ id: actors.id })
+      .from(actors)
+      .where(and(eq(actors.apId, grant.subject.apId), eq(actors.local, false), sql`${actors.deletedAt} is not null`));
+    if (!actor) return { removed: 0, moved: false };
+    const [unlocked] = await t.db.select({ communityId: posts.communityId }).from(posts).where(eq(posts.id, input.postId));
+    if (!unlocked) return { removed: 0, moved: false };
+    await t.db.select({ id: actors.id }).from(actors).where(eq(actors.id, unlocked.communityId)).for('no key update');
+    const [post] = await t.db
+      .select({ authorId: posts.authorId, communityId: posts.communityId, deletedAt: posts.deletedAt })
+      .from(posts)
+      .where(eq(posts.id, input.postId))
+      .for('no key update');
+    if (!post) return { removed: 0, moved: false };
+    if (post.communityId !== unlocked.communityId) return { removed: 0, moved: true };
+
+    const now = new Date();
+    let removed = 0;
+    if (post.authorId === actor.id && post.deletedAt === null) {
+      await t.db.update(posts).set({ deletedAt: now }).where(eq(posts.id, input.postId));
+      await t.emit({ type: 'post.deleted', v: 1, postId: input.postId, communityId: post.communityId, authorId: actor.id, local: false });
+      removed += 1;
+    }
+    const mine = await t.db
+      .select({ id: comments.id })
+      .from(comments)
+      .where(and(eq(comments.postId, input.postId), eq(comments.authorId, actor.id), isNull(comments.deletedAt)))
+      .orderBy(asc(comments.path))
+      .for('no key update');
+    if (mine.length > 0) {
+      await t.db
+        .update(comments)
+        .set({ deletedAt: now })
+        .where(
+          inArray(
+            comments.id,
+            mine.map((comment) => comment.id),
+          ),
+        );
+      for (const comment of mine) {
+        await t.emit({ type: 'comment.deleted', v: 1, commentId: comment.id, postId: input.postId, authorId: actor.id, local: false });
+      }
+      removed += mine.length;
+    }
+    return { removed, moved: false };
+  },
+});
+
+/** Posts handled per page of the actor's content, and times one post is tried again when it moved communities. */
+const contentPage = 200;
+const movedRetries = 3;
+
+/** Soft-deletes everything the (already deleted) actor wrote, one post at a time; returns how many posts and comments went. */
+async function removeActorContent(grant: Authorized<'remote.actor_delete'>, actorId: Uuid): Promise<number> {
+  let removed = 0;
+  let after = '00000000-0000-0000-0000-000000000000';
+  for (;;) {
+    // The posts the actor wrote that are still live, and the posts it commented on.
+    const page = await db().execute<{ id: Uuid }>(sql`
+      select id from (
+        select id from ${posts} where author_id = ${actorId} and deleted_at is null
+        union
+        select post_id as id from ${comments} where author_id = ${actorId} and deleted_at is null
+      ) held
+      where id > ${after}::uuid
+      order by id
+      limit ${contentPage}`);
+    if (page.length === 0) return removed;
+    for (const { id } of page) {
+      for (let attempt = 0; attempt < movedRetries; attempt++) {
+        const result = await removeActorContentUnderPost(grant, { postId: id });
+        removed += result.removed;
+        if (!result.moved) break;
+      }
+      after = id;
+    }
+  }
+}
+
+/**
+ * A remote actor's deletion: its own signed Delete, or its server answering 410 or a Tombstone.
+ * `actorChanged` says whether the actor went from live to deleted just now; `contentRemoved` how
+ * many posts and comments were soft-deleted by this call. They are independent: content removal
+ * runs for every request that asks for it (`removeContent`), whatever the actor's state before,
+ * so a Delete with `removeData` that follows a plain Delete or a Tombstone still removes the
+ * content, and a repeat finds nothing left. Nothing happens for an actor we do not hold.
+ *
+ * Not a single transaction, on purpose. The actor is tombstoned in a transaction of its own
+ * (tombstoneRemoteActor, which also writes the ledger row), then the content goes post by post
+ * (removeActorContentUnderPost), each in a transaction that takes the community's and the post's
+ * locks before the actor's comments under it. An account can have thousands of posts, and a
+ * transaction holding the actor row while it waits for community locks could deadlock with a
+ * reply that holds a community and waits for the author. So call it outside any open
+ * transaction (an inbound handler does it in `prepare`, not `apply`).
+ */
+export async function deleteRemoteActor(
+  grant: Authorized<'remote.actor_delete'>,
+  input: RemoteActorDeletion = {},
+): Promise<{ actorChanged: boolean; contentRemoved: number }> {
+  const tombstoned = await tombstoneRemoteActor(grant, input);
+  if (!tombstoned) return { actorChanged: false, contentRemoved: 0 };
+  const contentRemoved = tombstoned.removeContent ? await removeActorContent(grant, tombstoned.id) : 0;
+  return { actorChanged: tombstoned.actorChanged, contentRemoved };
+}
+
+/**
+ * Takes a remote actor's deletion back. `via` says who is asking: the actor itself with an
+ * Undo(Delete) (the default; always restores), or a refetch that found a valid document
+ * (`refresh`), which restores a deletion that came from a 410 or a Tombstone and never one the
+ * actor made with its own signed Delete. The check runs under the actor's row lock against the
+ * ledger, so a signed Delete that arrives meanwhile wins. The profile was scrubbed, so the
+ * caller stores the fresh document next; content that a deletion removed stays deleted (it
+ * cannot be told from content the author deleted one by one). Returns `undeleted`, and
+ * `signedDelete` when a refresh was declined for that reason. The ledger gets a
  * `remote.actor_undeleted` row after the deletion's, so a restore applies them in order and
  * ends with the actor alive.
  */
 export const undeleteRemoteActor = defineMutation({
   action: 'remote.actor_undelete',
   emits: ['actor.updated'],
-  async run(t, grant, _input: void) {
+  async run(t, grant, input: { via?: 'undo' | 'refresh' } | void) {
     const [actor] = await t.db
       .select({ id: actors.id, kind: actors.kind, deletedAt: actors.deletedAt })
       .from(actors)
       .where(and(eq(actors.apId, grant.subject.apId), eq(actors.local, false)))
       .for('no key update');
-    if (!actor?.deletedAt) return { undeleted: false };
+    if (!actor?.deletedAt) return { undeleted: false, signedDelete: false };
+    if (input?.via === 'refresh' && (await actorDeletionState(t.db, actor.id))?.signedDelete) {
+      return { undeleted: false, signedDelete: true };
+    }
     await t.db.update(actors).set({ deletedAt: null }).where(eq(actors.id, actor.id));
-    await t.db.insert(deletionLedger).values({
-      subjectKind: 'actor',
-      subjectId: actor.id,
-      subjectApId: grant.subject.apId,
-      reason: 'remote.actor_undeleted',
-      requestedBy: grant.actorId,
-      details: { remote: true },
-    });
+    await recordUndeletion(t, actor.id, grant.actorId);
     await t.emit({ type: 'actor.updated', v: 1, actorId: actor.id, kind: actor.kind, local: false });
-    return { undeleted: true };
+    return { undeleted: true, signedDelete: false };
   },
 });
