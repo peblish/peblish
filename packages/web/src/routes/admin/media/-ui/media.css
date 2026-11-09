@@ -1,0 +1,135 @@
+/* The admin Media tab, after the R2b pick media-split: a status strip, sub-sections, a list and
+   detail pane for review with one shared decision control. Structure and states, not final styling. */
+@layer app {
+  .media-admin .strip {
+    display: flex;
+    gap: 6px 18px;
+    flex-wrap: wrap;
+    align-items: center;
+    margin: 8px 0 12px;
+    font-size: 13px;
+  }
+  .media-admin .flash {
+    border-left: 2px solid currentColor;
+    padding: 2px 0 2px 10px;
+    margin: 0 0 12px;
+  }
+  .media-admin .flash.warn {
+    color: var(--auth-warn);
+  }
+  .media-admin .flash.ok {
+    color: var(--auth-ok);
+  }
+  .media-admin .flash.err {
+    color: var(--auth-err);
+  }
+  .media-admin .subnav {
+    display: flex;
+    gap: 4px 14px;
+    flex-wrap: wrap;
+    border-bottom: 1px solid var(--auth-line);
+    margin: 0 0 14px;
+    padding: 0 0 6px;
+  }
+  .media-admin .subnav a[aria-current='page'] {
+    font-weight: 700;
+    text-decoration: underline;
+  }
+  .media-admin .md {
+    display: grid;
+    grid-template-columns: minmax(220px, 300px) minmax(0, 1fr);
+    gap: 18px;
+    align-items: start;
+  }
+  .media-admin .ml {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    border-top: 1px solid var(--auth-line);
+  }
+  .media-admin .ml a {
+    display: block;
+    padding: 6px 8px;
+    border-bottom: 1px solid var(--auth-line);
+    text-decoration: none;
+    color: inherit;
+  }
+  .media-admin .ml a[aria-current='true'] {
+    outline: 2px solid currentColor;
+    outline-offset: -2px;
+  }
+  .media-admin .row {
+    display: flex;
+    gap: 8px;
+    align-items: baseline;
+  }
+  .media-admin .row .sp {
+    flex: 1;
+  }
+  .media-admin .kv {
+    display: grid;
+    grid-template-columns: 120px minmax(0, 1fr);
+    gap: 4px 12px;
+    margin: 0 0 14px;
+  }
+  .media-admin .kv dt {
+    color: var(--auth-muted);
+  }
+  .media-admin .kv dd {
+    margin: 0;
+  }
+  .media-admin .hx {
+    font:
+      12px ui-monospace,
+      SFMono-Regular,
+      Menlo,
+      monospace;
+    overflow-wrap: anywhere;
+  }
+  .media-admin details.decide {
+    border: 1px solid var(--auth-line);
+    padding: 6px 10px;
+    margin: 0 0 8px;
+  }
+  .media-admin details.decide summary {
+    cursor: pointer;
+    font-weight: 600;
+  }
+  .media-admin details.decide form {
+    margin-top: 8px;
+  }
+  .media-admin .add-hash {
+    display: grid;
+    grid-template-columns: minmax(0, 3fr) auto minmax(0, 2fr) auto;
+    gap: 8px;
+    align-items: end;
+    margin: 0 0 14px;
+  }
+  .media-admin .add-hash .fld {
+    margin: 0;
+  }
+  .media-admin pre.manifest {
+    max-height: 320px;
+    overflow: auto;
+    border: 1px solid var(--auth-line);
+    padding: 8px;
+    font-size: 12px;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+  @media (max-width: 860px) {
+    .media-admin .md {
+      grid-template-columns: minmax(0, 1fr);
+    }
+    .media-admin .add-hash {
+      grid-template-columns: minmax(0, 1fr);
+    }
+    .media-admin .kv {
+      grid-template-columns: minmax(0, 1fr);
+      gap: 0;
+    }
+    .media-admin .kv dd {
+      margin-bottom: 6px;
+    }
+  }
+}
