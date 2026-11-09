@@ -1,11 +1,14 @@
 import type { ReactNode } from 'react';
 import { Button } from '@peblish/ui/components/button';
+import { Prose } from '@peblish/ui/components/prose';
+import { VoteControl } from '@peblish/ui/components/vote-control';
 import { useTranslate } from '../../../i18n/use-translate.ts';
 import { useRouteHydrated } from '../../../shell/hydration.ts';
+import { useVoteLabels } from '../../../shell/labels.ts';
+import { castVoteFn } from '../-vote.ts';
 import type { PostPageData } from '../-load.ts';
 import { ActionForm } from './action-form.tsx';
 import { asPostError, errorKey } from './errors.ts';
-import { PostVote } from './post-vote.tsx';
 
 // The post page after thread-nested.html's post part: vote column, title and link, community
 // and author, body, the actions the MVP has. Left out on purpose: lock and pin authoring, save,
@@ -24,9 +27,6 @@ const when = (locale: string, iso: string) =>
     timeZoneName: 'short',
   }).format(new Date(iso));
 
-/** The rendered HTML comes from the Markdown renderer or the sanitiser (-load.ts), never from anywhere else. */
-const Html = ({ html }: { html: string }) => <div className="post-text pb-prose" dangerouslySetInnerHTML={{ __html: html }} />;
-
 export function PostPage({ data, error }: { data: PostPageData; error?: string | undefined }) {
   const { t, locale } = useTranslate();
   useRouteHydrated();
@@ -37,6 +37,7 @@ export function PostPage({ data, error }: { data: PostPageData; error?: string |
   const withheld = post.deleted ? 'deleted' : gate === 'sign-in' || gate === 'age' ? 'gate' : post.removed && !moderator ? 'removed' : null;
   const count = post.counts.comments;
   const shownError = asPostError(error);
+  const voteLabels = useVoteLabels();
 
   let body: ReactNode;
   if (post.deleted) {
@@ -96,7 +97,8 @@ export function PostPage({ data, error }: { data: PostPageData; error?: string |
             </a>
           )
         )}
-        {post.contentHtml && <Html html={post.contentHtml} />}
+        {/* The HTML comes from the Markdown renderer or the sanitiser (-load.ts), never from anywhere else. */}
+        {post.contentHtml && <Prose className="post-text" html={post.contentHtml} />}
       </div>
     );
     body = blurred ? (
@@ -114,13 +116,17 @@ export function PostPage({ data, error }: { data: PostPageData; error?: string |
   return (
     <main className="post-page" data-state={withheld ?? 'visible'}>
       <article className="post" aria-labelledby={withheld ? undefined : 'post-title'}>
-        <PostVote
-          key={`${post.myVote}:${post.counts.upvotes}:${post.counts.downvotes}`}
-          postId={post.id}
-          up={post.counts.upvotes}
-          down={post.counts.downvotes}
+        <VoteControl
+          score={post.counts.upvotes - post.counts.downvotes}
           myVote={post.myVote}
+          // A refusal throws, which puts the arrows and the score back.
+          onVote={async (value) => {
+            const result = await castVoteFn({ data: { target: { kind: 'post', id: post.id }, value } });
+            if (!result.ok) throw new Error(result.reason);
+          }}
           disabled={viewerId === null || post.deleted || withheld !== null}
+          labels={{ ...voteLabels, group: t('posts', 'vote.group') }}
+          locale={locale}
         />
         <div className="post-main">
           <p className="post-meta">

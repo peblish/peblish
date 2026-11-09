@@ -148,7 +148,7 @@ test.describe('a viewer', () => {
     // Vote on the plain post: the first tap after hydration counts, and the server keeps it.
     await gotoHydrated(page, url(seed.posts.plain));
     const up = page.getByRole('button', { name: 'Upvote' });
-    const score = page.getByRole('group', { name: 'Vote on this post' }).locator('output');
+    const score = page.getByRole('group', { name: 'Vote on this post' }).locator('.pb-vote__score');
     await expect(score).toHaveText('0');
     // Wait for the server's answer before reloading: a reload would abort a vote still in flight.
     const answered = () => page.waitForResponse((response) => response.url().includes('/_serverFn/'));

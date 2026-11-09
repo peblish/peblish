@@ -31,7 +31,7 @@ export const loadPost = createServerFn({ method: 'GET' })
     // without one, an image shows as the link to it.
     const media = (url: string | null) => {
       if (!url) return null;
-      // This instance's own media, and a link preview's proxy URL (lane B2 stores it as thumbnail_url).
+      // This instance's own media; any other URL (a link preview's og:image URL is stored as it is) is signed for the proxy.
       if (/^\/(?!\/)/.test(url) || URL.parse(url)?.origin === site.origin) return url;
       return site.remoteMedia && site.proxy ? site.proxy(url) : null;
     };
