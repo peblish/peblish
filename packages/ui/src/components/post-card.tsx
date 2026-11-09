@@ -44,6 +44,13 @@ export interface PostCardProps {
   hrefs: PostCardHrefs;
   labels: PostCardLabels;
   locale: string;
+  /**
+   * Where the thumbnail loads from, resolved by the page with the renderer's `image()` helper
+   * (web/src/server/markdown.ts): this instance's own URL, the signed proxy path for a remote
+   * image, or null (none, or it must not load). The card never reads `post.thumbnailUrl`, since
+   * a raw remote URL would hand the viewer's address to that host.
+   */
+  thumbnailSrc: string | null;
   /** Called with the viewer's new vote; see VoteControl. Without it the arrows still respond but save nothing. */
   onVote?: (value: Vote) => void | Promise<void>;
   /** The viewer cannot vote on this post. */
@@ -77,7 +84,19 @@ const markIcons = { text: TextIcon, link: LinkIcon, image: ImageIcon } as const;
  * NSFL) post starts hidden: its picture is blurred and its excerpt withheld until "show".
  * The server decides what a signed-out viewer receives; this only renders it.
  */
-export function PostCard({ post, density, hrefs, labels, locale, onVote, voteDisabled, onShare, headingLevel = 2, now }: PostCardProps) {
+export function PostCard({
+  post,
+  density,
+  hrefs,
+  labels,
+  locale,
+  thumbnailSrc,
+  onVote,
+  voteDisabled,
+  onShare,
+  headingLevel = 2,
+  now,
+}: PostCardProps) {
   const [revealed, setRevealed] = useState(false);
   const kind = kindOf(post);
   const sensitive = post.sensitive || post.nsfl;
@@ -106,8 +125,8 @@ export function PostCard({ post, density, hrefs, labels, locale, onVote, voteDis
         locale={locale}
       />
       <a className="pb-post__thumb" href={hrefs.post} tabIndex={-1} aria-hidden="true">
-        {post.thumbnailUrl && !gone ? (
-          <img src={post.thumbnailUrl} alt="" loading="lazy" decoding="async" />
+        {thumbnailSrc && !gone ? (
+          <img src={thumbnailSrc} alt="" loading="lazy" decoding="async" />
         ) : (
           <span className="pb-post__mark">
             <Mark />

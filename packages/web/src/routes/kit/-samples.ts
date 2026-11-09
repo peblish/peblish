@@ -28,9 +28,19 @@ export const communities = {
   art: actor('art', null, 'Group'),
 };
 
-/** A hatched picture as a data URI, so the gallery loads nothing from the network. */
+/**
+ * A hatched picture as a data URI, so the gallery loads nothing from the network. It stands for
+ * what a page gets from the renderer's image() helper for a thumbnail: PostCard shows only that
+ * resolved source, never the post's own thumbnailUrl (see thumbnailSrc below).
+ */
 const picture =
   "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='90'%3E%3Cdefs%3E%3Cpattern id='p' width='8' height='8' patternUnits='userSpaceOnUse' patternTransform='rotate(45)'%3E%3Crect width='4' height='8' fill='%23888'/%3E%3C/pattern%3E%3C/defs%3E%3Crect width='160' height='90' fill='url(%23p)'/%3E%3C/svg%3E";
+
+/** What a feed loader would pass PostCard as `thumbnailSrc`: the post's thumbnail, resolved (here a local picture) or null. */
+export const thumbnailSrc = (post: PostView): string | null => (post.thumbnailUrl ? picture : null);
+
+/** The host of the thumbnail the withheld post names; e2e asserts nothing is requested from it. */
+export const withheldHost = 'tracker.example';
 
 let counter = 0;
 const base = (title: string, over: Partial<PostView>): PostView => ({
@@ -61,7 +71,7 @@ const base = (title: string, over: Partial<PostView>): PostView => ({
 export const posts = {
   link: base('Lemmy 1.0 changes how Lock and Flag federate: what to test on Mbin and PieFed', {
     url: 'https://www.join-lemmy.org/news/lock-and-flag',
-    thumbnailUrl: picture,
+    thumbnailUrl: 'https://www.join-lemmy.org/assets/lock-and-flag.png',
   }),
   pinned: base('Welcome to feddit.com on peblish: what changed and what did not', {
     community: communities.announcements,
@@ -87,7 +97,7 @@ export const posts = {
   image: base('Rack day: finally labelled every cable', {
     url: 'https://lemmy.ml/pictrs/image/rack.jpg',
     urlContentType: 'image/jpeg',
-    thumbnailUrl: picture,
+    thumbnailUrl: 'https://lemmy.ml/pictrs/image/rack-thumb.jpg',
     publishedAt: ago(30),
     counts: { upvotes: 410, downvotes: 0, comments: 27 },
   }),
@@ -97,11 +107,16 @@ export const posts = {
     authorBadge: 'moderator',
     url: 'https://feddit.test/media/hands.png',
     urlContentType: 'image/png',
-    thumbnailUrl: picture,
+    thumbnailUrl: 'https://feddit.test/media/hands-thumb.png',
     sensitive: true,
     excerpt: 'Charcoal on newsprint, forty minutes.',
     publishedAt: ago(8),
     counts: { upvotes: 95, downvotes: 0, comments: 12 },
+  }),
+  /** A remote thumbnail the page chose not to load (remote media off): the card must show its type mark and request nothing. */
+  withheld: base('A link whose picture is not loaded', {
+    url: 'https://news.example/story',
+    thumbnailUrl: `https://${withheldHost}/pixel.png`,
   }),
 };
 

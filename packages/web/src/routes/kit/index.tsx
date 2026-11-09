@@ -25,7 +25,7 @@ import { commentPath, communityPath, postPath, userPath } from '../../shell/path
 import { usePrefs } from '../../shell/prefs.tsx';
 import { kitEnabled } from './-enabled.ts';
 import { SlowVotes } from './-slow-votes.tsx';
-import { deepThread, feed, now, posts, proseSample, thread } from './-samples.ts';
+import { deepThread, feed, now, posts, proseSample, thread, thumbnailSrc } from './-samples.ts';
 import kitCss from './-kit.css?url';
 
 // The component gallery: every @peblish/ui component in its states, for e2e (axe, density,
@@ -109,6 +109,7 @@ function KitPage() {
               hrefs={hrefs(post)}
               labels={postLabels}
               locale={locale}
+              thumbnailSrc={thumbnailSrc(post)}
               headingLevel={3}
               now={now}
               onShare={() => toast.add('Link copied')}
@@ -128,6 +129,7 @@ function KitPage() {
               hrefs={hrefs(posts.link)}
               labels={postLabels}
               locale={locale}
+              thumbnailSrc={thumbnailSrc(posts.link)}
               headingLevel={4}
               now={now}
             />
@@ -137,11 +139,28 @@ function KitPage() {
               hrefs={hrefs(posts.text)}
               labels={postLabels}
               locale={locale}
+              thumbnailSrc={thumbnailSrc(posts.text)}
               headingLevel={4}
               now={now}
             />
           </div>
         ))}
+      </section>
+
+      <section aria-labelledby="kit-withheld">
+        <h2 id="kit-withheld">Thumbnail not loaded</h2>
+        <div data-testid="kit-withheld">
+          <PostCard
+            post={posts.withheld}
+            density="classic"
+            hrefs={hrefs(posts.withheld)}
+            labels={postLabels}
+            locale={locale}
+            thumbnailSrc={null}
+            headingLevel={3}
+            now={now}
+          />
+        </div>
       </section>
 
       <section aria-labelledby="kit-vote">
