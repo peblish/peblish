@@ -2,6 +2,7 @@ import { and, eq, isNull } from 'drizzle-orm';
 import { comments, posts } from '../db/tables/content.ts';
 import { defineMutation } from '../tx/mutation.ts';
 import { recordDeletion } from './ledger.ts';
+import { objectRechecks } from './tables.ts';
 
 // Owned by lane REM. A remote post or comment whose own server no longer serves it: the refetch
 // answered 410 Gone or a Tombstone (federation/src/remote-fetch). The object's author deleting
@@ -12,7 +13,7 @@ import { recordDeletion } from './ledger.ts';
  * replies stay, as for an author's delete) and records it in `deletion_ledger`, so a backup
  * restore re-applies it. Emits post.deleted or comment.deleted with `local: false`. A local
  * object is never touched here, and nothing happens, nothing is recorded, for an object we do
- * not hold or one already deleted.
+ * not hold or one already deleted. Its recheck mark (remote/rechecks.ts) goes with it.
  */
 export const deleteRemoteObject = defineMutation({
   action: 'remote.object_delete',
@@ -28,6 +29,7 @@ export const deleteRemoteObject = defineMutation({
     if (post) {
       if (post.deletedAt) return { deleted: false };
       await t.db.update(posts).set({ deletedAt: now }).where(eq(posts.id, post.id));
+      await t.db.delete(objectRechecks).where(eq(objectRechecks.objectId, post.id));
       await recordDeletion(t, { kind: 'post', id: post.id, cause: 'Tombstone', actorId: grant.actorId });
       await t.emit({ type: 'post.deleted', v: 1, postId: post.id, communityId: post.communityId, authorId: post.authorId, local: false });
       return { deleted: true };
@@ -39,6 +41,7 @@ export const deleteRemoteObject = defineMutation({
       .for('no key update');
     if (!comment) return { deleted: false };
     await t.db.update(comments).set({ deletedAt: now }).where(eq(comments.id, comment.id));
+    await t.db.delete(objectRechecks).where(eq(objectRechecks.objectId, comment.id));
     await recordDeletion(t, { kind: 'comment', id: comment.id, cause: 'Tombstone', actorId: grant.actorId });
     await t.emit({
       type: 'comment.deleted',
