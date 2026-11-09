@@ -247,6 +247,7 @@ test.describe('the check catches', () => {
   });
 
   test('a page that is neither budgeted nor excused', () => {
-    expect(unaccounted(['/', '/auth/sign-in', '/healthz', '/communities/'])).toEqual(['/communities/']);
+    // A route that can never be a real page, so the example stays unbudgeted as pages are added.
+    expect(unaccounted(['/', '/auth/sign-in', '/healthz', '/nonexistent/'])).toEqual(['/nonexistent/']);
   });
 });
