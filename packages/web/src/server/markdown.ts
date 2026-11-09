@@ -1,5 +1,7 @@
 import { createHash } from 'node:crypto';
 import { publicOrigin } from '@peblish/core/config';
+import { imageSource } from '@peblish/core/media/image-src';
+import { mediaProxyKey, proxyUrlBuilder } from '@peblish/core/media/proxy-url';
 import { renderMarkdown } from '@peblish/core/markdown/render';
 import { sanitizeRemoteHtml } from '@peblish/core/markdown/sanitize';
 import { readSetting } from '@peblish/core/settings/read';
@@ -16,9 +18,9 @@ export interface SiteMarkdown {
   /** The remote_media.enabled kill switch. */
   remoteMedia: boolean;
   /**
-   * The remote-media proxy URL for an off-origin image (lane B2). Without it, or with remote
-   * media switched off, off-origin images show as links: viewer IPs never reach remote hosts
-   * (decision 5).
+   * The remote-media proxy URL for an off-origin image: a signed /media/proxy path, which
+   * siteMarkdown() sets. Without it, or with remote media switched off, off-origin images show
+   * as links: viewer IPs never reach remote hosts (decision 5).
    */
   proxy?: (url: string) => string;
 }
@@ -28,21 +30,24 @@ export interface MarkdownRenderer {
   render(source: string, options?: { idPrefix?: string; maxLength?: number; excerptLength?: number }): RenderedMarkdown;
   /** A remote object's HTML `content`; baseUrl is the object's URL. */
   sanitize(html: string, options?: { baseUrl?: string; excerptLength?: number }): SanitizedHtml;
+  /**
+   * Where a page loads an image from, such as a post's `thumbnailUrl` or an image post's `url`:
+   * the URL itself on this instance, the signed proxy path for a remote one, or null when it
+   * must not load (the caller shows a link or nothing).
+   */
+  image(url: string | null | undefined): string | null;
 }
 
-/** The settings of this instance: PUBLIC_ORIGIN and the stored kill switch. */
+/** The settings of this instance: PUBLIC_ORIGIN, the stored kill switch and the remote-media proxy. */
 export async function siteMarkdown(): Promise<SiteMarkdown> {
   const origin = publicOrigin();
   if (!origin) throw new Error('PUBLIC_ORIGIN is not set; Markdown links and mentions need the instance origin');
-  return { origin, remoteMedia: await readSetting('remote_media.enabled') };
+  return { origin, remoteMedia: await readSetting('remote_media.enabled'), proxy: proxyUrlBuilder(await mediaProxyKey()) };
 }
 
 export async function createMarkdownRenderer(site?: SiteMarkdown): Promise<MarkdownRenderer> {
   const { origin, remoteMedia, proxy } = site ?? (await siteMarkdown());
-  const rewriteImageUrl = (url: string) => {
-    if (new URL(url).origin === origin) return url;
-    return remoteMedia && proxy ? proxy(url) : null;
-  };
+  const image = (url: string | null | undefined) => imageSource(url, { origin, remoteMedia, proxy });
   const rendered = new Map<string, RenderedMarkdown>();
   const sanitized = new Map<string, SanitizedHtml>();
   // Keyed by a hash of the input and its options, so large bodies are not kept twice.
@@ -56,7 +61,9 @@ export async function createMarkdownRenderer(site?: SiteMarkdown): Promise<Markd
   };
   return {
     render: (source, options = {}) =>
-      memo(rendered, [source, options], () => renderMarkdown(source, { ...options, baseOrigin: origin, rewriteImageUrl })),
-    sanitize: (html, options = {}) => memo(sanitized, [html, options], () => sanitizeRemoteHtml(html, { ...options, rewriteImageUrl })),
+      memo(rendered, [source, options], () => renderMarkdown(source, { ...options, baseOrigin: origin, rewriteImageUrl: image })),
+    sanitize: (html, options = {}) =>
+      memo(sanitized, [html, options], () => sanitizeRemoteHtml(html, { ...options, rewriteImageUrl: image })),
+    image,
   };
 }
