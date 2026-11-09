@@ -1,11 +1,13 @@
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { beforeEach, describe, expect, test } from 'vitest';
 import { authorize } from '../authz/authorize.ts';
 import { systemPrincipal } from '../authz/system.ts';
 import { db } from '../db/read.ts';
+import { actors } from '../db/tables/actors.ts';
 import { follows } from '../db/tables/follows.ts';
 import { writer } from '../db/write.ts';
 import { Refused } from '../tx/refused.ts';
+import { tx } from '../tx/tx.ts';
 import { truncateAll } from '../testing/db.ts';
 import { localUser, seedActor, seedInstance } from '../testing/seed.ts';
 import { grantFor, outboxEvents, seedBan, seedCommunityRemoval } from '../testing/seed-az.ts';
@@ -136,7 +138,7 @@ describe('the answers that come back', () => {
 
   test('an Accept matching the Follow id, the follower and the community makes the follow accepted', async () => {
     const w = await pendingFollow();
-    const grant = await grantFor('follow.accept', w.asRemote(w.remote), { followApId: w.row.apId! });
+    const grant = await grantFor('follow.accept', w.asRemote(w.remote), { followApId: w.row.apId!, followerApId: w.alice.apId });
     expect(await acceptFollow(grant)).toEqual({ accepted: true });
     expect(await acceptFollow(grant)).toEqual({ accepted: false });
     expect(await follow(w.alice.id, w.remote.id)).toMatchObject({ state: 'accepted' });
@@ -150,19 +152,60 @@ describe('the answers that come back', () => {
 
   test('an Accept from another community, for an unknown Follow id, or from a local principal changes nothing', async () => {
     const w = await pendingFollow();
-    expect(await authorize('follow.accept', w.asRemote(w.otherRemote), { followApId: w.row.apId! })).toEqual({
+    expect(await authorize('follow.accept', w.asRemote(w.otherRemote), { followApId: w.row.apId!, followerApId: w.alice.apId })).toEqual({
       ok: false,
       reason: 'follow.mismatch',
     });
-    expect(await authorize('follow.accept', w.asRemote(w.remote), { followApId: 'https://fed-a.test/ap/activity/nope' })).toEqual({
+    expect(
+      await authorize('follow.accept', w.asRemote(w.remote), {
+        followApId: 'https://fed-a.test/ap/activity/nope',
+        followerApId: w.alice.apId,
+      }),
+    ).toEqual({
       ok: false,
       reason: 'target.not_found',
     });
-    expect(await authorize('follow.accept', localUser(w.alice.id), { followApId: w.row.apId! })).toEqual({
+    expect(await authorize('follow.accept', localUser(w.alice.id), { followApId: w.row.apId!, followerApId: w.alice.apId })).toEqual({
       ok: false,
       reason: 'auth.required',
     });
     expect(await follow(w.alice.id, w.remote.id)).toMatchObject({ state: 'pending' });
+  });
+
+  test('an Accept must name the local follower of the stored follow', async () => {
+    const w = await pendingFollow();
+    const followApId = w.row.apId!;
+    const claim = (followerApId: string) => authorize('follow.accept', w.asRemote(w.remote), { followApId, followerApId });
+    expect(await claim(w.alice.apId)).toMatchObject({ ok: true });
+    // Someone else's id, a remote actor's, or a made-up one: the stored follower is alice.
+    for (const followerApId of [w.bob.apId, w.remote.apId, 'https://fed-a.test/ap/u.nobody']) {
+      expect(await claim(followerApId), followerApId).toEqual({ ok: false, reason: 'follow.mismatch' });
+    }
+    // A remote follower's follow is not one of ours to be accepted.
+    await receiveFollow(
+      await grantFor('follow.receive', w.asRemote(w.bob), {
+        communityId: w.local.id,
+        followApId: 'https://lemmy.test/activities/follow/9',
+      }),
+    );
+    expect(
+      await authorize('follow.accept', w.asRemote(w.local), {
+        followApId: 'https://lemmy.test/activities/follow/9',
+        followerApId: w.bob.apId,
+      }),
+    ).toEqual({ ok: false, reason: 'follow.mismatch' });
+  });
+
+  test('the Accept policy locks the follow row and leaves the follower’s actor row free', async () => {
+    const w = await pendingFollow();
+    const subject = { followApId: w.row.apId!, followerApId: w.alice.apId };
+    const probe = (table: typeof actors | typeof follows, id: string) =>
+      writer().execute(sql`select id from ${table} where id = ${id} for no key update nowait`);
+    await tx(async (t) => {
+      expect(await authorize('follow.accept', w.asRemote(w.remote), subject, { db: t.db, lock: true })).toMatchObject({ ok: true });
+      await expect(probe(actors, w.alice.id)).resolves.toBeDefined();
+      await expect(probe(follows, w.row.id)).rejects.toThrow();
+    });
   });
 
   test('a Reject removes the follow only when it names the Follow id and comes from the followee', async () => {
@@ -217,6 +260,20 @@ describe('a remote actor following a local community', () => {
       { type: 'follow.accepted', followerLocal: false, followeeLocal: true, apId: first.followApId },
       { type: 'follow.accepted', followerLocal: false, followeeLocal: true, apId: 'https://lemmy.test/activities/follow/2' },
     ]);
+  });
+
+  test('a ban that lands after authorize() is honoured by the recheck, and nothing is written', async () => {
+    const w = await world();
+    const grant = await grantFor('follow.receive', w.asRemote(w.bob), {
+      communityId: w.local.id,
+      followApId: 'https://lemmy.test/activities/follow/1',
+    });
+    await seedBan(w.local, w.bob);
+    const error = await refusal(receiveFollow(grant));
+    expect(error).toBeInstanceOf(Refused);
+    expect(error?.reason).toBe('community.banned');
+    expect(await db().select().from(follows)).toHaveLength(0);
+    expect(await outboxEvents()).toEqual([]);
   });
 
   test('is refused for a remote community, a community they are banned from, or a local principal', async () => {
@@ -286,10 +343,25 @@ describe('the first-contact retry', () => {
     expect(await types()).toEqual(['follow.requested', 'follow.requested', 'follow.requested']);
   });
 
+  test('a Reject or Undo authorized for an older Follow id cannot delete the newer Follow a retry put in its place', async () => {
+    const w = await pending();
+    const subject = { followerId: w.alice.id, followeeId: w.remote.id, apId: w.first.apId };
+    const reject = await grantFor('follow.remove', w.asRemote(w.remote), subject);
+    expect(await retryUnansweredFollows(w.at(6))).toBe(1);
+    expect(await removeFollow(reject)).toEqual({ removed: false });
+    const now = (await follow(w.alice.id, w.remote.id))!;
+    expect(now).toMatchObject({ state: 'pending' });
+    expect(now.apId).not.toBe(w.first.apId);
+    expect(await types()).toEqual(['follow.requested', 'follow.requested']);
+    // The same Reject naming the id that is stored now does remove it.
+    const current = await grantFor('follow.remove', w.asRemote(w.remote), { ...subject, apId: now.apId });
+    expect(await removeFollow(current)).toEqual({ removed: true });
+  });
+
   test('an accepted follow, a local community and a removed follow are never sent again', async () => {
     const w = await pending();
     await requestFollow(await grantFor('follow.request', localUser(w.alice.id), { communityId: w.local.id }));
-    await acceptFollow(await grantFor('follow.accept', w.asRemote(w.remote), { followApId: w.first.apId! }));
+    await acceptFollow(await grantFor('follow.accept', w.asRemote(w.remote), { followApId: w.first.apId!, followerApId: w.alice.apId }));
     expect(await retryUnansweredFollows(w.at(6))).toBe(0);
     await writer().update(follows).set({ state: 'pending' }).where(eq(follows.id, w.first.id));
     await removeFollow(
