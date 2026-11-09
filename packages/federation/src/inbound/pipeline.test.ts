@@ -1,0 +1,385 @@
+import { eq } from 'drizzle-orm';
+import { beforeEach, describe, expect, test } from 'vitest';
+import { db } from '@peblish/core/db/read';
+import { actors } from '@peblish/core/db/tables/actors';
+import { posts, votes } from '@peblish/core/db/tables/content';
+import { activities, inboxDedupe, inboxRaw } from '@peblish/core/db/tables/federation';
+import { follows } from '@peblish/core/db/tables/follows';
+import { deliveries } from '@peblish/core/delivery/tables';
+import { outbox } from '@peblish/core/db/tables/outbox';
+import { truncateAll } from '@peblish/core/testing/db';
+import { seedAccount } from '@peblish/core/testing/seed-b1';
+import { deliverRow, inboxState, seedFollow, seedInboundWorld, seedInboxRow } from '@peblish/core/testing/seed-fed-b';
+import { stubFetch } from '@peblish/core/testing/seed-fed-a';
+import { processPending } from './job.ts';
+import { processRow, type PipelineOptions } from './pipeline.ts';
+import { requeueSkippedFor } from './queue.ts';
+import { resetKeyFetchBudget } from './throttle.ts';
+import { activityId, addressedToCommunity, hosts, PUBLIC } from './test-support.ts';
+
+const deliver = (json: Record<string, unknown>, options: PipelineOptions = {}) => deliverRow(json, (row) => processRow(row, options));
+const lemmy = 'https://lemmy.test';
+const { spike, lab, lemmyuser, t1 } = hosts;
+
+let world: Awaited<ReturnType<typeof seedInboundWorld>>;
+beforeEach(async () => {
+  await truncateAll();
+  resetKeyFetchBudget();
+  world = await seedInboundWorld();
+});
+
+const page = (id: string, extra: Record<string, unknown> = {}) => ({
+  id: `${lemmy}/post/${id}`,
+  type: 'Page',
+  attributedTo: lemmyuser,
+  name: `Post ${id}`,
+  content: '<p>body</p>',
+  source: { content: 'body', mediaType: 'text/markdown' },
+  published: '2026-11-09T10:00:00Z',
+  ...extra,
+});
+const createPage = (id: string, community: string, extra: Record<string, unknown> = {}) => ({
+  id: activityId(lemmy, 'create'),
+  type: 'Create',
+  actor: lemmyuser,
+  object: page(id, { audience: community, to: [community, PUBLIC], ...extra }),
+  ...addressedToCommunity(community),
+});
+const announceBy = (community: string, inner: Record<string, unknown>) => ({
+  id: activityId(lemmy, 'announce'),
+  type: 'Announce',
+  actor: community,
+  to: [PUBLIC],
+  cc: [`${community}/followers`],
+  object: inner,
+});
+const postCount = async () => (await db().select({ id: posts.id }).from(posts)).length;
+
+describe('dedupe, apply and enqueue are one transaction', () => {
+  test('a fault between apply and enqueue leaves no state, and a rerun applies once', async () => {
+    const body = createPage('100', spike);
+    const failing = deliverRow(body, (row) =>
+      processRow(row, {
+        afterApply: async () => {
+          throw new Error('the process died after the insert');
+        },
+      }),
+    );
+    await expect(failing).rejects.toThrow('the process died');
+    expect(
+      await db()
+        .select()
+        .from(posts)
+        .where(eq(posts.apId, `${lemmy}/post/100`)),
+    ).toHaveLength(0);
+    expect(await db().select().from(inboxDedupe)).toHaveLength(0);
+    expect(await db().select().from(activities)).toHaveLength(0);
+    expect(await db().select().from(deliveries)).toHaveLength(0);
+    expect((await db().select().from(outbox)).filter((row) => row.type === 'post.created')).toHaveLength(0);
+
+    // The same document again: the row is pending and leased, the rerun is the first apply.
+    const first = await deliver(body);
+    expect(first.stored).toEqual({ state: 'applied', error: null });
+    expect(await postCount()).toBe(3);
+    // The follower of !spike on mastodon.test got an Announce; the sender's server did not.
+    const queued = await db().select().from(deliveries);
+    expect(queued.map((row) => row.inboxUrl)).toEqual(['https://mastodon.test/inbox']);
+    // A second copy changes nothing.
+    const second = await deliver(body);
+    expect(second.stored?.state).toBe('skipped');
+    expect(second.stored?.error).toBe('duplicate');
+    expect(await postCount()).toBe(3);
+    expect(await db().select().from(deliveries)).toHaveLength(1);
+  });
+
+  test('a copy that arrives inside two Announces applies once, and a direct copy in a remote community does not apply', async () => {
+    const create = createPage('101', lab);
+    const direct = await deliver(create);
+    expect(direct.stored).toEqual({ state: 'skipped', error: 'community.unannounced https://lemmy.test/c/lab' });
+    const announced = await deliver(announceBy(lab, create));
+    expect(announced.stored).toEqual({ state: 'applied', error: null });
+    const again = await deliver(announceBy(lab, create));
+    expect(again.stored?.error).toBe('duplicate');
+    // The Mastodon copy Lemmy also sends, Announce(Page), is the same post.
+    const copy = await deliver(announceBy(lab, create.object));
+    expect(copy.stored?.error).toMatch(/^object\.exists/);
+    expect((await db().select().from(posts)).filter((post) => post.apId === `${lemmy}/post/101`)).toHaveLength(1);
+    // Applied inside an Announce, it is a remote community's business: nothing is relayed.
+    expect(await db().select().from(deliveries)).toHaveLength(0);
+  });
+
+  test('PieFed’s batched Announce applies each activity inside it', async () => {
+    const like = (n: number) => ({
+      id: activityId(lemmy, `like${n}`),
+      type: 'Like',
+      actor: lemmyuser,
+      object: n === 1 ? world.t2.apId : `${lemmy}/post/none`,
+      audience: lab,
+    });
+    const row = await deliver(announceBy(lab, like(1)));
+    expect(row.stored?.state).toBe('applied');
+    await truncateVotes();
+    const batch = { ...announceBy(lab, like(1)), object: [like(1), like(2)] };
+    const batched = await deliver(batch);
+    // One vote counted, one skipped for want of its post: the row is applied, and the vote is there.
+    expect(batched.stored).toEqual({ state: 'applied', error: null });
+    expect(await db().select().from(votes)).toHaveLength(1);
+  });
+});
+
+async function truncateVotes() {
+  const { writer } = await import('@peblish/core/db/write');
+  await writer().delete(votes);
+  await writer().delete(inboxDedupe);
+}
+
+describe('rows that cannot be applied', () => {
+  test('a document the mapping cannot read fails once and is never tried again', async () => {
+    const row = await seedInboxRow(
+      JSON.stringify({
+        id: activityId(lemmy, 'create'),
+        type: 'Create',
+        actor: lemmyuser,
+        object: { type: 'Page', id: `${lemmy}/post/1` },
+      }),
+    );
+    await processPending();
+    const first = await inboxState(row.id);
+    expect(first?.state).toBe('failed');
+    expect(first?.error).toMatch(/Page/);
+    const [afterFirst] = await db().select().from(inboxRaw).where(eq(inboxRaw.id, row.id));
+    await processPending();
+    const [afterSecond] = await db().select().from(inboxRaw).where(eq(inboxRaw.id, row.id));
+    expect(afterSecond?.attempts).toBe(afterFirst?.attempts);
+  });
+
+  test('a Question, an Announce of a bare IRI and a type we do not read are skipped with a reason', async () => {
+    const question = await deliver({
+      id: activityId(lemmy, 'create'),
+      type: 'Create',
+      actor: lemmyuser,
+      object: { id: `${lemmy}/poll/1`, type: 'Question', attributedTo: lemmyuser, name: 'p?' },
+      ...addressedToCommunity(spike),
+    });
+    expect(question.stored?.error).toMatch(/^type\.question/);
+    const boost = await deliver({
+      id: activityId(lemmy, 'announce'),
+      type: 'Announce',
+      actor: lab,
+      object: `${lemmy}/post/1`,
+      to: [PUBLIC],
+    });
+    expect(boost.stored?.error).toMatch(/^announce\.bare_iri/);
+    const move = await deliver({ id: activityId(lemmy, 'move'), type: 'Move', actor: lemmyuser, object: lemmyuser, target: lemmyuser });
+    expect(move.stored?.error).toMatch(/^type\.unhandled/);
+  });
+
+  test('an activity from a server that is down is tried again later, and fails for good only after many tries', async () => {
+    const row = await seedInboxRow(
+      JSON.stringify({ id: activityId('https://elsewhere.test', 'like'), type: 'Like', actor: 'https://elsewhere.test/u/x', object: t1 }),
+      { attempts: 1 },
+    );
+    const down = stubFetch({ 'https://elsewhere.test/u/x': { status: 503 } });
+    await expect(processRow(row, { fetch: down.fetch })).rejects.toThrow();
+    expect((await inboxState(row.id))?.state).toBe('pending');
+  });
+});
+
+describe('putting skipped rows back in line', () => {
+  test('a vote for a post we do not hold yet is applied once the post arrives', async () => {
+    const target = `${lemmy}/post/200`;
+    const vote = { id: activityId(lemmy, 'dislike'), type: 'Dislike', actor: lemmyuser, object: target, audience: lab };
+    const skipped = await deliver(announceBy(lab, vote));
+    expect(skipped.stored).toEqual({ state: 'skipped', error: `target.missing ${target}` });
+    // The post arrives in its Create: the row that waited for it goes back to pending…
+    await deliver(announceBy(lab, createPage('200', lab)));
+    expect((await inboxState(skipped.row.id))?.state).toBe('pending');
+    // …and the job applies it.
+    await processPending();
+    expect(await inboxState(skipped.row.id)).toEqual({ state: 'applied', error: null });
+    expect((await db().select().from(votes).where(eq(votes.value, -1))).length).toBe(1);
+  });
+
+  test('requeueSkippedFor sets the rows waiting for one object back to pending (REM’s backfill calls it)', async () => {
+    const target = `${lemmy}/post/201`;
+    const skipped = await deliver(
+      announceBy(lab, { id: activityId(lemmy, 'like'), type: 'Like', actor: lemmyuser, object: target, audience: lab }),
+    );
+    const other = await deliver(
+      announceBy(lab, { id: activityId(lemmy, 'like'), type: 'Like', actor: lemmyuser, object: `${lemmy}/post/202`, audience: lab }),
+    );
+    expect(await requeueSkippedFor(target)).toBe(1);
+    expect((await inboxState(skipped.row.id))?.state).toBe('pending');
+    expect((await inboxState(other.row.id))?.state).toBe('skipped');
+  });
+});
+
+describe('a community’s answers to our Follow', () => {
+  const accept = (follow: string, actor: string, follower = world.alice.apId) => ({
+    id: activityId(actor.startsWith(lemmy) ? lemmy : 'https://rogue.test', 'accept'),
+    type: 'Accept',
+    actor,
+    to: [lemmyuser],
+    object: { id: follow, type: 'Follow', actor: follower, object: lab },
+  });
+
+  test('an Accept or Reject from anyone but the followed community changes nothing', async () => {
+    const bob = await seedAccount(world.instances.local, 'bob');
+    const followId = 'https://fed-b.test/ap/activity/follow-bob';
+    await seedFollow(bob, world.peers.lab, followId, 'pending');
+    const state = async () => (await db().select().from(follows).where(eq(follows.apId, followId)))[0]?.state;
+
+    const wrongAccept = await deliver(accept(followId, hosts.mallory));
+    expect(wrongAccept.stored).toEqual({ state: 'skipped', error: 'follow.mismatch' });
+    const wrongReject = await deliver({ ...accept(followId, hosts.mallory), type: 'Reject' });
+    expect(wrongReject.stored).toEqual({ state: 'skipped', error: 'follow.mismatch' });
+    // The community's own Accept must also name the follower whose Follow it answers.
+    const wrongFollower = await deliver(accept(followId, lab));
+    expect(wrongFollower.stored).toEqual({ state: 'skipped', error: 'follow.mismatch' });
+    expect(await state()).toBe('pending');
+
+    expect((await deliver(accept(followId, lab, bob.apId))).stored).toEqual({ state: 'applied', error: null });
+    expect(await state()).toBe('accepted');
+    expect((await deliver({ ...accept(followId, lab, bob.apId), type: 'Reject' })).stored).toEqual({ state: 'applied', error: null });
+    expect(await state()).toBeUndefined();
+  });
+
+  test('an Accept that names its Follow by IRI only cannot be matched to its follower and is skipped; a Reject by IRI is read', async () => {
+    const bob = await seedAccount(world.instances.local, 'bob');
+    const followId = 'https://fed-b.test/ap/activity/follow-bob';
+    await seedFollow(bob, world.peers.lab, followId, 'pending');
+    const bare = { id: activityId(lemmy, 'accept'), type: 'Accept', actor: lab, object: followId, to: [bob.apId] };
+    expect((await deliver(bare)).stored).toEqual({ state: 'skipped', error: `accept.unverifiable ${followId}` });
+    expect((await db().select().from(follows).where(eq(follows.apId, followId)))[0]?.state).toBe('pending');
+    const reject = { ...bare, id: activityId(lemmy, 'reject'), type: 'Reject' };
+    expect((await deliver(reject)).stored).toEqual({ state: 'applied', error: null });
+    expect(await db().select().from(follows).where(eq(follows.apId, followId))).toEqual([]);
+  });
+
+  test('a remote Follow of a local community is accepted, and an Undo(Follow) takes it back', async () => {
+    const followId = `${lemmy}/activities/follow/1`;
+    const follow = { id: followId, type: 'Follow', actor: lemmyuser, object: spike, to: [spike] };
+    expect((await deliver(follow)).stored).toEqual({ state: 'applied', error: null });
+    const rows = () => db().select().from(follows).where(eq(follows.apId, followId));
+    expect(await rows()).toHaveLength(1);
+    const undo = { id: activityId(lemmy, 'undo'), type: 'Undo', actor: lemmyuser, object: follow, to: [spike] };
+    expect((await deliver(undo)).stored).toEqual({ state: 'applied', error: null });
+    expect(await rows()).toHaveLength(0);
+    // A person is not a community.
+    const person = await deliver({ ...follow, id: `${lemmy}/activities/follow/2`, object: world.alice.apId });
+    expect(person.stored?.error).toMatch(/^follow\.target_unsupported/);
+  });
+});
+
+describe('what a remote author may post', () => {
+  test('sensitive content is refused by default', async () => {
+    const nsfw = await deliver(createPage('300', spike, { sensitive: true }));
+    expect(nsfw.stored?.error).toMatch(/^content\.nsfw_rejected/);
+    expect(await postCount()).toBe(2);
+  });
+
+  test('a Create of an id already held under another community is refused with post.id_conflict, not stored twice', async () => {
+    const before = await postCount();
+    const conflict = await deliver(announceBy(lab, createPage('1', lab)));
+    expect(conflict.stored).toEqual({ state: 'skipped', error: 'post.id_conflict' });
+    expect(await postCount()).toBe(before);
+  });
+
+  test('a community never authors a post, comment or vote: skipped before anything is built', async () => {
+    const before = await postCount();
+    const create = await deliver({
+      ...createPage('301', spike),
+      actor: lab,
+      object: page('301', { attributedTo: lab, audience: spike, to: [spike, PUBLIC] }),
+    });
+    expect(create.stored?.error).toMatch(/^actor\.group_cannot_act/);
+    const like = await deliver({ id: activityId(lemmy, 'like'), type: 'Like', actor: lab, object: t1, audience: spike });
+    expect(like.stored?.error).toMatch(/^actor\.group_cannot_act/);
+    expect(await postCount()).toBe(before);
+    expect(await db().select().from(votes)).toEqual([]);
+  });
+
+  test('a top-level Note to a local community is a post: the title is its first line, the body the whole text', async () => {
+    const note = {
+      id: 'https://mastodon.test/users/follower/statuses/1',
+      type: 'Note',
+      attributedTo: world.peers.remoteFollower.apId,
+      content: '<p>  </p><p>The first line of the status</p><p>and a second</p>',
+      published: '2026-11-09T10:00:00Z',
+      to: [PUBLIC],
+      cc: [spike, 'https://mastodon.test/users/follower/followers'],
+    };
+    const created = await deliver({
+      id: 'https://mastodon.test/users/follower/statuses/1/activity',
+      type: 'Create',
+      actor: world.peers.remoteFollower.apId,
+      object: note,
+      to: [PUBLIC],
+      cc: note.cc,
+    });
+    expect(created.stored).toEqual({ state: 'applied', error: null });
+    const [post] = await db().select().from(posts).where(eq(posts.apId, note.id));
+    expect(post?.title).toBe('The first line of the status');
+    expect(post?.contentHtml).toContain('and a second');
+    const stranger = await deliver({
+      id: 'https://mastodon.test/users/follower/statuses/2/activity',
+      type: 'Create',
+      actor: world.peers.remoteFollower.apId,
+      object: { ...note, id: 'https://mastodon.test/users/follower/statuses/2', cc: ['https://mastodon.test/users/other'] },
+      to: [PUBLIC],
+    });
+    expect(stranger.stored?.error).toMatch(/^note\.no_local_community/);
+  });
+
+  test('an author deletes their post, and the moderator who removed it restores it', async () => {
+    const del = { id: activityId(lemmy, 'delete'), type: 'Delete', actor: lemmyuser, object: t1, ...addressedToCommunity(spike) };
+    expect((await deliver(del)).stored?.state).toBe('applied');
+    expect((await db().select().from(posts).where(eq(posts.apId, t1)))[0]?.deletedAt).not.toBeNull();
+    const undo = { id: activityId(lemmy, 'undo'), type: 'Undo', actor: lemmyuser, object: del, ...addressedToCommunity(spike) };
+    expect((await deliver(undo)).stored?.state).toBe('applied');
+    expect((await db().select().from(posts).where(eq(posts.apId, t1)))[0]?.deletedAt).toBeNull();
+
+    // A moderator appointed here removes it with a reason; the Undo restores it.
+    const removal = {
+      id: activityId(lemmy, 'delete'),
+      type: 'Delete',
+      actor: hosts.lemmyadmin,
+      object: t1,
+      summary: 'spam',
+      ...addressedToCommunity(spike),
+    };
+    expect((await deliver(removal)).stored?.state).toBe('applied');
+    expect((await db().select().from(posts).where(eq(posts.apId, t1)))[0]?.removedAt).not.toBeNull();
+    const restore = {
+      id: activityId(lemmy, 'undo'),
+      type: 'Undo',
+      actor: hosts.lemmyadmin,
+      object: removal,
+      ...addressedToCommunity(spike),
+    };
+    expect((await deliver(restore)).stored?.state).toBe('applied');
+    expect((await db().select().from(posts).where(eq(posts.apId, t1)))[0]?.removedAt).toBeNull();
+  });
+
+  test('a remote account’s own Delete deletes the actor, and nobody else’s does', async () => {
+    const own = { id: activityId(lemmy, 'delete'), type: 'Delete', actor: lemmyuser, object: lemmyuser, to: [PUBLIC] };
+    expect((await deliver(own)).stored?.state).toBe('applied');
+    expect((await db().select().from(actors).where(eq(actors.apId, lemmyuser)))[0]?.deletedAt).not.toBeNull();
+  });
+
+  test('an actor edits its own profile, and an actor that sent a Delete stays deleted', async () => {
+    const profile = {
+      id: lemmyuser,
+      type: 'Person',
+      preferredUsername: 'lemmyuser',
+      name: 'Lemmy User',
+      inbox: `${lemmyuser}/inbox`,
+      publicKey: { id: `${lemmyuser}#main-key`, owner: lemmyuser, publicKeyPem: world.peers.lemmyuser.keys.publicKeyPem },
+    };
+    const update = () => ({ id: activityId(lemmy, 'update'), type: 'Update', actor: lemmyuser, object: profile, to: [PUBLIC] });
+    expect((await deliver(update())).stored).toEqual({ state: 'applied', error: null });
+    const own = { id: activityId(lemmy, 'delete'), type: 'Delete', actor: lemmyuser, object: lemmyuser, to: [PUBLIC] };
+    expect((await deliver(own)).stored?.state).toBe('applied');
+    expect((await deliver(update())).stored).toEqual({ state: 'skipped', error: `target.deleted ${lemmyuser}` });
+  });
+});

@@ -30,17 +30,18 @@ it runs in the product:
 
 ## Layout
 
-| Directory       | What it holds                                                                                   |
-| --------------- | ----------------------------------------------------------------------------------------------- |
-| `mapping/`      | Pure wire to record functions, the Lemmy dialect (`mapping/README.md`)                          |
-| `signing/`      | draft-cavage-12 signing for deliveries and document fetches, signature checks for the inbox     |
-| `actors/`       | Fetching remote actors (`resolve.ts`), the documents we serve (`serve.ts`), the B2 seam         |
-| `webfinger/`    | The WebFinger client and endpoint                                                               |
-| `nodeinfo/`     | The NodeInfo client (software of a peer) and endpoint                                           |
-| `delivery/`     | The outbound consumer, the queue, the worker, the Announce shapes                               |
-| `inbound/`      | The inbox pipeline (lane FED-B); until it lands `receiveInbound` answers 503 with `Retry-After` |
-| `http.ts`       | Routing, the only module web imports besides the consumer registry                              |
-| `federation.ts` | Software name and version, the local origin, the User-Agent                                     |
+| Directory       | What it holds                                                                               |
+| --------------- | ------------------------------------------------------------------------------------------- |
+| `mapping/`      | Pure wire to record functions, the Lemmy dialect (`mapping/README.md`)                      |
+| `signing/`      | draft-cavage-12 signing for deliveries and document fetches, signature checks for the inbox |
+| `actors/`       | Fetching remote actors (`resolve.ts`), the documents we serve (`serve.ts`), the B2 seam     |
+| `webfinger/`    | The WebFinger client and endpoint                                                           |
+| `nodeinfo/`     | The NodeInfo client (software of a peer) and endpoint                                       |
+| `delivery/`     | The outbound consumer, the queue, the worker, the Announce shapes                           |
+| `inbound/`      | The inbox: receipt, the pipeline, authorization, one handler per activity (lane FED-B)      |
+| `relay/`        | The community's Announce of what reached it, and the outbound moderation activities (FED-B) |
+| `http.ts`       | Routing, the only module web imports besides the consumer registry                          |
+| `federation.ts` | Software name and version, the local origin, the User-Agent                                 |
 
 ## What we serve
 
@@ -203,20 +204,77 @@ An Accept, Reject or Undo is matched on what it names, not on the pair alone:
   `fetchActivity` (`actors/document.ts`), which signs the GET as the instance.
 - Resolve the follower with `resolveRemoteActor` before `receiveFollow`: that is what reads
   its server's NodeInfo, and with it the Announce shape.
+- `requeueSkippedFor(apId)` (`inbound/queue.ts`) sets the rows that were skipped waiting for an
+  object back to pending (used when an object arrives by another route, and by a backfill).
 - `src/test/diff.ts` and the corpus tests (`delivery/corpus.test.ts`) compare what we send with
   what Lemmy and PieFed accepted.
 
 ## Inbound processing
 
-Each inbound activity is stored in `inbox_raw` first, then one transaction (`tx` from
-`@peblish/core/tx/tx`) writes its dedupe marker, applies it through a core mutation and
-enqueues the resulting outbox events. Handlers live one per activity type in
-`src/inbound/handlers/<type>.ts` (each exports `handler`), registered by glob.
+An inbox POST goes through two steps, so the sender gets its answer fast and nothing is lost.
 
-Dedupe rule: the id passed to `Tx.dedupe` (stored in `inbox_dedupe`) is the id of the
-activity being applied, which is the inner activity when it arrives inside an Announce.
-A Create delivered directly by its author and the same Create relayed by the community's
-Announce are therefore applied once.
+1. **Receipt** (`inbound/receive.ts`). The exact bytes are verified (draft-cavage, the key's
+   owner is the activity's actor) and stored in `inbox_raw` with the request headers that were
+   signed. Answers: 202 stored, 401 bad signature, 400 not an activity, 413 over 512 KiB (also
+   counted while a chunked body streams in), 429 for too many unknown keys at once, 503 with
+   `Retry-After` while `inbox.enabled` is off or storage fails. Never 410, 418 or another 5xx.
+2. **The pipeline** (`inbound/pipeline.ts`, run by the `federation.inbound` job, one second
+   poll, rows claimed with `SKIP LOCKED`). Per row: classify the document (`classify.ts`: a
+   type we do not read, a poll, a bare-IRI Announce and a microblog Note are decided here; a
+   batched Announce becomes one Announce per activity), map it (`mapping/`), then the
+   handler's `prepare` does all network work (resolving actors, fetching an announced
+   activity from its own origin) and returns an `apply` step. One transaction then writes the
+   dedupe marker (the inner activity's id inside an Announce, so a direct and an announced
+   copy apply once), runs `apply` through core mutations, records the `activities` row linked
+   to `inbox_raw`, queues the relay's deliveries, puts rows that waited for what was just stored
+   back to pending, and settles the row. No network runs inside the transaction. A skip rolls
+   all of it back.
+
+Every row ends `applied`, `skipped` with a reason in `inbox_raw.error`, or `failed` (a document
+the mapping cannot read, never retried). A transient failure (a peer down, a database error,
+a unique violation from two first deliveries racing) leaves the row `pending` for a retry with
+backoff, `failed` after eight tries. Reasons are the closed set in `inbound/reasons.ts` plus
+core's `RefusalReason`s.
+
+### Authorization
+
+`inbound/authorize.ts` is the one module that decides whether an activity may change state. An
+activity's id and actor share an origin; a created object lives on its author's origin and names
+the actor; an activity inside an Announce is on the announcer's origin or read from its own;
+an Undo reverses only its actor's activity; content in a remote community counts only in that
+community's own Announce; an Announce vouches only for its own community; a community never
+authors a post, comment or vote. Who may do what to the target is core's: `grantFor` hands the
+policy a remote principal (`announcedBy` names the community whose Announce carried it, decision 10) and a refusal becomes the skip's reason. `matrix.test.ts` runs the spike's 16 cases (N0 to
+N15) and asserts the exact reason and that state is unchanged.
+
+### Handlers
+
+One file per ActivityStreams type in `inbound/handlers/` exports `handler` (`prepare`, and `undo`
+where the type can be undone); files starting with `_` are shared helpers and not registered.
+`Create`, `Update`, `Delete`, `Undo`, `Like`, `Dislike`, `Announce`, `Lock`, `Add`, `Remove`,
+`Block`, `Follow`, `Accept`, `Reject`, `Flag`. `Flag` authorizes the report and records it as
+skipped `flag.not_handled`; the reports lane replaces its last line. Comments go through
+lane D's remote comment mutations (`storeRemoteComment`, `updateRemoteComment`, `deleteComment`).
+
+### Relay and outbound moderation
+
+What reaches a local community directly (a post, a comment, a vote, a remote moderator's
+action) is applied and then announced by the community to its remote followers except the
+sender's server (`relay/announce.ts`). The Announce embeds the received bytes exactly,
+spliced into the Announce text, because re-serialising parsed JSON changes what Lemmy's strict
+parser needs. A new post goes to Mastodon-like followers as `Announce(Page)` instead.
+`relay/consumer.ts` turns a moderation event taken here (`local: true`, in a local community)
+into Delete, Lock, Add or Remove on the featured and moderators collections, Block, and their
+Undos, announced to followers; a local account's deletion becomes a Delete of the account.
+
+### Remote moderators
+
+A remote community's moderators are mirrored from its moderators collection into
+`community_moderators` (`source: 'remote'`, core `remote/moderators.ts`). A row grants only
+once verified and until `expires_at` (twelve hours after the last confirmation), so a
+moderator the peer removed loses authority within a bounded time even if the Remove never
+reached us. The mirror is refetched when the community announces an Add or Remove on the
+collection and by the `federation.moderators` job before a row runs out.
 
 ## HTTP and consumers
 

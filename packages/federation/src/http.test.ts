@@ -86,11 +86,10 @@ describe('answering federation requests', () => {
     expect(((await (await ask('/nodeinfo/2.1'))!.json()) as { software: { name: string } }).software.name).toBe('peblish');
   });
 
-  test('every inbox takes a POST and, until the pipeline is live, answers 503 with Retry-After', async () => {
+  test('every inbox takes a POST, and an unsigned one is answered 401', async () => {
     for (const path of ['/inbox', '/ap/u.alice/inbox', '/ap/c.news/inbox', '/u/alice/inbox', '/c/news/inbox']) {
       const response = (await ask(path, { method: 'POST', body: '{}', headers: { 'content-type': activity } }))!;
-      expect(response.status, path).toBe(503);
-      expect(Number(response.headers.get('retry-after')), path).toBeGreaterThan(0);
+      expect(response.status, path).toBe(401);
     }
   });
 
