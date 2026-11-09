@@ -1,7 +1,8 @@
+import { createHash } from 'node:crypto';
 import { db } from '@peblish/core/db/read';
 import { actorKeys, actors } from '@peblish/core/db/tables/actors';
 import { eq } from 'drizzle-orm';
-import type { Fetcher } from '../actors/document.ts';
+import { fetchActivity, type Fetcher } from '../actors/document.ts';
 import { resolveRemoteActor } from '../actors/resolve.ts';
 import { safeFetch } from '../actors/safe-fetch.ts';
 import { parseSignature, signatureVerifies, type SignatureFailure } from './verify.ts';
@@ -31,24 +32,27 @@ function actorOf(keyId: string): string {
 /** A stored actor copy younger than this is not fetched again to look for a rotated or new key. */
 export const keyRefetchAfterMs = 60 * 1000;
 
-// Key-refresh attempts, by actor id, so a flood of bad signatures from (or in the name of) one
-// actor costs one fetch a minute even when that fetch fails: actors.fetched_at only moves when
-// a fetch succeeds, so it cannot throttle an endpoint that is down. Bounded: the oldest attempt
-// is forgotten past the cap. Per process, like the NodeInfo failure map; on globalThis because
-// the web build can hold two copies of a module.
+// Key-refresh attempts, by a hash of the actor id, so a flood of bad signatures from (or in the
+// name of) one actor costs one fetch a minute even when that fetch fails: actors.fetched_at only
+// moves when a fetch succeeds, so it cannot throttle an endpoint that is down. The key id is
+// whatever the sender wrote in its Signature header, so only its hash is stored. Bounded: the
+// oldest attempt is forgotten past the cap. Per process, like the NodeInfo failure map; on
+// globalThis because the web build can hold two copies of a module.
 const refreshAttempts = ((globalThis as { __peblishKeyRefreshes?: Map<string, number> }).__peblishKeyRefreshes ??= new Map());
 const refreshAttemptsMax = 10_000;
+const attemptKey = (actorApId: string): string => createHash('sha256').update(actorApId).digest('base64url');
 
 /** Whether `actorApId` was fetched for its key within the last minute, successfully or not. */
 function recentlyFetched(actorApId: string, now: number): boolean {
-  const last = refreshAttempts.get(actorApId);
+  const last = refreshAttempts.get(attemptKey(actorApId));
   return last !== undefined && now - last < keyRefetchAfterMs;
 }
 
 /** Records that a request for `actorApId` is going out (it moves to the newest end of the map). */
 function recordFetch(actorApId: string, now: number): void {
-  refreshAttempts.delete(actorApId);
-  refreshAttempts.set(actorApId, now);
+  const key = attemptKey(actorApId);
+  refreshAttempts.delete(key);
+  refreshAttempts.set(key, now);
   if (refreshAttempts.size > refreshAttemptsMax) refreshAttempts.delete(refreshAttempts.keys().next().value!);
 }
 
@@ -58,12 +62,32 @@ export function forgetKeyRefreshes(): void {
 }
 
 /**
+ * The actor behind a key id that has no fragment. Most servers put the key in the actor's own
+ * document (`actor#main-key`); GoToSocial's key id is a document of its own
+ * (`actor/main-key`) holding the key and naming its `owner`. The owner must be on the key's
+ * origin, and the key is still taken only from the owner's own document afterwards, so a key
+ * document cannot vouch for itself. Null when the address is something else (an actor, an error).
+ */
+async function keyOwner(keyId: string, fetch: Fetcher): Promise<string | null> {
+  if (new URL(keyId).hash) return null;
+  try {
+    const { json } = await fetchActivity(keyId, fetch);
+    const { owner, publicKeyPem } = json as { owner?: unknown; publicKeyPem?: unknown };
+    if (typeof owner !== 'string' || typeof publicKeyPem !== 'string' || !URL.canParse(owner)) return null;
+    return new URL(owner).origin === new URL(keyId).origin ? owner : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Checks the HTTP signature of an inbox POST whose exact bytes are `body`, and names the actor
  * that signed it. The key comes from actor_keys; a key we do not hold has its actor fetched
  * (safeFetch) and stored first, and a signature that does not verify under a stored key is
  * tried once more against a freshly fetched copy, since the actor may have rotated it. Two
- * limits keep this from being a way to make us fetch: only the actor a key id names is ever
- * fetched, and an actor is not fetched for its key more than once a minute, whether or not the
+ * limits keep this from being a way to make us fetch: only the actor a key id names (or, for a
+ * key id that is a document of its own, the owner on the same origin that document names) is
+ * ever fetched, and an actor is not fetched for its key more than once a minute, whether or not the
  * last fetch worked (FED-B throttles the callers that make us fetch for an actor we do not hold).
  *
  * This proves the signer holds the key of `ownerApId`; whether that actor may do what the
@@ -89,7 +113,8 @@ export async function verifyInboundSignature(
       return send(url, init);
     };
     try {
-      await resolveRemoteActor(actorApId, { fetch: recording, maxAgeMs: keyRefetchAfterMs });
+      const owner = (await keyOwner(parsed.keyId, recording)) ?? actorApId;
+      await resolveRemoteActor(owner, { fetch: recording, maxAgeMs: keyRefetchAfterMs });
     } catch {
       return null;
     }

@@ -137,6 +137,57 @@ describe('verifying an inbox POST', () => {
     expect(down.requests.filter((request) => request.url === stranger.id)).toHaveLength(1);
   });
 
+  test('the refresh throttle remembers a hash of the key id, however long the sender made it', async () => {
+    const longKeyId = `https://lemmy.test/u/${'x'.repeat(6000)}#main-key`;
+    const headers = signDelivery({ keyId: longKeyId, privateKeyPem: rsaKeys().privateKeyPem }, inbox, body);
+    const request = new Request(inbox, { method: 'POST', headers, body });
+    const down = stubFetch({});
+    expect(await verifyInboundSignature(request, bytes(), { fetch: down.fetch })).toEqual({ ok: false, reason: 'key_unknown' });
+    expect(down.requests.length).toBeGreaterThan(0);
+    const remembered = (globalThis as { __peblishKeyRefreshes?: Map<string, number> }).__peblishKeyRefreshes!;
+    expect([...remembered.keys()].map((key) => key.length)).toEqual([43]);
+  });
+
+  test('a key id that is a document of its own (GoToSocial) is resolved through the owner it names', async () => {
+    const keys = rsaKeys();
+    const actorId = 'https://gts.test/users/alice';
+    const gtsKeyId = `${actorId}/main-key`;
+    const actor = {
+      ...actorDocument('gts.test', 'alice', { publicKeyPem: keys.publicKeyPem }),
+      id: actorId,
+      inbox: `${actorId}/inbox`,
+      outbox: `${actorId}/outbox`,
+      followers: `${actorId}/followers`,
+      publicKey: { id: gtsKeyId, owner: actorId, publicKeyPem: keys.publicKeyPem },
+    };
+    const keyDocument = { id: gtsKeyId, owner: actorId, publicKeyPem: keys.publicKeyPem };
+    const { fetch, requests } = stubFetch({ [gtsKeyId]: { body: keyDocument }, [actorId]: { body: actor } });
+    const request = new Request(inbox, {
+      method: 'POST',
+      headers: signDelivery({ keyId: gtsKeyId, privateKeyPem: keys.privateKeyPem }, inbox, body),
+      body,
+    });
+    expect(await verifyInboundSignature(request, bytes(), { fetch })).toEqual({ ok: true, keyId: gtsKeyId, ownerApId: actorId });
+    expect(requests.map((each) => each.url).slice(0, 2)).toEqual([gtsKeyId, actorId]);
+  });
+
+  test('a key document on one origin cannot name an owner on another', async () => {
+    const keys = rsaKeys();
+    const victim = actorDocument('lemmy.test', 'victim', { publicKeyPem: keys.publicKeyPem });
+    const evilKeyId = 'https://evil.test/users/mallory/main-key';
+    const { fetch, requests } = stubFetch({
+      [evilKeyId]: { body: { id: evilKeyId, owner: victim.id, publicKeyPem: keys.publicKeyPem } },
+      [victim.id]: { body: victim },
+    });
+    const request = new Request(inbox, {
+      method: 'POST',
+      headers: signDelivery({ keyId: evilKeyId, privateKeyPem: keys.privateKeyPem }, inbox, body),
+      body,
+    });
+    expect(await verifyInboundSignature(request, bytes(), { fetch })).toEqual({ ok: false, reason: 'key_unknown' });
+    expect(requests.some((each) => each.url === victim.id)).toBe(false);
+  });
+
   test('a stranger’s signature, an unreachable actor and one of our own keys are all refused', async () => {
     const keys = rsaKeys();
     const { fetch } = stubFetch({ [sender.id]: { body: document(rsaKeys().publicKeyPem) } });
