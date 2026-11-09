@@ -7,11 +7,12 @@ import { switchedOn } from '../../media/settings.ts';
 import type { Frozen } from '../frozen.ts';
 import { allow, deny, forShare, type PolicyRequest, type PolicyResult } from '../policy.ts';
 
-// Owned by lane B2. Two ways a local account puts an image in the bucket: an upload (switched
-// off by uploads.enabled until M26 scanning is live, decision 4) and the thumbnail of a link
-// preview (switched off by remote_media.enabled, which also stops the fetch). Both need a
-// verified email, like posting does. Under lock the setting row and the login row are read
-// FOR SHARE; no write body updates either.
+// Owned by lane B2. Two things a local account asks the server to do with media: put an image in
+// the bucket (an upload, switched off by uploads.enabled until M26 scanning is live, decision 4)
+// and fetch a page for a link preview (`media.thumbnail`, switched off by remote_media.enabled;
+// it gates only the fetch, since a preview stores nothing). Both need a verified email, like
+// posting does. Under lock the setting row and the login row are read FOR SHARE; no write body
+// updates either.
 
 async function mediaDenial(
   principal: Frozen<ActingPrincipal>,

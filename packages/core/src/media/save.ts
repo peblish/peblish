@@ -20,7 +20,7 @@ const imageRefusals = {
 } as const satisfies Record<ImageError['code'], RefusalReason>;
 
 /**
- * The shared path of an upload and a preview thumbnail, after the caller's authorize(): check
+ * The path of an upload, after the caller's authorize(): check
  * the size, clean the image of its metadata (clean.ts), put the object, then `record` the row
  * (a mutation that emits media.stored). The network call to the bucket comes before the
  * transaction, so the object is deleted again when the row is refused or the write fails.
