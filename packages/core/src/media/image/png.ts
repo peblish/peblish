@@ -7,7 +7,10 @@ import { expectThat, type Cleaned } from './types.ts';
 // are dropped, and so is anything after IEND. The compressed pixel data is never decoded.
 // A kept chunk must have exactly the length its fields define and a good checksum (`expectChunk`),
 // so a marker cannot ride in the tail of a "known" chunk, in an IEND payload or in its checksum;
-// only IDAT and fdAT stay opaque (the compressed stream cannot be judged without inflating it).
+// a palette's transparency has one alpha byte per palette entry at most, so a one-entry palette
+// cannot carry a 256-byte tRNS, and a chunk the format allows once is kept once (a repeat is
+// dropped, as decoders ignore it) so it cannot be repeated to carry more. Only IDAT and fdAT
+// stay opaque (the compressed stream cannot be judged without inflating it).
 
 const SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 const KEPT = new Set(['IHDR', 'PLTE', 'tRNS', 'IDAT', 'acTL', 'fcTL', 'fdAT', 'sRGB', 'gAMA', 'cHRM']);
@@ -16,18 +19,24 @@ const FIXED_LENGTH: Record<string, number> = { IHDR: 13, acTL: 8, fcTL: 26, sRGB
 /** The bit depths each colour type allows. */
 const BIT_DEPTHS: Record<number, readonly number[]> = { 0: [1, 2, 4, 8, 16], 2: [8, 16], 3: [1, 2, 4, 8], 4: [8, 16], 6: [8, 16] };
 
+/** The chunks a PNG holds at most once; real files carry a doubled tRNS now and then. */
+const ONCE = new Set(['PLTE', 'tRNS', 'acTL', 'sRGB', 'gAMA', 'cHRM']);
+
 type Header = { width: number; height: number; colorType: number };
 
 /** Throws unless a chunk's payload is as long as its fields say, and its fields are legal. */
-function expectChunk(type: string, payload: Buffer, header: Header | null): void {
+function expectChunk(type: string, payload: Buffer, header: Header | null, paletteEntries: number): void {
   const fixed = FIXED_LENGTH[type];
   if (fixed !== undefined) expectThat(payload.length === fixed, `PNG: ${type} must be ${fixed} bytes`);
   if (type === 'PLTE') {
     expectThat(payload.length >= 3 && payload.length <= 768 && payload.length % 3 === 0, 'PNG: bad palette');
   } else if (type === 'tRNS') {
-    // One grey value, one RGB triple (16 bits each), or an alpha byte per palette entry.
+    // One grey value, one RGB triple (16 bits each), or an alpha byte per palette entry at most
+    // (the palette comes first, so a tRNS before any PLTE has no entries to describe).
     const allowed =
-      header?.colorType === 3 ? payload.length >= 1 && payload.length <= 256 : payload.length === (header?.colorType === 0 ? 2 : 6);
+      header?.colorType === 3
+        ? payload.length >= 1 && payload.length <= paletteEntries
+        : payload.length === (header?.colorType === 0 ? 2 : 6);
     expectThat(header !== null && [0, 2, 3].includes(header.colorType) && allowed, 'PNG: bad transparency chunk');
   } else if (type === 'fdAT') {
     expectThat(payload.length >= 4, 'PNG: bad frame data chunk');
@@ -61,6 +70,8 @@ export function cleanPng(input: Buffer): Cleaned {
   const kept: Buffer[] = [SIGNATURE];
   let header: Header | null = null;
   let pixelChunks = 0;
+  let paletteEntries = 0;
+  const seen = new Set<string>();
   let pos = 8;
   for (let index = 0; ; index++) {
     expectThat(pos + 12 <= input.length, 'PNG: chunk cut short');
@@ -69,10 +80,16 @@ export function cleanPng(input: Buffer): Cleaned {
     const end = pos + 12 + length;
     expectThat(length <= 0x7fffffff && end <= input.length, 'PNG: chunk length out of range');
     expectThat((index === 0) === (type === 'IHDR'), 'PNG: the header chunk must come first, once');
+    if (ONCE.has(type) && seen.has(type)) {
+      pos = end;
+      continue;
+    }
     if (type === 'IEND' || KEPT.has(type)) {
       expectThat(input.readUInt32BE(end - 4) === crc32(input.subarray(pos + 4, end - 4)), `PNG: bad checksum in ${type}`);
       const payload = input.subarray(pos + 8, end - 4);
-      expectChunk(type, payload, header);
+      seen.add(type);
+      expectChunk(type, payload, header, paletteEntries);
+      if (type === 'PLTE') paletteEntries = payload.length / 3;
       if (type === 'IHDR') header = readHeader(payload);
       if (type === 'IDAT') pixelChunks++;
       kept.push(input.subarray(pos, end));
