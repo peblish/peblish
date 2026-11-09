@@ -3,7 +3,6 @@ import type { Fetcher } from '../actors/document.ts';
 import { importGrant } from '../actors/grants.ts';
 import { ActorResolveError, resolveRemoteActor } from '../actors/resolve.ts';
 import { safeFetch, type SafeResponse } from '../actors/safe-fetch.ts';
-import { isTombstone } from './object.ts';
 
 // Fetching an actor again on purpose, and acting on what the peer says: a 410 or a Tombstone
 // is a deletion, and a valid document for an actor we hold as deleted because of a 410 or a
@@ -23,15 +22,6 @@ export type ActorRefresh =
   | 'unreachable'
   /** The answer was not a valid actor document, or the actor is one of ours. */
   | 'refused';
-
-const tombstoneBody = (response: SafeResponse | undefined): boolean => {
-  if (!response) return false;
-  try {
-    return isTombstone(JSON.parse(new TextDecoder().decode(response.body)));
-  } catch {
-    return false;
-  }
-};
 
 /**
  * Fetches `apId` now, whatever the age of the stored copy, and stores what comes back.
@@ -69,7 +59,8 @@ export async function refreshRemoteActor(apId: string, options: { fetch?: Fetche
     return (await resolveRemoteActor(apId, { fetch: replay, refresh: true })).deleted ? 'refused' : 'undeleted';
   } catch (error) {
     if (!(error instanceof ActorResolveError)) throw error;
-    if (error.reason === 'gone' || (error.reason === 'invalid' && tombstoneBody(recorded))) return deletion();
+    // The resolver turns a Tombstone that names this actor into `gone`; one naming anything else is `invalid`.
+    if (error.reason === 'gone') return deletion();
     return error.transient ? 'unreachable' : 'refused';
   }
 }
