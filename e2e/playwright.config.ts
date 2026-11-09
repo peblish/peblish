@@ -44,6 +44,9 @@ export default defineConfig({
           // A spec that must fail many sign-ins (e2e/auth/flows.spec.ts) names its own client address in
           // X-Forwarded-For, so it does not spend the budget every other spec signs in under.
           PEBLISH_TRUSTED_PROXY: 'traefik',
+          // Uploads are scanned against the local hash list only; no scanning provider is called
+          // (deploy/README.md). Unset, an upload fails closed with media.scan_unavailable.
+          MEDIASCAN_LOCAL_ONLY: '1',
         },
         reuseExistingServer: !process.env.CI,
         timeout: 30_000,
