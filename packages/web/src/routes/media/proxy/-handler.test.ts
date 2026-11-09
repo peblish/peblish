@@ -8,7 +8,7 @@ const remoteUrl = 'https://img.example/a.png';
 const [signature, target] = proxyUrlBuilder(key)(remoteUrl).split('/').slice(3) as [string, string];
 const image = () => vi.fn(async () => ({ ok: true as const, type: 'image/png' as const, body: png }));
 
-test('a signed URL is fetched and answered with the sniffed type, a short cache lifetime and sandboxing headers', async () => {
+test('a signed URL is fetched and answered with the sniffed type, a private, short cache lifetime and sandboxing headers', async () => {
   const fetchImage = image();
   const response = await proxyResponse(signature, target, { key, enabled: true, fetchImage });
   expect(fetchImage).toHaveBeenCalledWith(remoteUrl);
@@ -17,7 +17,7 @@ test('a signed URL is fetched and answered with the sniffed type, a short cache 
   expect(Object.fromEntries(response.headers)).toEqual({
     'content-type': 'image/png',
     'content-length': String(png.length),
-    'cache-control': `public, max-age=${PROXY_MAX_AGE_SECONDS}`,
+    'cache-control': `private, max-age=${PROXY_MAX_AGE_SECONDS}`,
     'x-content-type-options': 'nosniff',
     'content-security-policy': "default-src 'none'; sandbox",
     'referrer-policy': 'no-referrer',

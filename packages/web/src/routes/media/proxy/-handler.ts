@@ -5,7 +5,11 @@ import { verifyProxyPath } from '@peblish/core/media/proxy-url';
 // for this response and stored nowhere. Viewers never contact remote hosts; remote hosts see
 // this server and nothing of the viewer (fetchProxiedImage sends no viewer header).
 
-/** Minutes, not days: a takedown or the kill switch reaches viewers within this time. */
+/**
+ * Minutes, not days: a takedown or the kill switch reaches viewers within this time. The answer is
+ * `private`, so only the viewer's browser keeps it: no edge cache holds remote media for the beta
+ * (revisit when lane SAFE's scanning is live).
+ */
 export const PROXY_MAX_AGE_SECONDS = 600;
 
 const plain = (status: number, text: string) =>
@@ -33,7 +37,7 @@ export async function proxyResponse(signature: string, target: string, deps: Pro
       // The type sniffed from the bytes, never the remote host's claim.
       'content-type': result.type,
       'content-length': String(result.body.byteLength),
-      'cache-control': `public, max-age=${PROXY_MAX_AGE_SECONDS}`,
+      'cache-control': `private, max-age=${PROXY_MAX_AGE_SECONDS}`,
       'x-content-type-options': 'nosniff',
       // If someone opens the URL itself, the response can run nothing and load nothing.
       'content-security-policy': "default-src 'none'; sandbox",
