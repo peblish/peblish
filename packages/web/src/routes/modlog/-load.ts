@@ -14,7 +14,12 @@ import { pageSession } from '../../server/auth.ts';
 
 export const pageSize = 50;
 
+/** A filter value no row has. */
+const nothing = '00000000-0000-0000-0000-000000000000';
+
 export const ModlogSearch = type({
+  /** One entry by id (a notice's "Statement of reasons"). */
+  'entry?': 'string',
   'community?': 'string',
   'action?': 'string',
   'remote?': 'boolean',
@@ -56,7 +61,14 @@ export type ModlogData = {
   from: number;
   next: string | null;
   /** What the address chose, as the page understood it. */
-  chosen: { community: ActorLabel | null; communityHandle: string | null; group: ActionGroup | null; remote: boolean; cursor: boolean };
+  chosen: {
+    community: ActorLabel | null;
+    communityHandle: string | null;
+    group: ActionGroup | null;
+    remote: boolean;
+    cursor: boolean;
+    entry: boolean;
+  };
   /** An admin, or someone who moderates a community: the Moderator view line and the [mods only] legend. */
   staff: boolean;
   signedIn: boolean;
@@ -68,13 +80,15 @@ export const loadModlog = createServerFn({ method: 'GET' })
     const session = await pageSession();
     const admin = session?.view.siteRole === 'admin';
     const moderates = session ? (await moderatedCommunities(session.view.actorId)).map((community) => community.id) : [];
-    const viewer: ModlogViewer | null = session ? { admin, moderates } : null;
+    const viewer: ModlogViewer | null = session ? { admin, moderates, actorId: session.view.actorId } : null;
     const community = data.community ? await findActorByHandle(data.community, 'Group') : null;
     const group = data.action && isActionGroup(data.action) ? data.action : null;
     const filter: ModlogFilter = {
       limit: pageSize,
+      // An id that is not one matches nothing, as an unknown community does.
+      ...(data.entry ? { id: /^[0-9a-f-]{36}$/.test(data.entry) ? data.entry : nothing } : {}),
       // A community nobody holds matches nothing, rather than everything.
-      ...(data.community ? { communityId: community?.id ?? '00000000-0000-0000-0000-000000000000' } : {}),
+      ...(data.community ? { communityId: community?.id ?? nothing } : {}),
       ...(group ? { actions: [...actionGroups[group]] } : {}),
       ...(data.remote ? { remote: true } : {}),
       ...(data.cursor ? { cursor: data.cursor } : {}),
@@ -96,6 +110,7 @@ export const loadModlog = createServerFn({ method: 'GET' })
         group,
         remote: data.remote === true,
         cursor: Boolean(data.cursor),
+        entry: Boolean(data.entry),
       },
       staff: admin || moderates.length > 0,
       signedIn: session !== null,

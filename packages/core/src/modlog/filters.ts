@@ -8,17 +8,32 @@ import { modlog } from '../db/tables/moderation.ts';
 // The modlog's WHERE clauses, shared by the plain read (read.ts) and the page (page.ts).
 
 /**
- * Who is reading. Everyone sees the public rows; an admin sees every row, and a moderator also
- * the private rows of the communities they moderate. Pass null for a signed-out reader.
+ * Who is reading. Everyone sees the public rows; an admin sees every row, a moderator also the
+ * private rows of the communities they moderate, and a person the private rows about them
+ * (`actorId`: a ban of them, a removal of their post or comment), whose statement of reasons
+ * they are owed. Pass null for a signed-out reader.
  */
-export type ModlogViewer = { admin: boolean; moderates: readonly Uuid[] };
+export type ModlogViewer = { admin: boolean; moderates: readonly Uuid[]; actorId?: Uuid };
+
+/**
+ * Rows about this person: they are the target, or wrote the targeted post or comment. Names are
+ * written out: a Drizzle column interpolated into a sub-select can lose its table name.
+ */
+const about = (actorId: Uuid): SQL =>
+  sql`(${modlog.targetActorId} = ${actorId}
+    or exists (select 1 from posts where posts.id = "modlog"."target_post_id" and posts.author_id = ${actorId})
+    or exists (select 1 from comments where comments.id = "modlog"."target_comment_id" and comments.author_id = ${actorId}))`;
 
 /** The row filter for a viewer: undefined when everything is visible. */
 export function visibleTo(viewer: ModlogViewer | null): SQL | undefined {
   if (viewer?.admin) return undefined;
   const publicRows = eq(modlog.public, true);
-  if (!viewer || viewer.moderates.length === 0) return publicRows;
-  return or(publicRows, inArray(modlog.communityId, [...viewer.moderates]));
+  if (!viewer) return publicRows;
+  const more = [
+    ...(viewer.moderates.length > 0 ? [inArray(modlog.communityId, [...viewer.moderates])] : []),
+    ...(viewer.actorId ? [about(viewer.actorId)] : []),
+  ];
+  return more.length === 0 ? publicRows : or(publicRows, ...more);
 }
 
 /** An action pattern as a condition: an exact name, or a prefix when it ends in ".*". */
@@ -43,10 +58,11 @@ type Options = {
 };
 
 export async function modlogConditions(filter: ModlogFilter, q: Queryable, { viewer, skip = [] }: Options): Promise<SQL[]> {
-  const { communityId, actorId, action, actions, remote, cursor, since, until } = filter;
+  const { id, communityId, actorId, action, actions, remote, cursor, since, until } = filter;
   const conditions: SQL[] = [];
   const visible = visibleTo(viewer);
   if (visible) conditions.push(visible);
+  if (id) conditions.push(eq(modlog.id, id));
   if (communityId && !skip.includes('community')) conditions.push(eq(modlog.communityId, communityId));
   if (actorId) conditions.push(eq(modlog.actorId, actorId));
   if (action) conditions.push(eq(modlog.action, action));

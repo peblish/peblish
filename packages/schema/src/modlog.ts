@@ -76,6 +76,8 @@ export type ModlogAudience = typeof ModlogAudience.infer;
 
 /** Filters of the modlog read model; every one is optional. The time range is [since, until). */
 export const ModlogFilter = type({
+  /** One entry, as a notice's "Statement of reasons" links it. */
+  'id?': Uuid,
   'communityId?': Uuid,
   'actorId?': Uuid,
   /** One mod.* action name, such as 'mod.remove'. */

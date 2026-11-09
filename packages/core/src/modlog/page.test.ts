@@ -113,6 +113,24 @@ describe('readModlogPage', () => {
     expect((await readModlogPage({}, { viewer: viewer(w, 'public') })).total).toBe(1);
   });
 
+  test('a person also sees the private rows about them: a ban of them, a removal of their post or comment', async () => {
+    const w = await world();
+    const post = await seedPost(w.local, w.technik, w.tobi);
+    const comment = await seedComment(w.local, post, w.tobi);
+    const other = await seedPost(w.local, w.technik, w.mira);
+    const hidden = { community: w.technik, public: false } as const;
+    const ban = await log(w, w.mira, { action: 'mod.ban', ...hidden, targetActorId: w.tobi.id, targetApId: w.tobi.apId });
+    const postRemoval = await log(w, w.mira, { action: 'mod.remove', ...hidden, targetPostId: post.id, targetApId: post.apId });
+    const commentRemoval = await log(w, w.mira, { action: 'mod.remove', ...hidden, targetCommentId: comment.id, targetApId: comment.apId });
+    await log(w, w.andrew, { action: 'mod.remove', ...hidden, targetPostId: other.id, targetApId: other.apId });
+    const tobi = { admin: false, moderates: [], actorId: w.tobi.id };
+    const ids = (await readModlogPage({}, { viewer: tobi })).entries.map((entry) => entry.id).toSorted();
+    expect(ids).toEqual([ban, postRemoval, commentRemoval].toSorted());
+    // One entry by id, as a notice links it; another person's private entry stays out of reach.
+    expect((await readModlogPage({ id: postRemoval }, { viewer: tobi })).entries.map((entry) => entry.id)).toEqual([postRemoval]);
+    expect((await readModlogPage({ id: postRemoval }, { viewer: null })).entries).toEqual([]);
+  });
+
   test('actions, remote and community narrow the page; remote means the acting actor is not on this instance', async () => {
     const w = await world();
     await log(w, w.mira, { action: 'mod.remove', community: w.technik });

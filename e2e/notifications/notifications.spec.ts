@@ -119,16 +119,24 @@ test.describe('the inbox of a person who was replied to, mentioned, moderated an
     await expect(page.getByText(`Secret ${seed.suffix}`)).toHaveCount(0);
     await expect(text('Deleted')).toHaveCount(1);
     await expect(page.getByText(`Deleted later ${seed.suffix}`)).toHaveCount(0);
-    // Removed text is never repeated; the reasons are, with a link to the public entry.
+    // Removed text is never repeated; the reasons are, with a link to the modlog entry.
     await expect(page.getByText(`Rude words ${seed.suffix}`)).toHaveCount(0);
     await expect(page.getByText('Reason: Rule 3: no ads')).toBeVisible();
     await expect(page.getByText('Reason: Looked like spam')).toBeVisible();
     await expect(page.getByRole('link', { name: 'Statement of reasons' })).toHaveCount(5);
-    await expect(page.getByRole('link', { name: 'Statement of reasons' }).first()).toHaveAttribute('href', /^\/modlog\/[0-9a-f-]{36}$/);
+    await expect(page.getByRole('link', { name: 'Statement of reasons' }).first()).toHaveAttribute(
+      'href',
+      /^\/modlog\?entry=[0-9a-f-]{36}$/,
+    );
     await expect(rows(page).getByText('MOD', { exact: true })).toHaveCount(5);
 
     await expectAccessible(page);
     expect(log.hydrationProblems()).toEqual([]);
+
+    // The link opens that one entry on the modlog, for the person it is about.
+    await page.getByRole('link', { name: 'Statement of reasons' }).first().click();
+    await page.waitForURL(/\/modlog\?entry=/);
+    await expect(page.getByTestId('modlog-entry')).toHaveCount(1);
   });
 
   test('each filter lists exactly its kinds', async ({ page }) => {

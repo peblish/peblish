@@ -23,8 +23,10 @@ const text = (value: unknown) =>
 export function parseModlogSearch(raw: Record<string, unknown>): ModlogSearch {
   const action = text(raw.action);
   const community = text(raw.community);
+  const entry = text(raw.entry);
   const cursor = text(raw.cursor);
   return {
+    ...(entry ? { entry } : {}),
     ...(community ? { community } : {}),
     ...(action && isActionGroup(action) ? { action } : {}),
     ...(truthy(raw.remote) ? { remote: true } : {}),
@@ -66,7 +68,7 @@ function ModlogPage() {
   useRouteHydrated();
   const { chosen } = data;
   const number = new Intl.NumberFormat(locale);
-  const filtered = Boolean(chosen.communityHandle || chosen.group || chosen.remote);
+  const filtered = Boolean(chosen.communityHandle || chosen.group || chosen.remote || chosen.entry);
   const keep = { community: chosen.communityHandle ?? undefined, action: chosen.group ?? undefined, remote: chosen.remote || undefined };
   const days = groupByDay(data.lines);
   return (

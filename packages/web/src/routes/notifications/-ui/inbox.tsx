@@ -7,7 +7,7 @@ import { useState, type FormEvent } from 'react';
 import { translatePlural } from '../../../i18n/translate.ts';
 import { useTranslate } from '../../../i18n/use-translate.ts';
 import { useRouteHydrated } from '../../../shell/hydration.ts';
-import { commentPath, postPath } from '../../../shell/paths.ts';
+import { commentPath, modlogEntryPath, postPath } from '../../../shell/paths.ts';
 import type { InboxData } from '../-load.ts';
 import { inboxHref, type InboxSearch } from '../-search.ts';
 
@@ -125,8 +125,6 @@ function SignedInbox({ data, search }: { data: Signed; search: InboxSearch }) {
   );
 }
 
-const statementPath = (modlogId: string) => `/modlog/${modlogId}`;
-
 function Notice({
   item,
   now,
@@ -196,12 +194,8 @@ function Notice({
             {item.statement.reasonWithheld
               ? t('notifications', 'reason.withheld')
               : item.statement.reason && t('notifications', 'reason', { reason: item.statement.reason })}
-            {item.statement.public && (
-              <>
-                {' '}
-                <a href={statementPath(item.statement.modlogId)}>{t('notifications', 'statement')}</a>
-              </>
-            )}
+            {/* The modlog shows the entry to the person it is about, public or not. */}{' '}
+            <a href={modlogEntryPath(item.statement.modlogId)}>{t('notifications', 'statement')}</a>
           </p>
         )}
       </div>

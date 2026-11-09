@@ -30,6 +30,9 @@ export const editCommunityPath = (handle: string) => `${communityPath({ handle }
 /** The modlog (lane MODF), the whole of it or one community's, by its handle. */
 export const modlogPath = (handle?: string) => (handle ? `/modlog?${new URLSearchParams({ community: handle })}` : '/modlog');
 
+/** One modlog entry, as a notice's statement of reasons links it. */
+export const modlogEntryPath = (id: string) => `/modlog?${new URLSearchParams({ entry: id })}`;
+
 /** The report queue (lane REP), the whole of it or one community's, by its handle. */
 export const reportQueuePath = (handle?: string) =>
   handle ? `/admin/reports?${new URLSearchParams({ community: handle })}` : '/admin/reports';
