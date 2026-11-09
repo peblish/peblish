@@ -405,7 +405,7 @@ Integration commits, after the merges:
 | 9df8e4d | README: ownership rows for B1, B2, F, FED-A and UI, a rule for outbound requests, the root loader's invalidation rule                                                 |
 | eae782f | deploy/README.md: the `S3_*` variables, `BETTER_AUTH_SECRET` also keys proxy URLs, the preview budget, the proxy's `private` answer                                   |
 | 251cb19 | B1's gate spec scopes its Sign in link to the page body (the shell has one too)                                                                                       |
-| (this)  | This section; the S3 line under "Cut or left"; `LANE-NOTES.md` removed                                                                                                |
+| e886daf | This section; the S3 line under "Cut or left"; `LANE-NOTES.md` removed                                                                                                |
 
 Migration `0004_wave_2`, generated once by drizzle-kit after all the merges (it equals F's and FED-A's scratch output, joined):
 
@@ -415,7 +415,7 @@ Migration `0004_wave_2`, generated once by drizzle-kit after all the merges (it 
 
 Dependencies accepted: `aws4fetch` 1.0.20 (core, MIT, B2), `@react-aria/optimize-locales-plugin` 2.1.0 (web, dev, Apache-2.0, UI; it pulls `unplugin` 2.3.11, MIT), `drizzle-orm` 0.45.4 in federation (FED-A; core already had it). Nothing else changed in the lockfile. `pnpm install` after the merges left it as it was, and `pnpm install --frozen-lockfile` is up to date.
 
-Architecture note: Fedify is used for request signing and signature verification only (`signing/`). Actor and collection serving, WebFinger, NodeInfo and delivery are peblish's own code, and `federation.ts` holds only the software identity, `localOrigin()` and `userAgent()`. Contract 7 (Fedify only inside `packages/federation`) still holds. The batch review and the wave 3 live lab decide whether anything returns to Fedify.
+Architecture note: signing and signature verification (`signing/`), actor and collection serving, WebFinger, NodeInfo and delivery are all peblish's own code (the review fixes replaced Fedify's signer, which covers the pathname only, with a draft-cavage signer of ours); Fedify is a test-only dependency, the independent implementation `signing.test.ts` checks against. `federation.ts` holds only the software identity, `localOrigin()` and `userAgent()`. Contract 7 (Fedify only inside `packages/federation`) still holds. The batch review and the wave 3 live lab decide whether anything returns to Fedify.
 
 The seam switch: `actors/safe-fetch.ts` is now four lines of re-export from `@peblish/core/net/fetch` and `actors/safe-fetch.test.ts` is gone, so the actor, document, NodeInfo and delivery tests run through the real address predicate. Delivery sends `schemes: ['https:']` and `maxRedirects: 0`, and a `BlockedDestinationError` is permanent (`run.ts`). Documents (actors, WebFinger, NodeInfo) refuse a truncated body (`actors/document.ts`); delivery does not, because it reads only the status and a cut error page is enough. The live lab overlays that one file with a client of its own.
 
@@ -450,3 +450,128 @@ Still open from the lane notes (not in the integration brief):
 - FED-A: a poison event stalls the `federation.delivery` consumer; imported communities have empty outboxes until a backfill stores their Create activities; `deliveries` rows are never pruned (REM); PieFed's day-one cap status and Lemmy's reaction to unknown software are measured live in wave 3; unexpected failures on federation paths answer 503 with `Retry-After`, never 500.
 
 Housekeeping: no push; the worktrees, the lane branches, the lane databases and the `peblish:w2` image tag stay.
+
+## Wave 2 batch A review fixes (2026-11-09)
+
+Five fix branches, each cut from e886daf (pass one) in its own lane worktree, merged in this order with no conflict: B2 (a2253cd), F (a80e5a4), B1 (8b526e1), UI (789b8b3), FED-A (4cda027). Item numbers are the fixers' own ("Review fixes (2026-11-09)" in their lane notes, kept in `/Users/admin/.agents/plans/feddit/lane-notes/wave-2/<lane>.md`). The FED-A branch ended two commits past the head its brief named (a0c7099): e29310e and b437afb, both listed below.
+
+B2 (head 85c106b, 6 commits):
+
+- 1, 2 The cleaners check every kept structure's declared size and every frame; an APP14 suffix is cut to its 12 bytes instead of refused (196 real JPEGs carry private Adobe bytes there); GIF frames inside the screen with a legal code size, APNG frames inside the canvas, WebP animations with ANIM and one raster chunk per frame, and stricter DQT, DHT, DRI, DAC, SOF, SOS, IHDR, PLTE, tRNS, IEND CRC, GIF GCE and WebP pad bytes (13d6bbe; tests in `clean-structure.test.ts`, checked over about 50,900 local images, four deliberately broken GIFs newly refused).
+- 3 A link preview nulls a `thumbnailUrl` or `urlContentType` that `NewPost.get(...)` would refuse (ab67441).
+- 4 The proxy runs 32 upstream fetches at once and queues 64 more, then answers 503 with `Retry-After: 2` (d7d180b). The limit is per process, 320 MiB worst case at 32 by 10 MiB.
+- 5 The proxy URL cap is 2,048 UTF-8 bytes on build and verify (b54fef0).
+- 6, 7 `s3Store(config, { timeoutMs })`: one 30-second budget across retries; a timed-out put may still have landed (712659f).
+- 8 README notes on the media limits, the proxy's reach and the link-preview throttle (85c106b).
+
+F (head f8b25cd, 5 commits):
+
+- 1 `listLocalCommunities` hides NSFL communities unless `includeSensitive` (75b5532).
+- 2 `readCommunity(key, q?, hooks)` sanitises a remote Group's summary; images become links without a `rewriteImageUrl` hook (d7c9fc6).
+- 3 `community.create` and `community.update` write modlog rows in the same transaction (9b86c89).
+- 4 The owner posting case in the restricted-posting test (f8b25cd).
+- 5 Icon and banner URLs are documented as raw (7a7413a).
+
+B1 (head 9c9dc1a, 9 commits):
+
+- 1 Posts in a deleted or removed community are left out of `postViews` for everyone, and `readPost` answers null (034ed9e).
+- 2 `post.group_cannot_act` is refused before any lock in post.create, update, delete, restore and vote.cast (c5d1dbc).
+- 3, 4, 6, 10 `storeRemotePost` and `updateRemotePost` share `editable()`, `post.id_conflict` for an ap_id under another author or community, a peer's url, thumbnail, content type and alt text pass the local validators, an identical Update writes nothing (9a4bb31).
+- 5 `routes/post/-page-data.ts` holds `postMedia` and `threadVisible`, false for a removed post unless the viewer moderates (f15f411).
+- 7 `createPost` refuses a non-local grant with `auth.required` (8d8c8d6).
+- 8 A non-uuid post id answers 404 before the redirect (61f4464).
+- 9 The author's self-vote logs a warning when it fails (4cca9f4).
+- 11 The loader formats `published` and `edited` as strings; German hydration asserted in e2e (e90fa4b).
+- A peer's post `language` is bounded by `peerLanguage`, a BCP 47 shape of at most 35 characters (9c9dc1a).
+
+UI (head 22f0634, 10 commits):
+
+- 1 `VoteControl` sends one request at a time and reverts a refusal to the last accepted vote (6e6f324).
+- 2 Preference saves queue and each sends the complete `Prefs` (8cff78c).
+- 3 `useMenuDismiss` closes only on later navigation (29bfe3f).
+- 4 The drawer works before hydration through `:target` (d9de745); Safari and Firefox untested.
+- 5 `Prose` makes inline spoilers keyboard operable (5bf5840).
+- 6 `loadManifest` throws on a missing or invalid manifest unless `BASE_URL` is remote (37892eb).
+- 7 Sign-up, reset, two-factor, verify, invite, account, security and registration are budgeted, with an inventory test over `routeTree.gen.ts` (4eb1333).
+- 8 `PostCard` requires `thumbnailSrc: string | null` (11ec93f).
+- 9 The gallery renders its bodies through the server Markdown renderer, so `/kit` needs the database (ebdff9b).
+- 10 The budget measures compressible bytes; Traefik or Cloudflare compress in production (22f0634).
+
+FED-A (head b437afb, 17 commits):
+
+- 1, 12 Keys follow the fetched document and a deleted remote actor stays deleted (15fe483).
+- 2 Peblish's own draft-cavage signer covers the full request target; Fedify is test-only (8fcc2be).
+- 3 Delivery settlement is fenced on the claimed attempt and the lease renewed before sending (1157f2f).
+- 4 The fetched id, the WebFinger name and the sigil are checked against the document (497dc24).
+- 5 The key-refresh throttle counts attempts, per process, capped at 10,000 entries (4419bbe, e29310e).
+- 6, 7 A follow is deleted only under the authorized Follow id, `receiveFollow` rechecks, and `follow.accept` carries `{ followApId, followerApId }` (1185012).
+- 8 Actor GETs are signed with the instance key (1927535).
+- 9 Only 408 and 429 retry among 4xx answers (205b4a8).
+- 10 Resends pick by unfinished stage (137ca91).
+- 11 `servable` includes `live`, deleted or removed content serves a 410 Tombstone, outboxes rebuild from current posts (6fc8107, b437afb).
+- 13 NodeInfo is read whenever an instance's actor is resolved, a failed read not retried for 10 minutes (3ee3011).
+- 14 The moderators collection applies `freshModerator` (ef8bd8e).
+- 15 NodeInfo software name and version are capped and sanitised (97d0a9c).
+- 16 The federation README describes all of it (a0c7099).
+
+Statements these fixes made wrong, corrected here: "Fedify signs and verifies" (README, the architecture note above; signing and verification are peblish's own code and `@fedify/fedify` is now a dev dependency of federation), `PostCard` reading `post.thumbnailUrl` (it reads `thumbnailSrc`), B1's `-load.ts` helpers (now in `-page-data.ts`), and B1's removed-post copy "The comments below stay." (gone: the thread is withheld under a removed post for everyone but moderators and admins). Still true: a link preview stores the `og:image` URL as it is (now nulled when `NewPost` would refuse it). Left for later from the fixers: a partial index on `follows(created_at) where state = 'pending'` if follows grow; `isDormant` is still false and `deliveries` never pruned (REM); the proxy limit is per process and has no per-address limit; a timed-out S3 put can leave an orphan (SAFE); Mux `Dialog`'s English close label shows in German (a UI facade item, not fixed).
+
+## Wave 2 round 2: D, C1, COMPOSER (2026-11-09)
+
+Three lanes cut from e886daf, merged after the fixes; `LANE-NOTES.md` is removed in each merge commit (the notes are kept outside the repository). FED-B and REM follow in round B.
+
+| Lane     | What it brought                                                                                                                                                 | Head    | Merge   |
+| -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- | ------- |
+| D        | comment policies, mutations and remote counterparts, the thread read model with four sorts, the thread under the post, the permalink page and the comment forms | 23a83e0 | 12815d6 |
+| C1       | the feed read model (Subscribed, Local, All, Popular, Moderating; Hot, New, Old, Top), keyset pagination, the five feed pages, the sidebar's lists              | e5313d3 | a2af0ef |
+| COMPOSER | the Markdown editor and bottom sheet in `ui`, the `/submit` page, link previews on submit, the draft store, uploads behind `uploads.enabled`                    | 38c4cc2 | 45cd82f |
+
+D's decisions and risks: `child_count` counts every comment below, at any depth (the parent chain updates in one statement, safe under the lock order, with a concurrency test); a delete changes no count (tombstones are counted); the author's upvote is cast at creation; `comment.group_cannot_act`; reply state copy for locked, deleted and removed posts is shown to everyone; 6 levels shown and at most 300 comments sent. Risks: no `comment` throttle scope, no "load more" past 300 comments, removal reasons come from the newest 200 modlog rows, a sort change fetches twice through the router.
+
+C1's decisions and risks: Top's period as links, Old in the toolbar, Hot follows Lemmy past the week (older posts newest first), excerpts from `postViews`, defaults out of the URL so `/` never redirects, the closed-community filter lives in the feed SQL. Not built: Controversial, floated pinned posts, unread counts, a per-feed language filter. Performance: 133 cases over 100,000 posts (opt-in `PEBLISH_FEED_PERF`), worst p95 23.5 ms on a loaded machine, every key query on a `posts` index. Risk: Hot scans a week of posts per query (about 7,800 rows); a `hot_rank` column with a refresh job if the lab shows it.
+
+COMPOSER's decisions and risks: a radio list with a filter for the community picker (works without scripts), remote communities listed only with an accepted follow, a link preview over its budget is refused as `rate.limited`, the sheet is shell state not a route (one rolling draft per community), uploads built behind `uploads.enabled` (nothing serves `/media/<id>` until SAFE). Risks: the picker's restriction flag for remote communities waits for FED-B's mirror, `document.execCommand` is the only way to keep Undo in a textarea, each e2e run spends about 3 of the 30 link previews per address per ten minutes.
+
+Merge conflicts: only `packages/web/src/routes/post/-load.ts` (D's loader call against the B1 fix, kept both: `-page-data.ts`'s `postMedia`, `postTime` and `threadVisible`, and `thread: await loadThread(...)`) and the stale `siteMarkdown` import D's side carried. D's three mount lines in `post-page.tsx` merged on their own. `pnpm-lock.yaml`, `README.md`, `G0-STATUS.md`, `deploy/README.md` and `e2e/payload/routes.ts` merged without conflict. The UI fix did not touch `shell/data.ts` (C1 owns it). B1's removed-post copy "The comments below stay." is gone from `i18n/posts.json` in both languages (the deleted-post copy keeps it: a tombstone's comments stay). D's `threadShown` repeats B1's `threadVisible` rule; it can import it later.
+
+Integration commits, after the merges:
+
+| Commit  | Change                                                                                                                                               |
+| ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 16c0208 | The feed loader no longer overwrites `post.thumbnailUrl`; the root loader passes its session to `loadShellData`                                      |
+| 9ac0188 | JIT off for the read pool (`jit: 'off'`, a string because postgres.js drops a falsy startup value) and a test that pins both pools' settings         |
+| f9619ce | The post card's title link is 24px high, in the component; the feed's margin workaround is gone                                                      |
+| 8b2a78f | Migration `0005_wave_2_round_a` and the two indexes in the Drizzle tables                                                                            |
+| 0a6f00d | `ReplyBar` catches a rejected `onSubmit`, so a refused reply keeps its text                                                                          |
+| 68cc744 | `emailUnverified` is one helper in `authz/roles.ts`, called by the post and comment policies                                                         |
+| 74fdb9c | Comments: `childCount` counts every comment below, and `ModAction.action` names the `community.*` actions                                            |
+| b919b07 | `@fedify/fedify` moves to federation's `devDependencies`                                                                                             |
+| 55ba9a7 | `e2e/payload/routes.ts`: `/all`, `/local`, `/popular`, `/moderating`, the comment permalink and `/submit`; the comment forms' endpoint in `notPages` |
+| 58d50dc | The phone drawer is pinned to the screen height (below)                                                                                              |
+| e6786f5 | The feed's page data carries `thumbnailUrl: null` (below)                                                                                            |
+| 1ffea94 | Four e2e specs adjusted for the merged tree (below)                                                                                                  |
+| (this)  | README (ownership rows for D, C1 and COMPOSER, the Fedify statements), this section                                                                  |
+
+Migration `0005_wave_2_round_a`, generated once by drizzle-kit after the merges and the index edits (it holds exactly the two indexes and nothing else):
+
+- `posts_score` on `posts`: `((upvotes - downvotes)) DESC NULLS LAST, id DESC NULLS LAST`, for the score sorts (Top over a week or more, Popular's deep pages: 40 to 190 ms down to about 3 ms).
+- `actors_gated` on `actors (id)` where `sensitive or nsfl`, so the feeds' NSFW predicate is an index-only scan of the few gated communities instead of a sequential scan of every actor.
+- No table, column or trigger. `pnpm db:drift` finds none. Round B regenerates it if FED-B or REM add tables.
+
+Found by the e2e run on the merged tree, fixed in the integration commits:
+
+1. The phone drawer was unreachable below the fold once the sidebar listed many communities (C1's lists, 25 on the lane database). The desktop rule's `align-self: start` made the fixed drawer as tall as its content instead of top-to-bottom, and the overflow never scrolled. The mobile rule now sets `align-self: stretch`.
+2. Dropping the thumbnail overwrite put the raw `thumbnailUrl` of every feed post into the serialised page data, which C1's own spec (a remote picture's address is never in the page) caught. The loader sets it to null; the card draws `thumbnailSrc`.
+3. The uploads spec's post sits at `<PUBLIC_ORIGIN>/media/<id>`, and the lane's origin does not resolve, so the home feed (now a real feed) broke the hydration spec with `ERR_NAME_NOT_RESOLVED`. The spec deletes its post at the end. A product-level answer is for `imageSource` to return own-origin media as a root-relative path; B2 owns it and it is a wider change, so it is left for root.
+4. The composer spec's "no search box" check, the shell's "Local" link and the pagination spec's overlap check each met the merged tree's new sidebar search box, `feeds_local_*` communities and repeated titles; they now scope to the composer's box, match exactly and compare links.
+
+Dependencies accepted: none added. `@fedify/fedify` 2.4.5 moved from `dependencies` to `devDependencies` in federation (the lockfile changed in that one place; `pnpm install --frozen-lockfile` is up to date).
+
+Requests from the lanes not applied here: the community page (`routes/c/**`) does not exist yet, so F's `readCommunity(..., { rewriteImageUrl: renderer.image })` call and the icon and banner through `renderer.image()` go in with the lane that builds it (DISC); COMPOSER's `/submit?community=` link waits for the same page; D's optional `CommentThread` actions slot, COMPOSER's optional `followedCommunities` host and restriction fields, and the Mux `Dialog` close label in German stay open.
+
+Verification of round A, on lane root:
+
+- `pnpm install --frozen-lockfile` is up to date; `pnpm check` is green: 124 test files (122 passed, 2 skipped), 1,747 tests passed and 3 skipped (FIT's opt-in build and archive tests, C1's opt-in performance test), no boundary violations (593 modules), oxlint and Prettier clean. No `worker.test.ts` timeout and no rerun was needed.
+- `pnpm db:drift`: none, with 0005 applied to `peblish_root`.
+- `PEBLISH_UI_KIT=1 pnpm e2e`: 194 passed, 1 skipped (the test that `/kit` answers 404 where the gallery is off). The first run on the merged tree found the four fixes above (five specs failed); the runs that followed met a repeated title in the pagination spec and then the sign-in throttle after three full runs from one address (cleared with `delete from throttles` on the lane database), and the last run was clean. Payload, first visit, of the 170 kB script budget: `/`, `/all`, `/local`, `/popular`, `/moderating` 62.8 kB; the auth, invite, settings and admin pages 126.3 kB; `/post/<id>` and the permalink 127.3 kB; `/submit` signed out 126.3 kB and signed in 129.4 kB (the sheet adds 106.1 kB lazily, of 200); `/kit` 168.8 kB, 1.2 kB of room. CSS 60.4 of 65 kB everywhere; fonts 105.6 kB, the kit 259.2 of 270 kB.
+- `docker build`, then `scripts/image-smoke.sh` against a throwaway `peblish_root_image` (dropped after): the disagreeing command exits 64, migrate (0005 applied), the first admin, the worker starts and stops on SIGTERM with exit 0, web `/healthz`, `/readyz` and the healthcheck, uid 1000. A rerun on the same database passed too. The image is tagged `peblish:w2-round-a`.
