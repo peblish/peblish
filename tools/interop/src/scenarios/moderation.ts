@@ -11,7 +11,13 @@ import { expectInbound } from '../match.ts';
 import { seedAccount } from '@peblish/core/testing/seed-a';
 import { actorIdByApId, apIdOf, localActorId, peblish } from '../peblish.ts';
 import type { Peer } from '../peers/types.ts';
-import { mbinUnannounced, peerOwnPostInPeblish, postOnPeer, prepare, type Side, storedPost, tag } from './support.ts';
+import { peerOwnPostInPeblish, postOnPeer, prepare, type Side, storedPost, tag } from './support.ts';
+
+/** Mbin's trash now applies here as a removal (straight from its host); its restore never arrives. */
+const MBIN_M1_IN: KnownDefect = {
+  explanation: 'Mbin sends nothing when its moderator restores a trashed post, so the post stays removed here',
+  signature: 'restore: no inbox row for from https://mbin.lab.test/u/mbinadmin',
+};
 
 async function canComment(peer: Peer, token: string, postId: number): Promise<boolean> {
   try {
@@ -103,13 +109,19 @@ export const moderation: Group = {
             }
           : undefined;
       // M1/in: the peer's moderator moderates a native post in the peer's community; peblish follows it.
-      const nativeUnannounced: KnownDefect | undefined = peer.name === 'mbin' ? mbinUnannounced(side.remote.apId) : undefined;
+      // Mbin announces none of it: its moderator's activities come straight from its host, and a
+      // trash is a bare Delete with no reason, so the post is its ordinary user's (a Delete of the
+      // moderator's own post would be the author's own). Only Create, Update and Delete count from
+      // the community's host; the rest still needs an Announce.
+      const mbin = peer.name === 'mbin';
+      const mbinDirect: KnownDefect | undefined = mbin ? MBIN_M1_IN : undefined;
       await rec.scenario(
         'M1/in',
         peer.name,
         async () => {
-          const native = await peerOwnPostInPeblish(ctx, side, tag(ctx, 'M1 in', peer));
+          const native = await peerOwnPostInPeblish(ctx, side, tag(ctx, 'M1 in', peer), mbin ? 'user' : 'admin');
           const community = side.remote;
+          const from = mbin ? { actor: peer.actorUri(peer.admin) } : { type: 'Announce', actor: community.apId };
           const sinceAll = new Date();
           const row = (apId: string) =>
             ctx.sql<Record<string, unknown>[]>`
@@ -155,13 +167,13 @@ export const moderation: Group = {
           const done: string[] = [];
           for (const step of steps) {
             const started = new Date();
-            await step.act();
-            await expectInbound(
-              ctx.sql,
-              { since: started, type: 'Announce', actor: community.apId, contains: step.contains },
-              { state: 'applied' },
-            );
-            await waitFor(`peblish to apply ${step.name}`, step.state, { timeoutMs: 15_000 });
+            try {
+              await step.act();
+              await expectInbound(ctx.sql, { since: started, ...from, contains: step.contains }, { state: 'applied' });
+              await waitFor(`peblish to apply ${step.name}`, step.state, { timeoutMs: 15_000 });
+            } catch (error) {
+              throw new Error(`${step.name}: ${error instanceof Error ? error.message : String(error)}`);
+            }
             done.push(step.name);
           }
           // A ban of a peblish user, then its undo.
@@ -175,20 +187,16 @@ export const moderation: Group = {
             (await ctx.sql`select 1 from community_bans where community_id = ${community.id} and actor_id = ${bob}`).length > 0;
           let started = new Date();
           await peer.mod.ban(side.adminToken, side.peerCommunityId, personId, true, `M1 ${ctx.run}`);
-          await expectInbound(
-            ctx.sql,
-            { since: started, type: 'Announce', actor: community.apId, contains: targetUri },
-            { state: 'applied' },
-          );
+          await expectInbound(ctx.sql, { since: started, ...from, contains: targetUri }, { state: 'applied' });
           await waitFor('peblish to record the ban', banned, { timeoutMs: 15_000 });
           started = new Date();
           await peer.mod.ban(side.adminToken, side.peerCommunityId, personId, false, `M1 ${ctx.run}`);
           await waitFor('peblish to lift the ban', async () => !(await banned()), { timeoutMs: 15_000 });
           done.push('ban', 'unban');
           void sinceAll;
-          return `${done.join(', ')} applied from ${peer.name}'s Announces`;
+          return `${done.join(', ')} applied from ${peer.name}'s ${mbin ? 'moderator' : 'Announces'}`;
         },
-        nativeUnannounced ?? pieFedUnban,
+        mbinDirect ?? pieFedUnban,
       );
 
       // M1/remote: the peer's user becomes a moderator of !lab and moderates it from the peer's own server.

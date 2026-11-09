@@ -16,21 +16,16 @@ export const groupEdit: Group = {
     for (const peer of ctx.peers) {
       const side = await prepare(ctx, peer);
 
-      // S3/out: peblish edits !lab, and the peer shows the new description. Lemmy 0.19.21 parses the
-      // embedded Group of an Update sent by the community itself as a Person and answers 400; Mbin
-      // answers 200 and keeps the old description.
+      // S3/out: peblish edits !lab, and the peer shows the new description. peblish sends it as Lemmy
+      // does: an Update(Group) by the editor, announced by the community. Mbin answers 200 and keeps
+      // the old description.
       const outKnown: KnownDefect | undefined =
-        peer.name === 'lemmy'
+        peer.name === 'mbin'
           ? {
-              explanation: 'Lemmy refuses an Update(Group) sent by the community itself (400: unknown variant `Group`, expected Person)',
-              signature: 'got [failed status=400',
+              explanation: 'Mbin answers 200 to a remote community’s announced Update(Group) and keeps the old description',
+              signature: 'timed out waiting for mbin to show the new description',
             }
-          : peer.name === 'mbin'
-            ? {
-                explanation: 'Mbin answers 200 to an Update(Group) from the community itself and keeps the old description',
-                signature: 'timed out waiting for mbin to show the new description',
-              }
-            : undefined;
+          : undefined;
       await rec.scenario(
         'S3/out',
         peer.name,
@@ -40,7 +35,7 @@ export const groupEdit: Group = {
           await peblish.updateCommunity('labadmin', community.id, { description: mine });
           await expectDelivery(
             ctx.sql,
-            { since: started, type: 'Update', host: new URL(peer.origin).host },
+            { since: started, type: 'Announce', inner: 'Update', host: new URL(peer.origin).host, contains: mine },
             { state: 'delivered' },
             { timeoutMs: 45_000 },
           );

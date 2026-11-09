@@ -30,9 +30,7 @@ export const missing: Group = {
     for (const peer of ctx.peers) {
       await ctx.rec.scenario('B1', peer.name, async () => {
         if (peer.name === 'mbin')
-          throw new NotApplicable(
-            'Mbin never announces its own members’ activity to a remote follower (see P3), so there is no announced Dislike to hold',
-          );
+          throw new NotApplicable('Mbin’s API users are bots and cannot vote down, so there is no Dislike for an older post to hold');
         const side = await prepare(ctx, peer);
         let last: unknown;
         for (let n = 1; n <= 3; n += 1) {
