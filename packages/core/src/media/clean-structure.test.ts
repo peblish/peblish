@@ -1,3 +1,4 @@
+import { deflateSync } from 'node:zlib';
 import { describe, expect, test } from 'vitest';
 import { pngChunk, riff, subBlocks, webpChunk } from './__fixtures__/containers.ts';
 import { has, secret, SECRET, segment } from './__fixtures__/dirty.ts';
@@ -58,6 +59,38 @@ describe('JPEG', () => {
     refused(withSuffix(marker, Buffer.from([0])));
   });
 
+  describe('table caps', () => {
+    /** The fixture with a segment per payload planted after SOI. */
+    const plant = (marker: number, ...payloads: Buffer[]) =>
+      Buffer.concat([original.subarray(0, 2), ...payloads.map((payload) => segment(marker, payload)), original.subarray(2)]);
+    const dqt = (id = 0) => Buffer.concat([Buffer.from([id]), Buffer.alloc(64, 1)]);
+    const dht = (id = 0) => Buffer.concat([Buffer.from([id]), Buffer.alloc(16)]); // a table without codes
+
+    test('a few more tables pass, a hundred more are refused whatever their segments', () => {
+      expect(cleanImage(plant(0xdb, dqt(2), dqt(3))).width).toBe(24);
+      expect(cleanImage(plant(0xc4, dht(0x10), dht(0x11))).width).toBe(24);
+      refused(plant(0xdb, ...Array.from({ length: 100 }, () => dqt())));
+      refused(plant(0xdb, Buffer.concat(Array.from({ length: 100 }, () => dqt())))); // one segment holding them all
+      refused(plant(0xc4, Buffer.concat(Array.from({ length: 300 }, () => dht()))));
+      refused(plant(0xdd, ...Array.from({ length: 100 }, () => Buffer.from([0, 8]))));
+      refused(plant(0xcc, Buffer.alloc(2 * 100)));
+    });
+
+    test('a table id past the four a decoder has, or a bad precision or class, is refused', () => {
+      refused(plant(0xdb, dqt(4)));
+      refused(plant(0xdb, dqt(0x20)));
+      refused(plant(0xc4, dht(4)));
+      refused(plant(0xc4, dht(0x20)));
+    });
+
+    test('a second frame header is refused', () => {
+      let at = 2;
+      while (original[at + 1] !== 0xc0) at += 2 + original.readUInt16BE(at + 2);
+      const frame = original.subarray(at, at + 2 + original.readUInt16BE(at + 2));
+      refused(Buffer.concat([original.subarray(0, at), frame, frame, original.subarray(at + frame.length)]));
+    });
+  });
+
   test('a DAC segment of whole pairs passes and an odd one is refused', () => {
     const plant = (payload: Buffer) => Buffer.concat([original.subarray(0, 2), segment(0xcc, payload), original.subarray(2)]);
     expect(cleanImage(plant(Buffer.from([0x00, 0x10, 0x11, 0x05]))).width).toBe(24);
@@ -106,6 +139,70 @@ describe('PNG', () => {
     refused(withHeader((header) => (header[9] = 5))); // colour type
     refused(Buffer.concat([original.subarray(0, idat), pngChunk('PLTE', Buffer.alloc(4)), original.subarray(idat)]));
     refused(Buffer.concat([original.subarray(0, idat), pngChunk('tRNS', Buffer.alloc(3)), original.subarray(idat)]));
+  });
+
+  describe('palette transparency', () => {
+    /** A 1x1 palette image: `entries` palette entries, then the given chunks between PLTE and IDAT. */
+    const palette = (entries: number, ...between: Buffer[]) => {
+      const header = Buffer.from(ihdr);
+      header.writeUInt32BE(1, 0);
+      header.writeUInt32BE(1, 4);
+      header[8] = 8; // bit depth
+      header[9] = 3; // colour type: palette
+      return Buffer.concat([
+        original.subarray(0, 8),
+        pngChunk('IHDR', header),
+        pngChunk('PLTE', Buffer.alloc(3 * entries)),
+        ...between,
+        pngChunk('IDAT', deflateSync(Buffer.from([0, 0]))),
+        pngChunk('IEND', Buffer.alloc(0)),
+      ]);
+    };
+    // 256 bytes: the most a tRNS holds, and more than any short palette has entries.
+    const stuffed = Buffer.concat([tail, Buffer.alloc(256 - tail.length)]);
+
+    test('a one-entry palette cannot carry a 256-byte tRNS', () => {
+      expect(has(palette(1, pngChunk('tRNS', stuffed)), secret)).toBe(true);
+      refused(palette(1, pngChunk('tRNS', stuffed)));
+      refused(palette(1, pngChunk('tRNS', Buffer.alloc(2))));
+      refused(palette(255, pngChunk('tRNS', stuffed)));
+    });
+
+    test('one alpha byte per palette entry, at most, passes; so does a full 256-entry palette', () => {
+      for (const [entries, alphas] of [
+        [1, 1],
+        [4, 3],
+        [4, 4],
+        [256, 256],
+      ] as const) {
+        const file = palette(entries, pngChunk('tRNS', Buffer.alloc(alphas, 0x80)));
+        expect(Buffer.from(cleanImage(file).bytes).equals(file)).toBe(true);
+      }
+    });
+
+    test('a tRNS before its palette has nothing to describe', () => {
+      const file = palette(4, pngChunk('tRNS', Buffer.alloc(2)));
+      const plte = file.indexOf('PLTE') - 4;
+      const trns = file.indexOf('tRNS') - 4;
+      refused(
+        Buffer.concat([
+          file.subarray(0, plte),
+          file.subarray(trns, file.indexOf('IDAT') - 4),
+          file.subarray(plte, trns),
+          file.subarray(file.indexOf('IDAT') - 4),
+        ]),
+      );
+    });
+
+    test('a repeated tRNS or PLTE is dropped, so a second chunk carries nothing', () => {
+      const file = palette(4, pngChunk('tRNS', Buffer.alloc(2, 0x80)), pngChunk('tRNS', tail));
+      expect(has(file, secret)).toBe(true);
+      const cleaned = Buffer.from(cleanImage(file).bytes);
+      expect(has(cleaned, secret)).toBe(false);
+      expect(cleaned.toString('latin1').match(/tRNS/g)).toHaveLength(1);
+      const twice = palette(4, pngChunk('PLTE', Buffer.concat([tail, Buffer.alloc(3 - (tail.length % 3))])));
+      expect(has(cleanImage(twice).bytes, secret)).toBe(false);
+    });
   });
 
   describe('animation', () => {

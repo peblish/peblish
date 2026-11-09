@@ -10,8 +10,10 @@ const image = () => vi.fn(async () => ({ ok: true as const, type: 'image/png' as
 
 test('a signed URL is fetched and answered with the sniffed type, a private, short cache lifetime and sandboxing headers', async () => {
   const fetchImage = image();
-  const response = await proxyResponse(signature, target, { key, enabled: true, fetchImage });
-  expect(fetchImage).toHaveBeenCalledWith(remoteUrl);
+  const { signal } = new AbortController();
+  const response = await proxyResponse(signature, target, { key, enabled: true, fetchImage, signal });
+  // The request's signal goes along, so a request that gives up while queued is dropped.
+  expect(fetchImage).toHaveBeenCalledWith(remoteUrl, signal);
   expect(response.status).toBe(200);
   expect(Buffer.from(await response.arrayBuffer())).toEqual(png);
   expect(Object.fromEntries(response.headers)).toEqual({

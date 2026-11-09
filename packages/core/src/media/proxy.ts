@@ -38,10 +38,15 @@ type Fetcher = (url: string, init: SafeFetchInit) => Promise<SafeResponse>;
  * and not by the type the remote host claims (SVG, HTML and everything else are refused with
  * 415), so the type the proxy answers with is its own. At most `proxyLimits.concurrent` fetches
  * run at once; a request waits for a turn behind up to `proxyLimits.queued` others and is
- * refused with 503 beyond that. `fetch` is safeFetch unless a test brings a stub.
+ * refused with 503 beyond that, or when `signal` (the viewer's request) aborts while it waits;
+ * a fetch already running is not cancelled, it ends within `timeoutMs`. `fetch` is safeFetch
+ * unless a test brings a stub.
  */
-export async function fetchProxiedImage(url: string, fetch: Fetcher = safeFetch, slots: Slots = upstream): Promise<ProxyResult> {
-  const release = await slots.acquire();
+export async function fetchProxiedImage(
+  url: string,
+  { fetch = safeFetch, slots = upstream, signal }: { fetch?: Fetcher; slots?: Slots; signal?: AbortSignal } = {},
+): Promise<ProxyResult> {
+  const release = await slots.acquire(signal);
   if (!release) return { ok: false, status: 503, why: 'busy' };
   try {
     return await fetchImage(url, fetch);

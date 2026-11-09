@@ -30,14 +30,17 @@ export type ProxyDeps = {
   key: Buffer;
   /** The remote_media.enabled kill switch. */
   enabled: boolean;
-  fetchImage?: (url: string) => Promise<ProxyResult>;
+  /** The viewer's request signal: a request that gives up while queued for a turn is dropped. */
+  signal?: AbortSignal;
+  fetchImage?: (url: string, signal?: AbortSignal) => Promise<ProxyResult>;
 };
 
 export async function proxyResponse(signature: string, target: string, deps: ProxyDeps): Promise<Response> {
   // An unsigned, altered or foreign URL, and the kill switch, look the same from outside: nothing here.
   const url = verifyProxyPath(deps.key, signature, target);
   if (url === null || !deps.enabled) return plain(404, 'not found');
-  const result = await (deps.fetchImage ?? fetchProxiedImage)(url);
+  const fetchImage = deps.fetchImage ?? ((target: string, signal?: AbortSignal) => fetchProxiedImage(target, { signal }));
+  const result = await fetchImage(url, deps.signal);
   if (!result.ok) return plain(result.status, `the image could not be proxied (${result.why})`);
   // A copy: the fetched buffer's type is wider than a Response body accepts.
   return new Response(new Uint8Array(result.body), {

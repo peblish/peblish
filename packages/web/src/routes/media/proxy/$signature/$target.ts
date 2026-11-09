@@ -8,8 +8,12 @@ import { proxyResponse } from '../-handler.ts';
 export const Route = createFileRoute('/media/proxy/$signature/$target')({
   server: {
     handlers: {
-      GET: async ({ params }) =>
-        proxyResponse(params.signature, params.target, { key: await mediaProxyKey(), enabled: await readSetting('remote_media.enabled') }),
+      GET: async ({ params, request }) =>
+        proxyResponse(params.signature, params.target, {
+          key: await mediaProxyKey(),
+          enabled: await readSetting('remote_media.enabled'),
+          signal: request.signal,
+        }),
     },
   },
 });
