@@ -31,13 +31,37 @@ const manifestPath = join(import.meta.dirname, '../../packages/web/.output/paylo
 
 const isStrings = (value: unknown): value is string[] => Array.isArray(value) && value.every((item) => typeof item === 'string');
 
+/**
+ * The groups packages/web/vite.config.ts defines, each with a package its pattern must match: a
+ * pattern that matches nothing (or a group that went missing) would make misplacedPackages
+ * report nothing while react-dom sits in an app chunk.
+ */
+const expectedGroups = { 'vendor-react': 'react-dom', 'vendor-mux': '@muxui/react', 'vendor-editor': '@tiptap/core' } as const;
+
+function matchesPackage(source: unknown, pkg: string): boolean {
+  if (typeof source !== 'string') return false;
+  try {
+    return new RegExp(source).test(`/node_modules/${pkg}/`);
+  } catch {
+    return false;
+  }
+}
+
+/** A plain object with exactly the expected groups, each a valid pattern that matches its package. */
+function isVendorGroups(value: unknown): value is Manifest['vendorGroups'] {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return false;
+  const names = Object.keys(value).sort();
+  return (
+    names.join() === Object.keys(expectedGroups).sort().join() &&
+    Object.entries(expectedGroups).every(([name, pkg]) => matchesPackage(Reflect.get(value, name), pkg))
+  );
+}
+
 function isManifest(value: unknown): value is Manifest {
   if (typeof value !== 'object' || value === null || !('vendorGroups' in value) || !('chunks' in value)) return false;
   const { vendorGroups, chunks } = value;
   return (
-    typeof vendorGroups === 'object' &&
-    vendorGroups !== null &&
-    Object.values(vendorGroups).every((source) => typeof source === 'string') &&
+    isVendorGroups(vendorGroups) &&
     Array.isArray(chunks) &&
     chunks.every(
       (chunk: unknown) =>
@@ -59,7 +83,9 @@ function isManifest(value: unknown): value is Manifest {
 export function parseManifest(text: string): Manifest {
   const value: unknown = JSON.parse(text);
   if (!isManifest(value))
-    throw new Error('payload-chunks.json is not a manifest: expected vendorGroups and chunks (see packages/web/vite.config.ts)');
+    throw new Error(
+      'payload-chunks.json is not a manifest: expected vendorGroups (vendor-react, vendor-mux and vendor-editor, each a pattern matching its package) and chunks (see packages/web/vite.config.ts)',
+    );
   return value;
 }
 

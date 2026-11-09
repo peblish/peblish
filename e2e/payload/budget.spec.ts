@@ -178,6 +178,13 @@ test('the font budget holds in German too (umlauts stay in the Latin slice)', as
 });
 
 // Negative controls: the checks above must fail on what they exist to catch.
+// The groups as vite.config.ts writes them (the patterns' source text).
+const validGroups = {
+  'vendor-react': '[\\\\/]node_modules[\\\\/](?:react|react-dom|scheduler)[\\\\/]',
+  'vendor-mux': '[\\\\/]node_modules[\\\\/](?:@muxui[\\\\/]react|react-aria)[\\\\/]',
+  'vendor-editor': '[\\\\/]node_modules[\\\\/](?:@tiptap|prosemirror-[\\w-]+)[\\\\/]',
+};
+
 test.describe('the check catches', () => {
   test('themes.css rules in the Mux stylesheet', () => {
     const themes = readFileSync(join(import.meta.dirname, '../../packages/ui/node_modules/@muxui/react/generated/themes.css'), 'utf8');
@@ -189,9 +196,8 @@ test.describe('the check catches', () => {
   });
 
   test('a vendor package in an app chunk', () => {
-    const vendorGroups = { 'vendor-react': '[\\\\/]node_modules[\\\\/](?:react|react-dom|scheduler)[\\\\/]' };
     const broken = {
-      vendorGroups,
+      vendorGroups: validGroups,
       chunks: [
         { file: 'assets/vendor-react-a.js', entry: false, packages: ['react', 'react-dom'], app: false },
         { file: 'assets/page-b.js', entry: false, packages: ['react-dom'], app: true },
@@ -210,13 +216,28 @@ test.describe('the check catches', () => {
       };
       expect(() => loadManifest({ remote: false, path: join(dir, 'absent.json') })).toThrow(/did not write/);
       expect(() => loadManifest({ remote: false, path: write('broken.json', '{') })).toThrow();
-      expect(() => loadManifest({ remote: false, path: write('shape.json', '{"vendorGroups":{},"chunks":[{"file":1}]}') })).toThrow(
-        /not a manifest/,
-      );
-      const valid = {
-        vendorGroups: { 'vendor-react': 'react' },
-        chunks: [{ file: 'assets/vendor-react-a.js', entry: false, packages: ['react'], app: false }],
+      const chunks = [{ file: 'assets/vendor-react-a.js', entry: false, packages: ['react'], app: false }];
+      const invalid = {
+        'chunk shape': { vendorGroups: validGroups, chunks: [{ file: 1 }] },
+        'no groups': { vendorGroups: {}, chunks },
+        'groups as an array': { vendorGroups: [], chunks },
+        'groups as an array of the right patterns': { vendorGroups: Object.values(validGroups), chunks },
+        'a missing group': {
+          vendorGroups: { 'vendor-react': validGroups['vendor-react'], 'vendor-mux': validGroups['vendor-mux'] },
+          chunks,
+        },
+        'an unexpected group': { vendorGroups: { ...validGroups, 'vendor-extra': 'extra' }, chunks },
+        'a pattern that does not compile': { vendorGroups: { ...validGroups, 'vendor-react': '(' }, chunks },
+        'a pattern that matches nothing': { vendorGroups: { ...validGroups, 'vendor-react': '(?!)' }, chunks },
+        'a pattern that is not a string': { vendorGroups: { ...validGroups, 'vendor-mux': 1 }, chunks },
+        'no chunks': { vendorGroups: validGroups },
       };
+      for (const [reason, manifest] of Object.entries(invalid)) {
+        expect(() => loadManifest({ remote: false, path: write('invalid.json', JSON.stringify(manifest)) }), reason).toThrow(
+          /not a manifest/,
+        );
+      }
+      const valid = { vendorGroups: validGroups, chunks };
       expect(loadManifest({ remote: false, path: write('valid.json', JSON.stringify(valid)) })).toEqual(valid);
       // Only a remote BASE_URL, which has no build output, may skip the guard.
       expect(loadManifest({ remote: true, path: join(dir, 'absent.json') })).toBeNull();
