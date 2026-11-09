@@ -8,6 +8,7 @@ import { TextAreaField } from '@peblish/ui/components/text-area';
 import { TextField } from '@peblish/ui/components/text-field';
 import { createFileRoute, notFound, redirect } from '@tanstack/react-router';
 import { createServerFn } from '@tanstack/react-start';
+import { setResponseStatus } from '@tanstack/react-start/server';
 import { type } from 'arktype';
 import { useTranslate } from '../../../../i18n/use-translate.ts';
 import { forbidden, formSession, pageSession, principalOf, readForm, sameOrigin } from '../../../../server/auth.ts';
@@ -35,7 +36,11 @@ const loadEditor = createServerFn({ method: 'GET' })
     const session = await pageSession();
     if (!session) throw redirect({ to: '/auth/sign-in', search: { redirect: hereOf(slug, language) } });
     const access = accessOf(session);
-    if (access !== 'ok') return { access } as const;
+    // Signed in but not an admin with two-factor on: the denial copy, answered as a 403 (as the report queue does).
+    if (access !== 'ok') {
+      setResponseStatus(403);
+      return { access } as const;
+    }
     const [draft, rows, unresolved] = await Promise.all([readDraft(slug, language), listPages(), unresolvedTokens(slug, language)]);
     const row = rows.find((candidate) => candidate.slug === slug && candidate.language === language);
     const renderer = await createMarkdownRenderer();

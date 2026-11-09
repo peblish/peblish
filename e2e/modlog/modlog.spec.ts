@@ -164,3 +164,9 @@ test('a member who moderates nothing cannot act: the form is refused and nothing
   );
   expect(answer).toEqual([400, { error: 'mod.moderator_required' }]);
 });
+
+test('an entry id that is not a uuid is a 404; a well-formed one nobody holds is an empty log', async ({ request }) => {
+  for (const entry of ['-'.repeat(36), 'not-an-id', `${'0'.repeat(35)}g`])
+    expect((await request.get(`/modlog?entry=${entry}`)).status(), entry).toBe(404);
+  expect((await request.get('/modlog?entry=0192f5a0-1234-7abc-8def-0123456789ab')).status()).toBe(200);
+});

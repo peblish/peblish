@@ -153,6 +153,11 @@ test.describe('signed in', () => {
     await expect(page.getByRole('navigation', { name: 'Activity' })).toBeVisible();
     await expect(page.getByText(seed.posts.owner[0]!)).toBeVisible();
     await expectAccessible(page);
+    // A member's comment rows carry the action slots (the Block form among them): they hydrate cleanly.
+    const log = recordConsole(page);
+    await gotoHydrated(page, `${profile(seed.owner.name)}?tab=comments`);
+    await expect(page.locator('.prof-comment').getByRole('button', { name: 'Block' }).first()).toBeVisible();
+    expect(log.hydrationProblems()).toEqual([]);
   });
 
   test('the Block slot works without JavaScript too', async ({ page, browser }) => {

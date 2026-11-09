@@ -4,6 +4,7 @@ import { killSwitches, type SiteSettingKey } from '@peblish/schema/site-settings
 import { Button } from '@peblish/ui/components/button';
 import { createFileRoute, redirect } from '@tanstack/react-router';
 import { createServerFn } from '@tanstack/react-start';
+import { setResponseStatus } from '@tanstack/react-start/server';
 import { type } from 'arktype';
 import { useTranslate } from '../../../i18n/use-translate.ts';
 import { forbidden, formSession, pageSession, principalOf, readForm, sameOrigin } from '../../../server/auth.ts';
@@ -27,7 +28,11 @@ const loadSettings = createServerFn({ method: 'GET' }).handler(async () => {
   const session = await pageSession();
   if (!session) throw redirect({ to: '/auth/sign-in', search: { redirect: path } });
   const access = accessOf(session);
-  if (access !== 'ok') return { access } as const;
+  // Signed in but not an admin with two-factor on: the denial copy, answered as a 403 (as the report queue does).
+  if (access !== 'ok') {
+    setResponseStatus(403);
+    return { access } as const;
+  }
   return { access, ...(await settingsOverview()) } as const;
 });
 

@@ -1,14 +1,18 @@
-import { sql } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { uuidv7 } from 'uuidv7';
 import { beforeEach, describe, expect, test } from 'vitest';
+import { showNsfw, type NsfwChoice } from '../communities/gate.ts';
 import { db } from '../db/read.ts';
+import { actors } from '../db/tables/actors.ts';
 import { modlog } from '../db/tables/moderation.ts';
 import { writer } from '../db/write.ts';
+import { ageDeclarations } from '../identity/tables.ts';
 import { removeContent } from '../moderation/remove.ts';
 import { truncateAll } from '../testing/db.ts';
 import { admin, grantFor, seedAdmin, seedComment, seedModerator, seedPost } from '../testing/seed-az.ts';
 import { localUser, seedActor, seedInstance } from '../testing/seed.ts';
 import { describeTargets } from './describe.ts';
+import type { ModlogViewer } from './filters.ts';
 import { readModlogPage, modlogFacets } from './page.ts';
 
 beforeEach(truncateAll);
@@ -62,8 +66,10 @@ const viewer = (w: World, who: 'public' | 'admin' | 'technik' | 'art') =>
   who === 'public'
     ? null
     : who === 'admin'
-      ? { admin: true, moderates: [] }
-      : { admin: false, moderates: [who === 'technik' ? w.technik.id : w.art.id] };
+      ? { admin: true, moderates: [], actorId: w.andrew.id }
+      : who === 'technik'
+        ? { admin: false, moderates: [w.technik.id], actorId: w.mira.id }
+        : { admin: false, moderates: [w.art.id], actorId: w.tobi.id };
 
 describe('readModlogPage', () => {
   test('a cursor walks rows with the same timestamp, and timestamps a millisecond apart, without skipping or repeating one', async () => {
@@ -232,6 +238,61 @@ describe('describeTargets', () => {
       handle: expect.any(String),
       local: true,
     });
+  });
+
+  test("a title or excerpt passes the post page gates: the NSFW and NSFL flags, a closed community and a comment's post", async () => {
+    const w = await world();
+    const reader = await seedActor(w.local, 'Person', 'reader');
+    const undeclared = await seedActor(w.local, 'Person', 'undeclared');
+    await writer().insert(ageDeclarations).values({ actorId: reader.id });
+    const nsflGroup = await seedActor(w.local, 'Group', 'gore', { nsfl: true });
+    const deletedGroup = await seedActor(w.local, 'Group', 'gone');
+    const plain = await seedPost(w.local, w.technik, w.tobi);
+    const sensitive = await seedPost(w.local, w.technik, w.tobi, { sensitive: true });
+    const inNsfl = await seedPost(w.local, nsflGroup, w.tobi);
+    const removed = await seedPost(w.local, w.technik, w.tobi, { removedAt: new Date() });
+    const inDeleted = await seedPost(w.local, deletedGroup, w.tobi);
+    const underSensitive = await seedComment(w.local, sensitive, w.tobi, { bodyMd: 'Under a sensitive post' });
+    const underNsfl = await seedComment(w.local, inNsfl, w.tobi, { bodyMd: 'Under an NSFL community' });
+    const underRemoved = await seedComment(w.local, removed, w.tobi, { bodyMd: 'Under a removed post' });
+    const underPlain = await seedComment(w.local, plain, w.tobi, { bodyMd: 'Under a plain post' });
+    await writer().update(actors).set({ deletedAt: new Date() }).where(eq(actors.id, deletedGroup.id));
+    const ids = new Map<string, string>();
+    for (const [name, post, community] of [
+      ['plain', plain, w.technik],
+      ['sensitive', sensitive, w.technik],
+      ['inNsfl', inNsfl, nsflGroup],
+      ['inDeleted', inDeleted, deletedGroup],
+    ] as const)
+      ids.set(name, await log(w, w.andrew, { action: 'mod.lock', community, targetPostId: post.id, targetApId: post.apId }));
+    for (const [name, comment, community] of [
+      ['underSensitive', underSensitive, w.technik],
+      ['underNsfl', underNsfl, nsflGroup],
+      ['underRemoved', underRemoved, w.technik],
+      ['underPlain', underPlain, w.technik],
+    ] as const)
+      ids.set(name, await log(w, w.andrew, { action: 'mod.pin', community, targetCommentId: comment.id, targetApId: comment.apId }));
+    const entries = (await readModlogPage({}, { viewer: viewer(w, 'admin') })).entries;
+    const shown = async (who: ModlogViewer | null, nsfw?: NsfwChoice) => {
+      const lines = await describeTargets(entries, { viewer: who, ...(nsfw && { nsfw }) });
+      const label = (name: string) => {
+        const target = lines.find((line) => line.entry.id === ids.get(name))?.target;
+        return target && (target.kind === 'post' || target.kind === 'comment') ? target.label : undefined;
+      };
+      return [...ids.keys()].filter((name) => label(name) !== null);
+    };
+    const person = (actor: { id: string }) => ({ admin: false, moderates: [], actorId: actor.id });
+
+    // Signed out, undeclared, and declared with Hide NSFW on (the default): only unflagged content in a live community.
+    expect(await shown(null, showNsfw)).toEqual(['plain', 'underPlain']);
+    expect(await shown(person(undeclared), showNsfw)).toEqual(['plain', 'underPlain']);
+    expect(await shown(person(reader))).toEqual(['plain', 'underPlain']);
+    // Declared and showing NSFW: the flagged ones too; a closed community and a removed post's comment stay withheld.
+    expect(await shown(person(reader), showNsfw)).toEqual(['plain', 'sensitive', 'inNsfl', 'underSensitive', 'underNsfl', 'underPlain']);
+    // "Show once" opens one community.
+    expect(await shown(person(reader), { always: false, once: [nsflGroup.id] })).toEqual(['plain', 'inNsfl', 'underNsfl', 'underPlain']);
+    // Staff of the community see a removed post's comment, but the NSFW gate still applies to them.
+    expect(await shown(viewer(w, 'technik'))).toEqual(['plain', 'underRemoved', 'underPlain']);
   });
 
   test('a remote moderator is relayed, a banned person is a person, and a purged actor is named from its ap_id', async () => {

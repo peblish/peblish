@@ -2,10 +2,12 @@ import type { Uuid } from '@peblish/schema/ids';
 import type { ModlogEntry } from '@peblish/schema/modlog';
 import { eq, inArray } from 'drizzle-orm';
 import { localInstance } from '../db/local-instance.ts';
+import { hideNsfw, shows, type NsfwChoice } from '../communities/gate.ts';
 import { db as readDb, type Queryable } from '../db/read.ts';
 import { actors } from '../db/tables/actors.ts';
 import { comments, posts } from '../db/tables/content.ts';
 import { instances } from '../db/tables/instances.ts';
+import { postViews, type Viewer } from '../posts/read.ts';
 import type { ModlogViewer } from './filters.ts';
 
 // What the modlog page shows beside each row: the handles and the post title or comment excerpt
@@ -64,29 +66,26 @@ export async function labelActors(ids: readonly Uuid[], q: Queryable = readDb())
 }
 
 /**
- * The lines for a page of entries. For a viewer who is not staff for a row, the title or
- * excerpt of removed (or deleted) content is left out: the public log says what was removed and
- * why, not what it said.
+ * The lines for a page of entries. A post title or comment excerpt passes the post page's gates
+ * for this viewer (posts/read.ts postViews): nothing of deleted content, nor of a post in a
+ * deleted or removed community; removed content only for staff of its community; a sensitive or
+ * NSFL post or community only for a viewer who declared 16+ and whose Hide NSFW choice (`nsfw`,
+ * default hide) shows it. A comment's excerpt also needs its post to pass. The public log says
+ * what was removed and why, not what it said.
  */
 export async function describeTargets(
   list: readonly ModlogEntry[],
-  options: { viewer: ModlogViewer | null; db?: Queryable },
+  options: { viewer: ModlogViewer | null; nsfw?: NsfwChoice; db?: Queryable },
 ): Promise<ModlogLine[]> {
   const q = options.db ?? readDb();
-  const { viewer } = options;
+  const { viewer, nsfw = hideNsfw } = options;
+  const reader: Viewer = viewer?.actorId ? { actorId: viewer.actorId, siteRole: viewer.admin ? 'admin' : 'user' } : null;
   const unique = <T>(values: (T | null)[]) => [...new Set(values.filter((value): value is T => value !== null))];
-  const postIds = unique(list.map((entry) => entry.targetPostId));
   const commentIds = unique(list.map((entry) => entry.targetCommentId));
-  const [postRows, commentRows] = await Promise.all([
-    postIds.length === 0
-      ? []
-      : q
-          .select({ id: posts.id, title: posts.title, authorId: posts.authorId, removedAt: posts.removedAt, deletedAt: posts.deletedAt })
-          .from(posts)
-          .where(inArray(posts.id, postIds)),
+  const commentRows =
     commentIds.length === 0
       ? []
-      : q
+      : await q
           .select({
             id: comments.id,
             postId: comments.postId,
@@ -96,8 +95,16 @@ export async function describeTargets(
             deletedAt: comments.deletedAt,
           })
           .from(comments)
-          .where(inArray(comments.id, commentIds)),
-  ]);
+          .where(inArray(comments.id, commentIds));
+  // The targeted posts and the posts of the targeted comments.
+  const postIds = unique([...list.map((entry) => entry.targetPostId), ...commentRows.map((row) => row.postId)]);
+  const postRows = postIds.length === 0 ? [] : await q.select().from(posts).where(inArray(posts.id, postIds));
+  // A view's title is '' when the post page would withhold it; a post in a closed community has no view.
+  const titles = new Map(
+    (await postViews(postRows, reader, q))
+      .filter((view) => view.title !== '' && (!(view.sensitive || view.nsfl) || shows(nsfw, view.community.id)))
+      .map((view) => [view.id, view.title]),
+  );
   const labels = await labelActors(
     unique([
       ...list.flatMap((entry) => [entry.actorId, entry.targetActorId, entry.communityId]),
@@ -125,7 +132,7 @@ export async function describeTargets(
         kind: 'post',
         postId: entry.targetPostId,
         apId: entry.targetApId ?? '',
-        label: row && (staff || (row.removedAt === null && row.deletedAt === null)) ? row.title : null,
+        label: titles.get(entry.targetPostId) ?? null,
         author: row ? label(row.authorId, null) : null,
       };
     } else if (entry.targetCommentId) {
@@ -135,7 +142,10 @@ export async function describeTargets(
         commentId: entry.targetCommentId,
         postId: row?.postId ?? null,
         apId: entry.targetApId ?? '',
-        label: row && (staff || (row.removedAt === null && row.deletedAt === null)) ? excerpt(row.bodyMd ?? '') || null : null,
+        label:
+          row && row.deletedAt === null && (staff || row.removedAt === null) && titles.has(row.postId)
+            ? excerpt(row.bodyMd ?? '') || null
+            : null,
         author: row ? label(row.authorId, null) : null,
       };
     } else if (entry.targetActorId || (entry.targetApId && entry.action.startsWith('mod.'))) {

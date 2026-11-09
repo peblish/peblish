@@ -17,30 +17,28 @@ function laneDatabaseUrl(): string {
   return url;
 }
 
+/** Which run of e2e/run.ts this is: each keeps its own results and report, so the serial run does not wipe the parallel one's. */
+const phase = process.env.E2E_PHASE ?? 'all';
+
 export default defineConfig({
   testDir: '.',
   globalSetup: './global-setup.ts',
   testMatch: '**/*.spec.ts',
-  outputDir: './artifacts/test-results',
+  outputDir: `./artifacts/test-results/${phase}`,
   timeout: 30_000,
   expect: { timeout: 5_000 },
   forbidOnly: Boolean(process.env.CI),
   retries: 0,
-  reporter: process.env.CI ? [['list'], ['html', { outputFolder: './artifacts/report', open: 'never' }]] : 'list',
+  reporter: process.env.CI ? [['list'], ['html', { outputFolder: `./artifacts/report/${phase}`, open: 'never' }]] : 'list',
   use: { baseURL, locale: 'en-US', trace: 'retain-on-failure' },
-  // Specs that flip a shared site setting (kill switches, uploads, remote media) or render
-  // something such a flip changes are named *.serial.spec.ts: they run one at a time after the
-  // parallel project, so no flip lands in the middle of another spec. Playwright skips them when
-  // the parallel project fails; `pnpm e2e --project serial --no-deps` runs them alone.
+  // Specs that save a shared site setting (kill switches, uploads, remote media, the site and
+  // operator details) or render something such a save changes are named *.serial.spec.ts: they
+  // run one at a time after the parallel project, so no save lands in the middle of another spec.
+  // `pnpm e2e` (e2e/run.ts) runs the two projects one after the other, the serial one whether or
+  // not the parallel one failed; `pnpm e2e --project serial` runs the serial specs alone.
   projects: [
     { name: 'chromium', use: { ...devices['Desktop Chrome'] }, testIgnore: '**/*.serial.spec.ts' },
-    {
-      name: 'serial',
-      use: { ...devices['Desktop Chrome'] },
-      testMatch: '**/*.serial.spec.ts',
-      dependencies: ['chromium'],
-      workers: 1,
-    },
+    { name: 'serial', use: { ...devices['Desktop Chrome'] }, testMatch: '**/*.serial.spec.ts', workers: 1 },
   ],
   webServer: process.env.BASE_URL
     ? undefined

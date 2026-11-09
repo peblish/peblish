@@ -50,7 +50,8 @@ function CommentRow({ entry, data, path }: { entry: Comment; data: ProfileData; 
         )}
       </p>
       {view.contentHtml && <Prose html={view.contentHtml} className="prof-comment-text" />}
-      <p className="prof-comment-actions">
+      {/* A div: the slots hold forms and menus, which a <p> cannot contain (the parser would close it). */}
+      <div className="prof-comment-actions">
         <a href={commentPath(post.id, view.id)}>{t('profiles', 'comment.reply')}</a>
         {slot && (
           <>
@@ -59,7 +60,7 @@ function CommentRow({ entry, data, path }: { entry: Comment; data: ProfileData; 
             <CommentModerate {...slot} />
           </>
         )}
-      </p>
+      </div>
     </li>
   );
 }
