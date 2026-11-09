@@ -518,7 +518,7 @@ Statements these fixes made wrong, corrected here: "Fedify signs and verifies" (
 
 ## Wave 2 round 2: D, C1, COMPOSER (2026-11-09)
 
-Three lanes cut from e886daf, merged after the fixes; `LANE-NOTES.md` is removed in each merge commit (the notes are kept outside the repository). FED-B and REM follow in round B.
+Three lanes cut from e886daf, merged after the fixes; `LANE-NOTES.md` is removed in each merge commit (the notes are kept outside the repository). FED-B follows below, REM after it.
 
 | Lane     | What it brought                                                                                                                                                 | Head    | Merge   |
 | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- | ------- |
@@ -550,13 +550,13 @@ Integration commits, after the merges:
 | 58d50dc | The phone drawer is pinned to the screen height (below)                                                                                              |
 | e6786f5 | The feed's page data carries `thumbnailUrl: null` (below)                                                                                            |
 | 1ffea94 | Four e2e specs adjusted for the merged tree (below)                                                                                                  |
-| (this)  | README (ownership rows for D, C1 and COMPOSER, the Fedify statements), this section                                                                  |
+| c514872 | README (ownership rows for D, C1 and COMPOSER, the Fedify statements), this section                                                                  |
 
 Migration `0005_wave_2_round_a`, generated once by drizzle-kit after the merges and the index edits (it holds exactly the two indexes and nothing else):
 
 - `posts_score` on `posts`: `((upvotes - downvotes)) DESC NULLS LAST, id DESC NULLS LAST`, for the score sorts (Top over a week or more, Popular's deep pages: 40 to 190 ms down to about 3 ms).
 - `actors_gated` on `actors (id)` where `sensitive or nsfl`, so the feeds' NSFW predicate is an index-only scan of the few gated communities instead of a sequential scan of every actor.
-- No table, column or trigger. `pnpm db:drift` finds none. Round B regenerates it if FED-B or REM add tables.
+- No table, column or trigger. `pnpm db:drift` finds none. FED-B added no table; REM may, and regenerates it then.
 
 Found by the e2e run on the merged tree, fixed in the integration commits:
 
@@ -575,3 +575,24 @@ Verification of round A, on lane root:
 - `pnpm db:drift`: none, with 0005 applied to `peblish_root`.
 - `PEBLISH_UI_KIT=1 pnpm e2e`: 194 passed, 1 skipped (the test that `/kit` answers 404 where the gallery is off). The first run on the merged tree found the four fixes above (five specs failed); the runs that followed met a repeated title in the pagination spec and then the sign-in throttle after three full runs from one address (cleared with `delete from throttles` on the lane database), and the last run was clean. Payload, first visit, of the 170 kB script budget: `/`, `/all`, `/local`, `/popular`, `/moderating` 62.8 kB; the auth, invite, settings and admin pages 126.3 kB; `/post/<id>` and the permalink 127.3 kB; `/submit` signed out 126.3 kB and signed in 129.4 kB (the sheet adds 106.1 kB lazily, of 200); `/kit` 168.8 kB, 1.2 kB of room. CSS 60.4 of 65 kB everywhere; fonts 105.6 kB, the kit 259.2 of 270 kB.
 - `docker build`, then `scripts/image-smoke.sh` against a throwaway `peblish_root_image` (dropped after): the disagreeing command exits 64, migrate (0005 applied), the first admin, the worker starts and stops on SIGTERM with exit 0, web `/healthz`, `/readyz` and the healthcheck, uid 1000. A rerun on the same database passed too. The image is tagged `peblish:w2-round-a`.
+
+## Wave 2 round 2: FED-B (2026-11-09)
+
+Lane FED-B (head 91eef16, cut from e886daf; it merged `mvp-w2` at 55ba9a7, the end of round A's first commits, into its branch before reporting) merged as 8932230 with no conflict; `LANE-NOTES.md` is removed in the merge commit and the notes are kept in `/Users/admin/.agents/plans/feddit/lane-notes/wave-2/fed-b.md`. It adds no table and no migration, and no dependency. It brought the inbound half of ActivityPub:
+
+- Receipt replaces the 503 stub: the signature is verified, the exact bytes go into `inbox_raw` with the signed headers, and the answer is 202 (400 not an activity, 401 bad signature or a key whose owner is not the actor, 413 over 512 KiB, 429 too many unknown-key fetches, 503 with `Retry-After` when `inbox.enabled` is off or storage fails).
+- One pipeline (`federation.inbound`, leases with `SKIP LOCKED`): classify, map, `prepare` (all network), then one transaction for dedupe, apply, the `activities` row, the relay, the requeue of rows waiting on the object and the row's end state. A skip or refusal rolls it back and records the bare reason; a mapping error is `failed` and never retried; anything else backs off and fails after 8 tries.
+- The authorization matrix runs 16 of 16 (N0 to N15, exact reasons, state unchanged on every refusal). Handlers cover Announce (including PieFed's batched form), Create, Update, Delete, Undo, Like, Dislike, Lock, Add, Remove, Block, Follow, Accept and Reject. Inbound Lock, featured Add and Remove, and community Block (with their Undo) apply, inside a remote community's Announce and straight to a local community from a moderator appointed there. Flag is a stub that authorizes the report and skips with `flag.not_handled` until REP.
+- The relay announces what reaches a local community to its remote followers (the received bytes spliced unchanged into the Announce; `Announce(Page)` for Mastodon-like followers) and federates local `mod.remove`, `mod.lock`, `mod.feature`, `mod.ban`, `mod.role` and a local account's deletion. The remote moderators mirror (`remote/moderators.ts`, policy `remote.moderators_mirror`, job `federation.moderators` every 15 minutes) writes `source: 'remote'` rows verified at mirror time and expiring in 12 hours.
+- Comments go through D's remote mutations; the shim FED-B carried is gone.
+- The corpus replay (every inbound and peer-log document of the Phase 0 captures, Lemmy 71 and PieFed 35) ends with 106 documents: 36 applied, 70 skipped with a recorded reason, 0 failed, none left pending.
+
+Decisions: a Group sender is skipped as `actor.group_cannot_act` before anything is built (B1 and D refuse the same later, so the two agree); an Accept that names its Follow by IRI only is skipped as `accept.unverifiable`; `Undo(Follow)` removes the follow with `apId: null` because Lemmy mints a fresh Follow id inside its Undo (LAB confirms); a remote Group's `summary_html` is stored raw and sanitised only on read (`readCommunity`); direct content in a remote community is skipped (`community.unannounced`), it counts only in that community's own Announce. Accepted edits outside its write set: `e2e/server/federation.spec.ts` and `packages/federation/src/http.test.ts` expect a 401 from an unsigned inbox POST instead of the stub's 503, and `packages/federation/README.md`.
+
+Risks and hand-offs: the inbound throttle is per process; `inbox_raw` grows without bound until REM prunes it; a first delivery of one object into two communities that race can raise a unique violation, which is retried, not lost; a missing object is not fetched (votes and edits for a post never seen wait with `target.missing`, and `requeueSkippedFor(apId)` releases them); the first mirror of a newly followed community waits up to 15 minutes unless REM calls `mirrorNow`; the mirrored moderators' modlog rows are non-public. For the wave 3 lab: PieFed serving `/activities/...`, a real Lemmy accepting the relayed Announce byte for byte, a Mastodon-like follower receiving `Announce(Page)`, a live moderator add and remove with the 12 hour expiry, and the Undo(Follow) shape.
+
+Verification of round B, on lane root with FED-B merged (the tree after round A's commits plus 8932230):
+
+- `pnpm install --frozen-lockfile` is up to date; `pnpm check` is green: 130 test files (128 passed, 2 skipped), 1,808 tests passed and 3 skipped, no boundary violations (636 modules), oxlint and Prettier clean. `pnpm db:drift`: none.
+- `PEBLISH_UI_KIT=1 pnpm e2e`: 194 passed, 1 skipped. One run in three failed on the sign-in throttle: three specs that sign in were refused with "Too many attempts" because `sign-in` allows 10 per client address in 15 minutes and a full run leaves 9 of them counted (the specs that fail on purpose; the table showed 12 in the failing run, with sign-ins in flight at once). Clearing `throttles` on the lane database and rerunning was clean, as was the run before it. Payload figures are the same as in round A.
+- `docker build` (tagged `peblish:w2-round-b`), then `scripts/image-smoke.sh` against a throwaway `peblish_root_image` (dropped after): all steps passed, and a rerun on the same database passed too.
