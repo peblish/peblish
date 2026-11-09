@@ -44,11 +44,13 @@ async function world() {
   const gone = await seedActor(local, 'Person', 'gone', { deletedAt: new Date() });
   const banned = await seedActor(local, 'Person', 'banned');
   const instanceActor = await seedActor(local, 'Application', 'feddit.test');
+  const bot = await seedActor(local, 'Service', 'bot');
   const technology = await seedActor(local, 'Group', 'technology');
   const lemmyAdmin = await seedActor(lemmy, 'Person', 'lemmy_admin');
   const lemmyUser = await seedActor(lemmy, 'Person', 'lemmy_user');
   const lemmyBanned = await seedActor(lemmy, 'Person', 'lemmy_banned');
   const piefedUser = await seedActor(piefed, 'Person', 'piefed_user');
+  const lemmyBot = await seedActor(lemmy, 'Service', 'lemmy_bot');
   await seedModerator(technology, moderator);
   await writer()
     .insert(siteBans)
@@ -67,6 +69,8 @@ async function world() {
     gone,
     banned,
     instanceActor,
+    bot,
+    lemmyBot,
     technology,
     lemmyAdmin,
     lemmyUser,
@@ -94,6 +98,8 @@ describe('mod.site_ban and mod.site_unban: role by target state', () => {
     ['a deleted person', (w) => w.gone.id, { ban: 'target.deleted', unban: 'target.not_site_banned' }],
     ['a remote person', (w) => w.lemmyUser.id, { ban: OK, unban: 'target.not_site_banned' }],
     ['a banned remote person', (w) => w.lemmyBanned.id, { ban: 'target.site_banned', unban: OK }],
+    ['a bot (a Service actor)', (w) => w.bot.id, { ban: OK, unban: 'target.not_site_banned' }],
+    ['a remote bot', (w) => w.lemmyBot.id, { ban: OK, unban: 'target.not_site_banned' }],
   ];
   const refusedRoles: [string, (w: World) => Principal, string][] = [
     ['anonymous', () => ({ kind: 'anonymous' }), 'auth.required'],
@@ -270,6 +276,14 @@ describe('banFromSite and unbanFromSite', () => {
     await expect(banFromSite(grant, { expiresAt: new Date(Date.now() - 1000).toISOString() })).rejects.toThrow(RangeError);
     expect(await writeCounts()).toEqual(before);
     expect(await db().select().from(siteBans).where(eq(siteBans.actorId, w.spammer.id))).toEqual([]);
+  });
+
+  test('a peer may ban its own bot (a Service actor), not a community', async () => {
+    const w = await world();
+    const principal: Principal = { kind: 'remote', actorId: w.lemmyAdmin.id, announcedBy: null };
+    const decide = (targetActorId: string) => authorize('mod.site_ban', principal, { targetActorId });
+    expect(await decide(w.lemmyBot.id)).toMatchObject({ ok: true, grant: { authority: { kind: 'owner', actorId: w.lemmyAdmin.id } } });
+    expect(await decide((await seedActor(w.lemmy, 'Group', 'lemmy_group')).id)).toEqual({ ok: false, reason: 'target.not_found' });
   });
 
   test('a peer bans its own person: source remote, owner authority, the event is not local', async () => {
