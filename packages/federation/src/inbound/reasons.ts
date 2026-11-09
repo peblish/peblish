@@ -22,6 +22,8 @@ export const inboundReasons = {
   'announce.person': 'An Announce by a person is a boost, not a community’s relay, and is ignored.',
   'announce.bare_iri': 'An Announce of a bare IRI is not read yet (a boost, or a Mastodon share).',
   'announce.unfollowed': 'The announcing community has no follower here, so nothing it announces was asked for.',
+  'announce.nested':
+    'An Announce of an Announce is not read: threadiverse peers never send one, and following it is how two origins could send us in circles.',
   'announce.empty': 'The Announce carries no activity.',
   'echo.own_activity': 'The activity is one of ours coming back through a relay.',
   duplicate: 'Another copy of this activity was applied already.',

@@ -93,6 +93,8 @@ async function classifyOne(json: unknown, env: ClassifyEnv, depth: number): Prom
       const object = json.object;
       if (typeof object === 'string') return { skipped: skip('announce.bare_iri', object) };
       if (!isObject(object) || depth > 0) return { json };
+      // Skipped before anything is read or fetched: an Announce that wraps an Announce can only chain origins.
+      if (object.type === 'Announce') return { skipped: skip('announce.nested', idOf(object) ?? undefined) };
       if (typeof object.type === 'string' && handledTypes.has(object.type)) {
         const inner = await classifyOne(object, env, depth + 1);
         return 'json' in inner ? { json: { ...json, object: inner.json } } : inner;

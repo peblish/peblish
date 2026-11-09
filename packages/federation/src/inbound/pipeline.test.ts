@@ -468,3 +468,31 @@ describe('what processing a delivery may fetch', () => {
     expect((await inboxState(row.id))?.state).toBe('pending');
   });
 });
+
+describe('an Announce of an Announce', () => {
+  test('is skipped before anything is read, so two origins cannot send each other in circles', async () => {
+    // lab (lemmy.test) announces rogue.test's Announce, which announces lab's Announce, which names the first again.
+    const first = `${lemmy}/activities/announce/a`;
+    const second = 'https://rogue.test/activities/announce/b';
+    const cycle = {
+      id: first,
+      type: 'Announce',
+      actor: lab,
+      to: [PUBLIC],
+      object: {
+        id: second,
+        type: 'Announce',
+        actor: hosts.fake,
+        to: [PUBLIC],
+        object: { id: first, type: 'Announce', actor: lab, to: [PUBLIC], object: second },
+      },
+    };
+    const probe = stubFetch({ [first]: { body: cycle }, [second]: { body: cycle.object } });
+    const result = await deliver(cycle, { fetch: probe.fetch });
+    expect(result.stored).toEqual({ state: 'skipped', error: `announce.nested ${second}` });
+    // The same inside a batched Announce.
+    const batched = await deliver({ ...cycle, id: `${lemmy}/activities/announce/c`, object: [cycle.object] }, { fetch: probe.fetch });
+    expect(batched.stored?.error).toMatch(/^announce\.nested/);
+    expect(probe.requests).toEqual([]);
+  });
+});
