@@ -7,6 +7,7 @@ import { actors, communityLanguages } from '../db/tables/actors.ts';
 import { follows } from '../db/tables/follows.ts';
 import { instances } from '../db/tables/instances.ts';
 import { communityModerators } from '../db/tables/moderation.ts';
+import { sanitizeRemoteHtml, type SanitizeHooks } from '../markdown/sanitize.ts';
 import { communityRemovals } from '../moderation/tables.ts';
 import { communityRules } from './tables.ts';
 
@@ -19,9 +20,10 @@ export type CommunityRule = { position: number; title: string; bodyMd: string | 
 /**
  * One community for its page and its edit form: the shared CommunityView plus what only a
  * page needs. `summaryMd` is the Markdown source of a local sidebar, which pages render
- * themselves; `summaryHtml` is the stored HTML (federation's form for a local community, the
- * sanitised remote HTML for a remote one). Rules and the posting warning exist for local
- * communities only; a remote community's are empty.
+ * themselves; `summaryHtml` is the HTML to print: federation's form as stored for a local
+ * community, and for a remote one the peer's HTML sanitised on read (see readCommunity).
+ * Rules and the posting warning exist for local communities only; a remote community's are
+ * empty.
  */
 export type CommunityDetail = CommunityView & {
   nsfl: boolean;
@@ -79,8 +81,27 @@ function actorRef(row: {
   };
 }
 
-/** A community by id (any Group, local or remote) or by local name (any case), or null. */
-export async function readCommunity(key: { id: Uuid } | { name: string }, q: Queryable = readDb()): Promise<CommunityDetail | null> {
+/**
+ * A remote Group's `summary` is peer HTML, stored as it arrived. It is sanitised against the
+ * Group's ap_id here, so no caller can print it raw. An image loads only where the page's hook
+ * (the renderer's `image()`) sends it, normally the signed media proxy; without a hook, or when
+ * the hook answers null, it shows as a link, never as a remote `<img src>`.
+ */
+function remoteSummary(html: string | null, apId: string, hooks: SanitizeHooks): string | null {
+  if (html === null) return null;
+  return sanitizeRemoteHtml(html, { baseUrl: apId, images: hooks.rewriteImageUrl ? 'inline' : 'link', ...hooks }).html;
+}
+
+/**
+ * A community by id (any Group, local or remote) or by local name (any case), or null. A local
+ * community's `summaryHtml` is returned as stored; a remote one's is sanitised on read, with
+ * images as links unless `hooks.rewriteImageUrl` says where to load them from.
+ */
+export async function readCommunity(
+  key: { id: Uuid } | { name: string },
+  q: Queryable = readDb(),
+  hooks: SanitizeHooks = {},
+): Promise<CommunityDetail | null> {
   const [row] = await q
     .select({
       ...refColumns,
@@ -124,7 +145,7 @@ export async function readCommunity(key: { id: Uuid } | { name: string }, q: Que
   ]);
   return {
     actor: actorRef(row),
-    summaryHtml: row.summaryHtml,
+    summaryHtml: row.local ? row.summaryHtml : remoteSummary(row.summaryHtml, row.apId, hooks),
     summaryMd: row.summaryMd,
     iconUrl: row.iconUrl,
     bannerUrl: row.bannerUrl,

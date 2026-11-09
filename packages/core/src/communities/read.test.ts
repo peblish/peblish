@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, test } from 'vitest';
 import { follows } from '../db/tables/follows.ts';
 import { writer } from '../db/write.ts';
+import { proxyUrlBuilder } from '../media/proxy-url.ts';
 import { truncateAll } from '../testing/db.ts';
 import { seedCommunityRemoval, seedModerator } from '../testing/seed-az.ts';
 import { person, sampleCommunity, seedCommunityWorld } from '../testing/seed-f.ts';
@@ -82,6 +83,31 @@ describe('readCommunity', () => {
       actor: { apId: technology.apId, local: false, handle: 'technology@lemmy.test' },
     });
     expect(await readCommunity({ name: 'technology' })).toBeNull();
+  });
+
+  test('a remote Group’s sidebar is sanitised on read, with images as links or through the page’s proxy; a null one stays null', async () => {
+    const { instances } = await setup();
+    const hostile = [
+      '<p>Welcome</p><script>alert(1)</script>',
+      '<img src="https://evil.test/track.png" alt="logo" onerror="alert(2)">',
+      '<a href="javascript:alert(3)">click</a>',
+    ].join('');
+    const technology = await seedActor(instances.lemmy, 'Group', 'technology', { summaryHtml: hostile });
+    const quiet = await seedActor(instances.lemmy, 'Group', 'quiet');
+
+    const plain = (await readCommunity({ id: technology.id }))?.summaryHtml;
+    expect(plain).toContain('<p>Welcome</p>');
+    expect(plain).not.toMatch(/<script|<img|onerror|javascript:/i);
+    expect(plain).toContain('href="https://evil.test/track.png"');
+
+    const proxy = proxyUrlBuilder(Buffer.from('test key'));
+    const proxied = (await readCommunity({ id: technology.id }, undefined, { rewriteImageUrl: proxy }))?.summaryHtml;
+    expect(proxied).toContain(`<img src="${proxy('https://evil.test/track.png')}"`);
+    expect(proxied).not.toMatch(/<script|onerror|javascript:|src="https:\/\/evil/i);
+    const refused = (await readCommunity({ id: technology.id }, undefined, { rewriteImageUrl: () => null }))?.summaryHtml;
+    expect(refused).not.toContain('<img');
+
+    expect((await readCommunity({ id: quiet.id }))?.summaryHtml).toBeNull();
   });
 
   test('a deleted or removed community, a Person and an unknown id read as absent', async () => {
