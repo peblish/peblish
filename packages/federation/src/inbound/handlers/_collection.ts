@@ -5,7 +5,7 @@ import { mirrorModerators } from '@peblish/core/remote/moderators';
 import { eq, or } from 'drizzle-orm';
 import { importGrant } from '../../actors/grants.ts';
 import type { ResolvedActor } from '../../actors/resolve.ts';
-import { checkAnnouncer, checkCommunity, communityById, grantFor, storedContent } from '../authorize.ts';
+import { checkCommunity, claimedCommunity, communityById, grantFor, storedContent } from '../authorize.ts';
 import { prepared, type InboundContext, type Prepared } from '../handler.ts';
 import { fetchModerators } from '../moderators/refresh.ts';
 import { skip } from '../reasons.ts';
@@ -47,12 +47,9 @@ async function prepareFeatured(
   });
 }
 
-/** The community whose moderators collection is `targetApId`: the one the activity names, else a stored one. */
+/** The community whose moderators collection is `targetApId`: the one the activity names (checked against the Announce, never fetched), else a stored one. */
 async function moderatorsOwner(ctx: InboundContext, claim: string | null, targetApId: string): Promise<ResolvedActor> {
-  if (claim !== null) {
-    checkAnnouncer(ctx, claim);
-    return ctx.actor(claim);
-  }
+  if (claim !== null) return claimedCommunity(ctx, claim);
   if (ctx.announce) return ctx.announce.community;
   const [row] = await db()
     .select({ id: actors.id })

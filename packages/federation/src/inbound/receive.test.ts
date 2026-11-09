@@ -6,10 +6,10 @@ import { siteSettings } from '@peblish/core/db/tables/site';
 import { writer } from '@peblish/core/db/write';
 import { truncateAll } from '@peblish/core/testing/db';
 import { stubFetch } from '@peblish/core/testing/seed-fed-a';
-import { seedInboundWorld } from '@peblish/core/testing/seed-fed-b';
+import { seedInboundWorld, seedInboxRow } from '@peblish/core/testing/seed-fed-b';
 import { signDelivery } from '../signing/sign.ts';
-import { maxBodyBytes, receiveInbound } from './receive.ts';
-import { perHostBudget, resetKeyFetchBudget } from './throttle.ts';
+import { maxBodyBytes, pendingBytesLimit, receiveInbound } from './receive.ts';
+import { perHostBudget, perInstanceRate, perSignerRate, resetKeyFetchBudget, takeIntake, takePipelineFetch } from './throttle.ts';
 import { activityId, addressedToCommunity, hosts } from './test-support.ts';
 
 const inbox = 'https://fed-b.test/inbox';
@@ -113,5 +113,67 @@ describe('receiving an activity', () => {
     expect(statuses.slice(0, perHostBudget)).toEqual(Array(perHostBudget).fill(401));
     expect(statuses[perHostBudget]).toBe(429);
     expect(await db().select().from(inboxRaw).where(eq(inboxRaw.state, 'pending'))).toHaveLength(0);
+  });
+
+  test('an unsigned flood does not spend what a real peer needs', async () => {
+    const { fetch } = stubFetch({});
+    for (let attempt = 0; attempt <= perHostBudget; attempt++) {
+      const stranger = {
+        keyId: `https://unknown.test/u/someone${attempt}#main-key`,
+        privateKeyPem: world.peers.mallory.keys.privateKeyPem,
+      };
+      await receiveInbound(await signed(JSON.stringify(like()), stranger), { fetch });
+    }
+    // The key budget is spent, yet a known key needs no fetch, and what processing fetches has its own budget.
+    expect((await receiveInbound(await signed(JSON.stringify(like())))).status).toBe(202);
+    expect(takePipelineFetch('unknown.test')).toBe(true);
+  });
+});
+
+describe('what one signer, and its instance, may send', () => {
+  test('a repeat of a body, or of an activity id within the hour, is answered 202 and stored once', async () => {
+    const body = JSON.stringify(like());
+    expect((await receiveInbound(await signed(body))).status).toBe(202);
+    expect((await receiveInbound(await signed(body))).status).toBe(202);
+    expect((await receiveInbound(await signed(`${body} `))).status).toBe(202);
+    expect(await rows()).toHaveLength(1);
+    expect((await receiveInbound(await signed(JSON.stringify(like())))).status).toBe(202);
+    expect(await rows()).toHaveLength(2);
+  });
+
+  test('a signer over its request rate, or an instance over its own, is answered 429 and the others are not affected', async () => {
+    const elsewhere = { ...like(), actor: hosts.mallory };
+    for (let used = 0; used < perSignerRate; used++) takeIntake(hosts.lemmyuser);
+    expect((await receiveInbound(await signed(JSON.stringify(like())))).status).toBe(429);
+    expect((await receiveInbound(await signed(JSON.stringify(elsewhere), world.peers.mallory.keys))).status).toBe(202);
+
+    resetKeyFetchBudget();
+    for (let used = 0; used < perInstanceRate; used++) takeIntake(`https://lemmy.test/u/other${used}`);
+    const limited = await receiveInbound(await signed(JSON.stringify(like())));
+    expect({ status: limited.status, retryAfter: limited.headers.get('retry-after') }).toEqual({ status: 429, retryAfter: '300' });
+    expect((await rows()).filter((row) => row.actorApId === hosts.lemmyuser)).toHaveLength(0);
+  });
+
+  test('a signer, or an instance, with too much waiting in inbox_raw is answered 429 until the pipeline catches up', async () => {
+    const megabytes = (count: number) => new Uint8Array(count * 1024 * 1024);
+    const waiting = (actorApId: string, size: number) => seedInboxRow(megabytes(size), { actorApId });
+    const elsewhere = { ...like(), actor: hosts.mallory };
+    const post = async () => (await receiveInbound(await signed(JSON.stringify(like())))).status;
+
+    const full = await waiting(hosts.lemmyuser, pendingBytesLimit.signer / 1024 / 1024 + 1);
+    expect(await post()).toBe(429);
+    // Another signer of the same instance, and a signer elsewhere, are not held back by it.
+    expect(
+      (await receiveInbound(await signed(JSON.stringify({ ...like(), actor: hosts.lemmyadmin }), world.peers.lemmyadmin.keys))).status,
+    ).toBe(202);
+    expect((await receiveInbound(await signed(JSON.stringify(elsewhere), world.peers.mallory.keys))).status).toBe(202);
+    // Once the row is processed it no longer counts.
+    await writer().update(inboxRaw).set({ state: 'applied' }).where(eq(inboxRaw.id, full.id));
+    expect(await post()).toBe(202);
+
+    // Many signers of one instance together.
+    const share = pendingBytesLimit.instance / 1024 / 1024 / 4 + 1;
+    for (let signer = 0; signer < 5; signer++) await waiting(`https://lemmy.test/u/filler${signer}`, share);
+    expect(await post()).toBe(429);
   });
 });

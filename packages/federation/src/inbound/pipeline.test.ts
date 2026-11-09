@@ -12,7 +12,7 @@ import { seedAccount } from '@peblish/core/testing/seed-b1';
 import { deliverRow, inboxState, seedFollow, seedInboundWorld, seedInboxRow } from '@peblish/core/testing/seed-fed-b';
 import { stubFetch } from '@peblish/core/testing/seed-fed-a';
 import { processPending } from './job.ts';
-import { processRow, type PipelineOptions } from './pipeline.ts';
+import { fetchesPerRow, processRow, type PipelineOptions } from './pipeline.ts';
 import { requeueSkippedFor } from './queue.ts';
 import { resetKeyFetchBudget } from './throttle.ts';
 import { activityId, addressedToCommunity, hosts, PUBLIC } from './test-support.ts';
@@ -405,5 +405,66 @@ describe('what a remote author may post', () => {
     const own = { id: activityId(lemmy, 'delete'), type: 'Delete', actor: lemmyuser, object: lemmyuser, to: [PUBLIC] };
     expect((await deliver(own)).stored?.state).toBe('applied');
     expect((await deliver(update())).stored).toEqual({ state: 'skipped', error: `target.deleted ${lemmyuser}` });
+  });
+});
+
+describe('what processing a delivery may fetch', () => {
+  test('a follow of a community that is not ours, and an Undo of one, fetch nothing', async () => {
+    const probe = stubFetch({});
+    const follow = (id: string, object: string) => ({
+      id: `${lemmy}/activities/follow/${id}`,
+      type: 'Follow',
+      actor: lemmyuser,
+      object,
+      to: [object],
+    });
+    for (const object of [lab, 'https://fed-b.test/ap/c.nowhere', 'https://elsewhere.test/c/new']) {
+      const followed = await deliver(follow('f', object), { fetch: probe.fetch });
+      expect(followed.stored?.error).toMatch(/^follow\.target_unsupported/);
+      const undone = await deliver(
+        { id: activityId(lemmy, 'undo'), type: 'Undo', actor: lemmyuser, object: follow('f', object), to: [object] },
+        { fetch: probe.fetch },
+      );
+      expect(undone.stored?.error).toMatch(/^follow\.target_unsupported/);
+    }
+    expect(probe.requests).toEqual([]);
+  });
+
+  test('content sent straight to a community we do not hold is unannounced before anything is fetched', async () => {
+    const probe = stubFetch({});
+    const stranger = 'https://elsewhere.test/c/new';
+    const direct = await deliver(createPage('400', stranger), { fetch: probe.fetch });
+    expect(direct.stored?.error).toMatch(/^community\.unannounced/);
+    const block = await deliver(
+      {
+        id: activityId(lemmy, 'block'),
+        type: 'Block',
+        actor: hosts.lemmyadmin,
+        object: lemmyuser,
+        target: stranger,
+        ...addressedToCommunity(stranger),
+      },
+      { fetch: probe.fetch },
+    );
+    expect(block.stored?.error).toMatch(/^community\.unannounced/);
+    expect(probe.requests).toEqual([]);
+  });
+
+  test('a delivery that needs more fetches than its share waits and is tried again, not dropped', async () => {
+    const probe = stubFetch({});
+    // Each member is a post of a stranger's server: reading it from its origin is one fetch.
+    const members = Array.from({ length: fetchesPerRow + 10 }, (_, n) => ({
+      id: `https://elsewhere.test/post/${n}`,
+      type: 'Page',
+      attributedTo: `https://elsewhere.test/u/${n}`,
+      name: `Post ${n}`,
+      audience: lab,
+      to: [lab, PUBLIC],
+    }));
+    const batch = { ...announceBy(lab, members[0]!), object: members };
+    const row = await seedInboxRow(JSON.stringify(batch), { activityId: batch.id, activityType: 'Announce', actorApId: lab });
+    await expect(processRow(row, { fetch: probe.fetch })).rejects.toThrow(/more fetches/);
+    expect(probe.requests).toHaveLength(fetchesPerRow);
+    expect((await inboxState(row.id))?.state).toBe('pending');
   });
 });

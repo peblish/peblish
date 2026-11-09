@@ -19,6 +19,7 @@ import { classify, type ClassifyEnv, type Item } from './classify.ts';
 import type { AnnounceInfo, InboundContext, InboundHandler, Prepared } from './handler.ts';
 import { requeueWaiting, settle, settleAlone, type InboxRow, type Settled } from './queue.ts';
 import { Skipped, skip } from './reasons.ts';
+import { takePipelineFetch } from './throttle.ts';
 
 // One inbox_raw row from receipt to its end state. The signature was verified when the row was
 // stored (receive.ts), so the key's owner is the activity's actor. From there:
@@ -54,6 +55,24 @@ type Env = {
   afterApply: (() => Promise<void>) | undefined;
 };
 
+/** Most fetches one delivery may cost, so a batched Announce naming many strangers cannot fan out without end. */
+export const fetchesPerRow = 60;
+
+/**
+ * `base` counted against this row's allowance and the pipeline's window (throttle.ts). A fetch
+ * past either fails like an unreachable peer, which the pipeline retries later, so a delivery
+ * that needs more than its share waits instead of being lost.
+ */
+function budgeted(base: Fetcher): Fetcher {
+  let left = fetchesPerRow;
+  return async (url, init) => {
+    if (left <= 0 || !takePipelineFetch(new URL(String(url)).host))
+      throw new Error('this delivery needs more fetches than it may make now');
+    left -= 1;
+    return base(url, init);
+  };
+}
+
 const handlers = new Map<string, InboundHandler>(inboundHandlers.map((handler) => [handler.type, handler]));
 
 async function resolveActor(apId: string, fetch: Fetcher): Promise<ResolvedActor> {
@@ -67,7 +86,7 @@ async function resolveActor(apId: string, fetch: Fetcher): Promise<ResolvedActor
 }
 
 async function makeEnv(options: PipelineOptions): Promise<Env> {
-  const fetch = options.fetch ?? safeFetch;
+  const fetch = budgeted(options.fetch ?? safeFetch);
   return {
     fetch,
     origin: await localOrigin(),

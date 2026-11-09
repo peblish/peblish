@@ -1,5 +1,5 @@
 import { banFromCommunity, unbanFromCommunity } from '@peblish/core/moderation/ban';
-import { checkAnnouncer, checkCommunity, grantFor } from '../authorize.ts';
+import { checkCommunity, claimedCommunity, grantFor } from '../authorize.ts';
 import { prepared, type InboundContext, type Prepared } from '../handler.ts';
 import { skip } from '../reasons.ts';
 
@@ -19,8 +19,7 @@ export type BlockFields = {
 export async function prepareBan(ctx: InboundContext, block: BlockFields, banning: boolean): Promise<Prepared> {
   if (new URL(block.targetApId).pathname === '/') throw skip('block.instance_unsupported', block.targetApId);
   if (banning && block.expires && block.expires.getTime() <= Date.now()) throw skip('block.expired', block.targetApId);
-  checkAnnouncer(ctx, block.targetApId);
-  const community = await ctx.actor(block.targetApId);
+  const community = await claimedCommunity(ctx, block.targetApId);
   if (community.kind !== 'Group') throw skip('community.mismatch', block.targetApId);
   checkCommunity(ctx, community, ctx.activity.communityApId);
   const banned = await ctx.actor(block.objectApId);

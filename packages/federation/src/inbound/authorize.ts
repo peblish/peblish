@@ -209,6 +209,13 @@ export async function storedActor(q: Queryable, apId: string): Promise<ResolvedA
   return row ? resolved(row) : null;
 }
 
+/** A community of ours by ap_id, for a Follow or an Undo(Follow): an id on this origin that we hold as a Group. Never fetched. */
+export async function localCommunity(ctx: InboundContext, apId: string): Promise<ResolvedActor> {
+  const held = new URL(apId).origin === ctx.origin ? await storedActor(db(), apId) : null;
+  if (!held || !held.local || held.kind !== 'Group') throw skip('follow.target_unsupported', apId);
+  return held;
+}
+
 /**
  * The community an activity names, resolved without a fetch: the community whose Announce
  * carried it, the sender when it is the community itself, or one we hold. A community we do not
