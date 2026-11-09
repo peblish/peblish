@@ -1,0 +1,126 @@
+@layer app {
+  .pb-thread {
+    min-width: 0;
+  }
+
+  .pb-comment__list {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .pb-comment {
+    padding: 6px 0 0;
+  }
+
+  .pb-comment__head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0 4px;
+    font-size: 13px;
+  }
+
+  .pb-comment__fold {
+    min-width: 24px;
+    height: 24px;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--pb-muted);
+    font-weight: 700;
+    line-height: 1;
+    cursor: pointer;
+  }
+
+  .pb-comment__fold:hover {
+    color: var(--pb-fg);
+  }
+
+  .pb-comment__author {
+    font-weight: 600;
+    text-decoration: none;
+  }
+
+  .pb-comment__author:hover {
+    text-decoration: underline;
+  }
+
+  .pb-comment__text,
+  .pb-comment__note {
+    margin: 0 0 0 28px;
+  }
+
+  .pb-comment__note {
+    color: var(--pb-muted);
+    font-style: italic;
+  }
+
+  .pb-comment__stub {
+    margin: 0 0 4px 28px;
+    font-size: 12px;
+    color: var(--pb-muted);
+  }
+
+  .pb-comment__actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0 12px;
+    margin: 2px 0 0 28px;
+    font-size: 12px;
+    color: var(--pb-muted);
+  }
+
+  .pb-comment__actions .pb-vote button {
+    min-width: 26px;
+    min-height: 24px;
+  }
+
+  .pb-comment__actions > button,
+  .pb-comment__stub > button {
+    min-height: 24px;
+  }
+
+  /* The levels under a comment sit in a column with a line down its left edge. */
+  .pb-comment__kids {
+    position: relative;
+    margin: 6px 0 0 10px;
+    padding-left: 12px;
+    border-left: 1px solid var(--pb-line);
+  }
+
+  .pb-comment__kids:hover {
+    border-left-color: var(--pb-muted);
+  }
+
+  .pb-comment__line {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: -6px;
+    width: 10px;
+    padding: 0;
+    border: 0;
+    background: none;
+    cursor: pointer;
+  }
+
+  .pb-comment__more {
+    font-size: 13px;
+  }
+
+  .pb-comment__continue {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    color: var(--pb-accent);
+  }
+
+  @media (max-width: 600px) {
+    .pb-comment__kids {
+      margin-left: 6px;
+      padding-left: 7px;
+    }
+  }
+}

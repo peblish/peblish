@@ -1,0 +1,142 @@
+/* peblish's own tokens and base rules, linked in packages/web/src/styles.css beside Mux UI's
+   stylesheet. Colour comes from Mux UI's semantic tokens where one fits; the few accents Mux
+   has no role for (votes, badges) are --pb-* tokens set per scheme. The schemes are Mux UI's
+   light and dark plus true black: data-scheme="black" sits on top of the dark scheme and
+   moves the background to #000 and the text to white. */
+@layer app {
+  :root {
+    --pb-fg: var(--muxui-semantic-typography-text-color);
+    --pb-bg: var(--muxui-semantic-surface-background);
+    --pb-muted: #595959;
+    --pb-line: #d0d0d0;
+    --pb-hover: #efeeed;
+    --pb-accent: var(--muxui-semantic-content-link);
+    --pb-up: #b8400a;
+    --pb-down: #2f4fc8;
+    --pb-mod: #0b6b2f;
+    --pb-admin: #9b1590;
+    --pb-op: #0a4fc4;
+    --pb-warn: #8a5200;
+    --pb-error: #b00020;
+    --pb-ok: #0b6b2f;
+    --pb-font: var(--muxui-semantic-typography-text-font-family);
+    --pb-mono: var(--muxui-semantic-typography-mono-font-family);
+    --pb-sidebar-width: 248px;
+    --pb-page-width: 940px;
+    color-scheme: light;
+  }
+
+  [data-muxui-color-scheme='dark'] {
+    --pb-muted: #a3a3a3;
+    --pb-line: #2c2c2c;
+    --pb-hover: #1b1a18;
+    --pb-up: #ff8a50;
+    --pb-down: #8aa4ff;
+    --pb-mod: #4fdc84;
+    --pb-admin: #ff7be5;
+    --pb-op: #6cb2ff;
+    --pb-warn: #f5b84a;
+    --pb-error: #ff7a8a;
+    --pb-ok: #4fdc84;
+    color-scheme: dark;
+  }
+
+  /* True black. Mux UI derives its dark surfaces from the neutral scale, so moving the scale's
+     ends moves every surface: 5 is the page, 10 the raised surfaces (menus, fields), 90 the text. */
+  [data-scheme='black'] {
+    --muxui-semantic-color-neutral-5: #000;
+    --muxui-semantic-color-neutral-10: #0a0a0a;
+    --muxui-semantic-color-neutral-90: #fff;
+    --pb-hover: #121212;
+  }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    margin: 0;
+    min-height: 100vh;
+    font: 14px/1.45 var(--pb-font);
+    background: var(--pb-bg);
+    color: var(--pb-fg);
+    overflow-wrap: anywhere;
+  }
+
+  a {
+    color: inherit;
+  }
+
+  a:hover {
+    text-decoration: underline;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--pb-accent);
+    outline-offset: 1px;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4 {
+    margin: 0;
+  }
+
+  .pb-muted {
+    color: var(--pb-muted);
+  }
+
+  .pb-mono {
+    font-family: var(--pb-mono);
+    font-size: 0.93em;
+  }
+
+  .pb-sr {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  /* The page column: C1, B1, D and the rest wrap their route content in it. The shell centres
+     the main body in the width the sidebar leaves; a page that wants more room sets its own
+     max-width (lane A's settings pages do). */
+  .pb-page {
+    box-sizing: border-box;
+    width: 100%;
+    max-width: var(--pb-page-width);
+    margin: 0 auto;
+    padding: 10px 16px 40px;
+  }
+
+  /* A plain button styled as a text link, for the small actions under a post or comment. */
+  .pb-linkbutton {
+    padding: 0;
+    border: 0;
+    background: none;
+    font: inherit;
+    color: var(--pb-muted);
+    cursor: pointer;
+    white-space: nowrap;
+  }
+
+  .pb-linkbutton:hover {
+    color: var(--pb-fg);
+    text-decoration: underline;
+  }
+
+  @media (max-width: 600px) {
+    .pb-page {
+      padding: 8px 10px 40px;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    * {
+      scroll-behavior: auto !important;
+    }
+  }
+}

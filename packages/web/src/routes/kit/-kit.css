@@ -1,0 +1,40 @@
+@layer app {
+  .kit section {
+    margin-bottom: 28px;
+  }
+
+  .kit h2 {
+    padding: 6px 0;
+    border-bottom: 1px solid var(--pb-fg);
+    font-size: 15px;
+  }
+
+  .kit section > h3 {
+    margin: 10px 0 4px;
+    font-size: 13px;
+  }
+
+  .kit section > div > h3 {
+    margin: 10px 0 4px;
+    font-size: 13px;
+    text-transform: capitalize;
+  }
+
+  .kit-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .kit-stack {
+    display: grid;
+    gap: 14px;
+    max-width: 420px;
+    justify-items: start;
+  }
+
+  .kit-toolbar {
+    padding: 8px 0;
+  }
+}

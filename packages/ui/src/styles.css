@@ -1,13 +1,6 @@
-/* Layer order first, as the Mux UI README describes, so app rules rank above Mux UI. */
+/* Mux UI's stylesheet and nothing else: the web app links it as its own file so the payload
+   budget measures it alone (e2e/payload). The default palette is in styles.css; themes.css
+   (the 15 preset themes, +29 kB gzip) is never imported. App styles are in tokens/ and
+   components/, linked beside it from packages/web/src/styles.css. */
 @layer reset, muxui.tokens, muxui.components, muxui.utilities, app;
-/* styles.css carries the default palette; themes.css (the preset themes) is not offered. */
 @import '@muxui/react/styles.css';
-
-@layer app {
-  body {
-    margin: 0;
-    font-family: var(--muxui-semantic-typography-text-font-family);
-    background: var(--muxui-semantic-surface-background);
-    color: var(--muxui-semantic-typography-text-color);
-  }
-}

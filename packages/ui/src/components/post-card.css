@@ -1,0 +1,290 @@
+@layer app {
+  .pb-post {
+    display: grid;
+    align-items: start;
+    gap: 0 10px;
+    min-width: 0;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--pb-line);
+  }
+
+  .pb-post__vote {
+    grid-area: v;
+  }
+
+  .pb-post__thumb {
+    grid-area: t;
+    position: relative;
+    display: block;
+    width: 72px;
+    height: 54px;
+    overflow: hidden;
+    border: 1px solid var(--pb-line);
+    color: var(--pb-muted);
+    text-decoration: none;
+  }
+
+  .pb-post__thumb:hover {
+    text-decoration: none;
+  }
+
+  .pb-post__thumb img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  [data-hidden] .pb-post__thumb img {
+    filter: blur(14px);
+  }
+
+  /* The fallback for a post without a picture: a hatched box with the kind of post. */
+  .pb-post__mark {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    align-content: center;
+    gap: 2px;
+    font-size: 11px;
+    background: repeating-linear-gradient(135deg, var(--pb-line) 0 3px, transparent 3px 8px);
+  }
+
+  .pb-post__mark > span {
+    padding: 0 3px;
+    background: var(--pb-bg);
+  }
+
+  .pb-post__mark svg {
+    padding: 1px;
+    background: var(--pb-bg);
+    font-size: 14px;
+  }
+
+  .pb-post__body {
+    grid-area: b;
+    min-width: 0;
+  }
+
+  .pb-post__title {
+    margin: 0;
+    font-size: 16px;
+    font-weight: 600;
+    line-height: 1.3;
+  }
+
+  .pb-post__title a {
+    text-decoration: none;
+  }
+
+  .pb-post__title a:hover {
+    text-decoration: underline;
+  }
+
+  .pb-post__domain {
+    margin-left: 0.4em;
+    font-size: 12px;
+    font-weight: 400;
+    color: var(--pb-muted);
+  }
+
+  .pb-tag {
+    margin-right: 5px;
+    font-size: 11px;
+    font-weight: 700;
+  }
+
+  .pb-tag--pin {
+    color: var(--pb-ok);
+  }
+
+  .pb-tag--lock {
+    color: var(--pb-warn);
+  }
+
+  .pb-tag--nsfw {
+    color: var(--pb-error);
+  }
+
+  .pb-post__meta,
+  .pb-post__actions {
+    font-size: 12px;
+    color: var(--pb-muted);
+  }
+
+  .pb-post__meta a {
+    color: var(--pb-fg);
+    text-decoration: none;
+  }
+
+  .pb-post__meta a:hover {
+    text-decoration: underline;
+  }
+
+  .pb-post__community {
+    font-weight: 600;
+  }
+
+  .pb-handle {
+    white-space: nowrap;
+  }
+
+  .pb-handle__host {
+    color: var(--pb-muted);
+    font-weight: 400;
+  }
+
+  .pb-badge {
+    margin-left: 5px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+  }
+
+  .pb-badge--admin {
+    color: var(--pb-admin);
+  }
+
+  .pb-badge--moderator {
+    color: var(--pb-mod);
+  }
+
+  .pb-badge--op {
+    color: var(--pb-op);
+  }
+
+  .pb-post__excerpt {
+    max-width: 72ch;
+    margin: 4px 0 0;
+  }
+
+  .pb-post__actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0 12px;
+  }
+
+  /* Touch targets of at least 24 px (WCAG 2.2, 2.5.8) for the small actions under a post. */
+  .pb-post__actions > a,
+  .pb-post__actions > button {
+    display: inline-flex;
+    align-items: center;
+    min-height: 24px;
+  }
+
+  .pb-post__comments {
+    color: var(--pb-fg);
+    text-decoration: none;
+  }
+
+  .pb-post__comments:hover {
+    text-decoration: underline;
+  }
+
+  /* Classic: vote column, a small thumbnail, then the text. */
+  .pb-post[data-density='classic'] {
+    grid-template-columns: 44px 72px minmax(0, 1fr);
+    grid-template-areas: 'v t b';
+  }
+
+  .pb-post[data-density='classic'] .pb-post__excerpt {
+    display: -webkit-box;
+    overflow: hidden;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+  }
+
+  /* Card: the text first, then a wide picture; a text post has no picture block. */
+  .pb-post[data-density='card'] {
+    grid-template-columns: 44px minmax(0, 1fr);
+    grid-template-areas:
+      'v b'
+      'v t';
+    padding: 16px 0;
+  }
+
+  .pb-post[data-density='card'] .pb-post__title {
+    font-size: 18px;
+  }
+
+  .pb-post[data-density='card'] .pb-post__thumb {
+    width: 100%;
+    height: 190px;
+    margin-top: 10px;
+  }
+
+  .pb-post[data-density='card'][data-kind='text'] .pb-post__thumb {
+    display: none;
+  }
+
+  .pb-post[data-density='card'] .pb-post__excerpt {
+    font-size: 15px;
+  }
+
+  .pb-post[data-density='card'] .pb-post__actions {
+    margin-top: 6px;
+    font-size: 13px;
+  }
+
+  /* Compact: one line, the vote beside the title. */
+  .pb-post[data-density='compact'] {
+    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-areas: 'v b';
+    align-items: center;
+    padding: 3px 0;
+  }
+
+  .pb-post[data-density='compact'] .pb-post__vote {
+    flex-direction: row;
+  }
+
+  .pb-post[data-density='compact'] .pb-vote__score {
+    min-width: 30px;
+  }
+
+  .pb-post[data-density='compact'] .pb-post__thumb,
+  .pb-post[data-density='compact'] .pb-post__excerpt,
+  .pb-post[data-density='compact'] .pb-post__actions button {
+    display: none;
+  }
+
+  .pb-post[data-density='compact'] .pb-post__title {
+    overflow: hidden;
+    font-size: 14px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* The title takes the first row; the meta and the comment count share the second. */
+  .pb-post[data-density='compact'] .pb-post__body {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    column-gap: 12px;
+  }
+
+  .pb-post[data-density='compact'] .pb-post__title {
+    grid-column: 1 / -1;
+  }
+
+  @media (max-width: 600px) {
+    .pb-post[data-density='classic'] {
+      grid-template-columns: 40px minmax(0, 1fr) 56px;
+      grid-template-areas: 'v b t';
+    }
+
+    .pb-post[data-density='classic'] .pb-post__thumb {
+      width: 56px;
+      height: 44px;
+    }
+
+    .pb-post[data-density='card'] {
+      grid-template-columns: 40px minmax(0, 1fr);
+    }
+
+    .pb-post[data-density='card'] .pb-post__thumb {
+      height: 150px;
+    }
+  }
+}
