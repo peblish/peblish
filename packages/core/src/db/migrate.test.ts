@@ -8,7 +8,10 @@ const url = new URL(process.env.DATABASE_URL ?? '');
 url.pathname = url.pathname.replace(/_test$/, '_migrate_test');
 afterAll(() => dropDatabase(url));
 
-test('concurrent migrate runs take turns, bootstrap included, and apply each migration once', async () => {
+// Each case migrates whole databases (ten migrations since wave 3): over 5 s on a busy shared Postgres.
+const migrating = { timeout: 30_000 };
+
+test('concurrent migrate runs take turns, bootstrap included, and apply each migration once', migrating, async () => {
   await recreateDatabase(url, { migrate: false });
   const steps: string[] = [];
   const run = (name: string) =>
@@ -33,7 +36,7 @@ test('concurrent migrate runs take turns, bootstrap included, and apply each mig
   }
 });
 
-test("a database migrated from different migration files is refused before anything runs; a newer build's are not", async () => {
+test("a database migrated from different migration files is refused before anything runs; a newer build's are not", migrating, async () => {
   await recreateDatabase(url);
   const client = postgres(url.href, { max: 1, onnotice: () => {} });
   try {
