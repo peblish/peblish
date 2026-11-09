@@ -1,4 +1,4 @@
-import { sql } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { uuidv7 } from 'uuidv7';
 import { closePools } from '../db/pools.ts';
 import { db } from '../db/read.ts';
@@ -159,8 +159,11 @@ async function e2e() {
   const instance = { ...(await localInstance(db())), domain: new URL((await localInstance(db())).origin).host, local: true };
   const remote = await seedInstance(`lemmy-${suffix}.test`, false);
   const [viewer, undeclared] = await Promise.all([seedAccount(`feeds_${suffix}`), seedAccount(`minor_${suffix}`)]);
-  const { eq } = await import('drizzle-orm');
   await writer().delete(ageDeclarations).where(eq(ageDeclarations.actorId, undeclared.actorId));
+  // Earlier runs' posts leave every feed, so this run's scores and ranks are the top of each.
+  await writer().execute(
+    sql`update posts set removed_at = now() where removed_at is null and title ~ '^(Followed|Picture|Sensitive|Local|Other|Unloved) [a-z0-9]{6}( |$)'`,
+  );
   const author = await seedActor(instance, 'Person', `feeds_author_${suffix}`);
   const community = {
     local: await seedActor(instance, 'Group', `feeds_local_${suffix}`),
@@ -174,7 +177,7 @@ async function e2e() {
   const make = async (community: Row, title: string, ago: number, extra: Parameters<typeof seedFeedPost>[3] = {}) =>
     (await seedFeedPost(instance, community, author, { ago, title, ...extra })).id;
   const posts: Record<string, string> = {};
-  // 45 posts in the followed remote community: enough for three pages of 20 in every sort.
+  // 45 posts in the followed remote community, and one more below: enough for three pages of 20.
   for (let n = 1; n <= 45; n += 1)
     posts[`followed${n}`] = await make(community.remote, `Followed ${suffix} ${String(n).padStart(2, '0')}`, n * 60_000, {
       up: 100 - n,
@@ -184,8 +187,14 @@ async function e2e() {
     });
   posts.local = await make(community.local, `Local ${suffix}`, 30_000, { up: 5 });
   posts.other = await make(community.other, `Other ${suffix}`, 20_000, { up: 3 });
-  posts.sensitive = await make(community.adult, `Sensitive ${suffix}`, 10_000, { up: 50, sensitive: true });
+  posts.sensitive = await make(community.adult, `Sensitive ${suffix}`, 10_000, { up: 500, sensitive: true });
   posts.zero = await make(community.other, `Unloved ${suffix}`, 5_000);
+  // The newest and the best-scored post: first in every sort of the followed feed. Its picture is on a remote host.
+  posts.thumb = await make(community.remote, `Picture ${suffix}`, 1_000, {
+    up: 600,
+    thumbnailUrl: `https://images.example.test/${suffix}.png`,
+    url: `https://images.example.test/${suffix}.html`,
+  });
   return {
     password: PASSWORD,
     suffix,
