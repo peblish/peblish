@@ -295,6 +295,41 @@ services:
         condition: service_completed_successfully
     logging: *logging
 
+  # ---------------------------------------------------------------- the runner and the rogue
+  # Both run tools/interop from one image (runner.Dockerfile). The runner is a one-shot tool
+  # container (`make seed`, `make interop`): it calls core against peblish-db the way the web
+  # process would, and never delivers or processes the inbox itself.
+  rogue:
+    build:
+      context: ..
+      dockerfile: lab/runner.Dockerfile
+    image: feddit-lab/interop:dev
+    restart: unless-stopped
+    environment:
+      NODE_EXTRA_CA_CERTS: *lab-ca
+    volumes:
+      - lab-ca:/lab-ca:ro
+    networks: [lab]
+    command: ["node", "src/rogue.ts"]
+    depends_on:
+      lab-ca:
+        condition: service_completed_successfully
+    logging: *logging
+
+  runner:
+    image: feddit-lab/interop:dev
+    profiles: [tools]
+    environment:
+      <<: *peblish-env
+      # The runner reads peblish's database directly; the web and worker processes own the rest.
+      INTEROP_RESULTS_DIR: /results
+    volumes:
+      - lab-ca:/lab-ca:ro
+      - ./data/results:/results
+    networks: [lab]
+    depends_on: [peblish-web]
+    logging: *logging
+
   # Opt-in host access (`make ports`): plain TCP from 127.0.0.1 ports to Caddy.
   # The only container on a network with a route out; it connects to Caddy
   # and nothing else (lab/forward.mjs).
