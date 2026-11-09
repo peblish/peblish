@@ -81,7 +81,8 @@ export function ProfileModerateTools({ person, viewer, moderatedCommunities, bac
             community: communities.length === 1 ? `!${community.handle}` : t('modlog', 'panel.ban.aCommunity'),
           })}
           intent="ban"
-          fields={{ community: community.id, person: person.id }}
+          // With a choice, the select itself is the `community` field, so a form sent before hydration posts the chosen one.
+          fields={communities.length > 1 ? { person: person.id } : { community: community.id, person: person.id }}
           back={back}
           submit={t('modlog', 'panel.submit.ban')}
         >
@@ -90,6 +91,7 @@ export function ProfileModerateTools({ person, viewer, moderatedCommunities, bac
               <label htmlFor={`ban-community-${person.id}`}>{t('modlog', 'panel.community')}</label>
               <select
                 id={`ban-community-${person.id}`}
+                name="community"
                 value={community.id}
                 onChange={(event) => setCommunityId(event.currentTarget.value)}
               >
