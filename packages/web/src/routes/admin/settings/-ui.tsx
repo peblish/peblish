@@ -33,10 +33,10 @@ export function AccessNotice({ access, title }: { access: Exclude<Access, 'ok'>;
       <h1>{title}</h1>
       {access === 'needs-two-factor' ? (
         <p role="alert">
-          {t('admin', 'settings.needsTwoFactor')} <Link to="/settings/security">{t('admin', 'settings.securityLink')}</Link>
+          {t('admin', 'access.needsTwoFactor')} <Link to="/settings/security">{t('admin', 'access.securityLink')}</Link>
         </p>
       ) : (
-        <p role="alert">{t('admin', 'settings.notAdmin')}</p>
+        <p role="alert">{t('admin', 'access.notAdmin')}</p>
       )}
     </main>
   );

@@ -41,7 +41,7 @@ export async function prepareRevision(
   page: { slug: string; language: string },
   lock: boolean,
   now = new Date(),
-): Promise<{ ok: true; title: string; bodyMd: string } | { ok: false; reason: RefusalReason }> {
+): Promise<{ ok: true; title: string; bodyMd: string } | { ok: false; reason: RefusalReason; unresolved: string[] }> {
   const [draft] = await forNoKeyUpdate(
     db
       .select({ title: pages.title, bodyMd: pages.bodyMd })
@@ -49,7 +49,7 @@ export async function prepareRevision(
       .where(and(eq(pages.slug, page.slug), eq(pages.language, page.language))),
     lock,
   );
-  if (!draft) return { ok: false, reason: 'target.not_found' };
+  if (!draft) return { ok: false, reason: 'target.not_found', unresolved: [] };
   const operator = await operatorDetails(db, lock);
   const values = {
     OPERATOR_NAME: operator.name,
@@ -60,6 +60,7 @@ export async function prepareRevision(
   };
   const title = fillTokens(draft.title, values);
   const body = fillTokens(draft.bodyMd, values);
-  if (title.unresolved.length > 0 || body.unresolved.length > 0) return { ok: false, reason: 'page.unresolved_tokens' };
+  const unresolved = [...new Set([...title.unresolved, ...body.unresolved])];
+  if (unresolved.length > 0) return { ok: false, reason: 'page.unresolved_tokens', unresolved };
   return { ok: true, title: title.text, bodyMd: body.text };
 }

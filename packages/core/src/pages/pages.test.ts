@@ -13,7 +13,7 @@ import { person, remote, seedCommunityWorld } from '../testing/seed-f.ts';
 import { tx } from '../tx/tx.ts';
 import { Refused } from '../tx/refused.ts';
 import { publishPage, publishPageAs, unpublishPage, unpublishPageAs } from './publish.ts';
-import { listPages, publishedPages, readDraft, readPublishedPage } from './read.ts';
+import { listPages, publishedPages, readDraft, readPublishedPage, unresolvedTokens } from './read.ts';
 import { savePage, savePageAs, seedShippedPages } from './save.ts';
 import { pageRevisions, pages } from './tables.ts';
 
@@ -311,5 +311,16 @@ describe('a publish and a change of operator details at once', () => {
     const [revision] = await db().select({ bodyMd: pageRevisions.bodyMd }).from(pageRevisions).where(eq(pageRevisions.id, revisionId));
     expect(revision?.bodyMd).toContain('Test Operator');
     expect(revision?.bodyMd).not.toContain('Someone Else');
+  });
+});
+
+describe('unresolvedTokens', () => {
+  test('names what a publish would still find to fill, and nothing once the details are in', async () => {
+    const { admin } = await world();
+    await saved(admin, rules, { title: 'Rules', bodyMd: '{{OPERATOR_NAME}} {{DMCA_AGENT_NAME}} {{CONTACT_EMAIL}}' });
+    expect(await unresolvedTokens('rules', 'en')).toEqual(['{{OPERATOR_NAME}}', '{{DMCA_AGENT_NAME}}', '{{CONTACT_EMAIL}}']);
+    await updateSettingsAs(admin, { 'operator.name': 'Op', 'contact.email': 'a@b.test' });
+    expect(await unresolvedTokens('rules', 'en')).toEqual(['{{DMCA_AGENT_NAME}}']);
+    expect(await unresolvedTokens('rules', 'de')).toEqual([]);
   });
 });

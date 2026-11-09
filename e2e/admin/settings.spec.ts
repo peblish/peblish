@@ -120,7 +120,7 @@ test('a visitor signed out is sent to sign in, and a member without the admin ro
   await expect(visitor).toHaveURL(/\/auth\/sign-in\?redirect=%2Fadmin%2Fsettings/);
   await signIn(visitor, `@${member.name}`, member.password);
   await landed(visitor, '/admin/settings');
-  await expect(visitor.getByRole('alert')).toHaveText('Only site admins can change settings.');
+  await expect(visitor.getByRole('alert')).toHaveText('Only site admins can use this page.');
   await expect(visitor.getByRole('button', { name: 'Save changes' })).toHaveCount(0);
   await visitor.context().close();
 });

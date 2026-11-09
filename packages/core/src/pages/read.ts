@@ -1,6 +1,7 @@
 import { and, desc, eq, isNotNull } from 'drizzle-orm';
 import { db, type Queryable } from '../db/read.ts';
 import { actors } from '../db/tables/actors.ts';
+import { prepareRevision } from './prepare.ts';
 import { pageLanguages, pageSlugs, type PageLanguage, type PageSlug } from './slugs.ts';
 import { pageRevisions, pages } from './tables.ts';
 
@@ -103,4 +104,10 @@ export async function publishedPages(language: string, q: Queryable = db()): Pro
 /** One public page for a reader, or null when none is live in their language or English. */
 export async function readPublishedPage(slug: string, language: string, q: Queryable = db()): Promise<PublishedPage | null> {
   return (await publishedPages(language, q)).find((page) => page.slug === slug) ?? null;
+}
+
+/** The tokens a publish of this draft would still find unresolved right now (none when it is ready, or when there is no draft). */
+export async function unresolvedTokens(slug: string, language: string, q: Queryable = db()): Promise<string[]> {
+  const prepared = await prepareRevision(q, { slug, language }, false);
+  return prepared.ok ? [] : prepared.unresolved;
 }
