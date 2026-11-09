@@ -13,6 +13,14 @@ export type Section = (typeof sections)[number];
 
 export const blockCategories = ['csam', 'intimate_image', 'violent', 'spam', 'other'] as const;
 
+type HoldAuthority = NonNullable<QuarantineRow['holdAuthority']>;
+
+/** Who may direct a hold (core evidence/tables.ts holdAuthorities); only AFP keeps the image file. */
+export const holdAuthorities = ['afp', 'ncmec', 'nca'] as const satisfies readonly HoldAuthority[];
+
+const authorityLabel = (authority: HoldAuthority | null, t: ReturnType<typeof useTranslate>['t']) =>
+  authority ? t('mediascan', `media.hold.authority.${authority}`) : '';
+
 /** `2026-11-09 14:05 UTC`: the same text on server and client, whatever the viewer's zone. */
 const stamp = (iso: string) => `${iso.slice(0, 10)} ${iso.slice(11, 16)} UTC`;
 const shortHash = (hash: string | null) => (hash ? `${hash.slice(0, 8)}…${hash.slice(-4)}` : '');
@@ -120,6 +128,19 @@ function Decision({ row }: { row: QuarantineRow }) {
           {hidden('item', row.mediaId)}
           <p className="hint">{t('mediascan', 'media.hold.help')}</p>
           <div className="fld">
+            <label htmlFor="hold-authority">{t('mediascan', 'media.hold.authority')}</label>
+            <select id="hold-authority" name="authority" required defaultValue="">
+              <option value="" disabled>
+                {t('mediascan', 'media.hold.authorityChoose')}
+              </option>
+              {holdAuthorities.map((authority) => (
+                <option key={authority} value={authority}>
+                  {t('mediascan', `media.hold.authority.${authority}`)}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="fld">
             <label htmlFor="hold-ref">{t('mediascan', 'media.hold.reference')}</label>
             <input
               id="hold-ref"
@@ -216,12 +237,20 @@ function Detail({ row }: { row: QuarantineRow }) {
             </ul>
           )}
         </dd>
-        {row.holdReference && row.holdUntil ? (
+        {row.holdReference && row.holdUntil && (
           <>
             <dt>{t('mediascan', 'media.d.hold')}</dt>
-            <dd>{t('mediascan', 'media.d.holdValue', { reference: row.holdReference, date: date(row.holdUntil) })}</dd>
+            <dd>
+              {t('mediascan', 'media.d.holdValue', {
+                authority: authorityLabel(row.holdAuthority, t),
+                reference: row.holdReference,
+                date: date(row.holdUntil),
+              })}
+            </dd>
           </>
-        ) : (
+        )}
+        {/* Only an AFP hold stops the automatic block; under an NCMEC or NCA hold it still comes. */}
+        {!row.bytesHeld && (
           <>
             <dt>{t('mediascan', 'media.d.autoBlock')}</dt>
             <dd>{t('mediascan', 'media.d.autoBlockAt', { date: stamp(row.blocksAt) })}</dd>
@@ -448,7 +477,9 @@ export function Evidence({ rows }: { rows: EvidenceRow[] }) {
               <td data-label={t('mediascan', 'media.evidence.hold')}>
                 {row.holdReference && row.holdUntil ? (
                   <>
-                    <span className="mono">{row.holdReference}</span>
+                    <span className="mono">
+                      {authorityLabel(row.holdAuthority, t)} {row.holdReference}
+                    </span>
                     <br />
                     <span className="muted">{date(row.holdUntil)}</span>
                   </>

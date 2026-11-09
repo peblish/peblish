@@ -68,6 +68,7 @@ const Body = type({
   'entry?': 'string.uuid',
   'note?': 'string <= 500',
   'removePosts?': 'string',
+  'authority?': "'afp' | 'ncmec' | 'nca'",
   'reference?': 'string <= 200',
   'until?': 'string',
   'value?': 'string <= 200',
@@ -114,8 +115,14 @@ export const Route = createFileRoute('/admin/media/')({
             await notice({ kind: 'released' });
           } else {
             const until = /^\d{4}-\d{2}-\d{2}$/.test(body.until ?? '') ? new Date(`${body.until}T23:59:59.000Z`) : null;
+            if (!body.authority) return failed('review', 'form.invalid', item);
             if (!until || Number.isNaN(until.getTime())) return failed('review', 'media.hold_invalid', item);
-            const result = await holdQuarantined(principal, { mediaId: body.item, reference: body.reference ?? '', until });
+            const result = await holdQuarantined(principal, {
+              mediaId: body.item,
+              authority: body.authority,
+              reference: body.reference ?? '',
+              until,
+            });
             if (!result.ok) return failed('review', result.reason, item);
             await notice({ kind: 'held' });
             return reply({ redirect: page('review', item) });

@@ -8,6 +8,9 @@ import { media } from '../db/tables/media.ts';
 
 const sourceValues = ['provider', 'list'] as const;
 const statusValues = ['open', 'confirmed', 'released'] as const;
+/** Who directed a hold. Only an AFP direction keeps the image bytes (the CSAM SOP); NCMEC and NCA holds keep the manifest, hashes and log. */
+export const holdAuthorities = ['afp', 'ncmec', 'nca'] as const;
+export type HoldAuthority = (typeof holdAuthorities)[number];
 
 export const mediaEvidence = pgTable(
   'media_evidence',
@@ -29,8 +32,9 @@ export const mediaEvidence = pgTable(
     decidedBy: uuid('decided_by').references(() => actors.id, { onDelete: 'set null' }),
     decidedAt: at('decided_at'),
     note: text('note'),
-    /** A police or NCMEC reference for a preservation direction; with `holdUntil`, keeps the object and the manifest. */
+    /** A preservation direction's reference; with `holdUntil` it keeps the manifest, and the object too when `holdAuthority` is afp. */
     holdReference: text('hold_reference'),
+    holdAuthority: text('hold_authority', { enum: holdAuthorities }),
     holdUntil: at('hold_until'),
     /** When the purge claimed the image's bytes (mediascan/purge.ts): from then on a hold is refused, since the bytes are on their way out. */
     purgeStartedAt: at('purge_started_at'),
@@ -42,6 +46,7 @@ export const mediaEvidence = pgTable(
   (t) => [
     enumCheck('media_evidence_source', t.source, sourceValues),
     enumCheck('media_evidence_status', t.status, statusValues),
+    enumCheck('media_evidence_hold_authority', t.holdAuthority, holdAuthorities),
     index('media_evidence_status').on(t.status),
     /** An image's incidents, the current (latest) one first. */
     index('media_evidence_media').on(t.mediaId, t.createdAt),

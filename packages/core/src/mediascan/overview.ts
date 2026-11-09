@@ -6,9 +6,10 @@ import { actors } from '../db/tables/actors.ts';
 import { posts } from '../db/tables/content.ts';
 import { instances } from '../db/tables/instances.ts';
 import { media } from '../db/tables/media.ts';
-import { mediaEvidence } from '../evidence/tables.ts';
+import { mediaEvidence, type HoldAuthority } from '../evidence/tables.ts';
 import { readSetting } from '../settings/read.ts';
 import { scanConfig } from './config.ts';
+import { holdKeepsBytes } from './purge.ts';
 import { mediaBlocklist, mediaScans } from './tables.ts';
 import { mediaUrl } from './usage.ts';
 
@@ -32,9 +33,12 @@ export type QuarantineRow = {
   quarantinedAt: string;
   /** Posts that still show the image. */
   livePosts: { id: Uuid; title: string }[];
+  holdAuthority: HoldAuthority | null;
   holdReference: string | null;
   holdUntil: string | null;
-  /** When the undecided window ends and the image is blocked, unless a hold stands. */
+  /** An AFP hold in force: it keeps the bytes and stops the automatic block. */
+  bytesHeld: boolean;
+  /** When the undecided window ends and the image is blocked, unless an AFP hold stands. */
   blocksAt: string;
 };
 
@@ -49,8 +53,9 @@ export type EvidenceRow = {
   status: 'open' | 'confirmed' | 'released';
   decidedAt: string | null;
   decidedBy: Person;
-  /** held: kept under a hold; purged: gone; kept: a released image; waiting: undecided, still stored. */
+  /** held: kept under an AFP hold; purged: gone; kept: a released image; waiting: undecided, still stored. */
   bytes: 'held' | 'purged' | 'kept' | 'waiting';
+  holdAuthority: HoldAuthority | null;
   holdReference: string | null;
   holdUntil: string | null;
   retainUntil: string | null;
@@ -182,8 +187,10 @@ export async function mediaOverview(now = new Date()): Promise<MediaOverview> {
       uploadedAt: row.createdAt.toISOString(),
       quarantinedAt: evidence.createdAt.toISOString(),
       livePosts: postsByMedia.get(row.id) ?? [],
+      holdAuthority: evidence.holdAuthority,
       holdReference: evidence.holdReference,
       holdUntil: iso(evidence.holdUntil),
+      bytesHeld: holdKeepsBytes(evidence, now),
       blocksAt: new Date(evidence.createdAt.getTime() + config.undecidedPurgeDays * 86_400_000).toISOString(),
     })),
     failed: failedRows.map((row) => ({
@@ -207,14 +214,8 @@ export async function mediaOverview(now = new Date()): Promise<MediaOverview> {
       status: evidence.status,
       decidedAt: iso(evidence.decidedAt),
       decidedBy: person(evidence.decidedBy),
-      bytes:
-        evidence.status === 'released'
-          ? 'kept'
-          : storageKey === null
-            ? 'purged'
-            : evidence.holdUntil && evidence.holdUntil > now
-              ? 'held'
-              : 'waiting',
+      bytes: evidence.status === 'released' ? 'kept' : storageKey === null ? 'purged' : holdKeepsBytes(evidence, now) ? 'held' : 'waiting',
+      holdAuthority: evidence.holdAuthority,
       holdReference: evidence.holdReference,
       holdUntil: iso(evidence.holdUntil),
       retainUntil: iso(evidence.retainUntil),

@@ -19,16 +19,17 @@ import { mediaScans } from './tables.ts';
 // first makes the hold refused (recordHold). A crash after the claim leaves a key that the purge
 // job finds and deletes again (deleting a missing key succeeds).
 
-/** Whether a hold keeps an image's bytes at `now` (any of its incidents: the SQL twin is `heldSql`). */
-const holdKeepsBytes = (incident: { holdUntil: Date | null }, now: Date) => incident.holdUntil !== null && incident.holdUntil > now;
+/** Whether a hold keeps an image's bytes at `now`: an AFP direction still in force (the SQL twin is `heldSql`). */
+export const holdKeepsBytes = (incident: { holdAuthority: string | null; holdUntil: Date | null }, now: Date) =>
+  incident.holdAuthority === 'afp' && incident.holdUntil !== null && incident.holdUntil > now;
 
-/** SQL: a hold in force keeps the bytes of the media row `mediaId` names, as holdKeepsBytes says. */
+/** SQL: a hold keeps the bytes of the media row `mediaId` names (any of its incidents), as holdKeepsBytes says. */
 export const heldSql = (mediaId: AnyColumn, now: Date) =>
   exists(
     db()
       .select({ one: sql`1` })
       .from(mediaEvidence)
-      .where(and(eq(mediaEvidence.mediaId, mediaId), gt(mediaEvidence.holdUntil, now))),
+      .where(and(eq(mediaEvidence.mediaId, mediaId), eq(mediaEvidence.holdAuthority, 'afp'), gt(mediaEvidence.holdUntil, now))),
   );
 
 /** How long the purge leaves a row whose bucket delete failed: doubling from a minute, at most a day. */
@@ -36,7 +37,7 @@ export const purgeBackoffMs = (attempts: number) => Math.min(2 ** Math.max(0, at
 
 /**
  * Claims the purge of a blocked or failed row's bytes and returns the key to delete, or null when
- * there is nothing to purge or a hold in force keeps the bytes. Marks the image's current incident
+ * there is nothing to purge or an AFP hold in force keeps the bytes. Marks the image's current incident
  * as deleting (purge_started_at), with a log line, the first time.
  */
 export const beginPurge = defineMutation({
@@ -52,12 +53,17 @@ export const beginPurge = defineMutation({
       .for('no key update');
     if (!row?.storageKey || (row.scanState !== 'blocked' && row.scanState !== 'failed')) return { storageKey: null };
     const incidents = await t.db
-      .select({ id: mediaEvidence.id, holdUntil: mediaEvidence.holdUntil, purgeStartedAt: mediaEvidence.purgeStartedAt })
+      .select({
+        id: mediaEvidence.id,
+        holdAuthority: mediaEvidence.holdAuthority,
+        holdUntil: mediaEvidence.holdUntil,
+        purgeStartedAt: mediaEvidence.purgeStartedAt,
+      })
       .from(mediaEvidence)
       .where(eq(mediaEvidence.mediaId, mediaId))
       .orderBy(desc(mediaEvidence.createdAt), desc(mediaEvidence.id))
       .for('no key update');
-    // A hold on any incident keeps the bytes; the current (latest) one is the one a hold is recorded on.
+    // An AFP hold on any incident keeps the bytes; the current (latest) one is the one a hold is recorded on.
     if (incidents.some((incident) => holdKeepsBytes(incident, input.now))) return { storageKey: null };
     const [current] = incidents;
     if (current && current.purgeStartedAt === null) {

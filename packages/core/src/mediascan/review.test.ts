@@ -68,7 +68,7 @@ test('only a signed-in admin may review: a member, and an admin without two-fact
   for (const attempt of [
     confirmQuarantined(member, { mediaId: row.id, removePosts: true }, { store }),
     releaseQuarantined(member, { mediaId: row.id }),
-    holdQuarantined(member, { mediaId: row.id, reference: 'AFP-1', until: new Date(Date.now() + day) }),
+    holdQuarantined(member, { mediaId: row.id, authority: 'afp', reference: 'AFP-1', until: new Date(Date.now() + day) }),
     addToBlocklist(member, { value: 'a'.repeat(64), category: 'spam' }),
     removeFromBlocklist(member, row.id),
     confirmQuarantined({ kind: 'anonymous' }, { mediaId: row.id, removePosts: false }),
@@ -186,9 +186,14 @@ test('a hold keeps the bytes through confirmation and the undecided expiry, and 
     { reference: '  ', until: new Date(now.getTime() + day) },
     { reference: 'AFP-9', until: new Date(now.getTime() - day) },
   ])
-    expect(await holdQuarantined(asAdmin(), { mediaId: held.id, ...bad })).toEqual({ ok: false, reason: 'media.hold_invalid' });
+    expect(await holdQuarantined(asAdmin(), { mediaId: held.id, authority: 'afp', ...bad })).toEqual({
+      ok: false,
+      reason: 'media.hold_invalid',
+    });
   const until = new Date(now.getTime() + 365 * day);
-  expect(await holdQuarantined(asAdmin(), { mediaId: held.id, reference: 'AFP-2026-114', until })).toMatchObject({ ok: true });
+  expect(await holdQuarantined(asAdmin(), { mediaId: held.id, authority: 'afp', reference: 'AFP-2026-114', until })).toMatchObject({
+    ok: true,
+  });
   expect(await evidenceOf(held.id)).toMatchObject({ holdReference: 'AFP-2026-114', holdUntil: until });
 
   // Eight days on, the undecided window (7 days) has ended for both; only the held one is spared.
@@ -224,7 +229,14 @@ test('a hold cannot land between the purge claiming the bytes and its bucket del
   const confirming = confirmQuarantined(asAdmin(), { mediaId: row.id, removePosts: false }, { store: slow });
   await deleting.opened;
   // The purge has claimed the bytes and its bucket delete is in flight: a hold now is too late.
-  expect(await holdQuarantined(asAdmin(), { mediaId: row.id, reference: 'AFP-2026-7', until: new Date(Date.now() + 30 * day) })).toEqual({
+  expect(
+    await holdQuarantined(asAdmin(), {
+      mediaId: row.id,
+      authority: 'afp',
+      reference: 'AFP-2026-7',
+      until: new Date(Date.now() + 30 * day),
+    }),
+  ).toEqual({
     ok: false,
     reason: 'media.already_decided',
   });
@@ -237,22 +249,59 @@ test('a hold cannot land between the purge claiming the bytes and its bucket del
   expect([(await rowOf(row.id)).storageKey, store.objects.has(row.storageKey!)]).toEqual([null, false]);
 });
 
+test('only an AFP direction keeps the image bytes: NCMEC and NCA holds keep the record, and the bytes follow the normal purge', async () => {
+  const now = new Date();
+  const until = new Date(now.getTime() + 365 * day);
+  const afp = await quarantined();
+  const ncmec = await quarantined();
+  const nca = await quarantined();
+  for (const [row, authority, reference] of [
+    [afp, 'afp', 'AFP-2026-114'],
+    [ncmec, 'ncmec', 'CT-1234567'],
+    [nca, 'nca', 'NCA-77'],
+  ] as const)
+    expect(await holdQuarantined(asAdmin(), { mediaId: row.id, authority, reference, until })).toMatchObject({ ok: true });
+  expect(await evidenceOf(ncmec.id)).toMatchObject({ holdAuthority: 'ncmec', holdReference: 'CT-1234567', holdUntil: until });
+  const [line] = await db().select().from(mediaEvidenceLog).where(eq(mediaEvidenceLog.event, 'hold')).orderBy(mediaEvidenceLog.id);
+  expect(line?.note).toBe(`AFP AFP-2026-114 until ${until.toISOString()}`);
+
+  // Eight days on the undecided window has ended: the AFP hold stops the automatic block; the others are blocked and purged.
+  const eightDays = new Date(now.getTime() + 8 * day);
+  expect(await purgePass({ store, now: eightDays, days: 7 })).toMatchObject({ expired: 2, purged: 2 });
+  expect([(await rowOf(afp.id)).scanState, store.objects.has(afp.storageKey!)]).toEqual(['quarantined', true]);
+  for (const row of [ncmec, nca]) {
+    expect([(await rowOf(row.id)).scanState, (await rowOf(row.id)).storageKey, store.objects.has(row.storageKey!)]).toEqual([
+      'blocked',
+      null,
+      false,
+    ]);
+    // The record stays: manifest, hashes and log, kept at least until the hold's date.
+    const evidence = await evidenceOf(row.id);
+    expect(evidence.holdUntil).toEqual(until);
+    expect(evidence.retainUntil!.getTime()).toBeGreaterThanOrEqual(until.getTime());
+    expect(await logOf(evidence.id)).toEqual(['quarantined', 'hold', 'expired', 'purge_started']);
+  }
+  // Confirmed, the AFP-held image keeps its bytes while the hold stands.
+  expect((await confirmQuarantined(asAdmin(), { mediaId: afp.id, removePosts: false }, { store, now: eightDays })).ok).toBe(true);
+  expect(store.objects.has(afp.storageKey!)).toBe(true);
+});
+
 test('a hold on a released image, or on bytes already purged, is refused as already decided', async () => {
   const until = new Date(Date.now() + 30 * day);
   const released = await quarantined();
   await releaseQuarantined(asAdmin(), { mediaId: released.id });
-  expect(await holdQuarantined(asAdmin(), { mediaId: released.id, reference: 'R', until })).toEqual({
+  expect(await holdQuarantined(asAdmin(), { mediaId: released.id, authority: 'afp', reference: 'R', until })).toEqual({
     ok: false,
     reason: 'media.not_quarantined',
   });
   const purged = await quarantined();
   await confirmQuarantined(asAdmin(), { mediaId: purged.id, removePosts: false }, { store });
-  expect(await holdQuarantined(asAdmin(), { mediaId: purged.id, reference: 'R', until })).toEqual({
+  expect(await holdQuarantined(asAdmin(), { mediaId: purged.id, authority: 'afp', reference: 'R', until })).toEqual({
     ok: false,
     reason: 'media.already_decided',
   });
   const clean = await seedMedia(store, { state: 'clean' });
-  expect(await holdQuarantined(asAdmin(), { mediaId: clean.id, reference: 'R', until })).toEqual({
+  expect(await holdQuarantined(asAdmin(), { mediaId: clean.id, authority: 'afp', reference: 'R', until })).toEqual({
     ok: false,
     reason: 'media.not_quarantined',
   });
@@ -300,7 +349,7 @@ test('held images and failing deletions cannot fill the purge batch', async () =
   // First in line: two confirmed images whose bytes a hold keeps.
   for (const reference of ['AFP-1', 'AFP-2']) {
     const held = await quarantined();
-    expect(await holdQuarantined(asAdmin(), { mediaId: held.id, reference, until })).toMatchObject({ ok: true });
+    expect(await holdQuarantined(asAdmin(), { mediaId: held.id, authority: 'afp', reference, until })).toMatchObject({ ok: true });
     expect((await confirmQuarantined(asAdmin(), { mediaId: held.id, removePosts: false }, { store })).ok).toBe(true);
   }
   // Then two failed images whose deletes keep failing, and one whose delete works.

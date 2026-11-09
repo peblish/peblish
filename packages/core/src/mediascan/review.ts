@@ -5,7 +5,7 @@ import { authorize } from '../authz/authorize.ts';
 import { db } from '../db/read.ts';
 import { media } from '../db/tables/media.ts';
 import { logEvidence } from '../evidence/log.ts';
-import { mediaEvidence } from '../evidence/tables.ts';
+import { holdAuthorities, mediaEvidence, type HoldAuthority } from '../evidence/tables.ts';
 import { refusedAsResult, type Result } from '../identity/result.ts';
 import { removeContent } from '../moderation/remove.ts';
 import { writeModlog } from '../modlog/write.ts';
@@ -108,9 +108,11 @@ export const releaseMatch = defineMutation({
 const maxReferenceLength = 200;
 
 /**
- * Records a hold: an AFP, NCMEC or NCA preservation direction names a reference and a date. While
- * it is in force the object is kept (neither the undecided expiry nor the purge touches it) and
- * the manifest outlives its date. Allowed on a quarantined image or a confirmed one whose bytes
+ * Records a hold: an AFP, NCMEC or NCA preservation direction names a reference and a date, and
+ * the hold names which of them directed it. Any hold keeps the manifest, hashes and log past its
+ * date. Only an AFP direction keeps the image bytes (the CSAM SOP: imagery is kept on written AFP
+ * direction only): while it is in force neither the undecided expiry nor the purge touches them.
+ * Under an NCMEC or NCA hold the bytes follow the normal purge. Allowed on a quarantined image or a confirmed one whose bytes
  * are still there and not yet claimed by the purge; a released image, or bytes the purge has
  * claimed or deleted, are `media.already_decided`.
  */
@@ -118,10 +120,15 @@ export const recordHold = defineMutation({
   action: 'media.review',
   emits: ['media.reviewed'],
   recheck: true,
-  async run(t, grant, input: { reference: string; until: Date; now: Date }) {
+  async run(t, grant, input: { authority: HoldAuthority; reference: string; until: Date; now: Date }) {
     const { mediaId } = grant.subject;
     const reference = input.reference.trim();
-    if (reference.length === 0 || reference.length > maxReferenceLength || !(input.until > input.now))
+    if (
+      !holdAuthorities.includes(input.authority) ||
+      reference.length === 0 ||
+      reference.length > maxReferenceLength ||
+      !(input.until > input.now)
+    )
       throw new Refused('media.review', 'media.hold_invalid');
     const { row, evidence } = await lockedEvidence(t, 'media.review', mediaId);
     if (!evidence || (row.scanState !== 'quarantined' && row.scanState !== 'blocked'))
@@ -132,6 +139,7 @@ export const recordHold = defineMutation({
     await t.db
       .update(mediaEvidence)
       .set({
+        holdAuthority: input.authority,
         holdReference: reference,
         holdUntil: input.until,
         ...(evidence.retainUntil && { retainUntil: retainUntil(evidence.decidedAt ?? input.now, input.until) }),
@@ -141,7 +149,7 @@ export const recordHold = defineMutation({
       evidenceId: evidence.id,
       actorId: grant.actorId,
       event: 'hold',
-      note: `${reference} until ${input.until.toISOString()}`,
+      note: `${input.authority.toUpperCase()} ${reference} until ${input.until.toISOString()}`,
     });
     await writeModlog(t.db, grant, { community: null, target: null, reason: null, details: { public: false } });
     await t.emit({ type: 'media.reviewed', v: 1, mediaId, evidenceId: evidence.id, adminId: grant.actorId, decision: 'held' });
@@ -195,10 +203,11 @@ export async function releaseQuarantined(
 
 export async function holdQuarantined(
   principal: Principal,
-  input: { mediaId: Uuid; reference: string; until: Date },
+  input: { mediaId: Uuid; authority: HoldAuthority; reference: string; until: Date },
   deps: ReviewDeps = {},
 ): Promise<Result<object>> {
   const decision = await granted(principal, input.mediaId);
   if (!decision.ok) return decision;
-  return refusedAsResult(() => recordHold(decision.grant, { reference: input.reference, until: input.until, now: deps.now ?? new Date() }));
+  const { authority, reference, until } = input;
+  return refusedAsResult(() => recordHold(decision.grant, { authority, reference, until, now: deps.now ?? new Date() }));
 }

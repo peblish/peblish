@@ -34,7 +34,7 @@ export async function purgePass(
   };
   const cutoff = new Date(now.getTime() - days * 86_400_000);
 
-  // 1. Quarantines nobody decided, past the window and under no hold in force.
+  // 1. Quarantines nobody decided, past the window and under no AFP hold in force.
   const undecided = await db()
     .select({ id: media.id })
     .from(media)
@@ -44,7 +44,7 @@ export async function purgePass(
         eq(media.scanState, 'quarantined'),
         eq(mediaEvidence.status, 'open'),
         lt(mediaEvidence.createdAt, cutoff),
-        or(isNull(mediaEvidence.holdUntil), lt(mediaEvidence.holdUntil, now)),
+        not(heldSql(media.id, now)),
       ),
     )
     .limit(batch);

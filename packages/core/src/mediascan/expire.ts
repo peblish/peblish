@@ -5,12 +5,13 @@ import { logEvidence } from '../evidence/log.ts';
 import { mediaEvidence } from '../evidence/tables.ts';
 import { defineMutation } from '../tx/mutation.ts';
 import { blockMedia, retainUntil } from './block.ts';
+import { holdKeepsBytes } from './purge.ts';
 
 // Owned by lane SAFE. What the instance does by itself with quarantined images nobody decided.
 
 /**
  * Ends the undecided window of one quarantined image: when its evidence is still open, older than
- * `days` and under no hold in force, the image is blocked exactly as an admin's confirmation
+ * `days` and under no AFP hold in force (an NCMEC or NCA hold keeps the record, not the image), the image is blocked exactly as an admin's confirmation
  * blocks it (hash listed, clean copies quarantined, ledger row, row deleted) with no admin
  * named. Anything else is left as it is. The bytes are purged by the purge job.
  */
@@ -28,7 +29,7 @@ export const expireUndecided = defineMutation({
       .where(and(eq(mediaEvidence.mediaId, mediaId), eq(mediaEvidence.status, 'open')))
       .for('no key update');
     const cutoff = new Date(input.now.getTime() - input.days * 86_400_000);
-    if (!evidence || evidence.createdAt > cutoff || (evidence.holdUntil && evidence.holdUntil > input.now)) return { expired: false };
+    if (!evidence || evidence.createdAt > cutoff || holdKeepsBytes(evidence, input.now)) return { expired: false };
     await blockMedia(t, { action: 'media.scan', mediaId, sha256: row.sha256, from: 'quarantined', evidence, by: null, now: input.now });
     await t.db
       .update(mediaEvidence)
