@@ -69,9 +69,8 @@ test('WebFinger and NodeInfo name the instance actor', async ({ request }) => {
   expect(nodeinfo.usage).toMatchObject({ users: { total: expect.any(Number) }, localPosts: expect.any(Number) });
 });
 
-test('the inbox takes POSTs and, until the pipeline is live, answers 503 with Retry-After', async ({ request }) => {
+test('the inbox takes POSTs only, and a POST without a valid signature is a 401, never a 5xx', async ({ request }) => {
   const response = await request.post('/inbox', { data: '{}', headers: { 'content-type': 'application/activity+json' } });
-  expect(response.status()).toBe(503);
-  expect(Number(response.headers()['retry-after'])).toBeGreaterThan(0);
+  expect(response.status()).toBe(401);
   expect((await request.get('/inbox')).status()).toBe(405);
 });
