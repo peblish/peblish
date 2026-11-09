@@ -1,8 +1,9 @@
 import { eq } from 'drizzle-orm';
 import { beforeEach, expect, test } from 'vitest';
 import { db } from '../db/read.ts';
-import { posts } from '../db/tables/content.ts';
+import { posts, votes } from '../db/tables/content.ts';
 import { truncateAll } from '../testing/db.ts';
+import { outboxEvents } from '../testing/seed-az.ts';
 import { seedPostWorld } from '../testing/seed-b1.ts';
 import { localUser } from '../testing/seed.ts';
 import { voteAs } from '../votes/service.ts';
@@ -35,6 +36,23 @@ test('a refusal comes back as a result, from the precheck and from the recheck',
   expect(results.filter((result) => result.ok)).toHaveLength(1);
   expect(results.filter((result) => !result.ok)).toEqual([{ ok: false, reason: 'target.deleted' }]);
   expect(await restorePostAs(author, created.id)).toEqual({ ok: true });
+});
+
+test('a new post starts with its author upvote, as Lemmy and PieFed give it', async () => {
+  const world = await seedPostWorld();
+  const author = localUser(world.people.author.id);
+  const created = await createPostAs(author, world.communities.open.id, { title: 'Mine' });
+  if (!created.ok) throw new Error(created.reason);
+
+  const [post] = await db().select({ upvotes: posts.upvotes, downvotes: posts.downvotes }).from(posts).where(eq(posts.id, created.id));
+  expect(post).toEqual({ upvotes: 1, downvotes: 0 });
+  const rows = await db().select({ voterId: votes.voterId, value: votes.value }).from(votes).where(eq(votes.postId, created.id));
+  expect(rows).toEqual([{ voterId: world.people.author.id, value: 1 }]);
+  // The vote federates like any other: one vote.cast after the post's own event.
+  expect(await outboxEvents()).toMatchObject([
+    { type: 'post.created', postId: created.id, authorId: world.people.author.id },
+    { type: 'vote.cast', voterId: world.people.author.id, target: { kind: 'post', id: created.id }, value: 1, local: true },
+  ]);
 });
 
 test('a moderator removes and restores a post with a reason; anyone else is refused', async () => {

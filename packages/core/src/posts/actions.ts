@@ -3,6 +3,7 @@ import type { Uuid } from '@peblish/schema/ids';
 import { authorize } from '../authz/authorize.ts';
 import { refusedAsResult, type Result } from '../identity/result.ts';
 import { removeContent, restoreContent } from '../moderation/remove.ts';
+import { voteAs } from '../votes/service.ts';
 import { createPost } from './create.ts';
 import { deletePost, restorePost } from './delete.ts';
 import { updatePost } from './edit.ts';
@@ -13,10 +14,17 @@ import type { NewPost, PostEdit } from './input.ts';
 // the reason to a message). Callers validate the input first with NewPost and PostEdit
 // (./input.ts) to show field errors; the mutations assert it again.
 
+/**
+ * Creates the post, then casts the author's own upvote on it, as Lemmy and PieFed do, so a new
+ * post starts at a score of 1 like its peers'. The vote is a second mutation and best effort: the
+ * post exists either way, so a refusal or a failure there is not the caller's error.
+ */
 export async function createPostAs(principal: Principal, communityId: Uuid, input: NewPost): Promise<Result<{ id: Uuid; apId: string }>> {
   const decision = await authorize('post.create', principal, { communityId });
   if (!decision.ok) return decision;
-  return refusedAsResult(() => createPost(decision.grant, input));
+  const created = await refusedAsResult(() => createPost(decision.grant, input));
+  if (created.ok) await voteAs(principal, { kind: 'post', id: created.id }, 1).catch(() => undefined);
+  return created;
 }
 
 /** `changed` is false when the edit changed nothing. */
