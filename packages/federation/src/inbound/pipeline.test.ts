@@ -241,13 +241,16 @@ describe('a community’s answers to our Follow', () => {
     expect(await state()).toBeUndefined();
   });
 
-  test('an Accept that names its Follow by IRI only is matched by that IRI', async () => {
+  test('an Accept that names its Follow by IRI only cannot be matched to its follower and is skipped; a Reject by IRI is read', async () => {
     const bob = await seedAccount(world.instances.local, 'bob');
     const followId = 'https://fed-b.test/ap/activity/follow-bob';
     await seedFollow(bob, world.peers.lab, followId, 'pending');
     const bare = { id: activityId(lemmy, 'accept'), type: 'Accept', actor: lab, object: followId, to: [bob.apId] };
-    expect((await deliver(bare)).stored).toEqual({ state: 'applied', error: null });
-    expect((await db().select().from(follows).where(eq(follows.apId, followId)))[0]?.state).toBe('accepted');
+    expect((await deliver(bare)).stored).toEqual({ state: 'skipped', error: `accept.unverifiable ${followId}` });
+    expect((await db().select().from(follows).where(eq(follows.apId, followId)))[0]?.state).toBe('pending');
+    const reject = { ...bare, id: activityId(lemmy, 'reject'), type: 'Reject' };
+    expect((await deliver(reject)).stored).toEqual({ state: 'applied', error: null });
+    expect(await db().select().from(follows).where(eq(follows.apId, followId))).toEqual([]);
   });
 
   test('a remote Follow of a local community is accepted, and an Undo(Follow) takes it back', async () => {

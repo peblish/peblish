@@ -41,6 +41,7 @@ export const inboundReasons = {
   'block.instance_unsupported': 'A ban of a whole instance is read once site bans exist.',
   'block.expired': 'The ban had already ended when it arrived.',
   'delete.target_unsupported': 'A Delete of an actor counts only from that actor itself.',
+  'accept.unverifiable': 'An Accept that names its Follow by IRI only cannot be matched to the follower it accepts, so it is not read.',
   'follow.target_unsupported': 'Only local communities take followers.',
   'undo.unsupported': 'This Undo reverses something peblish does not undo.',
   'report.not_local': 'A report counts only about content stored here, in a community hosted here.',

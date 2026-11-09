@@ -7,7 +7,7 @@ import { skip, type Skipped } from './reasons.ts';
 // fails and is never retried). This step sorts out what is not malformed but is not ours to
 // map: a type we do not read, a poll, an Announce of a bare IRI, and it rewrites what the
 // mapping cannot read yet but we decided how to store: a Note that replies to nothing
-// (a microblog post to a community) and an Accept that names its Follow by IRI only.
+// (a microblog post to a community), an Accept that names its Follow by IRI only (skipped) and a Reject that does (given its Follow).
 
 const handledTypes = new Set([
   'Create',
@@ -63,9 +63,15 @@ async function contentObject(json: JsonObject, env: ClassifyEnv): Promise<Item> 
   return { skipped: skip('note.no_local_community', idOf(object) ?? undefined) };
 }
 
-/** An Accept or Reject that names its Follow by IRI gets the Follow embedded, as the mapping reads it. */
+/**
+ * An Accept or Reject that names its Follow by IRI. A Reject gets the Follow embedded, as the
+ * mapping reads it (core deletes only the follow with that id, and only on the followee's
+ * word). An Accept is skipped: it must name the follower whose Follow it answers, and an IRI
+ * does not (core's follow.accept checks the follower against the stored row).
+ */
 async function followAnswer(json: JsonObject, env: ClassifyEnv): Promise<Item> {
   if (typeof json.object !== 'string') return { json };
+  if (json.type === 'Accept') return { skipped: skip('accept.unverifiable', json.object) };
   const follower = await env.followerOf(json.object);
   const answerer = idOf(json.actor);
   if (follower === null || answerer === null) return { skipped: skip('target.missing', json.object) };
