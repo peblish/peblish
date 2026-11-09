@@ -75,8 +75,8 @@ const beyond = (direction: 'before' | 'after', micros: number, id: string) => {
 const hotRank = (asOf: number) =>
   sql`(log(greatest(1, ${score} + 3)::float8) / power(extract(epoch from (${msToInstant(asOf)} - ${posts.publishedAt}))::float8 / 3600 + 2, 1.8))`;
 
-/** What every feed shows: live posts of open communities, published by the page's clock, past the predicates. */
-function visible(feed: FeedName, viewer: Viewer, asOf: number, scope?: FeedScope): SQL[] {
+/** What every feed shows: live posts of open communities, published by the page's clock, past the predicates. Exported for the profile activity. */
+export function visible(feed: FeedName, viewer: Viewer, asOf: number, scope?: FeedScope): SQL[] {
   const conditions: SQL[] = [
     isNull(posts.deletedAt),
     isNull(posts.removedAt),

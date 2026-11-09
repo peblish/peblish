@@ -4,6 +4,7 @@ import { beforeAll, describe, expect, test } from 'vitest';
 import { readPool } from '../db/pools.ts';
 import { writer } from '../db/write.ts';
 import { seedBulk } from '../testing/seed-c1.ts';
+import { seedPerson } from '../testing/seed-f.ts';
 import { seedInstance } from '../testing/seed.ts';
 import { decodeCursor } from './cursor.ts';
 import { periods, type FeedName } from './input.ts';
@@ -42,6 +43,17 @@ describe.skipIf(!process.env.PEBLISH_FEED_PERF)('feed performance', () => {
     const { heavy, sparse, moderator } = await seedBulk({ local });
     await writer().execute(sql`analyze`);
     const user = (person: { id: string }): Viewer => ({ actorId: person.id, siteRole: 'user' });
+    // E1: a viewer with 100 person blocks, 50 community blocks and 20 instance blocks (S02).
+    const blocker = await seedPerson(local, 'blocker');
+    await writer().execute(
+      sql`insert into person_blocks select ${blocker.id}::uuid, id from actors where kind = 'Person' and not local order by random() limit 100`,
+    );
+    await writer().execute(
+      sql`insert into community_blocks select ${blocker.id}::uuid, id from actors where kind = 'Group' order by random() limit 50`,
+    );
+    await writer().execute(
+      sql`insert into instance_blocks select ${blocker.id}::uuid, id from instances where not local order by random() limit 20`,
+    );
     cases.push(
       { who: 'signed out', viewer: null, feed: 'all' },
       { who: 'signed out', viewer: null, feed: 'local' },
@@ -50,6 +62,8 @@ describe.skipIf(!process.env.PEBLISH_FEED_PERF)('feed performance', () => {
       { who: 'follows 130', viewer: user(heavy), feed: 'all' },
       { who: 'follows 3 quiet', viewer: user(sparse), feed: 'subscribed' },
       { who: 'moderates 2', viewer: user(moderator), feed: 'moderating' },
+      { who: 'blocks 100/50/20', viewer: user(blocker), feed: 'all' },
+      { who: 'blocks 100/50/20', viewer: user(blocker), feed: 'local' },
     );
   }, 300_000);
 

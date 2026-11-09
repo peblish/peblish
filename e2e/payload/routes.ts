@@ -65,6 +65,13 @@ export const routes: readonly PayloadRoute[] = [
   { route: '/settings/account/', path: '/settings/account', admin: true },
   { route: '/settings/security/', path: '/settings/security', admin: true },
   { route: '/settings/blocks/', path: '/settings/blocks', admin: true },
+  { route: '/u/$handle/', path: '/u/<handle>', target: async (base) => `/u/${(await fixtures(base)).admin.name}` },
+  {
+    route: '/u/$handle/edit',
+    path: '/u/<handle>/edit',
+    target: async (base) => `/u/${(await fixtures(base)).admin.name}/edit`,
+    admin: true,
+  },
   { route: '/admin/registration/', path: '/admin/registration', admin: true },
   { route: '/post/$id/', path: '/post/<id>', target: seededPost },
   { route: '/post/$id/comments/$commentId', path: '/post/<id>/comments/<commentId>', target: seededPermalink },
