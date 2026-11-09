@@ -1,5 +1,4 @@
 import { beforeEach, describe, expect, test } from 'vitest';
-import { db } from '../db/read.ts';
 import { truncateAll } from '../testing/db.ts';
 import { seedActor, seedInstance } from '../testing/seed.ts';
 import { seedBlock } from '../testing/seed-e1.ts';
@@ -33,19 +32,19 @@ describe('the block lists', () => {
     await seedBlock(w.alice, w.tech);
     await seedBlock(w.alice, { instance: w.lemmy });
 
-    expect((await listBlocks(db(), w.alice.id, 'person')).map((row) => row.actor.handle)).toEqual(['bob@lemmy.test', 'Bob']);
-    expect((await listBlocks(db(), w.alice.id, 'community')).map((row) => row.actor.handle)).toEqual(['tech@lemmy.test']);
-    expect(await listInstanceBlocks(db(), w.alice.id)).toMatchObject([{ domain: 'lemmy.test', people: 2, communities: 1 }]);
-    expect(await blockCounts(db(), w.alice.id)).toEqual({ person: 2, community: 1, instance: 1 });
-    expect(await blockCounts(db(), w.bob.id)).toEqual({ person: 0, community: 0, instance: 0 });
-    expect(await listBlocks(db(), w.bob.id, 'person')).toEqual([]);
+    expect((await listBlocks(w.alice.id, 'person')).map((row) => row.actor.handle)).toEqual(['bob@lemmy.test', 'Bob']);
+    expect((await listBlocks(w.alice.id, 'community')).map((row) => row.actor.handle)).toEqual(['tech@lemmy.test']);
+    expect(await listInstanceBlocks(w.alice.id)).toMatchObject([{ domain: 'lemmy.test', people: 2, communities: 1 }]);
+    expect(await blockCounts(w.alice.id)).toEqual({ person: 2, community: 1, instance: 1 });
+    expect(await blockCounts(w.bob.id)).toEqual({ person: 0, community: 0, instance: 0 });
+    expect(await listBlocks(w.bob.id, 'person')).toEqual([]);
   });
 });
 
 describe('resolveBlockTarget', () => {
   test('people: local and remote handles, with or without the @', async () => {
     const w = await world();
-    const resolve = (input: string) => resolveBlockTarget(db(), 'person', input);
+    const resolve = (input: string) => resolveBlockTarget('person', input);
     expect(await resolve('@Bob')).toEqual({ ok: true, target: { kind: 'person', actorId: w.bob.id }, label: '@Bob' });
     expect(await resolve('bob')).toMatchObject({ target: { actorId: w.bob.id } });
     expect(await resolve('@bob@feddit.test')).toMatchObject({ target: { actorId: w.bob.id } });
@@ -64,21 +63,21 @@ describe('resolveBlockTarget', () => {
 
   test('communities and instances', async () => {
     const w = await world();
-    expect(await resolveBlockTarget(db(), 'community', '!tech@lemmy.test')).toEqual({
+    expect(await resolveBlockTarget('community', '!tech@lemmy.test')).toEqual({
       ok: true,
       target: { kind: 'community', actorId: w.tech.id },
       label: '!tech@lemmy.test',
     });
-    expect(await resolveBlockTarget(db(), 'community', 'news')).toMatchObject({ target: { actorId: w.news.id } });
-    expect(await resolveBlockTarget(db(), 'community', '!bob@lemmy.test')).toEqual({ ok: false, reason: 'handle.not_found' });
+    expect(await resolveBlockTarget('community', 'news')).toMatchObject({ target: { actorId: w.news.id } });
+    expect(await resolveBlockTarget('community', '!bob@lemmy.test')).toEqual({ ok: false, reason: 'handle.not_found' });
     for (const input of ['lemmy.test', 'LEMMY.test', 'https://lemmy.test/c/tech', 'lemmy.test/path'])
-      expect(await resolveBlockTarget(db(), 'instance', input), input).toEqual({
+      expect(await resolveBlockTarget('instance', input), input).toEqual({
         ok: true,
         target: { kind: 'instance', instanceId: w.lemmy.id },
         label: 'lemmy.test',
       });
-    expect(await resolveBlockTarget(db(), 'instance', 'other.test')).toEqual({ ok: false, reason: 'handle.not_found' });
-    expect(await resolveBlockTarget(db(), 'instance', 'http://')).toEqual({ ok: false, reason: 'handle.invalid' });
-    expect(await resolveBlockTarget(db(), 'instance', 'not a host')).toEqual({ ok: false, reason: 'handle.invalid' });
+    expect(await resolveBlockTarget('instance', 'other.test')).toEqual({ ok: false, reason: 'handle.not_found' });
+    expect(await resolveBlockTarget('instance', 'http://')).toEqual({ ok: false, reason: 'handle.invalid' });
+    expect(await resolveBlockTarget('instance', 'not a host')).toEqual({ ok: false, reason: 'handle.invalid' });
   });
 });

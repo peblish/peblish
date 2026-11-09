@@ -1,6 +1,7 @@
+import { BlockAction } from '../../../settings/blocks/-ui/block-action.tsx';
 import type { CommunityActionProps } from '../../../-actions/props.ts';
 
-/** The Block action on a community page. Lane E1 fills it; until then it renders nothing. */
-export function CommunityBlock(_props: CommunityActionProps) {
-  return null;
+/** Block the community. The community page (COMM) renders it for a signed-in viewer and shows its own notice for a community already blocked. */
+export function CommunityBlock({ community, back }: CommunityActionProps) {
+  return <BlockAction kind="community" target={community.id} back={back} look="button" />;
 }

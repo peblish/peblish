@@ -4,7 +4,7 @@ import type { ActorRef } from '@peblish/schema/views';
 import { and, count, desc, eq, inArray, sql } from 'drizzle-orm';
 import { authorize } from '../authz/authorize.ts';
 import type { BlockTarget } from '../authz/actions/blocks.ts';
-import type { Queryable } from '../db/read.ts';
+import { db, type Queryable } from '../db/read.ts';
 import { actors } from '../db/tables/actors.ts';
 import { instances } from '../db/tables/instances.ts';
 import { refusedAsResult, type Result } from '../identity/result.ts';
@@ -38,7 +38,7 @@ export type BlockedActor = { actor: ActorRef; blockedAt: string };
 export type BlockedInstance = { id: Uuid; domain: string; blockedAt: string; people: number; communities: number };
 
 /** The people or communities a person blocks, newest first. Deleted ones stay listed, so they can be unblocked. */
-export async function listBlocks(q: Queryable, blockerId: Uuid, kind: 'person' | 'community'): Promise<BlockedActor[]> {
+export async function listBlocks(blockerId: Uuid, kind: 'person' | 'community', q: Queryable = db()): Promise<BlockedActor[]> {
   const [table, targetColumn] =
     kind === 'person' ? ([personBlocks, personBlocks.blockedId] as const) : ([communityBlocks, communityBlocks.communityId] as const);
   const rows = await q
@@ -64,7 +64,7 @@ export async function listBlocks(q: Queryable, blockerId: Uuid, kind: 'person' |
 }
 
 /** The instances a person blocks, newest first, each with the number of people and communities it hides. */
-export async function listInstanceBlocks(q: Queryable, blockerId: Uuid): Promise<BlockedInstance[]> {
+export async function listInstanceBlocks(blockerId: Uuid, q: Queryable = db()): Promise<BlockedInstance[]> {
   const rows = await q
     .select({ id: instances.id, domain: instances.domain, blockedAt: instanceBlocks.createdAt })
     .from(instanceBlocks)
@@ -100,7 +100,7 @@ export async function listInstanceBlocks(q: Queryable, blockerId: Uuid): Promise
 }
 
 /** How many of each kind a person blocks: the tab counts. */
-export async function blockCounts(q: Queryable, blockerId: Uuid): Promise<Record<BlockKind, number>> {
+export async function blockCounts(blockerId: Uuid, q: Queryable = db()): Promise<Record<BlockKind, number>> {
   const [[person], [community], [instance]] = await Promise.all([
     q.select({ n: count() }).from(personBlocks).where(eq(personBlocks.blockerId, blockerId)),
     q.select({ n: count() }).from(communityBlocks).where(eq(communityBlocks.blockerId, blockerId)),
@@ -122,9 +122,9 @@ const hostPattern = /^(?=.{1,253}$)[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z
  * that cannot be a handle; `handle.not_found` is a well-formed one with no match here.
  */
 export async function resolveBlockTarget(
-  q: Queryable,
   kind: BlockKind,
   input: string,
+  q: Queryable = db(),
 ): Promise<Result<ResolvedBlock> | { ok: false; reason: ResolveError }> {
   const typed = input.trim();
   if (kind === 'instance') {

@@ -1,33 +1,27 @@
-import { createFileRoute, redirect } from '@tanstack/react-router';
-import { createServerFn } from '@tanstack/react-start';
-import { useTranslate } from '../../../i18n/use-translate.ts';
-import { pageSession } from '../../../server/auth.ts';
+import { createFileRoute } from '@tanstack/react-router';
 import { useRouteHydrated } from '../../../shell/hydration.ts';
 import { authHead } from '../../auth/-ui/page.tsx';
-import { SettingsLayout } from '../account/-nav.tsx';
+import { loadBlocks } from './-load.ts';
+import { handleBlocksPost } from './-post.ts';
+import { parseBlocksSearch, type BlockTab } from './-tabs.ts';
+import { BlocksPage } from './-ui/blocks-page.tsx';
+import blocksCss from './-ui/blocks.css?url';
 
-// /settings/blocks (blocks-tabs). Owned by lane E1, which builds the page; GW3's stub keeps the
-// settings nav's typed link compiling and shows the heading only.
-
-const loadBlocks = createServerFn({ method: 'GET' }).handler(async () => {
-  const session = await pageSession();
-  if (!session) throw redirect({ to: '/auth/sign-in', search: { redirect: '/settings/blocks' } });
-  return { admin: session.role === 'admin' };
-});
+// /settings/blocks (blocks-tabs): People, Communities and Instances as links with `?tab=`, so the
+// page works without scripts. Lane E1's. The POST is also where every block slot posts.
 
 export const Route = createFileRoute('/settings/blocks/')({
-  loader: () => loadBlocks(),
-  head: authHead,
+  validateSearch: parseBlocksSearch,
+  loaderDeps: ({ search }) => ({ tab: search.tab ?? ('people' as BlockTab), just: search.just }),
+  loader: ({ deps }) => loadBlocks({ data: { tab: deps.tab, ...(deps.just ? { just: deps.just } : {}) } }),
+  head: () => ({ links: [...authHead().links, { rel: 'stylesheet', href: blocksCss }] }),
   component: Blocks,
+  server: { handlers: { POST: ({ request }) => handleBlocksPost(request) } },
 });
 
 function Blocks() {
-  const { t } = useTranslate();
   const data = Route.useLoaderData();
+  const search = Route.useSearch();
   useRouteHydrated();
-  return (
-    <SettingsLayout admin={data.admin}>
-      <h1>{t('settings', 'nav.blocks')}</h1>
-    </SettingsLayout>
-  );
+  return <BlocksPage data={data} search={search} />;
 }

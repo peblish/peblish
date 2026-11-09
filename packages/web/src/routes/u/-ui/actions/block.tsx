@@ -1,6 +1,8 @@
+import { BlockAction } from '../../../settings/blocks/-ui/block-action.tsx';
 import type { ProfileActionProps } from '../../../-actions/props.ts';
 
-/** The Block action on a profile. Lane E1 fills it; until then it renders nothing. */
-export function ProfileBlock(_props: ProfileActionProps) {
-  return null;
+/** Block the person whose profile this is. The profile page does not render it for the viewer's own page or for a person already blocked. */
+export function ProfileBlock({ person, viewer, back }: ProfileActionProps) {
+  if (person.id === viewer.actorId) return null;
+  return <BlockAction kind="person" target={person.id} back={back} look="button" />;
 }
