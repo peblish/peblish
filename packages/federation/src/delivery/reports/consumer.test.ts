@@ -2,15 +2,18 @@ import { beforeEach, describe, expect, test } from 'vitest';
 import { db } from '@peblish/core/db/read';
 import { activities } from '@peblish/core/db/tables/federation';
 import { deliveries } from '@peblish/core/delivery/tables';
+import { writer } from '@peblish/core/db/write';
+import { peerControls } from '@peblish/core/peers/tables';
 import { createReportAs } from '@peblish/core/reports/actions';
 import type { ReportCategory } from '@peblish/core/reports/categories';
 import { truncateAll } from '@peblish/core/testing/db';
 import { localUser, seedActor, seedInstance } from '@peblish/core/testing/seed';
 import { outboxEvents, seedPost } from '@peblish/core/testing/seed-az';
-import { seedLocalInstance, seedSigningKey } from '@peblish/core/testing/seed-fed-a';
+import { seedLocalInstance, seedSigningKey, stubFetch } from '@peblish/core/testing/seed-fed-a';
 import { tx } from '@peblish/core/tx/tx';
 import type { OutboxEvent } from '@peblish/schema/events';
 import { readFixture } from '../../test/manifest.ts';
+import { deliverDue } from '../run.ts';
 import { consumer } from './consumer.ts';
 
 // A local report with `forward` becomes one Flag signed as the reporter, queued for the remote
@@ -126,5 +129,19 @@ describe('who gets it', () => {
     const remote = await seedPost(w.lemmy, w.lab, w.rex);
     expect(await forwarded(w, remote, 'child_safety', true)).toBe('report.forward_unavailable');
     expect(await queued()).toEqual([]);
+  });
+
+  test('an author’s instance blocked after the report was filed gets no Flag; the community’s still does', async () => {
+    const w = await world();
+    const post = await seedPost(w.lemmy, w.lab, w.olga);
+    expect(await forwarded(w, post, 'hate', true)).toMatchObject({ ok: true });
+    await writer().insert(peerControls).values({ instanceId: w.other.id, blocked: true });
+    const { fetch, requests } = stubFetch({ 'https://lemmy.test/inbox': { status: 202 } });
+    expect(await deliverDue({ fetch, refreshSoftware: async () => {} })).toMatchObject({ delivered: 1, skipped: 1 });
+    expect(requests.map((request) => request.url)).toEqual(['https://lemmy.test/inbox']);
+    expect((await queued()).map((row) => [row.inboxUrl, row.state])).toEqual([
+      ['https://lemmy.test/inbox', 'delivered'],
+      ['https://other.test/inbox', 'skipped'],
+    ]);
   });
 });
