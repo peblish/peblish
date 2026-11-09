@@ -15,9 +15,10 @@ import { isBanned, type CommunityState, type StateRead } from './state.ts';
 /**
  * A local row grants until its expires_at, if it has one. A remote row mirrors the community's
  * moderators collection: it grants only once verified and until its expires_at, so a mirror
- * that was never confirmed, or not refreshed in time, grants nothing.
+ * that was never confirmed, or not refreshed in time, grants nothing. Exported so the read
+ * models that list moderators or badges apply the same rule.
  */
-const fresh = or(
+export const freshModerator = or(
   and(eq(communityModerators.source, 'local'), or(isNull(communityModerators.expiresAt), gt(communityModerators.expiresAt, sql`now()`))),
   and(eq(communityModerators.source, 'remote'), isNotNull(communityModerators.verifiedAt), gt(communityModerators.expiresAt, sql`now()`)),
 );
@@ -35,7 +36,7 @@ export async function communityRole(read: StateRead, communityId: Uuid, actorId:
     read.db
       .select({ role: communityModerators.role, expiresAt: communityModerators.expiresAt })
       .from(communityModerators)
-      .where(and(eq(communityModerators.communityId, communityId), eq(communityModerators.moderatorId, actorId), fresh)),
+      .where(and(eq(communityModerators.communityId, communityId), eq(communityModerators.moderatorId, actorId), freshModerator)),
     read.lock,
   );
   if (!row) return null;

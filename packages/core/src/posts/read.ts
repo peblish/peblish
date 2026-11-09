@@ -1,7 +1,8 @@
 import { Uuid } from '@peblish/schema/ids';
 import { excerptLength } from '@peblish/schema/markdown';
 import type { ActorRef, AuthorBadge, PostView } from '@peblish/schema/views';
-import { and, eq, gt, inArray, isNotNull, isNull, or, sql } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
+import { freshModerator } from '../authz/roles.ts';
 import { db, type Queryable } from '../db/read.ts';
 import { localInstance } from '../db/local-instance.ts';
 import { actors } from '../db/tables/actors.ts';
@@ -48,16 +49,6 @@ export type PostPage = {
 /** Characters of body source that a card excerpt reads; the excerpt itself is excerptLength. */
 const excerptSourceLength = 2_000;
 const excerptHtmlLength = 20_000;
-
-/**
- * The rule lane AZ's roles.ts applies to a moderator row (`fresh`): a local row grants until
- * its expiry, a remote row only once verified and before its expiry. Repeated here because
- * the badges are read for many authors in one query; role-table.test.ts pins both.
- */
-const freshModerator = or(
-  and(eq(communityModerators.source, 'local'), or(isNull(communityModerators.expiresAt), gt(communityModerators.expiresAt, sql`now()`))),
-  and(eq(communityModerators.source, 'remote'), isNotNull(communityModerators.verifiedAt), gt(communityModerators.expiresAt, sql`now()`)),
-);
 
 type Known = ActorRef & { sensitive: boolean; nsfl: boolean };
 

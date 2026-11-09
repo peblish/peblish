@@ -1,6 +1,7 @@
 import type { Uuid } from '@peblish/schema/ids';
 import type { ActorRef, CommunityView } from '@peblish/schema/views';
-import { and, asc, eq, gt, isNotNull, isNull, or, sql } from 'drizzle-orm';
+import { and, asc, eq, isNull, sql } from 'drizzle-orm';
+import { freshModerator } from '../authz/roles.ts';
 import { db as readDb, type Queryable } from '../db/read.ts';
 import { actors, communityLanguages } from '../db/tables/actors.ts';
 import { follows } from '../db/tables/follows.ts';
@@ -179,8 +180,8 @@ export async function listLocalCommunities(
 
 /**
  * The community's moderators who hold a role now, owners first, then in the order appointed.
- * The freshness rule is roles.ts's (`fresh`): a local row until its expiry, if any, a mirrored
- * remote row only once verified and until its expiry.
+ * The freshness rule is roles.ts's (`freshModerator`): a local row until its expiry, if any, a
+ * mirrored remote row only once verified and until its expiry.
  */
 export async function listModerators(communityId: Uuid, q: Queryable = readDb()): Promise<CommunityModerator[]> {
   const rows = await q
@@ -188,23 +189,7 @@ export async function listModerators(communityId: Uuid, q: Queryable = readDb())
     .from(communityModerators)
     .innerJoin(actors, eq(actors.id, communityModerators.moderatorId))
     .innerJoin(instances, eq(instances.id, actors.instanceId))
-    .where(
-      and(
-        eq(communityModerators.communityId, communityId),
-        isNull(actors.deletedAt),
-        or(
-          and(
-            eq(communityModerators.source, 'local'),
-            or(isNull(communityModerators.expiresAt), gt(communityModerators.expiresAt, sql`now()`)),
-          ),
-          and(
-            eq(communityModerators.source, 'remote'),
-            isNotNull(communityModerators.verifiedAt),
-            gt(communityModerators.expiresAt, sql`now()`),
-          ),
-        ),
-      ),
-    )
+    .where(and(eq(communityModerators.communityId, communityId), isNull(actors.deletedAt), freshModerator))
     .orderBy(sql`${communityModerators.role} = 'owner' desc`, asc(communityModerators.createdAt), asc(actors.id));
   return rows.map((row) => ({ actor: actorRef(row), role: row.role }));
 }
