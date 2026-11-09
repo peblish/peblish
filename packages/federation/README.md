@@ -204,12 +204,26 @@ change nothing a Mastodon user sees. A ban with `removeContent` removes the memb
 without an event each, so the relay withdraws up to 200 of the member's removed, still boosted
 posts per event (`removedBoostedPosts`); a second event takes the rest.
 
+**Site bans.** A `mod.ban` with `communityId: null` (a local moderator banning a person from the
+whole site) is a `Block` of the person with the instance actor (`<origin>/`) as `target`, signed
+by the moderator and sent straight to every peer we trade follows with (`peerInboxes`), not
+announced, as an account's deletion is; an unban is the `Undo` embedding it. Inboxes of an
+instance where `deliveryBlocked` (`core/src/peers/gate.ts`, lane MODF's) is true are left out.
+With `removeContent` the person's removed posts are taken down without an event each, so the
+relay withdraws their boosts from Mastodon-like followers in batches of 200 until none is
+left, in every local community. A site ban by a remote moderator is not ours to send.
+
+**The kill switch.** With the `delivery.enabled` site setting off, `deliverDue` claims nothing:
+rows stay pending (attempts uncounted) and go out once it is on again. A run that is under way
+stops before its next batch.
+
 **Mentions.** A post or comment that names a remote person (`@name@host`) we hold adds that
 person to the `cc` of the activity and of the Page or Note, and the Mention `tag` as before.
 When no Announce reaches the person's inbox (it is not a follower inbox the activity goes to),
 the author's own activity is also sent to it directly, signed by the author, as Lemmy does. An
 unknown handle stays text, and a mentioned community (`!name@host`) is tagged but never
-addressed: an activity sent to a community's inbox is read as a post to it.
+addressed: an activity sent to a community's inbox is read as a post to it. The Page or Note served
+at its id (`actors/serve.ts`) has the same `tag` and `cc`, so what a peer fetches matches what was sent.
 
 **The worker.** `federation.delivery_queue` runs every two seconds. A row is claimed with
 `FOR UPDATE SKIP LOCKED` and a 60 second lease (the request times out at 15 seconds), the
@@ -423,7 +437,7 @@ rewritten into a post is relayed as the Page it was stored as, never as the orig
 into Delete, Lock, Add or Remove on the featured and moderators collections, Block, and their
 Undos, announced to followers, and, for the removal of a post and a ban with `removeContent`, the
 withdrawal of its boosts from Mastodon-like followers; a local account's deletion becomes a
-Delete of the account.
+Delete of the account; a site ban becomes a `Block` to the peers (above).
 
 ### Remote moderators
 
