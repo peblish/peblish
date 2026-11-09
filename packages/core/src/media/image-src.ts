@@ -31,3 +31,13 @@ export function imageSource(url: string | null | undefined, policy: ImagePolicy)
     return null;
   }
 }
+
+/**
+ * Whether a post's `url_content_type` says its link is an image to show: any `image/` type,
+ * including the placeholder `image/*` that PieFed's Image attachments without a media type
+ * get (FIT), but not SVG, which the proxy never serves.
+ */
+export function isImageContentType(contentType: string | null | undefined): boolean {
+  const type = contentType?.trim().toLowerCase();
+  return !!type?.startsWith('image/') && !type.startsWith('image/svg');
+}

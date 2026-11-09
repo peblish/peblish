@@ -1,7 +1,7 @@
 import { expect, test } from 'vitest';
 import { derivedKey } from '../identity/auth.ts';
 import { seedLocalInstance } from '../testing/seed-a.ts';
-import { imageSource } from './image-src.ts';
+import { imageSource, isImageContentType } from './image-src.ts';
 import { mediaProxyKey, proxyUrlBuilder, verifyProxyPath } from './proxy-url.ts';
 
 const key = Buffer.from('a'.repeat(32));
@@ -77,4 +77,10 @@ test('where an image loads from: this instance as is, remote only through the pr
   expect(imageSource('https://feddit.example/media/a.png', { ...policy, remoteMedia: false, proxy: undefined })).toBe(
     'https://feddit.example/media/a.png',
   );
+});
+
+test('a post link is an image when its content type says so, including the image/* placeholder', () => {
+  for (const type of ['image/png', 'image/jpeg', 'IMAGE/WebP', 'image/*', ' image/gif ']) expect(isImageContentType(type), type).toBe(true);
+  for (const type of ['image/svg+xml', 'text/html', 'application/pdf', 'imagery/png', '', null, undefined])
+    expect(isImageContentType(type), String(type)).toBe(false);
 });
