@@ -1,5 +1,5 @@
 import { ModlogDetails } from '@peblish/schema/modlog';
-import { asc, eq, inArray } from 'drizzle-orm';
+import { asc, eq, inArray, sql } from 'drizzle-orm';
 import { closePools } from '../db/pools.ts';
 import { db } from '../db/read.ts';
 import { actors } from '../db/tables/actors.ts';
@@ -22,11 +22,18 @@ async function resetSettings(keys: readonly string[]): Promise<void> {
     .where(inArray(siteSettings.key, [...keys]));
 }
 
-/** No pages and no revisions: the state a fresh instance starts in. (Revisions are append-only in production; a test database may be emptied.) */
+/**
+ * No pages and no revisions: the state a fresh instance starts in. Revisions are append-only
+ * (trigger in 0009); a lane database may be emptied, so the guard is suspended for the delete.
+ */
 async function resetPages(): Promise<void> {
-  await writer().update(pages).set({ publishedRevision: null });
-  await writer().delete(pageRevisions);
-  await writer().delete(pages);
+  await writer().transaction(async (t) => {
+    await t.update(pages).set({ publishedRevision: null });
+    await t.execute(sql`alter table page_revisions disable trigger page_revisions_append_only`);
+    await t.delete(pageRevisions);
+    await t.execute(sql`alter table page_revisions enable trigger page_revisions_append_only`);
+    await t.delete(pages);
+  });
 }
 
 /**

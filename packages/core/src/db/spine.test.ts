@@ -147,6 +147,26 @@ describe('migration 0001 identity spine', () => {
     }
   });
 
+  test('the media evidence log and published page revisions refuse update, delete and truncate (0009)', async () => {
+    const local = await seedInstance('feddit.test');
+    const admin = await seedActor(local, 'Person', 'Andrew');
+    await writer().execute(
+      sql`insert into media_evidence_log (evidence_id, event) values ('0192f5a0-0000-7000-8000-000000000001', 'quarantined')`,
+    );
+    await writer().execute(
+      sql`insert into page_revisions (id, slug, language, title, body_md, effective_at, published_by)
+          values ('0192f5a0-0000-7000-8000-000000000002', 'rules', 'en', 'Rules', 'Be kind.', now(), ${admin.id})`,
+    );
+    for (const [table, column] of [
+      ['media_evidence_log', 'event'],
+      ['page_revisions', 'title'],
+    ]) {
+      for (const statement of [`update ${table} set ${column} = 'changed'`, `delete from ${table}`, `truncate ${table} cascade`]) {
+        expect(await failure(writer().execute(sql.raw(statement)))).toMatchObject({ code: '23000' });
+      }
+    }
+  });
+
   describe('the modlog outlives purges and refuses tampering', () => {
     async function logged() {
       const local = await seedInstance('feddit.test');
@@ -260,8 +280,12 @@ describe('migration 0001 identity spine', () => {
       'comments_immutable_identity',
       'deletion_ledger_append_only',
       'deletion_ledger_no_truncate',
+      'media_evidence_log_append_only',
+      'media_evidence_log_no_truncate',
       'modlog_append_only',
       'modlog_no_truncate',
+      'page_revisions_append_only',
+      'page_revisions_no_truncate',
       'posts_immutable_identity',
       'votes_immutable_identity',
     ]);

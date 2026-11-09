@@ -64,6 +64,13 @@
       "when": 1794228162862,
       "tag": "0008_wave_3",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1794228190556,
+      "tag": "0009_wave_3_guards",
+      "breakpoints": true
     }
   ]
 }
