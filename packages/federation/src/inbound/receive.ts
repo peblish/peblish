@@ -20,7 +20,8 @@ import { takeIntake, takeKeyFetch } from './throttle.ts';
 //   an account's own   202                 a Delete of an account we do not hold, signed with a key that can no
 //   Delete, no key                         longer be fetched (Mastodon sends it after the account is gone):
 //                                          nothing to apply, answered so the peer stops retrying
-//   not an activity    400
+//   not an activity    400                 or a body that is not strictly UTF-8: the relay sends the exact bytes, which
+//                                          must then be exactly the text that was read
 //   throttled          429 + Retry-After   too many unknown keys at once, or the signer or its instance is over
 //                                          its request rate or has too many bytes waiting in inbox_raw
 //   a repeat           202                 the same body, or an activity id seen within the hour, is not stored again
@@ -37,6 +38,9 @@ export const pendingBytesLimit = { signer: 8 * 1024 * 1024, instance: 32 * 1024 
 const repeatWindowMs = 60 * 60_000;
 /** The request headers a signature covers, kept with the body so it can be checked again. */
 const keptHeaders = ['host', 'date', 'digest', 'signature', 'content-type', 'content-length', 'user-agent'];
+
+/** Strict: a body that is not valid UTF-8 (or starts with a byte order mark) does not survive a decode and encode, so it is not taken. */
+const utf8 = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true });
 
 const refuse = (status: number, text: string, headers?: Record<string, string>) => new Response(text, { status, headers });
 
@@ -118,7 +122,7 @@ export type ReceiveOptions = {
 async function isGoneAccountsDelete(body: Uint8Array): Promise<boolean> {
   let json: unknown;
   try {
-    json = JSON.parse(new TextDecoder().decode(body));
+    json = JSON.parse(utf8.decode(body));
   } catch {
     return false;
   }
@@ -154,9 +158,9 @@ export async function receiveInbound(request: Request, options: ReceiveOptions =
 
     let activity: unknown;
     try {
-      activity = JSON.parse(new TextDecoder().decode(body));
+      activity = JSON.parse(utf8.decode(body));
     } catch {
-      return refuse(400, 'the body is not JSON');
+      return refuse(400, 'the body is not UTF-8 JSON');
     }
     const actor = isObject(activity) ? idOf(activity.actor) : null;
     if (!isObject(activity) || typeof activity.type !== 'string' || actor === null) return refuse(400, 'not an activity');

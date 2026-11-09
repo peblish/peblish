@@ -46,7 +46,11 @@ export function announceText(id: string, communityApId: string, inner: string): 
   return `${head.slice(0, -1)},"object":${inner}}`;
 }
 
-/** The text of `body` when decoding and encoding it again gives the same bytes; otherwise the parsed activity, serialised. */
+/**
+ * The text of `body` when decoding and encoding it again gives the same bytes; otherwise the
+ * parsed activity, serialised. Receipt refuses a body that does not round trip (inbound/receive.ts),
+ * so the fallback is only for rows stored before it did.
+ */
 function exactText(body: Uint8Array, fallback: JsonObject): string {
   const text = new TextDecoder().decode(body);
   return Buffer.from(text, 'utf8').equals(Buffer.from(body)) ? text : JSON.stringify(fallback);

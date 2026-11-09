@@ -7,7 +7,8 @@ import { writer } from '@peblish/core/db/write';
 import { truncateAll } from '@peblish/core/testing/db';
 import { stubFetch } from '@peblish/core/testing/seed-fed-a';
 import { seedInboundWorld, seedInboxRow } from '@peblish/core/testing/seed-fed-b';
-import { signDelivery } from '../signing/sign.ts';
+import { createHash } from 'node:crypto';
+import { signDelivery, signHeaders } from '../signing/sign.ts';
 import { maxBodyBytes, pendingBytesLimit, receiveInbound } from './receive.ts';
 import { perHostBudget, perInstanceRate, perSignerRate, resetKeyFetchBudget, takeIntake, takePipelineFetch } from './throttle.ts';
 import { activityId, addressedToCommunity, hosts } from './test-support.ts';
@@ -46,6 +47,30 @@ describe('receiving an activity', () => {
     expect(Buffer.from(row!.body).toString('utf8')).toBe(body);
     expect(row).toMatchObject({ activityType: 'Like', actorApId: hosts.lemmyuser, state: 'pending' });
     expect(row?.headers).toMatchObject({ method: 'POST', path: '/inbox', signer: hosts.lemmyuser, keyId: `${hosts.lemmyuser}#main-key` });
+  });
+
+  test('a body that does not survive a UTF-8 round trip is answered 400, so the relay can send exactly what was read', async () => {
+    const send = async (bytes: Uint8Array<ArrayBuffer>) => {
+      const url = new URL(inbox);
+      const headers = new Headers({
+        accept: 'application/activity+json',
+        'content-type': 'application/activity+json',
+        date: new Date().toUTCString(),
+        digest: `SHA-256=${createHash('sha256').update(bytes).digest('base64')}`,
+        host: url.host,
+      });
+      const covered = ['(request-target)', 'accept', 'content-type', 'date', 'digest', 'host'];
+      const signedHeaders = signHeaders(world.peers.lemmyuser.keys, 'post', url, headers, covered);
+      return (await receiveInbound(new Request(inbox, { method: 'POST', headers: signedHeaders, body: bytes }))).status;
+    };
+    const json = JSON.stringify({ ...like(), summary: 'XX' });
+    const around = json.split('XX').map((part) => new TextEncoder().encode(part));
+    const joined = (middle: number[]) => new Uint8Array(Buffer.concat([around[0]!, Uint8Array.from(middle), around[1]!]));
+    expect(await send(joined([0xff, 0xfe]))).toBe(400);
+    expect(await send(joined([0xc0, 0xaf]))).toBe(400);
+    expect(await send(new Uint8Array(Buffer.concat([Uint8Array.from([0xef, 0xbb, 0xbf]), new TextEncoder().encode(json)])))).toBe(400);
+    expect(await rows()).toEqual([]);
+    expect(await send(joined([...new TextEncoder().encode('zażółć')]))).toBe(202);
   });
 
   test('a body over 512 KiB is answered 413, announced by Content-Length or streamed in chunks', async () => {
