@@ -12,6 +12,7 @@ import { seedChain, seedReply, seedTree } from '../testing/seed-d.ts';
 import { localUser } from '../testing/seed.ts';
 import { castVote } from '../votes/cast.ts';
 import { threadDisplayDepth, threadMaxComments, threadPageSize, threadReplyPreview } from './limits.ts';
+import { encodeCursor, type ThreadCursor } from './cursor.ts';
 import { readThread, type Thread } from './read.ts';
 import { threadSorts, type ThreadSort } from './sort.ts';
 
@@ -287,6 +288,8 @@ describe('pages of siblings', () => {
     const { w, post, at } = await world();
     const [first] = await seedTree(at, post, [w.people.reader], [total, 1]);
     const top = await readThread(post.id, null, { sort: 'top' });
+    const forged = (over: Record<string, unknown>) =>
+      encodeCursor({ v: 1, sort: 'top', parent: null, asOf: Date.now(), pub: 1_700_000_000_000_000, score: 1, ...over } as ThreadCursor);
     const second = await readThread(post.id, null, { sort: 'top', after: top!.next });
     expect(second?.comments.filter(({ view }) => view.parentId === null)).toHaveLength(total - threadPageSize);
     for (const [sort, rootId, after] of [
@@ -295,6 +298,10 @@ describe('pages of siblings', () => {
       ['top', null, 'not a cursor'],
       ['top', null, Buffer.from('{"v":1}').toString('base64url')],
       ['top', null, 'x'.repeat(500)],
+      // Numbers the SQL could not take are not a position.
+      ['top', null, forged({ id: first!.id, score: 3_000_000_000 })],
+      ['top', null, forged({ id: first!.id, asOf: 9_007_199_254_740_991 })],
+      ['top', null, forged({ id: first!.id, pub: 9_007_199_254_740_991 })],
     ] as const) {
       const thread = await readThread(post.id, null, { sort, rootId, after });
       expect(thread?.comments.filter(({ view }) => view.parentId === rootId)).toHaveLength(rootId ? 1 : threadPageSize);

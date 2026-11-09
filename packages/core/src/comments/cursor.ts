@@ -2,6 +2,11 @@ import { Uuid } from '@peblish/schema/ids';
 import { type } from 'arktype';
 import { ThreadSortParam, type ThreadSort } from './sort.ts';
 
+/** The year 2100 in milliseconds: nothing a cursor names is later, and the SQL arithmetic on it cannot overflow. */
+const lastMs = 4_102_444_800_000;
+/** An integer column's largest value; a score is a difference of two. */
+const intMax = 2_147_483_647;
+
 /**
  * Where the previous page of one set of siblings ended, plus the clock it was ranked with.
  * `asOf` (milliseconds) is fixed by the first page, so Hot ranks every page against the same
@@ -13,10 +18,10 @@ export const ThreadCursor = type({
   v: '1',
   sort: ThreadSortParam,
   parent: Uuid.or('null'),
-  asOf: 'number.integer > 0',
-  pub: 'number.integer > 0',
+  asOf: `1 <= number.integer <= ${lastMs}`,
+  pub: `1 <= number.integer <= ${lastMs * 1000}`,
   id: Uuid,
-  'score?': 'number.integer',
+  'score?': `${-intMax - 1} <= number.integer <= ${intMax}`,
   'rank?': 'number',
 });
 export type ThreadCursor = typeof ThreadCursor.infer;
