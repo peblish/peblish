@@ -52,6 +52,15 @@ export type RemoteActorInput = {
 };
 
 /**
+ * What `storeRemoteActor` takes: a mapped document, and whether the actor's key rows follow it.
+ * `keys: false` stores the profile fields only and never reads or writes a key row, for a
+ * document that does not speak for the actor's keys (an Update(Group) a moderator announced:
+ * the keys in it are the moderator's copy, and a rotation that landed after it was read must
+ * survive). Left out it is true.
+ */
+export type StoreRemoteActorInput = RemoteActorInput & { keys?: boolean };
+
+/**
  * Why a document may not be stored as `input.apId`, or null. The mapping checks shapes and
  * schemes only (its README, "What the caller checks"); this is the origin rule: an actor's
  * endpoints and its key are on its own origin, and the key's owner is the actor itself. A document
@@ -132,7 +141,7 @@ const kindsThatMayBecome = (kind: ActorKind): readonly ActorKind[] => (accountKi
 export const storeRemoteActor = defineMutation({
   action: 'remote.actor_store',
   emits: ['actor.created', 'actor.updated'],
-  async run(t, grant, input: RemoteActorInput) {
+  async run(t, grant, input: StoreRemoteActorInput) {
     if (input.apId !== grant.subject.apId) throw new TypeError('the document is not the one the grant names');
     const problem = checkRemoteActor(input);
     if (problem) throw new TypeError(problem);
@@ -182,16 +191,18 @@ export const storeRemoteActor = defineMutation({
       throw new RemoteActorKindError(input.apId, held.kind, input.kind);
     }
 
-    const algorithm = input.publicKey ? keyAlgorithm(input.publicKey.pem) : null;
-    // Whatever the document no longer advertises goes first (a key id is unique, so a replaced
-    // key must be out of the way before its successor is written).
-    await t.db.delete(actorKeys).where(and(eq(actorKeys.actorId, row.id), algorithm ? ne(actorKeys.algorithm, algorithm) : sql`true`));
-    if (input.publicKey && algorithm) {
-      const { keyId, pem } = input.publicKey;
-      await t.db
-        .insert(actorKeys)
-        .values({ actorId: row.id, keyId, algorithm, publicKeyPem: pem })
-        .onConflictDoUpdate({ target: [actorKeys.actorId, actorKeys.algorithm], set: { keyId, publicKeyPem: pem } });
+    if (input.keys !== false) {
+      const algorithm = input.publicKey ? keyAlgorithm(input.publicKey.pem) : null;
+      // Whatever the document no longer advertises goes first (a key id is unique, so a replaced
+      // key must be out of the way before its successor is written).
+      await t.db.delete(actorKeys).where(and(eq(actorKeys.actorId, row.id), algorithm ? ne(actorKeys.algorithm, algorithm) : sql`true`));
+      if (input.publicKey && algorithm) {
+        const { keyId, pem } = input.publicKey;
+        await t.db
+          .insert(actorKeys)
+          .values({ actorId: row.id, keyId, algorithm, publicKeyPem: pem })
+          .onConflictDoUpdate({ target: [actorKeys.actorId, actorKeys.algorithm], set: { keyId, publicKeyPem: pem } });
+      }
     }
     if (input.kind === 'Group') {
       const languages = [...new Set(input.languages)];
