@@ -3,13 +3,13 @@ import { index, pgTable, text, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
 import { at, createdAt, enumCheck, id } from '../db/columns.ts';
 import { actors } from '../db/tables/actors.ts';
 import { comments, posts } from '../db/tables/content.ts';
-import { modlog } from '../db/tables/moderation.ts';
 import { notificationKinds } from './view.ts';
 
 /**
  * A person's inbox. One row per cause: ref_id is the comment, post or modlog row that
  * triggered it, so a replayed event or a repeated edit adds nothing (the unique index). The
- * context ids are plain links for rendering and go null when their row is purged. uuidv7 ids
+ * context ids are plain links for rendering and go null when their row is purged (the modlog
+ * one is never purged). uuidv7 ids
  * are in creation order, so the list pages by id and (recipient_id, id desc) serves it; the
  * partial index keeps the unread count to the unread rows however large the table grows.
  */
@@ -26,7 +26,8 @@ export const notifications = pgTable(
     communityId: uuid('community_id').references(() => actors.id, { onDelete: 'set null' }),
     postId: uuid('post_id').references(() => posts.id, { onDelete: 'set null' }),
     commentId: uuid('comment_id').references(() => comments.id, { onDelete: 'set null' }),
-    modlogId: uuid('modlog_id').references(() => modlog.id, { onDelete: 'set null' }),
+    // No foreign key: the modlog is append-only, and a reference into it would make TRUNCATE fail on the constraint before its guard (db/spine.test.ts).
+    modlogId: uuid('modlog_id'),
     readAt: at('read_at'),
     createdAt: createdAt(),
   },

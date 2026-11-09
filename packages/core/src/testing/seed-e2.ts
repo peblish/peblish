@@ -1,8 +1,11 @@
 import type { OutboxEvent } from '@peblish/schema/events';
 import { asc, eq, sql } from 'drizzle-orm';
+import { consumer } from '../notifications/consumer.ts';
 import { db } from '../db/read.ts';
+import { modlog } from '../db/tables/moderation.ts';
 import { writer } from '../db/write.ts';
 import { notifications } from '../notifications/tables.ts';
+import { ensureCursors, processBatch } from '../outbox/worker.ts';
 import { seedPostWorld } from './seed-b1.ts';
 import { seedActor } from './seed.ts';
 import { tx } from '../tx/tx.ts';
@@ -25,6 +28,27 @@ export async function seedInboxWorld() {
 
 /** Emits an event as the transaction that caused it would have, for a test that seeds rows directly. */
 export const emitEvent = (event: OutboxEvent) => tx((t) => t.emit(event));
+
+/**
+ * Runs the notifications consumer over the outbox until its cursor has passed every event,
+ * through the real processBatch (its cursor and transaction included). The horizon lags: it is
+ * the oldest transaction running anywhere on the server, so on a busy machine a batch can move
+ * nothing while events wait. This waits for the cursor, not for a quiet batch.
+ */
+export async function drainNotices(): Promise<void> {
+  await ensureCursors([consumer]);
+  const deadline = Date.now() + 30_000;
+  while (Date.now() < deadline) {
+    await processBatch(consumer);
+    const [waiting] = await db().execute<{ n: number }>(
+      sql`select count(*)::int as n from outbox o, outbox_cursors c
+        where c.consumer = ${consumer.name} and (o.tx_id, o.id) > (c.tx_id, c.event_id)`,
+    );
+    if (waiting?.n === 0) return;
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  throw new Error('the notifications consumer did not catch up');
+}
 
 /** A person's notices, oldest first. */
 export const noticesOf = (recipientId: string) =>
@@ -57,4 +81,21 @@ export async function sameTransactionAsNotice(id: string, type: string): Promise
 export async function seedNotice(row: typeof notifications.$inferInsert) {
   const [created] = await writer().insert(notifications).values(row).returning();
   return created!;
+}
+
+/** A modlog row as a site ban would write it (the ban lane's mutation does not exist yet), so an event can name a real one. */
+export async function seedSiteBanLog(moderator: { id: string; apId: string }, target: { id: string; apId: string }) {
+  const [row] = await writer()
+    .insert(modlog)
+    .values({
+      action: 'ban.site',
+      actorId: moderator.id,
+      actorApId: moderator.apId,
+      targetActorId: target.id,
+      targetApId: target.apId,
+      reason: 'Spam',
+      authority: { kind: 'site-admin', actorId: moderator.id },
+    })
+    .returning();
+  return row!;
 }
