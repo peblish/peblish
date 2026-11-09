@@ -2,7 +2,7 @@ import { sql } from 'drizzle-orm';
 import { beforeEach, describe, expect, test } from 'vitest';
 import { db, type Queryable } from '../db/read.ts';
 import { posts } from '../db/tables/content.ts';
-import { communityModerators } from '../db/tables/moderation.ts';
+import { communityModerators, reports } from '../db/tables/moderation.ts';
 import { writer } from '../db/write.ts';
 import { truncateAll } from '../testing/db.ts';
 import { admin, seedModerationWorld, seedPost } from '../testing/seed-az.ts';
@@ -13,7 +13,7 @@ import type { Principal } from '@peblish/schema/authz';
 import { createReportAs, resolveReportsAs, routeReportsAs } from './actions.ts';
 import type { ReportCategory } from './categories.ts';
 import { openReportCount } from './count.ts';
-import { readQueue, readQueueCommunities, type QueueGroup } from './read.ts';
+import { groupReportLimit, readQueue, readQueueCommunities, type QueueGroup } from './read.ts';
 import type { ReportTarget } from './types.ts';
 
 beforeEach(truncateAll);
@@ -115,6 +115,10 @@ describe('the queue', () => {
     expect(await queue(w.mod, 'escalated')).toEqual([]);
     expect(await queue(w.mod, 'dismissed')).toEqual([]);
     expect(dismissed).toHaveLength(1);
+    expect(dismissed[0]).toMatchObject({
+      escalatedBy: { id: w.people.moderator.id },
+      closed: { resolution: 'dismissed', by: { id: w.people.admin.id }, at: expect.stringMatching(/^\d{4}-\d\d-\d\dT/) },
+    });
     // the admins still see both
     expect((await queue(w.boss, 'escalated')).map((group) => group.target)).toEqual([w.local]);
   });
@@ -169,6 +173,28 @@ function pauseAfterFirstRead(between: () => Promise<unknown>): Queryable {
     },
   });
 }
+
+describe('a bounded page', () => {
+  test('a group shows its total and only its newest reports', async () => {
+    const w = await world();
+    const crowd = await seedPost(w.instances.local, w.communities.local.live, w.people.author, { title: 'Crowded' });
+    const target: ReportTarget = { kind: 'post', id: crowd.id };
+    for (let i = 0; i < groupReportLimit + 5; i++) {
+      const reporter = await seedActor(w.instances.local, 'Person', `crowd_${i}`);
+      await file(localUser(reporter.id), target, i === 0 ? 'hate' : 'spam');
+    }
+    const all = await db().select().from(reports).where(eq(reports.targetPostId, crowd.id)).orderBy(reports.number);
+    const group = (await queue(w.mod)).find((item) => item.target.id === crowd.id);
+    expect(group).toMatchObject({
+      count: groupReportLimit + 5,
+      oldestAt: all[0]?.createdAt.toISOString(),
+      newestAt: all.at(-1)?.createdAt.toISOString(),
+    });
+    // the categories come from every report, the list from the newest
+    expect(group?.categories.sort()).toEqual(['hate', 'spam']);
+    expect(group?.reports.map((row) => row.number)).toEqual(all.slice(5).map((row) => row.number));
+  });
+});
 
 describe('a queue read racing a resolution', () => {
   test('a group resolved between the two reads is left out, not a crash', async () => {
