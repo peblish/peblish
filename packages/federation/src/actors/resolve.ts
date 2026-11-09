@@ -240,7 +240,7 @@ async function resolveId(apId: string, fetch: Fetcher, options: ResolveOptions):
       if (held && error instanceof ActorResolveError && error.transient) return held;
       // A 410 for an actor we hold is its server saying it is gone: delete our copy, as a refetch does (remote-fetch/actor.ts).
       if (held && !held.local && error instanceof ActorResolveError && error.reason === 'gone') {
-        await deleteRemoteActor(await importGrant('remote.actor_delete', { apId }), { cause: 'Tombstone' });
+        await deleteRemoteActor(await importGrant('remote.actor_delete', { apId }), { removeContent: false, cause: 'Tombstone' });
       }
       throw error;
     }
