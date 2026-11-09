@@ -100,8 +100,6 @@
     "queue.type.comment": "Comment",
     "queue.type.person": "Person",
     "queue.type.community": "Community",
-    "queue.by": "by {handle}",
-    "queue.in": "in {community}",
     "queue.show": "Show",
     "queue.hide": "Hide",
     "queue.hidden": "Hidden until you press Show",
@@ -146,7 +144,8 @@
     "queue.closed.dismissed": "Dismissed",
     "queue.closed.removed": "Removed",
     "queue.more": "More",
-    "queue.back": "Back to the queue"
+    "queue.back": "Back to the queue",
+    "queue.where": "in {community} by {author}"
   },
   "de": {
     "form.title.post": "Beitrag melden",
@@ -249,8 +248,6 @@
     "queue.type.comment": "Kommentar",
     "queue.type.person": "Person",
     "queue.type.community": "Community",
-    "queue.by": "von {handle}",
-    "queue.in": "in {community}",
     "queue.show": "Anzeigen",
     "queue.hide": "Verbergen",
     "queue.hidden": "Verborgen, bis du auf Anzeigen drückst",
@@ -295,6 +292,7 @@
     "queue.closed.dismissed": "Abgewiesen",
     "queue.closed.removed": "Entfernt",
     "queue.more": "Mehr",
-    "queue.back": "Zurück zur Liste"
+    "queue.back": "Zurück zur Liste",
+    "queue.where": "in {community} von {author}"
   }
 }

@@ -192,6 +192,11 @@ describe('resolve, dismiss and route', () => {
       resolvedBy: people.moderator.id,
     });
     expect((event as { reports: unknown[] }).reports).toHaveLength(2);
+    // The rows and the event commit together: both carry the same transaction id.
+    const [same] = await db().execute<{ same: boolean }>(
+      sql`select (select (tx_id::text::numeric % 4294967296)::text from outbox where type = 'report.resolved') = (select distinct xmin::text from reports where status = 'dismissed') as same`,
+    );
+    expect(same?.same).toBe(true);
     expect(await resolveReportsAs(world.boss, world.key, { resolution: 'resolved' })).toEqual({ ok: false, reason: 'report.not_open' });
   });
 

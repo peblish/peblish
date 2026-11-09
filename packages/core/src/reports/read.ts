@@ -182,11 +182,11 @@ export async function readQueue(viewer: ReportViewer, request: Request, q: Query
   return { ok: true, groups, next: heads.length > queuePageSize ? String(offset + queuePageSize) : null };
 }
 
-/** The communities the queue's community filter offers: an admin's with open reports, a moderator's own. */
+/** The communities the queue's community filter offers: an admin's with any report, a moderator's own. */
 export async function readQueueCommunities(viewer: ReportViewer, q: Queryable = db()): Promise<ActorRef[]> {
   const rows =
     viewer.siteRole === 'admin'
-      ? await q.selectDistinct({ id: reports.communityId }).from(reports).where(eq(reports.status, 'open'))
+      ? await q.selectDistinct({ id: reports.communityId }).from(reports)
       : await q
           .select({ id: communityModerators.communityId })
           .from(communityModerators)
