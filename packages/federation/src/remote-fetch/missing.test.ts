@@ -2,14 +2,17 @@ import { eq } from 'drizzle-orm';
 import { beforeEach, describe, expect, test } from 'vitest';
 import { db } from '@peblish/core/db/read';
 import { posts, votes } from '@peblish/core/db/tables/content';
+import { inboxRaw } from '@peblish/core/db/tables/federation';
+import { writer } from '@peblish/core/db/write';
 import { truncateAll } from '@peblish/core/testing/db';
 import { nodeInfoRoutes, stubFetch } from '@peblish/core/testing/seed-fed-a';
-import { deliverRow, inboxState, seedInboundWorld } from '@peblish/core/testing/seed-fed-b';
+import { deliverRow, inboxState, seedInboundWorld, seedInboxRow } from '@peblish/core/testing/seed-fed-b';
 import { processPending } from '../inbound/job.ts';
 import { processRow } from '../inbound/pipeline.ts';
 import { resetKeyFetchBudget } from '../inbound/throttle.ts';
 import { activityId } from '../inbound/test-support.ts';
-import { fetchMissing, forgetMissingAttempts } from './missing.ts';
+import { fetchMissing, forgetMissingAttempts, missingAttemptCount } from './missing.ts';
+import { fetchRemoteObject } from './object.ts';
 import { remoteTtls } from './ttl.ts';
 import { announceOf, lab, lemmy, lemmyPage, lemmyuser } from './test-support.ts';
 
@@ -102,5 +105,105 @@ describe('objects that skipped activities are waiting for', () => {
     const server = peer({ [target]: { body: lemmyPage(420) } });
     expect(await fetchMissing({ fetch: server.fetch, gapMs: 0 })).toEqual({ looked: 0, stored: 0 });
     expect(server.requests).toHaveLength(0);
+  });
+});
+
+/** A skipped row waiting for `target`, as the pipeline leaves it after an Announce by `community`. */
+const waitingRow = (target: string, community: string, receivedAt = new Date()) =>
+  seedInboxRow('{}', {
+    state: 'skipped',
+    error: `target.missing ${target}`,
+    actorApId: community,
+    activityId: activityId(lemmy, 'announce'),
+    activityType: 'Announce',
+    receivedAt,
+    processedAt: receivedAt,
+  });
+
+describe('which waiting objects a run reaches', () => {
+  test('an older fetchable object is reached past a crowd of newer ones this server will not ask for', async () => {
+    const hour = 60 * 60 * 1000;
+    const old = `${lemmy}/post/700`;
+    const own = new URL(world.community.apId).origin;
+    // More waiting objects than a page holds, all newer, all on this server's own origin (never fetched).
+    await writer()
+      .insert(inboxRaw)
+      .values(
+        Array.from({ length: remoteTtls.missing.pageSize + 30 }, (_, i) => ({
+          body: new TextEncoder().encode('{}'),
+          state: 'skipped' as const,
+          error: `target.missing ${own}/ap/post/${i}`,
+          actorApId: lab,
+          activityId: `${lemmy}/activities/announce/${i}`,
+          activityType: 'Announce',
+          receivedAt: new Date(Date.now() - i * 1000),
+        })),
+      );
+    await waitingRow(old, lab, new Date(Date.now() - hour));
+
+    const server = peer({ [old]: { body: lemmyPage(700) } });
+    expect(await fetchMissing({ fetch: server.fetch, gapMs: 0 })).toEqual({ looked: 1, stored: 1 });
+    expect(server.requests.some((request) => request.url === old)).toBe(true);
+  });
+
+  test('what one community got refused is not held against another that vouches for the same object', async () => {
+    const target = `${lemmy}/post/710`;
+    // The rogue community announced a vote on it: the post is in lab, so it refuses.
+    await waitingRow(target, world.peers.fake.apId, new Date(Date.now() - 1000));
+    const server = peer({ [target]: { body: lemmyPage(710) } });
+    expect(await fetchMissing({ fetch: server.fetch, gapMs: 0 })).toEqual({ looked: 1, stored: 0 });
+    expect(await db().select().from(posts).where(eq(posts.apId, target))).toEqual([]);
+
+    // Lab announces a vote on the same object: it is asked for again, and stored.
+    await waitingRow(target, lab);
+    expect(await fetchMissing({ fetch: server.fetch, gapMs: 0 })).toEqual({ looked: 1, stored: 1 });
+    // And the rogue community's row is not tried again.
+    expect(await fetchMissing({ fetch: server.fetch, gapMs: 0 })).toEqual({ looked: 0, stored: 0 });
+  });
+
+  test('what it remembers is bounded and expires', async () => {
+    const targets = Array.from({ length: 5 }, (_, i) => `${lemmy}/post/${720 + i}`);
+    for (const target of targets) await waitingRow(target, lab);
+    const server = peer({});
+    const missing = remoteTtls.missing as { memoryCap: number };
+    const was = missing.memoryCap;
+    missing.memoryCap = 3;
+    try {
+      const now = Date.now();
+      expect(await fetchMissing({ fetch: server.fetch, gapMs: 0, now })).toMatchObject({ looked: 5 });
+      expect(missingAttemptCount()).toBe(3);
+      // A settled object is asked for again after a day.
+      forgetMissingAttempts();
+      expect(await fetchMissing({ fetch: server.fetch, gapMs: 0, now })).toMatchObject({ looked: 5 });
+      missing.memoryCap = was;
+      forgetMissingAttempts();
+      await fetchMissing({ fetch: server.fetch, gapMs: 0, now });
+      expect(await fetchMissing({ fetch: server.fetch, gapMs: 0, now: now + remoteTtls.missing.settledForMs - 1000 })).toMatchObject({
+        looked: 0,
+      });
+      expect(await fetchMissing({ fetch: server.fetch, gapMs: 0, now: now + remoteTtls.missing.settledForMs + 1000 })).toMatchObject({
+        looked: 5,
+      });
+    } finally {
+      missing.memoryCap = was;
+    }
+  });
+
+  test('puts the rows back in line for an object that was stored but whose requeue was cut off', async () => {
+    const target = `${lemmy}/post/730`;
+    const waiting = await waitingVote(target);
+    const server = peer({ [target]: { body: lemmyPage(730) } });
+    const vouch = { community: { id: world.peers.lab.id, apId: lab }, announceApId: `${lemmy}/activities/announce/1` };
+    await fetchRemoteObject(target, { vouch, fetch: server.fetch });
+    // The crash between the store and the requeue: the row is skipped again, the post is held.
+    await writer()
+      .update(inboxRaw)
+      .set({ state: 'skipped', error: `target.missing ${target}` })
+      .where(eq(inboxRaw.id, waiting.row.id));
+
+    expect(await fetchMissing({ fetch: server.fetch, gapMs: 0 })).toEqual({ looked: 0, stored: 0 });
+    expect((await inboxState(waiting.row.id))?.state).toBe('pending');
+    await processPending();
+    expect(await inboxState(waiting.row.id)).toEqual({ state: 'applied', error: null });
   });
 });

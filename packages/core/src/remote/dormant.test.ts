@@ -27,6 +27,15 @@ async function world() {
   return { instanceActor, lemmy, piefed, bob, fail };
 }
 
+/**
+ * The job's passes for the failures a test seeds: it first sees them a week before `now` (which
+ * starts the week), then runs at `now`.
+ */
+async function afterAWeek() {
+  await evaluateInstanceHealth(daysAgo(8, now));
+  return evaluateInstanceHealth(now);
+}
+
 const events = async () => (await outboxEvents()).map((event) => (event as { type: string }).type);
 const stateOf = async (instanceId: string) =>
   (await db().select().from(instanceHealth).where(eq(instanceHealth.instanceId, instanceId)))[0];
@@ -37,10 +46,13 @@ describe('becoming dormant', () => {
   test('deliveries that failed for a week with nothing heard back make an instance dormant, and only that instance', async () => {
     const w = await world();
     await w.fail(w.lemmy, 8, 5, 0.5);
+    expect(await evaluateInstanceHealth(daysAgo(8, now))).toEqual({ dormant: 0, revived: 0 });
+    // Piefed's deliveries began failing two days later.
     await w.fail(w.piefed, 6, 3, 0.5);
+    expect(await evaluateInstanceHealth(daysAgo(6, now))).toEqual({ dormant: 0, revived: 0 });
     expect(await evaluateInstanceHealth(now)).toEqual({ dormant: 1, revived: 0 });
     expect(await stateOf(w.lemmy.id)).toMatchObject({ state: 'dormant', failingSince: daysAgo(8, now), dormantSince: now });
-    expect(await stateOf(w.piefed.id)).toBeUndefined();
+    expect(await stateOf(w.piefed.id)).toMatchObject({ state: 'active', failingSince: daysAgo(6, now) });
     expect(await isDormant(w.lemmy.id, now)).toBe(true);
     expect(await isDormant(w.piefed.id, now)).toBe(false);
     expect(await events()).toEqual(['instance.dormant']);
@@ -49,21 +61,46 @@ describe('becoming dormant', () => {
     expect(await events()).toEqual(['instance.dormant']);
   });
 
+  test('the week counts from the first failure the job saw, not from the age of the rows', async () => {
+    const w = await world();
+    // Rows queued before our own worker was down: old, but their first attempt was just now.
+    await w.fail(w.lemmy, 9, 9, 9);
+    await seedDelivery(w.lemmy, w.instanceActor, { state: 'pending', attempts: 1, createdAt: daysAgo(0.5, now), settledAt: null });
+    expect(await evaluateInstanceHealth(now)).toEqual({ dormant: 0, revived: 0 });
+    expect(await stateOf(w.lemmy.id)).toMatchObject({ state: 'active', failingSince: now });
+    const days = (n: number) => new Date(now.getTime() + n * 24 * 60 * 60 * 1000);
+    // Deliveries keep failing through the week.
+    await Promise.all([3, 5, 6.5].map((n) => seedDelivery(w.lemmy, w.instanceActor, { state: 'failed', createdAt: days(n) })));
+    expect(await evaluateInstanceHealth(days(6.9))).toEqual({ dormant: 0, revived: 0 });
+    expect(await evaluateInstanceHealth(days(7.1))).toEqual({ dormant: 1, revived: 0 });
+    expect(await stateOf(w.lemmy.id)).toMatchObject({ state: 'dormant', failingSince: now, dormantSince: days(7.1) });
+  });
+
+  test('an instance that stops failing is forgotten, and a later failure starts the week again', async () => {
+    const w = await world();
+    await w.fail(w.lemmy, 3, 2, 1);
+    await evaluateInstanceHealth(daysAgo(3, now));
+    expect(await stateOf(w.lemmy.id)).toMatchObject({ failingSince: daysAgo(3, now) });
+    await seedDelivery(w.lemmy, w.instanceActor, { state: 'delivered', createdAt: hours(-1), settledAt: hours(-1) });
+    expect(await evaluateInstanceHealth(now)).toEqual({ dormant: 0, revived: 0 });
+    expect(await stateOf(w.lemmy.id)).toMatchObject({ state: 'active', failingSince: null });
+  });
+
   test('a delivery that succeeded since the failures began breaks the run', async () => {
     const w = await world();
     await w.fail(w.lemmy, 9, 8, 7, 0.5);
     await seedDelivery(w.lemmy, w.instanceActor, { state: 'delivered', createdAt: daysAgo(2, now) });
-    expect(await evaluateInstanceHealth(now)).toEqual({ dormant: 0, revived: 0 });
+    expect(await afterAWeek()).toEqual({ dormant: 0, revived: 0 });
     // The failures after the success are a new run, and it is young.
     await w.fail(w.lemmy, 1);
-    expect(await evaluateInstanceHealth(now)).toEqual({ dormant: 0, revived: 0 });
+    expect(await afterAWeek()).toEqual({ dormant: 0, revived: 0 });
   });
 
   test('an instance that sent us something within the week is not dormant', async () => {
     const w = await world();
     await w.fail(w.lemmy, 9, 4, 0.5);
     await seedInbound(w.bob, daysAgo(3, now));
-    expect(await evaluateInstanceHealth(now)).toEqual({ dormant: 0, revived: 0 });
+    expect(await afterAWeek()).toEqual({ dormant: 0, revived: 0 });
     // Silence past the window does not protect it.
     await writer().delete(inboxRaw);
     await seedInbound(w.bob, daysAgo(8, now));
@@ -74,7 +111,7 @@ describe('becoming dormant', () => {
     const w = await world();
     await w.fail(w.lemmy, 12, 10, 9);
     await w.fail(w.piefed, 9, 0.5);
-    expect(await evaluateInstanceHealth(now)).toEqual({ dormant: 0, revived: 0 });
+    expect(await afterAWeek()).toEqual({ dormant: 0, revived: 0 });
   });
 
   test('retrying deliveries count as failing, skipped ones do not', async () => {
@@ -82,9 +119,9 @@ describe('becoming dormant', () => {
     await seedDelivery(w.lemmy, w.instanceActor, { state: 'pending', attempts: 3, createdAt: daysAgo(8, now), settledAt: null });
     await seedDelivery(w.lemmy, w.instanceActor, { state: 'failed', createdAt: daysAgo(5, now) });
     await seedDelivery(w.lemmy, w.instanceActor, { state: 'skipped', createdAt: daysAgo(1, now) });
-    expect(await evaluateInstanceHealth(now)).toEqual({ dormant: 0, revived: 0 });
+    expect(await afterAWeek()).toEqual({ dormant: 0, revived: 0 });
     await seedDelivery(w.lemmy, w.instanceActor, { state: 'pending', attempts: 1, createdAt: daysAgo(1, now), settledAt: null });
-    expect(await evaluateInstanceHealth(now)).toEqual({ dormant: 1, revived: 0 });
+    expect(await afterAWeek()).toEqual({ dormant: 1, revived: 0 });
   });
 });
 
@@ -92,7 +129,7 @@ describe('a dormant instance', () => {
   async function dormant() {
     const w = await world();
     await w.fail(w.lemmy, 8, 5, 0.5);
-    await evaluateInstanceHealth(now);
+    await afterAWeek();
     return w;
   }
 
@@ -107,6 +144,33 @@ describe('a dormant instance', () => {
     expect(await isDormant(w.lemmy.id, hours(48))).toBe(false);
     expect((await events()).filter((type) => type === 'instance.probed')).toHaveLength(2);
     expect(dormancy.probeEveryMs).toBe(24 * 60 * 60 * 1000);
+  });
+
+  test('gives a probe back when nothing shows its delivery was tried', async () => {
+    const w = await dormant();
+    expect(await isDormant(w.lemmy.id, hours(24))).toBe(false); // the probe is claimed...
+    expect(await isDormant(w.lemmy.id, hours(24.2))).toBe(true);
+    // ...and the worker died before it sent anything: an hour on, the job gives it back.
+    expect(await evaluateInstanceHealth(hours(24.5))).toEqual({ dormant: 0, revived: 0 });
+    expect(await isDormant(w.lemmy.id, hours(24.6))).toBe(true);
+    expect(await evaluateInstanceHealth(hours(25.5))).toEqual({ dormant: 0, revived: 0 });
+    expect(await isDormant(w.lemmy.id, hours(25.6))).toBe(false);
+    // Nothing is released over and over: the new claim stands until it is old enough too.
+    expect(await isDormant(w.lemmy.id, hours(25.7))).toBe(true);
+    expect(await evaluateInstanceHealth(hours(26))).toEqual({ dormant: 0, revived: 0 });
+    expect(await isDormant(w.lemmy.id, hours(26.1))).toBe(true);
+  });
+
+  test('keeps a probe that was tried, whatever came of it', async () => {
+    const w = await dormant();
+    expect(await isDormant(w.lemmy.id, hours(24))).toBe(false);
+    // The probe failed for good; the activities behind it were skipped at once.
+    await seedDelivery(w.lemmy, w.instanceActor, { state: 'failed', createdAt: hours(24), settledAt: hours(24) });
+    await seedDelivery(w.lemmy, w.instanceActor, { state: 'skipped', attempts: 1, createdAt: hours(24), settledAt: hours(24) });
+    expect(await evaluateInstanceHealth(hours(26))).toEqual({ dormant: 0, revived: 0 });
+    expect(await isDormant(w.lemmy.id, hours(26.1))).toBe(true);
+    expect(await isDormant(w.lemmy.id, hours(47))).toBe(true);
+    expect(await isDormant(w.lemmy.id, hours(48))).toBe(false);
   });
 
   test('is revived by a probe that was delivered', async () => {
@@ -142,6 +206,6 @@ describe('a dormant instance', () => {
     const w = await world();
     const [local] = await db().select().from(instances).where(eq(instances.local, true));
     await seedDelivery(local!, w.instanceActor, { state: 'failed', createdAt: daysAgo(9, now) });
-    expect(await evaluateInstanceHealth(now)).toEqual({ dormant: 0, revived: 0 });
+    expect(await afterAWeek()).toEqual({ dormant: 0, revived: 0 });
   });
 });

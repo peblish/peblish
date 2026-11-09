@@ -10,7 +10,7 @@ import { truncateAll } from '../testing/db.ts';
 import { localUser, seedActor } from '../testing/seed.ts';
 import { outboxEvents } from '../testing/seed-az.ts';
 import { rsaKeys, seedLocalInstance } from '../testing/seed-fed-a.ts';
-import { checkRemoteActor, deleteRemoteActor, storeRemoteActor, type RemoteActorInput } from './actors.ts';
+import { checkRemoteActor, deleteRemoteActor, RemoteActorKindError, storeRemoteActor, type RemoteActorInput } from './actors.ts';
 import { isDormant, storeInstanceSoftware } from './instances.ts';
 
 const { publicKeyPem } = rsaKeys();
@@ -216,6 +216,47 @@ describe('the remote actor store', () => {
     expect(checkRemoteActor(instance)).toBeNull();
   });
 
+  test('a person becomes a bot and back, and any other change of kind throws and writes nothing', async () => {
+    const w = await world();
+    const person = `https://lemmy.test/u/mira`;
+    const account = (kind: RemoteActorInput['kind'], extra: Partial<RemoteActorInput> = {}) =>
+      input({
+        apId: person,
+        kind,
+        name: 'mira',
+        inboxUrl: `${person}/inbox`,
+        outboxUrl: null,
+        followersUrl: null,
+        moderatorsUrl: null,
+        publicKey: null,
+        ...extra,
+      });
+    const kindOf = async () => (await db().select().from(actors).where(eq(actors.apId, person)))[0];
+
+    const created = await storeRemoteActor(await w.store(person), account('Person'));
+    await storeRemoteActor(await w.store(person), account('Service', { bot: true }));
+    expect(await kindOf()).toMatchObject({ id: created.id, kind: 'Service', bot: true });
+    await storeRemoteActor(await w.store(person), account('Person', { bot: false }));
+    expect(await kindOf()).toMatchObject({ kind: 'Person', bot: false });
+    const updates = (await outboxEvents()).filter((event) => (event as { type: string }).type === 'actor.updated');
+    expect(updates).toMatchObject([{ kind: 'Service' }, { kind: 'Person' }]);
+
+    // A community never becomes a person, nor a person a community or an instance actor.
+    for (const kind of ['Group', 'Application'] as const) {
+      const error = await storeRemoteActor(await w.store(person), account(kind, { displayName: 'Changed' })).catch(
+        (thrown: unknown) => thrown,
+      );
+      expect(error).toBeInstanceOf(RemoteActorKindError);
+      // fed-a's resolve code recognises the error by its name (it cannot import the class).
+      expect(error).toMatchObject({ name: 'RemoteActorKindError' });
+      expect(error).toMatchObject({ apId: person, stored: 'Person', incoming: kind });
+    }
+    expect(await kindOf()).toMatchObject({ kind: 'Person', displayName: 'Lab' });
+    await storeRemoteActor(await w.store(), input());
+    await expect(storeRemoteActor(await w.store(), input({ kind: 'Service' }))).rejects.toBeInstanceOf(RemoteActorKindError);
+    await expect(storeRemoteActor(await w.store(), input({ kind: 'Application' }))).rejects.toBeInstanceOf(RemoteActorKindError);
+  });
+
   test('only the instance importing is authorized', async () => {
     const w = await world();
     const person = await seedActor(w.instance, 'Person', 'someone');
@@ -229,8 +270,8 @@ describe('deleting an actor and recording instance software', () => {
   test('a remote actor’s Delete scrubs the profile, keeps the id and key, and is recorded once', async () => {
     const w = await world();
     await storeRemoteActor(await w.store(), input());
-    expect(await deleteRemoteActor(await w.remove())).toMatchObject({ deleted: true });
-    expect(await deleteRemoteActor(await w.remove())).toMatchObject({ deleted: false });
+    expect(await deleteRemoteActor(await w.remove())).toMatchObject({ actorChanged: true });
+    expect(await deleteRemoteActor(await w.remove())).toMatchObject({ actorChanged: false });
     const [actor] = await db().select().from(actors).where(eq(actors.apId, apId));
     expect(actor).toMatchObject({ displayName: null, summaryHtml: null, raw: null, name: 'lab' });
     expect(actor?.deletedAt).toBeInstanceOf(Date);

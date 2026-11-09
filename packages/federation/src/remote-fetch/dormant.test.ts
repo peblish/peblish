@@ -43,6 +43,8 @@ beforeEach(truncateAll);
 describe('delivery to a dormant instance', () => {
   test('sends nothing, bar one probe a day, and a delivered probe brings the instance back', async () => {
     const w = await world();
+    // The job first saw the deliveries failing eight days ago, and has seen them fail since.
+    await evaluateInstanceHealth(daysAgo(8));
     expect(await evaluateInstanceHealth()).toEqual({ dormant: 1, revived: 0 });
     const peer = stubFetch({ [inbox]: { status: 202, type: 'text/plain' } });
 

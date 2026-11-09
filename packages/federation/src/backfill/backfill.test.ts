@@ -164,6 +164,24 @@ describe('the backfill of a followed community', () => {
     ]);
   });
 
+  test('refuses a document that is not the one its listing names, and a Note where it wants posts', async () => {
+    // The community lists a URL on elsewhere.test; that server answers with another host's post.
+    const asked = `${elsewhere}/post/12`;
+    const impostor = lemmyPage(1, { id: 'https://good.test/post/1', attributedTo: 'https://good.test/u/alice' });
+    const server = peers({
+      [`${lab}/outbox`]: {
+        body: collection(`${lab}/outbox`, [asked, createOf(lemmyNote(30, `${lemmy}/post/540`)), createOf(lemmyPage(541))]),
+      },
+      ...route(asked, impostor),
+    });
+    await queue();
+    await run(server.fetch);
+    expect(await postIds()).not.toContain('https://good.test/post/1');
+    expect(await db().select().from(comments)).toEqual([]);
+    expect(await backfill()).toMatchObject({ state: 'done', posts: 1 });
+    expect(server.requests.some((request) => request.url.startsWith('https://good.test'))).toBe(false);
+  });
+
   test('stops at its caps and says so: posts, and requests', async () => {
     const pages = [520, 521, 522, 523].map((n) => lemmyPage(n));
     const server = peers({ ...outbox(...pages) });
@@ -177,6 +195,80 @@ describe('the backfill of a followed community', () => {
       limits: { ...backfillLimits, requests: 3 },
     });
     expect((await backfill())?.note).toContain('stopped at 3 requests');
+  });
+
+  describe('a post’s own comment collection is the post author’s, so it yields comments on that post and nothing else', () => {
+    const contextUrl = `${lemmy}/post/510/context`;
+    const items = () => [
+      lemmyNote(2, `${lemmy}/comment/1`), // a reply to a comment that is listed after it
+      lemmyNote(1, `${lemmy}/post/510`),
+      lemmyPage(520), // a Page is never a comment
+      lemmyNote(3, `${lemmy}/post/511`), // a reply to another post
+      lemmyNote(4, `${lemmy}/comment/77`), // a reply to nothing that reaches the post
+      lemmyNote(5, `${lemmy}/comment/3`), // a reply to a comment that was refused
+    ];
+    const serve = (extra: Record<string, { status?: number; body?: unknown }> = {}) =>
+      peers({
+        ...outbox(lemmyPage(510, { context: contextUrl }), lemmyPage(511)),
+        ...route(contextUrl, collection(contextUrl, items())),
+        ...extra,
+      });
+    const commentIds = async () => (await db().select({ apId: comments.apId }).from(comments)).map((row) => row.apId).sort();
+
+    test('in thread order, whatever order it lists them in; Pages and replies elsewhere are left', async () => {
+      await queue();
+      await run(serve().fetch);
+      expect(await commentIds()).toEqual([`${lemmy}/comment/1`, `${lemmy}/comment/2`]);
+      expect(await postIds()).not.toContain(`${lemmy}/post/520`);
+      expect(await backfill()).toMatchObject({ state: 'done', posts: 2, comments: 2 });
+      // Run again: nothing new is stored, and the counts do not grow.
+      await queue();
+      await run(serve().fetch);
+      expect(await backfill()).toMatchObject({ posts: 2, comments: 2 });
+    });
+
+    test('counts every comment it stores against the caps', async () => {
+      const chain = [lemmyNote(1, `${lemmy}/post/510`), lemmyNote(2, `${lemmy}/comment/1`), lemmyNote(3, `${lemmy}/comment/2`)];
+      const server = peers({ ...outbox(lemmyPage(510, { context: contextUrl })), ...route(contextUrl, collection(contextUrl, chain)) });
+      await queue();
+      await run(server.fetch, { limits: { ...backfillLimits, commentsPerPost: 2 } });
+      expect(await commentIds()).toEqual([`${lemmy}/comment/1`, `${lemmy}/comment/2`]);
+      expect(await backfill()).toMatchObject({ posts: 1, comments: 2 });
+
+      await queue();
+      await run(server.fetch, { limits: { ...backfillLimits, comments: 2 } });
+      expect(await commentIds()).toEqual([`${lemmy}/comment/1`, `${lemmy}/comment/2`]);
+    });
+
+    test('is not read from a server that is neither the post’s nor the community’s', async () => {
+      const evil = 'https://evil.test/ctx';
+      const server = peers({
+        ...outbox(lemmyPage(510, { context: evil })),
+        ...route(evil, collection(evil, [lemmyNote(1, `${lemmy}/post/510`)])),
+      });
+      await queue();
+      await run(server.fetch);
+      expect(await db().select().from(comments)).toEqual([]);
+      expect(server.requests.some((request) => request.url === evil)).toBe(false);
+      expect(await backfill()).toMatchObject({ state: 'done', posts: 1, note: expect.stringContaining('another server') });
+    });
+  });
+
+  test('stops before its lease ends, keeps what it stored, and settles while it still owns the row', async () => {
+    let now = new Date('2026-11-09T12:00:00Z');
+    const server = peers({ ...featured(lemmyPage(550)), ...outbox(lemmyPage(551)) });
+    // The featured collection is slow: by the time it answers the lease is nearly over.
+    const slow: typeof server.fetch = async (url, init) => {
+      const answer = await server.fetch(url, init);
+      if (String(url) === `${lab}/featured`) now = new Date(now.getTime() + backfillLimits.leaseMs - backfillLimits.settleMarginMs);
+      return answer;
+    };
+    await queue();
+    expect(await run(slow, { now: () => now })).toBe(1);
+    expect(await backfill()).toMatchObject({ state: 'done', posts: 1, note: expect.stringContaining('end of its lease') });
+    expect(await postIds()).toContain(`${lemmy}/post/550`);
+    expect(await postIds()).not.toContain(`${lemmy}/post/551`);
+    expect(server.requests.some((request) => request.url === `${lab}/outbox`)).toBe(false);
   });
 
   test('is tried again when the outbox is down, and fails for good after the last try', async () => {
