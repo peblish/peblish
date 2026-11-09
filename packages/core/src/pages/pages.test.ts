@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, test } from 'vitest';
 import { authorize } from '../authz/authorize.ts';
 import { db } from '../db/read.ts';
 import { authUser } from '../db/tables/auth.ts';
+import { siteSettings } from '../db/tables/site.ts';
 import { modlog } from '../db/tables/moderation.ts';
 import { writer } from '../db/write.ts';
 import { updateSettingsAs } from '../settings/write.ts';
@@ -15,6 +16,7 @@ import { Refused } from '../tx/refused.ts';
 import { publishPage, publishPageAs, unpublishPage, unpublishPageAs } from './publish.ts';
 import { listPages, publishedPages, readDraft, readPublishedPage, unresolvedTokens } from './read.ts';
 import { savePage, savePageAs, seedShippedPages } from './save.ts';
+import { prepareRevision } from './prepare.ts';
 import { pageRevisions, pages } from './tables.ts';
 
 beforeEach(truncateAll);
@@ -311,6 +313,41 @@ describe('a publish and a change of operator details at once', () => {
     const [revision] = await db().select({ bodyMd: pageRevisions.bodyMd }).from(pageRevisions).where(eq(pageRevisions.id, revisionId));
     expect(revision?.bodyMd).toContain('Test Operator');
     expect(revision?.bodyMd).not.toContain('Someone Else');
+  });
+});
+
+describe('a publish and a settings save lock the operator rows the same way round', () => {
+  test('the publish reads them in key order, so a writer locking in key order never deadlocks with it', async () => {
+    const { admin } = await world();
+    await fill(admin);
+    await saved(admin);
+    // Put contact.email (first in key order) after operator.name (last) in the table, so a scan
+    // that is not sorted would lock operator.name first.
+    const [email] = await writer().delete(siteSettings).where(eq(siteSettings.key, 'contact.email')).returning();
+    await writer().insert(siteSettings).values(email!);
+    const placed = await db().execute<{ key: string }>(
+      sql`select key from site_settings where key in ('contact.email', 'operator.name') order by ctid`,
+    );
+    expect(placed.map((row) => row.key)).toEqual(['operator.name', 'contact.email']);
+
+    // The writer holds contact.email, as settings/write.ts does when it saves it with operator.name.
+    const second = gate();
+    const writing = writer().transaction(async (t) => {
+      await t.select().from(siteSettings).where(eq(siteSettings.key, 'contact.email')).for('no key update');
+      await second.opened;
+      await t.select().from(siteSettings).where(eq(siteSettings.key, 'operator.name')).for('no key update');
+    });
+    // The publish's read, made to scan the table rather than walk the key index.
+    const publishing = writer().transaction(async (t) => {
+      await t.execute(sql`set local enable_indexscan = off`);
+      await t.execute(sql`set local enable_bitmapscan = off`);
+      await t.execute(sql`set local enable_indexonlyscan = off`);
+      return prepareRevision(t, rules, true);
+    });
+    await expect.poll(someoneWaitsOnALock).toBe(true);
+    second.open();
+    await writing;
+    expect(await publishing).toMatchObject({ ok: true });
   });
 });
 
