@@ -25,7 +25,8 @@ import { commentPath, communityPath, postPath, userPath } from '../../shell/path
 import { usePrefs } from '../../shell/prefs.tsx';
 import { kitEnabled } from './-enabled.ts';
 import { SlowVotes } from './-slow-votes.tsx';
-import { deepThread, feed, now, posts, proseSample, thread, thumbnailSrc } from './-samples.ts';
+import { loadKitContent } from './-render.ts';
+import { feed, now, posts, thumbnailSrc } from './-samples.ts';
 import kitCss from './-kit.css?url';
 
 // The component gallery: every @peblish/ui component in its states, for e2e (axe, density,
@@ -36,6 +37,8 @@ export const Route = createFileRoute('/kit/')({
   beforeLoad: async () => {
     if (!(await kitEnabled())) throw notFound();
   },
+  // Bodies are rendered on the server, through the same renderer the post page uses.
+  loader: () => loadKitContent(),
   component: Kit,
 });
 
@@ -60,6 +63,7 @@ function KitPage() {
   const voteLabels = useVoteLabels();
   const densityLabels = useDensityLabels();
   const toast = useToast();
+  const { thread, deepThread, markdown, remote } = Route.useLoaderData();
   const [count, setCount] = useState(0);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [replyTarget, setReplyTarget] = useState<{ handle: string; excerpt: string } | null>({
@@ -221,7 +225,8 @@ function KitPage() {
       <section aria-labelledby="kit-prose">
         <h2 id="kit-prose">Rendered content</h2>
         <div data-testid="kit-prose">
-          <Prose html={proseSample} />
+          <Prose html={markdown} />
+          <Prose html={remote} className="kit-remote" />
         </div>
       </section>
 

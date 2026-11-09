@@ -153,6 +153,11 @@
     content: '…';
   }
 
+  /* The back arrow is outside the Latin font slices: set in Inter it would pull the 468 kB full font file onto every page with a footnote (e2e/payload checks for it). The system's own arrow costs nothing. */
+  .pb-prose a.footnote-backref {
+    font-family: system-ui, sans-serif;
+  }
+
   .pb-prose sup.footnote-ref a {
     text-decoration: none;
   }
