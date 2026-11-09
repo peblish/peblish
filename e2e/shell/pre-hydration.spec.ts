@@ -79,6 +79,42 @@ test.describe('on a phone', () => {
     }
   });
 
+  test('an adopted drawer replaces its history entry once, closes on a link tap and stays closed on Back', async ({ page }) => {
+    const release = await holdScripts(page);
+    try {
+      await page.goto('/', { waitUntil: 'commit' });
+      const side = page.getByRole('complementary', { name: 'Sidebar' });
+      await page.getByRole('link', { name: 'Open menu' }).click();
+      await expect(side).toBeVisible();
+      const entries = await page.evaluate(() => history.length);
+
+      release();
+      await page.locator('html[data-hydrated="1"]').waitFor({ state: 'attached' });
+      await expect(side).toBeVisible();
+      await expect(page.locator('.pb-app__body')).toHaveAttribute('inert', '');
+      // The hash entry the link made was replaced, not joined by another.
+      expect(await page.evaluate(() => history.length)).toBe(entries);
+      expect(page.url()).not.toContain('#');
+
+      // A tap on a sidebar link after hydration: the page changes and the drawer is closed, with
+      // nothing left over from the :target that opened it (a stale :target must not reopen it).
+      await side.getByRole('link', { name: 'Local', exact: true }).click();
+      await page.waitForURL('**/local');
+      await expect(side).toBeHidden();
+      await expect(page.locator('.pb-app__body')).not.toHaveAttribute('inert');
+      expect(page.url()).not.toContain('#');
+
+      // Back returns to the first page with the drawer still closed.
+      await page.goBack();
+      await page.waitForURL((url) => url.pathname === '/' && url.hash === '');
+      await expect(side).toBeHidden();
+      await expect(page.locator('.pb-app__body')).not.toHaveAttribute('inert');
+      await expect(page.getByRole('link', { name: 'Open menu' })).toHaveAttribute('aria-expanded', 'false');
+    } finally {
+      release();
+    }
+  });
+
   test('with scripts off, the menu link opens the sidebar and its links work', async ({ browser, baseURL }) => {
     const context = await browser.newContext({ javaScriptEnabled: false, viewport: phone, baseURL });
     try {
