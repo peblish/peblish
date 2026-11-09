@@ -6,6 +6,7 @@ import { tx } from '@peblish/core/tx/tx';
 import { and, eq, sql } from 'drizzle-orm';
 import type { Fetcher } from '../actors/document.ts';
 import { BlockedDestinationError, safeFetch } from '../actors/safe-fetch.ts';
+import { userAgent } from '../federation.ts';
 import { refreshInstanceSoftware } from '../nodeinfo/client.ts';
 import { signDelivery } from '../signing/sign.ts';
 import { leaseMs as defaultLeaseMs, maxResponseBytes, parseRetryAfter, requestTimeoutMs, verdict, type Attempt } from './policy.ts';
@@ -111,6 +112,7 @@ async function attempt(row: Claimed, fetch: Fetcher): Promise<Outcome> {
     };
   }
   headers.delete('host');
+  headers.set('user-agent', await userAgent());
   let result: Attempt;
   let status: number | null = null;
   let note: string | null = null;

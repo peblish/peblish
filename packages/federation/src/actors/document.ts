@@ -1,3 +1,4 @@
+import { userAgent } from '../federation.ts';
 import { BlockedDestinationError, safeFetch, type SafeResponse } from './safe-fetch.ts';
 
 // The one way federation reads a document from a peer: an actor, a WebFinger answer, a
@@ -33,7 +34,7 @@ export const activityAccept = 'application/activity+json, application/ld+json; p
 export async function fetchJson(url: string, fetch: Fetcher, accept = activityAccept): Promise<{ json: unknown; url: string }> {
   let response: SafeResponse;
   try {
-    response = await fetch(url, { ...documentLimits, headers: { accept } });
+    response = await fetch(url, { ...documentLimits, headers: { accept, 'user-agent': await userAgent() } });
   } catch (error) {
     if (error instanceof BlockedDestinationError) throw new FetchFailure('blocked', error.message);
     throw new FetchFailure('unreachable', error instanceof Error ? error.message : String(error));
