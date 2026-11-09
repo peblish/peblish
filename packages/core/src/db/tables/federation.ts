@@ -29,6 +29,11 @@ export const inboxRaw = pgTable(
       .on(t.receivedAt)
       .where(sql`${t.state} = 'pending'`),
     index('inbox_raw_activity').on(t.activityId),
+    // Whether any actor of an instance sent something lately (dormancy), and the hourly prune of settled rows.
+    index('inbox_raw_actor').on(t.actorApId, t.receivedAt),
+    index('inbox_raw_processed')
+      .on(t.processedAt)
+      .where(sql`${t.state} <> 'pending'`),
   ],
 );
 

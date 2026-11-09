@@ -15,7 +15,7 @@ const stateValues = ['pending', 'delivered', 'failed', 'skipped'] as const;
  * and a lease, and a worker that dies mid-POST leaves a lease that expires, so the row is
  * sent again: delivery is at least once, and receivers dedupe on the activity id. A row ends
  * `delivered` (2xx), `failed` (a permanent refusal, or the retries ran out) or `skipped` (the
- * instance is dormant). Nothing prunes old rows yet.
+ * instance is dormant). Settled rows are pruned after 30 days (remote/prune.ts).
  */
 export const deliveries = pgTable(
   'deliveries',
@@ -53,5 +53,12 @@ export const deliveries = pgTable(
       .where(sql`${t.state} = 'pending'`),
     index('deliveries_object').on(t.objectApId),
     index('deliveries_instance').on(t.instanceId, t.state),
+    // The dormancy job's last success per instance, and the hourly prune of settled rows.
+    index('deliveries_delivered')
+      .on(t.instanceId, t.settledAt)
+      .where(sql`${t.state} = 'delivered'`),
+    index('deliveries_settled')
+      .on(t.settledAt)
+      .where(sql`${t.state} <> 'pending'`),
   ],
 );
