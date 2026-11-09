@@ -1,7 +1,7 @@
-import { db } from '@peblish/core/db/read';
-import { actors } from '@peblish/core/db/tables/actors';
+import { db, type Queryable } from '@peblish/core/db/read';
+import { actorKeys, actors } from '@peblish/core/db/tables/actors';
 import { checkRemoteActor, storeRemoteActor } from '@peblish/core/remote/actors';
-import { eq } from 'drizzle-orm';
+import { asc, eq } from 'drizzle-orm';
 import { importGrant } from '../../actors/grants.ts';
 import type { ActorRecord } from '../../mapping/records.ts';
 import { prepared, type InboundContext, type InboundHandler, type Prepared } from '../handler.ts';
@@ -15,19 +15,34 @@ import { prepareContent } from './_content.ts';
  * one. The store keeps `summary` as the peer's raw HTML (nothing here or there sanitises it,
  * and this must not either: readCommunity sanitises on read, and doing it at store would run
  * the media-proxy rewrite twice), so no code of this lane renders or forwards it.
+ *
+ * Only an actor's own Update says which key it signs with. An edit someone else sent (a
+ * moderator's Update(Group), relayed by the community's Announce) keeps the stored key: a
+ * document written on another server must not change the key a community is verified by.
  */
+async function storedKey(q: Queryable, actorId: string, apId: string): Promise<ActorRecord['publicKey']> {
+  const [key] = await q
+    .select({ keyId: actorKeys.keyId, pem: actorKeys.publicKeyPem })
+    .from(actorKeys)
+    .where(eq(actorKeys.actorId, actorId))
+    .orderBy(asc(actorKeys.createdAt))
+    .limit(1);
+  return key ? { keyId: key.keyId, ownerApId: apId, pem: key.pem } : null;
+}
+
 async function prepareActor(ctx: InboundContext, record: ActorRecord): Promise<Prepared> {
   const own = record.apId === ctx.activity.actorApId;
   const byCommunity = ctx.announce?.community.apId === record.apId;
   if (!own && !byCommunity) throw skip('actor.update_unauthorized', record.apId);
-  const [held] = await db().select({ local: actors.local }).from(actors).where(eq(actors.apId, record.apId));
+  const [held] = await db().select({ id: actors.id, local: actors.local }).from(actors).where(eq(actors.apId, record.apId));
   if (!held) throw skip('actor.unknown', record.apId);
   if (held.local) throw skip('actor.update_unauthorized', record.apId);
   if (checkRemoteActor(record) !== null) throw skip('object.origin_mismatch', record.apId);
   const grant = await importGrant('remote.actor_store', { apId: record.apId });
   return prepared(ctx, async (t) => {
     // An actor that sent a Delete stays deleted: the store changes nothing.
-    if ((await storeRemoteActor.within(t, grant, record)).deleted) throw skip('target.deleted', record.apId);
+    const input = own ? record : { ...record, publicKey: await storedKey(t.db, held.id, record.apId) };
+    if ((await storeRemoteActor.within(t, grant, input)).deleted) throw skip('target.deleted', record.apId);
     return { objectApId: record.apId };
   });
 }

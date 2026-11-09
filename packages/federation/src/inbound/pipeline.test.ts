@@ -1,7 +1,7 @@
 import { eq } from 'drizzle-orm';
 import { beforeEach, describe, expect, test } from 'vitest';
 import { db } from '@peblish/core/db/read';
-import { actors } from '@peblish/core/db/tables/actors';
+import { actorKeys, actors } from '@peblish/core/db/tables/actors';
 import { posts, votes } from '@peblish/core/db/tables/content';
 import { activities, inboxDedupe, inboxRaw } from '@peblish/core/db/tables/federation';
 import { follows } from '@peblish/core/db/tables/follows';
@@ -10,7 +10,7 @@ import { outbox } from '@peblish/core/db/tables/outbox';
 import { truncateAll } from '@peblish/core/testing/db';
 import { seedAccount } from '@peblish/core/testing/seed-b1';
 import { deliverRow, inboxState, seedFollow, seedInboundWorld, seedInboxRow } from '@peblish/core/testing/seed-fed-b';
-import { stubFetch } from '@peblish/core/testing/seed-fed-a';
+import { rsaKeys, stubFetch } from '@peblish/core/testing/seed-fed-a';
 import { processPending } from './job.ts';
 import { fetchesPerRow, processRow, type PipelineOptions } from './pipeline.ts';
 import { requeueSkippedFor } from './queue.ts';
@@ -494,5 +494,43 @@ describe('an Announce of an Announce', () => {
     const batched = await deliver({ ...cycle, id: `${lemmy}/activities/announce/c`, object: [cycle.object] }, { fetch: probe.fetch });
     expect(batched.stored?.error).toMatch(/^announce\.nested/);
     expect(probe.requests).toEqual([]);
+  });
+});
+
+describe('an Update of a community’s profile', () => {
+  const group = (publicKeyPem: string) => ({
+    id: lab,
+    type: 'Group',
+    preferredUsername: 'lab',
+    name: 'Lab, edited',
+    inbox: `${lab}/inbox`,
+    publicKey: { id: `${lab}#main-key`, owner: lab, publicKeyPem },
+  });
+  const updateBy = (actor: string, publicKeyPem: string) => ({
+    id: activityId(lemmy, 'update'),
+    type: 'Update',
+    actor,
+    object: group(publicKeyPem),
+    to: [PUBLIC],
+  });
+  const stored = async () => ({
+    name: (await db().select().from(actors).where(eq(actors.apId, lab)))[0]?.displayName,
+    key: (
+      await db()
+        .select()
+        .from(actorKeys)
+        .where(eq(actorKeys.keyId, `${lab}#main-key`))
+    )[0]?.publicKeyPem,
+  });
+
+  test('sent by a moderator and announced edits the profile but never the key; the community’s own Update changes the key', async () => {
+    const attacker = rsaKeys().publicKeyPem;
+    const moderator = await deliver(announceBy(lab, updateBy(hosts.lemmyadmin, attacker)));
+    expect(moderator.stored).toEqual({ state: 'applied', error: null });
+    expect(await stored()).toEqual({ name: 'Lab, edited', key: world.peers.lab.keys.publicKeyPem });
+
+    const own = await deliver(updateBy(lab, attacker));
+    expect(own.stored).toEqual({ state: 'applied', error: null });
+    expect((await stored()).key).toBe(attacker);
   });
 });
