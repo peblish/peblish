@@ -21,8 +21,6 @@ export async function followState(actorId: Uuid, communityId: Uuid): Promise<Fol
 
 export type FollowedCommunity = {
   id: Uuid;
-  /** Same as `id`; the sidebar and the composer's picker read it under this name until they move to `id`. */
-  communityId: Uuid;
   apId: string;
   name: string;
   displayName: string | null;
@@ -66,5 +64,5 @@ export async function followedCommunities(actorId: Uuid): Promise<FollowedCommun
       ),
     )
     .orderBy(asc(actors.name));
-  return rows.map((row) => ({ ...row, communityId: row.id }));
+  return rows;
 }

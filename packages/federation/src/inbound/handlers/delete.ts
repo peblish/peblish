@@ -1,15 +1,14 @@
 import { db } from '@peblish/core/db/read';
 import { removeContent, restoreContent } from '@peblish/core/moderation/remove';
-import { deleteComment } from '@peblish/core/comments/delete';
+import { deleteComment, restoreComment } from '@peblish/core/comments/delete';
 import { deletePost, restorePost } from '@peblish/core/posts/delete';
 import { deleteRemoteActor, undeleteRemoteActor } from '@peblish/core/remote/actors';
+import { recordDeletion, recordRestoration } from '@peblish/core/remote/ledger';
 import type { Activity } from '../../mapping/records.ts';
 import { importGrant } from '../../actors/grants.ts';
 import { checkCommunity, communityById, grantFor, storedActor, storedContent, type Stored } from '../authorize.ts';
 import { prepared, type InboundContext, type InboundHandler, type Prepared } from '../handler.ts';
-import { recordDeletion, recordRestoration } from '../ledger.ts';
 import { skip, type Skipped } from '../reasons.ts';
-import type { Tx } from '@peblish/core/tx/tx';
 
 // Delete. Lemmy and PieFed use one verb for three things:
 // - the author deleting their post or comment (no reason): a soft delete the author can undo;
@@ -34,16 +33,6 @@ async function contentOrWhy(apId: string): Promise<Stored> {
   return target;
 }
 
-/**
- * An author taking back the Delete of their comment. integration: lane d's restoreComment
- * (action comment.restore, event comment.restored; author only, rechecked) replaces the throw:
- *
- *   await restoreComment.within(t, await grantFor(ctx, t, 'comment.restore', { commentId: target.id }));
- */
-async function restoreOwnComment(_ctx: InboundContext, _t: Tx, _target: Stored): Promise<void> {
-  throw skip('undo.unsupported', 'a comment’s own Delete');
-}
-
 /** An author's own Delete: no reason given, and the actor wrote the target. */
 const isAuthorsOwn = (sender: { id: string }, target: Stored, reason: string | null) => target.authorId === sender.id && reason === null;
 
@@ -51,14 +40,12 @@ async function prepareActorDelete(ctx: InboundContext): Promise<Prepared> {
   const grant = await importGrant('remote.actor_delete', { apId: ctx.sender.apId });
   // Lemmy's account deletion with "delete content" sets removeData on the Delete; the mapping does not carry it.
   const removeContent = ctx.raw.removeData === true;
-  return prepared(ctx, async (t) => {
-    const outcome = await deleteRemoteActor.within(t, grant, { removeContent, cause: 'Delete' });
-    // integration: deleteRemoteActor answers { actorChanged, contentRemoved } (lane rem); destructure that and drop this line.
-    const { actorChanged, contentRemoved } = { actorChanged: outcome.deleted, contentRemoved: outcome.posts + outcome.comments };
-    // An actor that was gone already may still have had its content removed by this Delete.
-    if (!actorChanged && contentRemoved === 0) throw skip('target.deleted', ctx.sender.apId);
-    return { objectApId: ctx.sender.apId };
-  });
+  // Not one transaction: the actor is tombstoned in its own and its content removed post by post
+  // (core/remote/actors.ts), so the call is made here, outside the one `prepared` opens.
+  const { actorChanged, contentRemoved } = await deleteRemoteActor(grant, { removeContent, cause: 'Delete' });
+  // An actor that was gone already may still have had its content removed by this Delete.
+  if (!actorChanged && contentRemoved === 0) throw skip('target.deleted', ctx.sender.apId);
+  return prepared(ctx, async () => ({ objectApId: ctx.sender.apId }));
 }
 
 /** Undo(Delete) of the account's own Delete: the actor is alive again (content its deletion removed stays removed). */
@@ -108,7 +95,7 @@ export const handler: InboundHandler = {
         await restoreContent.within(t, grant, { activityApId: ctx.activity.id });
       } else {
         if (target.kind === 'post') await restorePost.within(t, await grantFor(ctx, t, 'post.restore', { postId: target.id }));
-        else await restoreOwnComment(ctx, t, target);
+        else await restoreComment.within(t, await grantFor(ctx, t, 'comment.restore', { commentId: target.id }));
         await recordRestoration(t, { kind: target.kind, id: target.id, actorId: ctx.sender.id });
       }
       return { communityId: community.id, objectApId: target.apId, relay: true };

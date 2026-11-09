@@ -1,4 +1,4 @@
-import { followedCommunities, type FollowedCommunity } from '@peblish/core/follows/read';
+import { followedCommunities } from '@peblish/core/follows/read';
 import { listLocalCommunities, listModerators, readCommunity } from '@peblish/core/communities/read';
 import { localHandles } from '@peblish/core/identity/handles';
 import { readPost } from '@peblish/core/posts/read';
@@ -32,47 +32,15 @@ async function canPostIn(viewer: SessionView, community: { id: string; restricte
 const ageAllows = (viewer: SessionView, community: { sensitive: boolean; nsfl: boolean }) =>
   viewer.ageDeclaredAt !== null || !(community.sensitive || community.nsfl);
 
-/** What the picker needs of a followed remote community. */
-interface FollowedRemote {
-  id: string;
-  /** `name@host` */
-  handle: string;
-  postingRestrictedToMods: boolean;
-  sensitive: boolean;
-  nsfl: boolean;
-}
-
-/**
- * The accepted follows that are remote Groups, without the removed and deleted ones.
- */
-// integration: replace with followedCommunities fields. It returns { id, apId, name, host, local,
-// postingRestrictedToMods, sensitive, nsfl } and excludes removed communities, so this becomes a
-// filter on `local` (and `state` if it stays) and a map to `handle: `${name}@${host}``. Until that
-// is in the tree the flags are read from the community rows, one readCommunity each (it leaves out
-// removed and deleted communities itself).
-async function followedRemote(followed: readonly FollowedCommunity[]): Promise<FollowedRemote[]> {
-  const accepted = followed.filter(({ local, state }) => !local && state === 'accepted');
-  const rows = await Promise.all(accepted.map(({ communityId }) => readCommunity({ id: communityId })));
-  return rows
-    .filter((community) => community !== null)
-    .map(({ actor, postingRestrictedToMods, sensitive, nsfl }) => ({
-      id: actor.id,
-      handle: actor.handle,
-      postingRestrictedToMods,
-      sensitive,
-      nsfl,
-    }));
-}
-
 /**
  * Local communities, then the remote ones the person follows (accepted follows only). A
  * community age-gated as sensitive or NSFL is listed only for someone who declared 16+, a
  * removed one never, and a mods-only one is disabled for anyone who is not staff there.
  */
 async function pickable(viewer: SessionView): Promise<PickerCommunity[]> {
-  const [local, followedGroups] = await Promise.all([
+  const [local, followed] = await Promise.all([
     listLocalCommunities({ includeSensitive: viewer.ageDeclaredAt !== null }),
-    followedCommunities(viewer.actorId).then(followedRemote),
+    followedCommunities(viewer.actorId),
   ]);
   const rows = await Promise.all(
     local.map(async ({ actor, postingRestrictedToMods, subscribers }): Promise<PickerCommunity> => ({
@@ -85,11 +53,11 @@ async function pickable(viewer: SessionView): Promise<PickerCommunity[]> {
     })),
   );
   const remote = await Promise.all(
-    followedGroups
-      .filter((community) => ageAllows(viewer, community))
-      .map(async ({ id, handle, postingRestrictedToMods }): Promise<PickerCommunity> => ({
+    followed
+      .filter((community) => !community.local && community.state === 'accepted' && ageAllows(viewer, community))
+      .map(async ({ id, name, host, postingRestrictedToMods }): Promise<PickerCommunity> => ({
         id,
-        handle,
+        handle: `${name}@${host}`,
         local: false,
         subscribers: null,
         restricted: postingRestrictedToMods,

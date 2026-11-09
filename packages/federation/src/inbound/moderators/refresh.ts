@@ -18,9 +18,6 @@ import { Skipped, skip } from '../reasons.ts';
 
 export type FetchedModerators = { collection: string; moderatorIds: string[] };
 
-// integration: replace with fetchActivity(url, fetch, { maxRedirects: 0 }) from actors/document.ts (lane fed-a), whose default is no redirects
-const fetchCollection = (url: string, fetch: Fetcher) => fetchActivity(url, (target, init) => fetch(target, { ...init, maxRedirects: 0 }));
-
 const transient = (error: FetchFailure) =>
   error.reason === 'unreachable' || (error.status !== undefined && (error.status >= 500 || error.status === 429 || error.status === 408));
 
@@ -44,7 +41,7 @@ export async function fetchModerators(communityId: string, fetch: Fetcher = safe
   if (new URL(collection).origin !== new URL(community.apId).origin) throw skip('moderators.unreachable', collection);
   let members;
   try {
-    const read = moderatorsFromWire((await fetchCollection(collection, fetch)).json);
+    const read = moderatorsFromWire((await fetchActivity(collection, fetch, { maxRedirects: 0 })).json);
     if (read.apId !== collection) throw skip('moderators.unreachable', `${collection} names itself ${read.apId}`);
     members = read.moderatorApIds;
   } catch (error) {

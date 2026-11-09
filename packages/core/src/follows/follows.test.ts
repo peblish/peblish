@@ -147,7 +147,6 @@ describe('the communities a viewer follows, for the sidebar and the composer', (
       expect.objectContaining({ name: 'lab', host: 'lemmy.test', postingRestrictedToMods: false, sensitive: false, nsfl: false }),
       {
         id: w.local.id,
-        communityId: w.local.id,
         apId: w.local.apId,
         name: 'news',
         displayName: null,
