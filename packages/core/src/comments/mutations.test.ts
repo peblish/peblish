@@ -1,0 +1,284 @@
+import { eq, sql } from 'drizzle-orm';
+import { beforeEach, describe, expect, test } from 'vitest';
+import { authorize } from '../authz/authorize.ts';
+import { db } from '../db/read.ts';
+import { comments, posts, votes } from '../db/tables/content.ts';
+import { writer } from '../db/write.ts';
+import { actors } from '../db/tables/actors.ts';
+import { lockPost } from '../moderation/lock.ts';
+import { banFromCommunity } from '../moderation/ban.ts';
+import { removeContent } from '../moderation/remove.ts';
+import { truncateAll } from '../testing/db.ts';
+import { grantFor, outboxEvents, writeCounts } from '../testing/seed-az.ts';
+import { seedPostWorld } from '../testing/seed-b1.ts';
+import { localUser } from '../testing/seed.ts';
+import { Refused } from '../tx/refused.ts';
+import { tx } from '../tx/tx.ts';
+import { createCommentAs, deleteCommentAs, updateCommentAs } from './actions.ts';
+import { createComment } from './create.ts';
+import { deleteComment } from './delete.ts';
+import { updateComment } from './edit.ts';
+import { NewComment, commentMaxLength, maxCommentDepth } from './input.ts';
+
+beforeEach(truncateAll);
+
+/** The Postgres error code behind a Drizzle query error, if any. */
+function postgresCode(error: unknown): unknown {
+  return error instanceof Error && typeof error.cause === 'object' && error.cause !== null && 'code' in error.cause
+    ? error.cause.code
+    : undefined;
+}
+
+const commentRow = async (id: string) => (await db().select().from(comments).where(eq(comments.id, id)))[0]!;
+const postRow = async (id: string) => (await db().select().from(posts).where(eq(posts.id, id)))[0]!;
+const ok = <T extends { ok: boolean }>(result: T): Extract<T, { ok: true }> => {
+  if (!result.ok) throw new Error(`refused: ${JSON.stringify(result)}`);
+  return result as Extract<T, { ok: true }>;
+};
+
+async function world() {
+  const w = await seedPostWorld();
+  return { w, reader: localUser(w.people.reader.id), postId: w.posts.local.normal, post: { id: w.posts.local.normal } };
+}
+
+describe('createComment', () => {
+  test('writes the comment, the counts and comment.created in one transaction, rendering the body once', async () => {
+    const { w, reader, postId } = await world();
+    const grant = await grantFor('comment.create', reader, { postId, parentId: null });
+    const { id, apId } = await createComment(grant, { bodyMd: 'Some **bold** text' });
+    const row = await commentRow(id);
+    expect(row).toMatchObject({
+      apId: `https://feddit.test/ap/comment/${id}`,
+      local: true,
+      postId,
+      parentId: null,
+      authorId: w.people.reader.id,
+      path: id,
+      bodyMd: 'Some **bold** text',
+      upvotes: 0,
+      downvotes: 0,
+      childCount: 0,
+      distinguished: false,
+    });
+    expect(apId).toBe(row.apId);
+    expect(row.contentHtml).toContain('<strong>bold</strong>');
+    expect((await postRow(postId)).commentCount).toBe(1);
+    expect(await outboxEvents()).toEqual([
+      { type: 'comment.created', v: 1, commentId: id, postId, authorId: w.people.reader.id, local: true, parentId: null },
+    ]);
+    // The row and its event commit together: the row's xmin is the outbox row's transaction.
+    const [same] = await db().execute<{ same: boolean }>(
+      sql`select exists (select 1 from outbox o, comments c where c.id = ${id} and o.type = 'comment.created'
+        and (o.tx_id::text::numeric % 4294967296)::text = c.xmin::text) as same`,
+    );
+    expect(same?.same).toBe(true);
+  });
+
+  test('a reply takes its parent path, counts as a direct reply of the parent only, and as a comment of the post', async () => {
+    const { reader, postId } = await world();
+    const reply = async (parentId: string | null) => ok(await createCommentAs(reader, { postId, parentId }, { bodyMd: 'x' })).id;
+    const top = await reply(null);
+    const child = await reply(top);
+    const grandchild = await reply(child);
+    expect((await commentRow(grandchild)).path).toBe(`${top}.${child}.${grandchild}`);
+    expect((await commentRow(grandchild)).parentId).toBe(child);
+    expect(await Promise.all([top, child, grandchild].map(async (id) => (await commentRow(id)).childCount))).toEqual([1, 1, 0]);
+    expect((await postRow(postId)).commentCount).toBe(3);
+  });
+
+  test('replies at the same moment all count (no lost update, no deadlock)', async () => {
+    const { w, reader, postId } = await world();
+    const top = ok(await createCommentAs(reader, { postId, parentId: null }, { bodyMd: 'top' })).id;
+    const others = [w.people.author, w.people.moderator, w.people.owner, w.people.admin].map((person) => localUser(person.id));
+    const results = await Promise.all(
+      [reader, ...others, reader, ...others].flatMap((who, index) => [
+        createCommentAs(who, { postId, parentId: index % 2 === 0 ? top : null }, { bodyMd: `reply ${index}` }),
+      ]),
+    );
+    expect(results.every((result) => result.ok)).toBe(true);
+    expect((await postRow(postId)).commentCount).toBe(1 + results.length);
+    expect((await commentRow(top)).childCount).toBe(Math.ceil(results.length / 2));
+  });
+
+  test("casts the author's own upvote, so a comment starts at a score of 1 like its peers'", async () => {
+    const { w, reader, postId } = await world();
+    const { id } = ok(await createCommentAs(reader, { postId, parentId: null }, { bodyMd: 'mine' }));
+    expect(await commentRow(id)).toMatchObject({ upvotes: 1, downvotes: 0 });
+    const [vote] = await db().select().from(votes).where(eq(votes.commentId, id));
+    expect(vote).toMatchObject({ voterId: w.people.reader.id, value: 1 });
+  });
+
+  test('refuses what the boundary does not allow, and writes nothing', async () => {
+    const { reader, postId } = await world();
+    const grant = await grantFor('comment.create', reader, { postId, parentId: null });
+    for (const input of [
+      { bodyMd: '' },
+      { bodyMd: ' \n\t ' },
+      { bodyMd: 'x'.repeat(commentMaxLength + 1) },
+      { bodyMd: 'ok', language: 'English' },
+    ])
+      await expect(createComment(grant, input)).rejects.toThrow();
+    // Exactly the limit passes, counted as code points.
+    await createComment(grant, { bodyMd: '😀'.repeat(commentMaxLength) });
+    expect(await writeCounts()).toMatchObject({ outbox: 1 });
+    expect(NewComment.allows({ bodyMd: '😀'.repeat(commentMaxLength + 1) })).toBe(false);
+  });
+
+  describe('the 51st level', () => {
+    test('is refused with comment.depth_exceeded, and the 50th is not', async () => {
+      const { reader, postId } = await world();
+      let parentId: string | null = null;
+      for (let level = 1; level <= maxCommentDepth; level++) {
+        const { id }: { id: string } = ok(await createCommentAs(reader, { postId, parentId }, { bodyMd: `level ${level}` }));
+        expect((await commentRow(id)).path.split('.').length).toBe(level);
+        parentId = id;
+      }
+      const before = await writeCounts();
+      expect(await createCommentAs(reader, { postId, parentId }, { bodyMd: 'level 51' })).toEqual({
+        ok: false,
+        reason: 'comment.depth_exceeded',
+      });
+      expect(await writeCounts()).toEqual(before);
+      expect((await postRow(postId)).commentCount).toBe(maxCommentDepth);
+    });
+  });
+
+  describe('a change between authorize() and the write refuses the stale grant and writes nothing', () => {
+    test('a lock', async () => {
+      const { w, reader, postId } = await world();
+      const stale = await grantFor('comment.create', reader, { postId, parentId: null });
+      await lockPost(await grantFor('mod.lock', localUser(w.people.moderator.id), { postId }), { reason: 'Heated' });
+      const before = await writeCounts();
+      const attempt = createComment(stale, { bodyMd: 'Too late' });
+      await expect(attempt).rejects.toBeInstanceOf(Refused);
+      await expect(attempt).rejects.toMatchObject({ action: 'comment.create', reason: 'post.locked' });
+      expect(await writeCounts()).toEqual(before);
+      expect((await postRow(postId)).commentCount).toBe(0);
+    });
+
+    test('a ban', async () => {
+      const { w, reader, postId } = await world();
+      const stale = await grantFor('comment.create', reader, { postId, parentId: null });
+      await banFromCommunity(
+        await grantFor('mod.ban', localUser(w.people.moderator.id), {
+          communityId: w.communities.open.id,
+          targetActorId: w.people.reader.id,
+        }),
+        { reason: 'Spam' },
+      );
+      await expect(createComment(stale, { bodyMd: 'Too late' })).rejects.toMatchObject({ reason: 'community.banned' });
+      expect((await postRow(postId)).commentCount).toBe(0);
+    });
+
+    test('a delete of the comment replied to', async () => {
+      const { w, reader, postId } = await world();
+      const parent = ok(await createCommentAs(reader, { postId, parentId: null }, { bodyMd: 'parent' })).id;
+      const stale = await grantFor('comment.create', localUser(w.people.author.id), { postId, parentId: parent });
+      ok(await deleteCommentAs(reader, parent));
+      await expect(createComment(stale, { bodyMd: 'Too late' })).rejects.toMatchObject({ reason: 'target.deleted' });
+      expect((await commentRow(parent)).childCount).toBe(0);
+    });
+  });
+
+  test('an unverified email is refused before the community row is read or locked', async () => {
+    const { w, postId } = await world();
+    const nowait = (communityId: string) =>
+      writer().execute(sql`select id from ${actors} where id = ${communityId} for no key update nowait`);
+    const attempt = async (who: { id: string }) => {
+      let reason: string | undefined;
+      let probe: unknown;
+      await tx(async (t) => {
+        const decision = await authorize('comment.create', localUser(who.id), { postId, parentId: null }, { db: t.db, lock: true });
+        if (!decision.ok) reason = decision.reason;
+        // Another connection tries for the community row while this transaction is still open.
+        probe = await nowait(w.communities.open.id).then(() => 'free', postgresCode);
+      });
+      return { reason, probe };
+    };
+    expect(await attempt(w.people.unverified)).toEqual({ reason: 'auth.email_unverified', probe: 'free' });
+    // Control: for a verified person the same probe finds the row locked (55P03, lock_not_available).
+    expect(await attempt(w.people.reader)).toEqual({ reason: undefined, probe: '55P03' });
+  });
+});
+
+describe('updateComment', () => {
+  test('replaces the body, renders it again, marks it edited and emits comment.updated', async () => {
+    const { w, reader, postId } = await world();
+    const { id } = ok(await createCommentAs(reader, { postId, parentId: null }, { bodyMd: 'before' }));
+    const result = ok(await updateCommentAs(reader, id, { bodyMd: 'after **edit**' }));
+    expect(result.changed).toBe(true);
+    const row = await commentRow(id);
+    expect(row).toMatchObject({ bodyMd: 'after **edit**', path: id });
+    expect(row.contentHtml).toContain('<strong>edit</strong>');
+    expect(row.editedAt).toBeInstanceOf(Date);
+    expect((await outboxEvents()).at(-1)).toEqual({
+      type: 'comment.updated',
+      v: 1,
+      commentId: id,
+      postId,
+      authorId: w.people.reader.id,
+      local: true,
+    });
+  });
+
+  test('an edit that changes nothing writes nothing and emits nothing', async () => {
+    const { reader, postId } = await world();
+    const { id } = ok(await createCommentAs(reader, { postId, parentId: null }, { bodyMd: 'same' }));
+    const before = await writeCounts();
+    expect(ok(await updateCommentAs(reader, id, { bodyMd: 'same' })).changed).toBe(false);
+    expect(await writeCounts()).toEqual(before);
+    expect((await commentRow(id)).editedAt).toBeNull();
+  });
+
+  test('refuses the others, an empty body and a body past the limit', async () => {
+    const { w, reader, postId } = await world();
+    const { id } = ok(await createCommentAs(reader, { postId, parentId: null }, { bodyMd: 'mine' }));
+    expect(await updateCommentAs(localUser(w.people.author.id), id, { bodyMd: 'not yours' })).toEqual({
+      ok: false,
+      reason: 'comment.author_required',
+    });
+    const grant = await grantFor('comment.update', reader, { commentId: id });
+    await expect(updateComment(grant, { bodyMd: '  ' })).rejects.toThrow();
+    await expect(updateComment(grant, { bodyMd: 'x'.repeat(commentMaxLength + 1) })).rejects.toThrow();
+    expect((await commentRow(id)).bodyMd).toBe('mine');
+  });
+});
+
+describe('deleteComment', () => {
+  test('is soft: the row, its path, its replies and every count stay, and comment.deleted is emitted', async () => {
+    const { w, reader, postId } = await world();
+    const parent = ok(await createCommentAs(reader, { postId, parentId: null }, { bodyMd: 'parent' })).id;
+    const child = ok(await createCommentAs(localUser(w.people.author.id), { postId, parentId: parent }, { bodyMd: 'child' })).id;
+    ok(await deleteCommentAs(reader, parent));
+    expect(await commentRow(parent)).toMatchObject({ bodyMd: 'parent', path: parent, childCount: 1 });
+    expect((await commentRow(parent)).deletedAt).toBeInstanceOf(Date);
+    expect(await commentRow(child)).toMatchObject({ parentId: parent, deletedAt: null });
+    expect((await postRow(postId)).commentCount).toBe(2);
+    expect((await outboxEvents()).at(-1)).toEqual({
+      type: 'comment.deleted',
+      v: 1,
+      commentId: parent,
+      postId,
+      authorId: w.people.reader.id,
+      local: true,
+    });
+    // Nothing more to do with it: no second delete, no edit, no reply.
+    expect(await deleteCommentAs(reader, parent)).toEqual({ ok: false, reason: 'target.deleted' });
+    expect(await updateCommentAs(reader, parent, { bodyMd: 'back' })).toEqual({ ok: false, reason: 'target.deleted' });
+    expect(await createCommentAs(reader, { postId, parentId: parent }, { bodyMd: 'late' })).toEqual({
+      ok: false,
+      reason: 'target.deleted',
+    });
+  });
+
+  test("a moderator's removal is not the author's to undo, even one that lands after authorize()", async () => {
+    const { w, reader, postId } = await world();
+    const { id } = ok(await createCommentAs(reader, { postId, parentId: null }, { bodyMd: 'rude' }));
+    const stale = await grantFor('comment.delete', reader, { commentId: id });
+    const moderator = localUser(w.people.moderator.id);
+    await removeContent(await grantFor('mod.remove', moderator, { target: { kind: 'comment', id } }), { reason: 'Rule 1' });
+    await expect(deleteComment(stale, undefined)).rejects.toMatchObject({ action: 'comment.delete', reason: 'target.removed' });
+    expect(await deleteCommentAs(reader, id)).toEqual({ ok: false, reason: 'target.removed' });
+    expect((await commentRow(id)).deletedAt).toBeNull();
+  });
+});
