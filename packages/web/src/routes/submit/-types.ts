@@ -85,6 +85,7 @@ export const composerErrors = [
   'target.removed',
   'post.author_required',
   'site.disabled',
+  'rate.limited',
   'media.unsupported_type',
   'media.invalid_image',
   'media.too_large',

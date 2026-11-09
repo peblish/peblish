@@ -13,7 +13,7 @@ test('the composer catalogue has the same keys in en and de, and every error cod
 
 test('a code from the URL is one the composer has a message for, or generic', () => {
   expect(asComposerError('community.banned')).toBe('community.banned');
-  expect(asComposerError('rate.limited')).toBe('generic');
+  expect(asComposerError('mod.moderator_required')).toBe('generic');
   expect(asComposerError('')).toBeUndefined();
   expect(asComposerError(undefined)).toBeUndefined();
 });

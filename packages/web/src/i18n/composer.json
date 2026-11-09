@@ -98,6 +98,7 @@
     "error.target.deleted": "That community or post was deleted.",
     "error.target.removed": "A moderator removed this post.",
     "error.post.author_required": "Only the author can edit this post.",
+    "error.rate.limited": "You are posting links faster than we can check them. Wait a few minutes and try again.",
     "error.generic": "Something went wrong. Try again.",
     "error.network": "The server could not be reached. Check your connection and try again."
   },
@@ -200,6 +201,7 @@
     "error.target.deleted": "Diese Community oder dieser Beitrag wurde gelöscht.",
     "error.target.removed": "Ein Moderator hat diesen Beitrag entfernt.",
     "error.post.author_required": "Nur die Autorin oder der Autor kann diesen Beitrag bearbeiten.",
+    "error.rate.limited": "Du postest Links schneller, als wir sie prüfen können. Warte ein paar Minuten und versuche es erneut.",
     "error.generic": "Etwas ist schiefgelaufen. Versuche es erneut.",
     "error.network": "Der Server ist nicht erreichbar. Prüfe deine Verbindung und versuche es erneut."
   }

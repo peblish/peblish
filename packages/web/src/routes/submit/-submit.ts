@@ -75,15 +75,17 @@ export function parseSubmission(raw: Record<string, string>, image: Uint8Array |
   return firstProblem({ ...submission, creating: editing === null, hasImage: image !== null && image.byteLength > 0 }) ?? submission;
 }
 
+export type Read = { ok: true; fields: Record<string, string>; image: Uint8Array | null } | { ok: false; error: ComposerError };
+
 /**
- * The form of a request, or null when the body is bigger than the form can be. The body is read
- * in pieces and dropped at the limit, so nobody can make the server buffer more than that:
- * a megabyte for text, and the upload limit on top while uploads are switched on.
+ * The form of a request. The body is read in pieces and dropped at the limit, so nobody can
+ * make the server buffer more than a megabyte for text, plus the upload limit while uploads are
+ * switched on: `media.too_large` past it, `generic` for a body that is no form at all.
  */
-export async function readSubmission(request: Request): Promise<{ fields: Record<string, string>; image: Uint8Array | null } | null> {
+export async function readSubmission(request: Request): Promise<Read> {
   const limit = ((await readSetting('uploads.enabled')) ? maxUploadBytes : 0) + fieldsBytes;
   const declared = Number(request.headers.get('content-length'));
-  if (Number.isFinite(declared) && declared > limit) return null;
+  if (Number.isFinite(declared) && declared > limit) return { ok: false, error: 'media.too_large' };
   const chunks: Uint8Array[] = [];
   let size = 0;
   const reader = request.body?.getReader();
@@ -93,107 +95,126 @@ export async function readSubmission(request: Request): Promise<{ fields: Record
     size += value.byteLength;
     if (size > limit) {
       await reader.cancel();
-      return null;
+      return { ok: false, error: 'media.too_large' };
     }
     chunks.push(value);
   }
-  const form = await new Response(Buffer.concat(chunks), {
-    headers: { 'content-type': request.headers.get('content-type') ?? '' },
-  }).formData();
-  const fields: Record<string, string> = {};
-  let image: Uint8Array | null = null;
-  for (const [name, value] of form) {
-    if (typeof value === 'string') fields[name] ??= value;
-    else if (name === 'image' && value.size > 0) image = new Uint8Array(await value.arrayBuffer());
+  try {
+    const form = await new Response(Buffer.concat(chunks), {
+      headers: { 'content-type': request.headers.get('content-type') ?? '' },
+    }).formData();
+    const fields: Record<string, string> = {};
+    let image: Uint8Array | null = null;
+    for (const [name, value] of form) {
+      if (typeof value === 'string') fields[name] ??= value;
+      else if (name === 'image' && value.size > 0) image = new Uint8Array(await value.arrayBuffer());
+    }
+    return { ok: true, fields, image };
+  } catch {
+    return { ok: false, error: 'generic' };
   }
-  return { fields, image };
 }
 
 type Outcome = { ok: true; id: string } | { ok: false; error: ComposerError };
 
 const refused = (reason: string): Outcome => ({ ok: false, error: asComposerError(reason) ?? 'generic' });
 
+type Who = { principal: ActingPrincipal; viewer: NonNullable<Viewer>; ip: string | null };
+
+/** What a submission calls out to, so the order of its steps can be tested without a database or a network. */
+export interface Deps {
+  /** Counts a link preview against the budget (client address and account); false when over it. */
+  throttle(principal: ActingPrincipal, ip: string | null): Promise<boolean>;
+  preview: typeof fetchLinkPreview;
+  upload: typeof uploadImage;
+  /** This instance's origin, where an uploaded image will be served. */
+  origin(): Promise<string>;
+  /** The address a post links to now. */
+  currentUrl(postId: string, viewer: NonNullable<Viewer>): Promise<string | null>;
+  createPost: typeof createPostAs;
+  updatePost: typeof updatePostAs;
+}
+
+const defaults: Deps = {
+  throttle: async (principal, ip) => (await attempt('link-preview', { ip, id: principal.actorId })).allowed,
+  preview: fetchLinkPreview,
+  upload: uploadImage,
+  origin: async () => (await localHandles()).origin,
+  currentUrl: async (postId, viewer) => (await readPost(postId, viewer))?.view.url ?? null,
+  createPost: createPostAs,
+  updatePost: updatePostAs,
+};
+
 /**
- * The page's preview (C02), fetched before the post and outside its transaction. Over the
- * budget, or with previews switched off, the post goes ahead without one; an account that cannot
- * post is refused here with the reason createPost would give.
+ * The page's preview (C02), fetched before the post and outside its transaction, after the
+ * request is counted against the link-preview budget: over it, the form is refused with
+ * `rate.limited` like the other throttled forms. With previews switched off the post goes ahead
+ * without one; an account that cannot post is refused here with the reason createPost would give.
  */
-async function previewOf(principal: ActingPrincipal, ip: string | null, url: string): Promise<LinkPreview | null | ComposerError> {
-  const counted = await attempt('link-preview', { ip, id: principal.actorId });
-  if (!counted.allowed) return null;
-  const preview = await fetchLinkPreview(principal, url);
+async function previewOf({ principal, ip }: Who, url: string, deps: Deps): Promise<LinkPreview | null | ComposerError> {
+  if (!(await deps.throttle(principal, ip))) return 'rate.limited';
+  const preview = await deps.preview(principal, url);
   if (preview.ok) return preview;
   return preview.reason === 'site.disabled' ? null : (asComposerError(preview.reason) ?? 'generic');
 }
 
-type Who = { principal: ActingPrincipal; viewer: NonNullable<Viewer>; ip: string | null };
-
 /** Creates or edits the post, and says where to go or what refused it. */
-export async function submit(who: Who, input: Submission): Promise<Outcome> {
-  return input.editing === null ? create(who, input) : edit(who, input.editing, input);
+export async function submit(who: Who, input: Submission, deps: Deps = defaults): Promise<Outcome> {
+  return input.editing === null ? create(who, input, deps) : edit(who, input.editing, input, deps);
 }
 
-async function create({ principal, ip }: Who, input: Submission): Promise<Outcome> {
+async function create(who: Who, input: Submission, deps: Deps): Promise<Outcome> {
+  const { principal } = who;
   const communityId = Uuid.assert(input.community);
   let preview: LinkPreview | null = null;
   let image: { url: string; contentType: string } | null = null;
   if (input.type === 'link') {
-    const found = await previewOf(principal, ip, input.url);
+    const found = await previewOf(who, input.url, deps);
     if (typeof found === 'string') return { ok: false, error: found };
     preview = found;
   }
   if (input.type === 'image' && input.image) {
-    const saved = await uploadImage(principal, { bytes: input.image, altText: input.alt || null });
+    const saved = await deps.upload(principal, { bytes: input.image, altText: input.alt || null });
     if (!saved.ok) return refused(saved.reason);
-    image = { url: `${(await localHandles()).origin}/media/${saved.id}`, contentType: saved.mimeType };
+    image = { url: `${await deps.origin()}/media/${saved.id}`, contentType: saved.mimeType };
   }
 
   const title = input.title || normalizeTitle(preview?.title ?? '');
   if (title === '') return { ok: false, error: 'title.required' };
-  const post = (withPreview: boolean) =>
-    NewPost({
-      title,
-      sensitive: input.nsfw,
-      ...(input.type === 'text' && { bodyMd: input.body }),
-      ...(input.type === 'link' && { url: input.url }),
-      ...(input.type === 'link' &&
-        withPreview &&
-        preview && { thumbnailUrl: preview.thumbnailUrl, urlContentType: preview.urlContentType }),
-      ...(image && { url: image.url, urlContentType: image.contentType, altText: input.alt || null }),
-    });
-  // A preview's picture address is a stranger's text: if it does not pass, post without it.
-  let checked = post(true);
-  if (checked instanceof type.errors) checked = post(false);
+  // The preview's picture address and type are already checked (lane B2), so they pass as they are.
+  const checked = NewPost({
+    title,
+    sensitive: input.nsfw,
+    ...(input.type === 'text' && { bodyMd: input.body }),
+    ...(input.type === 'link' && { url: input.url }),
+    ...(preview && { thumbnailUrl: preview.thumbnailUrl, urlContentType: preview.urlContentType }),
+    ...(image && { url: image.url, urlContentType: image.contentType, altText: input.alt || null }),
+  });
   if (checked instanceof type.errors) return { ok: false, error: 'generic' };
 
-  const created = await createPostAs(principal, communityId, checked);
+  const created = await deps.createPost(principal, communityId, checked);
   return created.ok ? { ok: true, id: created.id } : refused(created.reason);
 }
 
-async function edit({ principal, viewer, ip }: Who, postId: string, input: Submission): Promise<Outcome> {
+async function edit(who: Who, postId: string, input: Submission, deps: Deps): Promise<Outcome> {
   // A link post that now points somewhere else gets that page's preview; the old picture and type belong to the old page.
-  const moved = input.type === 'link' && input.url !== ((await readPost(postId, viewer))?.view.url ?? null);
+  const moved = input.type === 'link' && input.url !== (await deps.currentUrl(postId, who.viewer));
   let preview: LinkPreview | null = null;
   if (moved) {
-    const found = await previewOf(principal, ip, input.url);
+    const found = await previewOf(who, input.url, deps);
     if (typeof found === 'string') return { ok: false, error: found };
     preview = found;
   }
-  const changes = (withPreview: boolean): PostEdit => ({
+  const checked = PostEdit({
     title: input.title,
     sensitive: input.nsfw,
     ...(input.type === 'text' && { bodyMd: input.body }),
     ...(input.type === 'link' && { url: input.url }),
-    ...(moved && {
-      thumbnailUrl: (withPreview && preview?.thumbnailUrl) || null,
-      urlContentType: (withPreview && preview?.urlContentType) || null,
-    }),
+    ...(moved && { thumbnailUrl: preview?.thumbnailUrl ?? null, urlContentType: preview?.urlContentType ?? null }),
   });
-  let checked = PostEdit(changes(true));
-  if (checked instanceof type.errors) checked = PostEdit(changes(false));
   if (checked instanceof type.errors) return { ok: false, error: 'generic' };
 
-  const updated = await updatePostAs(principal, postId, checked);
+  const updated = await deps.updatePost(who.principal, postId, checked);
   return updated.ok ? { ok: true, id: postId } : refused(updated.reason);
 }
 
@@ -210,7 +231,8 @@ export function answer(request: Request, cookies: readonly string[], outcome: Ou
   if (request.headers.get('accept')?.includes('application/json')) {
     headers.set('content-type', 'application/json');
     const body = outcome.ok ? { redirect: `/post/${outcome.id}` } : { error: outcome.error };
-    return new Response(JSON.stringify(body), { status: outcome.ok ? 200 : 400, headers });
+    const status = outcome.ok ? 200 : outcome.error === 'rate.limited' ? 429 : 400;
+    return new Response(JSON.stringify(body), { status, headers });
   }
   const search = new URLSearchParams();
   if (back.edit) search.set('edit', back.edit);

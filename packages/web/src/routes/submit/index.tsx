@@ -48,11 +48,11 @@ export const Route = createFileRoute('/submit/')({
         if (!sameOrigin(request)) return forbidden();
         const { session } = await formSession(request);
         const cookies = session?.setCookies ?? [];
-        const read = await readSubmission(request).catch(() => null);
-        const fields = read?.fields ?? {};
+        const read = await readSubmission(request);
+        const fields = read.ok ? read.fields : {};
         const back = { edit: fields.edit ?? null, kept: keptOf(fields) };
         if (!session) return answer(request, cookies, { ok: false, error: 'auth.required' }, back);
-        if (!read) return answer(request, cookies, { ok: false, error: 'media.too_large' }, back);
+        if (!read.ok) return answer(request, cookies, read, back);
         const parsed = parseSubmission(read.fields, read.image);
         if (typeof parsed === 'string') return answer(request, cookies, { ok: false, error: parsed }, back);
         const { view } = session;
