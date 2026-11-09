@@ -16,6 +16,18 @@ export const scanLimits = { leaseMs: 60_000, jobMinAgeMs: 30_000, maxAttempts: 5
 
 export type ScanOutcome = { state: 'clean' } | { state: 'failed'; error: string } | { state: 'quarantined'; verdict: Verdict };
 
+const notLeased = (now: Date) =>
+  sql`not exists (select 1 from ${mediaScans} s where s.media_id = m.id and s.lease_until > ${now.toISOString()}::timestamptz)`;
+
+/** The next due pending rows, oldest first, locked (skipping rows another worker holds); uses the partial index media_scan_pending. */
+export const dueBatch = (now: Date) =>
+  sql`select m.id from ${media} m
+      where m.scan_state = 'pending' and m.created_at < ${new Date(now.getTime() - scanLimits.jobMinAgeMs).toISOString()}::timestamptz and ${notLeased(now)}
+      order by m.created_at limit ${scanLimits.batch} for update of m skip locked`;
+
+const dueRow = (mediaId: string, now: Date) =>
+  sql`select m.id from ${media} m where m.id = ${mediaId} and m.scan_state = 'pending' and ${notLeased(now)} for update of m skip locked`;
+
 export type Claimed = { mediaId: string; attempts: number };
 
 /**
@@ -30,15 +42,8 @@ export const claimScan = defineMutation({
   recheck: true,
   async run(t, grant, input: { now: Date }): Promise<Claimed[]> {
     const { mediaId } = grant.subject;
-    const now = input.now.toISOString();
     const lease = new Date(input.now.getTime() + scanLimits.leaseMs).toISOString();
-    const notLeased = sql`not exists (select 1 from ${mediaScans} s where s.media_id = m.id and s.lease_until > ${now}::timestamptz)`;
-    const due =
-      mediaId === null
-        ? sql`select m.id from ${media} m
-              where m.scan_state = 'pending' and m.created_at < ${new Date(input.now.getTime() - scanLimits.jobMinAgeMs).toISOString()}::timestamptz and ${notLeased}
-              order by m.created_at limit ${scanLimits.batch} for update of m skip locked`
-        : sql`select m.id from ${media} m where m.id = ${mediaId} and m.scan_state = 'pending' and ${notLeased} for update of m skip locked`;
+    const due = mediaId === null ? dueBatch(input.now) : dueRow(mediaId, input.now);
     const claimed = await t.db.execute<{ mediaId: string; attempts: number }>(sql`
       insert into ${mediaScans} (media_id, attempts, lease_until)
       select id, 1, ${lease}::timestamptz from (${due}) due
@@ -62,6 +67,8 @@ export const recordScan = defineMutation({
     const [row] = await t.db.select({ scanState: media.scanState }).from(media).where(eq(media.id, mediaId)).for('no key update');
     if (!row) throw new Refused('media.scan', 'target.not_found');
     const { outcome, now } = input;
+    // A scan result is for a pending row only; a clean row reaches quarantine through addBlockedHash.
+    if (row.scanState !== 'pending') throw new Refused('media.scan', 'media.not_pending');
     if (outcome.state === 'quarantined') {
       await quarantine(t, { action: 'media.scan', mediaId, from: row.scanState, verdict: outcome.verdict, now });
     } else {
