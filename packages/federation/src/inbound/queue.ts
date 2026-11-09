@@ -1,7 +1,6 @@
 import { inboxRaw } from '@peblish/core/db/tables/federation';
 import { tx, type OpenTx } from '@peblish/core/tx/tx';
-import { and, eq, inArray, sql } from 'drizzle-orm';
-import { missingTarget } from './reasons.ts';
+import { and, eq, like, or, sql } from 'drizzle-orm';
 
 // The inbox_raw queue: leasing pending rows for the job, settling them, and putting the rows
 // that waited for an object back in line. Every worker may run the job; a row is claimed with
@@ -94,6 +93,22 @@ export async function settle(t: OpenTx, claim: Claim, { state, error }: Settled)
 
 export const settleAlone = (claim: Claim, settled: Settled): Promise<void> => tx((t) => settle(t, claim, settled));
 
+/**
+ * Asserts, inside the caller's transaction, that this claim is still the one held, and keeps it
+ * so until the transaction ends: the row is locked (a lease or a settlement by another worker
+ * waits) and its lease renewed. A member of a batch is applied in a transaction of its own that
+ * does not settle the row; this is what makes a worker that lost the row roll it back. Throws
+ * ClaimLost when the claim is not held.
+ */
+export async function holdClaim(t: OpenTx, claim: Claim): Promise<void> {
+  const rows = await t.db
+    .update(inboxRaw)
+    .set({ leaseUntil: sql`now() + ${leaseSeconds} * interval '1 second'` })
+    .where(held(claim))
+    .returning({ id: inboxRaw.id });
+  if (rows.length === 0) throw new ClaimLost(claim);
+}
+
 /** Extends the lease by a full lease period. Throws ClaimLost when the claim is no longer held. */
 export async function renewLease(claim: Claim): Promise<void> {
   const rows = await tx((t) =>
@@ -125,12 +140,38 @@ export async function retryLater(row: Claim, error: unknown): Promise<void> {
   );
 }
 
+/**
+ * The row steps aside without having failed (a fetch was refused, so what is left of it waits for
+ * the next turn): it is pending again after `delaySeconds`, and the attempt this claim used is
+ * given back, so a delivery that keeps waiting for fetches cannot run out of attempts by waiting.
+ * Throws ClaimLost when the claim is no longer held. The generation (`attempts`) a worker whose
+ * lease ran out holds can then match again only until the next lease raises it; whatever such a
+ * worker settles is the complete result of its own pass, so nothing it does conflicts.
+ */
+export async function yieldLater(claim: Claim, delaySeconds: number, note: string): Promise<void> {
+  const rows = await tx((t) =>
+    t.db
+      .update(inboxRaw)
+      .set({
+        attempts: sql`${inboxRaw.attempts} - 1`,
+        error: note,
+        leaseUntil: sql`now() + ${delaySeconds} * interval '1 second'`,
+      })
+      .where(held(claim))
+      .returning({ id: inboxRaw.id }),
+  );
+  if (rows.length === 0) throw new ClaimLost(claim);
+}
+
 function ignoreClaimLost(error: unknown): void {
   if (!(error instanceof ClaimLost)) throw error;
 }
 
+/** Whether the error text of a skipped row (reasons.ts missingTargets) names `apId`, matched whole between spaces. */
+const names = (apId: string) => sql`position(${` ${apId} `}::text in ' ' || ${inboxRaw.error} || ' ') > 0`;
+
 /**
- * Sets the rows skipped for want of `apIds` (target.missing <ap_id>) back to pending, in the
+ * Sets the rows skipped for want of any of `apIds` (target.missing <ap_id> ...) back to pending, in the
  * caller's transaction: an object that has just been stored may be what a vote, an edit or a
  * moderator's action was waiting for. Returns how many rows went back in line.
  */
@@ -139,7 +180,7 @@ export async function requeueWaiting(t: OpenTx, apIds: readonly string[]): Promi
   const rows = await t.db
     .update(inboxRaw)
     .set({ state: 'pending', error: null, leaseUntil: null, processedAt: null })
-    .where(and(eq(inboxRaw.state, 'skipped'), inArray(inboxRaw.error, apIds.map(missingTarget))))
+    .where(and(eq(inboxRaw.state, 'skipped'), like(inboxRaw.error, 'target.missing %'), or(...apIds.map(names))))
     .returning({ id: inboxRaw.id });
   return rows.length;
 }

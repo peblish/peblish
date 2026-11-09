@@ -24,6 +24,13 @@ export const maxMirrored = 50;
 
 /** How long a community whose collection had nobody in it is left alone before it is fetched again. */
 export const emptyMirrorBackoffMs = 6 * 60 * 60 * 1000;
+/**
+ * How long a community whose collection could not be read (it is not there, or not what the
+ * community's origin says it is) is left alone, and one whose server is only failing for now.
+ * Without it a score of failing communities would take every slot of the job's batch each run.
+ */
+export const unreachableMirrorBackoffMs = 60 * 60 * 1000;
+export const failingMirrorBackoffMs = 15 * 60 * 1000;
 
 // Communities to leave alone until a time, kept in memory per process (on globalThis because the web
 // build can hold two copies of a module): without a row to show when a community was last asked,

@@ -1,6 +1,14 @@
 import { db } from '@peblish/core/db/read';
 import { actors } from '@peblish/core/db/tables/actors';
-import { communitiesDueForMirror, deferMirror, emptyMirrorBackoffMs, maxMirrored, mirrorModerators } from '@peblish/core/remote/moderators';
+import {
+  communitiesDueForMirror,
+  deferMirror,
+  emptyMirrorBackoffMs,
+  failingMirrorBackoffMs,
+  maxMirrored,
+  mirrorModerators,
+  unreachableMirrorBackoffMs,
+} from '@peblish/core/remote/moderators';
 import { eq } from 'drizzle-orm';
 import { fetchActivity, FetchFailure, type Fetcher } from '../../actors/document.ts';
 import { importGrant } from '../../actors/grants.ts';
@@ -74,7 +82,12 @@ export async function mirrorNow(communityId: string, fetch: Fetcher = safeFetch)
   return result;
 }
 
-/** Mirrors every community that is due (see communitiesDueForMirror); one failing community does not stop the rest. */
+/**
+ * Mirrors every community that is due (see communitiesDueForMirror); one failing community does
+ * not stop the rest, and is left alone for a while (an hour when its collection cannot be read,
+ * a quarter of an hour when its server is only failing), so failing communities cannot take every
+ * slot of the batch from the ones behind them.
+ */
 export async function mirrorDue(options: { fetch?: Fetcher; signal?: AbortSignal; limit?: number } = {}): Promise<number> {
   let mirrored = 0;
   for (const { id, apId } of await communitiesDueForMirror(db(), options.limit)) {
@@ -84,6 +97,7 @@ export async function mirrorDue(options: { fetch?: Fetcher; signal?: AbortSignal
       mirrored += 1;
     } catch (error) {
       console.error(`moderators of ${apId} could not be mirrored`, error);
+      deferMirror(id, error instanceof Skipped ? unreachableMirrorBackoffMs : failingMirrorBackoffMs);
     }
   }
   return mirrored;

@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
-import { db } from '@peblish/core/db/read';
-import { actors } from '@peblish/core/db/tables/actors';
+import { db, type Queryable } from '@peblish/core/db/read';
+import { actorKeys, actors } from '@peblish/core/db/tables/actors';
 import { inboxRaw } from '@peblish/core/db/tables/federation';
 import { readSetting } from '@peblish/core/settings/read';
 import { tx } from '@peblish/core/tx/tx';
@@ -8,7 +8,9 @@ import { and, eq, gt, sql } from 'drizzle-orm';
 import type { Fetcher } from '../actors/document.ts';
 import { safeFetch } from '../actors/safe-fetch.ts';
 import { verifyInboundSignature } from '../signing/inbound.ts';
-import { takeIntake, takeKeyFetch } from './throttle.ts';
+import { parseSignature } from '../signing/verify.ts';
+import { clientAddress, peerOf } from './client.ts';
+import { takeIntake, takeKeyLookup } from './throttle.ts';
 
 // The inbox's front door (lane FED-A's http.ts routes every inbox POST here). It does the
 // least that is safe and answers fast; applying the activity is the pipeline's, a moment later
@@ -22,10 +24,13 @@ import { takeIntake, takeKeyFetch } from './throttle.ts';
 //                                          nothing to apply, answered so the peer stops retrying
 //   not an activity    400                 or a body that is not strictly UTF-8: the relay sends the exact bytes, which
 //                                          must then be exactly the text that was read
-//   throttled          429 + Retry-After   too many unknown keys at once, or the signer or its instance is over
-//                                          its request rate or has too many bytes waiting in inbox_raw
+//   throttled          429 + Retry-After   too many key lookups from this address or for this host (throttle.ts), or
+//                                          the signer or its instance is over its request rate or has too many
+//                                          bytes waiting in inbox_raw
 //   a repeat           202                 the same body, or an activity id seen within the hour, is not stored again
-//   stored             202                 the exact bytes, in inbox_raw
+//                                          and costs none of the signer's allowance (it is recognised first)
+//   stored             202                 the exact bytes, in inbox_raw; the repeat check, the pending count and the
+//                                          insert are one step per instance, so concurrent requests are counted in turn
 //
 // Never 410 (peers read it as "this actor is gone"), 418 or an unexpected 5xx: a failure we did
 // not expect, a storage error included, is the 503 peers retry.
@@ -80,11 +85,11 @@ function rememberReceipt(key: string, now: number): void {
 }
 
 /** Whether this signer sent this body, or this activity id, within the window. */
-async function isRepeat(key: string, signer: string, activityId: string | null, now: number): Promise<boolean> {
+async function isRepeat(q: Queryable, key: string, signer: string, activityId: string | null, now: number): Promise<boolean> {
   const seen = receipts.get(key);
   if (seen !== undefined && now - seen < repeatWindowMs) return true;
   if (activityId === null) return false;
-  const [row] = await db()
+  const [row] = await q
     .select({ id: inboxRaw.id })
     .from(inboxRaw)
     .where(
@@ -94,15 +99,45 @@ async function isRepeat(key: string, signer: string, activityId: string | null, 
   return row !== undefined;
 }
 
-/** Whether the signer, or its instance, already has more waiting in inbox_raw than the limit allows. */
-async function overPendingLimit(signer: string): Promise<boolean> {
-  const [row] = await db().execute<{ signer: string; instance: string }>(sql`
+/** Whether taking `incoming` more bytes would leave the signer, or its instance, with more waiting in inbox_raw than the limit allows. */
+async function overPendingLimit(q: Queryable, signer: string, incoming: number): Promise<boolean> {
+  const [row] = await q.execute<{ signer: string; instance: string }>(sql`
     select
       coalesce(sum(octet_length(body)) filter (where actor_ap_id = ${signer}), 0)::text as signer,
       coalesce(sum(octet_length(body)), 0)::text as instance
     from inbox_raw
     where state = 'pending' and starts_with(actor_ap_id, ${`${new URL(signer).origin}/`})`);
-  return Number(row?.signer) > pendingBytesLimit.signer || Number(row?.instance) > pendingBytesLimit.instance;
+  return Number(row?.signer) + incoming > pendingBytesLimit.signer || Number(row?.instance) + incoming > pendingBytesLimit.instance;
+}
+
+/**
+ * Takes the request into inbox_raw unless it is a repeat or would put the signer, or its
+ * instance, over the pending limit. The repeat check, the pending count and the insert are one
+ * step per instance (an advisory lock on the instance, held to the commit), so concurrent
+ * requests, identical or large, are counted one after another and cannot all pass on the same
+ * count. A repeat is remembered before the commit and forgotten if it fails.
+ */
+/** The advisory lock key admission takes for the instance at `origin` (exported for the tests that hold it). */
+export const admissionLock = (origin: string): string => `inbox:${origin}`;
+
+async function admit(
+  row: typeof inboxRaw.$inferInsert & { actorApId: string },
+  receipt: string,
+  now: number,
+): Promise<'stored' | 'repeat' | 'full'> {
+  try {
+    return await tx(async (t) => {
+      await t.db.execute(sql`select pg_advisory_xact_lock(hashtextextended(${admissionLock(new URL(row.actorApId).origin)}, 0))`);
+      if (await isRepeat(t.db, receipt, row.actorApId, row.activityId ?? null, now)) return 'repeat';
+      if (await overPendingLimit(t.db, row.actorApId, row.body.byteLength)) return 'full';
+      await t.db.insert(inboxRaw).values(row);
+      rememberReceipt(receipt, now);
+      return 'stored';
+    });
+  } catch (error) {
+    receipts.delete(receipt);
+    throw error;
+  }
 }
 
 const isObject = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -112,7 +147,29 @@ const idOf = (value: unknown): string | null =>
 export type ReceiveOptions = {
   /** For tests: the fetcher an unknown signing key's actor is read with. */
   fetch?: Fetcher;
+  /** The address of the connection's peer, when the caller knows it better than the request does (`request.ip`). */
+  peer?: string;
 };
+
+/** Most fetches the lookup of one request's signing key may make: the key document, the actor, its NodeInfo, a hop or two. */
+const maxLookupFetches = 8;
+
+/**
+ * Whether the key id of the request's signature names an actor, or a key, we hold: its lookup is
+ * a refresh of what we know, not a discovery of a stranger, and has its own budget.
+ */
+async function namesHeldSigner(request: Request, body: Uint8Array): Promise<boolean> {
+  const parsed = parseSignature(request, body);
+  if (typeof parsed === 'string' || !URL.canParse(parsed.keyId)) return false;
+  const actor = new URL(parsed.keyId);
+  actor.hash = '';
+  const [row] = await db().execute<{ held: boolean }>(sql`
+    select (
+      exists (select 1 from ${actors} where ${actors.apId} = ${actor.href})
+      or exists (select 1 from ${actorKeys} where ${actorKeys.keyId} = ${parsed.keyId})
+    ) as held`);
+  return row?.held === true;
+}
 
 /**
  * Whether `body` is an account's Delete of itself for an account we do not hold (or hold as
@@ -141,12 +198,20 @@ export async function receiveInbound(request: Request, options: ReceiveOptions =
     if (body === null) return refuse(413, 'the body is larger than 512 KiB');
 
     let throttled = false;
+    let fetches = 0;
     const base = options.fetch ?? safeFetch;
+    const address = clientAddress(request.headers, options.peer ?? peerOf(request));
+    // Finding a signer's key is a few fetches (the key document, the actor, its NodeInfo), but one
+    // lookup: it is charged once, at the first, to the client and to the host the key id names.
     const limited: Fetcher = async (url, init) => {
-      if (!takeKeyFetch(new URL(String(url)).host)) {
-        throttled = true;
-        throw new Error('too many actor fetches for unknown keys');
+      if (fetches === 0) {
+        const kind = (await namesHeldSigner(request, body)) ? 'refresh' : 'discovery';
+        if (!takeKeyLookup(kind, { address, host: new URL(String(url)).host })) {
+          throttled = true;
+          throw new Error('too many lookups of signing keys');
+        }
       }
+      if (++fetches > maxLookupFetches) throw new Error('this lookup needs more fetches than it may make');
       return base(url, init);
     };
     const signature = await verifyInboundSignature(request, body, { fetch: limited });
@@ -166,13 +231,14 @@ export async function receiveInbound(request: Request, options: ReceiveOptions =
     if (!isObject(activity) || typeof activity.type !== 'string' || actor === null) return refuse(400, 'not an activity');
     // The key must be the actor's own: a server speaks for its own people, and nobody else's.
     if (signature.ownerApId !== actor) return refuse(401, 'signature: the key does not belong to the actor');
-    // From here the sender is authenticated, so its allowance is spent by its own key only.
+    // From here the sender is authenticated, so its allowance is spent by its own key only. A
+    // repeat is recognised first and costs none of it: a peer retrying what it got no answer to
+    // must not be told to slow down for it.
     const now = Date.now();
-    if (!takeIntake(actor, now)) return refuse(429, 'slow down', retryAfter);
     const activityId = typeof activity.id === 'string' ? activity.id : null;
     const receipt = receiptKey(actor, body);
-    if (await isRepeat(receipt, actor, activityId, now)) return new Response(null, { status: 202 });
-    if (await overPendingLimit(actor)) return refuse(429, 'too much of yours is waiting to be processed', retryAfter);
+    if (await isRepeat(db(), receipt, actor, activityId, now)) return new Response(null, { status: 202 });
+    if (!takeIntake(actor, now)) return refuse(429, 'slow down', retryAfter);
 
     const { pathname, search } = new URL(request.url);
     const headers = { method: request.method, path: `${pathname}${search}`, signer: signature.ownerApId, keyId: signature.keyId } as Record<
@@ -183,16 +249,8 @@ export async function receiveInbound(request: Request, options: ReceiveOptions =
       const value = request.headers.get(name);
       if (value !== null) headers[name] = value;
     }
-    await tx((t) =>
-      t.db.insert(inboxRaw).values({
-        activityId,
-        activityType: activity.type as string,
-        actorApId: actor,
-        body,
-        headers,
-      }),
-    );
-    rememberReceipt(receipt, now);
+    const outcome = await admit({ activityId, activityType: activity.type as string, actorApId: actor, body, headers }, receipt, now);
+    if (outcome === 'full') return refuse(429, 'too much of yours is waiting to be processed', retryAfter);
     return new Response(null, { status: 202 });
   } catch (error) {
     console.error('inbound: could not take the activity', error);
