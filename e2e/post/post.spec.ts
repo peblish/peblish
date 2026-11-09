@@ -19,7 +19,15 @@ type Seed = {
   moderator: { name: string };
   viewer: { name: string };
   undeclared: { name: string };
-  posts: { plain: string; deletable: string; removable: string; sensitive: string; deleted: string };
+  posts: {
+    plain: string;
+    deletable: string;
+    removable: string;
+    sensitive: string;
+    deleted: string;
+    inRemovedCommunity: string;
+    inDeletedCommunity: string;
+  };
 };
 
 let seed: Seed;
@@ -89,6 +97,14 @@ test.describe('anyone', () => {
     expect(text).not.toContain('Deleted body');
     await gotoHydrated(page, url(seed.posts.deleted));
     await expectAccessible(page);
+  });
+
+  test('a post in a removed or deleted community is a 404 with none of its text', async ({ page }) => {
+    for (const id of [seed.posts.inRemovedCommunity, seed.posts.inDeletedCommunity]) {
+      const { status, text } = await html(page, id);
+      expect(status).toBe(404);
+      expect(text).not.toContain('Closed post');
+    }
   });
 
   test('a signed-out viewer of a sensitive post gets the gate and none of its text in the HTML', async ({ page }) => {
