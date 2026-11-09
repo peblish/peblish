@@ -30,18 +30,20 @@ it runs in the product:
 
 ## Layout
 
-| Directory       | What it holds                                                                               |
-| --------------- | ------------------------------------------------------------------------------------------- |
-| `mapping/`      | Pure wire to record functions, the Lemmy dialect (`mapping/README.md`)                      |
-| `signing/`      | draft-cavage-12 signing for deliveries and document fetches, signature checks for the inbox |
-| `actors/`       | Fetching remote actors (`resolve.ts`), the documents we serve (`serve.ts`), the B2 seam     |
-| `webfinger/`    | The WebFinger client and endpoint                                                           |
-| `nodeinfo/`     | The NodeInfo client (software of a peer) and endpoint                                       |
-| `delivery/`     | The outbound consumer, the queue, the worker, the Announce shapes                           |
-| `inbound/`      | The inbox: receipt, the pipeline, authorization, one handler per activity (lane FED-B)      |
-| `relay/`        | The community's Announce of what reached it, and the outbound moderation activities (FED-B) |
-| `http.ts`       | Routing, the only module web imports besides the consumer registry                          |
-| `federation.ts` | Software name and version, the local origin, the User-Agent                                 |
+| Directory       | What it holds                                                                                                                              |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| `mapping/`      | Pure wire to record functions, the Lemmy dialect (`mapping/README.md`)                                                                     |
+| `signing/`      | draft-cavage-12 signing for deliveries and document fetches, signature checks for the inbox                                                |
+| `actors/`       | Fetching remote actors (`resolve.ts`), the documents we serve (`serve.ts`), the B2 seam                                                    |
+| `webfinger/`    | The WebFinger client and endpoint                                                                                                          |
+| `nodeinfo/`     | The NodeInfo client (software of a peer) and endpoint                                                                                      |
+| `delivery/`     | The outbound consumer, the queue, the worker, the Announce shapes                                                                          |
+| `inbound/`      | The inbox: receipt, the pipeline, authorization, one handler per activity (lane FED-B)                                                     |
+| `relay/`        | The community's Announce of what reached it, and the outbound moderation activities (FED-B)                                                |
+| `backfill/`     | The queue (a consumer on follow.accepted) and the run (a job) of the backfill of a followed remote community; see `remote-fetch/README.md` |
+| `remote-fetch/` | The cache figures, fetching a post, comment or actor on purpose, the missing-object job, politeness; see its `README.md`                   |
+| `http.ts`       | Routing, the only module web imports besides the consumer registry                                                                         |
+| `federation.ts` | Software name and version, the local origin, the User-Agent                                                                                |
 
 ## What we serve
 
@@ -155,12 +157,12 @@ the POST (and sends nothing if the row is no longer its own), and records its ou
 while the row is still `pending` at the attempt it claimed. A stale result is dropped; at
 worst the receiver gets the activity twice.
 
-| Answer                                                            | Result                              |
-| ----------------------------------------------------------------- | ----------------------------------- |
-| 2xx                                                               | delivered                           |
-| 408, 429, 5xx, a timeout, a connection error                      | retried                             |
-| every other 4xx (401 and 425 too), any 3xx, a refused destination | failed, never retried               |
-| an instance `isDormant` reports                                   | skipped (lane REM fills the policy) |
+| Answer                                                            | Result                                                      |
+| ----------------------------------------------------------------- | ----------------------------------------------------------- |
+| 2xx                                                               | delivered                                                   |
+| 408, 429, 5xx, a timeout, a connection error                      | retried                                                     |
+| every other 4xx (401 and 425 too), any 3xx, a refused destination | failed, never retried                                       |
+| an instance `isDormant` reports                                   | skipped, but one probe a day (`core/src/remote/dormant.ts`) |
 
 Retries wait 10 s, 30 s, 90 s, 270 s, 810 s, 2,430 s, 7,290 s, then 6 hours twice (the
 spike's schedule, in `delivery/policy.ts`): ten attempts over 54,130 seconds, about 15
