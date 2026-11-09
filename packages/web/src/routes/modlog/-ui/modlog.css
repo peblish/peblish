@@ -1,0 +1,110 @@
+/* The modlog (lane MODF), after the R2 mock modlog-feed: structure and states, not final styling. */
+@layer app {
+  .modlog {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 20px 16px 36px;
+    font-size: 14px;
+    line-height: 1.45;
+  }
+  .modlog a {
+    color: var(--muxui-semantic-content-link);
+  }
+  .modlog-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 4px 14px;
+    margin-bottom: 14px;
+  }
+  .modlog-head h1 {
+    font-size: 18px;
+    margin: 0;
+  }
+  .modlog-note {
+    color: var(--muxui-semantic-content-muted);
+    font-size: 13px;
+  }
+  .modlog-layout {
+    display: grid;
+    grid-template-columns: 220px minmax(0, 1fr);
+    gap: 24px;
+  }
+  .modlog-rail h2 {
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--muxui-semantic-content-muted);
+    margin: 0 0 6px;
+  }
+  .modlog-rail ul {
+    list-style: none;
+    margin: 0 0 18px;
+    padding: 0;
+  }
+  .modlog-rail a {
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 3px 0;
+    text-decoration: none;
+  }
+  .modlog-rail a[aria-current='true'] {
+    font-weight: 600;
+  }
+  .modlog-day {
+    font-size: 13px;
+    margin: 18px 0 6px;
+    padding-bottom: 4px;
+    border-bottom: 1px solid var(--muxui-semantic-border-default);
+  }
+  .modlog-body > section:first-child .modlog-day {
+    margin-top: 0;
+  }
+  .modlog-entry {
+    padding: 6px 0;
+  }
+  .modlog-l1 {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 2px 10px;
+  }
+  .modlog-l1 time {
+    font-variant-numeric: tabular-nums;
+    color: var(--muxui-semantic-content-muted);
+  }
+  .modlog-l2 {
+    margin-left: 46px;
+    overflow-wrap: anywhere;
+  }
+  .modlog-tag {
+    font-family: ui-monospace, monospace;
+    font-size: 12px;
+    color: var(--muxui-semantic-content-muted);
+  }
+  .modlog-pages {
+    display: flex;
+    gap: 14px;
+    align-items: baseline;
+    margin: 18px 0 8px;
+  }
+  .modlog-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 18px;
+    color: var(--muxui-semantic-content-muted);
+    font-size: 13px;
+    margin: 14px 0 0;
+  }
+  .modlog-empty {
+    margin: 24px 0;
+  }
+  @media (max-width: 760px) {
+    .modlog-layout {
+      grid-template-columns: minmax(0, 1fr);
+    }
+    .modlog-l2 {
+      margin-left: 0;
+    }
+  }
+}

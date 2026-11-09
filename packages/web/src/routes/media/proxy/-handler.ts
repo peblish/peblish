@@ -1,5 +1,6 @@
 import { fetchProxiedImage, type ProxyResult } from '@peblish/core/media/proxy';
 import { verifyProxyPath } from '@peblish/core/media/proxy-url';
+import { mediaAllowed } from '@peblish/core/peers/gate';
 
 // The remote-media proxy's answer (decision 5): the image bytes of one signed URL, held in memory
 // for this response and stored nowhere. Viewers never contact remote hosts; remote hosts see
@@ -33,12 +34,16 @@ export type ProxyDeps = {
   /** The viewer's request signal: a request that gives up while queued for a turn is dropped. */
   signal?: AbortSignal;
   fetchImage?: (url: string, signal?: AbortSignal) => Promise<ProxyResult>;
+  /** Whether the image's host may be proxied (peers/gate.ts: a peer's media waits for an admin's approval). */
+  mediaAllowed?: (host: string) => Promise<boolean>;
 };
 
 export async function proxyResponse(signature: string, target: string, deps: ProxyDeps): Promise<Response> {
   // An unsigned, altered or foreign URL, and the kill switch, look the same from outside: nothing here.
   const url = verifyProxyPath(deps.key, signature, target);
   if (url === null || !deps.enabled) return plain(404, 'not found');
+  // A quarantined, purged or blocked peer's media looks like any other missing image.
+  if (!(await (deps.mediaAllowed ?? mediaAllowed)(new URL(url).host))) return plain(404, 'not found');
   const fetchImage = deps.fetchImage ?? ((target: string, signal?: AbortSignal) => fetchProxiedImage(target, { signal }));
   const result = await fetchImage(url, deps.signal);
   if (!result.ok) return plain(result.status, `the image could not be proxied (${result.why})`);

@@ -1,6 +1,7 @@
 import type { ContentActionProps } from '../../../../../-actions/props.ts';
+import { ContentModerate } from '../../../../../modlog/-ui/content-moderate.tsx';
 
-/** The moderator tools on a comment row. Lane MODF fills it; until then it renders nothing. */
-export function CommentModerate(_props: ContentActionProps) {
-  return null;
+/** Remove or restore, and ban the author from the community (lane MODF). */
+export function CommentModerate(props: ContentActionProps) {
+  return <ContentModerate kind="comment" {...props} />;
 }

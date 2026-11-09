@@ -43,7 +43,6 @@ export const inboundReasons = {
   'moderators.unreachable': 'The community’s moderators collection could not be read.',
   'collection.unknown': 'The activity targets a collection peblish does not read.',
   'collection.mismatch': 'The target is not the featured collection of the post’s community.',
-  'block.instance_unsupported': 'A ban of a whole instance is read once site bans exist.',
   'block.expired': 'The ban had already ended when it arrived.',
   'delete.target_unsupported': 'A Delete of an actor counts only from that actor itself.',
   'accept.unverifiable': 'An Accept that names its Follow by IRI only cannot be matched to the follower it accepts, so it is not read.',
