@@ -98,7 +98,9 @@ Each item: the difference, who shows it, and where the mapping deals with it.
 - **Removal is a Delete.** A moderator's removal is a `Delete` by someone other than the
   author, with the reason in `summary`; `Undo(Delete)` restores (Lemmy, PieFed). The Delete
   keeps `reason`; the store compares the actor with the author to choose deleted or removed,
-  as `tools/fixture-import/src/lab-live.ts` does.
+  as `tools/fixture-import/src/lab-live.ts` does. An actor's Delete of itself carries Lemmy's
+  `removeData` when it is sent (true: the account's content goes too), and peblish's account
+  Delete sends `false`, since a deletion here keeps the content.
 - **Undoing a vote.** Lemmy's `Undo(Like)` embeds a freshly minted Like id, not the
   original's: match a vote by voter and target, never by the Like id.
 - **Announce shapes.** A community announces each activity, `Announce(Create(Page))`

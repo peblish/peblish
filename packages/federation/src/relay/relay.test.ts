@@ -267,12 +267,13 @@ describe('a moderation action taken here is federated through the community', ()
     expect(await queued()).toEqual([]);
   });
 
-  test('a local account’s deletion is a Delete of the account to the peers; a remote one is not ours to send', async () => {
+  test('a local account’s deletion is a Delete of the account to the peers, keeping its content as here; a remote one is not ours to send', async () => {
     const w = await outbound();
     await run({ type: 'actor.deleted', v: 1, actorId: w.moderator.id, kind: 'Person', local: true } as OutboxEvent);
     const rows = await queued();
     expect(rows.map((row) => shape(row.json))).toEqual(['Delete']);
-    expect(rows[0]?.json).toMatchObject({ actor: w.moderator.apId, object: w.moderator.apId });
+    // A deletion here keeps the account's posts and comments, so Lemmy is told to keep them too.
+    expect(rows[0]?.json).toMatchObject({ actor: w.moderator.apId, object: w.moderator.apId, removeData: false });
     await run({ type: 'actor.deleted', v: 1, actorId: w.bob.id, kind: 'Person', local: false } as OutboxEvent);
     await run({ type: 'actor.deleted', v: 1, actorId: w.news.id, kind: 'Group', local: true } as OutboxEvent);
     expect(await queued()).toHaveLength(1);

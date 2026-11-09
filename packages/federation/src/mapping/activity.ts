@@ -91,6 +91,7 @@ export function activityFromWire(json: unknown, depth = 0): Activity {
         communityApId: community(true),
         objectApId: objectId(object, 'Delete'),
         reason: activity.summary ?? null,
+        ...(typeof activity.removeData === 'boolean' && { removeData: activity.removeData }),
       };
     case 'Undo': {
       if (!isObject(object)) throw new MappingError('Undo must embed the activity it reverses');
@@ -194,7 +195,7 @@ export function activityToWire(activity: Activity): JsonObject {
         return { object: inner.type === 'Page' || inner.type === 'Note' ? contentToWire(inner) : activityToWire(inner) };
       }
       case 'Delete':
-        return { object: activity.objectApId, summary: activity.reason ?? undefined };
+        return { object: activity.objectApId, summary: activity.reason ?? undefined, removeData: activity.removeData };
       case 'Undo':
         return { object: activityToWire(activity.object) };
       case 'Lock':

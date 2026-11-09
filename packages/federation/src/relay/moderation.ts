@@ -67,10 +67,16 @@ export const unban = (base: Base, blockId: string, { objectApId, communityApId, 
   },
 });
 
-/** A local person deleting their account: a Delete of themselves, to everyone we trade follows with. */
+/**
+ * A local person deleting their account: a Delete of themselves, to everyone we trade follows
+ * with. `removeData` says what the deletion does here, as Lemmy reads it: deleting an account
+ * scrubs the profile and keeps its posts and comments (core's identity/delete.ts), so it is
+ * false, and Lemmy keeps them too.
+ */
 export const accountDeletion = (id: string, actorApId: string): Activity => ({
   ...envelope({ id, actorApId, communityApId: null }),
   type: 'Delete',
   objectApId: actorApId,
   reason: null,
+  removeData: false,
 });

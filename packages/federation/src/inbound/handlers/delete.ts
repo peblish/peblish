@@ -47,8 +47,8 @@ const isAuthorsOwn = (sender: { id: string }, target: Stored, reason: string | n
 
 async function prepareActorDelete(ctx: InboundContext): Promise<Prepared> {
   const grant = await importGrant('remote.actor_delete', { apId: ctx.sender.apId });
-  // Lemmy's account deletion with "delete content" sets removeData on the Delete; the mapping does not carry it.
-  const removeContent = ctx.raw.removeData === true;
+  // Lemmy's account deletion with "delete content" sets removeData on the Delete.
+  const removeContent = ctx.activity.type === 'Delete' && ctx.activity.removeData === true;
   // Not one transaction: the actor is tombstoned in its own and its content removed post by post
   // (core/remote/actors.ts), so the call is made here, outside the one `prepared` opens.
   const { actorChanged, contentRemoved } = await deleteRemoteActor(grant, { removeContent, cause: 'Delete' });
