@@ -33,7 +33,8 @@ export const loadFeed = createServerFn({ method: 'GET' })
     // URLs pass, remote ones are signed, anything else is null. An image post shows its image.
     const renderer = await createMarkdownRenderer();
     const items = page.items.map((post): FeedItem => ({
-      post,
+      // The card draws thumbnailSrc; the picture's own address stays out of the page data.
+      post: { ...post, thumbnailUrl: null },
       thumbnailSrc: renderer.image(post.thumbnailUrl ?? (isImageContentType(post.urlContentType) ? post.url : null)),
     }));
     return { ...base, signIn: false, items, next: page.next };
