@@ -180,6 +180,7 @@ export async function communityById(q: Queryable, id: string): Promise<ResolvedA
     .select({
       id: actors.id,
       apId: actors.apId,
+      name: actors.name,
       kind: actors.kind,
       local: actors.local,
       deletedAt: actors.deletedAt,
