@@ -140,9 +140,9 @@ export async function readCommunity(key: { id: Uuid } | { name: string }, q: Que
 
 /**
  * The communities of this instance (imported ones included), by name. `includeSensitive`
- * defaults to false: the caller passes true only for a viewer who declared 16+ and has not
- * hidden NSFW, since a signed-out or undeclared viewer never sees an age-gated community
- * listed. At most `limit` rows (200 by default, 500 at most); the beta has a handful.
+ * defaults to false, which leaves out every community flagged sensitive or NSFL: the caller
+ * passes true only for a viewer who declared 16+ and has not hidden NSFW, since a signed-out
+ * or undeclared viewer never sees an age-gated community listed. At most `limit` rows (200 by default, 500 at most); the beta has a handful.
  */
 export async function listLocalCommunities(
   options: { includeSensitive?: boolean; limit?: number } = {},
@@ -164,7 +164,8 @@ export async function listLocalCommunities(
         eq(actors.local, true),
         isNull(actors.deletedAt),
         notRemoved,
-        options.includeSensitive ? undefined : eq(actors.sensitive, false),
+        // Not safe for life implies the age gate for communities made here, but an imported one may carry only nsfl.
+        options.includeSensitive ? undefined : and(eq(actors.sensitive, false), eq(actors.nsfl, false)),
       ),
     )
     .orderBy(sql`lower(${actors.name})`)

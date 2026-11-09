@@ -113,6 +113,13 @@ describe('listLocalCommunities', () => {
     await create('news', { postingRestrictedToMods: true });
     await create('art', { sensitive: true });
     await create('Books');
+    // An imported community may be flagged NSFL without sensitive (PieFed's two flags are independent).
+    await seedActor(instances.local, 'Group', 'adults', {
+      apId: 'https://feddit.test/c/adults',
+      importedAt: new Date(),
+      sensitive: false,
+      nsfl: true,
+    });
     await seedActor(instances.lemmy, 'Group', 'technology');
     await seedActor(instances.local, 'Group', 'gone', { deletedAt: new Date() });
     await seedCommunityRemoval(await seedActor(instances.local, 'Group', 'closed'));
@@ -120,15 +127,16 @@ describe('listLocalCommunities', () => {
     const names = (items: Awaited<ReturnType<typeof listLocalCommunities>>) => items.map((item) => item.actor.name);
     expect(names(await listLocalCommunities())).toEqual(['Books', 'news']);
     const all = await listLocalCommunities({ includeSensitive: true });
-    expect(names(all)).toEqual(['art', 'Books', 'news']);
+    expect(names(all)).toEqual(['adults', 'art', 'Books', 'news']);
     expect(
       all.map(({ sensitive, nsfl, postingRestrictedToMods, subscribers }) => ({ sensitive, nsfl, postingRestrictedToMods, subscribers })),
     ).toEqual([
+      { sensitive: false, nsfl: true, postingRestrictedToMods: false, subscribers: 0 },
       { sensitive: true, nsfl: false, postingRestrictedToMods: false, subscribers: 0 },
       { sensitive: false, nsfl: false, postingRestrictedToMods: false, subscribers: 0 },
       { sensitive: false, nsfl: false, postingRestrictedToMods: true, subscribers: 0 },
     ]);
-    expect(names(await listLocalCommunities({ includeSensitive: true, limit: 2 }))).toEqual(['art', 'Books']);
+    expect(names(await listLocalCommunities({ includeSensitive: true, limit: 2 }))).toEqual(['adults', 'art']);
   });
 });
 
