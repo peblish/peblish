@@ -26,6 +26,14 @@ async function showAgain(page: Page): Promise<void> {
   });
 }
 
+/**
+ * Waits until `page` has recorded `viewer` (an effect that runs after hydration, a moment after
+ * the navigation that shows it has finished), so the stale tab is not shown again before the
+ * browser's latest viewer is written.
+ */
+const recorded = (page: Page, viewer: (value: string | null) => boolean) =>
+  expect.poll(async () => viewer(await page.evaluate(() => localStorage.getItem('pb-viewer')))).toBe(true);
+
 test('a tab shown again after another tab signed in, changed account or signed out shows the current viewer', async ({
   browser,
   baseURL,
@@ -45,6 +53,8 @@ test('a tab shown again after another tab signed in, changed account or signed o
     await gotoHydrated(other, '/auth/sign-in');
     await signIn(other, `@${people[0]}`, password);
     await landed(other, '/');
+    await recorded(other, (value) => !!value);
+    const first = await other.evaluate(() => localStorage.getItem('pb-viewer'));
 
     // The stale tab still shows the signed-out viewer until it is shown again.
     await expect(banner.getByRole('link', { name: 'Sign in' })).toBeVisible();
@@ -58,12 +68,14 @@ test('a tab shown again after another tab signed in, changed account or signed o
     await gotoHydrated(other, '/auth/sign-in');
     await signIn(other, `@${people[1]}`, password);
     await landed(other, '/');
+    await recorded(other, (value) => !!value && value !== first);
     await showAgain(stale);
     await expect(banner.getByText(people[1])).toBeAttached();
     await expect(banner.getByText(people[0])).toHaveCount(0);
 
     // And signs out: the stale tab goes back to the signed-out viewer.
     await signOut(other);
+    await recorded(other, (value) => value === '');
     await showAgain(stale);
     await expect(banner.getByRole('link', { name: 'Sign in' })).toBeVisible();
     expect(await stale.evaluate(() => 'sameDocument' in window)).toBe(true);
