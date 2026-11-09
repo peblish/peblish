@@ -99,7 +99,8 @@ test.describe('anyone', () => {
     expect(text).toContain('Sensitive content');
     expect(text).toContain(`/auth/sign-in?redirect=${encodeURIComponent(url(seed.posts.sensitive))}`);
     await gotoHydrated(page, url(seed.posts.sensitive));
-    await expect(page.getByRole('link', { name: 'Sign in' })).toBeVisible();
+    // The shell has its own Sign in link: the gate's is the one inside the page.
+    await expect(page.locator('#pb-main').getByRole('link', { name: 'Sign in' })).toBeVisible();
     await expect(page.locator('body')).not.toContainText(seed.secret);
     await expectAccessible(page);
   });
