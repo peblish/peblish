@@ -1,5 +1,6 @@
 import { fetchProxiedImage, type ProxyResult } from '@peblish/core/media/proxy';
 import { verifyProxyPath } from '@peblish/core/media/proxy-url';
+import { safeFetch, type SafeFetchInit, type SafeResponse } from '@peblish/core/net/fetch';
 import { mediaAllowed } from '@peblish/core/peers/gate';
 
 // The remote-media proxy's answer (decision 5): the image bytes of one signed URL, held in memory
@@ -27,6 +28,34 @@ const plain = (status: number, text: string) =>
     },
   });
 
+type Fetcher = (url: string, init: SafeFetchInit) => Promise<SafeResponse>;
+
+const REDIRECTS = new Set([301, 302, 303, 307, 308]);
+
+/**
+ * `fetch` one hop at a time, asking `allowed` about each redirect's host before it is contacted,
+ * so a peer whose media is quarantined, purged or blocked is never fetched, however the first host
+ * points there. A refused hop calls `onDenied` and fails the fetch. The hop count and the one
+ * deadline are still the caller's (`init.maxRedirects`, `init.timeoutMs`).
+ */
+export function gatedFetch(fetch: Fetcher, allowed: (host: string) => Promise<boolean>, onDenied: () => void): Fetcher {
+  return async (url, init) => {
+    const deadline = Date.now() + init.timeoutMs;
+    let target = url;
+    for (let redirects = 0; ; redirects++) {
+      const hop = await fetch(target, { ...init, maxRedirects: 0, timeoutMs: Math.max(1, deadline - Date.now()) });
+      const location = hop.headers.get('location');
+      const next = location === null ? null : URL.parse(location, target);
+      if (!REDIRECTS.has(hop.status) || next === null || redirects >= init.maxRedirects) return hop;
+      if (!(await allowed(next.host))) {
+        onDenied();
+        throw new Error(`a redirect to ${next.host}, whose media is not allowed`);
+      }
+      target = next.href;
+    }
+  };
+}
+
 export type ProxyDeps = {
   key: Buffer;
   /** The remote_media.enabled kill switch. */
@@ -34,18 +63,24 @@ export type ProxyDeps = {
   /** The viewer's request signal: a request that gives up while queued for a turn is dropped. */
   signal?: AbortSignal;
   fetchImage?: (url: string, signal?: AbortSignal) => Promise<ProxyResult>;
-  /** Whether the image's host may be proxied (peers/gate.ts: a peer's media waits for an admin's approval). */
+  /** Whether the image's host, and each host it redirects to, may be proxied (peers/gate.ts: a peer's media waits for an admin's approval). */
   mediaAllowed?: (host: string) => Promise<boolean>;
+  /** The HTTP client under the default fetchImage (safeFetch); tests bring a stub. */
+  fetch?: Fetcher;
 };
 
 export async function proxyResponse(signature: string, target: string, deps: ProxyDeps): Promise<Response> {
   // An unsigned, altered or foreign URL, and the kill switch, look the same from outside: nothing here.
   const url = verifyProxyPath(deps.key, signature, target);
   if (url === null || !deps.enabled) return plain(404, 'not found');
-  // A quarantined, purged or blocked peer's media looks like any other missing image.
-  if (!(await (deps.mediaAllowed ?? mediaAllowed)(new URL(url).host))) return plain(404, 'not found');
-  const fetchImage = deps.fetchImage ?? ((target: string, signal?: AbortSignal) => fetchProxiedImage(target, { signal }));
+  // A quarantined, purged or blocked peer's media looks like any other missing image, here or after a redirect.
+  const allowed = deps.mediaAllowed ?? mediaAllowed;
+  if (!(await allowed(new URL(url).host))) return plain(404, 'not found');
+  let denied = false;
+  const fetch = gatedFetch(deps.fetch ?? safeFetch, allowed, () => (denied = true));
+  const fetchImage = deps.fetchImage ?? ((target: string, signal?: AbortSignal) => fetchProxiedImage(target, { signal, fetch }));
   const result = await fetchImage(url, deps.signal);
+  if (denied) return plain(404, 'not found');
   if (!result.ok) return plain(result.status, `the image could not be proxied (${result.why})`);
   // A copy: the fetched buffer's type is wider than a Response body accepts.
   return new Response(new Uint8Array(result.body), {
