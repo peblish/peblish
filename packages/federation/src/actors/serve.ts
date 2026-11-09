@@ -5,13 +5,13 @@ import { posts } from '@peblish/core/db/tables/content';
 import { activities } from '@peblish/core/db/tables/federation';
 import { follows } from '@peblish/core/db/tables/follows';
 import { communityModerators } from '@peblish/core/db/tables/moderation';
+import { communityRemovals } from '@peblish/core/moderation/tables';
 import { and, count, desc, eq, isNull, sql } from 'drizzle-orm';
 import { create, page } from '../delivery/activities.ts';
 import { loadCommentByApId, loadPost, loadPostByApId, localActorRecord, mentionTags, withTags } from '../delivery/records.ts';
 import { toWire } from '../mapping/document.ts';
 import type { Json, JsonObject } from '../mapping/json.ts';
 import { LEMMY_CONTEXT } from '../mapping/vocabulary.ts';
-import { communityRemovals } from '@peblish/core/moderation/tables';
 
 // The documents a local actor, post, comment or activity is served as. Built with the same
 // mapping peers receive in deliveries (toWire), so what they fetch is what they were sent. Fedify
