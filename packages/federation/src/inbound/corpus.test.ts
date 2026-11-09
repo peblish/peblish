@@ -4,14 +4,16 @@ import { stubFetch } from '@peblish/core/testing/seed-fed-a';
 import { deliverRow, seedLabWorld } from '@peblish/core/testing/seed-fed-b';
 import { shapeOf } from '../test/corpus.ts';
 import { readFixture, readManifest } from '../test/manifest.ts';
+import { corpusOutcomes } from './corpus.expected.ts';
 import { processRow } from './pipeline.ts';
 import { resetKeyFetchBudget } from './throttle.ts';
 
 // Every activity Lemmy 0.19.21 and PieFed 1.8.11 sent in the Phase 0 captures (the manifest's
 // inbound and peer-log entries, in the order they were captured), run through the pipeline in
 // a world built from the same captures (lab-live, with the spike's instance as ours). Each is
-// applied or skipped with a recorded reason; none fails, none is left pending. The test prints
-// the table the lane notes quote when CORPUS_REPORT=1.
+// applied or skipped with a recorded reason; none fails, none is left pending, and each
+// ends as corpus.expected.ts says. The test prints the table the lane notes quote when
+// CORPUS_REPORT=1.
 
 const sequence = (id: string) => Number(/-(\d{4})-/.exec(id)?.[1] ?? 0);
 
@@ -30,6 +32,7 @@ describe('the captured inbound corpus', () => {
     const { fetch } = stubFetch({});
     const tally = new Map<string, { applied: number; skipped: Map<string, number>; failed: number }>();
     const problems: string[] = [];
+    const outcomes: Record<string, string> = {};
     for (const entry of entries) {
       const json = readFixture(entry.fixture);
       if (typeof json !== 'object' || json === null) continue;
@@ -37,10 +40,13 @@ describe('the captured inbound corpus', () => {
       const key = `${entry.software.name} ${shapeOf(json)}`;
       const line = tally.get(key) ?? { applied: 0, skipped: new Map(), failed: 0 };
       tally.set(key, line);
-      if (stored?.state === 'applied') line.applied += 1;
-      else if (stored?.state === 'skipped' && stored.error) {
+      if (stored?.state === 'applied') {
+        line.applied += 1;
+        outcomes[entry.id] = 'applied';
+      } else if (stored?.state === 'skipped' && stored.error) {
         const reason = stored.error.split(' ')[0]!;
         line.skipped.set(reason, (line.skipped.get(reason) ?? 0) + 1);
+        outcomes[entry.id] = reason;
       } else {
         line.failed += 1;
         problems.push(`${entry.id}: ${stored?.state} ${stored?.error}`);
@@ -52,6 +58,6 @@ describe('the captured inbound corpus', () => {
       }
     }
     expect(problems).toEqual([]);
-    expect(entries.length).toBeGreaterThan(100 - 5);
+    expect(outcomes).toEqual(corpusOutcomes);
   }, 60_000);
 });
