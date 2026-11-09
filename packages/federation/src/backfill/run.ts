@@ -17,7 +17,7 @@ import { FetchFailure, type Fetcher } from '../actors/document.ts';
 import { safeFetch } from '../actors/safe-fetch.ts';
 import type { JsonObject } from '../mapping/json.ts';
 import { refreshRemoteActor } from '../remote-fetch/actor.ts';
-import { readCollection } from '../remote-fetch/collection.ts';
+import { readCollection, type CollectionItem } from '../remote-fetch/collection.ts';
 import { isTransient, readObject, storeObject, type ObjectOutcome, type Vouch } from '../remote-fetch/object.ts';
 import { polite } from '../remote-fetch/polite.ts';
 import { remoteTtls } from '../remote-fetch/ttl.ts';
@@ -60,7 +60,7 @@ function entryOf(item: unknown): Entry | null {
 }
 
 /** The collection a post offers its comments in: FEP-7888's `context`, else `replies`. Neither is a link to the post itself. */
-function offeredCollection(post: unknown): unknown {
+function offeredCollection(post: unknown): string | JsonObject | null {
   if (!isObject(post)) return null;
   for (const key of ['context', 'replies']) {
     const value = post[key];
@@ -130,18 +130,22 @@ export async function runBackfill(claimed: ClaimedBackfill, options: BackfillOpt
   const vouch = (collectionUrl: string): Vouch => ({ community, announceApId: collectionUrl });
   const communityOrigin = originOf(community.apId);
 
+  type Loaded = { json: unknown; /** The origin that actually served these bytes. */ origin: string };
+
   /**
-   * An object's document: embedded when its id is on the origin of `owner` (the community, or
-   * the collection a post offers), else read from where it lives. Either way its id is the
-   * entry's (readObject checks that for a fetched one).
+   * An object's document: the one embedded in the collection page that listed it when its id is
+   * on the origin that served that page (`carrier`, read off the page by readCollection), else
+   * read from where it lives. Either way its id is the entry's (readObject checks that for a
+   * fetched one), and `origin` is where the bytes came from.
    */
-  async function load(entry: Entry, owner: string): Promise<{ json: unknown } | ObjectOutcome> {
-    if (entry.embedded && originOf(entry.id) === originOf(owner)) {
+  async function load(entry: Entry, carrier: string): Promise<Loaded | ObjectOutcome> {
+    if (entry.embedded && originOf(entry.id) === carrier) {
       return entry.embedded.id === entry.id
-        ? { json: entry.embedded }
+        ? { json: entry.embedded, origin: carrier }
         : { status: 'refused', apId: entry.id, reason: 'object.id_mismatch' };
     }
-    return readObject(entry.id, fetch);
+    const read = await readObject(entry.id, fetch);
+    return 'json' in read ? { json: read.json, origin: originOf(read.served) } : read;
   }
 
   const tally = (outcome: ObjectOutcome) => {
@@ -152,35 +156,37 @@ export async function runBackfill(claimed: ClaimedBackfill, options: BackfillOpt
    * The comments a stored post offers in its `context` or `replies` collection. The post's
    * author controls that collection, so it is trusted for nothing but comments on that post:
    * the post was listed by the community's own collection (the evidence that it belongs here),
-   * the collection is served by the post's or the community's server, and a comment is stored
-   * only once what it replies to is the post or a comment already stored from the collection.
-   * Pages and replies to anything else are refused, and every comment stored counts against the caps.
+   * the collection, its `first` page and every page read are on the origin that served the post
+   * or the community's, and a comment is stored only once what it replies to is the post or a
+   * comment already stored from the collection. A comment embedded in a page counts as served
+   * by its own origin only when that origin served the page. Pages and replies to anything else
+   * are refused, and every comment stored counts against the caps.
    */
-  async function backfillComments(postJson: unknown, postApId: string, via: Vouch) {
+  async function backfillComments(postJson: unknown, postApId: string, via: Vouch, postOrigin: string) {
     const source = offeredCollection(postJson);
     if (!source) return;
     const room = Math.min(limits.commentsPerPost, limits.comments - comments);
     if (room <= 0) return;
-    if (typeof source === 'string' && ![originOf(postApId), communityOrigin].includes(originOf(source))) {
-      notes.push(`comments of ${postApId}: the collection is on another server`);
-      return;
-    }
     const [post] = await db().select({ id: postRows.id }).from(postRows).where(eq(postRows.apId, postApId));
     if (!post) return;
-    let items: unknown[];
+    let items: CollectionItem[];
     try {
-      items = await readCollection(source, fetch, { pages: limits.collectionPages, items: room });
+      items = await readCollection(
+        source,
+        fetch,
+        { pages: limits.collectionPages, items: room },
+        { origins: [postOrigin, communityOrigin], servedFrom: postOrigin },
+      );
     } catch (error) {
       if (!(error instanceof FetchFailure)) throw error;
       notes.push(`comments of ${postApId}: ${error.message}`);
       return;
     }
-    const owner = typeof source === 'string' ? source : postApId;
     const waiting: { id: string; parent: string; json: unknown }[] = [];
-    for (const item of items) {
+    for (const { item, origin } of items) {
       const entry = entryOf(item);
       if (!entry || budget.spent || options.signal?.aborted) continue;
-      const loaded = await load(entry, owner);
+      const loaded = await load(entry, origin);
       if (!('json' in loaded)) {
         tally(loaded);
         continue;
@@ -210,9 +216,14 @@ export async function runBackfill(claimed: ClaimedBackfill, options: BackfillOpt
     ['outbox', community.outboxUrl],
   ] as const) {
     if (!url) continue;
-    let items: unknown[];
+    let items: CollectionItem[];
     try {
-      items = await readCollection(url, fetch, { pages: limits.collectionPages, items: limits.collectionItems });
+      items = await readCollection(
+        url,
+        fetch,
+        { pages: limits.collectionPages, items: limits.collectionItems },
+        { origins: [originOf(url)], servedFrom: originOf(url) },
+      );
     } catch (error) {
       if (!(error instanceof FetchFailure)) throw error;
       // Pinned posts are a bonus; the outbox is the backfill.
@@ -221,7 +232,7 @@ export async function runBackfill(claimed: ClaimedBackfill, options: BackfillOpt
       notes.push(`${label}: ${error.message}`);
       continue;
     }
-    for (const item of items) {
+    for (const { item, origin } of items) {
       if (posts >= limits.posts) {
         const capped = `stopped at ${limits.posts} posts`;
         if (!notes.includes(capped)) notes.push(capped);
@@ -231,7 +242,7 @@ export async function runBackfill(claimed: ClaimedBackfill, options: BackfillOpt
       const entry = entryOf(item);
       if (!entry || seen.has(entry.id) || budget.spent) continue;
       seen.add(entry.id);
-      const loaded = await load(entry, community.apId);
+      const loaded = await load(entry, origin);
       if (!('json' in loaded)) {
         tally(loaded);
         continue;
@@ -240,7 +251,7 @@ export async function runBackfill(claimed: ClaimedBackfill, options: BackfillOpt
       tally(outcome);
       if (outcome.status !== 'stored') continue;
       if (outcome.created) posts += 1;
-      await backfillComments(loaded.json, outcome.apId, vouch(url));
+      await backfillComments(loaded.json, outcome.apId, vouch(url), loaded.origin);
     }
   }
   if (budget.timedOut) notes.push('stopped at the end of its lease');
