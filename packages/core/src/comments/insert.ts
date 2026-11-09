@@ -24,6 +24,14 @@ const label = (id: string) => id;
  * touches a comment holds the community row first, and then the post, so none can reach an
  * ancestor ahead of this transaction. The depth is the policy's call; this repeats it as a
  * refusal rather than letting the CHECK constraint fail the transaction.
+ *
+ * The protocol for any other writer of comments (an import, a backfill, a bulk removal or
+ * delete of an author's content): take the community row, then the post, both FOR NO KEY UPDATE,
+ * and only then comments, in path order (parents before children), before inserting or updating
+ * one. That is what makes the ancestor update above safe without locking the ancestors; a writer
+ * that reaches a comment first can wait on this statement while it waits on that writer, and
+ * the two deadlock. The counts (`comment_count`, `child_count`) change only here (a delete or a
+ * removal changes none).
  */
 export async function insertComment(t: WriteTx, subject: { postId: Uuid; parentId: Uuid | null }, row: NewCommentRow): Promise<void> {
   const { postId, parentId } = subject;

@@ -16,6 +16,7 @@ export const commentErrors = [
   'community.removed',
   'community.deleted',
   'invalid',
+  'rate.limited',
   'generic',
   'network',
 ] as const;

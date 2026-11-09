@@ -13,14 +13,21 @@ import { loadThread, threadShown } from './-thread.ts';
  * post or the thread is not shown to this viewer.
  */
 export const loadThreadFn = createServerFn({ method: 'GET' })
-  .validator(type({ postId: Uuid, sort: ThreadSortParam, 'rootId?': Uuid }))
+  .validator(type({ postId: Uuid, sort: ThreadSortParam, 'after?': 'string', 'rootId?': Uuid }))
   .handler(async ({ data }) => {
     const session = await pageSession();
     const viewer: Viewer = session ? { actorId: session.view.actorId, siteRole: session.view.siteRole } : null;
     const page = await readPost(data.postId, viewer);
     if (!page) return null;
     const renderer = await createMarkdownRenderer(await siteMarkdown());
-    return loadThread({ page, session, renderer, sort: data.sort, ...(data.rootId && { rootId: data.rootId }) });
+    return loadThread({
+      page,
+      session,
+      renderer,
+      sort: data.sort,
+      after: data.after ?? null,
+      ...(data.rootId && { rootId: data.rootId }),
+    });
   });
 
 /**
@@ -30,7 +37,7 @@ export const loadThreadFn = createServerFn({ method: 'GET' })
  * the comment does not exist.
  */
 export const loadPermalinkFn = createServerFn({ method: 'GET' })
-  .validator(type({ postId: 'string', commentId: 'string', sort: ThreadSortParam }))
+  .validator(type({ postId: 'string', commentId: 'string', sort: ThreadSortParam, 'after?': 'string' }))
   .handler(async ({ data }) => {
     if (!Uuid.allows(data.postId) || !Uuid.allows(data.commentId)) return null;
     const session = await pageSession();
@@ -41,7 +48,7 @@ export const loadPermalinkFn = createServerFn({ method: 'GET' })
     // Under a removed post the comments are not shown, and the page is simply not there.
     const gated = page.gate === 'sign-in' || page.gate === 'age';
     if (!gated && !threadShown(page)) return null;
-    const thread = await loadThread({ page, session, renderer, sort: data.sort, rootId: data.commentId });
+    const thread = await loadThread({ page, session, renderer, sort: data.sort, after: data.after ?? null, rootId: data.commentId });
     if (!gated && !thread) return null;
     return {
       gate: page.gate,

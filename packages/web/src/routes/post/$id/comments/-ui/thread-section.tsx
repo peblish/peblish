@@ -5,7 +5,7 @@ import { ReplyBar } from '@peblish/ui/components/reply-bar';
 import type { CommentView } from '@peblish/schema/views';
 import { useRouter, useRouterState } from '@tanstack/react-router';
 import { type } from 'arktype';
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { useTranslate } from '../../../../../i18n/use-translate.ts';
 import { useCommentThreadLabels, useReplyBarLabels } from '../../../../../shell/labels.ts';
 import { commentPath, postPath, userPath } from '../../../../../shell/paths.ts';
@@ -17,12 +17,13 @@ import { asCommentError, errorKey, type CommentError } from './errors.ts';
 
 // The thread under a post, and the whole of a permalink page: the sort choice, the comment
 // tree (lane UI's CommentThread), and the docked reply bar. It draws the data it was given. A
-// sort other than the one the page was loaded with is fetched once the page has hydrated; before
-// that (and without JavaScript) the sort choice is a plain GET form, and the server renders the
-// sort the document asks for. A reply is a plain form post too, to /post/<id>/comments.
+// sort or a page (?after=) other than the one the page was loaded with is fetched once the page
+// has hydrated; before that (and without JavaScript) the sort choice is a plain GET form, the
+// pages are plain links, and the server renders the sort and page the document asks for. A
+// reply is a plain form post too, to /post/<id>/comments.
 
 const Answer = type({ 'ok?': 'boolean', 'error?': 'string' });
-const Search = type({ 'sort?': 'unknown', 'commentError?': 'unknown' });
+const Search = type({ 'sort?': 'unknown', 'after?': 'unknown', 'commentError?': 'unknown' });
 
 /** Plain text for the reply bar from a comment's rendered HTML; only displayed, and React escapes it. */
 function excerptOf(html: string | null): string {
@@ -40,22 +41,35 @@ export function ThreadSection({ data: loaded }: { data: ThreadData }) {
   const raw = useRouterState({ select: (state) => state.location.search });
   const search = Search(raw);
   const wanted = parseSort(search instanceof type.errors ? undefined : search.sort);
+  const wantedAfter = search instanceof type.errors || typeof search.after !== 'string' ? null : search.after;
   const urlError = asCommentError(search instanceof type.errors ? undefined : search.commentError);
 
-  // The sort the page was loaded with is the data; any other is fetched, and shown until then in the old order.
+  // The sort and page the page was loaded with are the data; any other is fetched, and shown until then as before.
   const [fetched, setFetched] = useState<ThreadData | null>(null);
+  const current = loaded.sort === wanted && loaded.after === wantedAfter;
   useEffect(() => {
-    if (loaded.sort === wanted) return;
-    let current = true;
-    loadThreadFn({ data: { postId: loaded.postId, sort: wanted, ...(loaded.focus && { rootId: loaded.focus.id }) } }).then(
-      (next) => current && next && setFetched(next),
+    if (current) return;
+    let live = true;
+    loadThreadFn({
+      data: {
+        postId: loaded.postId,
+        sort: wanted,
+        ...(wantedAfter && { after: wantedAfter }),
+        ...(loaded.focus && { rootId: loaded.focus.id }),
+      },
+    }).then(
+      (next) => live && next && setFetched(next),
       () => undefined,
     );
     return () => {
-      current = false;
+      live = false;
     };
-  }, [loaded, wanted]);
-  const data = loaded.sort === wanted ? loaded : (fetched ?? loaded);
+  }, [current, loaded.postId, loaded.focus, wanted, wantedAfter]);
+  const data = current ? loaded : (fetched ?? loaded);
+  const times = useMemo(() => new Map(Object.entries(data.times)), [data.times]);
+  // The address of a page of this thread: the post's or the permalink's, in this sort.
+  const pageHref = (cursor: string | null) =>
+    `${data.focus ? commentPath(data.postId, data.focus.id) : postPath(data.postId)}?${new URLSearchParams({ sort: data.sort, ...(cursor && { after: cursor }) })}#comments`;
 
   const labels = useCommentThreadLabels();
   const replyLabels = useReplyBarLabels();
@@ -121,13 +135,20 @@ export function ThreadSection({ data: loaded }: { data: ThreadData }) {
           </div>
         </form>
       </div>
+      {data.after && (
+        <p className="cm-more">
+          <a href={pageHref(null)}>{t('comments', data.focus ? 'first.replies' : 'first.comments')}</a>
+        </p>
+      )}
       {data.comments.length === 0 ? (
         <p className="cm-empty">{t('comments', 'empty')}</p>
       ) : (
         <CommentThread
           comments={data.comments}
           postAuthorId={data.postAuthorId}
-          continueHref={(comment) => commentPath(data.postId, comment.id)}
+          // The comment a permalink starts from pages its own replies, below.
+          continueHref={(comment) => (comment.id === data.focus?.id ? null : commentPath(data.postId, comment.id))}
+          times={times}
           authorHref={(comment) => userPath(comment.author)}
           labels={labels}
           locale={locale}
@@ -146,7 +167,11 @@ export function ThreadSection({ data: loaded }: { data: ThreadData }) {
           {t('comments', errorKey(urlError))}
         </p>
       )}
-      {data.truncated && <p className="cm-hint">{t('comments', 'truncated', { count: data.comments.length })}</p>}
+      {data.next && (
+        <p className="cm-more">
+          <a href={pageHref(data.next)}>{t('comments', data.focus ? 'more.replies' : 'more.comments')}</a>
+        </p>
+      )}
       {data.removals.length > 0 && (
         <details className="cm-removed">
           <summary>{t('comments', 'removed.heading', { count: data.removals.length })}</summary>

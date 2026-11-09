@@ -36,11 +36,13 @@ export interface CommentThreadProps {
   comments: readonly CommentView[];
   /** The post's author, to mark their comments OP. */
   postAuthorId: string;
-  /** Where "Continue this thread" leads for a comment: its permalink page. */
-  continueHref: (comment: CommentView) => string;
+  /** Where "Continue this thread" leads for a comment: its permalink page. Null for a comment that has none to offer (the one a permalink page starts from, whose replies the page pages itself). */
+  continueHref: (comment: CommentView) => string | null;
   authorHref: (comment: CommentView) => string;
   labels: CommentThreadLabels;
   locale: string;
+  /** Each comment's age and full date as text, formatted by the server so hydration formats nothing; a comment without one prints its age from the clock. */
+  times?: ReadonlyMap<string, { age: string; title: string }>;
   onVote?: (comment: CommentView, value: Vote) => void | Promise<void>;
   /** The viewer cannot vote (signed out). */
   voteDisabled?: boolean;
@@ -56,11 +58,23 @@ export interface CommentThreadProps {
 
 const scoreOf = (comment: CommentView) => comment.counts.upvotes - comment.counts.downvotes;
 
+/** Replies the list does not hold under a comment, at any depth. */
+const missingBelow = ({ comment, descendants }: CommentNode) => Math.max(0, comment.counts.comments - descendants);
+
+/**
+ * Replies the list does not hold that hang from this comment itself rather than from a reply
+ * the list does hold (which says so for its own): the ones the server cut from its children,
+ * so a branch the list only partly holds still shows where to continue.
+ */
+export const unloadedReplies = (node: CommentNode) =>
+  Math.max(0, missingBelow(node) - node.children.reduce((sum, child) => sum + missingBelow(child), 0));
+
 /**
  * The comment tree (thread-nested): indented levels with a clickable thread line, a fold
- * button per comment, low-score comments folded, removed and deleted comments as a note, and
- * a "Continue this thread" link where the depth cap cuts a branch. It fetches nothing: the
- * page passes the list and the callbacks.
+ * button per comment, low-score comments folded, removed and deleted comments as a note (one
+ * label for a comment that is both: removed), and a "Continue this thread" link wherever the
+ * list leaves replies out, because the depth cap cuts the branch or the server cut a branch it
+ * only partly sent. It fetches nothing: the page passes the list and the callbacks.
  */
 export function CommentThread({
   comments,
@@ -69,6 +83,7 @@ export function CommentThread({
   authorHref,
   labels,
   locale,
+  times,
   onVote,
   voteDisabled,
   onReply,
@@ -89,9 +104,11 @@ export function CommentThread({
     const gone = comment.removed || comment.deleted;
     const replies = node.descendants;
     const lowScore = scoreOf(comment) < lowScoreThreshold;
-    // Replies the list does not hold (the server cut the branch), and the ones past our own cap.
-    const unseen = Math.max(0, comment.counts.comments - replies);
-    const more = level >= maxDepth - 1 ? replies + unseen : node.children.length === 0 ? unseen : 0;
+    // Past our own cap the replies the list holds are not drawn; above it, only the ones it leaves out count.
+    const capped = level >= maxDepth - 1;
+    const more = capped ? replies + missingBelow(node) : unloadedReplies(node);
+    const href = more > 0 ? continueHref(comment) : null;
+    const stamp = times?.get(comment.id);
 
     return (
       <li key={comment.id} className="pb-comment" id={`comment-${comment.id}`} data-folded={isFolded || undefined}>
@@ -105,7 +122,7 @@ export function CommentThread({
           >
             {isFolded ? '+' : '−'}
           </button>
-          {comment.deleted ? (
+          {comment.deleted && !comment.removed ? (
             <span className="pb-muted">{labels.deleted}</span>
           ) : (
             <>
@@ -117,7 +134,14 @@ export function CommentThread({
             </>
           )}
           <span className="pb-muted">
-            · <Time iso={comment.publishedAt} locale={locale} now={now} />
+            ·{' '}
+            {stamp ? (
+              <time dateTime={comment.publishedAt} title={stamp.title}>
+                {stamp.age}
+              </time>
+            ) : (
+              <Time iso={comment.publishedAt} locale={locale} now={now} />
+            )}
             {comment.editedAt && ` · ${labels.edited}`}
           </span>
         </div>
@@ -159,21 +183,20 @@ export function CommentThread({
                 </button>
               )}
             </div>
-            {more > 0 ? (
+            {!capped && node.children.length > 0 && (
+              <div className="pb-comment__kids">
+                <button type="button" className="pb-comment__line" tabIndex={-1} aria-hidden="true" onClick={() => toggle(comment)} />
+                <ul className="pb-comment__list">{node.children.map((child) => renderNode(child, level + 1))}</ul>
+              </div>
+            )}
+            {href && (
               <div className="pb-comment__kids pb-comment__more">
-                <a className="pb-comment__continue" href={continueHref(comment)}>
+                <a className="pb-comment__continue" href={href}>
                   {labels.continueThread}
                   <ChevronRight />
                 </a>{' '}
                 <span className="pb-muted">{labels.moreReplies(more)}</span>
               </div>
-            ) : (
-              node.children.length > 0 && (
-                <div className="pb-comment__kids">
-                  <button type="button" className="pb-comment__line" tabIndex={-1} aria-hidden="true" onClick={() => toggle(comment)} />
-                  <ul className="pb-comment__list">{node.children.map((child) => renderNode(child, level + 1))}</ul>
-                </div>
-              )
             )}
           </div>
         )}

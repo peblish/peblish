@@ -16,7 +16,7 @@ import { Refused } from '../tx/refused.ts';
 import { tx } from '../tx/tx.ts';
 import { createCommentAs, deleteCommentAs, updateCommentAs } from './actions.ts';
 import { createComment } from './create.ts';
-import { deleteComment } from './delete.ts';
+import { deleteComment, restoreComment } from './delete.ts';
 import { updateComment } from './edit.ts';
 import { NewComment, commentMaxLength, maxCommentDepth } from './input.ts';
 
@@ -35,6 +35,15 @@ const ok = <T extends { ok: boolean }>(result: T): Extract<T, { ok: true }> => {
   if (!result.ok) throw new Error(`refused: ${JSON.stringify(result)}`);
   return result as Extract<T, { ok: true }>;
 };
+
+/** Whether the comment's row and its newest outbox event were written by one transaction. */
+async function sameTransaction(commentId: string): Promise<boolean> {
+  const [same] = await db().execute<{ same: boolean }>(
+    sql`select exists (select 1 from outbox o, comments c where c.id = ${commentId} and o.type = 'comment.restored'
+      and (o.tx_id::text::numeric % 4294967296)::text = c.xmin::text) as same`,
+  );
+  return same?.same === true;
+}
 
 async function world() {
   const w = await seedPostWorld();
@@ -284,5 +293,56 @@ describe('deleteComment', () => {
     await expect(deleteComment(stale, undefined)).rejects.toMatchObject({ action: 'comment.delete', reason: 'target.removed' });
     expect(await deleteCommentAs(reader, id)).toEqual({ ok: false, reason: 'target.removed' });
     expect((await commentRow(id)).deletedAt).toBeNull();
+  });
+});
+
+describe('restoreComment', () => {
+  test('takes the delete back: the text is live again, no count changes, comment.restored is emitted in one transaction', async () => {
+    const { w, reader, postId } = await world();
+    const parent = ok(await createCommentAs(reader, { postId, parentId: null }, { bodyMd: 'parent' })).id;
+    ok(await createCommentAs(localUser(w.people.author.id), { postId, parentId: parent }, { bodyMd: 'child' }));
+    ok(await deleteCommentAs(reader, parent));
+    const counts = { post: (await postRow(postId)).commentCount, parent: (await commentRow(parent)).childCount };
+    const grant = await grantFor('comment.restore', reader, { commentId: parent });
+    await restoreComment(grant, undefined);
+    expect(await commentRow(parent)).toMatchObject({ bodyMd: 'parent', deletedAt: null, path: parent, childCount: counts.parent });
+    expect((await postRow(postId)).commentCount).toBe(counts.post);
+    expect((await outboxEvents()).at(-1)).toEqual({
+      type: 'comment.restored',
+      v: 1,
+      commentId: parent,
+      postId,
+      authorId: w.people.reader.id,
+      local: true,
+    });
+    expect(await sameTransaction(parent)).toBe(true);
+    // Live again: it takes an edit and a reply, and a second delete.
+    expect(ok(await updateCommentAs(reader, parent, { bodyMd: 'back' })).changed).toBe(true);
+    ok(await createCommentAs(reader, { postId, parentId: parent }, { bodyMd: 'reply' }));
+  });
+
+  test('refuses a comment that is not deleted, and one a moderator removed', async () => {
+    const { w, reader, postId } = await world();
+    const { id } = ok(await createCommentAs(reader, { postId, parentId: null }, { bodyMd: 'live' }));
+    const refusal = async () => {
+      const decision = await authorize('comment.restore', reader, { commentId: id });
+      return decision.ok ? 'allow' : decision.reason;
+    };
+    expect(await refusal()).toBe('comment.not_deleted');
+    const moderator = localUser(w.people.moderator.id);
+    await removeContent(await grantFor('mod.remove', moderator, { target: { kind: 'comment', id } }), { reason: 'Rule 1' });
+    expect(await refusal()).toBe('target.removed');
+  });
+
+  test('a grant that is used twice is refused the second time, and writes nothing', async () => {
+    const { reader, postId } = await world();
+    const { id } = ok(await createCommentAs(reader, { postId, parentId: null }, { bodyMd: 'mine' }));
+    ok(await deleteCommentAs(reader, id));
+    const first = await grantFor('comment.restore', reader, { commentId: id });
+    const second = await grantFor('comment.restore', reader, { commentId: id });
+    await restoreComment(first, undefined);
+    const before = await writeCounts();
+    await expect(restoreComment(second, undefined)).rejects.toMatchObject({ action: 'comment.restore', reason: 'comment.not_deleted' });
+    expect(await writeCounts()).toEqual(before);
   });
 });

@@ -43,8 +43,11 @@ test(`a ${size}-comment thread that reaches level 50 is read and rendered in und
   expect(best).toBeLessThan(budgetMs);
 
   // It sends at most the capped depth and the capped page, and the thread really does reach level 50.
-  expect(Math.max(...thread.comments.map(({ view }) => view.depth))).toBe(threadDisplayDepth - 1);
+  expect(Math.max(...thread.comments.map(({ view }) => view.depth))).toBeLessThan(threadDisplayDepth);
   expect(thread.comments.length).toBeLessThanOrEqual(threadMaxComments);
+  // The oldest first reaches down the chain the seed starts with, to the last level the page draws.
+  const oldest = await readThread(postId, null, { sort: 'old' });
+  expect(Math.max(...oldest!.comments.map(({ view }) => view.depth))).toBe(threadDisplayDepth - 1);
   const [row] = await db().execute<{ deepest: number }>(
     sql`select max(nlevel(path))::int as deepest from comments where post_id = ${postId}`,
   );

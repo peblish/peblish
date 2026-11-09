@@ -8,11 +8,13 @@ import { removeContent } from '../moderation/remove.ts';
 import { truncateAll } from '../testing/db.ts';
 import { grantFor } from '../testing/seed-az.ts';
 import { seedPostWorld } from '../testing/seed-b1.ts';
-import { seedChain, seedReply } from '../testing/seed-d.ts';
+import { seedChain, seedReply, seedTree } from '../testing/seed-d.ts';
 import { localUser } from '../testing/seed.ts';
 import { castVote } from '../votes/cast.ts';
-import { threadDisplayDepth, threadMaxComments } from './limits.ts';
+import { threadDisplayDepth, threadMaxComments, threadPageSize, threadReplyPreview } from './limits.ts';
+import { encodeCursor, type ThreadCursor } from './cursor.ts';
 import { readThread, type Thread } from './read.ts';
+import { threadSorts, type ThreadSort } from './sort.ts';
 
 beforeEach(truncateAll);
 
@@ -61,7 +63,7 @@ describe('readThread', () => {
     const thread = await readThread(post.id, null);
     expect(ids(thread)).toEqual(chain.slice(0, threadDisplayDepth).map(({ id }) => id));
     expect(thread?.comments.at(-1)?.view).toMatchObject({ depth: threadDisplayDepth - 1, counts: { comments: 10 - threadDisplayDepth } });
-    expect(thread?.truncated).toBe(false);
+    expect(thread?.next).toBeNull();
   });
 
   test('a permalink page starts at its comment and shows the same number of levels below it', async () => {
@@ -83,16 +85,6 @@ describe('readThread', () => {
     expect(await readThread('0192f5a0-1234-7abc-8def-0123456789ab', null)).toBeNull();
     expect(await readThread(post.id, null, { rootId: elsewhere.id })).toBeNull();
     expect(await readThread(post.id, null, { rootId: '0192f5a0-1234-7abc-8def-0123456789ab' })).toBeNull();
-  });
-
-  test('sends a page of comments, the first in display order, and says there are more', async () => {
-    const { w, post, at } = await world();
-    for (let index = 0; index < threadMaxComments + 5; index++) await seedReply(at, post, null, w.people.reader, { upvotes: index });
-    const thread = await readThread(post.id, null, { sort: 'top' });
-    expect(thread?.comments).toHaveLength(threadMaxComments);
-    expect(thread?.truncated).toBe(true);
-    // The best scored are the ones kept.
-    expect(thread?.comments[0]?.view.counts.upvotes).toBe(threadMaxComments + 4);
   });
 
   describe('what a viewer is shown', () => {
@@ -140,6 +132,18 @@ describe('readThread', () => {
     });
   });
 
+  test("a comment that is both deleted and removed is a removed one, with a moderator's removal note and no text", async () => {
+    const { w, post, viewer, at } = await world();
+    const both = await seedReply(at, post, null, w.people.reader, { bodyMd: 'Both words', deletedAt: new Date(), removedAt: new Date() });
+    const asModerator = await readThread(post.id, viewer(w.people.moderator));
+    expect(asModerator?.comments[0]).toMatchObject({
+      view: { id: both.id, deleted: true, removed: true },
+      body: null,
+      removal: { reason: null },
+    });
+    expect(JSON.stringify(await readThread(post.id, null))).not.toContain('Both words');
+  });
+
   test("shows the viewer's own votes, the author's badge and the handle of a remote author", async () => {
     const { w, post, viewer, at } = await world();
     const mine = await seedReply(at, post, null, w.people.reader);
@@ -173,4 +177,200 @@ describe('readThread', () => {
     const thread = await readThread(post.id, null);
     expect(thread?.comments[0]?.body).toEqual({ kind: 'html', html: '<p>From a peer</p>', baseUrl: row.apId });
   });
+});
+
+// The order of siblings is SQL, so a page of them is chosen in the sort's order before the limit.
+describe('the order of siblings', () => {
+  const now = new Date('2026-11-09T12:00:00Z');
+  const hoursAgo = (hours: number) => new Date(now.getTime() - hours * 3_600_000);
+
+  test.each([
+    // A fresh comment with a fair score, an old one with a great score, and a brand new one with none.
+    ['hot', ['fresh-fair', 'new-none', 'old-great']],
+    ['top', ['old-great', 'fresh-fair', 'new-none']],
+    ['new', ['new-none', 'fresh-fair', 'old-great']],
+    ['old', ['old-great', 'fresh-fair', 'new-none']],
+  ] as const)('%s', async (sort, expected) => {
+    const { w, post, at } = await world();
+    const made = {
+      'old-great': await seedReply(at, post, null, w.people.reader, { upvotes: 100, publishedAt: hoursAgo(48) }),
+      'fresh-fair': await seedReply(at, post, null, w.people.reader, { upvotes: 10, publishedAt: hoursAgo(1) }),
+      'new-none': await seedReply(at, post, null, w.people.reader, { publishedAt: hoursAgo(0) }),
+    };
+    const thread = await readThread(post.id, null, { sort, now });
+    expect(ids(thread)).toEqual(expected.map((name) => made[name].id));
+  });
+
+  test('hot is the score over the age, as Lemmy ranks it, and a score below -2 ranks as -2', async () => {
+    const { w, post, at } = await world();
+    const rank = (up: number, down: number, hours: number) => Math.log10(Math.max(1, up - down + 3)) / (Math.max(0, hours) + 2) ** 1.8;
+    const specs = [
+      { up: 40, down: 2, hours: 30 },
+      { up: 3, down: 0, hours: 0.5 },
+      { up: 0, down: 50, hours: 1 },
+      { up: 0, down: 4, hours: 2 },
+      { up: 12, down: 12, hours: 3 },
+      { up: 90, down: 10, hours: 400 },
+    ];
+    const made = await Promise.all(
+      specs.map((spec) =>
+        seedReply(at, post, null, w.people.reader, { upvotes: spec.up, downvotes: spec.down, publishedAt: hoursAgo(spec.hours) }),
+      ),
+    );
+    const expected = made
+      .map((row, index) => ({ id: row.id, rank: rank(specs[index]!.up, specs[index]!.down, specs[index]!.hours) }))
+      .sort((a, b) => b.rank - a.rank)
+      .map(({ id }) => id);
+    expect(ids(await readThread(post.id, null, { sort: 'hot', now }))).toEqual(expected);
+  });
+
+  test('comments with the same score and time keep one order, by id', async () => {
+    const { w, post, at } = await world();
+    const same = { upvotes: 5, publishedAt: hoursAgo(3) };
+    const a = await seedReply(at, post, null, w.people.reader, same);
+    const b = await seedReply(at, post, null, w.people.reader, same);
+    const [low, high] = [a.id, b.id].sort();
+    for (const sort of ['hot', 'top', 'new'] as const) expect(ids(await readThread(post.id, null, { sort, now }))).toEqual([high, low]);
+    expect(ids(await readThread(post.id, null, { sort: 'old', now }))).toEqual([low, high]);
+  });
+});
+
+describe('pages of siblings', () => {
+  const total = threadPageSize + 7;
+
+  /** The ids of the siblings each page lists, walking `next` (each page asked a day later than the one before, as a slow reader would). */
+  async function walk(postId: string, sort: ThreadSort, rootId: string | null = null) {
+    const pages: string[][] = [];
+    let after: string | null = null;
+    for (let at = Date.now(); pages.length < 10; at += 86_400_000) {
+      const thread: Thread | null = await readThread(postId, null, { sort, rootId, after, now: new Date(at) });
+      pages.push(thread!.comments.filter(({ view }) => view.parentId === rootId).map(({ view }) => view.id));
+      after = thread!.next;
+      if (!after) break;
+    }
+    return pages;
+  }
+
+  test.each(threadSorts)('%s: a page is the next siblings in the sort order, and no sibling is repeated or skipped', async (sort) => {
+    const { w, post, at } = await world();
+    await seedTree(at, post, [w.people.reader, w.people.author], [total]);
+    const pages = await walk(post.id, sort);
+    expect(pages.map((page) => page.length)).toEqual([threadPageSize, total - threadPageSize]);
+    expect(new Set(pages.flat()).size).toBe(total);
+    // Hot's order has its own test; the others are plain comparisons over all the siblings.
+    type Stored = { id: string; upvotes: number; downvotes: number; publishedAt: Date };
+    const newest = (a: Stored, b: Stored) => b.publishedAt.getTime() - a.publishedAt.getTime() || (a.id < b.id ? 1 : -1);
+    const compare: Partial<Record<ThreadSort, (a: Stored, b: Stored) => number>> = {
+      top: (a, b) => b.upvotes - b.downvotes - (a.upvotes - a.downvotes) || newest(a, b),
+      new: newest,
+      old: (a, b) => -newest(a, b),
+    };
+    const order = compare[sort];
+    if (order) {
+      const rows = await writer().select().from(comments).where(eq(comments.postId, post.id));
+      expect(pages.flat()).toEqual(rows.sort(order).map(({ id }) => id));
+    }
+  });
+
+  test('the first page holds the best siblings of the whole set, not of the first rows stored', async () => {
+    const { w, post, at } = await world();
+    // The best scored comments are the last ones stored (the path order a global limit would cut).
+    for (let index = 0; index < total; index++) await seedReply(at, post, null, w.people.reader, { upvotes: index });
+    const thread = await readThread(post.id, null, { sort: 'top' });
+    expect(thread?.comments).toHaveLength(threadPageSize);
+    expect(thread?.comments.map(({ view }) => view.counts.upvotes)).toEqual(
+      Array.from({ length: threadPageSize }, (_, index) => total - 1 - index),
+    );
+    expect(thread?.next).toEqual(expect.any(String));
+  });
+
+  test('a cursor from another sort, another set of siblings or no cursor at all starts at the first page', async () => {
+    const { w, post, at } = await world();
+    const [first] = await seedTree(at, post, [w.people.reader], [total, 1]);
+    const top = await readThread(post.id, null, { sort: 'top' });
+    const forged = (over: Record<string, unknown>) =>
+      encodeCursor({ v: 1, sort: 'top', parent: null, asOf: Date.now(), pub: 1_700_000_000_000_000, score: 1, ...over } as ThreadCursor);
+    const second = await readThread(post.id, null, { sort: 'top', after: top!.next });
+    expect(second?.comments.filter(({ view }) => view.parentId === null)).toHaveLength(total - threadPageSize);
+    for (const [sort, rootId, after] of [
+      ['new', null, top!.next],
+      ['top', first!.id, top!.next],
+      ['top', null, 'not a cursor'],
+      ['top', null, Buffer.from('{"v":1}').toString('base64url')],
+      ['top', null, 'x'.repeat(500)],
+      // Numbers the SQL could not take are not a position.
+      ['top', null, forged({ id: first!.id, score: 3_000_000_000 })],
+      ['top', null, forged({ id: first!.id, asOf: 9_007_199_254_740_991 })],
+      ['top', null, forged({ id: first!.id, pub: 9_007_199_254_740_991 })],
+    ] as const) {
+      const thread = await readThread(post.id, null, { sort, rootId, after });
+      expect(thread?.comments.filter(({ view }) => view.parentId === rootId)).toHaveLength(rootId ? 1 : threadPageSize);
+    }
+  });
+
+  test('the replies under a permalink comment page the same way, with the comment itself on every page', async () => {
+    const { w, post, at } = await world();
+    const [parent] = await seedTree(at, post, [w.people.reader], [1, total]);
+    const root = parent!.id;
+    const pages = await walk(post.id, 'new', root);
+    expect(pages.map((page) => page.length)).toEqual([threadPageSize, total - threadPageSize]);
+    const later = await readThread(post.id, null, {
+      sort: 'new',
+      rootId: root,
+      after: (await readThread(post.id, null, { sort: 'new', rootId: root }))?.next,
+    });
+    expect(later?.comments[0]?.view.id).toBe(root);
+    expect(later?.focus?.id).toBe(root);
+  });
+
+  test('a comment lists its first few replies, and counts.comments says how many the page left out', async () => {
+    const { w, post, at } = await world();
+    const parent = await seedReply(at, post, null, w.people.reader);
+    for (let index = 0; index < threadReplyPreview + 4; index++) await seedReply(at, post, parent, w.people.author, { upvotes: index });
+    const thread = await readThread(post.id, null, { sort: 'top' });
+    expect(thread?.comments).toHaveLength(1 + threadReplyPreview);
+    // The best scored replies are the ones listed.
+    expect(thread?.comments.slice(1).map(({ view }) => view.counts.upvotes)).toEqual(
+      Array.from({ length: threadReplyPreview }, (_, index) => threadReplyPreview + 3 - index),
+    );
+    expect(thread?.comments[0]?.view.counts.comments).toBe(threadReplyPreview + 4);
+    expect(thread?.next).toBeNull();
+  });
+});
+
+describe('a page of a big thread', () => {
+  test('sends at most 300 comments, the top of the thread first, and every comment is reachable through next and the comments cut', async () => {
+    const { w, post, at } = await world();
+    // 28 top-level comments with 6 replies each with 6 replies each: 1,204 in all.
+    const made = await seedTree(at, post, [w.people.reader, w.people.author], [threadPageSize + 3, 6, 6]);
+    const first = await readThread(post.id, null, { sort: 'new' });
+    expect(first?.comments.length).toBeLessThanOrEqual(threadMaxComments);
+    expect(first?.comments.length).toBeGreaterThan(threadPageSize);
+    // Level by level: every top-level comment of the page is there before any third level.
+    expect(first?.comments.filter(({ view }) => view.depth === 0)).toHaveLength(threadPageSize);
+    expect(first?.comments.filter(({ view }) => view.depth === 1).length).toBeGreaterThan(threadPageSize);
+
+    const seen = new Set<string>();
+    const visited = new Set<string | null>();
+    const queue: (string | null)[] = [null];
+    for (let root = queue.shift(); root !== undefined; root = queue.shift()) {
+      if (visited.has(root)) continue;
+      visited.add(root);
+      for (let after: string | null = null, pages = 0; pages === 0 || after; pages++) {
+        const thread: Thread | null = await readThread(post.id, null, { sort: 'new', rootId: root, after });
+        expect(thread!.comments.length).toBeLessThanOrEqual(threadMaxComments);
+        const below = (id: string): number => {
+          const kids = thread!.comments.filter(({ view }) => view.parentId === id);
+          return kids.length + kids.reduce((sum, { view }) => sum + below(view.id), 0);
+        };
+        for (const { view } of thread!.comments) {
+          seen.add(view.id);
+          // A comment whose replies the page left out is where the reader continues.
+          if (view.id !== root && view.counts.comments > below(view.id)) queue.push(view.id);
+        }
+        after = thread!.next;
+      }
+    }
+    expect(seen.size).toBe(made.length);
+  }, 60_000);
 });

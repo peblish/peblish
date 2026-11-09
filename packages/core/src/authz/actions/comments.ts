@@ -68,13 +68,16 @@ const create = async (request: PolicyRequest<{ postId: Uuid; parentId: Uuid | nu
  * policies: the comment exists, its community is neither deleted nor removed, the principal is
  * the author (comment.author_required), then `check` on the comment's state. A comment a
  * moderator removed takes no author action (target.removed), as a post does. Only the author
- * acts: a moderator removes or restores through mod.remove and mod.restore.
+ * acts: a moderator removes or restores through mod.remove and mod.restore. A remote community
+ * (a Group) is refused first (comment.group_cannot_act), before any lock, as for comment.create.
  */
 const authorAction =
   (check: (request: PolicyRequest<unknown>, comment: CommentState) => Promise<RefusalReason | null>) =>
   async (request: PolicyRequest<{ commentId: Uuid }>): Promise<PolicyResult> => {
     const { principal } = request;
     if (principal.kind === 'system') return deny('auth.required');
+    // Before any locked read: a community's own row is held by its principal's refresh and is also the community row commentState locks.
+    if (principal.kind === 'remote' && (await isCommunity(request, principal.actorId))) return deny('comment.group_cannot_act');
     const comment = await commentState(request, request.subject.commentId);
     if (!comment) return deny('target.not_found');
     const closed = communityDenial(comment.community);
@@ -97,4 +100,10 @@ export const policies = {
   }),
   // Retracting your own comment needs none of that.
   'comment.delete': authorAction(async (_request, comment) => reason(liveDenial(comment))),
+  // Taking the retraction back needs the author in good standing and a comment that is only
+  // deleted: a moderator's removal is not the author's to undo.
+  'comment.restore': authorAction(async (request, comment) => {
+    if (await isBanned(request, comment.community.id, comment.authorId)) return 'community.banned';
+    return comment.removed ? 'target.removed' : comment.deleted ? null : 'comment.not_deleted';
+  }),
 };
