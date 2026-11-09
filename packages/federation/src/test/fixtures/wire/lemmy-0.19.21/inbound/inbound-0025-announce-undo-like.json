@@ -1,0 +1,36 @@
+{
+  "@context": ["https://join-lemmy.org/context.json", "https://www.w3.org/ns/activitystreams"],
+  "actor": "https://lemmy.lab.test/c/lab",
+  "to": ["https://www.w3.org/ns/activitystreams#Public"],
+  "object": {
+    "id": "https://feddit.lab.test/ap/activities/undo/dba39439-c5c8-4e9b-bc65-107e346c62b1",
+    "actor": "https://feddit.lab.test/ap/u.t1108022622",
+    "@context": [
+      "https://w3id.org/identity/v1",
+      "https://www.w3.org/ns/activitystreams",
+      "https://w3id.org/security/v1",
+      "https://w3id.org/security/data-integrity/v1",
+      "https://www.w3.org/ns/did/v1",
+      "https://w3id.org/security/multikey/v1",
+      "https://gotosocial.org/ns",
+      {
+        "litepub": "http://litepub.social/ns#",
+        "toot": "http://joinmastodon.org/ns#",
+        "EmojiReact": "litepub:EmojiReact",
+        "Emoji": "toot:Emoji"
+      }
+    ],
+    "type": "Undo",
+    "audience": "https://lemmy.lab.test/c/lab",
+    "object": {
+      "id": "https://feddit.lab.test/ap/activities/like/6ec440ab-51f9-41de-8df9-5fae58cf0de4",
+      "type": "Like",
+      "actor": "https://feddit.lab.test/ap/u.t1108022622",
+      "audience": "https://lemmy.lab.test/c/lab",
+      "object": "https://lemmy.lab.test/post/10"
+    }
+  },
+  "cc": ["https://lemmy.lab.test/c/lab/followers"],
+  "type": "Announce",
+  "id": "https://lemmy.lab.test/activities/announce/undo/7f350e52-94df-454d-a98f-1102cfe00337"
+}

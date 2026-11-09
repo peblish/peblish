@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm';
-import { boolean, check, index, pgTable, text, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
+import { boolean, check, index, pgTable, primaryKey, text, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
 import { at, createdAt, enumCheck, id, raw } from '../columns.ts';
 import { authUser } from './auth.ts';
 import { instances } from './instances.ts';
@@ -41,9 +41,16 @@ export const actors = pgTable(
     iconUrl: text('icon_url'),
     bannerUrl: text('banner_url'),
     sensitive: boolean('sensitive').notNull().default(false),
+    /** Not safe for life (PieFed's nsfl): a Group whose posts all are. */
+    nsfl: boolean('nsfl').notNull().default(false),
     bot: boolean('bot').notNull().default(false),
+    /** Search consent (Mastodon's discoverable and indexable): false is an opt-out import and search respect. */
+    discoverable: boolean('discoverable').notNull().default(true),
+    indexable: boolean('indexable').notNull().default(true),
     /** Group only: only moderators may post (lane F). */
     postingRestrictedToMods: boolean('posting_restricted_to_mods').notNull().default(false),
+    /** Group only: a notice the composer shows before posting (PieFed's postingWarning). */
+    postingWarning: text('posting_warning'),
     /** Local Person only: the better-auth account. Kept as a tombstone when the account goes. */
     userId: uuid('user_id')
       .unique()
@@ -93,4 +100,16 @@ export const actorKeys = pgTable(
     enumCheck('actor_keys_algorithm', t.algorithm, algorithmValues),
     uniqueIndex('actor_keys_one_per_algorithm').on(t.actorId, t.algorithm),
   ],
+);
+
+/** The languages a community accepts (a Group's `language` list), as ISO 639 codes like posts.language. */
+export const communityLanguages = pgTable(
+  'community_languages',
+  {
+    communityId: uuid('community_id')
+      .notNull()
+      .references(() => actors.id, { onDelete: 'cascade' }),
+    language: text('language').notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.communityId, t.language] })],
 );

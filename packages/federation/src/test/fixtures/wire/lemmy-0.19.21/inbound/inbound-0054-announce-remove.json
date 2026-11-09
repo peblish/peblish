@@ -1,0 +1,18 @@
+{
+  "@context": ["https://join-lemmy.org/context.json", "https://www.w3.org/ns/activitystreams"],
+  "actor": "https://lemmy.lab.test/c/lab",
+  "to": ["https://www.w3.org/ns/activitystreams#Public"],
+  "object": {
+    "id": "https://lemmy.lab.test/activities/remove/e6808c17-f33c-4598-a95b-1b08290cb671",
+    "actor": "https://lemmy.lab.test/u/lemmyadmin",
+    "to": ["https://www.w3.org/ns/activitystreams#Public"],
+    "object": "https://lemmy.lab.test/post/15",
+    "cc": ["https://lemmy.lab.test/c/lab"],
+    "type": "Remove",
+    "target": "https://lemmy.lab.test/c/lab/featured",
+    "audience": "https://lemmy.lab.test/c/lab"
+  },
+  "cc": ["https://lemmy.lab.test/c/lab/followers"],
+  "type": "Announce",
+  "id": "https://lemmy.lab.test/activities/announce/remove/82e43a22-da7b-4260-a360-87ad0a560224"
+}

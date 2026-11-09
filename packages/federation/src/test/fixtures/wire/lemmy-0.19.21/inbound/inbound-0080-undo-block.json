@@ -1,0 +1,20 @@
+{
+  "@context": ["https://join-lemmy.org/context.json", "https://www.w3.org/ns/activitystreams"],
+  "id": "https://lemmy.lab.test/activities/undo/10147f5a-8466-447d-a2f9-84e96c36e8c7",
+  "actor": "https://lemmy.lab.test/u/lemmyuser",
+  "to": ["https://www.w3.org/ns/activitystreams#Public"],
+  "object": {
+    "actor": "https://lemmy.lab.test/u/lemmyuser",
+    "to": ["https://www.w3.org/ns/activitystreams#Public"],
+    "object": "https://piefed.lab.test/u/pfuser",
+    "cc": ["https://feddit.lab.test/ap/c.spike"],
+    "target": "https://feddit.lab.test/ap/c.spike",
+    "type": "Block",
+    "id": "https://lemmy.lab.test/activities/block/cf8bfafc-c22b-405e-8cac-be9ffc83676a",
+    "audience": "https://feddit.lab.test/ap/c.spike",
+    "summary": "P4 1108022723"
+  },
+  "cc": ["https://feddit.lab.test/ap/c.spike"],
+  "type": "Undo",
+  "audience": "https://feddit.lab.test/ap/c.spike"
+}

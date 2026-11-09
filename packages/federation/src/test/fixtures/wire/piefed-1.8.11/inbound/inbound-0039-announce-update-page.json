@@ -1,0 +1,39 @@
+{
+  "id": "https://piefed.lab.test/activities/announce/ofZ5JE03j135HZb",
+  "type": "Announce",
+  "actor": "https://piefed.lab.test/c/pflab",
+  "object": {
+    "id": "https://piefed.lab.test/activities/update/CRrausNKeOsM46h",
+    "type": "Update",
+    "actor": "https://piefed.lab.test/u/pfuser",
+    "object": {
+      "id": "https://piefed.lab.test/c/pflab@piefed.lab.test/p/7/r2-piefed-1108022622",
+      "type": "Page",
+      "attributedTo": "https://piefed.lab.test/u/pfuser",
+      "to": ["https://piefed.lab.test/c/pflab", "https://www.w3.org/ns/activitystreams#Public"],
+      "cc": [],
+      "tag": [],
+      "audience": "https://piefed.lab.test/c/pflab",
+      "content": "<p>Edited on the peer.</p>\n",
+      "mediaType": "text/html",
+      "source": { "content": "Edited on the peer.", "mediaType": "text/markdown" },
+      "published": "2026-11-08T02:27:08.509505+00:00",
+      "language": { "identifier": "en", "name": "English" },
+      "name": "R4 edited piefed 1108022622",
+      "attachment": [],
+      "commentsEnabled": true,
+      "sensitive": false,
+      "nsfl": false,
+      "genAI": false,
+      "stickied": false,
+      "interactionPolicy": { "canQuote": { "automaticApproval": ["https://www.w3.org/ns/activitystreams#Public"] } },
+      "updated": "2026-11-08T02:27:14.136760+00:00"
+    },
+    "to": ["https://piefed.lab.test/c/pflab", "https://www.w3.org/ns/activitystreams#Public"],
+    "cc": [],
+    "audience": "https://piefed.lab.test/c/pflab"
+  },
+  "to": ["https://piefed.lab.test/c/pflab", "https://www.w3.org/ns/activitystreams#Public"],
+  "cc": ["https://piefed.lab.test/c/pflab/followers"],
+  "@context": ["https://www.w3.org/ns/activitystreams", "https://w3id.org/security/v1"]
+}

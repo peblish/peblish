@@ -1,0 +1,33 @@
+{
+  "@context": ["https://www.w3.org/ns/activitystreams", "https://w3id.org/security/v1"],
+  "id": "https://feddit.lab.test/ap/activities/announce/006ff65d-4c52-4b6d-973b-4dec8f60e0f2",
+  "type": "Announce",
+  "actor": "https://feddit.lab.test/ap/c.spike",
+  "to": ["https://www.w3.org/ns/activitystreams#Public"],
+  "cc": ["https://feddit.lab.test/ap/c.spike/followers"],
+  "object": {
+    "cc": ["https://feddit.lab.test/ap/c.spike"],
+    "id": "https://lemmy.lab.test/activities/create/33689516-ec6b-462d-b699-d03a6f4ee712",
+    "to": ["https://www.w3.org/ns/activitystreams#Public"],
+    "type": "Create",
+    "actor": "https://lemmy.lab.test/u/lemmyuser",
+    "object": {
+      "cc": [],
+      "id": "https://lemmy.lab.test/post/19",
+      "to": ["https://feddit.lab.test/ap/c.spike", "https://www.w3.org/ns/activitystreams#Public"],
+      "tag": [{ "href": "https://lemmy.lab.test/post/19", "name": "#spike", "type": "Hashtag" }],
+      "name": "P target lemmy 1108022723",
+      "type": "Page",
+      "source": { "content": "Moderated by a remote moderator.", "mediaType": "text/markdown" },
+      "content": "<p>Moderated by a remote moderator.</p>\n",
+      "audience": "https://feddit.lab.test/ap/c.spike",
+      "mediaType": "text/html",
+      "published": "2026-11-08T02:28:48.796151Z",
+      "sensitive": false,
+      "attachment": [],
+      "attributedTo": "https://lemmy.lab.test/u/lemmyuser"
+    },
+    "@context": ["https://join-lemmy.org/context.json", "https://www.w3.org/ns/activitystreams"],
+    "audience": "https://feddit.lab.test/ap/c.spike"
+  }
+}

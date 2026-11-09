@@ -1,0 +1,2175 @@
+{
+  "version": "1",
+  "entries": [
+    {
+      "id": "feddit-spike-0.0.1/outbound/outbound-0001-accept-follow",
+      "software": { "name": "feddit-spike", "version": "0.0.1" },
+      "type": "Accept(Follow)",
+      "direction": "outbound",
+      "source": { "file": "outbound.jsonl", "line": 1, "pointer": "/body", "at": "2026-11-08T02:26:25.836Z" },
+      "fixture": "wire/feddit-spike-0.0.1/outbound/outbound-0001-accept-follow.json",
+      "entity": "follow",
+      "allowed": [{ "path": "@context", "change": "changed", "vocabulary": "peblish.context" }]
+    },
+    {
+      "id": "feddit-spike-0.0.1/outbound/outbound-0003-announce-create-page",
+      "software": { "name": "feddit-spike", "version": "0.0.1" },
+      "type": "Announce(Create(Page))",
+      "direction": "outbound",
+      "source": { "file": "outbound.jsonl", "line": 3, "pointer": "/body", "at": "2026-11-08T02:26:28.121Z" },
+      "fixture": "wire/feddit-spike-0.0.1/outbound/outbound-0003-announce-create-page.json",
+      "entity": "post",
+      "allowed": [
+        { "path": "@context", "change": "changed", "vocabulary": "peblish.context" },
+        { "path": "object.object.attachment", "change": "added", "vocabulary": "peblish.attachment" },
+        { "path": "object.object.cc", "change": "added", "vocabulary": "peblish.page-cc" },
+        { "path": "object.object.commentsEnabled", "change": "added", "vocabulary": "peblish.page-flags" },
+        { "path": "object.object.nsfl", "change": "added", "vocabulary": "peblish.nsfl" },
+        { "path": "object.object.stickied", "change": "added", "vocabulary": "peblish.page-flags" }
+      ]
+    },
+    {
+      "id": "feddit-spike-0.0.1/outbound/outbound-0005-announce-create-note",
+      "software": { "name": "feddit-spike", "version": "0.0.1" },
+      "type": "Announce(Create(Note))",
+      "direction": "outbound",
+      "source": { "file": "outbound.jsonl", "line": 5, "pointer": "/body", "at": "2026-11-08T02:26:28.705Z" },
+      "fixture": "wire/feddit-spike-0.0.1/outbound/outbound-0005-announce-create-note.json",
+      "entity": "comment",
+      "allowed": [
+        { "path": "@context", "change": "changed", "vocabulary": "peblish.context" },
+        { "path": "object.object.attachment", "change": "added", "vocabulary": "peblish.attachment" },
+        { "path": "object.object.distinguished", "change": "added", "vocabulary": "peblish.distinguished" },
+        { "path": "object.object.sensitive", "change": "dropped", "vocabulary": "fedify.note-sensitive" }
+      ]
+    },
+    {
+      "id": "feddit-spike-0.0.1/outbound/outbound-0007-announce-create-note",
+      "software": { "name": "feddit-spike", "version": "0.0.1" },
+      "type": "Announce(Create(Note))",
+      "direction": "outbound",
+      "source": { "file": "outbound.jsonl", "line": 7, "pointer": "/body", "at": "2026-11-08T02:26:29.472Z" },
+      "fixture": "wire/feddit-spike-0.0.1/outbound/outbound-0007-announce-create-note.json",
+      "entity": "comment",
+      "allowed": [
+        { "path": "@context", "change": "changed", "vocabulary": "peblish.context" },
+        { "path": "object.@context", "change": "dropped", "vocabulary": "peblish.context.embedded" },
+        { "path": "object.cc", "change": "changed", "vocabulary": "peblish.addressing" },
+        { "path": "object.object.cc", "change": "changed", "vocabulary": "peblish.addressing" },
+        { "path": "object.object.tag", "change": "dropped", "vocabulary": "tags" },
+        { "path": "object.tag", "change": "dropped", "vocabulary": "tags" }
+      ]
+    },
+    {
+      "id": "feddit-spike-0.0.1/outbound/outbound-0008-announce-like",
+      "software": { "name": "feddit-spike", "version": "0.0.1" },
+      "type": "Announce(Like)",
+      "direction": "outbound",
+      "source": { "file": "outbound.jsonl", "line": 8, "pointer": "/body", "at": "2026-11-08T02:26:30.489Z" },
+      "fixture": "wire/feddit-spike-0.0.1/outbound/outbound-0008-announce-like.json",
+      "entity": "vote",
+      "allowed": [
+        { "path": "@context", "change": "changed", "vocabulary": "peblish.context" },
+        { "path": "object.@context", "change": "dropped", "vocabulary": "peblish.context.embedded" }
+      ]
+    },
+    {
+      "id": "feddit-spike-0.0.1/outbound/outbound-0009-announce-dislike",
+      "software": { "name": "feddit-spike", "version": "0.0.1" },
+      "type": "Announce(Dislike)",
+      "direction": "outbound",
+      "source": { "file": "outbound.jsonl", "line": 9, "pointer": "/body", "at": "2026-11-08T02:26:30.603Z" },
+      "fixture": "wire/feddit-spike-0.0.1/outbound/outbound-0009-announce-dislike.json",
+      "entity": "vote",
+      "allowed": [
+        { "path": "@context", "change": "changed", "vocabulary": "peblish.context" },
+        { "path": "object.@context", "change": "dropped", "vocabulary": "peblish.context.embedded" }
+      ]
+    },
+    {
+      "id": "feddit-spike-0.0.1/outbound/outbound-0010-announce-undo-like",
+      "software": { "name": "feddit-spike", "version": "0.0.1" },
+      "type": "Announce(Undo(Like))",
+      "direction": "outbound",
+      "source": { "file": "outbound.jsonl", "line": 10, "pointer": "/body", "at": "2026-11-08T02:26:31.657Z" },
+      "fixture": "wire/feddit-spike-0.0.1/outbound/outbound-0010-announce-undo-like.json",
+      "entity": "vote",
+      "allowed": [
+        { "path": "@context", "change": "changed", "vocabulary": "peblish.context" },
+        { "path": "object.@context", "change": "dropped", "vocabulary": "peblish.context.embedded" }
+      ]
+    },
+    {
+      "id": "feddit-spike-0.0.1/outbound/outbound-0012-announce-create-note",
+      "software": { "name": "feddit-spike", "version": "0.0.1" },
+      "type": "Announce(Create(Note))",
+      "direction": "outbound",
+      "source": { "file": "outbound.jsonl", "line": 12, "pointer": "/body", "at": "2026-11-08T02:26:32.647Z" },
+      "fixture": "wire/feddit-spike-0.0.1/outbound/outbound-0012-announce-create-note.json",
+      "entity": "comment",
+      "allowed": [
+        { "path": "@context", "change": "changed", "vocabulary": "peblish.context" },
+        { "path": "object.object.attachment", "change": "added", "vocabulary": "peblish.attachment" },
+        { "path": "object.object.distinguished", "change": "added", "vocabulary": "peblish.distinguished" },
+        { "path": "object.object.sensitive", "change": "dropped", "vocabulary": "fedify.note-sensitive" }
+      ]
+    },
+    {
+      "id": "feddit-spike-0.0.1/outbound/outbound-0014-announce-update-page",
+      "software": { "name": "feddit-spike", "version": "0.0.1" },
+      "type": "Announce(Update(Page))",
+      "direction": "outbound",
+      "source": { "file": "outbound.jsonl", "line": 14, "pointer": "/body", "at": "2026-11-08T02:26:33.709Z" },
+      "fixture": "wire/feddit-spike-0.0.1/outbound/outbound-0014-announce-update-page.json",
+      "entity": "post",
+      "allowed": [
+        { "path": "@context", "change": "changed", "vocabulary": "peblish.context" },
+        { "path": "object.object.attachment", "change": "added", "vocabulary": "peblish.attachment" },
+        { "path": "object.object.cc", "change": "added", "vocabulary": "peblish.page-cc" },
+        { "path": "object.object.commentsEnabled", "change": "added", "vocabulary": "peblish.page-flags" },
+        { "path": "object.object.nsfl", "change": "added", "vocabulary": "peblish.nsfl" },
+        { "path": "object.object.stickied", "change": "added", "vocabulary": "peblish.page-flags" }
+      ]
+    },
+    {
+      "id": "feddit-spike-0.0.1/outbound/outbound-0016-announce-delete",
+      "software": { "name": "feddit-spike", "version": "0.0.1" },
+      "type": "Announce(Delete)",
+      "direction": "outbound",
+      "source": { "file": "outbound.jsonl", "line": 16, "pointer": "/body", "at": "2026-11-08T02:26:34.803Z" },
+      "fixture": "wire/feddit-spike-0.0.1/outbound/outbound-0016-announce-delete.json",
+      "entity": "deletion",
+      "allowed": [{ "path": "@context", "change": "changed", "vocabulary": "peblish.context" }]
+    },
+    {
+      "id": "feddit-spike-0.0.1/outbound/outbound-0018-announce-create-page",
+      "software": { "name": "feddit-spike", "version": "0.0.1" },
+      "type": "Announce(Create(Page))",
+      "direction": "outbound",
+      "source": { "file": "outbound.jsonl", "line": 18, "pointer": "/body", "at": "2026-11-08T02:26:35.909Z" },
+      "fixture": "wire/feddit-spike-0.0.1/outbound/outbound-0018-announce-create-page.json",
+      "entity": "post",
+      "allowed": [
+        { "path": "@context", "change": "changed", "vocabulary": "peblish.context" },
+        { "path": "object.object.attachment", "change": "added", "vocabulary": "peblish.attachment" },
+        { "path": "object.object.cc", "change": "added", "vocabulary": "peblish.page-cc" },
+        { "path": "object.object.commentsEnabled", "change": "added", "vocabulary": "peblish.page-flags" },
+        { "path": "object.object.nsfl", "change": "added", "vocabulary": "peblish.nsfl" },
+        { "path": "object.object.stickied", "change": "added", "vocabulary": "peblish.page-flags" }
+      ]
+    },
+    {
+      "id": "feddit-spike-0.0.1/outbound/outbound-0020-announce-create-note",
+      "software": { "name": "feddit-spike", "version": "0.0.1" },
+      "type": "Announce(Create(Note))",
+      "direction": "outbound",
+      "source": { "file": "outbound.jsonl", "line": 20, "pointer": "/body", "at": "2026-11-08T02:26:35.950Z" },
+      "fixture": "wire/feddit-spike-0.0.1/outbound/outbound-0020-announce-create-note.json",
+      "entity": "comment",
+      "allowed": [
+        { "path": "@context", "change": "changed", "vocabulary": "peblish.context" },
+        { "path": "object.object.attachment", "change": "added", "vocabulary": "peblish.attachment" },
+        { "path": "object.object.distinguished", "change": "added", "vocabulary": "peblish.distinguished" },
+        { "path": "object.object.sensitive", "change": "dropped", "vocabulary": "fedify.note-sensitive" }
+      ]
+    },
+    {
+      "id": "feddit-spike-0.0.1/outbound/outbound-0022-announce-create-note",
+      "software": { "name": "feddit-spike", "version": "0.0.1" },
+      "type": "Announce(Create(Note))",
+      "direction": "outbound",
+      "source": { "file": "outbound.jsonl", "line": 22, "pointer": "/body", "at": "2026-11-08T02:26:36.538Z" },
+      "fixture": "wire/feddit-spike-0.0.1/outbound/outbound-0022-announce-create-note.json",
+      "entity": "comment",
+      "allowed": [
+        { "path": "@context", "change": "changed", "vocabulary": "peblish.context" },
+        { "path": "object.@context", "change": "dropped", "vocabulary": "peblish.context.embedded" },
+        { "path": "object.cc", "change": "changed", "vocabulary": "peblish.addressing" },
+        { "path": "object.object.attachment", "change": "added", "vocabulary": "peblish.attachment" },
+        { "path": "object.object.cc", "change": "changed", "vocabulary": "peblish.addressing" },
+        { "path": "object.object.contentMap", "change": "dropped", "vocabulary": "piefed.content-map" },
+        { "path": "object.object.flair", "change": "dropped", "vocabulary": "piefed.flair" },
+        { "path": "object.object.tag", "change": "dropped", "vocabulary": "tags" },
+        { "path": "object.object.url", "change": "dropped", "vocabulary": "piefed.url" }
+      ]
+    },
+    {
+      "id": "feddit-spike-0.0.1/outbound/outbound-0026-announce-undo-dislike",
+      "software": { "name": "feddit-spike", "version": "0.0.1" },
+      "type": "Announce(Undo(Dislike))",
+      "direction": "outbound",
+      "source": { "file": "outbound.jsonl", "line": 26, "pointer": "/body", "at": "2026-11-08T02:26:42.051Z" },
+      "fixture": "wire/feddit-spike-0.0.1/outbound/outbound-0026-announce-undo-dislike.json",
+      "entity": "vote",
+      "allowed": [
+        { "path": "@context", "change": "changed", "vocabulary": "peblish.context" },
+        { "path": "object.@context", "change": "dropped", "vocabulary": "peblish.context.embedded" }
+      ]
+    },
+    {
+      "id": "feddit-spike-0.0.1/outbound/outbound-0027-announce-create-note",
+      "software": { "name": "feddit-spike", "version": "0.0.1" },
+      "type": "Announce(Create(Note))",
+      "direction": "outbound",
+      "source": { "file": "outbound.jsonl", "line": 27, "pointer": "/body", "at": "2026-11-08T02:26:43.027Z" },
+      "fixture": "wire/feddit-spike-0.0.1/outbound/outbound-0027-announce-create-note.json",
+      "entity": "comment",
+      "allowed": [
+        { "path": "@context", "change": "changed", "vocabulary": "peblish.context" },
+        { "path": "object.object.attachment", "change": "added", "vocabulary": "peblish.attachment" },
+        { "path": "object.object.distinguished", "change": "added", "vocabulary": "peblish.distinguished" },
+        { "path": "object.object.sensitive", "change": "dropped", "vocabulary": "fedify.note-sensitive" }
+      ]
+    },
+    {
+      "id": "feddit-spike-0.0.1/outbound/outbound-0033-announce-create-page",
+      "software": { "name": "feddit-spike", "version": "0.0.1" },
+      "type": "Announce(Create(Page))",
+      "direction": "outbound",
+      "source": { "file": "outbound.jsonl", "line": 33, "pointer": "/body", "at": "2026-11-08T02:26:46.622Z" },
+      "fixture": "wire/feddit-spike-0.0.1/outbound/outbound-0033-announce-create-page.json",
+      "entity": "post",
+      "allowed": [
+        { "path": "@context", "change": "changed", "vocabulary": "peblish.context" },
+        { "path": "object.@context", "change": "dropped", "vocabulary": "peblish.context.embedded" },
+        { "path": "object.object.commentsEnabled", "change": "added", "vocabulary": "peblish.page-flags" },
+        { "path": "object.object.nsfl", "change": "added", "vocabulary": "peblish.nsfl" },
+        { "path": "object.object.stickied", "change": "added", "vocabulary": "peblish.page-flags" },
+        { "path": "object.object.tag", "change": "dropped", "vocabulary": "tags" }
+      ]
+    },
+    {
+      "id": "feddit-spike-0.0.1/outbound/outbound-0034-announce-create-page",
+      "software": { "name": "feddit-spike", "version": "0.0.1" },
+      "type": "Announce(Create(Page))",
+      "direction": "outbound",
+      "source": { "file": "outbound.jsonl", "line": 34, "pointer": "/body", "at": "2026-11-08T02:26:47.784Z" },
+      "fixture": "wire/feddit-spike-0.0.1/outbound/outbound-0034-announce-create-page.json",
+      "entity": "post",
+      "allowed": [
+        { "path": "@context", "change": "changed", "vocabulary": "peblish.context" },
+        { "path": "object.@context", "change": "dropped", "vocabulary": "peblish.context.embedded" },
+        { "path": "object.cc", "change": "changed", "vocabulary": "peblish.addressing" },
+        { "path": "object.object.genAI", "change": "dropped", "vocabulary": "piefed.gen-ai" },
+        { "path": "object.object.interactionPolicy", "change": "dropped", "vocabulary": "piefed.interaction-policy" },
+        { "path": "object.object.tag", "change": "dropped", "vocabulary": "tags" },
+        { "path": "object.to", "change": "changed", "vocabulary": "peblish.addressing" }
+      ]
+    },
+    {
+      "id": "feddit-spike-0.0.1/outbound/outbound-0039-announce-create-page",
+      "software": { "name": "feddit-spike", "version": "0.0.1" },
+      "type": "Announce(Create(Page))",
+      "direction": "outbound",
+      "source": { "file": "outbound.jsonl", "line": 39, "pointer": "/body", "at": "2026-11-08T02:26:53.106Z" },
+      "fixture": "wire/feddit-spike-0.0.1/outbound/outbound-0039-announce-create-page.json",
+      "entity": "post",
+      "allowed": [
+        { "path": "@context", "change": "changed", "vocabulary": "peblish.context" },
+        { "path": "object.object.cc", "change": "added", "vocabulary": "peblish.page-cc" },
+        { "path": "object.object.commentsEnabled", "change": "added", "vocabulary": "peblish.page-flags" },
+        { "path": "object.object.nsfl", "change": "added", "vocabulary": "peblish.nsfl" },
+        { "path": "object.object.stickied", "change": "added", "vocabulary": "peblish.page-flags" }
+      ]
+    },
+    {
+      "id": "feddit-spike-0.0.1/outbound/outbound-0041-announce-create-page",
+      "software": { "name": "feddit-spike", "version": "0.0.1" },
+      "type": "Announce(Create(Page))",
+      "direction": "outbound",
+      "source": { "file": "outbound.jsonl", "line": 41, "pointer": "/body", "at": "2026-11-08T02:26:53.188Z" },
+      "fixture": "wire/feddit-spike-0.0.1/outbound/outbound-0041-announce-create-page.json",
+      "entity": "post",
+      "allowed": [
+        { "path": "@context", "change": "changed", "vocabulary": "peblish.context" },
+        { "path": "object.object.cc", "change": "added", "vocabulary": "peblish.page-cc" },
+        { "path": "object.object.commentsEnabled", "change": "added", "vocabulary": "peblish.page-flags" },
+        { "path": "object.object.nsfl", "change": "added", "vocabulary": "peblish.nsfl" },
+        { "path": "object.object.stickied", "change": "added", "vocabulary": "peblish.page-flags" }
+      ]
+    },
+    {
+      "id": "feddit-spike-0.0.1/outbound/outbound-0043-follow",
+      "software": { "name": "feddit-spike", "version": "0.0.1" },
+      "type": "Follow",
+      "direction": "outbound",
+      "source": { "file": "outbound.jsonl", "line": 43, "pointer": "/body", "at": "2026-11-08T02:26:54.286Z" },
+      "fixture": "wire/feddit-spike-0.0.1/outbound/outbound-0043-follow.json",
+      "entity": "follow",
+      "allowed": [{ "path": "@context", "change": "changed", "vocabulary": "peblish.context" }]
+    },
+    {
+      "id": "feddit-spike-0.0.1/outbound/outbound-0044-create-note",
+      "software": { "name": "feddit-spike", "version": "0.0.1" },
+      "type": "Create(Note)",
+      "direction": "outbound",
+      "source": { "file": "outbound.jsonl", "line": 44, "pointer": "/body", "at": "2026-11-08T02:26:57.497Z" },
+      "fixture": "wire/feddit-spike-0.0.1/outbound/outbound-0044-create-note.json",
+      "entity": "comment",
+      "allowed": [
+        { "path": "@context", "change": "changed", "vocabulary": "peblish.context" },
+        { "path": "object.attachment", "change": "added", "vocabulary": "peblish.attachment" },
+        { "path": "object.distinguished", "change": "added", "vocabulary": "peblish.distinguished" },
+        { "path": "object.sensitive", "change": "dropped", "vocabulary": "fedify.note-sensitive" }
+      ]
+    },
+    {
+      "id": "feddit-spike-0.0.1/outbound/outbound-0045-like",
+      "software": { "name": "feddit-spike", "version": "0.0.1" },
+      "type": "Like",
+      "direction": "outbound",
+      "source": { "file": "outbound.jsonl", "line": 45, "pointer": "/body", "at": "2026-11-08T02:26:58.578Z" },
+      "fixture": "wire/feddit-spike-0.0.1/outbound/outbound-0045-like.json",
+      "entity": "vote",
+      "allowed": [{ "path": "@context", "change": "changed", "vocabulary": "peblish.context" }]
+    },
+    {
+      "id": "feddit-spike-0.0.1/outbound/outbound-0046-undo-like",
+      "software": { "name": "feddit-spike", "version": "0.0.1" },
+      "type": "Undo(Like)",
+      "direction": "outbound",
+      "source": { "file": "outbound.jsonl", "line": 46, "pointer": "/body", "at": "2026-11-08T02:26:59.655Z" },
+      "fixture": "wire/feddit-spike-0.0.1/outbound/outbound-0046-undo-like.json",
+      "entity": "vote",
+      "allowed": [{ "path": "@context", "change": "changed", "vocabulary": "peblish.context" }]
+    },
+    {
+      "id": "feddit-spike-0.0.1/outbound/outbound-0047-update-note",
+      "software": { "name": "feddit-spike", "version": "0.0.1" },
+      "type": "Update(Note)",
+      "direction": "outbound",
+      "source": { "file": "outbound.jsonl", "line": 47, "pointer": "/body", "at": "2026-11-08T02:27:02.858Z" },
+      "fixture": "wire/feddit-spike-0.0.1/outbound/outbound-0047-update-note.json",
+      "entity": "comment",
+      "allowed": [
+        { "path": "@context", "change": "changed", "vocabulary": "peblish.context" },
+        { "path": "object.attachment", "change": "added", "vocabulary": "peblish.attachment" },
+        { "path": "object.distinguished", "change": "added", "vocabulary": "peblish.distinguished" },
+        { "path": "object.sensitive", "change": "dropped", "vocabulary": "fedify.note-sensitive" }
+      ]
+    },
+    {
+      "id": "feddit-spike-0.0.1/outbound/outbound-0048-delete",
+      "software": { "name": "feddit-spike", "version": "0.0.1" },
+      "type": "Delete",
+      "direction": "outbound",
+      "source": { "file": "outbound.jsonl", "line": 48, "pointer": "/body", "at": "2026-11-08T02:27:03.893Z" },
+      "fixture": "wire/feddit-spike-0.0.1/outbound/outbound-0048-delete.json",
+      "entity": "deletion",
+      "allowed": [{ "path": "@context", "change": "changed", "vocabulary": "peblish.context" }]
+    },
+    {
+      "id": "feddit-spike-0.0.1/outbound/outbound-0049-create-page",
+      "software": { "name": "feddit-spike", "version": "0.0.1" },
+      "type": "Create(Page)",
+      "direction": "outbound",
+      "source": { "file": "outbound.jsonl", "line": 49, "pointer": "/body", "at": "2026-11-08T02:27:05.001Z" },
+      "fixture": "wire/feddit-spike-0.0.1/outbound/outbound-0049-create-page.json",
+      "entity": "post",
+      "allowed": [
+        { "path": "@context", "change": "changed", "vocabulary": "peblish.context" },
+        { "path": "object.attachment", "change": "added", "vocabulary": "peblish.attachment" },
+        { "path": "object.cc", "change": "added", "vocabulary": "peblish.page-cc" },
+        { "path": "object.commentsEnabled", "change": "added", "vocabulary": "peblish.page-flags" },
+        { "path": "object.nsfl", "change": "added", "vocabulary": "peblish.nsfl" },
+        { "path": "object.stickied", "change": "added", "vocabulary": "peblish.page-flags" }
+      ]
+    },
+    {
+      "id": "feddit-spike-0.0.1/outbound/outbound-0050-update-page",
+      "software": { "name": "feddit-spike", "version": "0.0.1" },
+      "type": "Update(Page)",
+      "direction": "outbound",
+      "source": { "file": "outbound.jsonl", "line": 50, "pointer": "/body", "at": "2026-11-08T02:27:05.108Z" },
+      "fixture": "wire/feddit-spike-0.0.1/outbound/outbound-0050-update-page.json",
+      "entity": "post",
+      "allowed": [
+        { "path": "@context", "change": "changed", "vocabulary": "peblish.context" },
+        { "path": "object.attachment", "change": "added", "vocabulary": "peblish.attachment" },
+        { "path": "object.cc", "change": "added", "vocabulary": "peblish.page-cc" },
+        { "path": "object.commentsEnabled", "change": "added", "vocabulary": "peblish.page-flags" },
+        { "path": "object.nsfl", "change": "added", "vocabulary": "peblish.nsfl" },
+        { "path": "object.stickied", "change": "added", "vocabulary": "peblish.page-flags" }
+      ]
+    },
+    {
+      "id": "feddit-spike-0.0.1/outbound/outbound-0053-create-note",
+      "software": { "name": "feddit-spike", "version": "0.0.1" },
+      "type": "Create(Note)",
+      "direction": "outbound",
+      "source": { "file": "outbound.jsonl", "line": 53, "pointer": "/body", "at": "2026-11-08T02:27:10.741Z" },
+      "fixture": "wire/feddit-spike-0.0.1/outbound/outbound-0053-create-note.json",
+      "entity": "comment",
+      "allowed": [
+        { "path": "@context", "change": "changed", "vocabulary": "peblish.context" },
+        { "path": "object.attachment", "change": "added", "vocabulary": "peblish.attachment" },
+        { "path": "object.distinguished", "change": "added", "vocabulary": "peblish.distinguished" },
+        { "path": "object.sensitive", "change": "dropped", "vocabulary": "fedify.note-sensitive" }
+      ]
+    },
+    {
+      "id": "feddit-spike-0.0.1/outbound/outbound-0058-create-page",
+      "software": { "name": "feddit-spike", "version": "0.0.1" },
+      "type": "Create(Page)",
+      "direction": "outbound",
+      "source": { "file": "outbound.jsonl", "line": 58, "pointer": "/body", "at": "2026-11-08T02:27:18.491Z" },
+      "fixture": "wire/feddit-spike-0.0.1/outbound/outbound-0058-create-page.json",
+      "entity": "post",
+      "allowed": [
+        { "path": "@context", "change": "changed", "vocabulary": "peblish.context" },
+        { "path": "object.attachment", "change": "added", "vocabulary": "peblish.attachment" },
+        { "path": "object.cc", "change": "added", "vocabulary": "peblish.page-cc" },
+        { "path": "object.commentsEnabled", "change": "added", "vocabulary": "peblish.page-flags" },
+        { "path": "object.nsfl", "change": "added", "vocabulary": "peblish.nsfl" },
+        { "path": "object.stickied", "change": "added", "vocabulary": "peblish.page-flags" }
+      ]
+    },
+    {
+      "id": "feddit-spike-0.0.1/outbound/outbound-0062-announce-create-page",
+      "software": { "name": "feddit-spike", "version": "0.0.1" },
+      "type": "Announce(Create(Page))",
+      "direction": "outbound",
+      "source": { "file": "outbound.jsonl", "line": 62, "pointer": "/body", "at": "2026-11-08T02:27:26.682Z" },
+      "fixture": "wire/feddit-spike-0.0.1/outbound/outbound-0062-announce-create-page.json",
+      "entity": "post",
+      "allowed": [
+        { "path": "@context", "change": "changed", "vocabulary": "peblish.context" },
+        { "path": "object.object.attachment", "change": "added", "vocabulary": "peblish.attachment" },
+        { "path": "object.object.cc", "change": "added", "vocabulary": "peblish.page-cc" },
+        { "path": "object.object.commentsEnabled", "change": "added", "vocabulary": "peblish.page-flags" },
+        { "path": "object.object.nsfl", "change": "added", "vocabulary": "peblish.nsfl" },
+        { "path": "object.object.stickied", "change": "added", "vocabulary": "peblish.page-flags" }
+      ]
+    },
+    {
+      "id": "feddit-spike-0.0.1/outbound/outbound-0064-announce-create-page",
+      "software": { "name": "feddit-spike", "version": "0.0.1" },
+      "type": "Announce(Create(Page))",
+      "direction": "outbound",
+      "source": { "file": "outbound.jsonl", "line": 64, "pointer": "/body", "at": "2026-11-08T02:27:26.878Z" },
+      "fixture": "wire/feddit-spike-0.0.1/outbound/outbound-0064-announce-create-page.json",
+      "entity": "post",
+      "allowed": [
+        { "path": "@context", "change": "changed", "vocabulary": "peblish.context" },
+        { "path": "object.@context", "change": "dropped", "vocabulary": "peblish.context.embedded" },
+        { "path": "object.object.commentsEnabled", "change": "added", "vocabulary": "peblish.page-flags" },
+        { "path": "object.object.nsfl", "change": "added", "vocabulary": "peblish.nsfl" },
+        { "path": "object.object.stickied", "change": "added", "vocabulary": "peblish.page-flags" },
+        { "path": "object.object.tag", "change": "dropped", "vocabulary": "tags" }
+      ]
+    },
+    {
+      "id": "feddit-spike-0.0.1/outbound/outbound-0067-announce-undo-delete",
+      "software": { "name": "feddit-spike", "version": "0.0.1" },
+      "type": "Announce(Undo(Delete))",
+      "direction": "outbound",
+      "source": { "file": "outbound.jsonl", "line": 67, "pointer": "/body", "at": "2026-11-08T02:27:29.050Z" },
+      "fixture": "wire/feddit-spike-0.0.1/outbound/outbound-0067-announce-undo-delete.json",
+      "entity": "deletion",
+      "allowed": [{ "path": "@context", "change": "changed", "vocabulary": "peblish.context" }]
+    },
+    {
+      "id": "feddit-spike-0.0.1/outbound/outbound-0069-announce-lock",
+      "software": { "name": "feddit-spike", "version": "0.0.1" },
+      "type": "Announce(Lock)",
+      "direction": "outbound",
+      "source": { "file": "outbound.jsonl", "line": 69, "pointer": "/body", "at": "2026-11-08T02:27:30.069Z" },
+      "fixture": "wire/feddit-spike-0.0.1/outbound/outbound-0069-announce-lock.json",
+      "entity": "lock",
+      "allowed": [
+        { "path": "@context", "change": "changed", "vocabulary": "peblish.context" },
+        { "path": "object.@context", "change": "dropped", "vocabulary": "peblish.context.embedded" }
+      ]
+    },
+    {
+      "id": "feddit-spike-0.0.1/outbound/outbound-0071-announce-undo-lock",
+      "software": { "name": "feddit-spike", "version": "0.0.1" },
+      "type": "Announce(Undo(Lock))",
+      "direction": "outbound",
+      "source": { "file": "outbound.jsonl", "line": 71, "pointer": "/body", "at": "2026-11-08T02:27:31.143Z" },
+      "fixture": "wire/feddit-spike-0.0.1/outbound/outbound-0071-announce-undo-lock.json",
+      "entity": "lock",
+      "allowed": [
+        { "path": "@context", "change": "changed", "vocabulary": "peblish.context" },
+        { "path": "object.@context", "change": "dropped", "vocabulary": "peblish.context.embedded" }
+      ]
+    },
+    {
+      "id": "feddit-spike-0.0.1/outbound/outbound-0073-announce-block",
+      "software": { "name": "feddit-spike", "version": "0.0.1" },
+      "type": "Announce(Block)",
+      "direction": "outbound",
+      "source": { "file": "outbound.jsonl", "line": 73, "pointer": "/body", "at": "2026-11-08T02:27:32.211Z" },
+      "fixture": "wire/feddit-spike-0.0.1/outbound/outbound-0073-announce-block.json",
+      "entity": "ban",
+      "allowed": [{ "path": "@context", "change": "changed", "vocabulary": "peblish.context" }]
+    },
+    {
+      "id": "feddit-spike-0.0.1/outbound/outbound-0075-announce-undo-block",
+      "software": { "name": "feddit-spike", "version": "0.0.1" },
+      "type": "Announce(Undo(Block))",
+      "direction": "outbound",
+      "source": { "file": "outbound.jsonl", "line": 75, "pointer": "/body", "at": "2026-11-08T02:27:33.300Z" },
+      "fixture": "wire/feddit-spike-0.0.1/outbound/outbound-0075-announce-undo-block.json",
+      "entity": "ban",
+      "allowed": [{ "path": "@context", "change": "changed", "vocabulary": "peblish.context" }]
+    },
+    {
+      "id": "feddit-spike-0.0.1/outbound/outbound-0077-announce-add",
+      "software": { "name": "feddit-spike", "version": "0.0.1" },
+      "type": "Announce(Add)",
+      "direction": "outbound",
+      "source": { "file": "outbound.jsonl", "line": 77, "pointer": "/body", "at": "2026-11-08T02:27:34.343Z" },
+      "fixture": "wire/feddit-spike-0.0.1/outbound/outbound-0077-announce-add.json",
+      "entity": "pin",
+      "allowed": [{ "path": "@context", "change": "changed", "vocabulary": "peblish.context" }]
+    },
+    {
+      "id": "feddit-spike-0.0.1/outbound/outbound-0079-announce-create-note",
+      "software": { "name": "feddit-spike", "version": "0.0.1" },
+      "type": "Announce(Create(Note))",
+      "direction": "outbound",
+      "source": { "file": "outbound.jsonl", "line": 79, "pointer": "/body", "at": "2026-11-08T02:27:34.447Z" },
+      "fixture": "wire/feddit-spike-0.0.1/outbound/outbound-0079-announce-create-note.json",
+      "entity": "comment",
+      "allowed": [
+        { "path": "@context", "change": "changed", "vocabulary": "peblish.context" },
+        { "path": "object.@context", "change": "dropped", "vocabulary": "peblish.context.embedded" },
+        { "path": "object.cc", "change": "changed", "vocabulary": "peblish.addressing" },
+        { "path": "object.object.cc", "change": "changed", "vocabulary": "peblish.addressing" },
+        { "path": "object.object.tag", "change": "dropped", "vocabulary": "tags" },
+        { "path": "object.tag", "change": "dropped", "vocabulary": "tags" }
+      ]
+    },
+    {
+      "id": "feddit-spike-0.0.1/outbound/outbound-0080-announce-remove",
+      "software": { "name": "feddit-spike", "version": "0.0.1" },
+      "type": "Announce(Remove)",
+      "direction": "outbound",
+      "source": { "file": "outbound.jsonl", "line": 80, "pointer": "/body", "at": "2026-11-08T02:27:35.446Z" },
+      "fixture": "wire/feddit-spike-0.0.1/outbound/outbound-0080-announce-remove.json",
+      "entity": "pin",
+      "allowed": [{ "path": "@context", "change": "changed", "vocabulary": "peblish.context" }]
+    },
+    {
+      "id": "feddit-spike-0.0.1/outbound/outbound-0084-announce-create-page",
+      "software": { "name": "feddit-spike", "version": "0.0.1" },
+      "type": "Announce(Create(Page))",
+      "direction": "outbound",
+      "source": { "file": "outbound.jsonl", "line": 84, "pointer": "/body", "at": "2026-11-08T02:27:51.073Z" },
+      "fixture": "wire/feddit-spike-0.0.1/outbound/outbound-0084-announce-create-page.json",
+      "entity": "post",
+      "allowed": [
+        { "path": "@context", "change": "changed", "vocabulary": "peblish.context" },
+        { "path": "object.object.attachment", "change": "added", "vocabulary": "peblish.attachment" },
+        { "path": "object.object.cc", "change": "added", "vocabulary": "peblish.page-cc" },
+        { "path": "object.object.commentsEnabled", "change": "added", "vocabulary": "peblish.page-flags" },
+        { "path": "object.object.nsfl", "change": "added", "vocabulary": "peblish.nsfl" },
+        { "path": "object.object.stickied", "change": "added", "vocabulary": "peblish.page-flags" }
+      ]
+    },
+    {
+      "id": "feddit-spike-0.0.1/outbound/outbound-0086-announce-create-page",
+      "software": { "name": "feddit-spike", "version": "0.0.1" },
+      "type": "Announce(Create(Page))",
+      "direction": "outbound",
+      "source": { "file": "outbound.jsonl", "line": 86, "pointer": "/body", "at": "2026-11-08T02:27:52.338Z" },
+      "fixture": "wire/feddit-spike-0.0.1/outbound/outbound-0086-announce-create-page.json",
+      "entity": "post",
+      "allowed": [
+        { "path": "@context", "change": "changed", "vocabulary": "peblish.context" },
+        { "path": "object.@context", "change": "dropped", "vocabulary": "peblish.context.embedded" },
+        { "path": "object.cc", "change": "changed", "vocabulary": "peblish.addressing" },
+        { "path": "object.object.genAI", "change": "dropped", "vocabulary": "piefed.gen-ai" },
+        { "path": "object.object.interactionPolicy", "change": "dropped", "vocabulary": "piefed.interaction-policy" },
+        { "path": "object.object.tag", "change": "dropped", "vocabulary": "tags" },
+        { "path": "object.to", "change": "changed", "vocabulary": "peblish.addressing" }
+      ]
+    },
+    {
+      "id": "feddit-spike-0.0.1/outbound/outbound-0101-announce-create-note",
+      "software": { "name": "feddit-spike", "version": "0.0.1" },
+      "type": "Announce(Create(Note))",
+      "direction": "outbound",
+      "source": { "file": "outbound.jsonl", "line": 101, "pointer": "/body", "at": "2026-11-08T02:27:59.809Z" },
+      "fixture": "wire/feddit-spike-0.0.1/outbound/outbound-0101-announce-create-note.json",
+      "entity": "comment",
+      "allowed": [
+        { "path": "@context", "change": "changed", "vocabulary": "peblish.context" },
+        { "path": "object.@context", "change": "dropped", "vocabulary": "peblish.context.embedded" },
+        { "path": "object.cc", "change": "changed", "vocabulary": "peblish.addressing" },
+        { "path": "object.object.attachment", "change": "added", "vocabulary": "peblish.attachment" },
+        { "path": "object.object.cc", "change": "changed", "vocabulary": "peblish.addressing" },
+        { "path": "object.object.contentMap", "change": "dropped", "vocabulary": "piefed.content-map" },
+        { "path": "object.object.flair", "change": "dropped", "vocabulary": "piefed.flair" },
+        { "path": "object.object.tag", "change": "dropped", "vocabulary": "tags" },
+        { "path": "object.object.url", "change": "dropped", "vocabulary": "piefed.url" }
+      ]
+    },
+    {
+      "id": "feddit-spike-0.0.1/outbound/outbound-0107-announce-create-page",
+      "software": { "name": "feddit-spike", "version": "0.0.1" },
+      "type": "Announce(Create(Page))",
+      "direction": "outbound",
+      "source": { "file": "outbound.jsonl", "line": 107, "pointer": "/body", "at": "2026-11-08T02:28:35.126Z" },
+      "fixture": "wire/feddit-spike-0.0.1/outbound/outbound-0107-announce-create-page.json",
+      "entity": "post",
+      "allowed": [
+        { "path": "@context", "change": "changed", "vocabulary": "peblish.context" },
+        { "path": "object.@context", "change": "dropped", "vocabulary": "peblish.context.embedded" },
+        { "path": "object.cc", "change": "changed", "vocabulary": "peblish.addressing" },
+        { "path": "object.object.genAI", "change": "dropped", "vocabulary": "piefed.gen-ai" },
+        { "path": "object.object.interactionPolicy", "change": "dropped", "vocabulary": "piefed.interaction-policy" },
+        { "path": "object.object.tag", "change": "dropped", "vocabulary": "tags" },
+        { "path": "object.to", "change": "changed", "vocabulary": "peblish.addressing" }
+      ]
+    },
+    {
+      "id": "feddit-spike-0.0.1/outbound/outbound-0118-announce-create-note",
+      "software": { "name": "feddit-spike", "version": "0.0.1" },
+      "type": "Announce(Create(Note))",
+      "direction": "outbound",
+      "source": { "file": "outbound.jsonl", "line": 118, "pointer": "/body", "at": "2026-11-08T02:28:44.751Z" },
+      "fixture": "wire/feddit-spike-0.0.1/outbound/outbound-0118-announce-create-note.json",
+      "entity": "comment",
+      "allowed": [
+        { "path": "@context", "change": "changed", "vocabulary": "peblish.context" },
+        { "path": "object.@context", "change": "dropped", "vocabulary": "peblish.context.embedded" },
+        { "path": "object.cc", "change": "changed", "vocabulary": "peblish.addressing" },
+        { "path": "object.object.attachment", "change": "added", "vocabulary": "peblish.attachment" },
+        { "path": "object.object.cc", "change": "changed", "vocabulary": "peblish.addressing" },
+        { "path": "object.object.contentMap", "change": "dropped", "vocabulary": "piefed.content-map" },
+        { "path": "object.object.flair", "change": "dropped", "vocabulary": "piefed.flair" },
+        { "path": "object.object.tag", "change": "dropped", "vocabulary": "tags" },
+        { "path": "object.object.url", "change": "dropped", "vocabulary": "piefed.url" }
+      ]
+    },
+    {
+      "id": "feddit-spike-0.0.1/outbound/outbound-0121-announce-create-page",
+      "software": { "name": "feddit-spike", "version": "0.0.1" },
+      "type": "Announce(Create(Page))",
+      "direction": "outbound",
+      "source": { "file": "outbound.jsonl", "line": 121, "pointer": "/body", "at": "2026-11-08T02:28:48.858Z" },
+      "fixture": "wire/feddit-spike-0.0.1/outbound/outbound-0121-announce-create-page.json",
+      "entity": "post",
+      "allowed": [
+        { "path": "@context", "change": "changed", "vocabulary": "peblish.context" },
+        { "path": "object.@context", "change": "dropped", "vocabulary": "peblish.context.embedded" },
+        { "path": "object.object.commentsEnabled", "change": "added", "vocabulary": "peblish.page-flags" },
+        { "path": "object.object.nsfl", "change": "added", "vocabulary": "peblish.nsfl" },
+        { "path": "object.object.stickied", "change": "added", "vocabulary": "peblish.page-flags" },
+        { "path": "object.object.tag", "change": "dropped", "vocabulary": "tags" }
+      ]
+    },
+    {
+      "id": "feddit-spike-0.0.1/outbound/outbound-0133-announce-create-page",
+      "software": { "name": "feddit-spike", "version": "0.0.1" },
+      "type": "Announce(Create(Page))",
+      "direction": "outbound",
+      "source": { "file": "outbound.jsonl", "line": 133, "pointer": "/body", "at": "2026-11-08T02:29:01.653Z" },
+      "fixture": "wire/feddit-spike-0.0.1/outbound/outbound-0133-announce-create-page.json",
+      "entity": "post",
+      "allowed": [
+        { "path": "@context", "change": "changed", "vocabulary": "peblish.context" },
+        { "path": "object.@context", "change": "dropped", "vocabulary": "peblish.context.embedded" },
+        { "path": "object.object.commentsEnabled", "change": "added", "vocabulary": "peblish.page-flags" },
+        { "path": "object.object.nsfl", "change": "added", "vocabulary": "peblish.nsfl" },
+        { "path": "object.object.stickied", "change": "added", "vocabulary": "peblish.page-flags" },
+        { "path": "object.object.tag", "change": "dropped", "vocabulary": "tags" }
+      ]
+    },
+    {
+      "id": "feddit-spike-0.0.1/outbound/outbound-0164-announce-create-page",
+      "software": { "name": "feddit-spike", "version": "0.0.1" },
+      "type": "Announce(Create(Page))",
+      "direction": "outbound",
+      "source": { "file": "outbound.jsonl", "line": 164, "pointer": "/body", "at": "2026-11-08T02:29:38.963Z" },
+      "fixture": "wire/feddit-spike-0.0.1/outbound/outbound-0164-announce-create-page.json",
+      "entity": "post",
+      "allowed": [
+        { "path": "@context", "change": "changed", "vocabulary": "peblish.context" },
+        { "path": "object.object.attachment", "change": "added", "vocabulary": "peblish.attachment" },
+        { "path": "object.object.cc", "change": "added", "vocabulary": "peblish.page-cc" },
+        { "path": "object.object.commentsEnabled", "change": "added", "vocabulary": "peblish.page-flags" },
+        { "path": "object.object.nsfl", "change": "added", "vocabulary": "peblish.nsfl" },
+        { "path": "object.object.stickied", "change": "added", "vocabulary": "peblish.page-flags" }
+      ]
+    },
+    {
+      "id": "feddit-spike-0.0.1/outbound/outbound-0177-announce-create-page",
+      "software": { "name": "feddit-spike", "version": "0.0.1" },
+      "type": "Announce(Create(Page))",
+      "direction": "outbound",
+      "source": { "file": "outbound.jsonl", "line": 177, "pointer": "/body", "at": "2026-11-08T02:29:53.136Z" },
+      "fixture": "wire/feddit-spike-0.0.1/outbound/outbound-0177-announce-create-page.json",
+      "entity": "post",
+      "allowed": [
+        { "path": "@context", "change": "changed", "vocabulary": "peblish.context" },
+        { "path": "object.object.attachment", "change": "added", "vocabulary": "peblish.attachment" },
+        { "path": "object.object.cc", "change": "added", "vocabulary": "peblish.page-cc" },
+        { "path": "object.object.commentsEnabled", "change": "added", "vocabulary": "peblish.page-flags" },
+        { "path": "object.object.nsfl", "change": "added", "vocabulary": "peblish.nsfl" },
+        { "path": "object.object.stickied", "change": "added", "vocabulary": "peblish.page-flags" }
+      ]
+    },
+    {
+      "id": "feddit-spike-0.0.1/outbound/outbound-0187-announce-create-page",
+      "software": { "name": "feddit-spike", "version": "0.0.1" },
+      "type": "Announce(Create(Page))",
+      "direction": "outbound",
+      "source": { "file": "outbound.jsonl", "line": 187, "pointer": "/body", "at": "2026-11-08T02:30:01.235Z" },
+      "fixture": "wire/feddit-spike-0.0.1/outbound/outbound-0187-announce-create-page.json",
+      "entity": "post",
+      "allowed": [
+        { "path": "@context", "change": "changed", "vocabulary": "peblish.context" },
+        { "path": "object.object.attachment", "change": "added", "vocabulary": "peblish.attachment" },
+        { "path": "object.object.cc", "change": "added", "vocabulary": "peblish.page-cc" },
+        { "path": "object.object.commentsEnabled", "change": "added", "vocabulary": "peblish.page-flags" },
+        { "path": "object.object.nsfl", "change": "added", "vocabulary": "peblish.nsfl" },
+        { "path": "object.object.stickied", "change": "added", "vocabulary": "peblish.page-flags" }
+      ]
+    },
+    {
+      "id": "lemmy-0.19.21/fetched/fetched-0001-person",
+      "software": { "name": "lemmy", "version": "0.19.21" },
+      "type": "Person",
+      "direction": "fetched",
+      "source": { "file": "fetched.jsonl", "line": 1, "pointer": "/response", "at": "2026-11-08T02:26:25.692Z" },
+      "fixture": "wire/lemmy-0.19.21/fetched/fetched-0001-person.json",
+      "entity": "actor",
+      "allowed": [
+        { "path": "discoverable", "change": "added", "vocabulary": "peblish.search-consent" },
+        { "path": "indexable", "change": "added", "vocabulary": "peblish.search-consent" }
+      ]
+    },
+    {
+      "id": "lemmy-0.19.21/fetched/fetched-0006-group",
+      "software": { "name": "lemmy", "version": "0.19.21" },
+      "type": "Group",
+      "direction": "fetched",
+      "source": { "file": "fetched.jsonl", "line": 6, "pointer": "/response", "at": "2026-11-08T02:26:54.251Z" },
+      "fixture": "wire/lemmy-0.19.21/fetched/fetched-0006-group.json",
+      "entity": "community",
+      "allowed": [
+        { "path": "discoverable", "change": "added", "vocabulary": "peblish.search-consent" },
+        { "path": "indexable", "change": "added", "vocabulary": "peblish.search-consent" },
+        { "path": "nsfl", "change": "added", "vocabulary": "peblish.nsfl" }
+      ]
+    },
+    {
+      "id": "lemmy-0.19.21/fetched/fetched-0013-person",
+      "software": { "name": "lemmy", "version": "0.19.21" },
+      "type": "Person",
+      "direction": "fetched",
+      "source": { "file": "fetched.jsonl", "line": 13, "pointer": "/response", "at": "2026-11-08T02:27:24.705Z" },
+      "fixture": "wire/lemmy-0.19.21/fetched/fetched-0013-person.json",
+      "entity": "actor",
+      "allowed": [
+        { "path": "discoverable", "change": "added", "vocabulary": "peblish.search-consent" },
+        { "path": "indexable", "change": "added", "vocabulary": "peblish.search-consent" }
+      ]
+    },
+    {
+      "id": "lemmy-0.19.21/fetched/fetched-0016-orderedcollection",
+      "software": { "name": "lemmy", "version": "0.19.21" },
+      "type": "OrderedCollection",
+      "direction": "fetched",
+      "source": { "file": "fetched.jsonl", "line": 16, "pointer": "/response", "at": "2026-11-08T02:27:40.005Z" },
+      "fixture": "wire/lemmy-0.19.21/fetched/fetched-0016-orderedcollection.json",
+      "entity": "moderators",
+      "allowed": []
+    },
+    {
+      "id": "lemmy-0.19.21/fetched/fetched-0026-page",
+      "software": { "name": "lemmy", "version": "0.19.21" },
+      "type": "Page",
+      "direction": "fetched",
+      "source": { "file": "fetched.jsonl", "line": 26, "pointer": "/response", "at": "2026-11-08T02:29:05.836Z" },
+      "fixture": "wire/lemmy-0.19.21/fetched/fetched-0026-page.json",
+      "entity": "post",
+      "allowed": [
+        { "path": "commentsEnabled", "change": "added", "vocabulary": "peblish.page-flags" },
+        { "path": "nsfl", "change": "added", "vocabulary": "peblish.nsfl" },
+        { "path": "stickied", "change": "added", "vocabulary": "peblish.page-flags" },
+        { "path": "tag", "change": "dropped", "vocabulary": "tags" }
+      ]
+    },
+    {
+      "id": "lemmy-0.19.21/inbound/inbound-0001-follow",
+      "software": { "name": "lemmy", "version": "0.19.21" },
+      "type": "Follow",
+      "direction": "inbound",
+      "source": { "file": "inbound.jsonl", "line": 1, "pointer": "/body", "at": "2026-11-08T02:26:25.766Z" },
+      "fixture": "wire/lemmy-0.19.21/inbound/inbound-0001-follow.json",
+      "entity": "follow",
+      "allowed": []
+    },
+    {
+      "id": "lemmy-0.19.21/inbound/inbound-0003-create-note",
+      "software": { "name": "lemmy", "version": "0.19.21" },
+      "type": "Create(Note)",
+      "direction": "inbound",
+      "source": { "file": "inbound.jsonl", "line": 3, "pointer": "/body", "at": "2026-11-08T02:26:29.410Z" },
+      "fixture": "wire/lemmy-0.19.21/inbound/inbound-0003-create-note.json",
+      "entity": "comment",
+      "allowed": [
+        { "path": "cc", "change": "changed", "vocabulary": "peblish.addressing" },
+        { "path": "object.cc", "change": "changed", "vocabulary": "peblish.addressing" },
+        { "path": "object.tag", "change": "dropped", "vocabulary": "tags" },
+        { "path": "tag", "change": "dropped", "vocabulary": "tags" }
+      ]
+    },
+    {
+      "id": "lemmy-0.19.21/inbound/inbound-0004-like",
+      "software": { "name": "lemmy", "version": "0.19.21" },
+      "type": "Like",
+      "direction": "inbound",
+      "source": { "file": "inbound.jsonl", "line": 4, "pointer": "/body", "at": "2026-11-08T02:26:30.460Z" },
+      "fixture": "wire/lemmy-0.19.21/inbound/inbound-0004-like.json",
+      "entity": "vote",
+      "allowed": []
+    },
+    {
+      "id": "lemmy-0.19.21/inbound/inbound-0005-dislike",
+      "software": { "name": "lemmy", "version": "0.19.21" },
+      "type": "Dislike",
+      "direction": "inbound",
+      "source": { "file": "inbound.jsonl", "line": 5, "pointer": "/body", "at": "2026-11-08T02:26:30.574Z" },
+      "fixture": "wire/lemmy-0.19.21/inbound/inbound-0005-dislike.json",
+      "entity": "vote",
+      "allowed": []
+    },
+    {
+      "id": "lemmy-0.19.21/inbound/inbound-0006-undo-like",
+      "software": { "name": "lemmy", "version": "0.19.21" },
+      "type": "Undo(Like)",
+      "direction": "inbound",
+      "source": { "file": "inbound.jsonl", "line": 6, "pointer": "/body", "at": "2026-11-08T02:26:31.619Z" },
+      "fixture": "wire/lemmy-0.19.21/inbound/inbound-0006-undo-like.json",
+      "entity": "vote",
+      "allowed": []
+    },
+    {
+      "id": "lemmy-0.19.21/inbound/inbound-0007-undo-like",
+      "software": { "name": "lemmy", "version": "0.19.21" },
+      "type": "Undo(Like)",
+      "direction": "inbound",
+      "source": { "file": "inbound.jsonl", "line": 7, "pointer": "/body", "at": "2026-11-08T02:26:31.738Z" },
+      "fixture": "wire/lemmy-0.19.21/inbound/inbound-0007-undo-like.json",
+      "entity": "vote",
+      "allowed": []
+    },
+    {
+      "id": "lemmy-0.19.21/inbound/inbound-0013-create-page",
+      "software": { "name": "lemmy", "version": "0.19.21" },
+      "type": "Create(Page)",
+      "direction": "inbound",
+      "source": { "file": "inbound.jsonl", "line": 13, "pointer": "/body", "at": "2026-11-08T02:26:46.583Z" },
+      "fixture": "wire/lemmy-0.19.21/inbound/inbound-0013-create-page.json",
+      "entity": "post",
+      "allowed": [
+        { "path": "object.commentsEnabled", "change": "added", "vocabulary": "peblish.page-flags" },
+        { "path": "object.nsfl", "change": "added", "vocabulary": "peblish.nsfl" },
+        { "path": "object.stickied", "change": "added", "vocabulary": "peblish.page-flags" },
+        { "path": "object.tag", "change": "dropped", "vocabulary": "tags" }
+      ]
+    },
+    {
+      "id": "lemmy-0.19.21/inbound/inbound-0015-update-page",
+      "software": { "name": "lemmy", "version": "0.19.21" },
+      "type": "Update(Page)",
+      "direction": "inbound",
+      "source": { "file": "inbound.jsonl", "line": 15, "pointer": "/body", "at": "2026-11-08T02:26:48.859Z" },
+      "fixture": "wire/lemmy-0.19.21/inbound/inbound-0015-update-page.json",
+      "entity": "post",
+      "allowed": [
+        { "path": "object.commentsEnabled", "change": "added", "vocabulary": "peblish.page-flags" },
+        { "path": "object.nsfl", "change": "added", "vocabulary": "peblish.nsfl" },
+        { "path": "object.stickied", "change": "added", "vocabulary": "peblish.page-flags" },
+        { "path": "object.tag", "change": "dropped", "vocabulary": "tags" }
+      ]
+    },
+    {
+      "id": "lemmy-0.19.21/inbound/inbound-0016-delete",
+      "software": { "name": "lemmy", "version": "0.19.21" },
+      "type": "Delete",
+      "direction": "inbound",
+      "source": { "file": "inbound.jsonl", "line": 16, "pointer": "/body", "at": "2026-11-08T02:26:50.016Z" },
+      "fixture": "wire/lemmy-0.19.21/inbound/inbound-0016-delete.json",
+      "entity": "deletion",
+      "allowed": []
+    },
+    {
+      "id": "lemmy-0.19.21/inbound/inbound-0019-accept-follow",
+      "software": { "name": "lemmy", "version": "0.19.21" },
+      "type": "Accept(Follow)",
+      "direction": "inbound",
+      "source": { "file": "inbound.jsonl", "line": 19, "pointer": "/body", "at": "2026-11-08T02:26:54.351Z" },
+      "fixture": "wire/lemmy-0.19.21/inbound/inbound-0019-accept-follow.json",
+      "entity": "follow",
+      "allowed": []
+    },
+    {
+      "id": "lemmy-0.19.21/inbound/inbound-0020-announce-create-page",
+      "software": { "name": "lemmy", "version": "0.19.21" },
+      "type": "Announce(Create(Page))",
+      "direction": "inbound",
+      "source": { "file": "inbound.jsonl", "line": 20, "pointer": "/body", "at": "2026-11-08T02:26:55.408Z" },
+      "fixture": "wire/lemmy-0.19.21/inbound/inbound-0020-announce-create-page.json",
+      "entity": "post",
+      "allowed": [
+        { "path": "object.object.commentsEnabled", "change": "added", "vocabulary": "peblish.page-flags" },
+        { "path": "object.object.nsfl", "change": "added", "vocabulary": "peblish.nsfl" },
+        { "path": "object.object.stickied", "change": "added", "vocabulary": "peblish.page-flags" },
+        { "path": "object.object.tag", "change": "dropped", "vocabulary": "tags" }
+      ]
+    },
+    {
+      "id": "lemmy-0.19.21/inbound/inbound-0021-announce-page",
+      "software": { "name": "lemmy", "version": "0.19.21" },
+      "type": "Announce(Page)",
+      "direction": "inbound",
+      "source": { "file": "inbound.jsonl", "line": 21, "pointer": "/body", "at": "2026-11-08T02:26:55.439Z" },
+      "fixture": "wire/lemmy-0.19.21/inbound/inbound-0021-announce-page.json",
+      "entity": "post",
+      "allowed": [
+        { "path": "object.actor", "change": "dropped", "vocabulary": "lemmy.announce-page-actor" },
+        { "path": "object.commentsEnabled", "change": "added", "vocabulary": "peblish.page-flags" },
+        { "path": "object.nsfl", "change": "added", "vocabulary": "peblish.nsfl" },
+        { "path": "object.stickied", "change": "added", "vocabulary": "peblish.page-flags" },
+        { "path": "object.tag", "change": "dropped", "vocabulary": "tags" }
+      ]
+    },
+    {
+      "id": "lemmy-0.19.21/inbound/inbound-0022-announce-create-note",
+      "software": { "name": "lemmy", "version": "0.19.21" },
+      "type": "Announce(Create(Note))",
+      "direction": "inbound",
+      "source": { "file": "inbound.jsonl", "line": 22, "pointer": "/body", "at": "2026-11-08T02:26:56.478Z" },
+      "fixture": "wire/lemmy-0.19.21/inbound/inbound-0022-announce-create-note.json",
+      "entity": "comment",
+      "allowed": [
+        { "path": "object.cc", "change": "changed", "vocabulary": "peblish.addressing" },
+        { "path": "object.object.cc", "change": "changed", "vocabulary": "peblish.addressing" },
+        { "path": "object.object.tag", "change": "dropped", "vocabulary": "tags" },
+        { "path": "object.tag", "change": "dropped", "vocabulary": "tags" }
+      ]
+    },
+    {
+      "id": "lemmy-0.19.21/inbound/inbound-0023-announce-create-note",
+      "software": { "name": "lemmy", "version": "0.19.21" },
+      "type": "Announce(Create(Note))",
+      "direction": "inbound",
+      "source": { "file": "inbound.jsonl", "line": 23, "pointer": "/body", "at": "2026-11-08T02:26:57.632Z" },
+      "fixture": "wire/lemmy-0.19.21/inbound/inbound-0023-announce-create-note.json",
+      "entity": "comment",
+      "allowed": [
+        { "path": "object.@context", "change": "dropped", "vocabulary": "peblish.context.embedded" },
+        { "path": "object.object.attachment", "change": "added", "vocabulary": "peblish.attachment" },
+        { "path": "object.object.distinguished", "change": "added", "vocabulary": "peblish.distinguished" },
+        { "path": "object.object.sensitive", "change": "dropped", "vocabulary": "fedify.note-sensitive" }
+      ]
+    },
+    {
+      "id": "lemmy-0.19.21/inbound/inbound-0024-announce-like",
+      "software": { "name": "lemmy", "version": "0.19.21" },
+      "type": "Announce(Like)",
+      "direction": "inbound",
+      "source": { "file": "inbound.jsonl", "line": 24, "pointer": "/body", "at": "2026-11-08T02:26:58.669Z" },
+      "fixture": "wire/lemmy-0.19.21/inbound/inbound-0024-announce-like.json",
+      "entity": "vote",
+      "allowed": [{ "path": "object.@context", "change": "dropped", "vocabulary": "peblish.context.embedded" }]
+    },
+    {
+      "id": "lemmy-0.19.21/inbound/inbound-0025-announce-undo-like",
+      "software": { "name": "lemmy", "version": "0.19.21" },
+      "type": "Announce(Undo(Like))",
+      "direction": "inbound",
+      "source": { "file": "inbound.jsonl", "line": 25, "pointer": "/body", "at": "2026-11-08T02:26:59.717Z" },
+      "fixture": "wire/lemmy-0.19.21/inbound/inbound-0025-announce-undo-like.json",
+      "entity": "vote",
+      "allowed": [{ "path": "object.@context", "change": "dropped", "vocabulary": "peblish.context.embedded" }]
+    },
+    {
+      "id": "lemmy-0.19.21/inbound/inbound-0026-announce-update-page",
+      "software": { "name": "lemmy", "version": "0.19.21" },
+      "type": "Announce(Update(Page))",
+      "direction": "inbound",
+      "source": { "file": "inbound.jsonl", "line": 26, "pointer": "/body", "at": "2026-11-08T02:27:00.861Z" },
+      "fixture": "wire/lemmy-0.19.21/inbound/inbound-0026-announce-update-page.json",
+      "entity": "post",
+      "allowed": [
+        { "path": "object.object.commentsEnabled", "change": "added", "vocabulary": "peblish.page-flags" },
+        { "path": "object.object.nsfl", "change": "added", "vocabulary": "peblish.nsfl" },
+        { "path": "object.object.stickied", "change": "added", "vocabulary": "peblish.page-flags" },
+        { "path": "object.object.tag", "change": "dropped", "vocabulary": "tags" }
+      ]
+    },
+    {
+      "id": "lemmy-0.19.21/inbound/inbound-0027-announce-page",
+      "software": { "name": "lemmy", "version": "0.19.21" },
+      "type": "Announce(Page)",
+      "direction": "inbound",
+      "source": { "file": "inbound.jsonl", "line": 27, "pointer": "/body", "at": "2026-11-08T02:27:00.887Z" },
+      "fixture": "wire/lemmy-0.19.21/inbound/inbound-0027-announce-page.json",
+      "entity": "post",
+      "allowed": [
+        { "path": "object.actor", "change": "dropped", "vocabulary": "lemmy.announce-page-actor" },
+        { "path": "object.commentsEnabled", "change": "added", "vocabulary": "peblish.page-flags" },
+        { "path": "object.nsfl", "change": "added", "vocabulary": "peblish.nsfl" },
+        { "path": "object.stickied", "change": "added", "vocabulary": "peblish.page-flags" },
+        { "path": "object.tag", "change": "dropped", "vocabulary": "tags" }
+      ]
+    },
+    {
+      "id": "lemmy-0.19.21/inbound/inbound-0028-announce-delete",
+      "software": { "name": "lemmy", "version": "0.19.21" },
+      "type": "Announce(Delete)",
+      "direction": "inbound",
+      "source": { "file": "inbound.jsonl", "line": 28, "pointer": "/body", "at": "2026-11-08T02:27:01.947Z" },
+      "fixture": "wire/lemmy-0.19.21/inbound/inbound-0028-announce-delete.json",
+      "entity": "deletion",
+      "allowed": []
+    },
+    {
+      "id": "lemmy-0.19.21/inbound/inbound-0029-announce-update-note",
+      "software": { "name": "lemmy", "version": "0.19.21" },
+      "type": "Announce(Update(Note))",
+      "direction": "inbound",
+      "source": { "file": "inbound.jsonl", "line": 29, "pointer": "/body", "at": "2026-11-08T02:27:02.991Z" },
+      "fixture": "wire/lemmy-0.19.21/inbound/inbound-0029-announce-update-note.json",
+      "entity": "comment",
+      "allowed": [
+        { "path": "object.@context", "change": "dropped", "vocabulary": "peblish.context.embedded" },
+        { "path": "object.object.attachment", "change": "added", "vocabulary": "peblish.attachment" },
+        { "path": "object.object.distinguished", "change": "added", "vocabulary": "peblish.distinguished" },
+        { "path": "object.object.sensitive", "change": "dropped", "vocabulary": "fedify.note-sensitive" }
+      ]
+    },
+    {
+      "id": "lemmy-0.19.21/inbound/inbound-0030-announce-delete",
+      "software": { "name": "lemmy", "version": "0.19.21" },
+      "type": "Announce(Delete)",
+      "direction": "inbound",
+      "source": { "file": "inbound.jsonl", "line": 30, "pointer": "/body", "at": "2026-11-08T02:27:04.039Z" },
+      "fixture": "wire/lemmy-0.19.21/inbound/inbound-0030-announce-delete.json",
+      "entity": "deletion",
+      "allowed": [{ "path": "object.@context", "change": "dropped", "vocabulary": "peblish.context.embedded" }]
+    },
+    {
+      "id": "lemmy-0.19.21/inbound/inbound-0031-announce-create-page",
+      "software": { "name": "lemmy", "version": "0.19.21" },
+      "type": "Announce(Create(Page))",
+      "direction": "inbound",
+      "source": { "file": "inbound.jsonl", "line": 31, "pointer": "/body", "at": "2026-11-08T02:27:05.089Z" },
+      "fixture": "wire/lemmy-0.19.21/inbound/inbound-0031-announce-create-page.json",
+      "entity": "post",
+      "allowed": [
+        { "path": "object.@context", "change": "dropped", "vocabulary": "peblish.context.embedded" },
+        { "path": "object.object.attachment", "change": "added", "vocabulary": "peblish.attachment" },
+        { "path": "object.object.cc", "change": "added", "vocabulary": "peblish.page-cc" },
+        { "path": "object.object.commentsEnabled", "change": "added", "vocabulary": "peblish.page-flags" },
+        { "path": "object.object.nsfl", "change": "added", "vocabulary": "peblish.nsfl" },
+        { "path": "object.object.stickied", "change": "added", "vocabulary": "peblish.page-flags" }
+      ]
+    },
+    {
+      "id": "lemmy-0.19.21/inbound/inbound-0032-announce-page",
+      "software": { "name": "lemmy", "version": "0.19.21" },
+      "type": "Announce(Page)",
+      "direction": "inbound",
+      "source": { "file": "inbound.jsonl", "line": 32, "pointer": "/body", "at": "2026-11-08T02:27:05.104Z" },
+      "fixture": "wire/lemmy-0.19.21/inbound/inbound-0032-announce-page.json",
+      "entity": "post",
+      "allowed": [
+        { "path": "object.actor", "change": "dropped", "vocabulary": "lemmy.announce-page-actor" },
+        { "path": "object.commentsEnabled", "change": "added", "vocabulary": "peblish.page-flags" },
+        { "path": "object.nsfl", "change": "added", "vocabulary": "peblish.nsfl" },
+        { "path": "object.stickied", "change": "added", "vocabulary": "peblish.page-flags" },
+        { "path": "object.tag", "change": "dropped", "vocabulary": "tags" }
+      ]
+    },
+    {
+      "id": "lemmy-0.19.21/inbound/inbound-0033-announce-update-page",
+      "software": { "name": "lemmy", "version": "0.19.21" },
+      "type": "Announce(Update(Page))",
+      "direction": "inbound",
+      "source": { "file": "inbound.jsonl", "line": 33, "pointer": "/body", "at": "2026-11-08T02:27:05.220Z" },
+      "fixture": "wire/lemmy-0.19.21/inbound/inbound-0033-announce-update-page.json",
+      "entity": "post",
+      "allowed": [
+        { "path": "object.@context", "change": "dropped", "vocabulary": "peblish.context.embedded" },
+        { "path": "object.object.attachment", "change": "added", "vocabulary": "peblish.attachment" },
+        { "path": "object.object.cc", "change": "added", "vocabulary": "peblish.page-cc" },
+        { "path": "object.object.commentsEnabled", "change": "added", "vocabulary": "peblish.page-flags" },
+        { "path": "object.object.nsfl", "change": "added", "vocabulary": "peblish.nsfl" },
+        { "path": "object.object.stickied", "change": "added", "vocabulary": "peblish.page-flags" }
+      ]
+    },
+    {
+      "id": "lemmy-0.19.21/inbound/inbound-0034-announce-page",
+      "software": { "name": "lemmy", "version": "0.19.21" },
+      "type": "Announce(Page)",
+      "direction": "inbound",
+      "source": { "file": "inbound.jsonl", "line": 34, "pointer": "/body", "at": "2026-11-08T02:27:05.233Z" },
+      "fixture": "wire/lemmy-0.19.21/inbound/inbound-0034-announce-page.json",
+      "entity": "post",
+      "allowed": [
+        { "path": "object.actor", "change": "dropped", "vocabulary": "lemmy.announce-page-actor" },
+        { "path": "object.commentsEnabled", "change": "added", "vocabulary": "peblish.page-flags" },
+        { "path": "object.nsfl", "change": "added", "vocabulary": "peblish.nsfl" },
+        { "path": "object.stickied", "change": "added", "vocabulary": "peblish.page-flags" },
+        { "path": "object.tag", "change": "dropped", "vocabulary": "tags" }
+      ]
+    },
+    {
+      "id": "lemmy-0.19.21/inbound/inbound-0035-announce-delete",
+      "software": { "name": "lemmy", "version": "0.19.21" },
+      "type": "Announce(Delete)",
+      "direction": "inbound",
+      "source": { "file": "inbound.jsonl", "line": 35, "pointer": "/body", "at": "2026-11-08T02:27:06.278Z" },
+      "fixture": "wire/lemmy-0.19.21/inbound/inbound-0035-announce-delete.json",
+      "entity": "deletion",
+      "allowed": [{ "path": "object.@context", "change": "dropped", "vocabulary": "peblish.context.embedded" }]
+    },
+    {
+      "id": "lemmy-0.19.21/inbound/inbound-0041-follow",
+      "software": { "name": "lemmy", "version": "0.19.21" },
+      "type": "Follow",
+      "direction": "inbound",
+      "source": { "file": "inbound.jsonl", "line": 41, "pointer": "/body", "at": "2026-11-08T02:27:24.764Z" },
+      "fixture": "wire/lemmy-0.19.21/inbound/inbound-0041-follow.json",
+      "entity": "follow",
+      "allowed": []
+    },
+    {
+      "id": "lemmy-0.19.21/inbound/inbound-0042-create-page",
+      "software": { "name": "lemmy", "version": "0.19.21" },
+      "type": "Create(Page)",
+      "direction": "inbound",
+      "source": { "file": "inbound.jsonl", "line": 42, "pointer": "/body", "at": "2026-11-08T02:27:26.848Z" },
+      "fixture": "wire/lemmy-0.19.21/inbound/inbound-0042-create-page.json",
+      "entity": "post",
+      "allowed": [
+        { "path": "object.commentsEnabled", "change": "added", "vocabulary": "peblish.page-flags" },
+        { "path": "object.nsfl", "change": "added", "vocabulary": "peblish.nsfl" },
+        { "path": "object.stickied", "change": "added", "vocabulary": "peblish.page-flags" },
+        { "path": "object.tag", "change": "dropped", "vocabulary": "tags" }
+      ]
+    },
+    {
+      "id": "lemmy-0.19.21/inbound/inbound-0043-create-note",
+      "software": { "name": "lemmy", "version": "0.19.21" },
+      "type": "Create(Note)",
+      "direction": "inbound",
+      "source": { "file": "inbound.jsonl", "line": 43, "pointer": "/body", "at": "2026-11-08T02:27:32.249Z" },
+      "fixture": "wire/lemmy-0.19.21/inbound/inbound-0043-create-note.json",
+      "entity": "comment",
+      "allowed": [
+        { "path": "cc", "change": "changed", "vocabulary": "peblish.addressing" },
+        { "path": "object.cc", "change": "changed", "vocabulary": "peblish.addressing" },
+        { "path": "object.tag", "change": "dropped", "vocabulary": "tags" },
+        { "path": "tag", "change": "dropped", "vocabulary": "tags" }
+      ]
+    },
+    {
+      "id": "lemmy-0.19.21/inbound/inbound-0044-create-note",
+      "software": { "name": "lemmy", "version": "0.19.21" },
+      "type": "Create(Note)",
+      "direction": "inbound",
+      "source": { "file": "inbound.jsonl", "line": 44, "pointer": "/body", "at": "2026-11-08T02:27:34.416Z" },
+      "fixture": "wire/lemmy-0.19.21/inbound/inbound-0044-create-note.json",
+      "entity": "comment",
+      "allowed": [
+        { "path": "cc", "change": "changed", "vocabulary": "peblish.addressing" },
+        { "path": "object.cc", "change": "changed", "vocabulary": "peblish.addressing" },
+        { "path": "object.tag", "change": "dropped", "vocabulary": "tags" },
+        { "path": "tag", "change": "dropped", "vocabulary": "tags" }
+      ]
+    },
+    {
+      "id": "lemmy-0.19.21/inbound/inbound-0045-flag",
+      "software": { "name": "lemmy", "version": "0.19.21" },
+      "type": "Flag",
+      "direction": "inbound",
+      "source": { "file": "inbound.jsonl", "line": 45, "pointer": "/body", "at": "2026-11-08T02:27:36.796Z" },
+      "fixture": "wire/lemmy-0.19.21/inbound/inbound-0045-flag.json",
+      "entity": "report",
+      "allowed": []
+    },
+    {
+      "id": "lemmy-0.19.21/inbound/inbound-0046-accept-follow",
+      "software": { "name": "lemmy", "version": "0.19.21" },
+      "type": "Accept(Follow)",
+      "direction": "inbound",
+      "source": { "file": "inbound.jsonl", "line": 46, "pointer": "/body", "at": "2026-11-08T02:27:38.472Z" },
+      "fixture": "wire/lemmy-0.19.21/inbound/inbound-0046-accept-follow.json",
+      "entity": "follow",
+      "allowed": []
+    },
+    {
+      "id": "lemmy-0.19.21/inbound/inbound-0047-announce-create-page",
+      "software": { "name": "lemmy", "version": "0.19.21" },
+      "type": "Announce(Create(Page))",
+      "direction": "inbound",
+      "source": { "file": "inbound.jsonl", "line": 47, "pointer": "/body", "at": "2026-11-08T02:27:39.017Z" },
+      "fixture": "wire/lemmy-0.19.21/inbound/inbound-0047-announce-create-page.json",
+      "entity": "post",
+      "allowed": [
+        { "path": "object.object.commentsEnabled", "change": "added", "vocabulary": "peblish.page-flags" },
+        { "path": "object.object.nsfl", "change": "added", "vocabulary": "peblish.nsfl" },
+        { "path": "object.object.stickied", "change": "added", "vocabulary": "peblish.page-flags" },
+        { "path": "object.object.tag", "change": "dropped", "vocabulary": "tags" }
+      ]
+    },
+    {
+      "id": "lemmy-0.19.21/inbound/inbound-0048-announce-page",
+      "software": { "name": "lemmy", "version": "0.19.21" },
+      "type": "Announce(Page)",
+      "direction": "inbound",
+      "source": { "file": "inbound.jsonl", "line": 48, "pointer": "/body", "at": "2026-11-08T02:27:39.043Z" },
+      "fixture": "wire/lemmy-0.19.21/inbound/inbound-0048-announce-page.json",
+      "entity": "post",
+      "allowed": [
+        { "path": "object.actor", "change": "dropped", "vocabulary": "lemmy.announce-page-actor" },
+        { "path": "object.commentsEnabled", "change": "added", "vocabulary": "peblish.page-flags" },
+        { "path": "object.nsfl", "change": "added", "vocabulary": "peblish.nsfl" },
+        { "path": "object.stickied", "change": "added", "vocabulary": "peblish.page-flags" },
+        { "path": "object.tag", "change": "dropped", "vocabulary": "tags" }
+      ]
+    },
+    {
+      "id": "lemmy-0.19.21/inbound/inbound-0049-announce-delete",
+      "software": { "name": "lemmy", "version": "0.19.21" },
+      "type": "Announce(Delete)",
+      "direction": "inbound",
+      "source": { "file": "inbound.jsonl", "line": 49, "pointer": "/body", "at": "2026-11-08T02:27:39.984Z" },
+      "fixture": "wire/lemmy-0.19.21/inbound/inbound-0049-announce-delete.json",
+      "entity": "deletion",
+      "allowed": []
+    },
+    {
+      "id": "lemmy-0.19.21/inbound/inbound-0050-announce-undo-delete",
+      "software": { "name": "lemmy", "version": "0.19.21" },
+      "type": "Announce(Undo(Delete))",
+      "direction": "inbound",
+      "source": { "file": "inbound.jsonl", "line": 50, "pointer": "/body", "at": "2026-11-08T02:27:41.136Z" },
+      "fixture": "wire/lemmy-0.19.21/inbound/inbound-0050-announce-undo-delete.json",
+      "entity": "deletion",
+      "allowed": []
+    },
+    {
+      "id": "lemmy-0.19.21/inbound/inbound-0051-announce-lock",
+      "software": { "name": "lemmy", "version": "0.19.21" },
+      "type": "Announce(Lock)",
+      "direction": "inbound",
+      "source": { "file": "inbound.jsonl", "line": 51, "pointer": "/body", "at": "2026-11-08T02:27:42.175Z" },
+      "fixture": "wire/lemmy-0.19.21/inbound/inbound-0051-announce-lock.json",
+      "entity": "lock",
+      "allowed": []
+    },
+    {
+      "id": "lemmy-0.19.21/inbound/inbound-0052-announce-undo-lock",
+      "software": { "name": "lemmy", "version": "0.19.21" },
+      "type": "Announce(Undo(Lock))",
+      "direction": "inbound",
+      "source": { "file": "inbound.jsonl", "line": 52, "pointer": "/body", "at": "2026-11-08T02:27:43.220Z" },
+      "fixture": "wire/lemmy-0.19.21/inbound/inbound-0052-announce-undo-lock.json",
+      "entity": "lock",
+      "allowed": []
+    },
+    {
+      "id": "lemmy-0.19.21/inbound/inbound-0053-announce-add",
+      "software": { "name": "lemmy", "version": "0.19.21" },
+      "type": "Announce(Add)",
+      "direction": "inbound",
+      "source": { "file": "inbound.jsonl", "line": 53, "pointer": "/body", "at": "2026-11-08T02:27:44.272Z" },
+      "fixture": "wire/lemmy-0.19.21/inbound/inbound-0053-announce-add.json",
+      "entity": "pin",
+      "allowed": []
+    },
+    {
+      "id": "lemmy-0.19.21/inbound/inbound-0054-announce-remove",
+      "software": { "name": "lemmy", "version": "0.19.21" },
+      "type": "Announce(Remove)",
+      "direction": "inbound",
+      "source": { "file": "inbound.jsonl", "line": 54, "pointer": "/body", "at": "2026-11-08T02:27:45.321Z" },
+      "fixture": "wire/lemmy-0.19.21/inbound/inbound-0054-announce-remove.json",
+      "entity": "pin",
+      "allowed": []
+    },
+    {
+      "id": "lemmy-0.19.21/inbound/inbound-0055-announce-block",
+      "software": { "name": "lemmy", "version": "0.19.21" },
+      "type": "Announce(Block)",
+      "direction": "inbound",
+      "source": { "file": "inbound.jsonl", "line": 55, "pointer": "/body", "at": "2026-11-08T02:27:46.372Z" },
+      "fixture": "wire/lemmy-0.19.21/inbound/inbound-0055-announce-block.json",
+      "entity": "ban",
+      "allowed": []
+    },
+    {
+      "id": "lemmy-0.19.21/inbound/inbound-0056-block",
+      "software": { "name": "lemmy", "version": "0.19.21" },
+      "type": "Block",
+      "direction": "inbound",
+      "source": { "file": "inbound.jsonl", "line": 56, "pointer": "/body", "at": "2026-11-08T02:27:46.388Z" },
+      "fixture": "wire/lemmy-0.19.21/inbound/inbound-0056-block.json",
+      "entity": "ban",
+      "allowed": []
+    },
+    {
+      "id": "lemmy-0.19.21/inbound/inbound-0057-announce-undo-block",
+      "software": { "name": "lemmy", "version": "0.19.21" },
+      "type": "Announce(Undo(Block))",
+      "direction": "inbound",
+      "source": { "file": "inbound.jsonl", "line": 57, "pointer": "/body", "at": "2026-11-08T02:27:47.322Z" },
+      "fixture": "wire/lemmy-0.19.21/inbound/inbound-0057-announce-undo-block.json",
+      "entity": "ban",
+      "allowed": []
+    },
+    {
+      "id": "lemmy-0.19.21/inbound/inbound-0058-undo-block",
+      "software": { "name": "lemmy", "version": "0.19.21" },
+      "type": "Undo(Block)",
+      "direction": "inbound",
+      "source": { "file": "inbound.jsonl", "line": 58, "pointer": "/body", "at": "2026-11-08T02:27:47.336Z" },
+      "fixture": "wire/lemmy-0.19.21/inbound/inbound-0058-undo-block.json",
+      "entity": "ban",
+      "allowed": []
+    },
+    {
+      "id": "lemmy-0.19.21/inbound/inbound-0073-delete",
+      "software": { "name": "lemmy", "version": "0.19.21" },
+      "type": "Delete",
+      "direction": "inbound",
+      "source": { "file": "inbound.jsonl", "line": 73, "pointer": "/body", "at": "2026-11-08T02:28:36.244Z" },
+      "fixture": "wire/lemmy-0.19.21/inbound/inbound-0073-delete.json",
+      "entity": "deletion",
+      "allowed": []
+    },
+    {
+      "id": "lemmy-0.19.21/inbound/inbound-0074-undo-delete",
+      "software": { "name": "lemmy", "version": "0.19.21" },
+      "type": "Undo(Delete)",
+      "direction": "inbound",
+      "source": { "file": "inbound.jsonl", "line": 74, "pointer": "/body", "at": "2026-11-08T02:28:37.289Z" },
+      "fixture": "wire/lemmy-0.19.21/inbound/inbound-0074-undo-delete.json",
+      "entity": "deletion",
+      "allowed": []
+    },
+    {
+      "id": "lemmy-0.19.21/inbound/inbound-0075-lock",
+      "software": { "name": "lemmy", "version": "0.19.21" },
+      "type": "Lock",
+      "direction": "inbound",
+      "source": { "file": "inbound.jsonl", "line": 75, "pointer": "/body", "at": "2026-11-08T02:28:38.438Z" },
+      "fixture": "wire/lemmy-0.19.21/inbound/inbound-0075-lock.json",
+      "entity": "lock",
+      "allowed": []
+    },
+    {
+      "id": "lemmy-0.19.21/inbound/inbound-0076-undo-lock",
+      "software": { "name": "lemmy", "version": "0.19.21" },
+      "type": "Undo(Lock)",
+      "direction": "inbound",
+      "source": { "file": "inbound.jsonl", "line": 76, "pointer": "/body", "at": "2026-11-08T02:28:39.482Z" },
+      "fixture": "wire/lemmy-0.19.21/inbound/inbound-0076-undo-lock.json",
+      "entity": "lock",
+      "allowed": []
+    },
+    {
+      "id": "lemmy-0.19.21/inbound/inbound-0077-add",
+      "software": { "name": "lemmy", "version": "0.19.21" },
+      "type": "Add",
+      "direction": "inbound",
+      "source": { "file": "inbound.jsonl", "line": 77, "pointer": "/body", "at": "2026-11-08T02:28:40.530Z" },
+      "fixture": "wire/lemmy-0.19.21/inbound/inbound-0077-add.json",
+      "entity": "pin",
+      "allowed": []
+    },
+    {
+      "id": "lemmy-0.19.21/inbound/inbound-0078-remove",
+      "software": { "name": "lemmy", "version": "0.19.21" },
+      "type": "Remove",
+      "direction": "inbound",
+      "source": { "file": "inbound.jsonl", "line": 78, "pointer": "/body", "at": "2026-11-08T02:28:41.465Z" },
+      "fixture": "wire/lemmy-0.19.21/inbound/inbound-0078-remove.json",
+      "entity": "pin",
+      "allowed": []
+    },
+    {
+      "id": "lemmy-0.19.21/inbound/inbound-0079-block",
+      "software": { "name": "lemmy", "version": "0.19.21" },
+      "type": "Block",
+      "direction": "inbound",
+      "source": { "file": "inbound.jsonl", "line": 79, "pointer": "/body", "at": "2026-11-08T02:28:42.607Z" },
+      "fixture": "wire/lemmy-0.19.21/inbound/inbound-0079-block.json",
+      "entity": "ban",
+      "allowed": []
+    },
+    {
+      "id": "lemmy-0.19.21/inbound/inbound-0080-undo-block",
+      "software": { "name": "lemmy", "version": "0.19.21" },
+      "type": "Undo(Block)",
+      "direction": "inbound",
+      "source": { "file": "inbound.jsonl", "line": 80, "pointer": "/body", "at": "2026-11-08T02:28:43.658Z" },
+      "fixture": "wire/lemmy-0.19.21/inbound/inbound-0080-undo-block.json",
+      "entity": "ban",
+      "allowed": []
+    },
+    {
+      "id": "lemmy-0.19.21/inbound/inbound-0082-create-page",
+      "software": { "name": "lemmy", "version": "0.19.21" },
+      "type": "Create(Page)",
+      "direction": "inbound",
+      "source": { "file": "inbound.jsonl", "line": 82, "pointer": "/body", "at": "2026-11-08T02:28:48.830Z" },
+      "fixture": "wire/lemmy-0.19.21/inbound/inbound-0082-create-page.json",
+      "entity": "post",
+      "allowed": [
+        { "path": "object.commentsEnabled", "change": "added", "vocabulary": "peblish.page-flags" },
+        { "path": "object.nsfl", "change": "added", "vocabulary": "peblish.nsfl" },
+        { "path": "object.stickied", "change": "added", "vocabulary": "peblish.page-flags" },
+        { "path": "object.tag", "change": "dropped", "vocabulary": "tags" }
+      ]
+    },
+    {
+      "id": "lemmy-0.19.21/inbound/inbound-0089-follow",
+      "software": { "name": "lemmy", "version": "0.19.21" },
+      "type": "Follow",
+      "direction": "inbound",
+      "source": { "file": "inbound.jsonl", "line": 89, "pointer": "/body", "at": "2026-11-08T02:28:59.374Z" },
+      "fixture": "wire/lemmy-0.19.21/inbound/inbound-0089-follow.json",
+      "entity": "follow",
+      "allowed": []
+    },
+    {
+      "id": "lemmy-0.19.21/inbound/inbound-0091-accept-follow",
+      "software": { "name": "lemmy", "version": "0.19.21" },
+      "type": "Accept(Follow)",
+      "direction": "inbound",
+      "source": { "file": "inbound.jsonl", "line": 91, "pointer": "/body", "at": "2026-11-08T02:29:00.512Z" },
+      "fixture": "wire/lemmy-0.19.21/inbound/inbound-0091-accept-follow.json",
+      "entity": "follow",
+      "allowed": []
+    },
+    {
+      "id": "lemmy-0.19.21/inbound/inbound-0092-create-page",
+      "software": { "name": "lemmy", "version": "0.19.21" },
+      "type": "Create(Page)",
+      "direction": "inbound",
+      "source": { "file": "inbound.jsonl", "line": 92, "pointer": "/body", "at": "2026-11-08T02:29:01.564Z" },
+      "fixture": "wire/lemmy-0.19.21/inbound/inbound-0092-create-page.json",
+      "entity": "post",
+      "allowed": [
+        { "path": "object.commentsEnabled", "change": "added", "vocabulary": "peblish.page-flags" },
+        { "path": "object.nsfl", "change": "added", "vocabulary": "peblish.nsfl" },
+        { "path": "object.stickied", "change": "added", "vocabulary": "peblish.page-flags" },
+        { "path": "object.tag", "change": "dropped", "vocabulary": "tags" }
+      ]
+    },
+    {
+      "id": "lemmy-0.19.21/inbound/inbound-0093-announce-create-page",
+      "software": { "name": "lemmy", "version": "0.19.21" },
+      "type": "Announce(Create(Page))",
+      "direction": "inbound",
+      "source": { "file": "inbound.jsonl", "line": 93, "pointer": "/body", "at": "2026-11-08T02:29:01.732Z" },
+      "fixture": "wire/lemmy-0.19.21/inbound/inbound-0093-announce-create-page.json",
+      "entity": "post",
+      "allowed": [
+        { "path": "object.object.commentsEnabled", "change": "added", "vocabulary": "peblish.page-flags" },
+        { "path": "object.object.nsfl", "change": "added", "vocabulary": "peblish.nsfl" },
+        { "path": "object.object.stickied", "change": "added", "vocabulary": "peblish.page-flags" },
+        { "path": "object.object.tag", "change": "dropped", "vocabulary": "tags" }
+      ]
+    },
+    {
+      "id": "lemmy-0.19.21/inbound/inbound-0094-announce-page",
+      "software": { "name": "lemmy", "version": "0.19.21" },
+      "type": "Announce(Page)",
+      "direction": "inbound",
+      "source": { "file": "inbound.jsonl", "line": 94, "pointer": "/body", "at": "2026-11-08T02:29:01.765Z" },
+      "fixture": "wire/lemmy-0.19.21/inbound/inbound-0094-announce-page.json",
+      "entity": "post",
+      "allowed": [
+        { "path": "object.actor", "change": "dropped", "vocabulary": "lemmy.announce-page-actor" },
+        { "path": "object.commentsEnabled", "change": "added", "vocabulary": "peblish.page-flags" },
+        { "path": "object.nsfl", "change": "added", "vocabulary": "peblish.nsfl" },
+        { "path": "object.stickied", "change": "added", "vocabulary": "peblish.page-flags" },
+        { "path": "object.tag", "change": "dropped", "vocabulary": "tags" }
+      ]
+    },
+    {
+      "id": "lemmy-0.19.21/inbound/inbound-0095-like",
+      "software": { "name": "lemmy", "version": "0.19.21" },
+      "type": "Like",
+      "direction": "inbound",
+      "source": { "file": "inbound.jsonl", "line": 95, "pointer": "/body", "at": "2026-11-08T02:29:02.723Z" },
+      "fixture": "wire/lemmy-0.19.21/inbound/inbound-0095-like.json",
+      "entity": "vote",
+      "allowed": []
+    },
+    {
+      "id": "lemmy-0.19.21/peer-log/lemmy-sent_activity-0013-create-page",
+      "software": { "name": "lemmy", "version": "0.19.21" },
+      "type": "Create(Page)",
+      "direction": "peer-log",
+      "source": { "file": "lemmy-sent_activity.jsonl", "line": 13, "pointer": "/data", "at": "2026-11-08T02:26:55.302Z" },
+      "fixture": "wire/lemmy-0.19.21/peer-log/lemmy-sent_activity-0013-create-page.json",
+      "entity": "post",
+      "allowed": [
+        { "path": "@context", "change": "added", "vocabulary": "lemmy.stored-without-context" },
+        { "path": "object.commentsEnabled", "change": "added", "vocabulary": "peblish.page-flags" },
+        { "path": "object.nsfl", "change": "added", "vocabulary": "peblish.nsfl" },
+        { "path": "object.stickied", "change": "added", "vocabulary": "peblish.page-flags" },
+        { "path": "object.tag", "change": "dropped", "vocabulary": "tags" }
+      ]
+    },
+    {
+      "id": "lemmy-0.19.21/peer-log/lemmy-sent_activity-0015-create-note",
+      "software": { "name": "lemmy", "version": "0.19.21" },
+      "type": "Create(Note)",
+      "direction": "peer-log",
+      "source": { "file": "lemmy-sent_activity.jsonl", "line": 15, "pointer": "/data", "at": "2026-11-08T02:26:56.395Z" },
+      "fixture": "wire/lemmy-0.19.21/peer-log/lemmy-sent_activity-0015-create-note.json",
+      "entity": "comment",
+      "allowed": [
+        { "path": "@context", "change": "added", "vocabulary": "lemmy.stored-without-context" },
+        { "path": "cc", "change": "changed", "vocabulary": "peblish.addressing" },
+        { "path": "object.cc", "change": "changed", "vocabulary": "peblish.addressing" },
+        { "path": "object.tag", "change": "dropped", "vocabulary": "tags" },
+        { "path": "tag", "change": "dropped", "vocabulary": "tags" }
+      ]
+    },
+    {
+      "id": "lemmy-0.19.21/peer-log/lemmy-sent_activity-0021-update-page",
+      "software": { "name": "lemmy", "version": "0.19.21" },
+      "type": "Update(Page)",
+      "direction": "peer-log",
+      "source": { "file": "lemmy-sent_activity.jsonl", "line": 21, "pointer": "/data", "at": "2026-11-08T02:27:00.717Z" },
+      "fixture": "wire/lemmy-0.19.21/peer-log/lemmy-sent_activity-0021-update-page.json",
+      "entity": "post",
+      "allowed": [
+        { "path": "@context", "change": "added", "vocabulary": "lemmy.stored-without-context" },
+        { "path": "object.commentsEnabled", "change": "added", "vocabulary": "peblish.page-flags" },
+        { "path": "object.nsfl", "change": "added", "vocabulary": "peblish.nsfl" },
+        { "path": "object.stickied", "change": "added", "vocabulary": "peblish.page-flags" },
+        { "path": "object.tag", "change": "dropped", "vocabulary": "tags" }
+      ]
+    },
+    {
+      "id": "lemmy-0.19.21/peer-log/lemmy-sent_activity-0023-delete",
+      "software": { "name": "lemmy", "version": "0.19.21" },
+      "type": "Delete",
+      "direction": "peer-log",
+      "source": { "file": "lemmy-sent_activity.jsonl", "line": 23, "pointer": "/data", "at": "2026-11-08T02:27:01.778Z" },
+      "fixture": "wire/lemmy-0.19.21/peer-log/lemmy-sent_activity-0023-delete.json",
+      "entity": "deletion",
+      "allowed": [{ "path": "@context", "change": "added", "vocabulary": "lemmy.stored-without-context" }]
+    },
+    {
+      "id": "lemmy-0.19.21/peer-log/lemmy-sent_activity-0039-create-page",
+      "software": { "name": "lemmy", "version": "0.19.21" },
+      "type": "Create(Page)",
+      "direction": "peer-log",
+      "source": { "file": "lemmy-sent_activity.jsonl", "line": 39, "pointer": "/data", "at": "2026-11-08T02:27:38.857Z" },
+      "fixture": "wire/lemmy-0.19.21/peer-log/lemmy-sent_activity-0039-create-page.json",
+      "entity": "post",
+      "allowed": [
+        { "path": "@context", "change": "added", "vocabulary": "lemmy.stored-without-context" },
+        { "path": "object.commentsEnabled", "change": "added", "vocabulary": "peblish.page-flags" },
+        { "path": "object.nsfl", "change": "added", "vocabulary": "peblish.nsfl" },
+        { "path": "object.stickied", "change": "added", "vocabulary": "peblish.page-flags" },
+        { "path": "object.tag", "change": "dropped", "vocabulary": "tags" }
+      ]
+    },
+    {
+      "id": "lemmy-0.19.21/peer-log/lemmy-sent_activity-0041-delete",
+      "software": { "name": "lemmy", "version": "0.19.21" },
+      "type": "Delete",
+      "direction": "peer-log",
+      "source": { "file": "lemmy-sent_activity.jsonl", "line": 41, "pointer": "/data", "at": "2026-11-08T02:27:39.965Z" },
+      "fixture": "wire/lemmy-0.19.21/peer-log/lemmy-sent_activity-0041-delete.json",
+      "entity": "deletion",
+      "allowed": [{ "path": "@context", "change": "added", "vocabulary": "lemmy.stored-without-context" }]
+    },
+    {
+      "id": "lemmy-0.19.21/peer-log/lemmy-sent_activity-0043-undo-delete",
+      "software": { "name": "lemmy", "version": "0.19.21" },
+      "type": "Undo(Delete)",
+      "direction": "peer-log",
+      "source": { "file": "lemmy-sent_activity.jsonl", "line": 43, "pointer": "/data", "at": "2026-11-08T02:27:41.048Z" },
+      "fixture": "wire/lemmy-0.19.21/peer-log/lemmy-sent_activity-0043-undo-delete.json",
+      "entity": "deletion",
+      "allowed": [{ "path": "@context", "change": "added", "vocabulary": "lemmy.stored-without-context" }]
+    },
+    {
+      "id": "lemmy-0.19.21/peer-log/lemmy-sent_activity-0045-lock",
+      "software": { "name": "lemmy", "version": "0.19.21" },
+      "type": "Lock",
+      "direction": "peer-log",
+      "source": { "file": "lemmy-sent_activity.jsonl", "line": 45, "pointer": "/data", "at": "2026-11-08T02:27:42.083Z" },
+      "fixture": "wire/lemmy-0.19.21/peer-log/lemmy-sent_activity-0045-lock.json",
+      "entity": "lock",
+      "allowed": [{ "path": "@context", "change": "added", "vocabulary": "lemmy.stored-without-context" }]
+    },
+    {
+      "id": "lemmy-0.19.21/peer-log/lemmy-sent_activity-0047-undo-lock",
+      "software": { "name": "lemmy", "version": "0.19.21" },
+      "type": "Undo(Lock)",
+      "direction": "peer-log",
+      "source": { "file": "lemmy-sent_activity.jsonl", "line": 47, "pointer": "/data", "at": "2026-11-08T02:27:43.109Z" },
+      "fixture": "wire/lemmy-0.19.21/peer-log/lemmy-sent_activity-0047-undo-lock.json",
+      "entity": "lock",
+      "allowed": [{ "path": "@context", "change": "added", "vocabulary": "lemmy.stored-without-context" }]
+    },
+    {
+      "id": "lemmy-0.19.21/peer-log/lemmy-sent_activity-0049-add",
+      "software": { "name": "lemmy", "version": "0.19.21" },
+      "type": "Add",
+      "direction": "peer-log",
+      "source": { "file": "lemmy-sent_activity.jsonl", "line": 49, "pointer": "/data", "at": "2026-11-08T02:27:44.144Z" },
+      "fixture": "wire/lemmy-0.19.21/peer-log/lemmy-sent_activity-0049-add.json",
+      "entity": "pin",
+      "allowed": [{ "path": "@context", "change": "added", "vocabulary": "lemmy.stored-without-context" }]
+    },
+    {
+      "id": "lemmy-0.19.21/peer-log/lemmy-sent_activity-0051-remove",
+      "software": { "name": "lemmy", "version": "0.19.21" },
+      "type": "Remove",
+      "direction": "peer-log",
+      "source": { "file": "lemmy-sent_activity.jsonl", "line": 51, "pointer": "/data", "at": "2026-11-08T02:27:45.178Z" },
+      "fixture": "wire/lemmy-0.19.21/peer-log/lemmy-sent_activity-0051-remove.json",
+      "entity": "pin",
+      "allowed": [{ "path": "@context", "change": "added", "vocabulary": "lemmy.stored-without-context" }]
+    },
+    {
+      "id": "lemmy-0.19.21/peer-log/lemmy-sent_activity-0070-create-page",
+      "software": { "name": "lemmy", "version": "0.19.21" },
+      "type": "Create(Page)",
+      "direction": "peer-log",
+      "source": { "file": "lemmy-sent_activity.jsonl", "line": 70, "pointer": "/data", "at": "2026-11-08T02:29:01.560Z" },
+      "fixture": "wire/lemmy-0.19.21/peer-log/lemmy-sent_activity-0070-create-page.json",
+      "entity": "post",
+      "allowed": [
+        { "path": "@context", "change": "added", "vocabulary": "lemmy.stored-without-context" },
+        { "path": "object.commentsEnabled", "change": "added", "vocabulary": "peblish.page-flags" },
+        { "path": "object.nsfl", "change": "added", "vocabulary": "peblish.nsfl" },
+        { "path": "object.stickied", "change": "added", "vocabulary": "peblish.page-flags" },
+        { "path": "object.tag", "change": "dropped", "vocabulary": "tags" }
+      ]
+    },
+    {
+      "id": "piefed-1.8.11/fetched/fetched-0003-person",
+      "software": { "name": "piefed", "version": "1.8.11" },
+      "type": "Person",
+      "direction": "fetched",
+      "source": { "file": "fetched.jsonl", "line": 3, "pointer": "/response", "at": "2026-11-08T02:26:27.611Z" },
+      "fixture": "wire/piefed-1.8.11/fetched/fetched-0003-person.json",
+      "entity": "actor",
+      "allowed": [
+        { "path": "@context", "change": "changed", "vocabulary": "peblish.context" },
+        { "path": "acceptPrivateMessages", "change": "dropped", "vocabulary": "piefed.person-settings" },
+        { "path": "attributionDomains", "change": "dropped", "vocabulary": "piefed.person-settings" },
+        { "path": "manuallyApprovesFollowers", "change": "dropped", "vocabulary": "piefed.person-settings" },
+        { "path": "reposter", "change": "dropped", "vocabulary": "piefed.person-settings" }
+      ]
+    },
+    {
+      "id": "piefed-1.8.11/fetched/fetched-0010-group",
+      "software": { "name": "piefed", "version": "1.8.11" },
+      "type": "Group",
+      "direction": "fetched",
+      "source": { "file": "fetched.jsonl", "line": 10, "pointer": "/response", "at": "2026-11-08T02:27:07.304Z" },
+      "fixture": "wire/piefed-1.8.11/fetched/fetched-0010-group.json",
+      "entity": "community",
+      "allowed": [
+        { "path": "@context", "change": "changed", "vocabulary": "peblish.context" },
+        { "path": "contentRetention", "change": "dropped", "vocabulary": "piefed.community-settings" },
+        { "path": "defaultHashtag", "change": "dropped", "vocabulary": "piefed.community-settings" },
+        { "path": "discoverable", "change": "added", "vocabulary": "peblish.search-consent" },
+        { "path": "genAI", "change": "dropped", "vocabulary": "piefed.gen-ai" },
+        { "path": "indexable", "change": "added", "vocabulary": "peblish.search-consent" },
+        { "path": "lemmy:tagsForPosts", "change": "dropped", "vocabulary": "piefed.community-settings" },
+        { "path": "moderators", "change": "dropped", "vocabulary": "piefed.moderators" },
+        { "path": "newModsWanted", "change": "dropped", "vocabulary": "piefed.community-settings" },
+        { "path": "nsfl", "change": "added", "vocabulary": "peblish.nsfl" },
+        { "path": "postUrlType", "change": "dropped", "vocabulary": "piefed.community-settings" },
+        { "path": "privateMods", "change": "dropped", "vocabulary": "piefed.community-settings" },
+        { "path": "questionAnswer", "change": "dropped", "vocabulary": "piefed.community-settings" },
+        { "path": "tag", "change": "dropped", "vocabulary": "tags" },
+        { "path": "url", "change": "dropped", "vocabulary": "piefed.url" }
+      ]
+    },
+    {
+      "id": "piefed-1.8.11/fetched/fetched-0017-person",
+      "software": { "name": "piefed", "version": "1.8.11" },
+      "type": "Person",
+      "direction": "fetched",
+      "source": { "file": "fetched.jsonl", "line": 17, "pointer": "/response", "at": "2026-11-08T02:27:48.837Z" },
+      "fixture": "wire/piefed-1.8.11/fetched/fetched-0017-person.json",
+      "entity": "actor",
+      "allowed": [
+        { "path": "@context", "change": "changed", "vocabulary": "peblish.context" },
+        { "path": "acceptPrivateMessages", "change": "dropped", "vocabulary": "piefed.person-settings" },
+        { "path": "attributionDomains", "change": "dropped", "vocabulary": "piefed.person-settings" },
+        { "path": "manuallyApprovesFollowers", "change": "dropped", "vocabulary": "piefed.person-settings" },
+        { "path": "reposter", "change": "dropped", "vocabulary": "piefed.person-settings" }
+      ]
+    },
+    {
+      "id": "piefed-1.8.11/fetched/fetched-0020-orderedcollection",
+      "software": { "name": "piefed", "version": "1.8.11" },
+      "type": "OrderedCollection",
+      "direction": "fetched",
+      "source": { "file": "fetched.jsonl", "line": 20, "pointer": "/response", "at": "2026-11-08T02:28:05.254Z" },
+      "fixture": "wire/piefed-1.8.11/fetched/fetched-0020-orderedcollection.json",
+      "entity": "moderators",
+      "allowed": [
+        { "path": "@context", "change": "changed", "vocabulary": "peblish.context" },
+        { "path": "totalItems", "change": "dropped", "vocabulary": "piefed.total-items" }
+      ]
+    },
+    {
+      "id": "piefed-1.8.11/inbound/inbound-0002-follow",
+      "software": { "name": "piefed", "version": "1.8.11" },
+      "type": "Follow",
+      "direction": "inbound",
+      "source": { "file": "inbound.jsonl", "line": 2, "pointer": "/body", "at": "2026-11-08T02:26:27.678Z" },
+      "fixture": "wire/piefed-1.8.11/inbound/inbound-0002-follow.json",
+      "entity": "follow",
+      "allowed": [{ "path": "@context", "change": "changed", "vocabulary": "peblish.context" }]
+    },
+    {
+      "id": "piefed-1.8.11/inbound/inbound-0008-create-note",
+      "software": { "name": "piefed", "version": "1.8.11" },
+      "type": "Create(Note)",
+      "direction": "inbound",
+      "source": { "file": "inbound.jsonl", "line": 8, "pointer": "/body", "at": "2026-11-08T02:26:36.205Z" },
+      "fixture": "wire/piefed-1.8.11/inbound/inbound-0008-create-note.json",
+      "entity": "comment",
+      "allowed": [
+        { "path": "@context", "change": "changed", "vocabulary": "peblish.context" },
+        { "path": "cc", "change": "changed", "vocabulary": "peblish.addressing" },
+        { "path": "object.attachment", "change": "added", "vocabulary": "peblish.attachment" },
+        { "path": "object.cc", "change": "changed", "vocabulary": "peblish.addressing" },
+        { "path": "object.contentMap", "change": "dropped", "vocabulary": "piefed.content-map" },
+        { "path": "object.flair", "change": "dropped", "vocabulary": "piefed.flair" },
+        { "path": "object.tag", "change": "dropped", "vocabulary": "tags" },
+        { "path": "object.url", "change": "dropped", "vocabulary": "piefed.url" }
+      ]
+    },
+    {
+      "id": "piefed-1.8.11/inbound/inbound-0009-like",
+      "software": { "name": "piefed", "version": "1.8.11" },
+      "type": "Like",
+      "direction": "inbound",
+      "source": { "file": "inbound.jsonl", "line": 9, "pointer": "/body", "at": "2026-11-08T02:26:40.573Z" },
+      "fixture": "wire/piefed-1.8.11/inbound/inbound-0009-like.json",
+      "entity": "vote",
+      "allowed": [{ "path": "@context", "change": "changed", "vocabulary": "peblish.context" }]
+    },
+    {
+      "id": "piefed-1.8.11/inbound/inbound-0010-dislike",
+      "software": { "name": "piefed", "version": "1.8.11" },
+      "type": "Dislike",
+      "direction": "inbound",
+      "source": { "file": "inbound.jsonl", "line": 10, "pointer": "/body", "at": "2026-11-08T02:26:40.711Z" },
+      "fixture": "wire/piefed-1.8.11/inbound/inbound-0010-dislike.json",
+      "entity": "vote",
+      "allowed": [{ "path": "@context", "change": "changed", "vocabulary": "peblish.context" }]
+    },
+    {
+      "id": "piefed-1.8.11/inbound/inbound-0011-undo-like",
+      "software": { "name": "piefed", "version": "1.8.11" },
+      "type": "Undo(Like)",
+      "direction": "inbound",
+      "source": { "file": "inbound.jsonl", "line": 11, "pointer": "/body", "at": "2026-11-08T02:26:41.847Z" },
+      "fixture": "wire/piefed-1.8.11/inbound/inbound-0011-undo-like.json",
+      "entity": "vote",
+      "allowed": [{ "path": "@context", "change": "changed", "vocabulary": "peblish.context" }]
+    },
+    {
+      "id": "piefed-1.8.11/inbound/inbound-0012-undo-dislike",
+      "software": { "name": "piefed", "version": "1.8.11" },
+      "type": "Undo(Dislike)",
+      "direction": "inbound",
+      "source": { "file": "inbound.jsonl", "line": 12, "pointer": "/body", "at": "2026-11-08T02:26:41.962Z" },
+      "fixture": "wire/piefed-1.8.11/inbound/inbound-0012-undo-dislike.json",
+      "entity": "vote",
+      "allowed": [{ "path": "@context", "change": "changed", "vocabulary": "peblish.context" }]
+    },
+    {
+      "id": "piefed-1.8.11/inbound/inbound-0014-create-page",
+      "software": { "name": "piefed", "version": "1.8.11" },
+      "type": "Create(Page)",
+      "direction": "inbound",
+      "source": { "file": "inbound.jsonl", "line": 14, "pointer": "/body", "at": "2026-11-08T02:26:47.747Z" },
+      "fixture": "wire/piefed-1.8.11/inbound/inbound-0014-create-page.json",
+      "entity": "post",
+      "allowed": [
+        { "path": "@context", "change": "changed", "vocabulary": "peblish.context" },
+        { "path": "cc", "change": "changed", "vocabulary": "peblish.addressing" },
+        { "path": "object.genAI", "change": "dropped", "vocabulary": "piefed.gen-ai" },
+        { "path": "object.interactionPolicy", "change": "dropped", "vocabulary": "piefed.interaction-policy" },
+        { "path": "object.tag", "change": "dropped", "vocabulary": "tags" },
+        { "path": "to", "change": "changed", "vocabulary": "peblish.addressing" }
+      ]
+    },
+    {
+      "id": "piefed-1.8.11/inbound/inbound-0017-update-page",
+      "software": { "name": "piefed", "version": "1.8.11" },
+      "type": "Update(Page)",
+      "direction": "inbound",
+      "source": { "file": "inbound.jsonl", "line": 17, "pointer": "/body", "at": "2026-11-08T02:26:50.982Z" },
+      "fixture": "wire/piefed-1.8.11/inbound/inbound-0017-update-page.json",
+      "entity": "post",
+      "allowed": [
+        { "path": "@context", "change": "changed", "vocabulary": "peblish.context" },
+        { "path": "cc", "change": "changed", "vocabulary": "peblish.addressing" },
+        { "path": "object.genAI", "change": "dropped", "vocabulary": "piefed.gen-ai" },
+        { "path": "object.interactionPolicy", "change": "dropped", "vocabulary": "piefed.interaction-policy" },
+        { "path": "object.tag", "change": "dropped", "vocabulary": "tags" },
+        { "path": "to", "change": "changed", "vocabulary": "peblish.addressing" }
+      ]
+    },
+    {
+      "id": "piefed-1.8.11/inbound/inbound-0018-delete",
+      "software": { "name": "piefed", "version": "1.8.11" },
+      "type": "Delete",
+      "direction": "inbound",
+      "source": { "file": "inbound.jsonl", "line": 18, "pointer": "/body", "at": "2026-11-08T02:26:52.040Z" },
+      "fixture": "wire/piefed-1.8.11/inbound/inbound-0018-delete.json",
+      "entity": "deletion",
+      "allowed": [{ "path": "@context", "change": "changed", "vocabulary": "peblish.context" }]
+    },
+    {
+      "id": "piefed-1.8.11/inbound/inbound-0036-accept-follow",
+      "software": { "name": "piefed", "version": "1.8.11" },
+      "type": "Accept(Follow)",
+      "direction": "inbound",
+      "source": { "file": "inbound.jsonl", "line": 36, "pointer": "/body", "at": "2026-11-08T02:27:07.520Z" },
+      "fixture": "wire/piefed-1.8.11/inbound/inbound-0036-accept-follow.json",
+      "entity": "follow",
+      "allowed": [{ "path": "@context", "change": "changed", "vocabulary": "peblish.context" }]
+    },
+    {
+      "id": "piefed-1.8.11/inbound/inbound-0037-announce-create-page",
+      "software": { "name": "piefed", "version": "1.8.11" },
+      "type": "Announce(Create(Page))",
+      "direction": "inbound",
+      "source": { "file": "inbound.jsonl", "line": 37, "pointer": "/body", "at": "2026-11-08T02:27:08.610Z" },
+      "fixture": "wire/piefed-1.8.11/inbound/inbound-0037-announce-create-page.json",
+      "entity": "post",
+      "allowed": [
+        { "path": "@context", "change": "changed", "vocabulary": "peblish.context" },
+        { "path": "object.cc", "change": "changed", "vocabulary": "peblish.addressing" },
+        { "path": "object.object.genAI", "change": "dropped", "vocabulary": "piefed.gen-ai" },
+        { "path": "object.object.interactionPolicy", "change": "dropped", "vocabulary": "piefed.interaction-policy" },
+        { "path": "object.object.tag", "change": "dropped", "vocabulary": "tags" },
+        { "path": "object.to", "change": "changed", "vocabulary": "peblish.addressing" },
+        { "path": "to", "change": "changed", "vocabulary": "peblish.addressing" }
+      ]
+    },
+    {
+      "id": "piefed-1.8.11/inbound/inbound-0038-announce-create-note",
+      "software": { "name": "piefed", "version": "1.8.11" },
+      "type": "Announce(Create(Note))",
+      "direction": "inbound",
+      "source": { "file": "inbound.jsonl", "line": 38, "pointer": "/body", "at": "2026-11-08T02:27:09.697Z" },
+      "fixture": "wire/piefed-1.8.11/inbound/inbound-0038-announce-create-note.json",
+      "entity": "comment",
+      "allowed": [
+        { "path": "@context", "change": "changed", "vocabulary": "peblish.context" },
+        { "path": "object.cc", "change": "changed", "vocabulary": "peblish.addressing" },
+        { "path": "object.object.attachment", "change": "added", "vocabulary": "peblish.attachment" },
+        { "path": "object.object.cc", "change": "changed", "vocabulary": "peblish.addressing" },
+        { "path": "object.object.contentMap", "change": "dropped", "vocabulary": "piefed.content-map" },
+        { "path": "object.object.flair", "change": "dropped", "vocabulary": "piefed.flair" },
+        { "path": "object.object.tag", "change": "dropped", "vocabulary": "tags" },
+        { "path": "object.object.url", "change": "dropped", "vocabulary": "piefed.url" }
+      ]
+    },
+    {
+      "id": "piefed-1.8.11/inbound/inbound-0039-announce-update-page",
+      "software": { "name": "piefed", "version": "1.8.11" },
+      "type": "Announce(Update(Page))",
+      "direction": "inbound",
+      "source": { "file": "inbound.jsonl", "line": 39, "pointer": "/body", "at": "2026-11-08T02:27:14.163Z" },
+      "fixture": "wire/piefed-1.8.11/inbound/inbound-0039-announce-update-page.json",
+      "entity": "post",
+      "allowed": [
+        { "path": "@context", "change": "changed", "vocabulary": "peblish.context" },
+        { "path": "object.cc", "change": "changed", "vocabulary": "peblish.addressing" },
+        { "path": "object.object.genAI", "change": "dropped", "vocabulary": "piefed.gen-ai" },
+        { "path": "object.object.interactionPolicy", "change": "dropped", "vocabulary": "piefed.interaction-policy" },
+        { "path": "object.object.tag", "change": "dropped", "vocabulary": "tags" },
+        { "path": "object.to", "change": "changed", "vocabulary": "peblish.addressing" },
+        { "path": "to", "change": "changed", "vocabulary": "peblish.addressing" }
+      ]
+    },
+    {
+      "id": "piefed-1.8.11/inbound/inbound-0040-announce-delete",
+      "software": { "name": "piefed", "version": "1.8.11" },
+      "type": "Announce(Delete)",
+      "direction": "inbound",
+      "source": { "file": "inbound.jsonl", "line": 40, "pointer": "/body", "at": "2026-11-08T02:27:15.235Z" },
+      "fixture": "wire/piefed-1.8.11/inbound/inbound-0040-announce-delete.json",
+      "entity": "deletion",
+      "allowed": [{ "path": "@context", "change": "changed", "vocabulary": "peblish.context" }]
+    },
+    {
+      "id": "piefed-1.8.11/inbound/inbound-0059-follow",
+      "software": { "name": "piefed", "version": "1.8.11" },
+      "type": "Follow",
+      "direction": "inbound",
+      "source": { "file": "inbound.jsonl", "line": 59, "pointer": "/body", "at": "2026-11-08T02:27:48.872Z" },
+      "fixture": "wire/piefed-1.8.11/inbound/inbound-0059-follow.json",
+      "entity": "follow",
+      "allowed": [{ "path": "@context", "change": "changed", "vocabulary": "peblish.context" }]
+    },
+    {
+      "id": "piefed-1.8.11/inbound/inbound-0060-create-page",
+      "software": { "name": "piefed", "version": "1.8.11" },
+      "type": "Create(Page)",
+      "direction": "inbound",
+      "source": { "file": "inbound.jsonl", "line": 60, "pointer": "/body", "at": "2026-11-08T02:27:52.301Z" },
+      "fixture": "wire/piefed-1.8.11/inbound/inbound-0060-create-page.json",
+      "entity": "post",
+      "allowed": [
+        { "path": "@context", "change": "changed", "vocabulary": "peblish.context" },
+        { "path": "cc", "change": "changed", "vocabulary": "peblish.addressing" },
+        { "path": "object.genAI", "change": "dropped", "vocabulary": "piefed.gen-ai" },
+        { "path": "object.interactionPolicy", "change": "dropped", "vocabulary": "piefed.interaction-policy" },
+        { "path": "object.tag", "change": "dropped", "vocabulary": "tags" },
+        { "path": "to", "change": "changed", "vocabulary": "peblish.addressing" }
+      ]
+    },
+    {
+      "id": "piefed-1.8.11/inbound/inbound-0061-create-note",
+      "software": { "name": "piefed", "version": "1.8.11" },
+      "type": "Create(Note)",
+      "direction": "inbound",
+      "source": { "file": "inbound.jsonl", "line": 61, "pointer": "/body", "at": "2026-11-08T02:27:59.764Z" },
+      "fixture": "wire/piefed-1.8.11/inbound/inbound-0061-create-note.json",
+      "entity": "comment",
+      "allowed": [
+        { "path": "@context", "change": "changed", "vocabulary": "peblish.context" },
+        { "path": "cc", "change": "changed", "vocabulary": "peblish.addressing" },
+        { "path": "object.attachment", "change": "added", "vocabulary": "peblish.attachment" },
+        { "path": "object.cc", "change": "changed", "vocabulary": "peblish.addressing" },
+        { "path": "object.contentMap", "change": "dropped", "vocabulary": "piefed.content-map" },
+        { "path": "object.flair", "change": "dropped", "vocabulary": "piefed.flair" },
+        { "path": "object.tag", "change": "dropped", "vocabulary": "tags" },
+        { "path": "object.url", "change": "dropped", "vocabulary": "piefed.url" }
+      ]
+    },
+    {
+      "id": "piefed-1.8.11/inbound/inbound-0062-flag",
+      "software": { "name": "piefed", "version": "1.8.11" },
+      "type": "Flag",
+      "direction": "inbound",
+      "source": { "file": "inbound.jsonl", "line": 62, "pointer": "/body", "at": "2026-11-08T02:28:01.938Z" },
+      "fixture": "wire/piefed-1.8.11/inbound/inbound-0062-flag.json",
+      "entity": "report",
+      "allowed": [{ "path": "@context", "change": "changed", "vocabulary": "peblish.context" }]
+    },
+    {
+      "id": "piefed-1.8.11/inbound/inbound-0063-accept-follow",
+      "software": { "name": "piefed", "version": "1.8.11" },
+      "type": "Accept(Follow)",
+      "direction": "inbound",
+      "source": { "file": "inbound.jsonl", "line": 63, "pointer": "/body", "at": "2026-11-08T02:28:03.133Z" },
+      "fixture": "wire/piefed-1.8.11/inbound/inbound-0063-accept-follow.json",
+      "entity": "follow",
+      "allowed": [{ "path": "@context", "change": "changed", "vocabulary": "peblish.context" }]
+    },
+    {
+      "id": "piefed-1.8.11/inbound/inbound-0064-announce-create-page",
+      "software": { "name": "piefed", "version": "1.8.11" },
+      "type": "Announce(Create(Page))",
+      "direction": "inbound",
+      "source": { "file": "inbound.jsonl", "line": 64, "pointer": "/body", "at": "2026-11-08T02:28:04.137Z" },
+      "fixture": "wire/piefed-1.8.11/inbound/inbound-0064-announce-create-page.json",
+      "entity": "post",
+      "allowed": [
+        { "path": "@context", "change": "changed", "vocabulary": "peblish.context" },
+        { "path": "object.cc", "change": "changed", "vocabulary": "peblish.addressing" },
+        { "path": "object.object.genAI", "change": "dropped", "vocabulary": "piefed.gen-ai" },
+        { "path": "object.object.interactionPolicy", "change": "dropped", "vocabulary": "piefed.interaction-policy" },
+        { "path": "object.object.tag", "change": "dropped", "vocabulary": "tags" },
+        { "path": "object.to", "change": "changed", "vocabulary": "peblish.addressing" },
+        { "path": "to", "change": "changed", "vocabulary": "peblish.addressing" }
+      ]
+    },
+    {
+      "id": "piefed-1.8.11/inbound/inbound-0065-announce-delete",
+      "software": { "name": "piefed", "version": "1.8.11" },
+      "type": "Announce(Delete)",
+      "direction": "inbound",
+      "source": { "file": "inbound.jsonl", "line": 65, "pointer": "/body", "at": "2026-11-08T02:28:05.224Z" },
+      "fixture": "wire/piefed-1.8.11/inbound/inbound-0065-announce-delete.json",
+      "entity": "deletion",
+      "allowed": [{ "path": "@context", "change": "changed", "vocabulary": "peblish.context" }]
+    },
+    {
+      "id": "piefed-1.8.11/inbound/inbound-0066-announce-undo-delete",
+      "software": { "name": "piefed", "version": "1.8.11" },
+      "type": "Announce(Undo(Delete))",
+      "direction": "inbound",
+      "source": { "file": "inbound.jsonl", "line": 66, "pointer": "/body", "at": "2026-11-08T02:28:06.292Z" },
+      "fixture": "wire/piefed-1.8.11/inbound/inbound-0066-announce-undo-delete.json",
+      "entity": "deletion",
+      "allowed": [{ "path": "@context", "change": "changed", "vocabulary": "peblish.context" }]
+    },
+    {
+      "id": "piefed-1.8.11/inbound/inbound-0067-announce-lock",
+      "software": { "name": "piefed", "version": "1.8.11" },
+      "type": "Announce(Lock)",
+      "direction": "inbound",
+      "source": { "file": "inbound.jsonl", "line": 67, "pointer": "/body", "at": "2026-11-08T02:28:07.351Z" },
+      "fixture": "wire/piefed-1.8.11/inbound/inbound-0067-announce-lock.json",
+      "entity": "lock",
+      "allowed": [{ "path": "@context", "change": "changed", "vocabulary": "peblish.context" }]
+    },
+    {
+      "id": "piefed-1.8.11/inbound/inbound-0068-announce-undo-lock",
+      "software": { "name": "piefed", "version": "1.8.11" },
+      "type": "Announce(Undo(Lock))",
+      "direction": "inbound",
+      "source": { "file": "inbound.jsonl", "line": 68, "pointer": "/body", "at": "2026-11-08T02:28:08.409Z" },
+      "fixture": "wire/piefed-1.8.11/inbound/inbound-0068-announce-undo-lock.json",
+      "entity": "lock",
+      "allowed": [{ "path": "@context", "change": "changed", "vocabulary": "peblish.context" }]
+    },
+    {
+      "id": "piefed-1.8.11/inbound/inbound-0069-announce-add",
+      "software": { "name": "piefed", "version": "1.8.11" },
+      "type": "Announce(Add)",
+      "direction": "inbound",
+      "source": { "file": "inbound.jsonl", "line": 69, "pointer": "/body", "at": "2026-11-08T02:28:09.468Z" },
+      "fixture": "wire/piefed-1.8.11/inbound/inbound-0069-announce-add.json",
+      "entity": "pin",
+      "allowed": [{ "path": "@context", "change": "changed", "vocabulary": "peblish.context" }]
+    },
+    {
+      "id": "piefed-1.8.11/inbound/inbound-0070-announce-remove",
+      "software": { "name": "piefed", "version": "1.8.11" },
+      "type": "Announce(Remove)",
+      "direction": "inbound",
+      "source": { "file": "inbound.jsonl", "line": 70, "pointer": "/body", "at": "2026-11-08T02:28:10.523Z" },
+      "fixture": "wire/piefed-1.8.11/inbound/inbound-0070-announce-remove.json",
+      "entity": "pin",
+      "allowed": [{ "path": "@context", "change": "changed", "vocabulary": "peblish.context" }]
+    },
+    {
+      "id": "piefed-1.8.11/inbound/inbound-0071-announce-block",
+      "software": { "name": "piefed", "version": "1.8.11" },
+      "type": "Announce(Block)",
+      "direction": "inbound",
+      "source": { "file": "inbound.jsonl", "line": 71, "pointer": "/body", "at": "2026-11-08T02:28:11.613Z" },
+      "fixture": "wire/piefed-1.8.11/inbound/inbound-0071-announce-block.json",
+      "entity": "ban",
+      "allowed": [
+        { "path": "@context", "change": "changed", "vocabulary": "peblish.context" },
+        { "path": "object.endTime", "change": "dropped", "vocabulary": "piefed.end-time" }
+      ]
+    },
+    {
+      "id": "piefed-1.8.11/inbound/inbound-0072-create-page",
+      "software": { "name": "piefed", "version": "1.8.11" },
+      "type": "Create(Page)",
+      "direction": "inbound",
+      "source": { "file": "inbound.jsonl", "line": 72, "pointer": "/body", "at": "2026-11-08T02:28:35.069Z" },
+      "fixture": "wire/piefed-1.8.11/inbound/inbound-0072-create-page.json",
+      "entity": "post",
+      "allowed": [
+        { "path": "@context", "change": "changed", "vocabulary": "peblish.context" },
+        { "path": "cc", "change": "changed", "vocabulary": "peblish.addressing" },
+        { "path": "object.genAI", "change": "dropped", "vocabulary": "piefed.gen-ai" },
+        { "path": "object.interactionPolicy", "change": "dropped", "vocabulary": "piefed.interaction-policy" },
+        { "path": "object.tag", "change": "dropped", "vocabulary": "tags" },
+        { "path": "to", "change": "changed", "vocabulary": "peblish.addressing" }
+      ]
+    },
+    {
+      "id": "piefed-1.8.11/inbound/inbound-0081-create-note",
+      "software": { "name": "piefed", "version": "1.8.11" },
+      "type": "Create(Note)",
+      "direction": "inbound",
+      "source": { "file": "inbound.jsonl", "line": 81, "pointer": "/body", "at": "2026-11-08T02:28:44.698Z" },
+      "fixture": "wire/piefed-1.8.11/inbound/inbound-0081-create-note.json",
+      "entity": "comment",
+      "allowed": [
+        { "path": "@context", "change": "changed", "vocabulary": "peblish.context" },
+        { "path": "cc", "change": "changed", "vocabulary": "peblish.addressing" },
+        { "path": "object.attachment", "change": "added", "vocabulary": "peblish.attachment" },
+        { "path": "object.cc", "change": "changed", "vocabulary": "peblish.addressing" },
+        { "path": "object.contentMap", "change": "dropped", "vocabulary": "piefed.content-map" },
+        { "path": "object.flair", "change": "dropped", "vocabulary": "piefed.flair" },
+        { "path": "object.tag", "change": "dropped", "vocabulary": "tags" },
+        { "path": "object.url", "change": "dropped", "vocabulary": "piefed.url" }
+      ]
+    },
+    {
+      "id": "piefed-1.8.11/inbound/inbound-0083-delete",
+      "software": { "name": "piefed", "version": "1.8.11" },
+      "type": "Delete",
+      "direction": "inbound",
+      "source": { "file": "inbound.jsonl", "line": 83, "pointer": "/body", "at": "2026-11-08T02:28:50.064Z" },
+      "fixture": "wire/piefed-1.8.11/inbound/inbound-0083-delete.json",
+      "entity": "deletion",
+      "allowed": [{ "path": "@context", "change": "changed", "vocabulary": "peblish.context" }]
+    },
+    {
+      "id": "piefed-1.8.11/inbound/inbound-0084-undo-delete",
+      "software": { "name": "piefed", "version": "1.8.11" },
+      "type": "Undo(Delete)",
+      "direction": "inbound",
+      "source": { "file": "inbound.jsonl", "line": 84, "pointer": "/body", "at": "2026-11-08T02:28:51.140Z" },
+      "fixture": "wire/piefed-1.8.11/inbound/inbound-0084-undo-delete.json",
+      "entity": "deletion",
+      "allowed": [{ "path": "@context", "change": "changed", "vocabulary": "peblish.context" }]
+    },
+    {
+      "id": "piefed-1.8.11/inbound/inbound-0085-lock",
+      "software": { "name": "piefed", "version": "1.8.11" },
+      "type": "Lock",
+      "direction": "inbound",
+      "source": { "file": "inbound.jsonl", "line": 85, "pointer": "/body", "at": "2026-11-08T02:28:52.253Z" },
+      "fixture": "wire/piefed-1.8.11/inbound/inbound-0085-lock.json",
+      "entity": "lock",
+      "allowed": [{ "path": "@context", "change": "changed", "vocabulary": "peblish.context" }]
+    },
+    {
+      "id": "piefed-1.8.11/inbound/inbound-0086-undo-lock",
+      "software": { "name": "piefed", "version": "1.8.11" },
+      "type": "Undo(Lock)",
+      "direction": "inbound",
+      "source": { "file": "inbound.jsonl", "line": 86, "pointer": "/body", "at": "2026-11-08T02:28:53.332Z" },
+      "fixture": "wire/piefed-1.8.11/inbound/inbound-0086-undo-lock.json",
+      "entity": "lock",
+      "allowed": [{ "path": "@context", "change": "changed", "vocabulary": "peblish.context" }]
+    },
+    {
+      "id": "piefed-1.8.11/inbound/inbound-0087-add",
+      "software": { "name": "piefed", "version": "1.8.11" },
+      "type": "Add",
+      "direction": "inbound",
+      "source": { "file": "inbound.jsonl", "line": 87, "pointer": "/body", "at": "2026-11-08T02:28:54.407Z" },
+      "fixture": "wire/piefed-1.8.11/inbound/inbound-0087-add.json",
+      "entity": "pin",
+      "allowed": [{ "path": "@context", "change": "changed", "vocabulary": "peblish.context" }]
+    },
+    {
+      "id": "piefed-1.8.11/inbound/inbound-0088-remove",
+      "software": { "name": "piefed", "version": "1.8.11" },
+      "type": "Remove",
+      "direction": "inbound",
+      "source": { "file": "inbound.jsonl", "line": 88, "pointer": "/body", "at": "2026-11-08T02:28:55.474Z" },
+      "fixture": "wire/piefed-1.8.11/inbound/inbound-0088-remove.json",
+      "entity": "pin",
+      "allowed": [{ "path": "@context", "change": "changed", "vocabulary": "peblish.context" }]
+    }
+  ]
+}

@@ -1,0 +1,15 @@
+{
+  "@context": ["https://join-lemmy.org/context.json", "https://www.w3.org/ns/activitystreams"],
+  "type": "Person",
+  "id": "https://lemmy.lab.test/u/lemmyuser",
+  "preferredUsername": "lemmyuser",
+  "inbox": "https://lemmy.lab.test/u/lemmyuser/inbox",
+  "outbox": "https://lemmy.lab.test/u/lemmyuser/outbox",
+  "publicKey": {
+    "id": "https://lemmy.lab.test/u/lemmyuser#main-key",
+    "owner": "https://lemmy.lab.test/u/lemmyuser",
+    "publicKeyPem": "-----BEGIN PUBLIC KEY-----\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAoyMLmVFGWdVx9uHsvNo1\ndQkWdfAl5ltD/24YUyQDAL9wNGQRjyVU+omkP9EWhxThQ81u9y0cwxk4HlaUEwPb\nQjBIsuy4F7/L7IEL+EuMhPlhUI5Nkxyy6z9Mn1DhEn0sW/zc37Yi9l2wpBxOMSCN\nBd8J5xZIeBB5aK/078gdQUyrhFPgC8+plNXqzcWdph22oCSdlJCI4uyXmFhSZrnf\nubnU4+95Bg4wk/HCw2poszfbtU4415I1tIHjpJAL8BodLfB24re9n4NHuTdLCVAr\nGGEaxrKzm2+1G2aR35ArN3fIg3GjkODFiKA+invKgABByIyDxjblwwqv4WkZ+gQD\nOQIDAQAB\n-----END PUBLIC KEY-----\n"
+  },
+  "endpoints": { "sharedInbox": "https://lemmy.lab.test/inbox" },
+  "published": "2026-11-08T02:25:31.775836Z"
+}

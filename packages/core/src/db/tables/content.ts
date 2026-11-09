@@ -29,12 +29,20 @@ export const posts = pgTable(
       .references(() => actors.id),
     title: text('title').notNull(),
     url: text('url'),
+    /** MIME type of what url points at, such as image/png for an image post (Lemmy's url_content_type). */
+    urlContentType: text('url_content_type'),
+    /** Alt text of an image post's image. */
+    altText: text('alt_text'),
+    /** Link preview image (a Page's `image`). */
+    thumbnailUrl: text('thumbnail_url'),
     /** Markdown source of a local post. */
     bodyMd: text('body_md'),
     /** Rendered (local) or sanitized (remote) HTML. */
     contentHtml: text('content_html'),
     language: text('language'),
     sensitive: boolean('sensitive').notNull().default(false),
+    /** Not safe for life (PieFed's nsfl), stronger than sensitive. */
+    nsfl: boolean('nsfl').notNull().default(false),
     locked: boolean('locked').notNull().default(false),
     featuredCommunity: boolean('featured_community').notNull().default(false),
     featuredLocal: boolean('featured_local').notNull().default(false),

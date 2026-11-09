@@ -1,0 +1,26 @@
+{
+  "@context": ["https://join-lemmy.org/context.json", "https://www.w3.org/ns/activitystreams"],
+  "actor": "https://lemmy.lab.test/c/lab",
+  "to": ["https://www.w3.org/ns/activitystreams#Public"],
+  "object": {
+    "id": "https://lemmy.lab.test/activities/undo/04dfbaa5-7128-49f9-a9e2-42c21557a65b",
+    "actor": "https://lemmy.lab.test/u/lemmyadmin",
+    "to": ["https://www.w3.org/ns/activitystreams#Public"],
+    "object": {
+      "actor": "https://lemmy.lab.test/u/lemmyadmin",
+      "to": ["https://www.w3.org/ns/activitystreams#Public"],
+      "object": "https://lemmy.lab.test/post/15",
+      "type": "Delete",
+      "id": "https://lemmy.lab.test/activities/delete/83bbc96d-32ad-486b-b961-e26438ed61d3",
+      "audience": "https://lemmy.lab.test/c/lab",
+      "cc": ["https://lemmy.lab.test/c/lab"],
+      "summary": "M1 1108022723"
+    },
+    "type": "Undo",
+    "audience": "https://lemmy.lab.test/c/lab",
+    "cc": ["https://lemmy.lab.test/c/lab"]
+  },
+  "cc": ["https://lemmy.lab.test/c/lab/followers"],
+  "type": "Announce",
+  "id": "https://lemmy.lab.test/activities/announce/undo/353ade80-a0e5-4e14-b6e7-fa9e55854dd6"
+}

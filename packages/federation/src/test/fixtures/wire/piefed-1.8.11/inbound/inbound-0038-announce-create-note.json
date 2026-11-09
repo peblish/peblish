@@ -1,0 +1,35 @@
+{
+  "id": "https://piefed.lab.test/activities/announce/6wGJ8drKgK1bo3e",
+  "type": "Announce",
+  "actor": "https://piefed.lab.test/c/pflab",
+  "object": {
+    "id": "https://piefed.lab.test/activities/create/5h2evFoR9NVGIm0",
+    "type": "Create",
+    "actor": "https://piefed.lab.test/u/pfuser",
+    "object": {
+      "id": "https://piefed.lab.test/comment/7",
+      "url": "https://piefed.lab.test/comment/7",
+      "type": "Note",
+      "attributedTo": "https://piefed.lab.test/u/pfuser",
+      "to": ["https://www.w3.org/ns/activitystreams#Public"],
+      "cc": ["https://piefed.lab.test/c/pflab", "https://piefed.lab.test/u/pfuser"],
+      "tag": [{ "href": "https://piefed.lab.test/u/pfuser", "name": "@pfuser@piefed.lab.test", "type": "Mention" }],
+      "audience": "https://piefed.lab.test/c/pflab",
+      "content": "<p>R2 native comment 1108022622</p>\n",
+      "mediaType": "text/html",
+      "source": { "content": "R2 native comment 1108022622", "mediaType": "text/markdown" },
+      "inReplyTo": "https://piefed.lab.test/c/pflab@piefed.lab.test/p/7/r2-piefed-1108022622",
+      "published": "2026-11-08T02:27:09.608749+00:00",
+      "language": { "identifier": "en", "name": "English" },
+      "contentMap": { "en": "<p>R2 native comment 1108022622</p>\n" },
+      "distinguished": false,
+      "flair": ""
+    },
+    "to": ["https://www.w3.org/ns/activitystreams#Public"],
+    "cc": ["https://piefed.lab.test/c/pflab", "https://piefed.lab.test/u/pfuser"],
+    "audience": "https://piefed.lab.test/c/pflab"
+  },
+  "to": ["https://www.w3.org/ns/activitystreams#Public"],
+  "cc": ["https://piefed.lab.test/c/pflab/followers"],
+  "@context": ["https://www.w3.org/ns/activitystreams", "https://w3id.org/security/v1"]
+}

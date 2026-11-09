@@ -72,6 +72,8 @@ export const modlog = pgTable(
       .default(sql`'{}'::jsonb`),
     /** The federated activity that carried or announced the action, when there is one. */
     activityApId: text('activity_ap_id'),
+    /** False keeps the row out of the public modlog (sensitive cases); staff still see it. */
+    public: boolean('public').notNull().default(true),
     createdAt: createdAt(),
   },
   (t) => [

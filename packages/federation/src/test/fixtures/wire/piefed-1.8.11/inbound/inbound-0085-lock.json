@@ -1,0 +1,10 @@
+{
+  "id": "https://piefed.lab.test/activities/lock/wWKI5hxiNwzKuMl",
+  "type": "Lock",
+  "actor": "https://piefed.lab.test/u/pfuser",
+  "object": "https://lemmy.lab.test/post/19",
+  "@context": ["https://www.w3.org/ns/activitystreams", "https://w3id.org/security/v1"],
+  "audience": "https://feddit.lab.test/ap/c.spike",
+  "to": ["https://www.w3.org/ns/activitystreams#Public"],
+  "cc": ["https://feddit.lab.test/ap/c.spike"]
+}

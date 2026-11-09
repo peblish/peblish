@@ -1,0 +1,39 @@
+{
+  "@context": ["https://www.w3.org/ns/activitystreams", "https://w3id.org/security/v1"],
+  "attributedTo": "https://piefed.lab.test/c/pflab/moderators",
+  "contentRetention": -1,
+  "defaultHashtag": "",
+  "defaultPostType": null,
+  "endpoints": { "sharedInbox": "https://piefed.lab.test/inbox" },
+  "featured": "https://piefed.lab.test/c/pflab/featured",
+  "followers": "https://piefed.lab.test/c/pflab/followers",
+  "genAI": false,
+  "id": "https://piefed.lab.test/c/pflab",
+  "inbox": "https://piefed.lab.test/c/pflab/inbox",
+  "language": [
+    { "identifier": "und", "name": "Undetermined" },
+    { "identifier": "en", "name": "English" }
+  ],
+  "lemmy:tagsForPosts": [],
+  "moderators": "https://piefed.lab.test/c/pflab/moderators",
+  "name": "PieFed lab",
+  "newModsWanted": false,
+  "outbox": "https://piefed.lab.test/c/pflab/outbox",
+  "postUrlType": "friendly",
+  "postingRestrictedToMods": false,
+  "postingWarning": null,
+  "preferredUsername": "pflab",
+  "privateMods": false,
+  "publicKey": {
+    "id": "https://piefed.lab.test/c/pflab#main-key",
+    "owner": "https://piefed.lab.test/c/pflab",
+    "publicKeyPem": "-----BEGIN PUBLIC KEY-----\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAuH4MD1bdHXesv3CPS5t1\nzxG72tapj2y9W0xlb6zV0BWItlAT4rO1SuVMYrwebfMnEvsDA6K2ULc4jatoni2N\nz7zXcqeiq81H9aLneUbR/JKNRKUafYdretdNSJtOY8BCqquwt+dTWnaVfd8fcIva\nZlO+kJbU9M8+IaH42FEpQ6juLUfx79/bnyTB23tiS/6PS4zDKDSQViRNSGFPOaSc\nsH7ZtjMr0+5aoY1eh/Uo+xNkWcuE6Ph6CEHgxnrfrq22jdNIZZuMo2BmtKMwls5W\n6+ufWDcCJ+3ypGcMtPGECXjYbYTjNJJCtxzxWC4Hoquu+6A3MZdZpo7IiKp+oJEF\nPQIDAQAB\n-----END PUBLIC KEY-----\n"
+  },
+  "published": "2026-11-08T02:25:32.402788+00:00",
+  "questionAnswer": false,
+  "sensitive": false,
+  "tag": [],
+  "type": "Group",
+  "updated": "2026-11-08T02:25:32.402793+00:00",
+  "url": "https://piefed.lab.test/c/pflab"
+}

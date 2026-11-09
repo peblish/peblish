@@ -1,0 +1,17 @@
+{
+  "@context": ["https://join-lemmy.org/context.json", "https://www.w3.org/ns/activitystreams"],
+  "actor": "https://lemmy.lab.test/c/lab",
+  "to": ["https://www.w3.org/ns/activitystreams#Public"],
+  "object": {
+    "id": "https://lemmy.lab.test/activities/lock/dc48cec4-fa04-43ac-860e-af7769418fce",
+    "actor": "https://lemmy.lab.test/u/lemmyadmin",
+    "to": ["https://www.w3.org/ns/activitystreams#Public"],
+    "object": "https://lemmy.lab.test/post/15",
+    "cc": ["https://lemmy.lab.test/c/lab"],
+    "type": "Lock",
+    "audience": "https://lemmy.lab.test/c/lab"
+  },
+  "cc": ["https://lemmy.lab.test/c/lab/followers"],
+  "type": "Announce",
+  "id": "https://lemmy.lab.test/activities/announce/lock/cb73c527-cf09-47e5-bd2b-8436e60b8c5e"
+}

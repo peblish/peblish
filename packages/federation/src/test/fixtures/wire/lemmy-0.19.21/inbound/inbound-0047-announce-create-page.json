@@ -1,0 +1,32 @@
+{
+  "@context": ["https://join-lemmy.org/context.json", "https://www.w3.org/ns/activitystreams"],
+  "actor": "https://lemmy.lab.test/c/lab",
+  "to": ["https://www.w3.org/ns/activitystreams#Public"],
+  "object": {
+    "id": "https://lemmy.lab.test/activities/create/8a78fce1-7684-4b16-bec9-222fcc38b8ea",
+    "actor": "https://lemmy.lab.test/u/lemmyuser",
+    "to": ["https://www.w3.org/ns/activitystreams#Public"],
+    "object": {
+      "type": "Page",
+      "id": "https://lemmy.lab.test/post/15",
+      "attributedTo": "https://lemmy.lab.test/u/lemmyuser",
+      "to": ["https://lemmy.lab.test/c/lab", "https://www.w3.org/ns/activitystreams#Public"],
+      "name": "Native mod target 1108022723",
+      "cc": [],
+      "content": "<p>Moderated by the peer.</p>\n",
+      "mediaType": "text/html",
+      "source": { "content": "Moderated by the peer.", "mediaType": "text/markdown" },
+      "attachment": [],
+      "sensitive": false,
+      "published": "2026-11-08T02:27:38.846062Z",
+      "audience": "https://lemmy.lab.test/c/lab",
+      "tag": [{ "href": "https://lemmy.lab.test/post/15", "name": "#lab", "type": "Hashtag" }]
+    },
+    "cc": ["https://lemmy.lab.test/c/lab"],
+    "type": "Create",
+    "audience": "https://lemmy.lab.test/c/lab"
+  },
+  "cc": ["https://lemmy.lab.test/c/lab/followers"],
+  "type": "Announce",
+  "id": "https://lemmy.lab.test/activities/announce/create/aebb0465-b1e2-4993-b197-74037e748900"
+}

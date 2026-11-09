@@ -1,0 +1,24 @@
+{
+  "actor": "https://lemmy.lab.test/u/lemmyuser",
+  "to": ["https://www.w3.org/ns/activitystreams#Public"],
+  "object": {
+    "type": "Page",
+    "id": "https://lemmy.lab.test/post/21",
+    "attributedTo": "https://lemmy.lab.test/u/lemmyuser",
+    "to": ["https://lemmy.lab.test/c/lab", "https://www.w3.org/ns/activitystreams#Public"],
+    "name": "Authz T2 1108022858",
+    "cc": [],
+    "content": "<p>Target in !lab.</p>\n",
+    "mediaType": "text/html",
+    "source": { "content": "Target in !lab.", "mediaType": "text/markdown" },
+    "attachment": [],
+    "sensitive": false,
+    "published": "2026-11-08T02:29:01.531385Z",
+    "audience": "https://lemmy.lab.test/c/lab",
+    "tag": [{ "href": "https://lemmy.lab.test/post/21", "name": "#lab", "type": "Hashtag" }]
+  },
+  "cc": ["https://lemmy.lab.test/c/lab"],
+  "type": "Create",
+  "id": "https://lemmy.lab.test/activities/create/406d77f8-781b-4607-98d7-1e61756674e6",
+  "audience": "https://lemmy.lab.test/c/lab"
+}

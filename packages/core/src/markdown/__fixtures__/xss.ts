@@ -1,0 +1,219 @@
+// Hostile inputs for the XSS corpus test (xss.test.ts). The HTML vectors follow the OWASP
+// XSS Filter Evasion Cheat Sheet, plus mutation-XSS shapes (namespace confusion, raw text
+// elements) and URL tricks; the Markdown vectors cover what the dialect adds. Every vector
+// goes through both paths: sanitizeRemoteHtml and renderMarkdown.
+
+const entities = (text: string, form: (code: number) => string) => [...text].map((c) => form(c.charCodeAt(0))).join('');
+const js = "javascript:alert('XSS')";
+
+export const htmlVectors: string[] = [
+  // Script elements, in every spelling.
+  '<script>alert(1)</script>',
+  '<SCRIPT SRC=https://xss.example/xss.js></SCRIPT>',
+  '<SCRIPT/XSS SRC="https://xss.example/xss.js"></SCRIPT>',
+  '<<SCRIPT>alert("XSS");//\\<</SCRIPT>',
+  '<SCRIPT SRC=https://xss.example/xss.js?< B >',
+  '<SCRIPT SRC=//xss.example/.j>',
+  '<IMG """><SCRIPT>alert("XSS")</SCRIPT>"\\>',
+  '</TITLE><SCRIPT>alert("XSS");</SCRIPT>',
+  "\\\";alert('XSS');//",
+  // javascript: URLs, with case, quoting, entity and whitespace evasions.
+  `<IMG SRC="${js};">`,
+  "<IMG SRC=javascript:alert('XSS')>",
+  "<IMG SRC=JaVaScRiPt:alert('XSS')>",
+  '<IMG SRC=javascript:alert(&quot;XSS&quot;)>',
+  '<IMG SRC=`javascript:alert("RSnake says, \'XSS\'")`>',
+  '<IMG SRC=javascript:alert(String.fromCharCode(88,83,83))>',
+  `<IMG SRC=${entities(js, (c) => `&#${c};`)}>`,
+  `<IMG SRC=${entities(js, (c) => `&#${String(c).padStart(7, '0')}`)}>`,
+  `<IMG SRC=${entities(js, (c) => `&#x${c.toString(16).toUpperCase()}`)}>`,
+  `<a href="${entities('javascript:alert(1)', (c) => `&#${c}`)}">no semicolons</a>`,
+  '<IMG SRC="jav\tascript:alert(\'XSS\');">',
+  '<IMG SRC="jav&#x09;ascript:alert(\'XSS\');">',
+  '<IMG SRC="jav&#x0A;ascript:alert(\'XSS\');">',
+  '<IMG SRC="jav&#x0D;ascript:alert(\'XSS\');">',
+  '<IMG SRC=" &#14;  javascript:alert(\'XSS\');">',
+  '<a href="&#x6A;avascript:alert(1)">entity scheme</a>',
+  '<a href="javascript&colon;alert(1)">named colon</a>',
+  '<a href="jav&Tab;ascript:alert(1)">named tab</a>',
+  '<a href=" javascript:alert(1)">leading space</a>',
+  '<a href="java\u0000script:alert(1)">nul</a>',
+  '<a href="https://ok.example/" title="a\u0000b">nul title</a><img src="https://ok.example/a.png" alt="c\u0000d" title="\u0000">',
+  '<scr\u0000ipt>alert(1)</scr\u0000ipt><p\u0000 class="x">nul in names</p>',
+  '<a href="\u0001javascript:alert(1)">control prefix</a>',
+  '<IMG SRC=\'vbscript:msgbox("XSS")\'>',
+  '<a href="vbscript:msgbox(1)">vb</a><a href="file:///etc/passwd">file</a><a href="blob:https://ok.example/x">blob</a>',
+  // data: URLs.
+  '<a href="data:text/html;base64,PHNjcmlwdD5hbGVydCgxKTwvc2NyaXB0Pg==">data link</a>',
+  '<img src="data:image/svg+xml;base64,PHN2ZyBvbmxvYWQ9YWxlcnQoMSk+">',
+  '<img src="data:image/png;base64,iVBORw0KGgo=">',
+  '<META HTTP-EQUIV="refresh" CONTENT="0;url=data:text/html base64,PHNjcmlwdD5hbGVydCgnWFNTJyk8L3NjcmlwdD4K">',
+  // Protocol-relative and other off-origin tricks.
+  '<a href="//evil.example/x">protocol relative</a><img src="//evil.example/a.png">',
+  '<a href="\\\\evil.example/x">backslashes</a><a href="/\\evil.example/x">slash backslash</a>',
+  // The same onto the base's own host (https://ok.example in the test), and a backslashed scheme.
+  '<a href="//ok.example/x">a</a><a href="\\\\ok.example/x">b</a><a href="/\\ok.example/x">c</a><a href="\\/ok.example/x">d</a>',
+  '<a href="https:\\\\evil.example/x">e</a><a href="https:/\\evil.example/x">f</a><a href="https://ok.example\\@evil.example/">g</a>',
+  '<a href="&#47;&#47;ok.example/x">h</a><a href="&#92;&#92;ok.example/x">i</a><a href="/&#9;/ok.example/x">j</a><a href=" //ok.example/x">k</a>',
+  '<img src="//ok.example/a.png" alt="l"><img src="\\\\ok.example/b.png" alt="m"><img src="https:\\\\evil.example/c.png" alt="n">',
+  '<a href="https://user:pass@evil.example/">credentials</a>',
+  // Event handlers.
+  '<a onmouseover="alert(document.cookie)">xxs link</a>',
+  '<a onmouseover=alert(document.cookie)>xxs link</a>',
+  '<IMG SRC=# onmouseover="alert(\'xxs\')">',
+  '<IMG SRC= onmouseover="alert(\'xxs\')">',
+  '<IMG onmouseover="alert(\'xxs\')">',
+  '<IMG SRC=/ onerror="alert(String.fromCharCode(88,83,83))"></img>',
+  `<img src=x onerror="${entities("javascript:alert('XSS')", (c) => `&#${String(c).padStart(7, '0')}`)}">`,
+  '<img src="https://ok.example/a.png"/onerror=alert(1)>',
+  '<img src="https://ok.example/a.png" onerror="alert(1)" srcset="javascript:alert(1) 1x">',
+  '<BODY onload!#$%&()*~+-_.,:;?@[/|\\]^`=alert("XSS")>',
+  '<details open ontoggle=alert(1)><summary>x</summary>body</details>',
+  "<svg/onload=alert('XSS')>",
+  '<marquee onstart=alert(1)>m</marquee><video><source onerror=alert(1)></video><audio src=x onerror=alert(1)>',
+  '<keygen autofocus onfocus=alert(1)><isindex type=image src=1 onerror=alert(1)>',
+  // Elements that load or run things.
+  '<iframe src=https://xss.example/scriptlet.html <',
+  '<IFRAME SRC="javascript:alert(\'XSS\');"></IFRAME>',
+  '<FRAMESET><FRAME SRC="javascript:alert(\'XSS\');"></FRAMESET>',
+  '<OBJECT TYPE="text/x-scriptlet" DATA="https://xss.example/scriptlet.html"></OBJECT>',
+  '<object data="javascript:alert(1)"></object><embed src="javascript:alert(1)">',
+  '<EMBED SRC="data:image/svg+xml;base64,PHN2ZyBvbmxvYWQ9YWxlcnQoMSk+" type="image/svg+xml" AllowScriptAccess="always"></EMBED>',
+  '<INPUT TYPE="IMAGE" SRC="javascript:alert(\'XSS\');">',
+  '<BODY BACKGROUND="javascript:alert(\'XSS\')">',
+  '<IMG DYNSRC="javascript:alert(\'XSS\')"><IMG LOWSRC="javascript:alert(\'XSS\')">',
+  '<BGSOUND SRC="javascript:alert(\'XSS\');">',
+  '<LINK REL="stylesheet" HREF="javascript:alert(\'XSS\');">',
+  '<META HTTP-EQUIV="refresh" CONTENT="0;url=javascript:alert(\'XSS\');">',
+  '<TABLE BACKGROUND="javascript:alert(\'XSS\')"><TD BACKGROUND="javascript:alert(\'XSS\')">',
+  '<BASE HREF="javascript:alert(\'XSS\');//">',
+  '<form action="javascript:alert(1)"><button formaction="javascript:alert(1)">x</button></form>',
+  // Styles.
+  '<STYLE>li {list-style-image: url("javascript:alert(\'XSS\')");}</STYLE><UL><LI>XSS</br>',
+  '<DIV STYLE="background-image: url(javascript:alert(\'XSS\'))">bg</DIV>',
+  '<DIV STYLE="width: expression(alert(\'XSS\'));">expr</DIV>',
+  '<IMG STYLE="xss:expr/*XSS*/ession(alert(\'XSS\'))">',
+  '<a href="https://ok.example/" style="position:fixed;top:0;left:0;width:100%;height:100%">overlay</a>',
+  '<td style="text-align:left;background:url(javascript:alert(1))">cell</td>',
+  // Mutation XSS: foreign content and raw text elements.
+  '<svg><script>alert(1)</script></svg>',
+  '<svg><a xlink:href="javascript:alert(1)"><text>x</text></a></svg>',
+  '<svg><style><img src=x onerror=alert(1)></style></svg>',
+  '<math><mtext><table><mglyph><style><img src=x onerror=alert(1)>',
+  '<math><mi><mglyph><svg><mtext><textarea><path id="</textarea><img onerror=alert(1) src=1>">',
+  '<noscript><p title="</noscript><img src=x onerror=alert(1)>">',
+  '<template><script>alert(1)</script></template>',
+  '<textarea><script>alert(1)</script></textarea>',
+  '<title><img src=x onerror=alert(1)></title>',
+  '<xmp><img src=x onerror=alert(1)></xmp>',
+  '<plaintext><img src=x onerror=alert(1)>',
+  '<!--<img src=x onerror=alert(1)>-->',
+  '<!--><img src=x onerror=alert(1)>-->',
+  '<![CDATA[<script>alert(1)</script>]]>',
+  '<?xml-stylesheet href="javascript:alert(1)"?>',
+  // Attribute and text breakouts.
+  "<a title='\"><script>alert(1)</script>'>x</a>",
+  '<a href="https://ok.example/?q=&quot;&gt;&lt;script&gt;alert(1)&lt;/script&gt;">x</a>',
+  '<img alt="&quot; onerror=&quot;alert(1)" src="https://ok.example/a.png">',
+  '<a href="https://ok.example/" target="_blank" rel="opener">target</a>',
+  '<a href="javascript:alert(1)" xlink:href="javascript:alert(1)">xlink</a>',
+  // DOM clobbering.
+  '<p id="location">clobber</p><img name="getElementById" src="https://ok.example/a.png"><form name="cookie"></form>',
+  // Peer shapes with handlers added.
+  '<span class="h-card"><a href="https://mastodon.example/@a" class="u-url mention" onclick="x()">@<span>a</span></a></span>',
+  '<pre style="background-color:#ffffff;"><span style="color:#323232;" onmouseover="alert(1)">code</span></pre>',
+  '<tg-spoiler onclick="alert(1)">secret</tg-spoiler>',
+  // Structure abuse.
+  `${'<div>'.repeat(2000)}<a href="javascript:alert(1)">deep</a>`,
+  // At the depth cap: an image shown as a link, and table parts a browser wraps in tbody and tr.
+  `${'<div>'.repeat(32)}<img src="https://ok.example/a.png" alt="a">`,
+  `${'<div>'.repeat(29)}<table><tr><td>x</td></tr></table>`,
+  `${'<div>'.repeat(29)}<table><td>x</td></table>`,
+  '<a href="https://ok.example/"><img src=x onerror=alert(1)',
+  '<a href="https://ok.example/"><a href="javascript:alert(1)">nested</a></a>',
+];
+
+/**
+ * Unknown elements (unwrapped, so a browser reading the output never sees them) around an
+ * element that closes an open one: a block in a paragraph, a list item or cell after
+ * another. The sanitiser must close it as a browser reading the output would.
+ */
+export const wrapperVectors: string[] = [
+  '<p><x><div>x</div></x></p>',
+  '<p><font><blockquote>quote</blockquote></font>after</p>',
+  '<p><center><h1>title</h1></center></p>',
+  '<p><x><p>inner</p></x>outer</p>',
+  '<p>a<x><hr>b</x></p>',
+  '<p><x><table><tbody><tr><td>c</td></tr></tbody></table></x></p>',
+  '<ul><li>a<x><li>b</x></li></ul>',
+  '<ol><li><x><p>a</p><li>b</x></ol>',
+  '<table><tbody><tr><td>a<x><td>b</x></td></tr><x><tr><td>c</td></tr></x></tbody></table>',
+  '<table><thead><tr><th>h</th></tr><x><tbody><tr><td>c</td></tr></tbody></x></thead></table>',
+  '<ruby>a<x><rt>b<x><rt>c</ruby>',
+  // The span is unwrapped by the depth cap rather than the allowlist.
+  `${'<div>'.repeat(31)}<p><span><div>capped</div></span></p>`,
+];
+
+export const markdownVectors: string[] = [
+  // javascript: URLs in links and images.
+  '[x](javascript:alert(1))',
+  '[x](JaVaScRiPt:alert(1))',
+  '[x](javascript&#58;alert(1))',
+  '[x](&#x6A;avascript:alert(1))',
+  '[x](javascript:alert&#40;1&#41;)',
+  '[x](<javascript:alert(1)>)',
+  '[x]( javascript:alert(1))',
+  '[x][r]\n\n[r]: javascript:alert(1)',
+  '![x](javascript:alert(1))',
+  '![x](JAVASCRIPT:alert(1) "t")',
+  '<javascript:alert(1)>',
+  '[x](vbscript:msgbox(1)) [y](file:///etc/passwd)',
+  // data: and protocol-relative URLs.
+  '[x](data:text/html;base64,PHNjcmlwdD4=)',
+  '![x](data:image/svg+xml;base64,PHN2ZyBvbmxvYWQ9YWxlcnQoMSk+)',
+  '![x](data:image/png;base64,iVBORw0KGgo=)',
+  '[x](//evil.example/x) ![y](//evil.example/a.png)',
+  '[x](\\\\evil.example/x)',
+  '[x](//ok.example/x) ![y](//ok.example/a.png) [z](https:\\\\evil.example/x)',
+  // Unicode and percent escapes.
+  '[x](\\u006Aavascript:alert(1))',
+  '[x](java%0ascript:alert(1)) [y](jav%61script:alert(1))',
+  '[x](ｊａｖａｓｃｒｉｐｔ:alert(1))',
+  '[x](java\u200Bscript:alert(1))',
+  '[x](https://ok.example/\u202Egpj.exe)',
+  'https://ok.example/\u0000x javascript:alert(1)',
+  '[x](https://ok.example/ "t\u0000t") ![a\u0000b](https://ok.example/a.png "\u0000")',
+  // HTML in Markdown.
+  '<script>alert(1)</script>',
+  '<img src=x onerror=alert(1)>',
+  '<details open ontoggle=alert(1)>x</details>',
+  '`<script>alert(1)</script>` and `<img src=x onerror=alert(1)>`',
+  '```html\n<script>alert(1)</script>\n```',
+  '```"><script>alert(1)</script>\ncode\n```',
+  '    <script>alert(1)</script>',
+  // Attribute injection through link titles, alt text and destinations.
+  '[x](https://ok.example/"onmouseover="alert(1))',
+  '[x](https://ok.example/ "title\\" onmouseover=\\"alert(1)")',
+  '![x" onerror="alert(1)](https://ok.example/a.png)',
+  '![a :: width=100"onerror=alert(1) height=1](https://ok.example/a.png)',
+  '[&lt;script&gt;alert(1)&lt;/script&gt;](https://ok.example/)',
+  // Spoilers, nested and with hostile titles.
+  '::: spoiler <img src=x onerror=alert(1)>\n::: spoiler <script>alert(1)</script>\nx [y](javascript:alert(1))\n:::\n:::',
+  `${'::: spoiler a\n'.repeat(300)}deep${'\n:::'.repeat(300)}`,
+  '::: spoiler "><script>alert(1)</script>\nbody\n:::',
+  // Footnotes.
+  'x[^<script>alert(1)</script>]\n\n[^<script>alert(1)</script>]: <img src=x onerror=alert(1)>',
+  'x[^1]\n\n[^1]: [y](javascript:alert(1)) ![z](javascript:alert(2))',
+  'x[^a" onclick="alert(1)]\n\n[^a" onclick="alert(1)]: note',
+  'inline^[<script>alert(1)</script>[y](javascript:alert(1))]',
+  // Tables.
+  '| a | b |\n| - | - |\n| <script>alert(1)</script> | [x](javascript:alert(1)) |\n| <img src=x onerror=alert(1)> | `|` |',
+  '| a |\n| :-: |\n| x |" style="background:red |',
+  // Mentions and emoji.
+  '@"><script>@evil.example and !<img/src=x/onerror=alert(1)>@evil.example',
+  ':xss: :proto: :__proto__: :constructor:',
+  // Deep nesting.
+  `${'> '.repeat(500)}deep quote`,
+  `${'- '.repeat(500)}deep list`,
+  `${'*'.repeat(5000)}x${'*'.repeat(5000)}`,
+];

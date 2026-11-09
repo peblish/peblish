@@ -1,0 +1,39 @@
+{
+  "@context": ["https://www.w3.org/ns/activitystreams", "https://w3id.org/security/v1"],
+  "id": "https://feddit.lab.test/ap/activities/announce/10ce7569-f0bf-442a-8bf9-dfe999ecf0a6",
+  "type": "Announce",
+  "actor": "https://feddit.lab.test/ap/c.spike",
+  "to": ["https://www.w3.org/ns/activitystreams#Public"],
+  "cc": ["https://feddit.lab.test/ap/c.spike/followers"],
+  "object": {
+    "cc": [],
+    "id": "https://piefed.lab.test/activities/create/GCvSHzAZReZ4qfW",
+    "to": ["https://feddit.lab.test/ap/c.spike", "https://www.w3.org/ns/activitystreams#Public"],
+    "type": "Create",
+    "actor": "https://piefed.lab.test/u/pfuser",
+    "object": {
+      "cc": [],
+      "id": "https://piefed.lab.test/c/spike@feddit.lab.test/p/12/peer-post-piefed-1108022723",
+      "to": ["https://feddit.lab.test/ap/c.spike", "https://www.w3.org/ns/activitystreams#Public"],
+      "tag": [],
+      "name": "Peer post piefed 1108022723",
+      "nsfl": false,
+      "type": "Page",
+      "genAI": false,
+      "source": { "content": "To be removed by Feddit's moderator.", "mediaType": "text/markdown" },
+      "content": "<p>To be removed by Feddit’s moderator.</p>\n",
+      "audience": "https://feddit.lab.test/ap/c.spike",
+      "language": { "name": "English", "identifier": "en" },
+      "stickied": false,
+      "mediaType": "text/html",
+      "published": "2026-11-08T02:27:52.145297+00:00",
+      "sensitive": false,
+      "attachment": [],
+      "attributedTo": "https://piefed.lab.test/u/pfuser",
+      "commentsEnabled": true,
+      "interactionPolicy": { "canQuote": { "automaticApproval": ["https://www.w3.org/ns/activitystreams#Public"] } }
+    },
+    "@context": ["https://www.w3.org/ns/activitystreams", "https://w3id.org/security/v1"],
+    "audience": "https://feddit.lab.test/ap/c.spike"
+  }
+}

@@ -1,0 +1,39 @@
+{
+  "@context": ["https://www.w3.org/ns/activitystreams", "https://w3id.org/security/v1"],
+  "id": "https://feddit.lab.test/ap/activities/announce/7efc99d2-3b3a-4623-99e8-6a8c08721821",
+  "type": "Announce",
+  "actor": "https://feddit.lab.test/ap/c.spike",
+  "to": ["https://www.w3.org/ns/activitystreams#Public"],
+  "cc": ["https://feddit.lab.test/ap/c.spike/followers"],
+  "object": {
+    "cc": [],
+    "id": "https://piefed.lab.test/activities/create/X8rU55Y6JGnrutp",
+    "to": ["https://feddit.lab.test/ap/c.spike", "https://www.w3.org/ns/activitystreams#Public"],
+    "type": "Create",
+    "actor": "https://piefed.lab.test/u/pfuser",
+    "object": {
+      "cc": [],
+      "id": "https://piefed.lab.test/c/spike@feddit.lab.test/p/14/p-target-piefed-1108022723",
+      "to": ["https://feddit.lab.test/ap/c.spike", "https://www.w3.org/ns/activitystreams#Public"],
+      "tag": [],
+      "name": "P target piefed 1108022723",
+      "nsfl": false,
+      "type": "Page",
+      "genAI": false,
+      "source": { "content": "Moderated by a remote moderator.", "mediaType": "text/markdown" },
+      "content": "<p>Moderated by a remote moderator.</p>\n",
+      "audience": "https://feddit.lab.test/ap/c.spike",
+      "language": { "name": "English", "identifier": "en" },
+      "stickied": false,
+      "mediaType": "text/html",
+      "published": "2026-11-08T02:28:34.902947+00:00",
+      "sensitive": false,
+      "attachment": [],
+      "attributedTo": "https://piefed.lab.test/u/pfuser",
+      "commentsEnabled": true,
+      "interactionPolicy": { "canQuote": { "automaticApproval": ["https://www.w3.org/ns/activitystreams#Public"] } }
+    },
+    "@context": ["https://www.w3.org/ns/activitystreams", "https://w3id.org/security/v1"],
+    "audience": "https://feddit.lab.test/ap/c.spike"
+  }
+}

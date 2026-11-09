@@ -1,0 +1,26 @@
+{
+  "@context": ["https://www.w3.org/ns/activitystreams", "https://w3id.org/security/v1"],
+  "id": "https://feddit.lab.test/ap/activities/announce/51649da1-07c2-42b5-bda5-b0410304c116",
+  "type": "Announce",
+  "actor": "https://feddit.lab.test/ap/c.spike",
+  "to": ["https://www.w3.org/ns/activitystreams#Public"],
+  "cc": ["https://feddit.lab.test/ap/c.spike/followers"],
+  "object": {
+    "@context": "https://www.w3.org/ns/activitystreams",
+    "id": "https://feddit.lab.test/ap/activities/undo/e823b768-0842-44b5-ba69-18f2ad0a36b0",
+    "type": "Undo",
+    "object": {
+      "cc": ["https://feddit.lab.test/ap/c.spike"],
+      "id": "https://feddit.lab.test/ap/activities/lock/763b6cd1-b97e-4747-af95-c122f41a9119",
+      "to": ["https://www.w3.org/ns/activitystreams#Public"],
+      "type": "Lock",
+      "actor": "https://feddit.lab.test/ap/u.alice",
+      "object": "https://feddit.lab.test/ap/post/21",
+      "audience": "https://feddit.lab.test/ap/c.spike"
+    },
+    "actor": "https://feddit.lab.test/ap/u.alice",
+    "to": ["https://www.w3.org/ns/activitystreams#Public"],
+    "cc": ["https://feddit.lab.test/ap/c.spike"],
+    "audience": "https://feddit.lab.test/ap/c.spike"
+  }
+}

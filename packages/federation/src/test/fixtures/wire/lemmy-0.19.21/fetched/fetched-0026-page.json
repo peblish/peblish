@@ -1,0 +1,17 @@
+{
+  "@context": ["https://join-lemmy.org/context.json", "https://www.w3.org/ns/activitystreams"],
+  "type": "Page",
+  "id": "https://lemmy.lab.test/post/20",
+  "attributedTo": "https://lemmy.lab.test/u/lemmyuser",
+  "to": ["https://feddit.lab.test/ap/c.spike", "https://www.w3.org/ns/activitystreams#Public"],
+  "name": "Authz T1 1108022858",
+  "cc": [],
+  "content": "<p>Target in !spike.</p>\n",
+  "mediaType": "text/html",
+  "source": { "content": "Target in !spike.", "mediaType": "text/markdown" },
+  "attachment": [],
+  "sensitive": false,
+  "published": "2026-11-08T02:29:01.444578Z",
+  "audience": "https://feddit.lab.test/ap/c.spike",
+  "tag": [{ "href": "https://lemmy.lab.test/post/20", "name": "#spike", "type": "Hashtag" }]
+}

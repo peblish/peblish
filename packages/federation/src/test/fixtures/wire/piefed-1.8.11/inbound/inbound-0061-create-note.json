@@ -1,0 +1,28 @@
+{
+  "id": "https://piefed.lab.test/activities/create/IoRl3rIS6rL1jvP",
+  "type": "Create",
+  "actor": "https://piefed.lab.test/u/pfuser",
+  "object": {
+    "id": "https://piefed.lab.test/comment/11",
+    "url": "https://piefed.lab.test/comment/11",
+    "type": "Note",
+    "attributedTo": "https://piefed.lab.test/u/pfuser",
+    "to": ["https://www.w3.org/ns/activitystreams#Public"],
+    "cc": ["https://feddit.lab.test/ap/c.spike", "https://feddit.lab.test/ap/u.alice"],
+    "tag": [{ "href": "https://feddit.lab.test/ap/u.alice", "name": "@alice@feddit.lab.test", "type": "Mention" }],
+    "audience": "https://feddit.lab.test/ap/c.spike",
+    "content": "<p>ban probe 1794104879666</p>\n",
+    "mediaType": "text/html",
+    "source": { "content": "ban probe 1794104879666", "mediaType": "text/markdown" },
+    "inReplyTo": "https://feddit.lab.test/ap/post/25",
+    "published": "2026-11-08T02:27:59.687074+00:00",
+    "language": { "identifier": "en", "name": "English" },
+    "contentMap": { "en": "<p>ban probe 1794104879666</p>\n" },
+    "distinguished": false,
+    "flair": ""
+  },
+  "to": ["https://www.w3.org/ns/activitystreams#Public"],
+  "cc": ["https://feddit.lab.test/ap/c.spike", "https://feddit.lab.test/ap/u.alice"],
+  "@context": ["https://www.w3.org/ns/activitystreams", "https://w3id.org/security/v1"],
+  "audience": "https://feddit.lab.test/ap/c.spike"
+}

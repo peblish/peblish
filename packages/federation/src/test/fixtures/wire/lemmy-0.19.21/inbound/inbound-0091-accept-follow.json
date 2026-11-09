@@ -1,0 +1,14 @@
+{
+  "@context": ["https://join-lemmy.org/context.json", "https://www.w3.org/ns/activitystreams"],
+  "actor": "https://lemmy.lab.test/c/lab",
+  "to": ["https://feddit.lab.test/ap/u.n1108022858"],
+  "object": {
+    "actor": "https://feddit.lab.test/ap/u.n1108022858",
+    "to": null,
+    "object": "https://lemmy.lab.test/c/lab",
+    "type": "Follow",
+    "id": "https://feddit.lab.test/ap/activities/follow/72f25465-0819-4578-baa2-e416e6116227"
+  },
+  "type": "Accept",
+  "id": "https://lemmy.lab.test/activities/accept/f6412b10-d36a-4e83-9c56-3d58ec84cff5"
+}

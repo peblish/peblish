@@ -10,8 +10,8 @@ WORKDIR /app
 
 # Dependencies first, keyed on the lockfile only: pnpm fetch fills the store without the
 # package manifests, so source changes keep this layer cached.
-# vendor/muxui/ holds the packed Mux rc once root swaps it in (vendor/muxui/README.md): a
-# file: tarball dependency must be in the context before pnpm fetch reads the lockfile.
+# vendor/muxui/ holds the packed Mux rc that packages/ui depends on (vendor/muxui/README.md):
+# a file: tarball dependency must be in place before pnpm fetch reads the lockfile.
 FROM base AS deps
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .npmrc ./
 COPY vendor/muxui/ ./vendor/muxui/
@@ -19,6 +19,7 @@ RUN --mount=type=cache,id=pnpm-store,target=/root/.local/share/pnpm/store pnpm f
 
 FROM deps AS build
 COPY . .
+# Offline: every package, the vendored Mux tarball included, is already in the store pnpm fetch filled.
 RUN --mount=type=cache,id=pnpm-store,target=/root/.local/share/pnpm/store pnpm install --offline --frozen-lockfile
 RUN pnpm build
 

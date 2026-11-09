@@ -1,0 +1,22 @@
+{
+  "@context": ["https://join-lemmy.org/context.json", "https://www.w3.org/ns/activitystreams"],
+  "type": "Group",
+  "id": "https://lemmy.lab.test/c/lab",
+  "preferredUsername": "lab",
+  "inbox": "https://lemmy.lab.test/c/lab/inbox",
+  "followers": "https://lemmy.lab.test/c/lab/followers",
+  "publicKey": {
+    "id": "https://lemmy.lab.test/c/lab#main-key",
+    "owner": "https://lemmy.lab.test/c/lab",
+    "publicKeyPem": "-----BEGIN PUBLIC KEY-----\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAqN+ElOdLnQXV8f7NwoQO\n9uCNpqG9g5A4rTGIJFznGn7aB6IAf0Ck7J8eeQWl/WezTdbRtuMuOCrmKf5epW0w\nbIIRAUesclJT0xx27cyadGx+iu5MUt/VScqfRFeymgwBQBLMFpY3Cl0yPtCk2bt7\n6r540nWGfNILMj9fbRhAJYoOgqv6xkLdLN5mTrResqqdZ5McautwhvgFUnZbJ3JV\nD9xNRi9UP/2n0kDoWTnJHF32ZTtPfaZnUrF5u7+5yWfd2IT0arK35TU/dvLhDF+X\noV6oyUHYrfnA218X6DIIRpFWphaOsToiNcjzyeGzGZXmlZxDFHWgsDkWnnUKkgL4\n6wIDAQAB\n-----END PUBLIC KEY-----\n"
+  },
+  "name": "Lemmy lab",
+  "sensitive": false,
+  "attributedTo": "https://lemmy.lab.test/c/lab/moderators",
+  "postingRestrictedToMods": false,
+  "outbox": "https://lemmy.lab.test/c/lab/outbox",
+  "endpoints": { "sharedInbox": "https://lemmy.lab.test/inbox" },
+  "featured": "https://lemmy.lab.test/c/lab/featured",
+  "language": [],
+  "published": "2026-11-08T02:25:32.170964Z"
+}

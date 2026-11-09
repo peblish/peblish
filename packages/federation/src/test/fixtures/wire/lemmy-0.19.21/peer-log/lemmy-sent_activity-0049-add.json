@@ -1,0 +1,10 @@
+{
+  "actor": "https://lemmy.lab.test/u/lemmyadmin",
+  "to": ["https://www.w3.org/ns/activitystreams#Public"],
+  "object": "https://lemmy.lab.test/post/15",
+  "target": "https://lemmy.lab.test/c/lab/featured",
+  "cc": ["https://lemmy.lab.test/c/lab"],
+  "type": "Add",
+  "id": "https://lemmy.lab.test/activities/add/b1fd5796-3a51-406c-837a-05eb1665f322",
+  "audience": "https://lemmy.lab.test/c/lab"
+}

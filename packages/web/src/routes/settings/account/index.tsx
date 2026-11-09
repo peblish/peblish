@@ -1,0 +1,122 @@
+import { auth, authErrorCode } from '@peblish/core/identity/auth';
+import { deleteAccountAs } from '@peblish/core/identity/delete';
+import { localHandles } from '@peblish/core/identity/handles';
+import { attempt } from '@peblish/core/identity/throttle';
+import { Button } from '@peblish/ui/components/button';
+import { createFileRoute, Link, redirect } from '@tanstack/react-router';
+import { createServerFn } from '@tanstack/react-start';
+import { type } from 'arktype';
+import { useTranslate } from '../../../i18n/use-translate.ts';
+import {
+  clientIp,
+  forbidden,
+  formSession,
+  forwardedHeaders,
+  pageSession,
+  principalOf,
+  readForm,
+  sameOrigin,
+  signedOutCookies,
+} from '../../../server/auth.ts';
+import { useRouteHydrated } from '../../../shell/hydration.ts';
+import { asFormError } from '../../auth/-ui/errors.ts';
+import { AuthForm, Field } from '../../auth/-ui/form.tsx';
+import { authHead, SearchText, useDate } from '../../auth/-ui/page.tsx';
+import { SettingsLayout } from './-nav.tsx';
+
+const Search = type({ 'error?': SearchText });
+const Body = type({ intent: "'delete'", confirm: 'string', password: 'string' });
+
+const loadAccount = createServerFn({ method: 'GET' }).handler(async () => {
+  const session = await pageSession();
+  if (!session) throw redirect({ to: '/auth/sign-in', search: { redirect: '/settings/account' } });
+  const { handle } = await localHandles();
+  return { ...session.view, handle: handle(session.view.name).handle, email: session.email, admin: session.role === 'admin' };
+});
+
+export const Route = createFileRoute('/settings/account/')({
+  validateSearch: Search,
+  loader: () => loadAccount(),
+  head: authHead,
+  component: Account,
+  server: {
+    handlers: {
+      // Deleting the account: the username typed again and the password, then account.delete.
+      POST: async ({ request }) => {
+        if (!sameOrigin(request)) return forbidden();
+        const { session, reply } = await formSession(request);
+        if (!session) return reply({ redirect: '/auth/sign-in?redirect=%2Fsettings%2Faccount' });
+        const body = Body(await readForm(request));
+        const back = { back: '/settings/account' };
+        if (body instanceof type.errors) return reply({ error: 'form.invalid', ...back });
+        if (body.confirm.trim() !== session.view.name) return reply({ error: 'confirm.mismatch', ...back });
+        // Wrong passwords count against the account and the address; a right one is refunded.
+        const counted = await attempt('password', { ip: clientIp(request), id: session.view.userId });
+        if (!counted.allowed) return reply({ error: 'rate.limited', ...back });
+        try {
+          await (await auth()).api.verifyPassword({ body: { password: body.password }, headers: forwardedHeaders(request) });
+          await counted.refund();
+        } catch (error) {
+          if (authErrorCode(error) === undefined) throw error;
+          return reply({ error: 'password.wrong', ...back });
+        }
+        const deleted = await deleteAccountAs(principalOf(session.view), session.view.actorId, 'owner request');
+        // A second submit that lost the race to the first finds the account already gone: done too.
+        if (!deleted.ok && deleted.reason !== 'auth.actor_deleted')
+          return reply({ error: asFormError(deleted.reason) ?? 'generic', ...back });
+        return reply({ redirect: '/', cookies: await signedOutCookies() });
+      },
+    },
+  },
+});
+
+function Account() {
+  const { t } = useTranslate();
+  const account = Route.useLoaderData();
+  const search = Route.useSearch();
+  const date = useDate();
+  useRouteHydrated();
+  return (
+    <SettingsLayout admin={account.admin}>
+      <h1>{t('settings', 'account.title')}</h1>
+      <section className="sec">
+        <p>
+          <b>{t('settings', 'account.username')}</b> <span className="mono">@{account.handle}</span>
+        </p>
+        <p>
+          <b>{t('settings', 'account.email')}</b> {account.email}{' '}
+          {account.emailVerified ? (
+            <span className="ok-t">{t('settings', 'account.verified')}</span>
+          ) : (
+            <span className="warn-t">
+              {t('settings', 'account.unverified')} <Link to="/auth/verify">{t('settings', 'account.verify')}</Link>
+            </span>
+          )}
+        </p>
+        <p>
+          <b>{t('settings', 'account.age')}</b>{' '}
+          {account.ageDeclaredAt
+            ? t('settings', 'account.declared', { date: date(account.ageDeclaredAt) })
+            : t('settings', 'account.notDeclared')}
+        </p>
+        <form method="post" action="/auth/sign-out">
+          <Button type="submit" variant="neutral">
+            {t('settings', 'account.signOut')}
+          </Button>
+        </form>
+      </section>
+      <section className="sec">
+        <h2>{t('settings', 'account.deleteTitle')}</h2>
+        <p className="hint">{t('settings', 'account.deleteBody')}</p>
+        <AuthForm action="/settings/account" label={t('settings', 'account.deleteTitle')} error={asFormError(search.error)}>
+          <input type="hidden" name="intent" value="delete" />
+          <Field label={t('settings', 'account.confirm')} name="confirm" required autoComplete="off" placeholder={account.name} />
+          <Field label={t('settings', 'account.password')} name="password" type="password" required autoComplete="current-password" />
+          <Button type="submit" variant="danger">
+            {t('settings', 'account.delete')}
+          </Button>
+        </AuthForm>
+      </section>
+    </SettingsLayout>
+  );
+}

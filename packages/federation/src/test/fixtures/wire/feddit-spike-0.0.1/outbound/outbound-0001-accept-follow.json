@@ -1,0 +1,18 @@
+{
+  "@context": [
+    "https://w3id.org/identity/v1",
+    "https://www.w3.org/ns/activitystreams",
+    "https://w3id.org/security/data-integrity/v1",
+    "https://gotosocial.org/ns"
+  ],
+  "id": "https://feddit.lab.test/ap/activities/accept/7390541d-226f-43d4-8ff3-14971fa19fbe",
+  "type": "Accept",
+  "actor": "https://feddit.lab.test/ap/c.spike",
+  "object": {
+    "id": "https://lemmy.lab.test/activities/follow/1a1dfa8e-4f16-4bb5-846f-b6e7af4bc22a",
+    "type": "Follow",
+    "actor": "https://lemmy.lab.test/u/lemmyuser",
+    "object": "https://feddit.lab.test/ap/c.spike"
+  },
+  "to": "https://lemmy.lab.test/u/lemmyuser"
+}

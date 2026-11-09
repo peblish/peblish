@@ -1,9 +1,10 @@
 #!/bin/sh
 # Boots the image's three processes against a Postgres the containers reach on <network>:
-# migrate, then worker (it starts, its healthcheck passes, it stops on SIGTERM and exits 0),
-# then web (/healthz and /readyz answer, the healthcheck passes and fails on a closed port,
-# and it runs as a non-root user). First, a process command that disagrees with
-# PEBLISH_PROCESS must be refused. CI's image job runs it; locally:
+# migrate, then the first-admin script (it creates the admin on a database without one, and
+# refuses a second with admin.exists), then worker (it starts, its healthcheck passes, it
+# stops on SIGTERM and exits 0), then web (/healthz and /readyz answer, the healthcheck passes
+# and fails on a closed port, and it runs as a non-root user). First, a process command that
+# disagrees with PEBLISH_PROCESS must be refused. CI's image job runs it; locally:
 #
 #   sh scripts/image-smoke.sh peblish:local peblish-dev_default \
 #     postgres://peblish:peblish@postgres:5432/peblish_g0 18388
@@ -31,6 +32,16 @@ docker run --rm "$image" worker >/dev/null 2>&1 || status=$?
 
 echo 'image-smoke: migrate'
 docker run --rm --network "$network" -e PEBLISH_PROCESS=migrate -e DATABASE_URL="$url" -e PUBLIC_ORIGIN=https://ci.peblish.test "$image"
+
+echo 'image-smoke: first admin, password on stdin'
+admin() { printf '%s' image-smoke-password | docker run -i --rm --network "$network" -e DATABASE_URL="$url" "$image" node /app/processes/admin.mjs "$@" 2>&1; }
+# A rerun on the same database finds the admin from the first run; that still proves the script runs.
+if ! out=$(admin smokeadmin smokeadmin@example.test); then
+  case "$out" in *admin.exists*) ;; *) fail "the admin script failed: $out" ;; esac
+fi
+status=0
+out=$(admin smokeadmin2 smokeadmin2@example.test) || status=$?
+case "$status:$out" in 1:*admin.exists*) ;; *) fail "a second admin was not refused (exit $status): $out" ;; esac
 
 echo 'image-smoke: worker'
 docker run -d --name "$worker" --network "$network" -e PEBLISH_PROCESS=worker -e DATABASE_URL="$url" "$image" >/dev/null

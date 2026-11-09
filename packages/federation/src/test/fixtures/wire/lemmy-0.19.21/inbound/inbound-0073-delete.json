@@ -1,0 +1,11 @@
+{
+  "@context": ["https://join-lemmy.org/context.json", "https://www.w3.org/ns/activitystreams"],
+  "id": "https://lemmy.lab.test/activities/delete/935151d0-3e69-4ee0-a1ff-df7be9771d5d",
+  "actor": "https://lemmy.lab.test/u/lemmyuser",
+  "to": ["https://www.w3.org/ns/activitystreams#Public"],
+  "object": "https://piefed.lab.test/c/spike@feddit.lab.test/p/14/p-target-piefed-1108022723",
+  "type": "Delete",
+  "audience": "https://feddit.lab.test/ap/c.spike",
+  "cc": ["https://feddit.lab.test/ap/c.spike"],
+  "summary": "P1 1108022723"
+}
