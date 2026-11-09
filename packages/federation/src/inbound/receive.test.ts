@@ -1,16 +1,26 @@
 import { eq, sql } from 'drizzle-orm';
-import { beforeEach, describe, expect, test } from 'vitest';
+import { beforeEach, describe, expect, test, vi } from 'vitest';
 import { db } from '@peblish/core/db/read';
+import { actors } from '@peblish/core/db/tables/actors';
 import { inboxRaw } from '@peblish/core/db/tables/federation';
 import { siteSettings } from '@peblish/core/db/tables/site';
 import { writer } from '@peblish/core/db/write';
 import { truncateAll } from '@peblish/core/testing/db';
-import { stubFetch } from '@peblish/core/testing/seed-fed-a';
+import { actorDocument, nodeInfoRoutes, rsaKeys, stubFetch } from '@peblish/core/testing/seed-fed-a';
 import { seedInboundWorld, seedInboxRow } from '@peblish/core/testing/seed-fed-b';
 import { createHash } from 'node:crypto';
+import { forgetKeyRefreshes } from '../signing/inbound.ts';
 import { signDelivery, signHeaders } from '../signing/sign.ts';
 import { maxBodyBytes, pendingBytesLimit, receiveInbound } from './receive.ts';
-import { perHostBudget, perInstanceRate, perSignerRate, resetKeyFetchBudget, takeIntake, takePipelineFetch } from './throttle.ts';
+import {
+  lookupBudgets,
+  perInstanceRate,
+  perSignerRate,
+  resetKeyFetchBudget,
+  takeIntake,
+  takeKeyLookup,
+  takePipelineFetch,
+} from './throttle.ts';
 import { activityId, addressedToCommunity, hosts } from './test-support.ts';
 
 const inbox = 'https://fed-b.test/inbox';
@@ -19,6 +29,7 @@ let world: Awaited<ReturnType<typeof seedInboundWorld>>;
 beforeEach(async () => {
   await truncateAll();
   resetKeyFetchBudget();
+  forgetKeyRefreshes();
   world = await seedInboundWorld();
 });
 
@@ -124,33 +135,86 @@ describe('receiving an activity', () => {
     }
   });
 
-  test('requests made to fetch unknown keys are limited, then answered 429', async () => {
-    const { fetch } = stubFetch({});
-    const body = JSON.stringify(like());
+  // Requests from `peer` signed with keys nobody here holds, each naming another actor of `host`.
+  const fabricated = async (count: number, host: string, peer: string, fetch: ReturnType<typeof stubFetch>['fetch']) => {
     const statuses: number[] = [];
-    for (let attempt = 0; attempt <= perHostBudget; attempt++) {
-      const stranger = {
-        keyId: `https://unknown.test/u/someone${attempt}#main-key`,
-        privateKeyPem: world.peers.mallory.keys.privateKeyPem,
-      };
-      statuses.push((await receiveInbound(await signed(body, stranger), { fetch })).status);
+    for (let n = 0; n < count; n++) {
+      const stranger = { keyId: `https://${host}/u/someone${n}#main-key`, privateKeyPem: world.peers.mallory.keys.privateKeyPem };
+      statuses.push((await receiveInbound(await signed(JSON.stringify(like()), stranger), { fetch, peer })).status);
     }
-    expect(statuses.slice(0, perHostBudget)).toEqual(Array(perHostBudget).fill(401));
-    expect(statuses[perHostBudget]).toBe(429);
+    return statuses;
+  };
+  const { discovery } = lookupBudgets;
+
+  test('one address making us look up unknown keys is limited to a small allowance, then answered 429', async () => {
+    const { fetch, requests } = stubFetch({});
+    const statuses = await fabricated(discovery.perAddress + 1, 'unknown.test', '203.0.113.1', fetch);
+    expect(statuses.slice(0, discovery.perAddress)).toEqual(Array(discovery.perAddress).fill(401));
+    expect(statuses[discovery.perAddress]).toBe(429);
+    // A refused lookup fetches nothing.
+    expect(requests).toHaveLength(discovery.perAddress);
     expect(await db().select().from(inboxRaw).where(eq(inboxRaw.state, 'pending'))).toHaveLength(0);
+  });
+
+  test('a flood of made-up key ids from one address leaves a real host’s genuine new signer its turn', async () => {
+    const host = 'genuine.test';
+    const real = actorDocument(host, 'real', { publicKeyPem: world.peers.mallory.keys.publicKeyPem });
+    const { fetch } = stubFetch({ [real.id]: { body: real }, ...nodeInfoRoutes(host, 'lemmy') });
+    const flood = await fabricated(2 * discovery.perHost, host, '203.0.113.1', fetch);
+    expect(flood.filter((status) => status === 401)).toHaveLength(discovery.perAddress);
+    expect(flood.filter((status) => status === 429)).toHaveLength(2 * discovery.perHost - discovery.perAddress);
+
+    const genuine = { keyId: real.publicKey.id, privateKeyPem: world.peers.mallory.keys.privateKeyPem };
+    const body = JSON.stringify({ ...like(), actor: real.id });
+    // Another client's lookup of the same host goes through: the flood spent its own address's allowance, not the host's.
+    expect((await receiveInbound(await signed(body, genuine), { fetch, peer: '198.51.100.7' })).status).toBe(202);
+    expect((await rows()).map((row) => row.actorApId)).toEqual([real.id]);
+  });
+
+  test('behind Traefik the address is the one it saw, so clients behind one proxy are counted apart', async () => {
+    vi.stubEnv('PEBLISH_TRUSTED_PROXY', 'traefik');
+    try {
+      const { fetch } = stubFetch({});
+      const from = async (client: string, n: number) => {
+        const stranger = { keyId: `https://unknown.test/u/someone${n}#main-key`, privateKeyPem: world.peers.mallory.keys.privateKeyPem };
+        const request = await signed(JSON.stringify(like()), stranger);
+        request.headers.set('x-forwarded-for', `10.9.9.9, ${client}`);
+        return (await receiveInbound(request, { fetch, peer: '10.0.0.2' })).status;
+      };
+      for (let n = 0; n < discovery.perAddress; n++) expect(await from('203.0.113.1', n)).toBe(401);
+      expect(await from('203.0.113.1', 99)).toBe(429);
+      expect(await from('203.0.113.2', 100)).toBe(401);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  test('a held actor’s rotated key is refreshed even while discovery of its host is spent', async () => {
+    const rotated = rsaKeys();
+    const { fetch } = stubFetch({
+      [hosts.lemmyuser]: { body: actorDocument('lemmy.test', 'lemmyuser', { publicKeyPem: rotated.publicKeyPem }) },
+      ...nodeInfoRoutes('lemmy.test', 'lemmy'),
+    });
+    // The stored copy is older than the minute a key is not looked for again.
+    await writer()
+      .update(actors)
+      .set({ fetchedAt: new Date(Date.now() - 10 * 60_000) })
+      .where(eq(actors.apId, hosts.lemmyuser));
+    for (let n = 0; n < 2 * discovery.perHost; n++) takeKeyLookup('discovery', { address: `192.0.2.${n}`, host: 'lemmy.test' });
+    expect(takeKeyLookup('discovery', { address: '192.0.2.250', host: 'lemmy.test' })).toBe(false);
+
+    const response = await receiveInbound(await signed(JSON.stringify(like()), { keyId: `${hosts.lemmyuser}#main-key`, ...rotated }), {
+      fetch,
+      peer: '198.51.100.7',
+    });
+    expect(response.status).toBe(202);
   });
 
   test('an unsigned flood does not spend what a real peer needs', async () => {
     const { fetch } = stubFetch({});
-    for (let attempt = 0; attempt <= perHostBudget; attempt++) {
-      const stranger = {
-        keyId: `https://unknown.test/u/someone${attempt}#main-key`,
-        privateKeyPem: world.peers.mallory.keys.privateKeyPem,
-      };
-      await receiveInbound(await signed(JSON.stringify(like()), stranger), { fetch });
-    }
-    // The key budget is spent, yet a known key needs no fetch, and what processing fetches has its own budget.
-    expect((await receiveInbound(await signed(JSON.stringify(like())))).status).toBe(202);
+    await fabricated(discovery.perAddress + 1, 'unknown.test', '203.0.113.1', fetch);
+    // The lookup budget is spent for that address, yet a known key needs no fetch, and what processing fetches has its own budget.
+    expect((await receiveInbound(await signed(JSON.stringify(like())), { peer: '203.0.113.1' })).status).toBe(202);
     expect(takePipelineFetch('unknown.test')).toBe(true);
   });
 });

@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { db } from '@peblish/core/db/read';
-import { actors } from '@peblish/core/db/tables/actors';
+import { actorKeys, actors } from '@peblish/core/db/tables/actors';
 import { inboxRaw } from '@peblish/core/db/tables/federation';
 import { readSetting } from '@peblish/core/settings/read';
 import { tx } from '@peblish/core/tx/tx';
@@ -8,7 +8,9 @@ import { and, eq, gt, sql } from 'drizzle-orm';
 import type { Fetcher } from '../actors/document.ts';
 import { safeFetch } from '../actors/safe-fetch.ts';
 import { verifyInboundSignature } from '../signing/inbound.ts';
-import { takeIntake, takeKeyFetch } from './throttle.ts';
+import { parseSignature } from '../signing/verify.ts';
+import { clientAddress, peerOf } from './client.ts';
+import { takeIntake, takeKeyLookup } from './throttle.ts';
 
 // The inbox's front door (lane FED-A's http.ts routes every inbox POST here). It does the
 // least that is safe and answers fast; applying the activity is the pipeline's, a moment later
@@ -22,8 +24,9 @@ import { takeIntake, takeKeyFetch } from './throttle.ts';
 //                                          nothing to apply, answered so the peer stops retrying
 //   not an activity    400                 or a body that is not strictly UTF-8: the relay sends the exact bytes, which
 //                                          must then be exactly the text that was read
-//   throttled          429 + Retry-After   too many unknown keys at once, or the signer or its instance is over
-//                                          its request rate or has too many bytes waiting in inbox_raw
+//   throttled          429 + Retry-After   too many key lookups from this address or for this host (throttle.ts), or
+//                                          the signer or its instance is over its request rate or has too many
+//                                          bytes waiting in inbox_raw
 //   a repeat           202                 the same body, or an activity id seen within the hour, is not stored again
 //   stored             202                 the exact bytes, in inbox_raw
 //
@@ -112,7 +115,29 @@ const idOf = (value: unknown): string | null =>
 export type ReceiveOptions = {
   /** For tests: the fetcher an unknown signing key's actor is read with. */
   fetch?: Fetcher;
+  /** The address of the connection's peer, when the caller knows it better than the request does (`request.ip`). */
+  peer?: string;
 };
+
+/** Most fetches the lookup of one request's signing key may make: the key document, the actor, its NodeInfo, a hop or two. */
+const maxLookupFetches = 8;
+
+/**
+ * Whether the key id of the request's signature names an actor, or a key, we hold: its lookup is
+ * a refresh of what we know, not a discovery of a stranger, and has its own budget.
+ */
+async function namesHeldSigner(request: Request, body: Uint8Array): Promise<boolean> {
+  const parsed = parseSignature(request, body);
+  if (typeof parsed === 'string' || !URL.canParse(parsed.keyId)) return false;
+  const actor = new URL(parsed.keyId);
+  actor.hash = '';
+  const [row] = await db().execute<{ held: boolean }>(sql`
+    select (
+      exists (select 1 from ${actors} where ${actors.apId} = ${actor.href})
+      or exists (select 1 from ${actorKeys} where ${actorKeys.keyId} = ${parsed.keyId})
+    ) as held`);
+  return row?.held === true;
+}
 
 /**
  * Whether `body` is an account's Delete of itself for an account we do not hold (or hold as
@@ -141,12 +166,20 @@ export async function receiveInbound(request: Request, options: ReceiveOptions =
     if (body === null) return refuse(413, 'the body is larger than 512 KiB');
 
     let throttled = false;
+    let fetches = 0;
     const base = options.fetch ?? safeFetch;
+    const address = clientAddress(request.headers, options.peer ?? peerOf(request));
+    // Finding a signer's key is a few fetches (the key document, the actor, its NodeInfo), but one
+    // lookup: it is charged once, at the first, to the client and to the host the key id names.
     const limited: Fetcher = async (url, init) => {
-      if (!takeKeyFetch(new URL(String(url)).host)) {
-        throttled = true;
-        throw new Error('too many actor fetches for unknown keys');
+      if (fetches === 0) {
+        const kind = (await namesHeldSigner(request, body)) ? 'refresh' : 'discovery';
+        if (!takeKeyLookup(kind, { address, host: new URL(String(url)).host })) {
+          throttled = true;
+          throw new Error('too many lookups of signing keys');
+        }
       }
+      if (++fetches > maxLookupFetches) throw new Error('this lookup needs more fetches than it may make');
       return base(url, init);
     };
     const signature = await verifyInboundSignature(request, body, { fetch: limited });
