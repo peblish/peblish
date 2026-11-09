@@ -45,6 +45,7 @@ export function ThreadSection({ data: loaded }: { data: ThreadData }) {
   const urlError = asCommentError(search instanceof type.errors ? undefined : search.commentError);
 
   // The sort and page the page was loaded with are the data; any other is fetched, and shown until then as before.
+  // `loaded` is a dependency: a reply invalidates the router, and the fresh load must fetch the other view again.
   const [fetched, setFetched] = useState<ThreadData | null>(null);
   const current = loaded.sort === wanted && loaded.after === wantedAfter;
   useEffect(() => {
@@ -64,8 +65,10 @@ export function ThreadSection({ data: loaded }: { data: ThreadData }) {
     return () => {
       live = false;
     };
-  }, [current, loaded.postId, loaded.focus, wanted, wantedAfter]);
-  const data = current ? loaded : (fetched ?? loaded);
+  }, [current, loaded, wanted, wantedAfter]);
+  // A fetch is drawn only for the view it was made for, so one left from another view (back on the loaded one, or on a third) never shows.
+  const fetchedHere = fetched?.sort === wanted && fetched.after === wantedAfter ? fetched : null;
+  const data = current ? loaded : (fetchedHere ?? loaded);
   const times = useMemo(() => new Map(Object.entries(data.times)), [data.times]);
   // The address of a page of this thread: the post's or the permalink's, in this sort.
   const pageHref = (cursor: string | null) =>

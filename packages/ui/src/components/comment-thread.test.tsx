@@ -91,10 +91,16 @@ describe('replies the list leaves out', () => {
 });
 
 describe('a comment that is both deleted and removed', () => {
-  test('shows one label, removed', () => {
+  test('shows one label, removed, and hides the author as a deleted one does', () => {
     const html = draw([comment('a', null, 0, { deleted: true, removed: true, contentHtml: null })]);
     expect(html).toContain('[removed]');
     expect(html).not.toContain('[deleted]');
+    expect(html).not.toContain('@jun');
+  });
+
+  test('removed alone still shows the author', () => {
+    const html = draw([comment('a', null, 0, { removed: true, contentHtml: null })]);
+    expect(html).toContain('[removed]');
     expect(html).toContain('@jun');
   });
 

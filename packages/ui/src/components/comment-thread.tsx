@@ -102,6 +102,8 @@ export function CommentThread({
     const { comment } = node;
     const isFolded = folded(comment);
     const gone = comment.removed || comment.deleted;
+    // Both flags show one label, removed.
+    const tombstone = comment.removed ? labels.removed : labels.deleted;
     const replies = node.descendants;
     const lowScore = scoreOf(comment) < lowScoreThreshold;
     // Past our own cap the replies the list holds are not drawn; above it, only the ones it leaves out count.
@@ -122,8 +124,9 @@ export function CommentThread({
           >
             {isFolded ? '+' : '−'}
           </button>
-          {comment.deleted && !comment.removed ? (
-            <span className="pb-muted">{labels.deleted}</span>
+          {comment.deleted ? (
+            // A deleted comment's author stays out of the page, removed as well or not.
+            <span className="pb-muted">{tombstone}</span>
           ) : (
             <>
               <a className="pb-comment__author" href={authorHref(comment)}>
@@ -156,7 +159,7 @@ export function CommentThread({
         ) : (
           <div className="pb-comment__main">
             {gone || comment.contentHtml === null ? (
-              <p className="pb-comment__note">{comment.removed ? labels.removed : labels.deleted}</p>
+              <p className="pb-comment__note">{tombstone}</p>
             ) : (
               <Prose html={comment.contentHtml} className="pb-comment__text" />
             )}
