@@ -162,7 +162,7 @@ describe('community.set_moderator', () => {
     expect(await lock()).toEqual({ ok: false, reason: 'mod.moderator_required' });
 
     if (!appointed.ok || !promoted.ok || !removed.ok) throw new Error('a change was refused');
-    const log = await readModlog({ communityId: community.id }, { audience: 'public' });
+    const log = await readModlog({ communityId: community.id, action: 'community.set_moderator' }, { audience: 'public' });
     expect(log.map(({ id, action, actorId, targetActorId, reason }) => ({ id, action, actorId, targetActorId, reason }))).toEqual([
       { id: removed.modlogId, action: 'community.set_moderator', actorId: people.admin.id, targetActorId: people.other.id, reason: null },
       { id: promoted.modlogId, action: 'community.set_moderator', actorId: people.member.id, targetActorId: people.other.id, reason: null },
