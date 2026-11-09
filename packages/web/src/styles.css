@@ -1,16 +1,11 @@
-@import '@peblish/ui/styles.css';
-
-@layer app {
-  .shell {
-    display: grid;
-    gap: 16px;
-    max-width: 960px;
-    margin: 0 auto;
-    padding: 24px 16px 96px;
-  }
-
-  .shell h1 {
-    margin: 0;
-    font-size: 24px;
-  }
-}
+/* The app's stylesheet, linked after Mux UI's (packages/ui/src/styles.css) so the budget check
+   measures Mux's alone. Same layer order as there; the first statement that names the layers wins. */
+@layer reset, muxui.tokens, muxui.components, muxui.utilities, app;
+@import '@peblish/ui/tokens/tokens.css';
+@import '@peblish/ui/density/density-control.css';
+@import '@peblish/ui/components/vote-control.css';
+@import '@peblish/ui/components/post-card.css';
+@import '@peblish/ui/components/comment-thread.css';
+@import '@peblish/ui/components/reply-bar.css';
+@import '@peblish/ui/components/prose.css';
+@import './shell/shell.css';
