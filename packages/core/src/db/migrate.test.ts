@@ -8,7 +8,7 @@ const url = new URL(process.env.DATABASE_URL ?? '');
 url.pathname = url.pathname.replace(/_test$/, '_migrate_test');
 afterAll(() => dropDatabase(url));
 
-// Each case migrates whole databases (ten migrations since wave 3): over 5 s on a busy shared Postgres.
+// Each case migrates whole databases (eleven migrations since the wave 3 fixes): over 5 s on a busy shared Postgres.
 const migrating = { timeout: 30_000 };
 
 test('concurrent migrate runs take turns, bootstrap included, and apply each migration once', migrating, async () => {
