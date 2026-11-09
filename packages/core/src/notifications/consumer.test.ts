@@ -11,16 +11,7 @@ import { banFromCommunity, unbanFromCommunity } from '../moderation/ban.ts';
 import { removeContent, restoreContent } from '../moderation/remove.ts';
 import { truncateAll } from '../testing/db.ts';
 import { grantFor, seedPost } from '../testing/seed-az.ts';
-import {
-  drainNotices,
-  emitEvent,
-  kindsOf,
-  noticeCount,
-  noticesOf,
-  seedInboxWorld,
-  seedNotice,
-  seedSiteBanLog,
-} from '../testing/seed-e2.ts';
+import { drainNotices, emitEvent, kindsOf, noticeCount, noticesOf, seedInboxWorld, seedNotice, seedModlog } from '../testing/seed-e2.ts';
 import { localUser } from '../testing/seed.ts';
 import { db } from '../db/read.ts';
 import { notifications } from './tables.ts';
@@ -253,7 +244,7 @@ describe('moderator actions', () => {
     const subject = { communityId: w.communities.open.id, targetActorId: w.people.reader.id };
     const ban = await banFromCommunity(await grantFor('mod.ban', mod, subject), { reason: 'Spam' });
     const unban = await unbanFromCommunity(await grantFor('mod.unban', mod, subject), { reason: 'Served' });
-    const siteLog = await seedSiteBanLog(w.people.admin, w.people.reader);
+    const siteLog = await seedModlog(w.people.admin, w.people.reader);
     await emitEvent({
       type: 'mod.ban',
       v: 1,

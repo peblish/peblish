@@ -1,4 +1,5 @@
-import { sql, type SQL, type SQLWrapper } from 'drizzle-orm';
+import { inArray, sql, type SQL, type SQLWrapper } from 'drizzle-orm';
+import { notifications } from './tables.ts';
 
 /**
  * SQL true when the recipient has blocked the person who caused a reply or mention notice
@@ -16,3 +17,7 @@ export function noticeBlocked(_notice: {
 }): SQL<boolean> {
   return sql`false`;
 }
+
+/** The condition a notices query adds so a blocked author's reply or mention never lists or counts. */
+export const notBlocked = (): SQL =>
+  sql`not (${inArray(notifications.kind, ['reply', 'mention'])} and ${noticeBlocked({ kind: notifications.kind, recipientId: notifications.recipientId, actorId: notifications.actorId, communityId: notifications.communityId })})`;

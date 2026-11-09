@@ -83,8 +83,16 @@ export async function seedNotice(row: typeof notifications.$inferInsert) {
   return created!;
 }
 
-/** A modlog row as a site ban would write it (the ban lane's mutation does not exist yet), so an event can name a real one. */
-export async function seedSiteBanLog(moderator: { id: string; apId: string }, target: { id: string; apId: string }) {
+/**
+ * A modlog row, by default a site ban by `moderator` (the ban lane's mutation does not exist
+ * yet), so an event or a notice can name a real one. A moderator on another instance gives an
+ * entry whose reason is withheld unless that instance is trusted.
+ */
+export async function seedModlog(
+  moderator: { id: string; apId: string },
+  target: { id: string; apId: string },
+  extra: Partial<typeof modlog.$inferInsert> = {},
+) {
   const [row] = await writer()
     .insert(modlog)
     .values({
@@ -95,6 +103,7 @@ export async function seedSiteBanLog(moderator: { id: string; apId: string }, ta
       targetApId: target.apId,
       reason: 'Spam',
       authority: { kind: 'site-admin', actorId: moderator.id },
+      ...extra,
     })
     .returning();
   return row!;
