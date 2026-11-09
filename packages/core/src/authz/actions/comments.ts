@@ -97,4 +97,10 @@ export const policies = {
   }),
   // Retracting your own comment needs none of that.
   'comment.delete': authorAction(async (_request, comment) => reason(liveDenial(comment))),
+  // Taking the retraction back needs the author in good standing and a comment that is only
+  // deleted: a moderator's removal is not the author's to undo.
+  'comment.restore': authorAction(async (request, comment) => {
+    if (await isBanned(request, comment.community.id, comment.authorId)) return 'community.banned';
+    return comment.removed ? 'target.removed' : comment.deleted ? null : 'comment.not_deleted';
+  }),
 };

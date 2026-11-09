@@ -14,4 +14,6 @@ export const events = {
   'comment.created': type({ type: "'comment.created'", ...base, parentId: Uuid.or('null') }),
   'comment.updated': type({ type: "'comment.updated'", ...base }),
   'comment.deleted': type({ type: "'comment.deleted'", ...base }),
+  /** The author's undo of their delete (a peer's Undo(Delete), or the author's own restore). */
+  'comment.restored': type({ type: "'comment.restored'", ...base }),
 };

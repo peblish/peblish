@@ -30,6 +30,7 @@ const GRP = 'comment.group_cannot_act';
 const DEEP = 'comment.depth_exceeded';
 const LCK = 'post.locked';
 const DEL = 'target.deleted';
+const NDEL = 'comment.not_deleted';
 const REM = 'target.removed';
 const NOT = 'target.not_found';
 
@@ -162,21 +163,22 @@ describe.each([
     expect(await create(other, 'remote post')).toBe(MIS);
   });
 
-  const authorActions = ['comment.update', 'comment.delete'] as const;
+  const authorActions = ['comment.update', 'comment.delete', 'comment.restore'] as const;
   const act = (action: (typeof authorActions)[number], principal: Principal, commentId: string) =>
     run(lock, async (options) => outcome(await authorize(action, principal, { commentId }, options)));
 
-  // The reader's own comments in each state; update, delete.
-  const asAuthor: Record<string, [string, string]> = {
-    normal: [OK, OK],
-    deleted: [DEL, DEL],
-    removed: [REM, REM],
+  // The reader's own comments in each state; update, delete, restore. Only a deleted comment
+  // restores, and a moderator's removal is not the author's to undo.
+  const asAuthor: Record<string, [string, string, string]> = {
+    normal: [OK, OK, NDEL],
+    deleted: [DEL, DEL, OK],
+    removed: [REM, REM, REM],
     // A lock stops new comments, not the author's own.
-    onLocked: [OK, OK],
+    onLocked: [OK, OK, NDEL],
     // A dead post takes no edit, but the author can still take their own comment back.
-    onRemovedPost: [REM, OK],
-    onDeletedPost: [DEL, OK],
-    inRemovedCommunity: [CRM, CRM],
+    onRemovedPost: [REM, OK, NDEL],
+    onDeletedPost: [DEL, OK, NDEL],
+    inRemovedCommunity: [CRM, CRM, CRM],
   };
 
   test.each(Object.entries(asAuthor))('the author acts on their comment: %s', async (state, expected) => {
@@ -187,7 +189,7 @@ describe.each([
 
   test('a remote author acts on their comment the same way', async () => {
     const principal = remote(world.people.remoteAuthor.id);
-    expect(await each(authorActions, (action) => act(action, principal, world.comments.remote))).toEqual([OK, OK]);
+    expect(await each(authorActions, (action) => act(action, principal, world.comments.remote))).toEqual([OK, OK, NDEL]);
   });
 
   test.each([
@@ -199,16 +201,16 @@ describe.each([
     ['the instance itself', () => system(world.instances.local.id), REQ],
   ] as const)('nobody else acts on the comment: %s', async (_who, principal, refusal) => {
     const actual = await each(authorActions, (action) => act(action, principal(), world.comments.local.normal));
-    expect(actual).toEqual([refusal, refusal]);
+    expect(actual).toEqual([refusal, refusal, refusal]);
   });
 
   test('a comment that does not exist is target.not_found', async () => {
     const missing = '0192f5a0-1234-7abc-8def-0123456789ab';
-    expect(await each(authorActions, (action) => act(action, localUser(world.people.reader.id), missing))).toEqual([NOT, NOT]);
+    expect(await each(authorActions, (action) => act(action, localUser(world.people.reader.id), missing))).toEqual([NOT, NOT, NOT]);
   });
 
-  test('an author banned from the community can delete their comment but not edit it', async () => {
+  test('an author banned from the community can delete their comment but not edit or restore it', async () => {
     const principal = localUser(world.people.banned.id);
-    expect(await each(authorActions, (action) => act(action, principal, world.comments.banned))).toEqual([BAN, OK]);
+    expect(await each(authorActions, (action) => act(action, principal, world.comments.banned))).toEqual([BAN, OK, BAN]);
   });
 });
