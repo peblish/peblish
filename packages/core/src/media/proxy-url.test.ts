@@ -100,6 +100,28 @@ test('where an image loads from: this instance as a root-relative path, remote o
   expect(imageSource('https://feddit.example/media/a.png', { ...policy, remoteMedia: false, proxy: undefined })).toBe('/media/a.png');
 });
 
+test('an own-origin URL whose path would leave the host takes the proxy branch, or null with the switch off', () => {
+  const policy = { origin: 'https://feddit.example', remoteMedia: true, proxy: build };
+  const leaving = [
+    'https://feddit.example//evil.example/x.png',
+    'https://feddit.example/\\evil.example/x.png', // the URL parser turns the backslash into a slash
+    'https://feddit.example/.//evil.example/x.png',
+    'https://feddit.example/a/..//evil.example/x.png',
+  ];
+  for (const url of leaving) {
+    expect(imageSource(url, policy), url).toBe(build(url));
+    expect(imageSource(url, { ...policy, remoteMedia: false }), url).toBeNull();
+  }
+  // These stay on the host: a query that looks like a host, and an encoded slash (browsers do not decode it).
+  for (const [url, path] of [
+    ['https://feddit.example/?//evil.example/x.png', '/?//evil.example/x.png'],
+    ['https://feddit.example?//evil.example/x.png', '/?//evil.example/x.png'],
+    ['https://feddit.example/%2f/x.png', '/%2f/x.png'],
+    ['https://feddit.example/%5Cevil.example/x.png', '/%5Cevil.example/x.png'],
+  ] as const)
+    expect(imageSource(url, policy), url).toBe(path);
+});
+
 test('a post link is an image when its content type says so, including the image/* placeholder', () => {
   for (const type of ['image/png', 'image/jpeg', 'IMAGE/WebP', 'image/*', ' image/gif ']) expect(isImageContentType(type), type).toBe(true);
   for (const type of ['image/svg+xml', 'text/html', 'application/pdf', 'imagery/png', '', null, undefined])
