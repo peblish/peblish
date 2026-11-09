@@ -333,7 +333,11 @@ test.describe('the community form', () => {
     browser,
   }) => {
     const page = await adminPage(browser);
-    await gotoHydrated(page, '/c/new');
+    // The directory offers the form to an admin.
+    await gotoHydrated(page, '/communities');
+    await page.getByRole('link', { name: 'New community' }).click();
+    await page.waitForURL('**/c/new');
+    await page.locator('html[data-hydrated="1"]').waitFor({ state: 'attached' });
     await expect(page.getByRole('heading', { level: 1 })).toHaveText('New community');
     await expect(page.getByRole('navigation', { name: 'Sections' }).getByRole('link')).toHaveText([
       'Basics',

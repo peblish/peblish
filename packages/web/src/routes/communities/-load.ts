@@ -29,6 +29,8 @@ export const loadDirectory = createServerFn({ method: 'GET' })
       /** The query as it was applied: a viewer who has not declared 16+ always gets Hide. */
       query: { ...data, nsfw: effectiveNsfw(data, viewer) },
       signedIn: viewer !== null,
+      /** A site admin is offered "New community" (/c/new is theirs alone). */
+      admin: session?.view.siteRole === 'admin',
       /** The NSFW links are for someone who declared 16+. */
       nsfwControls: viewer?.declared === true,
       /** The search is a handle or a link: the page offers to find it instead of filtering. */

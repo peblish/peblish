@@ -6,7 +6,7 @@ import { Time } from '@peblish/ui/components/time';
 import { Fragment, useState, type ReactNode } from 'react';
 import { useTranslate } from '../../../i18n/use-translate.ts';
 import { useRouteHydrated } from '../../../shell/hydration.ts';
-import { communityPath, directoryPaths } from '../../../shell/paths.ts';
+import { communityPath, directoryPaths, newCommunityPath } from '../../../shell/paths.ts';
 import type { DirectoryData } from '../-load.ts';
 import { asDirectoryError, errorKey, type DirectoryError } from './errors.ts';
 import { FollowForm } from './follow-form.tsx';
@@ -82,6 +82,7 @@ export function DirectoryPage({ data, error: fromAddress }: { data: DirectoryDat
             ))}
           </div>
         )}
+        {data.admin && <a href={newCommunityPath}>{t('directory', 'directory.new')}</a>}
       </div>
 
       <form className="dir-search" method="get" action={here} role="search">

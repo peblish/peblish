@@ -194,6 +194,8 @@ test.describe('the directory, signed in', () => {
   test('Join and Leave a local community, and Join a remote one that stays Pending', async ({ browser }) => {
     const { context, page } = await as(browser, viewerState);
     await gotoHydrated(page, search());
+    // "New community" is for site admins (e2e/communities checks they get it).
+    await expect(page.getByRole('link', { name: 'New community' })).toHaveCount(0);
     const local = row(page, seed.communities.local);
     await expect(local.getByRole('button', { name: 'Join' })).toBeVisible();
     await local.getByRole('button', { name: 'Join' }).click();
