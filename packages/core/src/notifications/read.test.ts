@@ -212,6 +212,25 @@ describe('what a row shows', () => {
   });
 });
 
+describe('one visibility rule for the list and every count', () => {
+  test('an unread notice in a deleted or removed community is neither listed nor counted', async () => {
+    const w = await seedInboxWorld();
+    const me = w.people.author;
+    const gone = await seedActor(w.instances.local, 'Group', 'gone', { deletedAt: new Date() });
+    for (const community of [w.communities.open, w.communities.removed, gone]) {
+      await seedNotice({ recipientId: me.id, kind: 'mod_remove', refId: uuidv7(), communityId: community.id });
+      await seedNotice({ recipientId: me.id, kind: 'reply', refId: uuidv7(), communityId: community.id });
+    }
+    const inbox = await readInbox(viewerOf(me));
+    expect(inbox.items.map((item) => item.community?.name)).toEqual(['open', 'open']);
+    expect(inbox.unread).toBe(2);
+    expect(inbox.unreadByGroup).toEqual({ replies: 1, mentions: 0, content: 1, account: 0 });
+    // The sidebar badge (shell/data.ts) reads unreadCount.
+    expect(await unreadCount(me.id)).toBe(2);
+    expect((await readInbox(viewerOf(me), { filter: 'unread' })).items).toHaveLength(2);
+  });
+});
+
 describe('blocks', () => {
   test('a block made after the notice hides a reply and a mention from the list and the count, never a removal or a ban', async () => {
     const w = await seedInboxWorld();
