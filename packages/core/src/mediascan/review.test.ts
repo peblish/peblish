@@ -1,4 +1,4 @@
-import { eq } from 'drizzle-orm';
+import { desc, eq } from 'drizzle-orm';
 import { beforeEach, expect, test } from 'vitest';
 import { db } from '../db/read.ts';
 import { localInstance } from '../db/local-instance.ts';
@@ -42,7 +42,9 @@ beforeEach(async () => {
 
 const asAdmin = () => admin(adminId);
 const rowOf = async (id: string) => (await db().select().from(media).where(eq(media.id, id)))[0]!;
-const evidenceOf = async (id: string) => (await db().select().from(mediaEvidence).where(eq(mediaEvidence.mediaId, id)))[0]!;
+/** The image's current incident (its latest evidence row). */
+const evidenceOf = async (id: string) =>
+  (await db().select().from(mediaEvidence).where(eq(mediaEvidence.mediaId, id)).orderBy(desc(mediaEvidence.createdAt)).limit(1))[0]!;
 const logOf = async (evidenceId: string) =>
   (await db().select().from(mediaEvidenceLog).where(eq(mediaEvidenceLog.evidenceId, evidenceId))).map((l) => l.event);
 
@@ -301,12 +303,31 @@ test('adding a hash quarantines the clean copies, each with evidence; bad and re
   expect((await rowOf(a.id)).scanState).toBe('quarantined');
 });
 
-test('a released image caught by a later list entry is quarantined again on the same evidence row', async () => {
-  const row = await quarantined();
-  await releaseQuarantined(asAdmin(), { mediaId: row.id });
+test('a requarantine opens a new incident: the earlier one keeps its record, and the new one starts its own clock', async () => {
+  const start = new Date();
+  const at = (days: number) => new Date(start.getTime() + days * day);
+  const row = await seedMedia(store, { ownerId: uploaderId });
+  await writer().insert(mediaBlocklist).values({ kind: 'sha256', value: row.sha256!, category: 'csam' });
+  expect(await scanUpload(row.id, { ...local, now: () => start })).toBe('quarantined');
+  await releaseQuarantined(asAdmin(), { mediaId: row.id, note: 'a holiday photo' }, { now: at(1) });
+  const [first] = await db().select().from(mediaEvidence).where(eq(mediaEvidence.mediaId, row.id));
   const [entry] = await db().select().from(mediaBlocklist);
   await removeFromBlocklist(asAdmin(), entry!.id);
-  expect(await addToBlocklist(asAdmin(), { value: row.sha256!, category: 'other' })).toMatchObject({ ok: true, quarantined: 1 });
-  expect(await evidenceOf(row.id)).toMatchObject({ status: 'open', classification: 'other', decidedBy: null });
-  expect(await logOf((await evidenceOf(row.id)).id)).toEqual(['quarantined', 'released', 'requarantined']);
+
+  // A month later the hash is listed again and catches the released image.
+  expect(await addToBlocklist(asAdmin(), { value: row.sha256!, category: 'other' }, at(30))).toMatchObject({ ok: true, quarantined: 1 });
+  const incidents = await db().select().from(mediaEvidence).where(eq(mediaEvidence.mediaId, row.id)).orderBy(mediaEvidence.createdAt);
+  expect(incidents).toHaveLength(2);
+  expect(incidents[0]).toEqual(first);
+  expect(incidents[0]).toMatchObject({ status: 'released', note: 'a holiday photo', classification: 'csam' });
+  expect(incidents[1]).toMatchObject({ status: 'open', classification: 'other', decidedBy: null, retainUntil: null, createdAt: at(30) });
+  expect(incidents[1]!.manifestSha256).not.toBe(first!.manifestSha256);
+  expect([await logOf(incidents[0]!.id), await logOf(incidents[1]!.id)]).toEqual([['quarantined', 'released'], ['requarantined']]);
+
+  // The undecided window runs from the requarantine, not the first quarantine.
+  expect((await purgePass({ store, now: at(36), days: 7 })).expired).toBe(0);
+  expect((await rowOf(row.id)).scanState).toBe('quarantined');
+  expect((await purgePass({ store, now: at(38), days: 7 })).expired).toBe(1);
+  expect((await rowOf(row.id)).scanState).toBe('blocked');
+  expect((await db().select().from(mediaEvidence).where(eq(mediaEvidence.id, incidents[0]!.id)))[0]).toEqual(first);
 });

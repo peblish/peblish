@@ -62,7 +62,7 @@ export async function purgePass(options: { store?: ObjectStore; now?: Date; days
 
   // 3. Manifests whose retention is over (decided, past retain_until, no hold in force).
   const over = await db()
-    .select({ mediaId: mediaEvidence.mediaId })
+    .select({ id: mediaEvidence.id, mediaId: mediaEvidence.mediaId })
     .from(mediaEvidence)
     .where(
       and(
@@ -72,9 +72,9 @@ export async function purgePass(options: { store?: ObjectStore; now?: Date; days
       ),
     )
     .limit(perRun);
-  for (const { mediaId } of over) {
+  for (const { id, mediaId } of over) {
     if (options.signal?.aborted) return run;
-    const expired = await refusedAsResult(async () => expireManifest(await as(mediaId), { now }));
+    const expired = await refusedAsResult(async () => expireManifest(await as(mediaId), { evidenceId: id, now }));
     if (expired.ok && expired.expired) run.manifests += 1;
   }
   return run;

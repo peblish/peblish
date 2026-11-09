@@ -13,9 +13,9 @@ export const mediaEvidence = pgTable(
   'media_evidence',
   {
     id: id(),
+    /** One row per incident: a released image caught again gets a new row, and the earlier one stays as it was. */
     mediaId: uuid('media_id')
       .notNull()
-      .unique()
       .references(() => media.id),
     source: text('source', { enum: sourceValues }).notNull(),
     /** A provider's classification (csam, harmful-abusive-material, test) or, for the list, the entry's category. */
@@ -34,12 +34,15 @@ export const mediaEvidence = pgTable(
     holdUntil: at('hold_until'),
     /** The decision plus 24 months; a hold postpones it. The purge job deletes the manifest after it. */
     retainUntil: at('retain_until'),
+    /** When this incident began (the quarantine); the undecided window runs from it. */
     createdAt: createdAt(),
   },
   (t) => [
     enumCheck('media_evidence_source', t.source, sourceValues),
     enumCheck('media_evidence_status', t.status, statusValues),
     index('media_evidence_status').on(t.status),
+    /** An image's incidents, the current (latest) one first. */
+    index('media_evidence_media').on(t.mediaId, t.createdAt),
   ],
 );
 

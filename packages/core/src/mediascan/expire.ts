@@ -1,3 +1,4 @@
+import type { Uuid } from '@peblish/schema/ids';
 import { and, eq } from 'drizzle-orm';
 import { media } from '../db/tables/media.ts';
 import { logEvidence } from '../evidence/log.ts';
@@ -21,10 +22,13 @@ export const expireUndecided = defineMutation({
     const { mediaId } = grant.subject;
     const [row] = await t.db.select().from(media).where(eq(media.id, mediaId)).for('no key update');
     if (row?.scanState !== 'quarantined') return { expired: false };
-    const [evidence] = await t.db.select().from(mediaEvidence).where(eq(mediaEvidence.mediaId, mediaId)).for('no key update');
+    const [evidence] = await t.db
+      .select()
+      .from(mediaEvidence)
+      .where(and(eq(mediaEvidence.mediaId, mediaId), eq(mediaEvidence.status, 'open')))
+      .for('no key update');
     const cutoff = new Date(input.now.getTime() - input.days * 86_400_000);
-    if (!evidence || evidence.status !== 'open' || evidence.createdAt > cutoff || (evidence.holdUntil && evidence.holdUntil > input.now))
-      return { expired: false };
+    if (!evidence || evidence.createdAt > cutoff || (evidence.holdUntil && evidence.holdUntil > input.now)) return { expired: false };
     await blockMedia(t, { action: 'media.scan', mediaId, sha256: row.sha256, from: 'quarantined', evidence, by: null, now: input.now });
     await t.db
       .update(mediaEvidence)
@@ -42,16 +46,21 @@ export const expireUndecided = defineMutation({
 });
 
 /**
- * Deletes the evidence row of one image once its retention is over: decided, retain_until past and
- * no hold in force. The log line that says so outlives it (the log has no foreign key).
+ * Deletes one evidence row (an incident of the image) once its retention is over: decided,
+ * retain_until past and no hold in force. The log line that says so outlives it (the log has no
+ * foreign key).
  */
 export const expireManifest = defineMutation({
   action: 'media.scan',
   emits: ['media.purged'],
   recheck: true,
-  async run(t, grant, input: { now: Date }) {
+  async run(t, grant, input: { evidenceId: Uuid; now: Date }) {
     const { mediaId } = grant.subject;
-    const [evidence] = await t.db.select().from(mediaEvidence).where(eq(mediaEvidence.mediaId, mediaId)).for('no key update');
+    const [evidence] = await t.db
+      .select()
+      .from(mediaEvidence)
+      .where(and(eq(mediaEvidence.id, input.evidenceId), eq(mediaEvidence.mediaId, mediaId)))
+      .for('no key update');
     const over =
       evidence &&
       evidence.status !== 'open' &&

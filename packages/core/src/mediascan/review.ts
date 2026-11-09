@@ -1,6 +1,6 @@
 import type { Uuid } from '@peblish/schema/ids';
 import type { Principal } from '@peblish/schema/authz';
-import { eq } from 'drizzle-orm';
+import { desc, eq } from 'drizzle-orm';
 import { authorize } from '../authz/authorize.ts';
 import { db } from '../db/read.ts';
 import { media } from '../db/tables/media.ts';
@@ -22,11 +22,17 @@ import { livePostsUsing } from './usage.ts';
 // Owned by lane SAFE. An admin's decisions on a quarantined image. The admin sees the image's
 // facts (the manifest), never the image: no UI route renders or links it.
 
-/** Locks the media row and its evidence and checks both are still undecided (or, for a hold, not released). */
+/** Locks the media row and its current incident (the latest evidence row); earlier incidents are history. */
 async function lockedEvidence(t: { db: WriteTx }, action: string, mediaId: Uuid) {
   const [row] = await t.db.select().from(media).where(eq(media.id, mediaId)).for('no key update');
   if (!row) throw new Refused(action, 'target.not_found');
-  const [evidence] = await t.db.select().from(mediaEvidence).where(eq(mediaEvidence.mediaId, mediaId)).for('no key update');
+  const [evidence] = await t.db
+    .select()
+    .from(mediaEvidence)
+    .where(eq(mediaEvidence.mediaId, mediaId))
+    .orderBy(desc(mediaEvidence.createdAt), desc(mediaEvidence.id))
+    .limit(1)
+    .for('no key update');
   return { row, evidence };
 }
 
