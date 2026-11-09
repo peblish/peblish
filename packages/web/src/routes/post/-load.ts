@@ -33,7 +33,8 @@ export const loadPost = createServerFn({ method: 'GET' })
     const { view } = page;
     const { thumbnail, image } = postMedia(view, renderer);
     const locale = negotiateLocale(getRequestHeader('accept-language'));
-    const post: PostView = { ...view, contentHtml };
+    // The page draws `thumbnail` (through the proxy rule); the picture's own address stays out of the page data.
+    const post: PostView = { ...view, thumbnailUrl: null, contentHtml };
     return {
       post,
       gate: page.gate,
