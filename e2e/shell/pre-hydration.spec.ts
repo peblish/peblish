@@ -103,7 +103,7 @@ test.describe('on a phone', () => {
 
       // A link in the sidebar is a plain link: it loads its page.
       await page.getByRole('link', { name: 'Open menu' }).click();
-      await side.getByRole('link', { name: 'Local' }).click();
+      await side.getByRole('link', { name: 'Local', exact: true }).click();
       await page.waitForURL('**/local');
     } finally {
       await context.close();
