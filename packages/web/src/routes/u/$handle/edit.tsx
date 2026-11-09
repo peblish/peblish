@@ -1,3 +1,4 @@
+import composerCss from '@peblish/ui/composer/composer.css?url';
 import { createFileRoute, notFound } from '@tanstack/react-router';
 import { translate } from '../../../i18n/translate.ts';
 import { useTranslate } from '../../../i18n/use-translate.ts';
@@ -26,7 +27,8 @@ export const Route = createFileRoute('/u/$handle/edit')({
     const { locale, site } = titleContext(matches);
     return {
       meta: [{ title: `${translate(locale, 'profiles', 'edit.title')} · ${site}` }, { name: 'robots', content: 'noindex' }],
-      links: [{ rel: 'stylesheet', href: profileCss }],
+      // The Markdown editor's own styles (its toolbar's 28 px targets among them), as the composer loads them.
+      links: [composerCss, profileCss].map((href) => ({ rel: 'stylesheet', href })),
     };
   },
   component: Edit,
