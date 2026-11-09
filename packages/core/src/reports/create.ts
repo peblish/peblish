@@ -23,11 +23,14 @@ export type ReportInput = typeof ReportInput.infer;
  * is built and sent by the outbound consumer, never stored as an activity (the activities table
  * is served by id). An inbound report keeps the peer's Flag in `raw`. The same reporter reports
  * the same target once while it is open: the policy refuses it, and the partial unique index
- * catches the race.
+ * catches the race. The recheck reruns the policy and the principal refresh inside the
+ * transaction, so a reporter site-banned after the form was authorised is refused
+ * (`auth.site_banned`), as is content removed in between.
  */
 export const createReport = defineMutation({
   action: 'report.create',
   emits: ['report.created'],
+  recheck: true,
   async run(t, grant, raw: ReportInput) {
     const input = ReportInput.assert(raw);
     const details = input.details.trim();

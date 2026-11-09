@@ -11,7 +11,9 @@ import { localUser } from '../testing/seed.ts';
 import { removeContent } from '../moderation/remove.ts';
 import type { Principal } from '@peblish/schema/authz';
 import type { ReportCategory } from './categories.ts';
+import { siteBanAs } from '../bans/service.ts';
 import { createReportAs, removeFromReportAs, resolveReportsAs, routeReportsAs } from './actions.ts';
+import { createReport } from './create.ts';
 import type { ReportTarget } from './types.ts';
 
 beforeEach(truncateAll);
@@ -55,6 +57,16 @@ describe('report.create', () => {
     expect(await reason(asRemote(people.remoteUser.id), post(world, 'pinned'))).toBe('ok');
     // one open report per reporter and target
     expect(await reason(localUser(people.user.id), normal, 'hate')).toBe('report.duplicate');
+  });
+
+  test('a person site-banned after the form was authorised cannot file the report', async () => {
+    const world = await seedModerationWorld();
+    const { people } = world;
+    const grant = await grantFor('report.create', localUser(people.user.id), { target: post(world), category: 'spam', forward: false });
+    expect(await siteBanAs(admin(people.admin.id), people.user.id, { reason: 'Spam' })).toMatchObject({ ok: true });
+    await expect(createReport(grant, { details: '' })).rejects.toMatchObject({ reason: 'auth.site_banned' });
+    expect(await db().select().from(reports)).toEqual([]);
+    expect(await reason(localUser(people.user.id), post(world))).toBe('auth.site_banned');
   });
 
   test('categories fit the target and other needs details', async () => {
