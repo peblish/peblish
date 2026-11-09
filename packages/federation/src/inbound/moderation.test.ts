@@ -1,15 +1,18 @@
 import { and, eq } from 'drizzle-orm';
 import { beforeEach, describe, expect, test } from 'vitest';
 import { db } from '@peblish/core/db/read';
+import { actors } from '@peblish/core/db/tables/actors';
 import { posts } from '@peblish/core/db/tables/content';
 import { communityModerators, modlog } from '@peblish/core/db/tables/moderation';
 import { deliveries } from '@peblish/core/delivery/tables';
 import { communityBans } from '@peblish/core/moderation/tables';
+import { writer } from '@peblish/core/db/write';
 import { truncateAll } from '@peblish/core/testing/db';
 import { stubFetch } from '@peblish/core/testing/seed-fed-a';
 import { deliverRow, seedLabWorld } from '@peblish/core/testing/seed-fed-b';
 import { readFixture } from '../test/manifest.ts';
-import { mirrorDue } from './moderators/refresh.ts';
+import { forgetDeferredMirrors } from '@peblish/core/remote/moderators';
+import { fetchModerators, mirrorDue } from './moderators/refresh.ts';
 import { processRow } from './pipeline.ts';
 import { resetKeyFetchBudget } from './throttle.ts';
 
@@ -22,6 +25,7 @@ let lab: Lab;
 beforeEach(async () => {
   await truncateAll();
   resetKeyFetchBudget();
+  forgetDeferredMirrors();
   lab = await seedLabWorld();
 });
 
@@ -213,5 +217,58 @@ describe('keeping the mirror fresh', () => {
     expect(await mirrored()).toBe(1);
     // Fresh now: nothing is due until the mirror runs low.
     expect(await mirrorDue({ fetch: stubFetch({ [collection]: { body: moderators } }).fetch })).toBe(0);
+  });
+});
+
+describe('reading a community’s moderators', () => {
+  const community = 'https://lemmy.lab.test/c/lab';
+  const collection = `${community}/moderators`;
+  const admin = 'https://lemmy.lab.test/u/lemmyadmin';
+  const list = (orderedItems: string[], id = collection) => ({ type: 'OrderedCollection', id, orderedItems });
+
+  test('is done without following a redirect, from the community’s own origin and under the name it gave', async () => {
+    const id = lab.id(community);
+    const redirected = stubFetch({
+      [collection]: { status: 301, location: 'https://evil.test/m' },
+      'https://evil.test/m': { body: list([admin]) },
+    });
+    await expect(fetchModerators(id, redirected.fetch)).rejects.toMatchObject({ reason: 'moderators.unreachable' });
+    expect(redirected.requests.map((request) => request.url)).toEqual([collection]);
+    expect(redirected.requests[0]?.init).toMatchObject({ maxRedirects: 0 });
+
+    const renamed = stubFetch({ [collection]: { body: list([admin], `${community}/other`) } });
+    await expect(fetchModerators(id, renamed.fetch)).rejects.toMatchObject({ reason: 'moderators.unreachable' });
+
+    const foreign = 'https://evil.test/c/lab/moderators';
+    await writer().update(actors).set({ moderatorsUrl: foreign }).where(eq(actors.id, id));
+    const elsewhere = stubFetch({ [foreign]: { body: list([admin], foreign) } });
+    await expect(fetchModerators(id, elsewhere.fetch)).rejects.toMatchObject({ reason: 'moderators.unreachable' });
+    expect(elsewhere.requests).toEqual([]);
+  });
+
+  test('leaves out a moderator nobody here has seen and whose server is down, and mirrors the rest', async () => {
+    const ghost = 'https://down.test/u/ghost';
+    const { fetch } = stubFetch({ [collection]: { body: list([ghost, admin]) }, [ghost]: { status: 503 } });
+    const fetched = await fetchModerators(lab.id(community), fetch);
+    expect(fetched.moderatorIds).toEqual([lab.id(admin)]);
+  });
+
+  test('an empty collection is mirrored once and not asked for again until the backoff has passed', async () => {
+    const empty = stubFetch({ [collection]: { body: list([]) } });
+    // (The other followed community has no stubbed collection, so it is asked again each run.)
+    const asked = () => empty.requests.filter((request) => request.url === collection).length;
+    expect(await mirrorDue({ fetch: empty.fetch })).toBe(1);
+    expect(asked()).toBe(1);
+    expect(await mirrorDue({ fetch: empty.fetch })).toBe(0);
+    expect(asked()).toBe(1);
+    // The collection fills up later; once the community is asked again it is mirrored.
+    forgetDeferredMirrors();
+    expect(await mirrorDue({ fetch: stubFetch({ [collection]: { body: list([admin]) } }).fetch })).toBe(1);
+    expect(
+      await db()
+        .select()
+        .from(communityModerators)
+        .where(eq(communityModerators.communityId, lab.id(community))),
+    ).toHaveLength(1);
   });
 });
