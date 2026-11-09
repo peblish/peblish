@@ -114,6 +114,15 @@ export const reports = pgTable(
     targetCommentId: uuid('target_comment_id'),
     category: text('category').notNull(),
     reason: text('reason'),
+    /**
+     * The remote hosts a local report is sent on to, fixed when it is filed: the hosts the form
+     * named that the Flag could still reach then. Empty when it stays here. The outbound Flag goes
+     * to these hosts only, and the receipt names them.
+     */
+    forwardedHosts: text('forwarded_hosts')
+      .array()
+      .notNull()
+      .default(sql`'{}'::text[]`),
     /** Who sees it: community moderators and admins, or admins alone. */
     audience: text('audience', { enum: audienceValues }).notNull().default('moderators'),
     status: text('status', { enum: statusValues }).notNull().default('open'),

@@ -26,6 +26,15 @@ export function mentionHrefs(raw: unknown): string[] {
 }
 
 /**
+ * The Mention hrefs that count: the first mentionMaxCount tags, then without repeats, in order.
+ * findMentioned looks people up from these, and sameMentions compares them, so an edit that
+ * changes who is notified is never taken for no change.
+ */
+export function effectiveHrefs(raw: unknown): string[] {
+  return [...new Set(mentionHrefs(raw).slice(0, mentionMaxCount))];
+}
+
+/**
  * The live local people the body mentions, never the author, at most mentionMaxCount. `bodyMd`
  * is a local body's Markdown (null for a peer's); `raw` the peer's document (null for ours).
  */
@@ -40,7 +49,7 @@ export async function findMentioned(
         m.kind === 'person' && m.host === host ? [m.name.toLowerCase()] : [],
       )
     : [];
-  const hrefs = mentionHrefs(raw).slice(0, mentionMaxCount);
+  const hrefs = effectiveHrefs(raw);
   if (names.length === 0 && hrefs.length === 0) return [];
   const byName = names.length > 0 ? inArray(sql`lower(${actors.name})`, names) : undefined;
   const byHref = hrefs.length > 0 ? inArray(actors.apId, hrefs) : undefined;
@@ -60,9 +69,12 @@ export async function findMentioned(
     .slice(0, mentionMaxCount);
 }
 
-/** Whether two peer documents mention the same actors (order and repeats aside): a change is an edit even when the text is not. */
+/**
+ * Whether two peer documents mention the same actors as findMentioned counts them (the capped
+ * set, order and repeats aside): a change is an edit even when the text is not.
+ */
 export function sameMentions(before: unknown, after: unknown): boolean {
-  const a = new Set(mentionHrefs(before));
-  const b = new Set(mentionHrefs(after));
+  const a = new Set(effectiveHrefs(before));
+  const b = new Set(effectiveHrefs(after));
   return a.size === b.size && [...a].every((href) => b.has(href));
 }

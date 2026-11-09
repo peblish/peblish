@@ -6,7 +6,7 @@ import { writer } from '../db/write.ts';
 import { truncateAll } from '../testing/db.ts';
 import { seedInboxWorld } from '../testing/seed-e2.ts';
 import { seedActor } from '../testing/seed.ts';
-import { findMentioned } from './scan.ts';
+import { findMentioned, sameMentions } from './scan.ts';
 
 beforeEach(truncateAll);
 
@@ -65,5 +65,20 @@ describe('findMentioned', () => {
     expect(found).toHaveLength(50);
     const tags = names.map((name) => ({ type: 'Mention', href: `https://feddit.test/ap/u.${name}` }));
     expect(await scan({ raw: { tag: tags }, authorId: w.people.author.id })).toHaveLength(50);
+  });
+});
+
+describe('sameMentions compares the mentions findMentioned counts', () => {
+  const doc = (...hrefs: string[]) => ({ tag: hrefs.map((href) => ({ type: 'Mention', href })) });
+  const a = 'https://here.test/u/a';
+  const b = 'https://here.test/u/b';
+  test('a tag past the 50th counts for nothing, so dropping the repeats ahead of it is a change', () => {
+    const fifty = Array.from({ length: 50 }, () => a);
+    // [A x 50, B] notifies A alone; [A, B] notifies both.
+    expect(sameMentions(doc(...fifty, b), doc(a, b))).toBe(false);
+    expect(sameMentions(doc(a, b), doc(...fifty, b))).toBe(false);
+    // Past the cap on both sides, or reordered and repeated within it, is no change.
+    expect(sameMentions(doc(...fifty, b), doc(...fifty))).toBe(true);
+    expect(sameMentions(doc(a, b, a), doc(b, a))).toBe(true);
   });
 });
