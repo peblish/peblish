@@ -18,7 +18,7 @@ export function ActionForm({
   children,
 }: {
   action: string;
-  intent: 'delete' | 'restore' | 'remove' | 'unremove';
+  intent: 'delete' | 'restore';
   className?: string;
   children?: ReactNode;
 }) {

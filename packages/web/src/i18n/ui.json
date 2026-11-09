@@ -51,7 +51,8 @@
     "density.card": "Card",
     "density.classic": "Classic",
     "density.compact": "Compact",
-    "prose.spoiler": "Reveal spoiler"
+    "prose.spoiler": "Reveal spoiler",
+    "thread.blocked": "Hidden: you blocked this person."
   },
   "de": {
     "vote.group": "Abstimmung",
@@ -105,6 +106,7 @@
     "density.card": "Karte",
     "density.classic": "Klassisch",
     "density.compact": "Kompakt",
-    "prose.spoiler": "Spoiler anzeigen"
+    "prose.spoiler": "Spoiler anzeigen",
+    "thread.blocked": "Ausgeblendet: Du hast diese Person blockiert."
   }
 }

@@ -42,8 +42,10 @@ export const loadPost = createServerFn({ method: 'GET' })
       /** False while the gate withholds the post (signed out, or no 16+ declaration) or a moderator removed it: the thread must not be sent either. */
       threadVisible: threadVisible(page),
       thread: await loadThread({ page, session, renderer }),
-      /** The signed-in person, or null: who may see the author's and moderators' actions. */
+      /** The signed-in person, or null: who may see the author's actions and the action slots. */
       viewerId: session?.view.actorId ?? null,
+      /** A site admin with two-factor on, for the action slots. */
+      viewerAdmin: session?.view.siteRole === 'admin',
       thumbnail,
       image,
       /** The times as text in the request's locale, so hydration formats nothing (postTime). */

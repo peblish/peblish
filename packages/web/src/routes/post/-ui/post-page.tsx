@@ -7,19 +7,24 @@ import { useRouteHydrated } from '../../../shell/hydration.ts';
 import { useVoteLabels } from '../../../shell/labels.ts';
 import { castVoteFn } from '../-vote.ts';
 import type { PostPageData } from '../-load.ts';
+import type { ContentActionProps } from '../../-actions/props.ts';
 import { ThreadSection } from '../$id/comments/-ui/thread-section.tsx';
+import { PostBlock } from './actions/block.tsx';
+import { PostModerate } from './actions/moderate.tsx';
+import { PostReport } from './actions/report.tsx';
 import { ActionForm } from './action-form.tsx';
 import { asPostError, errorKey } from './errors.ts';
 
 // The post page after thread-nested.html's post part: vote column, title and link, community
-// and author, body, the actions the MVP has. Left out on purpose: lock and pin authoring, save,
-// crosspost, share and report. Sensitive and tombstone states withhold their content in core
+// and author, body, the author's own actions, and the action slots (./actions/: report for REP,
+// block for E1, moderate for MODF) for a signed-in viewer. Left out on purpose: lock and pin
+// authoring, save, crosspost and share. Sensitive and tombstone states withhold their content in core
 // (readPost); this only lays out what it was given.
 
 export function PostPage({ data, error }: { data: PostPageData; error?: string | undefined }) {
   const { t, locale } = useTranslate();
   useRouteHydrated();
-  const { post, gate, moderator, viewerId } = data;
+  const { post, gate, moderator, viewerId, viewerAdmin } = data;
   const back = `/post/${post.id}`;
   const signInHref = `/auth/sign-in?redirect=${encodeURIComponent(back)}`;
   const isAuthor = viewerId === post.author.id;
@@ -27,6 +32,19 @@ export function PostPage({ data, error }: { data: PostPageData; error?: string |
   const count = post.counts.comments;
   const shownError = asPostError(error);
   const voteLabels = useVoteLabels();
+  // The slots get the post unless the gate withholds it; a removed or deleted post still has them (a moderator restores it).
+  const actions: ContentActionProps | null =
+    viewerId && withheld !== 'gate'
+      ? {
+          target: { kind: 'post', id: post.id },
+          author: post.author,
+          community: post.community,
+          removed: post.removed,
+          deleted: post.deleted,
+          viewer: { actorId: viewerId, moderator, admin: viewerAdmin },
+          back,
+        }
+      : null;
 
   let body: ReactNode;
   if (post.deleted) {
@@ -151,24 +169,13 @@ export function PostPage({ data, error }: { data: PostPageData; error?: string |
                 )}
               </div>
             )}
-            {moderator && !post.deleted && (
-              <div className="post-mod" role="group" aria-label={t('posts', 'action.mod')}>
-                {post.removed ? (
-                  <ActionForm action={back} intent="unremove">
-                    <p className="post-hint">{t('posts', 'removed.banner')}</p>
-                    <Button type="submit">{t('posts', 'action.unremove')}</Button>
-                  </ActionForm>
-                ) : (
-                  <details>
-                    <summary>{t('posts', 'action.remove')}</summary>
-                    <ActionForm action={back} intent="remove">
-                      <label htmlFor="remove-reason">{t('posts', 'action.removeReason')}</label>
-                      <textarea id="remove-reason" name="reason" rows={3} maxLength={10000} />
-                      <Button type="submit">{t('posts', 'action.removeSubmit')}</Button>
-                    </ActionForm>
-                  </details>
-                )}
-              </div>
+            {moderator && post.removed && !post.deleted && <p className="post-hint">{t('posts', 'removed.banner')}</p>}
+            {actions && (
+              <>
+                <PostReport {...actions} />
+                <PostBlock {...actions} />
+                <PostModerate {...actions} />
+              </>
             )}
           </div>
         </div>

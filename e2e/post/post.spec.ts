@@ -313,38 +313,3 @@ test.describe('the author', () => {
     expect(await post(page, seed.posts.plain, { intent: 'delete' })).toEqual({ status: 400, answer: { error: 'post.author_required' } });
   });
 });
-
-test.describe('a moderator', () => {
-  test('removes a post with a reason; everyone else sees only a notice, and restoring brings it back', async ({ page, browser }) => {
-    await signedIn(page, seed.moderator.name);
-    await gotoHydrated(page, url(seed.posts.removable));
-    await page.getByText('Remove', { exact: true }).click();
-    await page.getByLabel(/^Reason/).fill('Rule 2: off topic');
-    await page.getByRole('button', { name: 'Remove post' }).click();
-    await expect(page.getByText('Only moderators see this post')).toBeVisible();
-    // The moderator still reads it.
-    await expect(page.locator('.post-text')).toContainText('Removable body');
-
-    const anonymous = await (await browser.newContext()).newPage();
-    const { status, text } = await html(anonymous, seed.posts.removable);
-    expect(status).toBe(200);
-    expect(text).toContain('Removed by a moderator');
-    expect(text).not.toContain('Removable body');
-    expect(text).not.toContain('Removable post');
-    await anonymous.close();
-
-    await page.getByRole('button', { name: 'Restore post' }).click();
-    await expect(page.getByText('Only moderators see this post')).toHaveCount(0);
-    expect((await html(page, seed.posts.removable)).text).toContain('Removable body');
-    await expectAccessible(page);
-  });
-
-  test('a reader cannot remove', async ({ page }) => {
-    await signedIn(page, seed.viewer.name);
-    await gotoHydrated(page, url(seed.posts.removable));
-    expect(await post(page, seed.posts.removable, { intent: 'remove', reason: 'nope' })).toEqual({
-      status: 400,
-      answer: { error: 'mod.moderator_required' },
-    });
-  });
-});

@@ -46,6 +46,7 @@ const labels = {
   moreReplies: (n: number) => `${n} more replies`,
   removed: '[removed]',
   deleted: '[deleted]',
+  blocked: '[blocked]',
   edited: 'edited',
   reply: 'reply',
   share: 'share',
@@ -124,4 +125,43 @@ test('times from the server are printed as given', () => {
     />,
   );
   expect(html).toContain('<time dateTime="2026-11-09T09:00:00Z" title="Nov 9, 2026, 9:00 AM UTC">3h</time>');
+});
+
+describe('a comment by someone the viewer blocks', () => {
+  test('keeps its author line and its replies, without its text, vote or reply', () => {
+    const html = renderToStaticMarkup(
+      <CommentThread
+        comments={[comment('a', null, 1, { blocked: true }), comment('b', 'a', 0)]}
+        postAuthorId="nobody"
+        continueHref={() => null}
+        authorHref={() => '/u/jun'}
+        labels={labels}
+        locale="en-US"
+        onReply={() => {}}
+      />,
+    );
+    expect(html).toContain('[blocked]');
+    expect(html).not.toContain('text of a');
+    expect(html).toContain('text of b');
+    expect(html.match(/href="\/u\/jun"/g)).toHaveLength(2);
+    // Only b offers a vote and a reply.
+    expect(html.match(/>reply</g)).toHaveLength(1);
+    expect(html.match(/aria-label="Vote"/g)).toHaveLength(1);
+  });
+
+  test("the page's actions render on every comment, a blocked one included", () => {
+    const html = renderToStaticMarkup(
+      <CommentThread
+        comments={[comment('a', null, 0, { blocked: true }), comment('b', null, 0, { removed: true })]}
+        postAuthorId="nobody"
+        continueHref={() => null}
+        authorHref={() => '/u/jun'}
+        labels={labels}
+        locale="en-US"
+        renderActions={(c) => <span>actions of {c.id}</span>}
+      />,
+    );
+    expect(html).toContain('actions of a');
+    expect(html).toContain('actions of b');
+  });
 });
