@@ -2,7 +2,7 @@ import { db } from '@peblish/core/db/read';
 import { actors } from '@peblish/core/db/tables/actors';
 import { communitiesDueForMirror, maxMirrored, mirrorModerators } from '@peblish/core/remote/moderators';
 import { eq } from 'drizzle-orm';
-import { fetchJson, FetchFailure, type Fetcher } from '../../actors/document.ts';
+import { fetchActivity, FetchFailure, type Fetcher } from '../../actors/document.ts';
 import { importGrant } from '../../actors/grants.ts';
 import { ActorResolveError, resolveRemoteActor } from '../../actors/resolve.ts';
 import { safeFetch } from '../../actors/safe-fetch.ts';
@@ -37,7 +37,7 @@ export async function fetchModerators(communityId: string, fetch: Fetcher = safe
   const collection = community.moderatorsUrl;
   let members;
   try {
-    members = moderatorsFromWire((await fetchJson(collection, fetch)).json).moderatorApIds;
+    members = moderatorsFromWire((await fetchActivity(collection, fetch)).json).moderatorApIds;
   } catch (error) {
     if (error instanceof FetchFailure && transient(error)) throw error;
     if (error instanceof FetchFailure || error instanceof MappingError) throw skip('moderators.unreachable', collection);

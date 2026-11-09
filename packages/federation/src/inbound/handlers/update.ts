@@ -26,7 +26,8 @@ async function prepareActor(ctx: InboundContext, record: ActorRecord): Promise<P
   if (checkRemoteActor(record) !== null) throw skip('object.origin_mismatch', record.apId);
   const grant = await importGrant('remote.actor_store', { apId: record.apId });
   return prepared(ctx, async (t) => {
-    await storeRemoteActor.within(t, grant, record);
+    // An actor that sent a Delete stays deleted: the store changes nothing.
+    if ((await storeRemoteActor.within(t, grant, record)).deleted) throw skip('target.deleted', record.apId);
     return { objectApId: record.apId };
   });
 }

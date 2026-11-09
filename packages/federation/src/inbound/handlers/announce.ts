@@ -2,7 +2,7 @@ import { db } from '@peblish/core/db/read';
 import { actors } from '@peblish/core/db/tables/actors';
 import { follows } from '@peblish/core/db/tables/follows';
 import { and, eq } from 'drizzle-orm';
-import { fetchJson, FetchFailure } from '../../actors/document.ts';
+import { fetchActivity, FetchFailure } from '../../actors/document.ts';
 import { activityFromWire } from '../../mapping/activity.ts';
 import { fromWire } from '../../mapping/document.ts';
 import { MappingError, type JsonObject } from '../../mapping/json.ts';
@@ -45,7 +45,7 @@ async function readFromOrigin(ctx: InboundContext, expected: Announced): Promise
   const { id, actorApId } = expected.activity;
   let json: unknown;
   try {
-    json = (await fetchJson(id, ctx.fetch)).json;
+    json = (await fetchActivity(id, ctx.fetch)).json;
   } catch (error) {
     // The origin being down is retried; its saying no is the answer.
     if (error instanceof FetchFailure && (error.reason === 'unreachable' || (error.status !== undefined && error.status >= 500)))
