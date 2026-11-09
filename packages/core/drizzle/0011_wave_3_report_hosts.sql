@@ -1,0 +1,1 @@
+ALTER TABLE "reports" ADD COLUMN "forwarded_hosts" text[] DEFAULT '{}'::text[] NOT NULL;

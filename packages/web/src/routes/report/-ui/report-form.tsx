@@ -108,6 +108,8 @@ export function ReportFormView({
       {canForward && (
         <label className="rp-forward">
           <input type="checkbox" name="forward" value="yes" />
+          {/* The hosts named here; the report is sent on to no other. */}
+          <input type="hidden" name="hosts" value={form.hosts.join(' ')} />
           <span>{t('reports', 'form.forward', { hosts: hostList(locale, form.hosts) })}</span>
         </label>
       )}

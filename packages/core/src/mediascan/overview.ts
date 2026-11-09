@@ -9,7 +9,7 @@ import { media } from '../db/tables/media.ts';
 import { mediaEvidence, type HoldAuthority } from '../evidence/tables.ts';
 import { readSetting } from '../settings/read.ts';
 import { scanConfig } from './config.ts';
-import { holdKeepsBytes } from './purge.ts';
+import { heldSql, holdKeepsBytes } from './purge.ts';
 import { mediaBlocklist, mediaScans } from './tables.ts';
 import { mediaUrl } from './usage.ts';
 
@@ -53,7 +53,11 @@ export type EvidenceRow = {
   status: 'open' | 'confirmed' | 'released';
   decidedAt: string | null;
   decidedBy: Person;
-  /** held: kept under an AFP hold; purged: gone; kept: a released image; waiting: undecided, still stored. */
+  /**
+   * The image's one stored object now, whatever this incident's status (a later incident may have
+   * moved it on): purged: gone; kept: stored and served, the image is clean; held: kept by an AFP
+   * hold in force on any of its incidents; waiting: still stored, for a decision or the purge.
+   */
   bytes: 'held' | 'purged' | 'kept' | 'waiting';
   holdAuthority: HoldAuthority | null;
   holdReference: string | null;
@@ -140,7 +144,12 @@ export async function mediaOverview(now = new Date()): Promise<MediaOverview> {
     .limit(20);
   const hashRows = await db().select().from(mediaBlocklist).orderBy(desc(mediaBlocklist.createdAt)).limit(500);
   const evidenceRows = await db()
-    .select({ evidence: mediaEvidence, storageKey: media.storageKey })
+    .select({
+      evidence: mediaEvidence,
+      storageKey: media.storageKey,
+      scanState: media.scanState,
+      held: heldSql(media.id, now).mapWith(Boolean),
+    })
     .from(mediaEvidence)
     .innerJoin(media, eq(media.id, mediaEvidence.mediaId))
     .where(or(ne(mediaEvidence.status, 'open'), isNotNull(mediaEvidence.holdUntil)))
@@ -207,14 +216,14 @@ export async function mediaOverview(now = new Date()): Promise<MediaOverview> {
       addedAt: row.createdAt.toISOString(),
       addedBy: person(row.addedBy),
     })),
-    evidence: evidenceRows.map(({ evidence, storageKey }) => ({
+    evidence: evidenceRows.map(({ evidence, storageKey, scanState, held }) => ({
       evidenceId: evidence.id,
       mediaId: evidence.mediaId,
       manifestSha256: evidence.manifestSha256,
       status: evidence.status,
       decidedAt: iso(evidence.decidedAt),
       decidedBy: person(evidence.decidedBy),
-      bytes: evidence.status === 'released' ? 'kept' : storageKey === null ? 'purged' : holdKeepsBytes(evidence, now) ? 'held' : 'waiting',
+      bytes: storageKey === null ? 'purged' : scanState === 'clean' ? 'kept' : held ? 'held' : 'waiting',
       holdAuthority: evidence.holdAuthority,
       holdReference: evidence.holdReference,
       holdUntil: iso(evidence.holdUntil),

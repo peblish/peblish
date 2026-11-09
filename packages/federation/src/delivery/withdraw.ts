@@ -12,6 +12,7 @@ import { followersOf, LEMMY_CONTEXT, PUBLIC } from '../mapping/vocabulary.ts';
 import { remove } from './activities.ts';
 import { followerInboxes } from './followers.ts';
 import { newActivityId, sendActivity } from './send.ts';
+import { microblogSoftware } from './software.ts';
 import { enqueueDeliveries } from './queue.ts';
 import { actorRefs, mentionedBefore, type ActorRef } from './records.ts';
 
@@ -133,7 +134,10 @@ export const BULK_WITHDRAWAL_CAP = 200;
 export type BoostedPost = { apId: string; communityId: string };
 
 /**
- * The posts `authorId` has removed that still have a boost to take back, newest removal first,
+ * The posts `authorId` has removed that a Mastodon-like server still holds, newest removal
+ * first: a boost no Undo has taken back, or, for a local author, a copy sent directly for a
+ * mention that the author's Delete has not taken back (withdrawBoosts stores that Delete, so the
+ * post then leaves the query),
  * at most `limit` (a ban with removeContent removes them without one event each), in
  * `communityId` or, without it, in every local community.
  */
@@ -150,13 +154,36 @@ export async function removedBoostedPosts(
         communityId ? eq(posts.communityId, communityId) : undefined,
         eq(posts.authorId, authorId),
         isNotNull(posts.removedAt),
-        // Only a community that is ours and still there can take its boost back: a post elsewhere would come back every time.
-        sql`exists (
+        // Only a community that is ours and still there takes a post back: a post elsewhere would come back every time.
+        sql`exists (select 1 from actors c where c.id = ${posts.communityId} and c.local and c.deleted_at is null)`,
+        // A boost no Undo has taken back, or a copy sent directly to a Mastodon-like server for a
+        // mention (as mentionedBefore reads it) that the local author's Delete has not taken back.
+        sql`(exists (
           select 1 from activities a
-          join actors c on c.ap_id = a.actor_ap_id and c.id = ${posts.communityId} and c.local and c.deleted_at is null
+          join actors c on c.ap_id = a.actor_ap_id and c.id = ${posts.communityId}
           where a.type = 'Announce' and a.local and a.object_ap_id = ${posts.apId}
             and not exists (select 1 from activities u where u.type = 'Undo' and u.local and u.object_ap_id = a.ap_id)
-        )`,
+        ) or (
+          exists (
+            select 1 from activities s
+            join actors m on m.ap_id in (select jsonb_array_elements_text(s.raw -> 'cc'))
+            join instances i on i.id = m.instance_id
+            where s.local and s.type in ('Create', 'Update') and s.object_ap_id = ${posts.apId}
+              and jsonb_typeof(s.raw -> 'cc') = 'array'
+              and m.kind <> 'Group' and not m.local and coalesce(m.shared_inbox_url, m.inbox_url) is not null
+              and lower(i.software) in (${sql.join(
+                microblogSoftware.map((name) => sql`${name}`),
+                sql`, `,
+              )})
+          )
+          and exists (
+            select 1 from actors au where au.id = ${posts.authorId} and au.local
+              and not exists (
+                select 1 from activities d
+                where d.type = 'Delete' and d.local and d.actor_ap_id = au.ap_id and d.object_ap_id = ${posts.apId}
+              )
+          )
+        ))`,
       ),
     )
     .orderBy(desc(posts.removedAt))

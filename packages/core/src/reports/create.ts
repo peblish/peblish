@@ -1,4 +1,5 @@
 import { newObjectApId } from '@peblish/schema/actor-urls';
+import type { Uuid } from '@peblish/schema/ids';
 import { type } from 'arktype';
 import { eq } from 'drizzle-orm';
 import { uuidv7 } from 'uuidv7';
@@ -10,12 +11,16 @@ import type { Queryable } from '../db/read.ts';
 import { defineMutation } from '../tx/mutation.ts';
 import { Refused } from '../tx/refused.ts';
 import { audienceOf } from './categories.ts';
+import { forwardHosts } from './forward.ts';
 import type { ReportTarget } from './types.ts';
 
 export const detailsLimit = 2000;
 
-/** The reporter's free text, and for an inbound Flag its id and the document as received. */
-export const ReportInput = type({ details: 'string', 'apId?': 'string.url', 'raw?': 'unknown' });
+/**
+ * The reporter's free text; for a forwarded local report the hosts the form named (`hosts`); for
+ * an inbound Flag its id and the document as received.
+ */
+export const ReportInput = type({ details: 'string', 'hosts?': 'string[]', 'apId?': 'string.url', 'raw?': 'unknown' });
 export type ReportInput = typeof ReportInput.infer;
 
 /**
@@ -23,7 +28,10 @@ export type ReportInput = typeof ReportInput.infer;
  * is built and sent by the outbound consumer, never stored as an activity (the activities table
  * is served by id). An inbound report keeps the peer's Flag in `raw`. The same reporter reports
  * the same target once while it is open: the policy refuses it, and the partial unique index
- * catches the race. The recheck reruns the policy and the principal refresh inside the
+ * catches the race. A forwarded report stores the hosts it goes to (`forwarded_hosts`): those the
+ * form named (`hosts`; every current one when the caller names none) that `forwardHosts` still
+ * gives inside the transaction. Only they get the Flag, so a peer unblocked later is never added;
+ * when none is left the report stays here, with no Flag id. The recheck reruns the policy and the principal refresh inside the
  * transaction, so a reporter site-banned after the form was authorised is refused
  * (`auth.site_banned`), as is content removed in between.
  */
@@ -44,8 +52,10 @@ export const createReport = defineMutation({
     if (!reporter) throw new Error(`report.create: no actor ${grant.actorId}`);
     const id = uuidv7();
     const audience = audienceOf(category, target.kind);
-    const apId = input.apId ?? (local && forward ? newObjectApId(instance.origin, 'activity', id) : null);
     const communityId = await communityOf(t.db, target);
+    const forwardedHosts = local && forward ? await sendTo(t.db, target, communityId, input.hosts) : [];
+    const forwarding = forwardedHosts.length > 0;
+    const apId = input.apId ?? (forwarding ? newObjectApId(instance.origin, 'activity', id) : null);
     const [row] = await t.db
       .insert(reports)
       .values({
@@ -62,6 +72,7 @@ export const createReport = defineMutation({
         category,
         reason: details === '' ? null : details,
         audience,
+        forwardedHosts,
       })
       .onConflictDoNothing()
       .returning({ number: reports.number });
@@ -76,13 +87,25 @@ export const createReport = defineMutation({
       target,
       category,
       audience,
-      forward,
+      forward: forwarding,
       apId,
       local,
     });
     return { id, number: row.number, apId };
   },
 });
+
+/** The hosts a forwarded report about content goes to: the current ones, limited to those the form named. */
+async function sendTo(q: Queryable, target: ReportTarget, communityId: Uuid | null, named: readonly string[] | undefined) {
+  if (target.kind === 'actor' || !communityId) return [];
+  const [row] =
+    target.kind === 'post'
+      ? await q.select({ authorId: posts.authorId }).from(posts).where(eq(posts.id, target.id))
+      : await q.select({ authorId: comments.authorId }).from(comments).where(eq(comments.id, target.id));
+  if (!row) return [];
+  const hosts = await forwardHosts(q, communityId, row.authorId);
+  return named ? hosts.filter((host) => named.includes(host)) : hosts;
+}
 
 /** The community the report belongs to: the one a post or comment lives in, or the community itself when it is the target. */
 export async function communityOf(q: Queryable, target: ReportTarget) {

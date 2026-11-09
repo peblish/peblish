@@ -872,3 +872,40 @@ Left open, from FX-FED's notes:
 - LAB scenarios for F5 and F3 on Mastodon.
 
 All of these are for FX-INTEROP or later. `deleteAccount` stays without `recheck: 'inner'` (root: a site-banned person may still delete their account).
+
+### Wave 3 review fixes, step 3: the follow-up review's fixes (2026-11-10)
+
+The follow-up review of `w3-review...w3-fixes` confirmed 37 of the 40 fixes. It found three partial fixes and four new findings, R1 to R6 in `briefs/wave-3/fix-review-findings.md` and `fix-round-2.md`. FR-A and FR-B fixed them on branches cut from `w3-fixes`. Both merged with `git merge --no-ff`, with no conflicts, and `LANE-NOTES.md` was dropped each time.
+
+| Lane | Findings                                                                                                                                                                                                                                                                                                                                                   | Head    | Merge   |
+| ---- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- | ------- |
+| FR-B | R4 (a guard at the top of `0010` refuses to run while a preservation hold is in force), R5 (an incident's byte status follows what is stored now), R6 (`addBlock` serialises on a per-blocker advisory lock, so no deadlock between two people's blocks or with a moderator's ban)                                                                         | 3a841e7 | 524d203 |
+| FR-A | R1 (`reports.forwarded_hosts` stores the hosts the form disclosed; Flags go only there, and the receipt reads them), R2 (site-ban withdrawal reaches posts sent to a Mastodon-like server for a mention alone, and earlier recipients are kept whatever their state now), R3 (mentions are compared after `findMentioned`'s cap of 50 and in-order dedupe) | b9b9875 | 23a03ab |
+
+Migrations:
+
+- `0010_wave_3_fixes` is kept exactly as FR-B committed it, guard included, and was not regenerated. The guard changed its hash, so `peblish_root` and `peblish_root_test` were dropped and recreated.
+- `0011_wave_3_report_hosts` (drizzle-kit) is one statement: `ALTER TABLE "reports" ADD COLUMN "forwarded_hosts" text[] DEFAULT '{}'::text[] NOT NULL;`.
+- `pnpm db:drift` finds none, and a fresh `pnpm db:migrate` applies all twelve migrations.
+
+| Commit  | Change                                                                                                              |
+| ------- | ------------------------------------------------------------------------------------------------------------------- |
+| 9b56bfd | Migration `0011_wave_3_report_hosts`; the migrate test's comment counts twelve                                      |
+| 5516888 | README: `updateProfile` locks the acting actor's row, `addBlock` takes a per-blocker advisory lock (FR-B's wording) |
+| b8f213d | The `recheck: 'inner'` comment in `tx/mutation.ts` says the same                                                    |
+| (last)  | This section; tag `w3-final` (local) at the head                                                                    |
+
+Verification on lane root:
+
+- `pnpm check`: green. 226 test files passed and 4 skipped; 2,595 tests passed and 7 skipped.
+- `pnpm db:drift`: none. A fresh `pnpm db:migrate` applies.
+- `pnpm e2e`: parallel run 323 passed and 1 skipped; serial run 33 passed; both exited 0. The forwarded-report case passes against the stored hosts.
+- Payload unchanged: product pages at most 130.7 kB of 170, `/kit` 170.5 of 180, CSS 60.4 of 65, fonts 259.2 of 270.
+- Image job: `docker build -t peblish:w3-final .` and `scripts/image-smoke.sh` against a throwaway `peblish_root_image` (dropped after). It passed.
+- `PEBLISH_FEED_PERF=1` `feeds/perf.test.ts`:
+  - The first run, at load average 13 just after e2e, failed on two signed-out rows: Popular Top all page 1 at p95 94.8 ms (p50 6.9) and Local Top all page 10 at p95 57.2 ms (p50 14.1). Postgres had no stuck sessions.
+  - Rerun alone at load average 10, it passed: 309 rows, none over 50 ms. Worst p95 was 29.0 ms and worst Subscribed 19.3 ms; the two rows measured 4.4 and 8.5 ms.
+  - Those are signed-out rows with no viewer predicates, and the p50 stayed low, so I read the failure as load spikes.
+- `profiles/perf.test.ts`: passed, worst p95 14.3 ms.
+
+Left open: FR-A's section 9. A site-banned local author's post in a remote community, sent to a Mastodon-like server only for a mention, is not withdrawn, because withdrawal needs a live local community. This is rare. For FX-INTEROP: keep the stored-hosts filter if it folds `forwardHosts` and `recipients()` into one function. Any database migrated with the earlier `0010` (other lanes, FX-INTEROP) needs recreating with the command `lane.sh` prints.

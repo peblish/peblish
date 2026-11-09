@@ -1,13 +1,16 @@
-import { eq, sql } from 'drizzle-orm';
+import { eq, inArray, sql } from 'drizzle-orm';
 import { beforeEach, describe, expect, test } from 'vitest';
 import { siteBans } from '../bans/tables.ts';
 import { db } from '../db/read.ts';
 import { actors } from '../db/tables/actors.ts';
+import { authUser } from '../db/tables/auth.ts';
 import { follows } from '../db/tables/follows.ts';
 import { writer } from '../db/write.ts';
 import { truncateAll } from '../testing/db.ts';
 import { seedActor, seedInstance } from '../testing/seed.ts';
-import { admin, gate, outboxEvents } from '../testing/seed-az.ts';
+import { banFromCommunity } from '../moderation/ban.ts';
+import { communityBans } from '../moderation/tables.ts';
+import { admin, gate, grantFor, outboxEvents, seedModerator } from '../testing/seed-az.ts';
 import { seedFollow } from '../testing/seed-c1.ts';
 import { seedPerson, person } from '../testing/seed-f.ts';
 import { addBlockAs, removeBlockAs } from './actions.ts';
@@ -204,24 +207,83 @@ describe('a site-banned person cannot block or unblock', () => {
     expect(await writer().select().from(personBlocks)).toHaveLength(1);
   });
 
-  test('two blocks at once both apply, without a deadlock', async () => {
+  test('two blocks at once by one person take turns, so the cap stays exact', async () => {
     const w = await world();
-    // A third transaction holds alice's row FOR SHARE (as any recheck does) until both blocks wait on it.
-    const release = gate();
-    const holder = writer().transaction(async (t) => {
-      await t.select({ id: actors.id }).from(actors).where(eq(actors.id, w.alice.id)).for('share');
-      await release.opened;
-    });
+    const rows = Array.from({ length: maxPersonBlocks - 1 }, (_, n) => ({
+      apId: `https://lemmy.test/ap/u.p${n}`,
+      kind: 'Person' as const,
+      local: false,
+      instanceId: w.lemmy.id,
+      name: `p${n}`,
+    }));
+    const people = await writer().insert(actors).values(rows).returning({ id: actors.id });
+    await writer()
+      .insert(personBlocks)
+      .values(people.map((row) => ({ blockerId: w.alice.id, blockedId: row.id })));
+    // Both blocks start before either counts: one waits in its recheck, the other behind it.
+    const users = holdUsers([w.alice.userId!]);
     const both = Promise.all([
       addBlockAs(w.me, { kind: 'person', actorId: w.bob.id }),
       addBlockAs(w.me, { kind: 'person', actorId: w.remoteBob.id }),
     ]);
     await expect.poll(lockWaiters).toBe(2);
-    release.open();
-    await holder;
+    users.release();
+    await users.held;
+    expect((await both).map((result) => (result.ok ? 'created' : result.reason)).sort()).toEqual(['block.limit', 'created']);
+    expect(await writer().select().from(personBlocks)).toHaveLength(maxPersonBlocks);
+  });
+});
+
+/**
+ * Holds the auth_user rows of `userIds` FOR NO KEY UPDATE until released. A recheck's principal
+ * refresh reads the acting person's auth_user row FOR SHARE right after their actor row, so a
+ * block waits here having taken its first lock and none of the target's.
+ */
+function holdUsers(userIds: string[]) {
+  const release = gate();
+  const held = writer().transaction(async (t) => {
+    await t.select({ id: authUser.id }).from(authUser).where(inArray(authUser.id, userIds)).for('no key update');
+    await release.opened;
+  });
+  return { release: release.open, held };
+}
+
+describe('block creation does not deadlock with the other side', () => {
+  test('A blocks B while B blocks A: both apply', async () => {
+    const w = await world();
+    const carol = await seedPerson(w.local, 'carol');
+    const users = holdUsers([w.alice.userId!, carol.userId!]);
+    const both = Promise.all([
+      addBlockAs(w.me, { kind: 'person', actorId: carol.id }),
+      addBlockAs(person(carol.id), { kind: 'person', actorId: w.alice.id }),
+    ]);
+    await expect.poll(lockWaiters).toBe(2);
+    users.release();
+    await users.held;
     expect(await both).toEqual([
       { ok: true, created: true, unfollowed: 0 },
       { ok: true, created: true, unfollowed: 0 },
     ]);
+    expect(await writer().select().from(personBlocks)).toHaveLength(2);
+  });
+
+  test('blocking a community while one of its moderators bans the blocker there: both apply', async () => {
+    const w = await world();
+    const moderator = await seedPerson(w.local, 'mod');
+    await seedModerator(w.news, moderator);
+    const users = holdUsers([w.alice.userId!]);
+    // The block holds its first lock and waits in its recheck.
+    const block = addBlockAs(w.me, { kind: 'community', actorId: w.news.id });
+    await expect.poll(lockWaiters).toBe(1);
+    // The ban locks the community, then reads alice's rows.
+    const grant = await grantFor('mod.ban', person(moderator.id), { communityId: w.news.id, targetActorId: w.alice.id });
+    const ban = banFromCommunity(grant, { reason: 'Spam' });
+    await expect.poll(lockWaiters).toBe(2);
+    users.release();
+    await users.held;
+    expect(await block).toEqual({ ok: true, created: true, unfollowed: 0 });
+    await ban;
+    expect(await writer().select().from(communityBans)).toMatchObject([{ communityId: w.news.id, actorId: w.alice.id }]);
+    expect(await writer().select().from(communityBlocks)).toMatchObject([{ blockerId: w.alice.id, communityId: w.news.id }]);
   });
 });

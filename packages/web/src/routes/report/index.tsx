@@ -37,6 +37,8 @@ const Body = type({
   'category?': 'string',
   'details?': 'string',
   'forward?': 'string',
+  /** The hosts the form named for forwarding, space-separated. */
+  'hosts?': 'string',
 });
 
 const notFoundReasons: ReadonlySet<string> = new Set([
@@ -94,6 +96,7 @@ export const Route = createFileRoute('/report/')({
           category,
           forward,
           details,
+          hosts: (form.hosts ?? '').split(/\s+/).filter(Boolean),
         });
         if (!made.ok) return answer(request, cookies, fail(made.reason, { category }));
         return answer(request, cookies, { redirect: `/report/sent?${new URLSearchParams({ n: String(made.number), back })}` });

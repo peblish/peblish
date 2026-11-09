@@ -81,3 +81,33 @@ describe('a forwarded report names every host it goes to', () => {
     expect(await hosts((await seedPost(w.instances.local, w.communities.local.live, noInbox, { title: 'No inbox' })).id)).toEqual([]);
   });
 });
+
+describe('the receipt names what was forwarded when the report was filed', () => {
+  test('blocking every recipient afterwards does not bring back the anonymity promise, and unblocking adds nobody', async () => {
+    const w = await seedModerationWorld();
+    await writer()
+      .update(actors)
+      .set({ inboxUrl: sql`'https://' || split_part(${actors.apId}, '/', 3) || '/inbox'` })
+      .where(eq(actors.local, false));
+    const stranger = await seedActor(w.instances.other, 'Person', 'stranger', { inboxUrl: 'https://other.test/u/stranger/inbox' });
+    const both = await seedPost(w.instances.lemmy, w.communities.remote.live, stranger, { title: 'Two hosts' });
+    const user = localUser(w.people.user.id);
+    const sent = await createReportAs(user, { target: { kind: 'post', id: both.id }, category: 'spam', forward: true, details: '' });
+    if (!sent.ok) throw new Error(sent.reason);
+    await writer()
+      .insert(peerControls)
+      .values([
+        { instanceId: w.instances.lemmy.id, blocked: true },
+        { instanceId: w.instances.other.id, blocked: true },
+      ]);
+    expect(await readSentReport(w.people.user.id, sent.number)).toMatchObject({ forwardedTo: ['lemmy.test', 'other.test'] });
+
+    // Filed while other.test was blocked, then other.test unblocked: the receipt still names lemmy.test alone.
+    await writer().delete(peerControls).where(eq(peerControls.instanceId, w.instances.lemmy.id));
+    const second = await seedPost(w.instances.lemmy, w.communities.remote.live, stranger, { title: 'Later' });
+    const later = await createReportAs(user, { target: { kind: 'post', id: second.id }, category: 'spam', forward: true, details: '' });
+    if (!later.ok) throw new Error(later.reason);
+    await writer().delete(peerControls).where(eq(peerControls.instanceId, w.instances.other.id));
+    expect(await readSentReport(w.people.user.id, later.number)).toMatchObject({ forwardedTo: ['lemmy.test'] });
+  });
+});

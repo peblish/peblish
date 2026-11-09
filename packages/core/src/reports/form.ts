@@ -1,6 +1,6 @@
 import type { Principal } from '@peblish/schema/authz';
 import type { Uuid } from '@peblish/schema/ids';
-import { and, eq, inArray, sql } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { authorize } from '../authz/authorize.ts';
 import { hideNsfw, type NsfwChoice } from '../communities/gate.ts';
 import { db, type Queryable } from '../db/read.ts';
@@ -8,9 +8,9 @@ import { actors } from '../db/tables/actors.ts';
 import { comments, posts } from '../db/tables/content.ts';
 import { reports } from '../db/tables/moderation.ts';
 import type { Result } from '../identity/result.ts';
-import { instanceBlocked } from '../peers/gate.ts';
 import { readPost } from '../posts/read.ts';
 import { audienceOf, categoriesFor, mayFederate, type ReportAudience, type ReportCategory } from './categories.ts';
+import { forwardHosts } from './forward.ts';
 import { cut, plainText, readActors } from './read.ts';
 import type { ReportTarget } from './types.ts';
 
@@ -120,30 +120,8 @@ export async function readReportForm(
 }
 
 /**
- * The hosts a forwarded report about this content goes to, as the outbound consumer
- * (`federation.reports`, `recipients()`) addresses them and the delivery worker's peer-block gate
- * lets them through: the community's inbox host when it is remote, then the author's when it is
- * remote and another host (shared inbox first). An actor with no inbox gets nothing, and a
- * blocked peer's inbox is skipped at send time, so neither is named.
- */
-export async function forwardHosts(q: Queryable, communityId: Uuid, authorId: Uuid): Promise<string[]> {
-  const rows = await q
-    .select({ id: actors.id, local: actors.local, inbox: sql<string | null>`coalesce(${actors.sharedInboxUrl}, ${actors.inboxUrl})` })
-    .from(actors)
-    .where(inArray(actors.id, [communityId, authorId]));
-  const hosts: string[] = [];
-  for (const id of [communityId, authorId]) {
-    const actor = rows.find((row) => row.id === id);
-    if (!actor || actor.local || !actor.inbox) continue;
-    const host = URL.parse(actor.inbox)?.host;
-    if (host && !hosts.includes(host) && !(await instanceBlocked(q, actor.inbox))) hosts.push(host);
-  }
-  return hosts;
-}
-
-/**
  * What the sent page shows the reporter: the case number, whom they can block, and the hosts
- * the report was forwarded to (empty for a report that stayed here).
+ * the report was forwarded to (empty for a report that stayed here), as stored when it was filed.
  */
 export type SentReport = { number: number; blockHandle: string | null; forwardedTo: string[] };
 
@@ -155,19 +133,17 @@ export async function readSentReport(viewerId: Uuid, number: number, q: Queryabl
       postId: reports.targetPostId,
       commentId: reports.targetCommentId,
       actorId: reports.targetActorId,
-      communityId: reports.communityId,
-      // A local report gets a Flag id only when the reporter asked for it to be sent on.
-      forwarded: sql<boolean>`${reports.local} and ${reports.apId} is not null`,
+      // Fixed when the report was filed, so a peer blocked or unblocked since changes nothing here.
+      forwardedTo: reports.forwardedHosts,
     })
     .from(reports)
     .where(and(eq(reports.number, number), eq(reports.reporterId, viewerId)));
   if (!row) return null;
+  const { forwardedTo } = row;
   let personId: Uuid | null = row.actorId;
   if (row.postId) personId = (await q.select({ id: posts.authorId }).from(posts).where(eq(posts.id, row.postId)))[0]?.id ?? null;
   if (row.commentId)
     personId = (await q.select({ id: comments.authorId }).from(comments).where(eq(comments.id, row.commentId)))[0]?.id ?? null;
-  const forwardedTo =
-    row.forwarded && row.actorId === null && row.communityId && personId ? await forwardHosts(q, row.communityId, personId) : [];
   if (!personId || personId === viewerId) return { number: row.number, blockHandle: null, forwardedTo };
   const [person] = await q.select({ kind: actors.kind }).from(actors).where(eq(actors.id, personId));
   const ref = person?.kind === 'Person' ? (await readActors(q, [personId])).get(personId) : undefined;

@@ -1,5 +1,5 @@
 import type { Uuid } from '@peblish/schema/ids';
-import { and, count, eq, inArray } from 'drizzle-orm';
+import { and, count, eq, inArray, sql } from 'drizzle-orm';
 import type { BlockTarget } from '../authz/actions/blocks.ts';
 import { actors } from '../db/tables/actors.ts';
 import { follows } from '../db/tables/follows.ts';
@@ -50,7 +50,7 @@ async function sizeOf(db: WriteTx, blockerId: Uuid, kind: BlockTarget['kind']): 
  * nothing. A community block ends the blocker's follow of it, and an instance block their
  * follows of every community there, one `follow.removed` for each. The recheck refuses a
  * blocker site-banned since authorize() (auth.site_banned). Runs inside addBlock, which holds
- * the blocker's actor row.
+ * the blocker's block lock.
  */
 const addBlockRow = defineMutation({
   action: 'block.add',
@@ -111,18 +111,21 @@ const addBlockRow = defineMutation({
 });
 
 /**
- * block.add in its own transaction (addBlockRow, rechecked). The blocker's actor row is locked
- * FOR NO KEY UPDATE first, before the recheck reads it FOR SHARE: the lock order puts the acting
- * actor first, it serializes one person's concurrent blocks (so the size check cannot be raced
- * past the cap, and two blocks at once do not deadlock upgrading a shared lock), and a site ban,
- * which locks the same row before inserting, either waits for the block or is seen by the recheck.
+ * block.add in its own transaction (addBlockRow, rechecked). One blocker's blocks take turns on a
+ * transaction advisory lock per blocker, taken before the recheck, so the size check cannot be
+ * raced past the cap. The blocker's actor row is only read FOR SHARE, by the recheck's principal
+ * refresh, never locked more strongly: the other side reads it FOR SHARE after locking its own
+ * rows (B blocking A reads A's row after B's; a community ban of the blocker reads it after
+ * locking the community), so a stronger lock here would close a cycle (40P01). A site ban, which
+ * locks the blocker's row FOR NO KEY UPDATE before inserting, still waits for the block or is seen
+ * by the recheck.
  */
 export const addBlock = defineMutation({
   action: 'block.add',
   emits: ['block.added', 'follow.removed'],
   recheck: 'inner',
   async run(t, grant, input: void) {
-    await t.db.select({ id: actors.id }).from(actors).where(eq(actors.id, grant.actorId)).for('no key update');
+    await t.db.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`peblish.block_add:${grant.actorId}`}, 0))`);
     return addBlockRow.within(t, grant, input);
   },
 });

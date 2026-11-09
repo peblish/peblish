@@ -3,6 +3,7 @@ import { and, eq, sql } from 'drizzle-orm';
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 import { siteBans } from '@peblish/core/bans/tables';
 import { db } from '@peblish/core/db/read';
+import { actors } from '@peblish/core/db/tables/actors';
 import { posts } from '@peblish/core/db/tables/content';
 import { activities } from '@peblish/core/db/tables/federation';
 import { follows } from '@peblish/core/db/tables/follows';
@@ -501,6 +502,69 @@ describe('a Delete the community relays', () => {
         .from(activities)
         .where(and(eq(activities.type, 'Undo'), eq(activities.local, true))),
     ).toEqual([]);
+  });
+});
+
+/**
+ * Mastodon-like and Lemmy people a post by alice mentions, delivered as post.created, the queue
+ * then cleared. The community has no Mastodon-like follower, so nothing boosts the post there.
+ */
+async function mentioning(w: World, removedAt: Date | null = null) {
+  await writer().delete(follows).where(eq(follows.followerId, w.mastodon.actor.id));
+  const peer = async (domain: string, software: string, name: string) => {
+    const instance = await seedInstance(domain, false);
+    await writer().update(instances).set({ software }).where(eq(instances.id, instance.id));
+    return seedActor(instance, 'Person', name, {
+      inboxUrl: `https://${domain}/u/${name}/inbox`,
+      sharedInboxUrl: `https://${domain}/inbox`,
+    });
+  };
+  const eve = await peer('toot.test', 'mastodon', 'eve');
+  const bot = await peer('bots.test', 'mastodon', 'bot');
+  await peer('other.test', 'lemmy', 'eve');
+  const p = await seedPost(w.here, w.news, w.alice, { title: 'Hello', bodyMd: 'for @eve@toot.test, @bot@bots.test and @eve@other.test' });
+  await tx((t) =>
+    delivery.handle({ type: 'post.created', v: 1, postId: p.id, communityId: w.news.id, authorId: w.alice.id, local: true }, t),
+  );
+  expect((await sentTo('https://toot.test/inbox')).map(({ shape: s }) => s)).toEqual(['Create(Page)']);
+  expect(await db().select().from(activities).where(eq(activities.type, 'Announce'))).toHaveLength(1); // Announce(Create) to Lemmy only
+  expect(await sentTo(w.mastodon.inbox)).toEqual([]);
+  if (removedAt) await writer().update(posts).set({ removedAt }).where(eq(posts.id, p.id));
+  await clearQueue();
+  return { p, eve, bot };
+}
+
+describe('a post sent to a Mastodon-like server for a mention, never boosted', () => {
+  test('a site ban with removeContent sends its author’s Delete there, once', async () => {
+    const w = await world();
+    const { p } = await mentioning(w, new Date());
+    await writer().insert(siteBans).values({ actorId: w.alice.id, source: 'local', removeContent: true });
+    await runRelay({ ...ban(w, w.alice), communityId: null } as OutboxEvent);
+    for (const inbox of ['https://toot.test/inbox', 'https://bots.test/inbox']) {
+      expect((await sentTo(inbox)).filter(({ shape: s }) => s === 'Delete').map(({ senderId, json }) => [senderId, json.object])).toEqual([
+        [w.alice.id, p.apId],
+      ]);
+    }
+    expect((await sentTo('https://other.test/inbox')).filter(({ shape: s }) => s === 'Delete')).toEqual([]);
+    // The author's Delete takes it out of what is left to withdraw: the job and a second event send nothing more.
+    await clearQueue();
+    expect(await withdrawRemaining()).toBe(0);
+    await runRelay({ ...ban(w, w.alice), communityId: null } as OutboxEvent);
+    expect((await sentTo('https://toot.test/inbox')).filter(({ shape: s }) => s === 'Delete')).toEqual([]);
+  });
+
+  test('reaches a mentioned person deleted since, or turned from Person to Service', async () => {
+    const w = await world();
+    const { p, eve, bot } = await mentioning(w);
+    await writer().update(actors).set({ deletedAt: new Date() }).where(eq(actors.id, eve.id));
+    await writer().update(actors).set({ kind: 'Service' }).where(eq(actors.id, bot.id));
+    await runRelay(removal(w, p.apId));
+    for (const inbox of ['https://toot.test/inbox', 'https://bots.test/inbox']) {
+      expect((await sentTo(inbox)).map(({ shape: s, senderId }) => [s, senderId])).toEqual([
+        ['Delete', w.moderator.id],
+        ['Delete', w.alice.id],
+      ]);
+    }
   });
 });
 

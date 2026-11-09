@@ -19,13 +19,14 @@ import type { ReportGroupKey, ReportTarget } from './types.ts';
 // The report actions as web calls them: authorize, run the mutation, answer with a result (a
 // refusal from the precheck or from inside the transaction alike).
 
-export type NewReport = { target: ReportTarget; category: ReportCategory; forward: boolean; details: string };
+/** `hosts` are the hosts the form named for forwarding; the report goes to no other (see createReport). */
+export type NewReport = { target: ReportTarget; category: ReportCategory; forward: boolean; details: string; hosts?: string[] };
 
 export async function createReportAs(principal: Principal, input: NewReport) {
-  const { details, ...subject } = input;
+  const { details, hosts, ...subject } = input;
   const decision = await authorize('report.create', principal, subject);
   if (!decision.ok) return decision;
-  return refusedAsResult(() => createReport(decision.grant, { details }));
+  return refusedAsResult(() => createReport(decision.grant, { details, ...(hosts && { hosts }) }));
 }
 
 /** Resolve or dismiss a whole group, with an optional note kept on its rows. */
