@@ -1,3 +1,4 @@
+import { freshModerator } from '@peblish/core/authz/roles';
 import type { Queryable } from '@peblish/core/db/read';
 import { actors } from '@peblish/core/db/tables/actors';
 import { posts } from '@peblish/core/db/tables/content';
@@ -171,7 +172,7 @@ async function collectionDocument(db: Queryable, origin: string, actor: ActorRow
           .select({ apId: actors.apId })
           .from(communityModerators)
           .innerJoin(actors, eq(actors.id, communityModerators.moderatorId))
-          .where(and(eq(communityModerators.communityId, actor.id), isNull(actors.deletedAt)))
+          .where(and(eq(communityModerators.communityId, actor.id), isNull(actors.deletedAt), freshModerator))
           .orderBy(desc(communityModerators.role), communityModerators.createdAt);
         return toWire({ kind: 'moderators', moderators: { apId: url, moderatorApIds: rows.map((row) => row.apId) } });
       }

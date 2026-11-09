@@ -164,6 +164,38 @@ describe('collections', () => {
     expect(fromWire(doc)).toMatchObject({ kind: 'moderators', moderators: { moderatorApIds: [w.alice.apId, w.admin.apId] } });
   });
 
+  test('moderators leaves out rows that are not fresh: expired, or a remote mirror never verified or past its expiry', async () => {
+    const w = await world();
+    const peer = await seedInstance('peer.test', false);
+    const [fresh, expired, unverified, stale] = await Promise.all(
+      ['fresh', 'expired', 'unverified', 'stale'].map((name) => seedActor(peer, 'Person', name)),
+    );
+    const hour = 3_600_000;
+    await writer()
+      .insert(communityModerators)
+      .values([
+        { communityId: w.news.id, moderatorId: w.alice.id, role: 'owner', source: 'local' },
+        { communityId: w.news.id, moderatorId: w.admin.id, role: 'moderator', source: 'local', expiresAt: new Date(Date.now() - hour) },
+        {
+          communityId: w.news.id,
+          moderatorId: fresh!.id,
+          source: 'remote',
+          verifiedAt: new Date(),
+          expiresAt: new Date(Date.now() + hour),
+        },
+        { communityId: w.news.id, moderatorId: expired!.id, source: 'local', expiresAt: new Date(Date.now() - hour) },
+        { communityId: w.news.id, moderatorId: unverified!.id, source: 'remote', expiresAt: new Date(Date.now() + hour) },
+        {
+          communityId: w.news.id,
+          moderatorId: stale!.id,
+          source: 'remote',
+          verifiedAt: new Date(),
+          expiresAt: new Date(Date.now() - hour),
+        },
+      ]);
+    expect(((await json('/ap/c.news/moderators')).orderedItems as string[]).sort()).toEqual([w.alice.apId, fresh!.apId].sort());
+  });
+
   test('featured lists the pinned live posts as Pages', async () => {
     const w = await world();
     const pinned = await seedPost(w.here, w.news, w.alice, { title: 'Pinned', bodyMd: 'Read me', featuredCommunity: true });
