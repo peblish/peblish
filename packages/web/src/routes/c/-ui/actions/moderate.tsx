@@ -1,6 +1,7 @@
 import type { CommunityActionProps } from '../../../-actions/props.ts';
+import { CommunityModerateTools } from '../../../modlog/-ui/content-moderate.tsx';
 
-/** The moderator tools on a community page. Lane MODF fills it; until then it renders nothing. */
-export function CommunityModerate(_props: CommunityActionProps) {
-  return null;
+/** The community page's Mod tools (lane MODF). */
+export function CommunityModerate(props: CommunityActionProps) {
+  return <CommunityModerateTools {...props} />;
 }

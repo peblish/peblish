@@ -66,6 +66,9 @@ export const routes: readonly PayloadRoute[] = [
   { route: '/settings/security/', path: '/settings/security', admin: true },
   { route: '/settings/blocks/', path: '/settings/blocks', admin: true },
   { route: '/admin/registration/', path: '/admin/registration', admin: true },
+  { route: '/admin/bans/', path: '/admin/bans', admin: true },
+  { route: '/admin/peers/', path: '/admin/peers', admin: true },
+  { route: '/modlog/', path: '/modlog' },
   { route: '/post/$id/', path: '/post/<id>', target: seededPost },
   { route: '/post/$id/comments/$commentId', path: '/post/<id>/comments/<commentId>', target: seededPermalink },
   // Signed out, /submit is a redirect to sign-in, so this entry measures the sign-in page it lands on
@@ -86,6 +89,7 @@ export const notPages: Readonly<Record<string, string>> = {
   '/auth/sign-out': 'a form post that answers with a redirect',
   '/post/$id/comments/': 'the POST endpoint of the comment forms; a GET redirects to the post page',
   '/media/proxy/$signature/$target': 'an image endpoint, not a page',
+  '/modlog/act': 'the POST endpoint of the moderator forms; it answers with a redirect or JSON',
 };
 
 /** File routes that are neither budgeted nor listed as having no payload. */

@@ -1,6 +1,7 @@
 import type { ProfileActionProps } from '../../../-actions/props.ts';
+import { ProfileModerateTools } from '../../../modlog/-ui/content-moderate.tsx';
 
-/** The moderator tools on a profile. Lane MODF fills it; until then it renders nothing. */
-export function ProfileModerate(_props: ProfileActionProps) {
-  return null;
+/** Ban from a community the viewer moderates, and (admins) from the instance (lane MODF). */
+export function ProfileModerate(props: ProfileActionProps) {
+  return <ProfileModerateTools {...props} />;
 }
