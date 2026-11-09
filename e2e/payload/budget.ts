@@ -24,12 +24,59 @@ export interface Manifest {
   chunks: { file: string; entry: boolean; packages: string[]; app: boolean }[];
 }
 
-export function readManifest(): Manifest | null {
+const manifestPath = join(import.meta.dirname, '../../packages/web/.output/payload-chunks.json');
+
+const isStrings = (value: unknown): value is string[] => Array.isArray(value) && value.every((item) => typeof item === 'string');
+
+function isManifest(value: unknown): value is Manifest {
+  if (typeof value !== 'object' || value === null || !('vendorGroups' in value) || !('chunks' in value)) return false;
+  const { vendorGroups, chunks } = value;
+  return (
+    typeof vendorGroups === 'object' &&
+    vendorGroups !== null &&
+    Object.values(vendorGroups).every((source) => typeof source === 'string') &&
+    Array.isArray(chunks) &&
+    chunks.every(
+      (chunk: unknown) =>
+        typeof chunk === 'object' &&
+        chunk !== null &&
+        'file' in chunk &&
+        typeof chunk.file === 'string' &&
+        'entry' in chunk &&
+        typeof chunk.entry === 'boolean' &&
+        'app' in chunk &&
+        typeof chunk.app === 'boolean' &&
+        'packages' in chunk &&
+        isStrings(chunk.packages),
+    )
+  );
+}
+
+/** Parses a manifest; anything else throws, so a broken file cannot pass for "nothing to check". */
+export function parseManifest(text: string): Manifest {
+  const value: unknown = JSON.parse(text);
+  if (!isManifest(value))
+    throw new Error('payload-chunks.json is not a manifest: expected vendorGroups and chunks (see packages/web/vite.config.ts)');
+  return value;
+}
+
+/**
+ * The build's manifest. A local run (Playwright starts the production build itself) must have
+ * one: a missing or invalid file throws, because the vendor-placement guarantee would otherwise
+ * switch off unnoticed when the build plugin stops writing it. Only a remote BASE_URL (a
+ * running server, such as the Docker image, with no build output beside it) has none, and gets null.
+ */
+export function loadManifest({ remote, path = manifestPath }: { remote: boolean; path?: string }): Manifest | null {
+  if (remote) return null;
+  let text: string;
   try {
-    return JSON.parse(readFileSync(join(import.meta.dirname, '../../packages/web/.output/payload-chunks.json'), 'utf8')) as Manifest;
-  } catch {
-    return null;
+    text = readFileSync(path, 'utf8');
+  } catch (error) {
+    throw new Error(
+      `the build did not write ${path} (pnpm build runs the peblish:payload-chunks plugin in vite.config.ts): ${String(error)}`,
+    );
   }
+  return parseManifest(text);
 }
 
 /** Which budget a script file counts against, by the vendor chunk's name; null for app code. */

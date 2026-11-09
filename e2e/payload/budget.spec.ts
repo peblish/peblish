@@ -1,8 +1,9 @@
 import { expect, test, type Browser } from '@playwright/test';
-import { readFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { gotoHydrated } from '../support/route-marker.ts';
-import { budget, gzipSize, hasThemeRules, misplacedPackages, readManifest, vendorKind } from './budget.ts';
+import { budget, gzipSize, hasThemeRules, loadManifest, misplacedPackages, vendorKind } from './budget.ts';
 import { routes } from './routes.ts';
 
 // The payload budget as a check: each route's first visit, cold cache, must stay inside the
@@ -51,12 +52,15 @@ async function firstVisit(browser: Browser, origin: string, path: string, locale
   }
 }
 
-const manifest = readManifest();
+// A remote BASE_URL (a running server such as the Docker image) has no build output beside it.
+const remote = Boolean(process.env.BASE_URL);
 
 test('no vendor package sits outside its named chunk', () => {
-  test.skip(!manifest, 'needs the build output (packages/web/.output/payload-chunks.json); not available against a remote BASE_URL');
-  expect(misplacedPackages(manifest!)).toEqual([]);
-  const files = manifest!.chunks.map(({ file }) => file);
+  test.skip(remote, 'a remote BASE_URL has no build output beside it');
+  // Throws, and so fails, when the build did not write a valid manifest: the guard never goes quiet.
+  const manifest = loadManifest({ remote })!;
+  expect(misplacedPackages(manifest)).toEqual([]);
+  const files = manifest.chunks.map(({ file }) => file);
   // The named chunks exist at all, so a renamed group cannot make the rest of this check vacuous.
   expect(files.some((file) => vendorKind(file) === 'react')).toBe(true);
   expect(files.some((file) => vendorKind(file) === 'mux')).toBe(true);
@@ -138,5 +142,30 @@ test.describe('the check catches', () => {
       ],
     };
     expect(misplacedPackages(broken)).toEqual(['assets/page-b.js holds react-dom (a react package)']);
+  });
+
+  test('a missing or invalid manifest on a local run, and lets only a remote run go without', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'payload-manifest-'));
+    try {
+      const write = (name: string, text: string) => {
+        const file = join(dir, name);
+        writeFileSync(file, text);
+        return file;
+      };
+      expect(() => loadManifest({ remote: false, path: join(dir, 'absent.json') })).toThrow(/did not write/);
+      expect(() => loadManifest({ remote: false, path: write('broken.json', '{') })).toThrow();
+      expect(() => loadManifest({ remote: false, path: write('shape.json', '{"vendorGroups":{},"chunks":[{"file":1}]}') })).toThrow(
+        /not a manifest/,
+      );
+      const valid = {
+        vendorGroups: { 'vendor-react': 'react' },
+        chunks: [{ file: 'assets/vendor-react-a.js', entry: false, packages: ['react'], app: false }],
+      };
+      expect(loadManifest({ remote: false, path: write('valid.json', JSON.stringify(valid)) })).toEqual(valid);
+      // Only a remote BASE_URL, which has no build output, may skip the guard.
+      expect(loadManifest({ remote: true, path: join(dir, 'absent.json') })).toBeNull();
+    } finally {
+      rmSync(dir, { recursive: true });
+    }
   });
 });
