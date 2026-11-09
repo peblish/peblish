@@ -254,6 +254,23 @@ describe('the backfill of a followed community', () => {
     });
   });
 
+  test('stops before its lease ends, keeps what it stored, and settles while it still owns the row', async () => {
+    let now = new Date('2026-11-09T12:00:00Z');
+    const server = peers({ ...featured(lemmyPage(550)), ...outbox(lemmyPage(551)) });
+    // The featured collection is slow: by the time it answers the lease is nearly over.
+    const slow: typeof server.fetch = async (url, init) => {
+      const answer = await server.fetch(url, init);
+      if (String(url) === `${lab}/featured`) now = new Date(now.getTime() + backfillLimits.leaseMs - backfillLimits.settleMarginMs);
+      return answer;
+    };
+    await queue();
+    expect(await run(slow, { now: () => now })).toBe(1);
+    expect(await backfill()).toMatchObject({ state: 'done', posts: 1, note: expect.stringContaining('end of its lease') });
+    expect(await postIds()).toContain(`${lemmy}/post/550`);
+    expect(await postIds()).not.toContain(`${lemmy}/post/551`);
+    expect(server.requests.some((request) => request.url === `${lab}/outbox`)).toBe(false);
+  });
+
   test('is tried again when the outbox is down, and fails for good after the last try', async () => {
     const server = peers({ [`${lab}/outbox`]: { status: 503 } });
     let now = new Date('2026-11-09T12:00:00Z');

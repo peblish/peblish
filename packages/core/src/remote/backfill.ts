@@ -18,6 +18,8 @@ export type BackfillLimits = {
   collectionItems: number;
   requests: number;
   leaseMs: number;
+  /** A run makes no request in the last part of its lease, so it settles while it still owns the row. */
+  settleMarginMs: number;
   retryAfterMs: readonly number[];
 };
 
@@ -35,6 +37,7 @@ export const backfillLimits: BackfillLimits = {
   requests: 250,
   /** A worker owns a claimed backfill this long; a worker that dies leaves a lease that runs out. */
   leaseMs: 15 * 60 * 1000,
+  settleMarginMs: 60 * 1000,
   /** A run that failed for a reason that may pass (the peer is down) is tried again after these waits, then it fails for good. */
   retryAfterMs: [5 * 60 * 1000, 60 * 60 * 1000],
 };
@@ -65,13 +68,18 @@ export async function queueBackfill(t: Pick<OpenTx, 'db'>, communityId: Uuid): P
     });
 }
 
-export type ClaimedBackfill = {
+/**
+ * Which claim of a backfill a worker holds. A claim is the pair of its attempt number and the
+ * lease it was given; a worker whose lease ran out and whose backfill another worker took over
+ * no longer matches the row, and its result is dropped.
+ */
+export type BackfillClaim = { attempt: number; leaseUntil: Date };
+
+export type ClaimedBackfill = BackfillClaim & {
   communityId: Uuid;
   apId: string;
   outboxUrl: string | null;
   featuredUrl: string | null;
-  /** Counts this run: 1 for the first. */
-  attempt: number;
 };
 
 /** Takes the next due backfill (pending, or running under a lease that ran out) and leases it; null when none is due. */
@@ -99,15 +107,20 @@ export const claimBackfill = defineMutation({
       .where(eq(actors.id, row.communityId));
     if (!community) return null;
     await t.emit({ type: 'backfill.started', v: 1, communityId: row.communityId, attempt: row.attempts });
-    return { communityId: row.communityId, attempt: row.attempts, ...community };
+    return { communityId: row.communityId, attempt: row.attempts, leaseUntil: new Date(leaseUntil), ...community };
   },
 });
 
-export type BackfillResult =
+export type BackfillResult = { claim: BackfillClaim } & (
   | { outcome: 'done' | 'failed'; posts: number; comments: number; note: string | null; now: Date }
-  | { outcome: 'retry'; posts: number; comments: number; note: string | null; retryAt: Date };
+  | { outcome: 'retry'; posts: number; comments: number; note: string | null; retryAt: Date }
+);
 
-/** Records how a claimed backfill's run ended: done, failed for good, or to be tried again at `retryAt`. */
+/**
+ * Records how a claimed backfill's run ended: done, failed for good, or to be tried again at
+ * `retryAt`. Settles only the claim the result names (`settled: false` otherwise: the lease
+ * ran out and another worker has the backfill, or it was settled already).
+ */
 export const settleBackfill = defineMutation({
   action: 'remote.backfill_settle',
   emits: ['backfill.settled'],
@@ -125,7 +138,14 @@ export const settleBackfill = defineMutation({
           ? { ...counts, state: 'pending', nextAttemptAt: input.retryAt, leaseUntil: null }
           : { ...counts, state: input.outcome, leaseUntil: null, finishedAt: input.now },
       )
-      .where(and(eq(backfills.communityId, communityId), eq(backfills.state, 'running')))
+      .where(
+        and(
+          eq(backfills.communityId, communityId),
+          eq(backfills.state, 'running'),
+          eq(backfills.attempts, input.claim.attempt),
+          eq(backfills.leaseUntil, input.claim.leaseUntil),
+        ),
+      )
       .returning({ posts: backfills.posts, comments: backfills.comments });
     if (!row) return { settled: false };
     if (input.outcome !== 'retry') {

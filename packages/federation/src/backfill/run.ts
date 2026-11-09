@@ -77,6 +77,8 @@ export type BackfillOptions = {
   limits?: BackfillLimits;
   /** The gap between requests to one host; tests pass 0. */
   gapMs?: number;
+  /** The clock the lease and the time limit are read against (tests). */
+  now?: () => Date;
 };
 
 /**
@@ -86,8 +88,17 @@ export type BackfillOptions = {
 export async function runBackfill(claimed: ClaimedBackfill, options: BackfillOptions = {}): Promise<BackfillReport> {
   const limits = options.limits ?? backfillLimits;
   const base = options.fetch ?? safeFetch;
-  const budget = { used: 0, spent: false };
+  const clock = options.now ?? (() => new Date());
+  // The run settles under the claim it holds, and the claim is only good for its lease: it makes
+  // no request in the last `settleMarginMs` of it, so a long backfill ends (keeping what it
+  // stored) before another worker can take the row over.
+  const stopAt = claimed.leaseUntil.getTime() - limits.settleMarginMs;
+  const budget = { used: 0, spent: false, timedOut: false };
   const counted: Fetcher = (url, init) => {
+    if (clock().getTime() >= stopAt) {
+      budget.spent = budget.timedOut = true;
+      return Promise.reject(new Error('the backfill ran out of time'));
+    }
     if (budget.used >= limits.requests) {
       budget.spent = true;
       return Promise.reject(new Error('the backfill request budget is spent'));
@@ -232,16 +243,15 @@ export async function runBackfill(claimed: ClaimedBackfill, options: BackfillOpt
       await backfillComments(loaded.json, outcome.apId, vouch(url));
     }
   }
-  if (budget.spent) notes.push(`stopped at ${limits.requests} requests`);
+  if (budget.timedOut) notes.push('stopped at the end of its lease');
+  else if (budget.spent) notes.push(`stopped at ${limits.requests} requests`);
   if (unreachable > 0) notes.push(`${unreachable} objects could not be reached`);
   return { outcome: 'done', posts, comments, note: notes.join('; ') || null };
 }
 
 export type BackfillRunOptions = BackfillOptions & {
-  signal?: AbortSignal;
   /** Backfills one run of the job takes. */
   maxRuns?: number;
-  now?: () => Date;
 };
 
 /** Claims due backfills one at a time, runs and settles each; returns how many it ran. */
@@ -269,10 +279,19 @@ export async function backfillDue(options: BackfillRunOptions = {}): Promise<num
       }
     }
     const wait = limits.retryAfterMs[claimed.attempt - 1];
+    const claim = { attempt: claimed.attempt, leaseUntil: claimed.leaseUntil };
     const result: BackfillResult =
       report.outcome === 'retry' && wait !== undefined
-        ? { outcome: 'retry', posts: report.posts, comments: report.comments, note: report.note, retryAt: new Date(now().getTime() + wait) }
+        ? {
+            claim,
+            outcome: 'retry',
+            posts: report.posts,
+            comments: report.comments,
+            note: report.note,
+            retryAt: new Date(now().getTime() + wait),
+          }
         : {
+            claim,
             outcome: report.outcome === 'done' ? 'done' : 'failed',
             posts: report.posts,
             comments: report.comments,
@@ -281,7 +300,9 @@ export async function backfillDue(options: BackfillRunOptions = {}): Promise<num
           };
     const settleGrant = await authorize('remote.backfill_settle', principal, { communityId: claimed.communityId });
     if (!settleGrant.ok) throw new Error(`remote.backfill_settle refused: ${settleGrant.reason}`);
-    await settleBackfill(settleGrant.grant, result);
+    if (!(await settleBackfill(settleGrant.grant, result)).settled) {
+      console.warn(`backfill of ${claimed.apId} (attempt ${claimed.attempt}) ended after its lease ran out; the result is dropped`);
+    }
   }
   return ran;
 }
