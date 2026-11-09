@@ -66,20 +66,23 @@ type Row = {
   authorId: Uuid;
   parentId: Uuid | null;
   path: string;
-  bodyMd: string | null;
-  contentHtml: string | null;
   upvotes: number;
   downvotes: number;
   publishedAt: Date;
   editedAt: Date | null;
   deletedAt: Date | null;
   removedAt: Date | null;
-  /** Every comment under this one, however deep (a tombstone counts). */
-  descendants: number;
+  /** Every comment under this one, however deep (a tombstone counts): comments.child_count. */
+  childCount: number;
 };
 
 const level = (path: string) => path.split('.').length;
 
+/**
+ * The comments to lay out, without their text (a page shows a fraction of them): those of the
+ * post, or under `from`, within the depth, in path order, which is an index scan on
+ * comments_post_path and keeps every parent before its children.
+ */
 async function rowsOf(q: Queryable, postId: Uuid, from: { path: string } | null): Promise<Row[]> {
   const maxLevel = (from ? level(from.path) : 1) + threadDisplayDepth - 1;
   return q
@@ -89,17 +92,13 @@ async function rowsOf(q: Queryable, postId: Uuid, from: { path: string } | null)
       authorId: comments.authorId,
       parentId: comments.parentId,
       path: comments.path,
-      bodyMd: comments.bodyMd,
-      contentHtml: comments.contentHtml,
       upvotes: comments.upvotes,
       downvotes: comments.downvotes,
       publishedAt: comments.publishedAt,
       editedAt: comments.editedAt,
       deletedAt: comments.deletedAt,
       removedAt: comments.removedAt,
-      // The GiST index on path answers the descendants of each row read. Written out: Drizzle
-      // renders a column of an aliased table without its alias inside a select list.
-      descendants: sql<number>`(select count(*)::int from comments below where below.path <@ comments.path) - 1`,
+      childCount: comments.childCount,
     })
     .from(comments)
     .where(
@@ -111,6 +110,32 @@ async function rowsOf(q: Queryable, postId: Uuid, from: { path: string } | null)
     )
     .orderBy(comments.path)
     .limit(threadFetchLimit);
+}
+
+/** The text of the comments that are shown and live: a deleted or removed comment's text is never read. */
+async function textsOf(q: Queryable, rows: readonly Row[]): Promise<Map<Uuid, CommentBody>> {
+  const live = rows.filter((row) => row.deletedAt === null && row.removedAt === null);
+  const found =
+    live.length === 0
+      ? []
+      : await q
+          .select({ id: comments.id, apId: comments.apId, bodyMd: comments.bodyMd, contentHtml: comments.contentHtml })
+          .from(comments)
+          .where(
+            inArray(
+              comments.id,
+              live.map((row) => row.id),
+            ),
+          );
+  return new Map(
+    found.flatMap((row): [Uuid, CommentBody][] =>
+      row.bodyMd
+        ? [[row.id, { kind: 'markdown', source: row.bodyMd }]]
+        : row.contentHtml
+          ? [[row.id, { kind: 'html', html: row.contentHtml, baseUrl: row.apId }]]
+          : [],
+    ),
+  );
 }
 
 /** The people behind the comments, their badges, the viewer's votes and the modlog reasons moderators see. */
@@ -212,13 +237,12 @@ export async function readThread(
   const rows = await rowsOf(q, postId, focus);
   const ordered = inDisplayOrder(rows, sort, now);
   const shown = ordered.slice(0, threadMaxComments);
-  const context = await loadContext(q, postId, post.communityId, shown, viewer);
+  const [context, texts] = await Promise.all([loadContext(q, postId, post.communityId, shown, viewer), textsOf(q, shown)]);
   const removed = new Set(shown.filter((row) => row.removedAt !== null && row.deletedAt === null).map((row) => row.id));
   const reasons = context.moderator && removed.size > 0 ? await removalReasons(q, post.communityId, removed) : new Map();
   const entries = shown.map((row): ThreadComment => {
     const author = context.authors.get(row.authorId);
     if (!author) throw new Error(`comment ${row.id} names an author that is gone`);
-    const gone = row.deletedAt !== null || row.removedAt !== null;
     const badge: AuthorBadge = context.admins.has(author.id) ? 'admin' : context.moderators.has(author.id) ? 'moderator' : null;
     return {
       view: {
@@ -234,16 +258,10 @@ export async function readThread(
         editedAt: row.editedAt?.toISOString() ?? null,
         deleted: row.deletedAt !== null,
         removed: row.removedAt !== null,
-        counts: { upvotes: row.upvotes, downvotes: row.downvotes, comments: row.descendants },
+        counts: { upvotes: row.upvotes, downvotes: row.downvotes, comments: row.childCount },
         myVote: context.mine.get(row.id) ?? 0,
       },
-      body: gone
-        ? null
-        : row.bodyMd
-          ? { kind: 'markdown', source: row.bodyMd }
-          : row.contentHtml
-            ? { kind: 'html', html: row.contentHtml, baseUrl: row.apId }
-            : null,
+      body: texts.get(row.id) ?? null,
       removal: removed.has(row.id) && context.moderator ? { reason: reasons.get(row.id) ?? null } : null,
     };
   });

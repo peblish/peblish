@@ -74,7 +74,7 @@ describe('createComment', () => {
     expect(same?.same).toBe(true);
   });
 
-  test('a reply takes its parent path, counts as a direct reply of the parent only, and as a comment of the post', async () => {
+  test('a reply takes its parent path and counts for the post and for every comment above it', async () => {
     const { reader, postId } = await world();
     const reply = async (parentId: string | null) => ok(await createCommentAs(reader, { postId, parentId }, { bodyMd: 'x' })).id;
     const top = await reply(null);
@@ -82,22 +82,26 @@ describe('createComment', () => {
     const grandchild = await reply(child);
     expect((await commentRow(grandchild)).path).toBe(`${top}.${child}.${grandchild}`);
     expect((await commentRow(grandchild)).parentId).toBe(child);
-    expect(await Promise.all([top, child, grandchild].map(async (id) => (await commentRow(id)).childCount))).toEqual([1, 1, 0]);
+    // child_count is every comment below, at any depth.
+    expect(await Promise.all([top, child, grandchild].map(async (id) => (await commentRow(id)).childCount))).toEqual([2, 1, 0]);
     expect((await postRow(postId)).commentCount).toBe(3);
   });
 
-  test('replies at the same moment all count (no lost update, no deadlock)', async () => {
+  test('replies at the same moment, at different depths, all count (no lost update, no deadlock)', async () => {
     const { w, reader, postId } = await world();
     const top = ok(await createCommentAs(reader, { postId, parentId: null }, { bodyMd: 'top' })).id;
-    const others = [w.people.author, w.people.moderator, w.people.owner, w.people.admin].map((person) => localUser(person.id));
+    const child = ok(await createCommentAs(reader, { postId, parentId: top }, { bodyMd: 'child' })).id;
+    const people = [reader, ...[w.people.author, w.people.moderator, w.people.owner, w.people.admin].map((person) => localUser(person.id))];
+    // Eight replies under top, eight under child, four new top-level comments.
+    const parents = [...Array<string>(8).fill(top), ...Array<string>(8).fill(child), ...Array<null>(4).fill(null)];
     const results = await Promise.all(
-      [reader, ...others, reader, ...others].flatMap((who, index) => [
-        createCommentAs(who, { postId, parentId: index % 2 === 0 ? top : null }, { bodyMd: `reply ${index}` }),
-      ]),
+      parents.map((parentId, index) => createCommentAs(people[index % people.length]!, { postId, parentId }, { bodyMd: `reply ${index}` })),
     );
     expect(results.every((result) => result.ok)).toBe(true);
-    expect((await postRow(postId)).commentCount).toBe(1 + results.length);
-    expect((await commentRow(top)).childCount).toBe(Math.ceil(results.length / 2));
+    expect((await postRow(postId)).commentCount).toBe(2 + parents.length);
+    // Under top: child, its eight replies and the eight replies of top itself.
+    expect((await commentRow(top)).childCount).toBe(1 + 8 + 8);
+    expect((await commentRow(child)).childCount).toBe(8);
   });
 
   test("casts the author's own upvote, so a comment starts at a score of 1 like its peers'", async () => {

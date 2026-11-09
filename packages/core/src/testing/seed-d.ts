@@ -17,7 +17,10 @@ export type Parent = { id: string; path: string };
 
 const past = () => new Date(Date.now() - 60_000);
 
-/** A comment under `parent` (top level when null), with its path built as createComment builds it. */
+/**
+ * A comment under `parent` (top level when null), with its path built and the counts kept as
+ * createComment does: the post's comment_count, and child_count on every ancestor.
+ */
 export async function seedReply(
   instance: Instance,
   post: Row,
@@ -42,14 +45,24 @@ export async function seedReply(
       publishedAt: new Date(),
       ...extra,
     });
+  await writer()
+    .update(posts)
+    .set({ commentCount: sql`${posts.commentCount} + 1` })
+    .where(eq(posts.id, post.id));
+  if (parent) {
+    await writer()
+      .update(comments)
+      .set({ childCount: sql`${comments.childCount} + 1` })
+      .where(sql`${comments.path} @> ${parent.path}::ltree`);
+  }
   return { id, path };
 }
 
-/** Sets every count of the post's thread from its rows, for a thread seeded without them. */
+/** Sets every count of the post's thread from its rows, for a thread seeded in bulk. */
 export async function recount(postId: string): Promise<void> {
   await writer().transaction(async (t) => {
     await t.execute(
-      sql`update ${comments} c set child_count = (select count(*) from ${comments} k where k.parent_id = c.id) where c.post_id = ${postId}`,
+      sql`update ${comments} c set child_count = (select count(*) from ${comments} k where k.path <@ c.path and k.id <> c.id) where c.post_id = ${postId}`,
     );
     await t
       .update(posts)
@@ -188,19 +201,16 @@ async function e2e() {
   const chain: Parent[] = [second];
   for (let level = 2; level <= 8; level++)
     chain.push(await seedReply(instance, threadPost, chain.at(-1)!, commenter, body(`Chain level ${level} ${suffix}`)));
-  await recount(threadPost.id);
 
   const tombstonePost = await post('Tombstone post');
   const deleted = await seedReply(instance, tombstonePost, null, commenter, { ...body(`Deleted text ${suffix}`), deletedAt: past() });
   await seedReply(instance, tombstonePost, deleted, poster, body(`Reply under deleted ${suffix}`));
   const removed = await seedReply(instance, tombstonePost, null, commenter, { ...body(`Removed text ${suffix}`), removedAt: past() });
   await seedReply(instance, tombstonePost, removed, poster, body(`Reply under removed ${suffix}`));
-  await recount(tombstonePost.id);
 
   const emptyPost = await post('Empty post');
   const lockedPost = await post('Locked post', { locked: true });
   await seedReply(instance, lockedPost, null, commenter, body(`Comment on locked ${suffix}`));
-  await recount(lockedPost.id);
 
   const bigPost = await post('Big post');
   const crowd = await Promise.all(Array.from({ length: 5 }, (_, index) => seedLogin(`crowd${index}_${suffix}`)));

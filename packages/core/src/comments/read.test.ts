@@ -8,7 +8,7 @@ import { removeContent } from '../moderation/remove.ts';
 import { truncateAll } from '../testing/db.ts';
 import { grantFor } from '../testing/seed-az.ts';
 import { seedPostWorld } from '../testing/seed-b1.ts';
-import { recount, seedChain, seedReply } from '../testing/seed-d.ts';
+import { seedChain, seedReply } from '../testing/seed-d.ts';
 import { localUser } from '../testing/seed.ts';
 import { castVote } from '../votes/cast.ts';
 import { readThread, threadDisplayDepth, threadMaxComments, type Thread } from './read.ts';
@@ -34,7 +34,6 @@ describe('readThread', () => {
     const a1 = await seedReply(at, post, a, w.people.author, { upvotes: 1, ...later(2) });
     const a2 = await seedReply(at, post, a, w.people.author, { upvotes: 3, ...later(3) });
     const a2x = await seedReply(at, post, a2, w.people.reader, later(4));
-    await recount(post.id);
     const now = new Date('2026-11-10T00:00:00Z');
     const read = async (sort: 'hot' | 'top' | 'new' | 'old') => readThread(post.id, null, { sort, now });
 
