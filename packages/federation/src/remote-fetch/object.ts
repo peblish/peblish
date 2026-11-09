@@ -78,18 +78,19 @@ function isBoundTo(json: unknown, requested: string, served: string): boolean {
 }
 
 /**
- * GETs the object at `apId` from its own origin (signed as the instance, through safeFetch). A
- * 410, or a Tombstone, is an outcome of its own (`gone`), not an error. A document whose id is
+ * GETs the object at `apId` from its own origin (signed as the instance, through safeFetch);
+ * `served` is the URL the document came from. A 410, or a Tombstone, is an outcome of its own
+ * (`gone`), not an error. A document whose id is
  * not the requested URL's, or the one it was served from, is refused as `object.id_mismatch`; an
  * id on this server's own origin as `object.local`, with no request made.
  */
-export async function readObject(apId: string, fetch: Fetcher): Promise<{ json: unknown } | ObjectOutcome> {
+export async function readObject(apId: string, fetch: Fetcher): Promise<{ json: unknown; served: string } | ObjectOutcome> {
   // We never fetch ourselves: an id on this server's own origin that we do not hold is gone, whoever named it.
   if (!URL.canParse(apId) || new URL(apId).origin === (await localOrigin())) return refused(apId, 'object.local');
   try {
     const { json, url } = await fetchActivity(apId, fetch);
     if (!isBoundTo(json, apId, url)) return refused(apId, 'object.id_mismatch');
-    return isTombstone(json) ? await gone(apId) : { json };
+    return isTombstone(json) ? await gone(apId) : { json, served: url };
   } catch (error) {
     if (!(error instanceof FetchFailure)) throw error;
     if (error.reason === 'gone') return gone(apId);

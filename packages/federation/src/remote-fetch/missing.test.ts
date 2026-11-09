@@ -121,15 +121,17 @@ const waitingRow = (target: string, community: string, receivedAt = new Date()) 
   });
 
 describe('which waiting objects a run reaches', () => {
-  test('an older fetchable object is reached past a crowd of newer ones this server will not ask for', async () => {
+  test('an older fetchable object is reached past a crowd of newer ones on this server’s own origin', async () => {
     const hour = 60 * 60 * 1000;
     const old = `${lemmy}/post/700`;
     const own = new URL(world.community.apId).origin;
-    // More waiting objects than a page holds, all newer, all on this server's own origin (never fetched).
+    // Far more waiting objects than a run reads, all newer, all on this server's own origin (never fetched).
+    const crowd = 2500;
+    expect(crowd).toBeGreaterThan(remoteTtls.missing.scan * 4);
     await writer()
       .insert(inboxRaw)
       .values(
-        Array.from({ length: remoteTtls.missing.pageSize + 30 }, (_, i) => ({
+        Array.from({ length: crowd }, (_, i) => ({
           body: new TextEncoder().encode('{}'),
           state: 'skipped' as const,
           error: `target.missing ${own}/ap/post/${i}`,
@@ -144,6 +146,33 @@ describe('which waiting objects a run reaches', () => {
     const server = peer({ [old]: { body: lemmyPage(700) } });
     expect(await fetchMissing({ fetch: server.fetch, gapMs: 0 })).toEqual({ looked: 1, stored: 1 });
     expect(server.requests.some((request) => request.url === old)).toBe(true);
+  });
+
+  test('an older fetchable object is reached past newer ones that are settled or backed off', async () => {
+    const missing = remoteTtls.missing as { scan: number };
+    const was = missing.scan;
+    missing.scan = 30;
+    try {
+      const newer = Array.from({ length: 4 * remoteTtls.missing.perRun }, (_, i) => `${lemmy}/post/${800 + i}`);
+      const now = Date.now();
+      for (const [i, target] of newer.entries()) await waitingRow(target, lab, new Date(now - 60_000 - i * 1000));
+      const old = `${lemmy}/post/799`;
+      await waitingRow(old, lab, new Date(now - 24 * 60 * 60 * 1000));
+      // Half of the newer ones are refused (settled), half are down (backed off).
+      const server = peer({
+        ...Object.fromEntries(newer.filter((_, i) => i % 2 === 0).map((target) => [target, { status: 503 }])),
+        [old]: { body: lemmyPage(799) },
+      });
+      const looked: number[] = [];
+      for (let attempt = 0; attempt < 4; attempt++) looked.push((await fetchMissing({ fetch: server.fetch, gapMs: 0, now })).looked);
+      // Four runs of 25 take the 100 newer ones; none of them is asked for again, and the old one comes next.
+      expect(looked).toEqual([25, 25, 25, 25]);
+      expect(server.requests.some((request) => request.url === old)).toBe(false);
+      expect(await fetchMissing({ fetch: server.fetch, gapMs: 0, now })).toEqual({ looked: 1, stored: 1 });
+      expect(server.requests.filter((request) => request.url === newer[0])).toHaveLength(1);
+    } finally {
+      missing.scan = was;
+    }
   });
 
   test('what one community got refused is not held against another that vouches for the same object', async () => {

@@ -153,6 +153,36 @@ describe('the remote actor store', () => {
     expect(keys.map(({ keyId, publicKeyPem }) => ({ keyId, publicKeyPem }))).toEqual([{ keyId: `${apId}#key-2`, publicKeyPem: fresh }]);
   });
 
+  test('keys: false stores the profile and leaves the key rows alone, even when a key rotated after the document was read', async () => {
+    const w = await world();
+    await storeRemoteActor(await w.store(), input());
+    // A moderator's announced Update(Group) was read here, with the key we held then ...
+    const stale = input({ displayName: 'Lab, as the moderator sent it', languages: ['fr'] });
+    // ... and the Group's own Update rotated the key before it was stored.
+    const rotated = rsaKeys().publicKeyPem;
+    await storeRemoteActor(await w.store(), input({ publicKey: { keyId: `${apId}#key-2`, ownerApId: apId, pem: rotated } }));
+
+    const result = await storeRemoteActor(await w.store(), { ...stale, keys: false });
+    expect(result).toMatchObject({ created: false, deleted: false });
+    const [actor] = await db().select().from(actors).where(eq(actors.apId, apId));
+    expect(actor?.displayName).toBe('Lab, as the moderator sent it');
+    const keys = await db().select().from(actorKeys).where(eq(actorKeys.actorId, actor!.id));
+    expect(keys.map(({ keyId, publicKeyPem }) => ({ keyId, publicKeyPem }))).toEqual([{ keyId: `${apId}#key-2`, publicKeyPem: rotated }]);
+    const languages = await db().select().from(communityLanguages).where(eq(communityLanguages.communityId, actor!.id));
+    expect(languages.map((row) => row.language)).toEqual(['fr']);
+
+    // A document with no key, or one in another algorithm, removes nothing either.
+    await storeRemoteActor(await w.store(), { ...input({ publicKey: null }), keys: false });
+    expect(await db().select().from(actorKeys).where(eq(actorKeys.actorId, actor!.id))).toHaveLength(1);
+  });
+
+  test('keys: false for an actor not held yet creates it without a key', async () => {
+    const w = await world();
+    await storeRemoteActor(await w.store(), { ...input(), keys: false });
+    expect(await db().select().from(actors).where(eq(actors.apId, apId))).toHaveLength(1);
+    expect(await db().select().from(actorKeys)).toEqual([]);
+  });
+
   test('three fetches of the same new actor racing end with one actor, one key and one created event', async () => {
     const w = await world();
     const grant = await w.store();

@@ -62,7 +62,14 @@ const prefix = 'target.missing ';
 
 export type MissingRun = { looked: number; stored: number };
 
-type Waiting = { target: string; communityId: string; community: string; announce: string | null; receivedAt: string };
+type Waiting = { target: string; communityId: string; community: string; announce: string | null };
+
+/** The (community, object) pairs this process will not ask for at `now`: settled, or backed off until later. */
+function notDue(now: number): string[] {
+  const keys: string[] = [];
+  for (const [key, entry] of memory) if (entry.expires > now && (entry.settled || entry.nextAt > now)) keys.push(key);
+  return keys;
+}
 
 /** One pass: fetches up to `remoteTtls.missing.perRun` of the objects skipped activities are waiting for. */
 export async function fetchMissing(
@@ -71,69 +78,65 @@ export async function fetchMissing(
   const run: MissingRun = { looked: 0, stored: 0 };
   if (!(await readSetting('inbox.enabled'))) return run;
   const now = options.now ?? Date.now();
-  const { lookbackMs, perRun, pageSize, maxPages } = remoteTtls.missing;
+  const { lookbackMs, perRun, scan } = remoteTtls.missing;
   const fetch = polite(options.fetch ?? safeFetch, options.gapMs ?? remoteTtls.politeGapMs);
   const since = new Date(now - lookbackMs).toISOString();
   const here = await localOrigin();
-  // The latest skipped activity for each missing object and each community that announced it, newest
-  // first, a page at a time: objects this process will not ask for now (settled, backed off, our
-  // own) are passed over, so a crowd of newer ones that cannot be fetched never keeps an older one
-  // that can from being reached. `cursor` is the last row of the previous page.
-  let cursor: { receivedAt: string; target: string; community: string } | null = null;
-  for (let page = 0; page < maxPages && run.looked < perRun && !options.signal?.aborted; page++) {
-    const after = cursor
-      ? sql`where (received_at, target, community) < (${cursor.receivedAt}::timestamptz, ${cursor.target}, ${cursor.community})`
-      : sql``;
-    const waiting: Waiting[] = await db().execute<Waiting>(sql`
-      select target, "communityId", community, announce, received_at::text as "receivedAt" from (
-        select distinct on (r.error, r.actor_ap_id)
-          substr(r.error, ${prefix.length + 1}::int) as target, a.id as "communityId", r.actor_ap_id as community,
-          r.activity_id as announce, r.received_at
-        from ${inboxRaw} r
-        join ${actors} a on a.ap_id = r.actor_ap_id and a.kind = 'Group' and not a.local and a.deleted_at is null
-        where r.state = 'skipped' and r.error like ${`${prefix}%`} and r.received_at > ${since}::timestamptz
-        order by r.error, r.actor_ap_id, r.received_at desc
-      ) latest
-      ${after}
-      order by received_at desc, target desc, community desc
-      limit ${pageSize}`);
-    const last = waiting.at(-1);
-    if (!last) break;
-    cursor = { receivedAt: last.receivedAt, target: last.target, community: last.community };
+  // The latest skipped activity for each missing object and each community that announced it,
+  // newest first, in one read. Objects this process will not ask for now (our own, settled, backed
+  // off) are left out by the query itself, before the limit, so a crowd of newer ones that cannot
+  // be fetched never keeps an older one that can from being reached.
+  const waiting: Waiting[] = await db().execute<Waiting>(sql`
+    with skip(key) as (select * from jsonb_array_elements_text(${JSON.stringify(notDue(now))}::jsonb))
+    select target, "communityId", community, announce from (
+      select distinct on (r.error, r.actor_ap_id)
+        substr(r.error, ${prefix.length + 1}::int) as target, a.id as "communityId", r.actor_ap_id as community,
+        r.activity_id as announce, r.received_at
+      from ${inboxRaw} r
+      join ${actors} a on a.ap_id = r.actor_ap_id and a.kind = 'Group' and not a.local and a.deleted_at is null
+      where r.state = 'skipped' and r.error like ${`${prefix}%`} and r.received_at > ${since}::timestamptz
+        and not starts_with(r.error, ${`${prefix}${here}/`})
+        and not exists (select 1 from skip where skip.key = r.actor_ap_id || chr(10) || substr(r.error, ${prefix.length + 1}::int))
+      order by r.error, r.actor_ap_id, r.received_at desc
+    ) latest
+    order by received_at desc, target desc, community desc
+    limit ${scan}`);
 
-    for (const row of waiting) {
-      if (run.looked >= perRun || options.signal?.aborted) break;
-      if (!URL.canParse(row.target) || new URL(row.target).protocol !== 'https:') continue;
-      const key = keyOf(row.community, row.target);
-      const tried = recall(key, now);
-      if (tried && (tried.settled || tried.nextAt > now)) continue;
-      // We never fetch ourselves (an object of ours that is missing is gone).
-      if (new URL(row.target).origin === here) {
-        remember(key, { attempts: 0, nextAt: 0, settled: true }, now);
-        continue;
-      }
-      // Stored since it was skipped: nothing to fetch, but the rows that waited for it may still wait (a
-      // store that was cut off before it put them back in line), so put them back now, once.
-      if (await heldVouch(row.target)) {
-        await requeueSkippedFor(row.target);
-        remember(key, { attempts: 0, nextAt: 0, settled: true }, now);
-        continue;
-      }
-      run.looked += 1;
-      const community = { id: row.communityId, apId: row.community };
-      const outcome = await fetchRemoteObject(row.target, { vouch: { community, announceApId: row.announce ?? row.community }, fetch });
-      const attempts = (tried?.attempts ?? 0) + 1;
-      if (outcome.status === 'unreachable') {
-        const wait = remoteTtls.missing.retryAfterMs[Math.min(attempts, remoteTtls.missing.retryAfterMs.length) - 1] ?? 0;
-        remember(key, { attempts, nextAt: now + wait, settled: false }, now);
-        continue;
-      }
-      // Stored, gone or refused: asking again changes nothing (a stored one whose waiting rows skip
-      // again is waiting for something else).
-      remember(key, { attempts, nextAt: 0, settled: true }, now);
-      if (outcome.status === 'stored' && outcome.created) run.stored += 1;
+  for (const row of waiting) {
+    if (run.looked >= perRun || options.signal?.aborted) break;
+    const key = keyOf(row.community, row.target);
+    // Not an address we can ask: nothing to fetch now or later.
+    if (!URL.canParse(row.target) || new URL(row.target).protocol !== 'https:') {
+      remember(key, { attempts: 0, nextAt: 0, settled: true }, now);
+      continue;
     }
-    if (waiting.length < pageSize) break;
+    const tried = recall(key, now);
+    if (tried && (tried.settled || tried.nextAt > now)) continue;
+    // We never fetch ourselves (an object of ours that is missing is gone).
+    if (new URL(row.target).origin === here) {
+      remember(key, { attempts: 0, nextAt: 0, settled: true }, now);
+      continue;
+    }
+    // Stored since it was skipped: nothing to fetch, but the rows that waited for it may still wait (a
+    // store that was cut off before it put them back in line), so put them back now, once.
+    if (await heldVouch(row.target)) {
+      await requeueSkippedFor(row.target);
+      remember(key, { attempts: 0, nextAt: 0, settled: true }, now);
+      continue;
+    }
+    run.looked += 1;
+    const community = { id: row.communityId, apId: row.community };
+    const outcome = await fetchRemoteObject(row.target, { vouch: { community, announceApId: row.announce ?? row.community }, fetch });
+    const attempts = (tried?.attempts ?? 0) + 1;
+    if (outcome.status === 'unreachable') {
+      const wait = remoteTtls.missing.retryAfterMs[Math.min(attempts, remoteTtls.missing.retryAfterMs.length) - 1] ?? 0;
+      remember(key, { attempts, nextAt: now + wait, settled: false }, now);
+      continue;
+    }
+    // Stored, gone or refused: asking again changes nothing (a stored one whose waiting rows skip
+    // again is waiting for something else).
+    remember(key, { attempts, nextAt: 0, settled: true }, now);
+    if (outcome.status === 'stored' && outcome.created) run.stored += 1;
   }
   return run;
 }

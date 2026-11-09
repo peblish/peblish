@@ -56,6 +56,18 @@ describe('fetching an actor again', () => {
     );
     expect((await row())?.deletedAt).toBeInstanceOf(Date);
   });
+
+  test('does not delete the actor for a Tombstone that names another id, or another server’s', async () => {
+    for (const body of [
+      { type: 'Tombstone', id: 'https://lemmy.test/u/someone-else' },
+      { type: 'Tombstone', id: 'https://evil.test/u/bob' },
+      { type: 'Tombstone' },
+    ]) {
+      expect(await refreshRemoteActor(bob, { fetch: serving({ body }).fetch })).toBe('refused');
+      expect(await row()).toMatchObject({ displayName: 'Bob', deletedAt: null });
+    }
+    expect(await ledger()).toEqual([]);
+  });
 });
 
 describe('an actor we hold as deleted', () => {

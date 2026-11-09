@@ -254,6 +254,103 @@ describe('the backfill of a followed community', () => {
     });
   });
 
+  describe('a collection embedded in a post is read as strictly as one named by IRI', () => {
+    const evil = 'https://evil.test';
+    const forged = () =>
+      lemmyNote(1, `${lemmy}/post/510`, { content: '<p>Forged</p>', source: { content: 'Forged', mediaType: 'text/markdown' } });
+    const commentBodies = async () =>
+      (await db().select({ apId: comments.apId, bodyMd: comments.bodyMd }).from(comments)).sort((a, b) => a.apId.localeCompare(b.apId));
+    const requested = (server: ReturnType<typeof peers>, host: string) => server.requests.some((request) => request.url.startsWith(host));
+
+    test('does not follow an external first page, with or without an id on the collection', async () => {
+      for (const replies of [
+        { type: 'OrderedCollection', first: `${evil}/page` },
+        { type: 'OrderedCollection', id: `${lemmy}/post/510/replies`, first: `${evil}/page` },
+        { type: 'OrderedCollection', id: `${lemmy}/post/510/replies`, first: { type: 'OrderedCollectionPage', id: `${evil}/page` } },
+      ]) {
+        const server = peers({
+          ...outbox(lemmyPage(510, { replies })),
+          ...route(`${evil}/page`, { type: 'OrderedCollectionPage', id: `${evil}/page`, orderedItems: [forged()] }),
+        });
+        await queue();
+        await run(server.fetch);
+        expect(await commentBodies()).toEqual([]);
+        expect(requested(server, evil)).toBe(false);
+        expect(await backfill()).toMatchObject({ state: 'done', posts: 1, comments: 0 });
+      }
+    });
+
+    test('does not read a collection whose id is on another server, nor follow an external next page', async () => {
+      const elsewhereId = peers({
+        ...outbox(lemmyPage(510, { replies: { type: 'OrderedCollection', id: `${evil}/c`, orderedItems: [forged()] } })),
+      });
+      await queue();
+      await run(elsewhereId.fetch);
+      expect(await commentBodies()).toEqual([]);
+      expect(await backfill()).toMatchObject({ state: 'done', note: expect.stringContaining('another server') });
+
+      const pagedUrl = `${lemmy}/post/510/page1`;
+      const paged = peers({
+        ...outbox(lemmyPage(510, { replies: pagedUrl })),
+        ...route(pagedUrl, { type: 'OrderedCollectionPage', id: pagedUrl, orderedItems: [], next: `${evil}/page2` }),
+        ...route(`${evil}/page2`, { type: 'OrderedCollectionPage', id: `${evil}/page2`, orderedItems: [forged()] }),
+      });
+      await queue();
+      await run(paged.fetch);
+      expect(await commentBodies()).toEqual([]);
+      expect(requested(paged, evil)).toBe(false);
+    });
+
+    test('still stores the comments it embeds itself, and pages on the post’s or the community’s server', async () => {
+      const second = lemmyNote(2, `${lemmy}/comment/1`);
+      const page = `${lab}/replies/1`;
+      const server = peers({
+        ...outbox(
+          lemmyPage(510, {
+            replies: {
+              type: 'OrderedCollection',
+              first: { type: 'OrderedCollectionPage', orderedItems: [lemmyNote(1, `${lemmy}/post/510`)], next: page },
+            },
+          }),
+        ),
+        ...route(page, { type: 'OrderedCollectionPage', id: page, orderedItems: [second] }),
+      });
+      await queue();
+      await run(server.fetch);
+      expect((await commentBodies()).map((row) => row.apId)).toEqual([`${lemmy}/comment/1`, `${lemmy}/comment/2`]);
+    });
+
+    test('takes an object embedded in a page as served by the page’s origin, not the post’s', async () => {
+      // carol's post lives on elsewhere.test; its replies are an inline collection whose first page the community serves.
+      const post = lemmyPage(9, {
+        id: `${elsewhere}/post/9`,
+        attributedTo: carol,
+        replies: { type: 'OrderedCollection', first: `${lab}/replies/1` },
+      });
+      const genuine = lemmyNote(7, `${elsewhere}/post/9`, {
+        id: `${elsewhere}/comment/7`,
+        attributedTo: carol,
+        content: '<p>As carol wrote it</p>',
+        source: { content: 'As carol wrote it', mediaType: 'text/markdown' },
+      });
+      const server = peers({
+        ...route(`${lab}/outbox`, collection(`${lab}/outbox`, [`${elsewhere}/post/9`])),
+        ...route(`${elsewhere}/post/9`, post),
+        // The community's page types carol's comment in with other words; only her server speaks for her.
+        ...route(`${lab}/replies/1`, {
+          type: 'OrderedCollectionPage',
+          id: `${lab}/replies/1`,
+          orderedItems: [{ ...genuine, content: '<p>Forged</p>', source: { content: 'Forged', mediaType: 'text/markdown' } }],
+        }),
+        ...route(`${elsewhere}/comment/7`, genuine),
+      });
+      await queue();
+      await run(server.fetch);
+      expect(await commentBodies()).toEqual([{ apId: `${elsewhere}/comment/7`, bodyMd: 'As carol wrote it' }]);
+      expect(requested(server, `${elsewhere}/comment/7`)).toBe(true);
+    });
+  });
+
   test('stops before its lease ends, keeps what it stored, and settles while it still owns the row', async () => {
     let now = new Date('2026-11-09T12:00:00Z');
     const server = peers({ ...featured(lemmyPage(550)), ...outbox(lemmyPage(551)) });
