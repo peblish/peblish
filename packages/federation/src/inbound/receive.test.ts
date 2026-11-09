@@ -5,13 +5,14 @@ import { actors } from '@peblish/core/db/tables/actors';
 import { inboxRaw } from '@peblish/core/db/tables/federation';
 import { siteSettings } from '@peblish/core/db/tables/site';
 import { writer } from '@peblish/core/db/write';
+import { tx } from '@peblish/core/tx/tx';
 import { truncateAll } from '@peblish/core/testing/db';
 import { actorDocument, nodeInfoRoutes, rsaKeys, stubFetch } from '@peblish/core/testing/seed-fed-a';
 import { seedInboundWorld, seedInboxRow } from '@peblish/core/testing/seed-fed-b';
 import { createHash } from 'node:crypto';
 import { forgetKeyRefreshes } from '../signing/inbound.ts';
 import { signDelivery, signHeaders } from '../signing/sign.ts';
-import { maxBodyBytes, pendingBytesLimit, receiveInbound } from './receive.ts';
+import { admissionLock, maxBodyBytes, pendingBytesLimit, receiveInbound } from './receive.ts';
 import {
   lookupBudgets,
   perInstanceRate,
@@ -259,6 +260,54 @@ describe('what one signer, and its instance, may send', () => {
     expect(await rows()).toHaveLength(1);
     expect((await receiveInbound(await signed(JSON.stringify(like())))).status).toBe(202);
     expect(await rows()).toHaveLength(2);
+  });
+
+  test('a repeat is answered 202 after the signer’s allowance is spent, while a new activity is not', async () => {
+    const body = JSON.stringify(like());
+    expect((await receiveInbound(await signed(body))).status).toBe(202);
+    for (let used = 0; used < perSignerRate; used++) takeIntake(hosts.lemmyuser);
+    expect((await receiveInbound(await signed(body))).status).toBe(202);
+    expect((await receiveInbound(await signed(JSON.stringify(like())))).status).toBe(429);
+    expect(await rows()).toHaveLength(1);
+  });
+
+  test('identical requests that arrive together wait their turn at the instance and are stored once', async () => {
+    const body = JSON.stringify(like());
+    // Another request of the instance is in its admission step: these wait for it.
+    let release!: () => void;
+    let locked!: () => void;
+    const holding = new Promise<void>((resolve) => (locked = resolve));
+    const open = new Promise<void>((resolve) => (release = resolve));
+    const holder = tx(async (t) => {
+      await t.db.execute(sql`select pg_advisory_xact_lock(hashtextextended(${admissionLock('https://lemmy.test')}, 0))`);
+      locked();
+      await open;
+    });
+    await holding;
+
+    let finished = 0;
+    const answers = Array.from({ length: 4 }, async () => {
+      const status = (await receiveInbound(await signed(body))).status;
+      finished += 1;
+      return status;
+    });
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    expect(finished).toBe(0);
+    release();
+    await holder;
+    expect(await Promise.all(answers)).toEqual(Array(4).fill(202));
+    expect(await rows()).toHaveLength(1);
+  });
+
+  test('large requests that arrive together cannot all pass on the same pending count', async () => {
+    const filler = 'x'.repeat(256 * 1024);
+    const bodies = Array.from({ length: 4 }, () => JSON.stringify({ ...like(), summary: filler }));
+    const size = new TextEncoder().encode(bodies[0]!).byteLength;
+    // Room for two of them, and not three.
+    await seedInboxRow(new Uint8Array(pendingBytesLimit.signer - Math.floor(2.5 * size)), { actorApId: hosts.lemmyuser });
+    const statuses = await Promise.all(bodies.map(async (body) => (await receiveInbound(await signed(body))).status));
+    expect(statuses.toSorted()).toEqual([202, 202, 429, 429]);
+    expect(await rows()).toHaveLength(3);
   });
 
   test('a signer over its request rate, or an instance over its own, is answered 429 and the others are not affected', async () => {
