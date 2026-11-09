@@ -129,7 +129,7 @@ Verification, on this tree:
 
 ## Cut or left for later lanes
 
-- `c/storage` S3 adapter (B2 builds it with media; env names reserved in deploy/README.md)
+- `c/storage` S3 adapter: built in wave 2 (lane B2, `packages/core/src/storage/`; the `S3_*` variables are in deploy/README.md). Uploads stay off (`uploads.enabled`) until image scanning is live
 - Staging deploy on a peblish.com subdomain (described only, per the brief)
 - Outbox pruning and a poison-event skip (a failing event stalls only its consumer; visible in outbox_cursors)
 - Renovate config not run through renovate-config-validator (JSON parses; rules reviewed by hand)
@@ -372,3 +372,81 @@ Verification, on this tree (lane root):
 - `docker build -t peblish:w2-groundwork`, then `scripts/image-smoke.sh` against a throwaway `peblish_root_image` (dropped after): the disagreeing command exits 64, migrate, the first admin, the worker starts and stops on SIGTERM with exit 0, web `/healthz`, `/readyz` and the healthcheck, uid 1000. A rerun on the same database passed too.
 
 Housekeeping: no push; the `peblish:w2-groundwork` image tag stays.
+
+## Wave 2 integrated (2026-11-09)
+
+Branch `mvp-w2`, five lanes of the first batch, each cut from 485f084; their notes are kept outside the repository in `/Users/admin/.agents/plans/feddit/lane-notes/wave-2/<lane>.md`, and `LANE-NOTES.md` is gone from the tree. D, C1, COMPOSER and FED-B start from this head, REM after FED-B.
+
+| Lane  | What it brought                                                                                                                                                            | Head    | Merge   |
+| ----- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- | ------- |
+| B2    | the public-address predicate and `safeFetch`, the S3 adapter (`aws4fetch`), image cleaning, uploads behind `uploads.enabled`, link previews, the signed remote-media proxy | bf2a5cf | 7913c44 |
+| F     | `community.create`, `.update` and `.set_moderator` (policies, mutations, services), `community_rules`, the community read models                                           | 5d05066 | 4efddc2 |
+| B1    | post and vote policies and mutations (`postingRestrictedToMods`, `auth.email_unverified` first), `castVote`, the remote post counterparts, the NSFW gate, the post page    | d3ebd62 | a2e36ef |
+| UI    | the shell, colour schemes with true black, density, the component facade, `VoteControl`, `PostCard`, `CommentThread`, `ReplyBar`, the `/kit` gallery, the payload budget   | 5ce0add | c7c5ee4 |
+| FED-A | draft-cavage signing and verification, remote actors, serving, WebFinger, NodeInfo, the durable delivery queue, the follows service                                        | 5526679 | 033dbaa |
+
+Only `LANE-NOTES.md` conflicted (add/add in every merge, from the second on): each merge kept the first one's file, and the last commit removes it. The lockfile merged without conflict in the UI and FED-A merges.
+
+Integration commits, after the merges:
+
+| Commit  | Change                                                                                                                                                                |
+| ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 9719a8e | Migration `0004_wave_2` (below)                                                                                                                                       |
+| 80ebd58 | Federation's seam `actors/safe-fetch.ts` re-exports core's `safeFetch` (below)                                                                                        |
+| 16df4f9 | A link preview returns the `og:image` URL instead of storing a thumbnail                                                                                              |
+| 3cf2b33 | The proxy answers `Cache-Control: private, max-age=600`                                                                                                               |
+| bb3593c | The `'link-preview'` throttle scope: 30 per client address and 20 per account in ten minutes                                                                          |
+| 581c7cd | The post page uses `VoteControl` and `Prose`; B1's `PostVote` and `Html` are gone                                                                                     |
+| 0afa376 | `createPostAs` casts the author's upvote after `createPost`                                                                                                           |
+| 1b89c25 | F's posting-restriction test runs unconditionally (2 passed)                                                                                                          |
+| b20b9c3 | `freshModerator` exported from `authz/roles.ts`; the communities and posts read models use it instead of their own copies                                             |
+| 4b0d8f1 | `PEBLISH_UI_KIT: '1'` in Playwright's `webServer.env`; the post page in `e2e/payload/routes.ts`; the CI bundle step and the report's header no longer say report-only |
+| 2fc1d93 | CI starts MinIO (compose.yaml's image, by digest) and sets the `S3_*` variables, so the adapter tests run there                                                       |
+| 9df8e4d | README: ownership rows for B1, B2, F, FED-A and UI, a rule for outbound requests, the root loader's invalidation rule                                                 |
+| eae782f | deploy/README.md: the `S3_*` variables, `BETTER_AUTH_SECRET` also keys proxy URLs, the preview budget, the proxy's `private` answer                                   |
+| 251cb19 | B1's gate spec scopes its Sign in link to the page body (the shell has one too)                                                                                       |
+| (this)  | This section; the S3 line under "Cut or left"; `LANE-NOTES.md` removed                                                                                                |
+
+Migration `0004_wave_2`, generated once by drizzle-kit after all the merges (it equals F's and FED-A's scratch output, joined):
+
+- `community_rules` (F, `c/communities/tables.ts`): primary key community and position, `title`, `body_md`, `body_html`; check `position >= 1`; foreign key to `actors` ON DELETE cascade.
+- `deliveries` (FED-A, `c/delivery/tables.ts`): the queue, one row per activity and inbox (unique `activity_ap_id` and `inbox_url`), state check (`pending`, `delivered`, `failed`, `skipped`); foreign keys to `actors` (sender) and `instances`; indexes `deliveries_due` (partial, `next_attempt_at` where `state = 'pending'`), `deliveries_object` and `deliveries_instance`.
+- No trigger, no column on an existing table, no change to an earlier migration. B1, B2 and UI add no table. A lane database that applied a lane's own scratch 0004 fails with `MigrationHistoryError`; `scripts/lane.sh` prints the recreate command.
+
+Dependencies accepted: `aws4fetch` 1.0.20 (core, MIT, B2), `@react-aria/optimize-locales-plugin` 2.1.0 (web, dev, Apache-2.0, UI; it pulls `unplugin` 2.3.11, MIT), `drizzle-orm` 0.45.4 in federation (FED-A; core already had it). Nothing else changed in the lockfile. `pnpm install` after the merges left it as it was, and `pnpm install --frozen-lockfile` is up to date.
+
+Architecture note: Fedify is used for request signing and signature verification only (`signing/`). Actor and collection serving, WebFinger, NodeInfo and delivery are peblish's own code, and `federation.ts` holds only the software identity, `localOrigin()` and `userAgent()`. Contract 7 (Fedify only inside `packages/federation`) still holds. The batch review and the wave 3 live lab decide whether anything returns to Fedify.
+
+The seam switch: `actors/safe-fetch.ts` is now four lines of re-export from `@peblish/core/net/fetch` and `actors/safe-fetch.test.ts` is gone, so the actor, document, NodeInfo and delivery tests run through the real address predicate. Delivery sends `schemes: ['https:']` and `maxRedirects: 0`, and a `BlockedDestinationError` is permanent (`run.ts`). Documents (actors, WebFinger, NodeInfo) refuse a truncated body (`actors/document.ts`); delivery does not, because it reads only the status and a cut error page is enough. The live lab overlays that one file with a client of its own.
+
+Decisions where the briefs left room:
+
+1. A link preview stores the page's `og:image` URL as the post's `thumbnail_url` as it is, not a signed proxy URL. Pages turn it into `/media/proxy/<signature>/<target>` at render time with `createMarkdownRenderer().image()`, so nothing signed sits in the database, a rotated `BETTER_AUTH_SECRET` breaks no stored value, and federation sends the picture's URL as the Page `image` (`mapping/content.ts`). B1's `-load.ts` already signed any off-origin URL that way.
+2. With no thumbnail stored, `recordThumbnail` and the preview's bucket path are gone. The `media.thumbnail` policy stays as the gate on making the server fetch a URL a person chose (kill switch, verified email); its name is now a misnomer, and renaming it is optional. The `thumbnail` kind in `media.stored` and the `media.kind` check stay for SAFE.
+3. B2's `/media/proxy` is not in `e2e/payload/routes.ts`: it is an image endpoint with no markup, so there is no first-visit payload to budget. The post page is, through a `target` function that seeds a post with `seed-b1.ts e2e`; it is skipped against a remote `BASE_URL` (126.4 kB of the 170 kB script budget, 60.4 of 65 CSS).
+4. `createPostAs` casts the author's upvote through `voteAs`, so it is a real second mutation with its own `vote.cast` event (federated as a Like, FED-A note 5). It is best effort: the post exists either way, so a refusal or an error there is not returned to the caller.
+5. `VoteControl` keeps the post-specific group name ("Vote on this post"); the arrows' labels come from the `ui` catalogue (`vote.up` and `vote.down` left `posts.json`). The page no longer replaces its numbers with the server's tally after a vote, as the stand-in did: the optimistic score stands until the next load. A refused vote throws, which `VoteControl` reverts.
+6. The moderator freshness rule existed three times (roles, communities, posts); roles.ts exports it as `freshModerator` and the other two use it. AZ's role-table test still pins it.
+7. F's posting-restriction test lost its `skipIf` on the refusal reason, so it can no longer skip silently.
+8. The CI MinIO step uses the digest of the multi-arch index (it holds linux/amd64) and waits for `/minio/health/live`. The bucket is created by the adapter test.
+9. FED-A's edit to `e2e/server/federation.spec.ts` (the instance actor answers `/` for ActivityPub requests) is accepted, as are B1's edits to AZ's `seed-az.ts`, `role-table.test.ts` and `authorize.test.ts`.
+
+Safety checks: FIT's secrets test passes inside `pnpm check`. In tracked files, `PRIVATE KEY` appears only in `tools/fixture-import/src/secrets.ts` (the pattern) and an assertion in `e2e/server/federation.spec.ts` that a served actor has none, `privateKeyPem` only as code identifiers (the key store, signing, the per-test key generators), `"privateKey"` nowhere, and `@feddit.com` nowhere outside docs. The hosts in test files are `*.test`, `example.*`, loopback and private-range literals, plus real names used only as strings (JSON-LD contexts, `feddit.com` in URL-builder unit tests); no test makes a request to one.
+
+Verification, on this tree (lane root):
+
+- `rm -rf node_modules`, `pnpm install`, then `pnpm install --frozen-lockfile`: up to date, lockfile unchanged.
+- `pnpm check` is green: 100 test files passed and 1 skipped, 1,481 tests passed and 2 skipped (FIT's opt-in build and archive tests), no boundary violations (503 modules), oxlint and Prettier clean. The S3 adapter tests ran against the compose MinIO. Nothing else ran on the shared Postgres.
+- `pnpm db:drift`: none. `scripts/lane.sh root` applied 0004 to `peblish_root` (no MigrationHistoryError).
+- `PEBLISH_UI_KIT=1 pnpm e2e` on lane root (port 18399, Mailpit and MinIO from `compose.yaml`): 99 passed, 1 skipped (the test that `/kit` answers 404 where the gallery is off, which needs a server without `PEBLISH_UI_KIT`). That is wave 1's 33, B1's 15, B2's 4 (its post-page spec now runs), UI's gallery, shell and payload specs, and FED-A's six federation specs. The payload budget holds on `/`, `/auth/sign-in`, `/post/<id>` and `/kit`.
+- `docker build -t peblish:w2 .`, then `scripts/image-smoke.sh` against a throwaway `peblish_root_image` (dropped after): the disagreeing command exits 64, migrate (0004 applied), the first admin, the worker starts and stops on SIGTERM with exit 0, web `/healthz`, `/readyz` and the healthcheck, uid 1000. A rerun on the same database passed too.
+
+Still open from the lane notes (not in the integration brief):
+
+- B2: a lint rule against raw outbound HTTP in product code (`safeFetch` protects only what uses it; `fetch.test.ts` guards `createSafeFetch` only); a sweep of bucket objects with no row (a crash between put and commit); the proxy has no per-address limit and no HEAD; images are cleaned, not re-encoded or resized (decision 1 of B2's notes, accepted); `::/96` is refused whole.
+- F: `community.set_moderator` is not named `mod.*` (AZ's role table fails for any such policy without a column), a moderator may change the age gate and the posting restriction, no mutation deletes or removes a community, and icon and banner cannot be set while uploads are off.
+- B1: the sensitive-content gate links a signed-in account without a 16+ declaration to `/settings/account`, where no declaration form exists (imported accounts will hit it; lane A or ADM); `PostView` has no `altText`, so an image post's alt text is its title; AZ's `postState` locks the post for every caller, so comment votes in one thread take turns on the post row; pages are `private, no-store` for every viewer.
+- UI: `/auth/sign-in` loads 126.4 kB of script because `vendor-mux` is not tree-shaken (about 49 kB recoverable per route); the kit has 3.7 kB of room under the budget; lane A's native inputs are not yet swapped for the facade `TextField`, `Select` and `Checkbox`.
+- FED-A: a poison event stalls the `federation.delivery` consumer; imported communities have empty outboxes until a backfill stores their Create activities; `deliveries` rows are never pruned (REM); PieFed's day-one cap status and Lemmy's reaction to unknown software are measured live in wave 3; unexpected failures on federation paths answer 503 with `Retry-After`, never 500.
+
+Housekeeping: no push; the worktrees, the lane branches, the lane databases and the `peblish:w2` image tag stay.
