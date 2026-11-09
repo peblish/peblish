@@ -238,11 +238,11 @@ describe('a link to a post or a comment', () => {
     }
   });
 
-  test('a Tombstone is unsupported, a 410 is gone, a peer that is down is unreachable', async () => {
+  test('a Tombstone or a 410 is gone, a peer that is down is unreachable', async () => {
     const id = `${lemmy}/post/330`;
     expect(await resolveLookup(lookup(id), { fetch: peer({ [id]: { body: { type: 'Tombstone', id } } }).fetch })).toEqual({
       ok: false,
-      error: 'object.unsupported',
+      error: 'target.gone',
     });
     expect(await resolveLookup(lookup(id), { fetch: peer({ [id]: { status: 410 } }).fetch })).toEqual({ ok: false, error: 'target.gone' });
     expect(await resolveLookup(lookup(id), { fetch: peer({ [id]: { status: 503 } }).fetch })).toEqual({

@@ -147,6 +147,8 @@ async function byUrl(url: string, fetch: Fetcher): Promise<Held> {
   // claims is read again from its own address below, which holds it to its own origin.
   const said = identity(document.json);
   if (!said) throw new Stop('peer.invalid');
+  // Some servers answer a deleted object with a 200 Tombstone instead of a 410.
+  if (said.type === 'Tombstone') throw new Stop('target.gone');
   if (actorTypes.has(said.type)) return heldActor(await withActorError(resolveRemoteActor(said.id, { fetch })));
   if (!objectTypes.has(said.type)) throw new Stop('object.unsupported');
   return byObject(said.id, fetch);
