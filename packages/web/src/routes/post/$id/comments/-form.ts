@@ -1,5 +1,6 @@
 import { createCommentAs, deleteCommentAs, updateCommentAs } from '@peblish/core/comments/actions';
 import { NewComment } from '@peblish/core/comments/input';
+import { attempt } from '@peblish/core/identity/throttle';
 import type { RefusalReason } from '@peblish/schema/refusal';
 import { Uuid } from '@peblish/schema/ids';
 import { type } from 'arktype';
@@ -14,14 +15,17 @@ import { forbidden, formSession, principalOf, readForm, sameOrigin } from '../..
 // intent reply: body, and parent (a comment id; empty replies to the post);
 // intent edit: comment and body; intent delete: comment.
 // focus (a comment id) names the permalink page the form came from, where the answer goes back to.
+// Each form post is counted against the account's `comment` budget (30 in ten minutes) before
+// it does anything; over it the answer is rate.limited (429 for the enhanced form).
 
 const Form = type({ intent: "'reply'", body: 'string', 'parent?': 'string', 'focus?': 'string' })
   .or({ intent: "'edit'", comment: 'string', body: 'string', 'focus?': 'string' })
   .or({ intent: "'delete'", comment: 'string', 'focus?': 'string' });
 
-type Outcome = { ok: true; id?: string } | { ok: false; reason: RefusalReason | 'invalid' };
+type Reason = RefusalReason | 'invalid' | 'rate.limited';
+type Outcome = { ok: true; id?: string } | { ok: false; reason: Reason };
 
-const refuse = (reason: RefusalReason | 'invalid'): Outcome => ({ ok: false, reason });
+const refuse = (reason: Reason): Outcome => ({ ok: false, reason });
 
 function answer(request: Request, cookies: readonly string[], outcome: Outcome, back: string): Response {
   const headers = new Headers();
@@ -29,7 +33,7 @@ function answer(request: Request, cookies: readonly string[], outcome: Outcome, 
   if (request.headers.get('accept')?.includes('application/json')) {
     headers.set('content-type', 'application/json');
     return new Response(JSON.stringify(outcome.ok ? { ok: true, id: outcome.id } : { error: outcome.reason }), {
-      status: outcome.ok ? 200 : 400,
+      status: outcome.ok ? 200 : outcome.reason === 'rate.limited' ? 429 : 400,
       headers,
     });
   }
@@ -48,12 +52,14 @@ export async function handleCommentPost(request: Request, postId: string): Promi
   const cookies = session?.setCookies ?? [];
   const form = Form(await readForm(request));
   const focus = form instanceof type.errors || !form.focus || !Uuid.allows(form.focus) ? null : form.focus;
-  const back = focus && Uuid.allows(postId) ? commentPath(postId, focus) : postPath(postId);
+  // The post id is the address's: nothing is built from it, least of all a redirect, until it is known to be an id.
+  const back = !Uuid.allows(postId) ? '/' : focus ? commentPath(postId, focus) : postPath(postId);
   if (!session) return answer(request, cookies, refuse('auth.required'), back);
   if (form instanceof type.errors || !Uuid.allows(postId)) return answer(request, cookies, refuse('target.not_found'), back);
   const principal = principalOf(session.view);
   const comment = 'comment' in form ? form.comment : '';
   if (form.intent !== 'reply' && !Uuid.allows(comment)) return answer(request, cookies, refuse('target.not_found'), back);
+  if (!(await attempt('comment', { id: principal.actorId })).allowed) return answer(request, cookies, refuse('rate.limited'), back);
   let outcome: Outcome;
   switch (form.intent) {
     case 'reply': {

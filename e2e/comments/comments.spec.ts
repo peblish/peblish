@@ -280,6 +280,16 @@ test.describe('anyone', () => {
       `${postUrl(seed.posts.thread)}?commentError=auth.required#comments`,
     ]);
   });
+
+  test('an address that is not a post id never becomes the redirect', async ({ page }) => {
+    // The id in the address decodes to a protocol-relative URL; the answer must stay on this site.
+    const response = await page.request.post('/post/%2F%2Fevil.example/comments', {
+      form: { intent: 'reply', body: 'hi' },
+      maxRedirects: 0,
+    });
+    expect(response.status()).toBe(303);
+    expect(response.headers().location).toBe('/?commentError=auth.required#comments');
+  });
 });
 
 test.describe('a German browser', () => {
@@ -495,6 +505,33 @@ test.describe('a signed-in person', () => {
     await expect(page.locator(`#comment-${id}`)).toContainText('[deleted]');
     await expect(page.locator(`#comment-${id}`)).not.toContainText('Changed');
     await expect(page.getByRole('group', { name: 'Your comment' })).toHaveCount(0);
+  });
+});
+
+test.describe('an account over its budget', () => {
+  test('is refused with rate.limited (429) after 30 comment forms in ten minutes, and the others are not', async ({ page, browser }) => {
+    await signedIn(page, seed.moderator.name);
+    await gotoHydrated(page, postUrl(seed.posts.locked));
+    // Refused by the lock each time, but every post counts.
+    for (let count = 1; count <= 30; count++)
+      expect(await post(page, seed.posts.locked, { intent: 'reply', body: 'hello' })).toEqual({
+        status: 400,
+        answer: { error: 'post.locked' },
+      });
+    expect(await post(page, seed.posts.locked, { intent: 'reply', body: 'hello' })).toEqual({
+      status: 429,
+      answer: { error: 'rate.limited' },
+    });
+
+    // Another account has its own budget.
+    const other = await (await browser.newContext()).newPage();
+    await signedIn(other, seed.author.name);
+    await gotoHydrated(other, postUrl(seed.posts.locked));
+    expect(await post(other, seed.posts.locked, { intent: 'reply', body: 'hello' })).toEqual({
+      status: 400,
+      answer: { error: 'post.locked' },
+    });
+    await other.close();
   });
 });
 

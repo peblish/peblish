@@ -44,6 +44,7 @@
     "error.community.removed": "This community has been removed.",
     "error.community.deleted": "This community has been deleted.",
     "error.invalid": "Write something, up to 10,000 characters.",
+    "error.rate.limited": "You are commenting too fast. Wait a few minutes and try again.",
     "error.generic": "Something went wrong. Try again.",
     "error.network": "The request did not get through. Check your connection and try again."
   },
@@ -92,6 +93,7 @@
     "error.community.removed": "Diese Community wurde entfernt.",
     "error.community.deleted": "Diese Community wurde gelöscht.",
     "error.invalid": "Schreibe etwas, bis zu 10.000 Zeichen.",
+    "error.rate.limited": "Du kommentierst zu schnell. Warte ein paar Minuten und versuche es erneut.",
     "error.generic": "Etwas ist schiefgelaufen. Versuche es erneut.",
     "error.network": "Die Anfrage ist nicht durchgekommen. Prüfe deine Verbindung und versuche es erneut."
   }
