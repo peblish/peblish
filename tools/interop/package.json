@@ -1,0 +1,21 @@
+{
+  "name": "@peblish/interop",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "license": "AGPL-3.0-only",
+  "description": "The federation lab's runner: scenarios against Lemmy, PieFed and Mbin (lab/README.md, INTEROP.md).",
+  "scripts": {
+    "interop": "node src/run.ts"
+  },
+  "dependencies": {
+    "@peblish/core": "workspace:*",
+    "@peblish/federation": "workspace:*",
+    "@peblish/schema": "workspace:*",
+    "arktype": "2.2.9",
+    "postgres": "3.4.9"
+  },
+  "devDependencies": {
+    "@fedify/fedify": "2.4.5"
+  }
+}
