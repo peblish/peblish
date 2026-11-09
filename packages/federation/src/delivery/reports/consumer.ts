@@ -35,7 +35,7 @@ async function heldContent(db: Queryable, target: ContentRef): Promise<Held | nu
 
 const inboxOf = (actor: ActorRef) => actor.sharedInboxUrl ?? actor.inboxUrl;
 
-/** The remote community's inbox and, when it is on another host, the remote author's. */
+/** The remote community's inbox and, when it is on another host, the remote author's. The report form names the same hosts (`forwardHosts` in core's reports/form.ts): keep the two in step. */
 function recipients(community: ActorRef, author: ActorRef): string[] {
   const inboxes: string[] = [];
   const communityInbox = community.local ? null : inboxOf(community);

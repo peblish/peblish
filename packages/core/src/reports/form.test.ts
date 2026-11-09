@@ -1,10 +1,11 @@
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { beforeEach, describe, expect, test } from 'vitest';
 import { hideNsfw, showNsfw } from '../communities/gate.ts';
 import { db } from '../db/read.ts';
 import { actors } from '../db/tables/actors.ts';
 import { writer } from '../db/write.ts';
 import { ageDeclarations } from '../identity/tables.ts';
+import { peerControls } from '../peers/tables.ts';
 import { truncateAll } from '../testing/db.ts';
 import { seedComment, seedModerationWorld, seedPost } from '../testing/seed-az.ts';
 import { localUser, seedActor } from '../testing/seed.ts';
@@ -47,12 +48,17 @@ describe('the report form quotes only what the post page would show this viewer'
 describe('a forwarded report names every host it goes to', () => {
   test('the form lists the community host and the author host; the receipt drops the anonymity promise only when forwarded', async () => {
     const w = await seedModerationWorld();
-    const stranger = await seedActor(w.instances.other, 'Person', 'stranger');
+    // The outbound Flag goes to inboxes, shared first: give every remote actor one.
+    await writer()
+      .update(actors)
+      .set({ inboxUrl: sql`'https://' || split_part(${actors.apId}, '/', 3) || '/inbox'` })
+      .where(eq(actors.local, false));
+    const stranger = await seedActor(w.instances.other, 'Person', 'stranger', { inboxUrl: 'https://other.test/u/stranger/inbox' });
     const both = await seedPost(w.instances.lemmy, w.communities.remote.live, stranger, { title: 'Two hosts' });
     const authorOnly = await seedPost(w.instances.local, w.communities.local.live, stranger, { title: 'Author host' });
     const user = localUser(w.people.user.id);
-    const hosts = async (id: string) => {
-      const form = await readReportForm(user, { kind: 'post', id });
+    const hosts = async (id: string, as = user) => {
+      const form = await readReportForm(as, { kind: 'post', id });
       if (!form.ok) throw new Error(form.reason);
       return form.hosts;
     };
@@ -65,5 +71,13 @@ describe('a forwarded report names every host it goes to', () => {
     if (!sent.ok || !kept.ok) throw new Error('not filed');
     expect(await readSentReport(w.people.user.id, sent.number)).toMatchObject({ forwardedTo: ['lemmy.test', 'other.test'] });
     expect(await readSentReport(w.people.user.id, kept.number)).toMatchObject({ forwardedTo: [] });
+
+    // The delivery worker skips a blocked peer at send time, and an actor without an inbox gets nothing: neither is named.
+    await writer().insert(peerControls).values({ instanceId: w.instances.other.id, blocked: true });
+    const other = localUser((await seedActor(w.instances.local, 'Person', 'other_reporter')).id);
+    expect(await hosts(both.id, other)).toEqual(['lemmy.test']);
+    expect(await hosts(authorOnly.id, other)).toEqual([]);
+    const noInbox = await seedActor(w.instances.lemmy, 'Person', 'no_inbox');
+    expect(await hosts((await seedPost(w.instances.local, w.communities.local.live, noInbox, { title: 'No inbox' })).id)).toEqual([]);
   });
 });

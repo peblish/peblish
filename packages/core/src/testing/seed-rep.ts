@@ -152,7 +152,7 @@ async function e2e() {
   };
   // A remote author on a host that never resolves (.example): a forwarded Flag fails to deliver, harmlessly.
   const far = await seedInstance(`far-${suffix}.example`, false);
-  const farAuthor = await seedActor({ ...far, local: false }, 'Person', `far_${suffix}`);
+  const farAuthor = await seedActor({ ...far, local: false }, 'Person', `far_${suffix}`, { inboxUrl: `https://${far.domain}/inbox` });
   posts.forwarded = (
     await seedPost(far, community, farAuthor, { title: `Forward me ${suffix}`, bodyMd: 'Forward me', contentHtml: '<p>Forward me</p>' })
   ).id;
