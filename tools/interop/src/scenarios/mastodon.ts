@@ -2,10 +2,10 @@
 //   V2  a follower there gets the bare Announce of the Page, threadiverse peers get
 //       Announce(Create(Page)), no inbox gets both; deleting the post sends the follower
 //       Undo(Announce) and the author's Delete.
-//   F5  a Lemmy admin's site ban of a Lemmy user with removeData takes back the local community's
-//       boost of that user's post from the follower (Undo(Announce)).
-//   F3  a post that mentions a person there (not a follower), then removed by a moderator, is
-//       taken back by the author's Delete sent to that person's server.
+//   V2/F5  a Lemmy admin's site ban of a Lemmy user with removeData takes back the local community's
+//          boost of that user's post from the follower (Undo(Announce)).
+//   V2/F3  a post that mentions a person there (not a follower), then removed by a moderator, is
+//          taken back by the author's Delete sent to that person's server.
 import type { Context, Group } from '../context.ts';
 import { waitFor } from '../lab.ts';
 import { expectDelivery, expectInbound } from '../match.ts';
@@ -39,7 +39,7 @@ const idOf = (value: unknown): string | null =>
       : null;
 const actorOf = (body: unknown): unknown => (typeof body === 'object' && body !== null ? (body as { actor?: unknown }).actor : undefined);
 
-/** F5: a Lemmy user's post boosted to the follower, then the user's site ban at home with removeData. */
+/** V2/F5: a Lemmy user's post boosted to the follower, then the user's site ban at home with removeData. */
 async function f5(ctx: Context): Promise<string> {
   const username = `lf${ctx.run}`;
   await lemmy.registerUser!(username);
@@ -73,7 +73,7 @@ async function f5(ctx: Context): Promise<string> {
   return `Lemmy's site ban with removeData applied; the boost ${boostId} was undone at the follower`;
 }
 
-/** F3: alice names a person on the rogue (who follows nothing), and a moderator removes the post. */
+/** V2/F3: alice names a person on the rogue (who follows nothing), and a moderator removes the post. */
 async function f3(ctx: Context): Promise<string> {
   const person = rogue.actor('mastofan');
   const title = tag(ctx, 'F3', { name: 'rogue' });
@@ -98,7 +98,7 @@ async function f3(ctx: Context): Promise<string> {
 }
 
 export const mastodon: Group = {
-  ids: ['V2', 'F5', 'F3'],
+  ids: ['V2', 'V2/F5', 'V2/F3'],
   async run(ctx) {
     const { rec, community } = ctx;
     const fan = rogue.actor('mastofan');
@@ -170,15 +170,15 @@ export const mastodon: Group = {
           );
         return 'Announce(Page) to the Mastodon-like follower, Announce(Create) to the peers, one per inbox; Undo(Announce) and Delete on removal';
       });
-      // F5 needs Lemmy (its site ban with removeData) and the follower still following.
-      if (ctx.peers.some((peer) => peer.name === 'lemmy')) await rec.scenario('F5', 'rogue', () => f5(ctx));
+      // V2/F5 (review finding F5) needs Lemmy (its site ban with removeData) and the follower still following.
+      if (ctx.peers.some((peer) => peer.name === 'lemmy')) await rec.scenario('V2/F5', 'rogue', () => f5(ctx));
     } finally {
       const leaving = new Date();
       await unfollow().catch(() => undefined);
-      // Applied before F3 posts, or the post still goes to the follower too.
+      // Applied before V2/F3 posts, or the post still goes to the follower too.
       await expectInbound(ctx.sql, { since: leaving, actor: fan, type: 'Undo' }, { state: 'applied' }).catch(() => undefined);
     }
-    // F3 after the Undo(Follow): the mentioned person's server is reached only for the mention.
-    await rec.scenario('F3', 'rogue', () => f3(ctx));
+    // V2/F3 (review finding F3) after the Undo(Follow): the mentioned person's server is reached only for the mention.
+    await rec.scenario('V2/F3', 'rogue', () => f3(ctx));
   },
 };
