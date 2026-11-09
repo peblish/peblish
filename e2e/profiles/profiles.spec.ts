@@ -138,9 +138,11 @@ test.describe('anyone', () => {
   });
 
   test('an unknown handle and a community are not profiles', async ({ page }) => {
-    // The status is the shell's to set: /u/<name> negotiates by Accept and falls through federation with a 200 (see the lane notes).
+    // /u/<name> negotiates by Accept; the HTML that falls through federation keeps the router's 404.
     for (const handle of ['nobody_here_zz', seed.community.name, 'nobody@unknown.test']) {
-      await gotoHydrated(page, profile(handle));
+      const response = await page.goto(profile(handle), { waitUntil: 'commit' });
+      expect(response?.status(), handle).toBe(404);
+      await page.locator('html[data-hydrated="1"]').waitFor({ state: 'attached' });
       await expect(page.getByRole('heading', { level: 1, name: 'Page not found' }), handle).toBeVisible();
     }
   });

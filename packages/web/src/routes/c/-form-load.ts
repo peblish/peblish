@@ -5,7 +5,6 @@ import { createServerFn } from '@tanstack/react-start';
 import { setResponseStatus } from '@tanstack/react-start/server';
 import { type } from 'arktype';
 import { pageSession, principalOf } from '../../server/auth.ts';
-import { varyByAccept } from './-gate.ts';
 import { emptyValues, type FormValues } from './-form.ts';
 
 // What the community form pages load (server functions). A signed-out viewer is sent to sign in
@@ -24,7 +23,6 @@ const refused = (reason: string): FormData => {
 
 /** /c/new: a site admin with two-factor on (the session's admin role). */
 export const loadNewCommunity = createServerFn({ method: 'GET' }).handler(async (): Promise<FormData> => {
-  varyByAccept();
   const session = await pageSession();
   if (!session) return { status: 'signed-out' };
   if (session.view.siteRole !== 'admin') return refused('auth.admin_required');

@@ -1,6 +1,6 @@
 import { auth } from '@peblish/core/identity/auth';
 import { parseNsfwChoice, type NsfwChoice } from '@peblish/core/communities/gate';
-import { appendResponseHeader, getRequest, setResponseHeader } from '@tanstack/react-start/server';
+import { getRequest, setResponseHeader } from '@tanstack/react-start/server';
 import { ageGated } from '../../server/auth.ts';
 import type { GateData } from './-ui/gate.tsx';
 
@@ -32,10 +32,3 @@ export function gateData(options: {
   const state = gate === 'age' && ageGated(getRequest()) ? 'under-16' : gate;
   return { kind: 'gate', state, ...rest };
 }
-
-/**
- * Says `Vary: Accept` for a page at /c/<name>, which federation serves as the Group to a peer that
- * asks for it. The bridge adds the header itself when the page has not (server/federation.ts), by
- * copying the response, and that copy turns a 404 or 403 into a 200 here. Saying it first skips the copy.
- */
-export const varyByAccept = () => appendResponseHeader('vary', 'Accept');

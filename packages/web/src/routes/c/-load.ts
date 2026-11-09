@@ -15,7 +15,7 @@ import { communityPath } from '../../shell/paths.ts';
 import type { SlotViewer } from '../-actions/props.ts';
 import { feedItem } from '../index/-feed/items.ts';
 import { agoText, dateText, languageName } from './-format.ts';
-import { gateData, requestNsfw, varyByAccept } from './-gate.ts';
+import { gateData, requestNsfw } from './-gate.ts';
 
 /** No such community (unknown, deleted or removed): the route throws notFound with the handle for its own not-found page. */
 const missing = (handle: string) => ({ kind: 'missing' as const, handle });
@@ -31,7 +31,6 @@ const missing = (handle: string) => ({ kind: 'missing' as const, handle });
 export const loadCommunityPage = createServerFn({ method: 'GET' })
   .validator(type({ handle: 'string', sort: Sort, period: Period, 'cursor?': 'string <= 400' }))
   .handler(async ({ data }) => {
-    varyByAccept();
     const session = await pageSession();
     const viewer: Viewer = session ? { actorId: session.view.actorId, siteRole: session.view.siteRole } : null;
     const id = await findCommunityId(data.handle);
