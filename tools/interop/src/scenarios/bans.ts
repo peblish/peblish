@@ -1,5 +1,6 @@
 // S1: instance-wide bans both ways.
-//   S1/out  a peblish admin site-bans a peer's user: the user's next post in !lab is refused as
+//   S1/out  a peblish admin site-bans a peer's user (on Mbin a bot, a Service actor, which a site
+//           ban takes as a person): the user's next post in !lab is refused as
 //           auth.site_banned, and the Block (the instance as target) and the unban's Undo(Block)
 //           reach the peer (Lemmy answers both 400: a remote instance's ban never touches a
 //           user at home, so it refuses one aimed at its own user).
@@ -37,7 +38,6 @@ export const bans: Group = {
         return row;
       };
       await rec.scenario('S1/out', peer.name, async () => {
-        if (peer.name === 'mbin') throw new NotApplicable('Mbin API users are bots, stored as Service actors; a site ban is of a Person');
         const userApId = peer.actorUri(peer.user);
         const userId = await actorIdByApId(userApId);
         const banned = new Date();

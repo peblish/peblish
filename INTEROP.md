@@ -103,11 +103,14 @@ is claimed again after the 60 s lease and delivered on attempt 2.
 
 ## Latest results
 
-Run of 2026-11-10 (FX-INTEROP) against Lemmy 0.19.21, PieFed 1.8.11 and Mbin 1.11.0, from `make reset`:
+Run of 2026-11-10 (the interop integration, wave 3 with every fix) against Lemmy 0.19.21, PieFed 1.8.11
+and Mbin 1.11.0, from `make reset`:
 
-- `make check` took 892 s (14.9 minutes): reset, up, seed, the fast tier, D1 and cleanup, on an
+- `make check` took 885 s (14.8 minutes): reset, up, seed, the fast tier, D1 and cleanup, on an
   Apple-silicon Mac under Rosetta for the amd64 images, with the machine busy with other work.
-- Fast tier: 84 pass, 0 fail, 4 known, 8 n/a, 0 pending. D1: 8 pass. Cleanup: 73 cleaned, 0 failed.
+- Fast tier: 85 pass, 0 fail, 4 known, 7 n/a, 0 pending. D1: 8 pass. Cleanup: 74 cleaned, 0 failed.
+- FX-INTEROP's run before it: 84 pass, 4 known, 8 n/a. S1/out on Mbin is the change: a site ban now
+  takes a Service actor (a bot) as a person, so Mbin's bot user can be banned.
 - The run before the interop fixes (tag `w3-fixes`): 67 pass, 0 fail, 9 known, 6 n/a, 6 pending.
 
 | Scenario                                                           | Lemmy    | PieFed        | Mbin     | Other           |
@@ -131,7 +134,7 @@ Run of 2026-11-10 (FX-INTEROP) against Lemmy 0.19.21, PieFed 1.8.11 and Mbin 1.1
 | Z1 authorization matrix N0 to N15                                  |          |               |          | rogue: 16 pass  |
 | B1 Dislike for an older post                                       | pass     | pass          | n/a      |                 |
 | H1 WebFinger, NodeInfo, tombstones, inbox with a query, signed GET |          |               |          | peblish: 5 pass |
-| S1/out peblish site-bans a peer's user                             | pass     | pass          | n/a      |                 |
+| S1/out peblish site-bans a peer's user                             | pass     | pass          | pass     |                 |
 | S1/in the peer site-bans its own user                              | pass     | known         | n/a      |                 |
 | S2/out peblish account deleted                                     | pass     | pass          | pass     |                 |
 | S2/in a Lemmy account deleted, content kept and removed            | pass (2) | n/a           | n/a      |                 |
@@ -197,7 +200,7 @@ can't affect user's home instance`), by design: peblish's Block and Undo for a L
 - **Mbin's moderation is not announced either**: its trash is a bare Delete by the moderator with no
   reason, which now applies here as a removal, but a restore sends nothing (M1/in `known` at the
   restore). It also ignores the undo of a removal (M1 out), cannot be driven for a vote down, a boost,
-  a site ban or an account deletion by its bot API users (V1 Dislike, B1, S1 and S2/in `n/a`; its boost
+  a site ban of its own users or an account deletion by its bot API users (V1 Dislike, B1, S1/in and S2/in `n/a`; its boost
   is replayed by the rogue as the same wire shape), and treats a Like as a favourite.
 - **Mbin posts an activity id to an inbox once per 45 minutes** and sends no Follow when a user subscribes
   again after unsubscribing, so F1 uses a fresh user per run and `make interop` flushes Valkey. Client
