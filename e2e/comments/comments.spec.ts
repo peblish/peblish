@@ -411,6 +411,42 @@ test.describe('a signed-in person', () => {
     await expect(second.getByRole('button', { name: 'Upvote' })).toHaveAttribute('aria-pressed', 'true');
   });
 
+  /** Replies at the post level through the docked bar. */
+  async function replyAtPost(page: Page, text: string) {
+    const bar = page.getByRole('form', { name: 'Reply' });
+    await bar.getByRole('textbox', { name: 'Reply' }).fill(text);
+    await bar.getByRole('button', { name: 'Reply', exact: true }).click();
+  }
+
+  // The document is the default sort and page; the router opens the others and the section fetches them. A reply's
+  // invalidation reloads the default, so the fetch has to run again for the reply to reach the view.
+  test('a reply on a sort the router opened shows in that sort', async ({ page }) => {
+    await signedIn(page, seed.replier.name);
+    await gotoHydrated(page, postUrl(seed.posts.thread));
+    await page.evaluate(() => Object.assign(window, { loadedOnce: true }));
+    await page.getByRole('button', { name: 'Old' }).click();
+    await expect(page).toHaveURL(/\?sort=old#comments$/);
+    await expect(page.getByRole('button', { name: 'Old' })).toHaveAttribute('aria-pressed', 'true');
+    await replyAtPost(page, `Reply on the old sort ${seed.suffix}`);
+    // Oldest first, so the new comment is the last.
+    await expect.poll(async () => (await topLevel(page)).at(-1)).toBe(`Reply on the old sort ${seed.suffix}`);
+    await expect(page).toHaveURL(/\?sort=old#comments$/);
+    expect(await page.evaluate(() => 'loadedOnce' in window)).toBe(true);
+  });
+
+  test('a reply on a page the router opened shows on that page', async ({ page }) => {
+    await signedIn(page, seed.replier.name);
+    await gotoHydrated(page, postUrl(seed.posts.paged));
+    await page.evaluate(() => Object.assign(window, { loadedOnce: true }));
+    await page.getByRole('button', { name: 'Old' }).click();
+    await page.getByRole('link', { name: 'More comments' }).click();
+    await expect(page).toHaveURL(/\?sort=old&after=[\w-]+#comments$/);
+    await expect.poll(() => topLevel(page)).toEqual(['Comment 25', 'Comment 26', 'Comment 27']);
+    await replyAtPost(page, `Reply on the second page ${seed.suffix}`);
+    await expect.poll(() => topLevel(page)).toEqual(['Comment 25', 'Comment 26', 'Comment 27', `Reply on the second page ${seed.suffix}`]);
+    expect(await page.evaluate(() => 'loadedOnce' in window)).toBe(true);
+  });
+
   test("a reply being typed and a vote stay on their comment's page when the router opens another", async ({ page }) => {
     await signedIn(page, seed.author.name);
     await gotoHydrated(page, postUrl(seed.posts.thread));
