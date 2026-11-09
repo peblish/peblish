@@ -253,8 +253,8 @@ An inbox POST goes through two steps, so the sender gets its answer fast and not
    signed. Answers: 202 stored, 401 bad signature, 400 not an activity or not strictly UTF-8
    (the relay sends the exact bytes, which must be exactly the text that was read), 413 over
    512 KiB (also counted while a chunked body streams in), 429 with `Retry-After` for too many
-   unknown keys at once or a signer or instance over its limits, 503 with `Retry-After` while
-   `inbox.enabled` is off or storage fails. Never 410, 418 or another 5xx. Two more 202s store
+   key lookups from one address or for one host, or a signer or instance over its limits (below),
+   503 with `Retry-After` while `inbox.enabled` is off or storage fails. Never 410, 418 or another 5xx. Two more 202s store
    nothing: a repeat (the same body from the same signer, or an activity id already received from
    it, within an hour) and an account's own Delete when we hold no live copy of the account and
    its key cannot be fetched (Mastodon sends it after the account is gone; a held live actor
@@ -279,26 +279,67 @@ core's `RefusalReason`s.
 
 ### What the inbox costs us
 
-`inbound/throttle.ts` keeps three budgets in one-minute windows in memory, per process, none
-shared, so one kind of traffic cannot spend another's: key fetches (an unauthenticated request
-whose key we do not hold, per host the key names and in total; nothing authenticated spends it),
-the pipeline's fetches (120 a host and 1,200 in all a minute, plus 60 for any one delivery, spent
-only after the signature verified and never refunded) and intake (300 requests a minute per
-signer and 1,200 per instance, counted after the signature verifies). Every table is bounded.
-The pending bytes in `inbox_raw` (8 MiB per signer, 32 MiB per instance) are counted in the
-database, as are the repeats by activity id, so they hold across processes. The pipeline looks
-communities up by their stored row or the Announce's community and fetches one only when it is
-the sender, Follow and Undo(Follow) name stored local Groups and never fetch, and a Delete or
-Undo resolves its sender with the copy we hold however stale (a refetch answering 410 would
-delete the actor before its Delete is read and drop `removeData`).
+`inbound/throttle.ts` keeps four budgets in one-minute windows in memory, per process, none
+shared, so one kind of traffic cannot spend another's:
+
+- **Discovery**: finding the key of a signer we do not hold. Anyone can sign with a key id of
+  their choosing, so a request from a stranger is an invitation to make us fetch. Finding a key
+  is one lookup however many fetches it makes (the key document, the actor, its NodeInfo; at
+  most eight), charged once at its first fetch: to the client address first and alone (10 a
+  minute), so a flood of made-up key ids naming a real peer's host from one address is refused
+  before it spends anything that host's genuine signers need; then to the host the key id names
+  (20) and in all (120).
+- **Refresh**: the same lookup when the key id names an actor or a key we hold (a rotated key,
+  an actor presented under a key id we have not seen): 10 an address, 30 a host, 200 in all.
+  Counted apart, so strangers cannot keep a held actor's rotation from being found. An actor is
+  also looked up for its key at most once a minute, whether or not the fetch worked, but only a
+  fetch that was admitted spends that minute: a fetcher that refuses to send throws
+  `FetchRefused` (`signing/inbound.ts`) and the attempt is taken back.
+- **Pipeline fetches**: 120 a host and 1,200 in all a minute, spent only after the signature
+  verified and never refunded, plus an allowance of 60 for one claim of a delivery.
+- **Intake**: 300 requests a minute per signer and 1,200 per instance, counted after the
+  signature verifies, so only a peer's own key spends its allowance.
+
+The address is the client's, not the proxy's: web's bridge resolves it (`clientIp`, which reads
+a header only when `PEBLISH_TRUSTED_PROXY` names the proxy that sets it) and passes it as
+`handleFederationRequest(request, { peer })`, which hands it to `receiveInbound(request, { peer })`.
+`inbound/client.ts` applies the same setting to the request's headers on top of that, and falls
+back to `request.ip` only for a caller that passes none. Every table is bounded (2,000 windows a
+budget, 5,000 receipts): past the cap the oldest window is forgotten, which loosens one key's
+count while the totals keep counting.
+
+Admission is atomic per instance. Once the signature verifies, a repeat (the same body from the
+same signer, or an activity id already received from it, within the hour) is recognised first and
+answered 202 at no cost to the signer's allowance, also after the allowance is spent. Then intake
+is charged, and the repeat check, the pending bytes (8 MiB per signer, 32 MiB per instance, counted
+in the database with the incoming body) and the insert are one step under an advisory lock on the
+instance, held to the commit, so concurrent identical or large requests are counted in turn and
+cannot all pass on the same count.
+
+A fetch the pipeline's budgets refuse is a wait, not a failure. The row goes back to pending
+after 5 seconds when its own allowance of 60 was spent, or 30 when the process-wide window was,
+and the attempt it used is given back (`yieldLater`), so a delivery that keeps waiting for
+fetches cannot run out of its eight tries. A batch member is started only while at least six
+fetches are left (a new origin costs about four: the object, the actor and two NodeInfo reads);
+members already applied stay deduped and the rest resume on the next claim, so a 200-member batch
+over new origins completes across claims. A claim that applied nothing new before it spent its
+own allowance still counts as a failure.
+
+The pipeline looks communities up by their stored row or the Announce's community and fetches
+one only when it is the sender, Follow and Undo(Follow) name stored local Groups and never fetch,
+and a Delete or Undo resolves its sender with the copy we hold however stale (a refetch answering
+410 would delete the actor before its Delete is read and drop `removeData`).
 
 A row is claimed under a lease whose generation is `attempts`; settling, retrying and renewing
 match it, so a worker whose lease ran out gets `ClaimLost`, which rolls its apply back, and the
 worker that holds the row finishes it. Leases are renewed per row, per batch member and per
-fetch. A batched Announce settles as a whole, but each member keeps its own outcome: a member
-skipped as `target.missing` stays discoverable for the requeue even when another member applied,
-and reprocessing counts the applied members as duplicates. `inbound/corpus.expected.ts` pins the
-outcome and reason of every corpus fixture.
+fetch, and every batch member's applying transaction asserts the generation before it commits
+(`holdClaim`), so a worker that lost its claim cannot commit a member. A batched Announce settles
+as a whole, but each member keeps its own outcome: members skipped as `target.missing` stay
+discoverable for the requeue even when another member applied (the row's error names every
+missing object, one space apart, so the arrival of any of them puts it back), and reprocessing
+counts the applied members as duplicates. `inbound/corpus.expected.ts` pins the outcome and
+reason of every corpus fixture.
 
 ### Authorization
 
@@ -352,8 +393,12 @@ collection and by the `federation.moderators` job before a row runs out. The col
 without following a redirect (`fetchActivity(url, fetch, { maxRedirects: 0 })`) from the
 community's own origin and must name itself; a moderator who cannot be resolved is left out of
 that mirror instead of aborting it, and a collection with nobody in it is not asked again for six
-hours (in memory). A moderator's announced Update(Group) never replaces the stored key; the
-Group's own Update does.
+hours (in memory). A community whose collection cannot be reached is deferred for an hour and
+one that fails in another way for fifteen minutes (`unreachableMirrorBackoffMs` and
+`failingMirrorBackoffMs` in core `remote/moderators.ts`), so twenty failing communities cannot
+starve the batch of twenty. A moderator's announced Update(Group) never replaces the stored key,
+nor reads it: it is stored with `keys: false` (`storeRemoteActor`), which touches profile fields
+only, so a key the community rotated meanwhile survives. The Group's own Update does replace it.
 
 ## HTTP and consumers
 
