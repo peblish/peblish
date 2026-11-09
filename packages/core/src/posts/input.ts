@@ -28,6 +28,8 @@ const Link = type('string').narrow((value, ctx) => {
 });
 
 const mediaType = /^[a-z0-9][a-z0-9!#$&^_.+-]*\/[a-z0-9*][a-z0-9!#$&^_.+*-]*$/i;
+const MediaType = type('string <= 255').and(mediaType);
+const AltText = type(`string <= ${altTextMaxLength}`);
 
 const fields = {
   title: Title,
@@ -40,8 +42,8 @@ const fields = {
   'language?': type(/^[a-z]{2,3}$/).or('null'),
   // The link preview, filled by lane B2's fetchLinkPreview.
   'thumbnailUrl?': Link.or('null'),
-  'urlContentType?': type('string <= 255').and(mediaType).or('null'),
-  'altText?': type(`string <= ${altTextMaxLength}`).or('null'),
+  'urlContentType?': MediaType.or('null'),
+  'altText?': AltText.or('null'),
 } as const;
 
 /** A new post. `url` null or absent is a text post. */
@@ -51,3 +53,13 @@ export type NewPost = typeof NewPost.infer;
 /** An edit: only the fields present change (null clears a nullable one). */
 export const PostEdit = NewPost.partial();
 export type PostEdit = typeof PostEdit.infer;
+
+/**
+ * A peer's link, media type or alt text held to the limits a local post gets. A value that
+ * fails becomes null rather than an error: the rest of the peer's post is still worth storing.
+ */
+export const peerLink = (value: string | null): string | null => (value !== null && !(Link(value) instanceof type.errors) ? value : null);
+export const peerMediaType = (value: string | null): string | null =>
+  value !== null && !(MediaType(value) instanceof type.errors) ? value : null;
+export const peerAltText = (value: string | null): string | null =>
+  value !== null && !(AltText(value) instanceof type.errors) ? value : null;
