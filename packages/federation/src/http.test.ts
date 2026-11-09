@@ -1,5 +1,9 @@
-import { describe, expect, test } from 'vitest';
-import { isFederationRequest, prefersActivityJson } from './http.ts';
+import { beforeEach, describe, expect, test, vi } from 'vitest';
+import { truncateAll } from '@peblish/core/testing/db';
+import { seedActor } from '@peblish/core/testing/seed';
+import { seedPost } from '@peblish/core/testing/seed-az';
+import { seedLocalInstance, seedSigningKey } from '@peblish/core/testing/seed-fed-a';
+import { handleFederationRequest, isFederationRequest, prefersActivityJson } from './http.ts';
 
 const request = (path: string, accept?: string) => new Request(`https://feddit.test${path}`, { headers: accept ? { accept } : {} });
 const activity = 'application/activity+json';
@@ -15,6 +19,9 @@ describe('federation routing', () => {
     '/outbox',
     '/u/andrew/inbox',
     '/c/announcements/outbox',
+    '/u/feddit-admin/followers',
+    '/c/announcements/featured',
+    '/c/announcements/moderators',
   ])('%s always goes to federation', (path) => {
     expect(isFederationRequest(request(path, browser))).toBe(true);
   });
@@ -35,5 +42,86 @@ describe('federation routing', () => {
     expect(prefersActivityJson(`text/html, ${activity};q=0.5`)).toBe(false);
     expect(prefersActivityJson(`text/html;q=0.5, ${activity}`)).toBe(true);
     expect(prefersActivityJson('*/*')).toBe(false);
+  });
+});
+
+describe('answering federation requests', () => {
+  const origin = 'https://fed-a.test';
+  const ask = (path: string, init: RequestInit = {}) => handleFederationRequest(new Request(`${origin}${path}`, init));
+
+  beforeEach(async () => {
+    await truncateAll();
+    const { instance } = await seedLocalInstance('fed-a.test');
+    const alice = await seedActor(instance, 'Person', 'alice');
+    await seedSigningKey(alice);
+    const news = await seedActor(instance, 'Group', 'news', { followersUrl: `${origin}/ap/c.news/followers` });
+    await seedPost(instance, news, alice);
+  });
+
+  test.each(['/', '/u/alice', '/c/news', '/ap/u.alice', '/ap/c.news/followers'])(
+    '%s answers ActivityPub JSON with a cache lifetime',
+    async (path) => {
+      const response = (await ask(path, { headers: { accept: activity } }))!;
+      expect(response.status).toBe(200);
+      expect(response.headers.get('content-type')).toBe('application/activity+json; charset=utf-8');
+      expect(response.headers.get('cache-control')).toBe('public, max-age=60');
+      expect(await response.json()).toHaveProperty('type');
+    },
+  );
+
+  test('a page path with no actor behind it is declined, so the UI renders its own not-found page; a path of ours is a 404', async () => {
+    expect(await ask('/u/nobody', { headers: { accept: activity } })).toBeNull();
+    expect(await ask('/c/nobody', { headers: { accept: activity } })).toBeNull();
+    expect((await ask('/ap/u.nobody'))?.status).toBe(404);
+    expect((await ask('/ap/post/0190b7a8-0000-7000-8000-000000000001'))?.status).toBe(404);
+    expect((await ask('/nodeinfo/9.9'))?.status).toBe(404);
+    expect((await ask('/.well-known/webfinger?resource=acct:nobody@fed-a.test'))?.status).toBe(404);
+  });
+
+  test('WebFinger and NodeInfo answer on their well-known paths', async () => {
+    const webfinger = (await ask('/.well-known/webfinger?resource=acct:alice@fed-a.test'))!;
+    expect(webfinger.headers.get('content-type')).toContain('application/jrd+json');
+    expect(((await webfinger.json()) as { subject: string }).subject).toBe('acct:alice@fed-a.test');
+    expect(((await (await ask('/.well-known/nodeinfo'))!.json()) as { links: unknown[] }).links).toHaveLength(2);
+    expect(((await (await ask('/nodeinfo/2.1'))!.json()) as { software: { name: string } }).software.name).toBe('peblish');
+  });
+
+  test('every inbox takes a POST and, until the pipeline is live, answers 503 with Retry-After', async () => {
+    for (const path of ['/inbox', '/ap/u.alice/inbox', '/ap/c.news/inbox', '/u/alice/inbox', '/c/news/inbox']) {
+      const response = (await ask(path, { method: 'POST', body: '{}', headers: { 'content-type': activity } }))!;
+      expect(response.status, path).toBe(503);
+      expect(Number(response.headers.get('retry-after')), path).toBeGreaterThan(0);
+    }
+  });
+
+  test('a GET of an inbox and a write to a document are 405, and never 410 or 418', async () => {
+    const inbox = (await ask('/inbox'))!;
+    expect(inbox.status).toBe(405);
+    expect(inbox.headers.get('allow')).toBe('POST');
+    const write = (await ask('/ap/u.alice', { method: 'POST', body: '{}' }))!;
+    expect(write.status).toBe(405);
+    expect(write.headers.get('allow')).toBe('GET, HEAD');
+  });
+
+  test('a write to a page path is left to the UI', async () => {
+    expect(await ask('/u/alice', { method: 'POST', body: '{}', headers: { accept: activity } })).toBeNull();
+  });
+
+  test('HEAD has the headers of the GET and no body', async () => {
+    const response = (await ask('/ap/u.alice', { method: 'HEAD' }))!;
+    expect(response.status).toBe(200);
+    expect(response.headers.get('content-type')).toContain('application/activity+json');
+    expect(await response.text()).toBe('');
+  });
+
+  test('a failure behind the scenes is 503 with Retry-After, not a 500', async () => {
+    // No local instance row: the origin cannot be read, as when the server starts before migrate.
+    await truncateAll();
+    delete (globalThis as { __peblishOrigin?: unknown }).__peblishOrigin;
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const response = (await ask('/ap/u.alice'))!;
+    log.mockRestore();
+    expect(response.status).toBe(503);
+    expect(Number(response.headers.get('retry-after'))).toBeGreaterThan(0);
   });
 });
