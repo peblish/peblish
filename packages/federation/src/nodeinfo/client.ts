@@ -1,0 +1,69 @@
+import { type } from 'arktype';
+import { db } from '@peblish/core/db/read';
+import { instances } from '@peblish/core/db/tables/instances';
+import { storeInstanceSoftware } from '@peblish/core/remote/instances';
+import { eq } from 'drizzle-orm';
+import { fetchJson, type Fetcher } from '../actors/document.ts';
+import { importGrant } from '../actors/grants.ts';
+
+// What software a peer runs, from its NodeInfo. The delivery code picks the Announce shape
+// from it, so it is fetched when we first meet an instance (its actor is stored) and again
+// when a day has passed, and stored in instances.software.
+
+const nodeinfoRel = /^http:\/\/nodeinfo\.diaspora\.software\/ns\/schema\/(\d+\.\d+)$/;
+
+const Discovery = type({ links: type({ rel: 'string', href: 'string.url' }).array() });
+const Document = type({ software: { name: 'string', 'version?': 'string' } });
+
+/** How long a stored answer is trusted, and how long a failed check is not repeated. */
+export const nodeInfoMaxAgeMs = 24 * 60 * 60 * 1000;
+export const nodeInfoRetryMs = 10 * 60 * 1000;
+
+/** The newest NodeInfo document `origin` links, with the software it names (name lowercased). */
+export async function fetchNodeInfo(origin: string, fetch: Fetcher): Promise<{ software: string; version: string | null }> {
+  const discovery = Discovery((await fetchJson(`${origin}/.well-known/nodeinfo`, fetch, 'application/json')).json);
+  if (discovery instanceof type.errors) throw new TypeError(`${origin} has no NodeInfo links`);
+  const [newest] = discovery.links
+    .flatMap(({ rel, href }) => {
+      const version = nodeinfoRel.exec(rel)?.[1];
+      return version ? [{ version: Number(version), href }] : [];
+    })
+    // A document is read only from the host that linked it.
+    .filter(({ href }) => new URL(href).origin === new URL(origin).origin)
+    .sort((a, b) => b.version - a.version);
+  if (!newest) throw new TypeError(`${origin} links no NodeInfo 2.x document`);
+  const document = Document((await fetchJson(newest.href, fetch, 'application/json')).json);
+  if (document instanceof type.errors) throw new TypeError(`${newest.href} names no software`);
+  return { software: document.software.name.toLowerCase(), version: document.software.version ?? null };
+}
+
+// Failed checks, per origin, so an unreachable or NodeInfo-less peer is asked once in a while,
+// not on every actor fetch. Per process; on globalThis because the web build can hold two copies of a module.
+const failures = ((globalThis as { __peblishNodeInfoFailures?: Map<string, number> }).__peblishNodeInfoFailures ??= new Map());
+
+/**
+ * Brings instances.software up to date for the peer at `origin` unless it was checked within
+ * `nodeInfoMaxAgeMs`. A check that fails stores nothing and is not repeated for ten minutes; it
+ * never throws, because no caller can act on it: an instance with unknown software gets the
+ * default Announce shape.
+ */
+export async function refreshInstanceSoftware(
+  origin: string,
+  { fetch, now = Date.now() }: { fetch: Fetcher; now?: number },
+): Promise<void> {
+  const [row] = await db()
+    .select({ software: instances.software, checkedAt: instances.updatedAt })
+    .from(instances)
+    .where(eq(instances.domain, new URL(origin).host));
+  if (row?.software && now - row.checkedAt.getTime() < nodeInfoMaxAgeMs) return;
+  const failedAt = failures.get(origin);
+  if (failedAt !== undefined && now - failedAt < nodeInfoRetryMs) return;
+  try {
+    const { software, version } = await fetchNodeInfo(origin, fetch);
+    await storeInstanceSoftware(await importGrant('remote.instance_store', { origin }), { software, version });
+    failures.delete(origin);
+  } catch (error) {
+    failures.set(origin, now);
+    console.warn(`nodeinfo: ${origin}: ${error instanceof Error ? error.message : String(error)}`);
+  }
+}
