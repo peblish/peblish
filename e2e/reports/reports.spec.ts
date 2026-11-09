@@ -1,6 +1,5 @@
 import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
-import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Browser, type Page } from '@playwright/test';
 import { expectAccessible, freshTotp, landed, signIn } from '../auth/support.ts';
 import { gotoHydrated, recordConsole } from '../support/route-marker.ts';
@@ -141,19 +140,6 @@ test.describe('the report form', () => {
   });
 });
 
-/**
- * The queue page under axe, as expectAccessible runs it, without the shell's Moderation queue
- * link: with a count its aria-label ("Moderation queue, 3 open") does not hold the visible text
- * axe reads ("Moderation queue3"), which is the shell's to fix (LANE-NOTES, requests to root).
- */
-async function expectQueueAccessible(page: Page) {
-  const results = await new AxeBuilder({ page })
-    .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa', 'best-practice'])
-    .exclude('.pb-side a[aria-label^="Moderation queue"]')
-    .analyze();
-  expect(results.violations.map(({ id, nodes }) => ({ id, targets: nodes.map(({ target }) => target.join(' ')) }))).toEqual([]);
-}
-
 /** Who sees what in the queue, and what its actions leave behind. */
 test.describe('the queue', () => {
   const queue = '/admin/reports';
@@ -255,7 +241,7 @@ test.describe('the queue', () => {
     await expect(withheld).toHaveCount(1);
     await expect(withheld.getByRole('link', { name: 'Open' })).toBeVisible();
     await expect(page.locator('tbody tr', { hasText: 'Person' })).toHaveCount(0);
-    await expectQueueAccessible(page);
+    await expectAccessible(page);
   });
 
   test('hydrated: Show reveals the quote in the browser, and Remove writes the statement, the modlog row and the event', async ({
@@ -271,7 +257,7 @@ test.describe('the queue', () => {
     await hate.getByRole('link', { name: 'Show' }).click();
     await expect(hate.locator('blockquote')).not.toHaveAttribute('aria-hidden', 'true');
     await expect(page).not.toHaveURL(/show=/);
-    await expectQueueAccessible(page);
+    await expectAccessible(page);
     const remove = row(page, seed.titles.remove);
     await remove.getByText('Remove', { exact: true }).click();
     await remove.getByLabel('Community rule').selectOption('6');

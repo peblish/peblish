@@ -1,6 +1,5 @@
 import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
-import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Browser, type Page } from '@playwright/test';
 import { expectAccessible, landed, signIn } from '../auth/support.ts';
 import { gotoHydrated, recordConsole } from '../support/route-marker.ts';
@@ -47,20 +46,6 @@ async function plainPage(browser: Browser, name: string) {
   await signIn(page, `@${name}`, seed.password);
   await page.waitForURL('/');
   return page;
-}
-
-/**
- * expectAccessible, but for the sidebar's Inbox link while it carries a count: its aria-label
- * ("Inbox, 11 unread") does not contain the visible text ("Inbox11"), which axe reports as
- * label-content-name-mismatch. The shell is root's (see LANE-NOTES, "Requests to root"); this
- * leaves only that link out, so everything else on the page is still checked.
- */
-async function expectAccessibleBesidesBadge(page: Page) {
-  const results = await new AxeBuilder({ page })
-    .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa', 'best-practice'])
-    .exclude('.pb-side a[aria-label]')
-    .analyze();
-  expect(results.violations.map(({ id, nodes }) => ({ id, targets: nodes.map(({ target }) => target.join(' ')) }))).toEqual([]);
 }
 
 const rows = (page: Page) => page.locator('.pb-notice');
@@ -142,7 +127,7 @@ test.describe('the inbox of a person who was replied to, mentioned, moderated an
     await expect(page.getByRole('link', { name: 'Statement of reasons' }).first()).toHaveAttribute('href', /^\/modlog\/[0-9a-f-]{36}$/);
     await expect(rows(page).getByText('MOD', { exact: true })).toHaveCount(5);
 
-    await expectAccessibleBesidesBadge(page);
+    await expectAccessible(page);
     expect(log.hydrationProblems()).toEqual([]);
   });
 
