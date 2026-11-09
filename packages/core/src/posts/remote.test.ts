@@ -231,11 +231,23 @@ describe("updateRemotePost, and the author's delete and undo", () => {
     await update(record({ title: 'Edited title', raw: { type: 'Page', announced: true } }));
     expect((await row(id)).editedAt).toEqual(stamped);
     expect((await outboxEvents()).map((event) => parseEvent(event).type)).toEqual(['post.created', 'post.updated']);
-    // The peer's own `updated` is kept as sent, and a redelivery of it is a no-op too.
-    const sent = new Date('2026-11-03T00:00:00Z');
-    await update(record({ title: 'Edited title', editedAt: sent }));
-    await update(record({ title: 'Edited title', editedAt: sent }));
-    expect((await row(id)).editedAt).toEqual(sent);
+  });
+
+  test("the peer's own `updated` is kept as sent, a redelivery of it is a no-op, and an older Update arriving later is ignored", async () => {
+    const { author, create } = await setup();
+    const { id } = await create(record());
+    const update = async (post: RemotePost) => updateRemotePost(await grantFor('post.update', author, { postId: id }), post);
+    const second = new Date('2026-11-03T00:00:00Z');
+    await update(record({ title: 'Second edit', editedAt: second }));
+    await update(record({ title: 'Second edit', editedAt: second }));
+    expect(await row(id)).toMatchObject({ title: 'Second edit', editedAt: second });
+    // The first edit, delivered after the second: not applied, not an event, the edit time stays.
+    await update(record({ title: 'First edit', editedAt: new Date('2026-11-02T00:00:00Z') }));
+    expect(await row(id)).toMatchObject({ title: 'Second edit', editedAt: second });
+    // A later edit still applies.
+    const third = new Date('2026-11-04T00:00:00Z');
+    await update(record({ title: 'Third edit', editedAt: third }));
+    expect(await row(id)).toMatchObject({ title: 'Third edit', editedAt: third });
     expect((await outboxEvents()).map((event) => parseEvent(event).type)).toEqual(['post.created', 'post.updated', 'post.updated']);
   });
 
@@ -260,14 +272,25 @@ describe("updateRemotePost, and the author's delete and undo", () => {
     expect(await row(id)).toMatchObject({ url: null, urlContentType: null, thumbnailUrl: null });
   });
 
-  test('refuses an update by anyone but the author, and a record for another post', async () => {
-    const { world, author, create } = await setup();
+  test('refuses an update by anyone but the author', async () => {
+    const { world, create } = await setup();
     const { id } = await create(record());
     const reader: Principal = { kind: 'local', actorId: world.people.reader.id, siteRole: 'user' };
     expect(await authorize('post.update', reader, { postId: id })).toEqual({ ok: false, reason: 'post.author_required' });
+  });
+
+  test('a record under another object id is refused post.id_conflict: the post is unchanged and no event is emitted', async () => {
+    const { author, create } = await setup();
+    const { id } = await create(record());
+    const before = await row(id);
     await expect(
-      updateRemotePost(await grantFor('post.update', author, { postId: id }), record({ apId: 'https://lemmy.test/post/2' })),
-    ).rejects.toThrow(TypeError);
+      updateRemotePost(
+        await grantFor('post.update', author, { postId: id }),
+        record({ apId: 'https://lemmy.test/post/2', title: 'Taken over' }),
+      ),
+    ).rejects.toMatchObject({ name: 'Refused', action: 'post.update', reason: 'post.id_conflict' });
+    expect(await row(id)).toEqual(before);
+    expect((await outboxEvents()).map((event) => parseEvent(event).type)).toEqual(['post.created']);
   });
 
   test('Delete and Undo(Delete) by the remote author are the same soft delete and restore, emitted as remote', async () => {

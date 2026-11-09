@@ -61,8 +61,9 @@ describe('a remote community as the acting principal', () => {
     await refreshed.opened;
     let finished = false;
     const second = tx((t) => request(t.db)).finally(() => (finished = true));
-    // The second request either waits on a lock (a policy that locks first) or is already done.
-    await expect.poll(async () => finished || (await someoneWaitsOnALock())).toBe(true);
+    // The refusal comes before any lock: the second request is answered while the first still holds
+    // the community row. A policy that locks first would wait here and the poll would time out.
+    await expect.poll(() => finished).toBe(true);
     release.open();
     await expect(Promise.all([first, second])).resolves.toEqual(['post.group_cannot_act', 'post.group_cannot_act']);
   });

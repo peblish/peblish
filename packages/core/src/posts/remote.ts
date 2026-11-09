@@ -126,7 +126,10 @@ export const storeRemotePost = defineMutation({
  * A peer's Update by the author: replaces the editable fields, keeps `published`, the counts and
  * the flags a moderator sets. An Update that changes nothing (a redelivery, the direct copy after
  * the announced one) writes nothing and emits nothing, and does not move the edit time. A real
- * change takes the peer's `updated`, or the receive time when it sent none.
+ * change takes the peer's `updated`, or the receive time when it sent none. An Update whose
+ * `updated` is older than the stored edit time arrived out of order and is ignored (a stored
+ * receive time from an earlier Update without `updated` counts as that edit time). A record
+ * under another ap_id than the post's is refused post.id_conflict.
  */
 export const updateRemotePost = defineMutation({
   action: 'post.update',
@@ -136,7 +139,10 @@ export const updateRemotePost = defineMutation({
     const { postId } = grant.subject;
     const [current] = await t.db.select().from(posts).where(eq(posts.id, postId));
     if (!current) throw new Refused('post.update', 'target.not_found');
-    if (current.apId !== post.apId) throw new TypeError('updateRemotePost: the record is not this post');
+    // The caller matched the object to this post by id; a record under another id is a bad delivery, not a bug.
+    if (current.apId !== post.apId) throw new Refused('post.update', 'post.id_conflict');
+    // An Update delivered late (the peer's `updated` is before the edit already applied) must not roll the post back.
+    if (post.editedAt && current.editedAt && post.editedAt < current.editedAt) return { id: postId };
     const [community] = await t.db
       .select({ sensitive: actors.sensitive, nsfl: actors.nsfl })
       .from(actors)
