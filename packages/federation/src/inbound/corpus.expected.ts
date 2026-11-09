@@ -4,6 +4,11 @@
 // The replay is ordered and stateful, so an entry also depends on the ones before it.
 // A change in how the pipeline reads a fixture fails the replay with a diff of this table; update
 // the entry once the new outcome is understood and intended.
+//
+// The peer-log copies are what a Lemmy user sends to its own community's inbox. Signed on the
+// community's host and addressed to it, they count as from the community's own server
+// (authorize.ts, fromCommunityServer) once someone here follows it; the Undo, Lock, Add and
+// Remove copies still need the community's Announce.
 
 export const corpusOutcomes: Record<string, string> = {
   'lemmy-0.19.21/inbound/inbound-0001-follow': 'applied',
@@ -13,20 +18,20 @@ export const corpusOutcomes: Record<string, string> = {
   'lemmy-0.19.21/inbound/inbound-0006-undo-like': 'applied',
   'lemmy-0.19.21/inbound/inbound-0007-undo-like': 'applied',
   'lemmy-0.19.21/inbound/inbound-0013-create-page': 'object.exists',
-  'lemmy-0.19.21/peer-log/lemmy-sent_activity-0013-create-page': 'community.unannounced',
+  'lemmy-0.19.21/peer-log/lemmy-sent_activity-0013-create-page': 'object.exists',
   'lemmy-0.19.21/inbound/inbound-0015-update-page': 'target.deleted',
-  'lemmy-0.19.21/peer-log/lemmy-sent_activity-0015-create-note': 'community.unannounced',
+  'lemmy-0.19.21/peer-log/lemmy-sent_activity-0015-create-note': 'object.exists',
   'lemmy-0.19.21/inbound/inbound-0016-delete': 'target.deleted',
   'lemmy-0.19.21/inbound/inbound-0019-accept-follow': 'duplicate',
   'lemmy-0.19.21/inbound/inbound-0020-announce-create-page': 'object.exists',
   'lemmy-0.19.21/inbound/inbound-0021-announce-page': 'object.exists',
-  'lemmy-0.19.21/peer-log/lemmy-sent_activity-0021-update-page': 'community.unannounced',
+  'lemmy-0.19.21/peer-log/lemmy-sent_activity-0021-update-page': 'applied',
   'lemmy-0.19.21/inbound/inbound-0022-announce-create-note': 'object.exists',
   'lemmy-0.19.21/inbound/inbound-0023-announce-create-note': 'echo.own_activity',
-  'lemmy-0.19.21/peer-log/lemmy-sent_activity-0023-delete': 'community.unannounced',
+  'lemmy-0.19.21/peer-log/lemmy-sent_activity-0023-delete': 'target.deleted',
   'lemmy-0.19.21/inbound/inbound-0024-announce-like': 'echo.own_activity',
   'lemmy-0.19.21/inbound/inbound-0025-announce-undo-like': 'echo.own_activity',
-  'lemmy-0.19.21/inbound/inbound-0026-announce-update-page': 'applied',
+  'lemmy-0.19.21/inbound/inbound-0026-announce-update-page': 'duplicate',
   'lemmy-0.19.21/inbound/inbound-0027-announce-page': 'object.exists',
   'lemmy-0.19.21/inbound/inbound-0028-announce-delete': 'target.deleted',
   'lemmy-0.19.21/inbound/inbound-0029-announce-update-note': 'echo.own_activity',
@@ -36,9 +41,9 @@ export const corpusOutcomes: Record<string, string> = {
   'lemmy-0.19.21/inbound/inbound-0033-announce-update-page': 'echo.own_activity',
   'lemmy-0.19.21/inbound/inbound-0034-announce-page': 'echo.own_activity',
   'lemmy-0.19.21/inbound/inbound-0035-announce-delete': 'echo.own_activity',
-  'lemmy-0.19.21/peer-log/lemmy-sent_activity-0039-create-page': 'community.unannounced',
+  'lemmy-0.19.21/peer-log/lemmy-sent_activity-0039-create-page': 'object.exists',
   'lemmy-0.19.21/inbound/inbound-0041-follow': 'applied',
-  'lemmy-0.19.21/peer-log/lemmy-sent_activity-0041-delete': 'community.unannounced',
+  'lemmy-0.19.21/peer-log/lemmy-sent_activity-0041-delete': 'mod.moderator_required',
   'lemmy-0.19.21/inbound/inbound-0042-create-page': 'object.exists',
   'lemmy-0.19.21/inbound/inbound-0043-create-note': 'object.exists',
   'lemmy-0.19.21/peer-log/lemmy-sent_activity-0043-undo-delete': 'community.unannounced',
@@ -61,7 +66,7 @@ export const corpusOutcomes: Record<string, string> = {
   'lemmy-0.19.21/inbound/inbound-0056-block': 'duplicate',
   'lemmy-0.19.21/inbound/inbound-0057-announce-undo-block': 'applied',
   'lemmy-0.19.21/inbound/inbound-0058-undo-block': 'duplicate',
-  'lemmy-0.19.21/peer-log/lemmy-sent_activity-0070-create-page': 'community.unannounced',
+  'lemmy-0.19.21/peer-log/lemmy-sent_activity-0070-create-page': 'object.exists',
   'lemmy-0.19.21/inbound/inbound-0073-delete': 'mod.moderator_required',
   'lemmy-0.19.21/inbound/inbound-0074-undo-delete': 'mod.moderator_required',
   'lemmy-0.19.21/inbound/inbound-0075-lock': 'mod.moderator_required',

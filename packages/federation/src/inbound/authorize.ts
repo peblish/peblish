@@ -4,6 +4,7 @@ import type { ActionName, SubjectOf } from '@peblish/core/authz/policy';
 import { db, type Queryable } from '@peblish/core/db/read';
 import { actors } from '@peblish/core/db/tables/actors';
 import { comments, posts } from '@peblish/core/db/tables/content';
+import { follows } from '@peblish/core/db/tables/follows';
 import type { Tx } from '@peblish/core/tx/tx';
 import type { ActingPrincipal } from '@peblish/schema/authz';
 import { and, eq, inArray } from 'drizzle-orm';
@@ -23,7 +24,8 @@ import { skip } from './reasons.ts';
 // - The community. An activity names a community (audience, or the Group it is addressed to);
 //   that must be the community of what it is about. Content in a remote community counts only
 //   inside that community's own Announce, and an Announce vouches only for its own community
-//   (`mod.announce_mismatch`, as core's policies read it).
+//   (`mod.announce_mismatch`, as core's policies read it). A Create, Update or Delete may also
+//   come straight from the community's own server (Mbin never announces; fromCommunityServer).
 // - Roles. Who may do what to the target is core's: the principal below is handed to
 //   authorize(), whose policies answer owner, moderator or the community's Announce
 //   (decision 10) with the exact refusal.
@@ -108,6 +110,36 @@ export function checkCommunity(ctx: InboundContext, community: CommunityRef, cla
   } else if (!community.local && ctx.sender.id !== community.id) {
     throw skip('community.unannounced', community.apId);
   }
+}
+
+/**
+ * Whether an activity about content in a remote community came straight from that community's
+ * own server: it is signed on the community's host (the signer is the activity's actor,
+ * receive.ts holds the key's owner to it), it or its object is addressed to the community, and
+ * someone here follows the community. Mbin sends a magazine's Create, Update and Delete to its
+ * subscribers this way and never announces them. That server holds the community's key and
+ * could have announced the activity itself, so it vouches as well; a person on any other host
+ * still needs the community's Announce. Roles are unchanged: the principal has no Announce, so
+ * a removal counts only from a moderator core knows (mirrored from the community).
+ */
+async function fromCommunityServer(ctx: InboundContext, community: CommunityRef): Promise<boolean> {
+  if (new URL(ctx.sender.apId).host !== new URL(community.apId).host) return false;
+  if (![...addresses(ctx.raw), ...addresses(ctx.raw.object)].includes(community.apId)) return false;
+  const followed = await db()
+    .select({ id: follows.id })
+    .from(follows)
+    .innerJoin(actors, eq(actors.id, follows.followerId))
+    .where(and(eq(follows.followeeId, community.id), eq(follows.state, 'accepted'), eq(actors.local, true)))
+    .limit(1);
+  return followed.length > 0;
+}
+
+/** checkCommunity for a Create, Update or Delete, which may also come straight from the community's own server (fromCommunityServer). */
+export async function checkContentCommunity(ctx: InboundContext, community: CommunityRef, claimed: string | null): Promise<void> {
+  if (!ctx.announce && !community.local && ctx.sender.id !== community.id && (await fromCommunityServer(ctx, community))) {
+    return checkClaim(community, claimed);
+  }
+  checkCommunity(ctx, community, claimed);
 }
 
 /**

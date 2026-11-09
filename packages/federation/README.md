@@ -421,8 +421,11 @@ reason of every corpus fixture.
 activity's id and actor share an origin; a created object lives on its author's origin and names
 the actor; an activity inside an Announce is on the announcer's origin or read from its own;
 an Undo reverses only its actor's activity; content in a remote community counts only in that
-community's own Announce; an Announce vouches only for its own community; a community never
-authors a post, comment or vote. The community an activity claims is read from every addressee: its `audience`,
+community's own Announce, except that a Create, Update or Delete may come straight from the
+community's own host when it is addressed to the community and someone here follows it (Mbin
+never announces; the principal still has no Announce, so a removal needs a moderator core
+knows); an Announce vouches only for its own community; a community never authors a post,
+comment or vote. The community an activity claims is read from every addressee: its `audience`,
 else the target's community wherever `to` or `cc` names it (Mbin lists a comment's post author
 first), else the first other address. Who may do what to the target is core's: `grantFor` hands the
 policy a remote principal (`announcedBy` names the community whose Announce carried it, decision 10) and a refusal becomes the skip's reason. `matrix.test.ts` runs the spike's 16 cases (N0 to

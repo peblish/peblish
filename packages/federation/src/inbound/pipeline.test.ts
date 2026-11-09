@@ -98,10 +98,8 @@ describe('dedupe, apply and enqueue are one transaction', () => {
     expect(await db().select().from(deliveries)).toHaveLength(1);
   });
 
-  test('a copy that arrives inside two Announces applies once, and a direct copy in a remote community does not apply', async () => {
+  test('a copy that arrives inside two Announces applies once', async () => {
     const create = createPage('101', lab);
-    const direct = await deliver(create);
-    expect(direct.stored).toEqual({ state: 'skipped', error: 'community.unannounced https://lemmy.test/c/lab' });
     const announced = await deliver(announceBy(lab, create));
     expect(announced.stored).toEqual({ state: 'applied', error: null });
     const again = await deliver(announceBy(lab, create));

@@ -6,7 +6,16 @@ import { deleteRemoteActor, undeleteRemoteActor } from '@peblish/core/remote/act
 import { recordDeletion, recordRestoration } from '@peblish/core/remote/ledger';
 import type { Activity } from '../../mapping/records.ts';
 import { importGrant } from '../../actors/grants.ts';
-import { checkCommunity, claimFor, communityById, grantFor, storedActor, storedContent, type Stored } from '../authorize.ts';
+import {
+  checkCommunity,
+  checkContentCommunity,
+  claimFor,
+  communityById,
+  grantFor,
+  storedActor,
+  storedContent,
+  type Stored,
+} from '../authorize.ts';
 import { prepared, type InboundContext, type InboundHandler, type Prepared } from '../handler.ts';
 import { skip, type Skipped } from '../reasons.ts';
 
@@ -65,7 +74,7 @@ export const handler: InboundHandler = {
     if (activity.objectApId === activity.actorApId) return prepareActorDelete(ctx);
     const target = await contentOrWhy(activity.objectApId);
     const community = await communityById(db(), target.communityId);
-    checkCommunity(ctx, community, claimFor(ctx, community));
+    await checkContentCommunity(ctx, community, claimFor(ctx, community));
     const reason = reasonOf(activity.reason);
     const relayed = { communityId: community.id, objectApId: target.apId, relay: true };
     return prepared(ctx, async (t) => {
