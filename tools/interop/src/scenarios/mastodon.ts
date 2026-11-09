@@ -2,12 +2,17 @@
 //   V2  a follower there gets the bare Announce of the Page, threadiverse peers get
 //       Announce(Create(Page)), no inbox gets both; deleting the post sends the follower
 //       Undo(Announce) and the author's Delete.
-import type { Group } from '../context.ts';
+//   F5  a Lemmy admin's site ban of a Lemmy user with removeData takes back the local community's
+//       boost of that user's post from the follower (Undo(Announce)).
+//   F3  a post that mentions a person there (not a follower), then removed by a moderator, is
+//       taken back by the author's Delete sent to that person's server.
+import type { Context, Group } from '../context.ts';
 import { waitFor } from '../lab.ts';
 import { expectDelivery, expectInbound } from '../match.ts';
 import { peblish } from '../peblish.ts';
+import { lemmy } from '../peers/threadiverse.ts';
 import { rogue, typesOf, type Received } from '../rogue-client.ts';
-import { tag } from './support.ts';
+import { storedPost, tag } from './support.ts';
 
 /**
  * What reached the shared inbox of the rogue's people (mastofan's). The rogue's inbox fixtures
@@ -24,8 +29,72 @@ const heard = async (apId: string) =>
 const awaitRogue = (label: string, match: (r: Received) => boolean, timeoutMs = 45_000) =>
   waitFor(label, async () => (await atInbox()).find(match), { timeoutMs });
 
+const objectOf = (body: unknown): unknown =>
+  typeof body === 'object' && body !== null ? (body as { object?: unknown }).object : undefined;
+const idOf = (value: unknown): string | null =>
+  typeof value === 'string'
+    ? value
+    : typeof value === 'object' && value !== null && typeof (value as { id?: unknown }).id === 'string'
+      ? (value as { id: string }).id
+      : null;
+const actorOf = (body: unknown): unknown => (typeof body === 'object' && body !== null ? (body as { actor?: unknown }).actor : undefined);
+
+/** F5: a Lemmy user's post boosted to the follower, then the user's site ban at home with removeData. */
+async function f5(ctx: Context): Promise<string> {
+  const username = `lf${ctx.run}`;
+  await lemmy.registerUser!(username);
+  const token = await lemmy.login(username);
+  const onLemmy = await lemmy.resolveCommunity(token, ctx.community.handle);
+  if (onLemmy.subscribed === 'NotSubscribed') await lemmy.follow(token, onLemmy.id);
+  const title = tag(ctx, 'F5', { name: 'rogue' });
+  const post = await lemmy.createPost(token, onLemmy.id, title, 'Boosted to Mastodon, then banned at home.');
+  ctx.ledger.add({ kind: 'object', side: 'lemmy', user: username, type: 'post', apId: post.apId, peerId: post.id });
+  await storedPost(ctx, post.apId);
+  const boost = await awaitRogue(
+    'the rogue to receive the boost',
+    (r) => typesOf(r.body).type === 'Announce' && JSON.stringify(r.body).includes(title),
+  );
+  const boostId = idOf(boost.body);
+  const adminToken = await lemmy.login(lemmy.admin);
+  const personId = await lemmy.mod.resolvePerson(adminToken, lemmy.actorUri(username));
+  const started = new Date();
+  await lemmy.mod.siteBan!(adminToken, personId, true, `F5 ${ctx.run}`, true);
+  await expectInbound(
+    ctx.sql,
+    { since: started, actor: lemmy.actorUri(lemmy.admin), type: 'Block', contains: lemmy.actorUri(username) },
+    { state: 'applied' },
+  );
+  await awaitRogue(
+    'the rogue to receive Undo(Announce) of the boost',
+    (r) => typesOf(r.body).type === 'Undo' && idOf(objectOf(r.body)) === boostId,
+  );
+  return `Lemmy's site ban with removeData applied; the boost ${boostId} was undone at the follower`;
+}
+
+/** F3: alice names a person on the rogue (who follows nothing), and a moderator removes the post. */
+async function f3(ctx: Context): Promise<string> {
+  const person = rogue.actor('mastofan');
+  const title = tag(ctx, 'F3', { name: 'rogue' });
+  await rogue.reset();
+  const created = await peblish.createPost('alice', ctx.community.id, { title, bodyMd: `For @mastofan@rogue.lab.test to see.` });
+  ctx.ledger.add({ kind: 'object', side: 'peblish', user: 'alice', type: 'post', apId: created.apId });
+  const mention = await awaitRogue('the rogue to receive the mention', (r) => JSON.stringify(r.body).includes(created.apId));
+  const { type, inner } = typesOf(mention.body);
+  // Not a follower any more, so the only copy is the author's Create for the mention.
+  if (type !== 'Create' || inner !== 'Page') throw new Error(`the mentioned person got ${type}(${inner}), expected Create(Page)`);
+  if (!JSON.stringify(mention.body).includes(person)) throw new Error('the Create does not name the mentioned person');
+  const stored = await storedPost(ctx, created.apId);
+  await peblish.removePost('labadmin', stored.id, `F3 ${ctx.run}`);
+  const alice = await ctx.sql<{ ap_id: string }[]>`select ap_id from actors where local and name = 'alice'`;
+  await awaitRogue(
+    "the rogue to receive the author's Delete",
+    (r) => typesOf(r.body).type === 'Delete' && idOf(objectOf(r.body)) === created.apId && actorOf(r.body) === alice[0]?.ap_id,
+  );
+  return "Create(Page) to the mentioned person; the moderator's removal reached them as the author's Delete";
+}
+
 export const mastodon: Group = {
-  ids: ['V2'],
+  ids: ['V2', 'F5', 'F3'],
   async run(ctx) {
     const { rec, community } = ctx;
     const fan = rogue.actor('mastofan');
@@ -97,8 +166,15 @@ export const mastodon: Group = {
           );
         return 'Announce(Page) to the Mastodon-like follower, Announce(Create) to the peers, one per inbox; Undo(Announce) and Delete on removal';
       });
+      // F5 needs Lemmy (its site ban with removeData) and the follower still following.
+      if (ctx.peers.some((peer) => peer.name === 'lemmy')) await rec.scenario('F5', 'rogue', () => f5(ctx));
     } finally {
+      const leaving = new Date();
       await unfollow().catch(() => undefined);
+      // Applied before F3 posts, or the post still goes to the follower too.
+      await expectInbound(ctx.sql, { since: leaving, actor: fan, type: 'Undo' }, { state: 'applied' }).catch(() => undefined);
     }
+    // F3 after the Undo(Follow): the mentioned person's server is reached only for the mention.
+    await rec.scenario('F3', 'rogue', () => f3(ctx));
   },
 };
