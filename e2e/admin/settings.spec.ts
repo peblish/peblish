@@ -58,16 +58,23 @@ test('a bad value saves nothing and marks its field', async () => {
 
 /** What the modlog recorded for settings so far, as the seed reads it. */
 const settingsLog = () => seedAdm('settings-log') as { changes: Record<string, { before: unknown; after: unknown }>; public: boolean }[];
+// Every spec file runs side by side on one database, and these switches stop what other specs do
+// (sign-up, posting, remote images). So pausing them in a default run would break a spec that
+// happens to act at that moment; they flip only when the admin specs run alone:
+//   PEBLISH_E2E_FLIP_ALL=1 pnpm e2e e2e/admin --workers=1
+// Outgoing delivery has no other spec, and the inbox is flipped by its own short test below.
+// Core's kill-switches.test.ts flips all six through the real mutation and its readers.
+const flipAll = process.env.PEBLISH_E2E_FLIP_ALL === '1';
 const switches = [
-  ['registration.enabled', 'Registration', 'Pause registration', 'Resume registration'],
-  ['posting.enabled', 'Posting', 'Pause posting', 'Resume posting'],
-  ['remote_media.enabled', 'Remote media', 'Pause remote media', 'Resume remote media'],
-  ['inbox.enabled', 'Inbox', 'Pause inbox', 'Resume inbox'],
-  ['delivery.enabled', 'Outgoing delivery', 'Pause delivery', 'Resume delivery'],
+  ['registration.enabled', 'Registration', 'Pause registration', 'Resume registration', true],
+  ['posting.enabled', 'Posting', 'Pause posting', 'Resume posting', true],
+  ['remote_media.enabled', 'Remote media', 'Pause remote media', 'Resume remote media', true],
+  ['delivery.enabled', 'Outgoing delivery', 'Pause delivery', 'Resume delivery', false],
 ] as const;
 
-for (const [key, label, pause, resume] of switches) {
+for (const [key, label, pause, resume, shared] of switches) {
   test(`${label}: pausing is marked, resuming restores it, and both are logged`, async () => {
+    test.skip(shared && !flipAll, 'stops other specs: set PEBLISH_E2E_FLIP_ALL=1 and run the admin specs alone');
     await gotoHydrated(page, '/admin/settings');
     const row = page.locator(`[data-switch="${key}"]`);
     // The Pages spec saves settings too, side by side: look only at this switch's rows.
@@ -92,6 +99,23 @@ for (const [key, label, pause, resume] of switches) {
   });
 }
 
+test('every kill switch is a row with its state, what pausing does and one button', async () => {
+  await gotoHydrated(page, '/admin/settings');
+  for (const [key, label] of [
+    ['registration.enabled', 'Registration'],
+    ['posting.enabled', 'Posting'],
+    ['uploads.enabled', 'Image uploads'],
+    ['remote_media.enabled', 'Remote media'],
+    ['inbox.enabled', 'Inbox'],
+    ['delivery.enabled', 'Outgoing delivery'],
+  ] as const) {
+    const row = page.locator(`[data-switch="${key}"]`);
+    await expect(row.getByText(label, { exact: true })).toBeVisible();
+    await expect(row.locator('.hint')).toContainText(/\S/);
+    await expect(row.getByRole('button')).toHaveCount(1);
+  }
+});
+
 test('uploads are off until scanning is live: the row says so and offers to turn them on, nothing more', async () => {
   await gotoHydrated(page, '/admin/settings');
   const row = page.locator('[data-switch="uploads.enabled"]');
@@ -100,8 +124,12 @@ test('uploads are off until scanning is live: the row says so and offers to turn
   await expect(row.getByRole('button', { name: 'Turn uploads on' })).toBeVisible();
 });
 
-test('pausing the inbox makes it answer 503 with Retry-After, and it goes back to 401 for an unsigned post', async ({ request }) => {
+test('pausing the inbox makes it answer 503 with Retry-After, and it goes back to 401 for an unsigned post; both flips are logged', async ({
+  request,
+}) => {
   const post = () => request.post('/inbox', { data: '{}', headers: { 'content-type': 'application/activity+json' } });
+  const own = () => settingsLog().filter(({ changes }) => 'inbox.enabled' in changes);
+  const before = own().length;
   expect((await post()).status()).toBe(401);
   await gotoHydrated(page, '/admin/settings');
   await page.locator('[data-switch="inbox.enabled"]').getByRole('button', { name: 'Pause inbox' }).click();
@@ -114,6 +142,10 @@ test('pausing the inbox makes it answer 503 with Retry-After, and it goes back t
     await page.waitForURL(/saved=/);
   }
   expect((await post()).status()).toBe(401);
+  expect(own().slice(before)).toEqual([
+    { changes: { 'inbox.enabled': { before: true, after: false } }, public: false },
+    { changes: { 'inbox.enabled': { before: false, after: true } }, public: false },
+  ]);
 });
 
 test('a visitor signed out is sent to sign in, and a member without the admin role is told no', async ({ browser }) => {
