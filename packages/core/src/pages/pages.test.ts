@@ -188,14 +188,19 @@ describe('publishPage', () => {
     expect(await publishedPages('en')).toEqual([]);
   });
 
-  test('a value that looks like a token is written as text, never filled again', async () => {
+  test('a value that is or makes a token refuses the publish with page.unresolved_tokens, and writes nothing', async () => {
     const { admin } = await world();
     await updateSettingsAs(admin, { ...operator, 'operator.name': '{{CONTACT_EMAIL}}' });
     await saved(admin);
-    const result = await publishPageAs(admin, rules);
-    if (!result.ok) throw new Error(result.reason);
-    const [revision] = await db().select({ bodyMd: pageRevisions.bodyMd }).from(pageRevisions);
-    expect(revision?.bodyMd).toContain('Run by {{CONTACT_EMAIL}} at');
+    expect(await publishPageAs(admin, rules)).toEqual({ ok: false, reason: 'page.unresolved_tokens' });
+    expect(await unresolvedTokens('rules', 'en')).toEqual(['{{CONTACT_EMAIL}}']);
+    // Half a token in a value, completed by the draft's text beside it.
+    await updateSettingsAs(admin, { 'operator.name': 'Op {{DMCA' });
+    await saved(admin, rules, { title: 'Rules', bodyMd: '{{OPERATOR_NAME}}_AGENT}} runs this.' });
+    expect(await publishPageAs(admin, rules)).toEqual({ ok: false, reason: 'page.unresolved_tokens' });
+    expect(await unresolvedTokens('rules', 'en')).toEqual(['{{DMCA_AGENT}}']);
+    expect(await db().select().from(pageRevisions)).toEqual([]);
+    expect(await publishedPages('en')).toEqual([]);
   });
 
   test('a draft edit leaves the live revision alone, and publishing again replaces it', async () => {

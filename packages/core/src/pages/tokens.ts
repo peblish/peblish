@@ -15,18 +15,18 @@ export type TokenValues = {
 export const tokensIn = (text: string): string[] => [...new Set(text.match(TOKEN) ?? [])];
 
 /**
- * `text` with the known tokens that have a value filled in, in one pass (a value that itself
- * looks like a token stays as it is, it is never filled again), and the tokens that still
- * stand: the unknown ones, and the known ones whose value is empty.
+ * `text` with the known tokens that have a value filled in, in one pass (a value is never filled
+ * again), and every token the result still holds: the unknown ones, the known ones whose value
+ * is empty, and any a value brought in (an operator detail that is or contains `{{TOKEN}}`, or
+ * completes one with the text beside it). Publishing refuses while any stand, so a placeholder
+ * never reaches visitors, whichever way it got there.
  */
 export function fillTokens(text: string, values: TokenValues): { text: string; unresolved: string[] } {
-  const unresolved = new Set<string>();
   const filled = text.replace(TOKEN, (token) => {
     const value = Object.hasOwn(values, token.slice(2, -2)) ? values[token.slice(2, -2) as keyof TokenValues] : '';
-    if (value.trim() === '') unresolved.add(token);
     return value.trim() === '' ? token : value;
   });
-  return { text: filled, unresolved: [...unresolved] };
+  return { text: filled, unresolved: tokensIn(filled) };
 }
 
 /** A postal address on one line, for running text: its lines joined with commas. */
