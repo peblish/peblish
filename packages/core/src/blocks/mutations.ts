@@ -48,17 +48,17 @@ async function sizeOf(db: WriteTx, blockerId: Uuid, kind: BlockTarget['kind']): 
 /**
  * Blocks a person, a community or an instance. Blocking twice changes nothing and emits
  * nothing. A community block ends the blocker's follow of it, and an instance block their
- * follows of every community there, one `follow.removed` for each.
+ * follows of every community there, one `follow.removed` for each. The recheck refuses a
+ * blocker site-banned since authorize() (auth.site_banned). Runs inside addBlock, which holds
+ * the blocker's actor row.
  */
-export const addBlock = defineMutation({
+const addBlockRow = defineMutation({
   action: 'block.add',
   emits: ['block.added', 'follow.removed'],
+  recheck: true,
   async run(t, grant, _input: void) {
     const blockerId = grant.actorId;
     const { target } = grant.subject;
-    // The acting actor's row first, as the lock order has it; it also serializes one person's
-    // concurrent blocks, so the size check below cannot be raced past the cap.
-    await t.db.select({ id: actors.id }).from(actors).where(eq(actors.id, blockerId)).for('no key update');
     const created = await insertRow(t.db, blockerId, target);
     if (created) {
       const { size, max } = await sizeOf(t.db, blockerId, target.kind);
@@ -110,10 +110,30 @@ export const addBlock = defineMutation({
   },
 });
 
-/** Lifts a block. A block that is not there is fine: `removed` is false and nothing is emitted. */
+/**
+ * block.add in its own transaction (addBlockRow, rechecked). The blocker's actor row is locked
+ * FOR NO KEY UPDATE first, before the recheck reads it FOR SHARE: the lock order puts the acting
+ * actor first, it serializes one person's concurrent blocks (so the size check cannot be raced
+ * past the cap, and two blocks at once do not deadlock upgrading a shared lock), and a site ban,
+ * which locks the same row before inserting, either waits for the block or is seen by the recheck.
+ */
+export const addBlock = defineMutation({
+  action: 'block.add',
+  emits: ['block.added', 'follow.removed'],
+  async run(t, grant, input: void) {
+    await t.db.select({ id: actors.id }).from(actors).where(eq(actors.id, grant.actorId)).for('no key update');
+    return addBlockRow.within(t, grant, input);
+  },
+});
+
+/**
+ * Lifts a block. A block that is not there is fine: `removed` is false and nothing is emitted.
+ * Rechecked like every person's write, so a site-banned person changes nothing (auth.site_banned).
+ */
 export const removeBlock = defineMutation({
   action: 'block.remove',
   emits: ['block.removed'],
+  recheck: true,
   async run(t, grant, _input: void) {
     const blockerId = grant.actorId;
     const { target } = grant.subject;

@@ -120,7 +120,7 @@ describe('what a row shows', () => {
     expect(nested).toMatchObject({ replyTo: 'comment', actor: { handle: 'remote_author@lemmy.test', local: false } });
   });
 
-  test('sensitive content shows no text for anyone, and a removed or deleted comment shows that word', async () => {
+  test('sensitive content shows no text for anyone, a removed or deleted comment shows that word, a removed or deleted post no title', async () => {
     const w = await seedInboxWorld();
     const me = w.people.author;
     const notice = (comment: { id: string; postId: string }, extra: Partial<typeof notifications.$inferInsert> = {}) =>
@@ -150,6 +150,19 @@ describe('what a row shows', () => {
       removedAt: new Date(),
     });
     await seedNotice({ recipientId: me.id, kind: 'mod_remove', refId: removedPost.id, postId: removedPost.id });
+    // A reply under a post deleted since, and a removal of a post with the moderator's statement.
+    const deletedPost = await seedPost(w.instances.local, w.communities.open, me, { title: 'Deleted title', deletedAt: new Date() });
+    await notice(await seedComment(w.instances.local, deletedPost, w.people.reader, { bodyMd: 'Under a deleted post' }));
+    const entry = await seedModlog(w.people.moderator, me, {
+      action: 'mod.remove',
+      communityId: w.communities.open.id,
+      communityApId: w.communities.open.apId,
+      targetPostId: removedPost.id,
+      targetApId: removedPost.apId,
+      reason: 'Rule 3',
+      authority: { kind: 'local-role', actorId: w.people.moderator.id, role: 'moderator', communityId: w.communities.open.id },
+    });
+    await seedNotice({ recipientId: me.id, kind: 'mod_remove', refId: entry.id, modlogId: entry.id, postId: removedPost.id });
 
     const items = (await readInbox(viewerOf(me))).items.toReversed();
     expect(items.map((item) => [item.withheld, item.excerpt, item.postTitle])).toEqual([
@@ -160,8 +173,11 @@ describe('what a row shows', () => {
       ['sensitive', null, null],
       ['sensitive', null, null],
       ['sensitive', null, null],
-      ['removed', null, 'Gone'],
+      ['removed', null, null],
+      ['deleted', null, null],
+      ['removed', null, null],
     ]);
+    expect(items.at(-1)?.statement).toMatchObject({ modlogId: entry.id, reason: 'Rule 3' });
   });
 
   test('a removal shows the statement of reasons, withheld when the moderator’s instance is not trusted', async () => {
@@ -209,6 +225,25 @@ describe('what a row shows', () => {
     await seedNotice({ recipientId: me.id, kind: 'ban', refId: uuidv7() });
     const { items } = await readInbox(viewerOf(me));
     expect(items.map((item) => item.community?.name ?? null)).toEqual([null, 'open']);
+  });
+});
+
+describe('one visibility rule for the list and every count', () => {
+  test('an unread notice in a deleted or removed community is neither listed nor counted', async () => {
+    const w = await seedInboxWorld();
+    const me = w.people.author;
+    const gone = await seedActor(w.instances.local, 'Group', 'gone', { deletedAt: new Date() });
+    for (const community of [w.communities.open, w.communities.removed, gone]) {
+      await seedNotice({ recipientId: me.id, kind: 'mod_remove', refId: uuidv7(), communityId: community.id });
+      await seedNotice({ recipientId: me.id, kind: 'reply', refId: uuidv7(), communityId: community.id });
+    }
+    const inbox = await readInbox(viewerOf(me));
+    expect(inbox.items.map((item) => item.community?.name)).toEqual(['open', 'open']);
+    expect(inbox.unread).toBe(2);
+    expect(inbox.unreadByGroup).toEqual({ replies: 1, mentions: 0, content: 1, account: 0 });
+    // The sidebar badge (shell/data.ts) reads unreadCount.
+    expect(await unreadCount(me.id)).toBe(2);
+    expect((await readInbox(viewerOf(me), { filter: 'unread' })).items).toHaveLength(2);
   });
 });
 

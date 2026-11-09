@@ -1,6 +1,6 @@
 import { Uuid } from '@peblish/schema/ids';
 import { excerptLength } from '@peblish/schema/markdown';
-import { aliasedTable, and, desc, eq, inArray, isNull, lt, or, type SQL } from 'drizzle-orm';
+import { aliasedTable, and, desc, eq, inArray, isNull, lt, type SQL } from 'drizzle-orm';
 import { localInstance } from '../db/local-instance.ts';
 import { db, type Queryable } from '../db/read.ts';
 import { actors } from '../db/tables/actors.ts';
@@ -9,11 +9,10 @@ import { instances } from '../db/tables/instances.ts';
 import { renderMarkdown } from '../markdown/render.ts';
 import { sanitizeRemoteHtml } from '../markdown/sanitize.ts';
 import { readModlogEntries } from '../modlog/read.ts';
-import { communityRemovals } from '../moderation/tables.ts';
 import type { Viewer } from '../posts/read.ts';
-import { notBlocked } from './blocked.ts';
 import { notifications } from './tables.ts';
 import { unreadCountOf } from './unread.ts';
+import { inboxVisible } from './visible.ts';
 import {
   filterKinds,
   type Inbox,
@@ -27,9 +26,9 @@ import {
 // The read model of the inbox (the notifications-list pick): one page of the viewer's notices,
 // newest first, with what each is about. It decides what a notice may show, in one place: a
 // post or community that is sensitive or NSFL shows only that for every viewer (a notice must
-// not carry what the gate would hide), and a removed or deleted comment shows only that word.
-// A page is a handful of queries however many rows it lists: the notices, their people, their
-// posts and comments, and their modlog entries.
+// not carry what the gate would hide), a removed or deleted comment shows only that word, and a
+// removed or deleted post loses its title too. A page is a handful of queries however many rows
+// it lists: the notices, their people, their posts and comments, and their modlog entries.
 
 export const inboxPageSize = 25;
 
@@ -76,9 +75,10 @@ function excerptOf(body: { bodyMd: string | null; contentHtml: string | null }, 
 
 /**
  * The viewer's inbox, newest first: `limit` notices after `cursor` (the last id of the page
- * before; uuidv7 ids are in creation order), filtered by `filter`. A blocked author's reply or
- * mention is left out, and so is anything in a community that has been deleted or removed.
- * `unread` is the shell's badge number and `unreadByGroup` the filter links', both capped.
+ * before; uuidv7 ids are in creation order), filtered by `filter`. Which notices exist is
+ * inboxVisible's (no blocked author's reply or mention, nothing in a deleted or removed
+ * community), shared with every count. `unread` is the shell's badge number and
+ * `unreadByGroup` the filter links', both capped.
  */
 export async function readInbox(
   viewer: NonNullable<Viewer>,
@@ -86,21 +86,16 @@ export async function readInbox(
   q: Queryable = db(),
 ): Promise<Inbox> {
   const { filter = 'all', cursor = null, limit = inboxPageSize } = options;
-  const community = aliasedTable(actors, 'community');
   const conditions: (SQL | undefined)[] = [
-    eq(notifications.recipientId, viewer.actorId),
+    inboxVisible(viewer.actorId),
     filter === 'all' || filter === 'unread' ? undefined : inArray(notifications.kind, [...filterKinds[filter]]),
     filter === 'unread' ? isNull(notifications.readAt) : undefined,
     cursor !== null && Uuid.allows(cursor) ? lt(notifications.id, cursor) : undefined,
-    notBlocked(viewer.actorId),
-    or(isNull(notifications.communityId), and(isNull(community.deletedAt), isNull(communityRemovals.communityId))),
   ];
   const [rows, unread, unreadByGroup] = await Promise.all([
     q
       .select({ notice: notifications })
       .from(notifications)
-      .leftJoin(community, eq(community.id, notifications.communityId))
-      .leftJoin(communityRemovals, eq(communityRemovals.communityId, notifications.communityId))
       .where(and(...conditions))
       .orderBy(desc(notifications.id))
       .limit(limit + 1),
@@ -173,7 +168,7 @@ async function describe(q: Queryable, rows: (typeof notifications.$inferSelect)[
       community: (row.communityId && personById.get(row.communityId)) || null,
       postId: row.postId,
       commentId: row.commentId,
-      postTitle: post && withheld !== 'sensitive' ? post.title : null,
+      postTitle: titleOf(post),
       about: row.commentId ? 'comment' : row.postId ? 'post' : null,
       replyTo: row.kind === 'reply' ? (comment?.parentId ? 'comment' : 'post') : null,
       withheld,
@@ -207,6 +202,14 @@ async function postsOf(q: Queryable, ids: Uuid[]): Promise<PostRow[]> {
     hidden: sensitive || nsfl || communitySensitive || communityNsfl,
   }));
 }
+
+/**
+ * The post's title, when a notice may show it: not for sensitive content (the gate hides it from
+ * everyone), and not once the post is removed or deleted, whatever the notice is about. A
+ * removal notice still carries the moderator's statement; only the title goes.
+ */
+const titleOf = (post: PostRow | undefined): string | null =>
+  post && !post.hidden && post.removedAt === null && post.deletedAt === null ? post.title : null;
 
 /**
  * Why a notice about this text shows a word instead: sensitive content first (the gate hides it

@@ -7,11 +7,13 @@ import { defineMutation } from '../tx/mutation.ts';
 
 /**
  * Records the grant holder's 16+ declaration. Declaring twice changes nothing and emits
- * nothing, so a repeated POST (a second tab, a retry) is harmless.
+ * nothing, so a repeated POST (a second tab, a retry) is harmless. The recheck refuses a
+ * person site-banned since authorize() (auth.site_banned).
  */
 export const declareAge = defineMutation({
   action: 'age.declare',
   emits: ['age.declared'],
+  recheck: true,
   async run(t, grant) {
     const inserted = await t.db
       .insert(ageDeclarations)

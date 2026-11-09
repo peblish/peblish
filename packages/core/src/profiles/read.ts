@@ -2,6 +2,7 @@ import type { Uuid } from '@peblish/schema/ids';
 import type { ActorRef, CommentView, Page, PostView } from '@peblish/schema/views';
 import { and, count, eq, getTableColumns, inArray, isNull, sql, type SQL } from 'drizzle-orm';
 import { freshModerator } from '../authz/roles.ts';
+import { hideNsfw, type NsfwChoice } from '../communities/gate.ts';
 import { blockOf } from '../blocks/predicate.ts';
 import { db, type Queryable } from '../db/read.ts';
 import { actors } from '../db/tables/actors.ts';
@@ -55,10 +56,22 @@ function parseHandle(handle: string): { name: string; host: string | null } | nu
   return hostPattern.test(host.toLowerCase()) ? { name, host: host.toLowerCase() } : null;
 }
 
-const refOf = ({ domain, ...actor }: Omit<ActorRef, 'handle'> & { domain: string }): ActorRef => ({
-  ...actor,
-  handle: actor.local ? actor.name : `${actor.name}@${domain}`,
+/**
+ * The public reference to an actor, field by field from an allowlist: the row it comes from may
+ * be the whole actor row (user id, raw JSON, the auth role), and none of that may reach a page.
+ */
+export const publicActorRef = (actor: ActorRef): ActorRef => ({
+  id: actor.id,
+  apId: actor.apId,
+  kind: actor.kind,
+  name: actor.name,
+  displayName: actor.displayName,
+  local: actor.local,
+  handle: actor.handle,
 });
+
+const refOf = (actor: Omit<ActorRef, 'handle'> & { domain: string }): ActorRef =>
+  publicActorRef({ ...actor, handle: actor.local ? actor.name : `${actor.name}@${actor.domain}` });
 
 /** Communities the viewer moderates where `personId` has a live post or comment. */
 async function moderatedWith(q: Queryable, viewerId: Uuid, personId: Uuid): Promise<ActorRef[]> {
@@ -179,6 +192,8 @@ export type ActivityRequest = {
   /** The previous page's `next`; one that is not valid for this sort is ignored. */
   cursor?: string | undefined;
   limit?: number;
+  /** The browser's Hide NSFW choice (default: hide), for comments; posts carry their own cover, as in a feed. */
+  nsfw?: NsfwChoice;
 };
 
 /** What orders an item and continues after it. */
@@ -226,6 +241,21 @@ async function postsPage(q: Queryable, request: ActivityRequest, viewer: Viewer,
   });
 }
 
+/**
+ * Comments under a sensitive or NSFL post or community, unless this browser shows that
+ * community (Show always, or Show once for it). `visible` already keeps them from signed-out
+ * and undeclared viewers; this is Hide NSFW for declared ones, as the post page applies it. A
+ * comment has no cover to put its text behind, so a hidden one is not listed.
+ */
+function nsfwShown(nsfw: NsfwChoice): SQL | undefined {
+  if (nsfw.always) return undefined;
+  const clear = sql`not (${posts.sensitive} or ${posts.nsfl} or exists (
+    select 1 from ${actors} as comment_community
+    where comment_community.id = ${posts.communityId} and (comment_community.sensitive or comment_community.nsfl)
+  ))`;
+  return nsfw.once.length === 0 ? clear : sql`(${clear} or ${inArray(posts.communityId, [...nsfw.once])})`;
+}
+
 /** The query for the person's live comments on posts the viewer may see. */
 function commentsQuery(q: Queryable, request: ActivityRequest, viewer: Viewer, cursor: Cursor | null, asOf: number, want: number) {
   const columns = {
@@ -239,6 +269,8 @@ function commentsQuery(q: Queryable, request: ActivityRequest, viewer: Viewer, c
     isNull(comments.removedAt),
     ...visible('all', viewer, asOf),
   ];
+  const shown = nsfwShown(request.nsfw ?? hideNsfw);
+  if (shown) conditions.push(shown);
   const next = after(cursor, request.sort, columns);
   if (next) conditions.push(next);
   return q

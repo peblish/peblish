@@ -7,9 +7,10 @@ import { instances } from '../db/tables/instances.ts';
 import { writer } from '../db/write.ts';
 import { readModlog } from '../modlog/read.ts';
 import { truncateAll } from '../testing/db.ts';
-import { admin, grantFor, outboxEvents, seedAdmin, writeCounts } from '../testing/seed-az.ts';
+import { admin, gate, grantFor, outboxEvents, seedAdmin, someoneWaitsOnALock, writeCounts } from '../testing/seed-az.ts';
 import { localUser, seedActor, seedInstance } from '../testing/seed.ts';
 import { Refused } from '../tx/refused.ts';
+import { tx } from '../tx/tx.ts';
 import { peerControls } from './tables.ts';
 import { updatePeer } from './update.ts';
 
@@ -95,4 +96,31 @@ test('a change that fails its recheck writes nothing', async () => {
   await expect(updatePeer(grant, { blocked: true })).rejects.toBeInstanceOf(Refused);
   expect(await writeCounts()).toEqual(before);
   expect(await controls('lemmy.test')).toBeUndefined();
+});
+
+test('two first updates of a peer at once: the second waits for the first and keeps its block', async () => {
+  const { asAdmin } = await setup();
+  // A peer already known (ensureInstance inserts nothing) with no controls row yet.
+  await seedInstance('lemmy.test', false);
+  const blocking = await grantFor('peer.update', asAdmin, { domain: 'lemmy.test' });
+  const approving = await grantFor('peer.update', asAdmin, { domain: 'lemmy.test' });
+  // The block runs first and holds its transaction open until the approval waits on it.
+  const holding = gate();
+  const release = gate();
+  const block = tx(async (t) => {
+    await updatePeer.within(t, blocking, { blocked: true });
+    holding.open();
+    await release.opened;
+  });
+  await holding.opened;
+  const approve = updatePeer(approving, { media: 'approved' });
+  try {
+    await expect.poll(someoneWaitsOnALock).toBe(true);
+  } finally {
+    release.open();
+  }
+  await block;
+  await approve;
+  expect((await controls('lemmy.test'))?.peer_controls).toMatchObject({ blocked: true, media: 'approved' });
+  expect((await outboxEvents()).map((event) => (event as { blocked?: boolean }).blocked)).toEqual([true, true]);
 });

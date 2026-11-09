@@ -47,7 +47,7 @@ export type InboxItem = {
   community: NoticeActor | null;
   postId: string | null;
   commentId: string | null;
-  /** The post's title; null when the post is gone or the notice is sensitive. */
+  /** The post's title; null when the post is gone, removed or deleted, or the notice is sensitive. */
   postTitle: string | null;
   /** What the notice's text is: the comment (when commentId is set) or the post. Null for a ban. */
   about: 'post' | 'comment' | null;

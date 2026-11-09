@@ -1,6 +1,6 @@
 import type { RefusalReason } from '@peblish/schema/refusal';
 import { siteSettings as contract } from '@peblish/schema/site-settings';
-import { and, eq, inArray } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 import { forNoKeyUpdate, forShare } from '../authz/policy.ts';
 import type { Queryable } from '../db/read.ts';
 import { siteSettings } from '../db/tables/site.ts';
@@ -10,13 +10,15 @@ import { pages } from './tables.ts';
 /** The setting keys that fill the tokens. */
 const operatorKeys = ['operator.name', 'operator.address', 'operator.jurisdiction', 'contact.email'] as const;
 
-/** The operator's details as stored (the contract default when a row is missing), read FOR SHARE under `lock` so a change to them waits for a publish in flight. */
+/** The operator's details as stored (the contract default when a row is missing), read FOR SHARE in key order under `lock` so a change to them waits for a publish in flight. */
 async function operatorDetails(db: Queryable, lock: boolean) {
   const rows = await forShare(
     db
       .select({ key: siteSettings.key, value: siteSettings.value })
       .from(siteSettings)
-      .where(inArray(siteSettings.key, [...operatorKeys])),
+      .where(inArray(siteSettings.key, [...operatorKeys]))
+      // Key order by code point, as the settings writer (settings/write.ts) sorts and locks them, so the two cannot deadlock.
+      .orderBy(sql`${siteSettings.key} collate "C"`),
     lock,
   );
   const stored = new Map(rows.map(({ key, value }) => [key, value]));

@@ -1,5 +1,6 @@
 import { eq } from 'drizzle-orm';
 import { beforeEach, describe, expect, test } from 'vitest';
+import { hideNsfw, showNsfw, type NsfwChoice } from '../communities/gate.ts';
 import { actors } from '../db/tables/actors.ts';
 import { writer } from '../db/write.ts';
 import { seedBlock } from '../testing/seed-e1.ts';
@@ -52,6 +53,18 @@ describe('readProfile', () => {
     });
     expect(await readProfile('@alice@feddit.test', null)).toMatchObject({ actor: { id: w.alice.id } });
     expect((await readProfile('Alice', w.as(w.alice)))?.badges.you).toBe(true);
+  });
+
+  test('the person and the moderated communities carry only the public reference fields', async () => {
+    const w = await world();
+    await seedModerator(w.news, w.viewer);
+    await seedPost(w.local, w.news, w.admin);
+    const profile = await readProfile('boss', w.as(w.viewer));
+    const publicKeys = ['apId', 'displayName', 'handle', 'id', 'kind', 'local', 'name'];
+    expect(Object.keys(profile!.actor).sort()).toEqual(publicKeys);
+    expect(profile!.moderatedCommunities.map((ref) => Object.keys(ref).sort())).toEqual([publicKeys]);
+    // Nothing of the account (user id, role, two-factor) or the stored row (raw JSON, keys, timestamps) is in it.
+    expect(JSON.stringify(profile)).not.toMatch(/userId|"role"|twoFactor|"raw"|createdAt|summaryMd/);
   });
 
   test('a remote person has a home and refresh time; the bio is HTML', async () => {
@@ -208,7 +221,27 @@ describe('readActivity', () => {
       (await readActivity({ personId: w.alice.id, tab: 'overview', sort: 'new' }, viewer && w.as(viewer))).items.length;
     expect(await titles(null)).toBe(1);
     expect(await titles(w.mod)).toBe(1);
-    expect(await titles(w.viewer)).toBe(3);
+    expect(await titles(w.viewer)).toBe(2);
+  });
+
+  test('Hide NSFW keeps a declared viewer from comments under a flagged post or community, unless this browser shows it', async () => {
+    const w = await world();
+    const inAdult = await seedFeedPost(w.local, w.adult, w.alice, { title: 'in adult' });
+    const flagged = await seedFeedPost(w.local, w.news, w.alice, { title: 'flagged', nsfl: true });
+    const plain = await seedFeedPost(w.local, w.news, w.alice, { title: 'plain' });
+    await seedComment(w.local, inAdult, w.alice, { bodyMd: 'in adult' });
+    await seedComment(w.local, flagged, w.alice, { bodyMd: 'flagged' });
+    await seedComment(w.local, plain, w.alice, { bodyMd: 'plain' });
+    await declareAge(w.viewer);
+    const shown = async (nsfw?: NsfwChoice) =>
+      (await readActivity({ personId: w.alice.id, tab: 'comments', sort: 'new', ...(nsfw && { nsfw }) }, w.as(w.viewer))).items.map(
+        (item) => (item.kind === 'comment' ? item.comment.post.title : item.post.title),
+      );
+    expect(await shown()).toEqual(['plain']);
+    expect(await shown(hideNsfw)).toEqual(['plain']);
+    expect(await shown({ always: false, once: [w.adult.id] })).toEqual(['plain', 'in adult']);
+    expect(await shown({ always: false, once: [w.news.id] })).toEqual(['plain', 'flagged']);
+    expect(await shown(showNsfw)).toEqual(['plain', 'flagged', 'in adult']);
   });
 
   test("a blocked person's activity is hidden from the blocker only", async () => {
