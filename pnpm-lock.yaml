@@ -208,6 +208,28 @@ importers:
         specifier: 3.9.10
         version: 3.9.10
 
+  tools/interop:
+    dependencies:
+      '@peblish/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@peblish/federation':
+        specifier: workspace:*
+        version: link:../../packages/federation
+      '@peblish/schema':
+        specifier: workspace:*
+        version: link:../../packages/schema
+      arktype:
+        specifier: 2.2.9
+        version: 2.2.9
+      postgres:
+        specifier: 3.4.9
+        version: 3.4.9
+    devDependencies:
+      '@fedify/fedify':
+        specifier: 2.4.5
+        version: 2.4.5
+
 packages:
 
   '@ark/schema@0.56.8':
