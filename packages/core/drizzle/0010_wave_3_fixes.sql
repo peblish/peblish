@@ -1,3 +1,16 @@
+-- Guard (hand-written, not generated): a hold recorded before this migration has no authority, and
+-- from here on only an AFP hold keeps an image's bytes, so the next purge would delete bytes a hold
+-- protects. Stop while any hold is in force; nothing deployed has one.
+DO $$
+DECLARE
+  held bigint;
+BEGIN
+  SELECT count(*) INTO held FROM "media_evidence" WHERE "hold_reference" IS NOT NULL AND "hold_until" > now();
+  IF held > 0 THEN
+    RAISE EXCEPTION '% media_evidence % a preservation hold in force. 0010_wave_3_fixes adds hold_authority, and only an AFP hold keeps the image bytes after it. Add a data fix to this migration to classify each active hold''s authority (afp, ncmec or nca) before applying it, or the next purge may delete bytes the hold protects.',
+      held, CASE WHEN held = 1 THEN 'row has' ELSE 'rows have' END;
+  END IF;
+END $$;--> statement-breakpoint
 ALTER TABLE "media_evidence" DROP CONSTRAINT "media_evidence_media_id_unique";--> statement-breakpoint
 ALTER TABLE "media_evidence" ADD COLUMN "hold_authority" text;--> statement-breakpoint
 ALTER TABLE "media_evidence" ADD COLUMN "purge_started_at" timestamp with time zone;--> statement-breakpoint
