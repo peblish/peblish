@@ -142,6 +142,13 @@ test.describe('anyone', () => {
     const anonymous = await page.request.post(target, { form: { intent: 'delete' }, maxRedirects: 0 });
     expect([anonymous.status(), anonymous.headers().location]).toEqual([303, `${target}?error=auth.required`]);
   });
+
+  test('a form post to an id that is not a uuid is a 404, and no redirect is built from it', async ({ page }) => {
+    for (const id of ['not-a-post', '%0D%0Ainjected:%201']) {
+      const response = await page.request.post(`/post/${id}`, { form: { intent: 'delete' }, maxRedirects: 0 });
+      expect([response.status(), response.headers().location]).toEqual([404, undefined]);
+    }
+  });
 });
 
 test.describe('a German browser', () => {
