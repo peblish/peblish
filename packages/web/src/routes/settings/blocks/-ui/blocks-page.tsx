@@ -37,14 +37,15 @@ export function BlocksPage({ data, search }: { data: BlocksData; search: BlocksS
         </p>
 
         {data.just && (
-          <p className="blk-note" role="status">
+          // A div: it holds the Undo form, which a <p> cannot contain.
+          <div className="blk-note" role="status">
             {t('blocks', 'just', { name: data.just.name })}{' '}
             <BlockForm kind={kind} fields={{ intent: 'remove', kind, target: data.just.id }}>
               <button type="submit" className="pb-linkbutton">
                 {t('blocks', 'just.undo')}
               </button>
             </BlockForm>
-          </p>
+          </div>
         )}
 
         {/* An error from a form posted without scripts; the enhanced form shows its own beside the field. */}

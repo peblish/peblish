@@ -158,6 +158,10 @@ test.describe('the NSFW gate', () => {
     await page.locator('html[data-hydrated="1"]').waitFor({ state: 'attached' });
     await expect(page.getByRole('heading', { name: `${seed.secret} name` })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Hide NSFW' })).toBeVisible();
+    // The Hide NSFW form sits beside the address line and hydrates cleanly.
+    const log = recordConsole(page);
+    await gotoHydrated(page, community(nsfw.handle));
+    expect(log.hydrationProblems()).toEqual([]);
     // A flagged post in that community opens; another flagged community and its post stay hidden.
     expect((await html(page, `/post/${seed.posts.inNsfw}`)).text).toContain(`${seed.secret} nsfw post`);
     expect((await html(page, community(nsfwOther.handle))).text).not.toContain(seed.secret);

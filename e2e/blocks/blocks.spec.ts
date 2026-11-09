@@ -105,6 +105,10 @@ test('a person is blocked by handle, listed with the date, and unblocked from th
   await page.getByRole('button', { name: 'Block', exact: true }).click();
   await expect(page).toHaveURL(/tab=people&just=/);
   await expect(page.getByRole('status')).toContainText(`Blocked @${seed.noisy.name}.`);
+  // The note with its Undo form, loaded as a document, hydrates cleanly.
+  const log = recordConsole(page);
+  await gotoHydrated(page, page.url());
+  expect(log.hydrationProblems()).toEqual([]);
   await expect(tab(page, 'People')).toContainText('1');
   const row = page.getByRole('list', { name: 'Blocked People' }).getByRole('listitem');
   await expect(row).toContainText(seed.noisy.name);

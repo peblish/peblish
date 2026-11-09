@@ -45,7 +45,8 @@ export function CommunityPage({ data, search, error }: { data: CommunityPageData
         {data.icon && <img className="cm-icon" src={data.icon} alt="" width={64} height={64} />}
         <div className="cm-title">
           <h1>{data.title}</h1>
-          <p className="cm-address">
+          {/* A div: it can hold the Hide NSFW form, which a <p> cannot contain. */}
+          <div className="cm-address">
             {data.address}
             {data.nsfl ? (
               <span className="cm-tag">{t('communities', 'page.nsfl')}</span>
@@ -54,7 +55,7 @@ export function CommunityPage({ data, search, error }: { data: CommunityPageData
             )}
             {data.restricted && <span className="cm-tag">{t('communities', 'page.restricted')}</span>}
             {(data.nsfw || data.nsfl) && data.viewer && <HideNsfwForm handle={data.handle} back={path} />}
-          </p>
+          </div>
           <p className="cm-stats">
             {data.stats.subscribers} · {data.stats.posts} · {data.stats.created}
           </p>
