@@ -1,0 +1,60 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "description": "Delayed upgrades (7 days) with a security fast track. Root reviews every update; nothing automerges.",
+  "extends": ["config:recommended", "helpers:pinGitHubActionDigests", "docker:pinDigests", ":pinAllExceptPeerDependencies"],
+  "minimumReleaseAge": "7 days",
+  "internalChecksFilter": "strict",
+  "schedule": ["before 6am on monday"],
+  "prConcurrentLimit": 5,
+  "automerge": false,
+  "lockFileMaintenance": { "enabled": true, "schedule": ["before 6am on the first day of the month"] },
+  "vulnerabilityAlerts": {
+    "enabled": true,
+    "minimumReleaseAge": null,
+    "schedule": ["at any time"],
+    "labels": ["security"],
+    "prPriority": 10
+  },
+  "osvVulnerabilityAlerts": true,
+  "packageRules": [
+    {
+      "description": "Fedify stays on its patch line; minor and major upgrades are rechecked by root at each wave start.",
+      "matchPackageNames": ["@fedify/**"],
+      "groupName": "Fedify",
+      "matchUpdateTypes": ["minor", "major"],
+      "enabled": false
+    },
+    { "matchPackageNames": ["@fedify/**"], "groupName": "Fedify" },
+    {
+      "description": "TanStack Start, its router, Vite and the Nitro rc move together (rechecked at each wave start).",
+      "matchPackageNames": ["@tanstack/**", "vite", "@vitejs/**", "nitro"],
+      "groupName": "TanStack Start toolchain"
+    },
+    { "matchPackageNames": ["drizzle-orm", "drizzle-kit"], "groupName": "Drizzle" },
+    { "matchPackageNames": ["react", "react-dom", "@types/react", "@types/react-dom"], "groupName": "React" },
+    { "matchPackageNames": ["better-auth", "@better-auth/**"], "groupName": "better-auth" },
+    {
+      "description": "Mux UI is vendored by the MUX lane (vendor/muxui); root swaps it by hand.",
+      "matchPackageNames": ["@muxui/react"],
+      "enabled": false
+    },
+    {
+      "description": "Node 24 (Mux engines >=24.19 <25).",
+      "matchDepNames": ["node"],
+      "allowedVersions": "<25"
+    },
+    { "matchPackageNames": ["@types/node"], "allowedVersions": "<25" },
+    { "matchDatasources": ["docker"], "matchPackageNames": ["postgres"], "allowedVersions": "<18" },
+    { "matchDatasources": ["npm"], "matchPackageNames": ["postgres"], "allowedVersions": "<4" },
+    {
+      "description": "TypeScript 7 (the native compiler) waits until dependency-cruiser and Drizzle tooling support it.",
+      "matchPackageNames": ["typescript"],
+      "allowedVersions": "<7"
+    },
+    {
+      "description": "Playwright is pinned to the release whose Chromium 145 shell the spikes used; root upgrades it deliberately.",
+      "matchPackageNames": ["@playwright/test"],
+      "enabled": false
+    }
+  ]
+}

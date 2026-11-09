@@ -1,0 +1,15 @@
+.git
+**/node_modules
+**/.output
+**/dist
+**/.tanstack
+**/*.gen.ts
+**/.DS_Store
+e2e/artifacts
+test-results
+playwright-report
+spikes
+lab
+plans
+.env
+.env.*

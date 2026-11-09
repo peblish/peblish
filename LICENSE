@@ -1,0 +1,13 @@
+peblish is licensed per package.
+
+- packages/core, packages/federation, packages/web: GNU Affero General Public
+  License version 3 only (AGPL-3.0-only). Full text in each package's LICENSE.
+- packages/schema, packages/ui: MIT. Full text in each package's LICENSE.
+- Everything else in this repository (tooling, CI, deployment files, scripts,
+  tests outside the packages): AGPL-3.0-only, the text in packages/core/LICENSE.
+
+Third-party code keeps its own licence. vendor/ holds packed third-party
+packages under their own licences (see vendor/muxui/README.md).
+
+Contributions are accepted under the Developer Certificate of Origin (DCO):
+every commit carries a "Signed-off-by:" line (git commit -s). See DCO.

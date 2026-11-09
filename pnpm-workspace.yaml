@@ -1,0 +1,9 @@
+# spikes/ and lab/ stay outside the workspace. tools/* are private workspace packages
+# (tools/README.md).
+packages:
+  - packages/*
+  - tools/*
+
+# pnpm 10 runs no dependency build scripts unless listed here.
+onlyBuiltDependencies:
+  - esbuild

@@ -1,0 +1,100 @@
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+# A newer push to a branch cancels its superseded run; runs on main always finish.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  check:
+    name: check, e2e, bundle report
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:17.11@sha256:ff87138949ad9a46f32ff23bd6852b52ce024a13dffe9b4087be98292cdd3b4f
+        env:
+          POSTGRES_USER: peblish
+          POSTGRES_PASSWORD: peblish
+          POSTGRES_DB: peblish
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U peblish -d peblish"
+          --health-interval 2s
+          --health-retries 30
+    env:
+      # Tests recreate the _test database from the migrations; DATABASE_URL is the fresh
+      # database the service starts with, migrated below.
+      TEST_DATABASE_URL: postgres://peblish:peblish@127.0.0.1:5432/peblish_ci_test
+      DATABASE_URL: postgres://peblish:peblish@127.0.0.1:5432/peblish
+      PUBLIC_ORIGIN: https://ci.peblish.test
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: pnpm check (build, typecheck, lint with boundaries, tests on Postgres 17)
+        run: pnpm check
+      - name: No drift between the tables and the migrations
+        run: pnpm db:drift
+      - name: Migrations apply to a fresh database
+        run: pnpm db:migrate
+      - name: Install Chromium for Playwright
+        run: pnpm exec playwright install --with-deps chromium
+      - name: Playwright (hydration marker in en-US and de-DE, axe)
+        run: pnpm e2e
+      - name: Bundle size report (report only)
+        run: node scripts/bundle-report.ts >> "$GITHUB_STEP_SUMMARY"
+      - if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: e2e-artifacts
+          path: e2e/artifacts
+          retention-days: 7
+
+  image:
+    name: image migrates, runs the worker and serves web
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:17.11@sha256:ff87138949ad9a46f32ff23bd6852b52ce024a13dffe9b4087be98292cdd3b4f
+        env:
+          POSTGRES_USER: peblish
+          POSTGRES_PASSWORD: peblish
+          POSTGRES_DB: peblish
+        options: >-
+          --health-cmd "pg_isready -U peblish -d peblish"
+          --health-interval 2s
+          --health-retries 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: docker build -t peblish:ci .
+      - name: migrate, worker start and SIGTERM, web /healthz and /readyz as non-root
+        run: sh scripts/image-smoke.sh peblish:ci "${{ job.services.postgres.network }}" postgres://peblish:peblish@postgres:5432/peblish
+
+  dco:
+    name: DCO sign-off
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - run: sh scripts/check-dco.sh "${{ github.event.pull_request.base.sha }}" "${{ github.event.pull_request.head.sha }}"

@@ -1,0 +1,16 @@
+{
+  "name": "@peblish/schema",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "exports": {
+    "./*": "./src/*.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "arktype": "2.2.9"
+  }
+}

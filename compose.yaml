@@ -1,0 +1,42 @@
+# Local development services. One Postgres serves every lane: each lane gets its own
+# database (peblish_<lane>) through scripts/lane.sh. Ports avoid the spike range
+# 18100-18299 and the lane app ports 18300-18399.
+name: peblish-dev
+
+services:
+  postgres:
+    image: postgres:17.11@sha256:ff87138949ad9a46f32ff23bd6852b52ce024a13dffe9b4087be98292cdd3b4f
+    # Five lanes at a time each run web, worker and tests, two pools of up to 10 each.
+    command: ['postgres', '-c', 'max_connections=300']
+    environment:
+      POSTGRES_USER: peblish
+      POSTGRES_PASSWORD: peblish
+      POSTGRES_DB: peblish
+    ports: ['127.0.0.1:18432:5432']
+    volumes:
+      - postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD', 'pg_isready', '-U', 'peblish', '-d', 'peblish']
+      interval: 2s
+      retries: 30
+
+  # S3-compatible object store standing in for Cloudflare R2. MinIO no longer publishes
+  # images; pgsty/minio is a maintained rebuild of the upstream releases.
+  minio:
+    image: pgsty/minio:RELEASE.2026-08-04T00-00-00Z
+    command: ['server', '/data', '--console-address', ':9001']
+    environment:
+      MINIO_ROOT_USER: peblish
+      MINIO_ROOT_PASSWORD: peblish-dev-secret
+    ports: ['127.0.0.1:18490:9000', '127.0.0.1:18491:9001']
+    volumes:
+      - minio:/data
+
+  # Dev mailbox: SMTP on 18425, web UI on 18426.
+  mailpit:
+    image: axllent/mailpit:v1.31.4
+    ports: ['127.0.0.1:18425:1025', '127.0.0.1:18426:8025']
+
+volumes:
+  postgres:
+  minio:

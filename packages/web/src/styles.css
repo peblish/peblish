@@ -1,0 +1,16 @@
+@import '@peblish/ui/styles.css';
+
+@layer app {
+  .shell {
+    display: grid;
+    gap: 16px;
+    max-width: 960px;
+    margin: 0 auto;
+    padding: 24px 16px 96px;
+  }
+
+  .shell h1 {
+    margin: 0;
+    font-size: 24px;
+  }
+}
