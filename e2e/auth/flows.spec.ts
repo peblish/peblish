@@ -64,10 +64,8 @@ test('the admin signs in with a TOTP code and creates an invite', async ({ page 
   await expect(tabs.getByRole('link')).toHaveText(['Settings', 'Pages', 'Reports', 'Bans', 'Peers', 'Media', 'Registration and invites']);
   await expect(tabs.getByRole('link', { name: 'Registration and invites' })).toHaveAttribute('aria-current', 'page');
   await expect(page.getByRole('navigation', { name: 'You' }).getByRole('link')).toHaveText(['Inbox', 'Moderation queue']);
-  await expect(page.locator('.pb-account .pb-menu__panel').getByRole('link', { name: 'Admin', exact: true })).toHaveAttribute(
-    'href',
-    '/admin/settings',
-  );
+  // The account menu is a closed <details>, so its links are matched by address, not by role.
+  await expect(page.locator('.pb-account a[href="/admin/settings"]')).toHaveText('Admin');
   await page.getByLabel('Label').fill(`e2e ${person.name}`);
   await page.getByLabel('Max uses').fill('2');
   await page.getByRole('button', { name: 'Create' }).click();
