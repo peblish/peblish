@@ -99,10 +99,32 @@ function withoutFragment(id: string): string {
   return url.href;
 }
 
+/** Whether a fetched document is a Tombstone (`type` may be a list). */
+function isTombstone(json: unknown): json is { id?: unknown } {
+  if (typeof json !== 'object' || json === null || Array.isArray(json)) return false;
+  const { type } = json as { type?: unknown };
+  return type === 'Tombstone' || (Array.isArray(type) && type.includes('Tombstone'));
+}
+
 async function fetchAndStore(apId: string, fetch: Fetcher): Promise<string> {
   const { json, url } = await fetchActivity(apId, fetch).catch((error: unknown) => {
     throw error instanceof FetchFailure ? failure(error) : error;
   });
+  // Some servers answer a deleted account with a 200 Tombstone instead of a 410. It counts as a
+  // 410 only when it names the address we asked for, or the one it was served from after a
+  // redirect, and everything stays on the origin of the actor asked for: a Tombstone about
+  // something else is some other document, and another origin cannot delete this actor.
+  if (isTombstone(json)) {
+    const named = typeof json.id === 'string' && URL.canParse(json.id) ? withoutFragment(json.id) : null;
+    const origin = new URL(apId).origin;
+    const bound =
+      named !== null &&
+      (named === withoutFragment(apId) || named === withoutFragment(url)) &&
+      new URL(named).origin === origin &&
+      new URL(url).origin === origin;
+    if (!bound) throw new ActorResolveError('invalid', `${url} serves a Tombstone that does not name ${apId}`);
+    throw new ActorResolveError('gone', `${url} serves a Tombstone for ${apId}`);
+  }
   let record;
   try {
     record = actorFromWire(json);

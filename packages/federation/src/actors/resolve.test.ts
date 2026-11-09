@@ -2,6 +2,7 @@ import { eq } from 'drizzle-orm';
 import { beforeEach, describe, expect, test } from 'vitest';
 import { db } from '@peblish/core/db/read';
 import { actorKeys, actors } from '@peblish/core/db/tables/actors';
+import { deletionLedger } from '@peblish/core/db/tables/site';
 import { instances } from '@peblish/core/db/tables/instances';
 import { storeRemoteActor } from '@peblish/core/remote/actors';
 import { truncateAll } from '@peblish/core/testing/db';
@@ -242,6 +243,69 @@ describe('resolving an actor', () => {
     });
     const [row] = await db().select({ deletedAt: actors.deletedAt, raw: actors.raw }).from(actors).where(eq(actors.id, held.id));
     expect(row?.deletedAt).not.toBeNull();
+  });
+
+  describe('a 200 Tombstone is a 410 when it names the actor asked for', () => {
+    const tombstone = (id: string, extra = {}) => ({
+      '@context': 'https://www.w3.org/ns/activitystreams',
+      type: 'Tombstone',
+      id,
+      ...extra,
+    });
+    const deletedAt = async (id: string) =>
+      (await db().select({ deletedAt: actors.deletedAt }).from(actors).where(eq(actors.id, id)))[0]?.deletedAt;
+    const ledgerCause = async () => {
+      const [row] = await db()
+        .select({ details: deletionLedger.details })
+        .from(deletionLedger)
+        .where(eq(deletionLedger.subjectKind, 'actor'));
+      return (row?.details as { cause?: string } | undefined)?.cause;
+    };
+
+    test('a held actor is deleted with cause Tombstone, on an ordinary refresh', async () => {
+      const held = await resolveRemoteActor(lab.id, { fetch: peer().fetch });
+      const { fetch } = stubFetch({ [lab.id]: { body: tombstone(lab.id, { formerType: 'Group' }) } });
+      expect(await resolveRemoteActor(lab.id, { fetch, refresh: true }).catch((caught: unknown) => caught)).toMatchObject({
+        reason: 'gone',
+      });
+      expect(await deletedAt(held.id)).not.toBeNull();
+      expect(await ledgerCause()).toBe('Tombstone');
+    });
+
+    test('a Tombstone for an actor we never held is refused and stores nothing', async () => {
+      const { fetch } = stubFetch({ [lab.id]: { body: tombstone(lab.id) } });
+      expect(await resolveRemoteActor(lab.id, { fetch }).catch((caught: unknown) => caught)).toMatchObject({ reason: 'gone' });
+      expect(await db().select().from(actors).where(eq(actors.apId, lab.id))).toHaveLength(0);
+    });
+
+    test('a Tombstone about another id, or served from another origin, deletes nothing', async () => {
+      const held = await resolveRemoteActor(lab.id, { fetch: peer().fetch });
+      for (const id of ['https://lemmy.test/c/other', 'https://evil.test/c/lab']) {
+        const { fetch } = stubFetch({ [lab.id]: { body: tombstone(id) } });
+        expect(await resolveRemoteActor(lab.id, { fetch, refresh: true }).catch((caught: unknown) => caught)).toMatchObject({
+          reason: 'invalid',
+        });
+      }
+      // A redirect to another origin that serves a Tombstone naming its own address.
+      const { fetch: plain } = stubFetch({ [lab.id]: { body: tombstone('https://evil.test/c/lab') } });
+      const crossed: typeof plain = async (url, init) => ({ ...(await plain(url, init)), url: 'https://evil.test/c/lab' });
+      expect(await resolveRemoteActor(lab.id, { fetch: crossed, refresh: true }).catch((caught: unknown) => caught)).toMatchObject({
+        reason: 'invalid',
+      });
+      expect(await deletedAt(held.id)).toBeNull();
+    });
+
+    test('a Tombstone naming the address a redirect ended at, on the same origin, counts', async () => {
+      const old = actorDocument('lemmy.test', 'old', { kind: 'Group', publicKeyPem });
+      const held = await resolveRemoteActor(old.id, { fetch: peer({ [old.id]: { body: old } }).fetch });
+      const moved = 'https://lemmy.test/c/new';
+      const { fetch: plain } = stubFetch({ [old.id]: { body: tombstone(moved) } });
+      const redirected: typeof plain = async (url, init) => ({ ...(await plain(url, init)), url: moved });
+      expect(await resolveRemoteActor(old.id, { fetch: redirected, refresh: true }).catch((caught: unknown) => caught)).toMatchObject({
+        reason: 'gone',
+      });
+      expect(await deletedAt(held.id)).not.toBeNull();
+    });
   });
 
   test('an id on this server is never fetched, and one we hold is returned as stored', async () => {

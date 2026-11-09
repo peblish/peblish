@@ -75,6 +75,24 @@ describe('verifying an inbox POST', () => {
     expect(rotated.requests.filter((request) => request.url === sender.id)).toHaveLength(1);
   });
 
+  test('a key refresh answered by a Tombstone for the actor deletes our copy and verifies nothing', async () => {
+    const old = rsaKeys();
+    const first = stubFetch({ [sender.id]: { body: document(old.publicKeyPem) } });
+    const held = await resolveRemoteActor(sender.id, { fetch: first.fetch });
+    await writer()
+      .update(actors)
+      .set({ fetchedAt: new Date(Date.now() - 5 * 60_000) })
+      .where(eq(actors.id, held.id));
+
+    const gone = stubFetch({ [sender.id]: { body: { type: 'Tombstone', id: sender.id } } });
+    expect(await verifyInboundSignature(await signed(rsaKeys().privateKeyPem), bytes(), { fetch: gone.fetch })).toEqual({
+      ok: false,
+      reason: 'invalid',
+    });
+    const [row] = await db().select({ deletedAt: actors.deletedAt }).from(actors).where(eq(actors.id, held.id));
+    expect(row?.deletedAt).not.toBeNull();
+  });
+
   test('a key the actor drops from its document stops verifying once the actor is refreshed', async () => {
     const keys = rsaKeys();
     const first = stubFetch({ [sender.id]: { body: document(keys.publicKeyPem) } });
