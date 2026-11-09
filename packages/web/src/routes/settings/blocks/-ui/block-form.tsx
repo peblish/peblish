@@ -47,8 +47,10 @@ export function BlockForm({
       if (answer instanceof type.errors) return fail('generic');
       if (answer.error) return fail(answer.error);
       setError(undefined);
-      if (answer.redirect) await router.navigate({ href: answer.redirect });
-      await router.invalidate();
+      // One load, not two: a new address when the server names one, else the same page's data again.
+      const here = window.location.pathname + window.location.search;
+      if (answer.redirect && answer.redirect.split('#')[0] !== here) await router.navigate({ href: answer.redirect });
+      else await router.invalidate();
     } catch {
       fail('network');
     } finally {

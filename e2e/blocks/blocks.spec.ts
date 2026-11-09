@@ -47,6 +47,31 @@ async function sameSession(browser: Browser, page: Page, options: { javaScriptEn
 
 const tab = (page: Page, name: string) =>
   page.getByRole('navigation', { name: 'Kinds of block' }).getByRole('link', { name: new RegExp(`^${name}`) });
+/**
+ * Walks All by New page by page and reports which of `titles` it saw. The lane database is shared
+ * with the other specs, so a seeded post is not always on the first page: the walk goes on until
+ * every title in `present` has been seen, then one page more (a post older than those would be on
+ * it), at most 12 pages.
+ */
+async function walkAll(page: Page, { present, absent = [] }: { present: string[]; absent?: string[] }) {
+  const watched = [...present, ...absent];
+  const seen = new Set<string>();
+  let href: string | null = '/all?sort=new';
+  let more = 1;
+  for (let pages = 0; href && pages < 12; pages += 1) {
+    await page.goto(href);
+    const html = await page.content();
+    for (const title of watched) if (html.includes(title)) seen.add(title);
+    href = await page
+      .locator('a[rel="next"]')
+      .first()
+      .getAttribute('href', { timeout: 1_000 })
+      .catch(() => null);
+    if (present.every((title) => seen.has(title)) && (more -= 1) < 0) break;
+  }
+  return seen;
+}
+
 const hostOfInstance = () => new URL(process.env.PUBLIC_ORIGIN ?? 'https://e1.peblish.test').host;
 
 test('signed out, the page sends you to sign in', async ({ page }) => {
@@ -97,8 +122,12 @@ test('a person is blocked by handle, listed with the date, and unblocked from th
     await expect(page.getByRole('status')).toBeVisible();
   }
   await expect(page.getByRole('list', { name: 'Blocked People' }).getByRole('listitem')).toHaveCount(1);
-  await page.getByRole('button', { name: `Unblock @${seed.noisy.name}` }).click();
-  await expect(page.getByText('You have not blocked anyone.')).toBeVisible();
+  // The page reloads its data after each add; a click that lands in the swap is repeated.
+  const unblock = page.getByRole('button', { name: `Unblock @${seed.noisy.name}` });
+  await expect(async () => {
+    if (await unblock.count()) await unblock.click();
+    await expect(page.getByText('You have not blocked anyone.')).toBeVisible({ timeout: 1_500 });
+  }).toPass();
 });
 
 test('without JavaScript the same forms block and unblock', async ({ page, browser }) => {
@@ -147,16 +176,15 @@ test('every refusal has its message', async ({ page }) => {
 
 test('a blocked person leaves /all and is collapsed in a thread, for the blocker only', async ({ page, browser }) => {
   await signedIn(page, seed.viewers[4]!);
-  await gotoHydrated(page, '/all?sort=new');
-  await expect(page.getByText(seed.posts.noisy)).toBeVisible();
+  expect(await walkAll(page, { present: [seed.posts.noisy, seed.posts.friendTitle] })).toEqual(
+    new Set([seed.posts.noisy, seed.posts.friendTitle]),
+  );
   await gotoHydrated(page, '/settings/blocks');
   await page.getByLabel('Block a person by handle').fill(`@${seed.noisy.name}`);
   await page.getByRole('button', { name: 'Block', exact: true }).click();
   await expect(page.getByRole('status')).toBeVisible();
 
-  await gotoHydrated(page, '/all?sort=new');
-  await expect(page.getByText(seed.posts.friendTitle)).toBeVisible();
-  await expect(page.getByText(seed.posts.noisy)).toHaveCount(0);
+  expect(await walkAll(page, { present: [seed.posts.friendTitle], absent: [seed.posts.noisy] })).toEqual(new Set([seed.posts.friendTitle]));
 
   await gotoHydrated(page, `/post/${seed.posts.friend}`);
   const thread = page.getByRole('list', { name: 'Comments' }).first();
@@ -170,22 +198,23 @@ test('a blocked person leaves /all and is collapsed in a thread, for the blocker
   const other = await browser.newPage();
   await other.goto(`/post/${seed.posts.friend}`);
   await expect(other.getByRole('list', { name: 'Comments' }).first()).toContainText(seed.comments.noisy);
-  await other.goto('/all?sort=new');
-  await expect(other.getByText(seed.posts.noisy)).toBeVisible();
+  expect(await walkAll(other, { present: [seed.posts.noisy, seed.posts.friendTitle] })).toEqual(
+    new Set([seed.posts.noisy, seed.posts.friendTitle]),
+  );
   await other.close();
 });
 
 test('an instance block hides what lives there', async ({ page }) => {
   await signedIn(page, seed.viewers[5]!);
-  await gotoHydrated(page, '/all?sort=new');
-  await expect(page.getByText(seed.posts.remote)).toBeVisible();
+  expect(await walkAll(page, { present: [seed.posts.remote] })).toEqual(new Set([seed.posts.remote]));
   await gotoHydrated(page, '/settings/blocks?tab=instances');
   await page.getByLabel('Block an instance by host').fill(`https://${seed.remoteHost}/`);
   await page.getByRole('button', { name: 'Block', exact: true }).click();
   const row = page.getByRole('list', { name: 'Blocked Instances' }).getByRole('listitem');
   await expect(row).toContainText(seed.remoteHost);
   await expect(row).toContainText('hides 2 people, 1 community');
-  await gotoHydrated(page, '/all?sort=new');
-  await expect(page.getByText(seed.posts.remote)).toHaveCount(0);
-  await expect(page.getByText(seed.posts.friendTitle)).toBeVisible();
+  // The remote post is newer than the friend's, so the page with the friend's post would show it.
+  expect(await walkAll(page, { present: [seed.posts.friendTitle], absent: [seed.posts.remote] })).toEqual(
+    new Set([seed.posts.friendTitle]),
+  );
 });
