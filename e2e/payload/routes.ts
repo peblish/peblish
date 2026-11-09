@@ -69,6 +69,8 @@ export const routes: readonly PayloadRoute[] = [
   { route: '/local/', path: '/local' },
   { route: '/popular/', path: '/popular' },
   { route: '/moderating/', path: '/moderating' },
+  { route: '/communities/', path: '/communities' },
+  { route: '/resolve/', path: '/resolve' },
   { route: '/auth/sign-in', path: '/auth/sign-in' },
   { route: '/auth/sign-up', path: '/auth/sign-up' },
   {
@@ -131,6 +133,7 @@ export const notPages: Readonly<Record<string, string>> = {
   '/healthz': 'a probe answering plain text',
   '/readyz': 'a probe answering plain text',
   '/auth/sign-out': 'a form post that answers with a redirect',
+  '/communities/follow': 'the POST endpoint of Join and Leave; a GET answers 404',
   '/post/$id/comments/': 'the POST endpoint of the comment forms; a GET redirects to the post page',
   '/media/proxy/$signature/$target': 'an image endpoint, not a page',
   '/modlog/act': 'the POST endpoint of the moderator forms; it answers with a redirect or JSON',
