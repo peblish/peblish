@@ -14,7 +14,8 @@ function connect(readOnly: boolean) {
       application_name: readOnly ? 'peblish-read' : 'peblish-write',
       default_transaction_read_only: readOnly,
       // Reads are short statements; a misestimated feed plan once spent 166 of 301 ms on JIT. A string, because postgres.js drops a falsy startup value.
-      ...(readOnly && { jit: 'off' }),
+      // Custom plans only: postgres.js prepares every statement, and a cached generic plan cannot see the page's clock, the Top period or the viewer's follows.
+      ...(readOnly && { jit: 'off', plan_cache_mode: 'force_custom_plan' }),
     },
   });
   return { client, db: drizzle({ client }) };
