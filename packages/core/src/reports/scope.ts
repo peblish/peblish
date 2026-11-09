@@ -5,7 +5,8 @@ import { db, type Queryable } from '../db/read.ts';
 import { communityModerators, reports } from '../db/tables/moderation.ts';
 
 // Who sees which report rows (lane REP). A moderator sees the moderators' groups of the
-// communities they moderate now, and their own escalations; an admin sees everything. The
+// communities they moderate now, and their own escalations in those communities; an admin sees
+// everything. The
 // queue and the badge count share these conditions, so the count is exactly the Open, Escalated
 // and Admins tabs' groups.
 
@@ -39,17 +40,20 @@ export function visibleRows(viewer: ReportViewer, tab: QueueTab, communityId: Uu
   if (!admin && tab === 'admins') return null;
   const inCommunity = communityId ? eq(reports.communityId, communityId) : undefined;
   const status = tab === 'resolved' || tab === 'dismissed' ? eq(reports.status, tab) : eq(reports.status, 'open');
-  const escalatedBy = eq(reports.escalatedBy, viewer.actorId);
   let shown: SQL | undefined;
   if (admin) {
     if (tab === 'open') shown = eq(reports.audience, 'moderators');
     else if (tab === 'escalated') shown = and(eq(reports.audience, 'admins'), isNotNull(reports.escalatedAt));
     else if (tab === 'admins') shown = and(eq(reports.audience, 'admins'), isNull(reports.escalatedAt));
   } else {
-    const mine = and(eq(reports.audience, 'moderators'), inArray(reports.communityId, moderatedBy(viewer, q)));
+    // Both branches need current moderation of the row's community: a former moderator keeps
+    // neither the community's groups nor the ones they escalated while they moderated it.
+    const moderated = inArray(reports.communityId, moderatedBy(viewer, q));
+    const mine = and(eq(reports.audience, 'moderators'), moderated);
+    const escalated = and(eq(reports.escalatedBy, viewer.actorId), moderated);
     if (tab === 'open') shown = mine;
-    else if (tab === 'escalated') shown = and(eq(reports.audience, 'admins'), escalatedBy);
-    else shown = sql`(${mine} or ${escalatedBy})`;
+    else if (tab === 'escalated') shown = and(eq(reports.audience, 'admins'), escalated);
+    else shown = sql`(${mine} or ${escalated})`;
   }
   return and(status, shown, inCommunity) ?? null;
 }

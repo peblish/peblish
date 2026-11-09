@@ -1,18 +1,19 @@
 import { sql } from 'drizzle-orm';
 import { beforeEach, describe, expect, test } from 'vitest';
-import { db } from '../db/read.ts';
+import { db, type Queryable } from '../db/read.ts';
 import { posts } from '../db/tables/content.ts';
+import { communityModerators, reports } from '../db/tables/moderation.ts';
 import { writer } from '../db/write.ts';
 import { truncateAll } from '../testing/db.ts';
-import { seedModerationWorld, seedPost } from '../testing/seed-az.ts';
+import { admin, seedComment, seedModerationWorld, seedModerator, seedPost } from '../testing/seed-az.ts';
 import { seedBudgetWorld } from '../testing/seed-rep.ts';
 import { localUser, seedActor } from '../testing/seed.ts';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import type { Principal } from '@peblish/schema/authz';
-import { createReportAs, routeReportsAs } from './actions.ts';
+import { createReportAs, resolveReportsAs, routeReportsAs } from './actions.ts';
 import type { ReportCategory } from './categories.ts';
 import { openReportCount } from './count.ts';
-import { readQueue, readQueueCommunities, type QueueGroup } from './read.ts';
+import { groupReportLimit, readQueue, readQueueCommunities, type QueueGroup } from './read.ts';
 import type { ReportTarget } from './types.ts';
 
 beforeEach(truncateAll);
@@ -42,6 +43,17 @@ async function world() {
   await file(localUser(people.user.id), person, 'spam');
   await file(localUser(people.admin.id), local, 'child_safety');
   return { ...base, local, remote, person, mod: viewer(people.moderator), boss: viewer(people.admin, 'admin') };
+}
+
+/** A second post, reported, escalated by the moderator and dismissed by the admin; returns the moderator's Dismissed tab. */
+async function escalateAndDismiss(w: Awaited<ReturnType<typeof world>>) {
+  const extra = await seedPost(w.instances.local, w.communities.local.live, w.people.author, { title: 'Second' });
+  const target: ReportTarget = { kind: 'post', id: extra.id };
+  await file(localUser(w.people.user.id), target);
+  await routeReportsAs(localUser(w.people.moderator.id), { target, audience: 'moderators' }, 'admins');
+  const done = await resolveReportsAs(admin(w.people.admin.id), { target, audience: 'admins' }, { resolution: 'dismissed' });
+  if (!done.ok) throw new Error(done.reason);
+  return queue(w.mod, 'dismissed');
 }
 
 describe('the queue', () => {
@@ -89,6 +101,28 @@ describe('the queue', () => {
     expect((await readQueueCommunities(w.mod)).map((community) => community.handle)).toEqual(['announcements', 'closed']);
   });
 
+  test('a former moderator no longer reads the groups they escalated, open or closed', async () => {
+    const w = await world();
+    const key = { target: w.local, audience: 'moderators' as const };
+    await routeReportsAs(localUser(w.people.moderator.id), key, 'admins');
+    const dismissed = await escalateAndDismiss(w);
+    // removed from announcements; still a moderator of closed, so the queue itself stays open to them
+    await writer()
+      .delete(communityModerators)
+      .where(
+        and(eq(communityModerators.communityId, w.communities.local.live.id), eq(communityModerators.moderatorId, w.people.moderator.id)),
+      );
+    expect(await queue(w.mod, 'escalated')).toEqual([]);
+    expect(await queue(w.mod, 'dismissed')).toEqual([]);
+    expect(dismissed).toHaveLength(1);
+    expect(dismissed[0]).toMatchObject({
+      escalatedBy: { id: w.people.moderator.id },
+      closed: { resolution: 'dismissed', by: { id: w.people.admin.id }, at: expect.stringMatching(/^\d{4}-\d\d-\d\dT/) },
+    });
+    // the admins still see both
+    expect((await queue(w.boss, 'escalated')).map((group) => group.target)).toEqual([w.local]);
+  });
+
   test('the quote is plain, short and withheld for sensitive, removed, deleted and admins-only content', async () => {
     const w = await world();
     const long = 'x'.repeat(300);
@@ -102,8 +136,87 @@ describe('the queue', () => {
     expect(subject(post.id)).toMatchObject({ kind: 'post', withheld: null, quote: `${'x'.repeat(119)}…` });
     expect(subject(flagged.id)).toMatchObject({ quote: null, withheld: 'sensitive' });
     expect(subject(gone.id)).toMatchObject({ quote: null, withheld: 'removed' });
+    // the community's flags count, and a comment under a removed post is withheld as removed
+    const nsfwCommunity = await seedActor(w.instances.local, 'Group', 'after_dark', { sensitive: true });
+    await seedModerator(nsfwCommunity, w.people.moderator);
+    const inNsfw = await seedPost(w.instances.local, nsfwCommunity, w.people.author, { title: 'Plain title' });
+    const underGone = await seedComment(w.instances.local, post, w.people.author, { bodyMd: 'Plain words' });
+    await file(localUser(w.people.user.id), { kind: 'post', id: inNsfw.id });
+    await file(localUser(w.people.user.id), { kind: 'comment', id: underGone.id });
+    await writer().update(posts).set({ removedAt: new Date() }).where(eq(posts.id, post.id));
+    const later = await queue(w.mod);
+    const after = (id: string) => later.find((group) => group.target.id === id)?.subject;
+    expect(after(inNsfw.id)).toMatchObject({ quote: null, withheld: 'sensitive' });
+    expect(after(underGone.id)).toMatchObject({ quote: null, withheld: 'removed', removed: false });
     const adminOnly = (await queue(w.boss, 'admins')).find((group) => group.target.id === w.local.id);
     expect(adminOnly?.subject).toMatchObject({ quote: null, withheld: 'admins' });
+  });
+});
+
+/**
+ * The read handle, with `between` run once the first query has its rows and before the next one
+ * starts: the queue's group list, then its reports.
+ */
+function pauseAfterFirstRead(between: () => Promise<unknown>): Queryable {
+  let first = true;
+  const read = db();
+  return new Proxy(read, {
+    get(target, property, receiver) {
+      const value: unknown = Reflect.get(target, property, receiver);
+      if (property !== 'select' || !first || typeof value !== 'function') return value;
+      first = false;
+      return (...args: Parameters<typeof read.select>) => {
+        const builder = read.select(...args);
+        const from = builder.from.bind(builder);
+        return Object.assign(builder, {
+          from: (...source: Parameters<typeof from>) => {
+            const query = from(...source);
+            const execute = query.execute.bind(query);
+            return Object.assign(query, {
+              execute: async (...rest: Parameters<typeof execute>) => {
+                const rows = await execute(...rest);
+                await between();
+                return rows;
+              },
+            });
+          },
+        });
+      };
+    },
+  });
+}
+
+describe('a bounded page', () => {
+  test('a group shows its total and only its newest reports', async () => {
+    const w = await world();
+    const crowd = await seedPost(w.instances.local, w.communities.local.live, w.people.author, { title: 'Crowded' });
+    const target: ReportTarget = { kind: 'post', id: crowd.id };
+    for (let i = 0; i < groupReportLimit + 5; i++) {
+      const reporter = await seedActor(w.instances.local, 'Person', `crowd_${i}`);
+      await file(localUser(reporter.id), target, i === 0 ? 'hate' : 'spam');
+    }
+    const all = await db().select().from(reports).where(eq(reports.targetPostId, crowd.id)).orderBy(reports.number);
+    const group = (await queue(w.mod)).find((item) => item.target.id === crowd.id);
+    expect(group).toMatchObject({
+      count: groupReportLimit + 5,
+      oldestAt: all[0]?.createdAt.toISOString(),
+      newestAt: all.at(-1)?.createdAt.toISOString(),
+    });
+    // the categories come from every report, the list from the newest
+    expect(group?.categories.sort()).toEqual(['hate', 'spam']);
+    expect(group?.reports.map((row) => row.number)).toEqual(all.slice(5).map((row) => row.number));
+  });
+});
+
+describe('a queue read racing a resolution', () => {
+  test('a group resolved between the two reads is left out, not a crash', async () => {
+    const w = await world();
+    const q = pauseAfterFirstRead(() =>
+      resolveReportsAs(admin(w.people.admin.id), { target: w.local, audience: 'moderators' }, { resolution: 'resolved' }),
+    );
+    const result = await readQueue(w.boss, { tab: 'open', sort: 'oldest' }, q);
+    if (!result.ok) throw new Error(result.reason);
+    expect(targets(result.groups)).toEqual([`moderators:post:${w.remote.id}`]);
   });
 });
 

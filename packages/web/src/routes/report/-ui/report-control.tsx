@@ -38,7 +38,7 @@ export function ReportControl({ target, back, label }: { target: Target; back: s
     try {
       const result = await loadReportForm({ data: { kind: target.kind, id: target.id } });
       if (!result.ok) return setLoaded({ reason: result.reason });
-      const { ok: _ok, ...form } = result;
+      const { ok: _ok, back: _back, ...form } = result;
       setLoaded({ form });
     } catch {
       window.location.assign(href);

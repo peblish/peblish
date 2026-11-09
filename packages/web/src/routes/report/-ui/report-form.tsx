@@ -4,6 +4,7 @@ import { type } from 'arktype';
 import { useState, type FormEvent } from 'react';
 import { useTranslate } from '../../../i18n/use-translate.ts';
 import { asReportError, errorKey, type ReportError } from './errors.ts';
+import { hostList } from './hosts.ts';
 
 const Answer = type({ 'redirect?': 'string', 'error?': 'string' });
 
@@ -30,10 +31,10 @@ export function ReportFormView({
   /** In the dialog, closes it; on the page the Cancel link goes back. */
   onCancel?: () => void;
 }) {
-  const { t } = useTranslate();
+  const { t, locale } = useTranslate();
   const [error, setError] = useState(initialError);
   const [busy, setBusy] = useState(false);
-  const canForward = form.host !== null && form.categories.some((option) => option.forwardable);
+  const canForward = form.hosts.length > 0 && form.categories.some((option) => option.forwardable);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -104,10 +105,10 @@ export function ReportFormView({
           {t('reports', 'form.details.hint')} {t('reports', 'form.details.limit')}
         </span>
       </div>
-      {canForward && form.host && (
+      {canForward && (
         <label className="rp-forward">
           <input type="checkbox" name="forward" value="yes" />
-          <span>{t('reports', 'form.forward', { host: form.host })}</span>
+          <span>{t('reports', 'form.forward', { hosts: hostList(locale, form.hosts) })}</span>
         </label>
       )}
       <div className="rp-routes" aria-live="polite">

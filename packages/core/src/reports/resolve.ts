@@ -18,10 +18,14 @@ export type ResolveInput = typeof ResolveInput.infer;
  * Closes every open report of a group in one statement: who, when, how and the note stay on
  * the rows (no modlog row of its own; a removal's modlog row is the removal's). The update
  * matches only rows still open, so two people resolving the same group cannot both succeed.
+ * The recheck reads the acting person, the community row (FOR NO KEY UPDATE) and the moderator
+ * row (FOR SHARE) inside the transaction, never from the moderator cache, so a demotion or a
+ * site ban that landed after authorize() refuses the write, and one in flight waits for it.
  */
 export const resolveReports = defineMutation({
   action: 'report.resolve',
   emits: ['report.resolved'],
+  recheck: true,
   async run(t, grant, raw: ResolveInput) {
     const input = ResolveInput.assert(raw);
     const { target, audience } = grant.subject;

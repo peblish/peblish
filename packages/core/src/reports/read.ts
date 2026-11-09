@@ -1,7 +1,8 @@
 import type { Uuid } from '@peblish/schema/ids';
 import { excerptLength } from '@peblish/schema/markdown';
 import type { ActorRef } from '@peblish/schema/views';
-import { and, count, desc, eq, inArray, max, min, sql } from 'drizzle-orm';
+import { and, count, desc, eq, inArray, isNotNull, lte, max, min, sql, type SQL } from 'drizzle-orm';
+import type { AnyPgColumn } from 'drizzle-orm/pg-core';
 import { freshModerator } from '../authz/roles.ts';
 import { db, type Queryable } from '../db/read.ts';
 import { actors } from '../db/tables/actors.ts';
@@ -10,18 +11,22 @@ import { instances } from '../db/tables/instances.ts';
 import { communityModerators, reports } from '../db/tables/moderation.ts';
 import type { Result } from '../identity/result.ts';
 import { renderMarkdown } from '../markdown/render.ts';
+import { communityRemovals } from '../moderation/tables.ts';
 import { sanitizeRemoteHtml } from '../markdown/sanitize.ts';
 import { adminOnly, reportCategories, type ReportAudience, type ReportCategory } from './categories.ts';
 import { moderatesAny, targetKey, visibleRows, type QueueTab, type ReportViewer } from './scope.ts';
 import type { ReportTarget } from './types.ts';
 
 // The queue's read model (lane REP): groups of reports, one per reported target and audience,
-// each with its reporters and a summary of the target. Only staff call it. The quote is plain
-// text cut to 120 characters and left out for sensitive, removed or deleted content and for
-// admins-only categories (the evidence viewer is lane SAFE's); the page blurs it until Show.
+// each with its totals, its newest reports and a summary of the target. Only staff call it.
+// The quote is plain text cut to 120 characters and left out for sensitive, removed or deleted
+// content (the post's and the community's flags and state included) and for admins-only
+// categories (the evidence viewer is lane SAFE's); the page blurs it until Show.
 
 export const quoteLength = 120;
 export const queuePageSize = 50;
+/** The newest reports a group shows; its count says how many there are in all. */
+export const groupReportLimit = 20;
 export type QueueSort = 'oldest' | 'newest' | 'most';
 
 export type ReportRow = {
@@ -83,6 +88,10 @@ const orderings = {
   most: [desc(count()), min(reports.createdAt)],
 } as const;
 
+/** A column of the group's lowest-numbered report for which `present` holds, or null. */
+const firstWhere = (column: AnyPgColumn, present: SQL) =>
+  sql`(array_agg(${column} order by ${reports.number}) filter (where ${present}))[1]`;
+
 const asCategory = (value: string): ReportCategory => (reportCategories.find((key) => key === value) ?? 'other') as ReportCategory;
 
 /** The groups under one tab, `queuePageSize` at a time. A person who moderates nothing and is no admin gets `mod.moderator_required`. */
@@ -99,6 +108,17 @@ export async function readQueue(viewer: ReportViewer, request: Request, q: Query
       post: sql<string | null>`min(${reports.targetPostId}::text)`,
       comment: sql<string | null>`min(${reports.targetCommentId}::text)`,
       actor: sql<string | null>`min(${reports.targetActorId}::text)`,
+      // The group's totals come from every report in it; the page loads only the newest few.
+      count: count(),
+      oldestAt: min(reports.createdAt),
+      newestAt: max(reports.createdAt),
+      categories: sql<string[]>`array_agg(distinct ${reports.category})`,
+      escalatedBy: firstWhere(reports.escalatedBy, isNotNull(reports.escalatedBy)).mapWith(reports.escalatedBy),
+      resolvedBy: firstWhere(reports.resolvedBy, isNotNull(reports.resolvedAt)).mapWith(reports.resolvedBy),
+      resolvedAt: firstWhere(reports.resolvedAt, isNotNull(reports.resolvedAt)).mapWith(reports.resolvedAt),
+      resolution: firstWhere(reports.resolution, isNotNull(reports.resolvedAt)).mapWith(reports.resolution),
+      resolutionNote: firstWhere(reports.resolutionNote, isNotNull(reports.resolvedAt)).mapWith(reports.resolutionNote),
+      modlogId: firstWhere(reports.modlogId, isNotNull(reports.resolvedAt)).mapWith(reports.modlogId),
     })
     .from(reports)
     .where(rows)
@@ -109,56 +129,71 @@ export async function readQueue(viewer: ReportViewer, request: Request, q: Query
   const page = heads.slice(0, queuePageSize);
   if (page.length === 0) return { ok: true, groups: [], next: null };
 
-  const details = await q
+  // At most groupReportLimit reports per group, the newest, so a page is bounded however many
+  // reports one target draws.
+  const ranked = q
     .select({
       id: reports.id,
       number: reports.number,
-      key: targetKey,
+      key: sql<string>`${targetKey}`.as('key'),
       audience: reports.audience,
       category: reports.category,
       reason: reports.reason,
       createdAt: reports.createdAt,
       reporterId: reports.reporterId,
       local: reports.local,
-      escalatedBy: reports.escalatedBy,
-      resolvedBy: reports.resolvedBy,
-      resolvedAt: reports.resolvedAt,
-      resolution: reports.resolution,
-      resolutionNote: reports.resolutionNote,
-      modlogId: reports.modlogId,
+      rank: sql<number>`row_number() over (partition by ${reports.audience}, ${targetKey} order by ${reports.number} desc)`.as('rank'),
     })
     .from(reports)
     .where(and(rows, inArray(targetKey, [...new Set(page.map((head) => head.key))])))
-    .orderBy(reports.number);
+    .as('ranked');
+  const details = await q
+    .select({
+      id: ranked.id,
+      number: ranked.number,
+      key: ranked.key,
+      audience: ranked.audience,
+      category: ranked.category,
+      reason: ranked.reason,
+      createdAt: ranked.createdAt,
+      reporterId: ranked.reporterId,
+      local: ranked.local,
+    })
+    .from(ranked)
+    .where(lte(ranked.rank, groupReportLimit))
+    .orderBy(ranked.number);
 
   const subjects = await readSubjects(q, page);
   const people = await readActors(q, [
-    ...new Set(details.flatMap((row) => [row.reporterId, row.escalatedBy, row.resolvedBy]).filter((id) => id !== null)),
+    ...new Set(
+      [...details.map((row) => row.reporterId), ...page.flatMap((head) => [head.escalatedBy, head.resolvedBy])].filter((id) => id !== null),
+    ),
   ]);
-  const groups = page.map((head): QueueGroup => {
+  // The reports are a second read: a group closed or moved in between has none left and is
+  // left out of this page rather than shown empty.
+  const groups = page.flatMap((head): QueueGroup[] => {
     const mine = details.filter((row) => row.key === head.key && row.audience === head.audience);
+    if (mine.length === 0 || !head.oldestAt || !head.newestAt) return [];
     const target: ReportTarget = head.post
       ? { kind: 'post', id: head.post }
       : head.comment
         ? { kind: 'comment', id: head.comment }
         : { kind: 'actor', id: head.actor ?? head.key };
-    const categories = [...new Set(mine.map((row) => asCategory(row.category)))];
+    const categories = head.categories.map(asCategory);
     const subject = subjects.get(head.key) ?? { kind: 'gone' as const, id: head.key };
-    const first = mine.find((row) => row.escalatedBy) ?? null;
-    const closed = mine.find((row) => row.resolvedAt);
-    return {
+    const group: QueueGroup = {
       key: `${head.audience}.${head.key}`,
       target,
       audience: head.audience,
-      escalatedBy: first?.escalatedBy ? (people.get(first.escalatedBy) ?? null) : null,
+      escalatedBy: head.escalatedBy ? (people.get(head.escalatedBy) ?? null) : null,
       subject:
         subject.kind !== 'actor' && subject.kind !== 'gone' && categories.some(adminOnly)
           ? { ...subject, quote: null, withheld: 'admins' }
           : subject,
       categories,
-      count: mine.length,
-      oldestAt: mine[0]!.createdAt.toISOString(),
-      newestAt: mine.at(-1)!.createdAt.toISOString(),
+      count: head.count,
+      oldestAt: head.oldestAt.toISOString(),
+      newestAt: head.newestAt.toISOString(),
       reports: mine.map((row) => ({
         id: row.id,
         number: row.number,
@@ -168,16 +203,17 @@ export async function readQueue(viewer: ReportViewer, request: Request, q: Query
         reporter: row.reporterId ? (people.get(row.reporterId) ?? null) : null,
         remote: !row.local,
       })),
-      closed: closed
+      closed: head.resolvedAt
         ? {
-            by: closed.resolvedBy ? (people.get(closed.resolvedBy) ?? null) : null,
-            at: closed.resolvedAt?.toISOString() ?? null,
-            resolution: closed.resolution,
-            note: closed.resolutionNote,
-            modlogId: closed.modlogId,
+            by: head.resolvedBy ? (people.get(head.resolvedBy) ?? null) : null,
+            at: head.resolvedAt.toISOString(),
+            resolution: head.resolution,
+            note: head.resolutionNote,
+            modlogId: head.modlogId,
           }
         : null,
     };
+    return [group];
   });
   return { ok: true, groups, next: heads.length > queuePageSize ? String(offset + queuePageSize) : null };
 }
@@ -254,22 +290,49 @@ async function readSubjects(q: Queryable, page: Head[]): Promise<Map<string, Que
             nsfl: posts.nsfl,
             removedAt: comments.removedAt,
             deletedAt: comments.deletedAt,
+            postRemovedAt: posts.removedAt,
+            postDeletedAt: posts.deletedAt,
           })
           .from(comments)
           .innerJoin(posts, eq(posts.id, comments.postId))
           .where(inArray(comments.id, commentIds)),
   ]);
-  const people = await readActors(q, [
-    ...new Set([...postRows, ...commentRows].flatMap((row) => [row.authorId, row.communityId]).concat(actorIds)),
+  const communityIds = [...new Set([...postRows, ...commentRows].map((row) => row.communityId))];
+  const [people, communityRows] = await Promise.all([
+    readActors(q, [...new Set([...postRows, ...commentRows].flatMap((row) => [row.authorId, row.communityId]).concat(actorIds))]),
+    communityIds.length === 0
+      ? []
+      : q
+          .select({
+            id: actors.id,
+            sensitive: actors.sensitive,
+            nsfl: actors.nsfl,
+            closed: sql<boolean>`${actors.deletedAt} is not null or exists (select 1 from ${communityRemovals} where ${communityRemovals.communityId} = ${actors.id})`,
+          })
+          .from(actors)
+          .where(inArray(actors.id, communityIds)),
   ]);
+  const communities = new Map(communityRows.map((row) => [row.id, row]));
   const subjects = new Map<string, QueueSubject>();
   const content = (kind: 'post' | 'comment', row: (typeof postRows)[number] | (typeof commentRows)[number]) => {
     const author = people.get(row.authorId);
     const community = people.get(row.communityId);
-    if (!author || !community) return;
+    const flags = communities.get(row.communityId);
+    if (!author || !community || !flags) return;
     const removed = row.removedAt !== null;
     const deleted = row.deletedAt !== null;
-    const withheld: Withheld = deleted ? 'deleted' : removed ? 'removed' : row.sensitive || row.nsfl ? 'sensitive' : null;
+    // The post page's gates, all applied, since the queue never asks who is looking: a comment
+    // under a removed or deleted post, a closed community, and the post's and the community's
+    // NSFW and NSFL flags withhold the quote.
+    const parent = 'postRemovedAt' in row ? row : null;
+    const withheld: Withheld =
+      deleted || parent?.postDeletedAt
+        ? 'deleted'
+        : removed || parent?.postRemovedAt || flags.closed
+          ? 'removed'
+          : row.sensitive || row.nsfl || flags.sensitive || flags.nsfl
+            ? 'sensitive'
+            : null;
     const text = kind === 'post' ? (row as (typeof postRows)[number]).title : plainText(row.bodyMd, row.contentHtml, row.apId);
     subjects.set(row.id, {
       kind,

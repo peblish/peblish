@@ -6,7 +6,8 @@ import { createFileRoute, notFound, redirect } from '@tanstack/react-router';
 import { type } from 'arktype';
 import { useTranslate } from '../../i18n/use-translate.ts';
 import { useRouteHydrated } from '../../shell/hydration.ts';
-import { clientIp, forbidden, formSession, privateResponses, principalOf, readForm, safeRedirect, sameOrigin } from '../../server/auth.ts';
+import { clientIp, forbidden, formSession, privateResponses, principalOf, readForm, sameOrigin } from '../../server/auth.ts';
+import { reportBack } from './-back.ts';
 import { answer, type Outcome } from './-form.ts';
 import { loadReportForm } from './-load.ts';
 import { asReportError, errorKey } from './-ui/errors.ts';
@@ -18,7 +19,8 @@ import reportCss from './-ui/report.css?url';
 // sign-in and back. A target that is gone or withheld is not found; your own content, a ban and
 // a report already open are said on the page. A plain POST answers 303 to the sent page, or back
 // here with ?error=<code>. Typed details are not put in the URL (reports can be sensitive and
-// URLs reach logs), so without JavaScript a refusal keeps the category only.
+// URLs reach logs), so without JavaScript a refusal keeps the category only. `back` reaches the
+// Cancel link only through reportBack on the server.
 
 const Search = type({
   'kind?': 'string',
@@ -52,12 +54,12 @@ export const Route = createFileRoute('/report/')({
     const target = type({ kind: "'post' | 'comment' | 'actor'", id: Uuid })({ kind: deps.kind, id: deps.id });
     if (target instanceof type.errors) throw notFound();
     const here = `/report?${new URLSearchParams({ kind: target.kind, id: target.id, ...(deps.back && { back: deps.back }) })}`;
-    const result = await loadReportForm({ data: target });
+    const { back, ...result } = await loadReportForm({ data: { ...target, ...(deps.back && { back: deps.back }) } });
     if (!result.ok && result.reason === 'auth.required') {
       throw redirect({ to: '/auth/sign-in', search: { redirect: here }, statusCode: 303 });
     }
     if (!result.ok && notFoundReasons.has(result.reason)) throw notFound();
-    return result.ok ? { form: result, refusal: null } : { form: null, refusal: result.reason };
+    return result.ok ? { form: result, refusal: null, back } : { form: null, refusal: result.reason, back };
   },
   head: () => ({ links: [{ rel: 'stylesheet', href: reportCss }] }),
   component: ReportPage,
@@ -71,7 +73,7 @@ export const Route = createFileRoute('/report/')({
         const form = Body(await readForm(request));
         const origin = new URL(request.url).origin;
         if (form instanceof type.errors) return answer(request, cookies, { error: 'form.invalid', back: '/' });
-        const back = safeRedirect(form.back, origin);
+        const back = reportBack(form.back, origin);
         const here = `/report?${new URLSearchParams({ kind: form.kind, id: form.id, back })}`;
         const fail = (error: Parameters<typeof asReportError>[0], keep?: Record<string, string | undefined>): Outcome => ({
           error: asReportError(error) ?? 'generic',
@@ -103,9 +105,8 @@ export const Route = createFileRoute('/report/')({
 function ReportPage() {
   const { t } = useTranslate();
   useRouteHydrated();
-  const { form, refusal } = Route.useLoaderData();
+  const { form, refusal, back } = Route.useLoaderData();
   const search = Route.useSearch();
-  const back = safeBack(search.back);
   const kind = form ? (form.target.kind === 'actor' ? form.about.kind : form.target.kind) : null;
   return (
     <main className="rp-page">
@@ -124,6 +125,3 @@ function ReportPage() {
     </main>
   );
 }
-
-/** The page the viewer came from, as a path on this site (the server checked it before; this only guards the markup). */
-const safeBack = (back: string | undefined) => (back && /^\/(?!\/)/.test(back) && !back.includes('\\') ? back : '/');
