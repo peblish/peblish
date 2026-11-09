@@ -14,7 +14,9 @@ import { flagDocument, isCategory } from './flag.ts';
 // as the reporter and queued for delivery directly. It is never stored in `activities`: that
 // table is served by id, and a Flag names its reporter and their reason. A report that stays
 // here (admins-only categories, a person or community, no remote recipient) never gets this far:
-// the policy refused `forward` for it.
+// the policy refused `forward` for it. Nor does one whose named hosts were all gone when it was
+// filed. A host not stored with the report never gets the Flag, whatever its peer state is now;
+// the delivery worker still skips a stored host that is blocked at send time.
 
 type Held = { apId: string; authorId: string; communityId: string };
 
@@ -35,14 +37,18 @@ async function heldContent(db: Queryable, target: ContentRef): Promise<Held | nu
 
 const inboxOf = (actor: ActorRef) => actor.sharedInboxUrl ?? actor.inboxUrl;
 
-/** The remote community's inbox and, when it is on another host, the remote author's. The report form names the same hosts (`forwardHosts` in core's reports/form.ts): keep the two in step. */
-function recipients(community: ActorRef, author: ActorRef): string[] {
+/**
+ * The remote community's inbox and, when it is on another host, the remote author's, kept to the
+ * hosts stored with the report when it was filed (`forwarded_hosts`, the ones the form named). The
+ * form names hosts the same way (`forwardHosts` in core's reports/forward.ts): keep the two in step.
+ */
+function recipients(community: ActorRef, author: ActorRef, allowed: readonly string[]): string[] {
   const inboxes: string[] = [];
   const communityInbox = community.local ? null : inboxOf(community);
   if (communityInbox) inboxes.push(communityInbox);
   const authorInbox = author.local ? null : inboxOf(author);
   if (authorInbox && (!communityInbox || new URL(authorInbox).host !== new URL(communityInbox).host)) inboxes.push(authorInbox);
-  return inboxes;
+  return inboxes.filter((inbox) => allowed.includes(new URL(inbox).host));
 }
 
 export const consumer = defineConsumer({
@@ -61,7 +67,7 @@ export const consumer = defineConsumer({
     const community = refs.get(content.communityId);
     // A reporter who deleted their account since cannot sign; the report stays on the instance.
     if (!reporter || reporter.deleted || !author || !community) return;
-    const inboxes = recipients(community, author);
+    const inboxes = recipients(community, author, report.forwardedHosts);
     if (inboxes.length === 0) return;
     const body = JSON.stringify(
       flagDocument({

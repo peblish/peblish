@@ -93,6 +93,12 @@ describe('report.create', () => {
     expect(await reason(asRemote(world.people.remoteUser.id), post(world, 'locked'), 'other', true, 'x')).toBe(
       'report.forward_unavailable',
     );
+    // no inbox to send to: the report stays here, with no Flag id
+    expect(await report(user, remote('normal'), 'spam', true)).toMatchObject({ ok: true, apId: null });
+    await writer()
+      .update(actors)
+      .set({ inboxUrl: sql`'https://' || split_part(${actors.apId}, '/', 3) || '/inbox'` })
+      .where(eq(actors.local, false));
     const sent = await report(user, remote('locked'), 'spam', true);
     expect(sent.ok && sent.apId).toMatch(/\/ap\/activity\//);
     const kept = await report(user, remote('pinned'), 'spam', false);

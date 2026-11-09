@@ -1,3 +1,4 @@
+import { eq } from 'drizzle-orm';
 import { beforeEach, describe, expect, test } from 'vitest';
 import { db } from '@peblish/core/db/read';
 import { activities } from '@peblish/core/db/tables/federation';
@@ -5,6 +6,7 @@ import { deliveries } from '@peblish/core/delivery/tables';
 import { writer } from '@peblish/core/db/write';
 import { peerControls } from '@peblish/core/peers/tables';
 import { createReportAs } from '@peblish/core/reports/actions';
+import { readReportForm, readSentReport } from '@peblish/core/reports/form';
 import type { ReportCategory } from '@peblish/core/reports/categories';
 import { truncateAll } from '@peblish/core/testing/db';
 import { localUser, seedActor, seedInstance } from '@peblish/core/testing/seed';
@@ -143,5 +145,40 @@ describe('who gets it', () => {
       ['https://lemmy.test/inbox', 'delivered'],
       ['https://other.test/inbox', 'skipped'],
     ]);
+  });
+
+  test('only the hosts the form named and the report stored get it, whatever the peer state is by delivery', async () => {
+    const w = await world();
+    const post = await seedPost(w.lemmy, w.lab, w.olga);
+    const alice = localUser(w.alice.id);
+    // The form is read while other.test is blocked, so it names lemmy.test alone ...
+    await writer().insert(peerControls).values({ instanceId: w.other.id, blocked: true });
+    const form = await readReportForm(alice, { kind: 'post', id: post.id });
+    if (!form.ok) throw new Error(form.reason);
+    expect(form.hosts).toEqual(['lemmy.test']);
+    // ... and other.test is unblocked before the reporter submits it, and before the consumer runs.
+    await writer().delete(peerControls).where(eq(peerControls.instanceId, w.other.id));
+    const made = await createReportAs(alice, {
+      target: { kind: 'post', id: post.id },
+      category: 'hate',
+      forward: true,
+      details: '',
+      hosts: form.hosts,
+    });
+    if (!made.ok) throw new Error(made.reason);
+    const event = (await outboxEvents()).at(-1) as OutboxEvent;
+    await tx((t) => consumer.handle(event, t));
+    expect((await queued()).map((row) => row.inboxUrl)).toEqual(['https://lemmy.test/inbox']);
+    expect(await readSentReport(w.alice.id, made.number)).toMatchObject({ forwardedTo: ['lemmy.test'] });
+
+    // Filed while the only host is blocked: it stays here, with no Flag, and the receipt says so.
+    const second = await seedPost(w.lemmy, w.lab, w.rex);
+    await writer().insert(peerControls).values({ instanceId: w.lemmy.id, blocked: true });
+    const kept = await forwarded(w, second, 'hate', true);
+    if (typeof kept === 'string' || !kept.ok) throw new Error(String(kept));
+    expect(kept.apId).toBeNull();
+    await writer().delete(peerControls).where(eq(peerControls.instanceId, w.lemmy.id));
+    expect(await readSentReport(w.alice.id, kept.number)).toMatchObject({ forwardedTo: [] });
+    expect(await queued()).toHaveLength(1);
   });
 });
