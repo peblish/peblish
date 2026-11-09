@@ -16,6 +16,7 @@ import { admin, outboxEvents, seedAdmin, seedPost } from '../testing/seed-az.ts'
 import { seedMedia, sha256Of } from '../testing/seed-safe.ts';
 import { seedActor, localUser } from '../testing/seed.ts';
 import { scanConfig } from './config.ts';
+import type { ScanProvider } from './provider.ts';
 import { addToBlocklist, removeFromBlocklist } from './list.ts';
 import { confirmQuarantined, holdQuarantined, releaseQuarantined } from './review.ts';
 import { findServable } from './serve.ts';
@@ -131,6 +132,31 @@ test('a second decision on the same image is refused', async () => {
       ok: false,
       reason: 'media.not_quarantined',
     });
+});
+
+test('confirming a block quarantines the clean copies of the same image, as adding its hash does', async () => {
+  const bytes = Buffer.from('one image, uploaded three times');
+  const earlier = await seedMedia(store, { state: 'clean', bytes, ownerId: uploaderId });
+  const deleted = await seedMedia(store, { state: 'clean', bytes, deleted: true });
+  const other = await seedMedia(store, { state: 'clean' });
+  const caught = await seedMedia(store, { bytes, ownerId: uploaderId });
+  const provider: ScanProvider = {
+    name: 'stub',
+    scan: async () => ({ result: 'match', classification: 'csam', matchType: 'exact', raw: {} }),
+  };
+  expect(await scanUpload(caught.id, { store, config: scanConfig({}), providers: [provider] })).toBe('quarantined');
+  expect(await findServable(earlier.id, { withBody: false, store })).not.toBeNull();
+
+  expect((await confirmQuarantined(asAdmin(), { mediaId: caught.id, removePosts: false }, { store })).ok).toBe(true);
+  expect(await Promise.all([earlier, deleted, other].map(async (m) => (await rowOf(m.id)).scanState))).toEqual([
+    'quarantined',
+    'clean',
+    'clean',
+  ]);
+  expect(await findServable(earlier.id, { withBody: false, store })).toBeNull();
+  const [entry] = await db().select().from(mediaBlocklist).where(eq(mediaBlocklist.value, caught.sha256!));
+  expect(await evidenceOf(earlier.id)).toMatchObject({ source: 'list', classification: 'csam', status: 'open' });
+  expect(((await evidenceOf(earlier.id)).manifest as { verdict: unknown }).verdict).toMatchObject({ source: 'list', entryId: entry!.id });
 });
 
 test('release returns a false positive to clean and it is served again', async () => {

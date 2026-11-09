@@ -10,12 +10,12 @@ import { blockMedia, retainUntil } from './block.ts';
 /**
  * Ends the undecided window of one quarantined image: when its evidence is still open, older than
  * `days` and under no hold in force, the image is blocked exactly as an admin's confirmation
- * blocks it (hash listed, ledger row, row deleted) with no admin named. Anything else is left as
- * it is. The bytes are purged by the purge job.
+ * blocks it (hash listed, clean copies quarantined, ledger row, row deleted) with no admin
+ * named. Anything else is left as it is. The bytes are purged by the purge job.
  */
 export const expireUndecided = defineMutation({
   action: 'media.scan',
-  emits: ['media.scanned'],
+  emits: ['media.scanned', 'media.quarantined'],
   recheck: true,
   async run(t, grant, input: { now: Date; days: number }) {
     const { mediaId } = grant.subject;
@@ -25,7 +25,7 @@ export const expireUndecided = defineMutation({
     const cutoff = new Date(input.now.getTime() - input.days * 86_400_000);
     if (!evidence || evidence.status !== 'open' || evidence.createdAt > cutoff || (evidence.holdUntil && evidence.holdUntil > input.now))
       return { expired: false };
-    await blockMedia(t.db, { action: 'media.scan', mediaId, sha256: row.sha256, from: 'quarantined', evidence, by: null, now: input.now });
+    await blockMedia(t, { action: 'media.scan', mediaId, sha256: row.sha256, from: 'quarantined', evidence, by: null, now: input.now });
     await t.db
       .update(mediaEvidence)
       .set({

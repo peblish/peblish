@@ -9,10 +9,12 @@ import { mediaEvidence } from '../evidence/tables.ts';
 import { refusedAsResult, type Result } from '../identity/result.ts';
 import { removeContent } from '../moderation/remove.ts';
 import { writeModlog } from '../modlog/write.ts';
+import type { WriteTx } from '../db/write.ts';
 import type { ObjectStore } from '../storage/store.ts';
 import { defineMutation } from '../tx/mutation.ts';
 import { Refused } from '../tx/refused.ts';
 import { blockMedia, retainUntil } from './block.ts';
+import { lockHash } from './hash-lock.ts';
 import { purgeBytes } from './purge.ts';
 import { assertMove } from './state.ts';
 import { livePostsUsing } from './usage.ts';
@@ -21,17 +23,17 @@ import { livePostsUsing } from './usage.ts';
 // facts (the manifest), never the image: no UI route renders or links it.
 
 /** Locks the media row and its evidence and checks both are still undecided (or, for a hold, not released). */
-async function lockedEvidence(t: { db: Parameters<typeof blockMedia>[0] }, action: string, mediaId: Uuid) {
+async function lockedEvidence(t: { db: WriteTx }, action: string, mediaId: Uuid) {
   const [row] = await t.db.select().from(media).where(eq(media.id, mediaId)).for('no key update');
   if (!row) throw new Refused(action, 'target.not_found');
   const [evidence] = await t.db.select().from(mediaEvidence).where(eq(mediaEvidence.mediaId, mediaId)).for('no key update');
   return { row, evidence };
 }
 
-/** Admin confirms the match: the image is blocked, its hash listed, the purge recorded. */
+/** Admin confirms the match: the image is blocked, its hash listed (clean copies are quarantined), the purge recorded. */
 export const confirmMatch = defineMutation({
   action: 'media.review',
-  emits: ['media.reviewed'],
+  emits: ['media.reviewed', 'media.quarantined'],
   recheck: true,
   async run(t, grant, input: { note?: string | null; now: Date }) {
     const { mediaId } = grant.subject;
@@ -39,7 +41,7 @@ export const confirmMatch = defineMutation({
     assertMove('media.review', row.scanState, 'blocked', 'media.not_quarantined');
     if (!evidence) throw new Refused('media.review', 'media.not_quarantined');
     if (evidence.status !== 'open') throw new Refused('media.review', 'media.already_decided');
-    await blockMedia(t.db, {
+    await blockMedia(t, {
       action: 'media.review',
       mediaId,
       sha256: row.sha256,
@@ -76,6 +78,9 @@ export const releaseMatch = defineMutation({
     assertMove('media.review', row.scanState, 'clean', 'media.not_quarantined');
     if (!evidence) throw new Refused('media.review', 'media.not_quarantined');
     if (evidence.status !== 'open') throw new Refused('media.review', 'media.already_decided');
+    // A confirmation of a copy quarantines the clean copies under the hash lock; a release takes it
+    // too, so it lands wholly before that sweep (and is swept) or after it.
+    if (row.sha256) await lockHash(t.db, row.sha256);
     await t.db.update(media).set({ scanState: 'clean', scannedAt: input.now }).where(eq(media.id, mediaId));
     await t.db
       .update(mediaEvidence)
