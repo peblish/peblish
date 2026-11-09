@@ -4,6 +4,7 @@ import { createServerFn } from '@tanstack/react-start';
 import { type } from 'arktype';
 import { pageSession } from '../../server/auth.ts';
 import { createMarkdownRenderer, siteMarkdown } from '../../server/markdown.ts';
+import { loadThread } from './$id/comments/-thread.ts';
 
 /**
  * The post page's data, for the route loader (a server function: it runs on the server for a
@@ -44,6 +45,7 @@ export const loadPost = createServerFn({ method: 'GET' })
       moderator: page.moderator,
       /** False while the gate withholds the post (signed out, or no 16+ declaration): the thread must not be sent either. */
       threadVisible: page.gate === 'none' || page.gate === 'blur',
+      thread: await loadThread({ page, session, renderer }),
       /** The signed-in person, or null: who may see the author's and moderators' actions. */
       viewerId: session?.view.actorId ?? null,
       thumbnail: media(view.thumbnailUrl),

@@ -7,6 +7,7 @@ import { useRouteHydrated } from '../../../shell/hydration.ts';
 import { useVoteLabels } from '../../../shell/labels.ts';
 import { castVoteFn } from '../-vote.ts';
 import type { PostPageData } from '../-load.ts';
+import { ThreadSection } from '../$id/comments/-ui/thread-section.tsx';
 import { ActionForm } from './action-form.tsx';
 import { asPostError, errorKey } from './errors.ts';
 
@@ -182,10 +183,12 @@ export function PostPage({ data, error }: { data: PostPageData; error?: string |
           </div>
         </div>
       </article>
-      {/* Lane D mounts the thread here: one import, one render line (the thread component for
-          this post), one loader call in -load.ts, only when data.threadVisible (a gated post's
-          comments are gated with it). The div keeps the #comments anchor. */}
-      <div id="comments" className="post-thread" data-slot="thread" />
+      {/* Lane D's thread: sent and mounted only while data.threadVisible (the gate shows the post and no moderator removed it). The div keeps the #comments anchor. */}
+      {data.threadVisible && data.thread ? (
+        <ThreadSection data={data.thread} />
+      ) : (
+        <div id="comments" className="post-thread" data-slot="thread" />
+      )}
     </main>
   );
 }
