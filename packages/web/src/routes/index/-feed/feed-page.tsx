@@ -94,7 +94,7 @@ export function FeedPage({ path, data, search: address }: { path: string; data: 
                 }}
                 voteDisabled={!data.signedIn || post.deleted}
                 now={new Date(data.now)}
-                {...{ thumbnailSrc }}
+                thumbnailSrc={thumbnailSrc}
               />
             </li>
           ))}
