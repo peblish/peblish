@@ -55,6 +55,7 @@ const updateProfileRow = defineMutation({
 export const updateProfile = defineMutation({
   action: 'profile.update',
   emits: ['actor.updated'],
+  recheck: 'inner',
   async run(t, grant, input: ProfilePatch) {
     await t.db.select({ id: actors.id }).from(actors).where(eq(actors.id, grant.actorId)).for('no key update');
     return updateProfileRow.within(t, grant, input);

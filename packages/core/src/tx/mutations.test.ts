@@ -2,7 +2,11 @@ import { globSync } from 'node:fs';
 import { join } from 'node:path';
 import { eventTypes } from '@peblish/schema/events';
 import { expect, test } from 'vitest';
+import { authorize } from '../authz/authorize.ts';
 import { policies } from '../registry/policies.gen.ts';
+import { truncateAll } from '../testing/db.ts';
+import { localUser, seedActor } from '../testing/seed.ts';
+import { seedLocalInstance } from '../testing/seed-fed-a.ts';
 import { defineMutation, mutationInfo, requiresRecheck } from './mutation.ts';
 
 // Mutation registry: every mutation exported anywhere in core names a registered authz
@@ -40,4 +44,22 @@ test('a revocable mutation without recheck throws at definition, even unexported
   const wrapped = () => defineMutation({ action: 'post.create', emits: ['post.created'], run: async () => null });
   expect(wrapped).toThrow(/must set recheck: true/);
   expect(() => defineMutation({ action: 'vote.cast', emits: ['vote.cast'], run: async () => null })).not.toThrow();
+});
+
+test("recheck: 'inner' passes when its body runs the rechecked mutation, and throws when it does not", async () => {
+  await truncateAll();
+  const { instance } = await seedLocalInstance();
+  const sam = await seedActor(instance, 'Person', 'sam');
+  const decision = await authorize('age.declare', localUser(sam.id), { age: 30 });
+  if (!decision.ok) throw new Error(decision.reason);
+  const declare = defineMutation({ action: 'age.declare', emits: ['age.declared'], recheck: true, run: async () => 'rechecked' });
+  const locksThenRechecks = defineMutation({
+    action: 'age.declare',
+    emits: ['age.declared'],
+    recheck: 'inner',
+    run: (t, grant) => declare.within(t, grant, undefined),
+  });
+  const skips = defineMutation({ action: 'age.declare', emits: ['age.declared'], recheck: 'inner', run: async () => 'skipped' });
+  await expect(locksThenRechecks(decision.grant, undefined)).resolves.toBe('rechecked');
+  await expect(skips(decision.grant, undefined)).rejects.toThrow(/ran no rechecked age.declare mutation/);
 });

@@ -120,6 +120,7 @@ const addBlockRow = defineMutation({
 export const addBlock = defineMutation({
   action: 'block.add',
   emits: ['block.added', 'follow.removed'],
+  recheck: 'inner',
   async run(t, grant, input: void) {
     await t.db.select({ id: actors.id }).from(actors).where(eq(actors.id, grant.actorId)).for('no key update');
     return addBlockRow.within(t, grant, input);
