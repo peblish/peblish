@@ -271,6 +271,9 @@
     .pb-side {
       position: fixed;
       inset: 0 auto 0 0;
+      /* The desktop rule's align-self: start would size the drawer to its content, taller than
+         the screen with many communities and not scrollable; stretch pins it to the top and bottom. */
+      align-self: stretch;
       z-index: 80;
       display: none;
       width: min(86vw, 300px);

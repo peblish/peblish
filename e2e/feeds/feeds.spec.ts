@@ -37,6 +37,9 @@ async function signedIn(page: Page, name: string) {
 
 /** The card titles on the page, in order. */
 const titles = (page: Page) => page.locator('.feed-list .pb-post__title a').allTextContents();
+/** The posts' addresses: titles repeat across runs on a lane database, so a page-overlap check compares these. */
+const postLinks = (page: Page) =>
+  page.locator('.feed-list .pb-post__title a').evaluateAll((links) => links.map((link) => link.getAttribute('href')));
 
 /** The server-rendered HTML of `path` for this page's session, before any script runs. */
 async function html(page: Page, path: string) {
@@ -199,13 +202,13 @@ test.describe('without JavaScript', () => {
 
   test('the sort and the next page are plain links', async ({ page }) => {
     await page.goto('/all?sort=new');
-    const first = await titles(page);
+    const first = await postLinks(page);
     expect(first).toHaveLength(20);
     await page.getByRole('link', { name: 'Next page' }).click();
     await expect(page).toHaveURL(/cursor=/);
-    const second = await titles(page);
+    const second = await postLinks(page);
     expect(second).toHaveLength(20);
-    expect(second.filter((title) => first.includes(title))).toEqual([]);
+    expect(second.filter((link) => first.includes(link))).toEqual([]);
     await page.getByRole('group', { name: 'Sort' }).getByRole('link', { name: 'Top' }).click();
     await expect(page).toHaveURL(/sort=top/);
     expect((await titles(page))[0]).toBe(`Picture ${seed.suffix}`);

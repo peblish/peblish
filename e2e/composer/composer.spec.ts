@@ -164,7 +164,7 @@ test('editing: the author changes the post, and Preview already carries the publ
   await expect(page.getByText(`Editing a post in !${world.communities.open.handle}`)).toBeVisible();
   // The type and the community are fixed.
   await expect(page.getByRole('radio', { name: 'Link' })).toHaveCount(0);
-  await expect(page.getByRole('searchbox')).toHaveCount(0);
+  await expect(page.getByRole('searchbox', { name: 'Search communities' })).toHaveCount(0);
   await page.getByLabel('Title').fill('After the edit');
   await body(page).fill('Second[^1] version.\n\n[^1]: Another note.');
   await page.getByRole('button', { name: 'Preview' }).click();
