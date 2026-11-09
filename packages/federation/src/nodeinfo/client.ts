@@ -19,7 +19,29 @@ const Document = type({ software: { name: 'string', 'version?': 'string' } });
 export const nodeInfoMaxAgeMs = 24 * 60 * 60 * 1000;
 export const nodeInfoRetryMs = 10 * 60 * 1000;
 
-/** The newest NodeInfo document `origin` links, with the software it names (name lowercased). */
+/** The longest software name and version kept; a peer chooses both, and both are stored and compared. */
+export const softwareFieldMax = 64;
+
+/**
+ * What a peer's NodeInfo software fields become before they are stored. The name is NodeInfo's
+ * own pattern, lowercase letters, digits and hyphens, so anything else is dropped; a name with
+ * nothing left is no software. The version keeps printable ASCII only. Both are cut at
+ * `softwareFieldMax`.
+ */
+export function cleanSoftware(name: string, version: string | undefined): { software: string; version: string | null } {
+  const software = name
+    .toLowerCase()
+    .replace(/[^a-z0-9-]/g, '')
+    .slice(0, softwareFieldMax);
+  if (!software) throw new TypeError('NodeInfo names no usable software');
+  const cleaned = (version ?? '')
+    .replace(/[^\x20-\x7e]/g, '')
+    .trim()
+    .slice(0, softwareFieldMax);
+  return { software, version: cleaned || null };
+}
+
+/** The newest NodeInfo document `origin` links, with the software it names (cleaned, see cleanSoftware). */
 export async function fetchNodeInfo(origin: string, fetch: Fetcher): Promise<{ software: string; version: string | null }> {
   const discovery = Discovery((await fetchJson(`${origin}/.well-known/nodeinfo`, fetch, 'application/json')).json);
   if (discovery instanceof type.errors) throw new TypeError(`${origin} has no NodeInfo links`);
@@ -34,7 +56,7 @@ export async function fetchNodeInfo(origin: string, fetch: Fetcher): Promise<{ s
   if (!newest) throw new TypeError(`${origin} links no NodeInfo 2.x document`);
   const document = Document((await fetchJson(newest.href, fetch, 'application/json')).json);
   if (document instanceof type.errors) throw new TypeError(`${newest.href} names no software`);
-  return { software: document.software.name.toLowerCase(), version: document.software.version ?? null };
+  return cleanSoftware(document.software.name, document.software.version);
 }
 
 // Failed checks, per origin, so an unreachable or NodeInfo-less peer is asked once in a while,

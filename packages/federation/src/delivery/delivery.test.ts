@@ -97,7 +97,7 @@ describe('delivering', () => {
     expect(await deliverDue({ fetch, ...quiet })).toEqual({ delivered: 0, retried: 0, failed: 0, skipped: 0 });
   });
 
-  test.each([400, 403, 404, 405, 410, 413, 422, 418, 301, 302, 307])('a %i stops the delivery for good', async (status) => {
+  test.each([400, 401, 403, 404, 405, 410, 413, 418, 422, 425, 301, 302, 307])('a %i stops the delivery for good', async (status) => {
     const w = await world();
     await w.send();
     const { fetch, requests } = stubFetch({
@@ -119,7 +119,7 @@ describe('delivering', () => {
     expect((await w.rows())[0]).toMatchObject({ state: 'failed', lastError: 'redirect to https://127.0.0.1/inbox not followed' });
   });
 
-  test.each([401, 408, 425, 429, 500, 502, 503, 504])('a %i is tried again later', async (status) => {
+  test.each([408, 429, 500, 502, 503, 504])('a %i is tried again later', async (status) => {
     const w = await world();
     await w.send();
     const { fetch } = stubFetch({ [inbox]: { status } });
@@ -236,6 +236,78 @@ describe('leases and workers', () => {
     expect(requests.map((request) => request.url).sort()).toEqual([...inboxes].sort());
   });
 
+  /** Runs a worker that stops at `pauseAt` until released; the row's lease is then expired and another worker takes over. */
+  async function takeover(pauseAt: 'before the send' | 'during the send') {
+    const w = await world();
+    await w.send();
+    let release!: () => void;
+    const paused = new Promise<void>((resolve) => (release = resolve));
+    let reached!: () => void;
+    const stalled = new Promise<void>((resolve) => (reached = resolve));
+    const slow = stubFetch({ [inbox]: { status: 503 } });
+    const first = deliverDue({
+      fetch: async (url, init) => {
+        reached();
+        await paused;
+        return slow.fetch(url, init);
+      },
+      refreshSoftware: async () => {
+        if (pauseAt === 'before the send') {
+          reached();
+          await paused;
+        }
+      },
+    });
+    await stalled;
+    expect((await w.rows())[0]).toMatchObject({ attempts: 1, state: 'pending' });
+    // The first worker is past its lease; a second one claims the row and delivers it.
+    await writer()
+      .update(deliveries)
+      .set({ leaseUntil: new Date(Date.now() - 1000) });
+    const second = stubFetch({ [inbox]: { status: 202 } });
+    expect(await deliverDue({ fetch: second.fetch, ...quiet })).toMatchObject({ delivered: 1 });
+    release();
+    return { w, first: await first, slow, second };
+  }
+
+  test('a worker that wakes up after its lease ran out cannot put a delivered row back to pending', async () => {
+    const { w, first, slow, second } = await takeover('during the send');
+    // It had already sent (a duplicate the receiver dedupes), but its 503 is not recorded.
+    expect(slow.requests).toHaveLength(1);
+    expect(second.requests).toHaveLength(1);
+    expect(first).toEqual({ delivered: 0, retried: 0, failed: 0, skipped: 0 });
+    expect((await w.rows())[0]).toMatchObject({ state: 'delivered', attempts: 2, lastStatus: 202, lastError: null });
+  });
+
+  test('a worker that wakes up before its send finds the row taken over and sends nothing', async () => {
+    const { w, first, slow, second } = await takeover('before the send');
+    expect(slow.requests).toHaveLength(0);
+    expect(second.requests).toHaveLength(1);
+    expect(first).toEqual({ delivered: 0, retried: 0, failed: 0, skipped: 0 });
+    expect((await w.rows())[0]).toMatchObject({ state: 'delivered', attempts: 2 });
+  });
+
+  test('a worker renews its lease just before it sends', async () => {
+    const w = await world();
+    await w.send();
+    const answer = stubFetch({ [inbox]: { status: 202 } });
+    let leaseAtSend: Date | null = null;
+    const counts = await deliverDue({
+      fetch: async (url, init) => {
+        leaseAtSend = (await w.rows())[0]!.leaseUntil;
+        return answer.fetch(url, init);
+      },
+      // The lease is nearly out by the time the NodeInfo check is done.
+      refreshSoftware: async () => {
+        await writer()
+          .update(deliveries)
+          .set({ leaseUntil: new Date(Date.now() + 100) });
+      },
+    });
+    expect(counts).toMatchObject({ delivered: 1 });
+    expect(leaseAtSend!.getTime()).toBeGreaterThan(Date.now() + 30_000);
+  });
+
   test('a stopped worker claims nothing', async () => {
     const w = await world();
     await w.send();
@@ -265,8 +337,9 @@ describe('the retry policy', () => {
     expect(parseRetryAfter(null)).toBeNull();
   });
 
-  test('a day-one-cap style refusal (a 4xx) is final, not retried', () => {
-    expect(verdict(1, { status: 400, retryAfterMs: null })).toEqual({ state: 'failed' });
-    expect(verdict(1, { status: 429, retryAfterMs: null })).toMatchObject({ state: 'pending' });
+  test('every 4xx is final except 408 and 429, which retry', () => {
+    const final = Array.from({ length: 100 }, (_, index) => 400 + index).filter((status) => status !== 408 && status !== 429);
+    for (const status of final) expect(verdict(1, { status, retryAfterMs: null }), `${status}`).toEqual({ state: 'failed' });
+    for (const status of [408, 429]) expect(verdict(1, { status, retryAfterMs: null }), `${status}`).toMatchObject({ state: 'pending' });
   });
 });

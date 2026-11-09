@@ -107,10 +107,14 @@ export const removeFollow = defineMutation({
   action: 'follow.remove',
   emits: ['follow.removed'],
   async run(t, grant, _input: void) {
-    const { followerId, followeeId } = grant.subject;
+    const { followerId, followeeId, apId } = grant.subject;
+    // The Follow id the policy matched is part of the delete: an old Reject or Undo must not
+    // delete the newer Follow that a retry put in its place.
     const [row] = await t.db
       .delete(follows)
-      .where(and(eq(follows.followerId, followerId), eq(follows.followeeId, followeeId)))
+      .where(
+        and(eq(follows.followerId, followerId), eq(follows.followeeId, followeeId), apId === null ? undefined : eq(follows.apId, apId)),
+      )
       .returning({ id: follows.id, apId: follows.apId });
     if (!row) return { removed: false };
     const flags = await localFlags(t.db, followerId, followeeId);
@@ -137,6 +141,8 @@ export const removeFollow = defineMutation({
 export const receiveFollow = defineMutation({
   action: 'follow.receive',
   emits: ['follow.accepted'],
+  // A ban, or a community removed, can land after authorize().
+  recheck: true,
   async run(t, grant, _input: void) {
     const followerId = grant.actorId;
     const followeeId = grant.subject.communityId;

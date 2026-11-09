@@ -7,9 +7,6 @@
 /** Resend an unanswered Follow this long after it was first sent: 5 minutes, and again at 15. */
 export const followRetryOffsetsMs = [5 * 60_000, 15 * 60_000] as const;
 
-/** The longest a Follow can still be due, with a margin, so the job only looks at recent rows. */
-export const followRetryWindowMs = followRetryOffsetsMs[followRetryOffsetsMs.length - 1]! + 10 * 60_000;
-
 /**
  * Whether a pending Follow is due for another send at `now`: some offset has passed since the
  * first send (createdAt) that the last send (sentAt) came before. After the 5-minute resend,

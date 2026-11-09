@@ -1,10 +1,13 @@
+import { freshModerator } from '@peblish/core/authz/roles';
 import type { Queryable } from '@peblish/core/db/read';
 import { actors } from '@peblish/core/db/tables/actors';
 import { posts } from '@peblish/core/db/tables/content';
 import { activities } from '@peblish/core/db/tables/federation';
 import { follows } from '@peblish/core/db/tables/follows';
 import { communityModerators } from '@peblish/core/db/tables/moderation';
+import { communityRemovals } from '@peblish/core/moderation/tables';
 import { and, count, desc, eq, isNull, sql } from 'drizzle-orm';
+import { create, page } from '../delivery/activities.ts';
 import { loadCommentByApId, loadPost, loadPostByApId, localActorRecord, mentionTags, withTags } from '../delivery/records.ts';
 import { toWire } from '../mapping/document.ts';
 import type { Json, JsonObject } from '../mapping/json.ts';
@@ -89,24 +92,54 @@ function tombstone(id: string, formerType: string, deleted: Date | null): Served
   };
 }
 
+/** The activity types that carry a post or comment; a Delete or an Undo only names it, so it outlives it. */
+const contentActivities: ReadonlySet<string> = new Set(['Create', 'Update', 'Announce']);
+
+/** The id of the Page or Note an activity carries, through Announce(Create(Page)) and the like; null when it carries none. */
+function carriedContentId(activity: JsonObject): string | null {
+  let node: Json | undefined = activity.object;
+  while (typeof node === 'object' && node !== null && !Array.isArray(node)) {
+    if ((node.type === 'Page' || node.type === 'Note') && typeof node.id === 'string') return node.id;
+    node = node.object;
+  }
+  return null;
+}
+
+/** Whether the local post or comment `apId` can still be served; true when it is not one of ours to judge. */
+async function contentServable(db: Queryable, origin: string, apId: string): Promise<{ servable: boolean; deleted: Date | null }> {
+  const post = await loadPostByApId(db, origin, apId);
+  if (post) return { servable: post.servable, deleted: post.deletedAt };
+  const comment = await loadCommentByApId(db, origin, apId);
+  if (comment) return { servable: comment.servable, deleted: comment.deletedAt };
+  return { servable: true, deleted: null };
+}
+
 async function objectDocument(db: Queryable, origin: string, kind: 'post' | 'comment' | 'activity', apId: string): Promise<Served | null> {
   if (kind === 'activity') {
     const [row] = await db
-      .select({ raw: activities.raw })
+      .select({ type: activities.type, raw: activities.raw })
       .from(activities)
       .where(and(eq(activities.apId, apId), eq(activities.local, true)));
-    return row ? { status: 200, json: row.raw as JsonObject } : null;
+    if (!row) return null;
+    const stored = row.raw as JsonObject;
+    // What a Create, Update or Announce carried is gone: so is the activity, as far as peers can fetch it.
+    const carried = contentActivities.has(row.type) ? carriedContentId(stored) : null;
+    if (carried) {
+      const content = await contentServable(db, origin, carried);
+      if (!content.servable) return tombstone(apId, row.type, content.deleted);
+    }
+    return { status: 200, json: stored };
   }
   if (kind === 'post') {
     const loaded = await loadPostByApId(db, origin, apId);
     if (!loaded) return null;
-    if (!loaded.live) return tombstone(apId, 'Page', loaded.deletedAt);
+    if (!loaded.servable) return tombstone(apId, 'Page', loaded.deletedAt);
     const tags = await mentionTags(db, origin, loaded.bodyMd);
     return { status: 200, json: withTags(toWire({ kind: 'post', post: loaded.record }), tags) };
   }
   const loaded = await loadCommentByApId(db, origin, apId);
   if (!loaded) return null;
-  if (!loaded.live) return tombstone(apId, 'Note', loaded.deletedAt);
+  if (!loaded.servable) return tombstone(apId, 'Note', loaded.deletedAt);
   const tags = await mentionTags(db, origin, loaded.bodyMd);
   return { status: 200, json: withTags(toWire({ kind: 'comment', comment: loaded.record }), tags) };
 }
@@ -139,14 +172,14 @@ async function collectionDocument(db: Queryable, origin: string, actor: ActorRow
           .select({ apId: actors.apId })
           .from(communityModerators)
           .innerJoin(actors, eq(actors.id, communityModerators.moderatorId))
-          .where(and(eq(communityModerators.communityId, actor.id), isNull(actors.deletedAt)))
+          .where(and(eq(communityModerators.communityId, actor.id), isNull(actors.deletedAt), freshModerator))
           .orderBy(desc(communityModerators.role), communityModerators.createdAt);
         return toWire({ kind: 'moderators', moderators: { apId: url, moderatorApIds: rows.map((row) => row.apId) } });
       }
       case 'featured':
         return { type: 'OrderedCollection', id: url, orderedItems: await pinnedPages(db, origin, actor) };
       default:
-        return outboxCollection(db, actor, url);
+        return outboxCollection(db, origin, actor, url);
     }
   })();
   // toWire gives the moderators collection its @context; the rest get it here.
@@ -172,20 +205,28 @@ async function pinnedPages(db: Queryable, origin: string, community: ActorRow): 
   const pages: Json[] = [];
   for (const { id } of rows) {
     const loaded = await loadPost(db, origin, id);
-    if (!loaded) continue;
-    const { '@context': _context, ...page } = toWire({ kind: 'post', post: loaded.record });
-    pages.push(withTags(page, await mentionTags(db, origin, loaded.bodyMd)));
+    if (!loaded?.servable) continue;
+    const { '@context': _context, ...wire } = toWire({ kind: 'post', post: loaded.record });
+    pages.push(withTags(wire, await mentionTags(db, origin, loaded.bodyMd)));
   }
   return pages;
 }
 
 /**
- * A community's outbox: the Create activities we stored for its live local posts, newest
- * first (Lemmy's lists Create(Page) too). A Person's or the instance actor's is empty; their
+ * A community's outbox: a Create activity for each of its live local posts, newest first (Lemmy's
+ * lists Create(Page) too), each rebuilt from the post as it is now under the id and author of
+ * the Create we stored, so an edit shows and nothing deleted or removed lingers. Empty for a
+ * community that is deleted or removed. A Person's or the instance actor's is empty; their
  * posts are read in their communities.
  */
-async function outboxCollection(db: Queryable, actor: ActorRow, url: string): Promise<JsonObject> {
-  if (actor.kind !== 'Group') return { type: 'OrderedCollection', id: url, totalItems: 0, orderedItems: [] };
+async function outboxCollection(db: Queryable, origin: string, actor: ActorRow, url: string): Promise<JsonObject> {
+  const empty: JsonObject = { type: 'OrderedCollection', id: url, totalItems: 0, orderedItems: [] };
+  if (actor.kind !== 'Group' || actor.deletedAt) return empty;
+  const [removal] = await db
+    .select({ communityId: communityRemovals.communityId })
+    .from(communityRemovals)
+    .where(eq(communityRemovals.communityId, actor.id));
+  if (removal) return empty;
   const live = and(
     eq(activities.type, 'Create'),
     eq(activities.local, true),
@@ -195,15 +236,19 @@ async function outboxCollection(db: Queryable, actor: ActorRow, url: string): Pr
   );
   const [row] = await db.select({ total: count() }).from(activities).innerJoin(posts, eq(posts.apId, activities.objectApId)).where(live);
   const rows = await db
-    .select({ raw: activities.raw })
+    .select({ id: activities.apId, actorApId: activities.actorApId, postId: posts.id })
     .from(activities)
     .innerJoin(posts, eq(posts.apId, activities.objectApId))
     .where(live)
     .orderBy(desc(activities.createdAt))
     .limit(outboxLimit);
-  const items = rows.map(({ raw }) => {
-    const { '@context': _context, ...activity } = raw as JsonObject;
-    return activity;
-  });
+  const items: Json[] = [];
+  for (const { id, actorApId, postId } of rows) {
+    const loaded = await loadPost(db, origin, postId);
+    if (!loaded?.servable) continue;
+    const activity = create({ id, actorApId, communityApId: loaded.community.apId }, page(loaded.record));
+    const { '@context': _context, ...wire } = toWire({ kind: 'activity', activity });
+    items.push(withTags(wire, await mentionTags(db, origin, loaded.bodyMd)));
+  }
   return { type: 'OrderedCollection', id: url, totalItems: row?.total ?? 0, orderedItems: items };
 }
