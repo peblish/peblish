@@ -29,7 +29,8 @@ export const loadBans = createServerFn({ method: 'GET' })
     const bans = await listSiteBans();
     const handle = data.person?.trim();
     if (!handle) return { access: 'ok', bans, candidate: null };
-    const person = await findActorByHandle(handle, 'Person');
+    // A site ban takes a bot (a Service) as well as a person.
+    const person = await findActorByHandle(handle, ['Person', 'Service']);
     if (!person) return { access: 'ok', bans, candidate: { missing: handle } };
     return {
       access: 'ok',

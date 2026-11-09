@@ -45,6 +45,8 @@ async function e2e() {
     { id: spammer.actorId },
     { title: `Spam post ${suffix}`, bodyMd: 'Spam', contentHtml: '<p>Spam</p>' },
   );
+  // A local bot (a Service actor, no account): a site ban takes it as a person.
+  const bot = await seedActor(local, 'Service', `bot_${suffix}`);
   const peerDomain = `lemmy-${suffix}.test`;
   const peer = await seedInstance(peerDomain, false);
   const remote = await seedActor(peer, 'Person', `rem_${suffix}`);
@@ -62,6 +64,7 @@ async function e2e() {
     author: { name: author.name },
     spammer: { name: spammer.name, actorId: spammer.actorId },
     bystander: { name: bystander.name },
+    bot: { name: bot.name },
     posts: { author: post.id, spam: spamPost.id, remote: remotePost.id },
     comments: { spam: comment.id },
     peer: { domain: peerDomain, person: `rem_${suffix}@${peerDomain}` },

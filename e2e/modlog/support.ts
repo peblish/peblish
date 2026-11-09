@@ -5,7 +5,7 @@ import { freshTotp, landed, signIn } from '../auth/support.ts';
 import { gotoHydrated } from '../support/route-marker.ts';
 
 // Lane MODF's end-to-end world (packages/core/src/testing/seed-modf.ts): a community with a
-// moderator, an author, a spammer who posted and commented, a bystander and a peer's person.
+// moderator, an author, a spammer who posted and commented, a bystander, a local bot and a peer's person.
 
 export type World = {
   password: string;
@@ -16,6 +16,7 @@ export type World = {
   author: { name: string };
   spammer: { name: string; actorId: string };
   bystander: { name: string };
+  bot: { name: string };
   posts: { author: string; spam: string; remote: string };
   comments: { spam: string };
   peer: { domain: string; person: string };

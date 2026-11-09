@@ -50,9 +50,15 @@ export async function moderatedCommunities(viewerId: Uuid, q: Queryable = readDb
 /**
  * The actor of a kind a handle names: `name` for a local actor, `name@host` for a remote one we
  * hold (a leading @ or ! is ignored; a local one may also be written `name@<this host>`). Null
- * when we hold none, or the actor is deleted.
+ * when we hold none, or the actor is deleted. A list of kinds finds any of them (a site ban takes
+ * a Person or a Service).
  */
-export async function findActorByHandle(handle: string, kind: 'Person' | 'Group', q: Queryable = readDb()): Promise<ActorRef | null> {
+export async function findActorByHandle(
+  handle: string,
+  kind: 'Person' | 'Group' | readonly ('Person' | 'Service')[],
+  q: Queryable = readDb(),
+): Promise<ActorRef | null> {
+  const kinds = typeof kind === 'string' ? [kind] : kind;
   const [name, host, extra] = handle.trim().replace(/^[@!]/, '').split('@');
   if (!name || extra !== undefined) return null;
   const { origin } = await localInstance(q);
@@ -63,12 +69,15 @@ export async function findActorByHandle(handle: string, kind: 'Person' | 'Group'
     .innerJoin(instances, eq(instances.id, actors.instanceId))
     .where(
       and(
-        eq(actors.kind, kind),
+        inArray(actors.kind, kinds),
         isNull(actors.deletedAt),
         sql`lower(${actors.name}) = ${name.toLowerCase()}`,
         local ? eq(actors.local, true) : eq(instances.domain, host!.toLowerCase()),
       ),
-    );
+    )
+    // Local names are unique across kinds; a remote host's could repeat, so the first kind asked for wins.
+    .orderBy(sql`${actors.kind} <> ${kinds[0]}`)
+    .limit(1);
   return row ? refOf(row) : null;
 }
 
