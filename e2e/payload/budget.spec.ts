@@ -10,6 +10,11 @@ import { notPages, routes, unaccounted } from './routes.ts';
 
 // The payload budget as a check: each page's first visit, cold cache, must stay inside the
 // numbers Andrew approved (budget.ts). Run against the production build; see routes.ts to add a page.
+//
+// What is measured is compressible bytes: every text file is gzipped here (level 9), as a
+// compressing proxy would send it. Nothing in this repository compresses responses (the Node
+// server sends them as they are); in production Traefik (Easypanel) or Cloudflare does, which
+// deploy/README.md notes. Fonts are woff2, already compressed, and count as sent.
 // A remote BASE_URL has no build output and no database to seed: the manifest check and the
 // pages that need fixtures are skipped there, and nothing else is.
 const remote = Boolean(process.env.BASE_URL);

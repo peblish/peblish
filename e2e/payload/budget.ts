@@ -4,7 +4,10 @@ import { gzipSync } from 'node:zlib';
 
 // The payload budget Andrew approved (/Users/admin/Projects/muxui-peblish-rc/PAYLOAD.md,
 // "Proposed budget for peblish"). Per route, first visit, bytes transferred (gzip, or woff2 as
-// sent), kB of 1000 bytes, excluding app code, the router and the HTML.
+// sent), kB of 1000 bytes, excluding app code, the router and the HTML. The gzip is the
+// check's own: nothing in this repository compresses responses, Traefik (Easypanel) or
+// Cloudflare does in production (deploy/README.md), so the figures are the compressible bytes
+// a compressing proxy would send, not what the Node server itself sends.
 export const budget = {
   /** React, React DOM and Mux UI with React Aria pruned to en-US and de-DE. */
   js: 170_000,
