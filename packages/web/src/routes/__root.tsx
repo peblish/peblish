@@ -13,13 +13,16 @@ import { PrefsProvider } from '../shell/prefs.tsx';
 import { getRootData } from '../shell/root-data.ts';
 import { Shell } from '../shell/shell.tsx';
 import { titleForRoute } from '../shell/title.ts';
+import { useViewerSync } from '../shell/viewer-sync.ts';
 import appCss from '../styles.css?url';
 
 export const Route = createRootRoute({
   // One server call gathers the negotiated locale (from Accept-Language, dehydrated so the
   // client hydrates with the same value), the display cookie, the session and the sidebar's
   // lists. They only change by a full page load, a preference change (kept in state) or a
-  // router.invalidate(), so a client-side navigation does not ask again.
+  // router.invalidate() (also run when a tab that was hidden comes back showing a different
+  // viewer than the browser's latest, shell/viewer-sync.ts), so a client-side navigation does
+  // not ask again.
   loader: () => getRootData(),
   staleTime: Infinity,
   head: ({ loaderData, matches }) => ({
@@ -46,11 +49,12 @@ function useRouterHref(href: string): string {
 }
 
 function RootComponent() {
-  const { locale, prefs } = Route.useLoaderData();
+  const { locale, prefs, session } = Route.useLoaderData();
   const router = useRouter();
   const proseLabels = useProseLabels();
   const navigate = useCallback((href: string) => openInRouter(router, href), [router]);
   useClientLinks();
+  useViewerSync(session?.actorId ?? '');
 
   // Shell marker only; the page marker comes from route content (shell/hydration.ts).
   useEffect(() => {
