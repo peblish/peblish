@@ -6,6 +6,8 @@ import { communityModerators } from '@peblish/core/db/tables/moderation';
 import { actors } from '@peblish/core/db/tables/actors';
 import { comments, posts } from '@peblish/core/db/tables/content';
 import { writer } from '@peblish/core/db/write';
+import { instances } from '@peblish/core/db/tables/instances';
+import { tx } from '@peblish/core/tx/tx';
 import { truncateAll } from '@peblish/core/testing/db';
 import { seedActor, seedInstance } from '@peblish/core/testing/seed';
 import { seedComment, seedCommunityRemoval, seedPost } from '@peblish/core/testing/seed-az';
@@ -14,6 +16,7 @@ import { eq, sql } from 'drizzle-orm';
 import { actorFromWire } from '../mapping/actor.ts';
 import { fromWire } from '../mapping/document.ts';
 import type { JsonObject } from '../mapping/json.ts';
+import { relayToFollowers } from '../relay/announce.ts';
 import { localDocument } from './serve.ts';
 
 const origin = 'https://fed-a.test';
@@ -446,6 +449,137 @@ describe('posts, comments and activities', () => {
       await writer().update(comments).set({ deletedAt: new Date() }).where(eq(comments.id, sent.note.id));
       expect((await get(new URL(sent.id(6)).pathname))?.status).toBe(410);
       expect((await get(new URL(sent.id(1)).pathname))?.status).toBe(200);
+    });
+  });
+
+  describe('the community’s Announce of someone else’s post or comment', () => {
+    /**
+     * A remote post and comment in the local community, relayed to a Lemmy-like and a
+     * Mastodon-like follower the way the inbox does (relay/announce.ts), which stores one
+     * Announce(Create(Page)) and one Announce(Page), and Announce(Create(Note)) for the comment.
+     */
+    async function relayed() {
+      const w = await world();
+      const peer = await seedInstance('peer.test', false);
+      const bob = await seedActor(peer, 'Person', 'bob', { apId: 'https://peer.test/u/bob' });
+      const post = await seedPost(peer, w.news, bob);
+      const note = await seedComment(peer, post, bob);
+      for (const [domain, software] of [
+        ['lemmy.test', 'lemmy'],
+        ['mastodon.test', 'mastodon'],
+      ] as const) {
+        const instance = await seedInstance(domain, false);
+        await writer().update(instances).set({ software }).where(eq(instances.id, instance.id));
+        const follower = await seedActor(instance, 'Person', 'follower', { inboxUrl: `https://${domain}/inbox` });
+        await writer()
+          .insert(follows)
+          .values({ followerId: follower.id, followeeId: w.news.id, apId: `https://${domain}/follow`, state: 'accepted' });
+      }
+      const create = (object: JsonObject, n: number): JsonObject => ({
+        id: `https://peer.test/activities/${n}`,
+        type: 'Create',
+        actor: bob.apId,
+        object,
+      });
+      const pageJson: JsonObject = { type: 'Page', id: post.apId, attributedTo: bob.apId, name: post.title };
+      const noteJson: JsonObject = { type: 'Note', id: note.apId, attributedTo: bob.apId, inReplyTo: post.apId, content: '<p>x</p>' };
+      const relay = (json: JsonObject, page?: Parameters<typeof relayToFollowers>[1]['page']) =>
+        tx((t) =>
+          relayToFollowers(t, {
+            communityId: w.news.id,
+            body: new TextEncoder().encode(JSON.stringify(json)),
+            json,
+            senderApId: bob.apId,
+            page,
+          }),
+        );
+      await relay(create(pageJson, 1), {
+        apId: post.apId,
+        authorApId: bob.apId,
+        communityApId: w.news.apId,
+        title: post.title,
+        url: null,
+        urlContentType: null,
+        altText: null,
+        thumbnailUrl: null,
+        bodyMd: null,
+        contentHtml: null,
+        language: null,
+        sensitive: false,
+        nsfl: false,
+        locked: null,
+        featuredCommunity: null,
+        publishedAt: null,
+        editedAt: null,
+        raw: null,
+      });
+      await relay(create(noteJson, 2));
+      const rows = await db()
+        .select({ apId: activities.apId, raw: activities.raw })
+        .from(activities)
+        .where(eq(activities.type, 'Announce'));
+      const shape = (raw: unknown): string => {
+        const { type, object } = raw as { type: string; object?: unknown };
+        return object && typeof object === 'object' ? `${type}(${shape(object)})` : type;
+      };
+      const announce = (wanted: string) => {
+        const row = rows.find((each) => shape(each.raw) === wanted);
+        if (!row) throw new Error(`no stored ${wanted}`);
+        return new URL(row.apId).pathname;
+      };
+      return {
+        w,
+        post,
+        note,
+        pages: [announce('Announce(Create(Page))'), announce('Announce(Page)')],
+        notes: [announce('Announce(Create(Note))')],
+      };
+    }
+    const statuses = (paths: string[]) => Promise.all(paths.map(async (path) => (await get(path))?.status));
+
+    test('both shapes are served while the content lives', async () => {
+      const { pages, notes } = await relayed();
+      expect(await statuses([...pages, ...notes])).toEqual([200, 200, 200]);
+    });
+
+    test('a deleted or removed remote post, and the comments of a gone post, are Tombstones', async () => {
+      const { pages, notes, post, note } = await relayed();
+      await writer().update(posts).set({ removedAt: new Date() }).where(eq(posts.id, post.id));
+      expect(await statuses([...pages, ...notes])).toEqual([410, 410, 410]);
+      const deleted = new Date('2026-02-03T04:05:06Z');
+      await writer().update(posts).set({ removedAt: null, deletedAt: deleted }).where(eq(posts.id, post.id));
+      expect(await get(pages[0]!)).toMatchObject({
+        status: 410,
+        json: { type: 'Tombstone', formerType: 'Announce', deleted: deleted.toISOString() },
+      });
+      await writer().update(posts).set({ deletedAt: null }).where(eq(posts.id, post.id));
+      expect(await statuses([...pages, ...notes])).toEqual([200, 200, 200]);
+      await writer().update(comments).set({ deletedAt: new Date() }).where(eq(comments.id, note.id));
+      expect(await statuses([...pages, ...notes])).toEqual([200, 200, 410]);
+    });
+
+    test('a removed or deleted community serves none of its Announces', async () => {
+      const { pages, notes, w } = await relayed();
+      await seedCommunityRemoval(w.news);
+      expect(await statuses([...pages, ...notes])).toEqual([410, 410, 410]);
+      await writer().execute(sql`delete from community_removals`);
+      await writer().update(actors).set({ deletedAt: new Date() }).where(eq(actors.id, w.news.id));
+      expect(await statuses([...pages, ...notes])).toEqual([410, 410, 410]);
+    });
+
+    test('an Announce of content nobody holds is a Tombstone, and the remote object itself is still not served', async () => {
+      const { w, post, note } = await relayed();
+      const id = 'https://fed-a.test/ap/activity/0190b7a8-0000-7000-8000-0000000000ff';
+      const raw = {
+        type: 'Announce',
+        id,
+        actor: w.news.apId,
+        object: { type: 'Create', object: { type: 'Page', id: 'https://peer.test/post/unknown' } },
+      };
+      await writer().insert(activities).values({ apId: id, type: 'Announce', actorApId: w.news.apId, local: true, raw });
+      expect(await get(new URL(id).pathname)).toMatchObject({ status: 410, json: { type: 'Tombstone', id, formerType: 'Announce' } });
+      expect(await get(`/ap/post/${post.id}`)).toBeNull();
+      expect(await get(`/ap/comment/${note.id}`)).toBeNull();
     });
   });
 
