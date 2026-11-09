@@ -50,6 +50,26 @@ test('only absolute http and https URLs without credentials are ever signed thro
   expect(() => build(`https://x.example/${'a'.repeat(3000)}`)).toThrow(RangeError);
 });
 
+test('the length limit is 2,048 UTF-8 bytes on both sides: what the builder signs, verify takes back', () => {
+  const host = 'https://x.example/';
+  const urlOf = (bytes: number, letter: string) => {
+    // As many of `letter` (1 to 4 bytes) as fit, padded with ASCII to exactly `bytes` bytes.
+    const count = Math.floor((bytes - host.length) / Buffer.byteLength(letter));
+    return `${host}${letter.repeat(count)}${'a'.repeat(bytes - host.length - count * Buffer.byteLength(letter))}`;
+  };
+  for (const letter of ['a', 'é', '画', '😀']) {
+    const exact = urlOf(2048, letter);
+    expect(Buffer.byteLength(exact), letter).toBe(2048);
+    const [signature, target] = split(build(exact));
+    expect(verifyProxyPath(key, signature, target), letter).toBe(exact);
+    expect(() => build(`${exact}a`), letter).toThrow(RangeError);
+  }
+  // Under 2,048 UTF-16 units, over 2,048 bytes: the builder used to sign this and verify then refused it.
+  const wide = `${host}${'é'.repeat(1200)}`;
+  expect(wide.length).toBeLessThan(2048);
+  expect(() => build(wide)).toThrow(RangeError);
+});
+
 test('the key comes from the auth secret under its own purpose label', async () => {
   await seedLocalInstance();
   const proxy = await mediaProxyKey();
