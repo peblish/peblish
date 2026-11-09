@@ -4,7 +4,8 @@
 // has no register API). Mbin's by its console (lab/mbin/seed.sh).
 import { seedAccount, seedTwoFactor } from '@peblish/core/testing/seed-a';
 import type { Uuid } from '@peblish/schema/ids';
-import { HttpError, http, LEMMY, PASSWORD, PEBLISH, PIEFED, sleep, waitFor } from './lab.ts';
+import { HttpError, http, LEMMY, MBIN, PASSWORD, PEBLISH, PIEFED, sleep, waitFor } from './lab.ts';
+import { ensureClient } from './mbin-clients.ts';
 import { closeAll, forget, localActorId, peblish, sql } from './peblish.ts';
 import { lemmy, piefed } from './peers/threadiverse.ts';
 
@@ -17,6 +18,7 @@ console.log('waiting for peers...');
 await Promise.all([
   waitFor('Lemmy API', ready(`${LEMMY}/api/v3/site`), { timeoutMs: 240_000, intervalMs: 2_000 }),
   waitFor('PieFed API', ready(`${PIEFED}/api/alpha/site`), { timeoutMs: 240_000, intervalMs: 2_000 }),
+  waitFor('Mbin', ready(`${MBIN}/nodeinfo/2.1`), { timeoutMs: 240_000, intervalMs: 2_000 }),
   waitFor('peblish', ready(`${PEBLISH}/nodeinfo/2.1`), { timeoutMs: 240_000, intervalMs: 2_000 }),
 ]);
 
@@ -91,6 +93,15 @@ await ignoreExisting('Lemmy community !lab', () => lemmy.createCommunity(lemmyAd
 
 const pieAdmin = await piefed.login(piefed.admin);
 await ignoreExisting('PieFed community !pflab', () => piefed.createCommunity(pieAdmin, piefed.community, 'PieFed lab'));
+
+// ---------------------------------------------------------------- Mbin 1.11
+
+// A client_credentials client brings its own bot user. The magazine and the admin role are the
+// console's job (lab/mbin/seed.sh), which runs after this.
+for (const username of ['mbinadmin', 'mbinuser']) {
+  await ensureClient(username);
+  console.log(`Mbin client and user ${username} ready`);
+}
 
 // ---------------------------------------------------------------- peblish (the production image)
 

@@ -66,7 +66,13 @@ export type Peer = {
   listPosts(token: string, communityId: number): Promise<PeerPost[]>;
   getPost(token: string, postId: number): Promise<PeerPost>;
   resolvePost(token: string, apId: string): Promise<PeerPost | null>;
-  createPost(token: string, communityId: number, title: string, body: string, url?: string): Promise<PeerPost>;
+  createPost(
+    token: string,
+    communityId: number,
+    title: string,
+    body: string,
+    options?: { url?: string; nsfw?: boolean },
+  ): Promise<PeerPost>;
   editPost(token: string, postId: number, title: string, body: string): Promise<void>;
   deletePost(token: string, postId: number): Promise<void>;
   listComments(token: string, postId: number): Promise<PeerComment[]>;

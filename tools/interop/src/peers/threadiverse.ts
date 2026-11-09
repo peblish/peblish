@@ -137,12 +137,11 @@ export function threadiversePeer({ flavor, origin, user, admin, community, passw
       const { post } = await http<{ post?: PostViewWire }>('GET', `${base}/resolve_object`, { token, query: { q: apId } });
       return post ? toPost(post) : null;
     },
-    async createPost(token, communityId, title, body, url) {
+    async createPost(token, communityId, title, body, { url, nsfw } = {}) {
+      const extra = { ...(url ? { url } : {}), ...(nsfw ? { nsfw: true } : {}) };
       const { post_view } = await http<{ post_view: PostViewWire }>('POST', `${base}/post`, {
         token,
-        body: lemmy
-          ? { name: title, body, community_id: communityId, ...(url ? { url } : {}) }
-          : { title, body, community_id: communityId, ...(url ? { url } : {}) },
+        body: lemmy ? { name: title, body, community_id: communityId, ...extra } : { title, body, community_id: communityId, ...extra },
       });
       return toPost(post_view);
     },

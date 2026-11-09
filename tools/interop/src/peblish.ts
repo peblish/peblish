@@ -108,11 +108,11 @@ export async function postByApId(apId: string) {
       deleted_at: Date | null;
       removed_at: Date | null;
       locked: boolean;
-      pinned: boolean;
+      featured_community: boolean;
       author_id: Uuid;
       community_id: Uuid;
     }[]
-  >`select id, title, body_md, url, deleted_at, removed_at, locked, pinned, author_id, community_id from posts where ap_id = ${apId}`;
+  >`select id, title, body_md, url, deleted_at, removed_at, locked, featured_community, author_id, community_id from posts where ap_id = ${apId}`;
   return row ?? null;
 }
 

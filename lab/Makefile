@@ -6,8 +6,8 @@ PEERS ?= lemmy piefed mbin
 PROJECT := feddit-lab
 # The hosts that federate; the rogue (rogue.lab.test) is on no allowlist, on purpose.
 LAB_HOSTS := piefed.lab.test lemmy.lab.test mbin.lab.test peblish.lab.test
-# Lemmy opens one outbound worker per federating instance it has met (peblish, PieFed).
-LEMMY_WORKERS := 2
+# Lemmy opens one outbound worker per federating instance it has met (peblish, PieFed, Mbin).
+LEMMY_WORKERS := 3
 
 .PHONY: up ports down reset ps logs stats guard seed interop interop-slow
 
@@ -53,12 +53,13 @@ reset: guard
 	$(COMPOSE_ALL) down -v --remove-orphans
 	rm -rf data
 
-## Peers' users and communities; peblish's admin (through the image's own admin.mjs), alice, bob and !lab.
+## Peers' users and communities (Mbin's by its console); peblish's admin (through the image's own admin.mjs), alice, bob and !lab.
 seed:
 	@mkdir -p data/results
 	# The first admin proves the image bootstraps itself; it refuses when one exists, which is fine.
 	@printf '%s' lab-password-1 | $(COMPOSE) exec -T peblish-web node /app/processes/admin.mjs labadmin labadmin@peblish.lab.test || echo "(admin exists)"
 	$(COMPOSE) run --rm runner node src/seed.ts
+	sh mbin/seed.sh
 	# Lemmy starts its outbound worker for a newly seen instance on a 60 s timer, and that worker
 	# skips every activity queued before it started. Wait for the lab peers' workers.
 	@echo "Waiting for Lemmy's outbound workers for the lab peers (up to about 60 s)..."
@@ -71,6 +72,9 @@ seed:
 # remote accounts are aged first. This is a peer-side lab setting; peblish has none.
 interop:
 	@mkdir -p data/results
+	# Mbin sends one activity per id and inbox per 45 minutes (ApHttpClient::post), so a Follow after
+	# an unfollow in an earlier run would never leave. Valkey holds that cache and the API rate limits.
+	$(COMPOSE) exec -T mbin-valkey valkey-cli -a mbin --no-auth-warning flushall
 	$(COMPOSE) exec -T piefed-db psql -U piefed -q -c \
 	  "update \"user\" set created = now() - interval '2 days' where instance_id <> 1"
 	$(COMPOSE) run --rm runner node src/run.ts $(PEERS) $(if $(ONLY),--only=$(ONLY),)

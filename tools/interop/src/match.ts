@@ -26,7 +26,7 @@ export type InboxQuery = {
   since: Date;
   actor?: string;
   type?: string;
-  /** Text the body must contain (the object's id). */
+  /** Text the body must contain (the object's id). PHP peers escape slashes (`https:\\/\\/`); the body is compared unescaped. */
   contains?: string;
 };
 
@@ -90,7 +90,7 @@ async function inboxRows(sql: Sql, query: InboxQuery): Promise<InboxRow[]> {
     where received_at >= ${query.since}
       ${query.actor ? sql`and actor_ap_id = ${query.actor}` : sql``}
       ${query.type ? sql`and activity_type = ${query.type}` : sql``}
-      ${query.contains ? sql`and position(${query.contains} in convert_from(body, 'UTF8')) > 0` : sql``}
+      ${query.contains ? sql`and position(${query.contains} in replace(convert_from(body, 'UTF8'), '\\/', '/')) > 0` : sql``}
     order by received_at`;
   return rows.map((r) => ({
     id: r.id,
@@ -141,8 +141,14 @@ export type DeliveryQuery = {
   object?: string;
   /** The peer's inbox URL. */
   inbox?: string;
+  /** The peer's host (`lemmy.lab.test`): any of its inboxes. */
+  host?: string;
   /** The delivery's activity id. */
   activity?: string;
+  /** The `type` of the activity inside an Announce (`Create`, `Update`, `Delete`, `Like`), or of its object. */
+  inner?: string;
+  /** Text the delivery's body must contain (a title). */
+  contains?: string;
 };
 
 export type DeliveryRow = {
@@ -160,7 +166,16 @@ const deliveryOutcome = (row: Pick<DeliveryRow, 'state' | 'status' | 'error' | '
   `${row.state} status=${row.status ?? 'none'} error=${row.error ?? 'none'} attempts=${row.attempts}`;
 
 const describeDelivery = (query: DeliveryQuery) =>
-  [query.type, query.object && `about ${query.object}`, query.inbox && `to ${query.inbox}`].filter(Boolean).join(' ') || 'any delivery';
+  [
+    query.type,
+    query.inner && `of ${query.inner}`,
+    query.object && `about ${query.object}`,
+    query.contains && `containing ${query.contains}`,
+    query.inbox && `to ${query.inbox}`,
+    query.host && `to ${query.host}`,
+  ]
+    .filter(Boolean)
+    .join(' ') || 'any delivery';
 
 export function matchDelivery(rows: readonly DeliveryRow[], query: DeliveryQuery, expected: DeliveryExpectation): DeliveryRow {
   if (rows.length === 0) throw new Mismatch(`no delivery for ${describeDelivery(query)}; expected state ${expected.state}`);
@@ -200,7 +215,10 @@ export async function deliveryRows(sql: Sql, query: DeliveryQuery): Promise<Deli
       ${query.type ? sql`and activity_type = ${query.type}` : sql``}
       ${query.object ? sql`and object_ap_id = ${query.object}` : sql``}
       ${query.inbox ? sql`and inbox_url = ${query.inbox}` : sql``}
+      ${query.host ? sql`and inbox_url like ${`https://${query.host}/%`}` : sql``}
       ${query.activity ? sql`and activity_ap_id = ${query.activity}` : sql``}
+      ${query.inner ? sql`and body::jsonb -> 'object' ->> 'type' = ${query.inner}` : sql``}
+      ${query.contains ? sql`and position(${query.contains} in body) > 0` : sql``}
     order by created_at`;
   return rows.map((r) => ({
     activityApId: r.activity_ap_id,

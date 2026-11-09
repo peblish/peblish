@@ -46,6 +46,9 @@ volumes:
   piefed-db: {}
   piefed-redis: {}
   peblish-db: {}
+  mbin-db: {}
+  mbin-oauth: {}
+  mbin-media: {}
 
 services:
   caddy:
@@ -293,6 +296,111 @@ services:
     depends_on:
       peblish-migrate:
         condition: service_completed_successfully
+    logging: *logging
+
+  # ---------------------------------------------------------------- Mbin 1.11
+  # The smallest set that federates: the web process, one messenger worker on every queue
+  # upstream's compose lists, RabbitMQ (no amqproxy), Postgres and Valkey. No Mercure hub,
+  # mail, S3 or captcha. The image is amd64-only, so it runs under emulation on Apple silicon.
+  mbin-db:
+    image: postgres:17.11
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: mbin
+      POSTGRES_PASSWORD: mbin
+      POSTGRES_DB: mbin
+    volumes:
+      - mbin-db:/var/lib/postgresql/data
+    networks: [lab]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mbin"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+    logging: *logging
+
+  mbin-valkey:
+    image: valkey/valkey:8-alpine
+    restart: unless-stopped
+    command: ["valkey-server", "--requirepass", "mbin"]
+    networks: [lab]
+    healthcheck:
+      test: ["CMD-SHELL", "valkey-cli -a mbin ping | grep -q PONG"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+    logging: *logging
+
+  mbin-rabbitmq:
+    image: rabbitmq:3.13-alpine
+    restart: unless-stopped
+    hostname: mbin-rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: mbin
+      RABBITMQ_DEFAULT_PASS: mbin
+    networks: [lab]
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "check_port_connectivity"]
+      interval: 5s
+      timeout: 10s
+      retries: 30
+    logging: *logging
+
+  mbin-php:
+    image: ghcr.io/mbinorg/mbin:v1.11.0
+    platform: linux/amd64
+    restart: unless-stopped
+    env_file: ./mbin/mbin.env
+    entrypoint: ["/lab/entrypoint.sh"]
+    command: ["frankenphp", "run", "--config", "/etc/caddy/Caddyfile"]
+    volumes:
+      - ./mbin/entrypoint.sh:/lab/entrypoint.sh:ro
+      - ./mbin/Caddyfile:/etc/caddy/Caddyfile:ro
+      - lab-ca:/lab-ca:ro
+      - mbin-oauth:/app/config/oauth2
+      - mbin-media:/app/public/media
+    networks: [lab]
+    # The image's HEALTHCHECK curls Caddy's admin metrics, which the lab Caddyfile keeps; the
+    # first start runs the migrations, so allow it time.
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs http://localhost:2019/metrics >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 120s
+    depends_on:
+      mbin-db:
+        condition: service_healthy
+      mbin-valkey:
+        condition: service_healthy
+      mbin-rabbitmq:
+        condition: service_healthy
+      lab-ca:
+        condition: service_completed_successfully
+    logging: *logging
+
+  mbin-messenger:
+    image: ghcr.io/mbinorg/mbin:v1.11.0
+    platform: linux/amd64
+    restart: unless-stopped
+    env_file: ./mbin/mbin.env
+    entrypoint: ["/lab/entrypoint.sh"]
+    command: ["bin/console", "messenger:consume", "scheduler_default", "old", "async", "async_slow", "outbox", "deliver", "inbox", "resolve", "receive", "failed", "--time-limit=3600"]
+    # The image's HEALTHCHECK probes Caddy, which this container does not run; upstream's own
+    # compose checks that the consumer is running instead.
+    healthcheck:
+      test: ["CMD-SHELL", "ps aux | grep 'messenger[:]consume' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+    volumes:
+      - ./mbin/entrypoint.sh:/lab/entrypoint.sh:ro
+      - lab-ca:/lab-ca:ro
+      - mbin-media:/app/public/media
+    networks: [lab]
+    depends_on:
+      mbin-php:
+        condition: service_healthy
     logging: *logging
 
   # ---------------------------------------------------------------- the runner and the rogue
