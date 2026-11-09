@@ -5,7 +5,7 @@ import { truncateAll } from '../testing/db.ts';
 import { seedActor, seedInstance } from '../testing/seed.ts';
 import { seedComment, seedPost } from '../testing/seed-az.ts';
 import { tx } from '../tx/tx.ts';
-import { recordDeletion } from './ledger.ts';
+import { recordDeletion, recordRestoration } from './ledger.ts';
 
 beforeEach(truncateAll);
 
@@ -32,7 +32,7 @@ describe('recordDeletion', () => {
         subjectKind: 'post',
         subjectId: w.post.id,
         subjectApId: w.post.apId,
-        reason: 'remote.author_deleted',
+        reason: 'remote.object_deleted',
         requestedBy: w.bob.id,
         details: { remote: true, cause: 'Delete' },
       },
@@ -45,6 +45,18 @@ describe('recordDeletion', () => {
       },
     ]);
     expect((await ledger())[0]?.details).not.toHaveProperty('removeContent');
+  });
+
+  test('recordRestoration writes the row that takes an author’s Delete back', async () => {
+    const w = await world();
+    await tx(async (t) => {
+      await recordDeletion(t, { kind: 'comment', id: w.comment.id, cause: 'Delete', actorId: w.bob.id });
+      await recordRestoration(t, { kind: 'comment', id: w.comment.id, actorId: w.bob.id });
+    });
+    expect((await ledger()).map((row) => [row.reason, row.subjectApId])).toEqual([
+      ['remote.object_deleted', w.comment.apId],
+      ['remote.object_undeleted', w.comment.apId],
+    ]);
   });
 
   test('commits with the caller’s transaction and not without it', async () => {

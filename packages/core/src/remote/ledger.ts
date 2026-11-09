@@ -31,9 +31,14 @@ export type DeletionRecord = {
 
 const actorReasons = { deleted: 'remote.actor_deleted', undeleted: 'remote.actor_undeleted' } as const;
 
-/** The ledger's reason for a deletion of `kind`: an author's own Delete, or an object its server no longer serves. */
+/**
+ * The ledger's reason for a deletion of `kind`: an account's, an author's own Delete of a post or
+ * comment (`remote.object_deleted`), or an object its server no longer serves (`remote.object_gone`).
+ * A restore applies rows in id order; `remote.object_undeleted` and `remote.actor_undeleted` take
+ * an earlier row back.
+ */
 const reasonOf = ({ kind, cause }: Pick<DeletionRecord, 'kind' | 'cause'>) =>
-  kind === 'actor' ? actorReasons.deleted : cause === 'Delete' ? 'remote.author_deleted' : 'remote.object_gone';
+  kind === 'actor' ? actorReasons.deleted : cause === 'Delete' ? 'remote.object_deleted' : 'remote.object_gone';
 
 async function apIdOf(db: WriteTx, kind: DeletionRecord['kind'], id: Uuid): Promise<string | null> {
   switch (kind) {
@@ -60,6 +65,18 @@ export async function recordDeletion(t: { db: WriteTx }, input: DeletionRecord):
     reason: reasonOf(input),
     requestedBy: input.actorId,
     details: { remote: true, cause: input.cause, ...(input.removeContent === undefined ? {} : { removeContent: input.removeContent }) },
+  });
+}
+
+/** The row after a deletion's: the author took the Delete back (Undo), so a restore that applies the ledger in order ends with the post or comment alive. */
+export async function recordRestoration(t: { db: WriteTx }, input: { kind: 'post' | 'comment'; id: Uuid; actorId: Uuid }): Promise<void> {
+  await t.db.insert(deletionLedger).values({
+    subjectKind: input.kind,
+    subjectId: input.id,
+    subjectApId: await apIdOf(t.db, input.kind, input.id),
+    reason: 'remote.object_undeleted',
+    requestedBy: input.actorId,
+    details: { remote: true },
   });
 }
 
