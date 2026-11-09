@@ -367,6 +367,30 @@ describe('what a remote author may post', () => {
     expect((await db().select().from(actors).where(eq(actors.apId, lemmyuser)))[0]?.deletedAt).not.toBeNull();
   });
 
+  test('removeData on an account Delete removes its posts with it; without it they stay', async () => {
+    const deletedAt = async (apId: string) => (await db().select().from(posts).where(eq(posts.apId, apId)))[0]?.deletedAt;
+    const own = { id: activityId(lemmy, 'delete'), type: 'Delete', actor: lemmyuser, object: lemmyuser, to: [PUBLIC] };
+    expect((await deliver(own)).stored?.state).toBe('applied');
+    expect(await deletedAt(t1)).toBeNull();
+
+    await truncateAll();
+    world = await seedInboundWorld();
+    expect((await deliver({ ...own, removeData: true })).stored?.state).toBe('applied');
+    expect(await deletedAt(t1)).not.toBeNull();
+    expect(await deletedAt(world.t2.apId)).not.toBeNull();
+  });
+
+  test('Undo of an account’s own Delete brings the actor back; the posts its removal deleted stay deleted', async () => {
+    const own = { id: activityId(lemmy, 'delete'), type: 'Delete', actor: lemmyuser, object: lemmyuser, to: [PUBLIC], removeData: true };
+    const undo = { id: activityId(lemmy, 'undo'), type: 'Undo', actor: lemmyuser, object: own, to: [PUBLIC] };
+    const actorRow = async () => (await db().select().from(actors).where(eq(actors.apId, lemmyuser)))[0];
+    expect((await deliver(own)).stored?.state).toBe('applied');
+    expect((await actorRow())?.deletedAt).not.toBeNull();
+    expect((await deliver(undo)).stored).toEqual({ state: 'applied', error: null });
+    expect((await actorRow())?.deletedAt).toBeNull();
+    expect((await db().select().from(posts).where(eq(posts.apId, t1)))[0]?.deletedAt).not.toBeNull();
+  });
+
   test('an actor edits its own profile, and an actor that sent a Delete stays deleted', async () => {
     const profile = {
       id: lemmyuser,

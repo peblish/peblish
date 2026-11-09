@@ -2,7 +2,7 @@ import { db } from '@peblish/core/db/read';
 import { removeContent, restoreContent } from '@peblish/core/moderation/remove';
 import { deleteComment } from '@peblish/core/comments/delete';
 import { deletePost, restorePost } from '@peblish/core/posts/delete';
-import { deleteRemoteActor } from '@peblish/core/remote/actors';
+import { deleteRemoteActor, undeleteRemoteActor } from '@peblish/core/remote/actors';
 import type { Activity } from '../../mapping/records.ts';
 import { importGrant } from '../../actors/grants.ts';
 import { checkCommunity, communityById, grantFor, requireContent, type Stored } from '../authorize.ts';
@@ -23,9 +23,20 @@ const isAuthorsOwn = (sender: { id: string }, target: Stored, reason: string | n
 
 async function prepareActorDelete(ctx: InboundContext): Promise<Prepared> {
   const grant = await importGrant('remote.actor_delete', { apId: ctx.sender.apId });
+  // Lemmy's account deletion with "delete content" sets removeData on the Delete; the mapping does not carry it.
+  const removeContent = ctx.raw.removeData === true;
   return prepared(ctx, async (t) => {
-    const { deleted } = await deleteRemoteActor.within(t, grant);
+    const { deleted } = await deleteRemoteActor.within(t, grant, { removeContent, cause: 'Delete' });
     if (!deleted) throw skip('target.deleted', ctx.sender.apId);
+    return { objectApId: ctx.sender.apId };
+  });
+}
+
+/** Undo(Delete) of the account's own Delete: the actor is alive again (content its deletion removed stays removed). */
+async function prepareActorUndelete(ctx: InboundContext): Promise<Prepared> {
+  const grant = await importGrant('remote.actor_undelete', { apId: ctx.sender.apId });
+  return prepared(ctx, async (t) => {
+    await undeleteRemoteActor.within(t, grant);
     return { objectApId: ctx.sender.apId };
   });
 }
@@ -56,7 +67,7 @@ export const handler: InboundHandler = {
   /** Undo(Delete): the author takes the delete back, or a moderator restores what was removed. */
   async undo(ctx, undone: Activity) {
     if (undone.type !== 'Delete') throw new TypeError('the Delete handler was asked to undo another activity');
-    if (undone.objectApId === undone.actorApId) throw skip('undo.unsupported', 'an actor’s own Delete');
+    if (undone.objectApId === undone.actorApId) return prepareActorUndelete(ctx);
     const target = await requireContent(db(), undone.objectApId);
     const community = await communityById(db(), target.communityId);
     checkCommunity(ctx, community, ctx.activity.communityApId);
