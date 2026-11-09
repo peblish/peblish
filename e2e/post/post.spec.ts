@@ -25,6 +25,7 @@ type Seed = {
     removable: string;
     sensitive: string;
     deleted: string;
+    longThumbnail: string;
     inRemovedCommunity: string;
     inDeletedCommunity: string;
   };
@@ -97,6 +98,15 @@ test.describe('anyone', () => {
     expect(text).not.toContain('Deleted body');
     await gotoHydrated(page, url(seed.posts.deleted));
     await expectAccessible(page);
+  });
+
+  test('a link post whose remote thumbnail URL is too long to proxy still renders, as a plain link', async ({ page }) => {
+    const { status, text } = await html(page, seed.posts.longThumbnail);
+    expect(status).toBe(200);
+    expect(text).toContain('Long thumbnail post');
+    expect(text).toContain('class="post-link" href="https://example.test/long"');
+    // No picture: the thumbnail could not be signed, so the page loads nothing from img.example.
+    expect(text.includes('<img')).toBe(false);
   });
 
   test('a post in a removed or deleted community is a 404 with none of its text', async ({ page }) => {

@@ -155,6 +155,14 @@ async function e2e() {
         }),
       ),
       deleted: row(await post({ title: `Deleted post ${suffix}`, deletedAt: new Date(), ...body(`Deleted body ${suffix}`) })),
+      // A remote picture too long to sign for the proxy: the page shows the link without it.
+      longThumbnail: row(
+        await post({
+          title: `Long thumbnail post ${suffix}`,
+          url: 'https://example.test/long',
+          thumbnailUrl: `https://img.example/${'x'.repeat(3_000)}`,
+        }),
+      ),
       inRemovedCommunity: row(await inClosed(removedCommunity)),
       inDeletedCommunity: row(await inClosed(deletedCommunity)),
     },
