@@ -25,6 +25,12 @@ import { mediaBlocklist } from './tables.ts';
 import { mediaUrl } from './usage.ts';
 
 const store = memoryStore();
+
+function gate() {
+  let open!: () => void;
+  const opened = new Promise<void>((resolve) => (open = resolve));
+  return { open, opened };
+}
 const local = { config: scanConfig({ MEDIASCAN_LOCAL_ONLY: '1' }), store };
 const day = 86_400_000;
 
@@ -98,7 +104,7 @@ test('confirm blocks the image, lists its hash, writes the ledger and log, remov
   expect(evidence).toMatchObject({ status: 'confirmed', decidedBy: adminId, note: 'confirmed by eye on the manifest' });
   // Retention: the decision plus 24 months.
   expect(Math.round((evidence.retainUntil!.getTime() - evidence.decidedAt!.getTime()) / day)).toBeGreaterThanOrEqual(730);
-  expect(await logOf(evidence.id)).toEqual(['quarantined', 'confirmed']);
+  expect(await logOf(evidence.id)).toEqual(['quarantined', 'confirmed', 'purge_started']);
   expect((await db().select().from(mediaBlocklist).where(eq(mediaBlocklist.value, row.sha256!)))[0]).toMatchObject({ category: 'csam' });
   expect((await db().select().from(deletionLedger)).map((l) => [l.subjectKind, l.subjectId, l.reason, l.requestedBy])).toEqual([
     ['media', row.id, 'media.blocked', adminId],
@@ -203,6 +209,34 @@ test('a hold keeps the bytes through confirmation and the undecided expiry, and 
   expect([(await rowOf(held.id)).storageKey, store.objects.has(held.storageKey!)]).toEqual([null, false]);
 });
 
+test('a hold cannot land between the purge claiming the bytes and its bucket delete', async () => {
+  const row = await quarantined();
+  const deleting = gate();
+  const finish = gate();
+  const slow = {
+    ...store,
+    async delete(key: string) {
+      deleting.open();
+      await finish.opened;
+      await store.delete(key);
+    },
+  };
+  const confirming = confirmQuarantined(asAdmin(), { mediaId: row.id, removePosts: false }, { store: slow });
+  await deleting.opened;
+  // The purge has claimed the bytes and its bucket delete is in flight: a hold now is too late.
+  expect(await holdQuarantined(asAdmin(), { mediaId: row.id, reference: 'AFP-2026-7', until: new Date(Date.now() + 30 * day) })).toEqual({
+    ok: false,
+    reason: 'media.already_decided',
+  });
+  finish.open();
+  expect((await confirming).ok).toBe(true);
+  const evidence = await evidenceOf(row.id);
+  expect(evidence).toMatchObject({ holdReference: null, holdUntil: null });
+  expect(evidence.purgeStartedAt).not.toBeNull();
+  expect(await logOf(evidence.id)).toEqual(['quarantined', 'confirmed', 'purge_started']);
+  expect([(await rowOf(row.id)).storageKey, store.objects.has(row.storageKey!)]).toEqual([null, false]);
+});
+
 test('a hold on a released image, or on bytes already purged, is refused as already decided', async () => {
   const until = new Date(Date.now() + 30 * day);
   const released = await quarantined();
@@ -232,7 +266,7 @@ test('an undecided quarantine ends after the window with no admin named, and not
   await purgePass({ store, now: new Date(now.getTime() + 8 * day), days: 7 });
   expect([(await rowOf(row.id)).scanState, (await rowOf(row.id)).storageKey]).toEqual(['blocked', null]);
   expect(await evidenceOf(row.id)).toMatchObject({ status: 'confirmed', decidedBy: null });
-  expect(await logOf((await evidenceOf(row.id)).id)).toEqual(['quarantined', 'expired']);
+  expect(await logOf((await evidenceOf(row.id)).id)).toEqual(['quarantined', 'expired', 'purge_started']);
   expect((await db().select().from(deletionLedger)).map((l) => [l.subjectId, l.requestedBy])).toEqual([[row.id, null]]);
   expect((await outboxEvents()).map((e) => (e as { type: string }).type)).toEqual(['media.quarantined', 'media.scanned', 'media.purged']);
 });
@@ -249,6 +283,7 @@ test('manifests are deleted after their retention, a hold postpones that, and th
   expect((await db().select().from(mediaEvidenceLog).where(eq(mediaEvidenceLog.evidenceId, evidence.id))).map((l) => l.event)).toEqual([
     'quarantined',
     'confirmed',
+    'purge_started',
     'manifest_expired',
   ]);
 });

@@ -111,7 +111,8 @@ const maxReferenceLength = 200;
  * Records a hold: an AFP, NCMEC or NCA preservation direction names a reference and a date. While
  * it is in force the object is kept (neither the undecided expiry nor the purge touches it) and
  * the manifest outlives its date. Allowed on a quarantined image or a confirmed one whose bytes
- * are still there; a released image, or bytes already gone, are `media.already_decided`.
+ * are still there and not yet claimed by the purge; a released image, or bytes the purge has
+ * claimed or deleted, are `media.already_decided`.
  */
 export const recordHold = defineMutation({
   action: 'media.review',
@@ -125,7 +126,8 @@ export const recordHold = defineMutation({
     const { row, evidence } = await lockedEvidence(t, 'media.review', mediaId);
     if (!evidence || (row.scanState !== 'quarantined' && row.scanState !== 'blocked'))
       throw new Refused('media.review', 'media.not_quarantined');
-    if (evidence.status === 'released' || (row.scanState === 'blocked' && !row.storageKey))
+    // Once the purge has claimed the bytes (purge.ts) they are on their way out: too late for a hold.
+    if (evidence.status === 'released' || evidence.purgeStartedAt !== null || (row.scanState === 'blocked' && !row.storageKey))
       throw new Refused('media.review', 'media.already_decided');
     await t.db
       .update(mediaEvidence)

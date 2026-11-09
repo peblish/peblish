@@ -32,6 +32,8 @@ export const mediaEvidence = pgTable(
     /** A police or NCMEC reference for a preservation direction; with `holdUntil`, keeps the object and the manifest. */
     holdReference: text('hold_reference'),
     holdUntil: at('hold_until'),
+    /** When the purge claimed the image's bytes (mediascan/purge.ts): from then on a hold is refused, since the bytes are on their way out. */
+    purgeStartedAt: at('purge_started_at'),
     /** The decision plus 24 months; a hold postpones it. The purge job deletes the manifest after it. */
     retainUntil: at('retain_until'),
     /** When this incident began (the quarantine); the undecided window runs from it. */
