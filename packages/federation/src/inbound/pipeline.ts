@@ -5,7 +5,7 @@ import { follows } from '@peblish/core/db/tables/follows';
 import { Refused } from '@peblish/core/tx/refused';
 import { tx } from '@peblish/core/tx/tx';
 import { and, eq, isNull } from 'drizzle-orm';
-import { ActorResolveError, resolveRemoteActor, type ResolvedActor } from '../actors/resolve.ts';
+import { ActorResolveError, resolveRemoteActor, type ResolvedActor, type ResolveOptions } from '../actors/resolve.ts';
 import type { Fetcher } from '../actors/document.ts';
 import { safeFetch } from '../actors/safe-fetch.ts';
 import { localOrigin } from '../federation.ts';
@@ -49,7 +49,7 @@ type ItemResult = { applied: true } | { skipped: Skipped } | { failed: string };
 type Env = {
   fetch: Fetcher;
   origin: string;
-  actor(apId: string): Promise<ResolvedActor>;
+  actor(apId: string, options?: Pick<ResolveOptions, 'maxAgeMs'>): Promise<ResolvedActor>;
   seen(activityId: string): Promise<boolean>;
   classify: ClassifyEnv;
   afterApply: (() => Promise<void>) | undefined;
@@ -75,9 +75,9 @@ function budgeted(base: Fetcher): Fetcher {
 
 const handlers = new Map<string, InboundHandler>(inboundHandlers.map((handler) => [handler.type, handler]));
 
-async function resolveActor(apId: string, fetch: Fetcher): Promise<ResolvedActor> {
+async function resolveActor(apId: string, fetch: Fetcher, options: Pick<ResolveOptions, 'maxAgeMs'> = {}): Promise<ResolvedActor> {
   try {
-    return await resolveRemoteActor(apId, { fetch });
+    return await resolveRemoteActor(apId, { fetch, ...options });
   } catch (error) {
     // A peer that is down is retried; an actor that is gone, blocked or malformed will not change.
     if (error instanceof ActorResolveError && !error.transient) throw skip('actor.unresolvable', apId);
@@ -90,7 +90,7 @@ async function makeEnv(options: PipelineOptions): Promise<Env> {
   return {
     fetch,
     origin: await localOrigin(),
-    actor: (apId) => resolveActor(apId, fetch),
+    actor: (apId, options) => resolveActor(apId, fetch, options),
     seen: async (activityId) =>
       (await db().select({ id: inboxDedupe.activityId }).from(inboxDedupe).where(eq(inboxDedupe.activityId, activityId))).length > 0,
     classify: {
@@ -115,10 +115,14 @@ async function makeEnv(options: PipelineOptions): Promise<Env> {
 }
 
 async function contextFor(env: Env, activity: Activity, raw: JsonObject, announce: AnnounceInfo | null): Promise<InboundContext> {
+  // A Delete or an Undo comes from an actor that may be gone, and a stale copy refetched to
+  // answer 410 would be deleted before the activity is read, dropping a Delete with removeData.
+  // The copy we hold is enough to say who sent it.
+  const leaving = activity.type === 'Delete' || activity.type === 'Undo';
   return {
     activity,
     raw,
-    sender: await env.actor(activity.actorApId),
+    sender: await env.actor(activity.actorApId, leaving ? { maxAgeMs: Infinity } : undefined),
     announce,
     fetch: env.fetch,
     origin: env.origin,

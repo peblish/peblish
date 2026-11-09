@@ -7,6 +7,7 @@ import { activities, inboxDedupe, inboxRaw } from '@peblish/core/db/tables/feder
 import { follows } from '@peblish/core/db/tables/follows';
 import { deliveries } from '@peblish/core/delivery/tables';
 import { outbox } from '@peblish/core/db/tables/outbox';
+import { writer } from '@peblish/core/db/write';
 import { truncateAll } from '@peblish/core/testing/db';
 import { seedAccount } from '@peblish/core/testing/seed-b1';
 import { deliverRow, inboxState, seedFollow, seedInboundWorld, seedInboxRow } from '@peblish/core/testing/seed-fed-b';
@@ -128,7 +129,6 @@ describe('dedupe, apply and enqueue are one transaction', () => {
 });
 
 async function truncateVotes() {
-  const { writer } = await import('@peblish/core/db/write');
   await writer().delete(votes);
   await writer().delete(inboxDedupe);
 }
@@ -532,5 +532,22 @@ describe('an Update of a community’s profile', () => {
     const own = await deliver(updateBy(lab, attacker));
     expect(own.stored).toEqual({ state: 'applied', error: null });
     expect((await stored()).key).toBe(attacker);
+  });
+});
+
+describe('a Delete or an Undo from an actor whose server says it is gone', () => {
+  test('is read with the copy we hold, however stale, and does not refetch the actor', async () => {
+    await writer()
+      .update(actors)
+      .set({ fetchedAt: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000) })
+      .where(eq(actors.apId, lemmyuser));
+    const gone = stubFetch({ [lemmyuser]: { status: 410 } });
+    const own = { id: activityId(lemmy, 'delete'), type: 'Delete', actor: lemmyuser, object: lemmyuser, to: [PUBLIC], removeData: true };
+    expect((await deliver(own, { fetch: gone.fetch })).stored).toEqual({ state: 'applied', error: null });
+    expect((await db().select().from(posts).where(eq(posts.apId, t1)))[0]?.deletedAt).not.toBeNull();
+    const undo = { id: activityId(lemmy, 'undo'), type: 'Undo', actor: lemmyuser, object: own, to: [PUBLIC] };
+    expect((await deliver(undo, { fetch: gone.fetch })).stored).toEqual({ state: 'applied', error: null });
+    expect((await db().select().from(actors).where(eq(actors.apId, lemmyuser)))[0]?.deletedAt).toBeNull();
+    expect(gone.requests).toEqual([]);
   });
 });
