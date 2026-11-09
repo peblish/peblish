@@ -8,7 +8,7 @@ import type { OutboxEvent } from '@peblish/schema/events';
 import { and, desc, eq } from 'drizzle-orm';
 import { deliverableInboxes, peerInboxes } from '../delivery/followers.ts';
 import { newActivityId, publishInCommunity, sendActivity, type PublishOptions } from '../delivery/publish.ts';
-import { removedBoostedPosts, withdrawBoosts } from '../delivery/withdraw.ts';
+import { withdrawRemovedPosts } from '../delivery/withdraw.ts';
 import { actorRefs, mentionedBefore, type ActorRef } from '../delivery/records.ts';
 import { accountDeletion, ban, collectionChange, lock, removal, restoration, unban, unlock } from './moderation.ts';
 
@@ -111,10 +111,9 @@ async function onModeration(
         expires: event.expiresAt ? new Date(event.expiresAt) : null,
       };
       await publish(event.banned ? ban(as(id), details) : unban(as(id), await sentId(t, origin, 'Block', event.targetApId), details));
-      // A ban with removeContent removes the member's posts without an event each: take their boosts back.
+      // A ban with removeContent removes the member's posts without an event each: take their boosts back, one batch.
       if (event.banned && event.removeContent) {
-        const batch = await removedBoostedPosts(t.db, event.targetActorId, { communityId: community.id });
-        for (const { apId: postApId } of batch) await withdrawBoosts(t, { origin, community, postApId });
+        await withdrawRemovedPosts(t, { origin, authorId: event.targetActorId, communityId: community.id });
       }
       return;
     }
@@ -131,7 +130,7 @@ async function onModeration(
  * A site ban (no community): a Block of the person with the instance actor as target, signed by
  * the moderator, to every peer we trade follows with except those where deliveries are held back
  * (lane MODF's gate), or its Undo. With removeContent the person's removed posts were taken down
- * without an event each, so their boosts are withdrawn here, a batch at a time.
+ * without an event each, so their boosts are withdrawn: the first batch here, the rest by a job.
  */
 async function onSiteBan(event: Of<'mod.ban'>, moderatorId: string, t: ConsumerTx, origin: string): Promise<void> {
   const moderator = (await actorRefs(t.db, [moderatorId])).get(moderatorId);
@@ -146,21 +145,8 @@ async function onSiteBan(event: Of<'mod.ban'>, moderatorId: string, t: ConsumerT
   };
   const activity = event.banned ? ban(base, details) : unban(base, await sentId(t, origin, 'Block', event.targetApId), details);
   await sendActivity(t, moderator, activity, await deliverableInboxes(t.db, await peerInboxes(t.db)));
-  if (!event.banned || !event.removeContent) return;
-  const communities = new Map<string, ActorRef | null>();
-  const done = new Set<string>();
-  for (;;) {
-    // Withdrawn posts leave the query, so each batch is the next 200; `done` also ends the loop
-    // for a post in a community that is gone, which would come back every time.
-    const batch = (await removedBoostedPosts(t.db, event.targetActorId)).filter(({ apId }) => !done.has(apId));
-    if (batch.length === 0) return;
-    for (const { apId: postApId, communityId } of batch) {
-      done.add(postApId);
-      if (!communities.has(communityId)) communities.set(communityId, await localCommunity(t, communityId));
-      const community = communities.get(communityId);
-      if (community) await withdrawBoosts(t, { origin, community, postApId });
-    }
-  }
+  // One batch here, in the outbox transaction; the withdrawal job (delivery/withdrawals/job.ts) takes the rest.
+  if (event.banned && event.removeContent) await withdrawRemovedPosts(t, { origin, authorId: event.targetActorId });
 }
 
 async function onAccountDeleted(event: Of<'actor.deleted'>, t: ConsumerTx, origin: string): Promise<void> {

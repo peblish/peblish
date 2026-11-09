@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { beforeEach, describe, expect, test, vi } from 'vitest';
+import { siteBans } from '@peblish/core/bans/tables';
 import { db } from '@peblish/core/db/read';
 import { posts } from '@peblish/core/db/tables/content';
 import { activities } from '@peblish/core/db/tables/federation';
@@ -19,7 +20,7 @@ import { tx } from '@peblish/core/tx/tx';
 import type { OutboxEvent } from '@peblish/schema/events';
 import { localDocument } from '../actors/serve.ts';
 import { consumer as delivery } from '../delivery/consumer.ts';
-import { BULK_WITHDRAWAL_CAP } from '../delivery/withdraw.ts';
+import { BULK_WITHDRAWAL_CAP, withdrawalLock, withdrawRemaining } from '../delivery/withdraw.ts';
 import { processRow } from '../inbound/pipeline.ts';
 import { resetKeyFetchBudget } from '../inbound/throttle.ts';
 import { activityId, addressedToCommunity, hosts, PUBLIC } from '../inbound/test-support.ts';
@@ -288,21 +289,54 @@ describe('a site ban', () => {
     expect((await sentTo(w.mastodon.inbox)).map(({ shape: s }) => s)).toEqual(['Block']);
   });
 
-  test('with removeContent takes back the boost of every removed post in every batch, and only the banned person’s', async () => {
+  test('with removeContent takes back one batch in the event’s transaction and the rest in the job’s, only the banned person’s', async () => {
     const w = await world();
     const removedAt = new Date();
     for (let i = 0; i < BULK_WITHDRAWAL_CAP + 5; i++) await boosted(w, w.lemmy.actor, w.lemmy.instance, { removedAt });
     await boosted(w, w.lemmy.actor, w.lemmy.instance); // live: stays
     await boosted(w, w.alice, w.here, { removedAt }); // someone else's: stays
+    await writer().insert(siteBans).values({ actorId: w.lemmy.actor.id, source: 'local', removeContent: true });
     await runRelay(siteBan(w, w.lemmy.actor, { removeContent: true }));
-    const toMastodon = (await sentTo(w.mastodon.inbox)).map(({ shape: s }) => s);
-    expect(toMastodon.filter((s) => s === 'Undo(Announce)')).toHaveLength(BULK_WITHDRAWAL_CAP + 5);
-    expect(toMastodon.filter((s) => s === 'Block')).toHaveLength(1);
-    expect(toMastodon).toHaveLength(BULK_WITHDRAWAL_CAP + 6);
+    const undos = async () => (await sentTo(w.mastodon.inbox)).filter(({ shape: s }) => s === 'Undo(Announce)').length;
+    expect(await undos()).toBe(BULK_WITHDRAWAL_CAP);
+    expect((await sentTo(w.mastodon.inbox)).filter(({ shape: s }) => s === 'Block')).toHaveLength(1);
+
+    // The job resumes from what is left: the five, in a transaction of its own, then nothing.
+    expect(await withdrawRemaining({ maxBatches: 1 })).toBe(5);
+    expect(await undos()).toBe(BULK_WITHDRAWAL_CAP + 5);
+    expect(await withdrawRemaining()).toBe(0);
+    expect(await sentTo(w.mastodon.inbox)).toHaveLength(BULK_WITHDRAWAL_CAP + 6);
 
     await clearQueue();
     await runRelay(siteBan(w, w.lemmy.actor, { removeContent: true }));
     expect((await sentTo(w.mastodon.inbox)).map(({ shape: s }) => s)).toEqual(['Block']);
+  });
+
+  test('the job takes at most one batch per transaction, and skips a person another transaction is withdrawing', async () => {
+    const w = await world();
+    const removedAt = new Date();
+    for (let i = 0; i < BULK_WITHDRAWAL_CAP + 1; i++) await boosted(w, w.lemmy.actor, w.lemmy.instance, { removedAt });
+    await writer().insert(siteBans).values({ actorId: w.lemmy.actor.id, source: 'local', removeContent: true });
+    const undos = async () => (await sentTo(w.mastodon.inbox)).length;
+
+    // Another transaction holds the person's withdrawal lock: the job leaves them alone.
+    let release!: () => void;
+    let locked!: () => void;
+    const held = new Promise<void>((resolve) => (locked = resolve));
+    const holder = tx(async (t) => {
+      await t.db.execute(sql`select pg_advisory_xact_lock(hashtextextended(${withdrawalLock(w.lemmy.actor.id)}, 0))`);
+      locked();
+      await new Promise<void>((resolve) => (release = resolve));
+    });
+    await held;
+    expect(await withdrawRemaining()).toBe(0);
+    expect(await undos()).toBe(0);
+    release();
+    await holder;
+
+    expect(await withdrawRemaining({ maxBatches: 1 })).toBe(BULK_WITHDRAWAL_CAP);
+    expect(await undos()).toBe(BULK_WITHDRAWAL_CAP);
+    expect(await withdrawRemaining()).toBe(1);
   });
 
   test('a ban that keeps the content withdraws nothing, and a remote moderator’s ban is not ours to send', async () => {
