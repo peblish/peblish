@@ -17,6 +17,7 @@
     "@better-auth/utils": "0.5.1",
     "@peblish/schema": "workspace:*",
     "arktype": "2.2.9",
+    "aws4fetch": "1.0.20",
     "better-auth": "1.7.18",
     "drizzle-orm": "0.45.4",
     "highlight.js": "11.12.0",
