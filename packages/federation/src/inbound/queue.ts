@@ -94,6 +94,22 @@ export async function settle(t: OpenTx, claim: Claim, { state, error }: Settled)
 
 export const settleAlone = (claim: Claim, settled: Settled): Promise<void> => tx((t) => settle(t, claim, settled));
 
+/**
+ * Asserts, inside the caller's transaction, that this claim is still the one held, and keeps it
+ * so until the transaction ends: the row is locked (a lease or a settlement by another worker
+ * waits) and its lease renewed. A member of a batch is applied in a transaction of its own that
+ * does not settle the row; this is what makes a worker that lost the row roll it back. Throws
+ * ClaimLost when the claim is not held.
+ */
+export async function holdClaim(t: OpenTx, claim: Claim): Promise<void> {
+  const rows = await t.db
+    .update(inboxRaw)
+    .set({ leaseUntil: sql`now() + ${leaseSeconds} * interval '1 second'` })
+    .where(held(claim))
+    .returning({ id: inboxRaw.id });
+  if (rows.length === 0) throw new ClaimLost(claim);
+}
+
 /** Extends the lease by a full lease period. Throws ClaimLost when the claim is no longer held. */
 export async function renewLease(claim: Claim): Promise<void> {
   const rows = await tx((t) =>

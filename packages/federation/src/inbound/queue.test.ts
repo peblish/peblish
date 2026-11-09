@@ -1,8 +1,8 @@
 import { eq, sql } from 'drizzle-orm';
 import { beforeEach, describe, expect, test } from 'vitest';
 import { db } from '@peblish/core/db/read';
-import { posts } from '@peblish/core/db/tables/content';
-import { inboxRaw } from '@peblish/core/db/tables/federation';
+import { posts, votes } from '@peblish/core/db/tables/content';
+import { inboxDedupe, inboxRaw } from '@peblish/core/db/tables/federation';
 import { writer } from '@peblish/core/db/write';
 import { truncateAll } from '@peblish/core/testing/db';
 import { stubFetch } from '@peblish/core/testing/seed-fed-a';
@@ -16,10 +16,11 @@ import { activityId, addressedToCommunity, hosts, PUBLIC } from './test-support.
 // it: the claim generation (`attempts`) it holds no longer matches.
 
 const lemmy = 'https://lemmy.test';
+let world: Awaited<ReturnType<typeof seedInboundWorld>>;
 beforeEach(async () => {
   await truncateAll();
   resetKeyFetchBudget();
-  await seedInboundWorld();
+  world = await seedInboundWorld();
 });
 
 const like = () => ({
@@ -94,6 +95,37 @@ describe('a worker that lost its lease', () => {
         .from(posts)
         .where(eq(posts.apId, `${lemmy}/post/queue`)),
     ).toHaveLength(1);
+  });
+});
+
+describe('a batch whose row is taken while its members are applied', () => {
+  test('rolls back the member in flight, and the worker that holds the row applies them all', async () => {
+    const vote = (actor: string) => ({ id: activityId(lemmy, 'like'), type: 'Like', actor, object: world.t2.apId, audience: hosts.lab });
+    const batch = {
+      id: activityId(lemmy, 'announce'),
+      type: 'Announce',
+      actor: hosts.lab,
+      to: [PUBLIC],
+      object: [vote(hosts.lemmyuser), vote(hosts.lemmyadmin)],
+    };
+    await seedInboxRow(JSON.stringify(batch), { attempts: 0, activityId: batch.id });
+    const [claim] = await leasePending(1);
+    // The lease is taken by another worker after the first member is applied and before it commits.
+    let taken = false;
+    const takeIt = async () => {
+      if (taken) return;
+      taken = true;
+      await writer()
+        .update(inboxRaw)
+        .set({ attempts: sql`${inboxRaw.attempts} + 1` })
+        .where(eq(inboxRaw.id, claim!.id));
+    };
+    await expect(processRow(claim!, { afterApply: takeIt })).rejects.toBeInstanceOf(ClaimLost);
+    expect(await db().select().from(votes)).toEqual([]);
+    expect(await db().select().from(inboxDedupe)).toEqual([]);
+
+    expect(await processRow({ ...claim!, attempts: claim!.attempts + 1 })).toEqual({ state: 'applied', error: null });
+    expect(await db().select().from(votes)).toHaveLength(2);
   });
 });
 

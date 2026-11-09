@@ -17,7 +17,7 @@ import { inboundHandlers } from '../registry/inbound-handlers.gen.ts';
 import { checkActivityOrigin, checkNotEcho } from './authorize.ts';
 import { classify, type ClassifyEnv, type Item } from './classify.ts';
 import type { AnnounceInfo, InboundContext, InboundHandler, Prepared } from './handler.ts';
-import { renewLease, requeueWaiting, settle, settleAlone, yieldLater, type InboxRow, type Settled } from './queue.ts';
+import { holdClaim, renewLease, requeueWaiting, settle, settleAlone, yieldLater, type InboxRow, type Settled } from './queue.ts';
 import { Skipped, skip } from './reasons.ts';
 import { takePipelineFetch } from './throttle.ts';
 
@@ -222,7 +222,9 @@ async function applyOnce(row: InboxRow, prepared: Prepared, env: Env, settleHere
       });
     }
     await requeueWaiting(t, applied.stored ?? []);
+    // Either way the claim is asserted before the commit: a worker that lost the row applies nothing, a member of a batch included.
     if (settleHere) await settle(t, row, { state: 'applied', error: null });
+    else await holdClaim(t, row);
   });
 }
 
