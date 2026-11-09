@@ -15,7 +15,7 @@ import { defineMutation } from '../tx/mutation.ts';
 import { Refused } from '../tx/refused.ts';
 import { blockMedia, retainUntil } from './block.ts';
 import { lockHash } from './hash-lock.ts';
-import { purgeBytes } from './purge.ts';
+import { holdKeepsBytes, purgeBytes } from './purge.ts';
 import { assertMove } from './state.ts';
 import { livePostsUsing } from './usage.ts';
 
@@ -136,6 +136,8 @@ export const recordHold = defineMutation({
     // Once the purge has claimed the bytes (purge.ts) they are on their way out: too late for a hold.
     if (evidence.status === 'released' || evidence.purgeStartedAt !== null || (row.scanState === 'blocked' && !row.storageKey))
       throw new Refused('media.review', 'media.already_decided');
+    // A hold cannot narrow: while an AFP direction keeps the bytes, only another AFP direction replaces it.
+    if (holdKeepsBytes(evidence, input.now) && input.authority !== 'afp') throw new Refused('media.review', 'media.hold_invalid');
     await t.db
       .update(mediaEvidence)
       .set({

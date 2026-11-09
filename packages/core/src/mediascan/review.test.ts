@@ -286,6 +286,33 @@ test('only an AFP direction keeps the image bytes: NCMEC and NCA holds keep the 
   expect(store.objects.has(afp.storageKey!)).toBe(true);
 });
 
+test('a hold cannot narrow: while an AFP hold is in force, only another AFP hold replaces it', async () => {
+  const now = new Date();
+  const until = new Date(now.getTime() + 365 * day);
+  const row = await quarantined();
+  expect(await holdQuarantined(asAdmin(), { mediaId: row.id, authority: 'afp', reference: 'AFP-1', until }, { now })).toMatchObject({
+    ok: true,
+  });
+  for (const authority of ['ncmec', 'nca'] as const)
+    expect(await holdQuarantined(asAdmin(), { mediaId: row.id, authority, reference: 'X-1', until }, { now })).toEqual({
+      ok: false,
+      reason: 'media.hold_invalid',
+    });
+  expect(await holdQuarantined(asAdmin(), { mediaId: row.id, authority: 'afp', reference: 'AFP-2', until }, { now })).toMatchObject({
+    ok: true,
+  });
+  expect(await evidenceOf(row.id)).toMatchObject({ holdAuthority: 'afp', holdReference: 'AFP-2' });
+  // Once the AFP direction has ended, another authority may hold the record.
+  const later = new Date(until.getTime() + day);
+  expect(
+    await holdQuarantined(
+      asAdmin(),
+      { mediaId: row.id, authority: 'ncmec', reference: 'CT-1', until: new Date(later.getTime() + day) },
+      { now: later },
+    ),
+  ).toMatchObject({ ok: true });
+});
+
 test('a hold on a released image, or on bytes already purged, is refused as already decided', async () => {
   const until = new Date(Date.now() + 30 * day);
   const released = await quarantined();
