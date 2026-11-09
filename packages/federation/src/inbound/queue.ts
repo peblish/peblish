@@ -1,7 +1,6 @@
 import { inboxRaw } from '@peblish/core/db/tables/federation';
 import { tx, type OpenTx } from '@peblish/core/tx/tx';
-import { and, eq, inArray, sql } from 'drizzle-orm';
-import { missingTarget } from './reasons.ts';
+import { and, eq, like, or, sql } from 'drizzle-orm';
 
 // The inbox_raw queue: leasing pending rows for the job, settling them, and putting the rows
 // that waited for an object back in line. Every worker may run the job; a row is claimed with
@@ -168,8 +167,11 @@ function ignoreClaimLost(error: unknown): void {
   if (!(error instanceof ClaimLost)) throw error;
 }
 
+/** Whether the error text of a skipped row (reasons.ts missingTargets) names `apId`, matched whole between spaces. */
+const names = (apId: string) => sql`position(${` ${apId} `}::text in ' ' || ${inboxRaw.error} || ' ') > 0`;
+
 /**
- * Sets the rows skipped for want of `apIds` (target.missing <ap_id>) back to pending, in the
+ * Sets the rows skipped for want of any of `apIds` (target.missing <ap_id> ...) back to pending, in the
  * caller's transaction: an object that has just been stored may be what a vote, an edit or a
  * moderator's action was waiting for. Returns how many rows went back in line.
  */
@@ -178,7 +180,7 @@ export async function requeueWaiting(t: OpenTx, apIds: readonly string[]): Promi
   const rows = await t.db
     .update(inboxRaw)
     .set({ state: 'pending', error: null, leaseUntil: null, processedAt: null })
-    .where(and(eq(inboxRaw.state, 'skipped'), inArray(inboxRaw.error, apIds.map(missingTarget))))
+    .where(and(eq(inboxRaw.state, 'skipped'), like(inboxRaw.error, 'target.missing %'), or(...apIds.map(names))))
     .returning({ id: inboxRaw.id });
   return rows.length;
 }

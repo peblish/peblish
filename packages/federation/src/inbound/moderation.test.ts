@@ -210,9 +210,12 @@ describe('keeping the mirror fresh', () => {
         .where(eq(communityModerators.communityId, lab.id('https://lemmy.lab.test/c/lab')))
     ).length;
 
-  test('the job mirrors a followed community that has none yet, and leaves one it cannot read for the next run', async () => {
+  test('the job mirrors a followed community that has none yet, and leaves one it cannot read for a while', async () => {
     expect(await mirrorDue({ fetch: stubFetch({}).fetch })).toBe(0);
     expect(await mirrored()).toBe(0);
+    // Left alone for now (an hour), not asked at every run.
+    expect(await mirrorDue({ fetch: stubFetch({ [collection]: { body: moderators } }).fetch })).toBe(0);
+    forgetDeferredMirrors();
     expect(await mirrorDue({ fetch: stubFetch({ [collection]: { body: moderators } }).fetch })).toBe(1);
     expect(await mirrored()).toBe(1);
     // Fresh now: nothing is due until the mirror runs low.

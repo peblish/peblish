@@ -79,5 +79,10 @@ export class Skipped extends Error {
 
 export const skip = (reason: SkipReason, detail?: string): Skipped => new Skipped(reason, detail);
 
-/** The error text a skipped row waiting on `apId` carries, for the requeue. */
-export const missingTarget = (apId: string): string => `target.missing ${apId}`;
+/**
+ * The error text a skipped row carries while it waits for objects, for the requeue (queue.ts):
+ * `target.missing` and then each ap_id, one space apart (an ap_id has no space). A row waiting
+ * for one object reads `target.missing <ap_id>`; a batch with several members waiting names all
+ * of them, so the arrival of any one puts it back in line.
+ */
+export const missingTargets = (apIds: readonly string[]): string => `target.missing ${apIds.join(' ')}`;

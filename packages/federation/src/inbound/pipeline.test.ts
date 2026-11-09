@@ -139,6 +139,50 @@ describe('dedupe, apply and enqueue are one transaction', () => {
   });
 });
 
+describe('a batch that waits for several objects', () => {
+  test('goes back in line when any of them arrives, whichever comes first', async () => {
+    const vote = (n: number, actor: string, object: string) => ({
+      id: activityId(lemmy, `like${n}`),
+      type: 'Like',
+      actor,
+      object,
+      audience: lab,
+    });
+    const batch = {
+      ...announceBy(lab, vote(0, lemmyuser, world.t2.apId)),
+      object: [
+        vote(1, lemmyuser, world.t2.apId),
+        vote(2, hosts.lemmyadmin, `${lemmy}/post/none1`),
+        vote(3, lemmyuser, `${lemmy}/post/none2`),
+      ],
+    };
+    const waiting = await deliver(batch);
+    expect(waiting.stored).toEqual({ state: 'skipped', error: `target.missing ${lemmy}/post/none1 ${lemmy}/post/none2` });
+    expect(await db().select().from(votes)).toHaveLength(1);
+
+    // The second object arrives first: the row goes back in line, applies what it can and waits for the other.
+    await deliver(announceBy(lab, createPage('none2', lab)));
+    expect((await inboxState(waiting.row.id))?.state).toBe('pending');
+    await processPending();
+    expect(await inboxState(waiting.row.id)).toEqual({ state: 'skipped', error: `target.missing ${lemmy}/post/none1` });
+    expect(await db().select().from(votes)).toHaveLength(2);
+
+    await deliver(announceBy(lab, createPage('none1', lab)));
+    await processPending();
+    expect(await inboxState(waiting.row.id)).toEqual({ state: 'applied', error: null });
+    expect(await db().select().from(votes)).toHaveLength(3);
+  });
+
+  test('an object whose address only contains another’s does not requeue the row', async () => {
+    const vote = { id: activityId(lemmy, 'like'), type: 'Like', actor: lemmyuser, object: `${lemmy}/post/none`, audience: lab };
+    const skipped = await deliver(announceBy(lab, vote));
+    expect(skipped.stored?.error).toBe(`target.missing ${lemmy}/post/none`);
+    expect(await requeueSkippedFor(`${lemmy}/post/non`)).toBe(0);
+    expect(await requeueSkippedFor(`${lemmy}/post/none/x`)).toBe(0);
+    expect(await requeueSkippedFor(`${lemmy}/post/none`)).toBe(1);
+  });
+});
+
 async function truncateVotes() {
   await writer().delete(votes);
   await writer().delete(inboxDedupe);

@@ -18,7 +18,7 @@ import { checkActivityOrigin, checkNotEcho } from './authorize.ts';
 import { classify, type ClassifyEnv, type Item } from './classify.ts';
 import type { AnnounceInfo, InboundContext, InboundHandler, Prepared } from './handler.ts';
 import { holdClaim, renewLease, requeueWaiting, settle, settleAlone, yieldLater, type InboxRow, type Settled } from './queue.ts';
-import { Skipped, skip } from './reasons.ts';
+import { Skipped, missingTargets, skip } from './reasons.ts';
 import { takePipelineFetch } from './throttle.ts';
 
 // One inbox_raw row from receipt to its end state. The signature was verified when the row was
@@ -256,15 +256,18 @@ async function processItem(row: InboxRow, json: JsonObject, env: Env, settleHere
 /**
  * One end state for a row that carried several activities: applied if any was, else why none were.
  * A member still waiting for its object keeps the row discoverable even when another member
- * applied: the row is recorded as skipped for that object, goes back in line when the object
- * arrives (queue.ts requeueWaiting), and is processed again with the members that applied
- * protected by their dedupe markers (they come out as `duplicate`).
+ * applied: the row is recorded as skipped for every object its members wait for, goes back in
+ * line when any of them arrives (queue.ts requeueWaiting), and is processed again with the
+ * members that applied protected by their dedupe markers (they come out as `duplicate`).
  */
 function aggregate(results: readonly ItemResult[]): Settled {
   const skipped = results.filter((result): result is { skipped: Skipped } => 'skipped' in result).map((result) => result.skipped);
-  // A missing object is recorded alone, so the requeue that matches it finds the row.
-  const missing = skipped.find((one) => one.reason === 'target.missing');
-  if (missing) return { state: 'skipped', error: missing.recorded };
+  // Every object a member waits for is recorded, so the arrival of any one finds the row.
+  const missing = skipped.filter((one) => one.reason === 'target.missing');
+  if (missing.length > 0) {
+    const waiting = [...new Set(missing.flatMap((one) => (one.detail && !/\s/.test(one.detail) ? [one.detail] : [])))];
+    return { state: 'skipped', error: waiting.length > 0 ? missingTargets(waiting) : missing[0]!.recorded };
+  }
   if (results.some((result) => 'applied' in result)) return { state: 'applied', error: null };
   const failed = results.find((result): result is { failed: string } => 'failed' in result);
   if (failed) return { state: 'failed', error: failed.failed };
