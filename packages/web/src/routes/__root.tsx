@@ -1,3 +1,4 @@
+import { ProseLabelsProvider } from '@peblish/ui/components/prose';
 import { LocaleProvider } from '@peblish/ui/locale';
 import { rootThemeAttributes, systemSchemeScript } from '@peblish/ui/theme/root';
 import muxCss from '@peblish/ui/styles.css?url';
@@ -7,6 +8,7 @@ import { DEFAULT_LOCALE } from '../i18n/negotiate.ts';
 import { translate } from '../i18n/translate.ts';
 import { openInRouter, useClientLinks } from '../shell/client-links.ts';
 import { useRouteHydrated } from '../shell/hydration.ts';
+import { useProseLabels } from '../shell/labels.ts';
 import { PrefsProvider } from '../shell/prefs.tsx';
 import { getRootData } from '../shell/root-data.ts';
 import { Shell } from '../shell/shell.tsx';
@@ -46,6 +48,7 @@ function useRouterHref(href: string): string {
 function RootComponent() {
   const { locale, prefs } = Route.useLoaderData();
   const router = useRouter();
+  const proseLabels = useProseLabels();
   const navigate = useCallback((href: string) => openInRouter(router, href), [router]);
   useClientLinks();
 
@@ -65,9 +68,11 @@ function RootComponent() {
       <body>
         <LocaleProvider locale={locale} navigate={navigate} useHref={useRouterHref}>
           <PrefsProvider initial={prefs}>
-            <Shell>
-              <Outlet />
-            </Shell>
+            <ProseLabelsProvider value={proseLabels}>
+              <Shell>
+                <Outlet />
+              </Shell>
+            </ProseLabelsProvider>
           </PrefsProvider>
         </LocaleProvider>
         <Scripts />

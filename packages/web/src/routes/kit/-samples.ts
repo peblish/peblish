@@ -227,6 +227,7 @@ A footnote reference[^1].
 
 /**
  * A remote object's HTML (a PieFed or Mastodon post), which the server sanitises: inline
- * spoilers (one holding a link, which stays a plain span) and Mastodon's shortened link.
+ * spoilers (a leaf is a button; one holding a link, and one holding another spoiler, stay plain
+ * spans with a reveal control before them) and Mastodon's shortened link.
  */
-export const proseRemoteHtml = `<p>A <tg-spoiler>hidden spoiler</tg-spoiler> inside a sentence, a second <span class="spoiler">spoiler</span>, one that holds a <span class="spoiler">linked <a href="https://example.com/x">word</a></span>, and a short link <a href="https://example.com/a/long/path"><span class="invisible">https://</span><span class="ellipsis">example.com/a/long</span><span class="invisible">/path</span></a>.</p>`;
+export const proseRemoteHtml = `<p>A <tg-spoiler>hidden spoiler</tg-spoiler> inside a sentence, a second <span class="spoiler">spoiler</span>, one that holds a <span class="spoiler">linked <a href="https://example.com/x">word</a></span>, a nested <span class="spoiler">outer <span class="spoiler">inner</span> spoiler</span>, and a short link <a href="https://example.com/a/long/path"><span class="invisible">https://</span><span class="ellipsis">example.com/a/long</span><span class="invisible">/path</span></a>.</p>`;

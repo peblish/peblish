@@ -1,9 +1,11 @@
 import type { BadgeLabels } from '@peblish/ui/components/badge';
 import type { CommentThreadLabels } from '@peblish/ui/components/comment-thread';
 import type { PostCardLabels } from '@peblish/ui/components/post-card';
+import type { ProseLabels } from '@peblish/ui/components/prose';
 import type { ReplyBarLabels } from '@peblish/ui/components/reply-bar';
 import type { VoteControlLabels } from '@peblish/ui/components/vote-control';
 import type { DensityControlLabels } from '@peblish/ui/density/density-control';
+import { useMemo } from 'react';
 import { useTranslate } from '../i18n/use-translate.ts';
 import { translatePlural } from '../i18n/translate.ts';
 
@@ -85,4 +87,11 @@ export function useDensityLabels(): DensityControlLabels {
     classic: t('ui', 'density.classic'),
     compact: t('ui', 'density.compact'),
   };
+}
+
+/** Prose's one string; the root provides it (ProseLabelsProvider), so every page that renders content has it. */
+export function useProseLabels(): ProseLabels {
+  const { t } = useTranslate();
+  const revealSpoiler = t('ui', 'prose.spoiler');
+  return useMemo(() => ({ revealSpoiler }), [revealSpoiler]);
 }
