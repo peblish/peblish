@@ -1,49 +1,32 @@
-import type { Principal } from '@peblish/schema/authz';
 import { eq } from 'drizzle-orm';
 import { beforeEach, describe, expect, test } from 'vitest';
 import { actors } from '../db/tables/actors.ts';
 import { comments, posts } from '../db/tables/content.ts';
 import { outboxCursors } from '../db/tables/outbox.ts';
 import { writer } from '../db/write.ts';
-import { createCommentAs, deleteCommentAs, updateCommentAs } from '../comments/actions.ts';
-import { resolveReplyTarget, storeRemoteComment } from '../comments/remote.ts';
+import { deleteCommentAs, updateCommentAs } from '../comments/actions.ts';
 import { banFromCommunity, unbanFromCommunity } from '../moderation/ban.ts';
 import { removeContent, restoreContent } from '../moderation/remove.ts';
 import { truncateAll } from '../testing/db.ts';
 import { grantFor, seedPost } from '../testing/seed-az.ts';
-import { drainNotices, emitEvent, kindsOf, noticeCount, noticesOf, seedInboxWorld, seedNotice, seedModlog } from '../testing/seed-e2.ts';
+import {
+  drainNotices,
+  emitEvent,
+  kindsOf,
+  noticeCount,
+  noticesOf,
+  remoteSay,
+  say,
+  seedInboxWorld,
+  seedModlog,
+  seedNotice,
+} from '../testing/seed-e2.ts';
 import { localUser } from '../testing/seed.ts';
 import { db } from '../db/read.ts';
 import { notifications } from './tables.ts';
 import { uuidv7 } from 'uuidv7';
 
 beforeEach(truncateAll);
-
-type World = Awaited<ReturnType<typeof seedInboxWorld>>;
-
-/** A local person comments on `postId` (under `parentId` when given) and the id comes back. */
-async function say(person: { id: string }, postId: string, bodyMd: string, parentId: string | null = null) {
-  const created = await createCommentAs(localUser(person.id), { postId, parentId }, { bodyMd });
-  if (!created.ok) throw new Error(`comment refused: ${created.reason}`);
-  return created.id;
-}
-
-/** A remote person's comment, stored the way the inbound handler stores it. */
-async function remoteSay(w: World, replyToApId: string, raw: unknown = { type: 'Note' }) {
-  const principal: Principal = { kind: 'remote', actorId: w.people.remoteAuthor.id, announcedBy: null };
-  const subject = (await resolveReplyTarget(replyToApId))!;
-  const stored = await storeRemoteComment(await grantFor('comment.create', principal, subject), {
-    apId: `https://lemmy.test/comment/${uuidv7()}`,
-    inReplyToApId: replyToApId,
-    bodyMd: null,
-    contentHtml: '<p>Hello from Lemmy</p>',
-    language: null,
-    publishedAt: new Date(),
-    editedAt: null,
-    raw,
-  });
-  return stored.id;
-}
 
 const postApId = async (postId: string) => (await db().select({ apId: posts.apId }).from(posts).where(eq(posts.id, postId)))[0]!.apId;
 const commentApId = async (id: string) => (await db().select({ apId: comments.apId }).from(comments).where(eq(comments.id, id)))[0]!.apId;
@@ -53,7 +36,7 @@ describe('replies', () => {
     const w = await seedInboxWorld();
     const postId = w.posts.local.normal;
     const local = await say(w.people.reader, postId, 'Nice post');
-    const remote = await remoteSay(w, await postApId(postId));
+    const remote = await remoteSay(w.people.remoteAuthor, await postApId(postId));
     await drainNotices();
 
     const rows = await noticesOf(w.people.author.id);
@@ -69,7 +52,7 @@ describe('replies', () => {
     const postId = w.posts.local.normal;
     const parent = await say(w.people.moderator, postId, 'First');
     const local = await say(w.people.reader, postId, 'Second', parent);
-    const remote = await remoteSay(w, await commentApId(parent));
+    const remote = await remoteSay(w.people.remoteAuthor, await commentApId(parent));
     await drainNotices();
 
     expect(await noticesOf(w.people.moderator.id)).toMatchObject([
@@ -231,7 +214,7 @@ describe('moderator actions', () => {
     const mod = localUser(w.people.moderator.id);
     const own = await say(w.people.moderator, w.posts.local.normal, 'Mine');
     await removeContent(await grantFor('mod.remove', mod, { target: { kind: 'comment', id: own } }), {});
-    const remoteComment = await remoteSay(w, await postApId(w.posts.local.normal));
+    const remoteComment = await remoteSay(w.people.remoteAuthor, await postApId(w.posts.local.normal));
     await removeContent(await grantFor('mod.remove', mod, { target: { kind: 'comment', id: remoteComment } }), {});
     await drainNotices();
     // Only the two replies to the post's author exist; nobody was told about a removal.
