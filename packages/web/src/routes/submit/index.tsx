@@ -1,5 +1,5 @@
 import composerCss from '@peblish/ui/composer/composer.css?url';
-import { createFileRoute, redirect, useRouter } from '@tanstack/react-router';
+import { createFileRoute, getRouteApi, redirect, useRouter } from '@tanstack/react-router';
 import { type } from 'arktype';
 import { DEFAULT_LOCALE } from '../../i18n/negotiate.ts';
 import { translate } from '../../i18n/translate.ts';
@@ -16,6 +16,8 @@ import submitCss from './-ui/submit.css?url';
 // /submit: the composer as a page (composer-page), and with ?edit=<postId> the author's edit
 // form. The shell's "Create post" opens the same form as a sheet over the page instead
 // (shell/create-post.tsx). The form is plain: it posts here and works without JavaScript.
+
+const root = getRouteApi('__root__');
 
 /** A search value as a string: the router parses ?a=1 into a number. */
 const Text = type('string | number').pipe((value) => String(value));
@@ -77,6 +79,8 @@ function Submit() {
   const router = useRouter();
   const data = Route.useLoaderData();
   const search = Route.useSearch();
+  // Who the shell is showing: another tab changing the account reloads the root data (shell/viewer-sync.ts).
+  const viewer = root.useLoaderData({ select: ({ session }) => session?.actorId ?? '' });
   useRouteHydrated();
   const editing = search.edit !== undefined;
   return (
@@ -91,8 +95,8 @@ function Submit() {
         </>
       ) : (
         <Composer
-          // A different post (or none), or the words kept from another refusal, is a different form.
-          key={`${data.edit?.id ?? 'new'}:${search.flash ?? ''}`}
+          // Another person, a different post (or none), or the words kept from another refusal, is a different form.
+          key={`${viewer}:${data.edit?.id ?? 'new'}:${search.flash ?? ''}`}
           data={data}
           error={asComposerError(search.error)}
           onDone={(path) => openInRouter(router, path)}
