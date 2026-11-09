@@ -16,7 +16,7 @@ import { renderMarkdown } from '../markdown/render.ts';
 const MentionTag = type({ type: "'Mention'", href: 'string.url' });
 
 /** The https `href`s of the document's Mention tags; `tag` may be one object or an array. */
-function mentionHrefs(raw: unknown): string[] {
+export function mentionHrefs(raw: unknown): string[] {
   const tag = typeof raw === 'object' && raw !== null && 'tag' in raw ? raw.tag : undefined;
   const items = Array.isArray(tag) ? tag : tag === undefined ? [] : [tag];
   return items.flatMap((item) => {
@@ -58,4 +58,11 @@ export async function findMentioned(
     .map(({ id }) => id)
     .filter((id) => id !== authorId)
     .slice(0, mentionMaxCount);
+}
+
+/** Whether two peer documents mention the same actors (order and repeats aside): a change is an edit even when the text is not. */
+export function sameMentions(before: unknown, after: unknown): boolean {
+  const a = new Set(mentionHrefs(before));
+  const b = new Set(mentionHrefs(after));
+  return a.size === b.size && [...a].every((href) => b.has(href));
 }

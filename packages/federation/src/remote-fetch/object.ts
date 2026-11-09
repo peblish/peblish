@@ -179,9 +179,19 @@ export async function storeObject(
 
 type Author = { actor: ResolvedActor } | { outcome: ObjectOutcome };
 
-async function authorOf(apId: string, objectApId: string, fetch: Fetcher): Promise<Author> {
+/**
+ * The object's author, resolved. The actor document may sit behind redirects, and then its real
+ * id is not the one the object names: an alias on the object's host could redirect to a person
+ * elsewhere and have them stored as its author. So the resolved actor's own id must be the
+ * object's `attributedTo` (on whose origin checkObject already held the object), or nothing is
+ * authorised or stored.
+ */
+async function authorOf(object: { apId: string; authorApId: string }, fetch: Fetcher): Promise<Author> {
+  const objectApId = object.apId;
   try {
-    return { actor: await resolveRemoteActor(apId, { fetch }) };
+    const actor = await resolveRemoteActor(object.authorApId, { fetch });
+    if (actor.apId !== object.authorApId) return { outcome: refused(objectApId, 'object.author_mismatch') };
+    return { actor };
   } catch (error) {
     if (!(error instanceof ActorResolveError)) throw error;
     return { outcome: error.transient ? unreachable(objectApId, error.message) : refused(objectApId, 'actor.unresolvable') };
@@ -200,7 +210,7 @@ async function storePost(post: PostRecord, vouch: Vouch, fetch: Fetcher): Promis
   if (post.communityApId !== vouch.community.apId) return refused(post.apId, 'community.mismatch');
   // The inbound rule (handlers/_content.ts): NSFL never, NSFW only while remote_nsfw.accepted is on.
   if (post.nsfl || (post.sensitive && !(await readSetting('remote_nsfw.accepted')))) return refused(post.apId, 'content.nsfw_rejected');
-  const author = await authorOf(post.authorApId, post.apId, fetch);
+  const author = await authorOf(post, fetch);
   if ('outcome' in author) return author.outcome;
   const decision = await authorize('post.create', principalOf(author.actor, vouch), { communityId: vouch.community.id });
   if (!decision.ok) return refused(post.apId, decision.reason);
@@ -227,7 +237,7 @@ async function storeComment(
     target = parent.status === 'stored' ? await resolveReplyTarget(comment.inReplyToApId) : null;
     if (!target) return refused(comment.apId, 'parent.missing');
   }
-  const author = await authorOf(comment.authorApId, comment.apId, options.fetch);
+  const author = await authorOf(comment, options.fetch);
   if ('outcome' in author) return author.outcome;
   const decision = await authorize('comment.create', principalOf(author.actor, vouch), target);
   if (!decision.ok) return refused(comment.apId, decision.reason);

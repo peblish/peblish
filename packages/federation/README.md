@@ -127,6 +127,9 @@ concurrent fetches store one actor, and a stale copy is returned when the peer i
 - The document must be the one asked for: its id is the requested id, or where it was finally
   served from after a redirect (fragments aside), on the origin it names. An actor document
   may be reached through up to three redirects, each hop its own request through the fetcher.
+  So the actor found can have another id than the one asked for: a fetched post or comment
+  (`remote-fetch/object.ts`, used by resolve, the backfill and the missing-object job) is stored
+  only when its author's resolved id is its `attributedTo` exactly (`object.author_mismatch`).
 - A 200 `Tombstone` is the 410 answer when it names the requested id (or the address it was
   served from) on the requested actor's origin: the copy we hold is deleted with cause
   `Tombstone`, in ordinary resolution and in the inbound key refresh alike. A Tombstone for an
@@ -196,22 +199,35 @@ of it, then the author's `Delete` to the same inboxes when the author is local. 
 (`object_ap_id` the Announce's id) marks the boost withdrawn, so a second event queues nothing,
 and a post never boosted queues nothing. It follows Mastodon's `undo.rb` (an Undo of an
 Announce is found by the Announce's id and the booster) and `delete.rb` (a Delete is found by
-the author, and `RemoveStatusService` takes the boosts with it).
+the author, and `RemoveStatusService` takes the boosts with it). The author's `Delete` also goes
+to a Mastodon-like server that was sent the post directly for a mention (below), since only it
+removes the status there. A boost's `deliveries` rows are kept past the 30 day prune
+(`core/src/remote/prune.ts`) until an Undo takes the boost back, so the Undo reaches every inbox
+the boost did.
 
 Restoring is not sent to Mastodon-like inboxes: Mastodon keeps a Tombstone of what it deleted
 and refuses a `Create` of it, so a restored post stays gone there. An unlock, a pin and a ban
 change nothing a Mastodon user sees. A ban with `removeContent` removes the member's posts
 without an event each, so the relay withdraws up to 200 of the member's removed, still boosted
-posts per event (`removedBoostedPosts`); a second event takes the rest.
+posts per event (`withdrawRemovedPosts`); a second event takes the rest.
+
+**Reasons.** A removal, a restoration, a ban and an unban carry the moderator's reason as
+`summary` only when the event's modlog row is public. A private row (an admins-only report
+removal's statement of reasons, a private site ban) sends and stores the activity without one,
+so the copy served at its id has none either.
 
 **Site bans.** A `mod.ban` with `communityId: null` (a local moderator banning a person from the
 whole site) is a `Block` of the person with the instance actor (`<origin>/`) as `target`, signed
 by the moderator and sent straight to every peer we trade follows with (`peerInboxes`), not
 announced, as an account's deletion is; an unban is the `Undo` embedding it. Inboxes of an
 instance where `deliveryBlocked` (`core/src/peers/gate.ts`, lane MODF's) is true are left out.
-With `removeContent` the person's removed posts are taken down without an event each, so the
-relay withdraws their boosts from Mastodon-like followers in batches of 200 until none is
-left, in every local community. A site ban by a remote moderator is not ours to send.
+With `removeContent` the person's removed posts are taken down without an event each, so their
+boosts are withdrawn from Mastodon-like followers in every local community: one batch of 200 in
+the event's transaction, then the job `federation.boost_withdrawals` (every minute) one batch
+per transaction until none is left. Its continuation is the data (the `site_bans` row with
+`remove_content`, and the boosts no Undo has taken back), and an advisory lock per person keeps
+two transactions off the same posts. A site ban a peer sets on its own person is not ours to
+send, but with `removeData` its withdrawal runs the same way.
 
 **The kill switch.** With the `delivery.enabled` site setting off, `deliverDue` claims nothing:
 rows stay pending (attempts uncounted) and go out once it is on again. A run that is under way
@@ -220,7 +236,10 @@ stops before its next batch.
 **Mentions.** A post or comment that names a remote person (`@name@host`) we hold adds that
 person to the `cc` of the activity and of the Page or Note, and the Mention `tag` as before.
 When no Announce reaches the person's inbox (it is not a follower inbox the activity goes to),
-the author's own activity is also sent to it directly, signed by the author, as Lemmy does. An
+the author's own activity is also sent to it directly, signed by the author, as Lemmy does.
+Everyone an earlier copy named (the `cc` of each Create and Update we stored, `mentionedBefore`)
+is sent the edit, the deletion, the restoration and a moderator's removal the same way, also once
+the body no longer names them; they are not put back in `cc`. An
 unknown handle stays text, and a mentioned community (`!name@host`) is tagged but never
 addressed: an activity sent to a community's inbox is read as a post to it. The Page or Note served
 at its id (`actors/serve.ts`) has the same `tag` and `cc`, so what a peer fetches matches what was sent.
@@ -237,12 +256,13 @@ the POST (and sends nothing if the row is no longer its own), and records its ou
 while the row is still `pending` at the attempt it claimed. A stale result is dropped; at
 worst the receiver gets the activity twice.
 
-| Answer                                                            | Result                                                      |
-| ----------------------------------------------------------------- | ----------------------------------------------------------- |
-| 2xx                                                               | delivered                                                   |
-| 408, 429, 5xx, a timeout, a connection error                      | retried                                                     |
-| every other 4xx (401 and 425 too), any 3xx, a refused destination | failed, never retried                                       |
-| an instance `isDormant` reports                                   | skipped, but one probe a day (`core/src/remote/dormant.ts`) |
+| Answer                                                              | Result                                                      |
+| ------------------------------------------------------------------- | ----------------------------------------------------------- |
+| 2xx                                                                 | delivered                                                   |
+| 408, 429, 5xx, a timeout, a connection error                        | retried                                                     |
+| every other 4xx (401 and 425 too), any 3xx, a refused destination   | failed, never retried                                       |
+| an instance `isDormant` reports                                     | skipped, but one probe a day (`core/src/remote/dormant.ts`) |
+| a blocked peer (`peer_controls.blocked`), read just before the POST | skipped, never retried                                      |
 
 Retries wait 10 s, 30 s, 90 s, 270 s, 810 s, 2,430 s, 7,290 s, then 6 hours twice (the
 spike's schedule, in `delivery/policy.ts`): ten attempts over 54,130 seconds, about 15

@@ -1,8 +1,10 @@
-import type { Queryable } from '@peblish/core/db/read';
+import { siteBans } from '@peblish/core/bans/tables';
+import { db as readDb, type Queryable } from '@peblish/core/db/read';
+import { localInstance } from '@peblish/core/db/local-instance';
 import { posts } from '@peblish/core/db/tables/content';
 import { activities } from '@peblish/core/db/tables/federation';
 import { deliveries } from '@peblish/core/delivery/tables';
-import type { OpenTx } from '@peblish/core/tx/tx';
+import { tx, type OpenTx } from '@peblish/core/tx/tx';
 import { and, desc, eq, inArray, isNotNull, sql } from 'drizzle-orm';
 import type { JsonObject } from '../mapping/json.ts';
 import type { Activity } from '../mapping/records.ts';
@@ -11,7 +13,7 @@ import { remove } from './activities.ts';
 import { followerInboxes } from './followers.ts';
 import { newActivityId, sendActivity } from './send.ts';
 import { enqueueDeliveries } from './queue.ts';
-import { actorRefs, type ActorRef } from './records.ts';
+import { actorRefs, mentionedBefore, type ActorRef } from './records.ts';
 
 // Taking a post back from Mastodon-like followers. Mastodon ignores a group's Announce(Delete)
 // as it ignores Announce(Create(Page)), so the boost of a post it was sent as Announce(Page)
@@ -87,8 +89,9 @@ export function undoAnnounce(id: string, communityApId: string, announceApId: st
 /**
  * Queues the Undo of each boost of `postApId` in a local community, to the inboxes it went to
  * and to the Mastodon-like followers now (an instance that unfollowed since still gets it), and,
- * when a local person wrote the post, that person's Delete to the same inboxes. A post never
- * boosted, or whose boosts were all undone, queues nothing: a second removal event is a no-op.
+ * when a local person wrote the post, that person's Delete to the same inboxes and to the
+ * Mastodon-like servers it was sent to directly for a mention. A post never boosted, or whose
+ * boosts were all undone, and mentioning nobody there, queues nothing: a second removal event is a no-op.
  *
  * `announced` is the activity already announced to threadiverse followers for this withdrawal.
  * When it is the author's own Delete without a summary, it is reused as the Delete (one id for
@@ -99,9 +102,12 @@ export async function withdrawBoosts(
   { origin, community, postApId, announced }: { origin: string; community: ActorRef; postApId: string; announced?: Activity },
 ): Promise<void> {
   const boosts = await boostsOf(t.db, community.apId, postApId);
-  if (boosts.length === 0) return;
+  // A Mastodon-like server that was sent the post directly, for a person it mentions, holds the
+  // status too: only the author's Delete takes it away.
+  const mentioned = (await mentionedBefore(t.db, postApId)).filter(({ shape }) => shape === 'page').map(({ inbox }) => inbox);
+  if (boosts.length === 0 && mentioned.length === 0) return;
   const current = (await followerInboxes(t.db, community.id)).page;
-  const everywhere = new Set(current);
+  const everywhere = new Set(mentioned);
   for (const boost of boosts) {
     const id = newActivityId(origin);
     const wire = undoAnnounce(id, community.apId, boost.announceApId, postApId);
@@ -144,8 +150,10 @@ export async function removedBoostedPosts(
         communityId ? eq(posts.communityId, communityId) : undefined,
         eq(posts.authorId, authorId),
         isNotNull(posts.removedAt),
+        // Only a community that is ours and still there can take its boost back: a post elsewhere would come back every time.
         sql`exists (
-          select 1 from activities a join actors c on c.ap_id = a.actor_ap_id and c.id = ${posts.communityId}
+          select 1 from activities a
+          join actors c on c.ap_id = a.actor_ap_id and c.id = ${posts.communityId} and c.local and c.deleted_at is null
           where a.type = 'Announce' and a.local and a.object_ap_id = ${posts.apId}
             and not exists (select 1 from activities u where u.type = 'Undo' and u.local and u.object_ap_id = a.ap_id)
         )`,
@@ -153,4 +161,67 @@ export async function removedBoostedPosts(
     )
     .orderBy(desc(posts.removedAt))
     .limit(limit);
+}
+
+/** The advisory lock a transaction withdrawing `authorId`'s removed posts holds (exported for the tests that hold it). */
+export const withdrawalLock = (authorId: string): string => `withdrawal:${authorId}`;
+
+/**
+ * Withdraws the boosts of one batch (BULK_WITHDRAWAL_CAP) of `authorId`'s removed posts, in
+ * `communityId` or every local community, inside `t`, and says how many posts it took. Null
+ * when another transaction is withdrawing that person's posts right now: it then does nothing,
+ * so two never send the same Undo twice. Withdrawn posts leave the query, so the next call takes
+ * the next batch.
+ */
+export async function withdrawRemovedPosts(
+  t: OpenTx,
+  { origin, authorId, communityId }: { origin: string; authorId: string; communityId?: string },
+): Promise<number | null> {
+  const [lock] = await t.db.execute<{ locked: boolean }>(
+    sql`select pg_try_advisory_xact_lock(hashtextextended(${withdrawalLock(authorId)}, 0)) as locked`,
+  );
+  if (!lock?.locked) return null;
+  const batch = await removedBoostedPosts(t.db, authorId, { communityId });
+  const communities = await actorRefs(t.db, [...new Set(batch.map((post) => post.communityId))]);
+  for (const { apId: postApId, communityId: id } of batch) {
+    const community = communities.get(id);
+    if (community) await withdrawBoosts(t, { origin, community, postApId });
+  }
+  return batch.length;
+}
+
+/** Withdrawal transactions that took posts, at most, in one run of the withdrawal job. */
+export const withdrawalBatchesPerRun = 25;
+
+/**
+ * The rest of each site ban with removeContent. The ban's event withdraws one batch in the outbox
+ * transaction (relay/consumer.ts); this takes the person's remaining removed, still boosted posts,
+ * one batch per transaction, until none is left. What is left is read from the data each time
+ * (the site_bans row, and the boosts no Undo has taken back), so a run that stops anywhere is
+ * resumed by the next. Returns the posts withdrawn.
+ */
+export async function withdrawRemaining({
+  signal,
+  maxBatches = withdrawalBatchesPerRun,
+}: { signal?: AbortSignal; maxBatches?: number } = {}): Promise<number> {
+  const { origin } = await localInstance(readDb());
+  const people = await readDb()
+    .select({ actorId: siteBans.actorId })
+    .from(siteBans)
+    .where(eq(siteBans.removeContent, true))
+    .orderBy(siteBans.createdAt);
+  let batches = 0;
+  let withdrawn = 0;
+  for (const { actorId } of people) {
+    for (;;) {
+      if (batches >= maxBatches || signal?.aborted) return withdrawn;
+      const taken = await tx((t) => withdrawRemovedPosts(t, { origin, authorId: actorId }));
+      // A person with nothing left, or whose posts another transaction holds, costs no batch.
+      if (!taken) break;
+      batches++;
+      withdrawn += taken;
+      if (taken < BULK_WITHDRAWAL_CAP) break;
+    }
+  }
+  return withdrawn;
 }

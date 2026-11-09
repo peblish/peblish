@@ -225,6 +225,31 @@ describe('a link to a post or a comment', () => {
     expect(await db().select().from(posts)).toEqual([]);
   });
 
+  test('refuses a post or comment whose author alias redirects to someone else, and stores nothing in their name', async () => {
+    // lemmy.test hosts both the community and the alias; the alias redirects to an innocent person on other.test.
+    const alias = `${lemmy}/u/alias`;
+    const victim = actorDocument('other.test', 'victim', { publicKeyPem });
+    const { fetch } = peer({
+      [alias]: { status: 302, location: victim.id },
+      [victim.id]: { body: victim },
+      ...nodeInfoRoutes('other.test', 'lemmy', '0.19.21'),
+      [`${lemmy}/post/330`]: { body: lemmyPage(330, { attributedTo: alias }) },
+      [`${lemmy}/post/331`]: { body: lemmyPage(331) },
+      [`${lemmy}/comment/332`]: { body: lemmyNote(332, `${lemmy}/post/331`, { attributedTo: alias }) },
+    });
+    expect(await resolveLookup(lookup(`${lemmy}/post/330`), { fetch })).toEqual({ ok: false, error: 'peer.invalid' });
+    expect(await resolveLookup(lookup(`${lemmy}/comment/332`), { fetch })).toEqual({ ok: false, error: 'peer.invalid' });
+    const [victimRow] = await db().select({ id: actors.id }).from(actors).where(eq(actors.apId, victim.id));
+    expect(
+      await db()
+        .select({ apId: posts.apId })
+        .from(posts)
+        .where(eq(posts.authorId, victimRow?.id ?? '')),
+    ).toEqual([]);
+    expect(await db().select({ apId: comments.apId }).from(comments)).toEqual([]);
+    expect((await db().select({ apId: posts.apId }).from(posts)).map((row) => row.apId)).toEqual([`${lemmy}/post/331`]);
+  });
+
   test('refuses a post of a community flagged sensitive or nsfl', async () => {
     for (const flag of ['sensitive', 'nsfl']) {
       await truncateAll();

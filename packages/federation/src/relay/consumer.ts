@@ -1,14 +1,15 @@
 import { localInstance } from '@peblish/core/db/local-instance';
 import { actors } from '@peblish/core/db/tables/actors';
 import { activities } from '@peblish/core/db/tables/federation';
+import { modlog } from '@peblish/core/db/tables/moderation';
 import { defineConsumer, type ConsumerTx } from '@peblish/core/outbox/consumers';
 import { instanceActorUrls } from '@peblish/schema/actor-urls';
 import type { OutboxEvent } from '@peblish/schema/events';
 import { and, desc, eq } from 'drizzle-orm';
 import { deliverableInboxes, peerInboxes } from '../delivery/followers.ts';
-import { newActivityId, publishInCommunity, sendActivity } from '../delivery/publish.ts';
-import { removedBoostedPosts, withdrawBoosts } from '../delivery/withdraw.ts';
-import { actorRefs, type ActorRef } from '../delivery/records.ts';
+import { newActivityId, publishInCommunity, sendActivity, type PublishOptions } from '../delivery/publish.ts';
+import { withdrawRemovedPosts } from '../delivery/withdraw.ts';
+import { actorRefs, mentionedBefore, type ActorRef } from '../delivery/records.ts';
 import { accountDeletion, ban, collectionChange, lock, removal, restoration, unban, unlock } from './moderation.ts';
 
 // Outbound moderation (the other half of lane FED-B's relay; announce.ts is the inbound half).
@@ -40,6 +41,18 @@ async function sentId(t: ConsumerTx, origin: string, type: string, objectApId: s
   return row?.apId ?? newActivityId(origin);
 }
 
+/**
+ * The reason a moderation event may carry onto the wire: its own when the event's modlog row is
+ * public, otherwise none. A private row (an admins-only report removal's statement, a private
+ * site ban) keeps its reason on this instance; the activity, as delivered and as served at its
+ * id, has no summary. No row (never expected) counts as private.
+ */
+async function wireReason(t: ConsumerTx, event: { modlogId: string; reason: string | null }): Promise<string | null> {
+  if (event.reason === null) return null;
+  const [row] = await t.db.select({ public: modlog.public }).from(modlog).where(eq(modlog.id, event.modlogId));
+  return row?.public ? event.reason : null;
+}
+
 /** The community's featured and moderators collections, as its document advertises them. */
 async function collections(t: ConsumerTx, communityId: string) {
   const [row] = await t.db
@@ -55,27 +68,31 @@ async function onModeration(
   t: ConsumerTx,
   origin: string,
 ): Promise<void> {
+  // A site ban is withdrawn from Mastodon-like followers whoever set it (a peer's own ban of its person too).
+  if (event.type === 'mod.ban' && event.communityId === null) return onSiteBan(event, t, origin);
   // An action of someone no longer here is not federated from here.
-  if (!event.local || event.moderatorId === null) return;
-  if (event.type === 'mod.ban' && event.communityId === null) return onSiteBan(event, event.moderatorId, t, origin);
-  if (event.communityId === null) return;
+  if (!event.local || event.moderatorId === null || event.communityId === null) return;
   const { communityId } = event;
   const community = await localCommunity(t, communityId);
   const moderator = (await actorRefs(t.db, [event.moderatorId])).get(event.moderatorId);
   if (!community || !moderator) return;
   const as = (id: string) => ({ id, actorApId: moderator.apId, communityApId: community.apId });
-  const publish = (activity: Parameters<typeof publishInCommunity>[2], microblog?: { withdraw: string }) =>
-    publishInCommunity(t, { origin, author: moderator, community }, activity, { microblog });
+  const publish = (activity: Parameters<typeof publishInCommunity>[2], options: PublishOptions = {}) =>
+    publishInCommunity(t, { origin, author: moderator, community }, activity, options);
   const id = newActivityId(origin);
   switch (event.type) {
-    case 'mod.remove':
+    case 'mod.remove': {
+      const reason = await wireReason(t, event);
+      // The people a copy was sent to for a mention hear of the removal and the restoration too.
+      const earlier = await mentionedBefore(t.db, event.targetApId);
       // Mastodon-like followers cannot be told of a restoration: Mastodon keeps a Tombstone of what it deleted.
       return event.removed
-        ? publish(
-            removal(as(id), event.targetApId, event.reason),
-            event.target.kind === 'post' ? { withdraw: event.targetApId } : undefined,
-          )
-        : publish(restoration(as(id), await sentId(t, origin, 'Delete', event.targetApId), event.targetApId, event.reason));
+        ? publish(removal(as(id), event.targetApId, reason), {
+            earlier,
+            microblog: event.target.kind === 'post' ? { withdraw: event.targetApId } : undefined,
+          })
+        : publish(restoration(as(id), await sentId(t, origin, 'Delete', event.targetApId), event.targetApId, reason), { earlier });
+    }
     case 'mod.lock':
       return publish(
         event.locked ? lock(as(id), event.targetApId) : unlock(as(id), await sentId(t, origin, 'Lock', event.targetApId), event.targetApId),
@@ -89,15 +106,14 @@ async function onModeration(
       const details = {
         objectApId: event.targetApId,
         communityApId: community.apId,
-        reason: event.reason,
+        reason: await wireReason(t, event),
         removeData: event.removeContent,
         expires: event.expiresAt ? new Date(event.expiresAt) : null,
       };
       await publish(event.banned ? ban(as(id), details) : unban(as(id), await sentId(t, origin, 'Block', event.targetApId), details));
-      // A ban with removeContent removes the member's posts without an event each: take their boosts back.
+      // A ban with removeContent removes the member's posts without an event each: take their boosts back, one batch.
       if (event.banned && event.removeContent) {
-        const batch = await removedBoostedPosts(t.db, event.targetActorId, { communityId: community.id });
-        for (const { apId: postApId } of batch) await withdrawBoosts(t, { origin, community, postApId });
+        await withdrawRemovedPosts(t, { origin, authorId: event.targetActorId, communityId: community.id });
       }
       return;
     }
@@ -111,39 +127,33 @@ async function onModeration(
 }
 
 /**
- * A site ban (no community): a Block of the person with the instance actor as target, signed by
- * the moderator, to every peer we trade follows with except those where deliveries are held back
- * (lane MODF's gate), or its Undo. With removeContent the person's removed posts were taken down
- * without an event each, so their boosts are withdrawn here, a batch at a time.
+ * A site ban (no community). One a local moderator set is a Block of the person with the instance
+ * actor as target, signed by the moderator, to every peer we trade follows with except those
+ * where deliveries are held back (lane MODF's gate), or its Undo. With removeContent the person's
+ * removed posts were taken down without an event each, so their boosts are withdrawn, also for a
+ * ban a peer set on its own person (the Block came from there and goes nowhere): the first batch
+ * here, the rest by a job.
  */
-async function onSiteBan(event: Of<'mod.ban'>, moderatorId: string, t: ConsumerTx, origin: string): Promise<void> {
+async function onSiteBan(event: Of<'mod.ban'>, t: ConsumerTx, origin: string): Promise<void> {
+  // The Block is ours to send only for a ban a local moderator set; the withdrawal is due either way.
+  if (event.local && event.moderatorId !== null) await sendSiteBan(event, event.moderatorId, t, origin);
+  // One batch here, in the outbox transaction; the withdrawal job (delivery/withdrawals/job.ts) takes the rest.
+  if (event.banned && event.removeContent) await withdrawRemovedPosts(t, { origin, authorId: event.targetActorId });
+}
+
+async function sendSiteBan(event: Of<'mod.ban'>, moderatorId: string, t: ConsumerTx, origin: string): Promise<void> {
   const moderator = (await actorRefs(t.db, [moderatorId])).get(moderatorId);
   if (!moderator) return;
   const base = { id: newActivityId(origin), actorApId: moderator.apId, communityApId: null };
   const details = {
     objectApId: event.targetApId,
     communityApId: instanceActorUrls(origin).apId,
-    reason: event.reason,
+    reason: await wireReason(t, event),
     removeData: event.removeContent,
     expires: event.expiresAt ? new Date(event.expiresAt) : null,
   };
   const activity = event.banned ? ban(base, details) : unban(base, await sentId(t, origin, 'Block', event.targetApId), details);
   await sendActivity(t, moderator, activity, await deliverableInboxes(t.db, await peerInboxes(t.db)));
-  if (!event.banned || !event.removeContent) return;
-  const communities = new Map<string, ActorRef | null>();
-  const done = new Set<string>();
-  for (;;) {
-    // Withdrawn posts leave the query, so each batch is the next 200; `done` also ends the loop
-    // for a post in a community that is gone, which would come back every time.
-    const batch = (await removedBoostedPosts(t.db, event.targetActorId)).filter(({ apId }) => !done.has(apId));
-    if (batch.length === 0) return;
-    for (const { apId: postApId, communityId } of batch) {
-      done.add(postApId);
-      if (!communities.has(communityId)) communities.set(communityId, await localCommunity(t, communityId));
-      const community = communities.get(communityId);
-      if (community) await withdrawBoosts(t, { origin, community, postApId });
-    }
-  }
 }
 
 async function onAccountDeleted(event: Of<'actor.deleted'>, t: ConsumerTx, origin: string): Promise<void> {

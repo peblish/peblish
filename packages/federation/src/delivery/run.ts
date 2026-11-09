@@ -1,6 +1,7 @@
 import { db } from '@peblish/core/db/read';
 import { actorKeys } from '@peblish/core/db/tables/actors';
 import { deliveries } from '@peblish/core/delivery/tables';
+import { deliveryBlocked, instanceBlocked } from '@peblish/core/peers/gate';
 import { isDormant } from '@peblish/core/remote/instances';
 import { readSetting } from '@peblish/core/settings/read';
 import { tx } from '@peblish/core/tx/tx';
@@ -124,6 +125,16 @@ async function signingKey(senderId: string) {
   return key?.privateKeyPem ? { keyId: key.keyId, privateKeyPem: key.privateKeyPem } : null;
 }
 
+/**
+ * Whether the destination is a blocked peer, read just before the POST so a block made after the
+ * row was queued still stops it. A row queued before its instance was known has no `instanceId`:
+ * the inbox URL's host names the peer then.
+ */
+const destinationBlocked = (row: Claimed): Promise<boolean> =>
+  row.instanceId ? deliveryBlocked(row.instanceId) : instanceBlocked(db(), row.inboxUrl);
+
+const blockedOutcome: Outcome = { state: 'skipped', status: null, error: 'the instance is blocked', delayMs: 0 };
+
 /** Null when the row is no longer this worker's: it sends nothing and records nothing. */
 async function attempt(row: Claimed, fetch: Fetcher, leaseMs: number): Promise<Outcome | null> {
   const key = await signingKey(row.senderId);
@@ -143,6 +154,7 @@ async function attempt(row: Claimed, fetch: Fetcher, leaseMs: number): Promise<O
   headers.delete('host');
   headers.set('user-agent', await userAgent());
   if (!(await renew(row, leaseMs))) return null;
+  if (await destinationBlocked(row)) return blockedOutcome;
   let result: Attempt;
   let status: number | null = null;
   let note: string | null = null;
@@ -174,6 +186,8 @@ async function deliver(
   row: Claimed,
   options: Required<Pick<DeliveryOptions, 'fetch' | 'isDormant' | 'refreshSoftware' | 'leaseMs'>>,
 ): Promise<Outcome | null> {
+  // Checked here too, so a blocked peer is not asked for its NodeInfo either.
+  if (await destinationBlocked(row)) return blockedOutcome;
   if (row.instanceId && (await options.isDormant(row.instanceId))) {
     return { state: 'skipped', status: null, error: 'the instance is dormant', delayMs: 0 };
   }

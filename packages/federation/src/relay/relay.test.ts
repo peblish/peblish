@@ -9,6 +9,7 @@ import { writer } from '@peblish/core/db/write';
 import { tx } from '@peblish/core/tx/tx';
 import { truncateAll } from '@peblish/core/testing/db';
 import { seedActor, seedInstance } from '@peblish/core/testing/seed';
+import { seedModlog } from '@peblish/core/testing/seed-e2';
 import { seedLocalInstance, seedSigningKey } from '@peblish/core/testing/seed-fed-a';
 import { inboxState, seedFollow, seedInboundWorld, seedInboxRow, seedPeerActor } from '@peblish/core/testing/seed-fed-b';
 import type { OutboxEvent } from '@peblish/schema/events';
@@ -163,13 +164,14 @@ async function outbound() {
   await writer()
     .insert(follows)
     .values({ followerId: bob.id, followeeId: news.id, apId: 'https://lemmy.test/follow/bob', state: 'accepted', acceptedAt: new Date() });
-  return { here, moderator, news, bob, lab };
+  const log = (await seedModlog(moderator, bob)).id;
+  return { here, moderator, news, bob, lab, log };
 }
 type Outbound = Awaited<ReturnType<typeof outbound>>;
 
 const run = (event: OutboxEvent) => tx((t) => consumer.handle(event, t));
 const mod = (w: Outbound, community = w.news.id, local = true) =>
-  ({ v: 1, moderatorId: w.moderator.id, modlogId: uuidv7(), local, communityId: community }) as const;
+  ({ v: 1, moderatorId: w.moderator.id, modlogId: w.log, local, communityId: community }) as const;
 const target = 'https://fed-a.test/post/7';
 
 describe('a moderation action taken here is federated through the community', () => {
