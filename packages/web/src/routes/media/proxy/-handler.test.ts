@@ -1,6 +1,6 @@
 import { proxyUrlBuilder } from '@peblish/core/media/proxy-url';
 import { expect, test, vi } from 'vitest';
-import { PROXY_MAX_AGE_SECONDS, proxyResponse } from './-handler.ts';
+import { PROXY_MAX_AGE_SECONDS, PROXY_RETRY_AFTER_SECONDS, proxyResponse } from './-handler.ts';
 
 const key = Buffer.from('k'.repeat(32));
 const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/q842iQAAAABJRU5ErkJggg==', 'base64');
@@ -59,4 +59,24 @@ test('a refused fetch is passed on as its status, uncached, and never redirects 
     });
     expect([response.status, response.headers.get('cache-control'), response.headers.get('location')]).toEqual([status, 'no-store', null]);
   }
+});
+
+test('a busy proxy answers 503 with Retry-After and no caching', async () => {
+  const response = await proxyResponse(signature, target, {
+    key,
+    enabled: true,
+    fetchImage: async () => ({ ok: false, status: 503, why: 'busy' }),
+  });
+  expect([response.status, response.headers.get('retry-after'), response.headers.get('cache-control')]).toEqual([
+    503,
+    String(PROXY_RETRY_AFTER_SECONDS),
+    'no-store',
+  ]);
+  // Only a busy proxy asks the browser to come back.
+  const refused = await proxyResponse(signature, target, {
+    key,
+    enabled: true,
+    fetchImage: async () => ({ ok: false, status: 415, why: 'not_a_raster_image' }),
+  });
+  expect(refused.headers.get('retry-after')).toBeNull();
 });

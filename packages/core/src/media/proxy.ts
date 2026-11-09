@@ -1,4 +1,5 @@
 import { BlockedDestinationError, FetchTimeoutError, safeFetch, type SafeFetchInit, type SafeResponse } from '../net/fetch.ts';
+import { createSlots, type Slots } from './slots.ts';
 import { sniffRaster, type RasterType } from './sniff.ts';
 
 // The fetch behind the remote-media proxy route: one image, held in memory for the length of
@@ -10,21 +11,46 @@ export const proxyLimits = {
   bytes: 10 * 1024 * 1024,
   redirects: 3,
   timeoutMs: 15_000,
+  /**
+   * Upstream fetches at once in this process, and how many more may wait for a turn. The signed
+   * URL of a page's image is public, so anyone can ask for it again and again: each fetch holds up
+   * to `bytes` in memory (32 of them: 320 MiB at the very worst, a few MiB in practice), and
+   * past the queue the answer is a 503. A per-address limiter is a later item (it needs a throttle scope).
+   */
+  concurrent: 32,
+  queued: 64,
 };
+
+const upstream = createSlots(proxyLimits.concurrent, proxyLimits.queued);
 
 export type ProxyResult =
   | { ok: true; type: RasterType; body: Uint8Array }
-  | { ok: false; status: 403 | 413 | 415 | 502 | 504; why: 'blocked' | 'too_large' | 'not_a_raster_image' | 'upstream' | 'timeout' };
+  | {
+      ok: false;
+      status: 403 | 413 | 415 | 502 | 503 | 504;
+      why: 'blocked' | 'too_large' | 'not_a_raster_image' | 'upstream' | 'timeout' | 'busy';
+    };
 
 type Fetcher = (url: string, init: SafeFetchInit) => Promise<SafeResponse>;
 
 /**
  * The image at `url`. Only JPEG, PNG, GIF, WebP and AVIF pass, judged by their first bytes
  * and not by the type the remote host claims (SVG, HTML and everything else are refused with
- * 415), so the type the proxy answers with is its own. `fetch` is safeFetch unless a test
- * brings a stub.
+ * 415), so the type the proxy answers with is its own. At most `proxyLimits.concurrent` fetches
+ * run at once; a request waits for a turn behind up to `proxyLimits.queued` others and is
+ * refused with 503 beyond that. `fetch` is safeFetch unless a test brings a stub.
  */
-export async function fetchProxiedImage(url: string, fetch: Fetcher = safeFetch): Promise<ProxyResult> {
+export async function fetchProxiedImage(url: string, fetch: Fetcher = safeFetch, slots: Slots = upstream): Promise<ProxyResult> {
+  const release = await slots.acquire();
+  if (!release) return { ok: false, status: 503, why: 'busy' };
+  try {
+    return await fetchImage(url, fetch);
+  } finally {
+    release();
+  }
+}
+
+async function fetchImage(url: string, fetch: Fetcher): Promise<ProxyResult> {
   let response: SafeResponse;
   try {
     response = await fetch(url, {
