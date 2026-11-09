@@ -72,6 +72,7 @@ export const routes: readonly PayloadRoute[] = [
     target: async (base) => `/u/${(await fixtures(base)).admin.name}/edit`,
     admin: true,
   },
+  { route: '/notifications/', path: '/notifications', admin: true },
   { route: '/admin/registration/', path: '/admin/registration', admin: true },
   { route: '/post/$id/', path: '/post/<id>', target: seededPost },
   { route: '/post/$id/comments/$commentId', path: '/post/<id>/comments/<commentId>', target: seededPermalink },
