@@ -20,10 +20,10 @@ export const Route = createFileRoute('/report/sent/')({
   loader: async ({ deps }) => {
     const number = Number(deps.n);
     if (!Number.isInteger(number) || number < 1) throw notFound();
-    const result = await loadSentReport({ data: { number } });
+    const result = await loadSentReport({ data: { number, ...(deps.back && { back: deps.back }) } });
     if (result.signedOut) throw redirect({ to: '/auth/sign-in', search: { redirect: `/report/sent?n=${number}` }, statusCode: 303 });
     if (!result.sent) throw notFound();
-    return result.sent;
+    return { ...result.sent, back: result.back };
   },
   head: () => ({ links: [{ rel: 'stylesheet', href: reportCss }] }),
   component: Sent,
@@ -33,8 +33,6 @@ function Sent() {
   const { t, locale } = useTranslate();
   useRouteHydrated();
   const sent = Route.useLoaderData();
-  const { back } = Route.useSearch();
-  const done = back && /^\/(?!\/)/.test(back) && !back.includes('\\') ? back : '/';
   return (
     <main className="rp-page rp-sent">
       <h1>{t('reports', 'sent.title', { number: sent.number })}</h1>
@@ -48,7 +46,7 @@ function Sent() {
           {t('reports', 'sent.block', { handle: `@${sent.blockHandle}` })}
         </a>
       )}
-      <a href={done}>{t('reports', 'sent.done')}</a>
+      <a href={sent.back}>{t('reports', 'sent.done')}</a>
     </main>
   );
 }
