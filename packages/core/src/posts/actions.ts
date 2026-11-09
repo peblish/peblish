@@ -17,13 +17,20 @@ import type { NewPost, PostEdit } from './input.ts';
 /**
  * Creates the post, then casts the author's own upvote on it, as Lemmy and PieFed do, so a new
  * post starts at a score of 1 like its peers'. The vote is a second mutation and best effort: the
- * post exists either way, so a refusal or a failure there is not the caller's error.
+ * post exists either way, so a refusal or a failure there is not the caller's error, only a warning.
  */
 export async function createPostAs(principal: Principal, communityId: Uuid, input: NewPost): Promise<Result<{ id: Uuid; apId: string }>> {
   const decision = await authorize('post.create', principal, { communityId });
   if (!decision.ok) return decision;
   const created = await refusedAsResult(() => createPost(decision.grant, input));
-  if (created.ok) await voteAs(principal, { kind: 'post', id: created.id }, 1).catch(() => undefined);
+  if (created.ok) {
+    try {
+      const voted = await voteAs(principal, { kind: 'post', id: created.id }, 1);
+      if (!voted.ok) console.warn(`createPostAs: the author's upvote on post ${created.id} was refused: ${voted.reason}`);
+    } catch (error) {
+      console.warn(`createPostAs: the author's upvote on post ${created.id} failed`, error);
+    }
+  }
   return created;
 }
 
