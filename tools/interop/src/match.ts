@@ -17,7 +17,11 @@ export type Sql = postgres.Sql;
 
 export type InboxExpectation =
   | { state: 'applied' }
-  /** `detail` is what follows the reason in `inbox_raw.error` (a missing object's ap_id). */
+  /**
+   * `detail` is what follows the reason in `inbox_raw.error` (a missing object's ap_id). `'*'`
+   * accepts any detail but still requires the exact reason (the detail is an id the scenario
+   * cannot know, such as the address of a peer's object).
+   */
   | { state: 'skipped'; reason: SkipReason; detail?: string }
   | { state: 'failed'; error: string };
 
@@ -48,9 +52,18 @@ export function outcomeText(row: Pick<InboxRow, 'state' | 'error'>): string {
   return row.error ? `${row.state} ${row.error}` : row.state;
 }
 
+/** Equality of the recorded outcome with the expectation; a `'*'` detail accepts any detail after the exact reason. */
+export function outcomeMatches(row: Pick<InboxRow, 'state' | 'error'>, expected: InboxExpectation): boolean {
+  if (expected.state === 'skipped' && expected.detail === '*') {
+    return row.state === 'skipped' && (row.error === expected.reason || (row.error?.startsWith(`${expected.reason} `) ?? false));
+  }
+  return outcomeText(row) === expectedText(expected);
+}
+
 export function expectedText(expected: InboxExpectation): string {
   if (expected.state === 'applied') return 'applied';
   if (expected.state === 'failed') return `failed ${expected.error}`;
+  if (expected.detail === '*') return `skipped ${expected.reason} *`;
   return `skipped ${expected.detail ? `${expected.reason} ${expected.detail}` : expected.reason}`;
 }
 
@@ -69,7 +82,7 @@ export function matchInbound(rows: readonly InboxRow[], query: InboxQuery, expec
   if (rows.length === 0) throw new Mismatch(`no inbox row for ${describeQuery(query)}; expected [${expectedText(expected)}]`);
   if (rows.length > 1) throw new Mismatch(`${rows.length} inbox rows for ${describeQuery(query)}, expected one: ${listRows(rows)}`);
   const [row] = rows as [InboxRow];
-  if (outcomeText(row) !== expectedText(expected)) {
+  if (!outcomeMatches(row, expected)) {
     throw new Mismatch(`${describeQuery(query)}: expected [${expectedText(expected)}], got [${outcomeText(row)}]`);
   }
   return row;

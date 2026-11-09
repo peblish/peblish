@@ -230,6 +230,6 @@ export const peblish = {
   },
   /** Reads a remote community's moderators now (the 15 minute job is too slow for a scenario). */
   mirrorModerators: (communityId: Uuid) => mirrorNow(communityId),
-  resolve: (target: string) => resolveRemoteActor(target),
+  resolve: (target: string, options?: { refresh?: boolean }) => resolveRemoteActor(target, options),
   removeContent,
 };

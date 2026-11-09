@@ -36,6 +36,10 @@ export async function prepare(ctx: Context, peer: Peer): Promise<Side> {
     async () => (await peer.resolveCommunity(token, ctx.community.handle)).subscribed === 'Subscribed',
     { timeoutMs: 60_000 },
   );
+  // A second follower: Lemmy drops a banned user's subscription and then refuses the community's
+  // Announces while nobody there follows it (CommunityHasNoFollowers), which would swallow the unban.
+  const adminView = await peer.resolveCommunity(adminToken, ctx.community.handle);
+  if (adminView.subscribed === 'NotSubscribed') await peer.follow(adminToken, adminView.id);
   const handle = peer.communityHandle();
   const resolved = await peblish.resolve(handle);
   const remoteId = resolved.id as Uuid;
@@ -99,7 +103,7 @@ export async function storedComment(ctx: Context, apId: string) {
 }
 
 /** Text shared by a title and a body, so a post is easy to find in a log. */
-export const tag = (ctx: Context, label: string, peer: Peer) => `${label} ${peer.name} ${ctx.run}`;
+export const tag = (ctx: Context, label: string, who: { name: string }) => `${label} ${who.name} ${ctx.run}`;
 
 /**
  * The post a peer's admin makes in the peer's own community, as peblish stores it. When peblish

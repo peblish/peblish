@@ -117,7 +117,8 @@ export type Recorder = ReturnType<typeof recorder>;
 /** Runs named scenarios, prints one line each, and keeps the results for `finish`. */
 export function recorder(only?: readonly string[]) {
   const results: Result[] = [];
-  const wanted = (id: string) => !only || only.includes(id);
+  /** `ONLY=Z1` also selects its cases, `Z1/N3`. */
+  const wanted = (id: string) => !only || only.some((o) => id === o || id.startsWith(`${o}/`));
   return {
     results,
     wanted,

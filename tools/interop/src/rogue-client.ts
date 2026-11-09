@@ -13,6 +13,7 @@ export const rogue = {
     http<{ status: number; body: string }>('POST', `${ROGUE}/control/send`, { body: { as, inbox, activity } }),
   mode: (settings: { fail503?: number; slowMs?: number }) => http<unknown>('POST', `${ROGUE}/control/mode`, { body: settings }),
   received: () => http<Received[]>('GET', `${ROGUE}/control/received`),
+  gets: () => http<{ ts: string; path: string; signed: boolean; headers: string | null }[]>('GET', `${ROGUE}/control/gets`),
   reset: () => http<unknown>('POST', `${ROGUE}/control/reset`),
 };
 

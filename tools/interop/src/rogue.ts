@@ -42,11 +42,14 @@ const FIXTURE_INBOXES: Record<string, string> = {
   down: `${ORIGIN}/fixture/down`, // always 503
   refuser: `${ORIGIN}/fixture/refuse`, // always 400
   slow: `${ORIGIN}/fixture/slow`, // waits `slowMs` before the first answer
+  queried: `${ORIGIN}/fixture/query?a=1&b=2`, // an inbox URL with a query string
 };
 
 const mode = { fail503: 2, slowMs: 0 };
 type Received = { ts: string; path: string; status: number; body: unknown };
 let received: Received[] = [];
+/** GET requests (peblish's signed document fetches): path and whether a Signature header came with it. */
+let gets: { ts: string; path: string; signed: boolean; headers: string | null }[] = [];
 
 function actorDocument(kind: 'Person' | 'Group', name: string) {
   const id = `${ORIGIN}/${kind === 'Group' ? 'c' : 'u'}/${name}`;
@@ -99,7 +102,7 @@ const parse = (text: string): unknown => {
   }
 };
 
-async function onInbox(path: string, text: string, res: ServerResponse) {
+async function onInbox(path: string, text: string, res: ServerResponse, search = '') {
   const body = parse(text);
   let status = 202;
   if (path === '/fixture/redirect') {
@@ -119,7 +122,7 @@ async function onInbox(path: string, text: string, res: ServerResponse) {
     received.push({ ts: new Date().toISOString(), path: `${path} (started)`, status: 0, body });
     await new Promise((resolve) => setTimeout(resolve, wait));
   }
-  received.push({ ts: new Date().toISOString(), path, status, body });
+  received.push({ ts: new Date().toISOString(), path: path + search, status, body });
   res.writeHead(status).end();
   // Accept follows of the fake group, as a real server would.
   if (
@@ -150,6 +153,15 @@ createServer(async (req, res) => {
   const text = req.method === 'POST' ? await readBody(req) : '';
   try {
     if (req.method === 'GET') {
+      if (!path.startsWith('/control/')) {
+        const signature = req.headers.signature;
+        gets.push({
+          ts: new Date().toISOString(),
+          path: req.url ?? path,
+          signed: typeof signature === 'string',
+          headers: typeof signature === 'string' ? signature : null,
+        });
+      }
       const actor = /^\/(u|c)\/([a-z0-9]+)$/.exec(path);
       if (actor) return json(res, 200, actorDocument(actor[1] === 'c' ? 'Group' : 'Person', actor[2]!), 'application/activity+json');
       if (path === '/c/fake/moderators') {
@@ -184,6 +196,7 @@ createServer(async (req, res) => {
         });
       }
       if (path === '/control/received') return json(res, 200, received);
+      if (path === '/control/gets') return json(res, 200, gets);
       return json(res, 404, { error: 'not found' });
     }
     if (path === '/control/send') {
@@ -196,11 +209,12 @@ createServer(async (req, res) => {
     }
     if (path === '/control/reset') {
       received = [];
+      gets = [];
       mode.fail503 = 2;
       mode.slowMs = 0;
       return json(res, 200, { ok: true });
     }
-    return await onInbox(path, text, res);
+    return await onInbox(path, text, res, new URL(req.url ?? '/', ORIGIN).search);
   } catch (error) {
     return json(res, 500, { error: String(error) });
   }

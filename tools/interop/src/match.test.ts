@@ -26,6 +26,25 @@ describe('matchInbound', () => {
     expect(() => matchInbound([bare], query, { state: 'skipped', reason: 'announce.bare_iri' })).toThrow(Mismatch);
   });
 
+  it('accepts any detail for a wildcard, but still needs the exact reason', () => {
+    const origin = row('skipped', 'object.origin_mismatch https://x.test/post/1 is not on https://y.test');
+    expect(() => matchInbound([origin], query, { state: 'skipped', reason: 'object.origin_mismatch', detail: '*' })).not.toThrow();
+    expect(() =>
+      matchInbound([row('skipped', 'object.origin_mismatch')], query, { state: 'skipped', reason: 'object.origin_mismatch', detail: '*' }),
+    ).not.toThrow();
+    expect(() => matchInbound([origin], query, { state: 'skipped', reason: 'object.author_mismatch', detail: '*' })).toThrow(
+      'got [skipped object.origin_mismatch',
+    );
+    // A longer reason that merely starts with the wanted one is not it.
+    expect(() =>
+      matchInbound([row('skipped', 'object.origin_mismatch_x')], query, {
+        state: 'skipped',
+        reason: 'object.origin_mismatch',
+        detail: '*',
+      }),
+    ).toThrow(Mismatch);
+  });
+
   it('fails on another reason, and names both', () => {
     expect(() => matchInbound([row('skipped', 'announce.person')], query, { state: 'skipped', reason: 'announce.bare_iri' })).toThrow(
       'expected [skipped announce.bare_iri], got [skipped announce.person]',
