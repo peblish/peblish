@@ -19,6 +19,7 @@ function laneDatabaseUrl(): string {
 
 export default defineConfig({
   testDir: '.',
+  globalSetup: './global-setup.ts',
   testMatch: '**/*.spec.ts',
   outputDir: './artifacts/test-results',
   timeout: 30_000,
