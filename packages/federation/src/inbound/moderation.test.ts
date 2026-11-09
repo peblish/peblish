@@ -9,6 +9,7 @@ import { truncateAll } from '@peblish/core/testing/db';
 import { stubFetch } from '@peblish/core/testing/seed-fed-a';
 import { deliverRow, seedLabWorld } from '@peblish/core/testing/seed-fed-b';
 import { readFixture } from '../test/manifest.ts';
+import { mirrorDue } from './moderators/refresh.ts';
 import { processRow } from './pipeline.ts';
 import { resetKeyFetchBudget } from './throttle.ts';
 import { useCommentDouble } from './test-support.ts';
@@ -193,5 +194,26 @@ describe('a remote community’s moderators', () => {
     expect(row).toMatchObject({ source: 'remote', role: 'moderator' });
     expect(row?.verifiedAt).toBeInstanceOf(Date);
     expect((row?.expiresAt?.getTime() ?? 0) - Date.now()).toBeGreaterThan(11.9 * 3600_000);
+  });
+});
+
+describe('keeping the mirror fresh', () => {
+  const collection = 'https://lemmy.lab.test/c/lab/moderators';
+  const moderators = { type: 'OrderedCollection', id: collection, orderedItems: ['https://lemmy.lab.test/u/lemmyadmin'] };
+  const mirrored = async () =>
+    (
+      await db()
+        .select()
+        .from(communityModerators)
+        .where(eq(communityModerators.communityId, lab.id('https://lemmy.lab.test/c/lab')))
+    ).length;
+
+  test('the job mirrors a followed community that has none yet, and leaves one it cannot read for the next run', async () => {
+    expect(await mirrorDue({ fetch: stubFetch({}).fetch })).toBe(0);
+    expect(await mirrored()).toBe(0);
+    expect(await mirrorDue({ fetch: stubFetch({ [collection]: { body: moderators } }).fetch })).toBe(1);
+    expect(await mirrored()).toBe(1);
+    // Fresh now: nothing is due until the mirror runs low.
+    expect(await mirrorDue({ fetch: stubFetch({ [collection]: { body: moderators } }).fetch })).toBe(0);
   });
 });
