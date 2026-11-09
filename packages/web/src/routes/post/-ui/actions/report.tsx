@@ -1,6 +1,7 @@
 import type { ContentActionProps } from '../../../-actions/props.ts';
+import { ContentReport } from '../../../report/-ui/slots.tsx';
 
-/** The Report action on the post page. Lane REP fills it; until then it renders nothing. */
-export function PostReport(_props: ContentActionProps) {
-  return null;
+/** The Report action on the post page (lane REP). */
+export function PostReport(props: ContentActionProps) {
+  return <ContentReport {...props} />;
 }

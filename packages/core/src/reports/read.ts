@@ -294,13 +294,13 @@ async function readSubjects(q: Queryable, page: Head[]): Promise<Map<string, Que
 }
 
 /** Plain text from a Markdown body, else from remote HTML, as the feed's excerpt reads it. */
-function plainText(bodyMd: string | null, contentHtml: string | null, apId: string): string {
+export function plainText(bodyMd: string | null, contentHtml: string | null, apId: string): string {
   if (bodyMd) return renderMarkdown(bodyMd.slice(0, 2_000), { baseOrigin: new URL(apId).origin, excerptLength }).excerpt;
   if (contentHtml) return sanitizeRemoteHtml(contentHtml.slice(0, 20_000), { baseUrl: apId, excerptLength }).excerpt;
   return '';
 }
 
-const cut = (text: string): string | null => {
+export const cut = (text: string): string | null => {
   const flat = text.replaceAll(/\s+/g, ' ').trim();
   if (flat === '') return null;
   return flat.length <= quoteLength ? flat : `${flat.slice(0, quoteLength - 1).trimEnd()}…`;

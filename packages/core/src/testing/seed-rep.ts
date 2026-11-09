@@ -1,7 +1,14 @@
 import { uuidv7 } from 'uuidv7';
+import { and, eq } from 'drizzle-orm';
 import { closePools } from '../db/pools.ts';
+import { db } from '../db/read.ts';
+import { localInstance } from '../db/local-instance.ts';
+import { outbox } from '../db/tables/outbox.ts';
+import { createReportAs } from '../reports/actions.ts';
+import { localUser, seedActor } from './seed.ts';
+import { seedModerator, seedPost } from './seed-az.ts';
 import { posts } from '../db/tables/content.ts';
-import { communityModerators, reports } from '../db/tables/moderation.ts';
+import { communityModerators, modlog, reports } from '../db/tables/moderation.ts';
 import { actors } from '../db/tables/actors.ts';
 import { writer } from '../db/write.ts';
 import { seedAdmin } from './seed-az.ts';
@@ -95,9 +102,131 @@ export async function seedBudgetWorld({ communities = 300, reports: total = 5000
   };
 }
 
+/**
+ * What e2e/reports runs against: accounts that can sign in (lane A's seedAccount), two
+ * communities with a moderator each, and posts with open reports in every state the specs need:
+ * - `form`: posts to report through the form (with and without JavaScript, and the dialog);
+ * - `queue.hate`: a post with two reports; `queue.sensitive`: a sensitive post; `queue.other`: a
+ *   post in the other community; `queue.adminOnly`: a child-safety report; `queue.remove`,
+ *   `queue.escalate`, `queue.dismiss`: posts for the actions; `person`: a report about the author.
+ * Every run uses fresh names, so the lane database can keep earlier runs.
+ */
+async function e2e() {
+  const { seedAccount } = await import('./seed-a.ts');
+  const { PASSWORD } = await import('./seed-a.ts');
+  const suffix = Math.random().toString(36).slice(2, 8);
+  const here = await localInstance(db());
+  const instance = { ...here, domain: new URL(here.origin).host, local: true };
+  const [reporter, second, third, author, moderator, outsider] = await Promise.all(
+    ['reporter', 'second', 'third', 'author', 'mod', 'outsider'].map((name) => seedAccount(`${name}_${suffix}`)),
+  );
+  const community = await seedActor(instance, 'Group', `rep_${suffix}`);
+  const other = await seedActor(instance, 'Group', `rep_other_${suffix}`);
+  await seedModerator(community, { id: moderator!.actorId });
+  await seedModerator(other, { id: outsider!.actorId });
+  const poster = { id: author!.actorId };
+  const post = async (title: string, on = community, extra: Record<string, unknown> = {}) =>
+    (await seedPost(instance, on, poster, { title: `${title} ${suffix}`, bodyMd: title, contentHtml: `<p>${title}</p>`, ...extra })).id;
+  const report = async (
+    who: { actorId: string },
+    postId: string,
+    category: Parameters<typeof createReportAs>[1]['category'],
+    details = '',
+  ) => {
+    const made = await createReportAs(localUser(who.actorId), { target: { kind: 'post', id: postId }, category, forward: false, details });
+    if (!made.ok) throw new Error(`seed report ${category}: ${made.reason}`);
+  };
+  const posts = {
+    form: [await post('Form one'), await post('Form two'), await post('Form three'), await post('Form four')],
+    hate: await post('Hateful words'),
+    sensitive: await post('Spicy', community, { sensitive: true }),
+    other: await post('Other community post', other),
+    adminOnly: await post('Child safety case'),
+    remove: await post('Remove me'),
+    escalate: await post('Escalate me'),
+    dismiss: await post('Dismiss me'),
+  };
+  await report(reporter!, posts.hate, 'hate', 'Slurs in the second paragraph');
+  await report(second!, posts.hate, 'hate');
+  await report(reporter!, posts.sensitive, 'sexual_content');
+  await report(reporter!, posts.other, 'spam');
+  await report(reporter!, posts.adminOnly, 'child_safety');
+  await report(reporter!, posts.remove, 'fraud_illegal', 'Card scam');
+  await report(third!, posts.escalate, 'threats_harassment');
+  await report(third!, posts.dismiss, 'spam');
+  const made = await createReportAs(localUser(reporter!.actorId), {
+    target: { kind: 'actor', id: author!.actorId },
+    category: 'spam',
+    forward: false,
+    details: '',
+  });
+  if (!made.ok) throw new Error(made.reason);
+  return {
+    password: PASSWORD,
+    suffix,
+    reporter: { name: reporter!.name },
+    second: { name: second!.name },
+    author: { name: author!.name, actorId: author!.actorId },
+    moderator: { name: moderator!.name },
+    outsider: { name: outsider!.name },
+    community: { handle: community.name },
+    other: { handle: other.name },
+    posts,
+    titles: {
+      hate: `Hateful words ${suffix}`,
+      sensitive: `Spicy ${suffix}`,
+      other: `Other community post ${suffix}`,
+      adminOnly: `Child safety case ${suffix}`,
+      remove: `Remove me ${suffix}`,
+      escalate: `Escalate me ${suffix}`,
+      dismiss: `Dismiss me ${suffix}`,
+    },
+  };
+}
+
+/**
+ * What the payload budget visits (e2e/payload/routes.ts): a post by someone else, a report the
+ * named admin filed about it, and the report's number for the receipt page.
+ */
+async function payload(adminName: string) {
+  const here = await localInstance(db());
+  const instance = { ...here, domain: new URL(here.origin).host, local: true };
+  const [admin] = await db()
+    .select({ id: actors.id })
+    .from(actors)
+    .where(and(eq(actors.name, adminName), eq(actors.local, true)));
+  if (!admin) throw new Error(`no local person ${adminName}`);
+  const suffix = Math.random().toString(36).slice(2, 8);
+  const author = await seedActor(instance, 'Person', `payload_author_${suffix}`);
+  const community = await seedActor(instance, 'Group', `payload_${suffix}`);
+  const post = await seedPost(instance, community, author, { title: `Reported post ${suffix}` });
+  const made = await createReportAs(localUser(admin.id), {
+    target: { kind: 'post', id: post.id },
+    category: 'spam',
+    forward: false,
+    details: '',
+  });
+  if (!made.ok) throw new Error(made.reason);
+  return { postId: post.id, number: made.number };
+}
+
+/** What a removal left behind, for the spec: the modlog rows and report events about a post. */
+async function after(postId: string) {
+  const rows = await db()
+    .select({ action: modlog.action, reason: modlog.reason, public: modlog.public })
+    .from(modlog)
+    .where(eq(modlog.targetPostId, postId));
+  const events = await db().select({ type: outbox.type }).from(outbox);
+  return { modlog: rows, resolved: events.filter((event) => event.type === 'report.resolved').length };
+}
+
 if (import.meta.main) {
   try {
-    throw new Error('usage: node packages/core/src/testing/seed-rep.ts e2e');
+    const [command, argument] = process.argv.slice(2);
+    if (command === 'e2e') console.log(JSON.stringify(await e2e()));
+    else if (command === 'payload' && argument) console.log(JSON.stringify(await payload(argument)));
+    else if (command === 'after' && argument) console.log(JSON.stringify(await after(argument)));
+    else throw new Error('usage: node packages/core/src/testing/seed-rep.ts e2e | payload <admin name> | after <post id>');
   } finally {
     await closePools();
   }

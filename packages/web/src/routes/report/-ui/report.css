@@ -1,0 +1,136 @@
+/* The report form, its dialog and the sent page (lane REP). Tokens come from the shell. */
+@layer app {
+  .rp-page {
+    max-width: 640px;
+    margin: 0 auto;
+    padding: 16px;
+  }
+  .rp-form {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+  .rp-about {
+    margin: 0;
+  }
+  .rp-quote {
+    margin: 0;
+    padding: 6px 10px;
+    border-left: 3px solid var(--pb-line);
+    overflow-wrap: anywhere;
+  }
+  .rp-quote__label {
+    display: block;
+    font-size: 12px;
+    color: var(--pb-muted);
+  }
+  .rp-error {
+    margin: 0;
+    color: var(--post-err, #d33);
+  }
+  .rp-categories {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin: 0;
+    padding: 0;
+    border: 0;
+  }
+  .rp-categories legend {
+    padding: 0;
+    margin-bottom: 6px;
+    font-weight: 600;
+  }
+  .rp-cat {
+    display: flex;
+    gap: 8px;
+    align-items: flex-start;
+  }
+  .rp-cat input,
+  .rp-forward input {
+    appearance: auto;
+    flex: none;
+    inline-size: 16px;
+    block-size: 16px;
+    margin: 2px 0 0;
+  }
+  .rp-cat__name {
+    display: block;
+    font-weight: 600;
+  }
+  .rp-help {
+    display: block;
+    font-size: 12px;
+    color: var(--pb-muted);
+  }
+  .rp-field {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .rp-field label {
+    font-weight: 600;
+  }
+  .rp-field textarea {
+    width: 100%;
+    box-sizing: border-box;
+    font: inherit;
+    color: inherit;
+    background: transparent;
+    border: 1px solid var(--pb-line);
+    border-radius: 6px;
+    padding: 8px;
+    resize: vertical;
+  }
+  /* The checkbox and the routing line follow the chosen category, with or without JavaScript. */
+  .rp-forward {
+    display: none;
+    gap: 8px;
+    align-items: flex-start;
+  }
+  .rp-form:has(.rp-cat input[data-forwardable='true']:checked) .rp-forward {
+    display: flex;
+  }
+  .rp-route {
+    display: none;
+    margin: 0 0 6px;
+  }
+  .rp-form:not(:has(.rp-cat input:checked)) .rp-route[data-for='none'],
+  .rp-form:has(.rp-cat input[data-audience='moderators']:checked) .rp-route[data-for='moderators'],
+  .rp-form:has(.rp-cat input[data-audience='admins']:checked) .rp-route[data-for='admins'] {
+    display: block;
+  }
+  .rp-warning {
+    font-weight: 600;
+  }
+  .rp-buttons {
+    display: flex;
+    gap: 16px;
+    align-items: center;
+  }
+  .rp-dialog {
+    width: min(640px, calc(100vw - 24px));
+    max-height: calc(100vh - 24px);
+    overflow: auto;
+    padding: 16px;
+    color: inherit;
+    background: var(--pb-bg, Canvas);
+    border: 1px solid var(--pb-line);
+    border-radius: 10px;
+  }
+  .rp-dialog::backdrop {
+    background: rgb(0 0 0 / 0.6);
+  }
+  .rp-dialog h2 {
+    margin: 0 0 10px;
+    font-size: 18px;
+  }
+  .rp-sent {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .rp-sent h1 {
+    margin: 0;
+  }
+}

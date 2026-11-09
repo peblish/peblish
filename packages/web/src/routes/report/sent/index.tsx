@@ -1,0 +1,47 @@
+import { createFileRoute, notFound, redirect } from '@tanstack/react-router';
+import { type } from 'arktype';
+import { useTranslate } from '../../../i18n/use-translate.ts';
+import { useRouteHydrated } from '../../../shell/hydration.ts';
+import { privateResponses } from '../../../server/auth.ts';
+import { loadSentReport } from '../-load.ts';
+import reportCss from '../-ui/report.css?url';
+
+// /report/sent?n=<number>: the reporter's receipt. Only the person who filed report #N sees it;
+// anyone else, signed in or not, gets not found (the case number is not a secret to guess at).
+const Search = type({ 'n?': 'string | number', 'back?': 'string' });
+
+export const Route = createFileRoute('/report/sent/')({
+  validateSearch: Search,
+  server: { middleware: [privateResponses] },
+  loaderDeps: ({ search }) => search,
+  loader: async ({ deps }) => {
+    const number = Number(deps.n);
+    if (!Number.isInteger(number) || number < 1) throw notFound();
+    const result = await loadSentReport({ data: { number } });
+    if (result.signedOut) throw redirect({ to: '/auth/sign-in', search: { redirect: `/report/sent?n=${number}` }, statusCode: 303 });
+    if (!result.sent) throw notFound();
+    return result.sent;
+  },
+  head: () => ({ links: [{ rel: 'stylesheet', href: reportCss }] }),
+  component: Sent,
+});
+
+function Sent() {
+  const { t } = useTranslate();
+  useRouteHydrated();
+  const sent = Route.useLoaderData();
+  const { back } = Route.useSearch();
+  const done = back && /^\/(?!\/)/.test(back) && !back.includes('\\') ? back : '/';
+  return (
+    <main className="rp-page rp-sent">
+      <h1>{t('reports', 'sent.title', { number: sent.number })}</h1>
+      <p>{t('reports', 'sent.promise')}</p>
+      {sent.blockHandle && (
+        <a href={`/settings/blocks?person=${encodeURIComponent(sent.blockHandle)}`}>
+          {t('reports', 'sent.block', { handle: `@${sent.blockHandle}` })}
+        </a>
+      )}
+      <a href={done}>{t('reports', 'sent.done')}</a>
+    </main>
+  );
+}
