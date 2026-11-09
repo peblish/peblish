@@ -3,7 +3,7 @@ import { db } from '../db/read.ts';
 import { writer } from '../db/write.ts';
 import { truncateAll } from '../testing/db.ts';
 import { seedInstance } from '../testing/seed.ts';
-import { deliveryBlocked, deniedMediaDomains, instanceBlocked, intakeFor, mediaAllowed } from './gate.ts';
+import { blockedDomains, deliveryBlocked, deniedMediaDomains, instanceBlocked, intakeFor, mediaAllowed } from './gate.ts';
 import { peerControls } from './tables.ts';
 
 beforeEach(truncateAll);
@@ -38,6 +38,7 @@ test('intake: pause answers retry later, block refuses, and only that peer is af
   expect(await instanceBlocked(db(), 'https://paused.test/c/x')).toBe(false);
   expect(await deliveryBlocked(blocked.id)).toBe(true);
   expect(await deliveryBlocked(paused.id)).toBe(false);
+  expect(await blockedDomains()).toEqual(['blocked.test']);
 });
 
 test('media: approved passes, quarantined and denied do not, subdomains follow the closest known peer, strangers and this server pass', async () => {

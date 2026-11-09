@@ -44,6 +44,16 @@ export async function instanceBlocked(q: Queryable, actorApId: string): Promise<
   return (await controlsOf(q, actorApId))?.blocked === true;
 }
 
+/** The blocked peers' domains, for lists that leave them out (the community directory). */
+export async function blockedDomains(q: Queryable = db()): Promise<string[]> {
+  const rows = await q
+    .select({ domain: instances.domain })
+    .from(peerControls)
+    .innerJoin(instances, eq(instances.id, peerControls.instanceId))
+    .where(and(eq(peerControls.blocked, true), eq(instances.local, false)));
+  return rows.map((row) => row.domain);
+}
+
 /** Whether deliveries to this instance are held back (a blocked peer). */
 export async function deliveryBlocked(instanceId: Uuid, q: Queryable = db()): Promise<boolean> {
   const [row] = await q.select({ blocked: peerControls.blocked }).from(peerControls).where(eq(peerControls.instanceId, instanceId));
