@@ -22,6 +22,8 @@ export interface PayloadRoute {
   composer?: true;
   /** Renders regular, italic and code text, so it is where the font budget is measured. */
   fonts?: true;
+  /** A ceiling of its own for the React and Mux JavaScript, in place of the product pages' budget. */
+  js?: number;
 }
 
 /** A post page needs a post: the first one lane B1's seed (testing/seed-b1.ts) puts in the database. */
@@ -127,7 +129,9 @@ export const routes: readonly PayloadRoute[] = [
     target: async (base) => `/report/sent?n=${(await reportedOnce(base)).number}`,
     admin: true,
   },
-  { route: '/kit/', path: '/kit', fonts: true },
+  // The gallery (behind PEBLISH_UI_KIT=1, a 404 in production) loads every component at once,
+  // so it is no visitor's first visit: it keeps a ceiling of its own, above the pages' 170 kB.
+  { route: '/kit/', path: '/kit', fonts: true, js: 180_000 },
 ];
 
 /** File routes that send no page, so there is no payload to budget; each says why. */
