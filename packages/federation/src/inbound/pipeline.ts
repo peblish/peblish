@@ -136,7 +136,7 @@ async function contextFor(env: Env, activity: Activity, raw: JsonObject, announc
 }
 
 /** Dedupe, apply, record, relay and settle: the one transaction. */
-async function applyOnce(row: InboxRow, prepared: Prepared, env: Env, settleHere: boolean): Promise<void> {
+async function applyOnce(row: InboxRow, prepared: Prepared, env: Env, settleHere: boolean, rewritten: boolean): Promise<void> {
   const { activity, raw, apply, announced } = prepared;
   await tx(async (t) => {
     if (!(await t.dedupe(activity.id))) throw skip('duplicate');
@@ -158,7 +158,9 @@ async function applyOnce(row: InboxRow, prepared: Prepared, env: Env, settleHere
     if (applied.relay && applied.communityId && !announced) {
       await relayToFollowers(t, {
         communityId: applied.communityId,
-        body: row.body,
+        // A rewritten Note (a microblog post made into a Page) goes to threadiverse followers as the
+        // Page it was stored as: Lemmy and its kin read no top-level Note as a post.
+        body: rewritten ? new TextEncoder().encode(JSON.stringify(raw)) : row.body,
         json: raw,
         senderApId: activity.actorApId,
         page: applied.page,
@@ -169,7 +171,7 @@ async function applyOnce(row: InboxRow, prepared: Prepared, env: Env, settleHere
   });
 }
 
-async function processItem(row: InboxRow, json: JsonObject, env: Env, settleHere: boolean): Promise<ItemResult> {
+async function processItem(row: InboxRow, json: JsonObject, env: Env, settleHere: boolean, rewritten: boolean): Promise<ItemResult> {
   try {
     const activity = activityFromWire(json);
     checkActivityOrigin(activity);
@@ -179,7 +181,7 @@ async function processItem(row: InboxRow, json: JsonObject, env: Env, settleHere
     const handler = handlers.get(activity.type);
     if (!handler) throw skip('type.unhandled', activity.type);
     const prepared = await handler.prepare(await contextFor(env, activity, json, null));
-    await applyOnce(row, prepared, env, settleHere);
+    await applyOnce(row, prepared, env, settleHere, rewritten);
     return { applied: true };
   } catch (error) {
     if (error instanceof Skipped) return { skipped: error };
@@ -237,7 +239,7 @@ export async function processRow(row: InboxRow, options: PipelineOptions = {}): 
   for (const item of items) {
     // A batch can take a while: keep the lease while its members are worked through.
     if (!single) await renewLease(row);
-    results.push('skipped' in item ? { skipped: item.skipped } : await processItem(row, item.json, env, single));
+    results.push('skipped' in item ? { skipped: item.skipped } : await processItem(row, item.json, env, single, item.rewritten === true));
   }
   // A lone applied activity settled the row in its own transaction.
   if (single && results[0] && 'applied' in results[0]) return { state: 'applied', error: null };

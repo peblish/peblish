@@ -39,8 +39,12 @@ export interface ClassifyEnv {
   followerOf(followApId: string): Promise<string | null>;
 }
 
-/** One document to map and apply, or the reason there is nothing to do with it. */
-export type Item = { json: JsonObject } | { skipped: Skipped };
+/**
+ * One document to map and apply, or the reason there is nothing to do with it. `rewritten` is
+ * set when the document is no longer what the peer sent (a Note made into a Page), so what is
+ * relayed must be this document and not the bytes that arrived.
+ */
+export type Item = { json: JsonObject; rewritten?: true } | { skipped: Skipped };
 
 const isObject = (value: unknown): value is JsonObject => typeof value === 'object' && value !== null && !Array.isArray(value);
 const idOf = (value: unknown): string | null =>
@@ -58,7 +62,7 @@ async function contentObject(json: JsonObject, env: ClassifyEnv): Promise<Item> 
   if (type !== 'Note' || (object.inReplyTo !== undefined && object.inReplyTo !== null)) return { json };
   // A microblog post: only a community here makes it a post.
   for (const address of addressesOf(object)) {
-    if (await env.isLocalCommunity(address)) return { json: { ...json, object: noteAsPage(object, address) } };
+    if (await env.isLocalCommunity(address)) return { json: { ...json, object: noteAsPage(object, address) }, rewritten: true };
   }
   return { skipped: skip('note.no_local_community', idOf(object) ?? undefined) };
 }
@@ -97,7 +101,7 @@ async function classifyOne(json: unknown, env: ClassifyEnv, depth: number): Prom
       if (object.type === 'Announce') return { skipped: skip('announce.nested', idOf(object) ?? undefined) };
       if (typeof object.type === 'string' && handledTypes.has(object.type)) {
         const inner = await classifyOne(object, env, depth + 1);
-        return 'json' in inner ? { json: { ...json, object: inner.json } } : inner;
+        return 'json' in inner ? { json: { ...json, object: inner.json }, ...(inner.rewritten && { rewritten: true as const }) } : inner;
       }
       if (object.type === 'Question') return { skipped: skip('type.question', idOf(object) ?? undefined) };
       return { json };
