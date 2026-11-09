@@ -7,6 +7,7 @@ import type { ModlogFilter } from '@peblish/schema/modlog';
 import { createServerFn } from '@tanstack/react-start';
 import { type } from 'arktype';
 import { pageSession } from '../../server/auth.ts';
+import { requestNsfw } from '../c/-gate.ts';
 
 // The modlog page's data (a server function: it runs on the server for a document request and
 // over fetch for a client-side navigation). Who may see what is core's: public rows for
@@ -95,7 +96,7 @@ export const loadModlog = createServerFn({ method: 'GET' })
     };
     const [page, facets] = await Promise.all([readModlogPage(filter, { viewer }), modlogFacets(filter, { viewer })]);
     const [lines, labels] = await Promise.all([
-      describeTargets(page.entries, { viewer }),
+      describeTargets(page.entries, { viewer, nsfw: requestNsfw() }),
       labelActors(facets.communities.map((row) => row.id)),
     ]);
     return {
