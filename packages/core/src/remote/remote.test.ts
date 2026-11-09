@@ -1,3 +1,4 @@
+import { generateKeyPairSync } from 'node:crypto';
 import { count, eq } from 'drizzle-orm';
 import { beforeEach, describe, expect, test } from 'vitest';
 import { authorize } from '../authz/authorize.ts';
@@ -113,6 +114,45 @@ describe('the remote actor store', () => {
     expect(await eventTypes()).toEqual(['actor.created', 'actor.updated']);
   });
 
+  test('a key the document no longer advertises is removed, and an unusable one does not outlive it', async () => {
+    const w = await world();
+    const keysOf = async () => {
+      const [actor] = await db().select().from(actors).where(eq(actors.apId, apId));
+      return db().select().from(actorKeys).where(eq(actorKeys.actorId, actor!.id));
+    };
+    await storeRemoteActor(await w.store(), input());
+    expect(await keysOf()).toHaveLength(1);
+
+    // The peer drops its key: nothing it signed before may verify afterwards.
+    await storeRemoteActor(await w.store(), input({ publicKey: null }));
+    expect(await keysOf()).toEqual([]);
+
+    // A key of a kind we cannot verify with removes the one before it too.
+    await storeRemoteActor(await w.store(), input());
+    await storeRemoteActor(await w.store(), input({ publicKey: { keyId: `${apId}#main-key`, ownerApId: apId, pem: 'not a pem' } }));
+    expect(await keysOf()).toEqual([]);
+
+    // An Ed25519-only document replaces the RSA key: the actor is stored with the key it has now.
+    await storeRemoteActor(await w.store(), input());
+    const ed = generateKeyPairSync('ed25519', {
+      publicKeyEncoding: { type: 'spki', format: 'pem' },
+      privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
+    });
+    await storeRemoteActor(await w.store(), input({ publicKey: { keyId: `${apId}#main-key`, ownerApId: apId, pem: ed.publicKey } }));
+    expect((await keysOf()).map(({ algorithm, keyId }) => ({ algorithm, keyId }))).toEqual([
+      { algorithm: 'ed25519', keyId: `${apId}#main-key` },
+    ]);
+  });
+
+  test('a document under a new key id replaces the old key rather than adding a second', async () => {
+    const w = await world();
+    await storeRemoteActor(await w.store(), input());
+    const fresh = rsaKeys().publicKeyPem;
+    await storeRemoteActor(await w.store(), input({ publicKey: { keyId: `${apId}#key-2`, ownerApId: apId, pem: fresh } }));
+    const keys = await db().select().from(actorKeys);
+    expect(keys.map(({ keyId, publicKeyPem }) => ({ keyId, publicKeyPem }))).toEqual([{ keyId: `${apId}#key-2`, publicKeyPem: fresh }]);
+  });
+
   test('three fetches of the same new actor racing end with one actor, one key and one created event', async () => {
     const w = await world();
     const grant = await w.store();
@@ -195,6 +235,24 @@ describe('deleting an actor and recording instance software', () => {
     expect(actor).toMatchObject({ displayName: null, summaryHtml: null, raw: null, name: 'lab' });
     expect(actor?.deletedAt).toBeInstanceOf(Date);
     expect(await db().select().from(actorKeys).where(eq(actorKeys.actorId, actor!.id))).toHaveLength(1);
+    expect(await eventTypes()).toEqual(['actor.created', 'actor.deleted']);
+  });
+
+  test('a deleted actor stays deleted when its document is stored again', async () => {
+    const w = await world();
+    await storeRemoteActor(await w.store(), input());
+    await deleteRemoteActor(await w.remove());
+    const [deleted] = await db().select().from(actors).where(eq(actors.apId, apId));
+    const result = await storeRemoteActor(
+      await w.store(),
+      input({ displayName: 'Back again', summaryHtml: '<p>restored?</p>', publicKey: null, languages: ['fr'] }),
+    );
+    expect(result).toMatchObject({ id: deleted!.id, created: false, deleted: true });
+    const [after] = await db().select().from(actors).where(eq(actors.apId, apId));
+    expect(after).toMatchObject({ displayName: null, summaryHtml: null, raw: null });
+    expect(after?.deletedAt).toEqual(deleted?.deletedAt);
+    // The key is kept for the signed activities that still name it, and no event says the actor changed.
+    expect(await db().select().from(actorKeys).where(eq(actorKeys.actorId, deleted!.id))).toHaveLength(1);
     expect(await eventTypes()).toEqual(['actor.created', 'actor.deleted']);
   });
 

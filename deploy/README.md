@@ -100,6 +100,11 @@ action refuses an admin without it.
   actor, WebFinger or NodeInfo URLs; maintenance answers 503 with `Retry-After`.
 - Cloudflare in front: no cache rules on `/u`, `/c`, `/post`; the WAF must not block
   `POST /inbox`; forward real client IPs.
+- Compression: the Node server sends responses as they are and nothing in this repository
+  compresses them. Traefik (Easypanel) and Cloudflare compress text in production, so turn it
+  on at whichever of them faces the browser. The payload budget (`e2e/payload`, run by
+  `pnpm e2e`) gzips every text file itself and measures those compressible bytes (woff2 fonts
+  as sent); it does not measure what the Node server alone transfers.
 - Remote images reach viewers through `/media/proxy/*`, which answers `Cache-Control: private,
 max-age=600`. Cloudflare does not cache a `private` answer, so no cache rule is needed (or
   wanted) for it during the beta; every viewer's browser keeps an image for ten minutes.

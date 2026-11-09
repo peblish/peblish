@@ -26,7 +26,8 @@ export const policies = {
    * A local actor stops following (principal local, the follower), an Undo(Follow) arrives from
    * the follower, or a Reject arrives from the followee (principal remote, either). `apId`, when
    * given, is the Follow id the activity names and must be the stored one (the slice 3 hardening:
-   * a Reject deletes only the follow it names).
+   * a Reject deletes only the follow it names); the mutation repeats it in its delete, since a
+   * retry may replace the id between this decision and the write.
    */
   'follow.remove': async ({ principal, subject, db, lock }: PolicyRequest<{ followerId: Uuid; followeeId: Uuid; apId: string | null }>) => {
     if (principal.kind !== 'local' && principal.kind !== 'remote') return deny('auth.required');
@@ -46,21 +47,26 @@ export const policies = {
   },
 
   /**
-   * A remote community accepts a Follow of ours. The Follow id, the follower (local) and the
+   * A remote community accepts a Follow of ours. The Follow id, the follower the Accept names
+   * (`followerApId`, the actor of the Follow it embeds, which must be a local actor) and the
    * community (the acting principal) must all match the stored pending or accepted row.
+   *
+   * Only the follow row is locked: the body updates it. The follower's actor row is read
+   * unlocked, since `local` and `ap_id` never change, and locking it here would take it after
+   * the follow row, against the lock order (the actor rows come first).
    */
-  'follow.accept': async ({ principal, subject, db, lock }: PolicyRequest<{ followApId: string }>) => {
+  'follow.accept': async ({ principal, subject, db, lock }: PolicyRequest<{ followApId: string; followerApId: string }>) => {
     if (principal.kind !== 'remote') return deny('auth.required');
     const [row] = await forNoKeyUpdate(
       db
-        .select({ followeeId: follows.followeeId, followerLocal: actors.local })
+        .select({ followerId: follows.followerId, followeeId: follows.followeeId })
         .from(follows)
-        .innerJoin(actors, eq(actors.id, follows.followerId))
         .where(eq(follows.apId, subject.followApId)),
       lock,
     );
     if (!row) return deny('target.not_found');
-    if (row.followeeId !== principal.actorId || !row.followerLocal) return deny('follow.mismatch');
+    const [follower] = await db.select({ apId: actors.apId, local: actors.local }).from(actors).where(eq(actors.id, row.followerId));
+    if (row.followeeId !== principal.actorId || !follower?.local || follower.apId !== subject.followerApId) return deny('follow.mismatch');
     return allow({ kind: 'owner', actorId: principal.actorId });
   },
 

@@ -68,6 +68,30 @@ test('the density control switches the feed and the choice survives a reload', a
   expect(html).toMatch(/<html[^>]*data-muxui-color-scheme="dark"/);
 });
 
+test('two quick changes both reach the cookie, on a slow connection', async ({ page, context }) => {
+  // Scheme, then density, while the first save is still waiting for its answer. Saves that went
+  // out together would each merge their one change into the same old cookie, and the later answer
+  // would drop the other change; saves go out one at a time, each with both values.
+  await gotoHydrated(page, '/kit');
+  const session = await context.newCDPSession(page);
+  await session.send('Network.enable');
+  await session.send('Network.emulateNetworkConditions', { offline: false, latency: 400, downloadThroughput: -1, uploadThroughput: -1 });
+
+  await page.getByText('Appearance', { exact: true }).click();
+  await page.getByRole('button', { name: 'True black' }).click();
+  await page.getByRole('group', { name: 'View' }).getByRole('button', { name: 'Compact' }).click();
+  const stored = async () => (await context.cookies()).find(({ name }) => name === 'peblish_prefs')?.value;
+  await expect.poll(stored, { timeout: 10_000 }).toBe('density=compact&scheme=black');
+  // The last answer has landed: the cookie does not drift back.
+  await page.waitForTimeout(1_500);
+  expect(await stored()).toBe('density=compact&scheme=black');
+
+  await session.send('Network.emulateNetworkConditions', { offline: false, latency: 0, downloadThroughput: -1, uploadThroughput: -1 });
+  await page.reload();
+  await expect(page.locator('html')).toHaveAttribute('data-scheme', 'black');
+  await expect(page.getByTestId('kit-feed').locator('article').first()).toHaveAttribute('data-density', 'compact');
+});
+
 test('a page with scripts off still shows the stored density and scheme', async ({ browser, baseURL }) => {
   const context = await browser.newContext({ javaScriptEnabled: false });
   await context.addCookies([{ ...prefsCookie('compact', 'black'), url: baseURL! }]);

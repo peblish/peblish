@@ -1,4 +1,6 @@
 import { userAgent } from '../federation.ts';
+import { instanceSigningKey } from '../signing/instance.ts';
+import { signFetch } from '../signing/sign.ts';
 import { BlockedDestinationError, safeFetch, type SafeResponse } from './safe-fetch.ts';
 
 // The one way federation reads a document from a peer: an actor, a WebFinger answer, a
@@ -24,17 +26,43 @@ export class FetchFailure extends Error {
 
 const documentLimits = { schemes: ['https:'] as const, maxRedirects: 3, maxBytes: 512 * 1024, timeoutMs: 10_000 };
 
+/** The signature headers for a GET of `url`, or none when the instance has no key to sign with or it will not load. */
+async function signatures(url: string): Promise<Headers> {
+  try {
+    const key = await instanceSigningKey();
+    return key ? signFetch(key, url) : new Headers();
+  } catch (error) {
+    // A fetch that works unsigned is better than none; the delivery side reports a broken key loudly.
+    console.warn(`could not sign a fetch of ${url}: ${error instanceof Error ? error.message : String(error)}`);
+    return new Headers();
+  }
+}
+
 export const activityAccept = 'application/activity+json, application/ld+json; profile="https://www.w3.org/ns/activitystreams"';
+
+/** An ActivityPub object or actor document: fetched with `Accept: application/activity+json`, signed as the instance. */
+export const fetchActivity = (url: string, fetch: Fetcher) => fetchJson(url, fetch, activityAccept, { signed: true });
 
 /**
  * GETs `url` and parses the JSON body. Redirects are followed (each hop checked again) up to
  * three; `url` in the result is where the document finally came from, which is what its id
- * must live under.
+ * must live under. With `signed` the request carries the instance's HTTP signature, for peers
+ * that only answer authenticated fetches (a redirected hop goes out unsigned: safeFetch drops
+ * the signature, which vouches for one request).
  */
-export async function fetchJson(url: string, fetch: Fetcher, accept = activityAccept): Promise<{ json: unknown; url: string }> {
+export async function fetchJson(
+  url: string,
+  fetch: Fetcher,
+  accept = activityAccept,
+  { signed = false }: { signed?: boolean } = {},
+): Promise<{ json: unknown; url: string }> {
   let response: SafeResponse;
   try {
-    response = await fetch(url, { ...documentLimits, headers: { accept, 'user-agent': await userAgent() } });
+    const headers = new Headers({ accept, 'user-agent': await userAgent() });
+    if (signed) {
+      for (const [name, value] of await signatures(url)) headers.set(name, value);
+    }
+    response = await fetch(url, { ...documentLimits, headers });
   } catch (error) {
     if (error instanceof BlockedDestinationError) throw new FetchFailure('blocked', error.message);
     throw new FetchFailure('unreachable', error instanceof Error ? error.message : String(error));

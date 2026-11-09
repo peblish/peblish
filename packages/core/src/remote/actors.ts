@@ -1,6 +1,6 @@
 import { createPublicKey } from 'node:crypto';
 import type { ActorKind } from '@peblish/schema/ids';
-import { and, eq, notInArray, sql } from 'drizzle-orm';
+import { and, eq, isNull, ne, notInArray, sql } from 'drizzle-orm';
 import { canonicalOrigin } from '../config.ts';
 import { actorKeys, actors, communityLanguages } from '../db/tables/actors.ts';
 import { defineMutation } from '../tx/mutation.ts';
@@ -97,6 +97,11 @@ function keyAlgorithm(pem: string): 'rsa' | 'ed25519' | null {
  * which insert wins; the other updates). Creates the peer's instance row when it is new. Emits
  * actor.created or actor.updated with local false. A remote document can never replace a local
  * actor or change a stored actor's kind.
+ *
+ * The stored keys follow the document: a key it no longer advertises (or one we cannot use) is
+ * removed and a changed one replaced, so a key the owner dropped stops verifying at the next
+ * refresh. An actor that sent a Delete stays deleted: a later fetch changes nothing (it
+ * returns `deleted: true`), until an explicit undelete exists.
  */
 export const storeRemoteActor = defineMutation({
   action: 'remote.actor_store',
@@ -134,12 +139,20 @@ export const storeRemoteActor = defineMutation({
     const [row] = await t.db
       .insert(actors)
       .values({ apId: input.apId, kind: input.kind, local: false, instanceId: instance.id, ...fields })
-      .onConflictDoUpdate({ target: actors.apId, set: fields, setWhere: eq(actors.local, false) })
+      .onConflictDoUpdate({ target: actors.apId, set: fields, setWhere: and(eq(actors.local, false), isNull(actors.deletedAt)) })
       .returning({ id: actors.id, kind: actors.kind, created: sql<boolean>`(xmax = 0)` });
-    if (!row) throw new TypeError(`${input.apId} is a local actor`);
+    if (!row) {
+      // The upsert declined: a local actor, or a remote one that was deleted.
+      const [held] = await t.db.select({ id: actors.id, local: actors.local }).from(actors).where(eq(actors.apId, input.apId));
+      if (!held || held.local) throw new TypeError(`${input.apId} is a local actor`);
+      return { id: held.id, instanceId: instance.id, created: false, deleted: true };
+    }
     if (row.kind !== input.kind) throw new TypeError(`${input.apId} is stored as a ${row.kind}, not a ${input.kind}`);
 
     const algorithm = input.publicKey ? keyAlgorithm(input.publicKey.pem) : null;
+    // Whatever the document no longer advertises goes first (a key id is unique, so a replaced
+    // key must be out of the way before its successor is written).
+    await t.db.delete(actorKeys).where(and(eq(actorKeys.actorId, row.id), algorithm ? ne(actorKeys.algorithm, algorithm) : sql`true`));
     if (input.publicKey && algorithm) {
       const { keyId, pem } = input.publicKey;
       await t.db
@@ -159,7 +172,7 @@ export const storeRemoteActor = defineMutation({
       }
     }
     await t.emit({ type: row.created ? 'actor.created' : 'actor.updated', v: 1, actorId: row.id, kind: input.kind, local: false });
-    return { id: row.id, instanceId: instance.id, created: row.created };
+    return { id: row.id, instanceId: instance.id, created: row.created, deleted: false };
   },
 });
 

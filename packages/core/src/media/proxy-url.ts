@@ -9,18 +9,23 @@ import { derivedKey } from '../identity/auth.ts';
 
 export const PROXY_PATH = '/media/proxy';
 const PURPOSE = 'media-proxy';
-/** Longest remote URL the proxy signs; longer URLs cannot be proxied (they render as links). */
-const MAX_URL_LENGTH = 2048;
+/**
+ * Longest remote URL the proxy signs, in UTF-8 bytes (the bytes that are signed and carried in
+ * the path); a longer URL cannot be proxied and renders as a link. Both sides measure the same:
+ * `MAX_TARGET_LENGTH` is the unpadded base64url of exactly this many bytes.
+ */
+const MAX_URL_BYTES = 2048;
+const MAX_TARGET_LENGTH = Math.ceil((MAX_URL_BYTES * 4) / 3);
 
 /** The HMAC key for proxy URLs. */
 export const mediaProxyKey = () => derivedKey(PURPOSE);
 
 const sign = (key: Buffer, url: string) => createHmac('sha256', key).update(url).digest('base64url');
 
-/** The proxy path for a remote image URL; throws RangeError for a URL too long to proxy (imageSource turns that into null). */
+/** The proxy path for a remote image URL; throws RangeError for a URL over 2,048 bytes (imageSource turns that into null). */
 export function proxyUrlBuilder(key: Buffer): (url: string) => string {
   return (url) => {
-    if (url.length > MAX_URL_LENGTH) throw new RangeError('the image URL is too long to proxy');
+    if (Buffer.byteLength(url) > MAX_URL_BYTES) throw new RangeError('the image URL is too long to proxy');
     return `${PROXY_PATH}/${sign(key, url)}/${Buffer.from(url).toString('base64url')}`;
   };
 }
@@ -30,7 +35,7 @@ export function proxyUrlBuilder(key: Buffer): (url: string) => string {
  * and the URL is an absolute http or https URL without credentials; null otherwise.
  */
 export function verifyProxyPath(key: Buffer, signature: string, target: string): string | null {
-  if (target.length > Math.ceil((MAX_URL_LENGTH * 4) / 3) + 4) return null;
+  if (target.length > MAX_TARGET_LENGTH) return null;
   const url = Buffer.from(target, 'base64url').toString('utf8');
   const expected = Buffer.from(sign(key, url));
   const given = Buffer.from(signature);

@@ -19,7 +19,16 @@ type Seed = {
   moderator: { name: string };
   viewer: { name: string };
   undeclared: { name: string };
-  posts: { plain: string; deletable: string; removable: string; sensitive: string; deleted: string };
+  posts: {
+    plain: string;
+    deletable: string;
+    removable: string;
+    sensitive: string;
+    deleted: string;
+    longThumbnail: string;
+    inRemovedCommunity: string;
+    inDeletedCommunity: string;
+  };
 };
 
 let seed: Seed;
@@ -91,6 +100,23 @@ test.describe('anyone', () => {
     await expectAccessible(page);
   });
 
+  test('a link post whose remote thumbnail URL is too long to proxy still renders, as a plain link', async ({ page }) => {
+    const { status, text } = await html(page, seed.posts.longThumbnail);
+    expect(status).toBe(200);
+    expect(text).toContain('Long thumbnail post');
+    expect(text).toContain('class="post-link" href="https://example.test/long"');
+    // No picture: the thumbnail could not be signed, so the page loads nothing from img.example.
+    expect(text.includes('<img')).toBe(false);
+  });
+
+  test('a post in a removed or deleted community is a 404 with none of its text', async ({ page }) => {
+    for (const id of [seed.posts.inRemovedCommunity, seed.posts.inDeletedCommunity]) {
+      const { status, text } = await html(page, id);
+      expect(status).toBe(404);
+      expect(text).not.toContain('Closed post');
+    }
+  });
+
   test('a signed-out viewer of a sensitive post gets the gate and none of its text in the HTML', async ({ page }) => {
     const { status, text } = await html(page, seed.posts.sensitive);
     expect(status).toBe(200);
@@ -116,14 +142,29 @@ test.describe('anyone', () => {
     const anonymous = await page.request.post(target, { form: { intent: 'delete' }, maxRedirects: 0 });
     expect([anonymous.status(), anonymous.headers().location]).toEqual([303, `${target}?error=auth.required`]);
   });
+
+  test('a form post to an id that is not a uuid is a 404, and no redirect is built from it', async ({ page }) => {
+    for (const id of ['not-a-post', '%0D%0Ainjected:%201']) {
+      const response = await page.request.post(`/post/${id}`, { form: { intent: 'delete' }, maxRedirects: 0 });
+      expect([response.status(), response.headers().location]).toEqual([404, undefined]);
+    }
+  });
 });
 
 test.describe('a German browser', () => {
   test.use({ locale: 'de-DE' });
 
-  test('the post page speaks German to a German browser, with no axe violations', async ({ page }) => {
-    await gotoHydrated(page, url(seed.posts.plain));
+  test('the post page speaks German to a German browser, hydrates keeping the server’s date, with no axe violations', async ({ page }) => {
+    const log = recordConsole(page);
+    const response = await page.goto(url(seed.posts.plain), { waitUntil: 'commit' });
+    const server = /<time[^>]*>([^<]*)<\/time>/.exec((await response?.text()) ?? '')?.[1];
+    await page.locator('html[data-hydrated="1"]').waitFor({ state: 'attached' });
     await expect(page.getByRole('group', { name: 'Für diesen Beitrag abstimmen' })).toBeVisible();
+    // The date is German and was formatted once, on the server: hydration printed the same text.
+    expect(server).toMatch(/^\d{1,2}\. \p{L}+\.? \d{4}, \d{2}:\d{2} UTC$/u);
+    await expect(page.locator('time')).toHaveText(server ?? '');
+    await page.waitForLoadState('networkidle');
+    expect(log.hydrationProblems()).toEqual([]);
     await expectAccessible(page);
   });
 });

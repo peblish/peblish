@@ -112,7 +112,11 @@
     vertical-align: text-bottom;
   }
 
-  /* Spoilers: PieFed's span.spoiler stays blacked out until it is clicked (or hovered with a mouse). */
+  /*
+   * Spoilers: PieFed's span.spoiler stays blacked out until it is clicked, or focused and
+   * activated with Enter or Space (Prose adds tabindex and button semantics); a mouse can also
+   * hover it.
+   */
   .pb-prose span.spoiler {
     border-radius: 2px;
     background: var(--pb-fg);
@@ -120,7 +124,14 @@
     cursor: pointer;
   }
 
-  .pb-prose span.spoiler[data-revealed] {
+  /* A link inside a spoiler takes the span's colour, so it is blacked out with the rest. */
+  .pb-prose span.spoiler a {
+    color: inherit;
+  }
+
+  /* Revealed. A spoiler that contains a link is not a button (Prose leaves it a span), so focusing its link shows it. */
+  .pb-prose span.spoiler[data-revealed],
+  .pb-prose span.spoiler:has(a:focus-visible) {
     background: var(--pb-hover);
     color: inherit;
   }
@@ -151,6 +162,11 @@
 
   .pb-prose span.ellipsis::after {
     content: '…';
+  }
+
+  /* The back arrow is outside the Latin font slices: set in Inter it would pull the 468 kB full font file onto every page with a footnote (e2e/payload checks for it). The system's own arrow costs nothing. */
+  .pb-prose a.footnote-backref {
+    font-family: system-ui, sans-serif;
   }
 
   .pb-prose sup.footnote-ref a {

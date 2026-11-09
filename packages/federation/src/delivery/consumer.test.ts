@@ -10,9 +10,11 @@ import { writer } from '@peblish/core/db/write';
 import { tx } from '@peblish/core/tx/tx';
 import { truncateAll } from '@peblish/core/testing/db';
 import { seedActor, seedInstance } from '@peblish/core/testing/seed';
-import { seedComment, seedPost } from '@peblish/core/testing/seed-az';
-import { seedLocalInstance, seedSigningKey } from '@peblish/core/testing/seed-fed-a';
+import { grantFor, seedComment, seedPost } from '@peblish/core/testing/seed-az';
+import { actorDocument, nodeInfoRoutes, rsaKeys, seedLocalInstance, seedSigningKey, stubFetch } from '@peblish/core/testing/seed-fed-a';
+import { receiveFollow } from '@peblish/core/follows/follow';
 import type { OutboxEvent } from '@peblish/schema/events';
+import { resolveRemoteActor } from '../actors/resolve.ts';
 import { consumer } from './consumer.ts';
 
 type Json = Record<string, unknown>;
@@ -113,6 +115,33 @@ describe('a new post in a local community', () => {
     expect(announce.object.object.content).toContain('<strong>text</strong>');
     expect((announce.object.object.source as Json).content).toBe('Some **text**');
     expect(announce.object.object.attachment).toEqual([{ href: 'https://example.com/a', type: 'Link' }]);
+  });
+
+  test('a Mastodon server that has just been followed is announced to as Announce(Page) from the first post', async () => {
+    const w = await world();
+    // The follower arrives the way FED-B receives it: resolved (which reads its NodeInfo), then accepted.
+    const document = actorDocument('new-masto.test', 'zed', { publicKeyPem: rsaKeys().publicKeyPem });
+    const { fetch } = stubFetch({ [document.id]: { body: document }, ...nodeInfoRoutes('new-masto.test', 'mastodon', '4.4.0') });
+    const zed = await resolveRemoteActor(document.id, { fetch });
+    const grant = await grantFor(
+      'follow.receive',
+      { kind: 'remote', actorId: zed.id, announcedBy: null },
+      { communityId: w.news.id, followApId: 'https://new-masto.test/follows/1' },
+    );
+    await receiveFollow(grant);
+    await run({
+      type: 'follow.accepted',
+      v: 1,
+      followId: (await db().select().from(follows).where(eq(follows.followerId, zed.id)))[0]!.id,
+      apId: 'https://new-masto.test/follows/1',
+      followerId: zed.id,
+      followeeId: w.news.id,
+      followerLocal: false,
+      followeeLocal: true,
+    });
+    const p = await seedPost(w.here, w.news, w.alice, { title: 'First' });
+    await run(post(p.id, w.news.id, w.alice.id, 'created'));
+    expect((await shapes())['https://new-masto.test/inbox']).toBe('Announce(Page)');
   });
 
   test('followers on one instance are one delivery, to its shared inbox; local followers and a missing inbox get none', async () => {

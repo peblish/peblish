@@ -7,8 +7,9 @@ import { authorize } from '../authz/authorize.ts';
 import { db } from '../db/read.ts';
 import { actorKeys, actors, communityLanguages } from '../db/tables/actors.ts';
 import { authUser } from '../db/tables/auth.ts';
-import { communityModerators } from '../db/tables/moderation.ts';
+import { communityModerators, modlog } from '../db/tables/moderation.ts';
 import { writer } from '../db/write.ts';
+import { readModlog } from '../modlog/read.ts';
 import { truncateAll } from '../testing/db.ts';
 import { grantFor, outboxEvents, seedModerator } from '../testing/seed-az.ts';
 import { person, remote, sampleCommunity, seedCommunityWorld } from '../testing/seed-f.ts';
@@ -139,6 +140,29 @@ describe('community.create', () => {
     expect(same?.same).toBe(true);
   });
 
+  test('logs the creation by the admin in the modlog, in the create transaction', async () => {
+    const { people, admin } = await world();
+    const community = await created(admin, { name: 'news' });
+    const log = await readModlog({ communityId: community.id }, { audience: 'public' });
+    expect(log).toMatchObject([
+      {
+        action: 'community.create',
+        actorId: people.admin.id,
+        actorApId: people.admin.apId,
+        communityId: community.id,
+        communityApId: community.apId,
+        targetActorId: null,
+        reason: null,
+        public: true,
+        authority: { kind: 'site-admin', actorId: people.admin.id },
+      },
+    ]);
+    const [same] = await db().execute<{ same: boolean }>(
+      sql`select (select xmin::text from modlog where community_id = ${community.id}) = (select xmin::text from actors where id = ${community.id}) as same`,
+    );
+    expect(same?.same).toBe(true);
+  });
+
   test('stores an RSA signing key under <ap_id>#main-key that signs and verifies', async () => {
     const { admin } = await world();
     const community = await created(admin, { name: 'news' });
@@ -191,6 +215,7 @@ describe('community.create', () => {
     const keys = await newRsaKeyPair();
     await expect(createCommunity(grant, { fields: {}, keys })).rejects.toThrowError(new Refused('community.create', 'auth.admin_required'));
     expect(await db().select({ id: actors.id }).from(actors).where(eq(actors.name, 'late'))).toEqual([]);
+    expect(await db().select({ id: modlog.id }).from(modlog)).toEqual([]);
     expect(await outboxEvents()).toEqual([]);
   });
 });

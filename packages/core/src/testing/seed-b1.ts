@@ -126,6 +126,11 @@ async function e2e() {
   const community = await seedActor(instance, 'Group', `e2e_${suffix}`);
   await seedModerator(community, { id: moderator.actorId });
   const post = (extra: Partial<typeof posts.$inferInsert>) => seedPost(instance, community, { id: author.actorId }, extra);
+  // Communities an admin removed and one that was deleted: their posts are not found, for anyone.
+  const removedCommunity = await seedActor(instance, 'Group', `e2e_removed_${suffix}`);
+  await seedCommunityRemoval(removedCommunity);
+  const deletedCommunity = await seedActor(instance, 'Group', `e2e_deleted_${suffix}`, { deletedAt: new Date() });
+  const inClosed = (closed: { id: string }) => seedPost(instance, closed, { id: author.actorId }, { title: `Closed post ${suffix}` });
   const body = (text: string) => ({ bodyMd: text, contentHtml: `<p>${text}</p>` });
   const row = (value: { id: string }) => value.id;
   return {
@@ -150,6 +155,16 @@ async function e2e() {
         }),
       ),
       deleted: row(await post({ title: `Deleted post ${suffix}`, deletedAt: new Date(), ...body(`Deleted body ${suffix}`) })),
+      // A remote picture too long to sign for the proxy: the page shows the link without it.
+      longThumbnail: row(
+        await post({
+          title: `Long thumbnail post ${suffix}`,
+          url: 'https://example.test/long',
+          thumbnailUrl: `https://img.example/${'x'.repeat(3_000)}`,
+        }),
+      ),
+      inRemovedCommunity: row(await inClosed(removedCommunity)),
+      inDeletedCommunity: row(await inClosed(deletedCommunity)),
     },
   };
 }

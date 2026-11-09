@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, test } from 'vitest';
 import { follows } from '../db/tables/follows.ts';
 import { writer } from '../db/write.ts';
+import { proxyUrlBuilder } from '../media/proxy-url.ts';
 import { truncateAll } from '../testing/db.ts';
 import { seedCommunityRemoval, seedModerator } from '../testing/seed-az.ts';
 import { person, sampleCommunity, seedCommunityWorld } from '../testing/seed-f.ts';
@@ -84,6 +85,31 @@ describe('readCommunity', () => {
     expect(await readCommunity({ name: 'technology' })).toBeNull();
   });
 
+  test('a remote Group’s sidebar is sanitised on read, with images as links or through the page’s proxy; a null one stays null', async () => {
+    const { instances } = await setup();
+    const hostile = [
+      '<p>Welcome</p><script>alert(1)</script>',
+      '<img src="https://evil.test/track.png" alt="logo" onerror="alert(2)">',
+      '<a href="javascript:alert(3)">click</a>',
+    ].join('');
+    const technology = await seedActor(instances.lemmy, 'Group', 'technology', { summaryHtml: hostile });
+    const quiet = await seedActor(instances.lemmy, 'Group', 'quiet');
+
+    const plain = (await readCommunity({ id: technology.id }))?.summaryHtml;
+    expect(plain).toContain('<p>Welcome</p>');
+    expect(plain).not.toMatch(/<script|<img|onerror|javascript:/i);
+    expect(plain).toContain('href="https://evil.test/track.png"');
+
+    const proxy = proxyUrlBuilder(Buffer.from('test key'));
+    const proxied = (await readCommunity({ id: technology.id }, undefined, { rewriteImageUrl: proxy }))?.summaryHtml;
+    expect(proxied).toContain(`<img src="${proxy('https://evil.test/track.png')}"`);
+    expect(proxied).not.toMatch(/<script|onerror|javascript:|src="https:\/\/evil/i);
+    const refused = (await readCommunity({ id: technology.id }, undefined, { rewriteImageUrl: () => null }))?.summaryHtml;
+    expect(refused).not.toContain('<img');
+
+    expect((await readCommunity({ id: quiet.id }))?.summaryHtml).toBeNull();
+  });
+
   test('a deleted or removed community, a Person and an unknown id read as absent', async () => {
     const { instances, people } = await setup();
     const deleted = await seedActor(instances.local, 'Group', 'gone', { deletedAt: new Date() });
@@ -113,6 +139,13 @@ describe('listLocalCommunities', () => {
     await create('news', { postingRestrictedToMods: true });
     await create('art', { sensitive: true });
     await create('Books');
+    // An imported community may be flagged NSFL without sensitive (PieFed's two flags are independent).
+    await seedActor(instances.local, 'Group', 'adults', {
+      apId: 'https://feddit.test/c/adults',
+      importedAt: new Date(),
+      sensitive: false,
+      nsfl: true,
+    });
     await seedActor(instances.lemmy, 'Group', 'technology');
     await seedActor(instances.local, 'Group', 'gone', { deletedAt: new Date() });
     await seedCommunityRemoval(await seedActor(instances.local, 'Group', 'closed'));
@@ -120,15 +153,16 @@ describe('listLocalCommunities', () => {
     const names = (items: Awaited<ReturnType<typeof listLocalCommunities>>) => items.map((item) => item.actor.name);
     expect(names(await listLocalCommunities())).toEqual(['Books', 'news']);
     const all = await listLocalCommunities({ includeSensitive: true });
-    expect(names(all)).toEqual(['art', 'Books', 'news']);
+    expect(names(all)).toEqual(['adults', 'art', 'Books', 'news']);
     expect(
       all.map(({ sensitive, nsfl, postingRestrictedToMods, subscribers }) => ({ sensitive, nsfl, postingRestrictedToMods, subscribers })),
     ).toEqual([
+      { sensitive: false, nsfl: true, postingRestrictedToMods: false, subscribers: 0 },
       { sensitive: true, nsfl: false, postingRestrictedToMods: false, subscribers: 0 },
       { sensitive: false, nsfl: false, postingRestrictedToMods: false, subscribers: 0 },
       { sensitive: false, nsfl: false, postingRestrictedToMods: true, subscribers: 0 },
     ]);
-    expect(names(await listLocalCommunities({ includeSensitive: true, limit: 2 }))).toEqual(['art', 'Books']);
+    expect(names(await listLocalCommunities({ includeSensitive: true, limit: 2 }))).toEqual(['adults', 'art']);
   });
 });
 

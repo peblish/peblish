@@ -2,6 +2,7 @@ import type { Queryable } from '@peblish/core/db/read';
 import { actorKeys, actors, communityLanguages } from '@peblish/core/db/tables/actors';
 import { comments, posts } from '@peblish/core/db/tables/content';
 import { instances } from '@peblish/core/db/tables/instances';
+import { communityRemovals } from '@peblish/core/moderation/tables';
 import { renderMarkdown } from '@peblish/core/markdown/render';
 import type { ActorKind } from '@peblish/schema/ids';
 import { and, eq, inArray, sql } from 'drizzle-orm';
@@ -47,12 +48,24 @@ function html(stored: string | null, source: string | null, origin: string): str
   return source === null ? null : renderMarkdown(source, { baseOrigin: origin }).html;
 }
 
+/** Whether a community still shows what it holds: not deleted, and not removed by a site admin. */
+async function communityOpen(db: Queryable, community: ActorRef): Promise<boolean> {
+  if (community.deleted) return false;
+  const [removal] = await db
+    .select({ communityId: communityRemovals.communityId })
+    .from(communityRemovals)
+    .where(eq(communityRemovals.communityId, community.id));
+  return !removal;
+}
+
 export type LoadedPost = {
   record: PostRecord;
   author: ActorRef;
   community: ActorRef;
-  /** Neither deleted nor removed: still something to publish or serve. */
+  /** Neither deleted nor removed: still something to publish. */
   live: boolean;
+  /** Live, in a community that is neither deleted nor removed: still something to serve as a document. */
+  servable: boolean;
   deletedAt: Date | null;
   bodyMd: string | null;
 };
@@ -80,6 +93,7 @@ async function postFrom(db: Queryable, origin: string, row: typeof posts.$inferS
   const author = refs.get(row.authorId);
   const community = refs.get(row.communityId);
   if (!author || !community) return null;
+  const live = row.deletedAt === null && row.removedAt === null;
   return {
     record: {
       apId: row.apId,
@@ -103,7 +117,8 @@ async function postFrom(db: Queryable, origin: string, row: typeof posts.$inferS
     },
     author,
     community,
-    live: row.deletedAt === null && row.removedAt === null,
+    live,
+    servable: live && (await communityOpen(db, community)),
     deletedAt: row.deletedAt,
     bodyMd: row.bodyMd,
   };
@@ -113,7 +128,10 @@ export type LoadedComment = {
   record: CommentRecord;
   author: ActorRef;
   community: ActorRef;
+  /** Neither deleted nor removed: still something to publish. */
   live: boolean;
+  /** Live, on a post that is neither deleted nor removed, in a community that is neither deleted nor removed. */
+  servable: boolean;
   deletedAt: Date | null;
   bodyMd: string | null;
 };
@@ -131,7 +149,13 @@ export async function loadCommentByApId(db: Queryable, origin: string, apId: str
 
 async function commentFrom(db: Queryable, origin: string, where: ReturnType<typeof eq>): Promise<LoadedComment | null> {
   const [row] = await db
-    .select({ comment: comments, postApId: posts.apId, communityId: posts.communityId, parentApId: parents.apId })
+    .select({
+      comment: comments,
+      postApId: posts.apId,
+      postGone: sql<boolean>`(${posts.deletedAt} is not null or ${posts.removedAt} is not null)`,
+      communityId: posts.communityId,
+      parentApId: parents.apId,
+    })
     .from(comments)
     .innerJoin(posts, eq(posts.id, comments.postId))
     .leftJoin(parents, eq(parents.id, comments.parentId))
@@ -142,6 +166,7 @@ async function commentFrom(db: Queryable, origin: string, where: ReturnType<type
   const author = refs.get(comment.authorId);
   const community = refs.get(row.communityId);
   if (!author || !community) return null;
+  const live = comment.deletedAt === null && comment.removedAt === null;
   return {
     record: {
       apId: comment.apId,
@@ -158,7 +183,8 @@ async function commentFrom(db: Queryable, origin: string, where: ReturnType<type
     },
     author,
     community,
-    live: comment.deletedAt === null && comment.removedAt === null,
+    live,
+    servable: live && !row.postGone && (await communityOpen(db, community)),
     deletedAt: comment.deletedAt,
     bodyMd: comment.bodyMd,
   };

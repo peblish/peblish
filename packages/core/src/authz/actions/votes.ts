@@ -3,6 +3,7 @@ import { eq } from 'drizzle-orm';
 import { comments, posts } from '../../db/tables/content.ts';
 import { allow, deny, type PolicyRequest } from '../policy.ts';
 import { participationDenial } from '../state.ts';
+import { isGroupPrincipal } from './posts.ts';
 
 // Owned by lane B1. Lane AZ's guard (authz/state.ts: participationDenial) refuses bans and
 // removed or deleted targets and communities. It runs first because it locks the community
@@ -12,10 +13,12 @@ import { participationDenial } from '../state.ts';
 //
 // Votes on locked posts stay allowed: a lock stops comments, not votes (Lemmy, AZ decision 10).
 // A remote voter is allowed as itself, like a remote author: the pipeline has matched the
-// signer to the Like's actor.
+// signer to the Like's actor. A remote community (a Group) never votes (isGroupPrincipal).
 export const policies = {
   'vote.cast': async ({ principal, subject, db, lock }: PolicyRequest<{ target: ContentRef }>) => {
     if (principal.kind === 'system') return deny('auth.required');
+    // A remote community does not vote, and would deadlock on its own row (isGroupPrincipal).
+    if (await isGroupPrincipal({ principal, db })) return deny('post.group_cannot_act');
     const denied = await participationDenial({ db, lock }, principal.actorId, subject.target);
     if (denied) return denied;
     if (principal.kind === 'remote') return allow({ kind: 'owner', actorId: principal.actorId });

@@ -8,9 +8,9 @@ import { comments, posts } from '@peblish/core/db/tables/content';
 import { writer } from '@peblish/core/db/write';
 import { truncateAll } from '@peblish/core/testing/db';
 import { seedActor, seedInstance } from '@peblish/core/testing/seed';
-import { seedComment, seedPost } from '@peblish/core/testing/seed-az';
+import { seedComment, seedCommunityRemoval, seedPost } from '@peblish/core/testing/seed-az';
 import { seedLocalInstance, seedSigningKey } from '@peblish/core/testing/seed-fed-a';
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { actorFromWire } from '../mapping/actor.ts';
 import { fromWire } from '../mapping/document.ts';
 import type { JsonObject } from '../mapping/json.ts';
@@ -164,6 +164,38 @@ describe('collections', () => {
     expect(fromWire(doc)).toMatchObject({ kind: 'moderators', moderators: { moderatorApIds: [w.alice.apId, w.admin.apId] } });
   });
 
+  test('moderators leaves out rows that are not fresh: expired, or a remote mirror never verified or past its expiry', async () => {
+    const w = await world();
+    const peer = await seedInstance('peer.test', false);
+    const [fresh, expired, unverified, stale] = await Promise.all(
+      ['fresh', 'expired', 'unverified', 'stale'].map((name) => seedActor(peer, 'Person', name)),
+    );
+    const hour = 3_600_000;
+    await writer()
+      .insert(communityModerators)
+      .values([
+        { communityId: w.news.id, moderatorId: w.alice.id, role: 'owner', source: 'local' },
+        { communityId: w.news.id, moderatorId: w.admin.id, role: 'moderator', source: 'local', expiresAt: new Date(Date.now() - hour) },
+        {
+          communityId: w.news.id,
+          moderatorId: fresh!.id,
+          source: 'remote',
+          verifiedAt: new Date(),
+          expiresAt: new Date(Date.now() + hour),
+        },
+        { communityId: w.news.id, moderatorId: expired!.id, source: 'local', expiresAt: new Date(Date.now() - hour) },
+        { communityId: w.news.id, moderatorId: unverified!.id, source: 'remote', expiresAt: new Date(Date.now() + hour) },
+        {
+          communityId: w.news.id,
+          moderatorId: stale!.id,
+          source: 'remote',
+          verifiedAt: new Date(),
+          expiresAt: new Date(Date.now() - hour),
+        },
+      ]);
+    expect(((await json('/ap/c.news/moderators')).orderedItems as string[]).sort()).toEqual([w.alice.apId, fresh!.apId].sort());
+  });
+
   test('featured lists the pinned live posts as Pages', async () => {
     const w = await world();
     const pinned = await seedPost(w.here, w.news, w.alice, { title: 'Pinned', bodyMd: 'Read me', featuredCommunity: true });
@@ -199,6 +231,45 @@ describe('collections', () => {
     expect(doc).toMatchObject({ type: 'OrderedCollection', totalItems: 2 });
     expect((doc.orderedItems as JsonObject[]).map((item) => item.id)).toEqual([`${second.apId}/create`, `${first.apId}/create`]);
     expect((doc.orderedItems as JsonObject[])[0]).not.toHaveProperty('@context');
+  });
+
+  test('the outbox shows each post as it is now, and nothing of a deleted post or a removed or deleted community', async () => {
+    const w = await world();
+    const post = await seedPost(w.here, w.news, w.alice, { title: 'Before', bodyMd: 'old text' });
+    const pinned = await seedPost(w.here, w.news, w.alice, { title: 'Pinned', featuredCommunity: true });
+    const activityId = `${origin}/ap/activity/0190b7a8-0000-7000-8000-0000000000aa`;
+    await writer()
+      .insert(activities)
+      .values({
+        apId: activityId,
+        type: 'Create',
+        actorApId: w.alice.apId,
+        objectApId: post.apId,
+        local: true,
+        raw: { type: 'Create', id: activityId, object: { type: 'Page', id: post.apId, name: 'Before' } },
+      });
+    await writer()
+      .update(posts)
+      .set({ title: 'After', bodyMd: 'new text', contentHtml: null, editedAt: new Date() })
+      .where(eq(posts.id, post.id));
+    const [item] = (await json('/ap/c.news/outbox')).orderedItems as JsonObject[];
+    expect(item).toMatchObject({
+      type: 'Create',
+      id: activityId,
+      actor: w.alice.apId,
+      object: { type: 'Page', id: post.apId, name: 'After' },
+    });
+    expect(JSON.stringify(item)).toContain('new text');
+    expect(JSON.stringify(item)).not.toContain('old text');
+
+    // The outbox and the pinned posts of a removed community are empty, and so are a deleted one's.
+    await seedCommunityRemoval(w.news);
+    expect(await json('/ap/c.news/outbox')).toMatchObject({ totalItems: 0, orderedItems: [] });
+    expect((await json('/ap/c.news/featured')).orderedItems).toEqual([]);
+    await writer().execute(sql`delete from community_removals`);
+    expect((await json('/ap/c.news/featured')).orderedItems).toEqual([expect.objectContaining({ id: pinned.apId })]);
+    await writer().update(actors).set({ deletedAt: new Date() }).where(eq(actors.id, w.news.id));
+    expect(await json('/ap/c.news/outbox')).toMatchObject({ totalItems: 0, orderedItems: [] });
   });
 
   test('a Person has no featured collection, and an unadvertised or unknown collection is nothing', async () => {
@@ -285,6 +356,97 @@ describe('posts, comments and activities', () => {
     expect(await json('/ap/activity/0190b7a8-0000-7000-8000-000000000001')).toEqual(stored);
     expect(await get('/ap/activity/0190b7a8-0000-7000-8000-000000000002')).toBeNull();
     expect(await get('/ap/activity/0190b7a8-0000-7000-8000-000000000003')).toBeNull();
+  });
+
+  describe('nothing is served once what it belongs to is gone', () => {
+    const tombstone = (id: string, formerType: string) => ({
+      status: 410,
+      json: expect.objectContaining({ type: 'Tombstone', id, formerType }),
+    });
+
+    test('posts and comments of a removed or deleted community are Tombstones, and come back with it', async () => {
+      const w = await world();
+      const post = await seedPost(w.here, w.news, w.alice);
+      const note = await seedComment(w.here, post, w.alice);
+      await seedCommunityRemoval(w.news);
+      expect(await get(`/ap/post/${post.id}`)).toMatchObject(tombstone(post.apId, 'Page'));
+      expect(await get(`/ap/comment/${note.id}`)).toMatchObject(tombstone(note.apId, 'Note'));
+      await writer().execute(sql`delete from community_removals`);
+      expect((await get(`/ap/post/${post.id}`))?.status).toBe(200);
+      await writer().update(actors).set({ deletedAt: new Date() }).where(eq(actors.id, w.news.id));
+      expect(await get(`/ap/post/${post.id}`)).toMatchObject(tombstone(post.apId, 'Page'));
+      expect(await get(`/ap/comment/${note.id}`)).toMatchObject(tombstone(note.apId, 'Note'));
+    });
+
+    test('a comment on a deleted or removed post is a Tombstone, a reply to a deleted comment is not', async () => {
+      const w = await world();
+      const post = await seedPost(w.here, w.news, w.alice);
+      const parent = await seedComment(w.here, post, w.alice);
+      const reply = await seedComment(w.here, post, w.alice, { parentId: parent.id });
+      await writer().update(comments).set({ deletedAt: new Date() }).where(eq(comments.id, parent.id));
+      expect((await get(`/ap/comment/${reply.id}`))?.status).toBe(200);
+      await writer().update(posts).set({ removedAt: new Date() }).where(eq(posts.id, post.id));
+      expect(await get(`/ap/comment/${reply.id}`)).toMatchObject(tombstone(reply.apId, 'Note'));
+      await writer().update(posts).set({ removedAt: null, deletedAt: new Date() }).where(eq(posts.id, post.id));
+      expect(await get(`/ap/comment/${reply.id}`)).toMatchObject(tombstone(reply.apId, 'Note'));
+    });
+
+    /** Stores the activities a post and its comment produced, in the shapes the consumer writes. */
+    async function sentFor(w: Awaited<ReturnType<typeof world>>) {
+      const post = await seedPost(w.here, w.news, w.alice);
+      const note = await seedComment(w.here, post, w.alice);
+      const id = (n: number) => `${origin}/ap/activity/0190b7a8-0000-7000-8000-0000000000${String(n).padStart(2, '0')}`;
+      const page = { type: 'Page', id: post.apId };
+      const comment = { type: 'Note', id: note.apId };
+      const create = (n: number, object: object) => ({ type: 'Create', id: id(n), actor: w.alice.apId, object });
+      const rows = [
+        create(1, page),
+        { type: 'Update', id: id(2), actor: w.alice.apId, object: page },
+        { type: 'Announce', id: id(3), actor: w.news.apId, object: create(4, page) },
+        { type: 'Announce', id: id(5), actor: w.news.apId, object: page },
+        create(6, comment),
+        { type: 'Delete', id: id(7), actor: w.alice.apId, object: post.apId },
+        { type: 'Undo', id: id(8), actor: w.alice.apId, object: { type: 'Delete', id: id(7), object: post.apId } },
+        { type: 'Announce', id: id(9), actor: w.news.apId, object: { type: 'Delete', id: id(7), object: post.apId } },
+        { type: 'Like', id: id(10), actor: w.alice.apId, object: post.apId },
+        { type: 'Update', id: id(11), actor: w.alice.apId, object: { type: 'Person', id: w.alice.apId } },
+      ];
+      await writer()
+        .insert(activities)
+        .values(rows.map((raw) => ({ apId: raw.id, type: raw.type, actorApId: raw.actor, objectApId: null, local: true, raw })));
+      return { post, note, id, types: Object.fromEntries(rows.map((raw) => [raw.id, raw.type])) };
+    }
+
+    test('a Create, Update or Announce of deleted or removed content is a Tombstone; a Delete, an Undo and the rest stay', async () => {
+      const w = await world();
+      const sent = await sentFor(w);
+      const served = () => Promise.all(Object.keys(sent.types).map(async (apId) => (await get(new URL(apId).pathname))!));
+      // Everything is live: every activity is served as stored.
+      expect((await served()).map((each) => each.status)).toEqual(Array(10).fill(200));
+
+      await writer()
+        .update(posts)
+        .set({ deletedAt: new Date('2026-01-01T00:00:00Z') })
+        .where(eq(posts.id, sent.post.id));
+      const gone = await served();
+      // Create, Update, Announce(Create), Announce(Page) of the post; Create of the comment (its post is gone); then the keepers.
+      expect(gone.map((served) => served.status)).toEqual([410, 410, 410, 410, 410, 200, 200, 200, 200, 200]);
+      expect(gone[0]).toMatchObject({
+        json: { type: 'Tombstone', id: sent.id(1), formerType: 'Create', deleted: '2026-01-01T00:00:00.000Z' },
+      });
+      expect(gone[2]).toMatchObject({ json: { type: 'Tombstone', id: sent.id(3), formerType: 'Announce' } });
+      expect(gone[5]?.json).toMatchObject({ type: 'Delete', object: sent.post.apId });
+    });
+
+    test('an edit is not a deletion: the activity is served as stored while its content lives', async () => {
+      const w = await world();
+      const sent = await sentFor(w);
+      await writer().update(posts).set({ title: 'Edited', editedAt: new Date() }).where(eq(posts.id, sent.post.id));
+      expect((await get(new URL(sent.id(1)).pathname))?.status).toBe(200);
+      await writer().update(comments).set({ deletedAt: new Date() }).where(eq(comments.id, sent.note.id));
+      expect((await get(new URL(sent.id(6)).pathname))?.status).toBe(410);
+      expect((await get(new URL(sent.id(1)).pathname))?.status).toBe(200);
+    });
   });
 
   test('a remote post is not served from here', async () => {

@@ -31,13 +31,14 @@ export const Route = createFileRoute('/post/$id/')({
     handlers: {
       POST: async ({ request, params }) => {
         if (!sameOrigin(request)) return forbidden();
+        // The id goes into the Location header below: only a uuid does.
+        if (!Uuid.allows(params.id)) return new Response(null, { status: 404 });
         const { session } = await formSession(request);
         const cookies = session?.setCookies ?? [];
         const back = `/post/${params.id}`;
         if (!session) return answer(request, cookies, { ok: false, reason: 'auth.required' }, back);
         const body = Body(await readForm(request));
-        if (body instanceof type.errors || !Uuid.allows(params.id))
-          return answer(request, cookies, { ok: false, reason: 'target.not_found' }, back);
+        if (body instanceof type.errors) return answer(request, cookies, { ok: false, reason: 'target.not_found' }, back);
         const principal = principalOf(session.view);
         const reason = body.reason?.trim() || null;
         const outcome: Outcome = await {

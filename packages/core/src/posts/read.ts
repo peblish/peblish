@@ -21,6 +21,8 @@ import { communityRemovals } from '../moderation/tables.ts';
 // the community's moderators and site admins, and a sensitive or NSFL post reaches a viewer
 // who has not declared 16+ (or is signed out) without its title, link, preview or body.
 // Withheld fields are '' or null; the flags (deleted, removed, sensitive, nsfl) stay true.
+// A post in a deleted or removed community is not shown at all: postViews leaves it out and
+// readPost answers null, for every viewer.
 
 /** Who is looking: a signed-in person (their id and site role), or null when signed out. */
 export type Viewer = { actorId: Uuid; siteRole: 'user' | 'admin' } | null;
@@ -56,6 +58,8 @@ type Context = {
   origin: string;
   viewer: Viewer;
   declared: boolean;
+  /** Communities that are deleted or removed by an admin: nothing in them is shown. */
+  closed: Set<Uuid>;
   known: Map<Uuid, Known>;
   admins: Set<Uuid>;
   moderators: Set<string>;
@@ -70,7 +74,7 @@ async function load(q: Queryable, rows: readonly PostRow[], viewer: Viewer): Pro
   const communityIds = [...new Set(rows.map((row) => row.communityId))];
   const postIds = rows.map((row) => row.id);
   const empty = rows.length === 0;
-  const [instance, people, admins, moderators, mine, declaration, viewerRoles] = await Promise.all([
+  const [instance, people, removals, admins, moderators, mine, declaration, viewerRoles] = await Promise.all([
     localInstance(q),
     empty
       ? []
@@ -84,11 +88,18 @@ async function load(q: Queryable, rows: readonly PostRow[], viewer: Viewer): Pro
             local: actors.local,
             sensitive: actors.sensitive,
             nsfl: actors.nsfl,
+            deletedAt: actors.deletedAt,
             domain: instances.domain,
           })
           .from(actors)
           .innerJoin(instances, eq(instances.id, actors.instanceId))
           .where(inArray(actors.id, [...authorIds, ...communityIds])),
+    empty
+      ? []
+      : q
+          .select({ communityId: communityRemovals.communityId })
+          .from(communityRemovals)
+          .where(inArray(communityRemovals.communityId, communityIds)),
     // An admin badge needs two-factor on, like siteRole: an admin without it acts as a user.
     empty
       ? []
@@ -133,8 +144,12 @@ async function load(q: Queryable, rows: readonly PostRow[], viewer: Viewer): Pro
     origin: instance.origin,
     viewer,
     declared: declaration.length > 0,
+    closed: new Set([
+      ...removals.map(({ communityId }) => communityId),
+      ...people.filter(({ id, deletedAt }) => deletedAt && communityIds.includes(id)).map(({ id }) => id),
+    ]),
     known: new Map(
-      people.map(({ domain, sensitive, nsfl, ...actor }) => [
+      people.map(({ domain, sensitive, nsfl, deletedAt: _deletedAt, ...actor }) => [
         actor.id,
         { ...actor, handle: actor.local ? actor.name : `${actor.name}@${domain}`, sensitive, nsfl },
       ]),
@@ -208,11 +223,14 @@ function describe(row: PostRow, c: Context): PostPage {
 /**
  * Posts as views, in the order given, for a feed or a profile (lane C1 queries the rows and
  * keeps its own order and filters). A few queries per page, none per row. contentHtml stays
- * null: feeds show `excerpt`, and the post page renders the body from readPost.
+ * null: feeds show `excerpt`, and the post page renders the body from readPost. A post in a
+ * deleted or removed community is left out for every viewer, so the result can be shorter than
+ * `rows`: match by `view.id`, not by position (a feed query that joins the community keeps its
+ * pages full).
  */
 export async function postViews(rows: readonly PostRow[], viewer: Viewer, q: Queryable = db()): Promise<PostView[]> {
   const context = await load(q, rows, viewer);
-  return rows.map((row) => describe(row, context).view);
+  return rows.filter((row) => !context.closed.has(row.communityId)).map((row) => describe(row, context).view);
 }
 
 /**
@@ -225,11 +243,6 @@ export async function readPost(id: string, viewer: Viewer, q: Queryable = db()):
   if (!Uuid.allows(id)) return null;
   const [row] = await q.select().from(posts).where(eq(posts.id, id));
   if (!row) return null;
-  const [community] = await q
-    .select({ deletedAt: actors.deletedAt, removedAt: communityRemovals.removedAt })
-    .from(actors)
-    .leftJoin(communityRemovals, eq(communityRemovals.communityId, actors.id))
-    .where(eq(actors.id, row.communityId));
-  if (!community || community.deletedAt || community.removedAt) return null;
-  return describe(row, await load(q, [row], viewer));
+  const context = await load(q, [row], viewer);
+  return context.closed.has(row.communityId) ? null : describe(row, context);
 }

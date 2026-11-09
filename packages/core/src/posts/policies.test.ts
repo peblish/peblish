@@ -29,6 +29,7 @@ const RST = 'community.posting_restricted';
 const BAN = 'community.banned';
 const CRM = 'community.removed';
 const MIS = 'mod.announce_mismatch';
+const GRP = 'post.group_cannot_act';
 const AUT = 'post.author_required';
 const NDL = 'post.not_deleted';
 const DEL = 'target.deleted';
@@ -77,6 +78,12 @@ describe.each([
     { who: 'site admin',                 principal: () => admin(world.people.admin.id),           expected: { open: OK,  restricted: OK,  removed: CRM, remote: OK,  remoteRestricted: OK } },
     { who: 'banned from open',           principal: () => localUser(world.people.banned.id),      expected: { open: BAN, restricted: RST, removed: CRM, remote: OK,  remoteRestricted: RST } },
     { who: 'remote author, direct',      principal: () => remote(world.people.remoteAuthor.id),   expected: { open: OK,  restricted: RST, removed: CRM, remote: OK,  remoteRestricted: OK } },
+    { who: 'remote community, direct',   principal: () => remote(world.communities.remote.id),   expected: { open: GRP, restricted: GRP, removed: GRP, remote: GRP, remoteRestricted: GRP } },
+    {
+      who: 'remote community acting as itself',
+      principal: () => remote(world.communities.remote.id, { communityId: world.communities.remote.id }),
+      expected: { open: GRP, restricted: GRP, removed: GRP, remote: GRP, remoteRestricted: GRP },
+    },
     {
       who: "remote author, the remote community's Announce",
       principal: () => remote(world.people.remoteAuthor.id, { communityId: world.communities.remote.id }),
@@ -127,6 +134,14 @@ describe.each([
     expect(actual).toEqual([refusal, refusal, refusal]);
   });
 
+  test.each([
+    ['direct', () => remote(world.communities.remote.id)],
+    ['acting as itself', () => remote(world.communities.remote.id, { communityId: world.communities.remote.id })],
+  ] as const)('a remote community does not act on posts, even its own: %s', async (_how, principal) => {
+    const actual = await each(authorActions, (action) => act(action, principal(), world.posts.remote.normal));
+    expect(actual).toEqual([GRP, GRP, GRP]);
+  });
+
   test('a post that does not exist is target.not_found', async () => {
     const principal = localUser(world.people.author.id);
     const missing = '0192f5a0-1234-7abc-8def-0123456789ab';
@@ -157,6 +172,7 @@ describe.each([
     { who: 'the author',       principal: () => localUser(world.people.author.id),     expected: { 'a post': OK,  'a post, locked': OK,  'a post, removed': REM, 'a post, deleted': DEL, 'a post, community removed': CRM, 'a comment': OK } },
     { who: 'banned',           principal: () => localUser(world.people.banned.id),     expected: { 'a post': BAN, 'a post, locked': BAN, 'a post, removed': BAN, 'a post, deleted': BAN, 'a post, community removed': CRM, 'a comment': BAN } },
     { who: 'remote voter',     principal: () => remote(world.people.remoteAuthor.id),  expected: { 'a post': OK,  'a post, locked': OK,  'a post, removed': REM, 'a post, deleted': DEL, 'a post, community removed': CRM, 'a comment': OK } },
+    { who: 'remote community', principal: () => remote(world.communities.remote.id),    expected: { 'a post': GRP, 'a post, locked': GRP, 'a post, removed': GRP, 'a post, deleted': GRP, 'a post, community removed': GRP, 'a comment': GRP } },
   ];
 
   test.each(votes)('vote.cast: $who', async ({ principal, expected }) => {

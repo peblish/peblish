@@ -16,6 +16,12 @@ import { leaseMs as defaultLeaseMs, maxResponseBytes, parseRetryAfter, requestTi
 // longer than the request timeout, so a live worker's slow POST is never sent twice, and a
 // worker that dies mid-POST leaves a lease that runs out, after which the row is sent again
 // (at least once; receivers dedupe on the activity id).
+//
+// A worker that pauses past its lease (a stalled process, a long GC) can wake up after another
+// worker took the row over. Claiming counts an attempt, so `attempts` is the row's version:
+// the worker renews its lease just before it sends (and sends nothing if the row is no longer
+// its own), and records its outcome only while the row is still pending at the attempt it
+// claimed. A stale worker's result is dropped, never written over a newer attempt's.
 
 type Claimed = {
   id: string;
@@ -71,9 +77,28 @@ export async function claimDue(limit: number, leaseMs = defaultLeaseMs): Promise
 
 type Outcome = { state: 'delivered' | 'failed' | 'skipped' | 'pending'; status: number | null; error: string | null; delayMs: number };
 
-async function settle(row: Claimed, outcome: Outcome): Promise<void> {
+/** The row as this worker claimed it: still pending, and still at the attempt it counted. */
+const claimedBy = (row: Claimed) => and(eq(deliveries.id, row.id), eq(deliveries.state, 'pending'), eq(deliveries.attempts, row.attempts));
+
+/**
+ * Extends the lease of a claimed row just before its POST, so the whole request fits inside it,
+ * and says whether the row is still this worker's. False means another worker took it over.
+ */
+async function renew(row: Claimed, leaseMs: number): Promise<boolean> {
+  const renewed = await tx((t) =>
+    t.db
+      .update(deliveries)
+      .set({ leaseUntil: sql`now() + ${leaseMs} * interval '1 millisecond'` })
+      .where(claimedBy(row))
+      .returning({ id: deliveries.id }),
+  );
+  return renewed.length > 0;
+}
+
+/** Records the outcome of the attempt `row` claimed; false when the row had moved on and nothing was written. */
+async function settle(row: Claimed, outcome: Outcome): Promise<boolean> {
   const done = outcome.state !== 'pending';
-  await tx((t) =>
+  const settled = await tx((t) =>
     t.db
       .update(deliveries)
       .set({
@@ -84,8 +109,10 @@ async function settle(row: Claimed, outcome: Outcome): Promise<void> {
         nextAttemptAt: done ? undefined : new Date(Date.now() + outcome.delayMs),
         settledAt: done ? new Date() : null,
       })
-      .where(eq(deliveries.id, row.id)),
+      .where(claimedBy(row))
+      .returning({ id: deliveries.id }),
   );
+  return settled.length > 0;
 }
 
 async function signingKey(senderId: string) {
@@ -96,12 +123,13 @@ async function signingKey(senderId: string) {
   return key?.privateKeyPem ? { keyId: key.keyId, privateKeyPem: key.privateKeyPem } : null;
 }
 
-async function attempt(row: Claimed, fetch: Fetcher): Promise<Outcome> {
+/** Null when the row is no longer this worker's: it sends nothing and records nothing. */
+async function attempt(row: Claimed, fetch: Fetcher, leaseMs: number): Promise<Outcome | null> {
   const key = await signingKey(row.senderId);
   if (!key) return { state: 'failed', status: null, error: 'the sender has no signing key', delayMs: 0 };
   let headers: Headers;
   try {
-    headers = await signDelivery(key, row.inboxUrl, row.body);
+    headers = signDelivery(key, row.inboxUrl, row.body);
   } catch (error) {
     // A key that will not load stays broken on every retry.
     return {
@@ -113,6 +141,7 @@ async function attempt(row: Claimed, fetch: Fetcher): Promise<Outcome> {
   }
   headers.delete('host');
   headers.set('user-agent', await userAgent());
+  if (!(await renew(row, leaseMs))) return null;
   let result: Attempt;
   let status: number | null = null;
   let note: string | null = null;
@@ -142,20 +171,22 @@ async function attempt(row: Claimed, fetch: Fetcher): Promise<Outcome> {
 
 async function deliver(
   row: Claimed,
-  options: Required<Pick<DeliveryOptions, 'fetch' | 'isDormant' | 'refreshSoftware'>>,
-): Promise<Outcome> {
+  options: Required<Pick<DeliveryOptions, 'fetch' | 'isDormant' | 'refreshSoftware' | 'leaseMs'>>,
+): Promise<Outcome | null> {
   if (row.instanceId && (await options.isDormant(row.instanceId))) {
     return { state: 'skipped', status: null, error: 'the instance is dormant', delayMs: 0 };
   }
   await options.refreshSoftware(new URL(row.inboxUrl).origin);
-  return attempt(row, options.fetch);
+  return attempt(row, options.fetch, options.leaseMs);
 }
 
 /** Runs the queue until nothing is due (or `maxRows` rows were taken) and says how the rows ended. */
 export async function deliverDue(options: DeliveryOptions = {}): Promise<DeliveryCounts> {
   const fetch = options.fetch ?? safeFetch;
+  const leaseMs = options.leaseMs ?? defaultLeaseMs;
   const deps = {
     fetch,
+    leaseMs,
     isDormant: options.isDormant ?? isDormant,
     refreshSoftware: options.refreshSoftware ?? ((origin: string) => refreshInstanceSoftware(origin, { fetch })),
   };
@@ -170,7 +201,7 @@ export async function deliverDue(options: DeliveryOptions = {}): Promise<Deliver
     await deps.refreshSoftware(origin);
   };
   for (let taken = 0; taken < maxRows && !options.signal?.aborted;) {
-    const rows = await claimDue(Math.min(batchSize, maxRows - taken), options.leaseMs);
+    const rows = await claimDue(Math.min(batchSize, maxRows - taken), leaseMs);
     if (rows.length === 0) break;
     taken += rows.length;
     await Promise.all(
@@ -180,7 +211,16 @@ export async function deliverDue(options: DeliveryOptions = {}): Promise<Deliver
           console.error(`delivery of ${row.activityApId} to ${row.inboxUrl} broke`, error);
           return { state: 'pending', status: null, error: error instanceof Error ? error.message : String(error), delayMs: 60_000 };
         });
-        await settle(row, outcome);
+        if (!outcome) {
+          console.warn(`delivery of ${row.activityApId} to ${row.inboxUrl} not sent: another worker took the row over`);
+          return;
+        }
+        if (!(await settle(row, outcome))) {
+          console.warn(
+            `delivery of ${row.activityApId} to ${row.inboxUrl} (attempt ${row.attempts}) ended ${outcome.state} after its lease ran out; the result is dropped`,
+          );
+          return;
+        }
         if (outcome.state === 'pending') counts.retried++;
         else counts[outcome.state]++;
         if (outcome.state !== 'delivered') {

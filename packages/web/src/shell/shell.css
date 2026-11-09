@@ -249,10 +249,17 @@
     font-weight: 700;
   }
 
+  /* Under the sticky top bar, so a jump to #pb-main (the drawer's close link) lands below it. */
+  .pb-app__content {
+    scroll-margin-top: 4rem;
+  }
+
+  /* Shown only while the drawer is open (see the phone rules below). */
   .pb-scrim {
     position: fixed;
     inset: 0;
     z-index: 70;
+    display: none;
     background: rgb(0 0 0 / 0.5);
   }
 
@@ -271,8 +278,23 @@
       border-right: 1px solid var(--pb-fg);
     }
 
+    /* The drawer is open through :target (the menu link to #pb-side, before hydration and
+       without scripts) or through the shell's state once hydrated. */
+    .pb-side:target,
     .pb-app[data-drawer] .pb-side {
       display: block;
+    }
+
+    .pb-side:target ~ .pb-scrim,
+    .pb-app[data-drawer] .pb-scrim {
+      display: block;
+    }
+
+    /* Once the shell runs the drawer (data-managed) its state alone decides: a :target left
+       from before hydration, which dropping the hash does not clear, must not hold it open. */
+    .pb-app[data-managed]:not([data-drawer]) .pb-side,
+    .pb-app[data-managed]:not([data-drawer]) .pb-scrim {
+      display: none;
     }
 
     .pb-side__close,
@@ -287,6 +309,7 @@
       background: none;
       color: inherit;
       font-size: 18px;
+      text-decoration: none;
       cursor: pointer;
     }
 

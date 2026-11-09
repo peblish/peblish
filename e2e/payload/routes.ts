@@ -1,17 +1,23 @@
-// The routes the payload budget covers (budget.spec.ts), each measured on a first visit with
-// a cold cache. A lane that adds a page asks root to add its path here; the check then holds
-// that page to the same budget.
+// The pages the payload budget covers (budget.spec.ts), each measured on a first visit with a
+// cold cache. A lane that adds a page asks root to add it here, or to list it under notPages
+// with the reason it has no markup to budget: the inventory test in budget.spec.ts fails
+// until one of the two is done, so a new page cannot slip past the budget unmeasured.
 import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
+import { fixtures } from './fixtures.ts';
 
 export interface PayloadRoute {
-  /** The route as the test names it. */
+  /** The page's file route, as `FileRoutesByFullPath` in routeTree.gen.ts spells it. */
+  route: string;
+  /** The page as the test names it. */
   path: string;
   /**
-   * The URL to visit when the page needs seeded data (a post page): it reads the lane database,
-   * so the route is skipped against a remote BASE_URL.
+   * The URL to visit when the page needs data from the lane database (a post, an invite code, a
+   * mailed token): it is skipped against a remote BASE_URL, where there is no database to seed.
    */
-  target?: () => string;
+  target?: (baseURL: string) => string | Promise<string>;
+  /** The page is for a signed-in admin (two-factor on); the visit carries their session. Skipped against a remote BASE_URL, too. */
+  admin?: true;
   /** The composer: the one route that may load the editor's lazy chunk (vendor-editor). */
   composer?: true;
   /** Renders regular, italic and code text, so it is where the font budget is measured. */
@@ -27,10 +33,40 @@ const seededPost = () => {
   return `/post/${(JSON.parse(out) as { posts: { plain: string } }).posts.plain}`;
 };
 
-// B2's /media/proxy is an image endpoint, not a page: it sends no markup, so it has no payload to budget.
 export const routes: readonly PayloadRoute[] = [
-  { path: '/' },
-  { path: '/auth/sign-in' },
-  { path: '/post/<id>', target: seededPost },
-  { path: '/kit', fonts: true },
+  { route: '/', path: '/' },
+  { route: '/auth/sign-in', path: '/auth/sign-in' },
+  { route: '/auth/sign-up', path: '/auth/sign-up' },
+  {
+    route: '/auth/sign-up',
+    path: '/auth/sign-up?invite=<code>',
+    target: async (base) => `/auth/sign-up?invite=${(await fixtures(base)).inviteCode}`,
+  },
+  { route: '/auth/reset', path: '/auth/reset' },
+  { route: '/auth/reset', path: '/auth/reset?token=<mailed>', target: async (base) => (await fixtures(base)).resetPath },
+  { route: '/auth/two-factor', path: '/auth/two-factor' },
+  { route: '/auth/verify', path: '/auth/verify?token=<mailed>', target: async (base) => (await fixtures(base)).verifyPath },
+  { route: '/auth/verify', path: '/auth/verify (signed in)', target: () => '/auth/verify', admin: true },
+  { route: '/invite/$code', path: '/invite/<code>', target: async (base) => `/invite/${(await fixtures(base)).inviteCode}` },
+  { route: '/settings/account/', path: '/settings/account', admin: true },
+  { route: '/settings/security/', path: '/settings/security', admin: true },
+  { route: '/admin/registration/', path: '/admin/registration', admin: true },
+  { route: '/post/$id/', path: '/post/<id>', target: seededPost },
+  { route: '/kit/', path: '/kit', fonts: true },
 ];
+
+/** File routes that send no page, so there is no payload to budget; each says why. */
+export const notPages: Readonly<Record<string, string>> = {
+  '/admin': 'a layout group; /admin itself answers 404',
+  '/auth': 'a layout group; /auth itself answers 404',
+  '/invite': 'a layout group; /invite itself answers 404',
+  '/settings': 'a layout group; /settings itself answers 404',
+  '/healthz': 'a probe answering plain text',
+  '/readyz': 'a probe answering plain text',
+  '/auth/sign-out': 'a form post that answers with a redirect',
+  '/media/proxy/$signature/$target': 'an image endpoint, not a page',
+};
+
+/** File routes that are neither budgeted nor listed as having no payload. */
+export const unaccounted = (inventory: readonly string[]) =>
+  inventory.filter((route) => !routes.some((budgeted) => budgeted.route === route) && !(route in notPages));

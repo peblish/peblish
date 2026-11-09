@@ -36,7 +36,8 @@ function CommunityGroup({ title, communities, pathname }: { title: string; commu
 /**
  * The persistent left column (shell-sidebar): the feeds, the viewer's communities with a
  * filter, links to the directory and the resolver, and the site's pages. On a phone it is a
- * drawer the shell opens; `onClose` is its close button.
+ * drawer the shell opens (see Shell for how it works before hydration); `onClose` is its
+ * close link.
  */
 export function Sidebar({
   session,
@@ -63,9 +64,17 @@ export function Sidebar({
 
   return (
     <aside className="pb-side" id="pb-side" aria-label={t('shell', 'sidebar.label')} data-open={open || undefined}>
-      <button type="button" className="pb-side__close" onClick={onClose} aria-label={t('shell', 'menu.close')}>
+      <a
+        className="pb-side__close"
+        href="#pb-main"
+        aria-label={t('shell', 'menu.close')}
+        onClick={(event) => {
+          event.preventDefault();
+          onClose();
+        }}
+      >
         <CloseIcon />
-      </button>
+      </a>
       <a className="pb-brand" href="/">
         <b>{t('shell', 'title')}</b>
       </a>
