@@ -93,7 +93,7 @@ export const FixtureComment = type({
   distinguished: 'boolean',
   upvotes: 'number.integer >= 0',
   downvotes: 'number.integer >= 0',
-  /** Direct replies in the set. */
+  /** Every comment below this one, at any depth, as Lemmy counts (lab-live has none two levels deep). */
   childCount: 'number.integer >= 0',
   publishedAt: date,
   editedAt: optionalDate,
