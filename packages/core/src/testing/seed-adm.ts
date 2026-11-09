@@ -52,8 +52,13 @@ async function seedAdmin(name: string, secretKey: string) {
 /** A member with no admin role, for the specs that check the admin pages turn them away. */
 export async function seedAdmMember() {
   const name = 'adm_member';
-  const [existing] = await db().select({ id: actors.id }).from(actors).where(eq(actors.name, name));
-  if (!existing) await seedAccount(name);
+  const find = async () => (await db().select({ id: actors.id }).from(actors).where(eq(actors.name, name)))[0];
+  if (!(await find())) {
+    // Both ADM spec files seed side by side: on a fresh database the other may have made it first.
+    await seedAccount(name).catch(async (error: unknown) => {
+      if (!(await find())) throw error;
+    });
+  }
   return { name, password: PASSWORD };
 }
 
