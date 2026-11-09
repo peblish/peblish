@@ -1,5 +1,5 @@
 import { PlusIcon } from '@peblish/ui/components/icons';
-import { useRouterState } from '@tanstack/react-router';
+import { getRouteApi, useRouterState } from '@tanstack/react-router';
 import { lazy, Suspense, useState } from 'react';
 import { useTranslate } from '../i18n/use-translate.ts';
 import { createPostPath } from './paths.ts';
@@ -9,6 +9,7 @@ import { createPostPath } from './paths.ts';
 // Lane COMPOSER owns this module.
 const loadSheet = () => import('../routes/submit/-ui/composer-sheet.tsx');
 const ComposerSheet = lazy(loadSheet);
+const root = getRouteApi('__root__');
 
 /** The community whose page is open (`/c/<handle>`), so the sheet starts in it. */
 const communityOf = (pathname: string) => {
@@ -24,6 +25,8 @@ const communityOf = (pathname: string) => {
 export function CreatePost() {
   const { t } = useTranslate();
   const pathname = useRouterState({ select: (state) => state.location.pathname });
+  // Who the shell is showing (the root loader reloads when another tab changes the account, shell/viewer-sync.ts).
+  const viewer = root.useLoaderData({ select: ({ session }) => session?.actorId ?? '' });
   // The sheet is open for the page it was opened on: a navigation closes it without an effect.
   const [openAt, setOpenAt] = useState<string | null>(null);
   const open = openAt === pathname;
@@ -47,7 +50,8 @@ export function CreatePost() {
       </a>
       {open && (
         <Suspense fallback={null}>
-          <ComposerSheet community={communityOf(pathname)} onClose={() => setOpenAt(null)} />
+          {/* Another viewer is another sheet: it loads that person's communities and never carries the words over. */}
+          <ComposerSheet key={viewer} community={communityOf(pathname)} onClose={() => setOpenAt(null)} />
         </Suspense>
       )}
     </>
