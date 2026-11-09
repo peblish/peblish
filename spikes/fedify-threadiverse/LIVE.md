@@ -1,5 +1,7 @@
 # Slice 3: the live lab
 
+Status: torn down on 2026-11-09. The results, including the Mastodon and Mbin checks and the teardown, are in `RESULT.md` under "Slice 3 (live peers)". Do not reuse `lab.feddit.com`: peers cache its actor keys, so a later live lab uses a fresh subdomain.
+
 The Fedify spike, deployed unchanged as `https://lab.feddit.com`, federating with the real PieFed 1.8.11 at `https://feddit.com`. A runner on a laptop drives both sides: `scenarios/live.ts`.
 
 Posts go only into communities we control: `!lab@lab.feddit.com`, and one existing local community on the PieFed instance. L10 follows communities on other instances and never posts, comments or votes there.
@@ -78,6 +80,22 @@ Each one asserts on PieFed's API and on the lab's `/spike/state`. Titles are `[p
 
 The run ends with the scenario statuses and the remote followers in `/spike/state.followers`, so a Mastodon follow by the owner shows up there.
 
+### Mastodon
+
+A Mastodon account follows the group as `@lab@lab.feddit.com` (or the moderator as `@labmod@lab.feddit.com`) and the follower appears in `/spike/state.followers`. Mastodon shows nothing from the group's normal `Announce(Create(Page))` fan-out: it only turns an `Announce` whose object is the post itself into a boost, the second copy Lemmy sends to every follower and rejects on receipt (`CannotReceivePage`). To make one post visible there, send that shape to the followers at the named origins only:
+
+```sh
+curl -sS -X POST "$LIVE_LAB_ORIGIN/spike/announce-page" \
+  -H "Authorization: Bearer $LIVE_CONTROL_TOKEN" -H 'content-type: application/json' \
+  -d '{"object":"https://lab.feddit.com/ap/post/15","origins":["https://mastodon.social"]}'
+```
+
+`object` is a local post URI and `origins` lists follower origins; followers elsewhere get nothing. Check with Mastodon's public API: `GET https://mastodon.social/api/v1/accounts/lookup?acct=lab@lab.feddit.com`, then `/api/v1/accounts/<id>/statuses`, where the post appears as a boost by the group. A reply from Mastodon should reach the author's inbox as `Create(Note)` with `inReplyTo` set and show up in `/spike/state` (inbox log and objects).
+
+### Mbin
+
+An Mbin account subscribes to the magazine `lab@lab.feddit.com` (search for it on the Mbin instance), and the follower appears in `/spike/state.followers`. Mbin reads the group's normal `Announce(Create(Page))`, so a post from `POST /spike/post` shows up as a thread with no extra step. Check with Mbin's public API: `GET https://<mbin host>/api/magazine/<id>/entries`. Upvotes arrive as `Like` and replies as `Create(Note)`. A boost arrives as an `Announce` by the Person with a bare IRI, which the lab rejects.
+
 Results go to `captures/live-<run>.json` (`live-<run>-cleanup.json` for `--cleanup`). `captures/live-<run>-ids.json` lists everything created: lab actor names and URIs, lab post URIs, PieFed community, post and comment ids, followed communities, the post count and the L7 lock and removal flags. `captures/live-<run>-state.json` (`-cleanup-state.json` for `--cleanup`) is the lab's whole `/spike/state` at the end of the run: outbox rows, followers, votes and the inbox log, as evidence for the delivery and unfollow claims.
 
 PieFed lets a remote account it first saw in the last 24 hours make 4 posts. A run makes three posts per lab author (two in L3, one in L8) and refuses to create a fourth, counting from the ids file and from what the lab holds. Each run uses a new author.
@@ -98,12 +116,14 @@ Final checks, all of which must hold: the lab marks each deleted object deleted 
 
 The L3 posts and the `lab` community stay, so there is something to look at.
 
-Full teardown, in this order:
+Full teardown, in this order (done on 2026-11-09, see `RESULT.md`):
 
 1. `node scenarios/live.ts --cleanup --run=<id>` for each run. An ids file made before the env block existed is refused; add the block by hand if you are sure it belongs to this deployment.
 2. Check `/spike/state.followers` and `.following` are empty of test accounts.
 3. Stop and delete the Easypanel app, then its database.
 4. Remove the `peblish_test` account and its subscriptions on PieFed.
+
+Before step 3, delete the lab's own remaining posts with `POST /spike/delete`. A community's Delete reaches only its current followers, so re-follow from any peer that should drop its copy. Mastodon ignores the group's wrapped Delete, so boosts stay on Mastodon.
 
 ## Tests
 

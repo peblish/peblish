@@ -188,6 +188,13 @@ spike.post("/post", async (c) => {
   );
 });
 
+// Mastodon compatibility: Announce(Page) to the followers at the named origins only.
+spike.post("/announce-page", async (c) => {
+  const body = await c.req.json<Record<string, unknown>>();
+  const origins = Array.isArray(body.origins) ? body.origins.filter((v): v is string => typeof v === "string") : [];
+  return c.json(await actions.announcePage({ object: field(body, "object"), origins }));
+});
+
 spike.post("/comment", async (c) => {
   const body = await c.req.json<Record<string, unknown>>();
   return c.json(
