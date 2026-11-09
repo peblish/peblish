@@ -7,11 +7,13 @@ import { Refused } from '../tx/refused.ts';
 /**
  * Escalates a moderators' group to the admins, or sends an escalated one back. Sending back
  * moves only the rows a moderator escalated: an admins-only category never reaches moderators,
- * even when it shares a target with an escalated report.
+ * even when it shares a target with an escalated report. Rechecked like resolveReports, so the
+ * authority to move a group is the one in force when it moves.
  */
 export const routeReports = defineMutation({
   action: 'report.route',
   emits: ['report.routed'],
+  recheck: true,
   async run(t, grant, _input: Record<string, never>) {
     const { target, audience, to } = grant.subject;
     const escalating = to === 'admins';

@@ -1,12 +1,14 @@
-import { eq, sql } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { beforeEach, describe, expect, test } from 'vitest';
 import { authorize } from '../authz/authorize.ts';
 import { db } from '../db/read.ts';
+import { actors } from '../db/tables/actors.ts';
 import { posts } from '../db/tables/content.ts';
-import { reports } from '../db/tables/moderation.ts';
+import { communityModerators, reports } from '../db/tables/moderation.ts';
+import { writer } from '../db/write.ts';
 import { readModlog } from '../modlog/read.ts';
 import { truncateAll } from '../testing/db.ts';
-import { admin, grantFor, outboxEvents, seedBan, seedModerationWorld, writeCounts } from '../testing/seed-az.ts';
+import { admin, gate, grantFor, outboxEvents, seedBan, seedModerationWorld, someoneWaitsOnALock, writeCounts } from '../testing/seed-az.ts';
 import { localUser } from '../testing/seed.ts';
 import { removeContent } from '../moderation/remove.ts';
 import type { Principal } from '@peblish/schema/authz';
@@ -14,6 +16,8 @@ import type { ReportCategory } from './categories.ts';
 import { siteBanAs } from '../bans/service.ts';
 import { createReportAs, removeFromReportAs, resolveReportsAs, routeReportsAs } from './actions.ts';
 import { createReport } from './create.ts';
+import { resolveReports } from './resolve.ts';
+import { routeReports } from './route.ts';
 import type { ReportTarget } from './types.ts';
 
 beforeEach(truncateAll);
@@ -266,6 +270,72 @@ describe('resolve, dismiss and route', () => {
     expect(await routeReportsAs(world.boss, inAdmins, 'moderators')).toEqual({ ok: true, count: 2 });
     const categories = await db().select({ category: reports.category, audience: reports.audience }).from(reports).orderBy(reports.number);
     expect(categories.filter((row) => row.category === 'child_safety').map((row) => row.audience)).toEqual(['admins']);
+  });
+});
+
+describe('authority is current when the queue acts', () => {
+  /** Removes the moderator's row behind the moderator cache's back, as another process would. */
+  const revoke = (world: Awaited<ReturnType<typeof queueWorld>>) =>
+    writer()
+      .delete(communityModerators)
+      .where(
+        and(
+          eq(communityModerators.communityId, world.communities.local.live.id),
+          eq(communityModerators.moderatorId, world.people.moderator.id),
+        ),
+      );
+
+  test('a moderator removed after the cache was filled can neither resolve nor escalate', async () => {
+    const world = await queueWorld();
+    // authorize() fills this process's moderator cache; the revocation leaves it stale
+    expect((await authorize('report.resolve', world.mod, world.key)).ok).toBe(true);
+    await revoke(world);
+    expect(await resolveReportsAs(world.mod, world.key, { resolution: 'dismissed' })).toEqual({
+      ok: false,
+      reason: 'mod.moderator_required',
+    });
+    expect(await routeReportsAs(world.mod, world.key, 'admins')).toEqual({ ok: false, reason: 'mod.moderator_required' });
+    const rows = await db().select({ status: reports.status, audience: reports.audience }).from(reports);
+    expect(rows).toEqual([
+      { status: 'open', audience: 'moderators' },
+      { status: 'open', audience: 'moderators' },
+    ]);
+  });
+
+  test.each(['resolve', 'route'] as const)('%s waits for a removal holding the community row, then sees it', async (which) => {
+    const world = await queueWorld();
+    const resolveGrant = await grantFor('report.resolve', world.mod, world.key);
+    const routeGrant = await grantFor('report.route', world.mod, { ...world.key, to: 'admins' });
+    const locked = gate();
+    const release = gate();
+    // B: a moderator removal in flight holds the community row, as setModerator's recheck does
+    const removal = writer().transaction(async (b) => {
+      await b.select({ id: actors.id }).from(actors).where(eq(actors.id, world.communities.local.live.id)).for('no key update');
+      await b
+        .delete(communityModerators)
+        .where(
+          and(
+            eq(communityModerators.communityId, world.communities.local.live.id),
+            eq(communityModerators.moderatorId, world.people.moderator.id),
+          ),
+        );
+      locked.open();
+      await release.opened;
+    });
+    await locked.opened;
+    // A: the queue action rechecks under the community lock and waits for B
+    const action = which === 'resolve' ? resolveReports(resolveGrant, { resolution: 'dismissed' }) : routeReports(routeGrant, {});
+    let done = false;
+    const settled = action.then(
+      () => 'ok',
+      (error: { reason?: string }) => error.reason,
+    );
+    void settled.finally(() => (done = true));
+    while (!done && !(await someoneWaitsOnALock())) await new Promise((resolve) => setTimeout(resolve, 10));
+    release.open();
+    await removal;
+    expect(await settled).toBe('mod.moderator_required');
+    expect((await db().select({ status: reports.status }).from(reports)).every((row) => row.status === 'open')).toBe(true);
   });
 });
 
