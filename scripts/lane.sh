@@ -22,7 +22,8 @@ case "$lane" in
   ui) port=18305 ;; b1) port=18306 ;; b2) port=18307 ;; f) port=18308 ;; fed_a) port=18309 ;;
   fed_b) port=18310 ;; rem) port=18311 ;; d) port=18312 ;; c1) port=18313 ;; composer) port=18314 ;;
   e1) port=18315 ;; e2) port=18316 ;; disc) port=18317 ;; safe) port=18318 ;; rep) port=18319 ;;
-  modf) port=18320 ;; adm) port=18321 ;; lab) port=18322 ;; b06) port=18323 ;; root) port=18399 ;;
+  modf) port=18320 ;; adm) port=18321 ;; lab) port=18322 ;; b06) port=18323 ;; comm) port=18324 ;;
+  fed_c) port=18325 ;; root) port=18399 ;;
   *) echo "lane.sh: unknown lane '$1'" >&2; exit 1 ;;
 esac
 
