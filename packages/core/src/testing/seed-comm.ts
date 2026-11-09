@@ -3,6 +3,7 @@ import { createCommunityAs } from '../communities/create.ts';
 import { closePools } from '../db/pools.ts';
 import { db } from '../db/read.ts';
 import { localInstance } from '../db/local-instance.ts';
+import { actors } from '../db/tables/actors.ts';
 import { communityModerators } from '../db/tables/moderation.ts';
 import { writer } from '../db/write.ts';
 import { ageDeclarations, throttles } from '../identity/tables.ts';
@@ -18,9 +19,10 @@ const hour = 3_600_000;
 
 /**
  * - people (all sign in with `password`): `admin` (two-factor, owner of the communities),
- *   `moderator`, `member`, `declared` (a 16+ declaration, no role), `undeclared` (none), `banned`;
+ *   `moderator`, `member`, `declared` (a 16+ declaration, no role), `undeclared` and `young`
+ *   (none), `banned`;
  * - communities: `open` (rules, languages, a sidebar, posts, a flagged post), `restricted`
- *   (only staff post), `empty`, `nsfw` and `nsfwOther` (flagged, with `secret` in their name,
+ *   (only staff post), `empty`, `quiet` (not indexable), `nsfw` and `nsfwOther` (flagged, with `secret` in their name,
  *   sidebar, rules, moderators and posts), `remote` (a Lemmy community seen from here);
  * - posts: `flaggedInOpen` (sensitive, in the open community), `inNsfw`, `inNsfwOther`, `plain`.
  * Every run uses fresh names, so the lane database can keep earlier runs.
@@ -32,14 +34,14 @@ async function e2e() {
   const local = { ...(await localInstance(db())), domain: new URL(origin).host, local: true };
   await writer().delete(throttles);
 
-  const [admin, moderator, member, declared, undeclared, banned] = await Promise.all(
-    ['admin', 'moderator', 'member', 'declared', 'undeclared', 'banned'].map((role) =>
+  const [admin, moderator, member, declared, undeclared, young, banned] = await Promise.all(
+    ['admin', 'moderator', 'member', 'declared', 'undeclared', 'young', 'banned'].map((role) =>
       seedAccount(`${role}_${suffix}`, { role: role === 'admin' ? 'admin' : 'user' }),
     ),
   );
   const totp = await seedTwoFactor(admin!.userId);
   // Sign-up writes a declaration for everyone; this account is the imported kind that has none.
-  await writer().delete(ageDeclarations).where(eq(ageDeclarations.actorId, undeclared!.actorId));
+  for (const person of [undeclared!, young!]) await writer().delete(ageDeclarations).where(eq(ageDeclarations.actorId, person.actorId));
   const principal = { kind: 'local' as const, actorId: admin!.actorId, siteRole: 'admin' as const };
 
   const create = async (name: string, fields: Omit<Parameters<typeof createCommunityAs>[1], 'name'>) => {
@@ -55,6 +57,7 @@ async function e2e() {
   });
   const restricted = await create('notices', { displayName: `Notices ${suffix}`, postingRestrictedToMods: true });
   const empty = await create('empty', { displayName: `Empty ${suffix}` });
+  const quiet = await create('quiet', { displayName: `Quiet ${suffix}`, indexable: false });
   const nsfw = await create('nsfw', {
     displayName: `${secret} name`,
     description: `${secret} sidebar`,
@@ -122,18 +125,38 @@ async function e2e() {
       member: member!.name,
       declared: declared!.name,
       undeclared: undeclared!.name,
+      young: young!.name,
       banned: banned!.name,
     },
-    communities: { open, restricted, empty, nsfw, nsfwOther, remote: { id: lab.id, handle: `lab@${lemmy.domain}`, host: lemmy.domain } },
+    communities: {
+      open,
+      restricted,
+      empty,
+      quiet,
+      nsfw,
+      nsfwOther,
+      remote: { id: lab.id, handle: `lab@${lemmy.domain}`, host: lemmy.domain },
+    },
     posts: { plain: plain.id, flaggedInOpen: flaggedInOpen.id, inNsfw: inNsfw.id, inNsfwOther: inNsfwOther.id, remote: remotePost.id },
   };
 }
 
+/** Whether the person named has a 16+ declaration row, for the e2e check that an under-16 answer saved nothing. */
+async function declared(name: string) {
+  const [row] = await db()
+    .select({ actorId: ageDeclarations.actorId })
+    .from(ageDeclarations)
+    .innerJoin(actors, eq(actors.id, ageDeclarations.actorId))
+    .where(eq(actors.name, name));
+  return { declared: row !== undefined };
+}
+
 if (import.meta.main) {
   try {
-    const [command] = process.argv.slice(2);
+    const [command, name] = process.argv.slice(2);
     if (command === 'e2e') console.log(JSON.stringify(await e2e()));
-    else throw new Error('usage: node packages/core/src/testing/seed-comm.ts e2e');
+    else if (command === 'declared' && name) console.log(JSON.stringify(await declared(name)));
+    else throw new Error('usage: node packages/core/src/testing/seed-comm.ts e2e | declared <name>');
   } finally {
     await closePools();
   }

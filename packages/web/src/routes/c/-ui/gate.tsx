@@ -3,6 +3,7 @@ import { Select } from '@peblish/ui/components/select';
 import { TextField } from '@peblish/ui/components/text-field';
 import type { MouseEvent } from 'react';
 import { useTranslate } from '../../../i18n/use-translate.ts';
+import { useRouteHydrated } from '../../../shell/hydration.ts';
 import { communityPath } from '../../../shell/paths.ts';
 
 // The NSFW gate (R2 pick nsfw-gate-page): one notice that stands for the whole community page,
@@ -33,6 +34,7 @@ function goBack(event: MouseEvent<HTMLAnchorElement>) {
 
 export function GateNotice({ data, error }: { data: GateData; error?: string | undefined }) {
   const { t } = useTranslate();
+  useRouteHydrated();
   const { subject, state, handle, back } = data;
   const action = communityPath({ handle });
   const shown = `!${handle}`;

@@ -43,6 +43,15 @@ const seededPermalink = () => {
   return `/post/${posts.thread}/comments/${comments.first}`;
 };
 
+/** The community page and its edit form need a community: lane COMM's seed (testing/seed-comm.ts) makes one with rules, languages and posts. */
+const seededCommunity = (suffix = '') => {
+  const out = execFileSync('node', ['packages/core/src/testing/seed-comm.ts', 'e2e'], {
+    cwd: join(import.meta.dirname, '../..'),
+    encoding: 'utf8',
+  });
+  return `/c/${(JSON.parse(out) as { communities: { open: { handle: string } } }).communities.open.handle}${suffix}`;
+};
+
 export const routes: readonly PayloadRoute[] = [
   { route: '/', path: '/' },
   { route: '/all/', path: '/all' },
@@ -66,6 +75,7 @@ export const routes: readonly PayloadRoute[] = [
   { route: '/settings/security/', path: '/settings/security', admin: true },
   { route: '/settings/blocks/', path: '/settings/blocks', admin: true },
   { route: '/admin/registration/', path: '/admin/registration', admin: true },
+  { route: '/c/$handle/', path: '/c/<handle>', target: () => seededCommunity() },
   { route: '/post/$id/', path: '/post/<id>', target: seededPost },
   { route: '/post/$id/comments/$commentId', path: '/post/<id>/comments/<commentId>', target: seededPermalink },
   // Signed out, /submit is a redirect to sign-in, so this entry measures the sign-in page it lands on
