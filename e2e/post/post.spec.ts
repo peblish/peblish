@@ -154,9 +154,17 @@ test.describe('anyone', () => {
 test.describe('a German browser', () => {
   test.use({ locale: 'de-DE' });
 
-  test('the post page speaks German to a German browser, with no axe violations', async ({ page }) => {
-    await gotoHydrated(page, url(seed.posts.plain));
+  test('the post page speaks German to a German browser, hydrates keeping the server’s date, with no axe violations', async ({ page }) => {
+    const log = recordConsole(page);
+    const response = await page.goto(url(seed.posts.plain), { waitUntil: 'commit' });
+    const server = /<time[^>]*>([^<]*)<\/time>/.exec((await response?.text()) ?? '')?.[1];
+    await page.locator('html[data-hydrated="1"]').waitFor({ state: 'attached' });
     await expect(page.getByRole('group', { name: 'Für diesen Beitrag abstimmen' })).toBeVisible();
+    // The date is German and was formatted once, on the server: hydration printed the same text.
+    expect(server).toMatch(/^\d{1,2}\. \p{L}+\.? \d{4}, \d{2}:\d{2} UTC$/u);
+    await expect(page.locator('time')).toHaveText(server ?? '');
+    await page.waitForLoadState('networkidle');
+    expect(log.hydrationProblems()).toEqual([]);
     await expectAccessible(page);
   });
 });

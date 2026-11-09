@@ -15,18 +15,6 @@ import { asPostError, errorKey } from './errors.ts';
 // crosspost, share and report. Sensitive and tombstone states withhold their content in core
 // (readPost); this only lays out what it was given.
 
-// Fixed fields in UTC, so the server and the browser print the same text (dateStyle cannot be combined with timeZoneName).
-const when = (locale: string, iso: string) =>
-  new Intl.DateTimeFormat(locale, {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
-    timeZone: 'UTC',
-    timeZoneName: 'short',
-  }).format(new Date(iso));
-
 export function PostPage({ data, error }: { data: PostPageData; error?: string | undefined }) {
   const { t, locale } = useTranslate();
   useRouteHydrated();
@@ -135,8 +123,8 @@ export function PostPage({ data, error }: { data: PostPageData; error?: string |
             {post.authorBadge && (
               <span className="post-badge">{t('posts', post.authorBadge === 'admin' ? 'badge.admin' : 'badge.moderator')}</span>
             )}{' '}
-            · <time dateTime={post.publishedAt}>{when(locale, post.publishedAt)}</time>
-            {post.editedAt && <> · {t('posts', 'meta.edited', { date: when(locale, post.editedAt) })}</>}
+            · <time dateTime={post.publishedAt}>{data.published}</time>
+            {data.edited && <> · {t('posts', 'meta.edited', { date: data.edited })}</>}
           </p>
           {body}
           {shownError && (

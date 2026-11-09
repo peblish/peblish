@@ -2,7 +2,7 @@ import { proxyUrlBuilder } from '@peblish/core/media/proxy-url';
 import type { PostPage } from '@peblish/core/posts/read';
 import { describe, expect, test } from 'vitest';
 import { createMarkdownRenderer } from '../../server/markdown.ts';
-import { postMedia, threadVisible } from './-page-data.ts';
+import { postMedia, postTime, threadVisible } from './-page-data.ts';
 
 const site = { origin: 'https://feddit.example', remoteMedia: true, proxy: proxyUrlBuilder(Buffer.alloc(32, 7)) };
 const proxied = /^\/media\/proxy\/[\w-]+\/[\w-]+$/;
@@ -74,5 +74,16 @@ describe('the thread of a post page', () => {
     expect(threadVisible(page({ removed: true }))).toBe(false);
     expect(threadVisible(page({ removed: true, moderator: false }))).toBe(false);
     expect(threadVisible(page({ removed: true, moderator: true }))).toBe(true);
+  });
+});
+
+describe('the post time', () => {
+  const iso = '2026-11-09T02:39:47.092Z';
+
+  test('is the UTC date and time in the request’s locale, whatever the process time zone', () => {
+    // \s also matches the narrow no-break space that newer ICU puts before AM.
+    expect(postTime('en-US', iso)).toMatch(/^Nov 9, 2026, 2:39\sAM UTC$/);
+    expect(postTime('de-DE', iso)).toBe('9. Nov. 2026, 02:39 UTC');
+    expect(postTime('de-DE', '2026-11-09T23:59:00Z')).toBe('9. Nov. 2026, 23:59 UTC');
   });
 });

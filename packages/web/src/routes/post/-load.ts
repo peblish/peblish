@@ -1,10 +1,12 @@
 import { readPost, type Viewer } from '@peblish/core/posts/read';
 import type { PostView } from '@peblish/schema/views';
 import { createServerFn } from '@tanstack/react-start';
+import { getRequestHeader } from '@tanstack/react-start/server';
 import { type } from 'arktype';
+import { negotiateLocale } from '../../i18n/negotiate.ts';
 import { pageSession } from '../../server/auth.ts';
 import { createMarkdownRenderer } from '../../server/markdown.ts';
-import { postMedia, threadVisible } from './-page-data.ts';
+import { postMedia, postTime, threadVisible } from './-page-data.ts';
 
 /**
  * The post page's data, for the route loader (a server function: it runs on the server for a
@@ -29,6 +31,7 @@ export const loadPost = createServerFn({ method: 'GET' })
           : null;
     const { view } = page;
     const { thumbnail, image } = postMedia(view, renderer);
+    const locale = negotiateLocale(getRequestHeader('accept-language'));
     const post: PostView = { ...view, contentHtml };
     return {
       post,
@@ -40,6 +43,9 @@ export const loadPost = createServerFn({ method: 'GET' })
       viewerId: session?.view.actorId ?? null,
       thumbnail,
       image,
+      /** The times as text in the request's locale, so hydration formats nothing (postTime). */
+      published: postTime(locale, view.publishedAt),
+      edited: view.editedAt && postTime(locale, view.editedAt),
       domain: view.url ? (URL.parse(view.url)?.hostname.replace(/^www\./, '') ?? null) : null,
     };
   });

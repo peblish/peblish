@@ -38,3 +38,28 @@ export const threadVisible = ({
   view: Pick<PostView, 'removed'>;
   moderator: boolean;
 }): boolean => (gate === 'none' || gate === 'blur') && (!view.removed || moderator);
+
+const timeFormats = new Map<string, Intl.DateTimeFormat>();
+
+/**
+ * "Nov 9, 2026, 2:39 AM UTC": a date and time in UTC, in the request's locale. The loader
+ * formats it and the page prints the string it was given, so hydration never formats a date
+ * itself: Node's and each browser's ICU data differ in small ways, and any difference would be
+ * a hydration mismatch. Fixed fields, because dateStyle cannot be combined with timeZoneName.
+ */
+export function postTime(locale: string, iso: string): string {
+  let format = timeFormats.get(locale);
+  if (!format) {
+    format = new Intl.DateTimeFormat(locale, {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+      timeZone: 'UTC',
+      timeZoneName: 'short',
+    });
+    timeFormats.set(locale, format);
+  }
+  return format.format(new Date(iso));
+}
