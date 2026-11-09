@@ -18,11 +18,12 @@ const peer = (routes: Record<string, { status?: number; body?: unknown }>) =>
 const offline = peer({});
 const { retryAfterMs } = remoteTtls.missing;
 
+let world: Awaited<ReturnType<typeof seedInboundWorld>>;
 beforeEach(async () => {
   await truncateAll();
   resetKeyFetchBudget();
   forgetMissingAttempts();
-  await seedInboundWorld();
+  world = await seedInboundWorld();
 });
 
 /** A vote on `target`, announced by lab, as the pipeline skips it when it does not hold the post. */
@@ -76,6 +77,20 @@ describe('objects that skipped activities are waiting for', () => {
     expect(asks(down)).toBe(3);
     // A 410 settles it.
     expect(asks(gone)).toBe(1);
+  });
+
+  test('are asked for newest first, and never from this server itself', async () => {
+    const targets = Array.from({ length: 30 }, (_, i) => `${lemmy}/post/${500 + i}`);
+    for (const target of targets) await waitingVote(target);
+    const own = `${new URL(world.community.apId).origin}/ap/post/9`;
+    await waitingVote(own);
+    const server = peer({});
+    expect(await fetchMissing({ fetch: server.fetch, gapMs: 0 })).toEqual({ looked: remoteTtls.missing.perRun, stored: 0 });
+    const asked = new Set(server.requests.map((request) => request.url));
+    // A run takes 25. The newest are asked for (the very last wait was on ours, which is skipped), the oldest are left for later.
+    expect(asked.has(targets[29]!)).toBe(true);
+    expect(asked.has(targets[0]!)).toBe(false);
+    expect(asked.has(own)).toBe(false);
   });
 
   test('are left alone when no remote community announced the activity', async () => {

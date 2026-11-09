@@ -171,7 +171,8 @@ export async function runBackfill(claimed: ClaimedBackfill, options: BackfillOpt
     }
     for (const item of items) {
       if (posts >= limits.posts) {
-        notes.push(`stopped at ${limits.posts} posts`);
+        const capped = `stopped at ${limits.posts} posts`;
+        if (!notes.includes(capped)) notes.push(capped);
         break;
       }
       if (options.signal?.aborted) return { outcome: 'retry', posts, comments, note: 'interrupted by the worker stopping' };

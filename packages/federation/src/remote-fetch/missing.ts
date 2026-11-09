@@ -5,6 +5,7 @@ import { readSetting } from '@peblish/core/settings/read';
 import { and, eq, isNull, sql } from 'drizzle-orm';
 import type { Fetcher } from '../actors/document.ts';
 import { safeFetch } from '../actors/safe-fetch.ts';
+import { localOrigin } from '../federation.ts';
 import { fetchRemoteObject, heldVouch } from './object.ts';
 import { polite } from './polite.ts';
 import { remoteTtls } from './ttl.ts';
@@ -42,19 +43,28 @@ export async function fetchMissing(
   const fetch = polite(options.fetch ?? safeFetch, options.gapMs ?? remoteTtls.politeGapMs);
   const since = new Date(now - lookbackMs).toISOString();
 
-  // The latest skipped activity for each missing object, with the community that announced it.
+  // The latest skipped activity for each missing object, with the community that announced it, newest first.
   const waiting = await db().execute<{ target: string; community: string | null; announce: string | null }>(sql`
-    select distinct on (error) substr(error, ${prefix.length + 1}::int) as target, actor_ap_id as community, activity_id as announce
-    from ${inboxRaw}
-    where state = 'skipped' and error like ${`${prefix}%`} and received_at > ${since}::timestamptz
-    order by error, received_at desc
+    select target, community, announce from (
+      select distinct on (error) substr(error, ${prefix.length + 1}::int) as target, actor_ap_id as community, activity_id as announce, received_at
+      from ${inboxRaw}
+      where state = 'skipped' and error like ${`${prefix}%`} and received_at > ${since}::timestamptz
+      order by error, received_at desc
+    ) latest
+    order by received_at desc
     limit ${perRun * 8}`);
+  const here = await localOrigin();
 
   for (const row of waiting) {
     if (run.looked >= perRun || options.signal?.aborted) break;
     const tried = memory.get(row.target);
     if (tried && (tried.settled || tried.nextAt > now)) continue;
     if (!URL.canParse(row.target) || new URL(row.target).protocol !== 'https:' || !row.community) continue;
+    // We never fetch ourselves (an object of ours that is missing is gone).
+    if (new URL(row.target).origin === here) {
+      memory.set(row.target, { attempts: 0, nextAt: 0, settled: true });
+      continue;
+    }
     const [community] = await db()
       .select({ id: actors.id, apId: actors.apId })
       .from(actors)
