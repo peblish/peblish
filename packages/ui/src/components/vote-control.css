@@ -1,0 +1,57 @@
+@layer app {
+  .pb-vote {
+    display: flex;
+    flex: none;
+    flex-direction: column;
+    align-items: center;
+  }
+
+  .pb-vote--row {
+    flex-direction: row;
+  }
+
+  .pb-vote button {
+    display: inline-grid;
+    place-items: center;
+    min-width: 32px;
+    min-height: 28px;
+    padding: 0;
+    border: 0;
+    background: none;
+    font-size: 13px;
+    line-height: 1;
+    color: var(--pb-muted);
+    cursor: pointer;
+    border-radius: 3px;
+  }
+
+  .pb-vote button:hover:not(:disabled) {
+    color: var(--pb-fg);
+  }
+
+  .pb-vote button:disabled {
+    cursor: default;
+    opacity: 0.55;
+  }
+
+  .pb-vote button[aria-pressed='true'].pb-vote__up {
+    color: var(--pb-up);
+  }
+
+  .pb-vote button[aria-pressed='true'].pb-vote__down {
+    color: var(--pb-down);
+  }
+
+  .pb-vote__score {
+    min-width: 2ch;
+    font-size: 13px;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    line-height: 1.1;
+    text-align: center;
+  }
+
+  .pb-vote--row .pb-vote__score {
+    min-width: 30px;
+  }
+}
