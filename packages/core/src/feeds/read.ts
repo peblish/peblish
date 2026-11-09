@@ -24,7 +24,7 @@ export type FeedRequest = {
   sort: Sort;
   /** The window of Top; ignored by the other sorts. */
   period?: Period;
-  /** The previous page's `next`. One that does not belong to this sort and period is ignored. */
+  /** The previous page's `next`. One that does not belong to this sort and period, or is not valid, is ignored. */
   cursor?: string | undefined;
   limit?: number;
 };

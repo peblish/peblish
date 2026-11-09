@@ -8,7 +8,7 @@ import { seedBan, seedModerator, seedPost } from '../testing/seed-az.ts';
 import { declareAge } from '../testing/seed-b1.ts';
 import { seedFeedPost, seedFeedWorld, seedFollow } from '../testing/seed-c1.ts';
 import { decodeCursor } from './cursor.ts';
-import { periods, sorts, type Period } from './input.ts';
+import { periods, sorts, type Period, type Sort } from './input.ts';
 import { readFeed, type FeedRequest } from './read.ts';
 
 // The feed read model against a real database: who sees what in each feed, the order of each
@@ -256,6 +256,38 @@ describe('keyset pagination', () => {
     expect(await titles({ feed: 'all', sort: 'old', limit: 2, cursor: firstOfNew.next ?? undefined }, null)).toEqual(fresh);
     expect(await titles({ feed: 'all', sort: 'old', limit: 2, cursor: 'not-a-cursor' }, null)).toEqual(fresh);
     expect(await titles({ feed: 'all', sort: 'old', limit: 2, cursor: Buffer.from('{"v":1}').toString('base64url') }, null)).toEqual(fresh);
+  });
+
+  test('a forged cursor, with numbers the database cannot take, starts at the first page instead of failing', async () => {
+    const { instances, people, communities } = await seedFeedWorld();
+    for (let n = 0; n < 4; n += 1)
+      await seedFeedPost(instances.local, communities.news, people.author, { title: `p${n}`, ago: n * 1000, up: n });
+    const forge = (sort: Sort, fields: object) =>
+      Buffer.from(
+        JSON.stringify({
+          v: 1,
+          sort,
+          period: sort === 'top' ? 'week' : 'all',
+          asOf: Date.now(),
+          pub: 1_000_000,
+          id: crypto.randomUUID(),
+          ...fields,
+        }),
+      ).toString('base64url');
+    const cases: [Sort, object][] = [
+      ['new', { asOf: 1e300 }],
+      ['old', { pub: 1e300 }],
+      ['top', { score: 1e300 }],
+      ['top', { score: 2 ** 31 }],
+      ['top', {}],
+      ['hot', { rank: 99 }],
+      ['hot', {}],
+    ];
+    for (const [sort, fields] of cases) {
+      const request = { feed: 'all', sort, period: 'week', limit: 2 } as const;
+      const fresh = await titles(request, null);
+      expect(await titles({ ...request, cursor: forge(sort, fields) }, null), `${sort} ${JSON.stringify(fields)}`).toEqual(fresh);
+    }
   });
 
   test('the last page has no next, and an empty feed is an empty page', async () => {
