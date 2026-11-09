@@ -1,11 +1,11 @@
 import type { SessionView } from '@peblish/schema/session';
 import { useTranslate } from '../i18n/use-translate.ts';
-import { userPath } from './paths.ts';
+import { adminPaths, userPath } from './paths.ts';
 
 /**
  * The account area of the top bar: sign-in and sign-up links when signed out; when signed in,
- * a menu with the profile, settings, security, invites (admins) and sign-out (a form posting
- * to /auth/sign-out, which answers with a redirect).
+ * a menu with the profile, settings, security, invites and the admin pages (admins) and
+ * sign-out (a form posting to /auth/sign-out, which answers with a redirect).
  */
 export function Account({ session }: { session: SessionView | null }) {
   const { t } = useTranslate();
@@ -33,7 +33,12 @@ export function Account({ session }: { session: SessionView | null }) {
         <a href={userPath({ handle: session.name })}>{t('shell', 'account.profile')}</a>
         <a href="/settings/account">{t('shell', 'account.settings')}</a>
         <a href="/settings/security">{t('shell', 'account.security')}</a>
-        {session.siteRole === 'admin' && <a href="/admin/registration">{t('shell', 'account.invites')}</a>}
+        {session.siteRole === 'admin' && (
+          <>
+            <a href={adminPaths.registration}>{t('shell', 'account.invites')}</a>
+            <a href={adminPaths.settings}>{t('shell', 'account.admin')}</a>
+          </>
+        )}
         <form method="post" action="/auth/sign-out">
           <button type="submit">{t('shell', 'account.signOut')}</button>
         </form>

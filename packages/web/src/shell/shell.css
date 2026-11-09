@@ -66,6 +66,17 @@
     background: var(--pb-hover);
   }
 
+  /* A count beside a link (Inbox, Moderation queue); the link's aria-label says it in words. */
+  .pb-count {
+    margin-left: auto;
+    padding: 0 6px;
+    border-radius: 9px;
+    background: var(--pb-fg);
+    color: var(--pb-bg);
+    font-size: 11px;
+    line-height: 18px;
+  }
+
   .pb-side li a[aria-current='page'] {
     background: var(--pb-hover);
     box-shadow: inset 3px 0 var(--pb-fg);

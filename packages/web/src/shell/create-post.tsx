@@ -14,7 +14,8 @@ const root = getRouteApi('__root__');
 /** The community whose page is open (`/c/<handle>`), so the sheet starts in it. */
 const communityOf = (pathname: string) => {
   const handle = /^\/c\/([^/]+)/.exec(pathname)?.[1];
-  return handle === undefined ? undefined : decodeURIComponent(handle);
+  // /c/new is the community form, not a community.
+  return handle === undefined || handle === 'new' ? undefined : decodeURIComponent(handle);
 };
 
 /**

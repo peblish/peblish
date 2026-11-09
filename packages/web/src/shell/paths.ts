@@ -22,3 +22,28 @@ export const directoryPaths = { browse: '/communities', find: '/resolve' } as co
 export const sitePaths = { rules: '/rules', terms: '/terms', privacy: '/privacy', about: '/about' } as const;
 
 export const createPostPath = '/submit';
+
+/** The community form (lane COMM): a new community (admins) and the edit page of one. */
+export const newCommunityPath = '/c/new';
+export const editCommunityPath = (handle: string) => `${communityPath({ handle })}/edit`;
+
+/** The modlog (lane MODF), the whole of it or one community's, by its handle. */
+export const modlogPath = (handle?: string) => (handle ? `/modlog?${new URLSearchParams({ community: handle })}` : '/modlog');
+
+/** The report queue (lane REP), the whole of it or one community's, by its handle. */
+export const reportQueuePath = (handle?: string) =>
+  handle ? `/admin/reports?${new URLSearchParams({ community: handle })}` : '/admin/reports';
+
+/** The inbox (lane E2). */
+export const inboxPath = '/notifications';
+
+/** The admin tabs (admin-tabs), in their order; each tab's lane owns its route directory. */
+export const adminPaths = {
+  settings: '/admin/settings',
+  pages: '/admin/pages',
+  reports: '/admin/reports',
+  bans: '/admin/bans',
+  peers: '/admin/peers',
+  media: '/admin/media',
+  registration: '/admin/registration',
+} as const;

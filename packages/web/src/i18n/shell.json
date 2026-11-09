@@ -1,6 +1,5 @@
 {
   "en": {
-    "title": "peblish",
     "tagline": "Communities on the fediverse.",
     "sample": "Sample number",
     "press": "Press",
@@ -53,10 +52,16 @@
     "page.security": "Security",
     "page.invites": "Invites",
     "page.kit": "Component gallery",
-    "sidebar.label": "Sidebar"
+    "sidebar.label": "Sidebar",
+    "nav.you": "You",
+    "you.inbox": "Inbox",
+    "you.inboxUnread": "Inbox, {count} unread",
+    "you.queue": "Moderation queue",
+    "you.queueOpen": "Moderation queue, {count} open",
+    "account.admin": "Admin",
+    "page.blocks": "Blocks"
   },
   "de": {
-    "title": "peblish",
     "tagline": "Gemeinschaften im Fediverse.",
     "sample": "Beispielzahl",
     "press": "Drücken",
@@ -109,6 +114,13 @@
     "page.security": "Sicherheit",
     "page.invites": "Einladungen",
     "page.kit": "Komponentengalerie",
-    "sidebar.label": "Seitenleiste"
+    "sidebar.label": "Seitenleiste",
+    "nav.you": "Du",
+    "you.inbox": "Posteingang",
+    "you.inboxUnread": "Posteingang, {count} ungelesen",
+    "you.queue": "Moderationswarteschlange",
+    "you.queueOpen": "Moderationswarteschlange, {count} offen",
+    "account.admin": "Verwaltung",
+    "page.blocks": "Blockierungen"
   }
 }
