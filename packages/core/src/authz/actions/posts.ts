@@ -28,17 +28,33 @@ async function emailUnverified(request: Pick<PolicyRequest<unknown>, 'db' | 'loc
 }
 
 /**
+ * Whether the acting principal is a remote community (a Group). A community neither authors
+ * posts nor casts votes: the people in it do, relayed by its Announce. Its principal also
+ * deadlocks the policies below: the refresh holds the community's own row FOR SHARE, the policy
+ * then takes the same row FOR NO KEY UPDATE, and two concurrent requests each wait for the
+ * other (40P01). So a policy asks first and refuses with post.group_cannot_act before it locks
+ * anything; an actor's kind never changes, so this read needs no lock.
+ */
+export async function isGroupPrincipal({ principal, db }: Pick<PolicyRequest<unknown>, 'principal' | 'db'>): Promise<boolean> {
+  if (principal.kind !== 'remote') return false;
+  const [actor] = await db.select({ kind: actors.kind }).from(actors).where(eq(actors.id, principal.actorId));
+  return actor?.kind === 'Group';
+}
+
+/**
  * post.create. A local person needs a verified email, then the community must exist, not be
  * deleted, not be removed and not have banned them (AZ's postingDenial), then a restricted
  * community lets only its moderators, its owner and site admins post. A remote author is
  * allowed as the owner of what they post: the inbound pipeline has matched the signer to the
- * object's attributedTo (Authority.owner); an Announce must name the remote community the
- * post is in (mod.announce_mismatch). A remote community enforces its own restriction, so a
- * remote author in one is not checked against the mirrored flag.
+ * object's attributedTo (Authority.owner); a remote community itself is refused
+ * (isGroupPrincipal), and an Announce must name the remote community the post is in
+ * (mod.announce_mismatch). A remote community enforces its own restriction, so a remote
+ * author in one is not checked against the mirrored flag.
  */
 const create = async (request: PolicyRequest<{ communityId: Uuid }>): Promise<PolicyResult> => {
   const { principal, subject, db, lock } = request;
   if (principal.kind === 'system') return deny('auth.required');
+  if (await isGroupPrincipal(request)) return deny('post.group_cannot_act');
   if (principal.kind === 'local' && (await emailUnverified(request, principal.actorId))) return deny('auth.email_unverified');
   // FOR NO KEY UPDATE: a community ban recorded as an INSERT (lane AZ) locks this row first
   // (PolicyRequest.lock), so a ban and a post take turns.
@@ -81,6 +97,7 @@ const authorAction =
   async (request: PolicyRequest<{ postId: Uuid }>): Promise<PolicyResult> => {
     const { principal } = request;
     if (principal.kind === 'system') return deny('auth.required');
+    if (await isGroupPrincipal(request)) return deny('post.group_cannot_act');
     const post = await postState(request, request.subject.postId);
     if (!post) return deny('target.not_found');
     const closed = communityDenial(post.community);
