@@ -10,8 +10,8 @@ import { authUser } from '../db/tables/auth.ts';
  * Re-reads the principal inside the writing transaction (authorize() with lock), so a
  * session or grant issued earlier cannot outlive a deletion or a demotion: the actor must
  * still exist, match the principal's kind and not be deleted, and a local principal's site
- * role comes from auth_user, not the session: 'admin' only when role is admin and two-factor
- * is on (A03, as SessionView.siteRole). Rows are read FOR SHARE so a concurrent
+ * role is checked against auth_user: 'admin' only when the principal claims it (the session
+ * passed two-factor) and role is still admin with two-factor on (A03, B07 A1). Rows are read FOR SHARE so a concurrent
  * demotion or deletion waits for the write, and a site ban (which takes FOR NO KEY UPDATE on
  * the actor row before inserting) does too. A write body therefore must not update the acting
  * actor's own row, except self-deletion: deleteAccount (identity/delete.ts) locks the owner's
@@ -27,13 +27,16 @@ import { authUser } from '../db/tables/auth.ts';
  * upgrade (40P01), so that row is read FOR NO KEY UPDATE from the start.
  *
  * A site ban (bans/site.ts) is refused here for every kind of principal but the instance
- * itself (auth.site_banned): the ban took FOR NO KEY UPDATE on this actor row before inserting,
+ * itself (auth.site_banned), and for the one action a ban leaves open (siteBanExempt: a person
+ * deleting their own account, root decision 2026-11-10, B07 A4; every other check here still
+ * runs): the ban took FOR NO KEY UPDATE on this actor row before inserting,
  * so this read, after the FOR SHARE above, either waits for the ban to commit and sees it, or
  * ran first and the ban waits for the write it guards. The ban row is read plain.
  */
 export async function currentPrincipal(
   q: Queryable,
   principal: ActingPrincipal,
+  options: { siteBanExempt?: boolean } = {},
 ): Promise<{ ok: true; principal: ActingPrincipal } | { ok: false; reason: RefusalReason }> {
   const actsAsCommunity = principal.kind === 'remote' && principal.announcedBy?.communityId === principal.actorId;
   const [actor] = await q
@@ -43,7 +46,7 @@ export async function currentPrincipal(
     .for(actsAsCommunity ? 'no key update' : 'share');
   if (!actor) return { ok: false, reason: 'auth.required' };
   if (actor.deletedAt) return { ok: false, reason: 'auth.actor_deleted' };
-  if (principal.kind !== 'system') {
+  if (principal.kind !== 'system' && !options.siteBanExempt) {
     const [ban] = await q
       .select({ actorId: siteBans.actorId })
       .from(siteBans)
@@ -64,7 +67,11 @@ export async function currentPrincipal(
             .where(eq(authUser.id, actor.userId))
             .for('share')
         : [];
-      const siteRole = user?.role === 'admin' && user.twoFactorEnabled === true ? 'admin' : 'user';
+      // The recheck only takes authority away: an admin principal must still be one, and a
+      // 'user' one stays a user even for an admin account, since the session it came from
+      // may not have passed two-factor (B07 A1, SessionView.siteRole).
+      const stillAdmin = principal.siteRole === 'admin' && user?.role === 'admin' && user.twoFactorEnabled === true;
+      const siteRole = stillAdmin ? 'admin' : 'user';
       return { ok: true, principal: { ...principal, siteRole } };
     }
   }

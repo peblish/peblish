@@ -15,6 +15,21 @@ export type Decision<A extends ActionName> = { ok: true; grant: Authorized<A> } 
 const table: { [K in ActionName]: Policy<SubjectOf<K>> } = policies;
 
 /**
+ * A site ban refuses everything but this (root decision 2026-11-10, B07 A4): a person deleting
+ * their own account. The policy still checks ownership, and web the password.
+ */
+function deletesOwnAccount(action: ActionName, principal: Principal, subject: unknown): boolean {
+  return (
+    action === 'account.delete' &&
+    principal.kind === 'local' &&
+    typeof subject === 'object' &&
+    subject !== null &&
+    'actorId' in subject &&
+    subject.actorId === principal.actorId
+  );
+}
+
+/**
  * Decides `action` on `subject` for `principal`: Allow carries the grant every write
  * service requires, Deny carries exactly one closed RefusalReason. Pass `db` to read
  * inside an open transaction (the inbound pipeline), so the decision and the write agree.
@@ -39,7 +54,7 @@ export async function authorize<A extends ActionName>(
   const lock = options.lock ?? false;
   let acting = requested;
   if (lock) {
-    const current = await currentPrincipal(q, requested);
+    const current = await currentPrincipal(q, requested, { siteBanExempt: deletesOwnAccount(action, requested, frozenSubject) });
     if (!current.ok) return current;
     acting = frozenCopy(current.principal, 'principal');
   }

@@ -6,6 +6,7 @@ import { actorKeys, actors } from '../db/tables/actors.ts';
 import { authSession, authUser } from '../db/tables/auth.ts';
 import { outbox } from '../db/tables/outbox.ts';
 import { deletionLedger } from '../db/tables/site.ts';
+import { siteBans } from '../bans/tables.ts';
 import { writer } from '../db/write.ts';
 import { truncateAll } from '../testing/db.ts';
 import { seedAccount, seedLocalInstance, seedTwoFactor } from '../testing/seed-a.ts';
@@ -132,4 +133,27 @@ test('deleting your own account twice at once: one deletes, the other is refused
   expect(results.filter((result) => result.ok)).toHaveLength(1);
   expect(results.filter((result) => !result.ok)).toEqual([{ ok: false, reason: 'auth.actor_deleted' }]);
   expect(await db().select().from(deletionLedger)).toHaveLength(1);
+});
+
+test('a site-banned person may delete their own account, and only their own (B07 A4)', async () => {
+  const mira = await seedAccount('mira');
+  const andrew = await seedAccount('andrew', { role: 'admin' });
+  await seedTwoFactor(andrew.userId);
+  const lena = await seedAccount('lena');
+  await writer()
+    .insert(siteBans)
+    .values([
+      { actorId: mira.actorId, source: 'local' },
+      { actorId: andrew.actorId, source: 'local' },
+    ]);
+  // The exception is for your own account: a banned admin still deletes nobody else.
+  expect(await deleteAccountAs({ kind: 'local', actorId: andrew.actorId, siteRole: 'admin' }, lena.actorId, 'admin request')).toEqual({
+    ok: false,
+    reason: 'auth.site_banned',
+  });
+  expect(await deleteAccountAs({ kind: 'local', actorId: mira.actorId, siteRole: 'user' }, mira.actorId, 'owner request')).toEqual({
+    ok: true,
+  });
+  const [gone] = await db().select({ deletedAt: actors.deletedAt }).from(actors).where(eq(actors.id, mira.actorId));
+  expect(gone?.deletedAt).toBeInstanceOf(Date);
 });
