@@ -1,11 +1,8 @@
 import { createOTP } from '@better-auth/utils/otp';
 import type { Uuid } from '@peblish/schema/ids';
-import { symmetricDecrypt } from 'better-auth/crypto';
-import { eq } from 'drizzle-orm';
-import { db } from '../db/read.ts';
-import { authTwoFactor, authUser } from '../db/tables/auth.ts';
 import { auth } from './auth.ts';
 import { endOtherSessions, markSession, sessionIdOf, sessionPassedTwoFactor } from './session-two-factor.ts';
+import { clearSetupOwners, ownedSetup, recordSetupOwner } from './totp-setup.ts';
 
 // The security page's TOTP setup is three server-rendered steps (scan, confirm, save codes),
 // so the page can show a setup better-auth started (enableTwoFactor, unverified) and, once,
@@ -13,52 +10,32 @@ import { endOtherSessions, markSession, sessionIdOf, sessionPassedTwoFactor } fr
 //
 // The setup and the reveal belong to one session (B07 A2): the one that confirmed the password
 // to start it sees the key and may confirm it, and the codes show only to the session that
-// confirmation hands out. Another session of the account sees neither. Both are kept as
-// better-auth verification values, which it deletes once expired.
+// confirmation hands out. Another session of the account sees neither. Ownership is bound to
+// the setup's secret (totp-setup.ts, review 2 AN2). Both are kept as better-auth verification
+// values, which it deletes once expired.
 
-const setupKey = (userId: Uuid) => `peblish-totp-setup:${userId}`;
 const revealKey = (sessionId: Uuid) => `peblish-recovery-codes:${sessionId}`;
-
-/** How long a started setup stays on offer to its session; after that, starting again makes a new key. */
-const setupMs = 60 * 60_000;
 
 /**
  * Starts a TOTP setup for the session after checking the password (better-auth's
  * enableTwoFactor, which makes a new unconfirmed secret each time), and gives it to that
- * session alone. Throws better-auth's APIError for a wrong password.
+ * session alone: the owner is recorded for the secret this call made. Throws better-auth's
+ * APIError for a wrong password.
  */
 export async function startTotpSetup(sessionId: Uuid, userId: Uuid, headers: Headers, password: string): Promise<void> {
   const instance = await auth();
-  await instance.api.enableTwoFactor({ body: { password }, headers });
-  const { internalAdapter } = await instance.$context;
-  await internalAdapter.deleteVerificationByIdentifier(setupKey(userId));
-  await internalAdapter.createVerificationValue({
-    identifier: setupKey(userId),
-    value: sessionId,
-    expiresAt: new Date(Date.now() + setupMs),
-  });
-}
-
-/** Whether the account's setup in progress was started by this session, within setupMs. */
-async function setupBelongsTo(userId: Uuid, sessionId: Uuid): Promise<boolean> {
-  const { internalAdapter } = await (await auth()).$context;
-  const started = await internalAdapter.findVerificationValue(setupKey(userId));
-  return started?.value === sessionId && started.expiresAt.getTime() > Date.now();
+  const started = await instance.api.enableTwoFactor({ body: { password, method: 'totp' }, headers });
+  if (started.method !== 'totp') throw new Error('enableTwoFactor started no TOTP setup');
+  await recordSetupOwner(await instance.$context, userId, sessionId, started.totpURI);
 }
 
 /** The authenticator URI and key of a setup this session started and has not confirmed yet. */
 export async function pendingTotp(userId: Uuid, sessionId: Uuid, email: string): Promise<{ uri: string; key: string } | null> {
-  const [row] = await db()
-    .select({ secret: authTwoFactor.secret, verified: authTwoFactor.verified })
-    .from(authTwoFactor)
-    .where(eq(authTwoFactor.userId, userId));
-  if (!row || row.verified !== false || !(await setupBelongsTo(userId, sessionId))) return null;
   const instance = await auth();
-  const { secretConfig } = await instance.$context;
-  const secret = await symmetricDecrypt({ key: secretConfig, data: row.secret });
+  const setup = await ownedSetup(await instance.$context, userId, sessionId);
+  if (!setup) return null;
   const issuer = instance.options.appName ?? 'peblish';
-  const uri = createOTP(secret).url(issuer, email);
-  return { uri, key: new URL(uri).searchParams.get('secret') ?? '' };
+  return { uri: createOTP(setup.secret).url(issuer, email), key: setup.key };
 }
 
 /** Lets the session's next security page view show the recovery codes, within ten minutes. */
@@ -81,15 +58,10 @@ async function revealRecoveryCodesOnce(userId: Uuid, sessionId: Uuid): Promise<v
  * better-auth's Set-Cookie values, or null when there was no setup to confirm.
  */
 export async function confirmTotpSetup(userId: Uuid, sessionId: Uuid, headers: Headers, code: string): Promise<string[] | null> {
-  const [setup] = await db()
-    .select({ verified: authTwoFactor.verified, enabled: authUser.twoFactorEnabled })
-    .from(authTwoFactor)
-    .innerJoin(authUser, eq(authUser.id, authTwoFactor.userId))
-    .where(eq(authTwoFactor.userId, userId));
-  if (setup?.verified !== false || setup.enabled === true || !(await setupBelongsTo(userId, sessionId))) return null;
   const instance = await auth();
+  if (!(await ownedSetup(await instance.$context, userId, sessionId))) return null;
   const { headers: answer } = await instance.api.verifyTOTP({ body: { code }, headers, returnHeaders: true });
-  await (await instance.$context).internalAdapter.deleteVerificationByIdentifier(setupKey(userId));
+  await clearSetupOwners(userId);
   // verify-totp answers with the replaced session's token; the new one is in its cookie.
   const replacement = await instance.api.getSession({ headers: new Headers({ cookie: cookieHeader(answer.getSetCookie()) }) });
   if (replacement) {

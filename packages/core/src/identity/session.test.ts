@@ -1,8 +1,10 @@
-import { eq } from 'drizzle-orm';
+import { symmetricDecrypt } from 'better-auth/crypto';
+import { eq, sql } from 'drizzle-orm';
 import { beforeEach, expect, test } from 'vitest';
 import { currentPrincipal } from '../authz/principal.ts';
 import { siteBans } from '../bans/tables.ts';
-import { authSession } from '../db/tables/auth.ts';
+import { db } from '../db/read.ts';
+import { authSession, authTwoFactor } from '../db/tables/auth.ts';
 import { writer } from '../db/write.ts';
 import { truncateAll } from '../testing/db.ts';
 import { seedAccount, seedLocalInstance, seedTwoFactor, totpCode } from '../testing/seed-a.ts';
@@ -192,6 +194,60 @@ test('another session of the account sees neither the setup key nor the recovery
   expect(await takeRecoveryCodes(mira.userId, phoneId)).toBeNull();
   expect(await takeRecoveryCodes(mira.userId, replacement.sessionId)).toHaveLength(10);
 });
+
+test('a restart by another session never shows the earlier owner its new key, even before the new owner is recorded (review 2 AN2)', async () => {
+  const mira = await seedAccount('mira');
+  const laptop = await signIn(mira.email, mira.password, firefoxMac);
+  const phone = await signIn(mira.email, mira.password, safariPhone);
+  const [laptopId, phoneId] = [(await currentSession(laptop))!.sessionId, (await currentSession(phone))!.sessionId];
+  await startTotpSetup(phoneId, mira.userId, phone, mira.password);
+  const phoneKey = (await pendingTotp(mira.userId, phoneId, mira.email))!.key;
+
+  // Hold the phone's ownership record: the laptop's restart commits its new secret, then waits
+  // to replace that record. The phone looks in exactly that window.
+  let held!: () => void;
+  let release!: () => void;
+  const holding = new Promise<void>((resolve) => (held = resolve));
+  const released = new Promise<void>((resolve) => (release = resolve));
+  const holder = writer().transaction(async (t) => {
+    await t.execute(sql`select 1 from auth_verification where identifier like ${`peblish-totp-setup:${mira.userId}%`} for update`);
+    held();
+    await released;
+  });
+  await holding;
+  const restart = startTotpSetup(laptopId, mira.userId, laptop, mira.password);
+  await waitsOnTheLock();
+
+  const laptopSecret = await currentSecret(mira.userId);
+  expect(Buffer.from(base32Decode(phoneKey)).toString()).not.toBe(laptopSecret);
+  expect(await pendingTotp(mira.userId, phoneId, mira.email)).toBeNull();
+  expect(await confirmTotpSetup(mira.userId, phoneId, phone, totpCode(laptopSecret))).toBeNull();
+
+  release();
+  await holder;
+  await restart;
+  expect(Buffer.from(base32Decode((await pendingTotp(mira.userId, laptopId, mira.email))!.key)).toString()).toBe(laptopSecret);
+  expect(await pendingTotp(mira.userId, phoneId, mira.email)).toBeNull();
+});
+
+/** The account's two-factor secret as stored now (test code reads it to make codes). */
+async function currentSecret(userId: string): Promise<string> {
+  const [row] = await writer().select({ secret: authTwoFactor.secret }).from(authTwoFactor).where(eq(authTwoFactor.userId, userId));
+  return symmetricDecrypt({ key: (await (await auth()).$context).secretConfig, data: row!.secret });
+}
+
+/** Resolves once a statement on auth_verification in this database waits on a lock. */
+async function waitsOnTheLock(): Promise<void> {
+  for (let tries = 0; tries < 400; tries++) {
+    const [row] = await db().execute<{ waiting: number }>(
+      sql`select count(*)::int as waiting from pg_stat_activity
+          where datname = current_database() and wait_event_type = 'Lock' and query like '%auth_verification%'`,
+    );
+    if ((row?.waiting ?? 0) > 0) return;
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  throw new Error('nothing waited on the held ownership record');
+}
 
 function base32Decode(input: string): Uint8Array {
   const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
