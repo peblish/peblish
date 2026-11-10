@@ -1,8 +1,8 @@
 import { createOTP } from '@better-auth/utils/otp';
 import type { Uuid } from '@peblish/schema/ids';
 import { auth } from './auth.ts';
-import { endOtherSessions, markSession, sessionIdOf, sessionPassedTwoFactor } from './session-two-factor.ts';
-import { clearSetupOwners, ownedSetup, recordSetupOwner } from './totp-setup.ts';
+import { markSession, sessionIdOf, sessionPassedTwoFactor } from './session-two-factor.ts';
+import { ownedSetup, recordSetupOwner, revealKey } from './totp-setup.ts';
 
 // The security page's TOTP setup is three server-rendered steps (scan, confirm, save codes),
 // so the page can show a setup better-auth started (enableTwoFactor, unverified) and, once,
@@ -13,8 +13,6 @@ import { clearSetupOwners, ownedSetup, recordSetupOwner } from './totp-setup.ts'
 // confirmation hands out. Another session of the account sees neither. Ownership is bound to
 // the setup's secret (totp-setup.ts, review 2 AN2). Both are kept as better-auth verification
 // values, which it deletes once expired.
-
-const revealKey = (sessionId: Uuid) => `peblish-recovery-codes:${sessionId}`;
 
 /**
  * Starts a TOTP setup for the session after checking the password (better-auth's
@@ -38,41 +36,22 @@ export async function pendingTotp(userId: Uuid, sessionId: Uuid, email: string):
   return { uri: createOTP(setup.secret).url(issuer, email), key: setup.key };
 }
 
-/** Lets the session's next security page view show the recovery codes, within ten minutes. */
-async function revealRecoveryCodesOnce(userId: Uuid, sessionId: Uuid): Promise<void> {
-  const { internalAdapter } = await (await auth()).$context;
-  await internalAdapter.createVerificationValue({
-    identifier: revealKey(sessionId),
-    value: userId,
-    expiresAt: new Date(Date.now() + 10 * 60_000),
-  });
-}
-
 /**
  * Confirms the session's started TOTP setup with a code from the app (the security page's
- * step 2), and lets the next page view of the session it hands out show the recovery codes.
- * Only a setup this session started and not yet confirmed can be, so a code posted again later,
- * or from another session, shows nothing. Turning two-factor on replaces this session with one
- * that passed it and signs every other session out (B07 A1): one signed in with the password
- * alone must not carry on as the account of someone with a second factor. Returns
- * better-auth's Set-Cookie values, or null when there was no setup to confirm.
+ * step 2). Only a setup this session started and not yet confirmed can be, so a code posted
+ * again later, or from another session, shows nothing. The guard in totp-setup.ts, which
+ * every verify call passes, enforces that and does the rest: the session is replaced with one
+ * that passed two-factor, every other session is signed out (B07 A1: one signed in with the
+ * password alone must not carry on as the account of someone with a second factor), and the
+ * replacement's next page view shows the recovery codes. Returns better-auth's Set-Cookie
+ * values, or null when there was no setup to confirm.
  */
 export async function confirmTotpSetup(userId: Uuid, sessionId: Uuid, headers: Headers, code: string): Promise<string[] | null> {
   const instance = await auth();
   if (!(await ownedSetup(await instance.$context, userId, sessionId))) return null;
   const { headers: answer } = await instance.api.verifyTOTP({ body: { code }, headers, returnHeaders: true });
-  await clearSetupOwners(userId);
-  // verify-totp answers with the replaced session's token; the new one is in its cookie.
-  const replacement = await instance.api.getSession({ headers: new Headers({ cookie: cookieHeader(answer.getSetCookie()) }) });
-  if (replacement) {
-    await endOtherSessions(userId, replacement.session.id);
-    await revealRecoveryCodesOnce(userId, replacement.session.id);
-  }
   return answer.getSetCookie();
 }
-
-/** A Cookie header carrying the cookies a response sets. */
-const cookieHeader = (setCookies: string[]) => setCookies.map((cookie) => cookie.split(';')[0]).join('; ');
 
 /** The recovery codes if a reveal is pending for this session, consuming it: they are shown once. */
 export async function takeRecoveryCodes(userId: Uuid, sessionId: Uuid): Promise<string[] | null> {

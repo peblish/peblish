@@ -11,6 +11,7 @@ import { writer } from '../db/write.ts';
 import { sendMail } from './mail.ts';
 import { sessionTwoFactorMarker } from './session-two-factor.ts';
 import { totpReplayGuard } from './totp-replay.ts';
+import { totpSetupGuard } from './totp-setup.ts';
 
 // The better-auth instance (lane A). It lives in core because only core may hold the write
 // pool (lint rule core-writer-access names core/identity for it); web reaches it through
@@ -99,9 +100,15 @@ function createAuth(origin: string) {
       },
     },
     session: { expiresIn: 30 * 24 * 60 * 60, updateAge: 24 * 60 * 60 },
-    // The replay guard runs before the plugin's verify-totp: one code, one session. The marker
-    // records the sessions that passed two-factor, which admin authority needs.
-    plugins: [twoFactor({ issuer: host, backupCodeOptions: { amount: 10, length: 10 } }), totpReplayGuard(), sessionTwoFactorMarker()],
+    // Before the plugin's verifiers run: the setup guard (only the session that started a setup
+    // may confirm it), then the replay guard (one code, one session). The marker records the
+    // sessions that passed two-factor, which admin authority needs.
+    plugins: [
+      twoFactor({ issuer: host, backupCodeOptions: { amount: 10, length: 10 } }),
+      totpSetupGuard(),
+      totpReplayGuard(),
+      sessionTwoFactorMarker(),
+    ],
     // Direct auth.api calls skip better-auth's limiter anyway (it runs in its HTTP router).
     rateLimit: { enabled: false },
     telemetry: { enabled: false },
