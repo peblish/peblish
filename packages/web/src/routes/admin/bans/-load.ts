@@ -6,9 +6,10 @@ import { setResponseStatus } from '@tanstack/react-start/server';
 import { type } from 'arktype';
 import { pageSession } from '../../../server/auth.ts';
 import { adminPaths } from '../../../shell/paths.ts';
+import { type Access, accessOf } from '../settings/-access.ts';
 
 export type BansData =
-  | { access: 'not-admin' | 'needs-two-factor' }
+  | { access: Exclude<Access, 'ok'> }
   | {
       access: 'ok';
       bans: SiteBanRow[];
@@ -21,10 +22,11 @@ export const loadBans = createServerFn({ method: 'GET' })
   .handler(async ({ data }): Promise<BansData> => {
     const session = await pageSession();
     if (!session) throw redirect({ to: '/auth/sign-in', search: { redirect: adminPaths.bans } });
-    // Signed in but not an admin with two-factor on: the denial copy, answered as a 403 (as the report queue does).
-    if (session.role !== 'admin' || session.view.siteRole !== 'admin') {
+    // Signed in but not an admin whose session passed two-factor: the denial copy, answered as a 403 (as the report queue does).
+    const access = accessOf(session);
+    if (access !== 'ok') {
       setResponseStatus(403);
-      return { access: session.role !== 'admin' ? 'not-admin' : 'needs-two-factor' };
+      return { access };
     }
     const bans = await listSiteBans();
     const handle = data.person?.trim();

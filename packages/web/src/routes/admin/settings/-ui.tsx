@@ -1,4 +1,3 @@
-import { Link } from '@tanstack/react-router';
 import { useId, type ReactNode, type TextareaHTMLAttributes } from 'react';
 import { DEFAULT_LOCALE } from '../../../i18n/negotiate.ts';
 import { translate, type MessageKey } from '../../../i18n/translate.ts';
@@ -6,6 +5,7 @@ import { useTranslate } from '../../../i18n/use-translate.ts';
 import { rootTitleData } from '../../../shell/title.ts';
 import { authHead } from '../../auth/-ui/page.tsx';
 import adminCss from './-admin.css?url';
+import { Denial } from '../-denial.tsx';
 import type { Access } from './-access.ts';
 
 // Pieces the admin Settings and Pages routes share.
@@ -31,15 +31,14 @@ export function AccessNotice({ access, title }: { access: Exclude<Access, 'ok'>;
   return (
     <main className="auth-page">
       <h1>{title}</h1>
-      {access === 'needs-two-factor' ? (
-        <p role="alert">
-          {t('admin', 'access.needsTwoFactor')} <Link to="/settings/security">{t('admin', 'access.securityLink')}</Link>
-        </p>
-      ) : access === 'needs-two-factor-sign-in' ? (
-        <p role="alert">{t('admin', 'access.signInWithTwoFactor')}</p>
-      ) : (
-        <p role="alert">{t('admin', 'access.notAdmin')}</p>
-      )}
+      <Denial
+        access={access}
+        copy={{
+          needsTwoFactor: t('admin', 'access.needsTwoFactor'),
+          securityLink: t('admin', 'access.securityLink'),
+          notAdmin: t('admin', 'access.notAdmin'),
+        }}
+      />
     </main>
   );
 }

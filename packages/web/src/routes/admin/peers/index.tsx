@@ -1,6 +1,6 @@
 import { updatePeerAs } from '@peblish/core/peers/service';
 import { Button } from '@peblish/ui/components/button';
-import { createFileRoute, Link, useRouter } from '@tanstack/react-router';
+import { createFileRoute, useRouter } from '@tanstack/react-router';
 import { type } from 'arktype';
 import { useState, type FormEvent } from 'react';
 import { useTranslate } from '../../../i18n/use-translate.ts';
@@ -10,6 +10,7 @@ import { adminPaths } from '../../../shell/paths.ts';
 import { answer } from '../../post/-form.ts';
 import { authHead, AuthPage, useDate } from '../../auth/-ui/page.tsx';
 import { errorKey } from '../../modlog/-ui/panels.tsx';
+import { Denial } from '../-denial.tsx';
 import { changes, hostFrom, Body } from './-act.ts';
 import { loadPeers } from './-load.ts';
 
@@ -106,13 +107,14 @@ function Peers() {
     return (
       <AuthPage>
         <h1>{t('peers', 'title')}</h1>
-        {data.access === 'needs-two-factor' ? (
-          <p role="alert">
-            {t('peers', 'needsTwoFactor')} <Link to="/settings/security">{t('peers', 'securityLink')}</Link>
-          </p>
-        ) : (
-          <p role="alert">{t('peers', 'notAdmin')}</p>
-        )}
+        <Denial
+          access={data.access}
+          copy={{
+            needsTwoFactor: t('peers', 'needsTwoFactor'),
+            securityLink: t('peers', 'securityLink'),
+            notAdmin: t('peers', 'notAdmin'),
+          }}
+        />
       </AuthPage>
     );
   return (
