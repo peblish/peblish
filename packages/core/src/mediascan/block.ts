@@ -49,24 +49,33 @@ export async function blockMedia(
     details: { evidenceId: input.evidence.id, sha256: input.sha256, category },
   });
   if (!input.sha256) return { quarantinedCopies: 0 };
-  return listBlockedHash(t, { action: input.action, sha256: input.sha256, category, by: input.by, now: input.now });
+  const { quarantinedCopies } = await listBlockedHash(t, {
+    action: input.action,
+    sha256: input.sha256,
+    category,
+    by: input.by,
+    now: input.now,
+  });
+  return { quarantinedCopies };
 }
 
 /**
  * The hash half of a block, in the caller's transaction: `sha256` joins the list (so a re-upload
  * is quarantined with no provider call) unless it is there already, and every clean, undeleted
- * copy with that hash is quarantined under the entry, as adding the hash by hand does. Used by
- * blockMedia and by the restore drill when it re-applies a media.blocked ledger row. Takes the
- * hash lock; the caller holds no clean copy's row lock (hash-lock.ts).
+ * copy with that hash is quarantined under the entry. Used by blockMedia, by adding a hash by
+ * hand (list.ts, which refuses a listed hash first) and by the restore drill when it re-applies a
+ * media.blocked or media.hash_added ledger row. Takes the hash lock; the caller holds no clean
+ * copy's row lock (hash-lock.ts).
  */
 export async function listBlockedHash(
   t: QuarantineTx,
-  input: { action: string; sha256: string; category: BlockCategory; by: Uuid | null; now: Date },
-): Promise<{ quarantinedCopies: number }> {
+  input: { action: string; sha256: string; category: BlockCategory; reason?: string | null; by: Uuid | null; now: Date },
+): Promise<{ entryId: Uuid; quarantinedCopies: number }> {
   await lockHash(t.db, input.sha256);
+  const reason = input.reason === undefined ? 'confirmed quarantine' : input.reason;
   await t.db
     .insert(mediaBlocklist)
-    .values({ kind: 'sha256', value: input.sha256, category: input.category, reason: 'confirmed quarantine', addedBy: input.by })
+    .values({ kind: 'sha256', value: input.sha256, category: input.category, reason, addedBy: input.by })
     .onConflictDoNothing();
   const entry = await findBlocked(t.db, input.sha256);
   if (!entry) throw new Error('list entry not written');
@@ -77,5 +86,5 @@ export async function listBlockedHash(
     .for('no key update');
   for (const copy of copies)
     await quarantine(t, { action: input.action, mediaId: copy.id, from: 'clean', verdict: listVerdict(entry), now: input.now });
-  return { quarantinedCopies: copies.length };
+  return { entryId: entry.id, quarantinedCopies: copies.length };
 }

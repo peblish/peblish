@@ -188,8 +188,9 @@ no bucket was made (uploads are off and nothing reached S3), and the worker ran 
 ## Backups and the deletion ledger
 
 `deletion_ledger` is append-only and records every deletion that must survive a restore (remote
-Deletes and Tombstones, account deletions, blocked media). A restore loses every row written after
-its backup, ledger rows included, so the ledger is also exported on its own, more often.
+Deletes and Tombstones, account deletions, blocked media, hashes an admin adds to or removes from
+the blocked-image list). A restore loses every row written after its backup, ledger rows
+included, so the ledger is also exported on its own, more often.
 
 ```sh
 node tools/cutover/src/cli.ts backup --db $DATABASE_URL --out $S/backup-$(date -u +%Y%m%dT%H%M).dump      # nightly
@@ -206,9 +207,12 @@ the actor's content when `removeContent`), their undeletions, local account dele
 better-auth user goes again) and blocked media, whole: the row blocked again, its hash back on
 the list and every clean copy of it the backup holds quarantined again (core's own block path, so
 each copy gets its incident and a `media.quarantined` event in the restored outbox), even when the
-blocked row itself is newer than the backup. Each ledger row names the hash for this. A row with no rule stops the restore and changes
-nothing; add the rule before going live. Point the services at the restored database only after
-it reports.
+blocked row itself is newer than the backup. A hash an admin listed by hand is listed again with
+its category and reason, and its clean copies are quarantined the same way; a hash an admin
+removed is removed again (by value, after any earlier row that listed it; images it caught stay
+as they are, as on removal). Each ledger row names the hash for this. A row with no rule stops
+the restore and changes nothing; add the rule before going live. Point the services at the
+restored database only after it reports.
 
 `restore` and `drill` only ever create a database: they refuse one that exists and a name longer
 than 63 bytes (Postgres would cut it to another name). The drill restores into

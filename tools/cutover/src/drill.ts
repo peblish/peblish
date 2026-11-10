@@ -220,6 +220,19 @@ export function readLedgerExport(file: string): LedgerRow[] {
 
 const remote = (row: LedgerRow) => row.details.remote === true;
 
+/** The admin who made the change, when the backup has them (a list entry's added_by is a foreign key). */
+async function adminInBackup(t: ReplayTx, row: LedgerRow): Promise<Uuid | null> {
+  if (!row.requestedBy) return null;
+  const [by] = await t.db.select({ id: actors.id }).from(actors).where(eq(actors.id, row.requestedBy));
+  return (by?.id as Uuid | undefined) ?? null;
+}
+
+/** A list change's hash, which its row must name: without it the restore stops rather than guess. */
+function hashOf(row: LedgerRow): string {
+  if (typeof row.details.sha256 === 'string') return row.details.sha256;
+  throw new CutoverError(`ledger row ${row.id}: ${row.reason} names no hash; stop and look before going live`);
+}
+
 /**
  * The hash half of a media block, through core's listBlockedHash: the hash goes back on the list
  * and every clean copy the backup holds is quarantined again, whether or not the blocked row
@@ -240,13 +253,28 @@ async function replayBlockedHash(t: ReplayTx, row: LedgerRow): Promise<number> {
       .where(eq(mediaEvidence.id, details.evidenceId));
     if (evidence) category = categoryOf(evidence);
   }
-  // The admin who confirmed it, when the backup has them (the entry's added_by is a foreign key).
-  const [by] = row.requestedBy ? await t.db.select({ id: actors.id }).from(actors).where(eq(actors.id, row.requestedBy)) : [];
   const { quarantinedCopies } = await listBlockedHash(t, {
     action: 'media.scan',
     sha256,
     category: category ?? 'other',
-    by: (by?.id as Uuid | undefined) ?? null,
+    by: await adminInBackup(t, row),
+    now: new Date(),
+  });
+  return quarantinedCopies;
+}
+
+/**
+ * A hash an admin listed by hand (mediascan/list.ts): back on the list with its category and
+ * reason, and every clean copy the backup holds quarantined under it, as adding it did. The
+ * copies' incidents start now. Its subject is the list entry, which exists afterwards.
+ */
+async function replayHashAdded(t: ReplayTx, row: LedgerRow): Promise<number> {
+  const { quarantinedCopies } = await listBlockedHash(t, {
+    action: 'media.blocklist',
+    sha256: hashOf(row),
+    category: blockCategories.find((known) => known === row.details.category) ?? 'other',
+    reason: typeof row.details.reason === 'string' ? row.details.reason : null,
+    by: await adminInBackup(t, row),
     now: new Date(),
   });
   return quarantinedCopies;
@@ -254,7 +282,8 @@ async function replayBlockedHash(t: ReplayTx, row: LedgerRow): Promise<number> {
 
 /**
  * Brings one ledger row's state change back, as the write that recorded it made it (identity/
- * delete.ts, remote/actors.ts, remote/objects.ts, inbound Delete and Undo, mediascan/block.ts).
+ * delete.ts, remote/actors.ts, remote/objects.ts, inbound Delete and Undo, mediascan/block.ts and
+ * list.ts).
  * Returns whether its subject exists here; throws on a reason it does not know, so a restore stops
  * instead of skipping a deletion.
  */
@@ -294,6 +323,12 @@ async function apply(t: ReplayTx, row: LedgerRow, tally: { quarantinedCopies: nu
       tally.quarantinedCopies += await replayBlockedHash(t, row);
       return found;
     }
+    case 'media:media.hash_added':
+      tally.quarantinedCopies += await replayHashAdded(t, row);
+      return true;
+    case 'media:media.hash_removed':
+      // By value: a replayed listing may have given the hash a new entry id. Images it caught stay as they are, as on removal.
+      return hit(sql`delete from media_blocklist where kind = 'sha256' and value = ${hashOf(row)}`);
   }
   // A local account deletion (identity/delete.ts): the reason is free text, the row is not remote.
   if (row.subjectKind === 'actor' && !remote(row) && typeof row.details.userId === 'string') {

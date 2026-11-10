@@ -446,6 +446,29 @@ test('adding a hash quarantines the clean copies, each with evidence; bad and re
   expect((await rowOf(a.id)).scanState).toBe('quarantined');
 });
 
+test('adding and removing a hash by hand each write a deletion_ledger row naming the hash, for a restore to replay (TN8)', async () => {
+  const value = sha256Of(Buffer.from('listed by hand'));
+  const added = await addToBlocklist(asAdmin(), { value, category: 'violent', reason: 'a known shock image' });
+  if (!added.ok) throw new Error('not added');
+  expect(await removeFromBlocklist(asAdmin(), added.entryId)).toMatchObject({ ok: true });
+  // A refused change writes nothing.
+  expect(await removeFromBlocklist(asAdmin(), added.entryId)).toEqual({ ok: false, reason: 'target.not_found' });
+  expect(await addToBlocklist(asAdmin(), { value: 'xyz', category: 'spam' })).toMatchObject({ ok: false });
+  const rows = await db().select().from(deletionLedger).orderBy(deletionLedger.id);
+  expect(
+    rows.map(({ subjectKind, subjectId, reason, requestedBy, details }) => ({ subjectKind, subjectId, reason, requestedBy, details })),
+  ).toEqual([
+    {
+      subjectKind: 'media',
+      subjectId: added.entryId,
+      reason: 'media.hash_added',
+      requestedBy: adminId,
+      details: { sha256: value, category: 'violent', reason: 'a known shock image' },
+    },
+    { subjectKind: 'media', subjectId: added.entryId, reason: 'media.hash_removed', requestedBy: adminId, details: { sha256: value } },
+  ]);
+});
+
 test('a requarantine opens a new incident: the earlier one keeps its record, and the new one starts its own clock', async () => {
   const start = new Date();
   const at = (days: number) => new Date(start.getTime() + days * day);

@@ -8,6 +8,7 @@ import { comments, posts } from '@peblish/core/db/tables/content';
 import { writer } from '@peblish/core/db/write';
 import { loadFixtureSet } from '@peblish/core/fixtures/load';
 import { scanConfig } from '@peblish/core/mediascan/config';
+import { addToBlocklist, removeFromBlocklist } from '@peblish/core/mediascan/list';
 import { confirmQuarantined } from '@peblish/core/mediascan/review';
 import { scanUpload } from '@peblish/core/mediascan/scan';
 import { mediaBlocklist } from '@peblish/core/mediascan/tables';
@@ -259,6 +260,75 @@ describe.skipIf(tools < major)('backup and restore drill', () => {
       } finally {
         await restored.end({ timeout: 5 });
         await dropOwnDatabase(media);
+      }
+    },
+  );
+
+  test(
+    'a restore re-applies hashes listed and removed by hand: an added hash is listed again with its copies quarantined, a removed one is removed',
+    { timeout: 120_000 },
+    async () => {
+      await truncateAll();
+      await seedLocalInstance();
+      const row = await localInstance(db());
+      const instance = { ...row, domain: new URL(row.origin).host, local: true };
+      const adminId = (await seedAdmin(instance, 'lister')).id;
+      const uploaderId = (await seedActor(instance, 'Person', 'uploader')).id;
+      const store = memoryStore();
+      const added = await seedMedia(store, { ownerId: uploaderId, bytes: Buffer.from('listed after the backup'), state: 'clean' });
+      const removed = await seedMedia(store, { ownerId: uploaderId, bytes: Buffer.from('listed before, removed after'), state: 'clean' });
+
+      // In the backup: the second hash listed (its copy quarantined); the first copy clean.
+      const before = await addToBlocklist(admin(adminId), { value: removed.sha256!, category: 'spam' });
+      if (!before.ok) throw new Error('not listed');
+      const file = join(dir, 'list.dump');
+      await backup(url, file);
+
+      // After it: the first hash is listed by hand, the second taken off.
+      expect(
+        await addToBlocklist(admin(adminId), { value: added.sha256!, category: 'violent', reason: 'a known shock image' }),
+      ).toMatchObject({
+        ok: true,
+        quarantined: 1,
+      });
+      expect((await removeFromBlocklist(admin(adminId), before.entryId)).ok).toBe(true);
+      const ledger = join(dir, 'list-ledger.json');
+      expect(await exportLedger(url, ledger)).toBe(3);
+
+      const list = await restore(file, named(`${databaseName(url)}_list`));
+      const restored = postgres(list.url, { max: 1, onnotice: () => undefined });
+      try {
+        const states = async () =>
+          Object.fromEntries(
+            (await restored<{ id: string; scan_state: string }[]>`select id, scan_state from media`).map((m) => [m.id, m.scan_state]),
+          );
+        const listed = () =>
+          restored<{ value: string; category: string; reason: string | null; added_by: string | null }[]>`
+            select value, category, reason, added_by from media_blocklist order by value`;
+        // The backup alone serves the first copy, and lists the hash that was removed since.
+        expect(await states()).toEqual({ [added.id]: 'clean', [removed.id]: 'quarantined' });
+        expect((await listed()).map((e) => e.value)).toEqual([removed.sha256]);
+
+        const expected = [{ value: added.sha256, category: 'violent', reason: 'a known shock image', added_by: adminId }];
+        expect(await reapplyLedger(list.url, readLedgerExport(ledger))).toEqual({
+          restoredRows: 1,
+          appended: 2,
+          applied: 3,
+          absent: 0,
+          quarantinedCopies: 1,
+        });
+        expect(await states()).toEqual({ [added.id]: 'quarantined', [removed.id]: 'quarantined' });
+        expect([...(await listed())]).toEqual(expected);
+        const [incident] = await restored<{ status: string; source: string; classification: string }[]>`
+          select status, source, classification from media_evidence where media_id = ${added.id}`;
+        expect(incident).toEqual({ status: 'open', source: 'list', classification: 'violent' });
+
+        // Applied again, the same list and nothing more caught.
+        expect(await reapplyLedger(list.url, readLedgerExport(ledger))).toMatchObject({ appended: 0, quarantinedCopies: 0 });
+        expect([...(await listed())]).toEqual(expected);
+      } finally {
+        await restored.end({ timeout: 5 });
+        await dropOwnDatabase(list);
       }
     },
   );
