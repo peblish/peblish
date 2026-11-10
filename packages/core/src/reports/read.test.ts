@@ -254,5 +254,6 @@ describe('the budget', () => {
       sql`explain select audience from reports where status = 'open' and audience = 'moderators' and community_id = ${w.moderatedIds[0]!} group by audience`,
     );
     expect(plan.map((row) => row['QUERY PLAN']).join('\n')).toContain('reports_queue');
-  });
+    // The seeding and 360 timed queries outlast the 5 s default on a slow CI runner; the budgets are the assertions above.
+  }, 60_000);
 });
