@@ -20,10 +20,11 @@ const rootRelative = /^\/(?![/\\])/;
  * post is a link whose media type is an image other than SVG.
  */
 export function postMedia(
-  view: Pick<PostView, 'id' | 'url' | 'urlContentType' | 'thumbnailUrl'>,
+  view: Pick<PostView, 'id' | 'apId' | 'url' | 'urlContentType' | 'thumbnailUrl'>,
   renderer: Pick<MarkdownRenderer, 'image'>,
 ) {
-  const source = (url: string | null) => (url && rootRelative.test(url) ? url : renderer.image(url, { kind: 'post', id: view.id }));
+  const source = (url: string | null) =>
+    url && rootRelative.test(url) ? url : renderer.image(url, { kind: 'post', id: view.id, apId: view.apId });
   return {
     thumbnail: source(view.thumbnailUrl),
     image: isImageContentType(view.urlContentType) ? source(view.url) : null,

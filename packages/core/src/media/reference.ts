@@ -21,7 +21,7 @@ import type { MediaContent } from './proxy-url.ts';
  * - an actor: a community that is live and whose gate is open, or a person who is not deleted.
  */
 export async function contentShown(
-  content: MediaContent,
+  content: Pick<MediaContent, 'kind' | 'id'>,
   viewer: Viewer,
   nsfw: NsfwChoice = hideNsfw,
   q: Queryable = db(),

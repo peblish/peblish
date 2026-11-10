@@ -1,7 +1,7 @@
 import { proxyUrlBuilder } from '@peblish/core/media/proxy-url';
 import { expect, test, vi } from 'vitest';
 // The peer gate reads the database; these tests are about the handler, so every peer is approved unless a test says otherwise.
-vi.mock('@peblish/core/peers/gate', () => ({ mediaAllowed: async () => true }));
+vi.mock('@peblish/core/peers/gate', () => ({ mediaAllowed: async () => true, supplierMediaAllowed: async () => true }));
 
 import { PROXY_MAX_AGE_SECONDS, PROXY_RETRY_AFTER_SECONDS, proxyResponse } from './-handler.ts';
 
@@ -145,7 +145,7 @@ test('a redirect to a peer whose media is not allowed is a 404, and that host is
 });
 
 test('a URL signed for content is a 404 once that content is not shown to the viewer, and fetches nothing', async () => {
-  const post = { kind: 'post', id: '0195f0a0-0000-7000-8000-000000000001' } as const;
+  const post = { kind: 'post', id: '0195f0a0-0000-7000-8000-000000000001', supplier: null } as const;
   const [bound, boundTarget] = proxyUrlBuilder(key)(remoteUrl, post).split('/').slice(3) as [string, string];
   const fetchImage = image();
   const asked: unknown[] = [];
@@ -177,4 +177,27 @@ test('a URL signed for no content expires: a 404 once its hour is over, without 
   expect([expired.status, expired.headers.get('cache-control')]).toEqual([404, 'no-store']);
   expect(fetchImage).toHaveBeenCalledTimes(1);
   expect(asked).not.toHaveBeenCalled();
+});
+
+test('an image of content a quarantined, purged or blocked peer supplied is a 404 wherever it is hosted, and fetches nothing', async () => {
+  // The image sits on a host no peer owns (which mediaAllowed lets through); the post came from piefed.test.
+  const post = { kind: 'post', id: '0195f0a0-0000-7000-8000-000000000002', supplier: 'piefed.test' } as const;
+  const [bound, boundTarget] = proxyUrlBuilder(key)(remoteUrl, post).split('/').slice(3) as [string, string];
+  const fetchImage = image();
+  const asked: string[] = [];
+  const supplierAllowed = async (host: string) => {
+    asked.push(host);
+    return host !== 'piefed.test';
+  };
+  const deps = { key, enabled: true, contentShown, fetchImage, mediaAllowed: async () => true, supplierAllowed };
+  const response = await proxyResponse(bound, boundTarget, deps);
+  expect([response.status, response.headers.get('cache-control')]).toEqual([404, 'no-store']);
+  expect(asked).toEqual(['piefed.test']);
+  expect(fetchImage).not.toHaveBeenCalled();
+  // This instance's own content names no supplier, so only the image's host is asked about.
+  const own = proxyUrlBuilder(key)(remoteUrl, { ...post, supplier: null })
+    .split('/')
+    .slice(3) as [string, string];
+  expect((await proxyResponse(...own, deps)).status).toBe(200);
+  expect(asked).toEqual(['piefed.test']);
 });

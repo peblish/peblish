@@ -1,7 +1,7 @@
 import { fetchProxiedImage, type ProxyResult } from '@peblish/core/media/proxy';
 import { verifyProxyPath, type MediaContent } from '@peblish/core/media/proxy-url';
 import { safeFetch, type SafeFetchInit, type SafeResponse } from '@peblish/core/net/fetch';
-import { mediaAllowed } from '@peblish/core/peers/gate';
+import { mediaAllowed, supplierMediaAllowed } from '@peblish/core/peers/gate';
 
 // The remote-media proxy's answer (decision 5): the image bytes of one signed URL, held in memory
 // for this response and stored nowhere. Viewers never contact remote hosts; remote hosts see
@@ -70,6 +70,8 @@ export type ProxyDeps = {
   fetchImage?: (url: string, signal?: AbortSignal) => Promise<ProxyResult>;
   /** Whether the image's host, and each host it redirects to, may be proxied (peers/gate.ts: a peer's media waits for an admin's approval). */
   mediaAllowed?: (host: string) => Promise<boolean>;
+  /** Whether images of content the peer at this host supplied may be proxied, wherever they are hosted (peers/gate.ts). */
+  supplierAllowed?: (host: string) => Promise<boolean>;
   /** The HTTP client under the default fetchImage (safeFetch); tests bring a stub. */
   fetch?: Fetcher;
   /** The time an unbound URL's expiry is judged at (milliseconds); tests set it. */
@@ -80,8 +82,11 @@ export async function proxyResponse(signature: string, target: string, deps: Pro
   // An unsigned, altered, foreign or expired URL, and the kill switch, look the same from outside: nothing here.
   const verified = verifyProxyPath(deps.key, signature, target, deps.now);
   if (verified === null || !deps.enabled) return plain(404, 'not found');
-  // So does an image whose content was removed, deleted or is gated for this viewer.
-  if (verified.content && !(await deps.contentShown(verified.content))) return plain(404, 'not found');
+  // So does an image of content a quarantined, purged or blocked peer supplied, wherever the image
+  // is hosted, and one whose content was removed, deleted or is gated for this viewer.
+  const { content } = verified;
+  if (content?.supplier && !(await (deps.supplierAllowed ?? supplierMediaAllowed)(content.supplier))) return plain(404, 'not found');
+  if (content && !(await deps.contentShown(content))) return plain(404, 'not found');
   const { url } = verified;
   // A quarantined, purged or blocked peer's media looks like any other missing image, here or after a redirect.
   const allowed = deps.mediaAllowed ?? mediaAllowed;

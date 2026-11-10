@@ -85,15 +85,15 @@ async function buildProfile(
     const { view, body, post, community } = item.comment;
     const contentHtml =
       body?.kind === 'markdown'
-        ? renderer.render(body.source, { idPrefix: view.id, content: { kind: 'comment', id: view.id } }).html
+        ? renderer.render(body.source, { idPrefix: view.id, content: { kind: 'comment', id: view.id, apId: view.apId } }).html
         : body
-          ? renderer.sanitize(body.html, { baseUrl: body.baseUrl, content: { kind: 'comment', id: view.id } }).html
+          ? renderer.sanitize(body.html, { baseUrl: body.baseUrl, content: { kind: 'comment', id: view.id, apId: view.apId } }).html
           : null;
     times[view.id] = { age: compactAge(view.publishedAt, now, locale), title: absoluteTime(view.publishedAt, locale) };
     return { kind: 'comment', view: { ...view, contentHtml }, post, community: publicActorRef(community) };
   });
 
-  const person = { kind: 'actor', id: profile.actor.id } as const;
+  const person = { kind: 'actor', id: profile.actor.id, apId: profile.actor.apId } as const;
   const bioHtml =
     profile.bio?.kind === 'markdown'
       ? renderer.render(profile.bio.source, { idPrefix: 'bio', content: person }).html

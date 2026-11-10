@@ -9,6 +9,7 @@ const proxied = /^\/media\/proxy\/[\w-]+\/[\w-]+$/;
 
 const view = (extra: Partial<Parameters<typeof postMedia>[0]> = {}) => ({
   id: '0195f0a0-0000-7000-8000-000000000001',
+  apId: 'https://feddit.example/post/0195f0a0-0000-7000-8000-000000000001',
   url: null,
   urlContentType: null,
   thumbnailUrl: null,

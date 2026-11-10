@@ -39,9 +39,11 @@ export const loadCommunityPage = createServerFn({ method: 'GET' })
     if (gate !== 'none') return gateData({ subject: 'community', gate, handle: data.handle, back: communityPath({ handle: data.handle }) });
 
     const renderer = await createMarkdownRenderer(await siteMarkdown());
-    const community = { kind: 'actor', id } as const;
-    const page = await readCommunityPage({ id }, viewer, undefined, { rewriteImageUrl: (url) => renderer.image(url, community) });
+    // A remote summary's images stay inline here and are signed once, for this community, when
+    // the sidebar is sanitised below (signing them here too would sign the proxy paths again).
+    const page = await readCommunityPage({ id }, viewer, undefined, { rewriteImageUrl: (url) => url });
     if (!page) return missing(data.handle);
+    const community = { kind: 'actor', id, apId: page.actor.apId } as const;
     const locale = negotiateLocale(getRequestHeader('accept-language'));
     const now = new Date();
     const text = (key: MessageKey<'communities'>, params?: Record<string, string | number>) =>

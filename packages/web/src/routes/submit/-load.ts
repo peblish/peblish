@@ -74,7 +74,7 @@ async function panelFor(communityId: string, viewer: SessionView, renderer: Mark
   // Removed, deleted, or age-gated for someone who has not declared 16+: it does not exist for them.
   if (!community || !ageAllows(viewer, community)) return null;
   const restricted = community.postingRestrictedToMods;
-  const content = { kind: 'actor', id: community.actor.id } as const;
+  const content = { kind: 'actor', id: community.actor.id, apId: community.actor.apId } as const;
   const summary = community.summaryMd
     ? renderer.render(community.summaryMd, { excerptLength: 240, content }).excerpt
     : community.summaryHtml

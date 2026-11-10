@@ -11,7 +11,8 @@ import { derivedKey } from '../identity/auth.ts';
 // A reference names the content the image was shown for (a post, a comment, or an actor's
 // profile or community page), so the proxy can refuse it once that content is removed,
 // deleted or gated for the viewer (reference.ts): a saved URL dies with its content and no
-// list of revoked URLs is kept. An image shown outside any content (a preview of a draft, a
+// list of revoked URLs is kept. It also names the peer that supplied that content, so a
+// quarantined or blocked peer's images are refused wherever they are hosted (peers/gate.ts). An image shown outside any content (a preview of a draft, a
 // site page) gets a reference that expires instead, after one to two hours.
 
 export const PROXY_PATH = '/media/proxy';
@@ -22,14 +23,18 @@ const PURPOSE = 'media-proxy';
  * the target is at most the unpadded base64url of this many bytes plus the reference's head.
  */
 const MAX_URL_BYTES = 2048;
-/** The head before the URL: a kind letter and a uuid, or a time (with room to spare). */
+/** The head before the URL: a kind letter, a uuid and the supplier's host (253 characters and a port at most), or a time. */
 const MAX_HEAD_BYTES = 320;
 const MAX_TARGET_LENGTH = Math.ceil(((MAX_URL_BYTES + MAX_HEAD_BYTES) * 4) / 3);
 /** An unbound reference is valid until the end of the hour after the one it was made in, so a page's URLs stay the same within an hour. */
 const HOUR_SECONDS = 3600;
 
-/** The content an image is shown for. `actor` is a profile (avatar, bio) or a community page (icon, banner, sidebar, rules). */
-export type MediaContent = { kind: 'post' | 'comment' | 'actor'; id: Uuid };
+/**
+ * The content an image is shown for. `actor` is a profile (avatar, bio) or a community page
+ * (icon, banner, sidebar, rules). `supplier` is the host of the peer the content came from, null
+ * for this instance's own.
+ */
+export type MediaContent = { kind: 'post' | 'comment' | 'actor'; id: Uuid; supplier: string | null };
 
 /** What a valid proxy path names: the remote URL, and the content it was shown for (null for an unexpired unbound reference). */
 export type ProxyTarget = { url: string; content: MediaContent | null };
@@ -37,7 +42,7 @@ export type ProxyTarget = { url: string; content: MediaContent | null };
 const letters = { post: 'p', comment: 'c', actor: 'a' } as const;
 const kindOf = (letter: string): MediaContent['kind'] => (letter === 'p' ? 'post' : letter === 'c' ? 'comment' : 'actor');
 const uuid = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}';
-const boundHead = new RegExp(`^([pca]) (${uuid})$`);
+const boundHead = new RegExp(`^([pca]) (${uuid}) (\\S{1,300})$`);
 const unboundHead = /^t (\d{1,12})$/;
 
 /** The HMAC key for proxy URLs. */
@@ -47,7 +52,7 @@ const sign = (key: Buffer, payload: string) => createHmac('sha256', key).update(
 
 /** The head of a reference: the content, or the second an unbound one stops being valid. */
 function headOf(content: MediaContent | null, now: number): string {
-  if (content) return `${letters[content.kind]} ${content.id.toLowerCase()}`;
+  if (content) return `${letters[content.kind]} ${content.id.toLowerCase()} ${content.supplier?.toLowerCase() ?? '-'}`;
   return `t ${(Math.floor(now / 1000 / HOUR_SECONDS) + 2) * HOUR_SECONDS}`;
 }
 
@@ -80,8 +85,8 @@ export function verifyProxyPath(key: Buffer, signature: string, target: string, 
   const head = payload.slice(0, split);
   const url = payload.slice(split + 1);
   let content: MediaContent | null = null;
-  const [, letter, id] = boundHead.exec(head) ?? [];
-  if (letter && id) content = { kind: kindOf(letter), id };
+  const [, letter, id, supplier] = boundHead.exec(head) ?? [];
+  if (letter && id && supplier) content = { kind: kindOf(letter), id, supplier: supplier === '-' ? null : supplier };
   else {
     const until = unboundHead.exec(head);
     if (!until || Number(until[1]) * 1000 <= now) return null;

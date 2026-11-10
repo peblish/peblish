@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { publicOrigin } from '@peblish/core/config';
-import { imageSource } from '@peblish/core/media/image-src';
+import { imageSource, type ImageContent } from '@peblish/core/media/image-src';
 import { mediaProxyKey, proxyUrlBuilder, type MediaContent } from '@peblish/core/media/proxy-url';
 import { deniedMediaDomains } from '@peblish/core/peers/gate';
 import { renderMarkdown } from '@peblish/core/markdown/render';
@@ -29,12 +29,13 @@ export interface SiteMarkdown {
 }
 
 /**
- * What a body or an image belongs to (a post, a comment, a profile or community page). Remote
- * images are signed for it, so the proxy refuses them once it is removed, deleted or gated for
- * the viewer; text that belongs to nothing yet (a draft's preview, a site page) leaves it out,
- * and its images' URLs expire within two hours (core media/proxy-url.ts).
+ * What a body or an image belongs to (a post, a comment, a profile or community page), with its
+ * ap_id. Remote images are signed for it and for the peer that supplied it, so the proxy refuses
+ * them once it is removed, deleted or gated for the viewer, or that peer's media is denied; text
+ * that belongs to nothing yet (a draft's preview, a site page) leaves it out, and its images'
+ * URLs expire within two hours (core media/proxy-url.ts).
  */
-type Content = { content?: MediaContent };
+type Content = { content?: ImageContent };
 
 export interface MarkdownRenderer {
   /** A local or remote Markdown body. idPrefix keeps footnote anchors apart on a page with many bodies. */
@@ -46,7 +47,7 @@ export interface MarkdownRenderer {
    * the URL itself on this instance, the signed proxy path for a remote one (for `content`), or
    * null when it must not load (the caller shows a link or nothing).
    */
-  image(url: string | null | undefined, content?: MediaContent): string | null;
+  image(url: string | null | undefined, content?: ImageContent): string | null;
 }
 
 /** The settings of this instance: PUBLIC_ORIGIN, the stored kill switch and the remote-media proxy. */
@@ -63,7 +64,7 @@ export async function siteMarkdown(): Promise<SiteMarkdown> {
 
 export async function createMarkdownRenderer(site?: SiteMarkdown): Promise<MarkdownRenderer> {
   const { origin, remoteMedia, proxy, deniedDomains } = site ?? (await siteMarkdown());
-  const image = (url: string | null | undefined, content?: MediaContent) =>
+  const image = (url: string | null | undefined, content?: ImageContent) =>
     imageSource(url, { origin, remoteMedia, proxy, deniedDomains }, content ?? null);
   const rendered = new Map<string, RenderedMarkdown>();
   const sanitized = new Map<string, SanitizedHtml>();
