@@ -1,5 +1,5 @@
 import { fetchProxiedImage, type ProxyResult } from '@peblish/core/media/proxy';
-import { verifyProxyPath, type MediaContent } from '@peblish/core/media/proxy-url';
+import { unwrapProxyUrl, verifyProxyPath, type MediaContent } from '@peblish/core/media/proxy-url';
 import { safeFetch, type SafeFetchInit, type SafeResponse } from '@peblish/core/net/fetch';
 import { mediaAllowed, supplierMediaAllowed } from '@peblish/core/peers/gate';
 
@@ -82,6 +82,9 @@ export async function proxyResponse(signature: string, target: string, deps: Pro
   // An unsigned, altered, foreign or expired URL, and the kill switch, look the same from outside: nothing here.
   const verified = verifyProxyPath(deps.key, signature, target, deps.now);
   if (verified === null || !deps.enabled) return plain(404, 'not found');
+  // So does a URL that is itself one of this instance's proxy paths: it would be judged by the content
+  // and supplier it was first signed for. imageSource never signs one (it unwraps it).
+  if (unwrapProxyUrl(deps.key, new URL(verified.url)) !== null) return plain(404, 'not found');
   // So does an image of content a quarantined, purged or blocked peer supplied, wherever the image
   // is hosted, and one whose content was removed, deleted or is gated for this viewer.
   const { content } = verified;

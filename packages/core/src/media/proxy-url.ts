@@ -69,21 +69,59 @@ export function proxyUrlBuilder(key: Buffer, now: () => number = Date.now): (url
   };
 }
 
-/**
- * What a proxy path names, when its signature is the HMAC of its target under `key`, an
- * unbound reference has not expired at `now`, and the URL is an absolute http or https URL
- * without credentials; null otherwise.
- */
-export function verifyProxyPath(key: Buffer, signature: string, target: string, now: number = Date.now()): ProxyTarget | null {
+/** The URL a reference carries when `signature` is the HMAC of `target` under `key`, whatever its head says; null otherwise. */
+function carried(key: Buffer, signature: string, target: string): { head: string; url: string } | null {
   if (target.length > MAX_TARGET_LENGTH) return null;
   const payload = Buffer.from(target, 'base64url').toString('utf8');
   const expected = Buffer.from(sign(key, payload));
   const given = Buffer.from(signature);
   if (given.length !== expected.length || !timingSafeEqual(given, expected)) return null;
   const split = payload.indexOf('\n');
-  if (split < 0) return null;
-  const head = payload.slice(0, split);
-  const url = payload.slice(split + 1);
+  return split < 0 ? null : { head: payload.slice(0, split), url: payload.slice(split + 1) };
+}
+
+/** A percent-decoded path, or the path itself when it does not decode. */
+function decodedPath(pathname: string): string {
+  try {
+    return decodeURIComponent(pathname);
+  } catch {
+    return pathname;
+  }
+}
+
+/**
+ * Whether a URL's path is one the proxy route answers, read as a router may read it: in any case
+ * and percent-decoded. Such a path under this instance's origin is never an image source as it
+ * stands (image-src.ts): it is unwrapped or dropped.
+ */
+export function isProxyPath(url: URL): boolean {
+  return decodedPath(url.pathname).toLowerCase().startsWith(`${PROXY_PATH}/`);
+}
+
+/**
+ * The remote URL inside a proxy path this instance signed under `key`, on whatever host it is
+ * written (a copied page URL keeps its host), so it can be signed again for the content it is
+ * shown in now and never borrows the content and supplier it was first signed for. Expiry and the
+ * head are not judged: nothing is authorized by unwrapping. Null when `url` is not such a path.
+ */
+export function unwrapProxyUrl(key: Buffer, url: URL): string | null {
+  if (!isProxyPath(url)) return null;
+  const [signature, target, ...rest] = decodedPath(url.pathname)
+    .slice(PROXY_PATH.length + 1)
+    .split('/');
+  if (!signature || !target || rest.length > 0) return null;
+  return carried(key, signature, target)?.url ?? null;
+}
+
+/**
+ * What a proxy path names, when its signature is the HMAC of its target under `key`, an
+ * unbound reference has not expired at `now`, and the URL is an absolute http or https URL
+ * without credentials; null otherwise.
+ */
+export function verifyProxyPath(key: Buffer, signature: string, target: string, now: number = Date.now()): ProxyTarget | null {
+  const reference = carried(key, signature, target);
+  if (!reference) return null;
+  const { head, url } = reference;
   let content: MediaContent | null = null;
   const [, letter, id, supplier] = boundHead.exec(head) ?? [];
   if (letter && id && supplier) content = { kind: kindOf(letter), id, supplier: supplier === '-' ? null : supplier };

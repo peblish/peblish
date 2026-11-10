@@ -201,3 +201,16 @@ test('an image of content a quarantined, purged or blocked peer supplied is a 40
   expect((await proxyResponse(...own, deps)).status).toBe(200);
   expect(asked).toEqual(['piefed.test']);
 });
+
+test('a URL whose target is itself one of our proxy paths is a 404 and fetches nothing (CN1)', async () => {
+  const fetchImage = image();
+  const inner = `https://feddit.example${proxyUrlBuilder(key)(remoteUrl, { kind: 'post', id: '0195f0a0-0000-7000-8000-000000000003', supplier: null })}`;
+  const [outer, outerTarget] = proxyUrlBuilder(key)(inner).split('/').slice(3) as [string, string];
+  const response = await proxyResponse(outer, outerTarget, { key, enabled: true, contentShown, fetchImage });
+  expect([response.status, response.headers.get('cache-control')]).toEqual([404, 'no-store']);
+  expect(fetchImage).not.toHaveBeenCalled();
+  // Another instance's proxy path is just a remote image.
+  const theirs = `https://other.example${proxyUrlBuilder(Buffer.from('o'.repeat(32)))(remoteUrl)}`;
+  const [other, otherTarget] = proxyUrlBuilder(key)(theirs).split('/').slice(3) as [string, string];
+  expect((await proxyResponse(other, otherTarget, { key, enabled: true, contentShown, fetchImage })).status).toBe(200);
+});
