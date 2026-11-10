@@ -2,7 +2,7 @@ import { auth, authErrorCode } from '@peblish/core/identity/auth';
 import { localHandles } from '@peblish/core/identity/handles';
 import { deviceSessions, revokeSession } from '@peblish/core/identity/session';
 import { attempt } from '@peblish/core/identity/throttle';
-import { confirmTotpSetup, pendingTotp, takeRecoveryCodes } from '@peblish/core/identity/two-factor';
+import { changePasswordAs, confirmTotpSetup, pendingTotp, takeRecoveryCodes } from '@peblish/core/identity/two-factor';
 import type { DeviceSession } from '@peblish/schema/session';
 import { Button } from '@peblish/ui/components/button';
 import { createFileRoute, redirect } from '@tanstack/react-router';
@@ -84,14 +84,10 @@ export const Route = createFileRoute('/settings/security/')({
         try {
           switch (body.intent) {
             case 'password': {
-              // Other sessions end; this one gets a fresh cookie.
-              const result = await api.changePassword({
-                body: { currentPassword: body.current, newPassword: body.next, revokeOtherSessions: true },
-                headers,
-                returnHeaders: true,
-              });
+              // Other sessions end; this one gets a fresh cookie (and keeps its two-factor mark).
+              const cookies = await changePasswordAs(session.sessionId, headers, { current: body.current, next: body.next });
               await counted?.refund();
-              return reply({ redirect: `${page}?saved=password`, cookies: result.headers.getSetCookie() });
+              return reply({ redirect: `${page}?saved=password`, cookies });
             }
             case 'totp-start':
               await api.enableTwoFactor({ body: { password: body.password }, headers });

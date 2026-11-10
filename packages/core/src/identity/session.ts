@@ -5,13 +5,16 @@ import { db } from '../db/read.ts';
 import { actors } from '../db/tables/actors.ts';
 import { authSession, authUser } from '../db/tables/auth.ts';
 import { auth } from './auth.ts';
-import { ageDeclarations } from './tables.ts';
+import { ageDeclarations, sessionTwoFactor } from './tables.ts';
 
 export type CurrentSession = {
   view: SessionView;
   sessionId: Uuid;
   email: string;
-  /** auth_user.role, whatever two-factor says (the admin pages explain a missing second factor). */
+  /**
+   * auth_user.role, whatever two-factor says (the admin pages explain a missing second factor).
+   * view.siteRole is 'admin' only when the account has two-factor on and this session passed it.
+   */
   role: 'user' | 'admin';
   sessionCreatedAt: Date;
   /** Set-Cookie values better-auth wants sent back (a refreshed session cookie). */
@@ -36,21 +39,25 @@ export async function currentSession(headers: Headers): Promise<CurrentSession |
       emailVerified: authUser.emailVerified,
       twoFactorEnabled: authUser.twoFactorEnabled,
       declaredAt: ageDeclarations.declaredAt,
+      sessionPassed: sessionTwoFactor.sessionId,
     })
     .from(actors)
     .innerJoin(authUser, eq(authUser.id, actors.userId))
     .leftJoin(ageDeclarations, eq(ageDeclarations.actorId, actors.id))
+    .leftJoin(sessionTwoFactor, eq(sessionTwoFactor.sessionId, response.session.id))
     .where(eq(actors.userId, response.user.id));
   if (!row || row.deletedAt) return null;
   const role = row.role === 'admin' ? 'admin' : 'user';
   const twoFactorEnabled = row.twoFactorEnabled === true;
+  // Admin needs the account's second factor and this session to have passed it (B07 A1).
+  const admin = role === 'admin' && twoFactorEnabled && row.sessionPassed !== null;
   return {
     view: {
       userId: response.user.id,
       actorId: row.actorId,
       name: row.name,
       displayName: row.displayName,
-      siteRole: role === 'admin' && twoFactorEnabled ? 'admin' : 'user',
+      siteRole: admin ? 'admin' : 'user',
       emailVerified: row.emailVerified,
       twoFactorEnabled,
       ageDeclaredAt: row.declaredAt?.toISOString() ?? null,

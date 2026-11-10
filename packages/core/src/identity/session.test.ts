@@ -1,5 +1,6 @@
 import { eq } from 'drizzle-orm';
 import { beforeEach, expect, test } from 'vitest';
+import { currentPrincipal } from '../authz/principal.ts';
 import { authSession } from '../db/tables/auth.ts';
 import { writer } from '../db/write.ts';
 import { truncateAll } from '../testing/db.ts';
@@ -7,7 +8,7 @@ import { seedAccount, seedLocalInstance, seedTwoFactor, totpCode } from '../test
 import { auth } from './auth.ts';
 import { bootstrapAdmin } from './bootstrap.ts';
 import { currentSession, describeDevice, deviceSessions, maskIp, revokeSession } from './session.ts';
-import { confirmTotpSetup, pendingTotp, takeRecoveryCodes } from './two-factor.ts';
+import { changePasswordAs, confirmTotpSetup, pendingTotp, takeRecoveryCodes } from './two-factor.ts';
 
 beforeEach(async () => {
   await truncateAll();
@@ -66,16 +67,60 @@ test('a session older than a day comes back with a refreshed cookie for the repl
   expect(refreshed?.setCookies.some((cookie) => cookie.includes('session_token='))).toBe(true);
 });
 
-test('an admin counts as one only with two-factor on', async () => {
+/** Signs in through the two-factor challenge with a TOTP code; the new session's cookie. */
+async function signInWithCode(email: string, password: string, code: string): Promise<Headers> {
+  const challenge = await signIn(email, password, firefoxMac);
+  const { headers } = await (await auth()).api.verifyTOTP({ body: { code }, headers: challenge, returnHeaders: true });
+  return cookiesOf(headers);
+}
+
+const cookiesOf = (headers: Headers) =>
+  new Headers({
+    cookie: headers
+      .getSetCookie()
+      .map((value) => value.split(';')[0])
+      .join('; '),
+  });
+
+test('an admin counts as one only with two-factor on, in a session that passed it (B07 A1)', async () => {
   const andrew = await seedAccount('andrew', { role: 'admin' });
-  const cookies = await signIn(andrew.email, andrew.password, firefoxMac);
-  expect((await currentSession(cookies))?.view).toMatchObject({
+  const password = await signIn(andrew.email, andrew.password, firefoxMac);
+  expect((await currentSession(password))?.view).toMatchObject({
     siteRole: 'user',
     twoFactorEnabled: false,
     ageDeclaredAt: expect.any(String),
   });
-  await seedTwoFactor(andrew.userId);
-  expect((await currentSession(cookies))?.view).toMatchObject({ siteRole: 'admin', twoFactorEnabled: true });
+  const { secret } = await seedTwoFactor(andrew.userId);
+  // The account turned two-factor on; the password-only session did not pass it.
+  expect((await currentSession(password))?.view).toMatchObject({ siteRole: 'user', twoFactorEnabled: true });
+  const passed = await signInWithCode(andrew.email, andrew.password, totpCode(secret));
+  const admin = await currentSession(passed);
+  expect(admin?.view.siteRole).toBe('admin');
+
+  // The recheck never raises a principal to admin: the password-only session's stays a user.
+  const actorId = admin!.view.actorId;
+  expect(await currentPrincipal(writer(), { kind: 'local', actorId, siteRole: 'user' })).toEqual({
+    ok: true,
+    principal: { kind: 'local', actorId, siteRole: 'user' },
+  });
+
+  // A password change replaces the session and keeps its mark.
+  const changed = await changePasswordAs(admin!.sessionId, passed, { current: andrew.password, next: 'a new twelve char password' });
+  expect((await currentSession(cookiesOf(new Headers(changed.map((cookie) => ['set-cookie', cookie])))))?.view.siteRole).toBe('admin');
+});
+
+test('confirming a TOTP setup signs every other session out (B07 A1)', async () => {
+  const andrew = await seedAccount('andrew', { role: 'admin' });
+  const laptop = await signIn(andrew.email, andrew.password, firefoxMac);
+  const phone = await signIn(andrew.email, andrew.password, safariPhone);
+  const api = (await auth()).api;
+  await api.enableTwoFactor({ body: { password: andrew.password }, headers: laptop });
+  const secret = Buffer.from(base32Decode((await pendingTotp(andrew.userId, andrew.email))!.key)).toString();
+  const confirmed = await confirmTotpSetup(andrew.userId, laptop, totpCode(secret));
+  const enrolled = await currentSession(cookiesOf(new Headers((confirmed ?? []).map((cookie) => ['set-cookie', cookie]))));
+  expect(enrolled?.view.siteRole).toBe('admin');
+  expect(await currentSession(phone)).toBeNull();
+  expect((await deviceSessions(andrew.userId, enrolled!.sessionId)).map(({ id }) => id)).toEqual([enrolled!.sessionId]);
 });
 
 test('the admin bootstrap runs once', async () => {

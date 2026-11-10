@@ -10,8 +10,8 @@ import { authUser } from '../db/tables/auth.ts';
  * Re-reads the principal inside the writing transaction (authorize() with lock), so a
  * session or grant issued earlier cannot outlive a deletion or a demotion: the actor must
  * still exist, match the principal's kind and not be deleted, and a local principal's site
- * role comes from auth_user, not the session: 'admin' only when role is admin and two-factor
- * is on (A03, as SessionView.siteRole). Rows are read FOR SHARE so a concurrent
+ * role is checked against auth_user: 'admin' only when the principal claims it (the session
+ * passed two-factor) and role is still admin with two-factor on (A03, B07 A1). Rows are read FOR SHARE so a concurrent
  * demotion or deletion waits for the write, and a site ban (which takes FOR NO KEY UPDATE on
  * the actor row before inserting) does too. A write body therefore must not update the acting
  * actor's own row, except self-deletion: deleteAccount (identity/delete.ts) locks the owner's
@@ -64,7 +64,11 @@ export async function currentPrincipal(
             .where(eq(authUser.id, actor.userId))
             .for('share')
         : [];
-      const siteRole = user?.role === 'admin' && user.twoFactorEnabled === true ? 'admin' : 'user';
+      // The recheck only takes authority away: an admin principal must still be one, and a
+      // 'user' one stays a user even for an admin account, since the session it came from
+      // may not have passed two-factor (B07 A1, SessionView.siteRole).
+      const stillAdmin = principal.siteRole === 'admin' && user?.role === 'admin' && user.twoFactorEnabled === true;
+      const siteRole = stillAdmin ? 'admin' : 'user';
       return { ok: true, principal: { ...principal, siteRole } };
     }
   }
