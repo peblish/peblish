@@ -84,12 +84,15 @@ as the delivery worker does, verifies it as the inbox does against the stored pu
 the served actor document names that key and that it is the bundle's (what peers cached), and
 lists every follow with the inbox its posts and Undo go to. It exits 1 if any key fails.
 
-Local rehearsal, 2026-11-10 (lane B06): import 2.2 s, 1 instance actor, 2 users, 2 communities,
-130 remote communities, 131 follows; second run all present; verify 5 of 5 keys pass, 131 follows
+Local rehearsal, 2026-11-10 (lane B06, repeated with the peer blocks and the `/actor` routing):
+import of 1 instance actor, 2 users, 2 communities, 130 remote communities, 131 follows and 25
+peer blocks; second run all present; verify 5 of 5 keys pass and are routed, 131 follows
 accepted, 0 held, 28 hosts; migrate with `PUBLIC_ORIGIN` keeps the imported instance actor; drill
-counts identical. Host-header pretest of the built server: `/u/feddit-admin`, `/u/Andrew`
-(`/u/andrew` resolves to it), both communities, WebFinger for all three and NodeInfo 2.1 with
-usage answer; `GET /actor` answers 406 and `POST /actor/inbox` 404 (see "Before the go-ahead").
+counts identical. Host-header pretest of the built server: `/actor` (the Application, key
+`/actor#main-key`), `/actor/outbox`, `/u/feddit-admin`, `/u/Andrew` (`/u/andrew` resolves to it)
+and both communities answer their documents; unsigned POSTs to `/actor/inbox`, `/inbox` and an
+actor inbox answer 401; WebFinger and NodeInfo 2.1 with usage answer. `/` serves the HTML page
+only: the imported instance actor lives at `/actor`.
 
 The Easypanel rehearsal on a throwaway peblish.com subdomain (B06 step 2) repeats this with every
 kill switch off (federation off), then tears the project, its DNS record and its database down.
@@ -127,8 +130,8 @@ All must hold, else stay on PieFed:
 
 1. `GET https://<new origin>/actor` with `Accept: application/activity+json` returns the imported
    Application (PieFed's instance actor id, whose key `/actor#main-key` peblish signs its
-   authorized fetches with) and `POST /actor/inbox` reaches the inbox. Not yet true (request to
-   root in B06's notes).
+   authorized fetches with) and `POST /actor/inbox` reaches the inbox (true locally since
+   step 1b; check it on the new origin).
 2. The Easypanel rehearsal passed and was torn down; this runbook's commands were run there as written.
 3. The final archive (step 6) inventories the same as above, or the differences are understood.
 4. `verify --bundle` on production exits 0: 5 keys, every one matching the bundle; 131 follows accepted.
