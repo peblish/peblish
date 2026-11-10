@@ -2,6 +2,7 @@ import { createHash, createPrivateKey, createPublicKey } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import postgres from 'postgres';
+import { isPeerDomain } from '@peblish/core/authz/actions/peers';
 import { Bundle, type Bundle as BundleType } from './bundle.ts';
 
 // Reading the PieFed 1.8 archive of feddit.com, restored into its own database (deploy/cutover.md,
@@ -353,6 +354,11 @@ export async function exportBundle(url: string, { admins }: { admins: readonly s
       acceptedAt: row.created_at,
     }));
 
+    const banned = await sql<{ domain: string | null }[]>`select domain from banned_instances order by domain`;
+    const blockedInstances = [...new Set(banned.flatMap((row) => (row.domain ? [row.domain.trim().toLowerCase()] : [])))];
+    const unusable = blockedInstances.filter((domain) => !isPeerDomain(domain));
+    if (unusable.length > 0) throw new Error(`banned instances that are not hosts: ${unusable.join(', ')}`);
+
     const [alembic] = await sql<{ version_num: string }[]>`select version_num from alembic_version`;
     return Bundle.assert({
       format: 'peblish.cutover/1',
@@ -372,6 +378,7 @@ export async function exportBundle(url: string, { admins }: { admins: readonly s
       communities: bundleCommunities,
       remoteCommunities: bundleRemote,
       follows,
+      blockedInstances,
     });
   } finally {
     await sql.end({ timeout: 5 });

@@ -22,7 +22,7 @@ describe.skipIf(!url)('the feddit.com archive', () => {
     });
   });
 
-  test('export: the instance actor, two users, two communities, 130 remote communities and 131 follows, no password hash', async () => {
+  test('export: the instance actor, two users, two communities, 130 remote communities, 131 follows and 25 banned instances, no password hash', async () => {
     const bundle = await exportBundle(url ?? '', { admins: ['Andrew'] });
     expect(bundle.instanceActor.apId).toBe('https://feddit.com/actor');
     expect(bundle.users.map((user) => [user.apId, user.role])).toEqual([
@@ -34,6 +34,10 @@ describe.skipIf(!url)('the feddit.com archive', () => {
       'https://feddit.com/c/microblogs',
     ]);
     expect(bundle.remoteCommunities).toHaveLength(130);
+    // PieFed's default ban list plus threads.net; none is the host of a followed community.
+    expect(bundle.blockedInstances).toHaveLength(25);
+    const followedHosts = new Set(bundle.remoteCommunities.map((community) => new URL(community.apId).host));
+    expect(bundle.blockedInstances.filter((domain) => followedHosts.has(domain))).toEqual([]);
     expect(bundle.follows.filter((follow) => follow.apId?.startsWith('https://feddit.com/activities/follow/'))).toHaveLength(130);
     // A boolean, so a failure cannot print the bundle (it holds keys and addresses).
     expect(/pbkdf2:|scrypt:/.test(JSON.stringify(bundle))).toBe(false);

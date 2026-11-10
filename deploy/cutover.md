@@ -3,8 +3,8 @@
 Moves feddit.com from PieFed 1.8.11 on `box.feddit.com` to peblish, cutover steps 3 to 10 of the
 Phase 1 plan. Only identities move: the instance actor, the two local users (`feddit-admin`,
 `Andrew`), the two local communities (`announcements`, `microblogs`), each with its ap_id, inboxes
-and RSA key, and `feddit-admin`'s 131 follows as accepted rows (decision 3). No posts, comments,
-cached remote content or password hashes move.
+and RSA key, `feddit-admin`'s 131 follows as accepted rows (decision 3), and PieFed's 25 banned
+instances as peer blocks. No posts, comments, cached remote content or password hashes move.
 
 **Steps 6 to 10 touch production and run only after Andrew's explicit, named go-ahead (step 6).**
 Steps 3 and 4 touch nothing live.
@@ -46,6 +46,7 @@ Result on the 2026-11-08 archive (PieFed schema `7c5a293ed40c`):
 | Accepted state                            | All 131 are PieFed memberships, which PieFed writes when the Accept arrives (or at once for a local community); 130 carry the Follow id PieFed sent (`/activities/follow/<join request uuid>`); 0 join requests wait unanswered. PieFed kept no activity log, so the Accepts themselves cannot be re-read |
 | On instances PieFed marks dormant or gone | 9 of the 130                                                                                                                                                                                                                                                                                              |
 | `Andrew` follows                          | 0                                                                                                                                                                                                                                                                                                         |
+| Banned instances                          | 25 (PieFed's default list plus threads.net), none the host of a followed community                                                                                                                                                                                                                        |
 
 Subscription continuity (decision 3): import the 131 as accepted rows under the unchanged actor,
 inbox and keys; sample-verify in the rehearsal and in week one; re-Follow only those that do not
@@ -76,7 +77,9 @@ node tools/cutover/src/cli.ts drill --db $DATABASE_URL --dir $S/drill
 
 `import` refuses a bundle whose host is not `PUBLIC_ORIGIN`'s (without `--rehearsal-host`), a
 database whose migrate minted an instance actor, and a stored actor with another key; a refusal
-or any error writes nothing (one transaction). `verify` signs a delivery with every imported key
+or any error writes nothing (one transaction). It blocks each banned instance as a peer the way
+`/admin/peers` does (peer controls `blocked`, a private `peer.update` modlog row, `peer.updated`),
+keeping a peer's other controls and leaving one already blocked alone; the summary lists them. `verify` signs a delivery with every imported key
 as the delivery worker does, verifies it as the inbox does against the stored public key, checks
 the served actor document names that key and that it is the bundle's (what peers cached), and
 lists every follow with the inbox its posts and Undo go to. It exits 1 if any key fails.

@@ -99,7 +99,7 @@ async function main(): Promise<number> {
             .filter((u) => u.role === 'admin')
             .map((u) => u.name)
             .join(', ') || 'none'
-        }), ${bundle.communities.length} communities, ${bundle.remoteCommunities.length} remote communities, ${bundle.follows.length} follows`,
+        }), ${bundle.communities.length} communities, ${bundle.remoteCommunities.length} remote communities, ${bundle.follows.length} follows, ${bundle.blockedInstances.length} banned instances`,
       );
       return 0;
     }

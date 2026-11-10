@@ -3,7 +3,8 @@ import { Bundle } from './bundle.ts';
 
 // A small cutover bundle with generated keys, shaped like feddit.com's (tests never read the
 // archive): feddit-admin and Andrew, announcements (owned by feddit-admin, local only) and
-// microblogs, one remote Lemmy community feddit-admin follows, and its follow of announcements.
+// microblogs, one remote Lemmy community feddit-admin follows, its follow of announcements, and
+// two banned instances.
 
 export const testOrigin = 'https://feddit.test';
 export const remoteCommunity = 'https://lemmy.test/c/news';
@@ -119,5 +120,6 @@ export async function testBundle(): Promise<Bundle> {
         acceptedAt: '2025-06-23T00:00:00.000Z',
       },
     ],
+    blockedInstances: ['spam.test', 'threads.test'],
   });
 }

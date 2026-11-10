@@ -98,6 +98,8 @@ export const Bundle = type({
   communities: BundleCommunity.array(),
   remoteCommunities: BundleRemoteCommunity.array(),
   follows: BundleFollow.array(),
+  /** PieFed's banned instances (banned_instances.domain), lowercase hosts: the import blocks each as a peer. */
+  blockedInstances: 'string[]',
 });
 export type Bundle = typeof Bundle.infer;
 

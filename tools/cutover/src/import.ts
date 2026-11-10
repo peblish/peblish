@@ -7,6 +7,9 @@ import { authUser } from '@peblish/core/db/tables/auth';
 import { follows } from '@peblish/core/db/tables/follows';
 import { instances } from '@peblish/core/db/tables/instances';
 import { communityModerators } from '@peblish/core/db/tables/moderation';
+import { writeModlog } from '@peblish/core/modlog/write';
+import { peerControls } from '@peblish/core/peers/tables';
+import { ensureInstance } from '@peblish/core/remote/instances';
 import type { WriteTx } from '@peblish/core/db/write';
 import { storeRemoteActor } from '@peblish/core/remote/actors';
 import { tx, type Tx } from '@peblish/core/tx/tx';
@@ -43,6 +46,8 @@ export type ImportReport = {
   communities: Tally;
   remoteCommunities: Tally & { skippedDeleted: number };
   follows: Tally;
+  /** PieFed's banned instances, blocked here: the ones this run blocked, and every domain. */
+  peerBlocks: Tally & { domains: string[] };
 };
 
 /** The bundle as it will be written: checked against the target origin, rehosted for a rehearsal. */
@@ -289,6 +294,53 @@ async function importFollow(t: Tx, follow: BundleType['follows'][number]): Promi
   return true;
 }
 
+const peerBlockReason = "PieFed's banned instances, carried over at the cutover";
+
+/**
+ * Blocks one of PieFed's banned instances, writing what MODF's updatePeer writes for a block: the
+ * instance row (ensureInstance), its peer_controls row with blocked set, a private peer.update
+ * modlog row and peer.updated. updatePeer itself cannot run here, since its policy takes only a
+ * two-factor admin and the import runs as the instance (LANE-NOTES, request to root). A peer
+ * already blocked is left as it is; one present but not blocked is blocked, its other controls kept.
+ */
+async function importPeerBlock(t: Tx, instanceActorId: Uuid, domain: string): Promise<boolean> {
+  const { id: instanceId, origin } = await ensureInstance(t.db, `https://${domain}`);
+  await t.db.insert(peerControls).values({ instanceId }).onConflictDoNothing();
+  const [before] = await t.db.select().from(peerControls).where(eq(peerControls.instanceId, instanceId)).for('no key update');
+  if (!before) throw new Error(`peer controls for ${domain} vanished`);
+  if (before.blocked) return false;
+  await t.db
+    .update(peerControls)
+    .set({ blocked: true, reason: peerBlockReason, changedBy: instanceActorId, updatedAt: new Date() })
+    .where(eq(peerControls.instanceId, instanceId));
+  const modlogId = await writeModlog(
+    t.db,
+    {
+      action: 'peer.update',
+      actorId: instanceActorId,
+      authority: { kind: 'system', actorId: instanceActorId, job: 'import', ref: 'cutover' },
+    },
+    {
+      community: null,
+      target: { apId: origin },
+      reason: peerBlockReason,
+      details: { public: false, changes: { blocked: { before: false, after: true } } },
+    },
+  );
+  await t.emit({
+    type: 'peer.updated',
+    v: 1,
+    instanceId,
+    domain,
+    media: before.media,
+    inboxPaused: before.inboxPaused,
+    blocked: true,
+    purged: false,
+    modlogId,
+  });
+  return true;
+}
+
 const tally = (results: boolean[]): Tally => ({ created: results.filter(Boolean).length, present: results.filter((r) => !r).length });
 
 /** Imports `input` (checked again here) into the database DATABASE_URL names. A refusal or any error writes nothing. */
@@ -306,6 +358,9 @@ export async function importBundle(input: unknown, options: ImportOptions): Prom
     for (const community of bundle.remoteCommunities) remote.push(await importRemoteCommunity(t, community));
     const followed = [];
     for (const follow of bundle.follows) followed.push(await importFollow(t, follow));
+    const { actorId: instanceActorId } = await systemPrincipal(t.db, 'import');
+    const blocked = [];
+    for (const domain of bundle.blockedInstances) blocked.push(await importPeerBlock(t, instanceActorId as Uuid, domain));
     return {
       origin,
       rehearsal: options.rehearsalHost !== undefined,
@@ -318,6 +373,7 @@ export async function importBundle(input: unknown, options: ImportOptions): Prom
         skippedDeleted: remote.filter((r) => r === 'deleted').length,
       },
       follows: tally(followed),
+      peerBlocks: { ...tally(blocked), domains: bundle.blockedInstances },
     };
   });
 }

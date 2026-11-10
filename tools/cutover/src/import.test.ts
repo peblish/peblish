@@ -3,7 +3,9 @@ import { db } from '@peblish/core/db/read';
 import { actorKeys, actors } from '@peblish/core/db/tables/actors';
 import { authAccount, authUser } from '@peblish/core/db/tables/auth';
 import { follows } from '@peblish/core/db/tables/follows';
-import { communityModerators } from '@peblish/core/db/tables/moderation';
+import { communityModerators, modlog } from '@peblish/core/db/tables/moderation';
+import { instances } from '@peblish/core/db/tables/instances';
+import { peerControls } from '@peblish/core/peers/tables';
 import { outbox } from '@peblish/core/db/tables/outbox';
 import { writer } from '@peblish/core/db/write';
 import { auth } from '@peblish/core/identity/auth';
@@ -136,4 +138,36 @@ test('an imported account signs in once a password reset has set its first passw
   } finally {
     useMailTransport(undefined);
   }
+});
+
+test("blocks PieFed's banned instances as peers, keeping a peer's other controls, once", async () => {
+  const bundle = await testBundle();
+  // threads.test is already known here, with its media approved and not blocked.
+  const [known] = await writer().insert(instances).values({ domain: 'threads.test', origin: 'https://threads.test' }).returning();
+  await writer().insert(peerControls).values({ instanceId: known!.id, media: 'approved' });
+  const first = await importBundle(bundle, { publicOrigin: testOrigin });
+  expect(first.peerBlocks).toEqual({ created: 2, present: 0, domains: ['spam.test', 'threads.test'] });
+  const rows = await db()
+    .select({ domain: instances.domain, blocked: peerControls.blocked, media: peerControls.media })
+    .from(peerControls)
+    .innerJoin(instances, eq(instances.id, peerControls.instanceId))
+    .orderBy(instances.domain);
+  expect(rows).toEqual([
+    { domain: 'spam.test', blocked: true, media: 'quarantined' },
+    { domain: 'threads.test', blocked: true, media: 'approved' },
+  ]);
+  const logged = await db()
+    .select({ action: modlog.action, public: modlog.public, targetApId: modlog.targetApId })
+    .from(modlog)
+    .orderBy(modlog.targetApId);
+  expect(logged).toEqual([
+    { action: 'peer.update', public: false, targetApId: 'https://spam.test' },
+    { action: 'peer.update', public: false, targetApId: 'https://threads.test' },
+  ]);
+  const events = async () => (await db().select({ type: outbox.type }).from(outbox)).filter((row) => row.type === 'peer.updated').length;
+  expect(await events()).toBe(2);
+
+  const second = await importBundle(bundle, { publicOrigin: testOrigin });
+  expect(second.peerBlocks).toMatchObject({ created: 0, present: 2 });
+  expect(await events()).toBe(2);
 });
