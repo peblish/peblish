@@ -6,6 +6,8 @@ import { follows } from '@peblish/core/db/tables/follows';
 import { communityModerators, modlog } from '@peblish/core/db/tables/moderation';
 import { instances } from '@peblish/core/db/tables/instances';
 import { peerControls } from '@peblish/core/peers/tables';
+import { siteSettings } from '@peblish/core/db/tables/site';
+import { readSetting } from '@peblish/core/settings/read';
 import { outbox } from '@peblish/core/db/tables/outbox';
 import { writer } from '@peblish/core/db/write';
 import { auth } from '@peblish/core/identity/auth';
@@ -170,4 +172,24 @@ test("blocks PieFed's banned instances as peers, keeping a peer's other controls
   const second = await importBundle(bundle, { publicOrigin: testOrigin });
   expect(second.peerBlocks).toMatchObject({ created: 0, present: 2 });
   expect(await events()).toBe(2);
+});
+
+test('turns the federation switch off first, in its own transaction, so a refused import leaves it off too', async () => {
+  const bundle = await testBundle();
+  const report = await importBundle(bundle, { publicOrigin: testOrigin });
+  expect(report.federation).toEqual({ deliveryEnabled: false, wasOn: true });
+  expect(await readSetting('delivery.enabled')).toBe(false);
+  expect((await importBundle(bundle, { publicOrigin: testOrigin })).federation).toEqual({
+    deliveryEnabled: false,
+    wasOn: false,
+  });
+
+  // A database whose migrate minted an instance actor is refused inside the import's transaction.
+  await truncateAll();
+  await ensureLocalInstance(writer(), testOrigin);
+  await writer().insert(siteSettings).values({ key: 'delivery.enabled', value: true });
+  await expect(importBundle(await testBundle(), { publicOrigin: testOrigin })).rejects.toThrow(
+    /fresh database migrated without PUBLIC_ORIGIN/,
+  );
+  expect(await readSetting('delivery.enabled')).toBe(false);
 });

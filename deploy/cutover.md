@@ -127,6 +127,10 @@ Order on a fresh project, each step read back before the next:
    ```
 
 3. Copy the bundle in, then `import` (twice: the second is all `present`) and `verify`, as above.
+   `import` turns the federation switch off itself, in a transaction of its own before it reads
+   the bundle, so it stays off even when the import is refused; its report says so
+   (`"federation": { "deliveryEnabled": false, "wasOn": false }` after the SQL above). The SQL stays
+   as the check, and for the other switches.
 4. `web` with its domain (HTTPS) and environment. A `worker` may run with the imported follows
    only while the federation switch is off (below). Then the served-documents check, the password
    reset with two-factor enrolment, and the drill.
@@ -311,8 +315,9 @@ against the final dump before exporting. Beyond the responder and the stopped se
    (`PUBLIC_ORIGIN=https://feddit.com`):
 
    ```sh
-   node tools/cutover/src/cli.ts import --bundle /tmp/cutover/bundle-final.json
+   node tools/cutover/src/cli.ts import --bundle /tmp/cutover/bundle-final.json   # report: federation.deliveryEnabled false
    node tools/cutover/src/cli.ts verify --bundle /tmp/cutover/bundle-final.json
+   psql "$DATABASE_URL" -Atc "select key, value from site_settings where key in ('delivery.enabled', 'inbox.enabled', 'registration.enabled') order by key"   # all false
    ```
 
 2. Add `web` as in `README.md` with `PUBLIC_ORIGIN=https://feddit.com`, `BETTER_AUTH_SECRET`,
