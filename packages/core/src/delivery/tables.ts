@@ -15,7 +15,8 @@ const stateValues = ['pending', 'delivered', 'failed', 'skipped'] as const;
  * and a lease, and a worker that dies mid-POST leaves a lease that expires, so the row is
  * sent again: delivery is at least once, and receivers dedupe on the activity id. A row ends
  * `delivered` (2xx), `failed` (a permanent refusal, or the retries ran out) or `skipped` (the
- * instance is dormant). Settled rows are pruned after 30 days (remote/prune.ts).
+ * instance is dormant or blocked, or the content was withheld before the send). Settled rows
+ * are pruned after 30 days (remote/prune.ts).
  */
 export const deliveries = pgTable(
   'deliveries',

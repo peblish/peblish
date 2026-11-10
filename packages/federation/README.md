@@ -237,9 +237,14 @@ per transaction until none is left. Its continuation is the data (the `site_bans
 two transactions off the same posts. A site ban a peer sets on its own person is not ours to
 send, but with `removeData` its withdrawal runs the same way.
 
-**The kill switch.** With the `delivery.enabled` site setting off, `deliverDue` claims nothing:
-rows stay pending (attempts uncounted) and go out once it is on again. A run that is under way
-stops before its next batch.
+**The federation switch.** With the `delivery.enabled` site setting off ("Sending and fetching"
+on `/admin/settings`), `deliverDue` claims nothing: rows stay pending (attempts uncounted) and go
+out once it is on again. A run that is under way stops before its next batch. The same switch
+stops every other outbound federation request (`actors/federation-switch.ts`): `fetchJson`
+throws `FederationPaused` before any peer document is read, the backfill, moderator mirror,
+missing-object and recheck jobs claim nothing, an inbox POST whose key must be fetched answers
+503 with `Retry-After`, and an inbox row that needs a fetch goes back to pending. A request in
+flight when it flips completes.
 
 **Mentions.** A post or comment that names a remote person (`@name@host`) we hold adds that
 person to the `cc` of the activity and of the Page or Note, and the Mention `tag` as before.
@@ -271,6 +276,13 @@ worst the receiver gets the activity twice.
 | every other 4xx (401 and 425 too), any 3xx, a refused destination   | failed, never retried                                       |
 | an instance `isDormant` reports                                     | skipped, but one probe a day (`core/src/remote/dormant.ts`) |
 | a blocked peer (`peer_controls.blocked`), read just before the POST | skipped, never retried                                      |
+| withheld content (below), read just before the POST                 | skipped, never retried                                      |
+
+Withheld content (`delivery/recheck.ts`): a Create, Update or Announce (through a nested Announce
+to its real object) whose content is deleted or removed, sits under a gone post or in a deleted or
+removed community, or shows an upload of ours that is quarantined, blocked or deleted, settles as
+skipped with the reason in `last_error`. Delete, Undo, votes, follows and actor Updates go as
+queued.
 
 Retries wait 10 s, 30 s, 90 s, 270 s, 810 s, 2,430 s, 7,290 s, then 6 hours twice (the
 spike's schedule, in `delivery/policy.ts`): ten attempts over 54,130 seconds, about 15
