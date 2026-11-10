@@ -67,6 +67,19 @@ jobs:
           docker run -d --name minio -p 18490:9000 -e MINIO_ROOT_USER=peblish -e MINIO_ROOT_PASSWORD=peblish-dev-secret \
             pgsty/minio:RELEASE.2026-08-04T00-00-00Z@sha256:b6bfe7239bfc83fb90d31612d9704d86039dd714f7904b3f1ad68f211e602372 server /data
           for _ in $(seq 1 30); do curl -fsS http://127.0.0.1:18490/minio/health/live && break; sleep 1; done
+      # The cutover drill test (tools/cutover/src/drill.test.ts) skips unless pg_dump and
+      # pg_restore --version report the server's major version; ubuntu-24.04 ships 16. PGDG's
+      # client 17 goes first on PATH, ahead of pg_wrapper, which could pick the runner's 16.
+      - name: Postgres 17 client tools (PGDG) for the backup and restore drill
+        run: |
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl -fsSo /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" |
+            sudo tee /etc/apt/sources.list.d/pgdg.list > /dev/null
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends postgresql-client-17
+          echo /usr/lib/postgresql/17/bin >> "$GITHUB_PATH"
+          /usr/lib/postgresql/17/bin/pg_dump --version
       - name: pnpm check (build, typecheck, lint with boundaries, tests on Postgres 17)
         run: pnpm check
       - name: No drift between the tables and the migrations
