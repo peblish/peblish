@@ -3,7 +3,6 @@ import { actors } from '@peblish/core/db/tables/actors';
 import { activities } from '@peblish/core/db/tables/federation';
 import { modlog } from '@peblish/core/db/tables/moderation';
 import { defineConsumer, type ConsumerTx } from '@peblish/core/outbox/consumers';
-import { instanceActorUrls } from '@peblish/schema/actor-urls';
 import type { OutboxEvent } from '@peblish/schema/events';
 import { and, desc, eq } from 'drizzle-orm';
 import { deliverableInboxes, peerInboxes } from '../delivery/followers.ts';
@@ -144,10 +143,16 @@ async function onSiteBan(event: Of<'mod.ban'>, t: ConsumerTx, origin: string): P
 async function sendSiteBan(event: Of<'mod.ban'>, moderatorId: string, t: ConsumerTx, origin: string): Promise<void> {
   const moderator = (await actorRefs(t.db, [moderatorId])).get(moderatorId);
   if (!moderator) return;
+  // The Block's target is the instance actor by its stored id: the root for a fresh peblish, /actor for one imported from PieFed.
+  const [instanceActor] = await t.db
+    .select({ apId: actors.apId })
+    .from(actors)
+    .where(and(eq(actors.local, true), eq(actors.kind, 'Application')));
+  if (!instanceActor) throw new Error('no local instance actor to name as the site ban target');
   const base = { id: newActivityId(origin), actorApId: moderator.apId, communityApId: null };
   const details = {
     objectApId: event.targetApId,
-    communityApId: instanceActorUrls(origin).apId,
+    communityApId: instanceActor.apId,
     reason: await wireReason(t, event),
     removeData: event.removeContent,
     expires: event.expiresAt ? new Date(event.expiresAt) : null,

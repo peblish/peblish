@@ -1,12 +1,17 @@
 // The federation side of HTTP, the only federation module web imports besides the consumer
 // registry (lint rule web-federation-entry-points). G0 created it; lane FED-A owns it.
 
-import { db } from '@peblish/core/db/read';
+import { db, type Queryable } from '@peblish/core/db/read';
+import { actors } from '@peblish/core/db/tables/actors';
+import { and, eq } from 'drizzle-orm';
 import { localDocument } from './actors/serve.ts';
 import { localOrigin } from './federation.ts';
 import { receiveInbound } from './inbound/receive.ts';
 import { serveNodeInfo } from './nodeinfo/serve.ts';
 import { serveWebFinger } from './webfinger/serve.ts';
+
+/** PieFed's instance actor inbox; an inbox only where the stored instance actor's inbox is this URL (instanceInboxHere). */
+const instanceActorInbox = /^\/actor\/inbox$/;
 
 /** Paths federation always answers: ActivityPub endpoints, WebFinger and NodeInfo. */
 const federationPaths = [
@@ -16,11 +21,19 @@ const federationPaths = [
   /^\/(inbox|outbox)$/,
   // The imported actors keep their /u/<name> and /c/<name> ids, so their collections sit below the page path.
   /^\/[uc]\/[^/]+\/(inbox|outbox|followers|featured|moderators)$/,
+  // An imported PieFed instance actor keeps its id /actor, with its inbox and outbox below it.
+  instanceActorInbox,
+  /^\/actor\/outbox$/,
 ];
 /** Every inbox: the shared one, a new actor's (below /ap/) and an imported actor's (below its page path). */
-const inboxPaths = [/^\/inbox$/, /^\/ap\/[uc]\.[^/]+\/inbox$/, /^\/[uc]\/[^/]+\/inbox$/];
-/** Pages that are also ActivityPub objects (the instance actor, users, communities), chosen by Accept. */
-const negotiatedPaths = [/^\/$/, /^\/[uc]\/[^/]+$/];
+const inboxPaths = [/^\/inbox$/, /^\/ap\/[uc]\.[^/]+\/inbox$/, /^\/[uc]\/[^/]+\/inbox$/, instanceActorInbox];
+/**
+ * Pages that are also ActivityPub objects, chosen by Accept: the instance actor (at the root, or
+ * at /actor when it was imported from PieFed, whose key /actor#main-key peers fetch to check our
+ * signed requests), users and communities. Each is served by its stored ap_id, so on a fresh
+ * peblish /actor names nothing and the UI renders its not-found page.
+ */
+const negotiatedPaths = [/^\/$/, /^\/actor$/, /^\/[uc]\/[^/]+$/];
 
 const activityTypes = new Set(['application/activity+json', 'application/ld+json']);
 
@@ -69,10 +82,22 @@ export type FederationContext = {
   peer?: string;
 };
 
+/** Whether `inbox` is the stored inbox of this server's instance actor (an imported PieFed one's /actor/inbox). */
+async function instanceInboxHere(q: Queryable, inbox: string): Promise<boolean> {
+  const [row] = await q
+    .select({ id: actors.id })
+    .from(actors)
+    .where(and(eq(actors.local, true), eq(actors.kind, 'Application'), eq(actors.inboxUrl, inbox)));
+  return row !== undefined;
+}
+
 async function answer(request: Request, context: FederationContext): Promise<Response | null> {
   const url = new URL(request.url);
   const { pathname } = url;
   if (inboxPaths.some((path) => path.test(pathname))) {
+    if (instanceActorInbox.test(pathname) && !(await instanceInboxHere(db(), `${await localOrigin()}${pathname}`))) {
+      return new Response('not found', { status: 404 });
+    }
     if (request.method === 'POST') return receiveInbound(request, { peer: context.peer });
     return new Response('inboxes take POST', { status: 405, headers: { Allow: 'POST' } });
   }

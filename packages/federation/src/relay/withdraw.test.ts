@@ -15,7 +15,7 @@ import { deliveryBlocked } from '@peblish/core/peers/gate';
 import { seedActor, seedInstance } from '@peblish/core/testing/seed';
 import { outboxEvents, seedPost } from '@peblish/core/testing/seed-az';
 import { seedModlog } from '@peblish/core/testing/seed-e2';
-import { seedLocalInstance, seedSigningKey } from '@peblish/core/testing/seed-fed-a';
+import { seedSigningKey } from '@peblish/core/testing/seed-fed-a';
 import { inboxState, seedFollow, seedInboundWorld, seedInboxRow, seedPeerActor } from '@peblish/core/testing/seed-fed-b';
 import { tx } from '@peblish/core/tx/tx';
 import type { OutboxEvent } from '@peblish/schema/events';
@@ -55,8 +55,10 @@ beforeEach(async () => {
 });
 
 /** This server with a moderator, a local author, a community, and Lemmy and Mastodon followers. */
-async function world() {
-  const { instance: here } = await seedLocalInstance();
+async function world(instanceActorPath = '/') {
+  const here = await seedInstance('fed-a.test', true);
+  // The instance actor, at the root as migrate makes it, or at PieFed's /actor as the cutover imports it.
+  await seedActor(here, 'Application', 'fed-a.test', { apId: `https://fed-a.test${instanceActorPath}` });
   const person = async (name: string) => {
     const actor = await seedActor(here, 'Person', name, { inboxUrl: `https://fed-a.test/ap/u.${name}/inbox` });
     await seedSigningKey(actor);
@@ -400,6 +402,16 @@ describe('a reason kept out of the public modlog', () => {
     ]);
     expect(summaries(documents)).toEqual([]);
     expect(JSON.stringify(await db().select({ raw: activities.raw }).from(activities))).not.toMatch(/case 12|appeal|private/);
+  });
+
+  test('a site ban’s Block names the stored instance actor as its target: the root, or PieFed’s /actor once imported', async () => {
+    const blockTarget = async (w: World) => {
+      await runRelay({ ...ban(w, w.alice, false), communityId: null } as OutboxEvent);
+      return (await sentTo(w.lemmy.inbox)).find(({ json }) => json.type === 'Block')?.json.target;
+    };
+    expect(await blockTarget(await world())).toBe('https://fed-a.test/');
+    await truncateAll();
+    expect(await blockTarget(await world('/actor'))).toBe('https://fed-a.test/actor');
   });
 
   test('a public row’s reason still goes out', async () => {
