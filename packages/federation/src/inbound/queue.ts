@@ -82,10 +82,24 @@ export type Settled = { state: 'applied' | 'skipped' | 'failed'; error: string |
 const held = (claim: Claim) => and(eq(inboxRaw.id, claim.id), eq(inboxRaw.attempts, claim.attempts), eq(inboxRaw.state, 'pending'));
 
 /** Records how a row ended. Throws ClaimLost when the claim is no longer held. */
-export async function settle(t: OpenTx, claim: Claim, { state, error }: Settled): Promise<void> {
+/** What a row settled for good keeps of its body: enough to see what it was. */
+export const keptPrefixBytes = 1024;
+
+/**
+ * Whether a settled row's body will be read again: an applied one is the relay's exact bytes,
+ * and one skipped for want of an object goes back in line when it arrives (requeueWaiting).
+ * Every other end (failed, or skipped for good) keeps only the first `keptPrefixBytes`, so a
+ * peer's rejected bodies do not stay on disk for the retention period (throttle.ts intakeByteBudget).
+ */
+const bodyKept = ({ state, error }: Settled): boolean =>
+  state === 'applied' || (state === 'skipped' && error !== null && error.startsWith('target.missing '));
+
+export async function settle(t: OpenTx, claim: Claim, settled: Settled): Promise<void> {
+  const { state, error } = settled;
+  const body = bodyKept(settled) ? {} : { body: sql`substring(${inboxRaw.body} from 1 for ${keptPrefixBytes})` };
   const rows = await t.db
     .update(inboxRaw)
-    .set({ state, error, processedAt: new Date(), leaseUntil: null })
+    .set({ state, error, processedAt: new Date(), leaseUntil: null, ...body })
     .where(held(claim))
     .returning({ id: inboxRaw.id });
   if (rows.length === 0) throw new ClaimLost(claim);

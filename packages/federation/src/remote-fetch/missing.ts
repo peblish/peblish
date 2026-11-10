@@ -4,6 +4,7 @@ import { inboxRaw } from '@peblish/core/db/tables/federation';
 import { readSetting } from '@peblish/core/settings/read';
 import { sql } from 'drizzle-orm';
 import type { Fetcher } from '../actors/document.ts';
+import { federationOn } from '../actors/federation-switch.ts';
 import { safeFetch } from '../actors/safe-fetch.ts';
 import { localOrigin } from '../federation.ts';
 import { requeueSkippedFor } from '../inbound/queue.ts';
@@ -76,7 +77,7 @@ export async function fetchMissing(
   options: { fetch?: Fetcher; gapMs?: number; now?: number; signal?: AbortSignal } = {},
 ): Promise<MissingRun> {
   const run: MissingRun = { looked: 0, stored: 0 };
-  if (!(await readSetting('inbox.enabled'))) return run;
+  if (!(await readSetting('inbox.enabled')) || !(await federationOn())) return run;
   const now = options.now ?? Date.now();
   const { lookbackMs, perRun, scan } = remoteTtls.missing;
   const fetch = polite(options.fetch ?? safeFetch, options.gapMs ?? remoteTtls.politeGapMs);

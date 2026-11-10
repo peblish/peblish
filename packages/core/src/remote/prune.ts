@@ -6,8 +6,9 @@ import { throttles } from '../identity/tables.ts';
 import { defineMutation } from '../tx/mutation.ts';
 
 // Owned by lane REM. Retention for the tables that otherwise grow for ever: the inbox (every
-// activity as received, bodies up to 512 KiB), the delivery queue (every send), the dedupe
-// markers of applied activities and the expired windows of the rate limiter.
+// activity as received, bodies up to 512 KiB; a row rejected or skipped for good keeps only the
+// first KiB once it settles, federation inbound/queue.ts), the delivery queue (every send), the
+// dedupe markers of applied activities and the expired windows of the rate limiter.
 
 /** How long a row is kept, and how a prune run is cut into transactions. */
 export const retention = {

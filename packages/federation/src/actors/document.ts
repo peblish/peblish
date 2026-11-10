@@ -1,6 +1,7 @@
 import { userAgent } from '../federation.ts';
 import { instanceSigningKey } from '../signing/instance.ts';
 import { signFetch } from '../signing/sign.ts';
+import { assertFederationOn } from './federation-switch.ts';
 import { BlockedDestinationError, safeFetch, type SafeResponse } from './safe-fetch.ts';
 
 // The one way federation reads a document from a peer: an actor, a WebFinger answer, a
@@ -59,7 +60,8 @@ export const fetchActivity = (url: string, fetch: Fetcher, { maxRedirects = 0 }:
  * result is where the document finally came from, which is what its id must live under. With
  * `signed` the first request carries the instance's HTTP signature, for peers that only answer
  * authenticated fetches; a redirected hop goes out unsigned, as the signature vouches for one
- * request. The whole read has one deadline. WebFinger and NodeInfo keep three redirects.
+ * request. The whole read has one deadline. WebFinger and NodeInfo keep three redirects. While
+ * the federation switch is off it throws FederationPaused and sends nothing (federation-switch.ts).
  */
 export async function fetchJson(
   url: string,
@@ -67,6 +69,8 @@ export async function fetchJson(
   accept = activityAccept,
   { signed = false, maxRedirects = 3 }: { signed?: boolean; maxRedirects?: number } = {},
 ): Promise<FetchedDocument> {
+  // Outside the try below, which would make it a peer's failure.
+  await assertFederationOn();
   const deadline = Date.now() + documentLimits.timeoutMs;
   let target = url;
   let hops = 0;

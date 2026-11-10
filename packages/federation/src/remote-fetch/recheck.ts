@@ -3,6 +3,7 @@ import { systemPrincipal } from '@peblish/core/authz/system';
 import { db } from '@peblish/core/db/read';
 import { claimRechecks, rechecks } from '@peblish/core/remote/rechecks';
 import type { Fetcher } from '../actors/document.ts';
+import { federationOn } from '../actors/federation-switch.ts';
 import { safeFetch } from '../actors/safe-fetch.ts';
 import { polite } from './polite.ts';
 import { readObject } from './object.ts';
@@ -20,6 +21,8 @@ export async function recheckObjects(
   options: { fetch?: Fetcher; gapMs?: number; now?: Date; limit?: number; signal?: AbortSignal } = {},
 ): Promise<RecheckRun> {
   const run: RecheckRun = { checked: 0, gone: 0, unreachable: 0 };
+  // Before anything is claimed: claimed objects are not due again until their next turn.
+  if (!(await federationOn())) return run;
   const decision = await authorize('remote.object_recheck', await systemPrincipal(db(), 'scheduled'), {});
   if (!decision.ok) throw new Error(`remote.object_recheck refused: ${decision.reason}`);
   const due = await claimRechecks(decision.grant, { now: options.now ?? new Date(), limit: options.limit ?? rechecks.perRun });

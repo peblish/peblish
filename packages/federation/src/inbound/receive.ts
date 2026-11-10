@@ -11,7 +11,7 @@ import { safeFetch } from '../actors/safe-fetch.ts';
 import { FetchRefused, verifyInboundSignature } from '../signing/inbound.ts';
 import { parseSignature } from '../signing/verify.ts';
 import { clientAddress, peerOf } from './client.ts';
-import { takeIntake, takeKeyLookup } from './throttle.ts';
+import { takeIntake, takeIntakeBytes, takeKeyLookup } from './throttle.ts';
 
 // The inbox's front door (lane FED-A's http.ts routes every inbox POST here). It does the
 // least that is safe and answers fast; applying the activity is the pipeline's, a moment later
@@ -20,6 +20,7 @@ import { takeIntake, takeKeyLookup } from './throttle.ts';
 //   inbox.enabled off  503 + Retry-After   the one maintenance answer an inbox may give
 //   body over 512 KiB  413                 by Content-Length, or counted as a chunked body streams in
 //   bad signature      401                 draft-cavage, the key's owner is the activity's actor
+//   federation paused  503 + Retry-After   the signer's key had to be fetched while the switch is off (delivery.enabled)
 //   an account's own   202                 a Delete of an account we do not hold, signed with a key that can no
 //   Delete, no key                         longer be fetched (Mastodon sends it after the account is gone):
 //                                          nothing to apply, answered so the peer stops retrying
@@ -29,7 +30,8 @@ import { takeIntake, takeKeyLookup } from './throttle.ts';
 //                                          must then be exactly the text that was read
 //   throttled          429 + Retry-After   too many key lookups from this address or for this host (throttle.ts), or
 //                                          the signer or its instance is over its request rate or has too many
-//                                          bytes waiting in inbox_raw
+//                                          bytes waiting in inbox_raw, or its instance, or everyone, has stored
+//                                          its hour's bytes (throttle.ts takeIntakeBytes)
 //   a repeat           202                 the same body, or an activity id seen within the hour, is not stored again
 //                                          and costs none of the signer's allowance (it is recognised first)
 //   stored             202                 the exact bytes, in inbox_raw; the repeat check, the pending count and the
@@ -219,6 +221,8 @@ export async function receiveInbound(request: Request, options: ReceiveOptions =
     };
     const signature = await verifyInboundSignature(request, body, { fetch: limited });
     if (!signature.ok) {
+      // The signer's key had to be fetched, and federation is paused: the peer asks again later.
+      if (signature.reason === 'paused') return refuse(503, 'federation is paused here', retryAfter);
       if (throttled) return refuse(429, 'slow down', retryAfter);
       if (signature.reason === 'key_unknown' && (await isGoneAccountsDelete(body))) return refuse(202, 'skipped: actor.unresolvable');
       return refuse(401, `signature: ${signature.reason}`);
@@ -246,6 +250,8 @@ export async function receiveInbound(request: Request, options: ReceiveOptions =
     const receipt = receiptKey(actor, body);
     if (await isRepeat(db(), receipt, actor, activityId, now)) return new Response(null, { status: 202 });
     if (!takeIntake(actor, now)) return refuse(429, 'slow down', retryAfter);
+    const refund = takeIntakeBytes(actor, body.byteLength, now);
+    if (!refund) return refuse(429, 'too many bytes this hour', retryAfter);
 
     const { pathname, search } = new URL(request.url);
     const headers = { method: request.method, path: `${pathname}${search}`, signer: signature.ownerApId, keyId: signature.keyId } as Record<
@@ -256,7 +262,13 @@ export async function receiveInbound(request: Request, options: ReceiveOptions =
       const value = request.headers.get(name);
       if (value !== null) headers[name] = value;
     }
-    const outcome = await admit({ activityId, activityType: activity.type as string, actorApId: actor, body, headers }, receipt, now);
+    const outcome = await admit({ activityId, activityType: activity.type as string, actorApId: actor, body, headers }, receipt, now).catch(
+      (error: unknown) => {
+        refund();
+        throw error;
+      },
+    );
+    if (outcome !== 'stored') refund();
     if (outcome === 'full') return refuse(429, 'too much of yours is waiting to be processed', retryAfter);
     return new Response(null, { status: 202 });
   } catch (error) {

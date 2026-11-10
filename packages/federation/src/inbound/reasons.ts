@@ -30,6 +30,8 @@ export const inboundReasons = {
   duplicate: 'Another copy of this activity was applied already.',
   'target.missing': 'The object the activity is about is not stored here (yet); it is applied again when it arrives.',
   'actor.unresolvable': 'An actor the activity names could not be fetched or is not a valid actor.',
+  'actor.id_mismatch':
+    'An actor the activity names is served under another id (its document redirects to someone else), so that actor did not send it.',
   'actor.group_cannot_act':
     'A community does not author posts, comments or votes: its Announce wraps a person’s activity, and that person is the author.',
   'actor.unknown': 'An actor update for an actor this server does not hold.',
@@ -38,6 +40,8 @@ export const inboundReasons = {
   'type.question': 'Polls (Question) are not stored yet.',
   'content.nsfw_rejected':
     'Remote NSFL content is refused, and NSFW content too while the site setting remote_nsfw.accepted is off (its default).',
+  'content.not_public':
+    'The post or comment is not addressed to Public (followers-only or direct), it or an activity carrying it: peblish stores and relays public content only.',
   'note.no_local_community': 'A top-level Note that is not addressed to a community here is not a post.',
   'vote.unchanged': 'The voter already has this vote, or has none to take back.',
   'moderators.local_collection': 'A local community’s moderators change here, not by a peer’s Add or Remove.',

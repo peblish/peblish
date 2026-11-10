@@ -9,7 +9,7 @@ import { deliverRow, inboxState, seedInboundWorld } from '@peblish/core/testing/
 import { processPending } from '../inbound/job.ts';
 import { processRow } from '../inbound/pipeline.ts';
 import { resetKeyFetchBudget } from '../inbound/throttle.ts';
-import { activityId } from '../inbound/test-support.ts';
+import { activityId, PUBLIC } from '../inbound/test-support.ts';
 import { fetchRemoteObject, maxParentDepth, type Vouch } from './object.ts';
 import { announceOf, lab, lemmy, lemmyNote, lemmyPage, lemmyuser } from './test-support.ts';
 
@@ -70,7 +70,7 @@ describe('fetching a post on demand', () => {
   test('refuses what the inbound rules refuse: another community, sensitive content, an object not on its author’s origin', async () => {
     const check = async (page: Record<string, unknown>) =>
       fetchRemoteObject(String(page.id), { vouch, fetch: serving({ [String(page.id)]: page }).fetch });
-    expect(await check(lemmyPage(310, { audience: `${lemmy}/c/other`, to: [`${lemmy}/c/other`] }))).toMatchObject({
+    expect(await check(lemmyPage(310, { audience: `${lemmy}/c/other`, to: [`${lemmy}/c/other`, PUBLIC] }))).toMatchObject({
       status: 'refused',
       reason: 'community.mismatch',
     });

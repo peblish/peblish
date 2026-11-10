@@ -11,6 +11,7 @@ import {
 } from '@peblish/core/remote/moderators';
 import { eq } from 'drizzle-orm';
 import { fetchActivity, FetchFailure, type Fetcher } from '../../actors/document.ts';
+import { federationOn } from '../../actors/federation-switch.ts';
 import { importGrant } from '../../actors/grants.ts';
 import { ActorResolveError, resolveRemoteActor } from '../../actors/resolve.ts';
 import { safeFetch } from '../../actors/safe-fetch.ts';
@@ -62,6 +63,8 @@ export async function fetchModerators(communityId: string, fetch: Fetcher = safe
   for (const apId of members.slice(0, maxMirrored)) {
     try {
       const actor = await resolveRemoteActor(apId, { fetch });
+      // A member whose document redirects to another actor is not the person the collection names.
+      if (actor.apId !== apId) continue;
       if ((actor.kind === 'Person' || actor.kind === 'Service') && !actor.deleted) moderatorIds.push(actor.id);
     } catch (error) {
       // Left out of this mirror, whether the person is gone or only their server is down: one
@@ -86,10 +89,11 @@ export async function mirrorNow(communityId: string, fetch: Fetcher = safeFetch)
  * Mirrors every community that is due (see communitiesDueForMirror); one failing community does
  * not stop the rest, and is left alone for a while (an hour when its collection cannot be read,
  * a quarter of an hour when its server is only failing), so failing communities cannot take every
- * slot of the batch from the ones behind them.
+ * slot of the batch from the ones behind them. Nothing runs while the federation switch is off.
  */
 export async function mirrorDue(options: { fetch?: Fetcher; signal?: AbortSignal; limit?: number } = {}): Promise<number> {
   let mirrored = 0;
+  if (!(await federationOn())) return mirrored;
   for (const { id, apId } of await communitiesDueForMirror(db(), options.limit)) {
     if (options.signal?.aborted) break;
     try {
