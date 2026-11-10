@@ -188,7 +188,7 @@ node tools/cutover/src/cli.ts ledger-export --db $DATABASE_URL --out $S/ledger-$
 # Restore into a NEW database, then re-apply the newest ledger export (and take a fresh export
 # from the damaged database first if it still answers):
 node tools/cutover/src/cli.ts restore --backup <dump> --db <new database url> --ledger <newest ledger export>
-node tools/cutover/src/cli.ts drill --db $DATABASE_URL --dir $S/drill   # backup, export, restore to <db>_drill, re-apply, compare, drop
+node tools/cutover/src/cli.ts drill --db $DATABASE_URL --dir $S/drill   # backup, export, restore into a new drill_<time>_<random>, re-apply, compare, drop it
 ```
 
 `restore` appends the exported rows the backup lacks (same ids, sequence moved past them), then
@@ -196,7 +196,13 @@ applies every ledger row in id order in one transaction: remote object and actor
 the actor's content when `removeContent`), their undeletions, local account deletions (the
 better-auth user goes again) and blocked media. A row with no rule stops the restore and changes
 nothing; add the rule before going live. Point the services at the restored database only after
-it reports. Run the drill once before the first outside invitee and once in week one.
+it reports.
+
+`restore` and `drill` only ever create a database: they refuse one that exists and a name longer
+than 63 bytes (Postgres would cut it to another name). The drill restores into
+`drill_<time>_<random>` on the same server, marks it, and drops only the database carrying its
+mark; it never ends another database's sessions. `--keep` leaves the drill's database for a
+rollback test; drop it by hand afterwards. Run the drill once before the first outside invitee and once in week one.
 
 ## Step 5: cutover gate (not this runbook's)
 
