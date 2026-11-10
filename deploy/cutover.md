@@ -129,8 +129,12 @@ Order on a fresh project, each step read back before the next:
 3. Copy the bundle in, then `import` (twice: the second is all `present`) and `verify`, as above.
    `import` turns the federation switch off itself, in a transaction of its own before it reads
    the bundle, so it stays off even when the import is refused; its report says so
-   (`"federation": { "deliveryEnabled": false, "wasOn": false }` after the SQL above). The SQL stays
-   as the check, and for the other switches.
+   (`"federation": { "deliveryEnabled": false, "wasOn": false }` after the SQL above). Once the
+   database has its instance actor (a repeat run), it does so through `settings.update` as the
+   system import principal, which may set only this switch and only to off, so a change it makes
+   has a private `settings.update` modlog row and `settings.updated`; on the fresh database there
+   is no actor yet for them to name, and it writes the row as the SQL does. The SQL stays as the
+   check, and for the other switches.
 4. `web` with its domain (HTTPS) and environment. A `worker` may run with the imported follows
    only while the federation switch is off (below). Then the served-documents check, the password
    reset with two-factor enrolment, and the drill.

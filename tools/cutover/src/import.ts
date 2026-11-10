@@ -10,6 +10,7 @@ import { siteSettings } from '@peblish/core/db/tables/site';
 import { communityModerators } from '@peblish/core/db/tables/moderation';
 import { peerControls } from '@peblish/core/peers/tables';
 import { updatePeer } from '@peblish/core/peers/update';
+import { updateSettings } from '@peblish/core/settings/write';
 import type { WriteTx } from '@peblish/core/db/write';
 import { storeRemoteActor } from '@peblish/core/remote/actors';
 import { tx, type Tx } from '@peblish/core/tx/tx';
@@ -322,12 +323,27 @@ async function importPeerBlock(t: Tx, principal: SystemPrincipal, domain: string
 /**
  * Turns the federation switch (`delivery.enabled`) off in a transaction of its own, before the
  * import reads anything, so it stays off even when the import is refused or fails: the imported
- * follows must not reach any peer until step 8 turns it on. Written as the runbook's SQL writes
- * it (settings.update needs an admin with two-factor, and none can sign in yet); the insert
- * takes the row lock a kill-switch reader waits on. Returns whether it was on.
+ * follows must not reach any peer until step 8 turns it on. When the database has a local
+ * instance actor (a repeat run, or a database the import then refuses), it goes through
+ * settings.update as the system import principal, so a change gets its private modlog row and
+ * settings.updated. A fresh database has no actor for either to name yet (the import brings it),
+ * so there the switch is written as the runbook's SQL writes it; the insert takes the row lock a
+ * kill-switch reader waits on. Returns whether it was on.
  */
 async function federationOff(): Promise<boolean> {
   return tx(async (t) => {
+    const [instanceActor] = await t.db
+      .select({ id: actors.id })
+      .from(actors)
+      .where(and(eq(actors.local, true), eq(actors.kind, 'Application')));
+    if (instanceActor) {
+      const importer = await systemPrincipal(t.db, 'import');
+      const off = { 'delivery.enabled': false } as const;
+      const decision = await authorize('settings.update', importer, { keys: Object.keys(off), values: off }, { db: t.db });
+      if (!decision.ok) throw new ImportRefused(`settings.update refused for delivery.enabled: ${decision.reason}`);
+      const { changed } = await updateSettings.within(t, decision.grant, off);
+      return changed.length > 0;
+    }
     const [before] = await t.db.select({ value: siteSettings.value }).from(siteSettings).where(eq(siteSettings.key, 'delivery.enabled'));
     await t.db
       .insert(siteSettings)

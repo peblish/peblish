@@ -13,7 +13,7 @@ import { writer } from '@peblish/core/db/write';
 import { auth } from '@peblish/core/identity/auth';
 import { recordingTransport, useMailTransport } from '@peblish/core/identity/mail';
 import { truncateAll } from '@peblish/core/testing/db';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { beforeEach, expect, test } from 'vitest';
 import { ImportRefused, importBundle, planImport } from './import.ts';
 import { remoteCommunity, testBundle, testOrigin } from './test-bundle.ts';
@@ -22,6 +22,24 @@ beforeEach(truncateAll);
 
 const followAccepted = async () =>
   (await db().select({ type: outbox.type }).from(outbox)).filter((row) => row.type === 'follow.accepted').length;
+const instanceActorId = async () =>
+  (
+    await db()
+      .select({ id: actors.id })
+      .from(actors)
+      .where(and(eq(actors.local, true), eq(actors.kind, 'Application')))
+  )[0]?.id;
+/** The settings.update modlog rows: who changed the federation switch, under what authority. */
+const switchChanges = () =>
+  db()
+    .select({ actorId: modlog.actorId, public: modlog.public, authority: modlog.authority, details: modlog.details })
+    .from(modlog)
+    .where(eq(modlog.action, 'settings.update'));
+/** The settings.updated events in the outbox. */
+const settingsEvents = async () =>
+  (await db().select({ type: outbox.type, payload: outbox.payload }).from(outbox))
+    .filter((row) => row.type === 'settings.updated')
+    .map((row) => row.payload);
 
 test('imports the actors with their ids, inboxes and keys and the follows as accepted; a second run changes nothing', async () => {
   const bundle = await testBundle();
@@ -183,6 +201,22 @@ test('turns the federation switch off first, in its own transaction, so a refuse
     deliveryEnabled: false,
     wasOn: false,
   });
+  // A fresh database has no instance actor yet for a modlog row to name: the switch was written as the runbook's SQL writes it.
+  expect(await switchChanges()).toEqual([]);
+
+  // TN9: once the instance actor exists, the import turns it off through settings.update as the
+  // system import principal, so the change has its private modlog row and settings.updated.
+  await writer().update(siteSettings).set({ value: true }).where(eq(siteSettings.key, 'delivery.enabled'));
+  expect((await importBundle(bundle, { publicOrigin: testOrigin })).federation).toEqual({ deliveryEnabled: false, wasOn: true });
+  const instanceActor = await instanceActorId();
+  const recorded = {
+    actorId: instanceActor,
+    public: false,
+    authority: { kind: 'system', actorId: instanceActor, job: 'import', ref: null },
+    details: { public: false, changes: { 'delivery.enabled': { before: true, after: false } } },
+  };
+  expect(await switchChanges()).toEqual([recorded]);
+  expect(await settingsEvents()).toMatchObject([{ keys: ['delivery.enabled'], actorId: instanceActor }]);
 
   // A database whose migrate minted an instance actor is refused inside the import's transaction.
   await truncateAll();
@@ -192,4 +226,6 @@ test('turns the federation switch off first, in its own transaction, so a refuse
     /fresh database migrated without PUBLIC_ORIGIN/,
   );
   expect(await readSetting('delivery.enabled')).toBe(false);
+  const minted = await instanceActorId();
+  expect(await switchChanges()).toEqual([{ ...recorded, actorId: minted, authority: { ...recorded.authority, actorId: minted } }]);
 });
