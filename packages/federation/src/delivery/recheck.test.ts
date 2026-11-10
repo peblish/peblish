@@ -12,7 +12,7 @@ import { seedCommunityRemoval, seedComment, seedPost } from '@peblish/core/testi
 import { seedActor } from '@peblish/core/testing/seed';
 import { seedLocalInstance, seedSigningKey, stubFetch } from '@peblish/core/testing/seed-fed-a';
 import { enqueueDeliveries } from './queue.ts';
-import { sentContent } from './recheck.ts';
+import { sentContent, withheldReason } from './recheck.ts';
 import { deliverDue, type DeliveryOptions } from './run.ts';
 
 const inbox = 'https://lemmy.test/inbox';
@@ -121,6 +121,33 @@ test('content showing an upload the scan quarantined or blocked since is skipped
     expect((await w.retry()).counts, scanState).toMatchObject({ delivered: 0, skipped: 1 });
     expect(await w.row(id)).toMatchObject({ state: 'skipped', lastError: 'the content shows quarantined media' });
   }
+});
+
+test('a quarantined upload is found however the body writes its URL: JSON escapes, character references, percent escapes (CN2)', async () => {
+  const w = await world();
+  const image = { id: randomUUID(), kind: 'upload' as const, ownerId: w.author.id, scanState: 'quarantined' as const };
+  await writer().insert(media).values(image);
+  // Bodies as received and relayed, byte for byte: JSON.stringify never writes these forms, a peer may.
+  const announce = (object: string) =>
+    `{"type":"Announce","actor":"${w.community.apId}","object":{"type":"Create","actor":"${w.author.apId}","object":${object}}}`;
+  const page = (field: string) => `{"type":"Page","id":"${w.post.apId}",${field}}`;
+  const bodies = [
+    announce(page(`"content":"<img src=\\"https:\\/\\/fed-a.test\\/media\\/${image.id}\\">"`)),
+    announce(page(`"content":"<img src=\\"https:\\u002f\\u002ffed-a.test\\u002fmedia\\u002f${image.id}\\">"`)),
+    announce(page(`"image":{"type":"Image","url":"https:\\/\\/FED-A.test\\/media\\/${image.id.toUpperCase()}"}`)),
+    announce(page(`"content":"<img src=\\"https:&#x2F;&#x2F;fed-a.test&#47;media&sol;${image.id}\\">"`)),
+    announce(page(`"source":{"content":"![a](//fed-a.test/media%2F${image.id})","mediaType":"text/markdown"}`)),
+    announce(page(`"attachment":[[{"href":"https:\\/\\/fed-a.test\\/media\\/${image.id}"}]]`)),
+  ];
+  for (const body of bodies) expect(await withheldReason(body), body).toBe('the content shows quarantined media');
+  // Another host's /media/<id> is not this instance's upload, nor is an upload this instance does not hold.
+  expect(await withheldReason(announce(page(`"content":"https:\\/\\/other.test\\/media\\/${image.id}"`)))).toBeNull();
+  expect(await withheldReason(announce(page(`"content":"https:\\/\\/fed-a.test\\/media\\/${randomUUID()}"`)))).toBeNull();
+  // Through the worker: the escaped body queued as it came is skipped at its retry.
+  const activityApId = 'https://fed-a.test/activities/escaped';
+  await tx((t) => enqueueDeliveries(t, { activityApId, senderId: w.community.id, body: bodies[0]!, inboxes: [inbox] }));
+  expect((await w.retry()).counts).toMatchObject({ delivered: 0, skipped: 1 });
+  expect(await w.row(activityApId)).toMatchObject({ state: 'skipped', lastError: 'the content shows quarantined media' });
 });
 
 test('what an activity carries: the object of a Create or Update, an Announce unwrapped to its real object, nothing for the rest', () => {

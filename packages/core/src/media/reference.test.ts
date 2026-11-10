@@ -1,6 +1,5 @@
 import { eq } from 'drizzle-orm';
 import { beforeEach, expect, test } from 'vitest';
-import { hideNsfw, showNsfw } from '../communities/gate.ts';
 import { actors } from '../db/tables/actors.ts';
 import { comments, posts } from '../db/tables/content.ts';
 import { writer } from '../db/write.ts';
@@ -55,19 +54,23 @@ test('a post, comment or profile image stops being shown once its content is rem
   expect(await shown()).toEqual([false, false, false, false]);
 });
 
-test('an image of sensitive content follows the gate of the viewer asking', async () => {
+test('an image of sensitive content loads for a signed-in viewer with a 16+ declaration, whatever their Hide NSFW choice (CN3)', async () => {
   const w = await world();
   await writer().update(actors).set({ sensitive: true }).where(eq(actors.id, w.community.id));
-  const ask = (viewer: typeof w.viewer | null, nsfw = showNsfw) =>
+  const ask = (viewer: typeof w.viewer | null) =>
     Promise.all([
-      contentShown({ kind: 'post', id: w.post.id }, viewer, nsfw),
-      contentShown({ kind: 'comment', id: w.comment.id }, viewer, nsfw),
-      contentShown({ kind: 'actor', id: w.community.id }, viewer, nsfw),
+      contentShown({ kind: 'post', id: w.post.id }, viewer),
+      contentShown({ kind: 'comment', id: w.comment.id }, viewer),
+      contentShown({ kind: 'actor', id: w.community.id }, viewer),
     ]);
+  // Signed out, and signed in without a declaration: the sign-in and age gates hold.
   expect(await ask(null)).toEqual([false, false, false]);
   expect(await ask({ actorId: w.author.id, siteRole: 'user' })).toEqual([false, false, false]);
-  expect(await ask(w.viewer, hideNsfw)).toEqual([false, false, false]);
+  // Declared: the proxy reads no Hide NSFW choice (the default hides), so a revealed card's picture loads.
   expect(await ask(w.viewer)).toEqual([true, true, true]);
+  // A takedown still stops it.
+  await writer().update(posts).set({ removedAt: new Date() }).where(eq(posts.id, w.post.id));
+  expect(await ask(w.viewer)).toEqual([false, false, true]);
 });
 
 test('an unknown id, or an actor that is neither a person nor a community, is never shown', async () => {

@@ -1,4 +1,3 @@
-import { parseNsfwChoice } from '@peblish/core/communities/gate';
 import { mediaProxyKey, type MediaContent } from '@peblish/core/media/proxy-url';
 import { contentShown } from '@peblish/core/media/reference';
 import type { Viewer } from '@peblish/core/posts/read';
@@ -13,12 +12,14 @@ export const Route = createFileRoute('/media/proxy/$signature/$target')({
   server: {
     handlers: {
       GET: async ({ params, request }) => {
-        // The answer depends on who asks (a removed post's image, a gated community's banner), so
-        // it is read for this viewer; it is `private`, and a refusal is never cached (-handler.ts).
+        // The answer depends on who asks (a removed post's image, a sensitive community's banner for
+        // a signed-out viewer), so it is read for this viewer; it is `private`, and a refusal is
+        // never cached (-handler.ts). The browser's Hide NSFW cookies are not read: they decide how
+        // a page covers sensitive content, not whether the viewer may see it (core media/reference.ts).
         const shown = async (content: MediaContent) => {
           const { session } = await formSession(request);
           const viewer: Viewer = session ? { actorId: session.view.actorId, siteRole: session.view.siteRole } : null;
-          return contentShown(content, viewer, parseNsfwChoice(request.headers.get('cookie')));
+          return contentShown(content, viewer);
         };
         return proxyResponse(params.signature, params.target, {
           key: await mediaProxyKey(),

@@ -3,7 +3,7 @@ import { expect, test } from 'vitest';
 import { derivedKey } from '../identity/auth.ts';
 import { seedLocalInstance } from '../testing/seed-a.ts';
 import { imageSource, isImageContentType } from './image-src.ts';
-import { mediaProxyKey, proxyUrlBuilder, verifyProxyPath } from './proxy-url.ts';
+import { mediaProxyKey, proxyUrlBuilder, unwrapProxyUrl, verifyProxyPath } from './proxy-url.ts';
 
 const key = Buffer.from('a'.repeat(32));
 const build = proxyUrlBuilder(key);
@@ -162,6 +162,51 @@ test('an image shown for content a denied peer supplied never loads, wherever it
   expect(verifyProxyPath(key, ...own)?.content?.supplier).toBeNull();
   // Content whose ap_id is not a URL has no supplier to judge, so its images do not load.
   expect(imageSource(offHost, policy, { ...remote, apId: 'not a url' })).toBeNull();
+});
+
+test('a copied proxy path is signed again for the content it is shown in now, never kept as it stands (CN1)', () => {
+  const policy = {
+    origin: 'https://feddit.example',
+    remoteMedia: true,
+    proxy: build,
+    unwrap: (url: URL) => unwrapProxyUrl(key, url),
+    deniedDomains: ['piefed.example'],
+  };
+  const a = { kind: 'post', id: '0195f0a0-0000-7000-8000-00000000000a', apId: 'https://lemmy.example/post/a' } as const;
+  const b = { kind: 'post', id: '0195f0a0-0000-7000-8000-00000000000b', apId: 'https://lemmy.example/post/b' } as const;
+  const signedForA = imageSource(URL_, policy, a)!;
+  const contentOf = (path: string) => verifyProxyPath(key, ...split(path));
+  // Copied into B, absolute or relative, on this origin or another host name for it, A's path becomes B's.
+  for (const copy of [
+    `https://feddit.example${signedForA}`,
+    `https://www.feddit.example${signedForA}`,
+    `https://feddit.example${signedForA.toUpperCase().slice(0, 13)}${signedForA.slice(13)}`,
+    `https://feddit.example${signedForA.replace('proxy', '%70roxy')}`,
+  ]) {
+    const path = imageSource(copy, policy, b);
+    expect(path, copy).toBe(imageSource(URL_, policy, b));
+    expect(contentOf(path!), copy).toEqual({ url: URL_, content: { kind: 'post', id: b.id, supplier: 'lemmy.example' } });
+  }
+  // A path wrapped twice unwraps to the image; one with no content signs an expiring reference.
+  expect(imageSource(`https://feddit.example${build(`https://feddit.example${signedForA}`, null)}`, policy, b)).toBe(
+    imageSource(URL_, policy, b),
+  );
+  expect(contentOf(imageSource(`https://feddit.example${signedForA}`, policy)!)?.content).toBeNull();
+  // The supplier is judged first: B from a denied peer shows nothing, A's path and this instance's own media included.
+  const denied = { ...b, apId: 'https://piefed.example/post/b' };
+  expect(imageSource(`https://feddit.example${signedForA}`, policy, denied)).toBeNull();
+  expect(imageSource('https://feddit.example/media/0195f0a0-0000-7000-8000-000000000001', policy, denied)).toBeNull();
+  // A proxy path under this origin that is not ours, or with no way to read it, is dropped; another instance's is any remote image.
+  const forged = `https://feddit.example/media/proxy/${'A'.repeat(43)}/${split(signedForA)[1]}`;
+  expect(imageSource(forged, policy, b)).toBeNull();
+  expect(imageSource(`https://feddit.example${signedForA}`, { ...policy, unwrap: undefined }, b)).toBeNull();
+  const theirs = `https://other.example${proxyUrlBuilder(Buffer.from('o'.repeat(32)))(URL_)}`;
+  expect(contentOf(imageSource(theirs, policy, b)!)?.url).toBe(theirs);
+  // Unwrapping judges the signature alone: an expired reference still carries its URL.
+  const old = proxyUrlBuilder(key, () => 0)(URL_);
+  expect(unwrapProxyUrl(key, new URL(`https://feddit.example${old}`))).toBe(URL_);
+  expect(unwrapProxyUrl(key, new URL(`https://feddit.example${old}/extra`))).toBeNull();
+  expect(unwrapProxyUrl(Buffer.from('z'.repeat(32)), new URL(`https://feddit.example${old}`))).toBeNull();
 });
 
 test('a post link is an image when its content type says so, including the image/* placeholder', () => {

@@ -44,21 +44,67 @@ export function sentContent(body: string): { id: string; type: string | null } |
 const uuid = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}';
 const escape = (text: string) => text.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&');
 
+/** Every string in a parsed JSON value, keys included, walked without recursion (a peer's relayed JSON may nest deeply). */
+function strings(value: unknown): string[] {
+  const out: string[] = [];
+  const stack = [value];
+  while (stack.length > 0) {
+    const next = stack.pop();
+    if (typeof next === 'string') out.push(next);
+    else if (Array.isArray(next)) for (const item of next) stack.push(item);
+    else if (next !== null && typeof next === 'object')
+      for (const [key, item] of Object.entries(next)) {
+        out.push(key);
+        stack.push(item);
+      }
+  }
+  return out;
+}
+
+const named: Record<string, string> = { sol: '/', colon: ':', period: '.', amp: '&' };
+
 /**
- * Whether the body names an upload of this instance (`<origin>/media/<id>`) that is no longer
- * servable for a reason peers must respect: quarantined or blocked by the scan, or deleted.
- * Pending and failed rows are not withheld here (the image itself answers 404 until it is clean).
+ * A string as a peer reading it as HTML or as a URL would see it, so a reference written with
+ * character references (`&#x2F;`, `&sol;`) or percent escapes (`%2F`) is still found. One pass of
+ * each, as a parser decodes once.
  */
-async function mediaWithheld(q: Queryable, body: string): Promise<boolean> {
-  if (!body.includes('/media/')) return false;
+function decoded(text: string): string {
+  const html = text.replace(
+    /&(?:#x([0-9a-f]{1,6})|#(\d{1,7})|(sol|colon|period|amp));?/gi,
+    (whole: string, hex?: string, dec?: string, name?: string) => {
+      if (name) return named[name.toLowerCase()] ?? whole;
+      const code = hex ? Number.parseInt(hex, 16) : Number(dec);
+      return code > 0 && code < 0x80 ? String.fromCharCode(code) : whole;
+    },
+  );
+  return html.replace(/%([0-9a-f]{2})/gi, (whole: string, hex: string) => {
+    const code = Number.parseInt(hex, 16);
+    return code < 0x80 ? String.fromCharCode(code) : whole;
+  });
+}
+
+/**
+ * Whether the activity names an upload of this instance (`//<host>/media/<id>`, under any scheme
+ * or none) that is no longer servable for a reason peers must respect: quarantined or blocked by
+ * the scan, or deleted. The parsed body's string values are read, decoded, not its serialized text,
+ * so a URL written with JSON escapes (`https:\/\/<host>\/media\/<id>`, which a relayed body keeps
+ * byte for byte) is found (CN2 of review 2). Pending and failed rows are not withheld here (the
+ * image itself answers 404 until it is clean).
+ */
+async function mediaWithheld(q: Queryable, activity: unknown): Promise<boolean> {
   const { origin } = await localInstance(q);
-  const pattern = new RegExp(`${escape(origin)}/media/(${uuid})`, 'gi');
-  const ids = [...new Set([...body.matchAll(pattern)].flatMap((match) => (match[1] ? [match[1].toLowerCase()] : [])))];
-  if (ids.length === 0) return false;
+  const pattern = new RegExp(`//${escape(new URL(origin).host)}/media/(${uuid})`, 'gi');
+  const ids = new Set<string>();
+  for (const text of strings(activity)) {
+    const plain = decoded(text);
+    if (!plain.toLowerCase().includes('/media/')) continue;
+    for (const match of plain.matchAll(pattern)) if (match[1]) ids.add(match[1].toLowerCase());
+  }
+  if (ids.size === 0) return false;
   const withheld = await q
     .select({ id: media.id })
     .from(media)
-    .where(and(inArray(media.id, ids), or(inArray(media.scanState, ['quarantined', 'blocked']), isNotNull(media.deletedAt))))
+    .where(and(inArray(media.id, [...ids]), or(inArray(media.scanState, ['quarantined', 'blocked']), isNotNull(media.deletedAt))))
     .limit(1);
   return withheld.length > 0;
 }
@@ -75,6 +121,6 @@ export async function withheldReason(body: string, q: Queryable = db()): Promise
   const held = await heldContent(q, content.id);
   if (!held) return content.type !== null && contentTypes.has(content.type) ? 'the content is no longer held' : null;
   if (!held.servable) return 'the content is deleted or removed';
-  if (await mediaWithheld(q, body)) return 'the content shows quarantined media';
+  if (await mediaWithheld(q, JSON.parse(body))) return 'the content shows quarantined media';
   return null;
 }

@@ -1,5 +1,5 @@
 import { hostUnder } from '../peers/domains.ts';
-import type { MediaContent } from './proxy-url.ts';
+import { isProxyPath, type MediaContent } from './proxy-url.ts';
 
 /** The settings an image source depends on; web's SiteMarkdown has exactly these. */
 export type ImagePolicy = {
@@ -9,6 +9,12 @@ export type ImagePolicy = {
   remoteMedia: boolean;
   /** The proxy URL builder (proxy-url.ts); without it remote images are never loaded. */
   proxy?: (url: string, content?: MediaContent | null) => string;
+  /**
+   * The remote URL inside a proxy path this instance signed, on any host (proxy-url.ts
+   * unwrapProxyUrl with the proxy's key), or null. Without it every proxy path under this
+   * instance's origin is dropped.
+   */
+  unwrap?: (url: URL) => string | null;
   /**
    * Peer domains whose media is denied (peers/gate.ts deniedMediaDomains): an image hosted at or
    * under one, or shown for content one of them supplied, is treated like remote media switched off.
@@ -43,7 +49,10 @@ const ROOT_RELATIVE = /^\/(?![/\\])/;
  * is treated like any other URL, so it is never an `<img src>` that leaves the host. `content`
  * is what the image is shown for, signed into the proxy URL with its supplier so the proxy
  * refuses it once that content is withheld or that peer's media is denied; without it the URL
- * expires (proxy-url.ts).
+ * expires (proxy-url.ts). Content a denied peer supplied shows no image at all, its own media
+ * included. A proxy path this instance signed, copied into a body as an image (CN1 of review 2),
+ * is unwrapped to the URL it carries and signed again for this content, so it never keeps the
+ * content and supplier it was signed for; any other proxy path under this origin is dropped.
  */
 export function imageSource(url: string | null | undefined, policy: ImagePolicy, content: ImageContent | null = null): string | null {
   if (!url) return null;
@@ -54,13 +63,20 @@ export function imageSource(url: string | null | undefined, policy: ImagePolicy,
     return null;
   }
   if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') return null;
-  const path = `${parsed.pathname}${parsed.search}`;
-  if (parsed.origin === policy.origin && ROOT_RELATIVE.test(path)) return path;
-  if (!policy.remoteMedia || !policy.proxy) return null;
   const signed = content ? signedContent(content, policy.origin) : null;
   if (signed === undefined) return null;
   const denied = (host: string) => policy.deniedDomains?.some((domain) => hostUnder(host, domain)) ?? false;
-  if (denied(parsed.host) || (signed?.supplier && denied(signed.supplier))) return null;
+  if (signed?.supplier && denied(signed.supplier)) return null;
+  const own = parsed.origin === policy.origin;
+  if (isProxyPath(parsed)) {
+    const inner = policy.unwrap?.(parsed) ?? null;
+    // Each unwrap peels one signed layer off a strictly shorter URL, so this ends.
+    if (inner !== null) return imageSource(inner, policy, content);
+    if (own) return null;
+  }
+  const path = `${parsed.pathname}${parsed.search}`;
+  if (own && ROOT_RELATIVE.test(path)) return path;
+  if (!policy.remoteMedia || !policy.proxy || denied(parsed.host)) return null;
   try {
     return policy.proxy(url, signed);
   } catch {
