@@ -1,10 +1,8 @@
-import { mkdirSync } from 'node:fs';
-import { join } from 'node:path';
 import { parseArgs } from 'node:util';
 import { closePools } from '@peblish/core/db/pools';
 import { crossCheckKeyFiles, exportBundle, inventory } from './archive.ts';
 import { readBundle, rehostBundle, writeBundle } from './bundle.ts';
-import { backup, dropDatabase, exportLedger, reapplyLedger, readLedgerExport, restore, tableCounts } from './drill.ts';
+import { backup, exportLedger, reapplyLedger, readLedgerExport, restore, runDrill } from './drill.ts';
 import { importBundle } from './import.ts';
 import { verifyImport } from './verify.ts';
 
@@ -16,8 +14,8 @@ import { verifyImport } from './verify.ts';
 //   node tools/cutover/src/cli.ts verify [--bundle <file> [--rehearsal-host <host>]] [--json] (DATABASE_URL)
 //   node tools/cutover/src/cli.ts backup --db <url> --out <file>
 //   node tools/cutover/src/cli.ts ledger-export --db <url> --out <file>
-//   node tools/cutover/src/cli.ts restore --backup <file> --db <new database url> [--ledger <file>]
-//   node tools/cutover/src/cli.ts drill --db <url> --dir <scratch folder> [--keep]
+//   node tools/cutover/src/cli.ts restore --backup <file> --db <new database url> [--ledger <file>]   (refuses an existing database)
+//   node tools/cutover/src/cli.ts drill --db <url> --dir <scratch folder> [--keep]                  (restores into a new drill_<time>_<random>)
 //
 // The bundle, backups and ledger exports are written with mode 600 and never inside the
 // repository. Nothing prints key material, email addresses or password hashes.
@@ -147,29 +145,15 @@ async function main(): Promise<number> {
       return 0;
     case 'restore': {
       const url = need('db');
+      const ledger = values.ledger ? readLedgerExport(values.ledger) : [];
       await restore(need('backup'), url);
-      print(await reapplyLedger(url, values.ledger ? readLedgerExport(values.ledger) : []));
+      print(await reapplyLedger(url, ledger));
       return 0;
     }
     case 'drill': {
-      const url = need('db');
-      const dir = need('dir');
-      mkdirSync(dir, { recursive: true, mode: 0o700 });
-      const stamp = new Date().toISOString().replace(/[-:.]/g, '').slice(0, 15);
-      const file = join(dir, `backup-${stamp}.dump`);
-      const ledger = join(dir, `ledger-${stamp}.json`);
-      const target = new URL(url);
-      target.pathname = `${target.pathname.slice(1)}_drill`;
-      await backup(url, file);
-      await exportLedger(url, ledger);
-      await dropDatabase(target.href);
-      await restore(file, target.href);
-      const reapplied = await reapplyLedger(target.href, readLedgerExport(ledger));
-      const [source, restored] = [await tableCounts(url), await tableCounts(target.href)];
-      const differences = Object.keys(source).filter((table) => source[table] !== restored[table]);
-      print({ backup: file, ledger, reapplied, source, restored, differences });
-      if (!values.keep) await dropDatabase(target.href);
-      return differences.length === 0 ? 0 : 1;
+      const report = await runDrill(need('db'), need('dir'), { keep: values.keep === true });
+      print(report);
+      return report.differences.length === 0 ? 0 : 1;
     }
     default:
       throw new Usage(`unknown command ${command ?? '(none)'}; see the comment at the top of tools/cutover/src/cli.ts`);

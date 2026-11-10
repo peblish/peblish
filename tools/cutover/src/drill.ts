@@ -1,5 +1,7 @@
 import { spawn } from 'node:child_process';
-import { closeSync, readFileSync } from 'node:fs';
+import { randomBytes, randomUUID } from 'node:crypto';
+import { closeSync, mkdirSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { type } from 'arktype';
 import postgres from 'postgres';
 import { openPrivate, writePrivate } from './bundle.ts';
@@ -10,6 +12,8 @@ import { openPrivate, writePrivate } from './bundle.ts';
 // ledger rows included. After `pg_restore` into a new database, `reapplyLedger` appends the
 // exported rows the backup lacks (keeping their ids) and then applies every ledger row in id
 // order, so nothing deleted before the incident comes back. Files are written with mode 600.
+// A restore only ever creates a new database (an existing one is refused), and the drill drops
+// only the database it created, recognised by the marker it wrote on it.
 
 type Sql = postgres.Sql;
 
@@ -69,29 +73,86 @@ export async function backup(url: string, file: string): Promise<void> {
   }
 }
 
-async function onServer(url: string, statement: (name: string) => string): Promise<void> {
-  const target = new URL(url);
-  const name = target.pathname.slice(1);
+/** Postgres cuts a longer identifier to its first 63 bytes without an error (NAMEDATALEN). */
+const maxNameBytes = 63;
+
+/** The database a URL names, refused unless it is lowercase letters, digits and underscores within 63 bytes. */
+export function databaseName(url: string): string {
+  const name = decodeURIComponent(new URL(url).pathname.slice(1));
   if (!/^[a-z0-9_]+$/.test(name)) throw new Error(`database name ${name} must be lowercase letters, digits and underscores`);
+  if (Buffer.byteLength(name) > maxNameBytes) {
+    throw new Error(`database name ${name} is longer than ${maxNameBytes} bytes, so Postgres would cut it to another name`);
+  }
+  return name;
+}
+
+/** Runs `fn` on the server's maintenance database, with the name `url` names. */
+async function onServer<T>(url: string, fn: (admin: Sql, name: string) => Promise<T>): Promise<T> {
+  const name = databaseName(url);
   const maintenance = new URL(url);
   maintenance.pathname = '/postgres';
   const admin = postgres(maintenance.href, { max: 1, onnotice: () => undefined });
   try {
-    await admin.unsafe(statement(name));
+    return await fn(admin, name);
   } finally {
     await admin.end({ timeout: 5 });
   }
 }
 
-/** Creates the database `url` names (it must not exist) and restores `file` into it. */
-export async function restore(file: string, url: string): Promise<void> {
-  await onServer(url, (name) => `create database "${name}"`);
-  const { arg, env } = connection(url);
-  await run(pgRestore(), ['--no-owner', '--no-privileges', '--exit-on-error', arg, file], env);
+/**
+ * A database this process created for a restore. Its marker is the database's comment, written
+ * when it was created; `dropOwnDatabase` drops nothing whose comment is not this marker.
+ */
+export type OwnDatabase = { url: string; name: string; marker: string };
+
+async function createOwnDatabase(url: string): Promise<OwnDatabase> {
+  return onServer(url, async (admin, name) => {
+    const exists = async () => (await admin`select 1 from pg_database where datname = ${name}`).length > 0;
+    const refuse = () => new Error(`database ${name} already exists; restore only into a new database`);
+    if (await exists()) throw refuse();
+    try {
+      await admin.unsafe(`create database "${name}"`);
+    } catch (error) {
+      // duplicate_database: another session created it in between.
+      if (error instanceof Error && 'code' in error && error.code === '42P04') throw refuse();
+      throw error;
+    }
+    const marker = `peblish.cutover restore ${randomUUID()}`;
+    await admin.unsafe(`comment on database "${name}" is '${marker}'`);
+    return { url, name, marker };
+  });
 }
 
-export async function dropDatabase(url: string): Promise<void> {
-  await onServer(url, (name) => `drop database if exists "${name}" with (force)`);
+/**
+ * Drops a database `restore` created in this process: refused when its comment is not the marker
+ * written then, so a database someone else made or serves is never touched. WITH (FORCE) ends the
+ * drill's own sessions only, since nothing else knows the name.
+ */
+export async function dropOwnDatabase(own: OwnDatabase): Promise<void> {
+  await onServer(own.url, async (admin, name) => {
+    if (name !== own.name) throw new Error(`database ${name} is not the one this run created`);
+    const [row] = await admin<{ marker: string | null }[]>`
+      select shobj_description(oid, 'pg_database') as marker from pg_database where datname = ${name}`;
+    if (!row) return;
+    if (row.marker !== own.marker) throw new Error(`database ${name} was not created by this run; it is left as it is`);
+    await admin.unsafe(`drop database "${name}" with (force)`);
+  });
+}
+
+/**
+ * Creates the database `url` names, refusing one that exists, and restores `file` into it. A
+ * restore that fails drops the half-restored database it created. Returns it, for the drill to drop.
+ */
+export async function restore(file: string, url: string): Promise<OwnDatabase> {
+  const own = await createOwnDatabase(url);
+  try {
+    const { arg, env } = connection(url);
+    await run(pgRestore(), ['--no-owner', '--no-privileges', '--exit-on-error', arg, file], env);
+    return own;
+  } catch (error) {
+    await dropOwnDatabase(own);
+    throw error;
+  }
 }
 
 async function readLedger(sql: Sql | postgres.TransactionSql): Promise<LedgerRow[]> {
@@ -246,5 +307,42 @@ export async function tableCounts(url: string): Promise<Record<string, number>> 
     return counts;
   } finally {
     await sql.end({ timeout: 5 });
+  }
+}
+
+export type DrillReport = {
+  backup: string;
+  ledger: string;
+  database: string;
+  kept: boolean;
+  reapplied: ReapplyReport;
+  source: Record<string, number>;
+  restored: Record<string, number>;
+  differences: string[];
+};
+
+/**
+ * The drill: back up the database `url` names into `dir`, export its ledger, restore into a new
+ * database `drill_<time>_<random>` on the same server (created here, refused if it exists),
+ * re-apply the ledger and compare row counts. The new database is dropped afterwards unless
+ * `keep`; nothing else on the server is dropped or disconnected.
+ */
+export async function runDrill(url: string, dir: string, options: { keep?: boolean } = {}): Promise<DrillReport> {
+  mkdirSync(dir, { recursive: true, mode: 0o700 });
+  const stamp = new Date().toISOString().replace(/[-:.]/g, '').slice(0, 15).toLowerCase();
+  const backupFile = join(dir, `backup-${stamp}.dump`);
+  const ledger = join(dir, `ledger-${stamp}.json`);
+  const target = new URL(url);
+  target.pathname = `/drill_${stamp}_${randomBytes(3).toString('hex')}`;
+  await backup(url, backupFile);
+  await exportLedger(url, ledger);
+  const own = await restore(backupFile, target.href);
+  try {
+    const reapplied = await reapplyLedger(own.url, readLedgerExport(ledger));
+    const [source, restored] = [await tableCounts(url), await tableCounts(own.url)];
+    const differences = Object.keys(source).filter((table) => source[table] !== restored[table]);
+    return { backup: backupFile, ledger, database: own.name, kept: options.keep === true, reapplied, source, restored, differences };
+  } finally {
+    if (!options.keep) await dropOwnDatabase(own);
   }
 }

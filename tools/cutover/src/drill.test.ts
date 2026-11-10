@@ -11,7 +11,18 @@ import { truncateAll } from '@peblish/core/testing/db';
 import { eq, sql } from 'drizzle-orm';
 import postgres from 'postgres';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
-import { backup, clientMajor, dropDatabase, exportLedger, readLedgerExport, reapplyLedger, restore } from './drill.ts';
+import {
+  backup,
+  clientMajor,
+  databaseName,
+  dropOwnDatabase,
+  exportLedger,
+  readLedgerExport,
+  reapplyLedger,
+  restore,
+  runDrill,
+  type OwnDatabase,
+} from './drill.ts';
 
 // The drill on the lane's test database: back it up, record deletions after the backup, restore
 // the backup into a new database and re-apply the exported ledger. pg_dump refuses a server newer
@@ -27,16 +38,27 @@ const tools = Math.min(
 
 describe.skipIf(tools < major)('backup and restore drill', () => {
   const url = process.env.DATABASE_URL ?? '';
-  const restoredUrl = (() => {
+  const named = (name: string) => {
     const parsed = new URL(url);
-    parsed.pathname = `${parsed.pathname}_drill`;
+    parsed.pathname = `/${name}`;
     return parsed.href;
-  })();
+  };
+  const restoredUrl = named(`${databaseName(url)}_restored`);
+  // What the drill used to restore into and drop WITH (FORCE): a database someone may be serving.
+  const occupiedUrl = named(`${databaseName(url)}_drill`);
   const dir = mkdtempSync(join(tmpdir(), 'cutover-drill-'));
-  // Dropping a database forces a checkpoint, which takes seconds while the other test projects write.
-  beforeAll(() => dropDatabase(restoredUrl), 60_000);
+  const server = postgres(named('postgres'), { max: 1, onnotice: () => undefined });
+  const exists = async (name: string) => (await server`select 1 from pg_database where datname = ${name}`).length > 0;
+  let own: OwnDatabase | undefined;
+  // Creating and dropping a database forces a checkpoint, which takes seconds while the other test projects write.
+  beforeAll(async () => {
+    for (const name of [databaseName(restoredUrl), databaseName(occupiedUrl)])
+      await server.unsafe(`drop database if exists "${name}" with (force)`);
+  }, 60_000);
   afterAll(async () => {
-    await dropDatabase(restoredUrl);
+    if (own) await dropOwnDatabase(own);
+    await server.unsafe(`drop database if exists "${databaseName(occupiedUrl)}" with (force)`);
+    await server.end({ timeout: 5 });
     rmSync(dir, { recursive: true, force: true });
   }, 60_000);
 
@@ -69,7 +91,7 @@ describe.skipIf(tools < major)('backup and restore drill', () => {
     const ledger = join(dir, 'ledger.json');
     expect(await exportLedger(url, ledger)).toBe(4);
 
-    await restore(file, restoredUrl);
+    own = await restore(file, restoredUrl);
     const restored = postgres(restoredUrl, { max: 1, onnotice: () => undefined });
     try {
       // The backup alone brings the post back and keeps the comment deleted.
@@ -107,4 +129,37 @@ describe.skipIf(tools < major)('backup and restore drill', () => {
       await restored.end({ timeout: 5 });
     }
   });
+
+  test('the drill restores into a new database of its own and drops only that one', { timeout: 120_000 }, async () => {
+    await server.unsafe(`create database "${databaseName(occupiedUrl)}"`);
+    const occupied = postgres(occupiedUrl, { max: 1, onnotice: () => undefined });
+    try {
+      await occupied`create table served (n int)`;
+      await occupied`insert into served values (1)`;
+      const report = await runDrill(url, join(dir, 'drill'));
+      expect(report.database).toMatch(/^drill_\d{8}t\d{6}_[0-9a-f]{6}$/);
+      expect(report.differences).toEqual([]);
+      expect(await exists(report.database)).toBe(false);
+      // The database with the old drill name is still there, and its session was not ended.
+      expect((await occupied<{ n: number }[]>`select n from served`).map((row) => row.n)).toEqual([1]);
+    } finally {
+      await occupied.end({ timeout: 5 });
+    }
+  });
+
+  test(
+    'a restore refuses an existing database and a name Postgres would cut; a drop refuses a database it did not create',
+    { timeout: 60_000 },
+    async () => {
+      const file = join(dir, 'backup.dump');
+      await expect(restore(file, occupiedUrl)).rejects.toThrow(/already exists; restore only into a new database/);
+      const long = `${'a'.repeat(60)}_xyz`;
+      await expect(restore(file, named(long))).rejects.toThrow(/longer than 63 bytes/);
+      expect(await exists(long.slice(0, 63))).toBe(false);
+      await expect(
+        dropOwnDatabase({ url: occupiedUrl, name: databaseName(occupiedUrl), marker: 'peblish.cutover restore other' }),
+      ).rejects.toThrow(/was not created by this run/);
+      expect(await exists(databaseName(occupiedUrl))).toBe(true);
+    },
+  );
 });
