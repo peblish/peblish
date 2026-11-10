@@ -1,6 +1,7 @@
 import type { Uuid } from '@peblish/schema/ids';
 import type { DeviceSession, SessionView } from '@peblish/schema/session';
 import { and, desc, eq, gt } from 'drizzle-orm';
+import { siteBanned } from '../authz/roles.ts';
 import { db } from '../db/read.ts';
 import { actors } from '../db/tables/actors.ts';
 import { authSession, authUser } from '../db/tables/auth.ts';
@@ -40,6 +41,7 @@ export async function currentSession(headers: Headers): Promise<CurrentSession |
       twoFactorEnabled: authUser.twoFactorEnabled,
       declaredAt: ageDeclarations.declaredAt,
       sessionPassed: sessionTwoFactor.sessionId,
+      siteBanned: siteBanned(actors.id),
     })
     .from(actors)
     .innerJoin(authUser, eq(authUser.id, actors.userId))
@@ -49,8 +51,9 @@ export async function currentSession(headers: Headers): Promise<CurrentSession |
   if (!row || row.deletedAt) return null;
   const role = row.role === 'admin' ? 'admin' : 'user';
   const twoFactorEnabled = row.twoFactorEnabled === true;
-  // Admin needs the account's second factor and this session to have passed it (B07 A1).
-  const admin = role === 'admin' && twoFactorEnabled && row.sessionPassed !== null;
+  // Admin needs the account's second factor and this session to have passed it (B07 A1), and
+  // no site ban in force: a banned person has no staff authority, read or write (B07 A3).
+  const admin = role === 'admin' && twoFactorEnabled && row.sessionPassed !== null && !row.siteBanned;
   return {
     view: {
       userId: response.user.id,

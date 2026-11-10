@@ -1,6 +1,7 @@
 import type { Authority } from '@peblish/schema/authz';
 import type { Uuid } from '@peblish/schema/ids';
-import { and, eq, gt, isNotNull, isNull, or, sql } from 'drizzle-orm';
+import { and, eq, gt, isNotNull, isNull, or, sql, type Column, type SQL } from 'drizzle-orm';
+import { siteBans } from '../bans/tables.ts';
 import { actors } from '../db/tables/actors.ts';
 import { authUser } from '../db/tables/auth.ts';
 import { communityModerators } from '../db/tables/moderation.ts';
@@ -13,15 +14,25 @@ import { isBanned, type CommunityState, type StateRead } from './state.ts';
 // in the principal refresh (principal.ts), so a site-banned actor never reaches a policy that
 // runs with lock.
 
+/** Whether a site ban on `actorId` is in force (no expiry, or one ahead). */
+export const siteBanned = (actorId: SQL | Column) =>
+  sql<boolean>`exists (select 1 from ${siteBans} where ${siteBans.actorId} = ${actorId} and (${siteBans.expiresAt} is null or ${siteBans.expiresAt} > now()))`;
+
 /**
  * A local row grants until its expires_at, if it has one. A remote row mirrors the community's
  * moderators collection: it grants only once verified and until its expires_at, so a mirror
- * that was never confirmed, or not refreshed in time, grants nothing. Exported so the read
- * models that list moderators or badges apply the same rule.
+ * that was never confirmed, or not refreshed in time, grants nothing. Neither grants while the
+ * moderator is site-banned (B07 A3): the person keeps the row, but no staff read (report
+ * queues and details, private modlog rows, moderator views of content) and no listing counts
+ * them until the ban ends. Exported so the read models that list moderators or badges, and
+ * every moderator read, apply the same rule.
  */
-export const freshModerator = or(
-  and(eq(communityModerators.source, 'local'), or(isNull(communityModerators.expiresAt), gt(communityModerators.expiresAt, sql`now()`))),
-  and(eq(communityModerators.source, 'remote'), isNotNull(communityModerators.verifiedAt), gt(communityModerators.expiresAt, sql`now()`)),
+export const freshModerator = and(
+  or(
+    and(eq(communityModerators.source, 'local'), or(isNull(communityModerators.expiresAt), gt(communityModerators.expiresAt, sql`now()`))),
+    and(eq(communityModerators.source, 'remote'), isNotNull(communityModerators.verifiedAt), gt(communityModerators.expiresAt, sql`now()`)),
+  ),
+  sql`not ${siteBanned(communityModerators.moderatorId)}`,
 );
 
 /**
@@ -96,6 +107,15 @@ export async function moderationAuthority(
       : deny('mod.announce_mismatch');
   }
   if (principal.kind === 'system') return deny('mod.moderator_required');
+  // A read (no lock) skips the principal refresh, and a cached role predates any ban: refuse a
+  // site-banned person here as the refresh does for writes (B07 A3).
+  if (!request.lock) {
+    const [ban] = await request.db
+      .select({ actorId: siteBans.actorId })
+      .from(siteBans)
+      .where(and(eq(siteBans.actorId, principal.actorId), or(isNull(siteBans.expiresAt), gt(siteBans.expiresAt, sql`now()`))));
+    if (ban) return deny('auth.site_banned');
+  }
   if (await isBanned(request, community.id, principal.actorId)) return deny('community.banned');
   const role = await communityRole(request, community.id, principal.actorId);
   return role ? allow({ kind: 'local-role', actorId: principal.actorId, role, communityId: community.id }) : deny('mod.moderator_required');

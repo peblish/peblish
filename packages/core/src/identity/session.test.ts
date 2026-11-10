@@ -1,6 +1,7 @@
 import { eq } from 'drizzle-orm';
 import { beforeEach, expect, test } from 'vitest';
 import { currentPrincipal } from '../authz/principal.ts';
+import { siteBans } from '../bans/tables.ts';
 import { authSession } from '../db/tables/auth.ts';
 import { writer } from '../db/write.ts';
 import { truncateAll } from '../testing/db.ts';
@@ -107,6 +108,15 @@ test('an admin counts as one only with two-factor on, in a session that passed i
   // A password change replaces the session and keeps its mark.
   const changed = await changePasswordAs(admin!.sessionId, passed, { current: andrew.password, next: 'a new twelve char password' });
   expect((await currentSession(cookiesOf(new Headers(changed.map((cookie) => ['set-cookie', cookie])))))?.view.siteRole).toBe('admin');
+});
+
+test('a site-banned admin account has no admin authority (B07 A3)', async () => {
+  const andrew = await seedAccount('andrew', { role: 'admin' });
+  const { secret } = await seedTwoFactor(andrew.userId);
+  const passed = await signInWithCode(andrew.email, andrew.password, totpCode(secret));
+  expect((await currentSession(passed))?.view.siteRole).toBe('admin');
+  await writer().insert(siteBans).values({ actorId: andrew.actorId, source: 'local' });
+  expect((await currentSession(passed))?.view.siteRole).toBe('user');
 });
 
 test('confirming a TOTP setup signs every other session out (B07 A1)', async () => {
