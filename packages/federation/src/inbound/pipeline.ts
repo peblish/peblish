@@ -131,14 +131,24 @@ function fetchBudget(base: Fetcher, row: InboxRow): FetchBudget {
 
 const handlers = new Map<string, InboundHandler>(inboundHandlers.map((handler) => [handler.type, handler]));
 
+/**
+ * Every actor the pipeline resolves (the activity's actor, a nested activity's, an actor a
+ * handler targets) must be the actor asked for. The resolver follows an actor document's
+ * redirects and accepts the address it ends at, so `rogue.test/u/x` redirecting to
+ * `victim.test/u/y` resolves to y: a Delete sent as x would delete y. Here the resolved id must
+ * equal the requested one exactly. (Finding an actor by an alias, as search does, is resolve/web.ts.)
+ */
 async function resolveActor(apId: string, fetch: Fetcher, options: Pick<ResolveOptions, 'maxAgeMs'> = {}): Promise<ResolvedActor> {
+  let resolved: ResolvedActor;
   try {
-    return await resolveRemoteActor(apId, { fetch, ...options });
+    resolved = await resolveRemoteActor(apId, { fetch, ...options });
   } catch (error) {
     // A peer that is down is retried; an actor that is gone, blocked or malformed will not change.
     if (error instanceof ActorResolveError && !error.transient) throw skip('actor.unresolvable', apId);
     throw error;
   }
+  if (resolved.apId !== apId) throw skip('actor.id_mismatch', apId);
+  return resolved;
 }
 
 async function makeEnv(options: PipelineOptions, row: InboxRow): Promise<Env> {

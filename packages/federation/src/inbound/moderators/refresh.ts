@@ -62,6 +62,8 @@ export async function fetchModerators(communityId: string, fetch: Fetcher = safe
   for (const apId of members.slice(0, maxMirrored)) {
     try {
       const actor = await resolveRemoteActor(apId, { fetch });
+      // A member whose document redirects to another actor is not the person the collection names.
+      if (actor.apId !== apId) continue;
       if ((actor.kind === 'Person' || actor.kind === 'Service') && !actor.deleted) moderatorIds.push(actor.id);
     } catch (error) {
       // Left out of this mirror, whether the person is gone or only their server is down: one
