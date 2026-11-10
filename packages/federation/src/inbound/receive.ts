@@ -27,7 +27,7 @@ import { takeIntake, takeIntakeBytes, takeKeyLookup } from './throttle.ts';
 //   blocked peer       403                 the signer's instance is blocked here (peers/gate.ts); nothing is stored
 //   paused peer        503 + Retry-After   the signer's instance has its inbox paused; it retries, nothing is lost
 //   not an activity    400                 or a body that is not strictly UTF-8: the relay sends the exact bytes, which
-//                                          must then be exactly the text that was read
+//                                          must then be exactly the text that was read; or a type or id over its limit
 //   throttled          429 + Retry-After   too many key lookups from this address or for this host (throttle.ts), or
 //                                          the signer or its instance is over its request rate or has too many
 //                                          bytes waiting in inbox_raw, or its instance, or everyone, has stored
@@ -44,6 +44,8 @@ export const maxBodyBytes = 512 * 1024;
 
 /** The longest activity `type` taken (no ActivityPub type comes near it): it is stored in a column of its own, outside the body. */
 export const maxActivityTypeLength = 64;
+/** The longest activity `id` taken: it is stored in a column of its own and matched by the repeat check, so it survives the body cut. */
+export const maxActivityIdLength = 2048;
 const retryAfter = { 'Retry-After': '300' };
 /** Bytes a signer, and all the signers of one instance, may have waiting in inbox_raw (a pipeline that falls behind makes peers wait). */
 export const pendingBytesLimit = { signer: 8 * 1024 * 1024, instance: 32 * 1024 * 1024 };
@@ -240,6 +242,7 @@ export async function receiveInbound(request: Request, options: ReceiveOptions =
     const actor = isObject(activity) ? idOf(activity.actor) : null;
     if (!isObject(activity) || typeof activity.type !== 'string' || actor === null) return refuse(400, 'not an activity');
     if (activity.type.length > maxActivityTypeLength) return refuse(400, 'the activity type is too long');
+    if (typeof activity.id === 'string' && activity.id.length > maxActivityIdLength) return refuse(400, 'the activity id is too long');
     // The key must be the actor's own: a server speaks for its own people, and nobody else's.
     if (signature.ownerApId !== actor) return refuse(401, 'signature: the key does not belong to the actor');
     // What the admin decided about this peer (M18): a paused inbox asks it to come back, a blocked one is refused. Nothing is stored either way.

@@ -8,7 +8,7 @@ import { forgetKeyRefreshes } from '../signing/inbound.ts';
 import { signDelivery } from '../signing/sign.ts';
 import { processPending } from './job.ts';
 import { keptPrefixBytes, maxErrorLength } from './queue.ts';
-import { maxActivityTypeLength, maxBodyBytes, receiveInbound } from './receive.ts';
+import { maxActivityIdLength, maxActivityTypeLength, maxBodyBytes, receiveInbound } from './receive.ts';
 import { intakeByteBudget, resetKeyFetchBudget, takeIntakeBytes } from './throttle.ts';
 import { activityId, addressedToCommunity, hosts } from './test-support.ts';
 
@@ -128,6 +128,19 @@ describe('what the inbox keeps of a rejected body outside the body', () => {
     expect((await receiveInbound(await signed(atLimit))).status).toBe(202);
     await processPending();
     expect(await kept()).toEqual([{ type: longest, state: 'skipped', error: `type.unhandled ${longest}`, bytes: expect.any(Number) }]);
+  });
+
+  test('an activity whose id is longer than 2,048 characters is refused at the door, and nothing is stored', async () => {
+    const prefix = 'https://lemmy.test/activities/like/';
+    const id = (length: number) => `${prefix}${'i'.repeat(length - prefix.length)}`;
+    const body = JSON.stringify({ ...like(hosts.t1), id: id(maxActivityIdLength + 1) });
+    const response = await receiveInbound(await signed(body));
+    expect([response.status, await response.text()]).toEqual([400, 'the activity id is too long']);
+    expect(await db().select().from(inboxRaw)).toEqual([]);
+
+    // An id at the limit is taken.
+    expect((await receiveInbound(await signed(JSON.stringify({ ...like(hosts.t1), id: id(maxActivityIdLength) })))).status).toBe(202);
+    expect(await db().select({ id: inboxRaw.activityId }).from(inboxRaw)).toEqual([{ id: id(maxActivityIdLength) }]);
   });
 
   test('the error of a row settled for good is bounded, and a target.missing error keeps every id whole', async () => {
