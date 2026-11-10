@@ -6,7 +6,7 @@ import type { ResolvedActor } from '../../actors/resolve.ts';
 import type { CommentRecord, ContentObject, PostRecord } from '../../mapping/records.ts';
 import {
   checkAuthorIsPerson,
-  checkCommunity,
+  checkContentCommunity,
   checkObject,
   claimedCommunity,
   communityById,
@@ -58,7 +58,7 @@ async function preparePage(ctx: InboundContext, post: PostRecord, verb: 'Create'
   const held = verb === 'Update' ? await storedContent(db(), post.apId) : null;
   const community = held ? await heldPostCommunity(db(), held, post) : await claimedCommunity(ctx, post.communityApId);
   if (community.kind !== 'Group') throw skip('community.mismatch', post.communityApId);
-  checkCommunity(ctx, community, null);
+  await checkContentCommunity(ctx, community, null);
   return prepared(ctx, async (t) => {
     // Read again in the transaction: a copy of the Create may have stored it meanwhile.
     const existing = verb === 'Update' ? await storedContent(t.db, post.apId) : null;
@@ -99,7 +99,7 @@ async function prepareNote(ctx: InboundContext, comment: CommentRecord, verb: 'C
   if (held) checkSameReply(held, parent, comment.inReplyToApId);
   if (!parent) throw skip('target.missing', comment.inReplyToApId);
   const community = await communityById(db(), parent.communityId);
-  checkCommunity(ctx, community, audienceOf(ctx));
+  await checkContentCommunity(ctx, community, audienceOf(ctx));
   return prepared(ctx, async (t) => {
     const existing = await storedContent(t.db, comment.apId);
     if (existing && verb === 'Update') {

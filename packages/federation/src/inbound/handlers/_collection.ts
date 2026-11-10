@@ -5,7 +5,7 @@ import { mirrorModerators } from '@peblish/core/remote/moderators';
 import { eq, or } from 'drizzle-orm';
 import { importGrant } from '../../actors/grants.ts';
 import type { ResolvedActor } from '../../actors/resolve.ts';
-import { checkCommunity, claimedCommunity, communityById, grantFor, storedContent } from '../authorize.ts';
+import { checkCommunity, claimFor, claimedCommunity, communityById, grantFor, storedContent } from '../authorize.ts';
 import { prepared, type InboundContext, type Prepared } from '../handler.ts';
 import { fetchModerators } from '../moderators/refresh.ts';
 import { skip } from '../reasons.ts';
@@ -37,7 +37,7 @@ async function prepareFeatured(
   pinning: boolean,
 ): Promise<Prepared> {
   const community = await communityById(db(), communityId);
-  checkCommunity(ctx, community, ctx.activity.communityApId);
+  checkCommunity(ctx, community, claimFor(ctx, community));
   if (targetApId !== (await collectionUrls(communityId)).featured) throw skip('collection.mismatch', targetApId);
   return prepared(ctx, async (t) => {
     const input = { activityApId: ctx.activity.id };
@@ -65,7 +65,7 @@ async function prepareModerators(ctx: InboundContext, objectApId: string, target
     throw skip('collection.unknown', targetApId);
   }
   if (community.local) throw skip('moderators.local_collection', community.apId);
-  checkCommunity(ctx, community, ctx.activity.communityApId);
+  checkCommunity(ctx, community, claimFor(ctx, community));
   const fetched = await fetchModerators(community.id, ctx.fetch);
   const grant = await importGrant('remote.moderators_mirror', { communityId: community.id });
   return prepared(ctx, async (t) => {

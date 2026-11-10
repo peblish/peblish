@@ -59,6 +59,23 @@ test('the admin bans a peer’s person by handle, sees it listed and in the publ
   expect(console.hydrationProblems()).toEqual([]);
 });
 
+test('the admin bans a local bot (a Service actor) by handle, and lifts it', async ({ page }) => {
+  await signedInAdmin(page, world);
+  await gotoHydrated(page, '/admin/bans');
+  await page.getByLabel('Ban someone').fill(`@${world.bot.name}`);
+  await page.getByRole('button', { name: 'Check' }).click();
+  const confirm = page.getByTestId('ban-confirm');
+  await expect(confirm).toContainText(`Ban @${world.bot.name} from this instance?`);
+  await confirm.getByLabel('Length').selectOption('permanent');
+  await confirm.getByRole('textbox', { name: 'Reason' }).fill('Spam bot');
+  await confirm.getByRole('button', { name: 'Ban', exact: true }).click();
+  const row = page.getByTestId('ban-row').filter({ hasText: world.bot.name });
+  await expect(row).toContainText('Spam bot');
+  await row.getByText('Lift', { exact: true }).click();
+  await row.getByRole('button', { name: 'Lift ban' }).click();
+  await expect(page.getByTestId('ban-row').filter({ hasText: world.bot.name })).toHaveCount(0);
+});
+
 test('a banned local person keeps reading and is refused every write', async ({ page, browser }) => {
   const admin = await freshPage(browser);
   await signedInAdmin(admin, world);

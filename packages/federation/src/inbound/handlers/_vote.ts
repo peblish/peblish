@@ -1,6 +1,6 @@
 import { db } from '@peblish/core/db/read';
 import { castVote } from '@peblish/core/votes/cast';
-import { checkAuthorIsPerson, checkCommunity, communityById, grantFor, requireContent } from '../authorize.ts';
+import { checkAuthorIsPerson, checkCommunity, claimFor, communityById, grantFor, requireContent } from '../authorize.ts';
 import { prepared, type InboundContext, type Prepared } from '../handler.ts';
 import { skip } from '../reasons.ts';
 
@@ -15,7 +15,7 @@ export async function prepareVote(ctx: InboundContext, targetApId: string, cast:
   checkAuthorIsPerson(ctx);
   const target = await requireContent(db(), targetApId);
   const community = await communityById(db(), target.communityId);
-  checkCommunity(ctx, community, ctx.activity.communityApId);
+  checkCommunity(ctx, community, claimFor(ctx, community));
   return prepared(ctx, async (t) => {
     const grant = await grantFor(ctx, t, 'vote.cast', { target: { kind: target.kind, id: target.id } });
     // The vote already held, or none to take back, changes nothing.

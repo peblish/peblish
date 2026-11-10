@@ -39,6 +39,10 @@ export type PeerModeration = {
   featurePost(token: string, postId: number, featured: boolean): Promise<void>;
   ban(token: string, communityId: number, personId: number, ban: boolean, reason: string): Promise<void>;
   reportPost(token: string, postId: number, reason: string): Promise<void>;
+  /** An instance-wide ban of one of the peer's own people by its admin; `removeData` also removes their content. */
+  siteBan?(token: string, personId: number, ban: boolean, reason: string, removeData: boolean): Promise<void>;
+  /** Whether the peer lists an open report on one of its posts (admin token); null when its API cannot say. */
+  reported(token: string, postId: number): Promise<boolean | null>;
   /** Actor ids the peer lists as moderators of one of its communities (local or remote). */
   moderators(token: string, communityId: number): Promise<string[]>;
   /** Makes a person a moderator of a community on this peer (admin or owner token). */

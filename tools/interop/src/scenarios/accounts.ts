@@ -3,7 +3,7 @@
 // deletion ledger as `remote.actor_deleted`.
 import { seedAccount } from '@peblish/core/testing/seed-a';
 import type { Group } from '../context.ts';
-import { type KnownDefect, NotApplicable, PASSWORD, waitFor } from '../lab.ts';
+import { NotApplicable, PASSWORD, waitFor } from '../lab.ts';
 import { expectDelivery, expectInbound } from '../match.ts';
 import { peblish } from '../peblish.ts';
 import { postOnPeer, prepare, storedPost, tag } from './support.ts';
@@ -15,34 +15,34 @@ export const accounts: Group = {
     for (const peer of ctx.peers) {
       const side = await prepare(ctx, peer);
 
-      // S2/out: a peblish user posts, deletes the account, and the Delete reaches the peer.
-      // Lemmy keeps a deleted person's posts unless the Delete says `removeData`, which peblish's does not.
-      const lemmyKeeps: KnownDefect | undefined =
-        peer.name === 'lemmy'
-          ? {
-              explanation: "peblish's account Delete carries no removeData, so Lemmy keeps the account's posts visible",
-              signature: "timed out waiting for lemmy to hide the deleted account's post",
-            }
-          : undefined;
-      await rec.scenario(
-        'S2/out',
-        peer.name,
-        async () => {
-          const name = `gone${ctx.run}${peer.name}`;
-          await seedAccount(name, { password: PASSWORD });
-          const created = await peblish.createPost(name, community.id, { title: tag(ctx, 'S2', peer), bodyMd: 'Soon gone.' });
-          const onPeer = await postOnPeer(side, side.labOnPeer, created.apId);
-          const started = new Date();
-          await peblish.deleteAccount(name);
-          await expectDelivery(ctx.sql, { since: started, type: 'Delete', host: new URL(peer.origin).host }, { state: 'delivered' });
-          await waitFor(`${peer.name} to hide the deleted account's post`, async () => {
+      // S2/out: a peblish user posts, deletes the account, and the Delete reaches the peer. A deletion
+      // here keeps the account's posts, so the Delete says `removeData: false`; what the peer does with
+      // the post is its own rule (Lemmy keeps it, PieFed and Mbin hide it), so it is noted, not asserted.
+      await rec.scenario('S2/out', peer.name, async () => {
+        const name = `gone${ctx.run}${peer.name}`;
+        await seedAccount(name, { password: PASSWORD });
+        const created = await peblish.createPost(name, community.id, { title: tag(ctx, 'S2', peer), bodyMd: 'Soon gone.' });
+        const onPeer = await postOnPeer(side, side.labOnPeer, created.apId);
+        const started = new Date();
+        await peblish.deleteAccount(name);
+        await expectDelivery(
+          ctx.sql,
+          { since: started, type: 'Delete', host: new URL(peer.origin).host, contains: '"removeData":false' },
+          { state: 'delivered' },
+        );
+        const hidden = await waitFor(
+          `${peer.name} to hide the deleted account's post`,
+          async () => {
             const post = await peer.getPost(side.token, onPeer.id).catch(() => null);
             return !post || post.deleted || post.removed;
-          });
-          return 'the deleted account’s Delete reached the peer and its post is gone there';
-        },
-        lemmyKeeps,
-      );
+          },
+          { timeoutMs: 15_000 },
+        ).then(
+          () => true,
+          () => false,
+        );
+        return `the Delete (removeData: false) reached the peer; it ${hidden ? 'hides' : 'keeps'} the account’s post`;
+      });
 
       // S2/in: a Lemmy user posts in !lab and deletes the account; peblish records remote.actor_deleted.
       for (const withContent of [false, true]) {

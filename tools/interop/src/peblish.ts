@@ -17,6 +17,9 @@ import { lockPost, unlockPost } from '@peblish/core/moderation/lock';
 import { pinPost, unpinPost } from '@peblish/core/moderation/pin';
 import { removeContent, restoreContent } from '@peblish/core/moderation/remove';
 import { createPostAs, deletePostAs, updatePostAs } from '@peblish/core/posts/actions';
+import { createReportAs } from '@peblish/core/reports/actions';
+import type { ReportCategory } from '@peblish/core/reports/categories';
+import { siteBanAs, siteUnbanAs } from '@peblish/core/bans/service';
 import { voteAs } from '@peblish/core/votes/service';
 import { resolveRemoteActor } from '@peblish/federation/actors/resolve';
 import { mirrorNow } from '@peblish/federation/inbound/moderators/refresh';
@@ -221,6 +224,20 @@ export const peblish = {
   },
   async unban(who: string, communityId: Uuid, targetActorId: Uuid, reason = 'lab') {
     return unbanFromCommunity(await grant('mod.unban', await as(who), { communityId, targetActorId }), { reason });
+  },
+  /** An instance-wide ban by a local admin; federates as a Block of the person with the instance as target. */
+  async siteBan(who: string, targetActorId: Uuid, reason = 'lab', removeContentToo = false) {
+    return value('mod.site_ban', await siteBanAs(await as(who), targetActorId, { reason, removeContent: removeContentToo }));
+  },
+  async siteUnban(who: string, targetActorId: Uuid, reason = 'lab') {
+    return value('mod.site_unban', await siteUnbanAs(await as(who), targetActorId, { reason }));
+  },
+  /** A report of a post, sent on to the hosts concerned when `forward` is set (a Flag, signed as the reporter). */
+  async reportPost(who: string, postId: Uuid, category: ReportCategory, details: string, forward = true) {
+    return value(
+      'report.create',
+      await createReportAs(await as(who), { target: { kind: 'post', id: postId }, category, forward, details }),
+    );
   },
   async setModerator(who: string, communityId: Uuid, actorId: Uuid, role: 'owner' | 'moderator' | null) {
     return value('community.set_moderator', await setModeratorAs(await as(who), { communityId, actorId, role }));

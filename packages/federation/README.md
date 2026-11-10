@@ -168,6 +168,14 @@ queues one `deliveries` row per (activity, inbox) with the body fixed at that mo
 nothing for `local: false` events. A post or comment in a remote community goes to that
 community's inbox; in a local community the community announces it.
 
+**A community's edit** goes out as Lemmy, PieFed and Mbin send theirs: an `Update(Group)` by the
+local person on the newest `community.update` modlog row (else the owner or a moderator),
+announced by the community to its threadiverse followers. Lemmy 0.19 reads an `Update(Group)`
+whose actor is the Group as a Person and answers 400. Mastodon-like followers get the
+community's own `Update(Group)` (they read an actor's Update only from the actor), and so does
+everyone when the community has no local staff. A person's edit is their own `Update(Person)` to
+every peer.
+
 **Announce shape.** Each follower inbox gets exactly one shape, chosen by the follower
 instance's NodeInfo software (`delivery/software.ts`, lists as data):
 `Announce(Create(Page))` (FEP-1b12) for Lemmy, PieFed, Mbin and unknown software, and
@@ -421,8 +429,13 @@ reason of every corpus fixture.
 activity's id and actor share an origin; a created object lives on its author's origin and names
 the actor; an activity inside an Announce is on the announcer's origin or read from its own;
 an Undo reverses only its actor's activity; content in a remote community counts only in that
-community's own Announce; an Announce vouches only for its own community; a community never
-authors a post, comment or vote. Who may do what to the target is core's: `grantFor` hands the
+community's own Announce, except that a Create, Update or Delete may come straight from the
+community's own host when it is addressed to the community and someone here follows it (Mbin
+never announces; the principal still has no Announce, so a removal needs a moderator core
+knows); an Announce vouches only for its own community; a community never authors a post,
+comment or vote. The community an activity claims is read from every addressee: its `audience`,
+else the target's community wherever `to` or `cc` names it (Mbin lists a comment's post author
+first), else the first other address. Who may do what to the target is core's: `grantFor` hands the
 policy a remote principal (`announcedBy` names the community whose Announce carried it, decision 10) and a refusal becomes the skip's reason. `matrix.test.ts` runs the spike's 16 cases (N0 to
 N15) and asserts the exact reason and that state is unchanged.
 

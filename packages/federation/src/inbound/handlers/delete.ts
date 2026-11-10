@@ -6,7 +6,16 @@ import { deleteRemoteActor, undeleteRemoteActor } from '@peblish/core/remote/act
 import { recordDeletion, recordRestoration } from '@peblish/core/remote/ledger';
 import type { Activity } from '../../mapping/records.ts';
 import { importGrant } from '../../actors/grants.ts';
-import { checkCommunity, communityById, grantFor, storedActor, storedContent, type Stored } from '../authorize.ts';
+import {
+  checkCommunity,
+  checkContentCommunity,
+  claimFor,
+  communityById,
+  grantFor,
+  storedActor,
+  storedContent,
+  type Stored,
+} from '../authorize.ts';
 import { prepared, type InboundContext, type InboundHandler, type Prepared } from '../handler.ts';
 import { skip, type Skipped } from '../reasons.ts';
 
@@ -38,8 +47,8 @@ const isAuthorsOwn = (sender: { id: string }, target: Stored, reason: string | n
 
 async function prepareActorDelete(ctx: InboundContext): Promise<Prepared> {
   const grant = await importGrant('remote.actor_delete', { apId: ctx.sender.apId });
-  // Lemmy's account deletion with "delete content" sets removeData on the Delete; the mapping does not carry it.
-  const removeContent = ctx.raw.removeData === true;
+  // Lemmy's account deletion with "delete content" sets removeData on the Delete.
+  const removeContent = ctx.activity.type === 'Delete' && ctx.activity.removeData === true;
   // Not one transaction: the actor is tombstoned in its own and its content removed post by post
   // (core/remote/actors.ts), so the call is made here, outside the one `prepared` opens.
   const { actorChanged, contentRemoved } = await deleteRemoteActor(grant, { removeContent, cause: 'Delete' });
@@ -65,7 +74,7 @@ export const handler: InboundHandler = {
     if (activity.objectApId === activity.actorApId) return prepareActorDelete(ctx);
     const target = await contentOrWhy(activity.objectApId);
     const community = await communityById(db(), target.communityId);
-    checkCommunity(ctx, community, activity.communityApId);
+    await checkContentCommunity(ctx, community, claimFor(ctx, community));
     const reason = reasonOf(activity.reason);
     const relayed = { communityId: community.id, objectApId: target.apId, relay: true };
     return prepared(ctx, async (t) => {
@@ -87,7 +96,7 @@ export const handler: InboundHandler = {
     if (undone.objectApId === undone.actorApId) return prepareActorUndelete(ctx);
     const target = await contentOrWhy(undone.objectApId);
     const community = await communityById(db(), target.communityId);
-    checkCommunity(ctx, community, ctx.activity.communityApId);
+    checkCommunity(ctx, community, claimFor(ctx, community));
     const removal = !isAuthorsOwn(ctx.sender, target, reasonOf(undone.reason));
     return prepared(ctx, async (t) => {
       if (removal) {

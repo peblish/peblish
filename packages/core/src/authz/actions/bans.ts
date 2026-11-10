@@ -72,7 +72,8 @@ const siteBanBy =
     }
     if (principal.kind !== 'local' || principal.siteRole !== 'admin') return deny('auth.admin_required');
     const [person] = await target(request);
-    if (!person || (person.kind !== 'Person' && person.kind !== 'Application')) return deny('target.not_found');
+    // A Service (a bot) is a person for a ban; the instance's Application is refused as protected below.
+    if (!person || person.kind === 'Group') return deny('target.not_found');
     if (person.id === principal.actorId || person.kind === 'Application') return deny('target.protected');
     if (person.userId) {
       const [user] = await forShare(db.select({ role: authUser.role }).from(authUser).where(eq(authUser.id, person.userId)), lock);
@@ -86,7 +87,7 @@ const siteBanBy =
 async function remoteSiteBan(request: PolicyRequest<Subject>, banning: boolean): Promise<PolicyResult> {
   const { principal, db, lock } = request;
   const [person] = await target(request);
-  if (!person || person.kind !== 'Person') return deny('target.not_found');
+  if (!person || (person.kind !== 'Person' && person.kind !== 'Service')) return deny('target.not_found');
   if (person.local) return deny('ban.not_remote');
   if (person.id === principal.actorId) return deny('target.protected');
   const [actor] = await forShare(db.select({ instanceId: actors.instanceId }).from(actors).where(eq(actors.id, principal.actorId)), lock);

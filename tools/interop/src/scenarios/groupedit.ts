@@ -1,7 +1,7 @@
 // S3: Update(Group). A peblish edit of !lab shows on each peer, a peer's edit of its own community
 // applies in peblish, and an Update for a community that is not the sender's own is refused.
 import type { Group } from '../context.ts';
-import { type KnownDefect, waitFor } from '../lab.ts';
+import { waitFor } from '../lab.ts';
 import { expectDelivery, expectInbound } from '../match.ts';
 import { peblish } from '../peblish.ts';
 import { rogue } from '../rogue-client.ts';
@@ -16,43 +16,25 @@ export const groupEdit: Group = {
     for (const peer of ctx.peers) {
       const side = await prepare(ctx, peer);
 
-      // S3/out: peblish edits !lab, and the peer shows the new description. Lemmy 0.19.21 parses the
-      // embedded Group of an Update sent by the community itself as a Person and answers 400; Mbin
-      // answers 200 and keeps the old description.
-      const outKnown: KnownDefect | undefined =
-        peer.name === 'lemmy'
-          ? {
-              explanation: 'Lemmy refuses an Update(Group) sent by the community itself (400: unknown variant `Group`, expected Person)',
-              signature: 'got [failed status=400',
-            }
-          : peer.name === 'mbin'
-            ? {
-                explanation: 'Mbin answers 200 to an Update(Group) from the community itself and keeps the old description',
-                signature: 'timed out waiting for mbin to show the new description',
-              }
-            : undefined;
-      await rec.scenario(
-        'S3/out',
-        peer.name,
-        async () => {
-          const mine = `Edited by peblish ${ctx.run} for ${peer.name}`;
-          const started = new Date();
-          await peblish.updateCommunity('labadmin', community.id, { description: mine });
-          await expectDelivery(
-            ctx.sql,
-            { since: started, type: 'Update', host: new URL(peer.origin).host },
-            { state: 'delivered' },
-            { timeoutMs: 45_000 },
-          );
-          await waitFor(
-            `${peer.name} to show the new description`,
-            async () => ((await peer.communityDescription(side.token, side.labOnPeer)) ?? '').includes(mine),
-            { timeoutMs: 30_000 },
-          );
-          return 'the description edited in peblish shows on the peer';
-        },
-        outKnown,
-      );
+      // S3/out: peblish edits !lab, and the peer shows the new description. peblish sends it as Lemmy
+      // does: an Update(Group) by the editor, announced by the community.
+      await rec.scenario('S3/out', peer.name, async () => {
+        const mine = `Edited by peblish ${ctx.run} for ${peer.name}`;
+        const started = new Date();
+        await peblish.updateCommunity('labadmin', community.id, { description: mine });
+        await expectDelivery(
+          ctx.sql,
+          { since: started, type: 'Announce', inner: 'Update', host: new URL(peer.origin).host, contains: mine },
+          { state: 'delivered' },
+          { timeoutMs: 45_000 },
+        );
+        await waitFor(
+          `${peer.name} to show the new description`,
+          async () => ((await peer.communityDescription(side.token, side.labOnPeer)) ?? '').includes(mine),
+          { timeoutMs: 30_000 },
+        );
+        return 'the description edited in peblish shows on the peer';
+      });
 
       // S3/in: the peer's moderator edits its own community; peblish applies the Update(Group) it announces.
       await rec.scenario('S3/in', peer.name, async () => {

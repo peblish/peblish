@@ -3,11 +3,12 @@ import { actors } from '@peblish/core/db/tables/actors';
 import { activities } from '@peblish/core/db/tables/federation';
 import { defineConsumer, type ConsumerTx } from '@peblish/core/outbox/consumers';
 import type { OutboxEvent } from '@peblish/schema/events';
-import { and, desc, eq } from 'drizzle-orm';
+import { communityModerators, modlog } from '@peblish/core/db/tables/moderation';
+import { and, desc, eq, isNull, sql } from 'drizzle-orm';
 import { accept, create, follow, note, page, remove, undoDelete, undoFollow, undoVote, update, updateActor, vote } from './activities.ts';
 import { followerInboxes, peerInboxes } from './followers.ts';
 import { newActivityId, publishInCommunity, sendActivity } from './publish.ts';
-import { actorRefs, loadComment, loadPost, localActorRecord, mentionedBefore, mentionsIn, voteTarget } from './records.ts';
+import { actorRefs, type ActorRef, loadComment, loadPost, localActorRecord, mentionedBefore, mentionsIn, voteTarget } from './records.ts';
 
 // Turns the local things that happened (the outbox events with local content) into the
 // activities peers read, stores them in `activities`, and queues them for delivery. It runs in
@@ -131,19 +132,58 @@ async function onFollow(event: Of<'follow.requested' | 'follow.accepted' | 'foll
   }
 }
 
-/** A local person's or community's profile edit goes out as an Update of its document. */
+/**
+ * Who made a community's latest edit: the local person on its newest `community.update` modlog
+ * row (written in the edit's transaction), else its owner or a moderator. The event names no
+ * one, so two edits close together may both be sent as the later editor's; both are its staff.
+ */
+async function communityEditor(t: ConsumerTx, communityId: string): Promise<ActorRef | null> {
+  const person = and(eq(actors.local, true), eq(actors.kind, 'Person'), isNull(actors.deletedAt));
+  const [edited] = await t.db
+    .select({ id: modlog.actorId })
+    .from(modlog)
+    .innerJoin(actors, eq(actors.id, modlog.actorId))
+    .where(and(eq(modlog.action, 'community.update'), eq(modlog.communityId, communityId), person))
+    .orderBy(desc(modlog.createdAt))
+    .limit(1);
+  const [staff] = edited
+    ? []
+    : await t.db
+        .select({ id: communityModerators.moderatorId })
+        .from(communityModerators)
+        .innerJoin(actors, eq(actors.id, communityModerators.moderatorId))
+        .where(and(eq(communityModerators.communityId, communityId), person))
+        .orderBy(sql`${communityModerators.role} = 'owner' desc`, communityModerators.createdAt)
+        .limit(1);
+  const id = edited?.id ?? staff?.id;
+  return id ? ((await actorRefs(t.db, [id])).get(id) ?? null) : null;
+}
+
+/**
+ * A local person's profile edit goes out as an Update of its document to every peer. A
+ * community's goes out as Lemmy, PieFed and Mbin send theirs: an Update(Group) by the moderator
+ * who made it, announced by the community to its threadiverse followers (Lemmy 0.19 reads an
+ * Update(Group) whose actor is the Group as a Person and refuses it). Mastodon-like followers
+ * drop what an Announce wraps and read an actor's Update only from the actor itself, so they get
+ * the community's own Update, as does everyone when the community has no local staff.
+ */
 async function onActor(event: Of<'actor.updated'>, t: ConsumerTx, origin: string) {
   if (!event.local || (event.kind !== 'Person' && event.kind !== 'Group')) return;
   const [row] = await t.db.select().from(actors).where(eq(actors.id, event.actorId));
   const ref = (await actorRefs(t.db, [event.actorId])).get(event.actorId);
   if (!row || !ref || row.deletedAt) return;
-  const community = row.kind === 'Group';
-  const activity = updateActor(
-    { id: newActivityId(origin), actorApId: row.apId, communityApId: community ? row.apId : null },
-    await localActorRecord(t.db, origin, row),
-  );
-  const inboxes = community ? Object.values(await followerInboxes(t.db, row.id)).flat() : await peerInboxes(t.db);
-  await sendActivity(t, ref, activity, inboxes);
+  const record = await localActorRecord(t.db, origin, row);
+  if (row.kind !== 'Group') {
+    const activity = updateActor({ id: newActivityId(origin), actorApId: row.apId, communityApId: null }, record);
+    return sendActivity(t, ref, activity, await peerInboxes(t.db));
+  }
+  const own = updateActor({ id: newActivityId(origin), actorApId: row.apId, communityApId: row.apId }, record);
+  const followers = await followerInboxes(t.db, row.id);
+  const editor = await communityEditor(t, row.id);
+  if (!editor) return sendActivity(t, ref, own, [...followers.create, ...followers.page]);
+  const byEditor = updateActor({ id: newActivityId(origin), actorApId: editor.apId, communityApId: row.apId }, record);
+  await publishInCommunity(t, { origin, author: editor, community: ref }, byEditor);
+  await sendActivity(t, ref, own, followers.page);
 }
 
 export const consumer = defineConsumer({

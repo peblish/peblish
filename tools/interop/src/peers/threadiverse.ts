@@ -249,6 +249,27 @@ export function threadiversePeer({ flavor, origin, user, admin, community, passw
       async reportPost(token, postId, reason) {
         await http('POST', `${base}/post/report`, { token, body: { post_id: postId, reason } });
       },
+      async siteBan(token, personId, ban, reason, removeData) {
+        if (lemmy) {
+          await http('POST', `${base}/user/ban`, { token, body: { person_id: personId, ban, reason, remove_data: removeData } });
+        } else if (ban) {
+          // PieFed caps the modlog note at 50 characters.
+          await http('POST', `${base}/user/ban`, {
+            token,
+            body: { person_id: personId, ban_ip_address: false, purge_content: removeData, reason: reason.slice(0, 50) },
+          });
+        } else {
+          await http('POST', `${base}/user/unban`, { token, body: { person_id: personId } });
+        }
+      },
+      async reported(token, postId) {
+        if (!lemmy) return null;
+        const { post_reports } = await http<{ post_reports: { post: { id: number } }[] }>('GET', `${base}/post/report/list`, {
+          token,
+          query: { unresolved_only: true, limit: 50 },
+        });
+        return post_reports.some((report) => report.post.id === postId);
+      },
       async moderators(token, communityId) {
         const { moderators } = await http<{ moderators?: { moderator: { actor_id: string } }[] }>('GET', `${base}/community`, {
           token,

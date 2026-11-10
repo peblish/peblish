@@ -49,7 +49,7 @@ A scenario result is one of:
 - `n/a`: the peer cannot do the action at all.
 - `known`: it failed exactly as a documented peer or product defect predicts (the exact signature is in
   the code). A `known` scenario that starts to pass is reported as such, so its entry gets removed.
-- `pending(<lane>)`: it waits for a lane that has not merged.
+- `pending(<lane>)`: it waits for a lane that has not merged (no scenario is pending since FX-INTEROP).
 
 ## Services
 

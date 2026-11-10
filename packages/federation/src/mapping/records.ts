@@ -134,8 +134,12 @@ export type Activity =
   | FollowActivity
   | (Envelope & { type: 'Accept' | 'Reject'; object: FollowActivity })
   | (Envelope & { type: 'Announce'; object: Activity | ContentObject })
-  /** A Delete by someone other than the author is a moderator's removal, with the reason in `summary`. */
-  | (Envelope & { type: 'Delete'; objectApId: string; reason: string | null })
+  /**
+   * A Delete by someone other than the author is a moderator's removal, with the reason in
+   * `summary`. An actor's Delete of itself (an account leaving) may say whether its content goes
+   * too (`removeData`, Lemmy's "delete my content"); absent on every other Delete.
+   */
+  | (Envelope & { type: 'Delete'; objectApId: string; reason: string | null; removeData?: boolean })
   | (Envelope & { type: 'Undo'; object: Activity })
   | (Envelope & { type: 'Lock'; objectApId: string })
   | (Envelope & { type: 'Flag'; report: ReportRecord })

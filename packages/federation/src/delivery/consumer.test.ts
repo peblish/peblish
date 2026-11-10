@@ -6,12 +6,13 @@ import { comments, posts } from '@peblish/core/db/tables/content';
 import { deliveries } from '@peblish/core/delivery/tables';
 import { activities } from '@peblish/core/db/tables/federation';
 import { follows } from '@peblish/core/db/tables/follows';
+import { modlog } from '@peblish/core/db/tables/moderation';
 import { instances } from '@peblish/core/db/tables/instances';
 import { writer } from '@peblish/core/db/write';
 import { tx } from '@peblish/core/tx/tx';
 import { truncateAll } from '@peblish/core/testing/db';
 import { seedActor, seedInstance } from '@peblish/core/testing/seed';
-import { grantFor, seedComment, seedPost } from '@peblish/core/testing/seed-az';
+import { grantFor, seedComment, seedModerator, seedPost } from '@peblish/core/testing/seed-az';
 import { actorDocument, nodeInfoRoutes, rsaKeys, seedLocalInstance, seedSigningKey, stubFetch } from '@peblish/core/testing/seed-fed-a';
 import { receiveFollow } from '@peblish/core/follows/follow';
 import type { OutboxEvent } from '@peblish/schema/events';
@@ -544,6 +545,64 @@ describe('profile edits', () => {
     await writer().delete(deliveries);
     await run({ type: 'actor.updated', v: 1, actorId: w.lemmy.person.id, kind: 'Person', local: false });
     expect(await queued()).toEqual([]);
+  });
+});
+
+describe('a community’s edit, as Lemmy sends it', () => {
+  test('threadiverse followers get Announce(Update(Group)) by the editor; Mastodon-like ones the community’s own Update', async () => {
+    const w = await world();
+    const mira = await seedActor(w.here, 'Person', 'mira', { inboxUrl: 'https://fed-a.test/ap/u.mira/inbox' });
+    await seedSigningKey(mira);
+    await seedModerator(w.news, w.alice, { role: 'owner' });
+    await writer().update(actors).set({ summaryMd: 'All the news' }).where(eq(actors.id, w.news.id));
+    // No modlog row: the owner is named.
+    await run({ type: 'actor.updated', v: 1, actorId: w.news.id, kind: 'Group', local: true });
+    expect(await shapes()).toEqual({
+      [w.lemmy.shared]: 'Announce(Update(Group))',
+      [w.piefed.shared]: 'Announce(Update(Group))',
+      [w.unknown.shared]: 'Announce(Update(Group))',
+      [w.mastodon.shared]: 'Update(Group)',
+    });
+    const rows = await queued();
+    const announced = rows.find((row) => row.inbox === w.lemmy.shared)!;
+    expect(announced.senderId).toBe(w.news.id);
+    expect(announced.json).toMatchObject({
+      type: 'Announce',
+      actor: w.news.apId,
+      to: ['https://www.w3.org/ns/activitystreams#Public'],
+      cc: [`${w.news.apId}/followers`],
+      object: {
+        type: 'Update',
+        actor: w.alice.apId,
+        to: ['https://www.w3.org/ns/activitystreams#Public'],
+        cc: [w.news.apId],
+        audience: w.news.apId,
+        object: { type: 'Group', id: w.news.apId },
+      },
+    });
+    // The inner Update is stored, so it is served at its id as Lemmy may fetch it.
+    const inner = (announced.json.object as Json).id as string;
+    expect(await db().select({ actor: activities.actorApId }).from(activities).where(eq(activities.apId, inner))).toEqual([
+      { actor: w.alice.apId },
+    ]);
+    const own = rows.find((row) => row.inbox === w.mastodon.shared)!;
+    expect([own.senderId, own.json.actor]).toEqual([w.news.id, w.news.apId]);
+
+    // The person on the newest community.update modlog row made the edit, and is named over the owner.
+    await writer().delete(deliveries);
+    await writer()
+      .insert(modlog)
+      .values({
+        action: 'community.update',
+        actorId: mira.id,
+        actorApId: mira.apId,
+        communityId: w.news.id,
+        communityApId: w.news.apId,
+        authority: { kind: 'site-admin', actorId: mira.id },
+      });
+    await run({ type: 'actor.updated', v: 1, actorId: w.news.id, kind: 'Group', local: true });
+    const again = (await queued()).find((row) => row.inbox === w.lemmy.shared)!;
+    expect((again.json.object as Json).actor).toBe(mira.apId);
   });
 });
 

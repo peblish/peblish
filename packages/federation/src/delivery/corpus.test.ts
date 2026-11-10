@@ -9,7 +9,7 @@ import { writer } from '@peblish/core/db/write';
 import { tx } from '@peblish/core/tx/tx';
 import { truncateAll } from '@peblish/core/testing/db';
 import { seedActor, seedInstance } from '@peblish/core/testing/seed';
-import { seedComment, seedPost } from '@peblish/core/testing/seed-az';
+import { seedComment, seedModerator, seedPost } from '@peblish/core/testing/seed-az';
 import { seedLocalInstance, seedSigningKey } from '@peblish/core/testing/seed-fed-a';
 import type { OutboxEvent } from '@peblish/schema/events';
 import { diff, matches, type Change } from '../test/diff.ts';
@@ -215,5 +215,22 @@ describe('the copy for Mastodon is the shape Lemmy sends', () => {
         ],
       }),
     ).toEqual([]);
+  });
+});
+
+describe('a community’s edit is the shape Lemmy sends', () => {
+  test('Announce(Update(Group)) by a moderator has the envelope of Lemmy’s own Announce(Update(...)), key for key', async () => {
+    const w = await world();
+    await seedModerator(w.news, w.alice, { role: 'owner' });
+    const [ours] = await w.run({ type: 'actor.updated', v: 1, actorId: w.news.id, kind: 'Group', local: true });
+    expect(shapeOf(ours)).toBe('Announce(Update(Group))');
+    // Lemmy 0.19.21's Announce of a moderator's Update (captured, Update(Page)); the Group inside is
+    // the document we serve at the community's id, which Lemmy reads when the actor is a person.
+    const envelope = diff(acceptedShape('Announce(Update(Page))', 'lemmy'), ours)
+      .filter((difference) => !difference.path.startsWith('object.object'))
+      .filter((difference) => difference.change !== 'changed' || kind(difference.original) !== kind(difference.mapped))
+      .map((difference) => `${difference.change} ${difference.path}`);
+    expect(envelope).toEqual([]);
+    expect(ours).toMatchObject({ actor: w.news.apId, object: { actor: w.alice.apId, object: { type: 'Group', id: w.news.apId } } });
   });
 });

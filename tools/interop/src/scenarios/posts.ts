@@ -4,7 +4,7 @@ import { expectDelivery, expectInbound } from '../match.ts';
 import { peblish, postByApId } from '../peblish.ts';
 import type { Group } from '../context.ts';
 import type { Side } from './support.ts';
-import { mbinUnannounced, peerOwnPostInPeblish, postOnPeer, prepare, storedPost, tag } from './support.ts';
+import { peerOwnPostInPeblish, postOnPeer, prepare, storedPost, tag } from './support.ts';
 
 /** True once the peer no longer shows the post: deleted or removed, or not found. */
 async function vanished(side: Side, peerPostId: number): Promise<boolean> {
@@ -92,15 +92,11 @@ export const posts: Group = {
       });
 
       // P3: a post by the peer's own user in the peer's own community reaches peblish, announced by the community.
-      await rec.scenario(
-        'P3',
-        peer.name,
-        async () => {
-          const { stored } = await peerOwnPostInPeblish(ctx, side, tag(ctx, 'P3', peer));
-          return `stored ${stored.id}, relayed by the peer's community`;
-        },
-        peer.name === 'mbin' ? mbinUnannounced(side.remote.apId) : undefined,
-      );
+      // Mbin sends it straight from its own host instead of announcing it (accepted for a followed community).
+      await rec.scenario('P3', peer.name, async () => {
+        const { stored } = await peerOwnPostInPeblish(ctx, side, tag(ctx, 'P3', peer));
+        return `stored ${stored.id}, from the peer's community or its host`;
+      });
 
       // N1: remote NSFW is refused by default (the setting that accepts it is ADM's).
       await rec.scenario('N1', peer.name, async () => {

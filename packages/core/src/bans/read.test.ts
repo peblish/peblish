@@ -36,6 +36,22 @@ test('a handle finds a local actor by name, or a remote one by name@host, of the
   expect(await findActorByHandle('a@b@c', 'Person')).toBeNull();
 });
 
+test('a list of kinds finds any of them: a ban looks up a person or a bot, never a community', async () => {
+  const w = await world();
+  const bot = await seedActor(w.local, 'Service', 'helper_bot');
+  const remoteBot = await seedActor(w.lemmy, 'Service', 'lemmy_bot');
+  const banTarget = ['Person', 'Service'] as const;
+  expect(await findActorByHandle('@helper_bot', banTarget)).toMatchObject({ id: bot.id, local: true });
+  expect(await findActorByHandle('@lemmy_bot@lemmy.test', banTarget)).toMatchObject({ id: remoteBot.id });
+  expect(await findActorByHandle('@MIRA', banTarget)).toMatchObject({ id: w.mira.id });
+  expect(await findActorByHandle('technik', banTarget)).toBeNull();
+  expect(await findActorByHandle('@helper_bot', 'Person')).toBeNull();
+  // Two remote actors of one name: the first kind asked for wins.
+  const twin = await seedActor(w.lemmy, 'Person', 'lemmy_bot', { apId: 'https://lemmy.test/ap/person/lemmy_bot' });
+  expect(await findActorByHandle('@lemmy_bot@lemmy.test', banTarget)).toMatchObject({ id: twin.id });
+  expect(await findActorByHandle('@lemmy_bot@lemmy.test', ['Service', 'Person'])).toMatchObject({ id: remoteBot.id });
+});
+
 test('the communities someone moderates are the ones with a fresh moderator row', async () => {
   const w = await world();
   expect((await moderatedCommunities(w.mira.id)).map((community) => community.handle)).toEqual(['technik']);

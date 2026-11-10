@@ -1,6 +1,6 @@
 import { db } from '@peblish/core/db/read';
 import { lockPost, unlockPost } from '@peblish/core/moderation/lock';
-import { checkCommunity, communityById, grantFor, requireContent } from '../authorize.ts';
+import { checkCommunity, claimFor, communityById, grantFor, requireContent } from '../authorize.ts';
 import { prepared, type InboundContext, type Prepared } from '../handler.ts';
 import { skip } from '../reasons.ts';
 
@@ -14,7 +14,7 @@ export async function prepareLock(ctx: InboundContext, objectApId: string, locki
   const target = await requireContent(db(), objectApId);
   if (target.kind !== 'post') throw skip('target.missing', objectApId);
   const community = await communityById(db(), target.communityId);
-  checkCommunity(ctx, community, ctx.activity.communityApId);
+  checkCommunity(ctx, community, claimFor(ctx, community));
   return prepared(ctx, async (t) => {
     const input = { activityApId: ctx.activity.id };
     if (locking) await lockPost.within(t, await grantFor(ctx, t, 'mod.lock', { postId: target.id }), input);

@@ -2,7 +2,7 @@
 // waits for a post or comment to show on a peer.
 import type { Uuid } from '@peblish/schema/ids';
 import type { Context } from '../context.ts';
-import { type KnownDefect, waitFor } from '../lab.ts';
+import { waitFor } from '../lab.ts';
 import { matchInbound } from '../match.ts';
 import { followRow, peblish, sql } from '../peblish.ts';
 import type { Peer, PeerComment, PeerPost } from '../peers/types.ts';
@@ -110,11 +110,19 @@ export const tag = (ctx: Context, label: string, who: { name: string }) => `${la
  * does not store it, the error says what peblish did with the activity instead: the matcher's
  * `got [...]` outcome, so a scenario can name the defect exactly.
  */
-export async function peerOwnPostInPeblish(ctx: Context, side: Side, title: string) {
+export async function peerOwnPostInPeblish(ctx: Context, side: Side, title: string, by: 'admin' | 'user' = 'admin') {
   const { peer } = side;
   const started = new Date();
-  const post = await peer.createPost(side.adminToken, side.peerCommunityId, title, `The ${peer.name} community starts this one.`);
-  ctx.ledger.add({ kind: 'object', side: peer.name, user: peer.admin, type: 'post', apId: post.apId, peerId: post.id });
+  const token = by === 'admin' ? side.adminToken : side.token;
+  const post = await peer.createPost(token, side.peerCommunityId, title, `The ${peer.name} community starts this one.`);
+  ctx.ledger.add({
+    kind: 'object',
+    side: peer.name,
+    user: by === 'admin' ? peer.admin : peer.user,
+    type: 'post',
+    apId: post.apId,
+    peerId: post.id,
+  });
   try {
     const stored = await storedPost(ctx, post.apId, 25_000);
     return { post, stored };
@@ -146,12 +154,4 @@ export async function peerOwnPostInPeblish(ctx: Context, side: Side, title: stri
     );
     throw new Error(`peblish applied the activity for ${post.apId} but stored no post`);
   }
-}
-
-/** The known Mbin behaviour: a post by Mbin's own user in Mbin's own magazine is sent as a bare Create, never announced. */
-export function mbinUnannounced(communityApId: string): KnownDefect {
-  return {
-    explanation: "Mbin sends a Create straight to a magazine's remote subscribers and never announces it, so peblish skips it",
-    signature: `got [skipped community.unannounced ${communityApId}]`,
-  };
 }

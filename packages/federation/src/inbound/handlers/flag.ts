@@ -1,6 +1,15 @@
 import { db } from '@peblish/core/db/read';
 import { createReport, detailsLimit } from '@peblish/core/reports/create';
-import { authorizeReport, checkAuthorIsPerson, checkCommunity, communityById, grantFor, storedActor, storedContent } from '../authorize.ts';
+import {
+  authorizeReport,
+  checkAuthorIsPerson,
+  checkCommunity,
+  claimFor,
+  communityById,
+  grantFor,
+  storedActor,
+  storedContent,
+} from '../authorize.ts';
 import { prepared, type InboundHandler } from '../handler.ts';
 import { skip } from '../reasons.ts';
 
@@ -27,7 +36,7 @@ export const handler: InboundHandler = {
       // Reports count only about content in a community hosted here (the spike's N8).
       await authorizeReport(db(), [targetApId]);
       const community = await communityById(db(), stored.communityId);
-      checkCommunity(ctx, community, activity.communityApId);
+      checkCommunity(ctx, community, claimFor(ctx, community));
       return prepared(ctx, async (t) => {
         const grant = await grantFor(ctx, t, 'report.create', {
           target: { kind: stored.kind, id: stored.id },

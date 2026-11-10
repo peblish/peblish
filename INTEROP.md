@@ -15,6 +15,7 @@ cd lab
 make check          # reset, up, seed, interop, interop-d1, cleanup: about 20 minutes from nothing
 make interop        # the fast tier against a running lab
 make interop PEERS=mbin ONLY=Z1,P1
+make interop ONLY=V2   # with V2/F5 and V2/F3, which need V2's follow of !lab
 make interop-d1     # D1, the delivery schedule, with a SIGKILL of the worker in the middle
 make interop-slow   # F3, the Follow resend at 5 and 15 minutes (about 17 minutes)
 make cleanup        # put the lab back from the ledger
@@ -70,27 +71,29 @@ runner ──▶ peblish-db ◀── peblish-web ◀─┐
 exact signature is in the code and a different failure is a `fail`), `pending(<lane>)` (waits for a lane that
 has not merged).
 
-| Id     | What                                                                                                                               | Peers                      |
-| ------ | ---------------------------------------------------------------------------------------------------------------------------------- | -------------------------- |
-| F1     | A peer's user follows `!lab@peblish.lab.test`; Accept arrives (Mbin through `/f/inbox`)                                            | all                        |
-| F2     | A peblish user follows a community on the peer: pending, Accept, accepted; backfill done; moderators mirrored; Undo(Follow)        | all                        |
-| F3     | Slow tier: an unanswered Follow is sent again at 5 and 15 minutes under fresh ids                                                  | rogue                      |
-| P1     | Text and link post, edit, delete show, change and vanish on the peer                                                               | all                        |
-| P2, P3 | A peer's post is stored once and relayed to the other peers; PieFed serves `/activities/...`                                       | all                        |
-| C1, C2 | Comments both ways, threaded, edited, deleted                                                                                      | all                        |
-| V1     | Like, Dislike and Undo both ways; Mbin's boost arrives as `announce.bare_iri`                                                      | all                        |
-| V2     | A rogue follower posing as Mastodon gets `Announce(Page)`, peers get `Announce(Create(Page))`, never both to one inbox             | rogue, all                 |
-| N1     | A remote NSFW post: `content.nsfw_rejected`                                                                                        | all                        |
-| M1     | Remove, restore, lock, feature, community ban and unban, moderator add and remove, both directions                                 | all                        |
-| Z1     | The authorization matrix N0 to N15 from the rogue through the real inbox (reasons as in `matrix.test.ts`)                          | rogue                      |
-| B1     | A Dislike for an older post: `target.missing`, the missing-object job fetches it, the vote applies once                            | Lemmy, PieFed              |
-| H1     | WebFinger by name and URL, NodeInfo, 410 Tombstones, an inbox URL with a query, signed GET                                         | peblish                    |
-| S1     | Instance-wide ban both ways                                                                                                        | pending(MODF)              |
-| S2     | Account deletion: peblish's reaches each peer; a Lemmy deletion with and without content gives a `remote.actor_deleted` ledger row | all                        |
-| S3     | `Update(Group)`: a peblish edit shows on the peer, a peer's edit applies, a stranger's is `actor.update_unauthorized`              | all                        |
-| R1     | Flag in and out                                                                                                                    | pending(REP)               |
-| D1     | The production delivery schedule and recovery after a SIGKILL of the worker                                                        | Lemmy, PieFed, Mbin, rogue |
-| X1     | A new author's burst of posts, measured once and pinned                                                                            | all                        |
+| Id     | What                                                                                                                                                                                          | Peers                      |
+| ------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------- |
+| F1     | A peer's user follows `!lab@peblish.lab.test`; Accept arrives (Mbin through `/f/inbox`)                                                                                                       | all                        |
+| F2     | A peblish user follows a community on the peer: pending, Accept, accepted; backfill done; moderators mirrored; Undo(Follow)                                                                   | all                        |
+| F3     | Slow tier: an unanswered Follow is sent again at 5 and 15 minutes under fresh ids                                                                                                             | rogue                      |
+| P1     | Text and link post, edit, delete show, change and vanish on the peer                                                                                                                          | all                        |
+| P2, P3 | A peer's post is stored once and relayed to the other peers; PieFed serves `/activities/...`                                                                                                  | all                        |
+| C1, C2 | Comments both ways, threaded, edited, deleted                                                                                                                                                 | all                        |
+| V1     | Like, Dislike and Undo both ways; Mbin's boost arrives as `announce.bare_iri`                                                                                                                 | all                        |
+| V2     | A rogue follower posing as Mastodon gets `Announce(Page)`, peers get `Announce(Create(Page))`, never both to one inbox; the post's delete sends it `Undo(Announce)` and the author's `Delete` | rogue, all                 |
+| V2/F5  | A Lemmy admin's site ban of a Lemmy user with `removeData` takes the local community's boost of that user's post back from the Mastodon-like follower                                         | rogue, Lemmy               |
+| V2/F3  | A post naming a Mastodon-like person who follows nothing, then removed by a moderator, reaches that person as the author's `Create`, then the author's `Delete`                               | rogue                      |
+| N1     | A remote NSFW post: `content.nsfw_rejected`                                                                                                                                                   | all                        |
+| M1     | Remove, restore, lock, feature, community ban and unban, moderator add and remove, both directions                                                                                            | all                        |
+| Z1     | The authorization matrix N0 to N15 from the rogue through the real inbox (reasons as in `matrix.test.ts`)                                                                                     | rogue                      |
+| B1     | A Dislike for an older post: `target.missing`, the missing-object job fetches it, the vote applies once                                                                                       | Lemmy, PieFed              |
+| H1     | WebFinger by name and URL, NodeInfo, 410 Tombstones, an inbox URL with a query, signed GET                                                                                                    | peblish                    |
+| S1     | Instance-wide ban both ways: a peblish site ban refuses the peer user's post as `auth.site_banned` and its Block and Undo reach the peer; a peer's ban of its own user applies here and lifts | all                        |
+| S2     | Account deletion: peblish's reaches each peer with `removeData: false`; a Lemmy deletion with and without content gives a `remote.actor_deleted` ledger row                                   | all                        |
+| S3     | `Update(Group)`: a peblish edit (the editor's Update, announced) shows on the peer, a peer's edit applies, a stranger's is `actor.update_unauthorized`                                        | all                        |
+| R1     | Flag in (opens a report here) and out (a forwarded report reaches the peer; Lemmy lists it)                                                                                                   | all                        |
+| D1     | The production delivery schedule and recovery after a SIGKILL of the worker                                                                                                                   | Lemmy, PieFed, Mbin, rogue |
+| X1     | A new author's burst of posts, measured once and pinned                                                                                                                                       | all                        |
 
 D1 in detail: a 400 is final at attempt 1; a 503 stays pending and the retry is about 10 s later; a redirect
 is refused and not followed; an actor whose inbox is a private or loopback address is refused at the door
@@ -100,52 +103,61 @@ is claimed again after the 60 s lease and delivered on attempt 2.
 
 ## Latest results
 
-Run of 2026-11-09 against Lemmy 0.19.21, PieFed 1.8.11 and Mbin 1.11.0, from `make reset`:
+Run of 2026-11-10 (the interop integration, wave 3 with every fix) against Lemmy 0.19.21, PieFed 1.8.11
+and Mbin 1.11.0, from `make reset`:
 
-- `make check` took 998 s (16.6 minutes): reset, up, seed, the fast tier, D1 and cleanup, on an
+- `make check` took 885 s (14.8 minutes): reset, up, seed, the fast tier, D1 and cleanup, on an
   Apple-silicon Mac under Rosetta for the amd64 images, with the machine busy with other work.
-- Fast tier: 66 pass, 0 fail, 9 known, 6 n/a, 7 pending. D1: 8 pass. Cleanup: 61 cleaned, 0 failed.
-- Z1 and D1 each passed three runs in a row on the final tree. F3 (the slow tier, 17 minutes) passed.
+- Fast tier: 85 pass, 0 fail, 4 known, 7 n/a, 0 pending. D1: 8 pass. Cleanup: 74 cleaned, 0 failed.
+- FX-INTEROP's run before it: 84 pass, 4 known, 8 n/a. S1/out on Mbin is the change: a site ban now
+  takes a Service actor (a bot) as a person, so Mbin's bot user can be banned.
+- The run before the interop fixes (tag `w3-fixes`): 67 pass, 0 fail, 9 known, 6 n/a, 6 pending.
 
-| Scenario                                                           | Lemmy          | PieFed         | Mbin           | Other                  |
-| ------------------------------------------------------------------ | -------------- | -------------- | -------------- | ---------------------- |
-| F1 follow in, Accept                                               | pass           | pass           | pass           |                        |
-| F2 follow out, backfill, moderators, Undo                          | pass           | pass           | pass           |                        |
-| F3 Follow resend at 5 and 15 min (slow tier)                       |                |                |                | rogue: pass            |
-| P1 post, edit, delete                                              | pass           | pass           | pass           |                        |
-| P2 peer post stored once, relayed                                  | pass           | pass           | pass           |                        |
-| P3 peer post shown to the others                                   | pass           | pass           | known          |                        |
-| C1 comments into peblish                                           | pass           | pass           | known          |                        |
-| C2 comments out of peblish                                         | pass           | pass           | known          |                        |
-| V1 votes both ways                                                 | pass           | pass           | pass           |                        |
-| V2 Mastodon-like follower                                          |                |                |                | rogue: pending (FED-C) |
-| N1 remote NSFW post refused                                        | pass           | pass           | pass           |                        |
-| M1/out peblish moderation shown on the peer                        | pass           | pass           | known          |                        |
-| M1/in the peer's moderation applied                                | pass           | known          | known          |                        |
-| M1/remote remote moderator add and remove                          | pass           | pass           | n/a            |                        |
-| Z1 authorization matrix N0 to N15                                  |                |                |                | rogue: 16 pass         |
-| B1 Dislike for an older post                                       | pass           | pass           | n/a            |                        |
-| H1 WebFinger, NodeInfo, tombstones, inbox with a query, signed GET |                |                |                | peblish: 5 pass        |
-| S1 instance-wide ban                                               | pending (MODF) | pending (MODF) | pending (MODF) |                        |
-| S2/out peblish account deleted                                     | known          | pass           | pass           |                        |
-| S2/in a Lemmy account deleted, content kept and removed            | pass (2)       | n/a            | n/a            |                        |
-| S3/out peblish edits the community                                 | known          | pass           | known          |                        |
-| S3/in the peer edits its community                                 | pass           | pass           | pass           |                        |
-| S3/unauthorized a stranger's Update(Group)                         | pass           | pass           | pass           |                        |
-| R1 Flag in and out                                                 | pending (REP)  | pending (REP)  | pending (REP)  |                        |
-| D1 delivery schedule, SIGKILL of the worker                        |                |                |                | peblish: 8 pass        |
-| X1 new author's six posts                                          | pass (6)       | pass (4 to 5)  | pass (6)       |                        |
+| Scenario                                                           | Lemmy    | PieFed        | Mbin     | Other           |
+| ------------------------------------------------------------------ | -------- | ------------- | -------- | --------------- |
+| F1 follow in, Accept                                               | pass     | pass          | pass     |                 |
+| F2 follow out, backfill, moderators, Undo                          | pass     | pass          | pass     |                 |
+| F3 Follow resend at 5 and 15 min (slow tier, not rerun)            |          |               |          | rogue: pass     |
+| P1 post, edit, delete                                              | pass     | pass          | pass     |                 |
+| P2 peer post stored once, relayed                                  | pass     | pass          | pass     |                 |
+| P3 peer post shown to the others                                   | pass     | pass          | pass     |                 |
+| C1 comments into peblish                                           | pass     | pass          | pass     |                 |
+| C2 comments out of peblish                                         | pass     | pass          | pass     |                 |
+| V1 votes both ways                                                 | pass     | pass          | pass     |                 |
+| V2 Mastodon-like follower, Undo(Announce) and Delete               |          |               |          | rogue: pass     |
+| V2/F5 a Lemmy site ban with removeData withdraws the boost         |          |               |          | rogue: pass     |
+| V2/F3 a mentioned Mastodon-like person gets the author's Delete    |          |               |          | rogue: pass     |
+| N1 remote NSFW post refused                                        | pass     | pass          | pass     |                 |
+| M1/out peblish moderation shown on the peer                        | pass     | pass          | known    |                 |
+| M1/in the peer's moderation applied                                | pass     | known         | known    |                 |
+| M1/remote remote moderator add and remove                          | pass     | pass          | n/a      |                 |
+| Z1 authorization matrix N0 to N15                                  |          |               |          | rogue: 16 pass  |
+| B1 Dislike for an older post                                       | pass     | pass          | n/a      |                 |
+| H1 WebFinger, NodeInfo, tombstones, inbox with a query, signed GET |          |               |          | peblish: 5 pass |
+| S1/out peblish site-bans a peer's user                             | pass     | pass          | pass     |                 |
+| S1/in the peer site-bans its own user                              | pass     | known         | n/a      |                 |
+| S2/out peblish account deleted                                     | pass     | pass          | pass     |                 |
+| S2/in a Lemmy account deleted, content kept and removed            | pass (2) | n/a           | n/a      |                 |
+| S3/out peblish edits the community                                 | pass     | pass          | pass     |                 |
+| S3/in the peer edits its community                                 | pass     | pass          | pass     |                 |
+| S3/unauthorized a stranger's Update(Group)                         | pass     | pass          | pass     |                 |
+| R1/in a peer's Flag opens a report                                 | pass     | pass          | pass     |                 |
+| R1/out a forwarded report reaches the peer                         | pass     | pass          | pass     |                 |
+| D1 delivery schedule, SIGKILL of the worker                        |          |               |          | peblish: 8 pass |
+| X1 new author's six posts                                          | pass (6) | pass (4 to 5) | pass (6) |                 |
 
 `known` entries and what they mean (the exact signature is in the scenario code):
 
-- P3, C1, C2, M1/in on Mbin: Mbin sends Create and Delete straight to subscribers (`community.unannounced`)
-  or addresses a comment Delete to the post's author first (`community.mismatch`).
 - M1/out on Mbin: it does not apply the Undo of a removal. M1/in on PieFed: it never federates an unban.
-- S3/out on Lemmy: `400 unknown variant "Group"`; on Mbin: 200, description unchanged.
-- S2/out on Lemmy: the Delete has no `removeData`, so the account's posts stay visible.
+- M1/in on Mbin: its trash applies here as a removal, but its restore sends nothing.
+- S1/in on PieFed: it sends a site ban only to piefed, pylova, lemmy and mbin instances.
 
-`pending` waits for MODF (S1), REP (R1) and FED-C (V2: `Undo(Announce)` and the author's `Delete` to the
-Mastodon-like follower are not sent yet).
+`n/a` on Mbin: its API users are bots (Service actors), which cannot vote down, be made a peblish
+moderator or be site-banned here, and its lab clients have no admin scope for a site ban; PieFed and
+Mbin delete accounts outside their API (S2/in).
+
+S1/out on Lemmy passes with Lemmy's `400 Site bans from remote instance can't affect user's home
+instance` for the Block and its Undo: Lemmy refuses a remote ban of its own user by design.
 
 D1 in detail, as measured: a 400 is final at attempt 1; a 503 is pending and the retry is 10 to 12 s
 after the delivery was created; a redirect is refused and not followed; a post made while the worker
@@ -165,21 +177,31 @@ Peers:
 - **PieFed drops a Follow that arrives within seconds of an Undo(Follow)**; F2 waits for the Undo delivery
   and 8 s more. It also answers 200 and lists only four of a new author's six posts in a day (X1, pinned).
 - **Lemmy refuses an `Update(Group)` sent by the community itself** with `400 unknown variant "Group",
-expected one of "Person", "Service", "Organization"`: it parses the embedded object as a person (S3/out).
-- **Lemmy keeps a deleted person's posts** unless the Delete carries `removeData`; peblish's account Delete
-  does not (S2/out).
+expected one of "Person", "Service", "Organization"`: it parses the embedded object as a person. Lemmy,
+  PieFed and Mbin all send their own community edits as an `Update(Group)` by the moderator, announced by
+  the community, and peblish now does the same (S3/out passes on all three).
+- **Lemmy keeps a deleted person's posts** unless the Delete carries `removeData: true`. A deletion in
+  peblish keeps the account's content too, so its Delete says `removeData: false`; PieFed and Mbin hide
+  the posts anyway (S2/out notes which).
+- **Lemmy refuses a remote instance's site ban of its own user** (`400 Site bans from remote instance
+can't affect user's home instance`), by design: peblish's Block and Undo for a Lemmy user are answered
+  that way and the ban still holds here (S1/out).
+- **PieFed sends a site ban only to `piefed`, `pylova`, `lemmy` and `mbin` instances** (by NodeInfo
+  software), so peblish never hears of one (S1/in on PieFed is `known`).
 - **Lemmy's first contact**: its outbound worker for a newly seen instance starts on a 60 s timer and skips
   every activity queued before it started, so `make seed` waits for the workers.
 - **A Lemmy ban drops the banned user's subscription**, and Lemmy then rejects the community's Announces
   with `CommunityHasNoFollowers` once nobody there follows it. The scenarios keep a second follower.
-- **Mbin never announces**: it sends a Create straight to a magazine's remote subscribers, so peblish records
-  `skipped community.unannounced` (P3, C2, M1 in). **Mbin addresses a comment's Delete to the post's author
-  before the community**, so peblish records `skipped community.mismatch` and the comment stays (C1). Both
-  are open questions for the product, not only for Mbin.
-- **Mbin ignores the undo of a removal** (M1 out), keeps the old description after an `Update(Group)` it
-  answers 200 to (S3/out), cannot be driven for a vote down, a boost or an account deletion by its bot API
-  users (V1 Dislike `n/a`; its boost is replayed by the rogue as the same wire shape; S2/in `n/a`), and
-  treats a Like as a favourite.
+- **Mbin never announces its own members' activity**: it sends a Create, Update or Delete straight to a
+  magazine's remote subscribers. peblish now takes such an activity when it is signed on the community's
+  host, addressed to the community, and the community is followed here (P3, C2 pass); an author on any
+  other host still needs the community's Announce. **Mbin addresses a comment's Delete to the post's
+  author before the community**; peblish now finds the community among every addressee (C1 passes).
+- **Mbin's moderation is not announced either**: its trash is a bare Delete by the moderator with no
+  reason, which now applies here as a removal, but a restore sends nothing (M1/in `known` at the
+  restore). It also ignores the undo of a removal (M1 out), cannot be driven for a vote down, a boost,
+  a site ban of its own users or an account deletion by its bot API users (V1 Dislike, B1, S1/in and S2/in `n/a`; its boost
+  is replayed by the rogue as the same wire shape), and treats a Like as a favourite.
 - **Mbin posts an activity id to an inbox once per 45 minutes** and sends no Follow when a user subscribes
   again after unsubscribing, so F1 uses a fresh user per run and `make interop` flushes Valkey. Client
   creation is limited to two per six hours per IP, which the same flush resets.
