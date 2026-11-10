@@ -3,6 +3,7 @@ import { closePools } from '@peblish/core/db/pools';
 import { crossCheckKeyFiles, exportBundle, inventory } from './archive.ts';
 import { readBundle, rehostBundle, writeBundle } from './bundle.ts';
 import { backup, exportLedger, reapplyLedger, readLedgerExport, restore, runDrill } from './drill.ts';
+import { CutoverError, describe } from './errors.ts';
 import { importBundle } from './import.ts';
 import { verifyImport } from './verify.ts';
 
@@ -46,7 +47,7 @@ function need(name: keyof typeof values | 'DATABASE_URL' | 'PUBLIC_ORIGIN'): str
   return value;
 }
 
-class Usage extends Error {}
+class Usage extends CutoverError {}
 
 const archiveDb = () => values['archive-db'] ?? process.env.CUTOVER_ARCHIVE_DB_URL ?? need('archive-db');
 const print = (value: unknown) => console.log(JSON.stringify(value, null, 2));
@@ -158,29 +159,6 @@ async function main(): Promise<number> {
     default:
       throw new Usage(`unknown command ${command ?? '(none)'}; see the comment at the top of tools/cutover/src/cli.ts`);
   }
-}
-
-/**
- * What may be printed of a failure. A Drizzle query error's message carries the query's
- * parameters (keys, email addresses), a Postgres error's detail the conflicting values, and an
- * ArkType error the offending value, so only codes, constraint names, paths and our own messages
- * are shown.
- */
-function describe(error: unknown): string {
-  for (let cause = error; cause instanceof Error; cause = cause.cause) {
-    if ('severity' in cause && 'code' in cause) {
-      const constraint = 'constraint_name' in cause && cause.constraint_name ? ` (${String(cause.constraint_name)})` : '';
-      return `database error ${String(cause.code)}${constraint}: ${cause.message}`;
-    }
-  }
-  if (error instanceof Error && error.name === 'DrizzleQueryError') return 'a database query failed (its parameters are withheld)';
-  if (error instanceof Error && 'arkErrors' in error && Array.isArray(error.arkErrors)) {
-    const paths = error.arkErrors.map(
-      (e: { propString?: string; expected?: string }) => `${e.propString || '(root)'} must be ${e.expected}`,
-    );
-    return `the file does not match its format: ${paths.join('; ')}`;
-  }
-  return error instanceof Error ? `${error.name}: ${error.message}` : 'unknown failure';
 }
 
 try {

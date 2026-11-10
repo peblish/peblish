@@ -17,6 +17,7 @@ import type { Uuid } from '@peblish/schema/ids';
 import { and, eq } from 'drizzle-orm';
 import { uuidv7 } from 'uuidv7';
 import { publicFingerprint } from './archive.ts';
+import { CutoverError } from './errors.ts';
 import { Bundle, rehostBundle, type Bundle as BundleType } from './bundle.ts';
 
 // `import`: the bundle into a peblish database, in one transaction, idempotent. The database is
@@ -26,7 +27,7 @@ import { Bundle, rehostBundle, type Bundle as BundleType } from './bundle.ts';
 // through core's remote-actor store; follows land accepted (decision 3). Accounts import without
 // a password: the people sign in through a password reset.
 
-export class ImportRefused extends Error {
+export class ImportRefused extends CutoverError {
   override readonly name = 'ImportRefused';
 }
 

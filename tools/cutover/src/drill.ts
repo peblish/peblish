@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process';
 import { randomBytes, randomUUID } from 'node:crypto';
-import { closeSync, mkdirSync, readFileSync } from 'node:fs';
+import { closeSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { actors } from '@peblish/core/db/tables/actors';
 import { media } from '@peblish/core/db/tables/media';
@@ -17,6 +17,7 @@ import { asc, eq, sql, type SQL } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
 import { openPrivate, writePrivate } from './bundle.ts';
+import { CutoverError, readJsonFile } from './errors.ts';
 
 // The backup and restore drill (T&S baseline: a restore drill that re-applies the deletion
 // ledger). A backup is `pg_dump -Fc`; the ledger is also exported on its own, more often than
@@ -64,13 +65,24 @@ function connection(url: string): { arg: string; env: NodeJS.ProcessEnv } {
   return { arg: `--dbname=${parsed.href}`, env: password ? { ...process.env, PGPASSWORD: password } : process.env };
 }
 
+/**
+ * The kind of a pg_dump or pg_restore failure, from its first error line, cut before the first
+ * colon or quote: what follows can quote a row it could not load or a value. Rerun the command by
+ * hand to read all of it.
+ */
+function errorKind(stderr: string): string {
+  const line = /^pg_\w+: error: (.*)$/m.exec(stderr)?.[1];
+  const kind = line?.split(/[:"']/)[0]?.trim();
+  return kind ? ` (${kind}; the rest of its error output is withheld)` : ' (its error output is withheld)';
+}
+
 function run(binary: string, args: string[], env: NodeJS.ProcessEnv, stdout: 'ignore' | number = 'ignore'): Promise<void> {
   return new Promise((resolve, reject) => {
     const child = spawn(binary, args, { stdio: ['ignore', stdout, 'pipe'], env });
     let err = '';
     child.stderr?.on('data', (chunk: Buffer) => (err += chunk.toString()));
     child.on('error', reject);
-    child.on('close', (code) => (code === 0 ? resolve() : reject(new Error(`${binary} exited ${code}: ${err.trim().slice(0, 2000)}`))));
+    child.on('close', (code) => (code === 0 ? resolve() : reject(new CutoverError(`${binary} exited ${code}${errorKind(err)}`))));
   });
 }
 
@@ -91,9 +103,9 @@ const maxNameBytes = 63;
 /** The database a URL names, refused unless it is lowercase letters, digits and underscores within 63 bytes. */
 export function databaseName(url: string): string {
   const name = decodeURIComponent(new URL(url).pathname.slice(1));
-  if (!/^[a-z0-9_]+$/.test(name)) throw new Error(`database name ${name} must be lowercase letters, digits and underscores`);
+  if (!/^[a-z0-9_]+$/.test(name)) throw new CutoverError(`database name ${name} must be lowercase letters, digits and underscores`);
   if (Buffer.byteLength(name) > maxNameBytes) {
-    throw new Error(`database name ${name} is longer than ${maxNameBytes} bytes, so Postgres would cut it to another name`);
+    throw new CutoverError(`database name ${name} is longer than ${maxNameBytes} bytes, so Postgres would cut it to another name`);
   }
   return name;
 }
@@ -120,7 +132,7 @@ export type OwnDatabase = { url: string; name: string; marker: string };
 async function createOwnDatabase(url: string): Promise<OwnDatabase> {
   return onServer(url, async (admin, name) => {
     const exists = async () => (await admin`select 1 from pg_database where datname = ${name}`).length > 0;
-    const refuse = () => new Error(`database ${name} already exists; restore only into a new database`);
+    const refuse = () => new CutoverError(`database ${name} already exists; restore only into a new database`);
     if (await exists()) throw refuse();
     try {
       await admin.unsafe(`create database "${name}"`);
@@ -142,11 +154,11 @@ async function createOwnDatabase(url: string): Promise<OwnDatabase> {
  */
 export async function dropOwnDatabase(own: OwnDatabase): Promise<void> {
   await onServer(own.url, async (admin, name) => {
-    if (name !== own.name) throw new Error(`database ${name} is not the one this run created`);
+    if (name !== own.name) throw new CutoverError(`database ${name} is not the one this run created`);
     const [row] = await admin<{ marker: string | null }[]>`
       select shobj_description(oid, 'pg_database') as marker from pg_database where datname = ${name}`;
     if (!row) return;
-    if (row.marker !== own.marker) throw new Error(`database ${name} was not created by this run; it is left as it is`);
+    if (row.marker !== own.marker) throw new CutoverError(`database ${name} was not created by this run; it is left as it is`);
     await admin.unsafe(`drop database "${name}" with (force)`);
   });
 }
@@ -203,7 +215,7 @@ export async function exportLedger(url: string, file: string): Promise<number> {
 }
 
 export function readLedgerExport(file: string): LedgerRow[] {
-  return LedgerExport.assert(JSON.parse(readFileSync(file, 'utf8'))).rows;
+  return readJsonFile(file, 'the ledger export', LedgerExport).rows;
 }
 
 const remote = (row: LedgerRow) => row.details.remote === true;
@@ -292,7 +304,7 @@ async function apply(t: ReplayTx, row: LedgerRow, tally: { quarantinedCopies: nu
     await q.execute(sql`delete from auth_user where id = ${row.details.userId}`);
     return found;
   }
-  throw new Error(`ledger row ${row.id}: no rule for ${row.subjectKind} ${row.reason}; stop and add one before going live`);
+  throw new CutoverError(`ledger row ${row.id}: no rule for ${row.subjectKind} ${row.reason}; stop and add one before going live`);
 }
 
 export type ReapplyReport = { restoredRows: number; appended: number; applied: number; absent: number; quarantinedCopies: number };
@@ -317,7 +329,7 @@ export async function reapplyLedger(url: string, exported: readonly LedgerRow[])
       for (const row of exported) {
         const held = have.get(row.id);
         if (held && (held.subjectId !== row.subjectId || held.reason !== row.reason)) {
-          throw new Error(`ledger row ${row.id} differs between the backup and the export: they are not the same database`);
+          throw new CutoverError(`ledger row ${row.id} differs between the backup and the export: they are not the same database`);
         }
       }
       for (const row of missing) {

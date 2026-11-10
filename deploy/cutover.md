@@ -18,8 +18,10 @@ The PieFed dump, the key files and the bundle hold private keys, password hashes
 addresses. Keep them in the archive folder (700) or a scratch folder (700, files 600), never in
 the repository (the tool refuses to write there), never in a chat, log or ticket. The tool writes
 the bundle, backups and ledger exports with mode 600 and refuses an existing file, prints ids,
-URLs, counts and key fingerprints only, and withholds database error details (they can carry
-values). The tool never reads PieFed's password hashes. Drop the scratch databases when done.
+URLs, counts and key fingerprints only, and prints an error's message only when it is its own:
+a damaged bundle, key file or ledger export is named with a position or the failing paths, never
+quoted, and a database, `pg_restore` or other error shows its code, constraint or kind, since
+its text can carry values. The tool never reads PieFed's password hashes. Drop the scratch databases when done.
 
 ## Step 3: inventory (no production access)
 

@@ -1,9 +1,10 @@
 import { createHash, createPrivateKey, createPublicKey } from 'node:crypto';
-import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { type } from 'arktype';
 import postgres from 'postgres';
 import { isPeerDomain } from '@peblish/core/authz/actions/peers';
 import { Bundle, type Bundle as BundleType } from './bundle.ts';
+import { CutoverError, readJsonFile } from './errors.ts';
 
 // Reading the PieFed 1.8 archive of feddit.com, restored into its own database (deploy/cutover.md,
 // step 3). `inventory` reads counts and public facts only. `export` also reads the columns the
@@ -48,7 +49,7 @@ export type Inventory = {
 async function origin(sql: Sql): Promise<string> {
   // PieFed's own instance row is the first one it creates (id 1), named after SERVER_NAME.
   const [self] = await sql<{ domain: string }[]>`select domain from instance where id = 1`;
-  if (!self) throw new Error('the archive has no instance row 1 (PieFed names itself there)');
+  if (!self) throw new CutoverError('the archive has no instance row 1 (PieFed names itself there)');
   return `https://${self.domain}`;
 }
 
@@ -157,7 +158,7 @@ export async function exportBundle(url: string, { admins }: { admins: readonly s
     const host = new URL(base).host;
     const [site] = await sql<{ name: string; public_key: string | null; private_key: string | null }[]>`
       select name, public_key, private_key from site order by id limit 1`;
-    if (!site?.public_key || !site.private_key) throw new Error('the archive site row has no instance actor key');
+    if (!site?.public_key || !site.private_key) throw new CutoverError('the archive site row has no instance actor key');
 
     const users = await sql<
       {
@@ -180,11 +181,11 @@ export async function exportBundle(url: string, { admins }: { admins: readonly s
         ap_public_url, searchable, indexable, bot
       from "user" where ap_id is null and not deleted order by id`;
     const unknownAdmins = admins.filter((name) => !users.some((user) => user.user_name === name));
-    if (unknownAdmins.length > 0) throw new Error(`--admin names no local user: ${unknownAdmins.join(', ')}`);
+    if (unknownAdmins.length > 0) throw new CutoverError(`--admin names no local user: ${unknownAdmins.join(', ')}`);
     const userApId = new Map<number, string>();
     const bundleUsers = users.map((user) => {
-      if (!user.public_key || !user.private_key) throw new Error(`local user ${user.user_name} has no key pair`);
-      if (!user.email) throw new Error(`local user ${user.user_name} has no email address`);
+      if (!user.public_key || !user.private_key) throw new CutoverError(`local user ${user.user_name} has no key pair`);
+      if (!user.email) throw new CutoverError(`local user ${user.user_name} has no email address`);
       const apId = user.ap_public_url ?? `${base}/u/${user.user_name}`;
       userApId.set(user.id, apId);
       return {
@@ -244,7 +245,7 @@ export async function exportBundle(url: string, { admins }: { admins: readonly s
       select m.community_id, m.user_id, m.is_owner, m.is_moderator from community_member m join community c on c.id = m.community_id
       where c.ap_id is null and (m.is_owner or m.is_moderator) and not m.is_banned order by m.created_at`;
     const bundleCommunities = communities.map((community) => {
-      if (!community.public_key || !community.private_key) throw new Error(`local community ${community.name} has no key pair`);
+      if (!community.public_key || !community.private_key) throw new CutoverError(`local community ${community.name} has no key pair`);
       const apId = community.ap_public_url ?? `${base}/c/${community.name}`;
       const rows = staff.filter((row) => row.community_id === community.id);
       // The owner is the member PieFed marks owner, else the creator.
@@ -357,7 +358,7 @@ export async function exportBundle(url: string, { admins }: { admins: readonly s
     const banned = await sql<{ domain: string | null }[]>`select domain from banned_instances order by domain`;
     const blockedInstances = [...new Set(banned.flatMap((row) => (row.domain ? [row.domain.trim().toLowerCase()] : [])))];
     const unusable = blockedInstances.filter((domain) => !isPeerDomain(domain));
-    if (unusable.length > 0) throw new Error(`banned instances that are not hosts: ${unusable.join(', ')}`);
+    if (unusable.length > 0) throw new CutoverError(`banned instances that are not hosts: ${unusable.join(', ')}`);
 
     const [alembic] = await sql<{ version_num: string }[]>`select version_num from alembic_version`;
     return Bundle.assert({
@@ -393,26 +394,40 @@ export function publicFingerprint(pem: string): string {
     .digest('hex');
 }
 
+/** One row of PieFed's key files (community-keys.json, user-keys.json, site.json); other columns are ignored. */
+export const KeyFile = type({ public_key: 'string', private_key: 'string', 'name?': 'string | null', 'user_name?': 'string | null' });
+type KeyFile = typeof KeyFile.infer;
+
 /**
  * Checks the bundle's keys against the key files exported with the archive (community-keys.json,
  * user-keys.json, site.json), by fingerprint: each public key must match its file's public key,
  * and each private key must be the private half of it. Returns the problems, without key material.
  */
 export function crossCheckKeyFiles(bundle: BundleType, archiveDir: string): { checked: number; problems: string[] } {
-  type Row = { public_key: string; private_key: string; ap_profile_id?: string; ap_public_url?: string; name?: string; user_name?: string };
-  const read = (file: string) => JSON.parse(readFileSync(join(archiveDir, file), 'utf8')) as Row[];
+  const read = (file: string) => readJsonFile(join(archiveDir, file), file, KeyFile.array());
   const problems: string[] = [];
   let checked = 0;
-  const check = (label: string, key: { publicKeyPem: string; privateKeyPem: string }, file: Row | undefined) => {
+  const check = (label: string, key: { publicKeyPem: string; privateKeyPem: string }, file: KeyFile | undefined) => {
     if (!file) {
       problems.push(`${label}: not in the key files`);
       return;
     }
     checked += 1;
     const fingerprint = publicFingerprint(key.publicKeyPem);
-    if (fingerprint !== publicFingerprint(file.public_key)) problems.push(`${label}: public key differs from the key file`);
+    // A key the file holds that does not decode is reported, never quoted (crypto errors name no key, but stay safe).
+    const fromFile = (pem: string) => {
+      try {
+        return publicFingerprint(pem);
+      } catch {
+        problems.push(`${label}: a key in the key file is not a readable key`);
+        return null;
+      }
+    };
+    const filePublic = fromFile(file.public_key);
+    const filePrivate = fromFile(file.private_key);
+    if (filePublic !== null && fingerprint !== filePublic) problems.push(`${label}: public key differs from the key file`);
     if (fingerprint !== publicFingerprint(key.privateKeyPem)) problems.push(`${label}: private key is not the public key's pair`);
-    if (publicFingerprint(file.private_key) !== publicFingerprint(key.privateKeyPem))
+    if (filePrivate !== null && filePrivate !== publicFingerprint(key.privateKeyPem))
       problems.push(`${label}: private key differs from the key file`);
   };
   const users = read('user-keys.json');
