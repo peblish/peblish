@@ -3,10 +3,10 @@ import { actorKeys } from '@peblish/core/db/tables/actors';
 import { deliveries } from '@peblish/core/delivery/tables';
 import { deliveryBlocked, instanceBlocked } from '@peblish/core/peers/gate';
 import { isDormant } from '@peblish/core/remote/instances';
-import { readSetting } from '@peblish/core/settings/read';
 import { tx } from '@peblish/core/tx/tx';
 import { and, eq, sql } from 'drizzle-orm';
 import type { Fetcher } from '../actors/document.ts';
+import { FederationPaused, federationOn } from '../actors/federation-switch.ts';
 import { BlockedDestinationError, safeFetch } from '../actors/safe-fetch.ts';
 import { userAgent } from '../federation.ts';
 import { refreshInstanceSoftware } from '../nodeinfo/client.ts';
@@ -102,6 +102,24 @@ async function renew(row: Claimed, leaseMs: number): Promise<boolean> {
   return renewed.length > 0;
 }
 
+/**
+ * Puts a claimed row back unsent (the federation switch went off before its POST): pending, due
+ * as it was, with the attempt its claim counted given back, so waiting out a pause never uses
+ * up a row's attempts. False when the row had moved on. As with the inbox's yieldLater, a worker
+ * whose lease ran out before this claim then matches the row again until it is next claimed;
+ * what such a worker records is the real result of a POST it made.
+ */
+async function release(row: Claimed): Promise<boolean> {
+  const released = await tx((t) =>
+    t.db
+      .update(deliveries)
+      .set({ attempts: sql`${deliveries.attempts} - 1`, leaseUntil: null })
+      .where(claimedBy(row))
+      .returning({ id: deliveries.id }),
+  );
+  return released.length > 0;
+}
+
 /** Records the outcome of the attempt `row` claimed; false when the row had moved on and nothing was written. */
 async function settle(row: Claimed, outcome: Outcome): Promise<boolean> {
   const done = outcome.state !== 'pending';
@@ -140,8 +158,13 @@ const destinationBlocked = (row: Claimed): Promise<boolean> =>
 
 const blockedOutcome: Outcome = { state: 'skipped', status: null, error: 'the instance is blocked', delayMs: 0 };
 
-/** Null when the row is no longer this worker's: it sends nothing and records nothing. */
-async function attempt(row: Claimed, fetch: Fetcher, leaseMs: number): Promise<Outcome | null> {
+/**
+ * What became of a claimed row that was not sent: `lost`, it is no longer this worker's (nothing
+ * is recorded); `paused`, the federation switch went off before the POST (the row is released).
+ */
+type Unsent = 'lost' | 'paused';
+
+async function attempt(row: Claimed, fetch: Fetcher, leaseMs: number): Promise<Outcome | Unsent> {
   const key = await signingKey(row.senderId);
   if (!key) return { state: 'failed', status: null, error: 'the sender has no signing key', delayMs: 0 };
   let headers: Headers;
@@ -158,10 +181,13 @@ async function attempt(row: Claimed, fetch: Fetcher, leaseMs: number): Promise<O
   }
   headers.delete('host');
   headers.set('user-agent', await userAgent());
-  if (!(await renew(row, leaseMs))) return null;
+  if (!(await renew(row, leaseMs))) return 'lost';
   if (await destinationBlocked(row)) return blockedOutcome;
   const withheld = await withheldReason(row.body);
   if (withheld) return { state: 'skipped', status: null, error: withheld, delayMs: 0 };
+  // Read last, immediately before the POST: the run checked it before claiming, but the NodeInfo
+  // check and the reads above take time, and a pause in that time must stop this send too.
+  if (!(await federationOn())) return 'paused';
   let result: Attempt;
   let status: number | null = null;
   let note: string | null = null;
@@ -192,7 +218,7 @@ async function attempt(row: Claimed, fetch: Fetcher, leaseMs: number): Promise<O
 async function deliver(
   row: Claimed,
   options: Required<Pick<DeliveryOptions, 'fetch' | 'isDormant' | 'refreshSoftware' | 'leaseMs'>>,
-): Promise<Outcome | null> {
+): Promise<Outcome | Unsent> {
   // Checked here too, so a blocked peer is not asked for its NodeInfo either.
   if (await destinationBlocked(row)) return blockedOutcome;
   if (row.instanceId && (await options.isDormant(row.instanceId))) {
@@ -204,8 +230,9 @@ async function deliver(
 
 /**
  * Runs the queue until nothing is due (or `maxRows` rows were taken) and says how the rows ended.
- * With the `delivery.enabled` site setting off it claims nothing: rows stay pending, and a switch
- * turned off mid-run stops the run before its next batch.
+ * With the `delivery.enabled` site setting off it claims nothing: rows stay pending. A switch
+ * turned off mid-run stops every POST not yet made (each reads it just before sending; those rows
+ * go back to pending with their attempt given back) and the run before its next batch.
  */
 export async function deliverDue(options: DeliveryOptions = {}): Promise<DeliveryCounts> {
   const fetch = options.fetch ?? safeFetch;
@@ -227,13 +254,15 @@ export async function deliverDue(options: DeliveryOptions = {}): Promise<Deliver
     await deps.refreshSoftware(origin);
   };
   for (let taken = 0; taken < maxRows && !options.signal?.aborted;) {
-    if (!(await readSetting('delivery.enabled'))) break;
+    if (!(await federationOn())) break;
     const rows = await claimDue(Math.min(batchSize, maxRows - taken), leaseMs);
     if (rows.length === 0) break;
     taken += rows.length;
     await Promise.all(
       rows.map(async (row) => {
-        const outcome = await deliver(row, { ...deps, refreshSoftware }).catch((error: unknown): Outcome => {
+        const outcome = await deliver(row, { ...deps, refreshSoftware }).catch((error: unknown): Outcome | Unsent => {
+          // A read of a peer's document stopped by a pause (a NodeInfo check that does not catch it).
+          if (error instanceof FederationPaused) return 'paused';
           // Something of ours broke. The row follows the schedule of a send that failed, so one
           // whose handling keeps throwing ends failed at the attempt cap with the error kept,
           // not pending for ever.
@@ -242,8 +271,13 @@ export async function deliverDue(options: DeliveryOptions = {}): Promise<Deliver
           const decided = verdict(row.attempts, { error: message, permanent: false });
           return { state: decided.state, status: null, error: message, delayMs: decided.state === 'pending' ? decided.delayMs : 0 };
         });
-        if (!outcome) {
+        if (outcome === 'lost') {
           console.warn(`delivery of ${row.activityApId} to ${row.inboxUrl} not sent: another worker took the row over`);
+          return;
+        }
+        if (outcome === 'paused') {
+          if (!(await release(row)))
+            console.warn(`delivery of ${row.activityApId} to ${row.inboxUrl} not sent (paused); the row had moved on`);
           return;
         }
         if (!(await settle(row, outcome))) {
