@@ -211,3 +211,107 @@ blocked: true, reason })` after an already-blocked check. Not needed for the cut
 - The scratch database `piefed_archive` was restored again for item 3 and is dropped at the end of
   this run, with `peblish_b06_rehearsal`. The re-exported bundle stays at `<scratch>/b06/bundle.json`
   (mode 600) for step 2.
+
+## Step 2 (2026-11-10)
+
+Request 6 first, then the Easypanel rehearsal on `rehearsal-1.peblish.com`, torn down at the end.
+
+### What landed
+
+- `peer.update` allows the system principal with job `import` (and no other system job), with a
+  system authority, after the same domain and local-instance checks. The import blocks peers
+  through `authorize('peer.update', ...)` and `updatePeer.within`, after its already-blocked
+  check; the duplicated write from step 1b is gone (decision 16 is void).
+- `tools/cutover/Dockerfile`: the tool as a temporary Easypanel service (Node 24, Postgres 17
+  client tools from PGDG, `sleep infinity`, no bundle or secret in the image).
+- `deploy/cutover.md`: "On Easypanel" (how the import reaches the database, the order, the SQL
+  kill switches, why the worker must not run), the rehearsal's results, and step 7 and 8 rewritten
+  to match (no SSH tunnel; `worker` created only at step 8).
+
+### Commits
+
+- fcdfc51 Let the instance block peers while importing, and import through updatePeer
+- e5ea1a7 Add an image for running the cutover tool inside an Easypanel project
+- the runbook and these notes, then the merge of `origin/main` (63a6107, PR #7); see the reply
+  for their ids
+
+### Verification
+
+- `pnpm check` green before each commit: 2,614 passed, 9 skipped (fcdfc51, e5ea1a7); the docs
+  commit and the merge are in the reply.
+- The rehearsal, all against `peblish-rehearsal` only:
+  - import refused without `--rehearsal-host`. Then 1 instance actor, 2 users, 2 communities, 130
+    remote communities, 131 follows and 25 peer blocks; the second run was all present. verify: 5
+    of 5 keys pass, routed, the bundle's; 131 accepted, 0 held, 28 hosts.
+  - HTTPS with a Let's Encrypt certificate; 401 without basic auth. `/actor`, `/actor/outbox`,
+    `/u/feddit-admin`, `/u/Andrew`, `/c/announcements`, `/c/microblogs` served, each public key
+    the bundle's (fingerprint compare). WebFinger (user and community) and NodeInfo 2.1 answer.
+  - Andrew: reset through Mailpit, first password set, the used token refused, sign-in, a wrong
+    password refused. Site role `user` and `/admin/*` 403 until TOTP enrolment, then `admin`, and
+    `/admin/peers` lists 25 blocked.
+  - Drill: 4 s, 2,315 rows in 9 tables identical, ledger empty. Rollback by restore: `web`
+    pointed at `peblish_drill` served the restored state (a change marked in `peblish` after the
+    backup was absent, a pre-backup session valid); pointed back, the change was served again.
+    `peblish_drill` was then dropped.
+
+### Decisions and deviations
+
+18. **The import reaches Postgres from inside the project**, through a temporary `cutover` service
+    on the internal network. The bundle is copied in over the panel's console with echo off, and
+    its SHA-256 is compared. No exposed port, no tunnel and no SSH key (the operator machine has no
+    key for the server anyway). Production does the same (runbook step 7).
+19. **Kill switches by SQL** in the `cutover` console right after migrate, before `web` exists:
+    no admin can sign in before the reset and two-factor.
+20. **MinIO without a bucket**, with the root credentials as S3 keys: uploads are off and nothing
+    touched S3. That differs from staging, and it doesn't matter for this rehearsal.
+21. **Two-factor enrolled for Andrew** in the rehearsal (not asked), to prove an imported admin
+    becomes an admin; the secret never left the shell.
+22. **Not tested over HTTPS:** the unsigned POST to `/actor/inbox`. It was tested locally in step
+    1b; I left it out once the worker incident showed that a request can lead to fetches.
+23. **The local bundle is deleted**, with the step 1 local drill backups. The runbook re-exports
+    from the archive for each run (`export` in step 4, `bundle-final.json` in step 6), so a later
+    rehearsal needs only the archive.
+
+### Incident: the rehearsal contacted live peers
+
+Easypanel started `worker` by itself when its source was uploaded (10:17:45 UTC), before I
+deployed it on purpose. It ran until I stopped it (about 10:23) after seeing a fetch of
+`50501.chat` in its log. In that time it fetched 268 actors, 155 posts and 116 comments from 41
+hosts, mirrored 146 moderators and read 41 instances' NodeInfo. Those GETs ran the jobs that need
+no switch: `federation.moderators` and `federation.backfill_run` (4 of the 130 backfills the
+accepted follows queued). They were signed as `https://rehearsal-1.peblish.com/actor`, whose key
+fetch then met basic auth and now NXDOMAIN. It made no POSTs: `delivery.enabled` held, and
+`deliveries` was empty. The brief's "never contact any live peer" was broken by the deployment
+shape, "worker as staging has them", combined with the belief that the delivery switch keeps a
+peblish quiet. It doesn't, and the runbook now says so. The rest of the rehearsal ran with the
+worker stopped.
+
+### Requests to root
+
+3. **An outbound-fetch switch** (outside this write set), for example `fetch.enabled`, or
+   `inbox.enabled` also gating `federation.moderators`, `federation.backfill_run`,
+   `federation.recheck_objects` and the actor and NodeInfo refreshes. With it, a rehearsal or a
+   staging copy of real follows can run the worker, and production step 7 could create the worker
+   early.
+4. **The rehearsal's basic-auth password appeared once in my tool output.** curl's
+   `%{redirect_url}` adds the credentials to the URL it prints. The project is destroyed, so the
+   password protects nothing now.
+
+### Teardown
+
+- Easypanel: `web`, `worker`, `cutover`, `mailpit`, `minio` and `postgres` destroyed, then the
+  project. No container remains for any of them, the domain list is empty, and the project list
+  holds 12 projects, none `peblish-rehearsal`. Before that, `/tmp/cutover` in `cutover` was
+  emptied, which held the bundle, the import and verify reports, and the drill backup.
+- DNS: record `rehearsal-1.peblish.com` deleted. The zone is back to its 5 records, and the
+  authoritative nameserver answers NXDOMAIN.
+- No SSH key, tunnel or API token was made. `~/.agents/peblish-rehearsal.env` is deleted. Also
+  deleted: the scratch bundle, the step 1 drill backups, the source archive, the cookie and auth
+  files, and the panel's frontend JS. The scratch tools that hold no secret stay.
+
+### Left open
+
+- Easypanel's built images (`easypanel/peblish-rehearsal/{web,worker,cutover}`) and any volume
+  data on the host cannot be confirmed gone without host access. The images hold source only;
+  the database volume went with the `postgres` service as far as the panel shows.
+- The peers that served the worker may list `rehearsal-1.peblish.com` as a known instance.

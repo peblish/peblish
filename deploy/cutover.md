@@ -94,8 +94,80 @@ and both communities answer their documents; unsigned POSTs to `/actor/inbox`, `
 actor inbox answer 401; WebFinger and NodeInfo 2.1 with usage answer. `/` serves the HTML page
 only: the imported instance actor lives at `/actor`.
 
-The Easypanel rehearsal on a throwaway peblish.com subdomain (B06 step 2) repeats this with every
-kill switch off (federation off), then tears the project, its DNS record and its database down.
+### On Easypanel: how the import reaches the database
+
+The import runs inside the Easypanel project, never over an exposed Postgres or a tunnel. A
+temporary `cutover` App service is built from the same uploaded source as `web` and `worker` with
+build type Dockerfile and file `tools/cutover/Dockerfile` (the tool, Postgres 17 client tools,
+psql and curl; it runs `sleep infinity`). Its only environment is `DATABASE_URL` (the project's
+internal Postgres host, `<project>_postgres:5432`), `PUBLIC_ORIGIN` and, in a rehearsal, the
+Mailpit URL. The operator copies the bundle into its console with echo off to
+`/tmp/cutover/bundle.json` (mode 600, directory 700), compares its SHA-256 with the local
+copy, and runs the commands there. When done, `rm -rf /tmp/cutover/*`, then destroy the service.
+No image layer ever holds the bundle.
+
+Order on a fresh project, each step read back before the next:
+
+1. `postgres` (17, not exposed), then `cutover`: upload the source, then set the build (Easypanel
+   refuses a build setting before a source exists), then its environment, then deploy.
+2. In the `cutover` console: migrate with `PUBLIC_ORIGIN` unset, then set the kill switches
+   before `web` or `worker` exists (no admin can sign in yet, so this is SQL):
+
+   ```sh
+   cd /app && env -u PUBLIC_ORIGIN node packages/core/src/db/migrate-cli.ts
+   psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c "insert into site_settings (key, value) values
+     ('delivery.enabled', 'false'::jsonb), ('registration.enabled', 'false'::jsonb)
+     on conflict (key) do update set value = excluded.value, updated_at = now()"
+   ```
+
+3. Copy the bundle in, then `import` (twice: the second is all `present`) and `verify`, as above.
+4. `web` with its domain (HTTPS) and environment. **No `worker` until peers may be contacted**
+   (below). Then the served-documents check, the password reset and the drill.
+
+Easypanel starts a deployment by itself when a service's source is uploaded, so a service runs
+as soon as it has code, not only when deployed. A `deployService` request can time out at the
+panel's proxy (HTTP 524) while the build goes on: poll the service's actions until the new one is
+`done`.
+
+**The worker contacts peers whatever the kill switches say.** `delivery.enabled` stops deliveries
+only. On start the worker runs every job once: it mirrors the moderators of each followed remote
+community (`federation.moderators`), runs the backfills that accepting the 131 follows queued
+(`federation.backfill_run`), and fetches the actors, posts and instance NodeInfo those bring.
+`inbox.enabled` gates only the missing-object fetches. So a rehearsal never runs the worker, and
+production creates it only at step 8.
+
+### Easypanel rehearsal, 2026-11-10 (lane B06 step 2)
+
+Project `peblish-rehearsal` on 38.102.126.114, A record `rehearsal-1.peblish.com` (DNS only, TTL
+60), branch `mvp-w4-b06`. Services `postgres` 17.11, `cutover`, `web` (basic auth), `mailpit`,
+`minio`, `worker`. Differences from staging: the MinIO root credentials served as the S3 keys and
+no bucket was made (uploads are off and nothing reached S3), and the worker ran by mistake (below).
+
+- Import: refused without `--rehearsal-host`. Then 1 instance actor, 2 users, 2 communities, 130
+  remote communities, 131 follows and 25 peer blocks; the second run was all `present`. verify: 5 of 5
+  keys pass and are routed and the bundle's, 131 follows accepted, 0 held, 28 hosts. 2 auth users,
+  0 credential accounts, emails on the rehearsal host.
+- Over HTTPS (Let's Encrypt certificate; 401 without basic auth): `/actor` (Application, inbox
+  `/actor/inbox`, key `/actor#main-key`), `/actor/outbox`, `/u/feddit-admin`, `/u/Andrew` and both
+  communities answer their documents, and each served public key is the bundle's. WebFinger for a
+  user and a community, and NodeInfo 2.1 (peblish, 2 users, registrations closed), also answer.
+- Andrew: a reset requested at `/auth/reset` reached Mailpit (sent by `web` itself; the worker is
+  not involved), set the first password, and the used link was then refused. Sign-in worked, and a
+  wrong password was refused. Until two-factor is on, the session's site role is `user` and
+  `/admin/*` answers 403 ("needs two-factor"). After TOTP enrolment at `/settings/security` the
+  role is `admin` and `/admin/peers` lists the 25 blocked peers.
+- Drill in the `cutover` console: backup, ledger export, restore into `peblish_drill` and
+  re-apply in 4 s, table counts identical (2,315 rows), ledger empty. Rollback by restore: `web`
+  pointed at `peblish_drill` (its `DATABASE_URL` changed and redeployed) served the restored
+  data (a change made to `peblish` after the backup was absent, Andrew's earlier session still
+  valid, the 5 keys the bundle's). Pointed back, it served the change again.
+- **Peers were contacted.** The worker auto-started when its source was uploaded (10:17:45 UTC)
+  and ran until it was stopped (about 10:23). It fetched 268 actors, 155 posts and 116 comments
+  from 41 hosts, mirrored 146 moderators and probed 41 instances' NodeInfo, signed as
+  `https://rehearsal-1.peblish.com/actor`. It made no deliveries (`deliveries` was empty). The
+  section above is the fix.
+- Teardown: services and project destroyed, DNS record deleted (authoritative NXDOMAIN), bundle and
+  backups removed from the container first.
 
 ## Backups and the deletion ledger
 
@@ -158,20 +230,21 @@ rollback target.
 
 ## Step 7: production import and origin switch (production)
 
-1. Production Easypanel project (decision 9) with `postgres`, `web`, `worker` as in `README.md`.
-   Run the first migrate with `PUBLIC_ORIGIN` **unset**. Then reach its Postgres from the
-   operator machine through an SSH tunnel (the way the Easypanel rehearsal did) and import:
+1. Production Easypanel project (decision 9) with `postgres` and a temporary `cutover` service,
+   in the order of "On Easypanel" (step 4): migrate with `PUBLIC_ORIGIN` **unset**, set
+   `delivery.enabled` and `registration.enabled` off and also `inbox.enabled` off (so peers get
+   503 with `Retry-After`), copy the bundle in, then in the `cutover` console
+   (`PUBLIC_ORIGIN=https://feddit.com`):
 
    ```sh
-   export DATABASE_URL=postgres://<user>:<password>@127.0.0.1:<tunnel port>/<db> PUBLIC_ORIGIN=https://feddit.com
-   node tools/cutover/src/cli.ts import --bundle $S/bundle-final.json
-   node tools/cutover/src/cli.ts verify --bundle $S/bundle-final.json
+   node tools/cutover/src/cli.ts import --bundle /tmp/cutover/bundle-final.json
+   node tools/cutover/src/cli.ts verify --bundle /tmp/cutover/bundle-final.json
    ```
 
-2. Set `PUBLIC_ORIGIN=https://feddit.com`, `BETTER_AUTH_SECRET`, `SMTP_URL`, `MAIL_FROM` and
-   `PEBLISH_TRUSTED_PROXY=cloudflare` on `web` and `worker`; the origin accepts Cloudflare's
-   address ranges only (Easypanel or host firewall). Turn `inbox.enabled` and `delivery.enabled`
-   off until step 8, so peers get 503 with `Retry-After` and nothing is sent early.
+2. Add `web` as in `README.md` with `PUBLIC_ORIGIN=https://feddit.com`, `BETTER_AUTH_SECRET`,
+   `SMTP_URL`, `MAIL_FROM` and `PEBLISH_TRUSTED_PROXY=cloudflare`; the origin accepts Cloudflare's
+   address ranges only (Easypanel or host firewall). **Do not create `worker` yet**: it would
+   fetch from the followed communities' instances at once (step 4), before the switch.
 3. Sign in (point feddit.com at the new origin in the admin's own hosts file): `Andrew` asks for a
    password reset at `/auth/reset`, sets a password, turns on two-factor at `/settings/security`.
    `feddit-admin` does the same when needed. No account has an age declaration (NSFW stays hidden
@@ -191,7 +264,10 @@ rollback target.
 
 ## Step 8: verify peers (production)
 
-1. Turn `inbox.enabled` and `delivery.enabled` back on.
+1. Turn `inbox.enabled` and `delivery.enabled` back on, then create `worker` (same source and
+   environment as `web`, `PEBLISH_PROCESS=worker`). It starts the 130 queued backfills and the
+   moderator mirrors at once. Run the drill and the cleanup in the `cutover` console
+   (`rm -rf /tmp/cutover/*`), then destroy `cutover`.
 2. `feddit-admin` delivery to piefed.social and lemmy.world: post in a followed community on each
    and see it there. In the lab Lemmy 0.19.21 resolved and accepted `feddit-admin` (B06 notes,
    "Lemmy name check"); if production disagrees, test with `Andrew`, which has no hyphen.
