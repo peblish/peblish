@@ -277,7 +277,7 @@ restorable (its database and volumes stay); then take the final archive.
    ```
 
    A Cloudflare error page, a `52x` or a missing `Retry-After` is a no-go: restore the file (rollback
-   below) and look at Cloudflare's custom error rules first. The responder stays until step 7's origin switch has
+   below) and look at Cloudflare's custom error rules first. The responder stays until the origin switch (step 7.8) has
    pointed Cloudflare at the new origin (and after that it serves nothing); the rollback removes it.
 
 2. Stop PieFed and take the final dump (the database container keeps running):
@@ -311,17 +311,64 @@ against the final dump before exporting. Beyond the responder and the stopped se
    ```
 
 2. Add `web` as in `README.md` with `PUBLIC_ORIGIN=https://feddit.com`, `BETTER_AUTH_SECRET`,
-   `SMTP_URL`, `MAIL_FROM` and `PEBLISH_TRUSTED_PROXY=cloudflare`; the origin accepts Cloudflare's
-   address ranges only (Easypanel or host firewall). `worker` (same source and environment as
-   `web`, `PEBLISH_PROCESS=worker`) may be created now, with the federation switch still off:
-   read `delivery.enabled` back as `false` first. Its jobs wait until step 8.
-3. Sign in (point feddit.com at the new origin in the admin's own hosts file): `Andrew` asks for a
-   password reset at `/auth/reset`, sets a password, signs in and turns on two-factor at
-   `/settings/security` in that same session. Admin pages need a session that passed two-factor
-   (enrolled or verified in it), not only an account with it on; enrolling signs every other
-   session out. `feddit-admin` does the same when needed. No account has an age declaration (NSFW
-   stays hidden until each declares in settings).
-4. Host-header pretest against the new origin (`O` its address):
+   `SMTP_URL`, `MAIL_FROM` and `PEBLISH_TRUSTED_PROXY=cloudflare`. `worker` (same source and
+   environment as `web`, `PEBLISH_PROCESS=worker`) may be created now, with the federation switch
+   still off: read `delivery.enabled` back as `false` first. Its jobs wait until step 8.
+
+   The new origin needs a certificate for feddit.com before the switch, and a Let's Encrypt HTTP
+   challenge cannot pass while Cloudflare still sends feddit.com to the box (which answers 503).
+   Install one that does not depend on that (a Cloudflare Origin CA certificate, or a DNS
+   challenge) before the pretest; until then `curl` below needs `-k`, which proves nothing about TLS.
+
+3. **Origin firewall: Cloudflare only.** `PEBLISH_TRUSTED_PROXY=cloudflare` takes each client's
+   address from `CF-Connecting-IP`, a header anyone reaching the origin directly can set, so from
+   now on the origin takes ports 80 and 443 from Cloudflare's ranges only. On the production host,
+   as root. Docker publishes Traefik's ports past `ufw`, so the rules go in Docker's `DOCKER-USER`
+   chain, matched on the original port and on new connections arriving on the public interface
+   (so the worker's own outgoing HTTPS is not touched). Check first that
+   `docker ps --format '{{.Names}} {{.Ports}}' | grep -i traefik` shows `0.0.0.0:443->443/tcp`; if
+   Traefik uses the host network instead, the same two rules go in `INPUT` with `--dport`.
+
+   ```sh
+   IF=$(ip route show default | awk '{print $5; exit}')
+   ipset create origin-allow  hash:net family inet  -exist
+   ipset create origin-allow6 hash:net family inet6 -exist
+   for n in $(curl -s https://www.cloudflare.com/ips-v4); do ipset add origin-allow  "$n" -exist; done
+   for n in $(curl -s https://www.cloudflare.com/ips-v6); do ipset add origin-allow6 "$n" -exist; done
+   for port in 80 443; do
+     iptables  -I DOCKER-USER -i "$IF" -p tcp -m conntrack --ctstate NEW --ctorigdstport $port -m set ! --match-set origin-allow  src -j DROP
+     ip6tables -I DOCKER-USER -i "$IF" -p tcp -m conntrack --ctstate NEW --ctorigdstport $port -m set ! --match-set origin-allow6 src -j DROP
+   done
+   iptables -S DOCKER-USER; ip6tables -S DOCKER-USER; ipset list -t origin-allow   # read back
+   ```
+
+   Make the sets and rules survive a reboot (`netfilter-persistent save` with `ipset-persistent`
+   installed). Cloudflare's ranges change rarely; re-read them before opening and monthly.
+
+4. **Operator path for the pretest (temporary).** The sign-in and the pretest below go straight to
+   the origin from Andrew's machine, which the firewall now refuses. Let his current public
+   address in for this step only:
+
+   ```sh
+   ME=$(curl -s https://www.cloudflare.com/cdn-cgi/trace | sed -n 's/^ip=//p')   # on Andrew's machine
+   ipset add origin-allow <ME> -exist       # on the host, as root, with that address (origin-allow6 for IPv6)
+   ```
+
+   and add `<O> feddit.com` to his machine's hosts file (`O` the new origin's address). A direct
+   request carries no `CF-Connecting-IP`, so the app falls back to the connection's peer, which
+   behind Easypanel is Traefik: every direct request shares Traefik's internal address as its
+   client address, so throttles (sign-in, password reset, inbox key lookups) count all of them
+   together, and the session list shows Traefik's address for this session. A direct client could
+   also send its own `CF-Connecting-IP` and pick its key. Both are harmless while only Andrew's
+   address is let in, and the reason the path closes in item 7.
+
+5. Sign in: `Andrew` asks for a password reset at `/auth/reset`, sets a password, signs in and
+   turns on two-factor at `/settings/security` in that same session. Admin pages need a session
+   that passed two-factor (enrolled or verified in it), not only an account with it on; enrolling
+   signs every other session out. `feddit-admin` does the same when needed. No account has an age
+   declaration (NSFW stays hidden until each declares in settings). If a reset is refused as
+   throttled, wait out the window (item 4: direct requests share one budget).
+6. Host-header pretest against the new origin, from Andrew's machine:
 
    ```sh
    R="--resolve feddit.com:443:$O"; AP='Accept: application/activity+json'
@@ -331,8 +378,20 @@ against the final dump before exporting. Beyond the responder and the stopped se
    curl -s $R -X POST -H 'content-type: application/activity+json' -d '{}' -o /dev/null -w '%{http_code}\n' https://feddit.com/inbox   # 401 or 503, never 410, 418 or another 5xx
    ```
 
-5. Switch the Cloudflare origin of feddit.com to the new origin in one step (the proxied DNS
-   record). No cache rules on `/u`, `/c`, `/post`; the WAF must not block `POST /inbox`.
+7. **Close the operator path** before the switch: on the host `ipset del origin-allow <ME>`, and
+   remove the hosts file line on Andrew's machine. Then check, from Andrew's machine, that a
+   direct request is refused and the set holds Cloudflare's ranges only:
+
+   ```sh
+   curl -s --connect-timeout 5 --resolve feddit.com:443:$O -o /dev/null -w '%{http_code}\n' https://feddit.com/nodeinfo/2.1   # 000: no connection
+   ipset test origin-allow <ME>             # on the host: "is NOT in set origin-allow"
+   ```
+
+   Any answer other than `000` is a no-go: the origin is reachable around Cloudflare.
+
+8. Switch the Cloudflare origin of feddit.com to the new origin in one step (the proxied DNS
+   record). No cache rules on `/u`, `/c`, `/post`; the WAF must not block `POST /inbox`. From here
+   the box's responder (step 6) gets no traffic.
 
 ## Step 8: verify peers (production)
 
@@ -350,7 +409,9 @@ against the final dump before exporting. Beyond the responder and the stopped se
 
 ## Step 9: open (production)
 
-Admins first, then invitees (cap about 25 for 30 days).
+Before the first admin or invitee, repeat the step 7.7 check from an address outside Cloudflare (a
+direct request gets no connection) and read `ipset list origin-allow` back: Cloudflare's ranges
+only, no operator address. Then admins first, then invitees (cap about 25 for 30 days).
 
 ## Step 10: soak and retirement (production)
 
