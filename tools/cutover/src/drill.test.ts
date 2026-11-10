@@ -2,12 +2,22 @@ import { mkdtempSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { db } from '@peblish/core/db/read';
+import { localInstance } from '@peblish/core/db/local-instance';
 import { actors } from '@peblish/core/db/tables/actors';
 import { comments, posts } from '@peblish/core/db/tables/content';
 import { writer } from '@peblish/core/db/write';
 import { loadFixtureSet } from '@peblish/core/fixtures/load';
+import { scanConfig } from '@peblish/core/mediascan/config';
+import { confirmQuarantined } from '@peblish/core/mediascan/review';
+import { scanUpload } from '@peblish/core/mediascan/scan';
+import { mediaBlocklist } from '@peblish/core/mediascan/tables';
 import { recordDeletion, recordRestoration } from '@peblish/core/remote/ledger';
+import { memoryStore } from '@peblish/core/storage/memory';
 import { truncateAll } from '@peblish/core/testing/db';
+import { seedLocalInstance } from '@peblish/core/testing/seed-a';
+import { admin, seedAdmin } from '@peblish/core/testing/seed-az';
+import { seedMedia } from '@peblish/core/testing/seed-safe';
+import { seedActor } from '@peblish/core/testing/seed';
 import { eq, sql } from 'drizzle-orm';
 import postgres from 'postgres';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
@@ -96,7 +106,13 @@ describe.skipIf(tools < major)('backup and restore drill', () => {
     try {
       // The backup alone brings the post back and keeps the comment deleted.
       expect((await restored`select deleted_at from posts where id = ${post.id}`)[0]?.deleted_at).toBeNull();
-      expect(await reapplyLedger(restoredUrl, readLedgerExport(ledger))).toEqual({ restoredRows: 1, appended: 3, applied: 4, absent: 0 });
+      expect(await reapplyLedger(restoredUrl, readLedgerExport(ledger))).toEqual({
+        restoredRows: 1,
+        appended: 3,
+        applied: 4,
+        absent: 0,
+        quarantinedCopies: 0,
+      });
       expect((await restored`select deleted_at from posts where id = ${post.id}`)[0]?.deleted_at).not.toBeNull();
       expect((await restored`select deleted_at from comments where id = ${comment.id}`)[0]?.deleted_at).toBeNull();
       const [actor] = await restored`select deleted_at, display_name from actors where id = ${gone.id}`;
@@ -160,6 +176,90 @@ describe.skipIf(tools < major)('backup and restore drill', () => {
         dropOwnDatabase({ url: occupiedUrl, name: databaseName(occupiedUrl), marker: 'peblish.cutover restore other' }),
       ).rejects.toThrow(/was not created by this run/);
       expect(await exists(databaseName(occupiedUrl))).toBe(true);
+    },
+  );
+
+  test(
+    'a restore re-applies a media block whole: the hash goes back on the list and the clean copies the backup holds are quarantined',
+    { timeout: 120_000 },
+    async () => {
+      await truncateAll();
+      await seedLocalInstance();
+      const row = await localInstance(db());
+      const instance = { ...row, domain: new URL(row.origin).host, local: true };
+      const adminId = (await seedAdmin(instance, 'reviewer')).id;
+      const uploaderId = (await seedActor(instance, 'Person', 'uploader')).id;
+      const store = memoryStore();
+      const local = { config: scanConfig({ MEDIASCAN_LOCAL_ONLY: '1' }), store };
+      /** A real quarantine (a listed hash, scanned inline), with the list entry then taken off again. */
+      const quarantined = async (bytes: Buffer, keepEntry: boolean) => {
+        const media = await seedMedia(store, { ownerId: uploaderId, bytes });
+        await writer().insert(mediaBlocklist).values({ kind: 'sha256', value: media.sha256!, category: 'csam' }).onConflictDoNothing();
+        expect(await scanUpload(media.id, local)).toBe('quarantined');
+        if (!keepEntry) await writer().delete(mediaBlocklist).where(eq(mediaBlocklist.value, media.sha256!));
+        return media;
+      };
+      const first = Buffer.from('an image blocked after the backup');
+      const second = Buffer.from('an image uploaded and blocked after the backup');
+
+      // In the backup: the first image quarantined (its hash not listed), a clean copy of it, and a clean copy of the second.
+      const blocked = await quarantined(first, false);
+      const copy = await seedMedia(store, { ownerId: uploaderId, bytes: first, state: 'clean' });
+      const laterCopy = await seedMedia(store, { ownerId: uploaderId, bytes: second, state: 'clean' });
+      const file = join(dir, 'media.dump');
+      await backup(url, file);
+
+      // After it: the first is confirmed, then the second is uploaded, caught and confirmed; each block lists the hash and quarantines the copy.
+      expect((await confirmQuarantined(admin(adminId), { mediaId: blocked.id, removePosts: false }, { store })).ok).toBe(true);
+      const unseen = await quarantined(second, true);
+      expect((await confirmQuarantined(admin(adminId), { mediaId: unseen.id, removePosts: false }, { store })).ok).toBe(true);
+      const ledger = join(dir, 'media-ledger.json');
+      expect(await exportLedger(url, ledger)).toBe(2);
+      expect(readLedgerExport(ledger).map((entry) => entry.details)).toMatchObject([
+        { sha256: blocked.sha256, category: 'csam' },
+        { sha256: unseen.sha256, category: 'csam' },
+      ]);
+
+      const media = await restore(file, named(`${databaseName(url)}_media`));
+      const restored = postgres(media.url, { max: 1, onnotice: () => undefined });
+      try {
+        const states = async () =>
+          Object.fromEntries(
+            (await restored<{ id: string; scan_state: string }[]>`select id, scan_state from media`).map((m) => [m.id, m.scan_state]),
+          );
+        const listed = async () =>
+          (await restored<{ value: string; category: string }[]>`select value, category from media_blocklist order by value`).map((e) => [
+            e.value,
+            e.category,
+          ]);
+        // The backup alone serves both copies and lists neither hash.
+        expect(await states()).toEqual({ [blocked.id]: 'quarantined', [copy.id]: 'clean', [laterCopy.id]: 'clean' });
+        expect(await listed()).toEqual([]);
+
+        const [{ last } = { last: 0 }] = await restored<{ last: number }[]>`select coalesce(max(id), 0)::int as last from outbox`;
+        expect(await reapplyLedger(media.url, readLedgerExport(ledger))).toEqual({
+          restoredRows: 0,
+          appended: 2,
+          applied: 1,
+          absent: 1,
+          quarantinedCopies: 2,
+        });
+        expect(await states()).toEqual({ [blocked.id]: 'blocked', [copy.id]: 'quarantined', [laterCopy.id]: 'quarantined' });
+        expect(await listed()).toEqual([blocked.sha256!, unseen.sha256!].sort().map((value) => [value, 'csam']));
+        // Each copy is an incident of its own, with its event in the restored outbox for the worker.
+        const [incidents] = await restored<{ n: number }[]>`
+        select count(*)::int as n from media_evidence where media_id in (${copy.id}, ${laterCopy.id}) and status = 'open' and source = 'list'`;
+        expect(incidents?.n).toBe(2);
+        const events = await restored<{ media_id: string }[]>`
+        select payload->>'mediaId' as media_id from outbox where type = 'media.quarantined' and id > ${last} order by id`;
+        expect(events.map((e) => e.media_id).sort()).toEqual([copy.id, laterCopy.id].sort());
+
+        // Applied again, nothing more is caught.
+        expect(await reapplyLedger(media.url, readLedgerExport(ledger))).toMatchObject({ appended: 0, quarantinedCopies: 0 });
+      } finally {
+        await restored.end({ timeout: 5 });
+        await dropOwnDatabase(media);
+      }
     },
   );
 });

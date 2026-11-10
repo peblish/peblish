@@ -194,7 +194,10 @@ node tools/cutover/src/cli.ts drill --db $DATABASE_URL --dir $S/drill   # backup
 `restore` appends the exported rows the backup lacks (same ids, sequence moved past them), then
 applies every ledger row in id order in one transaction: remote object and actor deletions (with
 the actor's content when `removeContent`), their undeletions, local account deletions (the
-better-auth user goes again) and blocked media. A row with no rule stops the restore and changes
+better-auth user goes again) and blocked media, whole: the row blocked again, its hash back on
+the list and every clean copy of it the backup holds quarantined again (core's own block path, so
+each copy gets its incident and a `media.quarantined` event in the restored outbox), even when the
+blocked row itself is newer than the backup. Each ledger row names the hash for this. A row with no rule stops the restore and changes
 nothing; add the rule before going live. Point the services at the restored database only after
 it reports.
 

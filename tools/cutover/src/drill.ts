@@ -2,7 +2,19 @@ import { spawn } from 'node:child_process';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { closeSync, mkdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { actors } from '@peblish/core/db/tables/actors';
+import { media } from '@peblish/core/db/tables/media';
+import { deletionLedger } from '@peblish/core/db/tables/site';
+import type { WriteTx } from '@peblish/core/db/write';
+import { mediaEvidence } from '@peblish/core/evidence/tables';
+import { categoryOf, listBlockedHash } from '@peblish/core/mediascan/block';
+import { blockCategories } from '@peblish/core/mediascan/list';
+import { outboxEmitter } from '@peblish/core/tx/tx';
+import type { OutboxEvent } from '@peblish/schema/events';
+import type { Uuid } from '@peblish/schema/ids';
 import { type } from 'arktype';
+import { asc, eq, sql, type SQL } from 'drizzle-orm';
+import { drizzle } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
 import { openPrivate, writePrivate } from './bundle.ts';
 
@@ -155,40 +167,38 @@ export async function restore(file: string, url: string): Promise<OwnDatabase> {
   }
 }
 
-async function readLedger(sql: Sql | postgres.TransactionSql): Promise<LedgerRow[]> {
-  const rows = await sql<
-    {
-      id: string;
-      subject_kind: LedgerRow['subjectKind'];
-      subject_id: string;
-      subject_ap_id: string | null;
-      reason: string;
-      requested_by: string | null;
-      details: Record<string, unknown>;
-      created_at: Date;
-    }[]
-  >`select id, subject_kind, subject_id, subject_ap_id, reason, requested_by, details, created_at from deletion_ledger order by id`;
+/** Drizzle on one connection to the database `url` names: the ledger, and core's block path for its replay. */
+function connect(url: string) {
+  const client = postgres(url, { max: 1, onnotice: () => undefined });
+  return { db: drizzle({ client }), end: () => client.end({ timeout: 5 }) };
+}
+
+/** The transaction a replay runs in, with an outbox emit, as core's own block path expects. */
+type ReplayTx = { readonly db: WriteTx; emit(event: OutboxEvent): Promise<void> };
+
+async function readLedger(q: WriteTx): Promise<LedgerRow[]> {
+  const rows = await q.select().from(deletionLedger).orderBy(asc(deletionLedger.id));
   return rows.map((row) => ({
-    id: Number(row.id),
-    subjectKind: row.subject_kind,
-    subjectId: row.subject_id,
-    subjectApId: row.subject_ap_id,
+    id: row.id,
+    subjectKind: row.subjectKind,
+    subjectId: row.subjectId,
+    subjectApId: row.subjectApId,
     reason: row.reason,
-    requestedBy: row.requested_by,
-    details: row.details,
-    createdAt: row.created_at.toISOString(),
+    requestedBy: row.requestedBy,
+    details: row.details as Record<string, unknown>,
+    createdAt: row.createdAt.toISOString(),
   }));
 }
 
 /** Every deletion_ledger row of the database `url` names, as a mode 600 JSON file. */
 export async function exportLedger(url: string, file: string): Promise<number> {
-  const sql = postgres(url, { max: 1, onnotice: () => undefined });
+  const { db, end } = connect(url);
   try {
-    const rows = await readLedger(sql);
+    const rows = await db.transaction(readLedger);
     writePrivate(file, `${JSON.stringify({ format: 'peblish.ledger/1', exportedAt: new Date().toISOString(), rows }, null, 2)}\n`);
     return rows.length;
   } finally {
-    await sql.end({ timeout: 5 });
+    await end();
   }
 }
 
@@ -199,71 +209,108 @@ export function readLedgerExport(file: string): LedgerRow[] {
 const remote = (row: LedgerRow) => row.details.remote === true;
 
 /**
+ * The hash half of a media block, through core's listBlockedHash: the hash goes back on the list
+ * and every clean copy the backup holds is quarantined again, whether or not the blocked row
+ * itself is in the backup. A row written before the ledger named the hash falls back to the
+ * restored media row's hash and the category of its evidence. The copies' incidents start now,
+ * so an admin gets the whole undecided window for them again. Returns how many it quarantined.
+ */
+async function replayBlockedHash(t: ReplayTx, row: LedgerRow): Promise<number> {
+  const { details } = row;
+  const [stored] = await t.db.select({ sha256: media.sha256 }).from(media).where(eq(media.id, row.subjectId));
+  const sha256 = typeof details.sha256 === 'string' ? details.sha256 : (stored?.sha256 ?? null);
+  if (sha256 === null) return 0;
+  let category = blockCategories.find((known) => known === details.category);
+  if (!category && typeof details.evidenceId === 'string') {
+    const [evidence] = await t.db
+      .select({ source: mediaEvidence.source, classification: mediaEvidence.classification })
+      .from(mediaEvidence)
+      .where(eq(mediaEvidence.id, details.evidenceId));
+    if (evidence) category = categoryOf(evidence);
+  }
+  // The admin who confirmed it, when the backup has them (the entry's added_by is a foreign key).
+  const [by] = row.requestedBy ? await t.db.select({ id: actors.id }).from(actors).where(eq(actors.id, row.requestedBy)) : [];
+  const { quarantinedCopies } = await listBlockedHash(t, {
+    action: 'media.scan',
+    sha256,
+    category: category ?? 'other',
+    by: (by?.id as Uuid | undefined) ?? null,
+    now: new Date(),
+  });
+  return quarantinedCopies;
+}
+
+/**
  * Brings one ledger row's state change back, as the write that recorded it made it (identity/
  * delete.ts, remote/actors.ts, remote/objects.ts, inbound Delete and Undo, mediascan/block.ts).
  * Returns whether its subject exists here; throws on a reason it does not know, so a restore stops
  * instead of skipping a deletion.
  */
-async function apply(q: postgres.TransactionSql, row: LedgerRow): Promise<boolean> {
-  const at = new Date(row.createdAt);
+async function apply(t: ReplayTx, row: LedgerRow, tally: { quarantinedCopies: number }): Promise<boolean> {
+  const q = t.db;
+  const at = row.createdAt;
   const id = row.subjectId;
-  const hit = (result: { count: number }) => result.count > 0;
+  const hit = async (statement: SQL) => (await q.execute(statement)).count > 0;
   switch (`${row.subjectKind}:${row.reason}`) {
     case 'post:remote.object_deleted':
     case 'post:remote.object_gone':
-      return hit(await q`update posts set deleted_at = coalesce(deleted_at, ${at}) where id = ${id}`);
+      return hit(sql`update posts set deleted_at = coalesce(deleted_at, ${at}::timestamptz) where id = ${id}`);
     case 'comment:remote.object_deleted':
     case 'comment:remote.object_gone':
-      return hit(await q`update comments set deleted_at = coalesce(deleted_at, ${at}) where id = ${id}`);
+      return hit(sql`update comments set deleted_at = coalesce(deleted_at, ${at}::timestamptz) where id = ${id}`);
     case 'post:remote.object_undeleted':
-      return hit(await q`update posts set deleted_at = null where id = ${id}`);
+      return hit(sql`update posts set deleted_at = null where id = ${id}`);
     case 'comment:remote.object_undeleted':
-      return hit(await q`update comments set deleted_at = null where id = ${id}`);
+      return hit(sql`update comments set deleted_at = null where id = ${id}`);
     case 'actor:remote.actor_deleted': {
-      const found = hit(
-        await q`
+      const found = await hit(sql`
         update actors set display_name = null, summary_html = null, icon_url = null, banner_url = null, posting_warning = null,
-          raw = null, deleted_at = coalesce(deleted_at, ${at})
-        where id = ${id} and not local`,
-      );
+          raw = null, deleted_at = coalesce(deleted_at, ${at}::timestamptz)
+        where id = ${id} and not local`);
       if (found && row.details.removeContent === true) {
-        await q`update posts set deleted_at = coalesce(deleted_at, ${at}) where author_id = ${id}`;
-        await q`update comments set deleted_at = coalesce(deleted_at, ${at}) where author_id = ${id}`;
+        await q.execute(sql`update posts set deleted_at = coalesce(deleted_at, ${at}::timestamptz) where author_id = ${id}`);
+        await q.execute(sql`update comments set deleted_at = coalesce(deleted_at, ${at}::timestamptz) where author_id = ${id}`);
       }
       return found;
     }
     case 'actor:remote.actor_undeleted':
-      return hit(await q`update actors set deleted_at = null where id = ${id} and not local`);
-    case 'media:media.blocked':
-      return hit(await q`update media set scan_state = 'blocked', deleted_at = coalesce(deleted_at, ${at}) where id = ${id}`);
+      return hit(sql`update actors set deleted_at = null where id = ${id} and not local`);
+    case 'media:media.blocked': {
+      const found = await hit(
+        sql`update media set scan_state = 'blocked', deleted_at = coalesce(deleted_at, ${at}::timestamptz) where id = ${id}`,
+      );
+      tally.quarantinedCopies += await replayBlockedHash(t, row);
+      return found;
+    }
   }
   // A local account deletion (identity/delete.ts): the reason is free text, the row is not remote.
   if (row.subjectKind === 'actor' && !remote(row) && typeof row.details.userId === 'string') {
-    const found = hit(
-      await q`
+    const found = await hit(sql`
       update actors set display_name = null, summary_html = null, summary_md = null, icon_url = null, banner_url = null,
-        deleted_at = coalesce(deleted_at, ${at})
-      where id = ${id} and local`,
-    );
-    await q`delete from auth_user where id = ${row.details.userId}`;
+        deleted_at = coalesce(deleted_at, ${at}::timestamptz)
+      where id = ${id} and local`);
+    await q.execute(sql`delete from auth_user where id = ${row.details.userId}`);
     return found;
   }
   throw new Error(`ledger row ${row.id}: no rule for ${row.subjectKind} ${row.reason}; stop and add one before going live`);
 }
 
-export type ReapplyReport = { restoredRows: number; appended: number; applied: number; absent: number };
+export type ReapplyReport = { restoredRows: number; appended: number; applied: number; absent: number; quarantinedCopies: number };
 
 /**
  * After a restore: appends the `exported` ledger rows the restored database lacks, keeping their
  * ids, then applies every ledger row in id order, in one transaction. Rows already in the
  * restored ledger are applied again too (each rule is idempotent), so the end state follows the
  * whole ledger whichever copy held a row. A subject the backup never had is counted as absent;
- * its row is kept, so the ledger stays whole.
+ * its row is kept, so the ledger stays whole. Events the replay emits (media.quarantined for the
+ * copies a block catches) go to the restored database's outbox.
  */
 export async function reapplyLedger(url: string, exported: readonly LedgerRow[]): Promise<ReapplyReport> {
-  const sql = postgres(url, { max: 1, onnotice: () => undefined });
+  const { db, end } = connect(url);
   try {
-    return await sql.begin(async (q) => {
+    return await db.transaction(async (q) => {
+      const outbox = outboxEmitter(q);
+      const t: ReplayTx = { db: q, emit: outbox.emit };
       const restored = await readLedger(q);
       const have = new Map(restored.map((row) => [row.id, row]));
       const missing = exported.filter((row) => !have.has(row.id));
@@ -274,23 +321,27 @@ export async function reapplyLedger(url: string, exported: readonly LedgerRow[])
         }
       }
       for (const row of missing) {
-        await q`
+        await q.execute(sql`
           insert into deletion_ledger (id, subject_kind, subject_id, subject_ap_id, reason, requested_by, details, created_at)
           overriding system value
           values (${row.id}, ${row.subjectKind}, ${row.subjectId}, ${row.subjectApId}, ${row.reason}, ${row.requestedBy},
-            ${q.json(row.details as postgres.JSONValue)}, ${new Date(row.createdAt)})`;
+            ${JSON.stringify(row.details)}::jsonb, ${row.createdAt}::timestamptz)`);
       }
-      await q`select setval(pg_get_serial_sequence('deletion_ledger', 'id'), greatest((select max(id) from deletion_ledger), 1))`;
+      await q.execute(
+        sql`select setval(pg_get_serial_sequence('deletion_ledger', 'id'), greatest((select max(id) from deletion_ledger), 1))`,
+      );
+      const tally = { quarantinedCopies: 0 };
       let applied = 0;
       let absent = 0;
       for (const row of await readLedger(q)) {
-        if (await apply(q, row)) applied += 1;
+        if (await apply(t, row, tally)) applied += 1;
         else absent += 1;
       }
-      return { restoredRows: restored.length, appended: missing.length, applied, absent };
+      await outbox.notify();
+      return { restoredRows: restored.length, appended: missing.length, applied, absent, ...tally };
     });
   } finally {
-    await sql.end({ timeout: 5 });
+    await end();
   }
 }
 
