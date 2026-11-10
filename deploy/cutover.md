@@ -230,19 +230,71 @@ All must hold, else stay on PieFed:
 
 ## Step 6: go-ahead and final archive (production; Andrew's named go-ahead)
 
-Stop PieFed but keep it restorable (its database and volumes stay), then take the final archive:
+This step changes production and runs only under Andrew's step 6 go-ahead. First put a
+maintenance responder in front of PieFed, so peers and people get 503 with `Retry-After` for the
+whole window instead of upstream errors from a dead origin; then stop PieFed but keep it
+restorable (its database and volumes stay); then take the final archive.
 
-```sh
-ssh feddit@box.feddit.com 'cd ~/pyfedi && docker compose stop web celery piefednotifs'
-ssh feddit@box.feddit.com 'cd ~/pyfedi && docker compose exec -T db sh -c "pg_dump -U \"\$POSTGRES_USER\" -Fc \"\$POSTGRES_DB\""' > $A/piefed-db.dump
-```
+1. **Maintenance responder.** The box's own Caddy (systemd `caddy`, config `/etc/caddy/Caddyfile`)
+   terminates TLS for feddit.com and proxies to PieFed on `127.0.0.1:8030`. Confirm that first
+   (`ssh feddit@box.feddit.com 'systemctl is-active caddy; systemctl cat caddy | grep ExecStart'`
+   names `--config /etc/caddy/Caddyfile`; anything else, stop and adapt). The change replaces the
+   `feddit.com` site block, and only it:
+
+   ```diff
+    feddit.com {
+   -    reverse_proxy 127.0.0.1:8030
+   +	header Retry-After 3600
+   +	header Cache-Control no-store
+   +	respond "feddit.com is moving to new software. Please try again in an hour." 503
+    }
+   ```
+
+   Build it from the box's current file, check the diff is exactly that, then install and reload
+   (`ssh -t` for the sudo prompts):
+
+   ```sh
+   ssh feddit@box.feddit.com 'cat /etc/caddy/Caddyfile' > $S/Caddyfile.piefed
+   diff /Users/admin/Projects/feddit-archive/2026-11-08/Caddyfile $S/Caddyfile.piefed   # empty: as archived; otherwise stop and adapt
+   perl -0pe 's/^feddit\.com \{\n\s*reverse_proxy 127\.0\.0\.1:8030\n\}\n/feddit.com {\n\theader Retry-After 3600\n\theader Cache-Control no-store\n\trespond "feddit.com is moving to new software. Please try again in an hour." 503\n}\n/m' \
+     $S/Caddyfile.piefed > $S/Caddyfile.maintenance
+   diff $S/Caddyfile.piefed $S/Caddyfile.maintenance        # only the three lines above
+   scp $S/Caddyfile.maintenance feddit@box.feddit.com:Caddyfile.maintenance
+   ssh -t feddit@box.feddit.com 'caddy validate --adapter caddyfile --config ~/Caddyfile.maintenance &&
+     sudo cp -p /etc/caddy/Caddyfile /etc/caddy/Caddyfile.piefed &&
+     sudo install -m 644 ~/Caddyfile.maintenance /etc/caddy/Caddyfile && sudo systemctl reload caddy'
+   ```
+
+   Check it through Cloudflare before going on. Every line must read `503` and `3600`:
+
+   ```sh
+   AP='Accept: application/activity+json'
+   for p in / /inbox /actor /u/feddit-admin /nodeinfo/2.0; do
+     curl -s -o /dev/null -H "$AP" -w "GET $p %{http_code} retry-after %header{retry-after}\n" https://feddit.com$p
+   done
+   curl -s -o /dev/null -X POST -H 'content-type: application/activity+json' -d '{}' \
+     -w 'POST /inbox %{http_code} retry-after %header{retry-after}\n' https://feddit.com/inbox
+   ```
+
+   A Cloudflare error page, a `52x` or a missing `Retry-After` is a no-go: restore the file (rollback
+   below) and look at Cloudflare's custom error rules first. The responder stays until step 7's origin switch has
+   pointed Cloudflare at the new origin (and after that it serves nothing); the rollback removes it.
+
+2. Stop PieFed and take the final dump (the database container keeps running):
+
+   ```sh
+   ssh feddit@box.feddit.com 'cd ~/pyfedi && docker compose stop web celery piefednotifs'
+   ssh feddit@box.feddit.com 'cd ~/pyfedi && docker compose exec -T db sh -c "pg_dump -U \"\$POSTGRES_USER\" -Fc \"\$POSTGRES_DB\""' > $A/piefed-db.dump
+   ```
+
+   Run the checks of step 1 again: still `503` with `Retry-After: 3600`, now with PieFed stopped.
 
 (`$A` a new dated archive folder, 700.) Restore it as in step 3, run `inventory` (still 0 local
 posts), then `export --admin Andrew --out $S/bundle-final.json`. The 2026-11-08 dump is schema
 `7c5a293ed40c` and the box has run 1.8.11 since (`61f3520d99b2`): re-run the archive tests
 (`CUTOVER_ARCHIVE_DB_URL=... pnpm exec vitest run --project tools tools/cutover/src/archive.test.ts`)
-against the final dump before exporting. `box.feddit.com` is otherwise untouched: it is the
-rollback target.
+against the final dump before exporting. Beyond the responder and the stopped services,
+`box.feddit.com` is untouched: it is the rollback target.
 
 ## Step 7: production import and origin switch (production)
 
@@ -320,12 +372,18 @@ own page first.
 
 ## Rollback
 
-Before or during the soak: switch the Cloudflare origin of feddit.com back to `box.feddit.com`,
-then start PieFed:
+Before or during the soak: switch the Cloudflare origin of feddit.com back to `box.feddit.com`
+(peers get the box's 503 with `Retry-After` meanwhile), start PieFed, and only then put PieFed's
+Caddyfile back, so nothing answers 502 in between:
 
 ```sh
 ssh feddit@box.feddit.com 'cd ~/pyfedi && docker compose up -d web celery piefednotifs'
+ssh -t feddit@box.feddit.com 'sudo cp -p /etc/caddy/Caddyfile.piefed /etc/caddy/Caddyfile && sudo systemctl reload caddy'
+curl -s -o /dev/null -w '%{http_code}\n' https://feddit.com/nodeinfo/2.0   # 200, PieFed again
 ```
+
+The same two lines undo step 6 alone (PieFed started, then the Caddyfile restored) when the
+cutover stops before the origin switch.
 
 Content created on peblish after the switch is not carried back (small in week one). The peblish
 project stays as it is for diagnosis; do not run its worker against feddit.com while PieFed serves
