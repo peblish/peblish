@@ -27,13 +27,16 @@ import { authUser } from '../db/tables/auth.ts';
  * upgrade (40P01), so that row is read FOR NO KEY UPDATE from the start.
  *
  * A site ban (bans/site.ts) is refused here for every kind of principal but the instance
- * itself (auth.site_banned): the ban took FOR NO KEY UPDATE on this actor row before inserting,
+ * itself (auth.site_banned), and for the one action a ban leaves open (siteBanExempt: a person
+ * deleting their own account, root decision 2026-11-10, B07 A4; every other check here still
+ * runs): the ban took FOR NO KEY UPDATE on this actor row before inserting,
  * so this read, after the FOR SHARE above, either waits for the ban to commit and sees it, or
  * ran first and the ban waits for the write it guards. The ban row is read plain.
  */
 export async function currentPrincipal(
   q: Queryable,
   principal: ActingPrincipal,
+  options: { siteBanExempt?: boolean } = {},
 ): Promise<{ ok: true; principal: ActingPrincipal } | { ok: false; reason: RefusalReason }> {
   const actsAsCommunity = principal.kind === 'remote' && principal.announcedBy?.communityId === principal.actorId;
   const [actor] = await q
@@ -43,7 +46,7 @@ export async function currentPrincipal(
     .for(actsAsCommunity ? 'no key update' : 'share');
   if (!actor) return { ok: false, reason: 'auth.required' };
   if (actor.deletedAt) return { ok: false, reason: 'auth.actor_deleted' };
-  if (principal.kind !== 'system') {
+  if (principal.kind !== 'system' && !options.siteBanExempt) {
     const [ban] = await q
       .select({ actorId: siteBans.actorId })
       .from(siteBans)
