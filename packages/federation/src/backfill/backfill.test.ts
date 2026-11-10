@@ -409,4 +409,38 @@ describe('the backfill of a followed community', () => {
     expect(await postIds()).not.toContain(`${lemmy}/post/541`);
     expect(await postIds()).not.toContain(`${lemmy}/post/542`);
   });
+
+  // FN1 (review 2): the backfill unwrapped each listed Create, Update and Announce before the
+  // visibility rule ran, so a followers-only Create carrying a Page that names Public was stored
+  // as a public post. Every layer that carries the post or comment must be public too.
+  test('refuses a post or comment when any Create, Update or Announce carrying it is not public', async () => {
+    const followersOnly = { to: [`${lab}/followers`], cc: [] };
+    const hidden = (activity: Json): Json => ({ ...activity, ...followersOnly });
+    const contextUrl = `${lemmy}/post/565/context`;
+    const server = peers({
+      ...route(
+        `${lab}/outbox`,
+        collection(`${lab}/outbox`, [
+          hidden(createOf(lemmyPage(560))), // embedded, as Lemmy lists it
+          announceOf(lab, activityId(lemmy, 'announce-561'), hidden(createOf(lemmyPage(561)))),
+          hidden(announceOf(lab, activityId(lemmy, 'announce-562'), createOf(lemmyPage(562)))),
+          hidden({ ...createOf(lemmyPage(563)), id: activityId(lemmy, 'update-563'), type: 'Update' }),
+          hidden({ ...createOf(lemmyPage(564)), object: `${lemmy}/post/564` }), // by IRI: the Page is read from its origin
+          createOf(lemmyPage(565, { context: contextUrl })),
+        ]),
+      ),
+      ...route(`${lemmy}/post/564`, lemmyPage(564)),
+      ...route(
+        contextUrl,
+        collection(contextUrl, [hidden(createOf(lemmyNote(1, `${lemmy}/post/565`))), createOf(lemmyNote(2, `${lemmy}/post/565`))]),
+      ),
+    });
+    await queue();
+    await run(server.fetch);
+
+    for (const n of [560, 561, 562, 563, 564]) expect(await postIds()).not.toContain(`${lemmy}/post/${n}`);
+    expect(await postIds()).toContain(`${lemmy}/post/565`);
+    expect((await db().select({ apId: comments.apId }).from(comments)).map((row) => row.apId)).toEqual([`${lemmy}/comment/2`]);
+    expect(await backfill()).toMatchObject({ state: 'done', posts: 1, comments: 1 });
+  });
 });

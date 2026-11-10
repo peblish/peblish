@@ -46,16 +46,21 @@ const originOf = (url: string) => new URL(url).origin;
 
 export type BackfillReport = { outcome: 'done' | 'failed' | 'retry'; posts: number; comments: number; note: string | null };
 
-type Entry = { id: string; embedded: JsonObject | null };
+/** `envelopes`: the Create, Update and Announce activities the object was unwrapped from, outermost first. */
+type Entry = { id: string; embedded: JsonObject | null; envelopes: readonly JsonObject[] };
 const contentTypes = new Set(['Page', 'Article', 'Video', 'Note']);
 
-/** What a collection item points at: the object in a Create or Announce, a bare object, or an IRI. */
-function entryOf(item: unknown): Entry | null {
-  if (typeof item === 'string') return URL.canParse(item) ? { id: item, embedded: null } : null;
+/**
+ * What a collection item points at: the object in a Create, Update or Announce, a bare object,
+ * or an IRI. The activities around it are kept, since storeObject holds each to the visibility
+ * rule (a followers-only Create of a Page that names Public is not public).
+ */
+function entryOf(item: unknown, envelopes: readonly JsonObject[] = []): Entry | null {
+  if (typeof item === 'string') return URL.canParse(item) ? { id: item, embedded: null, envelopes } : null;
   if (!isObject(item)) return null;
-  if (item.type === 'Create' || item.type === 'Announce' || item.type === 'Update') return entryOf(item.object);
+  if (item.type === 'Create' || item.type === 'Announce' || item.type === 'Update') return entryOf(item.object, [...envelopes, item]);
   if (typeof item.id === 'string' && URL.canParse(item.id) && typeof item.type === 'string' && contentTypes.has(item.type)) {
-    return { id: item.id, embedded: item };
+    return { id: item.id, embedded: item, envelopes };
   }
   return null;
 }
@@ -183,7 +188,7 @@ export async function runBackfill(claimed: ClaimedBackfill, options: BackfillOpt
       notes.push(`comments of ${postApId}: ${error.message}`);
       return;
     }
-    const waiting: { id: string; parent: string; json: unknown }[] = [];
+    const waiting: { id: string; parent: string; json: unknown; envelopes: readonly JsonObject[] }[] = [];
     for (const { item, origin } of items) {
       const entry = entryOf(item);
       if (!entry || budget.spent || options.signal?.aborted) continue;
@@ -193,7 +198,7 @@ export async function runBackfill(claimed: ClaimedBackfill, options: BackfillOpt
         continue;
       }
       const parent = isObject(loaded.json) ? loaded.json.inReplyTo : undefined;
-      if (typeof parent === 'string') waiting.push({ id: entry.id, parent, json: loaded.json });
+      if (typeof parent === 'string') waiting.push({ id: entry.id, parent, json: loaded.json, envelopes: entry.envelopes });
     }
     // Thread order, whatever order the collection lists them in.
     const placed = new Set([postApId]);
@@ -203,7 +208,12 @@ export async function runBackfill(claimed: ClaimedBackfill, options: BackfillOpt
         waiting.splice(waiting.indexOf(next), 1);
         progress = true;
         if (budget.spent || options.signal?.aborted) continue;
-        const outcome = await storeObject(next.json, via, { fetch, depth: 0, confine: { kind: 'comment', postId: post.id } });
+        const outcome = await storeObject(next.json, via, {
+          fetch,
+          depth: 0,
+          confine: { kind: 'comment', postId: post.id },
+          envelopes: next.envelopes,
+        });
         tally(outcome);
         if (outcome.status !== 'stored') continue;
         placed.add(next.id);
@@ -248,7 +258,12 @@ export async function runBackfill(claimed: ClaimedBackfill, options: BackfillOpt
         tally(loaded);
         continue;
       }
-      const outcome = await storeObject(loaded.json, vouch(url), { fetch, depth: 0, confine: { kind: 'post' } });
+      const outcome = await storeObject(loaded.json, vouch(url), {
+        fetch,
+        depth: 0,
+        confine: { kind: 'post' },
+        envelopes: entry.envelopes,
+      });
       tally(outcome);
       if (outcome.status !== 'stored') continue;
       if (outcome.created) posts += 1;
