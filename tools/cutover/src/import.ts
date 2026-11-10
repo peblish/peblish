@@ -7,12 +7,12 @@ import { authUser } from '@peblish/core/db/tables/auth';
 import { follows } from '@peblish/core/db/tables/follows';
 import { instances } from '@peblish/core/db/tables/instances';
 import { communityModerators } from '@peblish/core/db/tables/moderation';
-import { writeModlog } from '@peblish/core/modlog/write';
 import { peerControls } from '@peblish/core/peers/tables';
-import { ensureInstance } from '@peblish/core/remote/instances';
+import { updatePeer } from '@peblish/core/peers/update';
 import type { WriteTx } from '@peblish/core/db/write';
 import { storeRemoteActor } from '@peblish/core/remote/actors';
 import { tx, type Tx } from '@peblish/core/tx/tx';
+import type { SystemPrincipal } from '@peblish/schema/authz';
 import type { Uuid } from '@peblish/schema/ids';
 import { and, eq } from 'drizzle-orm';
 import { uuidv7 } from 'uuidv7';
@@ -297,47 +297,21 @@ async function importFollow(t: Tx, follow: BundleType['follows'][number]): Promi
 const peerBlockReason = "PieFed's banned instances, carried over at the cutover";
 
 /**
- * Blocks one of PieFed's banned instances, writing what MODF's updatePeer writes for a block: the
- * instance row (ensureInstance), its peer_controls row with blocked set, a private peer.update
- * modlog row and peer.updated. updatePeer itself cannot run here, since its policy takes only a
- * two-factor admin and the import runs as the instance (LANE-NOTES, request to root). A peer
- * already blocked is left as it is; one present but not blocked is blocked, its other controls kept.
+ * Blocks one of PieFed's banned instances through MODF's updatePeer, as the instance importing
+ * (peer.update lets the system import principal through): the instance row, peer_controls with
+ * blocked set and the peer's other controls kept, a private peer.update modlog row and
+ * peer.updated. A peer already blocked is left as it is, so a second run writes nothing.
  */
-async function importPeerBlock(t: Tx, instanceActorId: Uuid, domain: string): Promise<boolean> {
-  const { id: instanceId, origin } = await ensureInstance(t.db, `https://${domain}`);
-  await t.db.insert(peerControls).values({ instanceId }).onConflictDoNothing();
-  const [before] = await t.db.select().from(peerControls).where(eq(peerControls.instanceId, instanceId)).for('no key update');
-  if (!before) throw new Error(`peer controls for ${domain} vanished`);
-  if (before.blocked) return false;
-  await t.db
-    .update(peerControls)
-    .set({ blocked: true, reason: peerBlockReason, changedBy: instanceActorId, updatedAt: new Date() })
-    .where(eq(peerControls.instanceId, instanceId));
-  const modlogId = await writeModlog(
-    t.db,
-    {
-      action: 'peer.update',
-      actorId: instanceActorId,
-      authority: { kind: 'system', actorId: instanceActorId, job: 'import', ref: 'cutover' },
-    },
-    {
-      community: null,
-      target: { apId: origin },
-      reason: peerBlockReason,
-      details: { public: false, changes: { blocked: { before: false, after: true } } },
-    },
-  );
-  await t.emit({
-    type: 'peer.updated',
-    v: 1,
-    instanceId,
-    domain,
-    media: before.media,
-    inboxPaused: before.inboxPaused,
-    blocked: true,
-    purged: false,
-    modlogId,
-  });
+async function importPeerBlock(t: Tx, principal: SystemPrincipal, domain: string): Promise<boolean> {
+  const [held] = await t.db
+    .select({ blocked: peerControls.blocked })
+    .from(peerControls)
+    .innerJoin(instances, eq(instances.id, peerControls.instanceId))
+    .where(eq(instances.domain, domain));
+  if (held?.blocked) return false;
+  const decision = await authorize('peer.update', principal, { domain }, { db: t.db });
+  if (!decision.ok) throw new ImportRefused(`peer.update refused for ${domain}: ${decision.reason}`);
+  await updatePeer.within(t, decision.grant, { blocked: true, reason: peerBlockReason });
   return true;
 }
 
@@ -358,9 +332,9 @@ export async function importBundle(input: unknown, options: ImportOptions): Prom
     for (const community of bundle.remoteCommunities) remote.push(await importRemoteCommunity(t, community));
     const followed = [];
     for (const follow of bundle.follows) followed.push(await importFollow(t, follow));
-    const { actorId: instanceActorId } = await systemPrincipal(t.db, 'import');
+    const importer = await systemPrincipal(t.db, 'import');
     const blocked = [];
-    for (const domain of bundle.blockedInstances) blocked.push(await importPeerBlock(t, instanceActorId as Uuid, domain));
+    for (const domain of bundle.blockedInstances) blocked.push(await importPeerBlock(t, importer, domain));
     return {
       origin,
       rehearsal: options.rehearsalHost !== undefined,
