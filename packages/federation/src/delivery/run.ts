@@ -12,6 +12,7 @@ import { userAgent } from '../federation.ts';
 import { refreshInstanceSoftware } from '../nodeinfo/client.ts';
 import { signDelivery } from '../signing/sign.ts';
 import { leaseMs as defaultLeaseMs, maxResponseBytes, parseRetryAfter, requestTimeoutMs, verdict, type Attempt } from './policy.ts';
+import { withheldReason } from './recheck.ts';
 
 // The delivery worker's body: claim due rows, sign each once, POST it, record how it went.
 // Every worker may run this at once. A row is claimed with FOR UPDATE SKIP LOCKED under a lease
@@ -24,6 +25,10 @@ import { leaseMs as defaultLeaseMs, maxResponseBytes, parseRetryAfter, requestTi
 // the worker renews its lease just before it sends (and sends nothing if the row is no longer
 // its own), and records its outcome only while the row is still pending at the attempt it
 // claimed. A stale worker's result is dropped, never written over a newer attempt's.
+//
+// The body is fixed when the row is queued, so just before each send the worker also looks at
+// what a Create, Update or Announce carries now (recheck.ts): content removed, deleted or
+// showing quarantined media since then settles the row as skipped instead of going out.
 
 type Claimed = {
   id: string;
@@ -155,6 +160,8 @@ async function attempt(row: Claimed, fetch: Fetcher, leaseMs: number): Promise<O
   headers.set('user-agent', await userAgent());
   if (!(await renew(row, leaseMs))) return null;
   if (await destinationBlocked(row)) return blockedOutcome;
+  const withheld = await withheldReason(row.body);
+  if (withheld) return { state: 'skipped', status: null, error: withheld, delayMs: 0 };
   let result: Attempt;
   let status: number | null = null;
   let note: string | null = null;
