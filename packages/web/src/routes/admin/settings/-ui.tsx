@@ -25,7 +25,7 @@ export const adminHead =
     };
   };
 
-/** What a page says when the visitor may not use it: not an admin, or two-factor is off. */
+/** What a page says when the visitor may not use it: not an admin, two-factor is off, or this session skipped it. */
 export function AccessNotice({ access, title }: { access: Exclude<Access, 'ok'>; title: string }) {
   const { t } = useTranslate();
   return (
@@ -35,6 +35,8 @@ export function AccessNotice({ access, title }: { access: Exclude<Access, 'ok'>;
         <p role="alert">
           {t('admin', 'access.needsTwoFactor')} <Link to="/settings/security">{t('admin', 'access.securityLink')}</Link>
         </p>
+      ) : access === 'needs-two-factor-sign-in' ? (
+        <p role="alert">{t('admin', 'access.signInWithTwoFactor')}</p>
       ) : (
         <p role="alert">{t('admin', 'access.notAdmin')}</p>
       )}
