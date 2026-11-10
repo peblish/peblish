@@ -1,5 +1,7 @@
+import { join } from 'node:path';
 import { describe, expect, test } from 'vitest';
-import { exportBundle, inventory } from './archive.ts';
+import { exportBundle, inventory, KeyFile } from './archive.ts';
+import { readJsonFile } from './errors.ts';
 
 // The PieFed archive of feddit.com never leaves the maintainer's machine, so CI skips this.
 // Locally: restore piefed-db.dump into its own database (deploy/cutover.md, step 3) and set
@@ -41,5 +43,18 @@ describe.skipIf(!url)('the feddit.com archive', () => {
     expect(bundle.follows.filter((follow) => follow.apId?.startsWith('https://feddit.com/activities/follow/'))).toHaveLength(130);
     // A boolean, so a failure cannot print the bundle (it holds keys and addresses).
     expect(/pbkdf2:|scrypt:/.test(JSON.stringify(bundle))).toBe(false);
+  });
+});
+
+// The key files exported with the archive (CUTOVER_ARCHIVE_DIR, the dated archive folder): they
+// fit the shape crossCheckKeyFiles reads. readJsonFile reports only paths, never a value.
+const archiveDir = process.env.CUTOVER_ARCHIVE_DIR;
+
+describe.skipIf(!archiveDir)('the feddit.com key files', () => {
+  test('user-keys.json, community-keys.json and site.json each hold rows with a public and a private key', () => {
+    const rows = ['user-keys.json', 'community-keys.json', 'site.json'].map(
+      (file) => readJsonFile(join(archiveDir ?? '', file), file, KeyFile.array()).length,
+    );
+    expect(rows).toEqual([2, 2, 1]);
   });
 });

@@ -1,6 +1,7 @@
-import { constants, openSync, readFileSync, writeSync, closeSync, fstatSync } from 'node:fs';
+import { constants, openSync, writeSync, closeSync, fstatSync } from 'node:fs';
 import { resolve, sep } from 'node:path';
 import { type } from 'arktype';
+import { CutoverError, readJsonFile } from './errors.ts';
 
 // The cutover bundle: what `export` reads from the PieFed archive and `import` writes into
 // peblish. It holds private keys and email addresses, so it is only ever written with mode 600,
@@ -109,7 +110,7 @@ const repositoryRoot = resolve(import.meta.dirname, '../../..');
 export function assertOutsideRepository(path: string): string {
   const absolute = resolve(path);
   if (absolute === repositoryRoot || absolute.startsWith(repositoryRoot + sep)) {
-    throw new Error(`refusing to write ${absolute}: it is inside the repository; use a scratch folder`);
+    throw new CutoverError(`refusing to write ${absolute}: it is inside the repository; use a scratch folder`);
   }
   return absolute;
 }
@@ -122,7 +123,7 @@ export function openPrivate(path: string, replace = false): number {
   // An existing file kept its mode under O_TRUNC; refuse rather than write secrets into it.
   if ((fstatSync(fd).mode & 0o077) !== 0) {
     closeSync(fd);
-    throw new Error(`refusing to write ${absolute}: it is readable by others (chmod 600 it or remove it)`);
+    throw new CutoverError(`refusing to write ${absolute}: it is readable by others (chmod 600 it or remove it)`);
   }
   return fd;
 }
@@ -138,7 +139,7 @@ export function writePrivate(path: string, text: string, replace = false): void 
 }
 
 export function readBundle(path: string): Bundle {
-  return Bundle.assert(JSON.parse(readFileSync(path, 'utf8')));
+  return readJsonFile(path, 'the bundle', Bundle);
 }
 
 export function writeBundle(path: string, bundle: Bundle, replace = false): void {

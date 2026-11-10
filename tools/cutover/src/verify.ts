@@ -18,8 +18,10 @@ import type { Bundle } from './bundle.ts';
 // stored private key the way delivery does (signDelivery), verify it the way the inbox does
 // (parseSignature, signatureVerifies) against the stored public key, and check the actor
 // document federation would serve names that key. With the bundle, also check the stored public
-// keys are the ones peers cached. Then list every follow of a local actor with the inbox its
-// posts and Undo would go to. Prints ids, URLs and key fingerprints only, never key material.
+// keys are the ones peers cached, and that every actor the bundle holds is here with its key pair.
+// It fails when anything is missing, a key fails (routing included) or nothing was checked. Then
+// list every follow of a local actor with the inbox its posts and Undo would go to. Prints ids,
+// URLs and key fingerprints only, never key material.
 
 export type KeyCheck = {
   apId: string;
@@ -34,9 +36,15 @@ export type KeyCheck = {
   served: boolean;
   /** The web server hands a GET of the ap_id (Accept: activity+json) to federation. */
   routed: boolean;
-  /** The stored public key is the bundle's (what peers cached); null without a bundle. */
+  /** The stored key id and public key are the bundle's (what peers cached); null without a bundle. */
   matchesBundle: boolean | null;
 };
+
+/** An actor the bundle expects that is not here, or a local actor that cannot sign. */
+export type KeyProblem = { apId: string; problem: 'actor missing' | 'key missing' | 'private key missing' };
+
+/** One key passes: a true pair, a signature that verifies, served and routed, and the bundle's when there is one. */
+export const keyPasses = (key: KeyCheck): boolean => key.pair && key.signature && key.served && key.routed && key.matchesBundle !== false;
 
 export type FollowTarget = {
   follower: string;
@@ -53,7 +61,10 @@ export type FollowTarget = {
 
 export type VerifyReport = {
   origin: string;
+  /** Every key passes, at least one was checked, and nothing expected is missing. */
+  ok: boolean;
   keys: KeyCheck[];
+  problems: KeyProblem[];
   follows: FollowTarget[];
   summary: {
     keys: number;
@@ -71,7 +82,7 @@ async function checkKey(
   origin: string,
   actor: { apId: string; kind: string; inboxUrl: string | null },
   key: { keyId: string; publicKeyPem: string; privateKeyPem: string },
-  bundleKeys: Map<string, string> | null,
+  bundleKeys: Map<string, { keyId: string; fingerprint: string }> | null,
 ): Promise<KeyCheck> {
   const fingerprint = publicFingerprint(key.publicKeyPem);
   let pair = false;
@@ -114,7 +125,7 @@ async function checkKey(
     signature,
     served,
     routed,
-    matchesBundle: bundleKeys === null ? null : expected === fingerprint,
+    matchesBundle: bundleKeys === null ? null : expected?.keyId === key.keyId && expected.fingerprint === fingerprint,
   };
 }
 
@@ -122,15 +133,12 @@ async function checkKey(
 export async function verifyImport(bundle: Bundle | null): Promise<VerifyReport> {
   const q = db();
   const { origin } = await localInstance(q);
+  const expected = bundle === null ? [] : [bundle.instanceActor, ...bundle.users, ...bundle.communities];
   const bundleKeys =
     bundle === null
       ? null
-      : new Map(
-          [bundle.instanceActor, ...bundle.users, ...bundle.communities].map((actor) => [
-            actor.apId,
-            publicFingerprint(actor.key.publicKeyPem),
-          ]),
-        );
+      : new Map(expected.map((actor) => [actor.apId, { keyId: actor.key.keyId, fingerprint: publicFingerprint(actor.key.publicKeyPem) }]));
+  // Every imported local actor and the instance actor, with its RSA key when it has one.
   const rows = await q
     .select({
       apId: actors.apId,
@@ -141,15 +149,20 @@ export async function verifyImport(bundle: Bundle | null): Promise<VerifyReport>
       privateKeyPem: actorKeys.privateKeyPem,
     })
     .from(actors)
-    .innerJoin(actorKeys, and(eq(actorKeys.actorId, actors.id), eq(actorKeys.algorithm, 'rsa')))
+    .leftJoin(actorKeys, and(eq(actorKeys.actorId, actors.id), eq(actorKeys.algorithm, 'rsa')))
     .where(and(eq(actors.local, true), or(isNotNull(actors.importedAt), eq(actors.kind, 'Application'))))
     .orderBy(actors.kind, actors.apId);
   const keys: KeyCheck[] = [];
+  const problems: KeyProblem[] = [];
+  const present = new Set(rows.map((row) => row.apId));
+  for (const actor of expected) if (!present.has(actor.apId)) problems.push({ apId: actor.apId, problem: 'actor missing' });
   for (const row of rows) {
-    if (!row.privateKeyPem) continue;
-    keys.push(
-      await checkKey(origin, row, { keyId: row.keyId, publicKeyPem: row.publicKeyPem, privateKeyPem: row.privateKeyPem }, bundleKeys),
-    );
+    if (row.keyId === null || row.publicKeyPem === null) problems.push({ apId: row.apId, problem: 'key missing' });
+    else if (!row.privateKeyPem) problems.push({ apId: row.apId, problem: 'private key missing' });
+    else
+      keys.push(
+        await checkKey(origin, row, { keyId: row.keyId, publicKeyPem: row.publicKeyPem, privateKeyPem: row.privateKeyPem }, bundleKeys),
+      );
   }
 
   const follower = alias(actors, 'follower');
@@ -179,11 +192,13 @@ export async function verifyImport(bundle: Bundle | null): Promise<VerifyReport>
   const remote = followTargets.filter((row) => !row.local);
   return {
     origin,
+    ok: keys.length > 0 && problems.length === 0 && keys.every(keyPasses),
     keys,
+    problems,
     follows: followTargets,
     summary: {
       keys: keys.length,
-      keysOk: keys.filter((key) => key.pair && key.signature && key.served && key.matchesBundle !== false).length,
+      keysOk: keys.filter(keyPasses).length,
       follows: followTargets.length,
       accepted: followTargets.filter((row) => row.state === 'accepted').length,
       pending: followTargets.filter((row) => row.state === 'pending').length,

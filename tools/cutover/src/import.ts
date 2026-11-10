@@ -6,6 +6,7 @@ import { actorKeys, actors } from '@peblish/core/db/tables/actors';
 import { authUser } from '@peblish/core/db/tables/auth';
 import { follows } from '@peblish/core/db/tables/follows';
 import { instances } from '@peblish/core/db/tables/instances';
+import { siteSettings } from '@peblish/core/db/tables/site';
 import { communityModerators } from '@peblish/core/db/tables/moderation';
 import { peerControls } from '@peblish/core/peers/tables';
 import { updatePeer } from '@peblish/core/peers/update';
@@ -14,9 +15,10 @@ import { storeRemoteActor } from '@peblish/core/remote/actors';
 import { tx, type Tx } from '@peblish/core/tx/tx';
 import type { SystemPrincipal } from '@peblish/schema/authz';
 import type { Uuid } from '@peblish/schema/ids';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { uuidv7 } from 'uuidv7';
 import { publicFingerprint } from './archive.ts';
+import { CutoverError } from './errors.ts';
 import { Bundle, rehostBundle, type Bundle as BundleType } from './bundle.ts';
 
 // `import`: the bundle into a peblish database, in one transaction, idempotent. The database is
@@ -26,7 +28,7 @@ import { Bundle, rehostBundle, type Bundle as BundleType } from './bundle.ts';
 // through core's remote-actor store; follows land accepted (decision 3). Accounts import without
 // a password: the people sign in through a password reset.
 
-export class ImportRefused extends Error {
+export class ImportRefused extends CutoverError {
   override readonly name = 'ImportRefused';
 }
 
@@ -41,6 +43,8 @@ type Tally = { created: number; present: number };
 export type ImportReport = {
   origin: string;
   rehearsal: boolean;
+  /** The federation switch, turned off before anything else: whether it was on before this run. */
+  federation: { deliveryEnabled: false; wasOn: boolean };
   instanceActor: Tally;
   users: Tally;
   communities: Tally;
@@ -315,10 +319,33 @@ async function importPeerBlock(t: Tx, principal: SystemPrincipal, domain: string
   return true;
 }
 
+/**
+ * Turns the federation switch (`delivery.enabled`) off in a transaction of its own, before the
+ * import reads anything, so it stays off even when the import is refused or fails: the imported
+ * follows must not reach any peer until step 8 turns it on. Written as the runbook's SQL writes
+ * it (settings.update needs an admin with two-factor, and none can sign in yet); the insert
+ * takes the row lock a kill-switch reader waits on. Returns whether it was on.
+ */
+async function federationOff(): Promise<boolean> {
+  return tx(async (t) => {
+    const [before] = await t.db.select({ value: siteSettings.value }).from(siteSettings).where(eq(siteSettings.key, 'delivery.enabled'));
+    await t.db
+      .insert(siteSettings)
+      .values({ key: 'delivery.enabled', value: false })
+      .onConflictDoUpdate({ target: siteSettings.key, set: { value: false, updatedBy: null, updatedAt: sql`now()` } });
+    // No row is the contract default, which is on.
+    return before === undefined || before.value !== false;
+  });
+}
+
 const tally = (results: boolean[]): Tally => ({ created: results.filter(Boolean).length, present: results.filter((r) => !r).length });
 
-/** Imports `input` (checked again here) into the database DATABASE_URL names. A refusal or any error writes nothing. */
+/**
+ * Imports `input` (checked again here) into the database DATABASE_URL names. It first turns the
+ * federation switch off (federationOff); after that a refusal or any error writes nothing.
+ */
 export async function importBundle(input: unknown, options: ImportOptions): Promise<ImportReport> {
+  const wasOn = await federationOff();
   const bundle = planImport(Bundle.assert(input), options);
   const origin = canonicalOrigin(bundle.source.origin);
   return tx(async (t) => {
@@ -338,6 +365,7 @@ export async function importBundle(input: unknown, options: ImportOptions): Prom
     return {
       origin,
       rehearsal: options.rehearsalHost !== undefined,
+      federation: { deliveryEnabled: false as const, wasOn },
       instanceActor: tally([instanceActor]),
       users: tally(users),
       communities: tally(communities),

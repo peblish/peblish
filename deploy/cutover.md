@@ -18,8 +18,10 @@ The PieFed dump, the key files and the bundle hold private keys, password hashes
 addresses. Keep them in the archive folder (700) or a scratch folder (700, files 600), never in
 the repository (the tool refuses to write there), never in a chat, log or ticket. The tool writes
 the bundle, backups and ledger exports with mode 600 and refuses an existing file, prints ids,
-URLs, counts and key fingerprints only, and withholds database error details (they can carry
-values). The tool never reads PieFed's password hashes. Drop the scratch databases when done.
+URLs, counts and key fingerprints only, and prints an error's message only when it is its own:
+a damaged bundle, key file or ledger export is named with a position or the failing paths, never
+quoted, and a database, `pg_restore` or other error shows its code, constraint or kind, since
+its text can carry values. The tool never reads PieFed's password hashes. Drop the scratch databases when done.
 
 ## Step 3: inventory (no production access)
 
@@ -82,7 +84,10 @@ or any error writes nothing (one transaction). It blocks each banned instance as
 keeping a peer's other controls and leaving one already blocked alone; the summary lists them. `verify` signs a delivery with every imported key
 as the delivery worker does, verifies it as the inbox does against the stored public key, checks
 the served actor document names that key and that it is the bundle's (what peers cached), and
-lists every follow with the inbox its posts and Undo go to. It exits 1 if any key fails.
+lists every follow with the inbox its posts and Undo go to. It exits 1 if any key fails (pair,
+signature, served document, routing, or the bundle's key id and key), if an actor the bundle holds
+is missing or an imported actor has no key or no private key (each listed by id), or if it found
+nothing to check.
 
 Local rehearsal, 2026-11-10 (lane B06, repeated with the peer blocks and the `/actor` routing):
 import of 1 instance actor, 2 users, 2 communities, 130 remote communities, 131 follows and 25
@@ -122,6 +127,10 @@ Order on a fresh project, each step read back before the next:
    ```
 
 3. Copy the bundle in, then `import` (twice: the second is all `present`) and `verify`, as above.
+   `import` turns the federation switch off itself, in a transaction of its own before it reads
+   the bundle, so it stays off even when the import is refused; its report says so
+   (`"federation": { "deliveryEnabled": false, "wasOn": false }` after the SQL above). The SQL stays
+   as the check, and for the other switches.
 4. `web` with its domain (HTTPS) and environment. A `worker` may run with the imported follows
    only while the federation switch is off (below). Then the served-documents check, the password
    reset with two-factor enrolment, and the drill.
@@ -188,15 +197,24 @@ node tools/cutover/src/cli.ts ledger-export --db $DATABASE_URL --out $S/ledger-$
 # Restore into a NEW database, then re-apply the newest ledger export (and take a fresh export
 # from the damaged database first if it still answers):
 node tools/cutover/src/cli.ts restore --backup <dump> --db <new database url> --ledger <newest ledger export>
-node tools/cutover/src/cli.ts drill --db $DATABASE_URL --dir $S/drill   # backup, export, restore to <db>_drill, re-apply, compare, drop
+node tools/cutover/src/cli.ts drill --db $DATABASE_URL --dir $S/drill   # backup, export, restore into a new drill_<time>_<random>, re-apply, compare, drop it
 ```
 
 `restore` appends the exported rows the backup lacks (same ids, sequence moved past them), then
 applies every ledger row in id order in one transaction: remote object and actor deletions (with
 the actor's content when `removeContent`), their undeletions, local account deletions (the
-better-auth user goes again) and blocked media. A row with no rule stops the restore and changes
+better-auth user goes again) and blocked media, whole: the row blocked again, its hash back on
+the list and every clean copy of it the backup holds quarantined again (core's own block path, so
+each copy gets its incident and a `media.quarantined` event in the restored outbox), even when the
+blocked row itself is newer than the backup. Each ledger row names the hash for this. A row with no rule stops the restore and changes
 nothing; add the rule before going live. Point the services at the restored database only after
-it reports. Run the drill once before the first outside invitee and once in week one.
+it reports.
+
+`restore` and `drill` only ever create a database: they refuse one that exists and a name longer
+than 63 bytes (Postgres would cut it to another name). The drill restores into
+`drill_<time>_<random>` on the same server, marks it, and drops only the database carrying its
+mark; it never ends another database's sessions. `--keep` leaves the drill's database for a
+rollback test; drop it by hand afterwards. Run the drill once before the first outside invitee and once in week one.
 
 ## Step 5: cutover gate (not this runbook's)
 
@@ -221,19 +239,71 @@ All must hold, else stay on PieFed:
 
 ## Step 6: go-ahead and final archive (production; Andrew's named go-ahead)
 
-Stop PieFed but keep it restorable (its database and volumes stay), then take the final archive:
+This step changes production and runs only under Andrew's step 6 go-ahead. First put a
+maintenance responder in front of PieFed, so peers and people get 503 with `Retry-After` for the
+whole window instead of upstream errors from a dead origin; then stop PieFed but keep it
+restorable (its database and volumes stay); then take the final archive.
 
-```sh
-ssh feddit@box.feddit.com 'cd ~/pyfedi && docker compose stop web celery piefednotifs'
-ssh feddit@box.feddit.com 'cd ~/pyfedi && docker compose exec -T db sh -c "pg_dump -U \"\$POSTGRES_USER\" -Fc \"\$POSTGRES_DB\""' > $A/piefed-db.dump
-```
+1. **Maintenance responder.** The box's own Caddy (systemd `caddy`, config `/etc/caddy/Caddyfile`)
+   terminates TLS for feddit.com and proxies to PieFed on `127.0.0.1:8030`. Confirm that first
+   (`ssh feddit@box.feddit.com 'systemctl is-active caddy; systemctl cat caddy | grep ExecStart'`
+   names `--config /etc/caddy/Caddyfile`; anything else, stop and adapt). The change replaces the
+   `feddit.com` site block, and only it:
+
+   ```diff
+    feddit.com {
+   -    reverse_proxy 127.0.0.1:8030
+   +	header Retry-After 3600
+   +	header Cache-Control no-store
+   +	respond "feddit.com is moving to new software. Please try again in an hour." 503
+    }
+   ```
+
+   Build it from the box's current file, check the diff is exactly that, then install and reload
+   (`ssh -t` for the sudo prompts):
+
+   ```sh
+   ssh feddit@box.feddit.com 'cat /etc/caddy/Caddyfile' > $S/Caddyfile.piefed
+   diff /Users/admin/Projects/feddit-archive/2026-11-08/Caddyfile $S/Caddyfile.piefed   # empty: as archived; otherwise stop and adapt
+   perl -0pe 's/^feddit\.com \{\n\s*reverse_proxy 127\.0\.0\.1:8030\n\}\n/feddit.com {\n\theader Retry-After 3600\n\theader Cache-Control no-store\n\trespond "feddit.com is moving to new software. Please try again in an hour." 503\n}\n/m' \
+     $S/Caddyfile.piefed > $S/Caddyfile.maintenance
+   diff $S/Caddyfile.piefed $S/Caddyfile.maintenance        # only the three lines above
+   scp $S/Caddyfile.maintenance feddit@box.feddit.com:Caddyfile.maintenance
+   ssh -t feddit@box.feddit.com 'caddy validate --adapter caddyfile --config ~/Caddyfile.maintenance &&
+     sudo cp -p /etc/caddy/Caddyfile /etc/caddy/Caddyfile.piefed &&
+     sudo install -m 644 ~/Caddyfile.maintenance /etc/caddy/Caddyfile && sudo systemctl reload caddy'
+   ```
+
+   Check it through Cloudflare before going on. Every line must read `503` and `3600`:
+
+   ```sh
+   AP='Accept: application/activity+json'
+   for p in / /inbox /actor /u/feddit-admin /nodeinfo/2.0; do
+     curl -s -o /dev/null -H "$AP" -w "GET $p %{http_code} retry-after %header{retry-after}\n" https://feddit.com$p
+   done
+   curl -s -o /dev/null -X POST -H 'content-type: application/activity+json' -d '{}' \
+     -w 'POST /inbox %{http_code} retry-after %header{retry-after}\n' https://feddit.com/inbox
+   ```
+
+   A Cloudflare error page, a `52x` or a missing `Retry-After` is a no-go: restore the file (rollback
+   below) and look at Cloudflare's custom error rules first. The responder stays until the origin switch (step 7.8) has
+   pointed Cloudflare at the new origin (and after that it serves nothing); the rollback removes it.
+
+2. Stop PieFed and take the final dump (the database container keeps running):
+
+   ```sh
+   ssh feddit@box.feddit.com 'cd ~/pyfedi && docker compose stop web celery piefednotifs'
+   ssh feddit@box.feddit.com 'cd ~/pyfedi && docker compose exec -T db sh -c "pg_dump -U \"\$POSTGRES_USER\" -Fc \"\$POSTGRES_DB\""' > $A/piefed-db.dump
+   ```
+
+   Run the checks of step 1 again: still `503` with `Retry-After: 3600`, now with PieFed stopped.
 
 (`$A` a new dated archive folder, 700.) Restore it as in step 3, run `inventory` (still 0 local
 posts), then `export --admin Andrew --out $S/bundle-final.json`. The 2026-11-08 dump is schema
 `7c5a293ed40c` and the box has run 1.8.11 since (`61f3520d99b2`): re-run the archive tests
 (`CUTOVER_ARCHIVE_DB_URL=... pnpm exec vitest run --project tools tools/cutover/src/archive.test.ts`)
-against the final dump before exporting. `box.feddit.com` is otherwise untouched: it is the
-rollback target.
+against the final dump before exporting. Beyond the responder and the stopped services,
+`box.feddit.com` is untouched: it is the rollback target.
 
 ## Step 7: production import and origin switch (production)
 
@@ -245,22 +315,70 @@ rollback target.
    (`PUBLIC_ORIGIN=https://feddit.com`):
 
    ```sh
-   node tools/cutover/src/cli.ts import --bundle /tmp/cutover/bundle-final.json
+   node tools/cutover/src/cli.ts import --bundle /tmp/cutover/bundle-final.json   # report: federation.deliveryEnabled false
    node tools/cutover/src/cli.ts verify --bundle /tmp/cutover/bundle-final.json
+   psql "$DATABASE_URL" -Atc "select key, value from site_settings where key in ('delivery.enabled', 'inbox.enabled', 'registration.enabled') order by key"   # all false
    ```
 
 2. Add `web` as in `README.md` with `PUBLIC_ORIGIN=https://feddit.com`, `BETTER_AUTH_SECRET`,
-   `SMTP_URL`, `MAIL_FROM` and `PEBLISH_TRUSTED_PROXY=cloudflare`; the origin accepts Cloudflare's
-   address ranges only (Easypanel or host firewall). `worker` (same source and environment as
-   `web`, `PEBLISH_PROCESS=worker`) may be created now, with the federation switch still off:
-   read `delivery.enabled` back as `false` first. Its jobs wait until step 8.
-3. Sign in (point feddit.com at the new origin in the admin's own hosts file): `Andrew` asks for a
-   password reset at `/auth/reset`, sets a password, signs in and turns on two-factor at
-   `/settings/security` in that same session. Admin pages need a session that passed two-factor
-   (enrolled or verified in it), not only an account with it on; enrolling signs every other
-   session out. `feddit-admin` does the same when needed. No account has an age declaration (NSFW
-   stays hidden until each declares in settings).
-4. Host-header pretest against the new origin (`O` its address):
+   `SMTP_URL`, `MAIL_FROM` and `PEBLISH_TRUSTED_PROXY=cloudflare`. `worker` (same source and
+   environment as `web`, `PEBLISH_PROCESS=worker`) may be created now, with the federation switch
+   still off: read `delivery.enabled` back as `false` first. Its jobs wait until step 8.
+
+   The new origin needs a certificate for feddit.com before the switch, and a Let's Encrypt HTTP
+   challenge cannot pass while Cloudflare still sends feddit.com to the box (which answers 503).
+   Install one that does not depend on that (a Cloudflare Origin CA certificate, or a DNS
+   challenge) before the pretest; until then `curl` below needs `-k`, which proves nothing about TLS.
+
+3. **Origin firewall: Cloudflare only.** `PEBLISH_TRUSTED_PROXY=cloudflare` takes each client's
+   address from `CF-Connecting-IP`, a header anyone reaching the origin directly can set, so from
+   now on the origin takes ports 80 and 443 from Cloudflare's ranges only. On the production host,
+   as root. Docker publishes Traefik's ports past `ufw`, so the rules go in Docker's `DOCKER-USER`
+   chain, matched on the original port and on new connections arriving on the public interface
+   (so the worker's own outgoing HTTPS is not touched). Check first that
+   `docker ps --format '{{.Names}} {{.Ports}}' | grep -i traefik` shows `0.0.0.0:443->443/tcp`; if
+   Traefik uses the host network instead, the same two rules go in `INPUT` with `--dport`.
+
+   ```sh
+   IF=$(ip route show default | awk '{print $5; exit}')
+   ipset create origin-allow  hash:net family inet  -exist
+   ipset create origin-allow6 hash:net family inet6 -exist
+   for n in $(curl -s https://www.cloudflare.com/ips-v4); do ipset add origin-allow  "$n" -exist; done
+   for n in $(curl -s https://www.cloudflare.com/ips-v6); do ipset add origin-allow6 "$n" -exist; done
+   for port in 80 443; do
+     iptables  -I DOCKER-USER -i "$IF" -p tcp -m conntrack --ctstate NEW --ctorigdstport $port -m set ! --match-set origin-allow  src -j DROP
+     ip6tables -I DOCKER-USER -i "$IF" -p tcp -m conntrack --ctstate NEW --ctorigdstport $port -m set ! --match-set origin-allow6 src -j DROP
+   done
+   iptables -S DOCKER-USER; ip6tables -S DOCKER-USER; ipset list -t origin-allow   # read back
+   ```
+
+   Make the sets and rules survive a reboot (`netfilter-persistent save` with `ipset-persistent`
+   installed). Cloudflare's ranges change rarely; re-read them before opening and monthly.
+
+4. **Operator path for the pretest (temporary).** The sign-in and the pretest below go straight to
+   the origin from Andrew's machine, which the firewall now refuses. Let his current public
+   address in for this step only:
+
+   ```sh
+   ME=$(curl -s https://www.cloudflare.com/cdn-cgi/trace | sed -n 's/^ip=//p')   # on Andrew's machine
+   ipset add origin-allow <ME> -exist       # on the host, as root, with that address (origin-allow6 for IPv6)
+   ```
+
+   and add `<O> feddit.com` to his machine's hosts file (`O` the new origin's address). A direct
+   request carries no `CF-Connecting-IP`, so the app falls back to the connection's peer, which
+   behind Easypanel is Traefik: every direct request shares Traefik's internal address as its
+   client address, so throttles (sign-in, password reset, inbox key lookups) count all of them
+   together, and the session list shows Traefik's address for this session. A direct client could
+   also send its own `CF-Connecting-IP` and pick its key. Both are harmless while only Andrew's
+   address is let in, and the reason the path closes in item 7.
+
+5. Sign in: `Andrew` asks for a password reset at `/auth/reset`, sets a password, signs in and
+   turns on two-factor at `/settings/security` in that same session. Admin pages need a session
+   that passed two-factor (enrolled or verified in it), not only an account with it on; enrolling
+   signs every other session out. `feddit-admin` does the same when needed. No account has an age
+   declaration (NSFW stays hidden until each declares in settings). If a reset is refused as
+   throttled, wait out the window (item 4: direct requests share one budget).
+6. Host-header pretest against the new origin, from Andrew's machine:
 
    ```sh
    R="--resolve feddit.com:443:$O"; AP='Accept: application/activity+json'
@@ -270,8 +388,20 @@ rollback target.
    curl -s $R -X POST -H 'content-type: application/activity+json' -d '{}' -o /dev/null -w '%{http_code}\n' https://feddit.com/inbox   # 401 or 503, never 410, 418 or another 5xx
    ```
 
-5. Switch the Cloudflare origin of feddit.com to the new origin in one step (the proxied DNS
-   record). No cache rules on `/u`, `/c`, `/post`; the WAF must not block `POST /inbox`.
+7. **Close the operator path** before the switch: on the host `ipset del origin-allow <ME>`, and
+   remove the hosts file line on Andrew's machine. Then check, from Andrew's machine, that a
+   direct request is refused and the set holds Cloudflare's ranges only:
+
+   ```sh
+   curl -s --connect-timeout 5 --resolve feddit.com:443:$O -o /dev/null -w '%{http_code}\n' https://feddit.com/nodeinfo/2.1   # 000: no connection
+   ipset test origin-allow <ME>             # on the host: "is NOT in set origin-allow"
+   ```
+
+   Any answer other than `000` is a no-go: the origin is reachable around Cloudflare.
+
+8. Switch the Cloudflare origin of feddit.com to the new origin in one step (the proxied DNS
+   record). No cache rules on `/u`, `/c`, `/post`; the WAF must not block `POST /inbox`. From here
+   the box's responder (step 6) gets no traffic.
 
 ## Step 8: verify peers (production)
 
@@ -289,7 +419,9 @@ rollback target.
 
 ## Step 9: open (production)
 
-Admins first, then invitees (cap about 25 for 30 days).
+Before the first admin or invitee, repeat the step 7.7 check from an address outside Cloudflare (a
+direct request gets no connection) and read `ipset list origin-allow` back: Cloudflare's ranges
+only, no operator address. Then admins first, then invitees (cap about 25 for 30 days).
 
 ## Step 10: soak and retirement (production)
 
@@ -311,12 +443,18 @@ own page first.
 
 ## Rollback
 
-Before or during the soak: switch the Cloudflare origin of feddit.com back to `box.feddit.com`,
-then start PieFed:
+Before or during the soak: switch the Cloudflare origin of feddit.com back to `box.feddit.com`
+(peers get the box's 503 with `Retry-After` meanwhile), start PieFed, and only then put PieFed's
+Caddyfile back, so nothing answers 502 in between:
 
 ```sh
 ssh feddit@box.feddit.com 'cd ~/pyfedi && docker compose up -d web celery piefednotifs'
+ssh -t feddit@box.feddit.com 'sudo cp -p /etc/caddy/Caddyfile.piefed /etc/caddy/Caddyfile && sudo systemctl reload caddy'
+curl -s -o /dev/null -w '%{http_code}\n' https://feddit.com/nodeinfo/2.0   # 200, PieFed again
 ```
+
+The same two lines undo step 6 alone (PieFed started, then the Caddyfile restored) when the
+cutover stops before the origin switch.
 
 Content created on peblish after the switch is not carried back (small in week one). The peblish
 project stays as it is for diagnosis; do not run its worker against feddit.com while PieFed serves

@@ -1,10 +1,9 @@
-import { mkdirSync } from 'node:fs';
-import { join } from 'node:path';
 import { parseArgs } from 'node:util';
 import { closePools } from '@peblish/core/db/pools';
 import { crossCheckKeyFiles, exportBundle, inventory } from './archive.ts';
 import { readBundle, rehostBundle, writeBundle } from './bundle.ts';
-import { backup, dropDatabase, exportLedger, reapplyLedger, readLedgerExport, restore, tableCounts } from './drill.ts';
+import { backup, exportLedger, reapplyLedger, readLedgerExport, restore, runDrill } from './drill.ts';
+import { CutoverError, describe } from './errors.ts';
 import { importBundle } from './import.ts';
 import { verifyImport } from './verify.ts';
 
@@ -16,8 +15,8 @@ import { verifyImport } from './verify.ts';
 //   node tools/cutover/src/cli.ts verify [--bundle <file> [--rehearsal-host <host>]] [--json] (DATABASE_URL)
 //   node tools/cutover/src/cli.ts backup --db <url> --out <file>
 //   node tools/cutover/src/cli.ts ledger-export --db <url> --out <file>
-//   node tools/cutover/src/cli.ts restore --backup <file> --db <new database url> [--ledger <file>]
-//   node tools/cutover/src/cli.ts drill --db <url> --dir <scratch folder> [--keep]
+//   node tools/cutover/src/cli.ts restore --backup <file> --db <new database url> [--ledger <file>]   (refuses an existing database)
+//   node tools/cutover/src/cli.ts drill --db <url> --dir <scratch folder> [--keep]                  (restores into a new drill_<time>_<random>)
 //
 // The bundle, backups and ledger exports are written with mode 600 and never inside the
 // repository. Nothing prints key material, email addresses or password hashes.
@@ -48,7 +47,7 @@ function need(name: keyof typeof values | 'DATABASE_URL' | 'PUBLIC_ORIGIN'): str
   return value;
 }
 
-class Usage extends Error {}
+class Usage extends CutoverError {}
 
 const archiveDb = () => values['archive-db'] ?? process.env.CUTOVER_ARCHIVE_DB_URL ?? need('archive-db');
 const print = (value: unknown) => console.log(JSON.stringify(value, null, 2));
@@ -133,10 +132,12 @@ async function main(): Promise<number> {
             `${f.follower} -> ${f.followee} ${f.state} ${f.local ? 'local' : `${f.software ?? 'unknown'} inbox ${f.inbox ?? 'none'}${f.deliverable ? '' : ' (held)'}`}`,
           );
         }
+        for (const p of report.problems) console.log(`${p.apId}: ${p.problem}`);
+        if (report.keys.length === 0) console.log('no imported actor with a key was found');
         print(report.summary);
+        console.log(report.ok ? 'verify passed' : 'verify FAILED');
       }
-      const ok = report.keys.every((k) => k.pair && k.signature && k.served && k.matchesBundle !== false);
-      return ok ? 0 : 1;
+      return report.ok ? 0 : 1;
     }
     case 'backup':
       await backup(need('db'), need('out'));
@@ -147,56 +148,19 @@ async function main(): Promise<number> {
       return 0;
     case 'restore': {
       const url = need('db');
+      const ledger = values.ledger ? readLedgerExport(values.ledger) : [];
       await restore(need('backup'), url);
-      print(await reapplyLedger(url, values.ledger ? readLedgerExport(values.ledger) : []));
+      print(await reapplyLedger(url, ledger));
       return 0;
     }
     case 'drill': {
-      const url = need('db');
-      const dir = need('dir');
-      mkdirSync(dir, { recursive: true, mode: 0o700 });
-      const stamp = new Date().toISOString().replace(/[-:.]/g, '').slice(0, 15);
-      const file = join(dir, `backup-${stamp}.dump`);
-      const ledger = join(dir, `ledger-${stamp}.json`);
-      const target = new URL(url);
-      target.pathname = `${target.pathname.slice(1)}_drill`;
-      await backup(url, file);
-      await exportLedger(url, ledger);
-      await dropDatabase(target.href);
-      await restore(file, target.href);
-      const reapplied = await reapplyLedger(target.href, readLedgerExport(ledger));
-      const [source, restored] = [await tableCounts(url), await tableCounts(target.href)];
-      const differences = Object.keys(source).filter((table) => source[table] !== restored[table]);
-      print({ backup: file, ledger, reapplied, source, restored, differences });
-      if (!values.keep) await dropDatabase(target.href);
-      return differences.length === 0 ? 0 : 1;
+      const report = await runDrill(need('db'), need('dir'), { keep: values.keep === true });
+      print(report);
+      return report.differences.length === 0 ? 0 : 1;
     }
     default:
       throw new Usage(`unknown command ${command ?? '(none)'}; see the comment at the top of tools/cutover/src/cli.ts`);
   }
-}
-
-/**
- * What may be printed of a failure. A Drizzle query error's message carries the query's
- * parameters (keys, email addresses), a Postgres error's detail the conflicting values, and an
- * ArkType error the offending value, so only codes, constraint names, paths and our own messages
- * are shown.
- */
-function describe(error: unknown): string {
-  for (let cause = error; cause instanceof Error; cause = cause.cause) {
-    if ('severity' in cause && 'code' in cause) {
-      const constraint = 'constraint_name' in cause && cause.constraint_name ? ` (${String(cause.constraint_name)})` : '';
-      return `database error ${String(cause.code)}${constraint}: ${cause.message}`;
-    }
-  }
-  if (error instanceof Error && error.name === 'DrizzleQueryError') return 'a database query failed (its parameters are withheld)';
-  if (error instanceof Error && 'arkErrors' in error && Array.isArray(error.arkErrors)) {
-    const paths = error.arkErrors.map(
-      (e: { propString?: string; expected?: string }) => `${e.propString || '(root)'} must be ${e.expected}`,
-    );
-    return `the file does not match its format: ${paths.join('; ')}`;
-  }
-  return error instanceof Error ? `${error.name}: ${error.message}` : 'unknown failure';
 }
 
 try {
