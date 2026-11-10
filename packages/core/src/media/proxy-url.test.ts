@@ -1,3 +1,4 @@
+import { createHmac } from 'node:crypto';
 import { expect, test } from 'vitest';
 import { derivedKey } from '../identity/auth.ts';
 import { seedLocalInstance } from '../testing/seed-a.ts';
@@ -13,8 +14,28 @@ test('a proxy path carries its URL and verifies only under its own key', () => {
   const path = build(URL_);
   expect(path).toMatch(/^\/media\/proxy\/[\w-]{43}\/[\w-]+$/);
   const [signature, target] = split(path);
-  expect(verifyProxyPath(key, signature, target)).toBe(URL_);
+  expect(verifyProxyPath(key, signature, target)).toEqual({ url: URL_, content: null });
   expect(verifyProxyPath(Buffer.from('b'.repeat(32)), signature, target)).toBeNull();
+});
+
+test('a path names the content it was signed for, and an unbound one expires at the end of the next hour', () => {
+  const comment = { kind: 'comment', id: '0195F0A0-0000-7000-8000-00000000000C' } as const;
+  const [signature, target] = split(build(URL_, comment));
+  expect(verifyProxyPath(key, signature, target)).toEqual({ url: URL_, content: { kind: 'comment', id: comment.id.toLowerCase() } });
+  for (const kind of ['post', 'actor'] as const)
+    expect(verifyProxyPath(key, ...split(build(URL_, { kind, id: comment.id })))?.content?.kind).toBe(kind);
+  // A bound path never expires: it lives as long as its content is shown (reference.ts).
+  expect(verifyProxyPath(key, signature, target, Date.UTC(2100, 0, 1))?.content?.kind).toBe('comment');
+
+  const issued = Date.UTC(2026, 10, 10, 9, 30);
+  const [s, t] = split(proxyUrlBuilder(key, () => issued)(URL_));
+  expect(verifyProxyPath(key, s, t, Date.UTC(2026, 10, 10, 10, 59, 59))).toEqual({ url: URL_, content: null });
+  expect(verifyProxyPath(key, s, t, Date.UTC(2026, 10, 10, 11))).toBeNull();
+  // The same URL within the hour, so a page's images stay in the browser's cache.
+  expect(proxyUrlBuilder(key, () => issued + 20 * 60_000)(URL_)).toBe(proxyUrlBuilder(key, () => issued)(URL_));
+  // A path in the old form (the URL alone, signed) carries no reference and is refused.
+  const old = Buffer.from(URL_).toString('base64url');
+  expect(verifyProxyPath(key, createHmac('sha256', key).update(URL_).digest('base64url'), old)).toBeNull();
 });
 
 test('an unsigned, altered or hand-made path is refused: signature, target, case, truncation', () => {
@@ -61,7 +82,7 @@ test('the length limit is 2,048 UTF-8 bytes on both sides: what the builder sign
     const exact = urlOf(2048, letter);
     expect(Buffer.byteLength(exact), letter).toBe(2048);
     const [signature, target] = split(build(exact));
-    expect(verifyProxyPath(key, signature, target), letter).toBe(exact);
+    expect(verifyProxyPath(key, signature, target)?.url, letter).toBe(exact);
     expect(() => build(`${exact}a`), letter).toThrow(RangeError);
   }
   // Under 2,048 UTF-16 units, over 2,048 bytes: the builder used to sign this and verify then refused it.

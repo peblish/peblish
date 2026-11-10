@@ -1,4 +1,5 @@
 import { hostUnder } from '../peers/domains.ts';
+import type { MediaContent } from './proxy-url.ts';
 
 /** The settings an image source depends on; web's SiteMarkdown has exactly these. */
 export type ImagePolicy = {
@@ -7,7 +8,7 @@ export type ImagePolicy = {
   /** The remote_media.enabled kill switch. */
   remoteMedia: boolean;
   /** The proxy URL builder (proxy-url.ts); without it remote images are never loaded. */
-  proxy?: (url: string) => string;
+  proxy?: (url: string, content?: MediaContent | null) => string;
   /** Peer domains whose media is denied (peers/gate.ts deniedMediaDomains): a host at or under one is treated like remote media switched off. */
   deniedDomains?: readonly string[];
 };
@@ -26,9 +27,11 @@ const ROOT_RELATIVE = /^\/(?![/\\])/;
  * never reaches the remote host (decision 5), and null when it must not load (remote media is
  * off, no proxy, a peer whose media is denied, not http or https, too long to proxy). The caller then shows a link or nothing.
  * An own-origin URL whose path would not be root-relative (`https://<origin>//evil.example/x.png`)
- * is treated like any other URL, so it is never an `<img src>` that leaves the host.
+ * is treated like any other URL, so it is never an `<img src>` that leaves the host. `content`
+ * is what the image is shown for, signed into the proxy URL so the proxy refuses it once that
+ * content is withheld; without it the URL expires (proxy-url.ts).
  */
-export function imageSource(url: string | null | undefined, policy: ImagePolicy): string | null {
+export function imageSource(url: string | null | undefined, policy: ImagePolicy, content: MediaContent | null = null): string | null {
   if (!url) return null;
   let parsed: URL;
   try {
@@ -42,7 +45,7 @@ export function imageSource(url: string | null | undefined, policy: ImagePolicy)
   if (!policy.remoteMedia || !policy.proxy) return null;
   if (policy.deniedDomains?.some((domain) => hostUnder(parsed.host, domain))) return null;
   try {
-    return policy.proxy(url);
+    return policy.proxy(url, content);
   } catch {
     return null;
   }

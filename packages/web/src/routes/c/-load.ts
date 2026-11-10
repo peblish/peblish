@@ -39,7 +39,8 @@ export const loadCommunityPage = createServerFn({ method: 'GET' })
     if (gate !== 'none') return gateData({ subject: 'community', gate, handle: data.handle, back: communityPath({ handle: data.handle }) });
 
     const renderer = await createMarkdownRenderer(await siteMarkdown());
-    const page = await readCommunityPage({ id }, viewer, undefined, { rewriteImageUrl: renderer.image });
+    const community = { kind: 'actor', id } as const;
+    const page = await readCommunityPage({ id }, viewer, undefined, { rewriteImageUrl: (url) => renderer.image(url, community) });
     if (!page) return missing(data.handle);
     const locale = negotiateLocale(getRequestHeader('accept-language'));
     const now = new Date();
@@ -52,9 +53,9 @@ export const loadCommunityPage = createServerFn({ method: 'GET' })
       viewer,
     );
     const sidebar = page.summaryMd
-      ? renderer.render(page.summaryMd).html
+      ? renderer.render(page.summaryMd, { content: community }).html
       : page.summaryHtml
-        ? renderer.sanitize(page.summaryHtml, { baseUrl: actor.apId }).html
+        ? renderer.sanitize(page.summaryHtml, { baseUrl: actor.apId, content: community }).html
         : null;
     const slotViewer: SlotViewer | null = session
       ? { actorId: session.view.actorId, moderator: page.canModerate, admin: session.view.siteRole === 'admin' }
@@ -71,8 +72,8 @@ export const loadCommunityPage = createServerFn({ method: 'GET' })
       nsfl: page.nsfl,
       restricted: page.postingRestrictedToMods,
       indexable: page.indexable,
-      banner: renderer.image(page.bannerUrl),
-      icon: renderer.image(page.iconUrl),
+      banner: renderer.image(page.bannerUrl, community),
+      icon: renderer.image(page.iconUrl, community),
       stats: {
         subscribers: translatePlural(locale, 'communities', remote ? 'page.subscribersHere' : 'page.subscribers', page.subscribers),
         posts: translatePlural(locale, 'communities', remote ? 'page.postsHeld' : 'page.posts', page.postCount),
@@ -95,7 +96,7 @@ export const loadCommunityPage = createServerFn({ method: 'GET' })
       about: sidebar,
       rules: page.rules.map((rule) => ({
         title: rule.title,
-        html: rule.bodyMd ? renderer.render(rule.bodyMd, { idPrefix: `rule-${rule.position}` }).html : null,
+        html: rule.bodyMd ? renderer.render(rule.bodyMd, { idPrefix: `rule-${rule.position}`, content: community }).html : null,
       })),
       moderators: page.moderators.map(({ actor: person, role, state, verifiedAt, since }) => ({
         handle: person.handle,

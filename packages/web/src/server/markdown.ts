@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { publicOrigin } from '@peblish/core/config';
 import { imageSource } from '@peblish/core/media/image-src';
-import { mediaProxyKey, proxyUrlBuilder } from '@peblish/core/media/proxy-url';
+import { mediaProxyKey, proxyUrlBuilder, type MediaContent } from '@peblish/core/media/proxy-url';
 import { deniedMediaDomains } from '@peblish/core/peers/gate';
 import { renderMarkdown } from '@peblish/core/markdown/render';
 import { sanitizeRemoteHtml } from '@peblish/core/markdown/sanitize';
@@ -23,22 +23,30 @@ export interface SiteMarkdown {
    * siteMarkdown() sets. Without it, or with remote media switched off, off-origin images show
    * as links: viewer IPs never reach remote hosts (decision 5).
    */
-  proxy?: (url: string) => string;
+  proxy?: (url: string, content?: MediaContent | null) => string;
   /** Peer domains whose media is denied (new peers are quarantined until approved); their images show as links. */
   deniedDomains?: readonly string[];
 }
 
+/**
+ * What a body or an image belongs to (a post, a comment, a profile or community page). Remote
+ * images are signed for it, so the proxy refuses them once it is removed, deleted or gated for
+ * the viewer; text that belongs to nothing yet (a draft's preview, a site page) leaves it out,
+ * and its images' URLs expire within two hours (core media/proxy-url.ts).
+ */
+type Content = { content?: MediaContent };
+
 export interface MarkdownRenderer {
   /** A local or remote Markdown body. idPrefix keeps footnote anchors apart on a page with many bodies. */
-  render(source: string, options?: { idPrefix?: string; maxLength?: number; excerptLength?: number }): RenderedMarkdown;
+  render(source: string, options?: { idPrefix?: string; maxLength?: number; excerptLength?: number } & Content): RenderedMarkdown;
   /** A remote object's HTML `content`; baseUrl is the object's URL. */
-  sanitize(html: string, options?: { baseUrl?: string; excerptLength?: number }): SanitizedHtml;
+  sanitize(html: string, options?: { baseUrl?: string; excerptLength?: number } & Content): SanitizedHtml;
   /**
    * Where a page loads an image from, such as a post's `thumbnailUrl` or an image post's `url`:
-   * the URL itself on this instance, the signed proxy path for a remote one, or null when it
-   * must not load (the caller shows a link or nothing).
+   * the URL itself on this instance, the signed proxy path for a remote one (for `content`), or
+   * null when it must not load (the caller shows a link or nothing).
    */
-  image(url: string | null | undefined): string | null;
+  image(url: string | null | undefined, content?: MediaContent): string | null;
 }
 
 /** The settings of this instance: PUBLIC_ORIGIN, the stored kill switch and the remote-media proxy. */
@@ -55,7 +63,8 @@ export async function siteMarkdown(): Promise<SiteMarkdown> {
 
 export async function createMarkdownRenderer(site?: SiteMarkdown): Promise<MarkdownRenderer> {
   const { origin, remoteMedia, proxy, deniedDomains } = site ?? (await siteMarkdown());
-  const image = (url: string | null | undefined) => imageSource(url, { origin, remoteMedia, proxy, deniedDomains });
+  const image = (url: string | null | undefined, content?: MediaContent) =>
+    imageSource(url, { origin, remoteMedia, proxy, deniedDomains }, content ?? null);
   const rendered = new Map<string, RenderedMarkdown>();
   const sanitized = new Map<string, SanitizedHtml>();
   // Keyed by a hash of the input and its options, so large bodies are not kept twice.
@@ -68,10 +77,14 @@ export async function createMarkdownRenderer(site?: SiteMarkdown): Promise<Markd
     return result;
   };
   return {
-    render: (source, options = {}) =>
-      memo(rendered, [source, options], () => renderMarkdown(source, { ...options, baseOrigin: origin, rewriteImageUrl: image })),
-    sanitize: (html, options = {}) =>
-      memo(sanitized, [html, options], () => sanitizeRemoteHtml(html, { ...options, rewriteImageUrl: image })),
+    render: (source, { content, ...options } = {}) =>
+      memo(rendered, [source, options, content], () =>
+        renderMarkdown(source, { ...options, baseOrigin: origin, rewriteImageUrl: (url) => image(url, content) }),
+      ),
+    sanitize: (html, { content, ...options } = {}) =>
+      memo(sanitized, [html, options, content], () =>
+        sanitizeRemoteHtml(html, { ...options, rewriteImageUrl: (url) => image(url, content) }),
+      ),
     image,
   };
 }
