@@ -2,7 +2,7 @@ import { auth, authErrorCode } from '@peblish/core/identity/auth';
 import { localHandles } from '@peblish/core/identity/handles';
 import { deviceSessions, revokeSession } from '@peblish/core/identity/session';
 import { attempt } from '@peblish/core/identity/throttle';
-import { changePasswordAs, confirmTotpSetup, pendingTotp, takeRecoveryCodes } from '@peblish/core/identity/two-factor';
+import { changePasswordAs, confirmTotpSetup, pendingTotp, startTotpSetup, takeRecoveryCodes } from '@peblish/core/identity/two-factor';
 import type { DeviceSession } from '@peblish/schema/session';
 import { Button } from '@peblish/ui/components/button';
 import { createFileRoute, redirect } from '@tanstack/react-router';
@@ -36,9 +36,10 @@ const loadSecurity = createServerFn({ method: 'GET' }).handler(async () => {
     email: session.email,
     admin: session.role === 'admin',
     twoFactorEnabled,
-    setup: twoFactorEnabled ? null : await pendingTotp(userId, session.email),
+    // Both belong to this session: the one that started the setup, and the one confirming it handed out.
+    setup: twoFactorEnabled ? null : await pendingTotp(userId, session.sessionId, session.email),
     // Consumed here: the codes show on the first view after confirming, and never again.
-    recoveryCodes: twoFactorEnabled ? await takeRecoveryCodes(userId) : null,
+    recoveryCodes: twoFactorEnabled ? await takeRecoveryCodes(userId, session.sessionId) : null,
     sessions: await deviceSessions(userId, session.sessionId),
   };
 });
@@ -90,12 +91,12 @@ export const Route = createFileRoute('/settings/security/')({
               return reply({ redirect: `${page}?saved=password`, cookies });
             }
             case 'totp-start':
-              await api.enableTwoFactor({ body: { password: body.password }, headers });
+              await startTotpSetup(session.sessionId, session.view.userId, headers, body.password);
               await counted?.refund();
               return reply({ redirect: page });
             case 'totp-verify': {
               // Only confirms a setup in progress; once two-factor is on this changes nothing.
-              const cookies = await confirmTotpSetup(session.view.userId, headers, body.code.replace(/\s/g, ''));
+              const cookies = await confirmTotpSetup(session.view.userId, session.sessionId, headers, body.code.replace(/\s/g, ''));
               return reply({ redirect: page, cookies: cookies ?? [] });
             }
             case 'totp-off': {

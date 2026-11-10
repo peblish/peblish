@@ -8,7 +8,7 @@ import { seedAccount, seedLocalInstance, seedTwoFactor, totpCode } from '../test
 import { auth } from './auth.ts';
 import { bootstrapAdmin } from './bootstrap.ts';
 import { currentSession, describeDevice, deviceSessions, maskIp, revokeSession } from './session.ts';
-import { changePasswordAs, confirmTotpSetup, pendingTotp, takeRecoveryCodes } from './two-factor.ts';
+import { changePasswordAs, confirmTotpSetup, pendingTotp, startTotpSetup, takeRecoveryCodes } from './two-factor.ts';
 
 beforeEach(async () => {
   await truncateAll();
@@ -113,10 +113,10 @@ test('confirming a TOTP setup signs every other session out (B07 A1)', async () 
   const andrew = await seedAccount('andrew', { role: 'admin' });
   const laptop = await signIn(andrew.email, andrew.password, firefoxMac);
   const phone = await signIn(andrew.email, andrew.password, safariPhone);
-  const api = (await auth()).api;
-  await api.enableTwoFactor({ body: { password: andrew.password }, headers: laptop });
-  const secret = Buffer.from(base32Decode((await pendingTotp(andrew.userId, andrew.email))!.key)).toString();
-  const confirmed = await confirmTotpSetup(andrew.userId, laptop, totpCode(secret));
+  const laptopId = (await currentSession(laptop))!.sessionId;
+  await startTotpSetup(laptopId, andrew.userId, laptop, andrew.password);
+  const secret = Buffer.from(base32Decode((await pendingTotp(andrew.userId, laptopId, andrew.email))!.key)).toString();
+  const confirmed = await confirmTotpSetup(andrew.userId, laptopId, laptop, totpCode(secret));
   const enrolled = await currentSession(cookiesOf(new Headers((confirmed ?? []).map((cookie) => ['set-cookie', cookie]))));
   expect(enrolled?.view.siteRole).toBe('admin');
   expect(await currentSession(phone)).toBeNull();
@@ -143,25 +143,44 @@ test('device names and masked addresses', () => {
 test('a two-factor setup shows its key until confirmed, then the recovery codes once, and a later code shows nothing', async () => {
   const mira = await seedAccount('mira');
   const cookies = await signIn(mira.email, mira.password, firefoxMac);
-  const api = (await auth()).api;
-  const enabled = await api.enableTwoFactor({ body: { password: mira.password }, headers: cookies });
-  if (enabled.method !== 'totp') throw new Error('expected a TOTP setup');
-  const pending = await pendingTotp(mira.userId, mira.email);
+  const sessionId = (await currentSession(cookies))!.sessionId;
+  await startTotpSetup(sessionId, mira.userId, cookies, mira.password);
+  const pending = await pendingTotp(mira.userId, sessionId, mira.email);
   expect(pending?.uri).toMatch(/^otpauth:\/\/totp\/a\.peblish\.test:mira%40example\.test\?secret=[A-Z2-7]+&issuer=a\.peblish\.test/);
   expect(pending?.key).toMatch(/^[A-Z2-7]{32,}$/);
 
   const secret = Buffer.from(base32Decode(pending!.key)).toString();
   const now = Date.now();
-  const confirmed = await confirmTotpSetup(mira.userId, cookies, totpCode(secret, now));
+  const confirmed = await confirmTotpSetup(mira.userId, sessionId, cookies, totpCode(secret, now));
   expect(confirmed?.some((cookie) => cookie.includes('session_token'))).toBe(true);
-  expect(await pendingTotp(mira.userId, mira.email)).toBeNull();
-  expect(await takeRecoveryCodes(mira.userId)).toEqual(enabled.backupCodes);
-  expect(await takeRecoveryCodes(mira.userId)).toBeNull();
+  const session = new Headers({ cookie: (confirmed ?? []).map((value) => value.split(';')[0]).join('; ') });
+  const replacement = (await currentSession(session))!.sessionId;
+  expect(await pendingTotp(mira.userId, replacement, mira.email)).toBeNull();
+  expect(await takeRecoveryCodes(mira.userId, replacement)).toHaveLength(10);
+  expect(await takeRecoveryCodes(mira.userId, replacement)).toBeNull();
 
   // Posting a valid code again, with the new session, changes nothing and reveals nothing.
-  const session = new Headers({ cookie: (confirmed ?? []).map((value) => value.split(';')[0]).join('; ') });
-  expect(await confirmTotpSetup(mira.userId, session, totpCode(secret, now + 30_000))).toBeNull();
-  expect(await takeRecoveryCodes(mira.userId)).toBeNull();
+  expect(await confirmTotpSetup(mira.userId, replacement, session, totpCode(secret, now + 30_000))).toBeNull();
+  expect(await takeRecoveryCodes(mira.userId, replacement)).toBeNull();
+});
+
+test('another session of the account sees neither the setup key nor the recovery codes, and cannot confirm (B07 A2)', async () => {
+  const mira = await seedAccount('mira');
+  const laptop = await signIn(mira.email, mira.password, firefoxMac);
+  const phone = await signIn(mira.email, mira.password, safariPhone);
+  const [laptopId, phoneId] = [(await currentSession(laptop))!.sessionId, (await currentSession(phone))!.sessionId];
+  await startTotpSetup(laptopId, mira.userId, laptop, mira.password);
+  expect(await pendingTotp(mira.userId, phoneId, mira.email)).toBeNull();
+  const secret = Buffer.from(base32Decode((await pendingTotp(mira.userId, laptopId, mira.email))!.key)).toString();
+  const now = Date.now();
+  expect(await confirmTotpSetup(mira.userId, phoneId, phone, totpCode(secret, now))).toBeNull();
+
+  const confirmed = await confirmTotpSetup(mira.userId, laptopId, laptop, totpCode(secret, now));
+  const replacement = (await currentSession(cookiesOf(new Headers((confirmed ?? []).map((cookie) => ['set-cookie', cookie])))))!;
+  // The reveal moved to the replacement session: the one that confirmed no longer exists, the phone was signed out.
+  expect(await takeRecoveryCodes(mira.userId, laptopId)).toBeNull();
+  expect(await takeRecoveryCodes(mira.userId, phoneId)).toBeNull();
+  expect(await takeRecoveryCodes(mira.userId, replacement.sessionId)).toHaveLength(10);
 });
 
 function base32Decode(input: string): Uint8Array {
