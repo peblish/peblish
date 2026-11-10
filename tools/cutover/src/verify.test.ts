@@ -21,8 +21,8 @@ test('every imported key signs a delivery that verifies against the stored publi
     [`${testOrigin}/u/Andrew`, true, true, true, true],
     [`${testOrigin}/u/feddit-admin`, true, true, true, true],
   ]);
-  // PieFed's instance actor id, /actor, is served by id but the web server does not route it to federation yet.
-  expect(report.keys.filter((key) => !key.routed).map((key) => key.apId)).toEqual([`${testOrigin}/actor`]);
+  // Every id, PieFed's instance actor at /actor included, is routed to federation.
+  expect(report.keys.every((key) => key.routed)).toBe(true);
   expect(report.follows).toMatchObject([
     { followee: `${testOrigin}/c/announcements`, state: 'accepted', local: true },
     {

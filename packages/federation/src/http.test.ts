@@ -3,6 +3,7 @@ import { truncateAll } from '@peblish/core/testing/db';
 import { seedActor } from '@peblish/core/testing/seed';
 import { seedPost } from '@peblish/core/testing/seed-az';
 import { rsaKeys, seedLocalInstance, seedSigningKey } from '@peblish/core/testing/seed-fed-a';
+import { seedInstance } from '@peblish/core/testing/seed';
 import { lookupBudgets, resetKeyFetchBudget, takeKeyLookup } from './inbound/throttle.ts';
 import { signDelivery } from './signing/sign.ts';
 import { handleFederationRequest, isFederationRequest, prefersActivityJson, type FederationContext } from './http.ts';
@@ -24,11 +25,13 @@ describe('federation routing', () => {
     '/u/feddit-admin/followers',
     '/c/announcements/featured',
     '/c/announcements/moderators',
+    '/actor/inbox',
+    '/actor/outbox',
   ])('%s always goes to federation', (path) => {
     expect(isFederationRequest(request(path, browser))).toBe(true);
   });
 
-  test.each(['/', '/u/andrew', '/c/announcements'])('%s goes to federation only when ActivityPub is asked for', (path) => {
+  test.each(['/', '/actor', '/u/andrew', '/c/announcements'])('%s goes to federation only when ActivityPub is asked for', (path) => {
     expect(isFederationRequest(request(path, activity))).toBe(true);
     expect(isFederationRequest(request(path, 'application/ld+json; profile="https://www.w3.org/ns/activitystreams"'))).toBe(true);
     expect(isFederationRequest(request(path, browser))).toBe(false);
@@ -78,6 +81,12 @@ describe('answering federation requests', () => {
     expect((await ask('/ap/post/0190b7a8-0000-7000-8000-000000000001'))?.status).toBe(404);
     expect((await ask('/nodeinfo/9.9'))?.status).toBe(404);
     expect((await ask('/.well-known/webfinger?resource=acct:nobody@fed-a.test'))?.status).toBe(404);
+  });
+
+  test('on a fresh instance, whose instance actor is at the root, /actor names nothing and /actor/inbox is no inbox', async () => {
+    expect(await ask('/actor', { headers: { accept: activity } })).toBeNull();
+    expect((await ask('/actor/outbox'))?.status).toBe(404);
+    expect((await ask('/actor/inbox', { method: 'POST', body: '{}', headers: { 'content-type': activity } }))?.status).toBe(404);
   });
 
   test('WebFinger and NodeInfo answer on their well-known paths', async () => {
@@ -150,5 +159,40 @@ describe('answering federation requests', () => {
     log.mockRestore();
     expect(response.status).toBe(503);
     expect(Number(response.headers.get('retry-after'))).toBeGreaterThan(0);
+  });
+});
+
+describe('an instance actor imported from PieFed, at /actor', () => {
+  const origin = 'https://feddit.test';
+  const ask = (path: string, init: RequestInit = {}) => handleFederationRequest(new Request(`${origin}${path}`, init));
+
+  beforeEach(async () => {
+    await truncateAll();
+    const instance = await seedInstance('feddit.test', true);
+    const actor = await seedActor(instance, 'Application', 'feddit.test', {
+      apId: `${origin}/actor`,
+      inboxUrl: `${origin}/actor/inbox`,
+      outboxUrl: `${origin}/actor/outbox`,
+      sharedInboxUrl: `${origin}/inbox`,
+    });
+    await seedSigningKey(actor);
+  });
+
+  test('is served at its stored id with its key, by Accept as the root is, and the root names nothing', async () => {
+    const response = (await ask('/actor', { headers: { accept: activity } }))!;
+    expect(response.status).toBe(200);
+    const json = (await response.json()) as { type: string; id: string; inbox: string; publicKey: { id: string; owner: string } };
+    expect(json).toMatchObject({ type: 'Application', id: `${origin}/actor`, inbox: `${origin}/actor/inbox` });
+    expect(json.publicKey).toMatchObject({ id: `${origin}/actor#main-key`, owner: `${origin}/actor` });
+    expect(isFederationRequest(new Request(`${origin}/actor`, { headers: { accept: browser } }))).toBe(false);
+    expect(await ask('/', { headers: { accept: activity } })).toBeNull();
+  });
+
+  test('/actor/inbox is its inbox (an unsigned POST is 401) and /actor/outbox its outbox', async () => {
+    const inbox = (await ask('/actor/inbox', { method: 'POST', body: '{}', headers: { 'content-type': activity } }))!;
+    expect(inbox.status).toBe(401);
+    const outbox = (await ask('/actor/outbox', { headers: { accept: activity } }))!;
+    expect(outbox.status).toBe(200);
+    expect(((await outbox.json()) as { type: string }).type).toBe('OrderedCollection');
   });
 });
