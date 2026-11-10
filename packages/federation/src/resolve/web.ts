@@ -4,6 +4,7 @@ import { findHeld, pointsHere } from '@peblish/core/resolve/local';
 import { resolveErrors, type Held, type Lookup, type ResolveError } from '@peblish/core/resolve/outcome';
 import { eq } from 'drizzle-orm';
 import { FetchFailure, fetchActivity, type Fetcher } from '../actors/document.ts';
+import { FederationPaused, federationOn } from '../actors/federation-switch.ts';
 import { ActorResolveError, resolveRemoteActor, type ResolvedActor } from '../actors/resolve.ts';
 import { safeFetch } from '../actors/safe-fetch.ts';
 import { fromWire } from '../mapping/document.ts';
@@ -199,6 +200,7 @@ async function byObject(id: string, fetch: Fetcher): Promise<Held> {
 export async function resolveLookup(lookup: Lookup, { fetch = safeFetch }: { fetch?: Fetcher } = {}): Promise<ResolveResult> {
   // An address on this server that is not held is not there: no request for it.
   if (await pointsHere(lookup)) return { ok: false, error: 'target.not_found' };
+  if (!(await federationOn())) return { ok: false, error: 'resolve.paused' };
   const guard: Limited = limit(fetch);
   try {
     return { ok: true, found: await (lookup.kind === 'handle' ? byHandle(lookup, guard.fetch) : byUrl(lookup.url, guard.fetch)) };
@@ -207,6 +209,8 @@ export async function resolveLookup(lookup: Lookup, { fetch = safeFetch }: { fet
     if (guard.spent) return { ok: false, error: 'resolve.too_large' };
     if (guard.blockedHost !== null) return { ok: false, error: 'instance.blocked' };
     if (error instanceof Stop) return { ok: false, error: error.code };
+    // The switch went off while this lookup ran.
+    if (error instanceof FederationPaused) return { ok: false, error: 'resolve.paused' };
     console.error('resolve: unexpected failure', error);
     return { ok: false, error: 'generic' };
   }

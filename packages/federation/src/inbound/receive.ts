@@ -20,6 +20,7 @@ import { takeIntake, takeKeyLookup } from './throttle.ts';
 //   inbox.enabled off  503 + Retry-After   the one maintenance answer an inbox may give
 //   body over 512 KiB  413                 by Content-Length, or counted as a chunked body streams in
 //   bad signature      401                 draft-cavage, the key's owner is the activity's actor
+//   federation paused  503 + Retry-After   the signer's key had to be fetched while the switch is off (delivery.enabled)
 //   an account's own   202                 a Delete of an account we do not hold, signed with a key that can no
 //   Delete, no key                         longer be fetched (Mastodon sends it after the account is gone):
 //                                          nothing to apply, answered so the peer stops retrying
@@ -219,6 +220,8 @@ export async function receiveInbound(request: Request, options: ReceiveOptions =
     };
     const signature = await verifyInboundSignature(request, body, { fetch: limited });
     if (!signature.ok) {
+      // The signer's key had to be fetched, and federation is paused: the peer asks again later.
+      if (signature.reason === 'paused') return refuse(503, 'federation is paused here', retryAfter);
       if (throttled) return refuse(429, 'slow down', retryAfter);
       if (signature.reason === 'key_unknown' && (await isGoneAccountsDelete(body))) return refuse(202, 'skipped: actor.unresolvable');
       return refuse(401, `signature: ${signature.reason}`);

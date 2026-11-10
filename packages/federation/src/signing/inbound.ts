@@ -3,13 +3,16 @@ import { db } from '@peblish/core/db/read';
 import { actorKeys, actors } from '@peblish/core/db/tables/actors';
 import { eq } from 'drizzle-orm';
 import { fetchActivity, type Fetcher } from '../actors/document.ts';
+import { FederationPaused } from '../actors/federation-switch.ts';
 import { resolveRemoteActor } from '../actors/resolve.ts';
 import { safeFetch } from '../actors/safe-fetch.ts';
 import { parseSignature, signatureVerifies, type SignatureFailure } from './verify.ts';
 
 export type SignatureResult =
   /** `ownerApId` is the actor the key belongs to: the one that signed. */
-  { ok: true; keyId: string; ownerApId: string } | { ok: false; reason: SignatureFailure };
+  | { ok: true; keyId: string; ownerApId: string }
+  /** `paused`: the key had to be fetched, and the federation switch is off (actors/federation-switch.ts). */
+  | { ok: false; reason: SignatureFailure | 'paused' };
 
 type StoredKey = { publicKeyPem: string; ownerApId: string; local: boolean };
 
@@ -91,7 +94,8 @@ async function keyOwner(keyId: string, fetch: Fetcher): Promise<string | null> {
     const { owner, publicKeyPem } = json as { owner?: unknown; publicKeyPem?: unknown };
     if (typeof owner !== 'string' || typeof publicKeyPem !== 'string' || !URL.canParse(owner)) return null;
     return new URL(owner).origin === new URL(keyId).origin ? owner : null;
-  } catch {
+  } catch (error) {
+    if (error instanceof FederationPaused) throw error;
     return null;
   }
 }
@@ -119,6 +123,7 @@ export async function verifyInboundSignature(
   const parsed = parseSignature(request, body, now);
   if (typeof parsed === 'string') return { ok: false, reason: parsed };
   if (!URL.canParse(parsed.keyId)) return { ok: false, reason: 'malformed' };
+  let paused = false;
   const fetched = async (): Promise<StoredKey | null> => {
     const actorApId = actorOf(parsed.keyId);
     if (recentlyFetched(actorApId, now)) return null;
@@ -139,7 +144,8 @@ export async function verifyInboundSignature(
     try {
       const owner = (await keyOwner(parsed.keyId, recording)) ?? actorApId;
       await resolveRemoteActor(owner, { fetch: recording, maxAgeMs: keyRefetchAfterMs });
-    } catch {
+    } catch (error) {
+      if (error instanceof FederationPaused) paused = true;
       return null;
     }
     return storedKey(parsed.keyId);
@@ -152,6 +158,8 @@ export async function verifyInboundSignature(
   if (key && signatureVerifies(parsed, key.publicKeyPem)) return verified(key);
   // An unknown key, or one that no longer verifies (rotated?): look at the actor's current document.
   key = (await fetched()) ?? key;
+  // The key could not be looked for, so the signature is neither good nor bad yet.
+  if (paused) return { ok: false, reason: 'paused' };
   if (!key || key.local) return { ok: false, reason: 'key_unknown' };
   return signatureVerifies(parsed, key.publicKeyPem) ? verified(key) : { ok: false, reason: 'invalid' };
 }

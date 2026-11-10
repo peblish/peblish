@@ -65,7 +65,7 @@ test('every kill switch is a row with its state, what pausing does and one butto
     ['uploads.enabled', 'Image uploads'],
     ['remote_media.enabled', 'Remote media'],
     ['inbox.enabled', 'Inbox'],
-    ['delivery.enabled', 'Outgoing delivery'],
+    ['delivery.enabled', 'Sending and fetching'],
   ] as const) {
     const row = page.locator(`[data-switch="${key}"]`);
     await expect(row.getByText(label, { exact: true })).toBeVisible();

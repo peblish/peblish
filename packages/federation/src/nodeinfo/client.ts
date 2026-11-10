@@ -4,6 +4,7 @@ import { instances } from '@peblish/core/db/tables/instances';
 import { storeInstanceSoftware } from '@peblish/core/remote/instances';
 import { eq } from 'drizzle-orm';
 import { fetchJson, type Fetcher } from '../actors/document.ts';
+import { FederationPaused } from '../actors/federation-switch.ts';
 import { importGrant } from '../actors/grants.ts';
 
 // What software a peer runs, from its NodeInfo. The delivery code picks the Announce shape
@@ -108,6 +109,8 @@ async function refresh(origin: string, fetch: Fetcher, now: number): Promise<voi
     await storeInstanceSoftware(await importGrant('remote.instance_store', { origin }), { software, version });
     failures.delete(origin);
   } catch (error) {
+    // Nothing was asked, so the peer did not fail: the next check after the pause asks it.
+    if (error instanceof FederationPaused) return;
     recordFailure(origin, now);
     console.warn(`nodeinfo: ${origin}: ${error instanceof Error ? error.message : String(error)}`);
   }

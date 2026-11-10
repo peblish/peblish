@@ -14,6 +14,7 @@ import {
 } from '@peblish/core/remote/backfill';
 import { eq } from 'drizzle-orm';
 import { FetchFailure, type Fetcher } from '../actors/document.ts';
+import { federationOn } from '../actors/federation-switch.ts';
 import { safeFetch } from '../actors/safe-fetch.ts';
 import type { JsonObject } from '../mapping/json.ts';
 import { refreshRemoteActor } from '../remote-fetch/actor.ts';
@@ -265,13 +266,17 @@ export type BackfillRunOptions = BackfillOptions & {
   maxRuns?: number;
 };
 
-/** Claims due backfills one at a time, runs and settles each; returns how many it ran. */
+/**
+ * Claims due backfills one at a time, runs and settles each; returns how many it ran. With the
+ * federation switch off it claims nothing, so a queued backfill waits without spending an attempt.
+ */
 export async function backfillDue(options: BackfillRunOptions = {}): Promise<number> {
   const limits = options.limits ?? backfillLimits;
   const now = options.now ?? (() => new Date());
   const principal = await systemPrincipal(db(), 'scheduled');
   let ran = 0;
   while (!options.signal?.aborted && ran < (options.maxRuns ?? 3)) {
+    if (!(await federationOn())) break;
     const claimGrant = await authorize('remote.backfill_claim', principal, {});
     if (!claimGrant.ok) throw new Error(`remote.backfill_claim refused: ${claimGrant.reason}`);
     const claimed = await claimBackfill(claimGrant.grant, { now: now() });

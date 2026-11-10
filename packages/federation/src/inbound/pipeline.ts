@@ -8,6 +8,7 @@ import { tx } from '@peblish/core/tx/tx';
 import { and, eq, isNull } from 'drizzle-orm';
 import { ActorResolveError, resolveRemoteActor, type ResolvedActor, type ResolveOptions } from '../actors/resolve.ts';
 import type { Fetcher } from '../actors/document.ts';
+import { FederationPaused } from '../actors/federation-switch.ts';
 import { safeFetch } from '../actors/safe-fetch.ts';
 import { localOrigin } from '../federation.ts';
 import { activityFromWire } from '../mapping/activity.ts';
@@ -77,11 +78,14 @@ export const fetchesPerRow = 60;
  */
 export const memberReserve = 6;
 
-/** Which budget said no: the claim's own allowance, or the process-wide window every delivery shares (throttle.ts). */
-type Refusal = 'allowance' | 'window';
+/**
+ * Which budget said no: the claim's own allowance, the process-wide window every delivery shares
+ * (throttle.ts), or the federation switch, off (actors/federation-switch.ts), which lets no fetch out at all.
+ */
+type Refusal = 'allowance' | 'window' | 'paused';
 
 /** Seconds a row waits before its next claim after each kind of refusal (the window lasts a minute). */
-const waitSeconds: Record<Refusal, number> = { allowance: 5, window: 30 };
+const waitSeconds: Record<Refusal, number> = { allowance: 5, window: 30, paused: 60 };
 const spentMessage = 'this delivery needs more fetches than it may make now';
 
 /** Thrown to stop a row's work for now: a fetch was refused, which is a wait, not a failure. */
@@ -260,6 +264,8 @@ async function processItem(row: InboxRow, json: JsonObject, env: Env, settleHere
   } catch (error) {
     // Whatever came of the member after a refusal is not its outcome: it is tried again.
     if (env.budget.refused) throw new FetchYield(env.budget.refused);
+    // A fetch the switch held back: the row waits for federation to be on again, its attempt given back.
+    if (error instanceof FederationPaused) throw new FetchYield('paused');
     if (error instanceof Skipped) return { skipped: error };
     if (error instanceof Refused) return { skipped: skip(error.reason) };
     if (error instanceof MappingError) return { failed: error.message };
@@ -292,16 +298,18 @@ function aggregate(results: readonly ItemResult[]): Settled {
 
 /**
  * A row whose fetches ran out steps aside: pending again after a short wait, with its attempt
- * given back. The window is shared with every delivery, so running out of it is nobody's fault.
+ * given back. The window is shared with every delivery, so running out of it is nobody's fault,
+ * and a pause of federation is the admin's.
  * A claim that spent its own allowance without applying anything new is a delivery that needs
  * more than it may have: that throws, and the caller counts an attempt.
  */
 async function giveWay(row: InboxRow, refusal: Refusal, results: readonly ItemResult[]): Promise<Yielded> {
   if (refusal === 'allowance' && !results.some((result) => 'applied' in result)) throw new Error(spentMessage);
-  const error =
-    refusal === 'window'
-      ? 'the server is fetching as much as it may; this delivery waits'
-      : 'the rest of this delivery waits for a turn to fetch';
+  const error = {
+    window: 'the server is fetching as much as it may; this delivery waits',
+    allowance: 'the rest of this delivery waits for a turn to fetch',
+    paused: 'federation is paused here; this delivery waits until it is on again',
+  }[refusal];
   await yieldLater(row, waitSeconds[refusal], error);
   return { state: 'pending', error };
 }
