@@ -40,6 +40,8 @@ export const inboundReasons = {
   'type.question': 'Polls (Question) are not stored yet.',
   'content.nsfw_rejected':
     'Remote NSFL content is refused, and NSFW content too while the site setting remote_nsfw.accepted is off (its default).',
+  'content.not_public':
+    'The post or comment is not addressed to Public (followers-only or direct), it or an activity carrying it: peblish stores and relays public content only.',
   'note.no_local_community': 'A top-level Note that is not addressed to a community here is not a post.',
   'vote.unchanged': 'The voter already has this vote, or has none to take back.',
   'moderators.local_collection': 'A local community’s moderators change here, not by a peer’s Add or Remove.',

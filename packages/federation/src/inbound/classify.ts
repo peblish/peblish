@@ -1,6 +1,7 @@
 import { MappingError, type JsonObject } from '../mapping/json.ts';
 import { addressesOf, noteAsPage } from './microblog.ts';
 import { skip, type Skipped } from './reasons.ts';
+import { notPublic } from './visibility.ts';
 
 // What an inbox document is, before the mapping reads it. The mapping is strict about the
 // shapes it knows and throws MappingError for the rest; that error is permanent (the row
@@ -59,6 +60,9 @@ async function contentObject(json: JsonObject, env: ClassifyEnv): Promise<Item> 
   if (typeof type !== 'string') return { json };
   if (json.type === 'Update' && actorTypes.has(type)) return { json };
   if (!contentTypes.has(type)) return { skipped: skip('object.unsupported', type) };
+  // Before a Note is made a post: what is not public is not ours to store (visibility.ts).
+  const hidden = notPublic(json);
+  if (hidden) return { skipped: hidden };
   if (type !== 'Note' || (object.inReplyTo !== undefined && object.inReplyTo !== null)) return { json };
   // A microblog post: only a community here makes it a post.
   for (const address of addressesOf(object)) {
@@ -101,7 +105,16 @@ async function classifyOne(json: unknown, env: ClassifyEnv, depth: number): Prom
       if (object.type === 'Announce') return { skipped: skip('announce.nested', idOf(object) ?? undefined) };
       if (typeof object.type === 'string' && handledTypes.has(object.type)) {
         const inner = await classifyOne(object, env, depth + 1);
-        return 'json' in inner ? { json: { ...json, object: inner.json }, ...(inner.rewritten && { rewritten: true as const }) } : inner;
+        if (!('json' in inner)) return inner;
+        // The Announce is one more layer that carries the content, and must be public too.
+        const hidden = notPublic(inner.json, json);
+        if (hidden) return { skipped: hidden };
+        return { json: { ...json, object: inner.json }, ...(inner.rewritten && { rewritten: true as const }) };
+      }
+      // A bare Page or Note (the copy Lemmy sends Mastodon-like followers) is stored like its Create.
+      if (typeof object.type === 'string' && contentTypes.has(object.type)) {
+        const hidden = notPublic(object, json);
+        if (hidden) return { skipped: hidden };
       }
       if (object.type === 'Question') return { skipped: skip('type.question', idOf(object) ?? undefined) };
       return { json };

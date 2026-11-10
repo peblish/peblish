@@ -17,6 +17,7 @@ import { localOrigin } from '../federation.ts';
 import { checkObject } from '../inbound/authorize.ts';
 import { requeueSkippedFor } from '../inbound/queue.ts';
 import { Skipped } from '../inbound/reasons.ts';
+import { notPublic } from '../inbound/visibility.ts';
 import { fromWire } from '../mapping/document.ts';
 import { MappingError } from '../mapping/json.ts';
 import type { CommentRecord, PostRecord } from '../mapping/records.ts';
@@ -157,6 +158,9 @@ export async function storeObject(
   vouch: Vouch,
   options: { fetch: Fetcher; depth: number; confine?: Confine },
 ): Promise<ObjectOutcome> {
+  // What is not public is not stored, however it was fetched (inbound/visibility.ts).
+  const hidden = notPublic(json);
+  if (hidden) return refused(idOf(json), hidden.reason);
   let mapped;
   try {
     mapped = fromWire(json);
