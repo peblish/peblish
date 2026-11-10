@@ -1,3 +1,4 @@
+import { createHmac } from 'node:crypto';
 import { expect, test } from 'vitest';
 import { derivedKey } from '../identity/auth.ts';
 import { seedLocalInstance } from '../testing/seed-a.ts';
@@ -13,8 +14,32 @@ test('a proxy path carries its URL and verifies only under its own key', () => {
   const path = build(URL_);
   expect(path).toMatch(/^\/media\/proxy\/[\w-]{43}\/[\w-]+$/);
   const [signature, target] = split(path);
-  expect(verifyProxyPath(key, signature, target)).toBe(URL_);
+  expect(verifyProxyPath(key, signature, target)).toEqual({ url: URL_, content: null });
   expect(verifyProxyPath(Buffer.from('b'.repeat(32)), signature, target)).toBeNull();
+});
+
+test('a path names the content it was signed for, and an unbound one expires at the end of the next hour', () => {
+  const comment = { kind: 'comment', id: '0195F0A0-0000-7000-8000-00000000000C', supplier: 'Lemmy.Example:8443' } as const;
+  const [signature, target] = split(build(URL_, comment));
+  expect(verifyProxyPath(key, signature, target)).toEqual({
+    url: URL_,
+    content: { kind: 'comment', id: comment.id.toLowerCase(), supplier: 'lemmy.example:8443' },
+  });
+  expect(verifyProxyPath(key, ...split(build(URL_, { ...comment, supplier: null })))?.content?.supplier).toBeNull();
+  for (const kind of ['post', 'actor'] as const)
+    expect(verifyProxyPath(key, ...split(build(URL_, { ...comment, kind })))?.content?.kind).toBe(kind);
+  // A bound path never expires: it lives as long as its content is shown (reference.ts).
+  expect(verifyProxyPath(key, signature, target, Date.UTC(2100, 0, 1))?.content?.kind).toBe('comment');
+
+  const issued = Date.UTC(2026, 10, 10, 9, 30);
+  const [s, t] = split(proxyUrlBuilder(key, () => issued)(URL_));
+  expect(verifyProxyPath(key, s, t, Date.UTC(2026, 10, 10, 10, 59, 59))).toEqual({ url: URL_, content: null });
+  expect(verifyProxyPath(key, s, t, Date.UTC(2026, 10, 10, 11))).toBeNull();
+  // The same URL within the hour, so a page's images stay in the browser's cache.
+  expect(proxyUrlBuilder(key, () => issued + 20 * 60_000)(URL_)).toBe(proxyUrlBuilder(key, () => issued)(URL_));
+  // A path in the old form (the URL alone, signed) carries no reference and is refused.
+  const old = Buffer.from(URL_).toString('base64url');
+  expect(verifyProxyPath(key, createHmac('sha256', key).update(URL_).digest('base64url'), old)).toBeNull();
 });
 
 test('an unsigned, altered or hand-made path is refused: signature, target, case, truncation', () => {
@@ -61,7 +86,7 @@ test('the length limit is 2,048 UTF-8 bytes on both sides: what the builder sign
     const exact = urlOf(2048, letter);
     expect(Buffer.byteLength(exact), letter).toBe(2048);
     const [signature, target] = split(build(exact));
-    expect(verifyProxyPath(key, signature, target), letter).toBe(exact);
+    expect(verifyProxyPath(key, signature, target)?.url, letter).toBe(exact);
     expect(() => build(`${exact}a`), letter).toThrow(RangeError);
   }
   // Under 2,048 UTF-16 units, over 2,048 bytes: the builder used to sign this and verify then refused it.
@@ -120,6 +145,23 @@ test('an own-origin URL whose path would leave the host takes the proxy branch, 
     ['https://feddit.example/%5Cevil.example/x.png', '/%5Cevil.example/x.png'],
   ] as const)
     expect(imageSource(url, policy), url).toBe(path);
+});
+
+test('an image shown for content a denied peer supplied never loads, wherever it is hosted; the supplier is signed in', () => {
+  const policy = { origin: 'https://feddit.example', remoteMedia: true, proxy: build, deniedDomains: ['piefed.example'] };
+  const remote = { kind: 'post', id: '0195f0a0-0000-7000-8000-000000000001', apId: 'https://piefed.example/post/1' } as const;
+  // The image host is no peer (a plain website), so only the supplier can refuse it.
+  const offHost = 'https://images.example/a.png';
+  expect(imageSource(offHost, policy, remote)).toBeNull();
+  expect(imageSource(offHost, policy, { ...remote, apId: 'https://sub.piefed.example/post/1' })).toBeNull();
+  const approved = { ...remote, apId: 'https://lemmy.example/post/1' };
+  const [signature, target] = split(imageSource(offHost, policy, approved)!);
+  expect(verifyProxyPath(key, signature, target)?.content).toEqual({ kind: 'post', id: remote.id, supplier: 'lemmy.example' });
+  // This instance's own content names no supplier.
+  const own = split(imageSource(offHost, policy, { ...remote, apId: 'https://feddit.example/post/1' })!);
+  expect(verifyProxyPath(key, ...own)?.content?.supplier).toBeNull();
+  // Content whose ap_id is not a URL has no supplier to judge, so its images do not load.
+  expect(imageSource(offHost, policy, { ...remote, apId: 'not a url' })).toBeNull();
 });
 
 test('a post link is an image when its content type says so, including the image/* placeholder', () => {

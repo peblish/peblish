@@ -3,7 +3,15 @@ import { db } from '../db/read.ts';
 import { writer } from '../db/write.ts';
 import { truncateAll } from '../testing/db.ts';
 import { seedInstance } from '../testing/seed.ts';
-import { blockedDomains, deliveryBlocked, deniedMediaDomains, instanceBlocked, intakeFor, mediaAllowed } from './gate.ts';
+import {
+  blockedDomains,
+  deliveryBlocked,
+  deniedMediaDomains,
+  instanceBlocked,
+  intakeFor,
+  mediaAllowed,
+  supplierMediaAllowed,
+} from './gate.ts';
 import { peerControls } from './tables.ts';
 
 beforeEach(truncateAll);
@@ -64,4 +72,25 @@ test('media: approved passes, quarantined and denied do not, subdomains follow t
   expect(await mediaAllowed('example.org')).toBe(true);
   expect(await mediaAllowed('feddit.test')).toBe(true);
   expect((await deniedMediaDomains(db())).toSorted()).toEqual(['blocked.test', 'piefed.test', 'purged.test']);
+});
+
+test('a supplier: approved passes, quarantined, purged and blocked do not, and an unknown one is refused, unlike an unknown image host', async () => {
+  await seedInstance('feddit.test');
+  const approved = await seedInstance('lemmy.test', false);
+  const purged = await seedInstance('purged.test', false);
+  const blocked = await seedInstance('blocked.test', false);
+  await seedInstance('piefed.test', false);
+  await control(approved.id, { media: 'approved' });
+  await control(purged.id, { media: 'denied', purgedAt: new Date() });
+  await control(blocked.id, { media: 'approved', blocked: true });
+  const answers = async (hosts: string[]) => Promise.all(hosts.map((host) => supplierMediaAllowed(host)));
+  expect(await answers(['feddit.test', 'lemmy.test', 'piefed.test', 'purged.test', 'blocked.test', 'stranger.example'])).toEqual([
+    true,
+    true,
+    false,
+    false,
+    false,
+    false,
+  ]);
+  expect(await mediaAllowed('stranger.example')).toBe(true);
 });

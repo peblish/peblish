@@ -19,8 +19,12 @@ const rootRelative = /^\/(?![/\\])/;
  * media off, no proxy, a URL too long to proxy), where the page shows a link or nothing. An image
  * post is a link whose media type is an image other than SVG.
  */
-export function postMedia(view: Pick<PostView, 'url' | 'urlContentType' | 'thumbnailUrl'>, renderer: Pick<MarkdownRenderer, 'image'>) {
-  const source = (url: string | null) => (url && rootRelative.test(url) ? url : renderer.image(url));
+export function postMedia(
+  view: Pick<PostView, 'id' | 'apId' | 'url' | 'urlContentType' | 'thumbnailUrl'>,
+  renderer: Pick<MarkdownRenderer, 'image'>,
+) {
+  const source = (url: string | null) =>
+    url && rootRelative.test(url) ? url : renderer.image(url, { kind: 'post', id: view.id, apId: view.apId });
   return {
     thumbnail: source(view.thumbnailUrl),
     image: isImageContentType(view.urlContentType) ? source(view.url) : null,

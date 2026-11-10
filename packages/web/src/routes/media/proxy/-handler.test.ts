@@ -1,7 +1,7 @@
 import { proxyUrlBuilder } from '@peblish/core/media/proxy-url';
 import { expect, test, vi } from 'vitest';
 // The peer gate reads the database; these tests are about the handler, so every peer is approved unless a test says otherwise.
-vi.mock('@peblish/core/peers/gate', () => ({ mediaAllowed: async () => true }));
+vi.mock('@peblish/core/peers/gate', () => ({ mediaAllowed: async () => true, supplierMediaAllowed: async () => true }));
 
 import { PROXY_MAX_AGE_SECONDS, PROXY_RETRY_AFTER_SECONDS, proxyResponse } from './-handler.ts';
 
@@ -9,12 +9,14 @@ const key = Buffer.from('k'.repeat(32));
 const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/q842iQAAAABJRU5ErkJggg==', 'base64');
 const remoteUrl = 'https://img.example/a.png';
 const [signature, target] = proxyUrlBuilder(key)(remoteUrl).split('/').slice(3) as [string, string];
+/** Every post, comment and actor is shown unless a test says otherwise. */
+const contentShown = async () => true;
 const image = () => vi.fn(async () => ({ ok: true as const, type: 'image/png' as const, body: png }));
 
 test('a signed URL is fetched and answered with the sniffed type, a private, short cache lifetime and sandboxing headers', async () => {
   const fetchImage = image();
   const { signal } = new AbortController();
-  const response = await proxyResponse(signature, target, { key, enabled: true, fetchImage, signal });
+  const response = await proxyResponse(signature, target, { key, enabled: true, contentShown, fetchImage, signal });
   // The request's signal goes along, so a request that gives up while queued is dropped.
   expect(fetchImage).toHaveBeenCalledWith(remoteUrl, signal);
   expect(response.status).toBe(200);
@@ -42,16 +44,18 @@ test('an unsigned, altered or foreign URL is a 404 and fetches nothing', async (
     [signature, target.slice(1)],
   ] as const;
   for (const [s, t] of attempts) {
-    const response = await proxyResponse(s, t, { key, enabled: true, fetchImage });
+    const response = await proxyResponse(s, t, { key, enabled: true, contentShown, fetchImage });
     expect([response.status, response.headers.get('cache-control')], `${s}/${t}`).toEqual([404, 'no-store']);
   }
-  expect((await proxyResponse(signature, target, { key: Buffer.from('z'.repeat(32)), enabled: true, fetchImage })).status).toBe(404);
+  expect(
+    (await proxyResponse(signature, target, { key: Buffer.from('z'.repeat(32)), enabled: true, contentShown, fetchImage })).status,
+  ).toBe(404);
   expect(fetchImage).not.toHaveBeenCalled();
 });
 
 test('the kill switch answers 404 for a valid URL without fetching', async () => {
   const fetchImage = image();
-  expect((await proxyResponse(signature, target, { key, enabled: false, fetchImage })).status).toBe(404);
+  expect((await proxyResponse(signature, target, { key, enabled: false, contentShown, fetchImage })).status).toBe(404);
   expect(fetchImage).not.toHaveBeenCalled();
 });
 
@@ -60,6 +64,7 @@ test('a refused fetch is passed on as its status, uncached, and never redirects 
     const response = await proxyResponse(signature, target, {
       key,
       enabled: true,
+      contentShown,
       fetchImage: async () => ({ ok: false, status, why: 'upstream' }),
     });
     expect([response.status, response.headers.get('cache-control'), response.headers.get('location')]).toEqual([status, 'no-store', null]);
@@ -70,6 +75,7 @@ test('a busy proxy answers 503 with Retry-After and no caching', async () => {
   const response = await proxyResponse(signature, target, {
     key,
     enabled: true,
+    contentShown,
     fetchImage: async () => ({ ok: false, status: 503, why: 'busy' }),
   });
   expect([response.status, response.headers.get('retry-after'), response.headers.get('cache-control')]).toEqual([
@@ -81,6 +87,7 @@ test('a busy proxy answers 503 with Retry-After and no caching', async () => {
   const refused = await proxyResponse(signature, target, {
     key,
     enabled: true,
+    contentShown,
     fetchImage: async () => ({ ok: false, status: 415, why: 'not_a_raster_image' }),
   });
   expect(refused.headers.get('retry-after')).toBeNull();
@@ -92,6 +99,7 @@ test('media of a quarantined, purged or blocked peer is a 404 and fetches nothin
   const response = await proxyResponse(signature, target, {
     key,
     enabled: true,
+    contentShown,
     fetchImage,
     mediaAllowed: async (host) => {
       asked.push(host);
@@ -124,14 +132,72 @@ test('a redirect to a peer whose media is not allowed is a 404, and that host is
     asked.push(host);
     return host !== 'quarantined.example';
   };
-  const response = await proxyResponse(signature, target, { key, enabled: true, fetch, mediaAllowed });
+  const response = await proxyResponse(signature, target, { key, enabled: true, contentShown, fetch, mediaAllowed });
   expect([response.status, response.headers.get('cache-control')]).toEqual([404, 'no-store']);
   expect(asked).toEqual(['img.example', 'cdn.example', 'quarantined.example']);
   expect(fetched).toEqual([remoteUrl, 'https://cdn.example/a.png']);
 
   // An allowed chain is followed to the image.
   fetched.length = 0;
-  const allowed = await proxyResponse(signature, target, { key, enabled: true, fetch, mediaAllowed: async () => true });
+  const allowed = await proxyResponse(signature, target, { key, enabled: true, contentShown, fetch, mediaAllowed: async () => true });
   expect(allowed.status).toBe(200);
   expect(fetched).toEqual([remoteUrl, 'https://cdn.example/a.png', 'https://quarantined.example/a.png']);
+});
+
+test('a URL signed for content is a 404 once that content is not shown to the viewer, and fetches nothing', async () => {
+  const post = { kind: 'post', id: '0195f0a0-0000-7000-8000-000000000001', supplier: null } as const;
+  const [bound, boundTarget] = proxyUrlBuilder(key)(remoteUrl, post).split('/').slice(3) as [string, string];
+  const fetchImage = image();
+  const asked: unknown[] = [];
+  const hidden = async (content: unknown) => {
+    asked.push(content);
+    return false;
+  };
+  const response = await proxyResponse(bound, boundTarget, { key, enabled: true, contentShown: hidden, fetchImage });
+  expect([response.status, response.headers.get('cache-control')]).toEqual([404, 'no-store']);
+  expect(asked).toEqual([post]);
+  expect(fetchImage).not.toHaveBeenCalled();
+  // While it is shown, the same URL is fetched.
+  expect((await proxyResponse(bound, boundTarget, { key, enabled: true, contentShown, fetchImage })).status).toBe(200);
+});
+
+test('a URL signed for no content expires: a 404 once its hour is over, without asking about content', async () => {
+  const issued = Date.UTC(2026, 10, 10, 9, 30);
+  const [unbound, unboundTarget] = proxyUrlBuilder(
+    key,
+    () => issued,
+  )(remoteUrl)
+    .split('/')
+    .slice(3) as [string, string];
+  const fetchImage = image();
+  const asked = vi.fn(async () => true);
+  const at = (now: number) => proxyResponse(unbound, unboundTarget, { key, enabled: true, contentShown: asked, fetchImage, now });
+  expect((await at(issued + 89 * 60_000)).status).toBe(200);
+  const expired = await at(issued + 90 * 60_000);
+  expect([expired.status, expired.headers.get('cache-control')]).toEqual([404, 'no-store']);
+  expect(fetchImage).toHaveBeenCalledTimes(1);
+  expect(asked).not.toHaveBeenCalled();
+});
+
+test('an image of content a quarantined, purged or blocked peer supplied is a 404 wherever it is hosted, and fetches nothing', async () => {
+  // The image sits on a host no peer owns (which mediaAllowed lets through); the post came from piefed.test.
+  const post = { kind: 'post', id: '0195f0a0-0000-7000-8000-000000000002', supplier: 'piefed.test' } as const;
+  const [bound, boundTarget] = proxyUrlBuilder(key)(remoteUrl, post).split('/').slice(3) as [string, string];
+  const fetchImage = image();
+  const asked: string[] = [];
+  const supplierAllowed = async (host: string) => {
+    asked.push(host);
+    return host !== 'piefed.test';
+  };
+  const deps = { key, enabled: true, contentShown, fetchImage, mediaAllowed: async () => true, supplierAllowed };
+  const response = await proxyResponse(bound, boundTarget, deps);
+  expect([response.status, response.headers.get('cache-control')]).toEqual([404, 'no-store']);
+  expect(asked).toEqual(['piefed.test']);
+  expect(fetchImage).not.toHaveBeenCalled();
+  // This instance's own content names no supplier, so only the image's host is asked about.
+  const own = proxyUrlBuilder(key)(remoteUrl, { ...post, supplier: null })
+    .split('/')
+    .slice(3) as [string, string];
+  expect((await proxyResponse(...own, deps)).status).toBe(200);
+  expect(asked).toEqual(['piefed.test']);
 });

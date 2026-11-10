@@ -7,7 +7,14 @@ import { postMedia, postTime, threadVisible } from './-page-data.ts';
 const site = { origin: 'https://feddit.example', remoteMedia: true, proxy: proxyUrlBuilder(Buffer.alloc(32, 7)) };
 const proxied = /^\/media\/proxy\/[\w-]+\/[\w-]+$/;
 
-const view = (extra: Partial<Parameters<typeof postMedia>[0]> = {}) => ({ url: null, urlContentType: null, thumbnailUrl: null, ...extra });
+const view = (extra: Partial<Parameters<typeof postMedia>[0]> = {}) => ({
+  id: '0195f0a0-0000-7000-8000-000000000001',
+  apId: 'https://feddit.example/post/0195f0a0-0000-7000-8000-000000000001',
+  url: null,
+  urlContentType: null,
+  thumbnailUrl: null,
+  ...extra,
+});
 
 describe('the post page media', () => {
   test('a thumbnail is this instance’s own media as a root-relative path, or a signed proxy path', async () => {

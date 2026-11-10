@@ -31,9 +31,9 @@ export const loadPost = createServerFn({ method: 'GET' })
     const { body } = page;
     const contentHtml =
       body?.kind === 'markdown'
-        ? renderer.render(body.source, { idPrefix: page.view.id }).html
+        ? renderer.render(body.source, { idPrefix: page.view.id, content: { kind: 'post', id: page.view.id, apId: page.view.apId } }).html
         : body
-          ? renderer.sanitize(body.html, { baseUrl: body.baseUrl }).html
+          ? renderer.sanitize(body.html, { baseUrl: body.baseUrl, content: { kind: 'post', id: page.view.id, apId: page.view.apId } }).html
           : null;
     const { view } = page;
     const { thumbnail, image } = postMedia(view, renderer);

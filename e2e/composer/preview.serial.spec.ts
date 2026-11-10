@@ -37,8 +37,17 @@ async function previewThenPublish(page: Page, text: string) {
 }
 
 // The preview of a new post has no post id yet, so its footnote anchors lack the id the published
-// page gives them; everything else is byte for byte the same.
-const withoutFootnoteId = (html: string) => html.replace(/(fn|fnref)-[0-9a-f-]{36}-(\d+)/g, '$1$2');
+// page gives them and its proxied images are not signed for the post; everything else is byte for
+// byte the same.
+const withoutFootnoteId = (html: string) =>
+  html
+    .replace(/(fn|fnref)-[0-9a-f-]{36}-(\d+)/g, '$1$2')
+    // A proxied image is signed for what it is shown in: the preview's reference expires, the
+    // published post's names the post. The image URL it carries (after the head line) must match.
+    .replace(/\/media\/proxy\/[\w-]+\/([\w-]+)/g, (_, target: string) => {
+      const payload = Buffer.from(target, 'base64url').toString('utf8');
+      return `/media/proxy/${payload.slice(payload.indexOf('\n') + 1)}`;
+    });
 
 const corpus: Record<string, string> = {
   'a spoiler, a table and code': [

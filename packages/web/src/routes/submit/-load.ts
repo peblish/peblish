@@ -74,10 +74,11 @@ async function panelFor(communityId: string, viewer: SessionView, renderer: Mark
   // Removed, deleted, or age-gated for someone who has not declared 16+: it does not exist for them.
   if (!community || !ageAllows(viewer, community)) return null;
   const restricted = community.postingRestrictedToMods;
+  const content = { kind: 'actor', id: community.actor.id, apId: community.actor.apId } as const;
   const summary = community.summaryMd
-    ? renderer.render(community.summaryMd, { excerptLength: 240 }).excerpt
+    ? renderer.render(community.summaryMd, { excerptLength: 240, content }).excerpt
     : community.summaryHtml
-      ? renderer.sanitize(community.summaryHtml, { excerptLength: 240 }).excerpt
+      ? renderer.sanitize(community.summaryHtml, { excerptLength: 240, content }).excerpt
       : '';
   return {
     id: community.actor.id,
@@ -85,7 +86,7 @@ async function panelFor(communityId: string, viewer: SessionView, renderer: Mark
     href: communityPath(community.actor),
     summary: summary || null,
     warning: community.postingWarning,
-    rules: community.rules.map(({ title, bodyMd }) => ({ title, html: bodyMd ? renderer.render(bodyMd).html : null })),
+    rules: community.rules.map(({ title, bodyMd }) => ({ title, html: bodyMd ? renderer.render(bodyMd, { content }).html : null })),
     // An NSFL community marks every post sensitive too (createPost).
     sensitive: community.sensitive || community.nsfl,
     restricted,
