@@ -7,8 +7,8 @@ import { seedInboundWorld } from '@peblish/core/testing/seed-fed-b';
 import { forgetKeyRefreshes } from '../signing/inbound.ts';
 import { signDelivery } from '../signing/sign.ts';
 import { processPending } from './job.ts';
-import { keptPrefixBytes } from './queue.ts';
-import { maxBodyBytes, receiveInbound } from './receive.ts';
+import { keptPrefixBytes, maxErrorLength } from './queue.ts';
+import { maxActivityTypeLength, maxBodyBytes, receiveInbound } from './receive.ts';
 import { intakeByteBudget, resetKeyFetchBudget, takeIntakeBytes } from './throttle.ts';
 import { activityId, addressedToCommunity, hosts } from './test-support.ts';
 
@@ -100,5 +100,51 @@ describe('the hour’s byte budget', () => {
     for (let n = 0; n < 3; n++) expect((await receiveInbound(await signed(body))).status).toBe(202);
     expect((await receiveInbound(await signed(JSON.stringify(like(hosts.t1))))).status).toBe(202);
     expect(await db().select().from(inboxRaw)).toHaveLength(2);
+  });
+});
+
+// FN3 (review 2): a rejected body was cut to its first KiB, but what it said survived the cut in
+// two other columns: `activity_type` (the top-level type, stored whole) and the recorded error
+// (`type.unhandled <type>`, `object.unsupported <type>`), so a type of about 500 KiB was kept
+// twice. The type is bounded at the door and the error of a settled row is bounded, except a
+// `target.missing` one, whose ids the requeue matches whole.
+describe('what the inbox keeps of a rejected body outside the body', () => {
+  const huge = 'X'.repeat(300_000);
+
+  test('an activity whose type is longer than the limit is refused at the door, and nothing is stored', async () => {
+    const body = JSON.stringify({ id: activityId('https://lemmy.test', 'huge'), type: huge, actor: hosts.lemmyuser, object: hosts.t1 });
+    const response = await receiveInbound(await signed(body));
+    expect([response.status, await response.text()]).toEqual([400, 'the activity type is too long']);
+    expect(await db().select().from(inboxRaw)).toEqual([]);
+
+    // A type at the limit is taken, and skipped as a type peblish does not read.
+    const longest = 'Y'.repeat(maxActivityTypeLength);
+    const atLimit = JSON.stringify({
+      id: activityId('https://lemmy.test', 'long'),
+      type: longest,
+      actor: hosts.lemmyuser,
+      object: hosts.t1,
+    });
+    expect((await receiveInbound(await signed(atLimit))).status).toBe(202);
+    await processPending();
+    expect(await kept()).toEqual([{ type: longest, state: 'skipped', error: `type.unhandled ${longest}`, bytes: expect.any(Number) }]);
+  });
+
+  test('the error of a row settled for good is bounded, and a target.missing error keeps every id whole', async () => {
+    const create = JSON.stringify({
+      id: activityId('https://lemmy.test', 'create'),
+      type: 'Create',
+      actor: hosts.lemmyuser,
+      ...addressedToCommunity(hosts.spike),
+      object: { id: 'https://lemmy.test/post/huge', type: huge, attributedTo: hosts.lemmyuser },
+    });
+    const unseen = `https://lemmy.test/post/${'z'.repeat(2 * maxErrorLength)}`;
+    for (const body of [create, JSON.stringify(like(unseen))]) expect((await receiveInbound(await signed(body))).status).toBe(202);
+    await processPending();
+    const [skipped, waiting] = await kept();
+    expect(skipped).toMatchObject({ type: 'Create', state: 'skipped', bytes: keptPrefixBytes });
+    expect(skipped?.error?.length).toBeLessThanOrEqual(maxErrorLength);
+    expect(skipped?.error?.startsWith('object.unsupported XXX')).toBe(true);
+    expect(waiting).toMatchObject({ type: 'Like', state: 'skipped', error: `target.missing ${unseen}` });
   });
 });

@@ -41,6 +41,9 @@ import { takeIntake, takeIntakeBytes, takeKeyLookup } from './throttle.ts';
 // not expect, a storage error included, is the 503 peers retry.
 
 export const maxBodyBytes = 512 * 1024;
+
+/** The longest activity `type` taken (no ActivityPub type comes near it): it is stored in a column of its own, outside the body. */
+export const maxActivityTypeLength = 64;
 const retryAfter = { 'Retry-After': '300' };
 /** Bytes a signer, and all the signers of one instance, may have waiting in inbox_raw (a pipeline that falls behind makes peers wait). */
 export const pendingBytesLimit = { signer: 8 * 1024 * 1024, instance: 32 * 1024 * 1024 };
@@ -236,6 +239,7 @@ export async function receiveInbound(request: Request, options: ReceiveOptions =
     }
     const actor = isObject(activity) ? idOf(activity.actor) : null;
     if (!isObject(activity) || typeof activity.type !== 'string' || actor === null) return refuse(400, 'not an activity');
+    if (activity.type.length > maxActivityTypeLength) return refuse(400, 'the activity type is too long');
     // The key must be the actor's own: a server speaks for its own people, and nobody else's.
     if (signature.ownerApId !== actor) return refuse(401, 'signature: the key does not belong to the actor');
     // What the admin decided about this peer (M18): a paused inbox asks it to come back, a blocked one is refused. Nothing is stored either way.
