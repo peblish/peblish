@@ -111,7 +111,8 @@ Order on a fresh project, each step read back before the next:
 1. `postgres` (17, not exposed), then `cutover`: upload the source, then set the build (Easypanel
    refuses a build setting before a source exists), then its environment, then deploy.
 2. In the `cutover` console: migrate with `PUBLIC_ORIGIN` unset, then set the kill switches
-   before `web` or `worker` exists (no admin can sign in yet, so this is SQL):
+   before `web` or `worker` exists and before the import (no admin can sign in yet, so this is
+   SQL). `delivery.enabled` is the federation switch: off, no process sends or fetches anything.
 
    ```sh
    cd /app && env -u PUBLIC_ORIGIN node packages/core/src/db/migrate-cli.ts
@@ -121,20 +122,26 @@ Order on a fresh project, each step read back before the next:
    ```
 
 3. Copy the bundle in, then `import` (twice: the second is all `present`) and `verify`, as above.
-4. `web` with its domain (HTTPS) and environment. **No `worker` until peers may be contacted**
-   (below). Then the served-documents check, the password reset and the drill.
+4. `web` with its domain (HTTPS) and environment. A `worker` may run with the imported follows
+   only while the federation switch is off (below). Then the served-documents check, the password
+   reset with two-factor enrolment, and the drill.
 
 Easypanel starts a deployment by itself when a service's source is uploaded, so a service runs
 as soon as it has code, not only when deployed. A `deployService` request can time out at the
 panel's proxy (HTTP 524) while the build goes on: poll the service's actions until the new one is
 `done`.
 
-**The worker contacts peers whatever the kill switches say.** `delivery.enabled` stops deliveries
-only. On start the worker runs every job once: it mirrors the moderators of each followed remote
-community (`federation.moderators`), runs the backfills that accepting the 131 follows queued
-(`federation.backfill_run`), and fetches the actors, posts and instance NodeInfo those bring.
-`inbox.enabled` gates only the missing-object fetches. So a rehearsal never runs the worker, and
-production creates it only at step 8.
+**The federation switch decides whether peers are contacted.** On start the worker runs every
+job once: it mirrors the moderators of each followed remote community (`federation.moderators`),
+runs the backfills that accepting the 131 follows queued (`federation.backfill_run`), and fetches
+the actors, posts and instance NodeInfo those bring. With `delivery.enabled` off (the label is
+"Sending and fetching") none of that leaves the server: delivery, backfill, the moderator mirror,
+NodeInfo refresh, remote fetch and resolve, dormancy probes and key fetches all wait, and an
+inbound activity that needs a fetch answers 503 with `Retry-After`. So the switch is set off
+before the import, a worker may start with the imported follows only while it is off, and it is
+turned on only at the step where peers may be contacted (step 8 in production; never in a
+rehearsal). This holds from the B07 fix batch on; the rehearsal below ran an earlier build, whose
+switch stopped deliveries only.
 
 ### Easypanel rehearsal, 2026-11-10 (lane B06 step 2)
 
@@ -165,7 +172,7 @@ no bucket was made (uploads are off and nothing reached S3), and the worker ran 
   and ran until it was stopped (about 10:23). It fetched 268 actors, 155 posts and 116 comments
   from 41 hosts, mirrored 146 moderators and probed 41 instances' NodeInfo, signed as
   `https://rehearsal-1.peblish.com/actor`. It made no deliveries (`deliveries` was empty). The
-  section above is the fix.
+  fix is the federation switch described above (B07 batch, O1).
 - Teardown: services and project destroyed, DNS record deleted (authoritative NXDOMAIN), bundle and
   backups removed from the container first.
 
@@ -209,8 +216,8 @@ All must hold, else stay on PieFed:
 4. `verify --bundle` on production exits 0: 5 keys, every one matching the bundle; 131 follows accepted.
 5. The host-header pretest below passes against the new origin.
 6. A drill on the production database passed, and the nightly backup and hourly ledger export run.
-7. `Andrew` has signed in through a password reset, turned on two-factor and set `site.name` to
-   "Feddit", the operator settings and the published pages.
+7. `Andrew` has signed in through a password reset, turned on two-factor in that session and set
+   `site.name` to "Feddit", the operator settings and the published pages.
 
 ## Step 6: go-ahead and final archive (production; Andrew's named go-ahead)
 
@@ -232,8 +239,9 @@ rollback target.
 
 1. Production Easypanel project (decision 9) with `postgres` and a temporary `cutover` service,
    in the order of "On Easypanel" (step 4): migrate with `PUBLIC_ORIGIN` **unset**, set
-   `delivery.enabled` and `registration.enabled` off and also `inbox.enabled` off (so peers get
-   503 with `Retry-After`), copy the bundle in, then in the `cutover` console
+   `delivery.enabled` (the federation switch) and `registration.enabled` off and also
+   `inbox.enabled` off (so peers get 503 with `Retry-After`), all before the import, copy the
+   bundle in, then in the `cutover` console
    (`PUBLIC_ORIGIN=https://feddit.com`):
 
    ```sh
@@ -243,12 +251,15 @@ rollback target.
 
 2. Add `web` as in `README.md` with `PUBLIC_ORIGIN=https://feddit.com`, `BETTER_AUTH_SECRET`,
    `SMTP_URL`, `MAIL_FROM` and `PEBLISH_TRUSTED_PROXY=cloudflare`; the origin accepts Cloudflare's
-   address ranges only (Easypanel or host firewall). **Do not create `worker` yet**: it would
-   fetch from the followed communities' instances at once (step 4), before the switch.
+   address ranges only (Easypanel or host firewall). `worker` (same source and environment as
+   `web`, `PEBLISH_PROCESS=worker`) may be created now, with the federation switch still off:
+   read `delivery.enabled` back as `false` first. Its jobs wait until step 8.
 3. Sign in (point feddit.com at the new origin in the admin's own hosts file): `Andrew` asks for a
-   password reset at `/auth/reset`, sets a password, turns on two-factor at `/settings/security`.
-   `feddit-admin` does the same when needed. No account has an age declaration (NSFW stays hidden
-   until each declares in settings).
+   password reset at `/auth/reset`, sets a password, signs in and turns on two-factor at
+   `/settings/security` in that same session. Admin pages need a session that passed two-factor
+   (enrolled or verified in it), not only an account with it on; enrolling signs every other
+   session out. `feddit-admin` does the same when needed. No account has an age declaration (NSFW
+   stays hidden until each declares in settings).
 4. Host-header pretest against the new origin (`O` its address):
 
    ```sh
@@ -264,9 +275,10 @@ rollback target.
 
 ## Step 8: verify peers (production)
 
-1. Turn `inbox.enabled` and `delivery.enabled` back on, then create `worker` (same source and
-   environment as `web`, `PEBLISH_PROCESS=worker`). It starts the 130 queued backfills and the
-   moderator mirrors at once. Run the drill and the cleanup in the `cutover` console
+1. Peers may be contacted from here. Turn `inbox.enabled` and the federation switch
+   (`delivery.enabled`, "Resume sending and fetching" at `/admin/settings`) back on; create
+   `worker` now if step 7 did not. The worker starts the 130 queued backfills and the moderator
+   mirrors at once. Run the drill and the cleanup in the `cutover` console
    (`rm -rf /tmp/cutover/*`), then destroy `cutover`.
 2. `feddit-admin` delivery to piefed.social and lemmy.world: post in a followed community on each
    and see it there. In the lab Lemmy 0.19.21 resolved and accepted `feddit-admin` (B06 notes,
