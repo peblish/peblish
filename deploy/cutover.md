@@ -244,6 +244,8 @@ All must hold, else stay on PieFed:
 6. A drill on the production database passed, and the nightly backup and hourly ledger export run.
 7. `Andrew` has signed in through a password reset, turned on two-factor in that session and set
    `site.name` to "Feddit", the operator settings and the published pages.
+8. The origin certificate (step 7 item 2) was rehearsed on a proxied `peblish.com` test hostname:
+   a Cloudflare Origin CA certificate, or the DNS challenge fallback.
 
 ## Step 6: go-ahead and final archive (production; Andrew's named go-ahead)
 
@@ -333,10 +335,18 @@ against the final dump before exporting. Beyond the responder and the stopped se
    environment as `web`, `PEBLISH_PROCESS=worker`) may be created now, with the federation switch
    still off: read `delivery.enabled` back as `false` first. Its jobs wait until step 8.
 
-   The new origin needs a certificate for feddit.com before the switch, and a Let's Encrypt HTTP
-   challenge cannot pass while Cloudflare still sends feddit.com to the box (which answers 503).
-   Install one that does not depend on that (a Cloudflare Origin CA certificate, or a DNS
-   challenge) before the pretest; until then `curl` below needs `-k`, which proves nothing about TLS.
+   **TLS on the new origin (root's decision; not yet rehearsed).** The new origin needs a
+   certificate for feddit.com before the switch, and a Let's Encrypt HTTP challenge cannot pass
+   while Cloudflare still sends feddit.com to the box (which answers 503). feddit.com stays
+   proxied, so only Cloudflare has to trust the origin: install a Cloudflare Origin CA certificate
+   for feddit.com on the new origin's `web` domain in Easypanel before the pretest, and read the
+   zone's SSL/TLS mode back as Full (strict). The pretest (item 6) checks the certificate with
+   `curl --cacert` and Cloudflare's Origin CA root (the RSA root from Cloudflare's Origin CA
+   documentation, saved as `$S/origin-ca-root.pem`), never `-k`. Before the cutover gate, rehearse
+   this on a proxied `peblish.com` test hostname: issue its Origin CA certificate, install it in
+   Easypanel, and run item 6's requests against that hostname with `--cacert`. If Easypanel cannot
+   take a custom certificate, the fallback is a Let's Encrypt DNS challenge, rehearsed the same
+   way. Without one of the two in place this step is a no-go.
 
 3. **Origin firewall: Cloudflare only.** `PEBLISH_TRUSTED_PROXY=cloudflare` takes each client's
    address from `CF-Connecting-IP`, a header anyone reaching the origin directly can set, so from
@@ -389,7 +399,7 @@ against the final dump before exporting. Beyond the responder and the stopped se
 6. Host-header pretest against the new origin, from Andrew's machine:
 
    ```sh
-   R="--resolve feddit.com:443:$O"; AP='Accept: application/activity+json'
+   R="--resolve feddit.com:443:$O --cacert $S/origin-ca-root.pem"; AP='Accept: application/activity+json'
    for p in /actor /u/feddit-admin /u/Andrew /c/announcements /c/microblogs; do curl -s $R -H "$AP" -o /dev/null -w "$p %{http_code}\n" https://feddit.com$p; done
    curl -s $R 'https://feddit.com/.well-known/webfinger?resource=acct:feddit-admin@feddit.com'
    curl -s $R https://feddit.com/nodeinfo/2.1        # usage.users.total 2, localPosts present
