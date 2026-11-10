@@ -34,7 +34,8 @@ export const authSession = pgTable(
     createdAt: createdAt(),
     updatedAt: at('updated_at').notNull().defaultNow(),
   },
-  (t) => [index('auth_session_user').on(t.userId)],
+  // expires_at serves the hourly sweep of expired sessions (identity/sessions/sweep.ts).
+  (t) => [index('auth_session_user').on(t.userId), index('auth_session_expires_at').on(t.expiresAt)],
 );
 
 export const authAccount = pgTable(

@@ -85,6 +85,13 @@
       "when": 1794242546971,
       "tag": "0011_wave_3_report_hosts",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1794311834415,
+      "tag": "0012_wave_4_session_two_factor",
+      "breakpoints": true
     }
   ]
 }
