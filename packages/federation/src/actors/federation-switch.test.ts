@@ -12,6 +12,7 @@ import { rsaKeys, stubFetch } from '@peblish/core/testing/seed-fed-a';
 import { deliverRow, seedInboundWorld } from '@peblish/core/testing/seed-fed-b';
 import { seedDelivery } from '@peblish/core/testing/seed-rem';
 import { backfillDue } from '../backfill/run.ts';
+import { deliveries } from '@peblish/core/delivery/tables';
 import { deliverDue } from '../delivery/run.ts';
 import { mirrorDue } from '../inbound/moderators/refresh.ts';
 import { processRow } from '../inbound/pipeline.ts';
@@ -21,10 +22,12 @@ import { activityId, addressedToCommunity, hosts } from '../inbound/test-support
 import { forgetNodeInfoFailures, nodeInfoFailureCount, refreshInstanceSoftware } from '../nodeinfo/client.ts';
 import { fetchMissing } from '../remote-fetch/missing.ts';
 import { fetchRemoteObject } from '../remote-fetch/object.ts';
+import { polite } from '../remote-fetch/polite.ts';
 import { recheckObjects } from '../remote-fetch/recheck.ts';
 import { resolveLookup } from '../resolve/web.ts';
 import { forgetKeyRefreshes } from '../signing/inbound.ts';
 import { signDelivery } from '../signing/sign.ts';
+import { fetchJson, type Fetcher } from './document.ts';
 import { FederationPaused } from './federation-switch.ts';
 import { resolveRemoteActor } from './resolve.ts';
 
@@ -148,5 +151,81 @@ describe('with the federation switch off', () => {
     const [after] = await db().select({ state: inboxRaw.state, attempts: inboxRaw.attempts }).from(inboxRaw).where(eq(inboxRaw.id, row.id));
     expect(after).toEqual({ state: 'pending', attempts: 0 });
     expect(peer.requests).toEqual([]);
+  });
+});
+
+// FN2 (review 2): the switch was read once, when a job or a document read started, so a request
+// that had not gone out yet still went out after a pause: a delivery POST after its NodeInfo
+// check, a redirect hop, a fetch waiting its turn to a host. Each test turns the switch off at
+// that point (no timing: the switch flips inside the step before) and checks nothing more is sent.
+describe('a switch turned off while work is under way', () => {
+  /** A promise and the function that resolves it. */
+  const signal = () => {
+    let resolve = () => {};
+    const promise = new Promise<void>((done) => (resolve = done));
+    return { promise, resolve };
+  };
+
+  test('a delivery whose NodeInfo check ends after the pause is not POSTed, and goes back to pending with its attempt given back', async () => {
+    const row = await seedDelivery(world.instances.lemmy, world.community, { state: 'pending', createdAt: new Date() });
+    const counts = await deliverDue({ fetch: peer.fetch, refreshSoftware: pause });
+    expect(counts).toEqual({ delivered: 0, retried: 0, failed: 0, skipped: 0 });
+    expect(peer.requests).toEqual([]);
+    const [after] = await db()
+      .select({
+        state: deliveries.state,
+        attempts: deliveries.attempts,
+        leaseUntil: deliveries.leaseUntil,
+        lastError: deliveries.lastError,
+      })
+      .from(deliveries)
+      .where(eq(deliveries.id, row.id));
+    expect(after).toEqual({ state: 'pending', attempts: row.attempts, leaseUntil: null, lastError: null });
+  });
+
+  test('a redirect is not followed once the switch is off', async () => {
+    const moved = 'https://new.test/users/someone';
+    const stub = stubFetch({ [stranger]: { status: 301, location: moved }, [moved]: { body: { id: moved, type: 'Person' } } });
+    const fetch = (async (url, init) => {
+      const answer = await stub.fetch(url, init);
+      await pause(); // while the first answer is on its way back
+      return answer;
+    }) as Fetcher;
+    await expect(fetchJson(stranger, fetch)).rejects.toBeInstanceOf(FederationPaused);
+    expect(stub.requests.map((request) => request.url)).toEqual([stranger]);
+  });
+
+  test('a fetch waiting its turn to a host is not sent when its turn comes after the pause', async () => {
+    const first = 'https://new.test/one';
+    const second = 'https://new.test/two';
+    const stub = stubFetch({ [first]: { body: { id: first } }, [second]: { body: { id: second } } });
+    const firstSent = signal();
+    const firstMayEnd = signal();
+    const base = (async (url, init) => {
+      const answer = await stub.fetch(url, init);
+      if (String(url) === first) {
+        firstSent.resolve();
+        await firstMayEnd.promise;
+      }
+      return answer;
+    }) as Fetcher;
+    const queue = polite(base, 0);
+    const secondQueued = signal();
+    const fetch: Fetcher = (url, init) => {
+      const turn = queue(url, init); // takes its place in the host's queue before it returns
+      if (String(url) === second) secondQueued.resolve();
+      return turn;
+    };
+
+    const one = fetchJson(first, fetch);
+    await firstSent.promise;
+    const two = fetchJson(second, fetch);
+    await secondQueued.promise; // checked the switch on its way in, and now waits behind the first
+    await pause();
+    firstMayEnd.resolve();
+
+    expect((await one).json).toEqual({ id: first });
+    await expect(two).rejects.toBeInstanceOf(FederationPaused);
+    expect(stub.requests.map((request) => request.url)).toEqual([first]);
   });
 });

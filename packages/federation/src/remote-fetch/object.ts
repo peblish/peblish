@@ -19,7 +19,7 @@ import { requeueSkippedFor } from '../inbound/queue.ts';
 import { Skipped } from '../inbound/reasons.ts';
 import { notPublic } from '../inbound/visibility.ts';
 import { fromWire } from '../mapping/document.ts';
-import { MappingError } from '../mapping/json.ts';
+import { MappingError, type JsonObject } from '../mapping/json.ts';
 import type { CommentRecord, PostRecord } from '../mapping/records.ts';
 
 // Fetching a post or comment on demand, and storing a document in hand, for the code that
@@ -151,15 +151,16 @@ export type Confine = { kind: 'post' } | { kind: 'comment'; postId: string };
  * vouching community, remote sensitive content is refused, and the policies of post.create and
  * comment.create decide the rest (a banned author, a locked post, a removed community). A
  * comment whose parent we do not hold has the parent fetched first, up to `maxParentDepth`,
- * unless the caller `confine`s what it accepts.
+ * unless the caller `confine`s what it accepts. `envelopes` are the activities the caller
+ * unwrapped `json` from (a collection's Create, Update or Announce): each must be public too.
  */
 export async function storeObject(
   json: unknown,
   vouch: Vouch,
-  options: { fetch: Fetcher; depth: number; confine?: Confine },
+  options: { fetch: Fetcher; depth: number; confine?: Confine; envelopes?: readonly JsonObject[] },
 ): Promise<ObjectOutcome> {
-  // What is not public is not stored, however it was fetched (inbound/visibility.ts).
-  const hidden = notPublic(json);
+  // What is not public is not stored, however it was fetched, nor when any activity it came in is not (inbound/visibility.ts).
+  const hidden = notPublic(json, ...(options.envelopes ?? []));
   if (hidden) return refused(idOf(json), hidden.reason);
   let mapped;
   try {

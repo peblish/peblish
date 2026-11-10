@@ -81,9 +81,11 @@ export type Settled = { state: 'applied' | 'skipped' | 'failed'; error: string |
 /** The row only while this claim is the one held: still pending, at the generation it was leased with. */
 const held = (claim: Claim) => and(eq(inboxRaw.id, claim.id), eq(inboxRaw.attempts, claim.attempts), eq(inboxRaw.state, 'pending'));
 
-/** Records how a row ended. Throws ClaimLost when the claim is no longer held. */
 /** What a row settled for good keeps of its body: enough to see what it was. */
 export const keptPrefixBytes = 1024;
+
+/** The longest error text a settled row keeps (a `target.missing` one excepted): it can quote the peer's document. */
+export const maxErrorLength = 512;
 
 /**
  * Whether a settled row's body will be read again: an applied one is the relay's exact bytes,
@@ -94,8 +96,21 @@ export const keptPrefixBytes = 1024;
 const bodyKept = ({ state, error }: Settled): boolean =>
   state === 'applied' || (state === 'skipped' && error !== null && error.startsWith('target.missing '));
 
+/**
+ * `error` cut to `maxErrorLength` characters, an ellipsis last. A `target.missing` error is kept
+ * whole: requeueWaiting matches the ids it names, and its row keeps its body anyway (bodyKept).
+ */
+export function boundedError(error: string): string {
+  if (error.length <= maxErrorLength || error.startsWith('target.missing ')) return error;
+  const cut = error.slice(0, maxErrorLength - 1);
+  // Never half of a surrogate pair.
+  return `${/[\uD800-\uDBFF]$/.test(cut) ? cut.slice(0, -1) : cut}…`;
+}
+
+/** Records how a row ended, its body and error bounded as above. Throws ClaimLost when the claim is no longer held. */
 export async function settle(t: OpenTx, claim: Claim, settled: Settled): Promise<void> {
-  const { state, error } = settled;
+  const { state } = settled;
+  const error = settled.error === null ? null : boundedError(settled.error);
   const body = bodyKept(settled) ? {} : { body: sql`substring(${inboxRaw.body} from 1 for ${keptPrefixBytes})` };
   const rows = await t.db
     .update(inboxRaw)
@@ -149,7 +164,7 @@ export async function retryLater(row: Claim, error: unknown): Promise<void> {
   await tx((t) =>
     t.db
       .update(inboxRaw)
-      .set({ error: message, leaseUntil: sql`now() + ${delaySeconds} * interval '1 second'` })
+      .set({ error: boundedError(message), leaseUntil: sql`now() + ${delaySeconds} * interval '1 second'` })
       .where(held(row)),
   );
 }
