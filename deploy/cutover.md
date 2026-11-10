@@ -84,7 +84,10 @@ or any error writes nothing (one transaction). It blocks each banned instance as
 keeping a peer's other controls and leaving one already blocked alone; the summary lists them. `verify` signs a delivery with every imported key
 as the delivery worker does, verifies it as the inbox does against the stored public key, checks
 the served actor document names that key and that it is the bundle's (what peers cached), and
-lists every follow with the inbox its posts and Undo go to. It exits 1 if any key fails.
+lists every follow with the inbox its posts and Undo go to. It exits 1 if any key fails (pair,
+signature, served document, routing, or the bundle's key id and key), if an actor the bundle holds
+is missing or an imported actor has no key or no private key (each listed by id), or if it found
+nothing to check.
 
 Local rehearsal, 2026-11-10 (lane B06, repeated with the peer blocks and the `/actor` routing):
 import of 1 instance actor, 2 users, 2 communities, 130 remote communities, 131 follows and 25

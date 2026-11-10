@@ -132,10 +132,12 @@ async function main(): Promise<number> {
             `${f.follower} -> ${f.followee} ${f.state} ${f.local ? 'local' : `${f.software ?? 'unknown'} inbox ${f.inbox ?? 'none'}${f.deliverable ? '' : ' (held)'}`}`,
           );
         }
+        for (const p of report.problems) console.log(`${p.apId}: ${p.problem}`);
+        if (report.keys.length === 0) console.log('no imported actor with a key was found');
         print(report.summary);
+        console.log(report.ok ? 'verify passed' : 'verify FAILED');
       }
-      const ok = report.keys.every((k) => k.pair && k.signature && k.served && k.matchesBundle !== false);
-      return ok ? 0 : 1;
+      return report.ok ? 0 : 1;
     }
     case 'backup':
       await backup(need('db'), need('out'));
