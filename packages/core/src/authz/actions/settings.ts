@@ -1,5 +1,6 @@
 import type { ActingPrincipal } from '@peblish/schema/authz';
 import { and, eq } from 'drizzle-orm';
+import { isDeepStrictEqual } from 'node:util';
 import type { Queryable } from '../../db/read.ts';
 import { actors } from '../../db/tables/actors.ts';
 import { authUser } from '../../db/tables/auth.ts';
@@ -9,7 +10,9 @@ import { prepareRevision } from '../../pages/prepare.ts';
 import { pages } from '../../pages/tables.ts';
 import { allow, deny, forNoKeyUpdate, forShare, type PolicyRequest, type PolicyResult } from '../policy.ts';
 
-// Owned by lane ADM: site settings and CMS pages. Only an admin with two-factor writes either.
+// Owned by lane ADM: site settings and CMS pages. Only an admin with two-factor writes either,
+// with one exception: the instance itself while importing (tools/cutover) may turn the federation
+// switch off, as peer.update lets it block a peer, so the import's change is recorded like any other.
 // Under lock the admin's login row is read FOR SHARE, as lane A's and F's admin policies do; no
 // write body here updates it. The setting rows a write changes are locked by the write itself
 // (settings/write.ts), which is what makes a flip wait for a reader holding the row FOR SHARE.
@@ -39,10 +42,25 @@ async function pageDenial({ principal, subject, db, lock }: PolicyRequest<PageSu
   return isPageSlug(subject.slug) && isPageLanguage(subject.language) ? null : deny('target.not_found');
 }
 
+type SettingsSubject = { keys: string[]; values?: Readonly<Record<string, unknown>> };
+
+/** The one change the system import principal may make: the federation switch off, and nothing else. */
+const importMayWrite = (subject: Frozen<SettingsSubject>) =>
+  isDeepStrictEqual([...subject.keys], ['delivery.enabled']) && isDeepStrictEqual({ ...subject.values }, { 'delivery.enabled': false });
+
 export const policies = {
-  /** An admin with two-factor changes site settings. The subject names the keys, which the body takes from the grant. */
-  'settings.update': async ({ principal, db, lock }: PolicyRequest<{ keys: string[] }>) =>
-    (await denyUnlessAdmin(principal, db, lock)) ?? allow({ kind: 'site-admin', actorId: principal.actorId }),
+  /**
+   * An admin with two-factor changes site settings. The subject names the keys, which the body
+   * takes from the grant; with `values`, the body writes exactly those. The system import
+   * principal may only set `delivery.enabled` to false, named in `values`.
+   */
+  'settings.update': async ({ principal, subject, db, lock }: PolicyRequest<SettingsSubject>) => {
+    if (principal.kind === 'system' && principal.job === 'import')
+      return importMayWrite(subject)
+        ? allow({ kind: 'system', actorId: principal.actorId, job: 'import', ref: null })
+        : deny('auth.admin_required');
+    return (await denyUnlessAdmin(principal, db, lock)) ?? allow({ kind: 'site-admin', actorId: principal.actorId });
+  },
 
   /** An admin with two-factor saves the draft of a page, creating it when that language has none yet. The body writes the draft row; no decision rests on it. */
   'page.save': async (request: PolicyRequest<PageSubject>) =>
