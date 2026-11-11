@@ -5,7 +5,7 @@ import { Badge } from '@peblish/ui/components/badge';
 import { Button } from '@peblish/ui/components/button';
 import { Card } from '@peblish/ui/components/card';
 import { EmptyState } from '@peblish/ui/components/empty-state';
-import { Handle } from '@peblish/ui/components/handle';
+import { Handle, neutraliseBidi } from '@peblish/ui/components/handle';
 import { Link } from '@peblish/ui/components/link';
 import { LinkTabs } from '@peblish/ui/components/link-tabs';
 import { Notice } from '@peblish/ui/components/notice';
@@ -158,7 +158,8 @@ function NoticeRow({
   const community = item.community ? <Handle prefix="!" handle={item.community.handle} /> : null;
 
   const account = item.kind === 'ban' || item.kind === 'unban';
-  const handle = item.community ? `!${item.community.handle}` : '';
+  // The ban sentences print the community's handle as plain text: drop any directional controls a remote one carries.
+  const handle = item.community ? `!${neutraliseBidi(item.community.handle)}` : '';
   const actor = item.actor ? `@${item.actor.handle}` : t('notifications', 'actor.unknown');
   const sentence = (() => {
     switch (item.kind) {
@@ -193,8 +194,12 @@ function NoticeRow({
           </Text>
         </div>
         <Text as="p" className="pb-notice__text">
-          {!item.read && <span className="pb-sr">{t('notifications', 'unread.hidden')} </span>}
-          <strong>{item.actor ? <Handle prefix="@" handle={item.actor.handle} /> : t('notifications', 'actor.unknown')}</strong>
+          {!item.read && (
+            <Text as="span" className="pb-sr">
+              {t('notifications', 'unread.hidden')}{' '}
+            </Text>
+          )}
+          <Text variant="label">{item.actor ? <Handle prefix="@" handle={item.actor.handle} /> : t('notifications', 'actor.unknown')}</Text>
           {moderator && (
             <>
               {' '}
@@ -227,7 +232,7 @@ function NoticeRow({
           )
         )}
         {item.statement && (
-          <Text as="p" size="sm">
+          <Text as="p" size="sm" className="pb-notice__statement">
             {item.statement.reasonWithheld
               ? t('notifications', 'reason.withheld')
               : item.statement.reason && t('notifications', 'reason', { reason: item.statement.reason })}

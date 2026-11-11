@@ -106,6 +106,18 @@ test.describe('anyone', () => {
     await expectAccessible(page);
   });
 
+  test('a remote display name with directional controls is isolated and cannot reorder the card', async ({ page }) => {
+    const bidi = JSON.parse(
+      execFileSync('node', ['e2e/profiles/bidi-seed.ts'], { cwd: join(import.meta.dirname, '../..'), encoding: 'utf8' }),
+    ) as { handle: string; name: string };
+    await gotoHydrated(page, profile(bidi.handle));
+    const heading = page.getByRole('complementary', { name: 'Profile' }).getByRole('heading', { level: 1 });
+    // The override (U+202E) and the isolate (U+2066) are dropped and the name sits in its own <bdi>.
+    await expect(heading).toHaveText('Ada evil Admin');
+    await expect(heading.locator('bdi')).toHaveText('Ada evil Admin');
+    expect(bidi.name).toMatch(/[\u202A-\u202E\u2066-\u2069]/);
+  });
+
   test('a bot account carries the Bot badge', async ({ page }) => {
     await gotoHydrated(page, profile(seed.bot.handle));
     await expect(page.getByRole('complementary', { name: 'Profile' }).getByText('Bot', { exact: true })).toBeVisible();
