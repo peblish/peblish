@@ -1,4 +1,4 @@
-import { useMemo, type ReactNode } from 'react';
+import type { ReactNode } from 'react';
 import { Badge } from '@peblish/ui/components/badge';
 import { Card } from '@peblish/ui/components/card';
 import { Group } from '@peblish/ui/components/group';
@@ -45,7 +45,6 @@ function PostContent({ data, error }: { data: Extract<PostPageData, { kind: 'pos
   const count = post.counts.comments;
   const shownError = asPostError(error);
   const voteLabels = useVoteLabels();
-  const now = useMemo(() => new Date(data.now), [data.now]);
   const badgeLabels = { admin: t('posts', 'badge.admin'), moderator: t('posts', 'badge.moderator'), op: '' };
   // The slots get the post for a signed-in viewer; a removed or deleted post still has them (a moderator restores it).
   const actions: ContentActionProps | null = viewerId
@@ -152,7 +151,7 @@ function PostContent({ data, error }: { data: Extract<PostPageData, { kind: 'pos
                   <Badge kind={post.authorBadge} labels={badgeLabels} />
                 </>
               )}{' '}
-              · <Time iso={post.publishedAt} locale={locale} now={now} />
+              · <Time iso={post.publishedAt} locale={locale} format="date" />
               {data.edited && <> · {t('posts', 'meta.edited', { date: data.edited })}</>}
             </Text>
             {body}

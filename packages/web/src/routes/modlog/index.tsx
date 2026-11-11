@@ -4,6 +4,7 @@ import { BidiText, Handle } from '@peblish/ui/components/handle';
 import { Link } from '@peblish/ui/components/link';
 import { Pager } from '@peblish/ui/components/pager';
 import { Text } from '@peblish/ui/components/text';
+import { Time } from '@peblish/ui/components/time';
 import { createFileRoute, notFound } from '@tanstack/react-router';
 import { DEFAULT_LOCALE } from '../../i18n/negotiate.ts';
 import { translate } from '../../i18n/translate.ts';
@@ -213,15 +214,12 @@ function Entry({ line }: { line: LineView }) {
   const length = banLength(line);
   const moderator = line.moderator;
   const host = new URL(entry.actorApId).host;
-  const time = new Intl.DateTimeFormat(locale, { hour: '2-digit', minute: '2-digit', hourCycle: 'h23', timeZone: 'UTC' }).format(
-    new Date(entry.createdAt),
-  );
   return (
     <article className="modlog-entry" data-testid="modlog-entry" data-action={entry.action}>
       <div className="modlog-l1">
-        <Note>
-          <time dateTime={entry.createdAt}>{time}</time>
-        </Note>
+        <Text size="sm" color="muted" className="modlog-time">
+          <Time iso={entry.createdAt} locale={locale} format="time" />
+        </Text>
         <Text variant="label">
           {!entry.public && <Marker>{t('modlog', 'marker.private')} </Marker>}
           {t('modlog', actionKey(entry.action, line.target))}
