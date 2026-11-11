@@ -26,3 +26,30 @@ Measured on the production build at 832837d plus the groundwork commit (wrappers
 | Composer sheet, when opened                                                          | +44.2 kB JS, +1.5 kB CSS     |            |          |
 
 Limits that were enforced until now: script 170 kB (the kit 180 kB), CSS 65 kB, fonts 270 kB, editor 200 kB. Fonts are close to their limit on pages with italic and code text (259.2 kB of 270 kB).
+
+## Figures on Mux UI rc.7 (2026-11-12)
+
+Measured on the production build of the commit that vendored rc.7 and dropped the workarounds it closed, against the last rc.6 build of `main` (1f982b2). Every page is all Mux UI now.
+
+| Page                                                           | React and Mux UI JS, rc.6 → rc.7   | Mux UI CSS     | Fonts           |
+| -------------------------------------------------------------- | ---------------------------------- | -------------- | --------------- |
+| Feeds (`/`, `/all`, `/local`, `/popular`, `/moderating`)       | 181.8 → 183.4 kB                   | 60.4 → 62.6 kB | 105.6 kB        |
+| Auth pages, `/resolve`, `/invite/<code>`, `/submit` signed out | 183.2 → 185.3 kB                   | 60.4 → 62.6 kB | 105.6 kB        |
+| `/auth/sign-up`                                                | 185.1 → 187.1 kB                   | 60.4 → 62.6 kB | 105.6 kB        |
+| `/about` and the other legal pages, `/modlog`, `/report/sent`  | 179.8 → 181.4 kB                   | 60.4 → 62.6 kB | 105.6 kB        |
+| `/notifications`                                               | 180.5 → 182.1 kB                   | 60.4 → 62.6 kB | 105.6 kB        |
+| `/post/<id>` (its comment permalink 188.2 kB)                  | 187.2 → 189.2 kB                   | 60.4 → 62.6 kB | 105.6 kB        |
+| `/c/<handle>` (`/c/new` and edit 188.0 kB)                     | 186.9 → 189.0 kB                   | 60.4 → 62.6 kB | 105.6 kB        |
+| `/u/<handle>` (edit 186.4 kB)                                  | 186.7 → 188.7 kB                   | 60.4 → 62.6 kB | 143.3 kB        |
+| `/settings/account`, `/settings/security`                      | 183.2 → 185.3, 184.0 → 186.1 kB    | 60.4 → 62.6 kB | 143.3, 105.6 kB |
+| `/settings/blocks`                                             | 200.4 → 202.4 kB                   | 60.4 → 62.6 kB | 105.6 kB        |
+| Admin tabs (reports, registration, bans, peers, pages)         | 201.0 to 202.8 → 203.0 to 204.9 kB | 60.4 → 62.6 kB | 105.6 kB        |
+| `/admin/settings`                                              | 184.6 → 186.7 kB                   | 60.4 → 62.6 kB | 105.6 kB        |
+| `/admin/media`                                                 | 209.8 → 212.0 kB                   | 60.4 → 62.6 kB | 105.6 kB        |
+| `/report?kind=post&id=<id>`                                    | 213.8 → 215.8 kB                   | 60.4 → 62.6 kB | 105.6 kB        |
+| `/submit` signed in                                            | 220.0 → 222.2 kB (editor 0 kB)     | 60.4 → 62.6 kB | 105.6 kB        |
+| `/communities`                                                 | 228.3 → 230.3 kB                   | 60.4 → 62.6 kB | 105.6 kB        |
+| `/kit` (it also gained a Mux Tabs section)                     | 190.3 → 200.6 kB                   | 60.4 → 62.6 kB | 259.2 kB        |
+| Composer sheet, when opened                                    | +53.0 → +53.6 kB JS, +1.1 kB CSS   |                |                 |
+
+rc.7 adds about 2 kB of script to every page and 2.2 kB to Mux UI's stylesheet, which stays inside its 65 kB. Fonts are unchanged.
