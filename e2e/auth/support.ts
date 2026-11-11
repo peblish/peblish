@@ -100,20 +100,64 @@ export async function signOut(page: Page): Promise<void> {
   await page.waitForURL('/');
 }
 
+/** How long `expectAccessible` waits for running animations and transitions to end. */
+const settleTimeout = 3_000;
+
 /**
- * WCAG 2.2 AA and best practice, as the shell's a11y spec runs it. Measured once every finite
- * animation and transition has ended: a panel that is still fading in (Mux's Disclosure) would
- * read as low contrast.
+ * Waits until no animation or transition that will end is running (a paused one, or one at a
+ * playback rate of zero or with endless iterations, never ends, so it is measured as it stands), reading
+ * the list again after each round so one that starts during the wait is waited for too. Fails, naming
+ * each element still animating, after `settleTimeout`.
  */
-export async function expectAccessible(page: Page): Promise<void> {
-  await page.evaluate(() =>
-    Promise.allSettled(
+async function settleAnimations(page: Page): Promise<void> {
+  const unsettled = await page.evaluate(async (timeout) => {
+    const ending = () =>
       document
         .getAnimations()
-        .filter((animation) => animation.effect?.getComputedTiming().endTime !== Infinity)
-        .map((animation) => animation.finished),
-    ),
-  );
+        .filter(
+          (animation) =>
+            animation.playState === 'running' &&
+            animation.playbackRate !== 0 &&
+            Number.isFinite(animation.effect?.getComputedTiming().endTime ?? Infinity),
+        );
+    const describe = (animation: Animation) => {
+      const effect = animation.effect;
+      const target = effect instanceof KeyframeEffect ? effect.target : null;
+      const element = target
+        ? `${target.localName}${target.id ? `#${target.id}` : ''}${[...target.classList].map((name) => `.${name}`).join('')}${effect instanceof KeyframeEffect && effect.pseudoElement ? effect.pseudoElement : ''}`
+        : 'an element-less animation';
+      const what =
+        animation instanceof CSSTransition
+          ? `transition of ${animation.transitionProperty}`
+          : animation instanceof CSSAnimation
+            ? `animation ${animation.animationName}`
+            : 'script animation';
+      return `${element} (${what})`;
+    };
+    const deadline = performance.now() + timeout;
+    for (;;) {
+      const running = ending();
+      if (running.length === 0) return [];
+      const left = deadline - performance.now();
+      if (left <= 0) return running.map(describe);
+      await Promise.race([
+        Promise.allSettled(running.map((animation) => animation.finished)),
+        new Promise((resolve) => setTimeout(resolve, left)),
+      ]);
+      // A frame for styles to update, so an animation started by one that just ended is on the list.
+      await new Promise(requestAnimationFrame);
+    }
+  }, settleTimeout);
+  expect(unsettled, `still animating after ${settleTimeout} ms, so axe would measure a page in motion`).toEqual([]);
+}
+
+/**
+ * WCAG 2.2 AA and best practice, as the shell's a11y spec runs it, on every rule and element.
+ * Measured once every animation and transition that will end has ended: a panel that is still
+ * fading in (Mux's Disclosure) would read as low contrast.
+ */
+export async function expectAccessible(page: Page): Promise<void> {
+  await settleAnimations(page);
   const results = await new AxeBuilder({ page })
     .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa', 'best-practice'])
     .analyze();
