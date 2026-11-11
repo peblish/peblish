@@ -28,11 +28,18 @@
     display: none;
   }
 
-  /* The column stays in view while the page scrolls; its navigation scrolls on its own. */
+  /* The column (mock direction A): the Sidebar stays in view while the page scrolls, and its
+     navigation scrolls on its own. Its cell runs the page's full height with the Sidebar's own
+     surface and edge (the Root has hideBorder), so the column never ends below the fold, even in
+     a full-page capture, which does not move sticky boxes. */
   .pb-app__side {
+    border-inline-end: 1px solid var(--muxui-semantic-color-neutral-20);
+    background: var(--muxui-semantic-color-neutral-10);
+  }
+
+  .pb-app__side > .pb-side {
     position: sticky;
     inset-block-start: 0;
-    align-self: start;
     block-size: 100dvh;
   }
 
@@ -48,6 +55,14 @@
     overflow: hidden;
     color: var(--muxui-semantic-content-strong);
     text-decoration: none;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* The Text inside the brand is what overflows, so it carries the ellipsis. */
+  :is(.pb-brand, .pb-bar-brand) > .muxui-text {
+    display: block;
+    overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
@@ -71,6 +86,41 @@
 
   .pb-nav > nav + nav {
     margin-block-start: var(--muxui-semantic-layout-group-gap);
+  }
+
+  /* Mux draws nav icons in neutral-70, under 3:1 on the dark sidebar (2.5:1): the muted text colour
+     instead, and the text colour on hover and for the current page, as Mux does. */
+  .pb-nav .muxui-sidebar__nav-icon {
+    color: var(--muxui-semantic-content-muted);
+  }
+
+  .pb-nav :is(.muxui-sidebar__nav-link:hover, .muxui-sidebar__nav-link--current) .muxui-sidebar__nav-icon {
+    color: var(--muxui-semantic-content-default);
+  }
+
+  /* A community row: a small Mux Avatar with the initial (nested rows have no icon slot), then the handle. */
+  .pb-nav__community {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--muxui-semantic-layout-control-gap);
+    min-inline-size: 0;
+    max-inline-size: 100%;
+  }
+
+  .pb-nav__community .muxui-avatar {
+    inline-size: 1.25rem;
+    block-size: 1.25rem;
+    font-size: var(--muxui-semantic-typography-badge-size);
+  }
+
+  .pb-nav__community .muxui-avatar__fallback {
+    padding: 0;
+  }
+
+  .pb-nav__community > :last-child {
+    min-inline-size: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   .pb-nav__filter {
@@ -144,6 +194,17 @@
   .pb-create svg {
     inline-size: 1em;
     block-size: 1em;
+  }
+
+  .pb-sign-in {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  /* The signed-out links show their icons only once their labels give way (below 360 px). */
+  :is(.pb-sign-in, .pb-cta) svg {
+    display: none;
   }
 
   /* The account menu's trigger: Mux's Menu.Trigger is an unstyled button. */
@@ -226,7 +287,17 @@
       margin-inline-start: auto;
     }
 
-    /* The name stays for assistive technology; only the avatar shows. */
+    /* What gives way in the phone bar, in order: Create post's label (an icon button, as in mock
+       direction A), the account's name (the avatar shows), then below 360 px the signed-out
+       labels; only then the site name, which ends in an ellipsis. Each name stays whole for
+       assistive technology. */
+    .pb-app__bar .pb-create {
+      justify-content: center;
+      inline-size: var(--muxui-semantic-control-size-sm);
+      padding-inline: 0;
+    }
+
+    .pb-app__bar .pb-create .pb-action__label,
     .pb-account__name {
       position: absolute;
       inline-size: 1px;
@@ -237,34 +308,24 @@
     }
   }
 
-  /* Read by other areas until they move to Mux pieces (the admin layout's tab bar, the inbox
-     filter counts); kept here on Mux tokens until integration removes them. */
-  .admin-tabs {
-    display: flex;
-    flex-wrap: wrap;
-    gap: var(--muxui-semantic-layout-inset-tight) var(--muxui-semantic-layout-inset-medium);
-    max-inline-size: 960px;
-    margin: var(--muxui-semantic-layout-inset-medium) auto 0;
-    padding: 0 var(--muxui-semantic-layout-inset-medium);
-    border-block-end: 1px solid var(--muxui-semantic-border-default);
-  }
+  @media (max-width: 359.98px) {
+    .pb-app__bar :is(.pb-sign-in, .pb-cta) {
+      inline-size: var(--muxui-semantic-control-size-sm);
+      block-size: var(--muxui-semantic-control-size-sm);
+      padding-inline: 0;
+    }
 
-  .admin-tabs a {
-    padding-block: var(--muxui-semantic-layout-inset-tight);
-    border-block-end: 2px solid transparent;
-  }
+    .pb-app__bar :is(.pb-sign-in, .pb-cta) svg {
+      display: block;
+    }
 
-  .admin-tabs a[aria-current='page'] {
-    border-block-end-color: var(--muxui-semantic-selection-indicator);
-    font-weight: var(--muxui-semantic-typography-label-weight);
-  }
-
-  .pb-count {
-    margin-inline-start: auto;
-    padding: 0 var(--muxui-semantic-layout-inset-tight);
-    border-radius: var(--muxui-semantic-shape-pill-radius);
-    background: var(--muxui-semantic-content-default);
-    color: var(--muxui-semantic-surface-background);
-    font-size: var(--muxui-semantic-typography-badge-size);
+    .pb-app__bar :is(.pb-sign-in, .pb-cta) .pb-action__label {
+      position: absolute;
+      inline-size: 1px;
+      block-size: 1px;
+      overflow: hidden;
+      clip-path: inset(50%);
+      white-space: nowrap;
+    }
   }
 }

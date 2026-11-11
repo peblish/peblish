@@ -36,8 +36,8 @@ async function freshPage(browser: Browser): Promise<Page> {
 }
 
 /**
- * The sidebar's You links, by accessible name: Mux's Sidebar puts an aria-hidden letter mark in each
- * link without an icon, so the visible text reads "IInbox" while the name is "Inbox".
+ * The sidebar's You links, by accessible name: a link's text also holds its count badge ("2 open"),
+ * which the name leads with the label.
  */
 async function expectYouLinks(page: Page, names: readonly (string | RegExp)[]): Promise<void> {
   const links = page.getByRole('navigation', { name: 'You' }).getByRole('link');
