@@ -3,6 +3,7 @@ import { type } from 'arktype';
 import { useState, type FormEvent, type ReactNode } from 'react';
 import { useTranslate } from '../../../../i18n/use-translate.ts';
 import { tabOfKind, blocksPath } from '../-tabs.ts';
+import { Notice } from '@peblish/ui/components/notice';
 import { blockError } from './errors.ts';
 
 const Answer = type({ 'redirect?': 'string', 'error?': 'string' });
@@ -12,7 +13,8 @@ type Kind = 'person' | 'community' | 'instance';
  * A form that posts to /settings/blocks and works without JavaScript (the server answers 303).
  * Once hydrated it posts by fetch (Accept: application/json), shows a refusal in place with
  * what was typed kept, and on success goes where the server says (the blocks page's tab, or
- * back to the page a slot sits on) and reloads that page's data. `fields` are the hidden inputs.
+ * back to the page a slot sits on) and reloads that page's data. `fields` travel in the form's
+ * address (`?intent=add&kind=person`), which the handler reads under the body (-post.ts).
  */
 export function BlockForm({
   fields,
@@ -32,6 +34,7 @@ export function BlockForm({
   const router = useRouter();
   const [error, setError] = useState<{ code: string; query: string }>();
   const [busy, setBusy] = useState(false);
+  const action = `${blocksPath}?${new URLSearchParams(fields)}`;
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -42,15 +45,17 @@ export function BlockForm({
     const fail = (code: string) => setError({ code, query });
     setBusy(true);
     try {
-      const response = await fetch(blocksPath, { method: 'POST', body, headers: { accept: 'application/json' } });
+      const response = await fetch(action, { method: 'POST', body, headers: { accept: 'application/json' } });
       const answer = Answer(await response.json());
       if (answer instanceof type.errors) return fail('generic');
       if (answer.error) return fail(answer.error);
       setError(undefined);
-      // One load, not two: a new address when the server names one, else the same page's data again.
+      // Go to the address the server names, then load its data again: a new address can keep the
+      // same loader inputs (/settings/blocks becomes ?tab=people), and the router would keep the
+      // list from before the change.
       const here = window.location.pathname + window.location.search;
       if (answer.redirect && answer.redirect.split('#')[0] !== here) await router.navigate({ href: answer.redirect });
-      else await router.invalidate();
+      await router.invalidate();
     } catch {
       fail('network');
     } finally {
@@ -62,20 +67,18 @@ export function BlockForm({
   return (
     <form
       method="post"
-      action={blocksPath}
+      action={action}
       aria-busy={busy}
       className={className}
+      // Layout only, inline: a slot sits on pages that do not load the blocks stylesheet.
       style={inline ? { display: 'inline', margin: 0 } : undefined}
       onSubmit={submit}
     >
-      {Object.entries(fields).map(([name, value]) => (
-        <input key={name} type="hidden" name={name} value={value} />
-      ))}
       {children}
       {message && (
-        <p className="blk-error" role="alert" style={{ color: 'var(--pb-error)' }}>
+        <Notice tone="danger" role="alert">
           {t('blocks', message.key, message.params)}
-        </p>
+        </Notice>
       )}
     </form>
   );

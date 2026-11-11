@@ -1,0 +1,140 @@
+/* The settings pages (account, security, blocks): a navigation column beside a column of Mux
+   Cards. Layout only; colour, type and shape come from Mux components and tokens. */
+@layer app {
+  .settings {
+    display: grid;
+    grid-template-columns: 200px minmax(0, 1fr);
+    gap: var(--muxui-semantic-layout-content-gap);
+    max-width: var(--pb-page-width);
+    margin: 0 auto;
+    padding: var(--muxui-semantic-layout-inset-large) var(--muxui-semantic-layout-inset-medium);
+  }
+  .settings__nav .muxui-sidebar__nav-list {
+    padding: 0;
+    overflow: visible;
+  }
+  .settings__main {
+    display: grid;
+    gap: var(--muxui-semantic-layout-section-gap);
+    align-content: start;
+    min-width: 0;
+  }
+  .settings__main > h1 {
+    margin: 0;
+  }
+  .settings__body {
+    display: grid;
+    gap: var(--muxui-semantic-layout-group-gap);
+  }
+  .settings__body > p,
+  .settings__body form > p {
+    margin: 0;
+  }
+  /* Forms keep a readable measure inside a wide card. */
+  .settings__body form {
+    display: grid;
+    gap: var(--muxui-semantic-layout-group-gap);
+    max-width: 24rem;
+    margin: 0;
+  }
+  .settings__body form > button {
+    justify-self: start;
+  }
+  .settings__actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--muxui-semantic-layout-group-gap);
+    align-items: center;
+  }
+  .settings__actions form {
+    display: contents;
+  }
+
+  /* Two-factor setup: numbered steps, each number beside its content. */
+  .settings__steps {
+    display: grid;
+    gap: var(--muxui-semantic-layout-group-gap);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .settings__steps > li {
+    display: grid;
+    grid-template-columns: 1.5rem minmax(0, 1fr);
+    gap: var(--muxui-semantic-layout-tight-gap);
+    padding-block-start: var(--muxui-semantic-layout-group-gap);
+    border-block-start: 1px solid var(--muxui-semantic-border-faint);
+  }
+  .settings__steps > li > div {
+    display: grid;
+    gap: var(--muxui-semantic-layout-group-gap);
+  }
+  .settings__qr {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--muxui-semantic-layout-action-gap);
+    align-items: flex-start;
+  }
+  .settings__qr > div {
+    display: grid;
+    gap: var(--muxui-semantic-layout-tight-gap);
+  }
+  .settings__qr p {
+    margin: 0;
+  }
+
+  /* Recovery codes, two columns of mono text. */
+  .settings__codes {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, max-content));
+    gap: var(--muxui-semantic-layout-tight-gap) var(--muxui-semantic-layout-content-gap);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  /* A list of rows (sessions): name and details, then the row's action. */
+  .settings__rows {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .settings__rows > li {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: var(--muxui-semantic-layout-dense-gap) var(--muxui-semantic-layout-action-gap);
+    align-items: center;
+    padding-block: var(--muxui-semantic-layout-group-gap);
+    border-block-start: 1px solid var(--muxui-semantic-border-faint);
+  }
+  .settings__rows > li:first-child {
+    border-block-start: 0;
+    padding-block-start: 0;
+  }
+  .settings__rows > li > div {
+    display: grid;
+    gap: var(--muxui-semantic-layout-dense-gap);
+  }
+  .settings__rows form {
+    margin: 0;
+  }
+  .settings__row-name {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--muxui-semantic-layout-tight-gap);
+    align-items: center;
+  }
+
+  @media (max-width: 760px) {
+    .settings {
+      grid-template-columns: minmax(0, 1fr);
+      gap: var(--muxui-semantic-layout-group-gap);
+      padding-inline: var(--muxui-semantic-layout-inset-small);
+    }
+    .settings__nav .muxui-sidebar__nav-list {
+      flex-direction: row;
+      flex-wrap: wrap;
+      gap: var(--muxui-semantic-layout-tight-gap);
+    }
+  }
+}

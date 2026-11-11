@@ -1,25 +1,60 @@
-import { Link } from '@tanstack/react-router';
+import { Card } from '@peblish/ui/components/card';
+import { Sidebar } from '@peblish/ui/components/sidebar';
+import { Text } from '@peblish/ui/components/text';
+import { useLocation } from '@tanstack/react-router';
 import type { ReactNode } from 'react';
 import { useTranslate } from '../../../i18n/use-translate.ts';
+import { authHead } from '../../auth/-ui/page.tsx';
+import settingsCss from '../-ui/settings.css?url';
 
-/** The settings column (mock: auth-pages.html, Security): Account, Security, Blocks (lane E1), and Invites for admins. */
-export function SettingsLayout({ admin, children }: { admin: boolean; children: ReactNode }) {
+/**
+ * Every settings page's head: the settings layout, and the auth stylesheet the shared form fields
+ * (`auth/-ui/form.tsx`) still read until the AUTH lane moves them onto Mux.
+ */
+export const settingsHead = () => ({ links: [...authHead().links, { rel: 'stylesheet', href: settingsCss }] });
+
+/**
+ * The settings column: Account, Security, Blocks, and Invites for admins, as Mux Sidebar
+ * navigation items (real links, so the column works before hydration), beside the page.
+ */
+export function SettingsLayout({ admin, title, children }: { admin: boolean; title: ReactNode; children: ReactNode }) {
   const { t } = useTranslate();
+  const { pathname } = useLocation();
+  const item = (href: string, label: string) => (
+    <Sidebar.NavItem href={href} current={pathname.replace(/\/+$/, '') === href}>
+      {label}
+    </Sidebar.NavItem>
+  );
   return (
-    <div className="auth-page settings">
-      <nav className="settings-nav" aria-label={t('settings', 'nav.label')}>
-        <Link to="/settings/account" activeProps={{ 'aria-current': 'page' }}>
-          {t('settings', 'nav.account')}
-        </Link>
-        <Link to="/settings/security" activeProps={{ 'aria-current': 'page' }}>
-          {t('settings', 'nav.security')}
-        </Link>
-        <Link to="/settings/blocks" activeProps={{ 'aria-current': 'page' }}>
-          {t('settings', 'nav.blocks')}
-        </Link>
-        {admin && <Link to="/admin/registration">{t('settings', 'nav.invites')}</Link>}
+    <div className="settings">
+      <nav className="settings__nav" aria-label={t('settings', 'nav.label')}>
+        <Sidebar.NavList>
+          {item('/settings/account', t('settings', 'nav.account'))}
+          {item('/settings/security', t('settings', 'nav.security'))}
+          {item('/settings/blocks', t('settings', 'nav.blocks'))}
+          {admin && item('/admin/registration', t('settings', 'nav.invites'))}
+        </Sidebar.NavList>
       </nav>
-      <main>{children}</main>
+      <main className="settings__main">
+        <Text as="h1" variant="heading" size="lg">
+          {title}
+        </Text>
+        {children}
+      </main>
     </div>
+  );
+}
+
+/** One settings section: an outlined Mux Card named by its heading. */
+export function SettingsSection({ id, title, children }: { id: string; title: ReactNode; children: ReactNode }) {
+  return (
+    <Card.Root role="region" aria-labelledby={`${id}-title`} id={id} className="settings__section">
+      <Card.Header>
+        <Text as="h2" variant="title" size="md" id={`${id}-title`}>
+          {title}
+        </Text>
+      </Card.Header>
+      <Card.Body className="settings__body">{children}</Card.Body>
+    </Card.Root>
   );
 }

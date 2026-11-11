@@ -33,7 +33,8 @@ export async function handleBlocksPost(request: Request): Promise<Response> {
       : new Response(null, { status: 303, headers: { location } });
   const { session, reply } = await formSession(request);
   if (!session) return reply({ redirect: '/auth/sign-in?redirect=%2Fsettings%2Fblocks' });
-  const body = Body(await readForm(request));
+  // A form's fixed fields come in its address (block-form.tsx); what was typed is in the body, which wins.
+  const body = Body({ ...Object.fromEntries(new URL(request.url).searchParams), ...(await readForm(request)) });
   if (body instanceof type.errors) return answer(blocksHref('people', { error: 'form.invalid' }), 'form.invalid');
   const tab = tabOfKind[body.kind];
   const typed = body.handle?.trim() ?? '';

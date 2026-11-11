@@ -1,9 +1,15 @@
 import { Button } from '@peblish/ui/components/button';
+import { Card } from '@peblish/ui/components/card';
 import { Handle } from '@peblish/ui/components/handle';
-import { Link } from '@tanstack/react-router';
+import { Table } from '@peblish/ui/components/table';
+import { Text } from '@peblish/ui/components/text';
+import { TextField } from '@peblish/ui/components/text-field';
 import { useTranslate } from '../../../../i18n/use-translate.ts';
 import { translatePlural } from '../../../../i18n/translate.ts';
 import { useDate } from '../../../auth/-ui/page.tsx';
+import { Badge } from '@peblish/ui/components/badge';
+import { LinkTabs } from '@peblish/ui/components/link-tabs';
+import { Notice } from '@peblish/ui/components/notice';
 import { SettingsLayout } from '../../account/-nav.tsx';
 import type { BlocksData } from '../-load.ts';
 import { blockTabs, blocksPath, kindOfTab, type BlocksSearch } from '../-tabs.ts';
@@ -20,85 +26,111 @@ export function BlocksPage({ data, search }: { data: BlocksData; search: BlocksS
   const kind = kindOfTab[tab];
   const failure = blockError(search.error, tab, search.q);
   return (
-    <SettingsLayout admin={data.admin}>
-      <h1>{t('blocks', 'title')}</h1>
-      <nav className="blk-tabs" aria-label={t('blocks', 'tabs.label')}>
-        {blockTabs.map((name) => (
-          <Link key={name} to={blocksPath} search={{ tab: name }} aria-current={name === tab ? 'page' : undefined}>
-            {t('blocks', `tab.${name}`)}
-            <span className="blk-count">{data.counts[kindOfTab[name]]}</span>
-          </Link>
-        ))}
-      </nav>
+    <SettingsLayout admin={data.admin} title={t('blocks', 'title')}>
+      <LinkTabs
+        aria-label={t('blocks', 'tabs.label')}
+        items={blockTabs.map((name) => ({
+          to: `${blocksPath}?tab=${name}`,
+          active: name === tab,
+          label: (
+            <>
+              {t('blocks', `tab.${name}`)}
+              <Badge>{data.counts[kindOfTab[name]]}</Badge>
+            </>
+          ),
+        }))}
+      />
 
-      <section aria-label={t('blocks', `tab.${tab}`)}>
-        <p>
-          <b>{t('blocks', `${tab}.lead`)}</b> {t('blocks', `${tab}.body`)}
-        </p>
+      <section aria-label={t('blocks', `tab.${tab}`)} className="settings__main">
+        <Text as="p">
+          <Text variant="label" size="md">
+            {t('blocks', `${tab}.lead`)}
+          </Text>{' '}
+          {t('blocks', `${tab}.body`)}
+        </Text>
 
         {data.just && (
-          // A div: it holds the Undo form, which a <p> cannot contain.
-          <div className="blk-note" role="status">
-            {t('blocks', 'just', { name: data.just.name })}{' '}
-            <BlockForm kind={kind} fields={{ intent: 'remove', kind, target: data.just.id }}>
-              <button type="submit" className="pb-linkbutton">
-                {t('blocks', 'just.undo')}
-              </button>
-            </BlockForm>
-          </div>
+          <Notice
+            tone="success"
+            role="status"
+            action={
+              <BlockForm kind={kind} fields={{ intent: 'remove', kind, target: data.just.id }}>
+                <Button type="submit" variant="ghost" size="sm">
+                  {t('blocks', 'just.undo')}
+                </Button>
+              </BlockForm>
+            }
+          >
+            {t('blocks', 'just', { name: data.just.name })}
+          </Notice>
         )}
 
         {/* An error from a form posted without scripts; the enhanced form shows its own beside the field. */}
         {failure && (
-          <p className="blk-error" role="alert">
+          <Notice tone="danger" role="alert">
             {t('blocks', failure.key, failure.params)}
-          </p>
+          </Notice>
         )}
 
         <BlockForm kind={kind} className="blk-add" fields={{ intent: 'add', kind }}>
-          <label htmlFor="blk-handle">{t('blocks', `${tab}.field`)}</label>
-          <div className="blk-add-row">
-            <input
-              id="blk-handle"
-              name="handle"
-              required
-              autoComplete="off"
-              autoCapitalize="none"
-              spellCheck={false}
-              placeholder={t('blocks', `${tab}.placeholder`)}
-              defaultValue={search.error ? search.q : undefined}
-            />
-            <Button type="submit" variant="primary">
-              {t('blocks', 'add')}
-            </Button>
-          </div>
+          <TextField
+            label={t('blocks', `${tab}.field`)}
+            name="handle"
+            required
+            autoComplete="off"
+            placeholder={t('blocks', `${tab}.placeholder`)}
+            defaultValue={search.error ? search.q : undefined}
+            className="blk-add__field"
+          />
+          <Button type="submit" variant="primary">
+            {t('blocks', 'add')}
+          </Button>
         </BlockForm>
 
         {data.rows.length === 0 ? (
-          <p className="blk-empty">{t('blocks', `${tab}.empty`)}</p>
+          <Text as="p" color="muted">
+            {t('blocks', `${tab}.empty`)}
+          </Text>
         ) : (
-          <ul className="blk-list" aria-label={t('blocks', 'list.label', { kind: t('blocks', `tab.${tab}`) })}>
-            {data.rows.map((row) => (
-              <li key={row.id} className="blk-row">
-                <span className="blk-name">
-                  {kind === 'instance' ? row.handle : <Handle prefix={prefixOf[kind]} handle={row.handle} />}
-                </span>
-                <span className="blk-meta">
-                  {t('blocks', 'row.blocked', { date: date(row.blockedAt) })}
-                  {row.hides &&
-                    ` · ${t('blocks', 'row.hides', {
-                      people: translatePlural(locale, 'blocks', 'row.people', row.hides.people),
-                      communities: translatePlural(locale, 'blocks', 'row.communities', row.hides.communities),
-                    })}`}
-                </span>
-                <BlockForm kind={kind} fields={{ intent: 'remove', kind, target: row.id }}>
-                  <Button type="submit" variant="neutral" aria-label={`${t('blocks', 'remove')} ${prefixOf[kind]}${row.handle}`}>
-                    {t('blocks', 'remove')}
-                  </Button>
-                </BlockForm>
-              </li>
-            ))}
-          </ul>
+          <Card.Root padding="sm">
+            <Table
+              aria-label={t('blocks', 'list.label', { kind: t('blocks', `tab.${tab}`) })}
+              columns={[
+                { id: 'name', label: t('blocks', 'column.name'), isRowHeader: true },
+                { id: 'details', label: t('blocks', 'column.details') },
+                { id: 'actions', label: t('blocks', 'column.actions') },
+              ]}
+              rows={data.rows.map((row) => ({
+                id: row.id,
+                textValue: row.handle,
+                values: {
+                  name: kind === 'instance' ? row.handle : <Handle prefix={prefixOf[kind]} handle={row.handle} />,
+                  details: (
+                    <Text size="sm" color="muted">
+                      {t('blocks', 'row.blocked', { date: date(row.blockedAt) })}
+                      {row.hides &&
+                        ` · ${t('blocks', 'row.hides', {
+                          people: translatePlural(locale, 'blocks', 'row.people', row.hides.people),
+                          communities: translatePlural(locale, 'blocks', 'row.communities', row.hides.communities),
+                        })}`}
+                    </Text>
+                  ),
+                  actions: (
+                    <BlockForm kind={kind} fields={{ intent: 'remove', kind, target: row.id }}>
+                      <Button
+                        type="submit"
+                        variant="neutral"
+                        size="sm"
+                        aria-label={`${t('blocks', 'remove')} ${prefixOf[kind]}${row.handle}`}
+                      >
+                        {t('blocks', 'remove')}
+                      </Button>
+                    </BlockForm>
+                  ),
+                },
+              }))}
+            />
+          </Card.Root>
         )}
       </section>
     </SettingsLayout>

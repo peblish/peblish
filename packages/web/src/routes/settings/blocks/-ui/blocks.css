@@ -1,88 +1,16 @@
-/* /settings/blocks after the R2 mock blocks-tabs.html: structure and states, not final styling. */
+/* /settings/blocks: the add row (a field beside its button). The rest is settings.css. */
 @layer app {
-  .blk-tabs {
-    display: flex;
-    flex-wrap: wrap;
-    margin: 0 0 14px;
-    border: 1px solid var(--pb-line);
-    border-radius: 2px;
-    width: fit-content;
-  }
-  .blk-tabs a {
-    padding: 4px 12px;
-    border-right: 1px solid var(--pb-line);
-    color: var(--pb-fg);
-    text-decoration: none;
-  }
-  .blk-tabs a:last-child {
-    border-right: 0;
-  }
-  .blk-tabs a:hover {
-    background: var(--pb-hover);
-  }
-  .blk-tabs a[aria-current='page'] {
-    background: var(--pb-fg);
-    color: var(--pb-bg);
-  }
-  .blk-count {
-    margin-left: 6px;
-    font-variant-numeric: tabular-nums;
-    opacity: 0.8;
-  }
   .blk-add {
-    display: grid;
-    gap: 4px;
-    margin: 10px 0 14px;
-  }
-  .blk-add label {
-    font-weight: 600;
-  }
-  .blk-add-row {
-    display: flex;
-    gap: 8px;
-  }
-  .blk-add-row input {
-    flex: 1;
-  }
-  .blk-error,
-  .blk-note {
-    margin: 6px 0;
-    padding: 6px 8px;
-    border: 1px solid var(--pb-line);
-    border-left-width: 3px;
-  }
-  .blk-error {
-    border-left-color: var(--pb-error);
-  }
-  .blk-note {
-    border-left-color: var(--pb-ok);
-  }
-  .blk-note form {
-    display: inline;
-  }
-  .blk-list {
-    margin: 0;
-    padding: 0;
-    list-style: none;
-    border-top: 1px solid var(--pb-line);
-  }
-  .blk-row {
     display: flex;
     flex-wrap: wrap;
-    align-items: baseline;
-    gap: 4px 12px;
-    padding: 8px 0;
-    border-bottom: 1px solid var(--pb-line);
+    gap: var(--muxui-semantic-layout-group-gap);
+    align-items: end;
+    margin: 0;
   }
-  .blk-row .blk-name {
-    font-weight: 600;
+  .blk-add__field {
+    flex: 1 1 16rem;
   }
-  .blk-row .blk-meta {
-    flex: 1;
-    color: var(--pb-muted);
-  }
-  .blk-empty {
-    padding: 14px 0;
-    color: var(--pb-muted);
+  .blk-add [role='alert'] {
+    flex-basis: 100%;
   }
 }

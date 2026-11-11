@@ -5,6 +5,10 @@ import { attempt } from '@peblish/core/identity/throttle';
 import { changePasswordAs, confirmTotpSetup, pendingTotp, startTotpSetup, takeRecoveryCodes } from '@peblish/core/identity/two-factor';
 import type { DeviceSession } from '@peblish/schema/session';
 import { Button } from '@peblish/ui/components/button';
+import { Card } from '@peblish/ui/components/card';
+import { Checkbox } from '@peblish/ui/components/checkbox';
+import { Link } from '@peblish/ui/components/link';
+import { Text } from '@peblish/ui/components/text';
 import { createFileRoute, redirect } from '@tanstack/react-router';
 import { createServerFn } from '@tanstack/react-start';
 import { type } from 'arktype';
@@ -14,9 +18,11 @@ import { clientIp, forbidden, formSession, forwardedHeaders, pageSession, readFo
 import { useRouteHydrated } from '../../../shell/hydration.ts';
 import { asFormError, type FormError } from '../../auth/-ui/errors.ts';
 import { AuthForm, Field } from '../../auth/-ui/form.tsx';
-import { authHead, SearchText } from '../../auth/-ui/page.tsx';
+import { SearchText } from '../../auth/-ui/page.tsx';
 import { QrCode } from '../../auth/-ui/qr.tsx';
-import { SettingsLayout } from '../account/-nav.tsx';
+import { SettingsLayout, SettingsSection, settingsHead } from '../account/-nav.tsx';
+import { Badge } from '@peblish/ui/components/badge';
+import { Notice } from '@peblish/ui/components/notice';
 
 const Search = type({ 'error?': SearchText, 'form?': SearchText, 'saved?': SearchText });
 const Body = type({ intent: "'password'", current: 'string', next: 'string' })
@@ -56,7 +62,7 @@ function pageError(code: string | undefined): FormError {
 export const Route = createFileRoute('/settings/security/')({
   validateSearch: Search,
   loader: () => loadSecurity(),
-  head: authHead,
+  head: settingsHead,
   component: Security,
   server: {
     handlers: {
@@ -64,7 +70,8 @@ export const Route = createFileRoute('/settings/security/')({
         if (!sameOrigin(request)) return forbidden();
         const { session, reply } = await formSession(request);
         if (!session) return reply({ redirect: '/auth/sign-in?redirect=%2Fsettings%2Fsecurity' });
-        const body = Body(await readForm(request));
+        // A revoke form names its session in the address; every other field is in the body, which wins.
+        const body = Body({ ...Object.fromEntries(new URL(request.url).searchParams), ...(await readForm(request)) });
         if (body instanceof type.errors) return reply({ error: 'form.invalid', back: '/settings/security' });
         const page = '/settings/security';
         const api = (await auth()).api;
@@ -126,13 +133,10 @@ function Security() {
   const errorFor = (form: string) => (search.form === form ? asFormError(search.error) : undefined);
   useRouteHydrated();
   return (
-    <SettingsLayout admin={data.admin}>
-      <h1>{t('settings', 'security.title')}</h1>
-      <section className="sec" aria-labelledby="sec-password">
-        <h2 id="sec-password">{t('settings', 'security.password')}</h2>
-        {search.saved === 'password' && <p className="ok-t">{t('settings', 'security.changed')}</p>}
+    <SettingsLayout admin={data.admin} title={t('settings', 'security.title')}>
+      <SettingsSection id="sec-password" title={t('settings', 'security.password')}>
+        {search.saved === 'password' && <Notice tone="success">{t('settings', 'security.changed')}</Notice>}
         <AuthForm action="/settings/security" label={t('settings', 'security.password')} error={errorFor('password')}>
-          <input type="hidden" name="intent" value="password" />
           <Field label={t('settings', 'security.current')} name="current" type="password" required autoComplete="current-password" />
           <Field
             label={t('settings', 'security.new')}
@@ -143,11 +147,11 @@ function Security() {
             autoComplete="new-password"
             hint={t('settings', 'security.newHint')}
           />
-          <Button type="submit" variant="primary">
+          <Button type="submit" variant="primary" name="intent" value="password">
             {t('settings', 'security.change')}
           </Button>
         </AuthForm>
-      </section>
+      </SettingsSection>
       <TwoFactorSection data={data} error={errorFor} />
       <Sessions sessions={data.sessions} />
     </SettingsLayout>
@@ -156,19 +160,20 @@ function Security() {
 
 type SecurityData = ReturnType<typeof Route.useLoaderData>;
 
+// Each form's intent rides on its submit button (name="intent"), which is also the button Enter
+// presses, so no form needs a hidden field for it.
+
 function TwoFactorSection({ data, error }: { data: SecurityData; error: (form: string) => FormError | undefined }) {
   const { t } = useTranslate();
   return (
-    <section className="sec" id="two-factor" aria-labelledby="sec-2fa">
-      <h2 id="sec-2fa">{t('settings', 'security.twoFactor')}</h2>
+    <SettingsSection id="two-factor" title={t('settings', 'security.twoFactor')}>
       {data.twoFactorEnabled ? (
         <>
-          <p className="hint">
-            <b className="ok-t">{t('settings', 'security.on')}</b> {t('settings', 'security.onBody')}
-          </p>
+          <Text as="p" color="muted">
+            <Badge tone="success">{t('settings', 'security.on')}</Badge> {t('settings', 'security.onBody')}
+          </Text>
           {data.recoveryCodes && <RecoveryCodes codes={data.recoveryCodes} host={data.host} />}
           <AuthForm action="/settings/security" label={t('settings', 'security.turnOff')} error={error('totp-off')}>
-            <input type="hidden" name="intent" value="totp-off" />
             <Field
               label={t('settings', 'security.offPassword')}
               name="password"
@@ -177,44 +182,53 @@ function TwoFactorSection({ data, error }: { data: SecurityData; error: (form: s
               autoComplete="current-password"
               hint={t('settings', 'security.turnOffHint')}
             />
-            <Button type="submit" variant="danger-neutral">
+            <Button type="submit" variant="danger-neutral" name="intent" value="totp-off">
               {t('settings', 'security.turnOff')}
             </Button>
           </AuthForm>
         </>
       ) : (
         <>
-          <p className="hint">
-            <b className="err-t">{t('settings', 'security.off')}</b> {t('settings', 'security.offBody')}
-          </p>
+          <Text as="p" color="muted">
+            <Badge tone="danger">{t('settings', 'security.off')}</Badge> {t('settings', 'security.offBody')}
+          </Text>
           {data.setup ? (
-            <ol className="steps">
+            <ol className="settings__steps">
               <li>
-                <span className="n">1</span>
+                <Text variant="title" size="sm">
+                  1
+                </Text>
                 <div>
-                  <b>{t('settings', 'security.scan')}</b>
-                  <div className="qr-row">
+                  <Text variant="title" size="sm">
+                    {t('settings', 'security.scan')}
+                  </Text>
+                  <div className="settings__qr">
                     <QrCode value={data.setup.uri} label={t('settings', 'security.qr')} />
                     <div>
-                      <p className="hint">{t('settings', 'security.cantScan')}</p>
-                      <p className="mono" data-testid="totp-key">
+                      <Text as="p" size="sm" color="muted">
+                        {t('settings', 'security.cantScan')}
+                      </Text>
+                      <Text as="p" variant="mono" data-testid="totp-key">
                         {data.setup.key.match(/.{1,4}/g)?.join(' ')}
-                      </p>
-                      <p className="hint">
+                      </Text>
+                      <Text as="p" size="sm" color="muted">
                         {t('settings', 'security.accountLine', { email: data.email })}
                         <br />
                         {t('settings', 'security.issuerLine', { host: data.host })}
-                      </p>
+                      </Text>
                     </div>
                   </div>
                 </div>
               </li>
               <li>
-                <span className="n">2</span>
+                <Text variant="title" size="sm">
+                  2
+                </Text>
                 <div>
-                  <b>{t('settings', 'security.enterCode')}</b>
+                  <Text variant="title" size="sm">
+                    {t('settings', 'security.enterCode')}
+                  </Text>
                   <AuthForm action="/settings/security" label={t('settings', 'security.enterCode')} error={error('totp-verify')}>
-                    <input type="hidden" name="intent" value="totp-verify" />
                     <Field
                       label={t('settings', 'security.code')}
                       name="code"
@@ -223,24 +237,26 @@ function TwoFactorSection({ data, error }: { data: SecurityData; error: (form: s
                       autoComplete="one-time-code"
                       maxLength={6}
                       placeholder="123456"
-                      className="code-input"
                     />
-                    <Button type="submit" variant="primary">
+                    <Button type="submit" variant="primary" name="intent" value="totp-verify">
                       {t('settings', 'security.verify')}
                     </Button>
                   </AuthForm>
                 </div>
               </li>
               <li>
-                <span className="n">3</span>
+                <Text variant="title" size="sm">
+                  3
+                </Text>
                 <div>
-                  <b>{t('settings', 'security.saveCodes')}</b>
+                  <Text variant="title" size="sm">
+                    {t('settings', 'security.saveCodes')}
+                  </Text>
                 </div>
               </li>
             </ol>
           ) : (
             <AuthForm action="/settings/security" label={t('settings', 'security.start')} error={error('totp-start')}>
-              <input type="hidden" name="intent" value="totp-start" />
               <Field
                 label={t('settings', 'security.startPassword')}
                 name="password"
@@ -248,14 +264,14 @@ function TwoFactorSection({ data, error }: { data: SecurityData; error: (form: s
                 required
                 autoComplete="current-password"
               />
-              <Button type="submit" variant="primary">
+              <Button type="submit" variant="primary" name="intent" value="totp-start">
                 {t('settings', 'security.start')}
               </Button>
             </AuthForm>
           )}
         </>
       )}
-    </section>
+    </SettingsSection>
   );
 }
 
@@ -264,15 +280,26 @@ function RecoveryCodes({ codes, host }: { codes: string[]; host: string }) {
   const { t } = useTranslate();
   const [copied, setCopied] = useState(false);
   const text = `${host} recovery codes\n\n${codes.join('\n')}\n`;
+  const download = () => {
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(new Blob([text], { type: 'text/plain;charset=utf-8' }));
+    link.download = `${host}-recovery-codes.txt`;
+    link.click();
+    URL.revokeObjectURL(link.href);
+  };
   return (
-    <div className="auth-note">
-      <b>{t('settings', 'security.saveCodes')}</b>
-      <ul className="codes mono" aria-label={t('settings', 'security.codes')} data-testid="recovery-codes">
+    <Card.Root variant="filled" padding="sm" className="settings__body">
+      <Text as="p" variant="title" size="sm">
+        {t('settings', 'security.saveCodes')}
+      </Text>
+      <ul className="settings__codes" aria-label={t('settings', 'security.codes')} data-testid="recovery-codes">
         {codes.map((code) => (
-          <li key={code}>{code}</li>
+          <li key={code}>
+            <Text variant="mono">{code}</Text>
+          </li>
         ))}
       </ul>
-      <div className="btns">
+      <div className="settings__actions">
         <Button
           variant="neutral"
           onActivate={() => {
@@ -281,19 +308,13 @@ function RecoveryCodes({ codes, host }: { codes: string[]; host: string }) {
         >
           {copied ? t('settings', 'security.copied') : t('settings', 'security.copy')}
         </Button>
-        <a href={`data:text/plain;charset=utf-8,${encodeURIComponent(text)}`} download={`${host}-recovery-codes.txt`}>
+        <Button variant="neutral" onActivate={download}>
           {t('settings', 'security.download')}
-        </a>
+        </Button>
       </div>
-      <label className="chk">
-        <input type="checkbox" />
-        <span>
-          {t('settings', 'security.saved')}
-          <span className="hint"> {t('settings', 'security.savedHint')}</span>
-        </span>
-      </label>
-      <a href="/settings/security">{t('settings', 'security.done')}</a>
-    </div>
+      <Checkbox description={t('settings', 'security.savedHint')}>{t('settings', 'security.saved')}</Checkbox>
+      <Link href="/settings/security">{t('settings', 'security.done')}</Link>
+    </Card.Root>
   );
 }
 
@@ -309,9 +330,8 @@ function Sessions({ sessions }: { sessions: DeviceSession[] }) {
   });
   const day = new Intl.DateTimeFormat(locale, { day: 'numeric', month: 'short', timeZone: 'UTC' });
   return (
-    <section className="sec" aria-labelledby="sec-sessions">
-      <h2 id="sec-sessions">{t('settings', 'security.sessions')}</h2>
-      <ul className="sessions">
+    <SettingsSection id="sec-sessions" title={t('settings', 'security.sessions')}>
+      <ul className="settings__rows">
         {sessions.map((session) => {
           const device =
             session.browser && session.os
@@ -321,19 +341,24 @@ function Sessions({ sessions }: { sessions: DeviceSession[] }) {
           return (
             <li key={session.id} data-testid="session">
               <div>
-                <b>{device}</b>
-                {session.current && <span className="you">{t('settings', 'security.thisDevice')}</span>}
-                <div className="hint">
+                <span className="settings__row-name">
+                  <Text variant="label" size="md">
+                    {device}
+                  </Text>
+                  {session.current && <Badge tone="warning">{t('settings', 'security.thisDevice')}</Badge>}
+                </span>
+                <Text size="sm" color="muted">
                   {session.ip ? t('settings', 'security.meta', { ip: session.ip, ...times }) : t('settings', 'security.metaNoIp', times)}
-                </div>
+                </Text>
               </div>
               {session.current ? (
-                <span className="hint">{t('settings', 'security.currentSession')}</span>
+                <Text size="sm" color="muted">
+                  {t('settings', 'security.currentSession')}
+                </Text>
               ) : (
-                <form method="post" action="/settings/security">
-                  <input type="hidden" name="intent" value="revoke" />
-                  <input type="hidden" name="session" value={session.id} />
-                  <Button type="submit" variant="neutral" size="sm">
+                // The session id rides in the address (the handler reads the query under the form).
+                <form method="post" action={`/settings/security?${new URLSearchParams({ session: session.id })}`}>
+                  <Button type="submit" variant="neutral" size="sm" name="intent" value="revoke">
                     {t('settings', 'security.revoke')}
                   </Button>
                 </form>
@@ -343,13 +368,12 @@ function Sessions({ sessions }: { sessions: DeviceSession[] }) {
         })}
       </ul>
       {sessions.length > 1 && (
-        <form method="post" action="/settings/security" className="btns">
-          <input type="hidden" name="intent" value="revoke-others" />
-          <Button type="submit" variant="neutral">
+        <form method="post" action="/settings/security">
+          <Button type="submit" variant="neutral" name="intent" value="revoke-others">
             {t('settings', 'security.revokeOthers')}
           </Button>
         </form>
       )}
-    </section>
+    </SettingsSection>
   );
 }

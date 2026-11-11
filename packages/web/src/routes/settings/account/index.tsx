@@ -3,7 +3,10 @@ import { deleteAccountAs } from '@peblish/core/identity/delete';
 import { localHandles } from '@peblish/core/identity/handles';
 import { attempt } from '@peblish/core/identity/throttle';
 import { Button } from '@peblish/ui/components/button';
-import { createFileRoute, Link, redirect } from '@tanstack/react-router';
+import { Card } from '@peblish/ui/components/card';
+import { Link } from '@peblish/ui/components/link';
+import { Text } from '@peblish/ui/components/text';
+import { createFileRoute, redirect } from '@tanstack/react-router';
 import { createServerFn } from '@tanstack/react-start';
 import { type } from 'arktype';
 import { useTranslate } from '../../../i18n/use-translate.ts';
@@ -21,8 +24,10 @@ import {
 import { useRouteHydrated } from '../../../shell/hydration.ts';
 import { asFormError } from '../../auth/-ui/errors.ts';
 import { AuthForm, Field } from '../../auth/-ui/form.tsx';
-import { authHead, SearchText, useDate } from '../../auth/-ui/page.tsx';
-import { SettingsLayout } from './-nav.tsx';
+import { SearchText, useDate } from '../../auth/-ui/page.tsx';
+import { Badge } from '@peblish/ui/components/badge';
+import { FactList } from '@peblish/ui/components/fact-list';
+import { SettingsLayout, SettingsSection, settingsHead } from './-nav.tsx';
 
 const Search = type({ 'error?': SearchText });
 const Body = type({ intent: "'delete'", confirm: 'string', password: 'string' });
@@ -37,7 +42,7 @@ const loadAccount = createServerFn({ method: 'GET' }).handler(async () => {
 export const Route = createFileRoute('/settings/account/')({
   validateSearch: Search,
   loader: () => loadAccount(),
-  head: authHead,
+  head: settingsHead,
   component: Account,
   server: {
     handlers: {
@@ -77,46 +82,56 @@ function Account() {
   const date = useDate();
   useRouteHydrated();
   return (
-    <SettingsLayout admin={account.admin}>
-      <h1>{t('settings', 'account.title')}</h1>
-      <section className="sec">
-        <p>
-          <b>{t('settings', 'account.username')}</b> <span className="mono">@{account.handle}</span>
-        </p>
-        <p>
-          <b>{t('settings', 'account.email')}</b> {account.email}{' '}
-          {account.emailVerified ? (
-            <span className="ok-t">{t('settings', 'account.verified')}</span>
-          ) : (
-            <span className="warn-t">
-              {t('settings', 'account.unverified')} <Link to="/auth/verify">{t('settings', 'account.verify')}</Link>
-            </span>
-          )}
-        </p>
-        <p>
-          <b>{t('settings', 'account.age')}</b>{' '}
-          {account.ageDeclaredAt
-            ? t('settings', 'account.declared', { date: date(account.ageDeclaredAt) })
-            : t('settings', 'account.notDeclared')}
-        </p>
-        <form method="post" action="/auth/sign-out">
-          <Button type="submit" variant="neutral">
-            {t('settings', 'account.signOut')}
-          </Button>
-        </form>
-      </section>
-      <section className="sec">
-        <h2>{t('settings', 'account.deleteTitle')}</h2>
-        <p className="hint">{t('settings', 'account.deleteBody')}</p>
+    <SettingsLayout admin={account.admin} title={t('settings', 'account.title')}>
+      <Card.Root className="settings__section">
+        <Card.Body className="settings__body">
+          <FactList
+            items={[
+              { label: t('settings', 'account.username'), value: <Text variant="mono">@{account.handle}</Text> },
+              {
+                label: t('settings', 'account.email'),
+                value: (
+                  <span className="settings__row-name">
+                    {account.email}
+                    {account.emailVerified ? (
+                      <Badge tone="success">{t('settings', 'account.verified')}</Badge>
+                    ) : (
+                      <>
+                        <Badge tone="warning">{t('settings', 'account.unverified')}</Badge>
+                        <Link href="/auth/verify">{t('settings', 'account.verify')}</Link>
+                      </>
+                    )}
+                  </span>
+                ),
+              },
+              {
+                label: t('settings', 'account.age'),
+                value: account.ageDeclaredAt
+                  ? t('settings', 'account.declared', { date: date(account.ageDeclaredAt) })
+                  : t('settings', 'account.notDeclared'),
+              },
+            ]}
+          />
+          <form method="post" action="/auth/sign-out">
+            <Button type="submit" variant="neutral">
+              {t('settings', 'account.signOut')}
+            </Button>
+          </form>
+        </Card.Body>
+      </Card.Root>
+      <SettingsSection id="delete" title={t('settings', 'account.deleteTitle')}>
+        <Text as="p" color="muted">
+          {t('settings', 'account.deleteBody')}
+        </Text>
         <AuthForm action="/settings/account" label={t('settings', 'account.deleteTitle')} error={asFormError(search.error)}>
-          <input type="hidden" name="intent" value="delete" />
           <Field label={t('settings', 'account.confirm')} name="confirm" required autoComplete="off" placeholder={account.name} />
           <Field label={t('settings', 'account.password')} name="password" type="password" required autoComplete="current-password" />
-          <Button type="submit" variant="danger">
+          {/* The intent rides on the submit button, which also submits on Enter (the form's default button). */}
+          <Button type="submit" variant="danger" name="intent" value="delete">
             {t('settings', 'account.delete')}
           </Button>
         </AuthForm>
-      </section>
+      </SettingsSection>
     </SettingsLayout>
   );
 }
