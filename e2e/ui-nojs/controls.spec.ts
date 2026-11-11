@@ -53,6 +53,8 @@ const boxIndicator = (checkbox: Locator) => checkbox.locator('xpath=ancestor::la
 
 /** Clicks a checkbox where its box is drawn: the label around it may hold links (the sign-up terms). */
 async function tick(checkbox: Locator) {
+  // The click is in viewport coordinates.
+  await boxIndicator(checkbox).scrollIntoViewIfNeeded();
   const box = await boxIndicator(checkbox).boundingBox();
   if (!box) throw new Error('the checkbox has no drawn box');
   await checkbox.page().mouse.click(box.x + box.width / 2, box.y + box.height / 2);
@@ -174,6 +176,7 @@ for (const scheme of ['light', 'dark'] as const) {
       await radioLabel(postType(page, 'Link')).click();
       await radioLabel(community(page, world.communities.open.handle)).click();
       await tick(page.getByRole('checkbox', { name: 'NSFW' }));
+      await expect(page.getByRole('checkbox', { name: 'NSFW' })).toBeChecked();
       // Back to Text by keyboard, so it has keyboard focus.
       await radioLabel(postType(page, 'Link')).click();
       await page.keyboard.press('ArrowUp');
@@ -186,7 +189,10 @@ for (const scheme of ['light', 'dark'] as const) {
     await hydrated.addStyleTag({ content: '*, ::before, ::after { transition: none !important; }' });
 
     const before = await drawing(hydrated);
-    expect(await removeInputStateRules(hydrated)).toBeGreaterThanOrEqual(10);
+    const { removed, families } = await removeInputStateRules(hydrated);
+    expect(removed).toBeGreaterThanOrEqual(10);
+    // Each kind of control the comparison is about had its rules removed, so none is left drawing.
+    for (const [family, rules] of Object.entries(families)) expect(rules, `rules removed for the ${family}`).toBeGreaterThan(0);
     expect(await drawing(hydrated)).toEqual(before);
 
     const parts = (page: Page) => [

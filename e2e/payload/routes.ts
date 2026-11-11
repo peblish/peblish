@@ -24,6 +24,11 @@ export interface PayloadRoute {
   fonts?: true;
   /** A ceiling of its own for the React and Mux JavaScript, in place of the product pages' budget. */
   js?: number;
+  /**
+   * Text the page must show before it is measured, from data seeded on the lane database. A remote
+   * BASE_URL still measures the page, without this check.
+   */
+  shows?: (baseURL: string) => Promise<RegExp>;
 }
 
 /** A post page needs a post: the first one lane B1's seed (testing/seed-b1.ts) puts in the database. */
@@ -66,13 +71,29 @@ const seededReport = async (base: string) => {
 let reported: ReturnType<typeof seededReport> | undefined;
 const reportedOnce = (base: string) => (reported ??= seededReport(base));
 
+const bidiControls = '\\u202A-\\u202E\\u2066-\\u2069\\u200E\\u200F\\u061C';
+const escaped = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+/**
+ * The name part of a community handle as `Handle` draws it: `!` and the name, each directional
+ * control replaced by one visible character (the replacement mark), never left as the control.
+ * Whichever mark the app picks, the font check then measures the glyph it is drawn with.
+ */
+function drawnName(handle: string): RegExp {
+  const name = handle.slice(0, handle.lastIndexOf('@'));
+  const parts = name.split(new RegExp(`[${bidiControls}]`));
+  if (parts.length < 2) throw new Error(`${JSON.stringify(handle)} has no directional control in its name`);
+  return new RegExp(`^!${parts.map(escaped).join(`[^\\s${bidiControls}]`)}$`);
+}
+
 export const routes: readonly PayloadRoute[] = [
   { route: '/', path: '/' },
   { route: '/all/', path: '/all' },
   { route: '/local/', path: '/local' },
   { route: '/popular/', path: '/popular' },
   { route: '/moderating/', path: '/moderating' },
-  { route: '/communities/', path: '/communities' },
+  // Seeded first, so the font budget always measures the replacement mark at the head of the list.
+  { route: '/communities/', path: '/communities', shows: async (base) => drawnName((await fixtures(base)).bidiCommunity) },
   { route: '/resolve/', path: '/resolve' },
   { route: '/auth/sign-in', path: '/auth/sign-in' },
   { route: '/auth/sign-up', path: '/auth/sign-up' },

@@ -46,8 +46,17 @@ interface Transfer {
 
 type StorageState = NonNullable<BrowserContextOptions['storageState']>;
 
-/** Visits `path` once with an empty cache (cookies aside) and returns every same-origin response the page loaded. */
-async function firstVisit(browser: Browser, origin: string, path: string, locale: string, storageState?: StorageState) {
+/**
+ * Visits `path` once with an empty cache (cookies aside) and returns every same-origin response the
+ * page loaded. `shows`, when given, must be visible on the page before its responses are counted.
+ */
+async function firstVisit(
+  browser: Browser,
+  origin: string,
+  path: string,
+  locale: string,
+  { storageState, shows }: { storageState?: StorageState; shows?: RegExp } = {},
+) {
   const context = await browser.newContext({ baseURL: origin, locale, extraHTTPHeaders: { 'Accept-Language': locale }, storageState });
   try {
     const page = await context.newPage();
@@ -69,6 +78,7 @@ async function firstVisit(browser: Browser, origin: string, path: string, locale
       );
     });
     await gotoHydrated(page, path);
+    if (shows) await expect(page.getByText(shows).first(), `the page shows ${shows}`).toBeVisible();
     await page.waitForLoadState('networkidle');
     const muxHref = await page.locator('link#pb-mux-css').getAttribute('href');
     return { all: (await Promise.all(transfers)).filter((transfer) => transfer !== null), muxHref };
@@ -131,13 +141,10 @@ for (const route of routes) {
     test.skip(remote && Boolean(route.target ?? route.admin), 'needs the lane database for its seed (DATABASE_URL)');
     const origin = new URL(baseURL!).origin;
     const path = (await route.target?.(origin)) ?? route.path;
-    const { all, muxHref } = await firstVisit(
-      browser,
-      origin,
-      path,
-      'en-US',
-      route.admin ? await adminSession(browser, origin) : undefined,
-    );
+    const { all, muxHref } = await firstVisit(browser, origin, path, 'en-US', {
+      storageState: route.admin ? await adminSession(browser, origin) : undefined,
+      shows: remote ? undefined : await route.shows?.(origin),
+    });
     const scripts = all.filter(({ path, type }) => path.endsWith('.js') && /javascript/.test(type));
     const sum = (list: Transfer[]) => list.reduce((total, { bytes }) => total + bytes, 0);
 
