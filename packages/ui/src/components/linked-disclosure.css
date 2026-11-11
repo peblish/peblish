@@ -6,9 +6,7 @@
   }
 
   /* A long title ("Ban from !community@a-very-long-host.example") wraps instead of running past
-     its column: Mux keeps an ungrouped trigger on one line, and a button may not inherit the
-     body's overflow-wrap. */
-  .pb-linked-disclosure .muxui-disclosure__trigger,
+     its column in the two stand-ins, as Mux's own trigger already does. */
   .pb-linked-disclosure__open,
   .pb-linked-disclosure__label {
     min-inline-size: 0;

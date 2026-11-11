@@ -38,9 +38,10 @@ const key = 'panel';
  * linked-disclosure.css), so the markup is the same before and after hydration.
  *
  * The Disclosure sits alone in a `DisclosureGroup`, where Mux draws its chevron. The stand-in is
- * outside the group, whose rules count on the Disclosure being its first and last child. The
- * root is a `div` that keeps the caller's `id` (Mux's Disclosure renders none), so `openHref`
- * can carry a fragment to it.
+ * outside the group, whose rules count on the Disclosure being its first and last child, so the
+ * root is a `div` that holds both and keeps the caller's `id`, class and attributes; `openHref`
+ * can carry a fragment to it. (Mux UI rc.7's Disclosure keeps an `id` of its own, but the
+ * stand-in still needs a root outside the group.)
  */
 export function LinkedDisclosure({
   title,
