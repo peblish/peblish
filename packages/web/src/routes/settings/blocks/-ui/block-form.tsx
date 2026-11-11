@@ -20,14 +20,11 @@ export function BlockForm({
   fields,
   kind,
   className,
-  inline = false,
   children,
 }: {
   fields: Record<string, string>;
   kind: Kind;
   className?: string;
-  /** For a slot beside other row actions: the form flows with them. */
-  inline?: boolean;
   children: ReactNode;
 }) {
   const { t } = useTranslate();
@@ -68,15 +65,7 @@ export function BlockForm({
 
   const message = error && blockError(error.code, tabOfKind[kind], error.query);
   return (
-    <form
-      method="post"
-      action={action}
-      aria-busy={busy}
-      className={className}
-      // Layout only, inline: a slot sits on pages that do not load the blocks stylesheet.
-      style={inline ? { display: 'inline', margin: 0 } : undefined}
-      onSubmit={submit}
-    >
+    <form method="post" action={action} aria-busy={busy} className={className} onSubmit={submit}>
       {children}
       {message && (
         <Notice tone="danger" role="alert">

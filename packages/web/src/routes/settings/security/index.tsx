@@ -211,11 +211,15 @@ function TwoFactorSection({ data, error }: { data: SecurityData; error: (form: s
                       <Text as="p" variant="mono" data-testid="totp-key">
                         {data.setup.key.match(/.{1,4}/g)?.join(' ')}
                       </Text>
-                      <Text as="p" size="sm" color="muted">
-                        {t('settings', 'security.accountLine', { email: data.email })}
-                        <br />
-                        {t('settings', 'security.issuerLine', { host: data.host })}
-                      </Text>
+                      {/* Two lines with no gap between them, as one paragraph broken in two. */}
+                      <div>
+                        <Text as="p" size="sm" color="muted">
+                          {t('settings', 'security.accountLine', { email: data.email })}
+                        </Text>
+                        <Text as="p" size="sm" color="muted">
+                          {t('settings', 'security.issuerLine', { host: data.host })}
+                        </Text>
+                      </div>
                     </div>
                   </div>
                 </div>

@@ -19,15 +19,13 @@
     align-content: start;
     min-width: 0;
   }
-  .settings__main > h1 {
-    margin: 0;
-  }
   .settings__body {
     display: grid;
     gap: var(--muxui-semantic-layout-group-gap);
   }
-  .settings__body > p,
-  .settings__body form > p {
+  /* Paragraph Text keeps no browser margin: the gaps space the parts. */
+  .settings__body > :where(.muxui-text),
+  .settings__body form > :where(.muxui-text) {
     margin: 0;
   }
   /* Forms keep a readable measure inside a wide card. */
@@ -37,7 +35,7 @@
     max-width: 24rem;
     margin: 0;
   }
-  .settings__body form > button {
+  .settings__body form > :where(.muxui-button) {
     justify-self: start;
   }
   .settings__actions {
@@ -79,8 +77,14 @@
     display: grid;
     gap: var(--muxui-semantic-layout-tight-gap);
   }
-  .settings__qr p {
+  .settings__qr :where(.muxui-text) {
     margin: 0;
+  }
+  /* The QR code (auth/-ui/qr.tsx) at a fixed size that scans well. */
+  .settings__qr .qr {
+    width: 148px;
+    height: 148px;
+    flex: none;
   }
 
   /* Recovery codes, two columns of mono text. */
