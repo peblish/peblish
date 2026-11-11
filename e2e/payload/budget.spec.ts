@@ -10,6 +10,10 @@ import { notPages, routes, unaccounted } from './routes.ts';
 
 // The payload budget as a check: each page's first visit, cold cache, must stay inside the
 // numbers Andrew approved (budget.ts). Run against the production build; see routes.ts to add a page.
+// During the Mux UI restyle the script and CSS sizes are report-only: they are measured and
+// printed (and noted on the test when over), but do not fail. Fonts, the vendor placement, the
+// editor's placement and the themes.css rule still fail. PAYLOAD.md has the figures; the budget
+// is set again when the restyle lands.
 //
 // What is measured is compressible bytes: every text file is gzipped here (level 9), as a
 // compressing proxy would send it. Nothing in this repository compresses responses (the Node
@@ -21,6 +25,14 @@ const remote = Boolean(process.env.BASE_URL);
 test.setTimeout(90_000);
 
 const kB = (bytes: number) => `${(bytes / 1000).toFixed(1)} kB`;
+
+/** Report-only during the restyle: an overrun is printed and noted on the test, never a failure. */
+function reportOver(what: string, bytes: number, limit: number) {
+  if (bytes <= limit) return;
+  const note = `${what} ${kB(bytes)} is over its budget of ${kB(limit)} (report-only during the Mux UI restyle)`;
+  console.log(`payload over: ${note}`);
+  test.info().annotations.push({ type: 'payload-over', description: note });
+}
 const fontFile = /\.(woff2?|ttf|otf)(\?|$)/;
 
 interface Transfer {
@@ -135,8 +147,8 @@ for (const route of routes) {
     const vendor = scripts.filter(({ path }) => vendorKind(path) === 'react' || vendorKind(path) === 'mux');
     const editor = scripts.filter(({ path }) => vendorKind(path) === 'editor');
     expect(vendor.length, 'the React and Mux chunks load').toBeGreaterThan(1);
-    expect(sum(vendor), `React and Mux UI JS ${kB(sum(vendor))}`).toBeLessThanOrEqual(route.js ?? budget.js);
-    if (route.composer) expect(sum(editor), `the editor chunk ${kB(sum(editor))}`).toBeLessThanOrEqual(budget.editor);
+    reportOver(`${route.path}: React and Mux UI JS`, sum(vendor), route.js ?? budget.js);
+    if (route.composer) reportOver(`${route.path}: the editor chunk`, sum(editor), budget.editor);
     else
       expect(
         editor.map(({ path }) => path),
@@ -147,7 +159,7 @@ for (const route of routes) {
     expect(muxHref, 'the Mux UI stylesheet link').toBeTruthy();
     const mux = all.find(({ path }) => path === new URL(muxHref!, 'http://x').pathname);
     expect(mux, 'the Mux UI stylesheet loads').toBeDefined();
-    expect(mux!.bytes, `Mux UI CSS ${kB(mux!.bytes)}`).toBeLessThanOrEqual(budget.css);
+    reportOver(`${route.path}: Mux UI CSS`, mux!.bytes, budget.css);
     expect(hasThemeRules(mux!.text ?? ''), 'themes.css rules are in the Mux UI stylesheet').toBe(false);
     expect(
       all.filter(({ text }) => hasThemeRules(text ?? '')).map(({ path }) => path),

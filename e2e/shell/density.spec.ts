@@ -98,23 +98,24 @@ test('a page with scripts off still shows the stored density and scheme', async 
   const page = await context.newPage();
   await page.goto('/kit');
   await expect(page.getByTestId('kit-feed').locator('article').first()).toHaveAttribute('data-density', 'compact');
-  expect(await page.evaluate(() => getComputedStyle(document.body).backgroundColor)).toBe('rgb(0, 0, 0)');
+  // A stored true black (no longer offered) renders as Mux UI's own dark scheme.
+  await expect(page.locator('html')).toHaveAttribute('data-muxui-color-scheme', 'dark');
+  expect(await page.evaluate(() => getComputedStyle(document.body).backgroundColor)).not.toBe('rgb(0, 0, 0)');
   await context.close();
 });
 
-test('the appearance menu changes the scheme: true black is #000, and it is stored', async ({ page, context }) => {
+test('the appearance menu changes the scheme: true black is Mux UI dark, and it is stored', async ({ page, context }) => {
   await gotoHydrated(page, '/kit');
   await page.getByText('Appearance', { exact: true }).click();
   await page.getByRole('button', { name: 'True black' }).click();
   await expect(page.locator('html')).toHaveAttribute('data-scheme', 'black');
   await expect(page.locator('html')).toHaveAttribute('data-muxui-color-scheme', 'dark');
-  expect(await page.evaluate(() => getComputedStyle(document.body).backgroundColor)).toBe('rgb(0, 0, 0)');
-  expect(await page.evaluate(() => getComputedStyle(document.body).color)).toBe('rgb(255, 255, 255)');
+  // The app has no third scheme: the body takes Mux UI's dark surface, not #000.
+  expect(await page.evaluate(() => getComputedStyle(document.body).backgroundColor)).not.toBe('rgb(0, 0, 0)');
   await expect.poll(async () => (await context.cookies()).find(({ name }) => name === 'peblish_prefs')?.value).toContain('scheme=black');
 
   await page.getByRole('button', { name: 'Light' }).click();
   await expect(page.locator('html')).toHaveAttribute('data-muxui-color-scheme', 'light');
-  expect(await page.evaluate(() => getComputedStyle(document.body).backgroundColor)).not.toBe('rgb(0, 0, 0)');
 });
 
 test('"system" follows the operating system before the first paint', async ({ browser, baseURL }) => {
