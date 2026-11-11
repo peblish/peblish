@@ -21,7 +21,8 @@ import { AuthForm, Field } from '../../auth/-ui/form.tsx';
 import { SearchText } from '../../auth/-ui/page.tsx';
 import { QrCode } from '../../auth/-ui/qr.tsx';
 import { SettingsLayout, SettingsSection, settingsHead } from '../account/-nav.tsx';
-import { Badge, Notice } from '../-ui/interim.tsx';
+import { Badge } from '@peblish/ui/components/badge';
+import { Notice } from '@peblish/ui/components/notice';
 
 const Search = type({ 'error?': SearchText, 'form?': SearchText, 'saved?': SearchText });
 const Body = type({ intent: "'password'", current: 'string', next: 'string' })

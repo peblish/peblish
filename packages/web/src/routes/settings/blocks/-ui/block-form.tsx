@@ -3,7 +3,7 @@ import { type } from 'arktype';
 import { useState, type FormEvent, type ReactNode } from 'react';
 import { useTranslate } from '../../../../i18n/use-translate.ts';
 import { tabOfKind, blocksPath } from '../-tabs.ts';
-import { Notice } from '../../-ui/interim.tsx';
+import { Notice } from '@peblish/ui/components/notice';
 import { blockError } from './errors.ts';
 
 const Answer = type({ 'redirect?': 'string', 'error?': 'string' });

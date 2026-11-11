@@ -25,7 +25,8 @@ import { useRouteHydrated } from '../../../shell/hydration.ts';
 import { asFormError } from '../../auth/-ui/errors.ts';
 import { AuthForm, Field } from '../../auth/-ui/form.tsx';
 import { SearchText, useDate } from '../../auth/-ui/page.tsx';
-import { Badge, FactList } from '../-ui/interim.tsx';
+import { Badge } from '@peblish/ui/components/badge';
+import { FactList } from '@peblish/ui/components/fact-list';
 import { SettingsLayout, SettingsSection, settingsHead } from './-nav.tsx';
 
 const Search = type({ 'error?': SearchText });
