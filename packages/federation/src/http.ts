@@ -9,6 +9,7 @@ import { localOrigin } from './federation.ts';
 import { receiveInbound } from './inbound/receive.ts';
 import { serveNodeInfo } from './nodeinfo/serve.ts';
 import { serveWebFinger } from './webfinger/serve.ts';
+import { errorLine } from '@peblish/core/error-line';
 
 /** PieFed's instance actor inbox; an inbox only where the stored instance actor's inbox is this URL (instanceInboxHere). */
 const instanceActorInbox = /^\/actor\/inbox$/;
@@ -131,7 +132,7 @@ export async function handleFederationRequest(request: Request, context: Federat
     if (response && request.method === 'HEAD') return new Response(null, { status: response.status, headers: response.headers });
     return response;
   } catch (error) {
-    console.error(`federation: ${request.method} ${new URL(request.url).pathname} failed`, error);
+    console.error(`federation: ${request.method} ${new URL(request.url).pathname} failed: ${errorLine(error)}`);
     return new Response('try again later', { status: 503, headers: { 'Retry-After': String(retryAfterSeconds) } });
   }
 }

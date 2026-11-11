@@ -11,6 +11,7 @@ import { fromWire } from '../mapping/document.ts';
 import { MappingError } from '../mapping/json.ts';
 import { readObject, storeObject, type ObjectOutcome } from '../remote-fetch/object.ts';
 import { limit, type Limited } from './limit.ts';
+import { errorLine } from '@peblish/core/error-line';
 
 // Lane DISC's resolver, the one file web imports from federation (lint rule
 // web-federation-entry-points). It finds a remote community, person, post or comment from a
@@ -211,7 +212,7 @@ export async function resolveLookup(lookup: Lookup, { fetch = safeFetch }: { fet
     if (error instanceof Stop) return { ok: false, error: error.code };
     // The switch went off while this lookup ran.
     if (error instanceof FederationPaused) return { ok: false, error: 'resolve.paused' };
-    console.error('resolve: unexpected failure', error);
+    console.error(`resolve: unexpected failure: ${errorLine(error)}`);
     return { ok: false, error: 'generic' };
   }
 }

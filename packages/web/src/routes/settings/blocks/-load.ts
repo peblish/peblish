@@ -4,6 +4,7 @@ import { redirect } from '@tanstack/react-router';
 import { type } from 'arktype';
 import { pageSession } from '../../../server/auth.ts';
 import { blocksHref, blocksPath, blockTabs, kindOfTab, type BlockTab } from './-tabs.ts';
+import { input } from '../../../server/input.ts';
 
 /** One line of a list: who or what is blocked, when, and (for an instance) what that hides. */
 export type BlockRow = {
@@ -25,7 +26,7 @@ export type BlocksData = {
 
 /** The page's data (a server function: private, as it depends on who asks). A signed-out visitor is sent to sign in. */
 export const loadBlocks = createServerFn({ method: 'GET' })
-  .validator(type({ tab: type.enumerated(...blockTabs), 'just?': 'string' }))
+  .validator(input(type({ tab: type.enumerated(...blockTabs), 'just?': 'string' })))
   .handler(async ({ data }): Promise<BlocksData> => {
     const session = await pageSession();
     if (!session) throw redirect({ to: '/auth/sign-in', search: { redirect: blocksHref(data.tab) } });

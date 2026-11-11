@@ -6,6 +6,7 @@ import { type } from 'arktype';
 import { pageSession, principalOf } from '../../server/auth.ts';
 import { requestNsfw } from '../c/-gate.ts';
 import { reportBack } from './-back.ts';
+import { input } from '../../server/input.ts';
 
 /** The target of a report, as the pages and the dialog name it. */
 export const ReportTargetInput = type({ kind: "'post' | 'comment' | 'actor'", id: Uuid });
@@ -21,7 +22,7 @@ const pageBack = (back: string | undefined) => reportBack(back, new URL(getReque
  * this site for the page's Cancel link.
  */
 export const loadReportForm = createServerFn({ method: 'GET' })
-  .validator(ReportTargetInput.and({ 'back?': 'string' }))
+  .validator(input(ReportTargetInput.and({ 'back?': 'string' })))
   .handler(async ({ data: { back, ...target } }) => {
     const session = await pageSession();
     if (!session) return { ok: false, reason: 'auth.required', back: pageBack(back) } as const;
@@ -31,7 +32,7 @@ export const loadReportForm = createServerFn({ method: 'GET' })
 
 /** The sent page's data: the reporter's own report by number, else null (not found), and the safe `back` for Done. */
 export const loadSentReport = createServerFn({ method: 'GET' })
-  .validator(type({ number: 'number.integer > 0', 'back?': 'string' }))
+  .validator(input(type({ number: 'number.integer > 0', 'back?': 'string' })))
   .handler(async ({ data }) => {
     const session = await pageSession();
     if (!session) return { signedOut: true } as const;

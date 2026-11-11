@@ -8,6 +8,7 @@ import { createMarkdownRenderer, siteMarkdown } from '../../../../server/markdow
 import { gateData, requestNsfw } from '../../../c/-gate.ts';
 import { commentPath } from '../../../../shell/paths.ts';
 import { loadThread, threadShown } from './-thread.ts';
+import { input } from '../../../../server/input.ts';
 
 /**
  * A post's thread in the sort asked for, for the thread section once the page is hydrated
@@ -15,7 +16,7 @@ import { loadThread, threadShown } from './-thread.ts';
  * post or the thread is not shown to this viewer.
  */
 export const loadThreadFn = createServerFn({ method: 'GET' })
-  .validator(type({ postId: Uuid, sort: ThreadSortParam, 'after?': 'string', 'rootId?': Uuid }))
+  .validator(input(type({ postId: Uuid, sort: ThreadSortParam, 'after?': 'string', 'rootId?': Uuid })))
   .handler(async ({ data }) => {
     const session = await pageSession();
     const viewer: Viewer = session ? { actorId: session.view.actorId, siteRole: session.view.siteRole } : null;
@@ -39,7 +40,7 @@ export const loadThreadFn = createServerFn({ method: 'GET' })
  * when the post or the comment does not exist.
  */
 export const loadPermalinkFn = createServerFn({ method: 'GET' })
-  .validator(type({ postId: 'string', commentId: 'string', sort: ThreadSortParam, 'after?': 'string' }))
+  .validator(input(type({ postId: 'string', commentId: 'string', sort: ThreadSortParam, 'after?': 'string' })))
   .handler(async ({ data }) => {
     if (!Uuid.allows(data.postId) || !Uuid.allows(data.commentId)) return null;
     const session = await pageSession();

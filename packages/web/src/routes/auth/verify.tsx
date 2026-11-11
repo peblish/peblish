@@ -16,6 +16,8 @@ import { asFormError } from './-ui/errors.ts';
 import { AuthForm, rich } from './-ui/form.tsx';
 import { authHead, SearchText } from './-route.ts';
 import { AuthCard } from './-ui/page.tsx';
+import { input } from '../../server/input.ts';
+import { errorLine } from '@peblish/core/error-line';
 
 const Search = type({ 'error?': SearchText, 'token?': SearchText, 'sent?': SearchText });
 
@@ -24,7 +26,7 @@ const Search = type({ 'error?': SearchText, 'token?': SearchText, 'sent?': Searc
  * writes. Without, it shows the signed-in person's pending or verified address.
  */
 const loadVerify = createServerFn({ method: 'POST' })
-  .validator(type({ 'token?': 'string' }))
+  .validator(input(type({ 'token?': 'string' })))
   .handler(async ({ data }) => {
     const session = await pageSession();
     if (data.token) return { state: await verifyEmailToken(data.token), email: null, signedIn: session !== null };
@@ -55,7 +57,7 @@ export const Route = createFileRoute('/auth/verify')({
         try {
           await (await auth()).api.sendVerificationEmail({ body: { email: session.email } });
         } catch (error) {
-          console.error('verify: sending the link failed', error);
+          console.error(`verify: sending the link failed: ${errorLine(error)}`);
           return reply({ error: 'mail.failed', back: '/auth/verify' });
         }
         return reply({ redirect: '/auth/verify?sent=yes' });

@@ -6,6 +6,7 @@ import { setResponseStatus } from '@tanstack/react-start/server';
 import { type } from 'arktype';
 import { pageSession, principalOf } from '../../server/auth.ts';
 import { emptyValues, type FormValues } from './-form.ts';
+import { input } from '../../server/input.ts';
 
 // What the community form pages load (server functions). A signed-out viewer is sent to sign in
 // by the route; a viewer who may not use the form sees the reason in place, with status 403.
@@ -31,7 +32,7 @@ export const loadNewCommunity = createServerFn({ method: 'GET' }).handler(async 
 
 /** /c/<handle>/edit: the owner, a moderator or a site admin of a community of this server. */
 export const loadEditCommunity = createServerFn({ method: 'GET' })
-  .validator(type({ handle: 'string' }))
+  .validator(input(type({ handle: 'string' })))
   .handler(async ({ data }): Promise<FormData> => {
     const session = await pageSession();
     const id = await findCommunityId(data.handle);

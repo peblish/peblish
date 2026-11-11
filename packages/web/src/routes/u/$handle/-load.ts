@@ -15,6 +15,7 @@ import { pageSession } from '../../../server/auth.ts';
 import { createMarkdownRenderer } from '../../../server/markdown.ts';
 import { userPath } from '../../../shell/paths.ts';
 import { feedItem, type FeedItem } from '../../index/-feed/items.ts';
+import { input } from '../../../server/input.ts';
 
 /** One line of the activity list. A comment carries its rendered text and where it was said. */
 export type ProfileEntry =
@@ -133,7 +134,7 @@ const Request = type({
 });
 
 export const loadProfile = createServerFn({ method: 'GET' })
-  .validator(Request)
+  .validator(input(Request))
   .handler(async ({ data }): Promise<ProfileData | null> => {
     const built = await buildProfile(data, true);
     // A path that negotiates by Accept falls through federation to the page with a status the page does not set itself.
@@ -145,7 +146,7 @@ export const loadProfile = createServerFn({ method: 'GET' })
 export type EditData = { profile: ProfileData; form: { displayName: string; bio: string } };
 
 export const loadEdit = createServerFn({ method: 'GET' })
-  .validator(type({ handle: 'string <= 300' }))
+  .validator(input(type({ handle: 'string <= 300' })))
   .handler(async ({ data }): Promise<EditData | null> => {
     const built = await buildProfile({ handle: data.handle, tab: 'overview', sort: 'new' }, false);
     if (!built) return null;

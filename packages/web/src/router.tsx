@@ -1,7 +1,7 @@
 import { createRouter, type AnyRoute } from '@tanstack/react-router';
 import { routeTree } from './routeTree.gen';
 import { PageError } from './shell/error-page.tsx';
-import { describeRouteFailure } from './shell/route-failure.ts';
+import { logRouteFailure } from './shell/route-failure.ts';
 
 /** Routes whose server-side onError already hides the cause (the route objects outlive each request's router). */
 const guarded = new WeakSet<AnyRoute>();
@@ -20,7 +20,7 @@ function hideServerErrors(routes: readonly AnyRoute[]): void {
     const own = route.options.onError;
     route.options.onError = (error: unknown) => {
       own?.(error);
-      console.error(describeRouteFailure(route.id, error));
+      logRouteFailure(route.id, error);
       throw new Error('route failed');
     };
   }

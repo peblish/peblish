@@ -1,61 +1,37 @@
+import { errorLine, issueSummary } from '@peblish/core/error-line';
+import { InputError } from '../server/input.ts';
+
 /**
- * The server log entry for a route that failed (router.tsx). It must not carry what a visitor
- * typed: the query string, a form's body, a cookie, an address or a handle. So:
+ * The server log entry for a route that failed (router.tsx): one physical line that never
+ * carries what a visitor typed (the query string, a path parameter, a form's body, a cookie, an
+ * address or a handle).
  *
- * - A search or path parameter failure (the router's SearchParamError, with the Standard Schema
- *   result as its cause) is one line: each failing parameter's name and ArkType's code for the
- *   problem. The issue messages are left out, as ArkType quotes the value ("was ...").
- * - Any other failure (a loader or beforeLoad error) keeps its name, code, message and stack
- *   frames, and those of its causes, except the parts known to quote input: drizzle's `params:`
- *   list and the quoted values in a Postgres message.
+ * - A search or path parameter failure (the router's SearchParamError or PathParamError, with
+ *   the Standard Schema result as its cause) and a server function's refused input (InputError,
+ *   server/input.ts) name each failing parameter and ArkType's code for the problem.
+ * - Anything else is described by core's errorLine: class, code, the first frame in the app's
+ *   code, and its causes. No message is read, whoever built it.
  *
  * Redirects and not-found never reach a route's onError, so they are never logged.
  */
 export function describeRouteFailure(routeId: string, error: unknown): string {
-  const head = `route ${routeId} failed:`;
-  if (!(error instanceof Error)) return `${head} a thrown ${typeof error}`;
-  const name = className(error);
-  if (name === 'SearchParamError' || name === 'PathParamError') return `${head} ${name} (${parameterProblems(error.cause)})`;
-  const frames = (error.stack ?? '').split('\n').filter((line) => line.startsWith('    at '));
-  return [`${head} ${causeChain(error)}`, ...frames].join('\n');
+  return `route ${routeId} failed: ${describe(error)}`;
 }
 
-/** The router's error classes set no `name`, so their constructor names them. */
-function className(error: Error): string {
-  const constructorName = error.constructor.name;
-  return error.name === 'Error' && constructorName && constructorName !== 'Error' ? constructorName : error.name;
+export function logRouteFailure(routeId: string, error: unknown): void {
+  console.error(describeRouteFailure(routeId, error));
 }
 
-type Issue = { path?: readonly unknown[]; code?: unknown };
+function describe(error: unknown): string {
+  if (error instanceof InputError) return `InputError (${error.problems})`;
+  if (error instanceof Error) {
+    const name = error.constructor.name;
+    if (name === 'SearchParamError' || name === 'PathParamError') return `${name} (${parameterProblems(error.cause)})`;
+  }
+  return errorLine(error);
+}
 
 function parameterProblems(cause: unknown): string {
-  if (!cause || typeof cause !== 'object' || !('issues' in cause) || !Array.isArray(cause.issues)) {
-    return cause instanceof Error ? `the validator threw ${className(cause)}` : 'the validator failed';
-  }
-  return cause.issues
-    .map((issue: Issue) => {
-      const key = (issue.path ?? []).map((part) => String(part && typeof part === 'object' && 'key' in part ? part.key : part)).join('.');
-      return `${key || '(all)'}: ${typeof issue.code === 'string' ? issue.code : 'invalid'}`;
-    })
-    .join(', ');
-}
-
-/** "Name code: message; caused by ...", three causes deep at most. */
-function causeChain(error: Error): string {
-  const parts: string[] = [];
-  let current: unknown = error;
-  while (current instanceof Error && parts.length < 4) {
-    const code = 'code' in current && typeof current.code === 'string' ? ` ${current.code}` : '';
-    parts.push(`${className(current)}${code}: ${safeMessage(current)}`);
-    current = current.cause;
-  }
-  return parts.join('; caused by ');
-}
-
-function safeMessage(error: Error): string {
-  // DrizzleQueryError: "Failed query: <sql>\nparams: <values>". The SQL has placeholders only.
-  if ('query' in error && typeof error.query === 'string' && 'params' in error) return `Failed query: ${error.query}`;
-  // PostgresError quotes the offending value: invalid input syntax for type uuid: "<value>".
-  if ('severity' in error) return error.message.replace(/"[^"]*"/g, '"…"');
-  return error.message;
+  if (cause && typeof cause === 'object' && 'issues' in cause && Array.isArray(cause.issues)) return issueSummary(cause.issues);
+  return cause instanceof Error ? `the validator threw ${errorLine(cause).split(' ')[0]}` : 'the validator failed';
 }

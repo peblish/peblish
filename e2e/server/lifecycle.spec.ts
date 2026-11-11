@@ -87,6 +87,20 @@ async function leaveEarly(origin: string, path: string, ms: number): Promise<voi
   socket.destroy();
 }
 
+/** The lane's database, which the specs that need real data boot their servers with. */
+function laneDatabase(): string {
+  const url = process.env.DATABASE_URL;
+  if (!url) throw new Error('DATABASE_URL is unset: run lane_env=$(sh scripts/lane.sh <lane>) && eval "$lane_env" first');
+  return url;
+}
+
+/** What the server logged, without its start-up line. */
+const logLines = (server: Booted) =>
+  server
+    .output()
+    .split('\n')
+    .filter((line) => line && !line.startsWith('➜ Listening on:'));
+
 test.describe('server lifecycle', () => {
   // These start their own servers from the local build; against BASE_URL there is no build to start.
   test.skip(Boolean(process.env.BASE_URL), 'starts its own servers from packages/web/.output');
@@ -160,6 +174,48 @@ test.describe('server lifecycle', () => {
         .split('\n')
         .filter((line) => line && !line.startsWith('➜'));
       expect(logged).toEqual(['route /post/$id/ failed: SearchParamError (error: domain)']);
+    } finally {
+      await stop(server);
+    }
+  });
+
+  test("a profile whose handle the loader refuses logs one line naming the parameter, never the visitor's value", async () => {
+    const server = await boot(laneDatabase());
+    try {
+      const marker = 'MARKER-typed-by-a-visitor@example.test';
+      // loadProfile takes a handle of at most 300 characters; its validator refuses the rest.
+      const response = await fetch(`${server.origin}/u/${'a'.repeat(310)}${encodeURIComponent(marker)}`);
+      expect(response.status).toBe(500);
+      await expect.poll(() => server.output()).toContain('failed');
+      expect(server.output()).not.toContain('MARKER');
+      expect(logLines(server)).toEqual(['route /u/$handle/ failed: InputError (handle: maxLength)']);
+    } finally {
+      await stop(server);
+    }
+  });
+
+  test("no address a visitor can type into a route's path parameters puts it in the log", async () => {
+    const server = await boot(laneDatabase());
+    try {
+      const marker = encodeURIComponent(`${'a'.repeat(310)}MARKER-typed-by-a-visitor@example.test`);
+      const uuid = '00000000-0000-0000-0000-000000000000';
+      for (const path of [
+        `/u/${marker}/edit`,
+        `/c/${marker}`,
+        `/c/${marker}/edit`,
+        `/post/${marker}`,
+        `/post/${uuid}/comments/${marker}`,
+        `/invite/${marker}`,
+        `/${marker}`,
+        `/admin/pages/${marker}/${marker}`,
+      ]) {
+        const response = await fetch(`${server.origin}${path}`, { redirect: 'manual' });
+        expect(response.status, path).toBeLessThan(600);
+      }
+      // Give the last request's log line time to arrive.
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      expect(server.output()).not.toContain('MARKER');
+      for (const line of logLines(server)) expect(line).toMatch(/^route \S+ failed: \S+/);
     } finally {
       await stop(server);
     }

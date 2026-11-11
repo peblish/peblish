@@ -6,6 +6,7 @@ import { type } from 'arktype';
 import { pageSession } from '../../../server/auth.ts';
 import { createMarkdownRenderer } from '../../../server/markdown.ts';
 import { feedItem, type FeedItem } from './items.ts';
+import { input } from '../../../server/input.ts';
 
 /**
  * A feed page for the route loader (a server function: it runs on the server for a document
@@ -15,7 +16,9 @@ import { feedItem, type FeedItem } from './items.ts';
  * `signIn: true` and no posts.
  */
 export const loadFeed = createServerFn({ method: 'GET' })
-  .validator(type({ feed: "'home' | 'local' | 'all' | 'popular' | 'moderating'", sort: Sort, period: Period, 'cursor?': 'string <= 400' }))
+  .validator(
+    input(type({ feed: "'home' | 'local' | 'all' | 'popular' | 'moderating'", sort: Sort, period: Period, 'cursor?': 'string <= 400' })),
+  )
   .handler(async ({ data }) => {
     const session = await pageSession();
     const viewer: Viewer = session ? { actorId: session.view.actorId, siteRole: session.view.siteRole } : null;

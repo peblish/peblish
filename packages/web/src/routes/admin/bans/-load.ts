@@ -7,6 +7,7 @@ import { type } from 'arktype';
 import { pageSession } from '../../../server/auth.ts';
 import { adminPaths } from '../../../shell/paths.ts';
 import { type Access, accessOf } from '../settings/-access.ts';
+import { input } from '../../../server/input.ts';
 
 export type BansData =
   | { access: Exclude<Access, 'ok'> }
@@ -18,7 +19,7 @@ export type BansData =
     };
 
 export const loadBans = createServerFn({ method: 'GET' })
-  .validator(type({ 'person?': 'string' }))
+  .validator(input(type({ 'person?': 'string' })))
   .handler(async ({ data }): Promise<BansData> => {
     const session = await pageSession();
     if (!session) throw redirect({ to: '/auth/sign-in', search: { redirect: adminPaths.bans } });

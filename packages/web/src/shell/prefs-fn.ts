@@ -3,6 +3,7 @@ import { Prefs, prefsSetCookie } from '@peblish/core/prefs/cookie';
 import { createServerFn } from '@tanstack/react-start';
 import { appendResponseHeader, getRequest } from '@tanstack/react-start/server';
 import { sameOrigin } from '../server/auth.ts';
+import { input } from '../server/input.ts';
 
 /**
  * Stores the viewer's complete display preferences in the cookie. The client sends all of them
@@ -10,7 +11,7 @@ import { sameOrigin } from '../server/auth.ts';
  * save that arrives late cannot restore an older value of the other field.
  */
 export const storePrefs = createServerFn({ method: 'POST' })
-  .validator(Prefs)
+  .validator(input(Prefs))
   .handler(({ data }) => {
     if (!sameOrigin(getRequest())) throw new Error('cross-site request refused');
     appendResponseHeader('set-cookie', prefsSetCookie(data, { secure: publicOrigin()?.startsWith('https:') ?? false }));

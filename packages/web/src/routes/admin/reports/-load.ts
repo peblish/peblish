@@ -4,6 +4,7 @@ import { createServerFn } from '@tanstack/react-start';
 import { setResponseStatus } from '@tanstack/react-start/server';
 import { type } from 'arktype';
 import { pageSession } from '../../../server/auth.ts';
+import { input } from '../../../server/input.ts';
 
 const Input = type({
   'tab?': 'string',
@@ -18,7 +19,7 @@ const isSort = (value: string | undefined): value is QueueSort => sorts.some((so
 
 /** The queue's page data. Staff only: signed out is a redirect for the route, anyone else a 403 with no data. */
 export const loadQueue = createServerFn({ method: 'GET' })
-  .validator(Input)
+  .validator(input(Input))
   .handler(async ({ data }) => {
     const session = await pageSession();
     if (!session) return { access: 'signed-out' } as const;

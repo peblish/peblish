@@ -9,6 +9,7 @@ import { createServerFn } from '@tanstack/react-start';
 import { type } from 'arktype';
 import { pageSession } from '../../server/auth.ts';
 import { requestNsfw } from '../c/-gate.ts';
+import { input } from '../../server/input.ts';
 
 // The modlog page's data (a server function: it runs on the server for a document request and
 // over fetch for a client-side navigation). Who may see what is core's: public rows for
@@ -80,7 +81,7 @@ export type ModlogData = {
 export const modlogEntryValid = (entry: string): boolean => Uuid.allows(entry);
 
 export const loadModlog = createServerFn({ method: 'GET' })
-  .validator(ModlogSearch)
+  .validator(input(ModlogSearch))
   .handler(async ({ data }): Promise<ModlogData> => {
     const session = await pageSession();
     const admin = session?.view.siteRole === 'admin';

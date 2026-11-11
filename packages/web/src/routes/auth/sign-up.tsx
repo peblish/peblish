@@ -34,11 +34,13 @@ import { asFormError } from './-ui/errors.ts';
 import { AuthForm, Field, rich } from './-ui/form.tsx';
 import { authHead, SearchText } from './-route.ts';
 import { AuthCard } from './-ui/page.tsx';
+import { input } from '../../server/input.ts';
+import { errorLine } from '@peblish/core/error-line';
 
 const Search = type({ 'error?': SearchText, 'invite?': SearchText, 'username?': SearchText });
 
 const loadSignUp = createServerFn({ method: 'GET' })
-  .validator(type({ 'invite?': 'string' }))
+  .validator(input(type({ 'invite?': 'string' })))
   .handler(async ({ data }) => {
     // Per browser (the age gate): the server function's own reply, on a client-side navigation, too.
     setResponseHeader('cache-control', PRIVATE_NO_STORE);
@@ -90,7 +92,7 @@ export const Route = createFileRoute('/auth/sign-up')({
           await api.sendVerificationEmail({ body: { email: result.email } });
         } catch (error) {
           // The account exists; the verify page offers to send the link again.
-          console.error('sign-up: the verification email failed', error);
+          console.error(`sign-up: the verification email failed: ${errorLine(error)}`);
         }
         return respond(request, { redirect: '/auth/verify', cookies: headers.getSetCookie() });
       },
