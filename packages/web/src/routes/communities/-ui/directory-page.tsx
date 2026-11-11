@@ -3,7 +3,7 @@ import type { DirectoryRow } from '@peblish/core/directory/read';
 import { Badge } from '@peblish/ui/components/badge';
 import { Button } from '@peblish/ui/components/button';
 import { EmptyState } from '@peblish/ui/components/empty-state';
-import { Handle } from '@peblish/ui/components/handle';
+import { BidiText, Handle } from '@peblish/ui/components/handle';
 import { Link } from '@peblish/ui/components/link';
 import { LinkTabs } from '@peblish/ui/components/link-tabs';
 import { Notice } from '@peblish/ui/components/notice';
@@ -62,7 +62,11 @@ export function DirectoryPage({ data, error: fromAddress }: { data: DirectoryDat
     { id: 'active', label: <Counted>{t('directory', 'directory.col.active')}</Counted> },
     {
       id: 'action',
-      label: <span className="pb-sr">{t('directory', 'directory.col.action')}</span>,
+      label: (
+        <Text as="span" className="pb-sr">
+          {t('directory', 'directory.col.action')}
+        </Text>
+      ),
       textValue: t('directory', 'directory.col.action'),
     },
   ];
@@ -187,9 +191,9 @@ function Counted({ children }: { children: ReactNode }) {
     <>
       {children}
       <sup>
-        <a href="#dir-note-counts" aria-label="1">
+        <Link href="#dir-note-counts" aria-label="1">
           1
-        </a>
+        </Link>
       </sup>
     </>
   );
@@ -207,7 +211,10 @@ function CommunityCell({ row, handleId, now }: { row: DirectoryRow; handleId: st
           <Handle prefix="!" handle={actor.handle} />
         </Link>
         {actor.displayName && actor.displayName.toLowerCase() !== actor.name.toLowerCase() && (
-          <Text color="muted"> {actor.displayName}</Text>
+          <Text color="muted">
+            {' '}
+            <BidiText text={actor.displayName} />
+          </Text>
         )}
       </Text>
       {row.excerpt && (

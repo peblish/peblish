@@ -2,10 +2,10 @@ import { asResolveError, maxLookupLength, type ResolveError } from '@peblish/cor
 import { parseLookup } from '@peblish/core/resolve/parse';
 import { Button } from '@peblish/ui/components/button';
 import { EmptyState } from '@peblish/ui/components/empty-state';
-import { Input } from '@peblish/ui/components/input';
 import { Link } from '@peblish/ui/components/link';
 import { Notice } from '@peblish/ui/components/notice';
 import { Text } from '@peblish/ui/components/text';
+import { TextField } from '@peblish/ui/components/text-field';
 import { useRouter } from '@tanstack/react-router';
 import { type } from 'arktype';
 import { useRef, useState, type FormEvent } from 'react';
@@ -94,12 +94,17 @@ function ResolveForm({ q, initial }: { q: string; initial: ResolveError | undefi
 
   return (
     <form className="dir-search dir-resolve" method="post" action={directoryPaths.find} onSubmit={submit} aria-busy={asking !== null}>
-      {/* Mux Input parts rather than the app's TextField, which has no autoCapitalize or spellCheck. */}
-      <Input.Root className="dir-field" defaultValue={q} required>
-        <Input.Label>{t('directory', 'resolve.label')}</Input.Label>
-        <Input.Input name="q" maxLength={maxLookupLength} autoComplete="off" autoCapitalize="none" spellCheck={false} />
-        <Input.Description>{t('directory', 'resolve.hint')}</Input.Description>
-      </Input.Root>
+      {/* The app's TextField explains an empty or over-long box in the page's language. */}
+      <TextField
+        className="dir-field"
+        label={t('directory', 'resolve.label')}
+        name="q"
+        defaultValue={q}
+        maxLength={maxLookupLength}
+        autoComplete="off"
+        description={t('directory', 'resolve.hint')}
+        required
+      />
       <div className="dir-buttons">
         <Button type="submit" disabled={asking !== null}>
           {t('directory', 'resolve.submit')}

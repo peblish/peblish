@@ -4,6 +4,7 @@ import { Button } from '@peblish/ui/components/button';
 import { Card } from '@peblish/ui/components/card';
 import { Checkbox } from '@peblish/ui/components/checkbox';
 import { FileTrigger } from '@peblish/ui/components/file-trigger';
+import { Group } from '@peblish/ui/components/group';
 import { IconButton } from '@peblish/ui/components/icon-button';
 import { ArrowDown, ArrowUp, CloseIcon } from '@peblish/ui/components/icons';
 import { Link } from '@peblish/ui/components/link';
@@ -46,10 +47,10 @@ type Row = { key: number; title: string; body: string };
 const sections = ['basics', 'rules', 'images', 'content', 'visibility'] as const;
 type Section = (typeof sections)[number];
 
-/** One part of the form: a named section holding an outlined Card with its heading. */
-function FormSection({ id, title, children }: { id: Section; title: string; children: ReactNode }) {
+/** One part of the form: a named section holding an outlined Card with its heading. `describedBy` names a message about the whole section. */
+function FormSection({ id, title, describedBy, children }: { id: Section; title: string; describedBy?: string; children: ReactNode }) {
   return (
-    <section id={id} aria-labelledby={`${id}-title`}>
+    <section id={id} aria-labelledby={`${id}-title`} aria-describedby={describedBy}>
       <Card.Root variant="outlined" className="cm-section">
         <Card.Header>
           <Text as="h2" variant="title" size="sm" id={`${id}-title`}>
@@ -206,7 +207,8 @@ export function CommunityForm({ handle, initial, uploadsOff, error }: CommunityF
             />
           </FormSection>
 
-          <FormSection id="rules" title={message('form.section.rules')}>
+          {/* The rules' own error is about the list as a whole, so it describes the section. */}
+          <FormSection id="rules" title={message('form.section.rules')} describedBy={problems.rules ? 'rules-error' : undefined}>
             <ol className="cm-rule-rows">
               {rows.map((row, index) => (
                 <li key={row.key}>
@@ -253,15 +255,15 @@ export function CommunityForm({ handle, initial, uploadsOff, error }: CommunityF
                 </li>
               ))}
             </ol>
-            <Text
-              as="p"
-              size="sm"
-              color={problems.rules ? undefined : 'muted'}
-              className={problems.rules ? 'cm-error' : undefined}
-              role={problems.rules ? 'alert' : undefined}
-            >
-              {problems.rules ? message('form.error.rules') : message('form.rules.count', { count: filledRules, max: communityRulesMax })}
-            </Text>
+            {problems.rules ? (
+              <Notice tone="danger" role="alert" id="rules-error">
+                {message('form.error.rules')}
+              </Notice>
+            ) : (
+              <Text as="p" size="sm" color="muted">
+                {message('form.rules.count', { count: filledRules, max: communityRulesMax })}
+              </Text>
+            )}
             <Button
               type="button"
               variant="neutral"
@@ -316,19 +318,22 @@ export function CommunityForm({ handle, initial, uploadsOff, error }: CommunityF
             <Checkbox name="restricted" defaultChecked={initial.restricted} description={message('form.restricted.hint')}>
               {message('form.restricted.label')}
             </Checkbox>
-            <fieldset className="cm-languages">
-              <legend>
-                <Text variant="label">{message('form.languages.legend')}</Text>
-              </legend>
-              {formLanguages.map((code) => (
-                <Checkbox key={code} name={`lang.${code}`} defaultChecked={initial.languages.includes(code)}>
-                  {message(`form.language.${code}`)}
-                </Checkbox>
-              ))}
-              <Text as="p" size="sm" color="muted">
+            {/* A Mux Group named by its label; the app's Checkbox keeps each box drawn right without script. */}
+            <div className="cm-languages">
+              <Text as="span" variant="label" id="languages-label">
+                {message('form.languages.legend')}
+              </Text>
+              <Group aria-labelledby="languages-label" aria-describedby="languages-hint" className="cm-language-boxes">
+                {formLanguages.map((code) => (
+                  <Checkbox key={code} name={`lang.${code}`} defaultChecked={initial.languages.includes(code)}>
+                    {message(`form.language.${code}`)}
+                  </Checkbox>
+                ))}
+              </Group>
+              <Text as="p" size="sm" color="muted" id="languages-hint">
                 {message('form.languages.hint')}
               </Text>
-            </fieldset>
+            </div>
           </FormSection>
 
           <FormSection id="visibility" title={message('form.section.visibility')}>
