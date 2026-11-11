@@ -4,10 +4,10 @@ import { LocaleProvider } from '@peblish/ui/locale';
 import { rootThemeAttributes, systemSchemeScript } from '@peblish/ui/theme/root';
 import muxCss from '@peblish/ui/styles.css?url';
 import { HeadContent, Outlet, Scripts, createRootRoute, useRouter } from '@tanstack/react-router';
-import { useCallback, useEffect } from 'react';
+import { useCallback, useEffect, type ReactNode } from 'react';
 import { DEFAULT_LOCALE } from '../i18n/negotiate.ts';
 import { openInRouter, useClientLinks } from '../shell/client-links.ts';
-import { PageBoundary, PageNotFound } from '../shell/error-page.tsx';
+import { PageError, PageNotFound } from '../shell/error-page.tsx';
 import { useProseLabels } from '../shell/labels.ts';
 import { PrefsProvider } from '../shell/prefs.tsx';
 import { getRootData } from '../shell/root-data.ts';
@@ -39,9 +39,36 @@ export const Route = createRootRoute({
       { rel: 'stylesheet', href: appCss },
     ],
   }),
+  shellComponent: RootDocument,
   component: RootComponent,
+  errorComponent: PageError,
   notFoundComponent: PageNotFound,
 });
+
+type RootData = ReturnType<typeof Route.useLoaderData>;
+
+/**
+ * The document around every page, the error page included: it renders even when the root loader
+ * failed (no data: English, the system scheme), so that page still gets its styles and scripts.
+ */
+function RootDocument({ children }: { children: ReactNode }) {
+  const data: RootData | undefined = Route.useLoaderData();
+  const scheme = data?.prefs.scheme ?? 'system';
+  return (
+    // suppressHydrationWarning: for the 'system' scheme the inline script may already have
+    // switched data-muxui-color-scheme to dark before React hydrates <html>.
+    <html lang={data?.locale ?? DEFAULT_LOCALE} {...rootThemeAttributes(scheme)} suppressHydrationWarning>
+      <head>
+        {scheme === 'system' && <script dangerouslySetInnerHTML={{ __html: systemSchemeScript }} />}
+        <HeadContent />
+      </head>
+      <body>
+        {children}
+        <Scripts />
+      </body>
+    </html>
+  );
+}
 
 /** Mux UI's `useHref`: the URL the browser shows for an internal href, as the router's own links print it. */
 function useRouterHref(href: string): string {
@@ -62,29 +89,17 @@ function RootComponent() {
   }, []);
 
   return (
-    // suppressHydrationWarning: for the 'system' scheme the inline script may already have
-    // switched data-muxui-color-scheme to dark before React hydrates <html>.
-    <html lang={locale} {...rootThemeAttributes(prefs.scheme)} suppressHydrationWarning>
-      <head>
-        {prefs.scheme === 'system' && <script dangerouslySetInnerHTML={{ __html: systemSchemeScript }} />}
-        <HeadContent />
-      </head>
-      <body>
-        <LocaleProvider locale={locale} navigate={navigate} useHref={useRouterHref}>
-          <PrefsProvider initial={prefs}>
-            <ProseLabelsProvider value={proseLabels}>
-              <ToastProvider>
-                <Shell>
-                  <PageBoundary>
-                    <Outlet />
-                  </PageBoundary>
-                </Shell>
-              </ToastProvider>
-            </ProseLabelsProvider>
-          </PrefsProvider>
-        </LocaleProvider>
-        <Scripts />
-      </body>
-    </html>
+    <LocaleProvider locale={locale} navigate={navigate} useHref={useRouterHref}>
+      <PrefsProvider initial={prefs}>
+        <ProseLabelsProvider value={proseLabels}>
+          <ToastProvider>
+            {/* A page's own failure renders PageError in place of the page (the router's defaultErrorComponent). */}
+            <Shell>
+              <Outlet />
+            </Shell>
+          </ToastProvider>
+        </ProseLabelsProvider>
+      </PrefsProvider>
+    </LocaleProvider>
   );
 }

@@ -1,7 +1,7 @@
 import { HeaderNav } from '@peblish/ui/components/header-nav';
 import { Sidebar } from '@peblish/ui/components/sidebar';
 import { getRouteApi, useRouterState } from '@tanstack/react-router';
-import type { ReactNode } from 'react';
+import { useEffect, useRef, type ReactNode } from 'react';
 import { useTranslate } from '../i18n/use-translate.ts';
 import { Account } from './account.tsx';
 import { CreatePost } from './create-post.tsx';
@@ -24,6 +24,28 @@ function Actions({ appearance }: { appearance: boolean }) {
 }
 
 /**
+ * After a navigation that took focus with it (a drawer link, or Back with the drawer open: the
+ * drawer and its button remount closed, see below), focus the new page's main landmark rather
+ * than leave it on <body>. Runs once the new page has rendered; a navigation that leaves focus
+ * where it was (a sidebar link) changes nothing.
+ */
+function useFocusLostToPage(pathname: string | undefined) {
+  const first = useRef(true);
+  useEffect(() => {
+    if (first.current) {
+      first.current = false;
+      return;
+    }
+    const active = document.activeElement;
+    if (active && active !== document.body) return;
+    const target = document.querySelector<HTMLElement>('#pb-main main') ?? document.getElementById('pb-main');
+    if (!target) return;
+    if (!target.hasAttribute('tabindex')) target.tabIndex = -1;
+    target.focus({ preventScroll: true });
+  }, [pathname]);
+}
+
+/**
  * The application frame (shell-sidebar, mock direction A): the Mux Sidebar column on the left,
  * a HeaderNav bar with the actions over the page, and the page centred in the width that is
  * left. Below 860 px the column and the bar give way to the Sidebar's phone bar, whose menu
@@ -33,11 +55,18 @@ function Actions({ appearance }: { appearance: boolean }) {
  *
  * The phone bar and the desktop bar each render the actions; CSS shows one of them, so
  * assistive technology and role queries only ever meet one.
+ *
+ * On the phone bar the brand and the actions sit beside Sidebar.MobileTrigger, laid over its
+ * bar by CSS, not in its `logo` slot: that slot is inside React Aria's DialogTrigger, whose press
+ * handler every pressable inside inherits, so a tap on Account (or on the brand on its own page)
+ * would open the drawer too. The trigger sits in a <section> so its <header> is not a second
+ * banner beside the bar's own.
  */
 export function Shell({ children }: { children: ReactNode }) {
   const { session, shell } = root.useLoaderData();
   const { t } = useTranslate();
   const pathname = useRouterState({ select: (state) => state.location.pathname });
+  useFocusLostToPage(useRouterState({ select: (state) => state.resolvedLocation?.pathname }));
   const navigation = <Navigation session={session} shell={shell} pathname={pathname} />;
 
   return (
@@ -46,25 +75,23 @@ export function Shell({ children }: { children: ReactNode }) {
         <a className="pb-skip" href="#pb-main">
           {t('shell', 'skip')}
         </a>
-        <div className="pb-app__bar">
-          {/* Keyed by the page, so a navigation (a link tap in the drawer, Back or Forward) closes the drawer. */}
-          <Sidebar.MobileTrigger
-            key={pathname}
-            logo={
-              <>
-                <Brand siteName={shell.siteName} className="pb-bar-brand" />
-                <span className="pb-app__actions">
-                  <Actions appearance={false} />
-                </span>
-              </>
-            }
-          >
-            {navigation}
-            <div className="pb-app__drawer-foot">
-              <ThemeMenu />
-            </div>
-          </Sidebar.MobileTrigger>
-        </div>
+        <header className="pb-app__bar">
+          <div className="pb-app__bar-start">
+            <Brand siteName={shell.siteName} className="pb-bar-brand" />
+            <span className="pb-app__actions">
+              <Actions appearance={false} />
+            </span>
+          </div>
+          <section className="pb-app__menu">
+            {/* Keyed by the page, so a navigation (a link tap in the drawer, Back or Forward) closes the drawer. */}
+            <Sidebar.MobileTrigger key={pathname}>
+              {navigation}
+              <div className="pb-app__drawer-foot">
+                <ThemeMenu />
+              </div>
+            </Sidebar.MobileTrigger>
+          </section>
+        </header>
         <div className="pb-app__side">
           <Sidebar.Root className="pb-side" aria-label={t('shell', 'sidebar.label')}>
             <Sidebar.Header>

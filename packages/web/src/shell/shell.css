@@ -102,7 +102,9 @@
     flex: 1;
   }
 
-  .pb-app__content:focus {
+  /* Focus targets, not controls: the skip link's and the one a navigation moves focus to (shell.tsx). */
+  .pb-app__content:focus,
+  .pb-app__content main:focus {
     outline: none;
   }
 
@@ -181,8 +183,10 @@
 
   /* Below 860 px the column and the HeaderNav bar give way to the phone bar and its drawer. */
   @media (max-width: 859.98px) {
+    /* Explicit rows: the spare height of a short page belongs to the page, not to the bar. */
     .pb-app {
       grid-template-columns: minmax(0, 1fr);
+      grid-template-rows: auto minmax(0, 1fr);
     }
 
     .pb-app__side,
@@ -190,17 +194,32 @@
       display: none;
     }
 
+    /* Mux's bar (the header Sidebar.MobileTrigger renders) and the brand with the actions share
+       one cell: Mux paints the bar and keeps its button at the end, the brand and the actions lie
+       over the rest. */
     .pb-app__bar {
-      display: block;
+      display: grid;
       position: sticky;
       inset-block-start: 0;
       z-index: 2;
     }
 
-    .pb-app__bar .muxui-sidebar__mobile-logo {
-      flex: 1;
-      min-inline-size: 0;
+    .pb-app__bar > * {
+      grid-area: 1 / 1;
+    }
+
+    .pb-app__bar-start {
+      z-index: 1;
+      display: flex;
+      align-items: center;
       gap: var(--muxui-semantic-layout-control-gap);
+      min-inline-size: 0;
+      margin-inline: var(--muxui-semantic-layout-inset-large)
+        calc(var(--muxui-semantic-layout-inset-large) + var(--muxui-control-size-md) + var(--muxui-semantic-layout-control-gap));
+    }
+
+    .pb-app__bar .muxui-sidebar__mobile-header {
+      justify-content: flex-end;
     }
 
     .pb-app__bar .pb-app__actions {
