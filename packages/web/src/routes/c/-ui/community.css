@@ -11,8 +11,7 @@
   :is(.cm-page, .cm-form) .muxui-text {
     margin: 0;
   }
-  .cm-refused,
-  .cm-missing {
+  .cm-refused {
     display: flex;
     flex-direction: column;
     gap: var(--muxui-semantic-layout-content-gap);
