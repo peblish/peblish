@@ -59,7 +59,8 @@
     display: none;
   }
 
-  .cmp__picker .cmp__list {
+  /* Only the options scroll in the box; the group's error sits below it, in sight. */
+  .cmp__picker .cmp__options {
     max-height: 220px;
     padding: var(--muxui-semantic-layout-inset-small);
     overflow: auto;
