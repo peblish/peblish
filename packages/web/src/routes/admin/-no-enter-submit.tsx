@@ -13,7 +13,8 @@ import { useEffect, useRef } from 'react';
  *   refuses; where the intent is a hidden field (the Bans panels), `formAction` sends it to a page
  *   that decides nothing instead.
  *
- * Nobody sees them, reaches them with Tab or hears them; the real buttons work as before.
+ * Nobody sees them (`.adm-no-enter` in -admin.css, which the admin layout links for every admin
+ * page), reaches them with Tab or hears them; the real buttons work as before.
  */
 export function NoEnterSubmit({ formAction }: { formAction?: string }) {
   const ref = useRef<HTMLButtonElement>(null);
@@ -32,8 +33,8 @@ export function NoEnterSubmit({ formAction }: { formAction?: string }) {
   }, []);
   return (
     <>
-      <Button type="submit" disabled tabIndex={-1} aria-hidden hidden style={{ display: 'none' }} />
-      <Button ref={ref} type="submit" formAction={formAction} tabIndex={-1} aria-hidden hidden style={{ display: 'none' }} />
+      <Button type="submit" disabled tabIndex={-1} aria-hidden hidden className="adm-no-enter" />
+      <Button ref={ref} type="submit" formAction={formAction} tabIndex={-1} aria-hidden hidden className="adm-no-enter" />
     </>
   );
 }

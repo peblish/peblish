@@ -125,6 +125,10 @@ test('switching Lift panels keeps each one’s reason and switch to itself, and 
   await lift.getByRole('button', { name: 'Lift ban' }).click();
   await expect(banRow(page, world.bot.name)).toHaveCount(0);
   await expect(banRow(page, world.spammer.name)).toBeVisible();
+  // Lifted, the address drops the ban, so no "not in the list" notice follows the updated list.
+  await expect(page).not.toHaveURL(/lift=/);
+  await expect(lift).toHaveCount(0);
+  await expect(page.getByTestId('lift-missing')).toHaveCount(0);
   expect(sent).toHaveLength(1);
   expect(sent[0]!.get('intent')).toBe('site_unban');
   expect(sent[0]!.get('person')).toBe(botId);

@@ -8,8 +8,8 @@
     flex-direction: column;
     gap: var(--muxui-semantic-layout-content-gap);
   }
-  .media-admin > h1,
-  .media-admin p {
+  /* Mux Text sets no margin, so a paragraph would keep the browser's; the gaps space the page. */
+  .media-admin .muxui-text {
     margin: 0;
   }
   .media-strip {
@@ -109,8 +109,6 @@
     border: 1px solid var(--muxui-semantic-border-subtle);
     border-radius: var(--muxui-semantic-control-radius);
     background: var(--muxui-semantic-surface-subtle);
-    font-family: var(--muxui-semantic-typography-mono-font-family);
-    font-size: var(--muxui-semantic-typography-mono-xs-font-size);
     white-space: pre-wrap;
     overflow-wrap: anywhere;
   }

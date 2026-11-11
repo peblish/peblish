@@ -2,9 +2,11 @@ import type { QueueGroup, QueueSubject } from '@peblish/core/reports/read';
 import type { QueueTab } from '@peblish/core/reports/scope';
 import { Button } from '@peblish/ui/components/button';
 import { Card } from '@peblish/ui/components/card';
-import { Disclosure } from '@peblish/ui/components/disclosure';
+import { Handle } from '@peblish/ui/components/handle';
 import { Link } from '@peblish/ui/components/link';
+import { LinkedDisclosure } from '@peblish/ui/components/linked-disclosure';
 import { Notice } from '@peblish/ui/components/notice';
+import { Quote } from '@peblish/ui/components/quote';
 import { Select } from '@peblish/ui/components/select';
 import { Table } from '@peblish/ui/components/table';
 import { Text } from '@peblish/ui/components/text';
@@ -31,6 +33,8 @@ export type QueueView = {
   show?: string | null;
   /** The group whose reporters and details are shown. */
   details?: string | null;
+  /** The group whose Remove form the server renders open, for its link without scripts. */
+  remove?: string | null;
 };
 
 export const queueHref = (view: QueueView, change: Partial<QueueView> = {}) => {
@@ -42,6 +46,7 @@ export const queueHref = (view: QueueView, change: Partial<QueueView> = {}) => {
   if (next.cursor) params.set('cursor', next.cursor);
   if (next.show) params.set('show', next.show);
   if (next.details) params.set('details', next.details);
+  if (next.remove) params.set('remove', next.remove);
   return `/admin/reports?${params}`;
 };
 
@@ -89,7 +94,10 @@ function Toggle({ shown, href, onToggle, children }: { shown: boolean; href: str
   );
 }
 
-/** Age as the biggest whole unit, counted from when the page's data was read. */
+/**
+ * Age as the biggest whole unit, counted from when the page's data was read. A raw `time` until
+ * the shared Time can print a date as well as an age: it waits for Time's `format` (root swaps it).
+ */
 function Age({ iso, now }: { iso: string; now: number }) {
   const { t } = useTranslate();
   const date = useDate();
@@ -176,16 +184,23 @@ function Content({ group, view }: { group: QueueGroup; view: QueueView }) {
           <>
             {' '}
             {rich(t('reports', 'queue.where'), {
-              community: <Link href={communityPath(subject.community)}>!{subject.community.handle}</Link>,
-              author: <Link href={userPath(subject.author)}>@{subject.author.handle}</Link>,
+              community: (
+                <Link href={communityPath(subject.community)}>
+                  <Handle prefix="!" handle={subject.community.handle} />
+                </Link>
+              ),
+              author: (
+                <Link href={userPath(subject.author)}>
+                  <Handle prefix="@" handle={subject.author.handle} />
+                </Link>
+              ),
             })}
           </>
         ) : subject.kind === 'actor' ? (
           <>
             {' '}
             <Link href={subject.person.kind === 'Group' ? communityPath(subject.person) : userPath(subject.person)}>
-              {subject.person.kind === 'Group' ? '!' : '@'}
-              {subject.person.handle}
+              <Handle prefix={subject.person.kind === 'Group' ? '!' : '@'} handle={subject.person.handle} />
             </Link>
           </>
         ) : null}
@@ -193,9 +208,9 @@ function Content({ group, view }: { group: QueueGroup; view: QueueView }) {
       {(subject.kind === 'post' || subject.kind === 'comment') && subject.quote && (
         <div className="rq-quote">
           {/* Blur by default: in the markup, but blurred, unselectable and hidden from assistive technology until Show. */}
-          <blockquote aria-hidden={shown ? undefined : 'true'} data-hidden={shown ? undefined : 'true'}>
+          <Quote edge className="rq-quote__text" aria-hidden={shown ? undefined : 'true'} data-hidden={shown ? undefined : 'true'}>
             {subject.quote}
-          </blockquote>
+          </Quote>
           <Toggle shown={shown} href={queueHref(view, { show: shown ? null : group.key })} onToggle={() => setShown(!shown)}>
             {shown ? t('reports', 'queue.hide') : t('reports', 'queue.show')}
           </Toggle>
@@ -237,7 +252,7 @@ function Reports({ group, view }: { group: QueueGroup; view: QueueView }) {
         {group.escalatedBy && (
           <Text size="sm" color="muted">
             {' '}
-            {t('reports', 'queue.escalatedBy', { handle: `@${group.escalatedBy.handle}` })}
+            {rich(t('reports', 'queue.escalatedBy'), { handle: <Handle prefix="@" handle={group.escalatedBy.handle} /> })}
           </Text>
         )}
       </Text>
@@ -256,7 +271,12 @@ function Reports({ group, view }: { group: QueueGroup; view: QueueView }) {
                 #{report.number}
               </Text>{' '}
               {t('reports', `category.${report.category}`)}
-              {report.reporter && <> @{report.reporter.handle}</>}
+              {report.reporter && (
+                <>
+                  {' '}
+                  <Handle prefix="@" handle={report.reporter.handle} />
+                </>
+              )}
               {report.remote && (
                 <Text size="sm" color="muted">
                   {' '}
@@ -286,18 +306,18 @@ const rules = [1, 2, 3, 4, 5, 6, 7] as const;
 
 function Actions({ group, tab, admin, view }: { group: QueueGroup; tab: QueueTab; admin: boolean; view: QueueView }) {
   const { t } = useTranslate();
-  const back = queueHref(view, { show: null, details: null });
+  const back = queueHref(view, { show: null, details: null, remove: null });
   const isContent = group.subject.kind === 'post' || group.subject.kind === 'comment';
   if (tab === 'resolved' || tab === 'dismissed') {
     const closed = group.closed;
     return closed ? (
       <Text as="p" size="sm" color="muted">
-        {t('reports', 'queue.closed', {
+        {rich(t('reports', 'queue.closed'), {
           resolution: t(
             'reports',
             `queue.closed.${closed.resolution === 'dismissed' ? 'dismissed' : closed.resolution === 'removed' ? 'removed' : 'resolved'}`,
           ),
-          handle: closed.by ? `@${closed.by.handle}` : '',
+          handle: closed.by ? <Handle prefix="@" handle={closed.by.handle} /> : '',
         })}
         {closed.note && <> {closed.note}</>}
       </Text>
@@ -329,7 +349,13 @@ function Actions({ group, tab, admin, view }: { group: QueueGroup; tab: QueueTab
         </div>
       </QueueForm>
       {isContent && (
-        <Disclosure title={t('reports', 'queue.remove')} className="rq-remove">
+        <LinkedDisclosure
+          id={`rq-remove-${group.key}`}
+          title={t('reports', 'queue.remove')}
+          className="rq-remove"
+          openHref={`${queueHref(view, { remove: group.key })}#rq-remove-${group.key}`}
+          defaultExpanded={view.remove === group.key}
+        >
           <QueueForm group={group} back={back} className="rq-act">
             <Text as="p" size="sm" color="muted">
               {t('reports', 'queue.remove.title')}
@@ -361,7 +387,7 @@ function Actions({ group, tab, admin, view }: { group: QueueGroup; tab: QueueTab
               </Button>
             </div>
           </QueueForm>
-        </Disclosure>
+        </LinkedDisclosure>
       )}
       {group.audience === 'moderators' && (
         <QueueForm group={group} back={back}>

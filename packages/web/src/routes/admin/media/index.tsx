@@ -28,6 +28,8 @@ const Search = type({
   'item?': SearchText,
   'error?': SearchText,
   'value?': SearchText,
+  /** The evidence manifest rendered open, for its link without scripts. */
+  'manifest?': SearchText,
 });
 
 /** The refusals and form errors this page has a message for (error.<code> in mediascan.json). */
@@ -211,7 +213,7 @@ function MediaTab() {
         </NoticeBox>
       )}
       <SubNav section={section} counts={overview.counts} />
-      <Sections section={section} overview={overview} item={search.item} value={search.value} />
+      <Sections section={section} overview={overview} item={search.item} value={search.value} manifest={search.manifest} />
     </main>
   );
 }
@@ -221,11 +223,13 @@ function Sections({
   overview,
   item,
   value,
+  manifest,
 }: {
   section: Section;
   overview: MediaOverview;
   item: string | undefined;
   value: string | undefined;
+  manifest: string | undefined;
 }) {
   switch (section) {
     case 'review':
@@ -235,7 +239,7 @@ function Sections({
     case 'hashes':
       return <Hashes rows={overview.hashes} value={value} />;
     case 'evidence':
-      return <Evidence rows={overview.evidence} />;
+      return <Evidence rows={overview.evidence} open={manifest} />;
     case 'status':
       return <Status overview={overview} />;
   }

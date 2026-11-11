@@ -5,6 +5,7 @@ import { isPageLanguage, isPageSlug, pageLanguages } from '@peblish/core/pages/s
 import { useHydrated } from '@peblish/ui/composer/use-hydrated.ts';
 import { Breadcrumbs } from '@peblish/ui/components/breadcrumbs';
 import { Button } from '@peblish/ui/components/button';
+import { EmptyState } from '@peblish/ui/components/empty-state';
 import { Input } from '@peblish/ui/components/input';
 import { Link } from '@peblish/ui/components/link';
 import { LinkTabs } from '@peblish/ui/components/link-tabs';
@@ -171,11 +172,15 @@ function Editor() {
             <ul className="adm-tokens">
               {unresolved.map((token) => (
                 <li key={token}>
-                  <code>{token}</code>
+                  <Text variant="mono" size="sm">
+                    {token}
+                  </Text>
                 </li>
               ))}
             </ul>
-            <p>{t('admin', 'pages.error.page.unresolved_tokens.hint')}</p>
+            <Text as="p" size="sm">
+              {t('admin', 'pages.error.page.unresolved_tokens.hint')}
+            </Text>
           </Notice>
         ) : (
           <Notice role="alert" tone="danger">
@@ -281,10 +286,12 @@ function PageForm({
                   <Notice role="alert" tone="danger">
                     {t('admin', 'pages.preview.failed')}
                   </Notice>
-                ) : (
+                ) : preview.status === 'loading' ? (
                   <Text as="p" color="muted">
-                    {t('admin', preview.status === 'loading' ? 'pages.preview.loading' : 'pages.preview.empty')}
+                    {t('admin', 'pages.preview.loading')}
                   </Text>
+                ) : (
+                  <EmptyState level={3} title={t('admin', 'pages.preview.empty')} />
                 )}
               </section>
             ),

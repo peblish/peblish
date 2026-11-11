@@ -5,7 +5,7 @@ import { Button } from '@peblish/ui/components/button';
 import { EmptyState } from '@peblish/ui/components/empty-state';
 import { LinkTabs } from '@peblish/ui/components/link-tabs';
 import { Notice } from '@peblish/ui/components/notice';
-import { Link } from '@peblish/ui/components/link';
+import { Pager } from '@peblish/ui/components/pager';
 import { Select } from '@peblish/ui/components/select';
 import { Text } from '@peblish/ui/components/text';
 import { createFileRoute, redirect } from '@tanstack/react-router';
@@ -36,6 +36,7 @@ const Search = type({
   'cursor?': SearchText,
   'show?': 'string',
   'details?': 'string',
+  'remove?': 'string',
   'error?': 'string',
 });
 
@@ -124,6 +125,7 @@ function Queue() {
     cursor: search.cursor ?? null,
     show: search.show ?? null,
     details: search.details ?? null,
+    remove: search.remove ?? null,
   };
   const tabs = data.admin
     ? (['open', 'escalated', 'admins', 'resolved', 'dismissed'] as const)
@@ -137,7 +139,7 @@ function Queue() {
       <LinkTabs
         aria-label={t('reports', 'queue.tabs')}
         items={tabs.map((tab) => ({
-          to: queueHref(view, { tab, cursor: null, show: null, details: null }),
+          to: queueHref(view, { tab, cursor: null, show: null, details: null, remove: null }),
           label: t('reports', `queue.tab.${tab}`),
           active: tab === data.tab,
         }))}
@@ -176,11 +178,13 @@ function Queue() {
         <QueueTable groups={data.groups} tab={data.tab} admin={data.admin} view={view} now={data.now} />
       )}
       {data.next && (
-        <Text as="p">
-          <Link href={queueHref(view, { cursor: data.next, show: null, details: null })} rel="next">
-            {t('reports', 'queue.more')}
-          </Link>
-        </Text>
+        <Pager
+          aria-label={t('reports', 'queue.pages')}
+          next={{
+            href: queueHref(view, { cursor: data.next, show: null, details: null, remove: null }),
+            label: t('reports', 'queue.more'),
+          }}
+        />
       )}
     </main>
   );

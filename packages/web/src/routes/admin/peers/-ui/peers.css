@@ -6,8 +6,8 @@
     flex-direction: column;
     gap: var(--muxui-semantic-layout-content-gap);
   }
-  .peers-page > h1,
-  .peers-page > p {
+  /* Mux Text sets no margin, so a paragraph would keep the browser's; the column gap spaces the page. */
+  .peers-page > .muxui-text {
     margin: 0;
   }
   .peers-add {

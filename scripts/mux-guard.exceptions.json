@@ -52,7 +52,7 @@
     "file": "packages/web/src/routes/admin/reports/-ui/queue.css",
     "rule": "css-blur",
     "match": "blur(",
-    "anchor": ".rq-quote blockquote[data-hidden]",
+    "anchor": ".rq-quote__text[data-hidden]",
     "reason": "A static blur hides reported text until a moderator chooses Show; it is not animated, so it does not repaint."
   },
   {

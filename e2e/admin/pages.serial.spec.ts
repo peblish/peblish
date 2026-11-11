@@ -78,7 +78,7 @@ test('publishing is refused while the operator details are empty, and the editor
   await page.waitForURL(/error=page.unresolved_tokens/);
   const alert = page.getByRole('alert');
   await expect(alert).toContainText('Not published');
-  await expect(alert.locator('code')).toHaveText(['{{CONTACT_EMAIL}}']);
+  await expect(alert.getByRole('listitem')).toHaveText(['{{CONTACT_EMAIL}}']);
   await expect(alert.getByRole('link', { name: 'Open Settings' })).toHaveAttribute('href', '/admin/settings');
   await expectAccessible(page);
 });
@@ -88,7 +88,7 @@ test('a page that holds a token the site does not fill cannot publish, and the a
   await gotoHydrated(page, '/admin/pages/privacy/en');
   await page.getByRole('button', { name: 'Publish' }).click();
   await page.waitForURL(/error=page.unresolved_tokens/);
-  await expect(page.getByRole('alert').locator('code')).toHaveText([
+  await expect(page.getByRole('alert').getByRole('listitem')).toHaveText([
     '{{OPERATOR_NAME}}',
     '{{JURISDICTION}}',
     '{{CONTACT_EMAIL}}',

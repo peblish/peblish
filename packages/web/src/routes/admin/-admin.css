@@ -15,9 +15,8 @@
     align-content: start;
   }
 
-  .adm-page > h1,
-  .adm-page h2,
-  .adm-page p {
+  /* Mux Text sets no margin, so a paragraph would keep the browser's; the grid gaps space the page. */
+  .adm-page .muxui-text {
     margin: 0;
   }
 
@@ -107,11 +106,6 @@
     padding-inline-start: var(--muxui-semantic-layout-inset-large);
   }
 
-  .adm-tokens code {
-    font-family: var(--muxui-semantic-typography-mono-font-family);
-    font-size: var(--muxui-semantic-typography-mono-s-font-size);
-  }
-
   /* The registration line: state, accounts against the cap, and the link to change them. */
   .adm-summary {
     display: flex;
@@ -141,7 +135,7 @@
     flex: 1 1 160px;
   }
 
-  .adm-create > button {
+  .adm-create > .adm-create__submit {
     flex: 0 0 auto;
   }
 
@@ -162,5 +156,10 @@
 
   .adm-break {
     overflow-wrap: anywhere;
+  }
+
+  /* NoEnterSubmit's two buttons: in the form for Enter, never drawn (Mux Button's display beats [hidden]). */
+  .adm-no-enter {
+    display: none;
   }
 }

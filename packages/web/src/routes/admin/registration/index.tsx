@@ -6,9 +6,11 @@ import { InviteCreateBody, type InviteRow, type InviteStatus } from '@peblish/sc
 import { Badge, type BadgeTone } from '@peblish/ui/components/badge';
 import { Button } from '@peblish/ui/components/button';
 import { Card } from '@peblish/ui/components/card';
-import { Disclosure } from '@peblish/ui/components/disclosure';
+import { EmptyState } from '@peblish/ui/components/empty-state';
+import { Handle } from '@peblish/ui/components/handle';
 import { Input } from '@peblish/ui/components/input';
 import { Link } from '@peblish/ui/components/link';
+import { LinkedDisclosure } from '@peblish/ui/components/linked-disclosure';
 import { Meter } from '@peblish/ui/components/meter';
 import { Notice } from '@peblish/ui/components/notice';
 import { Select } from '@peblish/ui/components/select';
@@ -30,7 +32,8 @@ import { Denial } from '../-denial.tsx';
 import { accessOf } from '../settings/-access.ts';
 import { AdminTitle } from '../settings/-ui.tsx';
 
-const Search = type({ 'error?': SearchText });
+// `usedBy`: the invite whose "used by" list the server renders open, for its link without scripts.
+const Search = type({ 'error?': SearchText, 'usedBy?': SearchText });
 // The Registration tab: the registration line, the create form (a plain POST: 303 back here, or
 // with ?error=<code>), the new invite's code shown once, and the invites table, whose Revoke
 // buttons submit one form outside the table that names the invite by the button's value.
@@ -164,10 +167,15 @@ function Registration() {
         <Input.Input type="hidden" name="intent" value="create" />
         <TextField label={t('invites', 'admin.label')} name="label" placeholder={t('invites', 'admin.labelPlaceholder')} />
         <TextField label={t('invites', 'admin.referrer')} name="referrer" defaultValue={`@${data.me}`} />
-        <Input.Root defaultValue="1" required>
-          <Input.Label>{t('invites', 'admin.maxUses')}</Input.Label>
-          <Input.Input name="maxUses" type="number" min={1} inputMode="numeric" />
-        </Input.Root>
+        <TextField
+          label={t('invites', 'admin.maxUses')}
+          name="maxUses"
+          type="number"
+          min={1}
+          inputMode="numeric"
+          defaultValue="1"
+          required
+        />
         <Select
           label={t('invites', 'admin.expires')}
           name="expires"
@@ -179,12 +187,12 @@ function Registration() {
             { id: 'never', label: t('invites', 'admin.never') },
           ]}
         />
-        <Button type="submit" variant="primary">
+        <Button type="submit" variant="primary" className="adm-create__submit">
           {t('invites', 'admin.create')}
         </Button>
       </form>
       {data.created && <CreatedInvite created={data.created} origin={data.origin} />}
-      <InvitesTable invites={data.invites} />
+      <InvitesTable invites={data.invites} open={search.usedBy} />
     </main>
   );
 }
@@ -206,30 +214,28 @@ function CreatedInvite({ created, origin }: { created: { code: string; maxUses: 
         </Button>
       }
     >
-      <p>
+      <Text as="p" size="sm">
         <Text variant="mono" data-testid="invite-code">
           {created.code}
         </Text>{' '}
         · {created.maxUses === 1 ? t('invites', 'admin.usesOne') : t('invites', 'admin.usesMany', { count: created.maxUses })} ·{' '}
         {created.expiresAt ? t('invites', 'admin.expiresOn', { date: date(created.expiresAt) }) : t('invites', 'admin.noExpiry')}
-      </p>
-      <p className="adm-break">
+      </Text>
+      <Text as="p" size="sm" className="adm-break">
         <Link href={link}>{link}</Link>
-      </p>
-      <p>{t('invites', 'admin.createdHint')}</p>
+      </Text>
+      <Text as="p" size="sm">
+        {t('invites', 'admin.createdHint')}
+      </Text>
     </Notice>
   );
 }
 
-function InvitesTable({ invites }: { invites: InviteRow[] }) {
+/** `open`: the invite whose "used by" list the address asks to show. */
+function InvitesTable({ invites, open }: { invites: InviteRow[]; open: string | undefined }) {
   const { t } = useTranslate();
   const date = useDate();
-  if (invites.length === 0)
-    return (
-      <Text as="p" color="muted">
-        {t('invites', 'admin.empty')}
-      </Text>
-    );
+  if (invites.length === 0) return <EmptyState title={t('invites', 'admin.empty')} />;
   const actions = t('invites', 'admin.colActions');
   return (
     <Card.Root variant="outlined" padding="sm" className="adm-table">
@@ -252,7 +258,7 @@ function InvitesTable({ invites }: { invites: InviteRow[] }) {
           id: invite.id,
           values: {
             invite: invite.label ?? <Text color="muted">{t('invites', 'admin.noLabel')}</Text>,
-            referrer: invite.referrer ? `@${invite.referrer.handle}` : '',
+            referrer: invite.referrer ? <Handle prefix="@" handle={invite.referrer.handle} /> : '',
             uses: `${invite.uses} / ${invite.maxUses}`,
             expires: invite.expiresAt ? date(invite.expiresAt) : t('invites', 'admin.neverShort'),
             status: <Badge tone={statusTone[invite.status]}>{t('invites', `admin.status.${invite.status}`)}</Badge>,
@@ -260,18 +266,21 @@ function InvitesTable({ invites }: { invites: InviteRow[] }) {
               invite.usedBy.length === 0 ? (
                 <Text color="muted">{t('invites', 'admin.nobody')}</Text>
               ) : (
-                <Disclosure
+                <LinkedDisclosure
+                  id={`used-by-${invite.id}`}
                   title={
                     invite.usedBy.length === 1
                       ? t('invites', 'admin.peopleOne')
                       : t('invites', 'admin.peopleMany', { count: invite.usedBy.length })
                   }
+                  openHref={`${path}?usedBy=${invite.id}#used-by-${invite.id}`}
+                  defaultExpanded={invite.id === open}
                 >
                   <ul className="adm-used-by">
                     {invite.usedBy.map((person) => (
                       <li key={person.handle}>
                         <span>
-                          @{person.handle}{' '}
+                          <Handle prefix="@" handle={person.handle} />{' '}
                           {person.deleted ? (
                             <Badge tone="neutral">{t('invites', 'admin.deleted')}</Badge>
                           ) : (
@@ -284,7 +293,7 @@ function InvitesTable({ invites }: { invites: InviteRow[] }) {
                       </li>
                     ))}
                   </ul>
-                </Disclosure>
+                </LinkedDisclosure>
               ),
             actions:
               invite.status === 'revoked' ? null : (

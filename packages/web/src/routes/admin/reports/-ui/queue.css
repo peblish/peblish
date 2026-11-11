@@ -6,8 +6,8 @@
     flex-direction: column;
     gap: var(--muxui-semantic-layout-content-gap);
   }
-  .rq-page > h1,
-  .rq-page p {
+  /* Mux Text sets no margin, so a paragraph would keep the browser's; the gaps space the page. */
+  .rq-page .muxui-text {
     margin: 0;
   }
   .rq-filter {
@@ -61,14 +61,12 @@
     gap: var(--muxui-semantic-layout-micro-gap) var(--muxui-semantic-layout-control-gap);
     align-items: baseline;
   }
-  .rq-quote blockquote {
+  /* The Quote's own edge draws the line down its start. */
+  .rq-quote__text {
     flex: 1 1 100%;
-    margin: 0;
-    padding-inline-start: var(--muxui-semantic-layout-inset-small);
-    border-inline-start: 3px solid var(--muxui-semantic-border-subtle);
   }
   /* Blur by default: the text is in the page but not readable, selectable or announced until Show. */
-  .rq-quote blockquote[data-hidden] {
+  .rq-quote__text[data-hidden] {
     filter: blur(6px);
     user-select: none;
     pointer-events: none;

@@ -6,9 +6,6 @@
     flex-direction: column;
     gap: var(--muxui-semantic-layout-content-gap);
   }
-  .bans-page > h1 {
-    margin: 0;
-  }
   .bans-find {
     display: flex;
     flex-direction: column;
