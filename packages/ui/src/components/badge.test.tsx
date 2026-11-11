@@ -32,3 +32,12 @@ test('a count passes its accessible name through', () => {
   expect(html).toContain('role="img"');
   expect(html).toContain('aria-label="3 unread"');
 });
+
+test('native attributes reach the span', () => {
+  const html = renderToStaticMarkup(
+    <Badge id="b" data-testid="badge" aria-describedby="note">
+      New
+    </Badge>,
+  );
+  expect(html).toBe('<span id="b" data-testid="badge" aria-describedby="note" class="pb-badge pb-badge--neutral">New</span>');
+});

@@ -27,3 +27,25 @@ test('without a role or title it is a plain neutral block', () => {
     ),
   ).toContain('role="status"');
 });
+
+test('native attributes reach the card', () => {
+  const html = renderToStaticMarkup(
+    <Notice id="n" data-testid="notice" aria-describedby="note">
+      Saved.
+    </Notice>,
+  );
+  expect(html).toMatch(/^<div id="n" data-testid="notice" aria-describedby="note" class="muxui-card[^"]* pb-alert pb-alert--neutral">/);
+});
+
+test('a heading level renders the title as that heading, with the same look', () => {
+  const html = renderToStaticMarkup(
+    <Notice tone="warning" title="Check your email" level={2}>
+      We sent a link.
+    </Notice>,
+  );
+  expect(html).toContain('<h2 class="muxui-text muxui-text--label-md pb-alert__title">Check your email</h2>');
+  expect(html).not.toContain('<p');
+  expect(renderToStaticMarkup(<Notice title="Note" level={4} />)).toContain(
+    '<h4 class="muxui-text muxui-text--label-md pb-alert__title">Note</h4>',
+  );
+});

@@ -1,7 +1,8 @@
 import { Text } from '@muxui/react';
-import type { ReactNode } from 'react';
+import type { ComponentPropsWithoutRef, ReactNode } from 'react';
 
-export interface EmptyStateProps {
+/** Any other `div` attribute (`id`, `data-testid`, `aria-describedby`) goes on the root `div`. */
+export interface EmptyStateProps extends Omit<ComponentPropsWithoutRef<'div'>, 'title' | 'children'> {
   title: ReactNode;
   /** One line saying why it is empty or what to do. */
   children?: ReactNode;
@@ -9,13 +10,12 @@ export interface EmptyStateProps {
   action?: ReactNode;
   /** The heading level in the page outline; it does not change the look. */
   level?: 2 | 3;
-  className?: string;
 }
 
 /** Nothing to show yet: a Mux title, a muted line and an optional action, centred in the column. */
-export function EmptyState({ title, children, action, level = 2, className }: EmptyStateProps) {
+export function EmptyState({ title, children, action, level = 2, className, ...rest }: EmptyStateProps) {
   return (
-    <div className={['pb-empty-state', className].filter(Boolean).join(' ')}>
+    <div {...rest} className={['pb-empty-state', className].filter(Boolean).join(' ')}>
       <Text as={level === 3 ? 'h3' : 'h2'} variant="title" size="sm">
         {title}
       </Text>

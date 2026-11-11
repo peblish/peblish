@@ -1,5 +1,5 @@
 import { Link } from '@muxui/react';
-import type { ComponentType, ReactNode } from 'react';
+import type { ComponentPropsWithoutRef, ComponentType, ReactNode } from 'react';
 
 export interface LinkTabItem {
   /** The tab's address: a path, with its query when the tab is a filter. */
@@ -19,7 +19,8 @@ export interface LinkTabLinkProps {
   children: ReactNode;
 }
 
-export interface LinkTabsProps {
+/** Any other `nav` attribute (`id`, `data-testid`, `aria-describedby`) goes on the `nav`. */
+export interface LinkTabsProps extends Omit<ComponentPropsWithoutRef<'nav'>, 'aria-label' | 'children'> {
   /** Names the `nav` landmark, for example "Admin" or "Sort". */
   'aria-label': string;
   items: readonly LinkTabItem[];
@@ -31,7 +32,6 @@ export interface LinkTabsProps {
    * router given to `LocaleProvider`. Pass the app's router link to get its preloading.
    */
   link?: ComponentType<LinkTabLinkProps>;
-  className?: string;
 }
 
 /**
@@ -39,9 +39,14 @@ export interface LinkTabsProps {
  * Mux `Tabs` bar but works before hydration and with scripts off, and each tab can open in a new tab.
  * Mux `Tabs` in rc.6 are buttons (no `href`), so they are only for panels on one page.
  */
-export function LinkTabs({ 'aria-label': label, items, variant = 'underline', size, link: As, className }: LinkTabsProps) {
+export function LinkTabs({ 'aria-label': label, items, variant = 'underline', size, link: As, className, ...rest }: LinkTabsProps) {
   return (
-    <nav aria-label={label} className={['muxui-tabs', 'pb-link-tabs', className].filter(Boolean).join(' ')} data-muxui-size={size}>
+    <nav
+      {...rest}
+      aria-label={label}
+      className={['muxui-tabs', 'pb-link-tabs', className].filter(Boolean).join(' ')}
+      data-muxui-size={size}
+    >
       <div className="muxui-tabs__motion" data-muxui-tabs-variant={variant}>
         <div className="muxui-tabs__list">
           {items.map((item) => {

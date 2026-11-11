@@ -1,15 +1,27 @@
 /* LinkTabs: Mux Tabs' look on links. Mux draws its underline and segment pill with motion after
    hydration; these rules draw the current tab statically and undo Mux Link's own link colour. */
 @layer app {
+  /* The bar never grows past its column: tabs wrap to new lines, and so do long labels. */
+  .pb-link-tabs {
+    min-inline-size: 0;
+    max-inline-size: 100%;
+  }
+
   .pb-link-tabs .muxui-tabs__list {
     flex-wrap: wrap;
   }
 
   .pb-link-tabs .muxui-tabs__tab {
+    min-inline-size: 0;
+    max-inline-size: 100%;
     color: var(--muxui-semantic-content-default);
     font-size: var(--muxui-semantic-typography-body-size);
     font-weight: var(--muxui-semantic-typography-control-weight);
+    text-align: center;
     text-decoration: none;
+    /* Mux keeps a tab on one line; a translated label longer than the screen wraps instead. */
+    white-space: normal;
+    overflow-wrap: anywhere;
   }
 
   .pb-link-tabs .muxui-tabs__tab:hover,
@@ -29,11 +41,24 @@
   }
 
   .pb-link-tabs [data-muxui-tabs-variant='segment'] .muxui-tabs__tab {
+    /* Mux's segment tabs never shrink (flex: 0 0 auto); these may, so a long label wraps. */
+    flex: 0 1 auto;
     border-radius: var(--muxui-semantic-shape-option-radius);
   }
 
   .pb-link-tabs [data-muxui-tabs-variant='segment'] .muxui-tabs__tab[aria-current='page'] {
     color: var(--muxui-semantic-content-on-solid);
     background-color: var(--muxui-semantic-surface-emphasis);
+  }
+
+  /* Forced colours (Windows high contrast) replace every colour and background, so the segment's
+     fill disappears and the underline merges with the list's own border. Mux's selected rules key
+     on aria-selected, which links do not have; an underline under the label survives. */
+  @media (forced-colors: active) {
+    .pb-link-tabs .muxui-tabs__tab[aria-current='page'] {
+      text-decoration-line: underline;
+      text-decoration-thickness: 0.15em;
+      text-underline-offset: 0.3em;
+    }
   }
 }
