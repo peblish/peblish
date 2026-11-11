@@ -5,8 +5,9 @@
    foregrounds, the only Mux accent colours with a dark branch (catalogue gap G7). The page
    width is layout, which Mux has no token for. Mapping: packages/ui/MUX.md. */
 
-/* The box model Mux UI rc.6 components assume: they take box sizing from the page. In the
-   reset layer, below Mux's own rules, so a component that sets its own still wins. */
+/* The app's own elements use border-box. Mux UI rc.7 reverts its own elements to the browser's
+   box model whatever the page sets, so this reaches only the app's markup; where the app gives a
+   Mux part a width that must include its padding, it says border-box there (auth.css). */
 @layer reset {
   *,
   *::before,
@@ -34,14 +35,10 @@
     -webkit-text-size-adjust: 100%;
   }
 
+  /* Mux's own base rule gives the body its text face, size, line height, colour and height. */
   body {
     margin: 0;
-    min-height: 100vh;
-    font-family: var(--muxui-semantic-typography-text-font-family);
-    font-size: var(--muxui-semantic-typography-text-m-font-size);
-    line-height: var(--muxui-semantic-typography-text-line-height);
     background: var(--muxui-semantic-surface-background);
-    color: var(--muxui-semantic-content-default);
     overflow-wrap: anywhere;
   }
 

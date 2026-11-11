@@ -121,13 +121,13 @@ The accents use TagGroup's hue foregrounds because they are the only Mux accent 
 
 The other jobs, straight from Mux (prefix `--muxui-`): text `semantic-content-default`; muted text (meta lines, counts, times) `semantic-content-muted`; links `semantic-content-link`; separators and thread lines `semantic-border-subtle`; hover fill `semantic-surface-hover`; page `semantic-surface-background`; raised surface (cards, menus, the docked bar) `semantic-surface-raised`; quiet fill (notice, code, stub) `semantic-surface-subtle`; link hover `semantic-content-link-hover`; borders on controls and collections `semantic-border-default`; dense row lines `semantic-border-faint`; selected item `semantic-selection-background`; focus ring `outline: 2px solid var(--muxui-semantic-focus-ring)` (Mux's own `:focus-visible` rule already draws it, so the app no longer sets one). Anything else: the catalogue's "Which token for which job" table.
 
-### Base rules (changed for Mux)
+### Base rules
 
-rc.6 components take box sizing and font from the page (catalogue G12), so the base rules in `tokens.css` now give them what they were designed against:
+Mux UI rc.7 components bring their own font and box model: they no longer take font, box sizing or Separator margin from the page, and Mux's base rule gives the body its text face, size (fluid 14 to 16px), line height and colour. What `tokens.css` adds:
 
-- `*, *::before, *::after { box-sizing: border-box }`, in the `reset` layer (below Mux, so a Mux rule that sets its own wins). Before, the page used the browser's `content-box`. A layout of yours that added padding to a fixed width now includes it.
-- `body` takes Mux's text face (`--muxui-semantic-typography-text-font-family`), size (`--muxui-semantic-typography-text-m-font-size`, fluid 14 to 16px, was a fixed 14px), line height (`--muxui-semantic-typography-text-line-height`, 1.5, was 1.45) and colour (`--muxui-semantic-content-default`).
-- The app's own `:focus-visible` rule is gone; Mux's applies.
+- `*, *::before, *::after { box-sizing: border-box }`, in the `reset` layer, for the app's own elements. Mux reverts its own elements to the browser's box model (content-box for most), so an app rule that gives a Mux part a width including its padding (`inline-size: 100%` on a `Card`) also sets `box-sizing: border-box` on it, as `auth.css` does for the auth card.
+- `body`: no margin, the page surface (`--muxui-semantic-surface-background`) and `overflow-wrap: anywhere`.
+- The app has no `:focus-visible` rule of its own; Mux's applies.
 - `.pb-page` padding takes Mux layout tokens.
 
 New `--pb-*` tokens go in `packages/ui/src/tokens/tokens.css` (the groundwork lane's file; ask root) and are only Mux tokens. Prefer using the Mux token directly.
