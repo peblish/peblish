@@ -1,5 +1,6 @@
+import { join } from 'node:path';
 import { describe, expect, test } from 'vitest';
-import { rewriteSubstrateImports, splitSubstrate } from '../vite.config.ts';
+import { rewriteSubstrateImports, splitDeclarations, splitSubstrate } from '../vite.config.ts';
 
 // The fail-closed shape checks of the client build's substrate.js split (vite.config.ts), on small sources:
 // a shape the split cannot express must fail the build instead of shipping a module that reads a missing name.
@@ -51,4 +52,15 @@ describe('rewriteSubstrateImports', () => {
   test.each(["import './substrate.js';\n", "import {} from './substrate.js';\n"])('rejects the side-effect-only %s', (code) =>
     expect(rewrite(code)).toThrow('a side-effect-only import of substrate.js'),
   );
+});
+
+// The vendored rc.7 files pass every check and split into the parts the client build has always had.
+describe('the vendored Mux UI files', () => {
+  const generated = join(import.meta.dirname, '../../ui/node_modules/@muxui/react/generated');
+  test('substrate.js splits into 81 wrappers', () => expect(splitSubstrate(join(generated, 'substrate.js')).wrappers.size).toBe(81));
+  test('overlays.js splits into 48 declarations, 9 of them exported', () => {
+    const { declarations } = splitDeclarations(join(generated, 'overlays.js'));
+    expect(declarations.size).toBe(48);
+    expect([...declarations.values()].filter(({ exported }) => exported)).toHaveLength(9);
+  });
 });
