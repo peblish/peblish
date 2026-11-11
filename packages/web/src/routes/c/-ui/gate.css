@@ -10,7 +10,8 @@
     flex-direction: column;
     gap: var(--muxui-semantic-layout-content-gap);
   }
-  /* Mux Text sets no margin, so Text rendered as a paragraph would keep the browser's (headings are reset in tokens.css). */
+  /* Mux's base styles give a paragraph a one-line bottom margin unless it is the last one; the gaps space
+     these parts, so Text rendered as a paragraph keeps none. */
   .gate-card .muxui-text {
     margin: 0;
   }
