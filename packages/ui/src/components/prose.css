@@ -108,11 +108,13 @@
   }
 
   /* Mux Table's look: a heavier line under the header, faint lines between rows. A table wider
-     than the column scrolls inside its own box. */
+     than the column scrolls inside its own box; contain keeps its width (whole words in every
+     cell) from widening a row or card around it that does not shrink below its content. */
   .pb-prose table {
     display: block;
     max-inline-size: 100%;
     overflow: auto;
+    contain: inline-size;
     border-collapse: collapse;
   }
 
