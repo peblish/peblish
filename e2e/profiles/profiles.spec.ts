@@ -435,14 +435,14 @@ test.describe('review cases', () => {
     const moderator = await (await browser.newContext()).newPage();
     await signedIn(moderator, review.moderator.name);
     await gotoHydrated(moderator, profile(review.prolific.name));
-    await expect(moderateOf(moderator).getByText(`Ban from !${review.community.name}`, { exact: true })).toBeVisible();
+    await expect(moderateOf(moderator).getByRole('button', { name: `Ban from !${review.community.name}`, exact: true })).toBeVisible();
     await expect(moderateOf(moderator).getByText('Ban from this instance', { exact: true })).toHaveCount(0);
     await moderator.context().close();
 
     const admin = await (await browser.newContext()).newPage();
     await signInAdmin(admin, review.admin);
     await gotoHydrated(admin, profile(review.prolific.name));
-    await expect(moderateOf(admin).getByText('Ban from this instance', { exact: true })).toBeVisible();
+    await expect(moderateOf(admin).getByRole('button', { name: 'Ban from this instance', exact: true })).toBeVisible();
     await expect(moderateOf(admin).getByText(/^Ban from !/)).toHaveCount(0);
     await admin.context().close();
   });
