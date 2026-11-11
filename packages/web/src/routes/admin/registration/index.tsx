@@ -6,6 +6,7 @@ import { InviteCreateBody, type InviteRow, type InviteStatus } from '@peblish/sc
 import { Button } from '@peblish/ui/components/button';
 import { createFileRoute, redirect } from '@tanstack/react-router';
 import { createServerFn } from '@tanstack/react-start';
+import { setResponseStatus } from '@tanstack/react-start/server';
 import { type } from 'arktype';
 import { useState } from 'react';
 import { useTranslate } from '../../../i18n/use-translate.ts';
@@ -29,7 +30,11 @@ const loadRegistration = createServerFn({ method: 'GET' }).handler(async () => {
   if (!session) throw redirect({ to: '/auth/sign-in', search: { redirect: '/admin/registration' } });
   const { origin, handle } = await localHandles();
   const access = accessOf(session);
-  if (access !== 'ok') return { access } as const;
+  // Signed in but not an admin whose session passed two-factor: the denial copy, answered as a 403 (as the other admin tabs do).
+  if (access !== 'ok') {
+    setResponseStatus(403);
+    return { access } as const;
+  }
   const [registration, invites, code] = await Promise.all([registrationOverview(), listInvites(), takeFlash(session.sessionId, CREATED)]);
   // The code of the invite just made, on the first view after making it and never again.
   const created = code ? { code, ...(await lookupInvite(code)) } : null;
