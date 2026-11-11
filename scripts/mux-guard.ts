@@ -40,6 +40,7 @@ export const cssRules = [
   'css-infinite',
   'css-important',
   'css-unknown-token',
+  'css-token-value',
   'css-blur',
   'css-element-selector',
 ] as const;
@@ -200,6 +201,11 @@ function styleProblems(node: ts.Expression): string[] {
     const name = property.name.text.startsWith('--') ? property.name.text : kebab(property.name.text);
     const value = unwrap(property.initializer);
     const literal = ts.isStringLiteralLike(value) ? value.text.trim() : ts.isNumericLiteral(value) ? value.text : undefined;
+    // A --muxui-* name Mux UI does not define is no token, set or read (as in stylesheets).
+    const made = [name, ...[...(literal ?? '').matchAll(/var\(\s*(--muxui-[\w-]+)/g)].map((match) => match[1]!)].find(
+      (token) => token.startsWith('--muxui-') && !muxTokens().has(token),
+    );
+    if (made) return [`${name}: ${made} is not a Mux UI token`];
     if (name.startsWith('--')) {
       // A custom property may carry data (a depth, a count); a string it sets must be tokens.
       return literal !== undefined && ts.isStringLiteralLike(value) && literals(literal, anyAlias).length ? [`${name}: ${literal}`] : [];
@@ -596,8 +602,21 @@ export function muxTokens(tarball = muxTarball): Set<string> {
   return tokens;
 }
 
-/** What a stylesheet is checked against: Mux's tokens, tokens.css's names and its pure aliases. */
-export type CssContext = { aliases: ReadonlySet<string>; defined: Names };
+/**
+ * What a stylesheet is checked against: tokens.css's pure aliases, every name Mux and tokens.css define, and Mux's
+ * own tokens alone (`mux`), which tell a real Mux token from a --muxui-* name the app made up.
+ */
+export type CssContext = { aliases: ReadonlySet<string>; defined: Names; mux: Names };
+
+/**
+ * Whether a custom property's value is built from tokens: var()s of Mux tokens or `aliases` with nothing
+ * hand-written beside them (maths over them is fine), or a bare 0, none, auto, normal or CSS-wide keyword.
+ */
+function fromTokens(value: string, aliases: Names): boolean {
+  const bare = value.trim();
+  if (cssWide.test(bare) || /^(0|none|auto|normal)$/i.test(bare)) return true;
+  return /var\(/.test(bare) && handWritten(bare, aliases).length === 0;
+}
 
 const sized = /^[+-]?(\d+\.?\d*|\.\d+)[a-z%]+$/i;
 const spacingProperty = /^(padding|margin)(-[a-z]+)*$|^(gap|row-gap|column-gap)$/;
@@ -645,8 +664,19 @@ export function scanCss(
       if (kind === 'statement' && /^@import\s+(url\()?\s*['"]@muxui\/react(\/|['"])/i.test(text)) add(line, 'mux-import', text, anchor);
     }
   }
-  const local = new Set([...context.aliases, ...pureAliases(css, context.aliases)]);
+  // Custom properties, whatever their prefix. A name this file sets to anything but tokens is not a token here,
+  // even a tokens.css alias. A --muxui-* name Mux does not define is unknown wherever it is set or read, so a
+  // local definition does not excuse it. Setting a real Mux token (or an alias) to tokens is how Mux is themed;
+  // setting one to anything else is css-token-value.
+  const pure = pureAliases(css, context.aliases);
+  const literal = new Set(
+    declarations(css)
+      .filter(({ property, value }) => property.startsWith('--') && !fromTokens(value, context.aliases))
+      .map(({ property }) => property),
+  );
+  const local: Names = { has: (name) => !literal.has(name) && (context.aliases.has(name) || pure.has(name)) };
   const own = definedProperties(css);
+  const made = (name: string) => name.startsWith('--muxui-') && !context.mux.has(name);
   for (const { kind, line, text, anchor } of items) {
     if (kind !== 'prelude') continue;
     const elements = elementSelectors(text);
@@ -683,8 +713,17 @@ export function scanCss(
       add(line, 'css-infinite', text, where);
     if (important) add(line, 'css-important', text, where);
     if (/^(backdrop-)?filter$/.test(property) && /\bblur\(/i.test(value)) add(line, 'css-blur', text, where);
+    if (made(property)) add(line, 'css-unknown-token', `${property} is not a Mux UI token, in ${text}`, where);
+    else if (
+      property.startsWith('--') &&
+      (context.mux.has(property) || context.aliases.has(property)) &&
+      !fromTokens(value, local) &&
+      !colourLiteral(value)
+    )
+      add(line, 'css-token-value', text, where);
     for (const match of value.matchAll(/var\(\s*(--[\w-]+)/g)) {
-      if (!context.defined.has(match[1]!) && !own.has(match[1]!)) add(line, 'css-unknown-token', `var(${match[1]}) in ${text}`, where);
+      const name = match[1]!;
+      if (made(name) || (!context.defined.has(name) && !own.has(name))) add(line, 'css-unknown-token', `var(${name}) in ${text}`, where);
     }
   }
   return { violations: out, layout: { comments: layoutComments, used: layoutUsed } };
@@ -814,6 +853,7 @@ export function scanRepository() {
   const context: CssContext = {
     aliases: pureAliases(tokensCss),
     defined: new Set([...muxTokens(), ...definedProperties(tokensCss)]),
+    mux: muxTokens(),
   };
   const layout = { comments: 0, used: 0 };
   const violations = [
