@@ -4,10 +4,12 @@
 # refuses a second with admin.exists), then worker (it starts, its healthcheck passes, it
 # stops on SIGTERM and exits 0), then web (/healthz and /readyz answer, the healthcheck passes
 # and fails on a closed port, and it runs as a non-root user). First, a process command that
-# disagrees with PEBLISH_PROCESS must be refused. CI's image job runs it; locally:
+# disagrees with PEBLISH_PROCESS must be refused. CI's image job runs it; locally, on a database
+# created fresh for it (migrate refuses one whose local instance is not the PUBLIC_ORIGIN set
+# below, so a lane database will not do):
 #
 #   sh scripts/image-smoke.sh peblish:local peblish-dev_default \
-#     postgres://peblish:peblish@postgres:5432/peblish_g0 18388
+#     postgres://peblish:peblish@postgres:5432/peblish_smoke 18388
 set -eu
 image=${1:?usage: sh scripts/image-smoke.sh <image> <network> <database-url> [host-port]}
 network=${2:?usage: sh scripts/image-smoke.sh <image> <network> <database-url> [host-port]}
