@@ -1,7 +1,7 @@
 import { DropZone, type MuxUIDropEvent } from '@peblish/ui/components/drop-zone';
 import { Input } from '@peblish/ui/components/input';
 import { ProgressBar } from '@peblish/ui/components/progress-bar';
-import { useId, useRef, type ReactNode } from 'react';
+import { useRef, type ReactNode } from 'react';
 import { useTranslate } from '../../../i18n/use-translate.ts';
 
 /**
@@ -21,9 +21,6 @@ export function ImageField({
 }) {
   const { t } = useTranslate();
   const input = useRef<HTMLInputElement>(null);
-  // Mux UI's Input links the error to the field by the id the error has when it mounts, and
-  // React Aria names an error that appears later only a render after that, so it is named here.
-  const errorId = useId();
 
   async function take(event: MuxUIDropEvent) {
     const item = event.items.find((dropped) => dropped.kind === 'file');
@@ -45,11 +42,7 @@ export function ImageField({
         <Input.Label>{t('composer', 'image.label')}</Input.Label>
         <Input.Input ref={input} type="file" name="image" className="cmp__file" accept="image/jpeg,image/png,image/webp,image/gif" />
         <Input.Description>{t('composer', 'image.hint')}</Input.Description>
-        {error !== undefined && (
-          <Input.Error id={errorId} role="alert">
-            {error}
-          </Input.Error>
-        )}
+        {error !== undefined && <Input.Error role="alert">{error}</Input.Error>}
       </Input.Root>
       {progress !== null && <ProgressBar label={t('composer', 'image.sending')} value={progress} />}
     </DropZone>
