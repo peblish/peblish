@@ -9,13 +9,19 @@
   .legal-page .legal-title {
     margin: 0 0 var(--muxui-semantic-layout-group-gap);
   }
+  /* The page inherits overflow-wrap: anywhere, which lets a table cell shrink to one letter (a
+     cell's narrowest width counts every letter as a break). break-word breaks only a word that
+     would overflow, so cells keep whole words and a table too wide for a phone scrolls in its box. */
+  .legal-page .legal-body {
+    overflow-wrap: break-word;
+  }
   .legal-page .legal-rule {
     margin-block: var(--muxui-semantic-layout-section-gap) var(--muxui-semantic-layout-group-gap);
   }
-  .legal-page .legal-list h2 {
+  .legal-page .legal-list-title {
     margin: 0 0 var(--muxui-semantic-layout-tight-gap);
   }
-  .legal-page .legal-list ul {
+  .legal-page .legal-links {
     list-style: none;
     margin: 0;
     padding: 0;

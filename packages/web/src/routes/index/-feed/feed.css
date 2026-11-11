@@ -9,7 +9,7 @@
     border-block-end: 1px solid var(--muxui-semantic-border-subtle);
   }
 
-  .feed-toolbar h1 {
+  .feed-toolbar .feed-title {
     margin: 0 var(--muxui-semantic-layout-tight-gap) 0 0;
   }
 
@@ -18,7 +18,7 @@
   }
 
   /* The sort and period tabs wrap inside the bar instead of widening the page. */
-  .feed-toolbar > nav {
+  .feed-toolbar .feed-tabs {
     min-inline-size: 0;
     max-inline-size: 100%;
   }

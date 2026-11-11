@@ -37,7 +37,7 @@ export function FeedPage({ path, data, search }: { path: string; data: FeedData;
   return (
     <main className="pb-page feed" data-feed={data.feed}>
       <FeedToolbar path={path} search={search}>
-        <Text as="h1" variant="heading" size="sm">
+        <Text as="h1" variant="heading" size="sm" className="feed-title">
           {t('shell', feedTitleKeys[data.feed])}
         </Text>
       </FeedToolbar>
@@ -62,6 +62,7 @@ export function FeedToolbar({ path, search: address, children }: { path: string;
       {children}
       <LinkTabs
         aria-label={t('feeds', 'sort.group')}
+        className="feed-tabs"
         variant="segment"
         size="sm"
         items={sorts.map((value: Sort) => ({
@@ -73,6 +74,7 @@ export function FeedToolbar({ path, search: address, children }: { path: string;
       {sort === 'top' && (
         <LinkTabs
           aria-label={t('feeds', 'period.group')}
+          className="feed-tabs"
           variant="segment"
           size="sm"
           items={periods.map((value: Period) => ({

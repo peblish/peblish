@@ -1,3 +1,4 @@
+import { Text } from '@peblish/ui/components/text';
 import { VoteControl, type Vote } from '@peblish/ui/components/vote-control';
 import { useRef, useState } from 'react';
 import { useTranslate } from '../../i18n/use-translate.ts';
@@ -30,7 +31,9 @@ function SlowVote({ id, refuseUp }: { id: string; refuseUp?: boolean }) {
   return (
     <div data-testid={id}>
       <VoteControl score={5} myVote={0} orientation="horizontal" onVote={save} labels={labels} locale={locale} />
-      <output data-testid={`${id}-log`}>{log.join(',')}</output>
+      <output data-testid={`${id}-log`}>
+        <Text as="span">{log.join(',')}</Text>
+      </output>
     </div>
   );
 }

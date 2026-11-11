@@ -21,7 +21,7 @@ export function LegalPage({ data }: { data: LegalPageData }) {
           <Text as="h1" variant="heading" size="md" className="legal-title">
             {page.title}
           </Text>
-          <Prose html={page.html} />
+          <Prose html={page.html} className="legal-body" />
         </article>
       ) : (
         about && (
@@ -37,10 +37,10 @@ export function LegalPage({ data }: { data: LegalPageData }) {
         <>
           <Separator className="legal-rule" />
           <nav className="legal-list" aria-labelledby="legal-list">
-            <Text as="h2" variant="label" size="md" id="legal-list">
+            <Text as="h2" variant="label" size="md" id="legal-list" className="legal-list-title">
               {t('admin', 'legal.list')}
             </Text>
-            <ul>
+            <ul className="legal-links">
               {links.map((link) => (
                 <li key={link.slug}>
                   <Link href={`/${link.slug}`} current={link.slug === data.slug}>
