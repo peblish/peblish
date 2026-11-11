@@ -109,10 +109,12 @@ test('on a long page the sidebar stays in view, and its column runs the page hei
 
   await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
   await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(2 * 800);
-  // The Sidebar is pinned to the screen, full height...
-  expect(await side.evaluate((element) => JSON.stringify(element.getBoundingClientRect()))).toBe(
-    JSON.stringify({ x: 0, y: 0, width: 256, height: 800, top: 0, right: 256, bottom: 800, left: 0 }),
-  );
+  // The Sidebar is pinned to the screen, full height (to the pixel: a fractional page height leaves a fraction)...
+  const sideBox = await side.evaluate((element) => {
+    const { x, y, width, height } = element.getBoundingClientRect();
+    return [x, y, width, height].map((value) => Math.round(value) || 0);
+  });
+  expect(sideBox).toEqual([0, 0, 256, 800]);
   // ...and its column, which a full-page capture shows below the fold, spans the whole page in the same colour.
   const columnBox = await column.evaluate((element) => {
     const box = element.getBoundingClientRect();
