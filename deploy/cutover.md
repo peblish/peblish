@@ -247,10 +247,13 @@ All must hold, else stay on PieFed:
 8. The TLS rehearsal (below) recorded which certificate path works on this Easypanel, path A (a
    DNS-challenge certificate) or path B (a Cloudflare Origin CA certificate), with the date and how
    the certificate was installed, and its checks passed on a proxied `peblish.com` test hostname.
+   Done 2026-11-11 on `tls-1.peblish.com`: path A, the certificate inline in Easypanel's Traefik
+   custom config, every check below passed, then torn down. If production runs on another
+   Easypanel server, its custom config must be read empty (or its contents kept) first.
 9. Before step 6 stops anything, the feddit.com certificate of that path is on the new origin and
    its check (below) passes: a certificate both Andrew's browser and Cloudflare trust.
 
-## TLS on the new origin (before step 6; not yet rehearsed)
+## TLS on the new origin (before step 6; path A rehearsed 2026-11-11)
 
 **The requirement:** before PieFed stops (step 6), the new origin serves feddit.com with a
 certificate that both Andrew's browser and Cloudflare (SSL/TLS mode Full (strict)) trust. Andrew's
@@ -265,39 +268,110 @@ before the switch, since Cloudflare still sends feddit.com to the box. Two paths
   sign-in then needs an isolated browser profile that trusts Cloudflare's origin root (below,
   removed after), and the pretest passes that root with `--cacert`.
 
-**Rehearse first** (go or no-go item 8), on a proxied `peblish.com` test hostname `T` on an
-Easypanel service, with each command below run with `T` in place of feddit.com. Record the date,
-the path, and the exact way the certificate went into Easypanel (a custom certificate on the
-domain, or a Traefik certificate file), so production repeats it as recorded. If Easypanel takes
-neither, the step is a no-go until root decides.
+**The rehearsal** (go or no-go item 8, 2026-11-11, Easypanel at 38.102.126.114, project
+`peblish-tls` with `postgres` and `web` only, no worker, federation switch off) used the proxied
+test hostname `tls-1.peblish.com`, first pointed at 192.0.2.1 (nothing answers, as feddit.com
+points at the box), and proved path A end to end:
 
-**Path A, issue.** On the new origin's server (the production Easypanel host, not the box) as
-root, with a Cloudflare API token limited to Zone, DNS, Edit on the feddit.com zone (a secret:
-typed into the file with an editor, never echoed or pasted into a chat):
+- A Let's Encrypt certificate by DNS challenge from Andrew's machine (issuer YE1, 90 days).
+- Easypanel has no certificate field on a domain (a domain only names a certificate resolver).
+  It takes a custom certificate in its Traefik custom config, set with the API procedure
+  `traefik/setCustomConfig` (Easypanel's guide does the same with a `custom.yaml` file under
+  `/etc/easypanel/traefik/config/` over SSH; Andrew's machine has no SSH key for this server). The certificate and key
+  go inline, so no file and no SSH is needed. Traefik served it within seconds, with no restart,
+  and before any domain existed.
+- With the hosts override and normal trust: `TLS ok, http 200` on `/healthz`, `/readyz` and
+  `/auth/sign-in` behind basic auth, `Verify return code: 0 (ok)`, and an isolated browser session
+  loaded the sign-in page while refusing a name with no certificate.
+- After the switch (the proxied record to the origin): `/healthz` 200 through Cloudflare.
+- Renewal: with the custom certificate removed, Traefik's own Let's Encrypt resolver got a
+  certificate by HTTP challenge through the Cloudflare proxy in about 15 seconds.
+
+The peblish.com zone runs SSL/TLS mode Full, not Full (strict): read from behaviour, since the
+Cloudflare token cannot read zone settings (403 on both zones). Through Cloudflare HTTPS worked
+(Flexible would loop on Traefik's redirect to HTTPS), and after five idle minutes Cloudflare still
+answered 200 while the origin served a self-signed certificate (Full (strict) answers 526). Its
+"Always Use HTTPS" is off: the challenge path over HTTP reached Traefik through Cloudflare. The
+feddit.com zone's two settings could not be read either; Andrew reads both in the dashboard
+before step 6 (below).
+
+**Path A, issue.** On Andrew's machine, with lego 5.6.0 (`brew install lego`, or the release
+archive checked against its `checksums.txt`) and a Cloudflare API token limited to Zone, DNS,
+Edit and Zone, Zone, Read on the feddit.com zone. The token is a secret: `read -rs` keeps it in
+the shell's memory, never on screen, in a file or in the history.
 
 ```sh
-apt-get install -y certbot python3-certbot-dns-cloudflare
-install -d -m 700 /root/.secrets && install -m 600 /dev/null /root/.secrets/cloudflare-dns.ini
-editor /root/.secrets/cloudflare-dns.ini     # one line: dns_cloudflare_api_token = <token>
-certbot certonly --dns-cloudflare --dns-cloudflare-credentials /root/.secrets/cloudflare-dns.ini \
-  --dns-cloudflare-propagation-seconds 60 --cert-name feddit.com -d feddit.com
-openssl x509 -in /etc/letsencrypt/live/feddit.com/fullchain.pem -noout -subject -issuer -enddate -ext subjectAltName
+read -rs CLOUDFLARE_DNS_API_TOKEN && export CLOUDFLARE_DNS_API_TOKEN    # paste the token, Enter
+lego run --accept-tos --path $S/lego --dns cloudflare --dns.resolvers 1.1.1.1:53 -d feddit.com
+openssl x509 -in $S/lego/certificates/feddit.com.crt -noout -subject -issuer -enddate -ext subjectAltName
 ```
 
-`certbot` must end with "Successfully received certificate"; the `openssl` line must show
-`DNS:feddit.com` and a Let's Encrypt issuer. Install `fullchain.pem` and `privkey.pem` on the
-`web` domain as the rehearsal recorded. certbot's timer renews by the same challenge; the
-rehearsal also records the deploy hook (`--deploy-hook`) that puts a renewed certificate where
-Easypanel reads it. Read the end date back during the soak (step 10).
+`lego` must log "Server responded with a certificate"; the `openssl` line must show
+`DNS:feddit.com` and a Let's Encrypt issuer. `--dns.resolvers 1.1.1.1:53` matters on a machine
+with Tailscale: its resolver (100.100.100.100) answered NXDOMAIN for the challenge record and
+lego gave up after two minutes. Without `--email` the Let's Encrypt account has no contact
+address; the account key, certificate and key stay in `$S/lego` (700).
 
-**Path B, issue.** In Cloudflare, SSL/TLS, Origin Server, create an RSA certificate for
-`feddit.com` and paste its certificate and key into the `web` domain as the rehearsal recorded
-(the key is shown once; never store it in the repository). Save Cloudflare's Origin CA RSA root
-(from Cloudflare's Origin CA documentation) as `$S/origin-ca-root.pem`.
+**Path A, install.** First read the server's Traefik custom config. It was empty on this server;
+if it is not, add the `tls` block to what is there and never replace other content. Then build the
+file (Traefik reads PEM given inline in `certFile` and `keyFile`) and set it, here through the API
+with the key from `~/.agents/easypanel.env`, kept off the command line:
 
-**Both paths:** read the zone's SSL/TLS mode back as Full (strict). If the `web` domain must exist
-for the certificate to be installed, create the production project's `web` service and domain now,
+```sh
+set -a; . ~/.agents/easypanel.env; set +a
+EP() { printf 'header = "Authorization: %s"\n' "$EASYPANEL_API_KEY" | curl -sS -K - "$@"; }
+EP "$EASYPANEL_URL/api/rpc/traefik/getCustomConfig"; echo     # {"json":""} when empty
+(umask 077; { printf 'tls:\n  certificates:\n    - certFile: |\n'; sed 's/^/        /' $S/lego/certificates/feddit.com.crt
+  printf '      keyFile: |\n'; sed 's/^/        /' $S/lego/certificates/feddit.com.key; } > $S/custom.yaml
+  python3 -c 'import json,sys; print(json.dumps({"json": {"config": open(sys.argv[1]).read()}}))' $S/custom.yaml > $S/custom.json)
+EP -H 'Content-Type: application/json' --data-binary @$S/custom.json "$EASYPANEL_URL/api/rpc/traefik/setCustomConfig"; echo
+```
+
+The read-back of `getCustomConfig` now holds the private key: compare it, never print it. No
+Traefik restart is needed (a restart is panel-wide). Then create the production `web` domain
+(HTTPS, port 3000, certificate resolver left blank, which is Easypanel's Let's Encrypt resolver),
 with no source uploaded (Easypanel starts a service once it has code, step 4), so nothing runs.
+Install before creating the domain: Traefik's resolver skips a name a stored certificate covers,
+so it never tries an HTTP challenge before the switch (that would fail while Cloudflare points at
+the box, and failures count toward Let's Encrypt's limit of 5 an hour per name). In the rehearsal
+the name stayed out of Traefik's certificate list until the custom certificate was removed. A
+custom certificate also wins over a Traefik certificate for the same name.
+
+**Path A, renewal** (rehearsed). Once Cloudflare reaches the new origin (step 7 item 8), hand the
+certificate to Traefik: set the custom config back to what it held before (empty here,
+`{"json": {"config": ""}}`). Traefik's resolver then gets its own certificate by HTTP challenge
+through Cloudflare and renews it itself; the rehearsal had it in 15 seconds. Two conditions:
+
+- The challenge request (`http://feddit.com/.well-known/acme-challenge/...`) must reach Traefik
+  on port 80: feddit.com's "Always Use HTTPS" off, or a rule that leaves that path on HTTP. If the
+  edge redirected it to HTTPS, it would reach the app instead of Traefik's challenge handler and
+  fail (reasoned, not tried: peblish.com has the setting off).
+- Until Traefik has its certificate the origin serves Easypanel's default one, so under Full
+  (strict) Cloudflare should answer 526 for those seconds (expected; under peblish.com's Full it
+  answered 200). Do it in a quiet moment, then read `openssl s_client` (below) until the issuer
+  is Let's Encrypt with a new serial: lego's ECDSA certificate comes from an E or YE issuer,
+  Traefik's RSA one from an R or YR issuer (YR2 in the rehearsal). If none comes within two
+  minutes, put `$S/custom.json` back (the lego certificate is still valid) and look at Traefik's
+  log.
+
+Otherwise keep path A by hand: rerun the same `lego run` (it renews when about a third of the
+lifetime is left), rebuild `$S/custom.yaml` and `$S/custom.json` and set them again, at least
+every 60 days. Read the end date back during the soak (step 10).
+
+Not done, an option: Traefik can be given a DNS-challenge resolver itself (Traefik environment
+`TRAEFIK_CERTIFICATESRESOLVERS_<name>_ACME_DNSCHALLENGE_PROVIDER=cloudflare` with its email and
+storage, plus `CF_DNS_API_TOKEN`, then a Traefik restart, and the domain's resolver field set to
+`<name>`). Other domains keep their resolver, but the restart redeploys Traefik for every project
+and rotates the dashboard token, and the DNS token then lives in Traefik's environment.
+
+**Path B, issue** (not rehearsed; path A works). In Cloudflare, SSL/TLS, Origin Server, create an
+RSA certificate for `feddit.com` and install its certificate and key the same way as path A (the
+key is shown once; never store it in the repository). Save Cloudflare's Origin CA RSA root (from
+Cloudflare's Origin CA documentation) as `$S/origin-ca-root.pem`. The token can list Origin CA
+certificates; creating one was not tried.
+
+**Both paths:** read the zone's SSL/TLS mode back as Full (strict) and record "Always Use HTTPS"
+(the token cannot read either).
 
 **Check, before step 6** (go or no-go item 9), from Andrew's machine, with `O` the new origin's
 address (no firewall is on it yet; step 7 item 3 adds it). `CA` is empty for path A (the
@@ -316,7 +390,16 @@ that does not match) or a handshake error (exit 35) is a no-go: the origin serve
 default certificate or the wrong one. `openssl` must print `Verify return code: 0 (ok)`, with a
 Let's Encrypt issuer for path A or a CloudFlare Origin issuer for path B (an Origin CA
 certificate's subject is not feddit.com; the name is in its alternative names, which curl
-checked). Record the issuer and end date with the rehearsal.
+checked). Record the issuer and end date. The rehearsal had `TLS ok, http 404` before `web`
+existed and `TLS ok, http 200` after, `Verify return code: 0 (ok)`, issuer Let's Encrypt YE1, end
+date 2027-02-09 (that test certificate is revoked). Run these lines in `bash`: zsh, macOS's default
+shell, passes `${CA:+--cacert $CA}` and a variable like `$R` (step 7 item 6) to curl as one
+argument, and curl stops with "option ... is unknown".
+
+**Browser for the sign-in, path A.** Andrew's usual browser with the hosts file line (secure DNS
+off for that step, step 7 item 5). The rehearsal used an isolated Obscura session behind a local
+proxy that sent only the test name to the origin: the sign-in page loaded with the certificate
+checked, and a name the origin has no certificate for was refused.
 
 **Path B only, the browser for the sign-in** (step 7 item 5), on Andrew's machine: a Firefox
 profile of its own trusts the origin root, so his everyday browsers never do. It needs Firefox
@@ -424,7 +507,7 @@ against the final dump before exporting. Beyond the responder and the stopped se
    still off: read `delivery.enabled` back as `false` first. Its jobs wait until step 8.
 
    The `web` domain serves the feddit.com certificate installed before step 6 ("TLS on the new
-   origin"; not yet rehearsed). Run that section's check again now that `web` runs; it must print
+   origin", path A rehearsed 2026-11-11). Run that section's check again now that `web` runs; it must print
    `TLS ok, http 200`. Without it this step is a no-go.
 
 3. **Origin firewall: Cloudflare only.** `PEBLISH_TRUSTED_PROXY=cloudflare` takes each client's
@@ -484,7 +567,8 @@ against the final dump before exporting. Beyond the responder and the stopped se
    certificate: normal trust for path A (the system's roots validate the Let's Encrypt chain), and
    `--cacert` with Cloudflare's origin root for path B (which cannot validate a Let's Encrypt
    chain). Never `-k`. Any `000` below is a failed connection or certificate: rerun that line with
-   `-sS` in place of `-s` to see which, and stop.
+   `-sS` in place of `-s` to see which, and stop. Run it in `bash`: zsh passes `$R` to curl as one
+   argument, and curl stops with "option --resolve ... is unknown".
 
    ```sh
    R="--resolve feddit.com:443:$O"                                         # path A
@@ -516,6 +600,13 @@ against the final dump before exporting. Beyond the responder and the stopped se
    Cloudflare: `exit 0` with any HTTP code, a TLS or certificate error (`exit 35`, `exit 60` or
    another), `exit 52` or `exit 56` (connected, then cut off), or `exit 28` with a non-zero
    `connected` time (connected, then slow). Look at the firewall rules (item 3) before going on.
+
+   Rehearsed 2026-11-11 against `tls-1.peblish.com` on 38.102.126.114, with no firewall: the open
+   ports fail as they should (443 `exit 0, http 401, connected 0.23`, 80
+   `exit 0, http 301, connected 0.23`), and closed ports 8443, 4443 and 5432 (the same lines with
+   `:<port>` in the `--resolve` and the URL) pass with `exit 7, http 000, connected 0.000000` in 0.24 s. That
+   server drops no port, so the `DROP` shape was shown against 192.0.2.1, where nothing answers:
+   `exit 28, http 000, connected 0.000000` after 5.0 s.
 
 8. Switch the Cloudflare origin of feddit.com to the new origin in one step (the proxied DNS
    record). No cache rules on `/u`, `/c`, `/post`; the WAF must not block `POST /inbox`. From here
