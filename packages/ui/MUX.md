@@ -4,7 +4,7 @@ One page for the lanes that move the app onto Mux UI. How each component is mean
 
 ## The import rule
 
-- Mux UI comes only from the vendored tarball, `vendor/muxui/muxui-react-0.1.0-rc.6.tgz`, a dependency of `packages/ui` alone.
+- Mux UI comes only from the vendored tarball, `vendor/muxui/muxui-react-0.1.0-rc.7.tgz`, a dependency of `packages/ui` alone.
 - Only `packages/ui` imports `@muxui/react`. Routes and the shell import one module per component: `import { Card } from '@peblish/ui/components/card'` (no extension, no barrel). One module per component keeps tree-shaking working: a route that imports `separator` does not load `sidebar`.
 - A wrapper re-exports the component, its parts and its prop types and nothing else. If one you need is missing, add `packages/ui/src/components/<kebab-name>.tsx` the same way and say so in your notes.
 - The app's own composed components (`PostCard`, `CommentThread`, `VoteControl`, `ReplyBar`, `Prose`, `Handle`, `Time`, `Badge`, the form fields) keep their public props.
@@ -25,7 +25,7 @@ One page for the lanes that move the app onto Mux UI. How each component is mean
 
 ## Wrappers
 
-Every component Mux UI rc.6 exports has a module in `packages/ui/src/components/`. Parts are reached through the component (`Card.Root`, `Card.Header`, `Sidebar.NavItem`).
+Every component Mux UI rc.6 exported has a module in `packages/ui/src/components/` (rc.7's new `ColorModePicker` and `ThemePicker` have none: the app does not use them). Parts are reached through the component (`Card.Root`, `Card.Header`, `Sidebar.NavItem`).
 
 | Module                                                                                                            | Exports                                                                                                                                                              |
 | ----------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -232,4 +232,4 @@ import { Sidebar } from '@peblish/ui/components/sidebar';
 </nav>;
 ```
 
-The three examples type-check against rc.6 (checked when this page was written).
+The three examples type-checked against rc.6; rc.7 removes no export or prop they use.

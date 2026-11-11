@@ -39,7 +39,7 @@
       "enabled": false
     },
     {
-      "description": "Node 24, as the root engines field (>=24.19 <25) and .nvmrc say. Mux rc.6 allows >=24.19 <27, so moving to Node 25 or 26 is a root decision, not a Mux limit.",
+      "description": "Node 24, as the root engines field (>=24.19 <25) and .nvmrc say. Mux rc.7 allows >=24.19 <27, so moving to Node 25 or 26 is a root decision, not a Mux limit.",
       "matchDepNames": ["node"],
       "allowedVersions": "<25"
     },

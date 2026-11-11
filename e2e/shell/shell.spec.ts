@@ -89,7 +89,7 @@ test("on a phone the sidebar is Mux UI's drawer behind the menu button, with App
   await page.setViewportSize({ width: 390, height: 800 });
   await gotoHydrated(page, '/');
   await expect(page.getByRole('complementary', { name: 'Sidebar' })).toBeHidden();
-  // Mux UI names the button and the drawer in English in every locale (rc.6).
+  // Mux UI names the button and the drawer in English in every locale (rc.7).
   const open = page.getByRole('button', { name: 'Open navigation' });
   const drawer = page.getByRole('dialog', { name: 'Navigation' });
   await open.click();

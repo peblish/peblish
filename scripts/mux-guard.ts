@@ -50,7 +50,8 @@ export type Rule = (typeof rules)[number];
 const root = join(import.meta.dirname, '..');
 const baselinePath = join(import.meta.dirname, 'mux-guard.baseline.json');
 const exceptionsPath = join(import.meta.dirname, 'mux-guard.exceptions.json');
-const muxTarball = join(root, 'vendor/muxui/muxui-react-0.1.0-rc.6.tgz');
+/** The vendored Mux UI tarball, read from packages/ui's `file:` dependency so a swap needs no edit here. */
+export const muxTarball = vendoredTarball(readFileSync(join(root, 'packages/ui/package.json'), 'utf8'));
 const tokensFile = 'packages/ui/src/tokens/tokens.css';
 // The file that imports Mux UI's own stylesheet and nothing else.
 const muxStylesheet = 'packages/ui/src/styles.css';
@@ -586,6 +587,15 @@ export function tarFile(tgz: Uint8Array, name: string): string | undefined {
     offset += Math.ceil(size / 512) * 512;
   }
   return undefined;
+}
+
+/** The tarball path a package.json gives `@muxui/react` as `file:`, resolved from packages/ui. */
+export function vendoredTarball(packageJson: string): string {
+  const spec = (JSON.parse(packageJson) as { dependencies?: Record<string, string> }).dependencies?.['@muxui/react'];
+  if (!spec?.startsWith('file:') || !spec.endsWith('.tgz')) {
+    throw new Error(`mux-guard: packages/ui/package.json must take @muxui/react from a file: tarball, not ${spec}`);
+  }
+  return join(root, 'packages/ui', spec.slice('file:'.length));
 }
 
 let muxTokenCache: Set<string> | undefined;

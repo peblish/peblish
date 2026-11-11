@@ -37,7 +37,7 @@ export interface LinkTabsProps extends Omit<ComponentPropsWithoutRef<'nav'>, 'ar
 /**
  * Tabs that are pages: a `nav` of real links with Mux Tabs' classes and tokens, so it reads like a
  * Mux `Tabs` bar but works before hydration and with scripts off, and each tab can open in a new tab.
- * Mux `Tabs` in rc.6 are buttons (no `href`), so they are only for panels on one page.
+ * Mux `Tabs` in rc.7 are buttons (no `href`), so they are only for panels on one page.
  */
 export function LinkTabs({ 'aria-label': label, items, variant = 'underline', size, link: As, className, ...rest }: LinkTabsProps) {
   return (
