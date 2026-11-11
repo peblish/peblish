@@ -1,250 +1,84 @@
-/* The community directory after directory-table.html: structure and states, not final styling. */
+/* The community directory and /resolve after directory-table.html, in Mux UI. Layout only;
+   colours, radii and type come from Mux components and tokens. */
 @layer app {
   .dir {
-    --dir-line: var(--muxui-semantic-border-default);
-    --dir-muted: var(--muxui-semantic-content-muted);
-    --dir-err: #b00020;
-    font-size: 14px;
-    line-height: 1.5;
+    display: flex;
+    flex-direction: column;
+    gap: var(--muxui-semantic-layout-content-gap);
   }
-
-  [data-muxui-color-scheme='dark'] .dir {
-    --dir-err: #ff7a8a;
+  .dir p,
+  .dir h1 {
+    margin: 0;
   }
-
-  .dir a {
-    color: var(--muxui-semantic-content-link);
-  }
-
   .dir-toolbar {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 6px 16px;
-    padding: 6px 0 8px;
-    border-bottom: 1px solid var(--pb-fg);
+    gap: var(--muxui-semantic-layout-control-gap) var(--muxui-semantic-layout-group-gap);
+    padding-block-end: var(--muxui-semantic-layout-tight-gap);
+    border-block-end: 1px solid var(--muxui-semantic-border-subtle);
   }
-
-  .dir-toolbar h1 {
-    margin: 0 4px 0 0;
-    font-size: 18px;
+  /* A row of choices wider than a phone scrolls inside itself. */
+  .dir-seg {
+    max-inline-size: 100%;
+    overflow-x: auto;
   }
-
   .dir-space {
     flex: 1;
   }
-
-  /* Links that look like a pressed segmented control, as the feeds' sort does. */
-  .dir-seg {
-    display: inline-flex;
-    flex: none;
-    flex-wrap: wrap;
-    border: 1px solid var(--pb-line);
-    border-radius: 2px;
-  }
-
-  .dir-seg a {
-    padding: 3px 10px;
-    border-right: 1px solid var(--pb-line);
-    color: var(--pb-fg);
-    text-decoration: none;
-  }
-
-  .dir-seg a:last-child {
-    border-right: 0;
-  }
-
-  .dir-seg a:hover {
-    background: var(--pb-hover);
-  }
-
-  .dir-seg a[aria-current='true'] {
-    background: var(--pb-fg);
-    color: var(--pb-bg);
-  }
-
   .dir-search {
     display: flex;
-    gap: 8px;
-    margin: 10px 0 6px;
+    gap: var(--muxui-semantic-layout-control-gap);
+    margin: 0;
   }
-
-  .dir-search input[type='search'] {
+  .dir-q {
     flex: 1;
-    min-width: 0;
+    min-inline-size: 0;
   }
-
-  .dir-search input[type='search'],
-  .dir-field input {
-    padding: 5px 8px;
-    border: 1px solid var(--pb-line);
-    border-radius: 2px;
-    background: var(--pb-bg);
-    color: var(--pb-fg);
-    font: inherit;
-  }
-
   /* The resolve form: a labelled field with its hint, the button beside it, then the pending line or the error. */
   .dir-resolve {
     flex-wrap: wrap;
     align-items: flex-end;
-    margin-top: 14px;
   }
-
   .dir-field {
-    display: flex;
     flex: 1 1 320px;
-    flex-direction: column;
-    gap: 4px;
   }
-
-  .dir-pending,
-  .dir-resolve .dir-error {
+  /* The hint under the field would push the button down: line it up with the input instead. */
+  .dir-buttons {
+    align-self: flex-start;
+    padding-block-start: calc(var(--muxui-semantic-layout-tight-gap) + 1lh);
+  }
+  .dir-pending {
     flex-basis: 100%;
-    margin: 4px 0 0;
   }
-
-  .dir-hint,
-  .dir-muted,
-  .dir-source,
-  .dir-notes {
-    color: var(--dir-muted);
+  /* Positioned, so the visually hidden column label stays inside the scroller instead of widening the page. */
+  .dir-scroll {
+    position: relative;
+    overflow-x: auto;
   }
-
-  .dir-hint {
-    margin: 6px 0;
-  }
-
-  .dir-error {
-    margin: 8px 0;
-    color: var(--dir-err);
-  }
-
   .dir-table {
-    width: 100%;
-    margin-top: 6px;
-    border-collapse: collapse;
+    inline-size: 100%;
+    min-inline-size: 36rem;
   }
-
-  .dir-table th,
-  .dir-table td {
-    padding: 8px 8px 8px 0;
-    border-bottom: 1px solid var(--dir-line);
-    text-align: left;
-    vertical-align: top;
+  .dir-community {
+    display: flex;
+    flex-direction: column;
+    gap: var(--muxui-semantic-layout-micro-gap);
   }
-
-  .dir-table th {
-    font-weight: 600;
-    white-space: nowrap;
+  .dir-name {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--muxui-semantic-layout-tight-gap);
   }
-
-  .dir-table .dir-num {
-    width: 110px;
-    text-align: right;
+  .dir-num {
+    display: block;
+    text-align: end;
     font-variant-numeric: tabular-nums;
   }
-
-  .dir-table th.dir-num {
-    padding-right: 12px;
-  }
-
-  .dir-table td.dir-num {
-    padding-right: 12px;
-  }
-
-  .dir-action {
-    width: 150px;
-  }
-
-  .dir-excerpt,
-  .dir-source {
-    margin: 2px 0 0;
-  }
-
-  .dir-source {
-    font-size: 12px;
-  }
-
-  .dir-nsfw {
-    margin-right: 4px;
-    font-weight: 600;
-  }
-
-  .dir-empty {
-    padding: 24px 0;
-  }
-
-  .dir-empty h2 {
-    margin: 0 0 4px;
-    font-size: 16px;
-  }
-
-  .dir-empty p {
-    margin: 4px 0;
-    max-width: 60ch;
-  }
-
-  .dir-pages {
-    display: flex;
-    gap: 16px;
-    justify-content: space-between;
-    padding: 12px 0 0;
-  }
-
-  .dir-pages a[rel='next'] {
-    margin-left: auto;
-  }
-
   .dir-notes {
-    margin-top: 16px;
-    font-size: 12px;
-  }
-
-  .dir-notes p {
-    margin: 4px 0;
-    max-width: 80ch;
-  }
-
-  /* A narrow screen stacks each row: the community, then its figures labelled by their column. */
-  @media (max-width: 640px) {
-    .dir-table thead {
-      position: absolute;
-      width: 1px;
-      height: 1px;
-      overflow: hidden;
-      clip-path: inset(50%);
-    }
-
-    .dir-table,
-    .dir-table tbody,
-    .dir-table tr,
-    .dir-table td {
-      display: block;
-      width: auto;
-    }
-
-    .dir-table tr {
-      padding: 8px 0;
-      border-bottom: 1px solid var(--dir-line);
-    }
-
-    .dir-table td {
-      padding: 2px 0;
-      border: 0;
-    }
-
-    .dir-table td.dir-num {
-      display: flex;
-      justify-content: space-between;
-      width: auto;
-      padding-right: 0;
-      text-align: right;
-    }
-
-    .dir-table td.dir-num::before {
-      content: attr(data-label);
-      color: var(--dir-muted);
-    }
+    display: flex;
+    flex-direction: column;
+    gap: var(--muxui-semantic-layout-micro-gap);
   }
 }

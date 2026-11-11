@@ -1,12 +1,17 @@
+import { Badge } from '@peblish/ui/components/badge';
 import { Button } from '@peblish/ui/components/button';
+import { Card } from '@peblish/ui/components/card';
+import { Link } from '@peblish/ui/components/link';
+import { Notice } from '@peblish/ui/components/notice';
 import { Select } from '@peblish/ui/components/select';
+import { Text } from '@peblish/ui/components/text';
 import { TextField } from '@peblish/ui/components/text-field';
-import type { MouseEvent } from 'react';
+import type { MouseEvent, ReactNode } from 'react';
 import { useTranslate } from '../../../i18n/use-translate.ts';
 import { useRouteHydrated } from '../../../shell/hydration.ts';
 import { communityPath } from '../../../shell/paths.ts';
 
-// The NSFW gate (R2 pick nsfw-gate-page): one notice that stands for the whole community page,
+// The NSFW gate (R2 pick nsfw-gate-page), one Mux Card that stands for the whole community page,
 // post page or comment permalink. It hides everything: the data behind it is only the community's
 // handle (where its forms post), the page to come back to and where the gate stands. Server rules
 // are in c/-gate.ts; the intents these forms post are handled by c/-intents.ts.
@@ -24,13 +29,31 @@ export type GateData = {
 
 const months = Array.from({ length: 12 }, (_, index) => index + 1);
 
-/** Back one step in the browser's history, else the front page. */
-function goBack(event: MouseEvent<HTMLAnchorElement>) {
+/** Back one step in the browser's history, else the front page. Runs in the capture phase, before the Mux Link opens its href. */
+function goBack(event: MouseEvent<HTMLElement>) {
   if (window.history.length > 1) {
     event.preventDefault();
     window.history.back();
   }
 }
+
+/** The gate's page: one outlined Card in a narrow column. */
+function Panel({ state, subject, children }: { state: GateData['state']; subject: GateData['subject']; children: ReactNode }) {
+  return (
+    <main className="gate" data-state={state} data-subject={subject}>
+      <Card.Root variant="outlined" padding="lg" className="gate-card">
+        {children}
+      </Card.Root>
+    </main>
+  );
+}
+
+const Heading = ({ children }: { children: ReactNode }) => (
+  <Text as="h1" variant="heading" size="sm">
+    {children}
+  </Text>
+);
+const Body = ({ children }: { children: ReactNode }) => <Text as="p">{children}</Text>;
 
 export function GateNotice({ data, error }: { data: GateData; error?: string | undefined }) {
   const { t } = useTranslate();
@@ -52,33 +75,39 @@ export function GateNotice({ data, error }: { data: GateData; error?: string | u
     </form>
   );
   const goBackLink = (
-    <a href="/" onClick={goBack}>
+    <Link href="/" onClickCapture={goBack}>
       {t('communities', 'gate.back')}
-    </a>
+    </Link>
   );
+  const flag = <Badge kind="nsfw">{t('communities', 'gate.flag')}</Badge>;
 
-  return (
-    <main className="gate" data-state={state} data-subject={subject}>
-      {state === 'under-16' ? (
-        <>
-          <h1>{t('communities', 'gate.under16.title')}</h1>
-          <p>{t('communities', 'gate.under16.body')}</p>
-          <p className="gate-links">{goBackLink}</p>
-        </>
-      ) : state === 'age' ? (
-        <>
-          <h1>{t('communities', 'gate.declare.title')}</h1>
-          <p>{t('communities', 'gate.declare.body')}</p>
-          {message && (
-            <p role="alert" className="gate-error">
-              {message}
-            </p>
-          )}
-          <form method="post" action={action} className="gate-declare">
-            <input type="hidden" name="intent" value="declare" />
-            <input type="hidden" name="redirect" value={back} />
-            <fieldset>
-              <legend>{t('communities', 'gate.declare.legend')}</legend>
+  if (state === 'under-16')
+    return (
+      <Panel state={state} subject={subject}>
+        <Heading>{t('communities', 'gate.under16.title')}</Heading>
+        <Body>{t('communities', 'gate.under16.body')}</Body>
+        <div className="gate-actions">{goBackLink}</div>
+      </Panel>
+    );
+
+  if (state === 'age')
+    return (
+      <Panel state={state} subject={subject}>
+        <Heading>{t('communities', 'gate.declare.title')}</Heading>
+        <Body>{t('communities', 'gate.declare.body')}</Body>
+        {message && (
+          <Notice tone="danger" role="alert">
+            {message}
+          </Notice>
+        )}
+        <form method="post" action={action} className="gate-declare">
+          <input type="hidden" name="intent" value="declare" />
+          <input type="hidden" name="redirect" value={back} />
+          <fieldset>
+            <legend>
+              <Text variant="label">{t('communities', 'gate.declare.legend')}</Text>
+            </legend>
+            <div className="gate-date">
               <TextField
                 label={t('communities', 'gate.declare.day')}
                 name="day"
@@ -102,42 +131,50 @@ export function GateNotice({ data, error }: { data: GateData; error?: string | u
                 autoComplete="bday-year"
                 required
               />
-            </fieldset>
-            <p className="gate-note">{t('communities', 'gate.declare.note')}</p>
-            <Button type="submit" variant="primary">
-              {t('communities', 'gate.declare.submit')}
-            </Button>
-          </form>
-          <p className="gate-links">{goBackLink}</p>
-        </>
-      ) : state === 'hidden' ? (
-        <>
-          <p className="gate-flag">{t('communities', 'gate.flag')}</p>
-          <h1>{t('communities', 'gate.hidden.title')}</h1>
-          <p>{t('communities', subject === 'community' ? 'gate.hidden.community' : 'gate.hidden.post', { handle: shown })}</p>
-          <div className="gate-actions">
-            {intentForm('nsfw-once', t('communities', 'gate.once'), true)}
-            {intentForm('nsfw-always', t('communities', 'gate.always'))}
-            {goBackLink}
-          </div>
-          <p className="gate-note">{t('communities', 'gate.hidden.note', { handle: shown })}</p>
-        </>
-      ) : (
-        <>
-          <p className="gate-flag">{t('communities', 'gate.flag')}</p>
-          <h1>{t('communities', subject === 'community' ? 'gate.community.title' : 'gate.post.title')}</h1>
-          <p>{t('communities', subject === 'community' ? 'gate.community.about' : 'gate.post.about', { handle: shown })}</p>
-          <p>{t('communities', 'gate.signedOut')}</p>
-          <div className="gate-actions">
-            <a className="gate-primary" href={`/auth/sign-in?redirect=${encodeURIComponent(back)}`}>
-              {t('communities', 'gate.signIn')}
-            </a>
-            <a href="/auth/sign-up">{t('communities', 'gate.signUp')}</a>
-            {goBackLink}
-          </div>
-        </>
-      )}
-    </main>
+            </div>
+          </fieldset>
+          <Text as="p" size="sm" color="muted">
+            {t('communities', 'gate.declare.note')}
+          </Text>
+          <Button type="submit" variant="primary">
+            {t('communities', 'gate.declare.submit')}
+          </Button>
+        </form>
+        <div className="gate-actions">{goBackLink}</div>
+      </Panel>
+    );
+
+  if (state === 'hidden')
+    return (
+      <Panel state={state} subject={subject}>
+        <div>{flag}</div>
+        <Heading>{t('communities', 'gate.hidden.title')}</Heading>
+        <Body>{t('communities', subject === 'community' ? 'gate.hidden.community' : 'gate.hidden.post', { handle: shown })}</Body>
+        <div className="gate-actions">
+          {intentForm('nsfw-once', t('communities', 'gate.once'), true)}
+          {intentForm('nsfw-always', t('communities', 'gate.always'))}
+          {goBackLink}
+        </div>
+        <Text as="p" size="sm" color="muted">
+          {t('communities', 'gate.hidden.note', { handle: shown })}
+        </Text>
+      </Panel>
+    );
+
+  return (
+    <Panel state={state} subject={subject}>
+      <div>{flag}</div>
+      <Heading>{t('communities', subject === 'community' ? 'gate.community.title' : 'gate.post.title')}</Heading>
+      <Body>{t('communities', subject === 'community' ? 'gate.community.about' : 'gate.post.about', { handle: shown })}</Body>
+      <Body>{t('communities', 'gate.signedOut')}</Body>
+      <div className="gate-actions">
+        <Link className="cm-cta" href={`/auth/sign-in?redirect=${encodeURIComponent(back)}`}>
+          {t('communities', 'gate.signIn')}
+        </Link>
+        <Link href="/auth/sign-up">{t('communities', 'gate.signUp')}</Link>
+        {goBackLink}
+      </div>
+    </Panel>
   );
 }
 

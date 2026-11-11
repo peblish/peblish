@@ -277,7 +277,9 @@ test.describe('the community page', () => {
     const { restricted, open, remote } = seed.communities;
     await signedIn(page, seed.people.member);
     await gotoHydrated(page, community(restricted.handle));
-    await expect(page.locator('.cm-disabled')).toHaveAttribute('title', 'Posting is restricted to moderators');
+    const disabled = page.getByRole('button', { name: 'New post' });
+    await expect(disabled).toBeDisabled();
+    await expect(disabled).toHaveAccessibleDescription('Posting is restricted to moderators');
     await expect(page.getByRole('link', { name: 'New post' })).toHaveCount(0);
     await expect(page.getByText('Mod tools')).toHaveCount(0);
     await page.context().clearCookies();
@@ -288,7 +290,7 @@ test.describe('the community page', () => {
     await signedIn(moderator, seed.people.moderator);
     await gotoHydrated(moderator, community(restricted.handle));
     await expect(moderator.getByRole('link', { name: 'New post' })).toHaveAttribute('href', `/submit?community=${restricted.handle}`);
-    await moderator.getByText('Mod tools').click();
+    await moderator.getByRole('button', { name: 'Mod tools' }).click();
     await expect(moderator.getByRole('link', { name: 'Reports' })).toHaveAttribute('href', /\/admin\/reports\?community=/);
     await expect(moderator.getByRole('link', { name: 'Edit community' })).toHaveAttribute('href', `/c/${restricted.handle}/edit`);
     await gotoHydrated(moderator, community(remote.handle));
@@ -298,11 +300,11 @@ test.describe('the community page', () => {
 
     const admin = await adminPage(browser);
     await gotoHydrated(admin, community(remote.handle));
-    await admin.getByText('Mod tools').click();
+    await admin.getByRole('button', { name: 'Mod tools' }).click();
     await expect(admin.getByText('Local actions only on this copy')).toBeVisible();
     await expect(admin.getByRole('link', { name: 'Edit community' })).toHaveCount(0);
     await gotoHydrated(admin, community(open.handle));
-    await expect(admin.getByText('Mod tools')).toBeVisible();
+    await expect(admin.getByRole('button', { name: 'Mod tools' })).toBeVisible();
     await admin.context().close();
   });
 
