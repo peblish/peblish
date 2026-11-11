@@ -216,3 +216,110 @@ test('the forms Mux rc.7 uses at the top level of overlays.js pass', () => {
   )();
   expect(parts.size).toBe(14);
 });
+
+// A known factory's result keeps its kind through /*#__PURE__*/ and through the wrappers that only look different
+// (parentheses, a sequence's last value, TypeScript's `as`, `satisfies` and `!`), so the forms Mux may emit next pass
+// and the property set travels with its declaration.
+const component = (name: string, factory = 'forwardRef') => `React.${factory}(function ${name}() { return null; })`;
+test.each([
+  ['an annotated forwardRef', `const Popover = /*#__PURE__*/ ${component('Popover')};\nPopover.displayName = 'Popover';\n`],
+  ['an annotated memo', `const Popover = /*#__PURE__*/ ${component('Popover', 'memo')};\nPopover.displayName = 'Popover';\n`],
+  [
+    'an annotated forwardRef in parentheses',
+    `const Popover = /*#__PURE__*/ (${component('Popover')});\nPopover.displayName = 'Popover';\n`,
+  ],
+  [
+    'a factory reached through a sequence',
+    "const Popover = /*#__PURE__*/ (0, React.memo)(function Popover() { return null; });\nPopover.displayName = 'Popover';\n",
+  ],
+  [
+    'a factory of React in parentheses',
+    "const Popover = (React).forwardRef(function Popover() { return null; });\nPopover.displayName = 'Popover';\n",
+  ],
+  [
+    'a property set in parentheses',
+    `const Popover = ${component('Popover')};\n(Popover).displayName = 'Popover';\n(Popover.label = 'Popover');\n`,
+  ],
+])('a factory result keeps its kind: %s', (_, body) => {
+  const { declarations: parts } = declarations(body)();
+  expect(parts.get('Popover')?.text).toMatch(/displayName = 'Popover'/);
+});
+
+test("Tooltip's own displayName still passes when Mux marks its forwardRef pure", () => {
+  const annotated = tooltip.replace('React.forwardRef', '/*#__PURE__*/ React.forwardRef');
+  const { declarations: parts } = splitDeclarations('/mux/generated/overlays.js', `${annotated}Tooltip.displayName = 'Tooltip';\n`);
+  expect(parts.get('Tooltip')?.text).toMatch(/displayName = 'Tooltip'/);
+});
+
+test('the other wrapped forms that run nothing pass', () => {
+  const { declarations: parts } = declarations(
+    [
+      "const GEOMETRY = /*#__PURE__*/ Object.freeze({ placement: 'top' });",
+      'const PLACEMENT = GEOMETRY.placement;',
+      'const OFFSET = Object.freeze(({ offset: 8 })).offset;',
+      "const PLACEMENTS = new Set((['top']));",
+      "const NAMES = new Map([(['top', 1])]);",
+      "const SERVER = typeof (window) === 'undefined';",
+      'const made = /*#__PURE__*/ (registry.make());',
+      'const box = (0, { value: 1 });',
+      'box.value = 2;',
+    ].join('\n'),
+  )();
+  expect(parts.size).toBe(9);
+});
+
+test('TypeScript wrappers are looked through, in a module that is still TypeScript', () => {
+  const { declarations: parts } = splitDeclarations(
+    '/mux/generated/overlays.ts',
+    tooltip +
+      [
+        `const Popover = ${component('Popover')} as unknown as typeof Tooltip;`,
+        "(Popover as typeof Tooltip).displayName = 'Popover';",
+        "Popover!.label = 'Popover';",
+        "const GEOMETRY = Object.freeze({ placement: 'top' } as const);",
+        'const PLACEMENT = GEOMETRY.placement;',
+        "const PLACEMENTS = new Set(['top'] satisfies string[]);",
+        "const SERVER = typeof (window as unknown) === 'undefined';",
+      ].join('\n'),
+  );
+  expect(parts.get('Popover')?.text).toMatch(/displayName = 'Popover';\nPopover!\.label/);
+});
+
+// The wrappers do not open a way past the check: what is unsafe bare is unsafe wrapped.
+test.each([
+  [
+    'a property set on an annotated call of an unknown function',
+    "const made = /*#__PURE__*/ registry.make();\nmade.displayName = 'made';\n",
+  ],
+  ['a property set on one in parentheses', "const made = /*#__PURE__*/ (registry.make());\nmade.displayName = 'made';\n"],
+  ['a property set on an annotated new', "const made = /*#__PURE__*/ new registry.Panel();\nmade.displayName = 'made';\n"],
+  [
+    'a computed key on a factory result',
+    `const KEY = 'displayName';\nconst Popover = /*#__PURE__*/ ${component('Popover')};\nPopover[KEY] = 'Popover';\n`,
+  ],
+  ['__proto__ on a factory result', `const Popover = /*#__PURE__*/ ${component('Popover', 'memo')};\nPopover.__proto__ = items;\n`],
+  ['a computed __proto__ on a factory result', `const Popover = /*#__PURE__*/ ${component('Popover')};\nPopover['__proto__'] = items;\n`],
+  ['a computed __proto__ in parentheses', `const Popover = ${component('Popover')};\nPopover[('__proto__')] = items;\n`],
+  ['an annotation that reaches only the first call of a sequence', 'const made = /*#__PURE__*/ (registry.make(), registerOverlay());\n'],
+  ['an annotation that does not reach into the callee', 'const made = /*#__PURE__*/ (registerOverlay(), registry.make)();\n'],
+  ['a sequence with a call before a value', 'const unused = (registerOverlay(), 1);\n'],
+  ['a sequence with a call before a factory', 'const Popover = (registerOverlay(), React.memo)(function Popover() { return null; });\n'],
+  ['a property set through a sequence', "(registerOverlay(), Tooltip).displayName = 'Tooltip';\n"],
+  ['typeof through a sequence', "const SERVER = typeof (0, window) === 'undefined';\n"],
+  ['typeof in parentheses before initialisation', 'const early = typeof (later);\nconst later = 1;\n'],
+  ['an annotated freeze of a binding', 'const box = {};\nconst frozen = /*#__PURE__*/ Object.freeze(box);\nbox.value = 1;\n'],
+  ['a property set on an import in parentheses', '(items).value = 1;\n'],
+  ['a map from a parenthesised iterable', 'const unused = new Map((items));\n'],
+])('the split refuses a wrapped value that runs code on load: %s', (_, body) =>
+  expect(declarations(body)).toThrow(/peblish:split-mux-declarations: .*may have effects/),
+);
+
+test.each([
+  ['a property set on an import', '(items as { value: number }).value = 1;\n'],
+  [
+    'a getter read through a non-null assertion',
+    'const box = { get value() { registerOverlay(); return 0; } };\nconst unused = box!.value;\n',
+  ],
+])('TypeScript wrappers do not hide an effect: %s', (_, body) =>
+  expect(() => splitDeclarations('/mux/generated/overlays.ts', tooltip + registry + body)).toThrow(/may have effects/),
+);

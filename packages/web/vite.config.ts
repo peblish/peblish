@@ -45,6 +45,35 @@ type Program = ReturnType<typeof parseProgram>;
 type Statement = Program['body'][number];
 type Expression = Extract<Statement, { type: 'ExpressionStatement' }>['expression'];
 type Class = Extract<Expression, { superClass: unknown }>;
+// Parentheses and TypeScript's `as`, `satisfies`, `!`, `<T>x` and `f<T>`: none runs code or changes the value inside.
+type Wrapper = Extract<
+  Expression,
+  {
+    type:
+      | 'ParenthesizedExpression'
+      | 'TSAsExpression'
+      | 'TSSatisfiesExpression'
+      | 'TSNonNullExpression'
+      | 'TSTypeAssertion'
+      | 'TSInstantiationExpression';
+  }
+>;
+const wrappers = new Set<string>([
+  'ParenthesizedExpression',
+  'TSAsExpression',
+  'TSSatisfiesExpression',
+  'TSNonNullExpression',
+  'TSTypeAssertion',
+  'TSInstantiationExpression',
+] satisfies Wrapper['type'][]);
+const isWrapper = (node: { type: string }): node is Wrapper => wrappers.has(node.type);
+
+/** The expression inside any wrappers, so a check of its shape sees `(Tooltip)` or `Tooltip as X` as `Tooltip`. */
+function bare<T extends { type: string }>(node: T) {
+  let inner: T | Expression = node;
+  while (isWrapper(inner)) inner = inner.expression;
+  return inner;
+}
 
 /**
  * What a top-level value is known to be, which decides what may be done with it without running code:
@@ -99,7 +128,9 @@ const effect = (node: { start: number; end: number }): never => {
  * operands are primitive, or the operator is `typeof`, `!`, `void`, `===` or `!==`); logical and conditional
  * expressions; and calls or `new` with accepted callee and arguments that are marked /*#__PURE__*\/, React's
  * forwardRef, memo or createContext, Object.freeze of a plain literal, or a new Set, Map, WeakSet or WeakMap with no
- * argument or an array literal (of array literals, for a map). Everything else is rejected, among it getters reached
+ * argument or an array literal (of array literals, for a map); a factory's result has the same kind whether marked
+ * pure or not. Parentheses and TypeScript's type wrappers are looked through wherever a shape is checked, and a
+ * sequence is accepted when each of its values is. Everything else is rejected, among it getters reached
  * by a read, `in`, `instanceof`, `delete`, optional chains, tagged templates, assignments, `await`, `import()` and
  * `using`. The one statement accepted beside declarations and imports is a property set, `target.key = value`, on a
  * plain, function or component binding with a literal key other than `__proto__` and an accepted value. Default
@@ -113,6 +144,25 @@ function assertPureTopLevel(file: string, code: string, drift: (file: string, wh
       .filter(({ value }) => /^\s*[#@]__PURE__\s*$/.test(value))
       .map(({ end }) => end + (/^\s*/.exec(code.slice(end))?.[0].length ?? 0)),
   );
+  // The bundler reads `/*#__PURE__*/ (make())` as marking the call inside the parentheses, and so does this check. Only
+  // the outermost node at the annotation counts: in `/*#__PURE__*/ (a(), b)()` it marks the outer call, not `a()`.
+  // The visitor enters a node before its children, so an enclosing call has claimed its offset first.
+  const claimed = new Set<number>();
+  const claim = (node: { start: number }) => void (pureCalls.has(node.start) && claimed.add(node.start));
+  const markInner = (node: Wrapper) => {
+    if (pureCalls.has(node.start) && !claimed.has(node.start)) pureCalls.add(bare(node).start);
+    claim(node);
+  };
+  new Visitor({
+    CallExpression: claim,
+    NewExpression: claim,
+    ParenthesizedExpression: markInner,
+    TSAsExpression: markInner,
+    TSSatisfiesExpression: markInner,
+    TSNonNullExpression: markInner,
+    TSTypeAssertion: markInner,
+    TSInstantiationExpression: markInner,
+  }).visit(program);
   // Every top-level name, so a builtin's name counts as the builtin only when the module does not declare it.
   const declared = new Set<string>();
   // What each top-level binding readable so far holds: imports and function declarations from the start, the others
@@ -152,14 +202,22 @@ function assertPureTopLevel(file: string, code: string, drift: (file: string, wh
       case 'ClassExpression':
         return classOf(node);
       case 'ParenthesizedExpression':
+      case 'TSAsExpression':
+      case 'TSSatisfiesExpression':
+      case 'TSNonNullExpression':
+      case 'TSTypeAssertion':
+      case 'TSInstantiationExpression':
         return valueOf(node.expression);
+      case 'SequenceExpression':
+        return node.expressions.map(valueOf).at(-1)!;
       case 'TemplateLiteral':
         for (const expression of node.expressions) if (valueOf(expression) !== 'primitive') effect(expression);
         return 'primitive';
       case 'UnaryExpression': {
         if (node.operator === 'delete') return effect(node);
-        // `typeof` of an undeclared global throws nothing; of a binding not yet initialised it throws.
-        const { argument } = node;
+        // `typeof` of an undeclared global throws nothing, in parentheses too; of a binding not yet initialised, or
+        // through a sequence (`typeof (0, window)`), it throws.
+        const argument = bare(node.argument);
         if (node.operator === 'typeof' && argument.type === 'Identifier' && !declared.has(argument.name)) return 'primitive';
         if (valueOf(argument) !== 'primitive' && ['+', '-', '~'].includes(node.operator)) effect(node);
         return 'primitive';
@@ -205,37 +263,47 @@ function assertPureTopLevel(file: string, code: string, drift: (file: string, wh
         const { callee } = node;
         if ((node.type === 'CallExpression' && node.optional) || callee.type === 'Super') return effect(node);
         const args = node.arguments.map((argument) => (argument.type === 'SpreadElement' ? effect(argument) : argument));
-        if (pureCalls.has(node.start)) {
-          valueOf(callee);
-          args.forEach(valueOf);
-          return 'other';
+        // A known factory returns the same kind with or without /*#__PURE__*/, so an annotated `React.forwardRef(...)`
+        // still takes a `displayName`. The callee is matched inside wrappers and after a sequence's checked values
+        // (`(0, React.memo)(...)`), which call the same function.
+        const pure = pureCalls.has(node.start);
+        let target = bare(callee);
+        while (target.type === 'SequenceExpression') {
+          target.expressions.slice(0, -1).forEach(valueOf);
+          target = bare(target.expressions.at(-1)!);
         }
+        const owner = target.type === 'MemberExpression' && !target.computed ? bare(target.object) : undefined;
         const [object, property] =
-          callee.type === 'MemberExpression' &&
-          !callee.computed &&
-          callee.object.type === 'Identifier' &&
-          callee.property.type === 'Identifier'
-            ? [callee.object.name, callee.property.name]
+          owner?.type === 'Identifier' && target.type === 'MemberExpression' && target.property.type === 'Identifier'
+            ? [owner.name, target.property.name]
             : [];
         if (node.type === 'CallExpression' && object !== undefined && react.has(object) && pureReactCalls.has(property!)) {
           args.forEach(valueOf);
           return property === 'createContext' ? 'other' : 'component';
         }
         const [first, ...rest] = args;
+        const list = first && bare(first);
         if (node.type === 'CallExpression' && object === 'Object' && property === 'freeze' && builtin('Object')) {
-          const literal = first?.type === 'ObjectExpression' || first?.type === 'ArrayExpression';
+          // Even when marked pure: freezing a binding would make a later property set on it throw.
+          const literal = list?.type === 'ObjectExpression' || list?.type === 'ArrayExpression';
           return literal && rest.length === 0 && valueOf(first) === 'plain' ? 'frozen' : effect(node);
         }
         // A collection iterates its argument, so only an array literal's own iterator may run; a map also reads each
-        // entry's 0 and 1, so each entry must be an array literal too.
-        if (node.type === 'NewExpression' && callee.type === 'Identifier' && collections.has(callee.name) && builtin(callee.name)) {
-          if (rest.length > 0 || (first && first.type !== 'ArrayExpression')) return effect(node);
-          const map = callee.name.endsWith('Map');
-          for (const entry of first?.elements ?? []) if (map && entry?.type !== 'ArrayExpression') effect(entry ?? node);
-          valueOf(first);
+        // entry's 0 and 1, so each entry must be an array literal too. Marked pure, Mux vouches for any argument.
+        if (node.type === 'NewExpression' && target.type === 'Identifier' && collections.has(target.name) && builtin(target.name)) {
+          const map = target.name.endsWith('Map');
+          const entries = list?.type === 'ArrayExpression' ? list.elements : [];
+          const literal =
+            !list ||
+            (list.type === 'ArrayExpression' && (!map || entries.every((entry) => entry && bare(entry).type === 'ArrayExpression')));
+          if (!pure && (rest.length > 0 || !literal)) return effect(node);
+          args.forEach(valueOf);
           return 'other';
         }
-        return effect(node);
+        if (!pure) return effect(node);
+        valueOf(callee);
+        args.forEach(valueOf);
+        return 'other';
       }
       default:
         return effect(node);
@@ -295,12 +363,14 @@ function assertPureTopLevel(file: string, code: string, drift: (file: string, wh
         // Only `target.key = value`: a compound operator reads and converts, a key the check cannot read could spell
         // `__proto__`, and a target that may hold a setter (an import, a class instance, anything not built here
         // from a literal) could run one.
-        const { expression } = node;
+        // Wrappers are looked through (`(Tooltip).displayName = ...`); a sequence is not, so its values stay checked.
+        const expression = bare(node.expression);
         if (expression.type !== 'AssignmentExpression' || expression.operator !== '=') return effect(expression);
-        const { left } = expression;
-        if (left.type !== 'MemberExpression' || left.optional || left.object.type !== 'Identifier') return effect(left);
-        if (!writable.has(valueOf(left.object))) effect(left.object);
-        const { property } = left;
+        const left = bare(expression.left);
+        const object = left.type === 'MemberExpression' && !left.optional ? bare(left.object) : undefined;
+        if (left.type !== 'MemberExpression' || object?.type !== 'Identifier') return effect(left);
+        if (!writable.has(valueOf(object))) effect(object);
+        const property = left.computed ? bare(left.property) : left.property;
         const key = !left.computed
           ? property.type === 'Identifier' && property.name
           : property.type === 'Literal' && ['string', 'number'].includes(typeof property.value) && String(property.value);
@@ -536,13 +606,11 @@ export function splitDeclarations(file: string, code = readFileSync(file, 'utf8'
       continue;
     }
     if (node.type === 'ExpressionStatement') {
-      const { expression } = node;
-      const target =
-        expression.type === 'AssignmentExpression' &&
-        expression.left.type === 'MemberExpression' &&
-        expression.left.object.type === 'Identifier'
-          ? declarations.get(owner.get(expression.left.object.name) ?? '')
-          : undefined;
+      // The same target assertPureTopLevel accepted, inside the same wrappers.
+      const expression = bare(node.expression);
+      const left = expression.type === 'AssignmentExpression' ? bare(expression.left) : undefined;
+      const object = left?.type === 'MemberExpression' ? bare(left.object) : undefined;
+      const target = object?.type === 'Identifier' ? declarations.get(owner.get(object.name) ?? '') : undefined;
       if (!target) declarationDrift(file, 'a top-level expression other than a property set on a declaration');
       target.text += `\n${text}`;
       target.ranges.push({ start: node.start, end: node.end });
