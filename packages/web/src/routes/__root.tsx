@@ -1,3 +1,4 @@
+import { FieldLabelsProvider } from '@peblish/ui/components/field-problem';
 import { ProseLabelsProvider } from '@peblish/ui/components/prose';
 import { ToastProvider } from '@peblish/ui/components/toast';
 import { LocaleProvider } from '@peblish/ui/locale';
@@ -8,7 +9,7 @@ import { useCallback, useEffect, type ReactNode } from 'react';
 import { DEFAULT_LOCALE } from '../i18n/negotiate.ts';
 import { openInRouter, useClientLinks } from '../shell/client-links.ts';
 import { PageError, PageNotFound } from '../shell/error-page.tsx';
-import { useProseLabels } from '../shell/labels.ts';
+import { useFieldLabels, useProseLabels } from '../shell/labels.ts';
 import { PrefsProvider } from '../shell/prefs.tsx';
 import { getRootData } from '../shell/root-data.ts';
 import { Shell } from '../shell/shell.tsx';
@@ -79,6 +80,7 @@ function RootComponent() {
   const { locale, prefs, session } = Route.useLoaderData();
   const router = useRouter();
   const proseLabels = useProseLabels();
+  const fieldLabels = useFieldLabels();
   const navigate = useCallback((href: string) => openInRouter(router, href), [router]);
   useClientLinks();
   useViewerSync(session?.actorId ?? '');
@@ -92,12 +94,14 @@ function RootComponent() {
     <LocaleProvider locale={locale} navigate={navigate} useHref={useRouterHref}>
       <PrefsProvider initial={prefs}>
         <ProseLabelsProvider value={proseLabels}>
-          <ToastProvider>
-            {/* A page's own failure renders PageError in place of the page (the router's defaultErrorComponent). */}
-            <Shell>
-              <Outlet />
-            </Shell>
-          </ToastProvider>
+          <FieldLabelsProvider value={fieldLabels}>
+            <ToastProvider>
+              {/* A page's own failure renders PageError in place of the page (the router's defaultErrorComponent). */}
+              <Shell>
+                <Outlet />
+              </Shell>
+            </ToastProvider>
+          </FieldLabelsProvider>
         </ProseLabelsProvider>
       </PrefsProvider>
     </LocaleProvider>

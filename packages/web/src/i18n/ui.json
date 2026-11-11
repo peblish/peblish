@@ -52,7 +52,18 @@
     "density.classic": "Classic",
     "density.compact": "Compact",
     "prose.spoiler": "Reveal spoiler",
-    "thread.blocked": "Hidden: you blocked this person."
+    "thread.blocked": "Hidden: you blocked this person.",
+    "field.required": "Fill in this field.",
+    "field.requiredCheck": "Tick this box to continue.",
+    "field.requiredChoice": "Choose an option.",
+    "field.email": "Enter an email address, like name@example.com.",
+    "field.url": "Enter a full link, like https://example.com.",
+    "field.tooShort": "Use at least {min} characters.",
+    "field.tooLong": "Use at most {max} characters.",
+    "field.pattern": "Use the format shown.",
+    "field.rangeUnderflow": "Enter {min} or more.",
+    "field.rangeOverflow": "Enter {max} or less.",
+    "field.invalid": "Check what you entered here."
   },
   "de": {
     "vote.group": "Abstimmung",
@@ -107,6 +118,17 @@
     "density.classic": "Klassisch",
     "density.compact": "Kompakt",
     "prose.spoiler": "Spoiler anzeigen",
-    "thread.blocked": "Ausgeblendet: Du hast diese Person blockiert."
+    "thread.blocked": "Ausgeblendet: Du hast diese Person blockiert.",
+    "field.required": "Fülle dieses Feld aus.",
+    "field.requiredCheck": "Setze hier ein Häkchen, um fortzufahren.",
+    "field.requiredChoice": "Wähle eine Option aus.",
+    "field.email": "Gib eine E-Mail-Adresse ein, etwa name@example.com.",
+    "field.url": "Gib einen vollständigen Link ein, etwa https://example.com.",
+    "field.tooShort": "Verwende mindestens {min} Zeichen.",
+    "field.tooLong": "Verwende höchstens {max} Zeichen.",
+    "field.pattern": "Verwende das angegebene Format.",
+    "field.rangeUnderflow": "Gib {min} oder mehr ein.",
+    "field.rangeOverflow": "Gib {max} oder weniger ein.",
+    "field.invalid": "Prüfe deine Eingabe."
   }
 }
