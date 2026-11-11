@@ -1,5 +1,6 @@
 import { Button } from '@peblish/ui/components/button';
 import { Card } from '@peblish/ui/components/card';
+import { EmptyState } from '@peblish/ui/components/empty-state';
 import { Handle, neutraliseBidi } from '@peblish/ui/components/handle';
 import { Table } from '@peblish/ui/components/table';
 import { Text } from '@peblish/ui/components/text';
@@ -88,11 +89,9 @@ export function BlocksPage({ data, search }: { data: BlocksData; search: BlocksS
         </BlockForm>
 
         {data.rows.length === 0 ? (
-          <Text as="p" color="muted">
-            {t('blocks', `${tab}.empty`)}
-          </Text>
+          <EmptyState title={t('blocks', `${tab}.emptyTitle`)}>{t('blocks', `${tab}.empty`)}</EmptyState>
         ) : (
-          <Card.Root padding="sm">
+          <Card.Root padding="sm" className="blk-list">
             <Table
               aria-label={t('blocks', 'list.label', { kind: t('blocks', `tab.${tab}`) })}
               columns={[
@@ -106,7 +105,7 @@ export function BlocksPage({ data, search }: { data: BlocksData; search: BlocksS
                 values: {
                   name: kind === 'instance' ? neutraliseBidi(row.handle) : <Handle prefix={prefixOf[kind]} handle={row.handle} />,
                   details: (
-                    <Text size="sm" color="muted">
+                    <Text size="sm" color="muted" className="blk-details">
                       {t('blocks', 'row.blocked', { date: date(row.blockedAt) })}
                       {row.hides &&
                         ` · ${t('blocks', 'row.hides', {
