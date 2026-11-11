@@ -7,7 +7,7 @@ import { seedActor, seedInstance } from '../../packages/core/src/testing/seed.ts
 try {
   const suffix = Math.random().toString(36).slice(2, 8);
   const far = await seedInstance(`bidi-${suffix}.lemmy.test`, false);
-  const name = 'Ada ‮evil⁦ Admin';
+  const name = 'Ada \u202Eevil\u2066 Admin';
   const person = await seedActor(far, 'Person', `bidi_${suffix}`, { displayName: name });
   console.log(JSON.stringify({ handle: `${person.name}@${far.domain}`, name }));
 } finally {
