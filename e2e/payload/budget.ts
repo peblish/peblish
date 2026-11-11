@@ -8,6 +8,7 @@ import { gzipSync } from 'node:zlib';
 // check's own: nothing in this repository compresses responses, Traefik (Easypanel) or
 // Cloudflare does in production (deploy/README.md), so the figures are the compressible bytes
 // a compressing proxy would send, not what the Node server itself sends.
+// js, css and editor are report-only during the Mux UI restyle (budget.spec.ts, PAYLOAD.md).
 export const budget = {
   /** React, React DOM and Mux UI with React Aria pruned to en-US and de-DE. */
   js: 170_000,
