@@ -6,7 +6,9 @@ import { gotoHydrated, recordConsole } from '../support/route-marker.ts';
 // Lane MODF end to end: the Bans tab. The admin bans a person of a peer by handle after seeing
 // what the ban would remove, the ban shows in the list and the public modlog, and Lift ends it.
 test.skip(Boolean(process.env.BASE_URL), 'needs the lane database for its seed (DATABASE_URL)');
-test.describe.configure({ mode: 'serial' });
+// Three tests sign the same admin in with two-factor, and each 30 s code is handed out once, so
+// a sign-in can wait most of a code's window for the next one: more than the default 30 s.
+test.describe.configure({ mode: 'serial', timeout: 90_000 });
 
 let world: World;
 
