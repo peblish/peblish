@@ -64,10 +64,10 @@ module.exports = {
     },
     {
       name: 'mux-only-in-ui',
-      comment: 'Mux UI and React Aria are reached only through the ui facade.',
+      comment: 'Mux UI, React Aria and Lucide (the icon set Mux uses) are reached only through the ui facade.',
       severity: 'error',
       from: { pathNot: ['^packages/ui/', '^tools/'] },
-      to: { path: npm('@muxui/react|react-aria-components|react-aria') },
+      to: { path: npm('@muxui/react|react-aria-components|react-aria|lucide-react') },
     },
     {
       name: 'fedify-only-in-federation',

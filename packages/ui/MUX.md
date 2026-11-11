@@ -8,6 +8,7 @@ One page for the lanes that move the app onto Mux UI. How each component is mean
 - Only `packages/ui` imports `@muxui/react`. Routes and the shell import one module per component: `import { Card } from '@peblish/ui/components/card'` (no extension, no barrel). One module per component keeps tree-shaking working: a route that imports `separator` does not load `sidebar`.
 - A wrapper re-exports the component, its parts and its prop types and nothing else. If one you need is missing, add `packages/ui/src/components/<kebab-name>.tsx` the same way and say so in your notes.
 - The app's own composed components (`PostCard`, `CommentThread`, `VoteControl`, `ReplyBar`, `Prose`, `Handle`, `Time`, `Badge`, the form fields) keep their public props.
+- Icons are Lucide (`lucide-react`, the set Mux UI draws its own with, pinned to the version Mux depends on), and like `@muxui/react` only `packages/ui` imports it (`mux-only-in-ui` in `.dependency-cruiser.cjs`). Everyone else imports from `@peblish/ui/components/icons`, which wraps each glyph by name: 1em square, `currentColor`, `aria-hidden` unless named. Need another glyph? Add one line there. Every `Sidebar.NavItem` takes one through `icon`: without it Mux draws the label's first letter, which becomes part of the link's text.
 - Shared composed pieces (built from Mux components and tokens by the GW2 lane, in the same folder): `badge`, `notice`, `link-tabs`, `pager`, `fact-list`, `empty-state`. Use them rather than composing your own; their CSS is linked from `packages/web/src/styles.css`.
 
 ## Wrappers
@@ -216,11 +217,12 @@ const reports = (
 A Sidebar item. Pass the same navigation to the column and the phone drawer and mark `current` in both.
 
 ```tsx
+import { HouseIcon } from '@peblish/ui/components/icons';
 import { Sidebar } from '@peblish/ui/components/sidebar';
 
 <nav aria-label={labels.communities}>
   <Sidebar.NavList>
-    <Sidebar.NavItem href="/" icon={HomeIcon} current={path === '/'}>
+    <Sidebar.NavItem href="/" icon={HouseIcon} current={path === '/'}>
       {labels.home}
     </Sidebar.NavItem>
     <Sidebar.Section label={labels.subscribed}>
