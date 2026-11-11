@@ -1,51 +1,54 @@
+/* The docked reply bar: a raised Mux Card stuck to the bottom of the thread. */
 @layer app {
   .pb-reply {
     position: sticky;
-    bottom: 0;
+    inset-block-end: 0;
     z-index: 20;
-    margin: 24px -16px 0;
-    padding: 8px 16px;
-    border-top: 1px solid var(--pb-fg);
-    background: var(--pb-bg);
+    margin-block-start: var(--muxui-semantic-layout-content-gap);
+    padding-block: var(--muxui-semantic-layout-inset-small);
+    /* The page shows through above the card and is covered below it, so text never runs under the bar's edge. */
+    background: linear-gradient(to bottom, transparent, var(--muxui-semantic-surface-background) 35%);
+  }
+
+  /* Whatever the page scrolls into view (a focused control, a find, a #comment link) stops above
+     the docked bar instead of under it (WCAG 2.4.11). The bar is about this tall with its
+     "Replying to" line; a little more room costs nothing. */
+  :root:has(.pb-reply:not(.pb-reply--inline)) {
+    scroll-padding-block-end: calc(var(--muxui-semantic-control-size-lg) * 4);
   }
 
   .pb-reply--inline {
     position: static;
     margin: 0;
-    padding: 8px 0;
+    background: none;
+  }
+
+  .pb-reply__box {
+    display: flex;
+    flex-direction: column;
+    gap: var(--muxui-semantic-layout-control-gap);
   }
 
   .pb-reply__to {
     display: flex;
     align-items: center;
-    gap: 8px;
-    margin-bottom: 6px;
-    font-size: 12px;
+    gap: var(--muxui-semantic-layout-tight-gap);
+    min-inline-size: 0;
   }
 
   .pb-reply__who {
     flex: 1;
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    min-inline-size: 0;
   }
 
   .pb-reply__input {
     display: flex;
     align-items: flex-end;
-    gap: 8px;
+    gap: var(--muxui-semantic-layout-control-gap);
   }
 
   .pb-reply__field {
     flex: 1;
-    min-width: 0;
-  }
-
-  @media (max-width: 600px) {
-    .pb-reply {
-      margin-inline: -10px;
-      padding-inline: 10px;
-    }
+    min-inline-size: 0;
   }
 }

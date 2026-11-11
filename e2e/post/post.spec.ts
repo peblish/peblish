@@ -118,7 +118,7 @@ test.describe('anyone', () => {
     const { status, text } = await html(page, seed.posts.longThumbnail);
     expect(status).toBe(200);
     expect(text).toContain('Long thumbnail post');
-    expect(text).toContain('class="post-link" href="https://example.test/long"');
+    expect(text).toMatch(/<a class="[^"]*\bpost-link\b[^"]*"[^>]* href="https:\/\/example\.test\/long"/);
     // No picture: the thumbnail could not be signed, so the page loads nothing from img.example.
     expect(text.includes('<img')).toBe(false);
   });

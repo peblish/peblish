@@ -14,6 +14,13 @@ const REVEAL = 'button[data-spoiler-reveal]';
 /** What a button must not contain, and what a keyboard user reaches by itself. */
 const CONTROLS = 'a[href], button, input, select, textarea, summary, [tabindex]';
 
+/**
+ * The footnote back link's arrow (U+21A9, with the text-style selector U+FE0E) is outside Mux
+ * UI's Latin font slices, so drawing it fetches the full font file (e2e/payload checks for it).
+ * The up arrow (U+2191) is in the slice; only the arrow inside the renderer's back link is swapped.
+ */
+const backArrow = /(<a [^>]*class="footnote-backref"[^>]*>)\u21a9\ufe0e?(<\/a>)/g;
+
 /** A leaf spoiler holds no control and no other spoiler, so it can be the button itself. */
 const isLeaf = (spoiler: Element) => spoiler.querySelector(`${CONTROLS}, span.spoiler`) === null;
 
@@ -93,7 +100,7 @@ export function Prose({ html, className }: { html: string; className?: string })
       className={className ? `pb-prose ${className}` : 'pb-prose'}
       onClick={onClick}
       onKeyDown={onKeyDown}
-      dangerouslySetInnerHTML={{ __html: html }}
+      dangerouslySetInnerHTML={{ __html: html.replace(backArrow, '$1\u2191$2') }}
     />
   );
 }

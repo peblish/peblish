@@ -618,10 +618,12 @@ test.describe('a moderator', () => {
   test('sees why a comment was removed; nobody else does', async ({ page, browser }) => {
     await signedIn(page, seed.moderator.name);
     await gotoHydrated(page, postUrl(seed.posts.tombstones));
-    const removed = page.locator('details.cm-removed');
-    await expect(removed).toContainText('Removed by moderators (1)');
-    await removed.getByText('Removed by moderators (1)').click();
-    await expect(removed).toContainText('Rule 3: no ads');
+    // A Mux Disclosure: its trigger is a button, and the reasons open below it.
+    const removed = page.getByRole('button', { name: 'Removed by moderators (1)' });
+    await expect(removed).toHaveAttribute('aria-expanded', 'false');
+    await removed.click();
+    await expect(removed).toHaveAttribute('aria-expanded', 'true');
+    await expect(page.getByRole('region', { name: 'Removed by moderators (1)' })).toContainText('Rule 3: no ads');
     await expectAccessible(page);
     await gotoHydrated(page, postUrl(seed.posts.removed));
     await expect(page.getByText(`Under a removed post ${seed.suffix}`)).toBeVisible();

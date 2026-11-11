@@ -1,26 +1,28 @@
 import { useRouter } from '@tanstack/react-router';
 import { type } from 'arktype';
-import { useState, type FormEvent, type ReactNode } from 'react';
+import { Button } from '@peblish/ui/components/button';
+import { Text } from '@peblish/ui/components/text';
+import { useState, type FormEvent } from 'react';
 import { useTranslate } from '../../../i18n/use-translate.ts';
 import { asPostError, errorKey, type PostError } from './errors.ts';
 
 const Answer = type({ 'ok?': 'boolean', 'error?': 'string' });
 
 /**
- * A form that posts to the post page and works without JavaScript (the server answers 303
- * back to the page). Once hydrated it posts by fetch (Accept: application/json), shows a
+ * A one-button form that posts to the post page and works without JavaScript (the server
+ * answers 303 back to the page); the intent rides on the submit button. Once hydrated it posts by fetch (Accept: application/json), shows a
  * refusal in place and, on success, reloads the page's data instead of navigating.
  */
 export function ActionForm({
   action,
   intent,
+  label,
   className,
-  children,
 }: {
   action: string;
   intent: 'delete' | 'restore';
+  label: string;
   className?: string;
-  children?: ReactNode;
 }) {
   const { t } = useTranslate();
   const router = useRouter();
@@ -50,12 +52,20 @@ export function ActionForm({
 
   return (
     <form method="post" action={action} aria-busy={busy} className={className} onSubmit={submit}>
-      <input type="hidden" name="intent" value={intent} />
-      {children}
+      <Button
+        type="submit"
+        name="intent"
+        value={intent}
+        variant={intent === 'delete' ? 'danger-neutral' : 'neutral'}
+        size="sm"
+        pending={busy}
+      >
+        {label}
+      </Button>
       {error && (
-        <p className="post-error" role="alert">
+        <Text as="p" role="alert" className="post-error">
           {t('posts', errorKey(error))}
-        </p>
+        </Text>
       )}
     </form>
   );

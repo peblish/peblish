@@ -1,7 +1,12 @@
 import { threadDisplayDepth } from '@peblish/core/comments/limits';
 import { parseSort, threadSorts } from '@peblish/core/comments/sort';
+import { Button } from '@peblish/ui/components/button';
+import { ButtonGroup } from '@peblish/ui/components/button-group';
 import { CommentThread } from '@peblish/ui/components/comment-thread';
+import { Disclosure } from '@peblish/ui/components/disclosure';
+import { Link } from '@peblish/ui/components/link';
 import { ReplyBar } from '@peblish/ui/components/reply-bar';
+import { Text } from '@peblish/ui/components/text';
 import type { CommentView } from '@peblish/schema/views';
 import { useRouter, useRouterState } from '@tanstack/react-router';
 import { type } from 'arktype';
@@ -147,28 +152,40 @@ export function ThreadSection({ data: loaded }: { data: ThreadData }) {
   };
 
   return (
-    <section id="comments" className="cm-thread" data-slot="thread" aria-labelledby="comments-heading">
+    <section id="comments" className="th-thread" data-slot="thread" aria-labelledby="comments-heading">
       {/* Without precedence, React leaves the link where it is. A precedence link would hold this part of the page back until a script reveals it. */}
       <link rel="stylesheet" href={commentsCss} />
-      <div className="cm-head">
-        <h2 id="comments-heading">{t('comments', 'heading')}</h2>
+      <div className="th-head">
+        <Text as="h2" variant="title" size="sm" id="comments-heading">
+          {t('comments', 'heading')}
+        </Text>
         <form method="get" action="#comments" onSubmit={chooseSort}>
-          <div className="pb-segmented" role="group" aria-label={t('comments', 'sort.group')}>
+          <ButtonGroup role="group" aria-label={t('comments', 'sort.group')} attached>
             {threadSorts.map((sort) => (
-              <button key={sort} type="submit" name="sort" value={sort} aria-pressed={sort === wanted}>
+              <Button
+                key={sort}
+                type="submit"
+                name="sort"
+                value={sort}
+                size="sm"
+                variant={sort === wanted ? 'primary' : 'neutral'}
+                aria-pressed={sort === wanted}
+              >
                 {t('comments', `sort.${sort}`)}
-              </button>
+              </Button>
             ))}
-          </div>
+          </ButtonGroup>
         </form>
       </div>
       {data.after && (
-        <p className="cm-more">
-          <a href={pageHref(null)}>{t('comments', data.focus ? 'first.replies' : 'first.comments')}</a>
-        </p>
+        <Text as="p" className="th-more">
+          <Link href={pageHref(null)}>{t('comments', data.focus ? 'first.replies' : 'first.comments')}</Link>
+        </Text>
       )}
       {data.comments.length === 0 ? (
-        <p className="cm-empty">{t('comments', 'empty')}</p>
+        <Text as="p" color="muted" className="th-empty">
+          {t('comments', 'empty')}
+        </Text>
       ) : (
         <CommentThread
           comments={data.comments}
@@ -191,26 +208,28 @@ export function ThreadSection({ data: loaded }: { data: ThreadData }) {
         />
       )}
       {urlError && (
-        <p className="cm-error" role="alert">
+        <Text as="p" role="alert" className="th-error">
           {t('comments', errorKey(urlError))}
-        </p>
+        </Text>
       )}
       {data.next && (
-        <p className="cm-more">
-          <a href={pageHref(data.next)}>{t('comments', data.focus ? 'more.replies' : 'more.comments')}</a>
-        </p>
+        <Text as="p" className="th-more">
+          <Link href={pageHref(data.next)}>{t('comments', data.focus ? 'more.replies' : 'more.comments')}</Link>
+        </Text>
       )}
       {data.removals.length > 0 && (
-        <details className="cm-removed">
-          <summary>{t('comments', 'removed.heading', { count: data.removals.length })}</summary>
-          <ul>
+        <Disclosure className="th-removed" title={t('comments', 'removed.heading', { count: data.removals.length })}>
+          <ul className="th-removed__list">
             {data.removals.map((removal) => (
               <li key={removal.id}>
-                <a href={commentPath(data.postId, removal.id)}>@{removal.handle}</a>: {removal.reason ?? t('comments', 'removed.noReason')}
+                <Text size="sm">
+                  <Link href={commentPath(data.postId, removal.id)}>@{removal.handle}</Link>:{' '}
+                  {removal.reason ?? t('comments', 'removed.noReason')}
+                </Text>
               </li>
             ))}
           </ul>
-        </details>
+        </Disclosure>
       )}
       {data.reply === 'yes' ? (
         <ReplyBar
@@ -225,20 +244,20 @@ export function ThreadSection({ data: loaded }: { data: ThreadData }) {
           {...(error && { error: t('comments', errorKey(error)) })}
         />
       ) : (
-        <p className="cm-notice" role="status">
+        <Text as="p" color="muted" role="status" className="th-notice">
           {data.reply === 'sign-in' ? (
             <>
               {t('comments', 'reply.signIn')}{' '}
-              <a
+              <Link
                 href={`/auth/sign-in?redirect=${encodeURIComponent(data.focus ? commentPath(data.postId, data.focus.id) : postPath(data.postId))}`}
               >
                 {t('comments', 'reply.signInLink')}
-              </a>
+              </Link>
             </>
           ) : (
             t('comments', `reply.${data.reply}`)
           )}
-        </p>
+        </Text>
       )}
     </section>
   );

@@ -1,5 +1,7 @@
 import { useState, type FormEvent, type KeyboardEvent } from 'react';
 import { Button } from './button.tsx';
+import { Card } from './card.tsx';
+import { Text } from './text.tsx';
 import { TextAreaField } from './text-area.tsx';
 
 export interface ReplyBarLabels {
@@ -22,7 +24,7 @@ export interface ReplyBarProps {
   labels: ReplyBarLabels;
   /** Called with the text when the form is submitted (the button, or Ctrl or Command with Enter). Without it the browser posts the form to `action`. */
   onSubmit?: (body: string) => void | Promise<void>;
-  /** Where the form posts without JavaScript, with `fields` as hidden inputs (the parent id, a token). */
+  /** Where the form posts without JavaScript, with `fields` added to its query string (the parent id, the page it came from): the endpoint reads them there. */
   action?: string;
   fields?: Readonly<Record<string, string>>;
   /** Switches the reply to the post. Shown only while `target` is set. */
@@ -37,10 +39,17 @@ export interface ReplyBarProps {
   docked?: boolean;
 }
 
+/** `action` with `fields` in its query string. */
+function withFields(action: string | undefined, fields: Readonly<Record<string, string>> | undefined) {
+  if (!fields || Object.keys(fields).length === 0) return action;
+  const base = action ?? '';
+  return `${base}${base.includes('?') ? '&' : '?'}${new URLSearchParams(fields)}`;
+}
+
 /**
- * The reply bar docked to the bottom of the thread (thread-docked): who you are answering,
- * "post instead", cancel, and a text field. A plain form, so it posts without JavaScript
- * when given an `action`; once hydrated it calls `onSubmit` instead.
+ * The reply bar docked to the bottom of the thread (thread-docked): a raised Mux Card with who
+ * you are answering, "post instead", cancel, and a text field. A plain form, so it posts
+ * without JavaScript when given an `action`; once hydrated it calls `onSubmit` instead.
  */
 export function ReplyBar({
   target,
@@ -79,48 +88,57 @@ export function ReplyBar({
     <form
       className={docked ? 'pb-reply' : 'pb-reply pb-reply--inline'}
       method="post"
-      action={action}
+      action={withFields(action, fields)}
       aria-label={labels.region}
       onSubmit={submit}
       onKeyDown={shortcut}
     >
-      {target && (
-        <div className="pb-reply__to">
-          <span className="pb-reply__who">
-            <span className="pb-muted">{labels.replyingTo}</span> <b>{target.handle}</b> <span className="pb-muted">{target.excerpt}</span>
-          </span>
-          {onPostInstead && (
-            <button type="button" className="pb-linkbutton" onClick={onPostInstead}>
-              {labels.postInstead}
-            </button>
-          )}
-          {onCancel && (
-            <button type="button" className="pb-linkbutton" onClick={onCancel}>
-              {labels.cancel}
-            </button>
-          )}
+      <Card.Root variant={docked ? 'elevated' : 'outlined'} padding="sm" className="pb-reply__box">
+        {target && (
+          <div className="pb-reply__to">
+            <Text size="sm" truncate className="pb-reply__who">
+              <Text size="sm" color="muted">
+                {labels.replyingTo}
+              </Text>{' '}
+              <Text size="sm" variant="label">
+                {target.handle}
+              </Text>{' '}
+              <Text size="sm" color="muted">
+                {target.excerpt}
+              </Text>
+            </Text>
+            {onPostInstead && (
+              <Button variant="ghost" size="sm" onActivate={onPostInstead}>
+                {labels.postInstead}
+              </Button>
+            )}
+            {onCancel && (
+              <Button variant="ghost" size="sm" onActivate={onCancel}>
+                {labels.cancel}
+              </Button>
+            )}
+          </div>
+        )}
+        <div className="pb-reply__input">
+          <TextAreaField
+            label={labels.field}
+            hideLabel
+            className="pb-reply__field"
+            name="body"
+            rows={2}
+            placeholder={labels.placeholder}
+            value={body}
+            onChange={setBody}
+            disabled={pending}
+            required
+            invalid={error !== undefined}
+            errorMessage={error}
+          />
+          <Button type="submit" variant="primary" disabled={pending}>
+            {labels.submit}
+          </Button>
         </div>
-      )}
-      {fields && Object.entries(fields).map(([name, value]) => <input key={name} type="hidden" name={name} value={value} />)}
-      <div className="pb-reply__input">
-        <TextAreaField
-          label={labels.field}
-          hideLabel
-          className="pb-reply__field"
-          name="body"
-          rows={2}
-          placeholder={labels.placeholder}
-          value={body}
-          onChange={setBody}
-          disabled={pending}
-          required
-          invalid={error !== undefined}
-          errorMessage={error}
-        />
-        <Button type="submit" variant="primary" disabled={pending}>
-          {labels.submit}
-        </Button>
-      </div>
+      </Card.Root>
     </form>
   );
 }

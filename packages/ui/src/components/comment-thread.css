@@ -1,6 +1,10 @@
+/* The comment tree. Mux UI has no thread component: the parts are Mux's (IconButton, Link, Text,
+   Button), and the indent and thread lines are layout drawn with Mux border tokens. */
 @layer app {
   .pb-thread {
-    min-width: 0;
+    /* The fold button's width: the column the thread line hangs from and the body indents past. */
+    --pb-comment-rail: var(--muxui-semantic-control-size-sm);
+    min-inline-size: 0;
   }
 
   .pb-comment__list {
@@ -10,117 +14,82 @@
   }
 
   .pb-comment {
-    padding: 6px 0 0;
+    padding-block-start: var(--muxui-semantic-layout-tight-gap);
   }
 
   .pb-comment__head {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 0 4px;
-    font-size: 13px;
+    gap: 0 var(--muxui-semantic-layout-tight-gap);
+    font-size: var(--muxui-semantic-typography-text-s-font-size);
   }
 
   .pb-comment__fold {
-    min-width: 24px;
-    height: 24px;
-    padding: 0;
-    border: 0;
-    background: none;
-    color: var(--pb-muted);
-    font-weight: 700;
-    line-height: 1;
-    cursor: pointer;
-  }
-
-  .pb-comment__fold:hover {
-    color: var(--pb-fg);
+    color: var(--muxui-semantic-content-muted);
   }
 
   .pb-comment__author {
-    font-weight: 600;
-    text-decoration: none;
+    font-weight: var(--muxui-semantic-typography-label-weight);
   }
 
-  .pb-comment__author:hover {
-    text-decoration: underline;
+  .pb-comment__text,
+  .pb-comment__note,
+  .pb-comment__stub,
+  .pb-comment__actions {
+    margin-inline-start: calc(var(--pb-comment-rail) + var(--muxui-semantic-layout-tight-gap));
   }
 
   .pb-comment__text,
   .pb-comment__note {
-    margin: 0 0 0 28px;
+    margin-block: 0;
   }
 
   .pb-comment__note {
-    color: var(--pb-muted);
     font-style: italic;
   }
 
-  .pb-comment__stub {
-    margin: 0 0 4px 28px;
-    font-size: 12px;
-    color: var(--pb-muted);
-  }
-
+  .pb-comment__stub,
   .pb-comment__actions {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 0 12px;
-    margin: 2px 0 0 28px;
-    font-size: 12px;
-    color: var(--pb-muted);
+    gap: 0 var(--muxui-semantic-layout-dense-gap);
   }
 
-  .pb-comment__actions .pb-vote button {
-    min-width: 26px;
-    min-height: 24px;
+  .pb-comment__stub {
+    gap: 0 var(--muxui-semantic-layout-control-gap);
   }
 
-  .pb-comment__actions > button,
-  .pb-comment__stub > button {
-    min-height: 24px;
-  }
-
-  /* The levels under a comment sit in a column with a line down its left edge. */
+  /* The levels under a comment sit in a column with a line down its start edge, under the fold button. */
   .pb-comment__kids {
     position: relative;
-    margin: 6px 0 0 10px;
-    padding-left: 12px;
-    border-left: 1px solid var(--pb-line);
+    margin-block-start: var(--muxui-semantic-layout-tight-gap);
+    margin-inline-start: calc(var(--pb-comment-rail) / 2);
+    padding-inline-start: var(--muxui-semantic-layout-tight-gap);
+    border-inline-start: 1px solid var(--muxui-semantic-border-subtle);
   }
 
-  .pb-comment__kids:hover {
-    border-left-color: var(--pb-muted);
+  .pb-comment__kids:has(> .pb-comment__line:hover) {
+    border-inline-start-color: var(--muxui-semantic-border-strong);
   }
 
   .pb-comment__line {
     position: absolute;
-    top: 0;
-    bottom: 0;
-    left: -6px;
-    width: 10px;
-    padding: 0;
-    border: 0;
-    background: none;
+    inset-block: 0;
+    inset-inline-start: calc(var(--muxui-semantic-layout-tight-gap) * -1);
+    inline-size: calc(var(--muxui-semantic-layout-tight-gap) * 2);
     cursor: pointer;
   }
 
   .pb-comment__more {
-    font-size: 13px;
+    padding-block: var(--muxui-semantic-layout-tight-gap);
+    font-size: var(--muxui-semantic-typography-text-s-font-size);
   }
 
   .pb-comment__continue {
     display: inline-flex;
     align-items: center;
-    gap: 2px;
-    color: var(--pb-accent);
-  }
-
-  @media (max-width: 600px) {
-    .pb-comment__kids {
-      margin-left: 6px;
-      padding-left: 7px;
-    }
+    gap: var(--muxui-semantic-layout-dense-gap);
   }
 }
