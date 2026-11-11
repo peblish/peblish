@@ -98,9 +98,26 @@
       outline-offset: 1px;
     }
 
-    /* Mux paints the current segment tab Highlight and keeps forced colours off it, which would leave
-       its focus outline in the ordinary ring colour; it takes the system colour too. */
-    .pb-link-tabs [data-muxui-tabs-variant='segment'] .muxui-tabs__tab[data-muxui-state-selected]:focus-visible {
+    /* Mux paints a selected tab Highlight with HighlightText here, but its hover, pressed and
+       pre-hydration fills outrank that rule and Mux Link's colours win on a link, so the current tab
+       lost its fill under the pointer (on a segment, its dark authored text then sat on a dark Canvas).
+       It keeps Mux's Highlight fill and HighlightText in every state, in both variants, and like Mux's
+       segment rule keeps forced colours off itself so the text needs no backplate. */
+    .pb-link-tabs .muxui-tabs__tab[data-muxui-state-selected] {
+      background: Highlight;
+      color: HighlightText;
+      forced-color-adjust: none;
+    }
+
+    /* The underline variant's mark lies on the list's border, outside that fill: it stays forced, as
+       on a Mux Tabs bar. */
+    .pb-link-tabs .muxui-tabs__tab[data-muxui-state-selected] .muxui-tabs__tab-label::after {
+      forced-color-adjust: auto;
+    }
+
+    /* Forced colours are off the current tab, which would leave its focus outline in the ordinary ring
+       colour; it takes the system colour too. */
+    .pb-link-tabs .muxui-tabs__tab[data-muxui-state-selected]:focus-visible {
       outline-color: Highlight;
     }
   }

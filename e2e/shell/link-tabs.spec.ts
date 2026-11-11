@@ -102,14 +102,17 @@ for (const scheme of ['light', 'dark'] as const) {
 
 const variants = ['underline', 'segment'] as const;
 
-/** A kit page in its own context: a scheme, and optionally scripts off or forced colours. */
+/**
+ * A kit page in its own context: a scheme, and optionally scripts off or forced colours. The system
+ * takes the scheme too, which picks the light or dark forced palette.
+ */
 async function kit(
   browser: Browser,
   baseURL: string,
   scheme: 'light' | 'dark',
   options: { javaScriptEnabled?: boolean; forcedColors?: 'active' } = {},
 ) {
-  const context = await browser.newContext({ viewport: { width: 1280, height: 800 }, ...options });
+  const context = await browser.newContext({ viewport: { width: 1280, height: 800 }, colorScheme: scheme, ...options });
   await context.addCookies([{ ...prefsCookie('card', scheme), url: baseURL }]);
   const page = await context.newPage();
   if (options.javaScriptEnabled === false) await page.goto('/kit');
@@ -256,6 +259,37 @@ for (const javaScriptEnabled of [true, false]) {
   });
 }
 
+/**
+ * Runs `check` with the current tab hovered, then pressed, then keyboard-focused, each on the kit page
+ * opened afresh: releasing the press clicks the tab, which opens the kit again.
+ */
+async function inEachState(page: Page, tab: Locator, javaScriptEnabled: boolean, check: (state: string) => Promise<void>) {
+  const states: Record<string, () => Promise<void>> = {
+    hovered: async () => {
+      await tab.hover();
+      await settle(page);
+    },
+    pressed: async () => {
+      await tab.hover();
+      await page.mouse.down();
+      await settle(page);
+    },
+    focused: async () => keyboardFocus(page, tab),
+  };
+  for (const [state, enter] of Object.entries(states)) {
+    if (javaScriptEnabled) await gotoHydrated(page, '/kit');
+    else await page.goto('/kit');
+    await page.mouse.move(0, 0);
+    await enter();
+    await check(state);
+    await page.mouse.up();
+    // The release clicked the tab: let that navigation land before the next one starts.
+    if (state === 'pressed') await page.waitForURL(/\/kit\?tab=/);
+  }
+}
+
+const backgroundOf = (tab: Locator) => tab.evaluate((element) => getComputedStyle(element).backgroundColor);
+
 // The current segment tab keeps its solid selected fill under the pointer, pressed and focused: Mux's
 // hover and pressed fills are translucent, drawn over the selection layer a hydrated Mux Tabs bar has
 // and a link does not. Hovered, it paints what that Mux Tabs bar paints.
@@ -269,34 +303,12 @@ for (const scheme of ['light', 'dark'] as const)
       const current = linksOf(page, 'segment').first();
       await page.mouse.move(0, 0);
       await settle(page);
-      const fill = await current.evaluate((element) => getComputedStyle(element).backgroundColor);
-      const states: Record<string, () => Promise<void>> = {
-        hovered: async () => {
-          await current.hover();
-          await settle(page);
-        },
-        pressed: async () => {
-          await current.hover();
-          await page.mouse.down();
-          await settle(page);
-        },
-        focused: async () => keyboardFocus(page, current),
-      };
-      for (const [state, enter] of Object.entries(states)) {
-        // A fresh page for each state: releasing the press clicks the tab, which opens the kit again.
-        if (javaScriptEnabled) await gotoHydrated(page, '/kit');
-        else await page.goto('/kit');
-        await page.mouse.move(0, 0);
-        await enter();
-        expect(await current.evaluate((element) => getComputedStyle(element).backgroundColor), `${state}: the selected fill stays`).toBe(
-          fill,
-        );
+      const fill = await backgroundOf(current);
+      await inEachState(page, current, javaScriptEnabled, async (state) => {
+        expect(await backgroundOf(current), `${state}: the selected fill stays`).toBe(fill);
         const { contrast } = await paintOf(current);
         expect(contrast, `${state}: the text keeps 4.5:1 on it`).toBeGreaterThanOrEqual(4.5);
-        await page.mouse.up();
-        // The release clicked the tab: let that navigation land before the next one starts.
-        if (state === 'pressed') await page.waitForURL(/\/kit\?tab=/);
-      }
+      });
       if (javaScriptEnabled) {
         const row = page.getByTestId('kit-tabs-segment');
         const muxTab = row.getByRole('tablist').getByRole('tab').first();
@@ -306,6 +318,40 @@ for (const scheme of ['light', 'dark'] as const)
         await current.hover();
         await settle(page);
         expect((await paintOf(current)).back, 'hovered: painted as the hovered current Mux tab').toEqual(mux.back);
+      }
+      await page.context().close();
+    });
+  }
+
+// In forced colours Mux paints a selected tab Highlight with HighlightText. Its hover, pressed and
+// pre-hydration fills outrank that rule, so the current LinkTab must keep that pair in every state on
+// its own: on a dark palette the segment tab's hover had left dark authored text on the dark page.
+for (const scheme of ['light', 'dark'] as const)
+  for (const javaScriptEnabled of [true, false]) {
+    test(`in forced colours the current LinkTab stays Highlight when hovered, pressed or focused (${scheme}, scripts ${javaScriptEnabled ? 'on' : 'off'})`, async ({
+      browser,
+      baseURL,
+    }) => {
+      const page = await kit(browser, baseURL!, scheme, { javaScriptEnabled, forcedColors: 'active' });
+      // The palette's own pair, read off a probe element that keeps forced colours off itself.
+      const system = await page.evaluate(() => {
+        const probe = document.body.appendChild(document.createElement('div'));
+        probe.style.cssText = 'forced-color-adjust: none; background-color: Highlight; color: HighlightText';
+        const { backgroundColor, color } = getComputedStyle(probe);
+        probe.remove();
+        return { back: backgroundColor, text: color };
+      });
+      for (const variant of variants) {
+        const current = linksOf(page, variant).first();
+        await page.mouse.move(0, 0);
+        await settle(page);
+        const rest = { back: await backgroundOf(current), text: await current.evaluate((element) => getComputedStyle(element).color) };
+        expect.soft(rest, `${variant}: Highlight with HighlightText at rest`).toEqual(system);
+        await inEachState(page, current, javaScriptEnabled, async (state) => {
+          expect.soft(await backgroundOf(current), `${variant}, ${state}: the Highlight fill stays`).toBe(rest.back);
+          const { contrast } = await paintOf(current);
+          expect.soft(contrast, `${variant}, ${state}: the text keeps 4.5:1 on it`).toBeGreaterThanOrEqual(4.5);
+        });
       }
       await page.context().close();
     });
