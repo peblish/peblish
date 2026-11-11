@@ -1,10 +1,14 @@
 import type { CommentView } from '@peblish/schema/views';
 import { useMemo, useState, type ReactNode } from 'react';
 import { Badge, type BadgeLabels } from './badge.tsx';
+import { Button } from './button.tsx';
 import { buildCommentTree, type CommentNode } from './comment-tree.ts';
 import { Handle } from './handle.tsx';
-import { ChevronRight } from './icons.tsx';
+import { IconButton } from './icon-button.tsx';
+import { ChevronDown, ChevronRight } from './icons.tsx';
+import { Link } from './link.tsx';
 import { Prose } from './prose.tsx';
+import { Text } from './text.tsx';
 import { Time } from './time.tsx';
 import { VoteControl, type Vote, type VoteControlLabels } from './vote-control.tsx';
 
@@ -74,8 +78,8 @@ export const unloadedReplies = (node: CommentNode) =>
   Math.max(0, missingBelow(node) - node.children.reduce((sum, child) => sum + missingBelow(child), 0));
 
 /**
- * The comment tree (thread-nested): indented levels with a clickable thread line, a fold
- * button per comment, low-score comments folded, removed and deleted comments as a note (one
+ * The comment tree (thread-nested), from Mux UI parts: indented levels with a clickable
+ * thread line drawn in Mux border tokens, a fold IconButton per comment, low-score comments folded, removed and deleted comments as a note (one
  * label for a comment that is both: removed), a comment by someone the viewer blocks as a note
  * under its author line (its replies stay), and a "Continue this thread" link wherever the
  * list leaves replies out, because the depth cap cuts the branch or the server cut a branch it
@@ -124,28 +128,30 @@ export function CommentThread({
     return (
       <li key={comment.id} className="pb-comment" id={`comment-${comment.id}`} data-folded={isFolded || undefined}>
         <div className="pb-comment__head">
-          <button
-            type="button"
+          <IconButton
+            size="sm"
             className="pb-comment__fold"
             aria-expanded={!isFolded}
             aria-label={isFolded ? labels.expand(replies) : labels.collapse(replies)}
-            onClick={() => toggle(comment)}
+            onActivate={() => toggle(comment)}
           >
-            {isFolded ? '+' : '−'}
-          </button>
+            {isFolded ? <ChevronRight /> : <ChevronDown />}
+          </IconButton>
           {comment.deleted ? (
             // A deleted comment's author stays out of the page, removed as well or not.
-            <span className="pb-muted">{tombstone}</span>
+            <Text size="sm" color="muted">
+              {tombstone}
+            </Text>
           ) : (
             <>
-              <a className="pb-comment__author" href={authorHref(comment)}>
+              <Link className="pb-comment__author" href={authorHref(comment)}>
                 <Handle prefix="@" handle={comment.author.handle} />
-              </a>
+              </Link>
               {comment.author.id === postAuthorId && <Badge kind="op" labels={labels.badges} />}
               {comment.authorBadge && <Badge kind={comment.authorBadge} labels={labels.badges} />}
             </>
           )}
-          <span className="pb-muted">
+          <Text size="sm" color="muted">
             ·{' '}
             {stamp ? (
               <time dateTime={comment.publishedAt} title={stamp.title}>
@@ -155,20 +161,24 @@ export function CommentThread({
               <Time iso={comment.publishedAt} locale={locale} now={now} />
             )}
             {comment.editedAt && ` · ${labels.edited}`}
-          </span>
+          </Text>
         </div>
         {isFolded ? (
           <div className="pb-comment__stub">
-            {lowScore && `${labels.lowScore(scoreOf(comment), lowScoreThreshold)} `}
-            {replies > 0 && `${labels.hiddenReplies(replies)} `}
-            <button type="button" className="pb-linkbutton" onClick={() => toggle(comment)}>
+            <Text size="sm" color="muted">
+              {lowScore && `${labels.lowScore(scoreOf(comment), lowScoreThreshold)} `}
+              {replies > 0 && labels.hiddenReplies(replies)}
+            </Text>
+            <Button variant="ghost" size="sm" onActivate={() => toggle(comment)}>
               {labels.show}
-            </button>
+            </Button>
           </div>
         ) : (
           <div className="pb-comment__main">
             {quiet || comment.contentHtml === null ? (
-              <p className="pb-comment__note">{tombstone}</p>
+              <Text as="p" color="muted" className="pb-comment__note">
+                {tombstone}
+              </Text>
             ) : (
               <Prose html={comment.contentHtml} className="pb-comment__text" />
             )}
@@ -185,30 +195,33 @@ export function CommentThread({
                 />
               )}
               {onReply && !quiet && (
-                <button type="button" className="pb-linkbutton" onClick={() => onReply(comment)}>
+                <Button variant="ghost" size="sm" onActivate={() => onReply(comment)}>
                   {labels.reply}
-                </button>
+                </Button>
               )}
               {onShare && (
-                <button type="button" className="pb-linkbutton" onClick={() => onShare(comment)}>
+                <Button variant="ghost" size="sm" onActivate={() => onShare(comment)}>
                   {labels.share}
-                </button>
+                </Button>
               )}
               {renderActions?.(comment)}
             </div>
             {!capped && node.children.length > 0 && (
               <div className="pb-comment__kids">
-                <button type="button" className="pb-comment__line" tabIndex={-1} aria-hidden="true" onClick={() => toggle(comment)} />
+                {/* A wide target on the thread line for a mouse; the fold button above is the control for everyone else. */}
+                <span className="pb-comment__line" aria-hidden="true" onClick={() => toggle(comment)} />
                 <ul className="pb-comment__list">{node.children.map((child) => renderNode(child, level + 1))}</ul>
               </div>
             )}
             {href && (
               <div className="pb-comment__kids pb-comment__more">
-                <a className="pb-comment__continue" href={href}>
+                <Link className="pb-comment__continue" href={href}>
                   {labels.continueThread}
                   <ChevronRight />
-                </a>{' '}
-                <span className="pb-muted">{labels.moreReplies(more)}</span>
+                </Link>{' '}
+                <Text size="sm" color="muted">
+                  {labels.moreReplies(more)}
+                </Text>
               </div>
             )}
           </div>

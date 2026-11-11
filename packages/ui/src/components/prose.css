@@ -1,16 +1,19 @@
-/* Styles for the HTML renderMarkdown and sanitizeRemoteHtml emit (packages/core/src/markdown/README.md). */
+/* Styles for the HTML renderMarkdown and sanitizeRemoteHtml emit (packages/core/src/markdown/README.md).
+   The markup stays the sanitiser's; every value is a Mux UI token, after Mux's own Markdown,
+   CodeBlock and Table treatments, spaced a little tighter for comments. */
 @layer app {
   .pb-prose {
-    max-width: 75ch;
-    line-height: 1.5;
+    max-inline-size: 75ch;
+    color: var(--muxui-semantic-content-default);
+    line-height: var(--muxui-semantic-typography-prose-line-height);
   }
 
   .pb-prose > :first-child {
-    margin-top: 0;
+    margin-block-start: 0;
   }
 
   .pb-prose > :last-child {
-    margin-bottom: 0;
+    margin-block-end: 0;
   }
 
   .pb-prose p,
@@ -20,7 +23,7 @@
   .pb-prose pre,
   .pb-prose table,
   .pb-prose details {
-    margin: 0.6em 0;
+    margin-block: var(--muxui-semantic-layout-group-gap);
   }
 
   .pb-prose h1,
@@ -29,67 +32,100 @@
   .pb-prose h4,
   .pb-prose h5,
   .pb-prose h6 {
-    margin: 0.9em 0 0.4em;
-    font-size: 1.05em;
-    line-height: 1.3;
+    margin-block: var(--muxui-semantic-layout-section-gap) var(--muxui-semantic-layout-tight-gap);
+    color: var(--muxui-semantic-content-strong);
+    font-family: var(--muxui-semantic-typography-title-font-family);
+    font-size: var(--muxui-semantic-typography-title-s-font-size);
+    font-weight: var(--muxui-semantic-typography-label-weight);
+    line-height: var(--muxui-semantic-typography-compact-line-height);
+  }
+
+  .pb-prose h1 {
+    font-size: var(--muxui-semantic-typography-title-m-font-size);
   }
 
   .pb-prose a {
-    color: var(--pb-accent);
+    color: var(--muxui-semantic-content-link);
     text-decoration: underline;
+  }
+
+  .pb-prose a:hover {
+    color: var(--muxui-semantic-content-link-hover);
   }
 
   .pb-prose a.mention,
   .pb-prose a.community {
-    font-weight: 600;
+    font-weight: var(--muxui-semantic-typography-label-weight);
   }
 
   .pb-prose ul,
   .pb-prose ol {
-    padding-left: 1.5em;
+    padding-inline-start: var(--muxui-semantic-layout-content-indent);
   }
 
   .pb-prose blockquote {
-    padding-left: 0.9em;
-    border-left: 3px solid var(--pb-line);
-    color: var(--pb-muted);
+    padding-block: var(--muxui-semantic-layout-inset-tiny);
+    padding-inline: var(--muxui-semantic-layout-inset-small);
+    border-inline-start: 0.25rem solid var(--muxui-semantic-color-color-40);
+    background: var(--muxui-semantic-surface-raised);
   }
 
   .pb-prose hr {
+    margin-block: var(--muxui-semantic-layout-section-gap);
     border: 0;
-    border-top: 1px solid var(--pb-line);
+    border-block-start: 1px solid var(--muxui-semantic-border-subtle);
   }
 
   .pb-prose code {
-    padding: 0 3px;
-    font-family: var(--pb-mono);
-    font-size: 0.9em;
-    background: var(--pb-hover);
+    padding-block: var(--muxui-semantic-layout-inset-tight);
+    padding-inline: var(--muxui-semantic-layout-inset-tiny);
+    border-radius: var(--muxui-semantic-shape-indicator-radius);
+    background: var(--muxui-semantic-surface-subtle);
+    font-family: var(--muxui-semantic-typography-mono-font-family);
+    font-size: var(--muxui-semantic-typography-mono-s-font-size);
+    line-height: var(--muxui-semantic-typography-mono-line-height);
+    overflow-wrap: anywhere;
   }
 
   .pb-prose pre {
     overflow: auto;
-    padding: 0.7em 0.9em;
-    background: var(--pb-hover);
-    border-radius: 3px;
+    padding: var(--muxui-semantic-layout-inset-small) var(--muxui-semantic-layout-inset-medium);
+    border: 1px solid var(--muxui-semantic-border-subtle);
+    border-radius: var(--muxui-semantic-control-radius);
+    background: var(--muxui-semantic-surface-raised);
+    font-family: var(--muxui-semantic-typography-mono-font-family);
+    font-size: var(--muxui-semantic-typography-mono-s-font-size);
+    line-height: var(--muxui-semantic-typography-mono-line-height);
+    tab-size: 2;
   }
 
   .pb-prose pre code {
     padding: 0;
+    border-radius: 0;
     background: none;
+    font: inherit;
+    overflow-wrap: normal;
   }
 
+  /* Mux Table's look: a heavier line under the header, faint lines between rows. */
   .pb-prose table {
     display: block;
-    max-width: 100%;
+    max-inline-size: 100%;
     overflow: auto;
     border-collapse: collapse;
   }
 
   .pb-prose th,
   .pb-prose td {
-    padding: 4px 8px;
-    border: 1px solid var(--pb-line);
+    padding: var(--muxui-semantic-layout-inset-tiny) var(--muxui-semantic-layout-inset-small);
+    border-block-end: 1px solid var(--muxui-semantic-border-faint);
+    text-align: start;
+  }
+
+  .pb-prose th {
+    border-block-end: 2px solid var(--muxui-semantic-border-default);
+    font-size: var(--muxui-semantic-typography-small-size);
+    font-weight: var(--muxui-semantic-typography-control-weight);
   }
 
   .pb-prose [align='center'] {
@@ -97,18 +133,18 @@
   }
 
   .pb-prose [align='right'] {
-    text-align: right;
+    text-align: end;
   }
 
   .pb-prose img {
-    max-width: 100%;
-    height: auto;
+    max-inline-size: 100%;
+    block-size: auto;
   }
 
   /* Custom emoji sit in the line of text. */
   .pb-prose img.emoji {
-    width: auto;
-    height: 1.25em;
+    inline-size: auto;
+    block-size: 1.25em;
     vertical-align: text-bottom;
   }
 
@@ -118,8 +154,8 @@
    * one a reveal control); a mouse can also hover it.
    */
   .pb-prose span.spoiler {
-    border-radius: 2px;
-    background: var(--pb-fg);
+    border-radius: var(--muxui-semantic-shape-radius-xs);
+    background: var(--muxui-semantic-content-default);
     color: transparent;
     cursor: pointer;
   }
@@ -132,7 +168,7 @@
   /* Revealed. A spoiler that holds a link or another spoiler is not a button (Prose leaves it a span and inserts a reveal control before it), so focusing its link shows it. */
   .pb-prose span.spoiler[data-revealed],
   .pb-prose span.spoiler:has(a:focus-visible) {
-    background: var(--pb-hover);
+    background: var(--muxui-semantic-surface-subtle);
     color: inherit;
   }
 
@@ -140,18 +176,22 @@
   .pb-prose button[data-spoiler-reveal] {
     display: inline-grid;
     place-items: center;
-    min-width: 24px;
-    min-height: 24px;
-    margin-inline-end: 0.2em;
+    min-inline-size: 1.5rem;
+    min-block-size: 1.5rem;
+    margin-inline-end: var(--muxui-semantic-layout-dense-gap);
     padding: 0;
-    border: 1px solid var(--pb-line);
-    border-radius: 3px;
-    background: none;
-    color: var(--pb-muted);
+    border: 1px solid var(--muxui-semantic-border-default);
+    border-radius: var(--muxui-semantic-control-radius);
+    background: var(--muxui-semantic-action-neutral-background);
+    color: var(--muxui-semantic-content-muted);
     font: inherit;
     line-height: 1;
     vertical-align: baseline;
     cursor: pointer;
+  }
+
+  .pb-prose button[data-spoiler-reveal]:hover {
+    background: var(--muxui-semantic-action-neutral-background-hover);
   }
 
   .pb-prose button[data-spoiler-reveal]::before {
@@ -159,27 +199,27 @@
   }
 
   .pb-prose button[data-spoiler-reveal][aria-pressed='true'] {
-    background: var(--pb-hover);
-    color: var(--pb-fg);
+    background: var(--muxui-semantic-selection-background);
+    color: var(--muxui-semantic-content-default);
   }
 
   @media (hover: hover) {
     .pb-prose span.spoiler:hover {
-      background: var(--pb-hover);
+      background: var(--muxui-semantic-surface-subtle);
       color: inherit;
     }
   }
 
   /* The summary is the spoiler's title; the body stays closed until it is opened. */
   .pb-prose details {
-    padding: 0.4em 0.8em;
-    border: 1px solid var(--pb-line);
-    border-radius: 3px;
+    padding: var(--muxui-semantic-layout-inset-tiny) var(--muxui-semantic-layout-inset-small);
+    border: 1px solid var(--muxui-semantic-border-subtle);
+    border-radius: var(--muxui-semantic-control-radius);
   }
 
   .pb-prose summary {
     cursor: pointer;
-    font-weight: 600;
+    font-weight: var(--muxui-semantic-typography-label-weight);
   }
 
   /* Mastodon's markup for shortened links. */
@@ -191,50 +231,46 @@
     content: '…';
   }
 
-  /* The back arrow is outside the Latin font slices: set in Inter it would pull the 468 kB full font file onto every page with a footnote (e2e/payload checks for it). The system's own arrow costs nothing. */
-  .pb-prose a.footnote-backref {
-    font-family: system-ui, sans-serif;
-  }
-
   .pb-prose sup.footnote-ref a {
     text-decoration: none;
   }
 
   .pb-prose hr.footnotes-sep {
-    margin-top: 1.2em;
+    margin-block-start: var(--muxui-semantic-layout-content-gap);
   }
 
   .pb-prose section.footnotes {
-    font-size: 0.9em;
-    color: var(--pb-muted);
+    color: var(--muxui-semantic-content-muted);
+    font-size: var(--muxui-semantic-typography-text-s-font-size);
   }
 
   .pb-prose section.footnotes ol {
-    margin: 0.4em 0;
+    margin-block: var(--muxui-semantic-layout-tight-gap);
   }
 
-  /* highlight.js classes, on the page's own surface so the colours hold in all three schemes. */
+  /* highlight.js classes, coloured with Mux UI's TagGroup hue foregrounds: the only accent
+     colours with a dark branch, each 6.5:1 or better, so one rule holds in both schemes. */
   .pb-prose .hljs {
-    color: var(--pb-fg);
+    color: var(--muxui-semantic-content-default);
   }
 
   /* No italics in code: the italic monospace face is a 41 kB font file the budget has no room for. */
   .pb-prose .hljs-comment,
   .pb-prose .hljs-quote {
-    color: var(--pb-muted);
+    color: var(--muxui-semantic-content-muted);
   }
 
   .pb-prose .hljs-keyword,
   .pb-prose .hljs-selector-tag,
   .pb-prose .hljs-doctag,
   .pb-prose .hljs-literal {
-    color: #a5226f;
+    color: var(--muxui-component-taggroup-fuchsia-foreground);
   }
 
   .pb-prose .hljs-string,
   .pb-prose .hljs-regexp,
   .pb-prose .hljs-addition {
-    color: #0b6b2f;
+    color: var(--muxui-component-taggroup-green-foreground);
   }
 
   .pb-prose .hljs-number,
@@ -242,7 +278,7 @@
   .pb-prose .hljs-bullet,
   .pb-prose .hljs-attr,
   .pb-prose .hljs-attribute {
-    color: #8a4b00;
+    color: var(--muxui-component-taggroup-amber-foreground);
   }
 
   .pb-prose .hljs-title,
@@ -250,7 +286,7 @@
   .pb-prose .hljs-built_in,
   .pb-prose .hljs-type,
   .pb-prose .hljs-class .hljs-title {
-    color: #0a4fc4;
+    color: var(--muxui-component-taggroup-indigo-foreground);
   }
 
   .pb-prose .hljs-variable,
@@ -259,56 +295,14 @@
   .pb-prose .hljs-tag,
   .pb-prose .hljs-meta,
   .pb-prose .hljs-link {
-    color: #5b3fc8;
+    color: var(--muxui-component-taggroup-violet-foreground);
   }
 
   .pb-prose .hljs-deletion {
-    color: #b00020;
+    color: var(--muxui-semantic-feedback-invalid);
   }
 
   .pb-prose .hljs-strong {
-    font-weight: 700;
-  }
-
-  [data-muxui-color-scheme='dark'] .pb-prose .hljs-keyword,
-  [data-muxui-color-scheme='dark'] .pb-prose .hljs-selector-tag,
-  [data-muxui-color-scheme='dark'] .pb-prose .hljs-doctag,
-  [data-muxui-color-scheme='dark'] .pb-prose .hljs-literal {
-    color: #ff8fd0;
-  }
-
-  [data-muxui-color-scheme='dark'] .pb-prose .hljs-string,
-  [data-muxui-color-scheme='dark'] .pb-prose .hljs-regexp,
-  [data-muxui-color-scheme='dark'] .pb-prose .hljs-addition {
-    color: #7ee4a0;
-  }
-
-  [data-muxui-color-scheme='dark'] .pb-prose .hljs-number,
-  [data-muxui-color-scheme='dark'] .pb-prose .hljs-symbol,
-  [data-muxui-color-scheme='dark'] .pb-prose .hljs-bullet,
-  [data-muxui-color-scheme='dark'] .pb-prose .hljs-attr,
-  [data-muxui-color-scheme='dark'] .pb-prose .hljs-attribute {
-    color: #f5b84a;
-  }
-
-  [data-muxui-color-scheme='dark'] .pb-prose .hljs-title,
-  [data-muxui-color-scheme='dark'] .pb-prose .hljs-section,
-  [data-muxui-color-scheme='dark'] .pb-prose .hljs-built_in,
-  [data-muxui-color-scheme='dark'] .pb-prose .hljs-type,
-  [data-muxui-color-scheme='dark'] .pb-prose .hljs-class .hljs-title {
-    color: #8cc4ff;
-  }
-
-  [data-muxui-color-scheme='dark'] .pb-prose .hljs-variable,
-  [data-muxui-color-scheme='dark'] .pb-prose .hljs-template-variable,
-  [data-muxui-color-scheme='dark'] .pb-prose .hljs-name,
-  [data-muxui-color-scheme='dark'] .pb-prose .hljs-tag,
-  [data-muxui-color-scheme='dark'] .pb-prose .hljs-meta,
-  [data-muxui-color-scheme='dark'] .pb-prose .hljs-link {
-    color: #b8a5ff;
-  }
-
-  [data-muxui-color-scheme='dark'] .pb-prose .hljs-deletion {
-    color: #ff7a8a;
+    font-weight: var(--muxui-semantic-typography-heading-weight);
   }
 }

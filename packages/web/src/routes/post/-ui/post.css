@@ -1,75 +1,79 @@
-/* The post page after the R1 mock thread-nested.html: structure and states, not final styling. */
+/* The post page: the post in an outlined Mux Card with its vote column, then the thread. Layout
+   only, in Mux UI tokens. */
 @layer app {
   .post-page {
-    --post-line: var(--muxui-semantic-border-default);
-    --post-muted: var(--muxui-semantic-content-muted);
-    --post-err: #b00020;
-    max-width: 860px;
+    max-inline-size: 860px;
     margin: 0 auto;
-    padding: 20px 16px 48px;
-    font-size: 14px;
-    line-height: 1.5;
-  }
-  [data-muxui-color-scheme='dark'] .post-page {
-    --post-err: #ff7a8a;
+    padding: var(--muxui-semantic-layout-inset-large) var(--muxui-semantic-layout-inset-medium) var(--muxui-semantic-layout-content-gap);
   }
   .post {
     display: grid;
-    grid-template-columns: 44px minmax(0, 1fr);
-    gap: 12px;
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: var(--muxui-semantic-layout-action-gap);
   }
   .post-meta,
   .post-flags,
   .post-hint {
-    margin: 0 0 6px;
-    color: var(--post-muted);
+    margin: 0 0 var(--muxui-semantic-layout-tight-gap);
   }
-  .post-page a {
-    color: var(--muxui-semantic-content-link);
+  .post-flags {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--muxui-semantic-layout-tight-gap);
   }
-  .post-badge,
-  .post-flags span {
-    margin-left: 6px;
-    padding: 0 5px;
-    border: 1px solid var(--post-line);
-    border-radius: 3px;
-    font-size: 12px;
+  /* A state mark, coloured as the shared Badge colours one: TagGroup's hue on its weak tint. */
+  .post-flag {
+    padding: 0 var(--muxui-semantic-layout-inset-tight);
+    border-radius: var(--muxui-semantic-shape-pill-radius);
+    background: var(--muxui-component-taggroup-tag-background);
+    color: var(--muxui-component-taggroup-tag-foreground);
+    font-size: var(--muxui-semantic-typography-badge-size);
+    font-weight: var(--muxui-semantic-typography-label-weight);
   }
-  .post-flags span {
-    margin: 0 6px 0 0;
+  .post-flag[data-flag='pinned'] {
+    background: var(--muxui-component-taggroup-brand-tint-weak);
+    color: var(--muxui-component-taggroup-brand-foreground);
   }
-  .post h1 {
-    margin: 0 0 8px;
-    font-size: 22px;
-    line-height: 1.25;
+  .post-flag[data-flag='sensitive'],
+  .post-flag[data-flag='nsfl'] {
+    background: var(--muxui-component-taggroup-error-tint-weak);
+    color: var(--muxui-component-taggroup-error-foreground);
+  }
+  .post-title {
+    margin: 0 0 var(--muxui-semantic-layout-control-gap);
     overflow-wrap: anywhere;
   }
-  .post-notice h1 {
-    font-size: 18px;
+  .post-notice > h1 {
+    margin: 0 0 var(--muxui-semantic-layout-tight-gap);
   }
-  .post-link,
-  .post-image {
-    display: inline-flex;
-    align-items: center;
-    gap: 10px;
-    margin: 0 0 10px;
-    max-width: 100%;
+  .post-notice > p {
+    margin: 0;
   }
-  .post-link {
-    padding: 6px 10px;
-    border: 1px solid var(--post-line);
-    border-radius: 4px;
-  }
-  .post-link img {
-    width: 64px;
-    height: 64px;
-    object-fit: cover;
-    border-radius: 3px;
+  .post-image,
+  .post-link-card {
+    display: block;
+    margin: 0 0 var(--muxui-semantic-layout-group-gap);
+    max-inline-size: 100%;
   }
   .post-image img {
-    max-width: 100%;
-    height: auto;
-    border-radius: 4px;
+    max-inline-size: 100%;
+    block-size: auto;
+  }
+  .post-link-card {
+    inline-size: fit-content;
+  }
+  .post-link {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--muxui-semantic-layout-group-gap);
+    max-inline-size: 100%;
+    overflow-wrap: anywhere;
+  }
+  .post-link img {
+    flex: none;
+    inline-size: 64px;
+    block-size: 64px;
   }
   .post-text {
     overflow-wrap: anywhere;
@@ -78,20 +82,34 @@
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 6px 16px;
-    margin-top: 12px;
+    gap: var(--muxui-semantic-layout-control-gap) var(--muxui-semantic-layout-action-gap);
+    margin-block-start: var(--muxui-semantic-layout-group-gap);
   }
   .post-own {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 8px 12px;
+    gap: var(--muxui-semantic-layout-control-gap) var(--muxui-semantic-layout-action-gap);
+  }
+  .post-own form {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--muxui-semantic-layout-control-gap);
   }
   .post-error {
-    margin: 8px 0 0;
-    color: var(--post-err);
+    margin: var(--muxui-semantic-layout-control-gap) 0 0;
+    color: var(--muxui-semantic-feedback-invalid);
   }
   .post-thread {
-    margin-top: 24px;
+    margin-block-start: var(--muxui-semantic-layout-content-gap);
+  }
+  @media (max-width: 600px) {
+    .post-page {
+      padding-inline: var(--muxui-semantic-layout-inset-small);
+    }
+    .post-card {
+      padding: var(--muxui-semantic-layout-inset-medium);
+    }
   }
 }

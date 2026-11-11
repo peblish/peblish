@@ -15,6 +15,7 @@ import { forbidden, formSession, principalOf, readForm, sameOrigin } from '../..
 // intent reply: body, and parent (a comment id; empty replies to the post);
 // intent edit: comment and body; intent delete: comment.
 // focus (a comment id) names the permalink page the form came from, where the answer goes back to.
+// Any field may also come in the query string of the form's address; a field in the body wins.
 // Each form post is counted against the account's `comment` budget (30 in ten minutes) before
 // it does anything; over it the answer is rate.limited (429 for the enhanced form).
 
@@ -50,7 +51,8 @@ export async function handleCommentPost(request: Request, postId: string): Promi
   if (!sameOrigin(request)) return forbidden();
   const { session } = await formSession(request);
   const cookies = session?.setCookies ?? [];
-  const form = Form(await readForm(request));
+  // A plain form names its comment and page in the address (the reply bar's `fields`, the permalink forms) and the rest in the body, which wins.
+  const form = Form({ ...Object.fromEntries(new URL(request.url).searchParams), ...(await readForm(request)) });
   const focus = form instanceof type.errors || !form.focus || !Uuid.allows(form.focus) ? null : form.focus;
   // The post id is the address's: nothing is built from it, least of all a redirect, until it is known to be an id.
   const back = !Uuid.allows(postId) ? '/' : focus ? commentPath(postId, focus) : postPath(postId);

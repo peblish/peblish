@@ -165,3 +165,12 @@ describe('a comment by someone the viewer blocks', () => {
     expect(html).toContain('actions of b');
   });
 });
+
+test('each comment folds with a named Mux IconButton that says whether it is open, and no raw control is left', () => {
+  const html = draw([comment('a', null, 1), comment('b', 'a', 0)]);
+  expect(html.match(/class="muxui-icon-button[^"]*"/g)).toHaveLength(2);
+  expect(html.match(/aria-expanded="true"/g)).toHaveLength(2);
+  expect(html).toContain('aria-label="Collapse"');
+  // The thread line is a mouse target only.
+  expect(html).toContain('<span class="pb-comment__line" aria-hidden="true">');
+});
