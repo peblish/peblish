@@ -2,7 +2,7 @@ import type { ReactNode } from 'react';
 import { Badge } from '@peblish/ui/components/badge';
 import { Card } from '@peblish/ui/components/card';
 import { Group } from '@peblish/ui/components/group';
-import { Handle, neutraliseBidi } from '@peblish/ui/components/handle';
+import { BidiText, Handle, neutraliseBidi } from '@peblish/ui/components/handle';
 import { Image } from '@peblish/ui/components/image';
 import { Link } from '@peblish/ui/components/link';
 import { Notice } from '@peblish/ui/components/notice';
@@ -76,7 +76,7 @@ function PostContent({ data, error }: { data: Extract<PostPageData, { kind: 'pos
     body = (
       <div className="post-content">
         <Text as="h1" variant="heading" size="sm" id="post-title" className="post-title">
-          {post.title}
+          <BidiText text={post.title} />
         </Text>
         {(post.locked || post.featured || post.sensitive || post.nsfl) && (
           <div className="post-flags">

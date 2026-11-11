@@ -117,3 +117,11 @@ test('a link post domain is a left-to-right isolated run with its directional co
   const html = renderWith(labels, { url: 'https://example.com/a' });
   expect(html).toMatch(/<bdi dir="ltr">\(example\.com\)<\/bdi>/);
 });
+
+test('a title with a right-to-left override is an isolated run drawn without its directional controls', () => {
+  // The vote group's name shows each control as the replacement mark, as the inbox's buttons do.
+  const html = renderWith(labels, { title: 'Plain ‮evil⁦ title' });
+  expect(html).toContain('<bdi>Plain evil title</bdi>');
+  expect(html).toContain('aria-label="Vote: Plain \u203Devil\u203D title"');
+  expect(html).not.toMatch(/[‪-‮⁦-⁩‎‏؜]/);
+});

@@ -9,7 +9,8 @@ import { seedActor, seedInstance } from '../../packages/core/src/testing/seed.ts
 //   host, and whose link is on that long host;
 // - `title`: a link post with the same long title, on an ordinary domain;
 // - `hostile`: a post whose author's name carries a right-to-left override and an isolate, on an
-//   ordinary host, to show that the name cannot move or reverse the host.
+//   ordinary host, to show that the name cannot move or reverse the host; its title carries them
+//   too, to show that a title is isolated and drawn without them.
 // Escapes only: this file holds no control character.
 try {
   const suffix = Math.random().toString(36).slice(2, 8);
@@ -28,11 +29,12 @@ try {
     publishedAt: new Date(Date.now() - 1_500),
   });
   const honest = await seedInstance(`honest-${suffix}.example`, false);
-  const hostileName = `jun‮⁦moc.elpmaxe_${suffix}`;
+  const hostileName = `jun\u202E\u2066moc.elpmaxe_${suffix}`;
   const hostileAuthor = await seedActor(honest, 'Person', hostileName);
   const hostileCommunity = await seedActor(honest, 'Group', `plain_${suffix}`);
+  const hostileTitle = `Hostile name ${suffix} \u202Eevil\u2066 title`;
   const hostile = await seedPost(honest, hostileCommunity, hostileAuthor, {
-    title: `Hostile name ${suffix}`,
+    title: hostileTitle,
     publishedAt: new Date(Date.now() - 1_000),
   });
   console.log(
@@ -40,7 +42,7 @@ try {
       suffix,
       long: { id: long.id, title: longTitle, host: far.domain, community: community.name, author: author.name },
       title: { id: titled.id, domain: `news-${suffix}.example` },
-      hostile: { id: hostile.id, title: `Hostile name ${suffix}`, host: honest.domain, author: hostileName },
+      hostile: { id: hostile.id, title: hostileTitle, host: honest.domain, author: hostileName },
     }),
   );
 } finally {

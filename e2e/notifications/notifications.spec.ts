@@ -381,5 +381,9 @@ test.describe('a remote handle and a title with directional controls', () => {
     expect(name).not.toMatch(/[\u202a-\u202e\u2066-\u2069\u200e\u200f\u061c]/);
     const shown = (text: string) => text.replace(/[\u202a-\u202e\u2066-\u2069\u200e\u200f\u061c]/g, '\u203D');
     expect(name).toBe(`Mark read: @${shown(hostile.handle)}, ${shown(hostile.title)}`);
+    // The post's title, as a link in the notice, is an isolated run drawn without them.
+    const plain = hostile.title.replace(/[\u202a-\u202e\u2066-\u2069\u200e\u200f\u061c]/g, '');
+    const title = page.getByRole('link', { name: plain, exact: true });
+    await expect(title.locator('bdi')).toHaveText(plain);
   });
 });

@@ -3,7 +3,7 @@ import { useId, useState } from 'react';
 import { Badge, type BadgeLabels } from './badge.tsx';
 import { Button } from './button.tsx';
 import { Card } from './card.tsx';
-import { Handle, neutraliseBidi } from './handle.tsx';
+import { BidiText, Handle, neutraliseBidi } from './handle.tsx';
 import { ImageIcon, LinkIcon, TextIcon } from './icons.tsx';
 import { Image } from './image.tsx';
 import { Link } from './link.tsx';
@@ -149,7 +149,8 @@ export function PostCard({
           {post.sensitive && <Badge kind="nsfw">{labels.nsfw}</Badge>}
           {post.nsfl && <Badge kind="nsfl">{labels.nsfl}</Badge>}
           <Link className="pb-link-quiet" href={hrefs.post}>
-            {title}
+            {/* A title from another server is isolated, its directional controls removed. */}
+            <BidiText text={title} />
           </Link>
           {domain && !gone && (
             <Text size="xs" color="muted" className="pb-post__domain">
@@ -213,7 +214,8 @@ export function PostCard({
         onVote={onVote}
         disabled={voteDisabled}
         labels={labels.vote}
-        label={labels.voteOn ? labels.voteOn(title) : `${labels.vote.group}: ${title}`}
+        // Named as the title is shown: its directional controls as the replacement mark, as the inbox's names are.
+        label={labels.voteOn ? labels.voteOn(neutraliseBidi(title)) : `${labels.vote.group}: ${neutraliseBidi(title)}`}
         locale={locale}
       />
       {card ? (
