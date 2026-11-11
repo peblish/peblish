@@ -143,7 +143,8 @@ test.describe('server lifecycle', () => {
       await leaveEarly(server.origin, '/media/proxy/signature/target', 500);
       // Long enough for the server to see each close and settle the request it was serving.
       await new Promise((resolve) => setTimeout(resolve, 1_000));
-      expect(server.output()).not.toMatch(/abort|error/i);
+      // Nothing at all once the start-up line is set aside: no stack, and no quieter line either.
+      expect(logLines(server)).toEqual([]);
     } finally {
       await stop(server);
       database.server.close();
