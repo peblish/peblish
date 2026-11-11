@@ -244,8 +244,96 @@ All must hold, else stay on PieFed:
 6. A drill on the production database passed, and the nightly backup and hourly ledger export run.
 7. `Andrew` has signed in through a password reset, turned on two-factor in that session and set
    `site.name` to "Feddit", the operator settings and the published pages.
-8. The origin certificate (step 7 item 2) was rehearsed on a proxied `peblish.com` test hostname:
-   a Cloudflare Origin CA certificate, or the DNS challenge fallback.
+8. The TLS rehearsal (below) recorded which certificate path works on this Easypanel, path A (a
+   DNS-challenge certificate) or path B (a Cloudflare Origin CA certificate), with the date and how
+   the certificate was installed, and its checks passed on a proxied `peblish.com` test hostname.
+9. Before step 6 stops anything, the feddit.com certificate of that path is on the new origin and
+   its check (below) passes: a certificate both Andrew's browser and Cloudflare trust.
+
+## TLS on the new origin (before step 6; not yet rehearsed)
+
+**The requirement:** before PieFed stops (step 6), the new origin serves feddit.com with a
+certificate that both Andrew's browser and Cloudflare (SSL/TLS mode Full (strict)) trust. Andrew's
+browser reaches the new origin directly for the sign-in (step 7 items 4 and 5, through a hosts
+file line), and Cloudflare reaches it after the switch. A Let's Encrypt HTTP challenge cannot pass
+before the switch, since Cloudflare still sends feddit.com to the box. Two paths; root prefers A.
+
+- **Path A (preferred): a publicly trusted certificate from a DNS challenge.** Let's Encrypt checks
+  a TXT record, not the origin, so it can be issued before the switch. Browsers and Cloudflare
+  trust it, so the sign-in works with only the hosts line, and the pretest uses normal trust.
+- **Path B (alternative): a Cloudflare Origin CA certificate.** Only Cloudflare trusts it. The
+  sign-in then needs an isolated browser profile that trusts Cloudflare's origin root (below,
+  removed after), and the pretest passes that root with `--cacert`.
+
+**Rehearse first** (go or no-go item 8), on a proxied `peblish.com` test hostname `T` on an
+Easypanel service, with each command below run with `T` in place of feddit.com. Record the date,
+the path, and the exact way the certificate went into Easypanel (a custom certificate on the
+domain, or a Traefik certificate file), so production repeats it as recorded. If Easypanel takes
+neither, the step is a no-go until root decides.
+
+**Path A, issue.** On the new origin's server (the production Easypanel host, not the box) as
+root, with a Cloudflare API token limited to Zone, DNS, Edit on the feddit.com zone (a secret:
+typed into the file with an editor, never echoed or pasted into a chat):
+
+```sh
+apt-get install -y certbot python3-certbot-dns-cloudflare
+install -d -m 700 /root/.secrets && install -m 600 /dev/null /root/.secrets/cloudflare-dns.ini
+editor /root/.secrets/cloudflare-dns.ini     # one line: dns_cloudflare_api_token = <token>
+certbot certonly --dns-cloudflare --dns-cloudflare-credentials /root/.secrets/cloudflare-dns.ini \
+  --dns-cloudflare-propagation-seconds 60 --cert-name feddit.com -d feddit.com
+openssl x509 -in /etc/letsencrypt/live/feddit.com/fullchain.pem -noout -subject -issuer -enddate -ext subjectAltName
+```
+
+`certbot` must end with "Successfully received certificate"; the `openssl` line must show
+`DNS:feddit.com` and a Let's Encrypt issuer. Install `fullchain.pem` and `privkey.pem` on the
+`web` domain as the rehearsal recorded. certbot's timer renews by the same challenge; the
+rehearsal also records the deploy hook (`--deploy-hook`) that puts a renewed certificate where
+Easypanel reads it. Read the end date back during the soak (step 10).
+
+**Path B, issue.** In Cloudflare, SSL/TLS, Origin Server, create an RSA certificate for
+`feddit.com` and paste its certificate and key into the `web` domain as the rehearsal recorded
+(the key is shown once; never store it in the repository). Save Cloudflare's Origin CA RSA root
+(from Cloudflare's Origin CA documentation) as `$S/origin-ca-root.pem`.
+
+**Both paths:** read the zone's SSL/TLS mode back as Full (strict). If the `web` domain must exist
+for the certificate to be installed, create the production project's `web` service and domain now,
+with no source uploaded (Easypanel starts a service once it has code, step 4), so nothing runs.
+
+**Check, before step 6** (go or no-go item 9), from Andrew's machine, with `O` the new origin's
+address (no firewall is on it yet; step 7 item 3 adds it). `CA` is empty for path A (the
+system's roots) and Cloudflare's origin root for path B; never `-k`:
+
+```sh
+CA=''                                       # path B: CA=$S/origin-ca-root.pem
+curl -sS ${CA:+--cacert $CA} --resolve feddit.com:443:$O -o /dev/null -w 'TLS ok, http %{http_code}\n' https://feddit.com/
+echo | openssl s_client -connect $O:443 -servername feddit.com ${CA:+-CAfile $CA} 2>/dev/null |
+  grep -E 'Verify return code|subject=|issuer='
+```
+
+`TLS ok` with any HTTP code passes (404 or 502 while `web` has no code): curl checked the chain
+and the name feddit.com. A certificate error (curl exit 60, "SSL certificate problem", or a name
+that does not match) or a handshake error (exit 35) is a no-go: the origin serves Traefik's
+default certificate or the wrong one. `openssl` must print `Verify return code: 0 (ok)`, with a
+Let's Encrypt issuer for path A or a CloudFlare Origin issuer for path B (an Origin CA
+certificate's subject is not feddit.com; the name is in its alternative names, which curl
+checked). Record the issuer and end date with the rehearsal.
+
+**Path B only, the browser for the sign-in** (step 7 item 5), on Andrew's machine: a Firefox
+profile of its own trusts the origin root, so his everyday browsers never do. It needs Firefox
+installed; `certutil` is Homebrew's `nss`. The `user.js` line turns off Firefox's DNS over HTTPS in that profile, so it
+reads the hosts file line:
+
+```sh
+P=$S/firefox-cutover && mkdir -m 700 $P
+echo 'user_pref("network.trr.mode", 5);' > $P/user.js
+certutil -N -d sql:$P --empty-password
+certutil -A -d sql:$P -n 'Cloudflare Origin CA (cutover)' -t 'C,,' -i $S/origin-ca-root.pem
+certutil -L -d sql:$P                       # lists the root with trust "C,,"
+/Applications/Firefox.app/Contents/MacOS/firefox -no-remote -profile $P https://feddit.com/nodeinfo/2.1
+```
+
+Cleanup after step 7 item 6: quit that Firefox and `rm -rf $S/firefox-cutover`. The root was
+trusted only inside that folder; nothing was added to the system keychain or another browser.
 
 ## Step 6: go-ahead and final archive (production; Andrew's named go-ahead)
 
@@ -335,18 +423,9 @@ against the final dump before exporting. Beyond the responder and the stopped se
    environment as `web`, `PEBLISH_PROCESS=worker`) may be created now, with the federation switch
    still off: read `delivery.enabled` back as `false` first. Its jobs wait until step 8.
 
-   **TLS on the new origin (root's decision; not yet rehearsed).** The new origin needs a
-   certificate for feddit.com before the switch, and a Let's Encrypt HTTP challenge cannot pass
-   while Cloudflare still sends feddit.com to the box (which answers 503). feddit.com stays
-   proxied, so only Cloudflare has to trust the origin: install a Cloudflare Origin CA certificate
-   for feddit.com on the new origin's `web` domain in Easypanel before the pretest, and read the
-   zone's SSL/TLS mode back as Full (strict). The pretest (item 6) checks the certificate with
-   `curl --cacert` and Cloudflare's Origin CA root (the RSA root from Cloudflare's Origin CA
-   documentation, saved as `$S/origin-ca-root.pem`), never `-k`. Before the cutover gate, rehearse
-   this on a proxied `peblish.com` test hostname: issue its Origin CA certificate, install it in
-   Easypanel, and run item 6's requests against that hostname with `--cacert`. If Easypanel cannot
-   take a custom certificate, the fallback is a Let's Encrypt DNS challenge, rehearsed the same
-   way. Without one of the two in place this step is a no-go.
+   The `web` domain serves the feddit.com certificate installed before step 6 ("TLS on the new
+   origin"; not yet rehearsed). Run that section's check again now that `web` runs; it must print
+   `TLS ok, http 200`. Without it this step is a no-go.
 
 3. **Origin firewall: Cloudflare only.** `PEBLISH_TRUSTED_PROXY=cloudflare` takes each client's
    address from `CF-Connecting-IP`, a header anyone reaching the origin directly can set, so from
@@ -390,12 +469,17 @@ against the final dump before exporting. Beyond the responder and the stopped se
    also send its own `CF-Connecting-IP` and pick its key. Both are harmless while only Andrew's
    address is let in, and the reason the path closes in item 7.
 
-5. Sign in: `Andrew` asks for a password reset at `/auth/reset`, sets a password, signs in and
-   turns on two-factor at `/settings/security` in that same session. Admin pages need a session
-   that passed two-factor (enrolled or verified in it), not only an account with it on; enrolling
-   signs every other session out. `feddit-admin` does the same when needed. No account has an age
-   declaration (NSFW stays hidden until each declares in settings). If a reset is refused as
-   throttled, wait out the window (item 4: direct requests share one budget).
+5. Sign in, in a browser that trusts the origin's certificate: with path A his usual browser, with
+   path B only the Firefox profile of "TLS on the new origin". First open
+   `https://feddit.com/nodeinfo/2.1`: it must name `peblish`. The box's 503 page (step 6) means the
+   browser went around the hosts file (turn its secure DNS off for this step); a certificate warning
+   means the wrong browser or path: stop, never click through it. Then `Andrew` asks for a password
+   reset at `/auth/reset`, sets a password, signs in and turns on two-factor at `/settings/security`
+   in that same session. Admin pages need a session that passed two-factor (enrolled or verified in
+   it), not only an account with it on; enrolling signs every other session out. `feddit-admin` does
+   the same when needed. No account has an age declaration (NSFW stays hidden until each declares in
+   settings). If a reset is refused as throttled, wait out the window (item 4: direct requests share
+   one budget).
 6. Host-header pretest against the new origin, from Andrew's machine:
 
    ```sh
