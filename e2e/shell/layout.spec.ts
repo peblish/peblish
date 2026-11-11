@@ -53,7 +53,8 @@ for (const signedIn of [false, true]) {
     const viewer = signedIn ? await signedInPage(browser) : page;
     for (const width of [320, 360]) {
       await viewer.setViewportSize({ width, height: 700 });
-      for (const path of ['/', '/auth/sign-in', '/communities']) {
+      // The inbox too: its bar once cut the instance's name short ("e2.peb...").
+      for (const path of ['/', '/auth/sign-in', '/communities', ...(signedIn ? ['/notifications'] : [])]) {
         await gotoHydrated(viewer, path);
         const at = `${width} px ${path}`;
         const { page: pageWidth, brand, actions, menu, nameCut } = await bar(viewer);
@@ -163,4 +164,23 @@ test('a long community handle in the sidebar ends in an ellipsis, keeps its whol
   expect(measured.cut, 'the handle is cut').toBe(true);
   expect(measured.ellipsis).toBe('ellipsis');
   expect(measured.page).toBe(1280);
+});
+
+test('a remote community whose name starts with a directional control shows a letter in its sidebar row, not the control', async ({
+  browser,
+}) => {
+  test.skip(Boolean(process.env.BASE_URL), 'needs the lane database for its seed (DATABASE_URL)');
+  const { password, people, remote } = JSON.parse(
+    execFileSync('node', ['e2e/shell/seed.ts', 'remote'], { cwd: join(import.meta.dirname, '../..'), encoding: 'utf8' }),
+  ) as { password: string; people: [string, string]; remote: string };
+  const page = await (await browser.newContext({ viewport: { width: 1280, height: 800 } })).newPage();
+  await gotoHydrated(page, '/auth/sign-in');
+  await signIn(page, `@${people[0]}`, password);
+  await landed(page, '/');
+  const communities = page.getByRole('complementary', { name: 'Sidebar' }).getByRole('navigation', { name: 'Communities' });
+  const row = communities.getByRole('link', { name: new RegExp(remote.slice(1)) });
+  await expect(row).toBeVisible();
+  // The avatar's initial is the first letter after the control; the handle shows the control as U+FFFD.
+  await expect(row.locator('.muxui-avatar')).toHaveText('S');
+  await expect(row.locator('.pb-handle__name')).toHaveText(`!\uFFFD${remote.slice(1)}`);
 });

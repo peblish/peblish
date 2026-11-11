@@ -1,4 +1,5 @@
 import { HeaderNav } from '@peblish/ui/components/header-nav';
+import { Link } from '@peblish/ui/components/link';
 import { Sidebar } from '@peblish/ui/components/sidebar';
 import { getRouteApi, useRouterState } from '@tanstack/react-router';
 import { useEffect, useRef, type ReactNode } from 'react';
@@ -78,9 +79,9 @@ export function Shell({ children }: { children: ReactNode }) {
   return (
     <Sidebar.Provider>
       <div className="pb-app">
-        <a className="pb-skip" href="#pb-main">
+        <Link className="pb-skip" href="#pb-main">
           {t('shell', 'skip')}
-        </a>
+        </Link>
         <header className="pb-app__bar">
           <div className="pb-app__bar-start">
             <Brand siteName={shell.siteName} className="pb-bar-brand" />

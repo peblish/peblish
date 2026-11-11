@@ -2,9 +2,11 @@ import type { SessionView } from '@peblish/schema/session';
 import { Avatar } from '@peblish/ui/components/avatar';
 import { Button } from '@peblish/ui/components/button';
 import { ButtonLink } from '@peblish/ui/components/button-link';
+import { BidiText } from '@peblish/ui/components/handle';
 import { LogInIcon, UserPlusIcon } from '@peblish/ui/components/icons';
 import { Link } from '@peblish/ui/components/link';
 import { Menu } from '@peblish/ui/components/menu';
+import { Text } from '@peblish/ui/components/text';
 import { useRouter } from '@tanstack/react-router';
 import { useTranslate } from '../i18n/use-translate.ts';
 import { openInRouter } from './client-links.ts';
@@ -40,8 +42,10 @@ function AccountName({ name, label }: { name: string; label: string }) {
       <Avatar.Root size="sm" aria-hidden="true">
         <Avatar.Fallback>{name.slice(0, 1).toUpperCase()}</Avatar.Fallback>
       </Avatar.Root>
-      <span className="pb-sr">{label}: </span>
-      <span className="pb-account__name">{name}</span>
+      <Text className="pb-sr">{label}: </Text>
+      <Text variant="label" className="pb-account__name">
+        <BidiText text={name} />
+      </Text>
     </>
   );
 }
@@ -64,11 +68,11 @@ export function Account({ session }: { session: SessionView | null }) {
         {/* On the narrowest phone bars the labels give way to the icons (shell.css); the names stay. */}
         <Link className="pb-sign-in" href="/auth/sign-in">
           <LogInIcon />
-          <span className="pb-action__label">{t('shell', 'account.signIn')}</span>
+          <Text className="pb-action__label">{t('shell', 'account.signIn')}</Text>
         </Link>
         <ButtonLink className="pb-cta" href="/auth/sign-up" size="sm">
           <UserPlusIcon />
-          <span className="pb-action__label">{t('shell', 'account.signUp')}</span>
+          <Text className="pb-action__label">{t('shell', 'account.signUp')}</Text>
         </ButtonLink>
       </nav>
     );

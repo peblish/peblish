@@ -112,13 +112,15 @@ test("on a phone the sidebar is Mux UI's drawer behind the menu button, with App
   await expect(drawer).toBeHidden();
 });
 
-test('the skip link moves focus to the page content', async ({ page }) => {
-  await gotoHydrated(page, '/');
+test('the skip link moves focus to the page content and stays on the page', async ({ page }) => {
+  // Not the home page: a Mux Link's same-page # once resolved against the site root.
+  await gotoHydrated(page, '/communities');
   await page.keyboard.press('Tab');
   const skip = page.getByRole('link', { name: 'Skip to content' });
   await expect(skip).toBeFocused();
   await page.keyboard.press('Enter');
   await expect(page.locator('#pb-main')).toBeFocused();
+  expect(new URL(page.url()).pathname).toBe('/communities');
 });
 
 test('the appearance popover closes on Escape and when a press lands outside it', async ({ page }) => {
