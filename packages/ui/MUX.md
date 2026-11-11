@@ -144,6 +144,16 @@ Every page renders on the server and must hydrate without warnings (the e2e hydr
 5. `ColorModeToggle` writes the scheme to `<html>` and localStorage on every render: do not use it. The scheme control is built from `ToggleButtonGroup` or `Menu` plus `theme/root.tsx`.
 6. Avatar shows its fallback until hydration; pending submit Buttons are disabled until hydration. Both are by design.
 
+## State without JavaScript
+
+Mux hides the native input of its choice controls and draws the visible box, tick and dot from `data-muxui-state-*` attributes that React sets. With scripts off, or before hydration, those attributes keep their server values: a click checks the input but the old option stays drawn as chosen. `components/native-state.css` (linked from `packages/web/src/styles.css`) fixes the drawing without touching Mux UI.
+
+- Covers `CheckboxField` (and the app's `Checkbox`, built on it) and `RadioField` inside `RadioGroup` (the post type and community picker): selected and unselected in both directions (a box the server ticked and the visitor cleared draws empty), the tick, the invalid edge, and the keyboard focus ring. Disabled and invalid never go stale (the server sets both with the input); hover and pressed are not drawn without scripts; `indeterminate` cannot be set without scripts.
+- Each rule matches only while an attribute and its input disagree (`.muxui-radio-field__button:not([data-muxui-state-selected]):has(input:checked)` and the reverse; `:not([data-muxui-state-focused]):has(input:focus-visible)` for focus) and repeats Mux's declaration for the input's state, with Mux tokens. After hydration they agree, so the file changes nothing: `e2e/ui-nojs` deletes its rules from a hydrated page and finds the same computed styles, and compares hydrated controls with scripts-off ones pixel for pixel, light and dark.
+- The tick is a CSS mask of Mux's check icon (React renders the icon only while selected). The focus ring is two outlines in Mux's ring colours, since the guard allows no hand-written `box-shadow` and Mux has no token for the ring.
+- Needs `:has()` (current evergreen browsers, the supported set).
+- Not covered, because nothing renders them: `SwitchField`, `Switch`, Mux's own `Checkbox` and `CheckboxGroup` (`mux-checkbox`, `checkbox-group`), and `RadioGroup`'s `options` radios. To cover one, find the Mux rules keyed on its `[data-muxui-state-selected]` (and `-focus-visible`) in `@muxui/react/styles.css`, add the stale pair of selectors for its part with the same declarations (mind `@scope` dark-scheme rules: `RadioGroup`'s radios have them), and add a case to `e2e/ui-nojs`.
+
 ## Examples
 
 A Card with actions (a community in a list):
