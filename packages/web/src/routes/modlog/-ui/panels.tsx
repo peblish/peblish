@@ -82,8 +82,15 @@ function openAddress(pathname: string, current: URLSearchParams, panel: string, 
   return `${pathname}?${params}#${id}`;
 }
 
-/** The panel's refusal, read by the field it is about (a missing reason goes to the reason box). */
-const PanelError = createContext<string | undefined>(undefined);
+/**
+ * The panel's refusal, read by the field it is about (a missing reason goes to the reason box),
+ * and `settle`, which that field calls when its value changes: a refusal it shows is cleared, so
+ * the field stops being invalid (React Aria would otherwise keep blocking the next submit).
+ */
+const PanelError = createContext<{ error: string | undefined; settle: (code: string) => void }>({
+  error: undefined,
+  settle: () => undefined,
+});
 
 export function Panel({
   panel,
@@ -152,7 +159,9 @@ export function Panel({
       <ModStyles />
       <form method="post" action="/modlog/act" className="mod-form" aria-busy={busy} onSubmit={onSubmit}>
         <HiddenFields fields={{ intent, back, ...fields }} />
-        <PanelError value={error}>{children}</PanelError>
+        <PanelError value={{ error, settle: (code) => setError((current) => (current === code ? undefined : current)) }}>
+          {children}
+        </PanelError>
         {error && error !== 'reason.required' && (
           <Notice tone="danger" role="alert">
             {t('modlog', errorKey(error))}
@@ -186,7 +195,8 @@ export function ReasonFields({
   /** Unused since Mux ties labels to fields; kept for callers. */ id: string;
 }) {
   const { t } = useTranslate();
-  const missing = use(PanelError) === 'reason.required';
+  const panel = use(PanelError);
+  const missing = panel.error === 'reason.required';
   return (
     <>
       <TextAreaField
@@ -196,6 +206,7 @@ export function ReasonFields({
         rows={3}
         maxLength={10000}
         required={required}
+        onChange={() => panel.settle('reason.required')}
         invalid={missing}
         errorMessage={missing ? t('modlog', errorKey('reason.required')) : undefined}
       />
