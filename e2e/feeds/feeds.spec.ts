@@ -56,7 +56,7 @@ test.describe('anyone', () => {
       await expect(page.getByRole('heading', { level: 1 })).toHaveText(
         { '/': 'Local', '/all': 'All', '/local': 'Local', '/popular': 'Popular', '/moderating': 'Moderating' }[path]!,
       );
-      await expect(page.getByRole('group', { name: 'View' })).toBeVisible();
+      await expect(page.getByRole('radiogroup', { name: 'View' })).toBeVisible();
       await expectAccessible(page);
       expect(log.hydrationProblems()).toEqual([]);
     });
@@ -73,31 +73,34 @@ test.describe('anyone', () => {
 
   test('the toolbar sorts by link: New, Old and Top with its period, and an unknown sort falls back', async ({ page }) => {
     await gotoHydrated(page, '/all');
-    await expect(page.getByRole('group', { name: 'Sort' }).getByRole('link', { name: 'Hot' })).toHaveAttribute('aria-current', 'true');
-    await page.getByRole('group', { name: 'Sort' }).getByRole('link', { name: 'Top' }).click();
+    await expect(page.getByRole('navigation', { name: 'Sort' }).getByRole('link', { name: 'Hot' })).toHaveAttribute('aria-current', 'page');
+    await page.getByRole('navigation', { name: 'Sort' }).getByRole('link', { name: 'Top' }).click();
     await page.waitForURL('**/all?sort=top');
-    await expect(page.getByRole('group', { name: 'Top of' }).getByRole('link', { name: 'Day' })).toHaveAttribute('aria-current', 'true');
+    await expect(page.getByRole('navigation', { name: 'Top of' }).getByRole('link', { name: 'Day' })).toHaveAttribute(
+      'aria-current',
+      'page',
+    );
     // The period is a link too: the top of the week is the best scored post first.
-    await page.getByRole('group', { name: 'Top of' }).getByRole('link', { name: 'Week' }).click();
+    await page.getByRole('navigation', { name: 'Top of' }).getByRole('link', { name: 'Week' }).click();
     await page.waitForURL('**/all?sort=top&period=week');
     expect((await titles(page))[0]).toBe(`Picture ${seed.suffix}`);
-    await page.getByRole('group', { name: 'Sort' }).getByRole('link', { name: 'New' }).click();
+    await page.getByRole('navigation', { name: 'Sort' }).getByRole('link', { name: 'New' }).click();
     await page.waitForURL('**/all?sort=new');
-    await expect(page.getByRole('group', { name: 'Top of' })).toHaveCount(0);
+    await expect(page.getByRole('navigation', { name: 'Top of' })).toHaveCount(0);
     await gotoHydrated(page, '/all?sort=bogus&period=nonsense');
     await expect(page).toHaveURL(/\/all$/);
-    await expect(page.getByRole('group', { name: 'Sort' }).getByRole('link', { name: 'Hot' })).toHaveAttribute('aria-current', 'true');
+    await expect(page.getByRole('navigation', { name: 'Sort' }).getByRole('link', { name: 'Hot' })).toHaveAttribute('aria-current', 'page');
   });
 
   test('the density switch changes the cards and the choice is kept', async ({ page }) => {
     await gotoHydrated(page, '/all?sort=top');
     const first = page.locator('.feed-list article').first();
     await expect(first).toHaveAttribute('data-density', 'classic');
-    await page.getByRole('group', { name: 'View' }).getByRole('button', { name: 'Compact' }).click();
+    await page.getByRole('radiogroup', { name: 'View' }).getByRole('radio', { name: 'Compact' }).click();
     await expect(first).toHaveAttribute('data-density', 'compact');
     await page.reload();
     await expect(page.locator('.feed-list article').first()).toHaveAttribute('data-density', 'compact');
-    await page.getByRole('group', { name: 'View' }).getByRole('button', { name: 'Classic' }).click();
+    await page.getByRole('radiogroup', { name: 'View' }).getByRole('radio', { name: 'Classic' }).click();
     await expect(page.locator('.feed-list article').first()).toHaveAttribute('data-density', 'classic');
   });
 
@@ -113,6 +116,40 @@ test.describe('anyone', () => {
     await expect(card).toHaveAttribute('data-kind', 'image');
     await expect(card.locator('.pb-post__domain')).toHaveText('(images.example.test)');
   });
+
+  test('at 320px a long community and author handle wrap inside the card: nothing clipped, no page scroll', async ({
+    page,
+    context,
+    baseURL,
+  }) => {
+    await page.setViewportSize({ width: 320, height: 800 });
+    for (const density of ['card', 'classic', 'compact']) {
+      await context.addCookies([{ name: 'peblish_prefs', value: `density=${density}&scheme=system`, url: baseURL! }]);
+      await gotoHydrated(page, '/all?sort=top');
+      const card = page.locator('.feed-list article').first();
+      await expect(card).toHaveAttribute('data-density', density);
+      // The seed's names are short: give the first card's two handles the longest kind a remote
+      // server sends, in place, so the real markup and styles are measured.
+      await card.locator('.pb-handle').evaluateAll((handles) =>
+        handles.forEach((handle, index) => {
+          const host =
+            handle.querySelector('.pb-handle__host') ?? Object.assign(document.createElement('span'), { className: 'pb-handle__host' });
+          host.textContent = '@a-very-long-subdomain.some-instance.example';
+          handle.replaceChildren(index === 0 ? '!a-very-long-community-name-from-elsewhere' : '@a-very-long-account-name', host);
+        }),
+      );
+      const layout = await card.evaluate((article) => {
+        const frame = article.querySelector('.pb-post__frame')!.getBoundingClientRect();
+        const hosts = [...article.querySelectorAll('.pb-handle__host')].map((host) => host.getBoundingClientRect());
+        return {
+          pageScrolls: document.documentElement.scrollWidth > document.documentElement.clientWidth,
+          cardOverflows: article.scrollWidth > article.clientWidth,
+          hostsInside: hosts.every((host) => host.width > 0 && host.left >= frame.left - 0.5 && host.right <= frame.right + 0.5),
+        };
+      });
+      expect(layout, density).toEqual({ pageScrolls: false, cardOverflows: false, hostsInside: true });
+    }
+  });
 });
 
 test.describe('a German browser', () => {
@@ -120,8 +157,8 @@ test.describe('a German browser', () => {
 
   test('the toolbar speaks German, with no axe violations', async ({ page }) => {
     await gotoHydrated(page, '/all?sort=top');
-    await expect(page.getByRole('group', { name: 'Sortierung' })).toBeVisible();
-    await expect(page.getByRole('group', { name: 'Top aus' }).getByRole('link', { name: 'Woche' })).toBeVisible();
+    await expect(page.getByRole('navigation', { name: 'Sortierung' })).toBeVisible();
+    await expect(page.getByRole('navigation', { name: 'Top aus' }).getByRole('link', { name: 'Woche' })).toBeVisible();
     await expectAccessible(page);
   });
 });
@@ -213,7 +250,7 @@ test.describe('without JavaScript', () => {
     const second = await postLinks(page);
     expect(second).toHaveLength(20);
     expect(second.filter((link) => first.includes(link))).toEqual([]);
-    await page.getByRole('group', { name: 'Sort' }).getByRole('link', { name: 'Top' }).click();
+    await page.getByRole('navigation', { name: 'Sort' }).getByRole('link', { name: 'Top' }).click();
     await expect(page).toHaveURL(/sort=top/);
     expect((await titles(page))[0]).toBe(`Picture ${seed.suffix}`);
   });

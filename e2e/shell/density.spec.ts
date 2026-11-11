@@ -46,12 +46,12 @@ test('a sensitive post is hidden until shown', async ({ page }) => {
 test('the density control switches the feed and the choice survives a reload', async ({ page, context, request }) => {
   await gotoHydrated(page, '/kit');
   const feed = page.getByTestId('kit-feed').locator('article').first();
-  const control = page.getByRole('group', { name: 'View' });
-  await expect(control.getByRole('button', { name: 'Classic' })).toHaveAttribute('aria-pressed', 'true');
+  const control = page.getByRole('radiogroup', { name: 'View' });
+  await expect(control.getByRole('radio', { name: 'Classic' })).toHaveAttribute('aria-checked', 'true');
   await expect(feed).toHaveAttribute('data-density', 'classic');
 
   // The first tap after the marker works, and the cookie is stored before the page reloads.
-  await control.getByRole('button', { name: 'Compact' }).click();
+  await control.getByRole('radio', { name: 'Compact' }).click();
   await expect(feed).toHaveAttribute('data-density', 'compact');
   await expect
     .poll(async () => (await context.cookies()).find(({ name }) => name === 'peblish_prefs')?.value)
@@ -59,7 +59,10 @@ test('the density control switches the feed and the choice survives a reload', a
 
   await page.reload();
   await expect(page.getByTestId('kit-feed').locator('article').first()).toHaveAttribute('data-density', 'compact');
-  await expect(page.getByRole('group', { name: 'View' }).getByRole('button', { name: 'Compact' })).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByRole('radiogroup', { name: 'View' }).getByRole('radio', { name: 'Compact' })).toHaveAttribute(
+    'aria-checked',
+    'true',
+  );
 
   // The server rendered it: the HTML itself carries the density, so there is no flash before hydration.
   // A stored true black (no longer offered) renders as Mux UI's dark scheme.
@@ -81,7 +84,7 @@ test('two quick changes both reach the cookie, on a slow connection', async ({ p
   await page.getByRole('banner').getByRole('button', { name: 'Appearance' }).click();
   await page.getByRole('radio', { name: 'Dark' }).click();
   await page.keyboard.press('Escape');
-  await page.getByRole('group', { name: 'View' }).getByRole('button', { name: 'Compact' }).click();
+  await page.getByRole('radiogroup', { name: 'View' }).getByRole('radio', { name: 'Compact' }).click();
   const stored = async () => (await context.cookies()).find(({ name }) => name === 'peblish_prefs')?.value;
   await expect.poll(stored, { timeout: 10_000 }).toBe('density=compact&scheme=dark');
   // The last answer has landed: the cookie does not drift back.

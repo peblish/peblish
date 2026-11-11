@@ -72,7 +72,7 @@ const render = (thumbnailSrc: string | null) =>
 
 test('the thumbnail loads from the resolved source, never from the post own URL', () => {
   const html = render('/media/proxy/signed/thumb');
-  expect(html).toContain('<img src="/media/proxy/signed/thumb"');
+  expect(html).toMatch(/<img [^>]*src="\/media\/proxy\/signed\/thumb"/);
   expect(html).not.toContain('tracker.example');
 });
 

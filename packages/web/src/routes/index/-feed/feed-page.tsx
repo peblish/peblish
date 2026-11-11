@@ -1,7 +1,12 @@
 import type { FeedName, Period, Sort } from '@peblish/core/feeds/input';
 import type { ReactNode } from 'react';
 import { periods, sorts } from '@peblish/core/feeds/input';
+import { EmptyState } from '@peblish/ui/components/empty-state';
+import { Link } from '@peblish/ui/components/link';
+import { LinkTabs } from '@peblish/ui/components/link-tabs';
+import { Pager } from '@peblish/ui/components/pager';
 import { PostCard } from '@peblish/ui/components/post-card';
+import { Text } from '@peblish/ui/components/text';
 import { DensityControl } from '@peblish/ui/density/density-control';
 import { useTranslate } from '../../../i18n/use-translate.ts';
 import { useRouteHydrated } from '../../../shell/hydration.ts';
@@ -12,11 +17,10 @@ import { castVoteFn } from '../../post/-vote.ts';
 import type { FeedData } from './load.ts';
 import { feedHref, resolveFeedSearch, type FeedSearch } from './search.ts';
 
-// A feed after feed-segmented.html: the feed's name, the sort as links (so the toolbar works
-// before the page hydrates and without JavaScript), the always-visible density switch, the posts
-// as cards, and a link to the next page. FeedToolbar and FeedCards are the same parts without
-// the heading, for other pages that list posts (a community page, a profile). No Mux collection component sits on the toolbar or
-// the rows (first-tap condition).
+// A feed: the feed's name, the sort and Top period as LinkTabs (real links, so the toolbar works
+// before the page hydrates and without JavaScript), the always-visible density switch (a Mux ToggleButtonGroup),
+// the posts, and a link to the next page. FeedToolbar and FeedCards are the same parts without
+// the heading, for other pages that list posts (a community page, a profile).
 
 const feedTitleKeys = {
   subscribed: 'feed.subscribed',
@@ -26,21 +30,15 @@ const feedTitleKeys = {
   moderating: 'feed.moderating',
 } as const;
 
-function Choice({ href, current, children }: { href: string; current: boolean; children: string }) {
-  return (
-    <a href={href} aria-current={current ? 'true' : undefined}>
-      {children}
-    </a>
-  );
-}
-
 export function FeedPage({ path, data, search }: { path: string; data: FeedData; search: FeedSearch }) {
   const { t } = useTranslate();
   useRouteHydrated();
   return (
     <main className="pb-page feed" data-feed={data.feed}>
       <FeedToolbar path={path} search={search}>
-        <h1>{t('shell', feedTitleKeys[data.feed])}</h1>
+        <Text as="h1" variant="heading" size="sm">
+          {t('shell', feedTitleKeys[data.feed])}
+        </Text>
       </FeedToolbar>
       <FeedCards path={path} data={data} search={search} empty={<Empty feed={data.feed} />} />
     </main>
@@ -61,21 +59,27 @@ export function FeedToolbar({ path, search: address, children }: { path: string;
   return (
     <div className="feed-toolbar">
       {children}
-      <div className="feed-seg" role="group" aria-label={t('feeds', 'sort.group')}>
-        {sorts.map((value: Sort) => (
-          <Choice key={value} href={feedHref(path, { ...search, sort: value, cursor: undefined })} current={sort === value}>
-            {t('feeds', `sort.${value}`)}
-          </Choice>
-        ))}
-      </div>
+      <LinkTabs
+        aria-label={t('feeds', 'sort.group')}
+        variant="segment"
+        size="sm"
+        items={sorts.map((value: Sort) => ({
+          to: feedHref(path, { ...search, sort: value, cursor: undefined }),
+          label: t('feeds', `sort.${value}`),
+          active: sort === value,
+        }))}
+      />
       {sort === 'top' && (
-        <div className="feed-seg" role="group" aria-label={t('feeds', 'period.group')}>
-          {periods.map((value) => (
-            <Choice key={value} href={feedHref(path, { sort, period: value })} current={search.period === value}>
-              {periodOf(value)}
-            </Choice>
-          ))}
-        </div>
+        <LinkTabs
+          aria-label={t('feeds', 'period.group')}
+          variant="segment"
+          size="sm"
+          items={periods.map((value: Period) => ({
+            to: feedHref(path, { sort, period: value }),
+            label: periodOf(value),
+            active: search.period === value,
+          }))}
+        />
       )}
       <span className="feed-space" />
       <DensityControl value={prefs.density} onChange={(density) => setPrefs({ density })} labels={densityLabels} />
@@ -108,13 +112,12 @@ export function FeedCards({
   return (
     <>
       {data.signIn ? (
-        <section className="feed-empty">
-          <h2>{t('feeds', 'moderating.signIn.title')}</h2>
-          <p>{t('feeds', 'moderating.signIn.body')}</p>
-          <p>
-            <a href={`/auth/sign-in?redirect=${encodeURIComponent(path)}`}>{t('feeds', 'moderating.signIn.link')}</a>
-          </p>
-        </section>
+        <EmptyState
+          title={t('feeds', 'moderating.signIn.title')}
+          action={<Link href={`/auth/sign-in?redirect=${encodeURIComponent(path)}`}>{t('feeds', 'moderating.signIn.link')}</Link>}
+        >
+          {t('feeds', 'moderating.signIn.body')}
+        </EmptyState>
       ) : data.items.length === 0 ? (
         empty
       ) : (
@@ -141,15 +144,12 @@ export function FeedCards({
         </ul>
       )}
 
-      {(data.next || search.cursor) && !data.signIn && (
-        <nav className="feed-pages" aria-label={t('feeds', 'pages.label')}>
-          {search.cursor && <a href={feedHref(path, { ...search, cursor: undefined })}>{t('feeds', 'first')}</a>}
-          {data.next && (
-            <a href={feedHref(path, { ...search, cursor: data.next })} rel="next">
-              {t('feeds', 'next')}
-            </a>
-          )}
-        </nav>
+      {!data.signIn && (
+        <Pager
+          aria-label={t('feeds', 'pages.label')}
+          first={search.cursor ? { href: feedHref(path, { ...search, cursor: undefined }), label: t('feeds', 'first') } : undefined}
+          next={data.next ? { href: feedHref(path, { ...search, cursor: data.next }), label: t('feeds', 'next') } : undefined}
+        />
       )}
     </>
   );
@@ -160,18 +160,19 @@ function Empty({ feed }: { feed: FeedName }) {
   const { t } = useTranslate();
   if (feed === 'subscribed')
     return (
-      <section className="feed-empty">
-        <h2>{t('feeds', 'empty.subscribed.title')}</h2>
-        <p>{t('feeds', 'empty.subscribed.body')}</p>
-        <p>
-          <a href={directoryPaths.browse}>{t('feeds', 'empty.browse')}</a> · <a href={feedPaths.all}>{t('feeds', 'empty.all')}</a>
-        </p>
-      </section>
+      <EmptyState
+        title={t('feeds', 'empty.subscribed.title')}
+        action={
+          <>
+            <Link href={directoryPaths.browse}>{t('feeds', 'empty.browse')}</Link>
+            <Link href={feedPaths.all}>{t('feeds', 'empty.all')}</Link>
+          </>
+        }
+      >
+        {t('feeds', 'empty.subscribed.body')}
+      </EmptyState>
     );
   return (
-    <section className="feed-empty">
-      <h2>{t('feeds', 'empty.title')}</h2>
-      <p>{t('feeds', feed === 'moderating' ? 'moderating.empty.body' : 'empty.body')}</p>
-    </section>
+    <EmptyState title={t('feeds', 'empty.title')}>{t('feeds', feed === 'moderating' ? 'moderating.empty.body' : 'empty.body')}</EmptyState>
   );
 }

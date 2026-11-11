@@ -1,5 +1,8 @@
 import { useEffect, useState } from 'react';
+import { Group } from './group.tsx';
 import { ArrowDown, ArrowUp } from './icons.tsx';
+import { Text } from './text.tsx';
+import { ToggleButton } from './toggle-button-group.tsx';
 import { createVoteQueue, type Vote } from './vote-queue.ts';
 
 export type { Vote };
@@ -31,9 +34,10 @@ export interface VoteControlProps {
 }
 
 /**
- * Up and down arrows with the score between them: two plain buttons, not a Mux collection, so
- * the first tap right after hydration is not lost (e2e/hydration). Optimistic: the viewer's
- * choice shows before `onVote` settles.
+ * Up and down arrows with the score between them: a Mux UI Group of two ToggleButtons (pressed
+ * state, `aria-pressed`) and the score in Mux Text. Not a ToggleButtonGroup: its single selection
+ * is a radio group, and a vote must be removable. Optimistic: the viewer's choice shows before
+ * `onVote` settles. The voted arrow and score take the --pb-up and --pb-down accents.
  */
 export function VoteControl({ score, myVote, onVote, disabled, orientation = 'vertical', labels, locale, className }: VoteControlProps) {
   const [state, setState] = useState({ base: myVote, vote: myVote });
@@ -47,28 +51,30 @@ export function VoteControl({ score, myVote, onVote, disabled, orientation = 've
   const shown = score - myVote + state.vote;
   const classes = ['pb-vote', orientation === 'horizontal' && 'pb-vote--row', className].filter(Boolean).join(' ');
   return (
-    <div className={classes} role="group" aria-label={labels.group}>
-      <button
-        type="button"
+    <Group className={classes} aria-label={labels.group} data-vote={state.vote === 1 ? 'up' : state.vote === -1 ? 'down' : undefined}>
+      <ToggleButton
+        size="sm"
         className="pb-vote__up"
         aria-label={labels.up}
-        aria-pressed={state.vote === 1}
+        selected={state.vote === 1}
         disabled={disabled}
-        onClick={() => queue.press(1, save)}
+        onChange={() => queue.press(1, save)}
       >
         <ArrowUp />
-      </button>
-      <span className="pb-vote__score">{new Intl.NumberFormat(locale).format(shown)}</span>
-      <button
-        type="button"
+      </ToggleButton>
+      <Text variant="label" size="sm" className="pb-vote__score">
+        {new Intl.NumberFormat(locale).format(shown)}
+      </Text>
+      <ToggleButton
+        size="sm"
         className="pb-vote__down"
         aria-label={labels.down}
-        aria-pressed={state.vote === -1}
+        selected={state.vote === -1}
         disabled={disabled}
-        onClick={() => queue.press(-1, save)}
+        onChange={() => queue.press(-1, save)}
       >
         <ArrowDown />
-      </button>
-    </div>
+      </ToggleButton>
+    </Group>
   );
 }
