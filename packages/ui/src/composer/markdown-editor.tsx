@@ -1,4 +1,5 @@
 import { useId, useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
+import { Card } from '../components/card.tsx';
 import { IconButton } from '../components/icon-button.tsx';
 import { Notice } from '../components/notice.tsx';
 import { Prose } from '../components/prose.tsx';
@@ -17,8 +18,8 @@ import {
   NumberedListIcon,
   QuoteIcon,
   SpoilerIcon,
-  StrikeIcon,
-} from './editor-icons.tsx';
+  StrikethroughIcon,
+} from '../components/icons.tsx';
 import { bulletList, code, heading, link, numberedList, quote, wrap, type Insert } from './insert.ts';
 import { useHydrated } from './use-hydrated.ts';
 
@@ -97,7 +98,7 @@ export function MarkdownEditor({
   onSubmitShortcut,
   className,
 }: MarkdownEditorProps) {
-  const root = useRef<HTMLDivElement>(null);
+  const textArea = useRef<HTMLTextAreaElement>(null);
   const selection = useRef<{ start: number; end: number } | null>(null);
   const requested = useRef(0);
   const enhanced = useHydrated();
@@ -107,13 +108,13 @@ export function MarkdownEditor({
 
   // A re-render after an edit must not move the caret off the edit's own selection.
   useLayoutEffect(() => {
-    const area = root.current?.querySelector('textarea');
+    const area = textArea.current;
     if (area && selection.current) area.setSelectionRange(selection.current.start, selection.current.end);
     selection.current = null;
   }, [value]);
 
   function apply(insert: Insert) {
-    const area = root.current?.querySelector('textarea');
+    const area = textArea.current;
     if (!area) return;
     const next = insert(area.value, area.selectionStart, area.selectionEnd);
     if (next.value !== area.value) {
@@ -130,7 +131,7 @@ export function MarkdownEditor({
   const actions: { label: string; icon: ReactNode; shortcut?: string; insert: Insert }[] = [
     { label: labels.bold, icon: <BoldIcon />, shortcut: 'Ctrl+B', insert: wrap('**') },
     { label: labels.italic, icon: <ItalicIcon />, shortcut: 'Ctrl+I', insert: wrap('*') },
-    { label: labels.strikethrough, icon: <StrikeIcon />, insert: wrap('~~') },
+    { label: labels.strikethrough, icon: <StrikethroughIcon />, insert: wrap('~~') },
     { label: labels.link, icon: <LinkIcon />, shortcut: 'Ctrl+K', insert: link({ text: labels.linkText, url: labels.linkUrl }) },
     { label: labels.quote, icon: <QuoteIcon />, insert: quote },
     { label: labels.code, icon: <CodeIcon />, insert: code },
@@ -141,8 +142,8 @@ export function MarkdownEditor({
   ];
   const shortcuts: Record<string, Insert | undefined> = { b: actions[0]?.insert, i: actions[1]?.insert, k: actions[3]?.insert };
 
-  function onKeyDown(event: KeyboardEvent<HTMLDivElement>) {
-    if (!(event.ctrlKey || event.metaKey) || event.altKey || !(event.target instanceof HTMLTextAreaElement)) return;
+  function onKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
+    if (!(event.ctrlKey || event.metaKey) || event.altKey) return;
     if (event.key === 'Enter' && onSubmitShortcut) {
       event.preventDefault();
       onSubmitShortcut();
@@ -170,7 +171,7 @@ export function MarkdownEditor({
 
   const off = !enhanced || disabled;
   return (
-    <div className={className ? `pb-md ${className}` : 'pb-md'} ref={root} onKeyDown={onKeyDown}>
+    <div className={className ? `pb-md ${className}` : 'pb-md'}>
       <div className="pb-md__head">
         <ToggleButtonGroup
           aria-label={labels.view}
@@ -207,10 +208,11 @@ export function MarkdownEditor({
             after the first render is linked to the field only by an id it already has (Mux UI rc.6). */}
         <TextArea.Root value={value} onChange={onChange} invalid={invalid} disabled={disabled}>
           <TextArea.Label className="pb-sr">{label}</TextArea.Label>
-          <TextArea.TextArea name={name} rows={rows} />
+          <TextArea.TextArea ref={textArea} name={name} rows={rows} onKeyDown={onKeyDown} />
           {description && <TextArea.Description>{description}</TextArea.Description>}
           {invalid && errorMessage && (
-            // React Aria's FieldError, under TextArea.Error, drops a role, so the alert is inside it.
+            // React Aria's FieldError, under TextArea.Error, drops a role, so the alert is inside it
+            // (a Text would recolour the message).
             <TextArea.Error id={errorId}>
               <span role="alert">{errorMessage}</span>
             </TextArea.Error>
@@ -218,7 +220,7 @@ export function MarkdownEditor({
         </TextArea.Root>
       </div>
       {view === 'preview' && (
-        <div className="pb-md__preview" aria-live="polite" aria-busy={preview.status === 'loading'}>
+        <Card.Root variant="outlined" padding="sm" className="pb-md__preview" aria-live="polite" aria-busy={preview.status === 'loading'}>
           {preview.status === 'loading' && (
             <Text as="p" color="muted">
               {labels.previewLoading}
@@ -240,7 +242,7 @@ export function MarkdownEditor({
               <Prose html={preview.html} />
             </>
           )}
-        </div>
+        </Card.Root>
       )}
     </div>
   );

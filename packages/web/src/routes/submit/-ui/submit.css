@@ -56,15 +56,11 @@
     display: none;
   }
 
-  /* Only the options scroll in the box; the group's error sits below it, in sight. 220px is the
-     box's layout height; Mux UI has no border-width token, so the 1px stays. */
+  /* The options are a Mux UI outlined Card that scrolls; the group's error sits below it, in
+     sight. 220px is the box's layout height. */
   .cmp__picker .cmp__options {
     max-height: 220px;
-    padding: var(--muxui-semantic-layout-inset-small);
     overflow: auto;
-    border: 1px solid var(--muxui-semantic-border-default);
-    border-radius: var(--muxui-semantic-control-radius);
-    background: var(--muxui-semantic-surface-raised);
   }
 
   .cmp__row[hidden] {
@@ -78,8 +74,9 @@
     gap: var(--muxui-semantic-layout-control-gap);
   }
 
-  /* The browser's own file button, in Mux UI's neutral button colours. */
-  .cmp__drop input[type='file']::file-selector-button {
+  /* The browser's own file button (the field must post without scripts, which Mux UI's
+     FileTrigger cannot), in Mux UI's neutral button colours. */
+  .cmp__file::file-selector-button {
     margin-inline-end: var(--muxui-semantic-layout-control-gap);
     padding: var(--muxui-semantic-layout-dense-gap) var(--muxui-semantic-layout-inset-small);
     border: 0;
@@ -90,7 +87,7 @@
     cursor: pointer;
   }
 
-  .cmp__drop input[type='file']::file-selector-button:hover {
+  .cmp__file::file-selector-button:hover {
     background: var(--muxui-semantic-action-neutral-background-hover);
   }
 
@@ -130,8 +127,8 @@
     display: grid;
     gap: var(--muxui-semantic-layout-dense-gap);
     margin: 0;
-    /* Room for the list's numbers, in the text's own size: a layout measure, not a scale step. */
-    padding-inline-start: 1.5em;
+    /* Room for the list's numbers, as Mux UI's Markdown indents its lists. */
+    padding-inline-start: var(--muxui-semantic-layout-content-indent);
   }
 
   .cmp__rule {

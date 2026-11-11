@@ -22,13 +22,10 @@
     display: none;
   }
 
+  /* The preview is a Mux UI outlined Card; this is only its height. */
   .pb-md__preview {
     /* A layout size, not a scale step: about the height of the textarea it stands in for. */
     min-height: 200px;
-    padding: var(--muxui-semantic-layout-inset-tiny) var(--muxui-semantic-layout-inset-medium);
-    border: 1px solid var(--muxui-semantic-border-default);
-    border-radius: var(--muxui-semantic-control-radius);
-    background: var(--muxui-semantic-surface-raised);
   }
 
   /* The sheet: the dialog panel moved to the bottom edge. The panel's own transform (centred, with
