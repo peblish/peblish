@@ -16,6 +16,8 @@ export interface LinkTabLinkProps {
   to: string;
   className: string;
   'aria-current'?: 'page';
+  /** Mux Tabs' selected state on the current tab, so Mux's stylesheet draws it as selected. */
+  'data-muxui-state-selected'?: '';
   children: ReactNode;
 }
 
@@ -35,9 +37,11 @@ export interface LinkTabsProps extends Omit<ComponentPropsWithoutRef<'nav'>, 'ar
 }
 
 /**
- * Tabs that are pages: a `nav` of real links with Mux Tabs' classes and tokens, so it reads like a
- * Mux `Tabs` bar but works before hydration and with scripts off, and each tab can open in a new tab.
- * Mux `Tabs` in rc.7 are buttons (no `href`), so they are only for panels on one page.
+ * Tabs that are pages: a `nav` of real links in Mux Tabs' markup (its classes, the label part and
+ * the selected state attribute on the current tab), so Mux's own stylesheet draws them as a Mux
+ * `Tabs` bar before its motion runs: the selected underline or pill, the hover fill, the focus ring.
+ * They work before hydration and with scripts off, and each tab can open in a new tab. Mux `Tabs`
+ * in rc.7 are buttons (no `href`), so they are only for panels on one page.
  */
 export function LinkTabs({ 'aria-label': label, items, variant = 'underline', size, link: As, className, ...rest }: LinkTabsProps) {
   return (
@@ -51,13 +55,27 @@ export function LinkTabs({ 'aria-label': label, items, variant = 'underline', si
         <div className="muxui-tabs__list">
           {items.map((item) => {
             const current: 'page' | undefined = item.active ? 'page' : undefined;
+            const selected: '' | undefined = item.active ? '' : undefined;
+            const label = <span className="muxui-tabs__tab-label">{item.label}</span>;
             return As ? (
-              <As key={item.key ?? item.to} to={item.to} className="muxui-tabs__tab" aria-current={current}>
-                {item.label}
+              <As
+                key={item.key ?? item.to}
+                to={item.to}
+                className="muxui-tabs__tab"
+                aria-current={current}
+                data-muxui-state-selected={selected}
+              >
+                {label}
               </As>
             ) : (
-              <Link key={item.key ?? item.to} href={item.to} current={item.active} className="muxui-tabs__tab">
-                {item.label}
+              <Link
+                key={item.key ?? item.to}
+                href={item.to}
+                current={item.active}
+                className="muxui-tabs__tab"
+                data-muxui-state-selected={selected}
+              >
+                {label}
               </Link>
             );
           })}

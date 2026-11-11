@@ -29,6 +29,14 @@
     gap: var(--muxui-semantic-layout-action-gap);
   }
 
+  .kit-tabs {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 18rem), 1fr));
+    gap: var(--muxui-semantic-layout-action-gap);
+    align-items: start;
+    margin-block-end: var(--muxui-semantic-layout-group-gap);
+  }
+
   .kit-stack {
     display: grid;
     gap: var(--muxui-semantic-layout-action-gap);

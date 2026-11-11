@@ -4,6 +4,7 @@ import { Checkbox } from '@peblish/ui/components/checkbox';
 import { CommentThread } from '@peblish/ui/components/comment-thread';
 import { Dialog } from '@peblish/ui/components/dialog';
 import { Link } from '@peblish/ui/components/link';
+import { LinkTabs } from '@peblish/ui/components/link-tabs';
 import { Menu } from '@peblish/ui/components/menu';
 import { PostCard, type Density } from '@peblish/ui/components/post-card';
 import { Prose } from '@peblish/ui/components/prose';
@@ -11,6 +12,7 @@ import { Quote } from '@peblish/ui/components/quote';
 import { ReplyBar } from '@peblish/ui/components/reply-bar';
 import { Select } from '@peblish/ui/components/select';
 import { Separator } from '@peblish/ui/components/separator';
+import { Tabs } from '@peblish/ui/components/tabs';
 import { Text } from '@peblish/ui/components/text';
 import { TextAreaField } from '@peblish/ui/components/text-area';
 import { TextField } from '@peblish/ui/components/text-field';
@@ -47,6 +49,7 @@ export const Route = createFileRoute('/kit/')({
 });
 
 const densities: readonly Density[] = ['card', 'classic', 'compact'];
+const tabSamples = ['Posts', 'Comments', 'About'];
 
 // Toasts need a provider above the page that raises them; the shell has none, because Mux
 // UI's toast code costs about 50 kB gzip on every route that loads it.
@@ -322,6 +325,28 @@ function KitPage() {
             </Menu.Popup>
           </Menu.Root>
         </div>
+      </section>
+
+      <section aria-labelledby="kit-tabs">
+        <Text as="h2" variant="heading" size="sm" className="kit-heading" id="kit-tabs">
+          Tabs
+        </Text>
+        {/* Mux Tabs (buttons, for panels) beside LinkTabs (links, for pages): they should look the same. */}
+        {(['underline', 'segment'] as const).map((variant) => (
+          <div key={variant} className="kit-tabs" data-testid={`kit-tabs-${variant}`}>
+            <Tabs
+              aria-label={`Mux Tabs, ${variant}`}
+              variant={variant}
+              keyboardActivation="manual"
+              items={tabSamples.map((label) => ({ id: label, label, panel: null }))}
+            />
+            <LinkTabs
+              aria-label={`LinkTabs, ${variant}`}
+              variant={variant}
+              items={tabSamples.map((label, index) => ({ to: `/kit?tab=${label}`, label, active: index === 0 }))}
+            />
+          </div>
+        ))}
       </section>
 
       <section aria-labelledby="kit-surfaces">

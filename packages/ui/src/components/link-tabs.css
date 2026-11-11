@@ -1,6 +1,6 @@
-/* LinkTabs: Mux Tabs' look on links. Mux gap: rc.6 Tabs are buttons, and Mux draws its underline and
-   segment pill with motion after hydration; these rules draw the current tab statically from
-   aria-current and undo Mux Link's own link colour. */
+/* LinkTabs: Mux Tabs' look on links. The markup is Mux Tabs' own (link-tabs.tsx), with the selected
+   state attribute on the current tab, so Mux's stylesheet draws the tabs as it draws a Mux Tabs bar
+   before its motion runs. These rules only take away what Mux Link adds, and let a long bar wrap. */
 @layer app {
   /* The bar never grows past its column: tabs wrap to new lines, and so do long labels. */
   .pb-link-tabs {
@@ -12,50 +12,42 @@
     flex-wrap: wrap;
   }
 
+  /* Mux Link underlines a link, and draws the current one bold with a plain cursor; a tab keeps
+     Mux Tabs' weight and cursor in every state. */
   .pb-link-tabs .muxui-tabs__tab {
-    min-inline-size: 0;
     max-inline-size: 100%;
-    color: var(--muxui-semantic-content-default);
-    font-size: var(--muxui-semantic-typography-body-size);
-    font-weight: var(--muxui-semantic-typography-control-weight);
     text-align: center;
     text-decoration: none;
+    font-weight: var(--muxui-semantic-typography-control-weight);
+    cursor: pointer;
     /* Mux keeps a tab on one line; a translated label longer than the screen wraps instead. */
     white-space: normal;
     overflow-wrap: anywhere;
   }
 
-  .pb-link-tabs .muxui-tabs__tab:hover,
-  .pb-link-tabs .muxui-tabs__tab[data-muxui-state-hovered] {
-    color: var(--muxui-semantic-content-default);
-    background-color: var(--muxui-semantic-surface-subtle);
+  /* Mux Link's hover colour would reach an unselected tab; Mux Tabs keep the tab colour. */
+  .pb-link-tabs .muxui-tabs__tab:not([data-muxui-state-selected]) {
+    color: var(--muxui-component-tabs-tab-foreground);
   }
 
-  .pb-link-tabs .muxui-tabs__tab[aria-current='page'] {
-    color: var(--muxui-semantic-content-strong);
-    background-color: transparent;
+  /* Mux Link rounds its corners for its own focus ring and outlines a focused link; an underline
+     tab is square, and Mux Tabs ring a focused one with their own shadow (the selected one with an
+     outline, which Mux's selected rule draws). */
+  .pb-link-tabs [data-muxui-tabs-variant='underline'] .muxui-tabs__tab:is(:not(:focus-visible), [data-muxui-state-selected]) {
+    border-radius: var(--muxui-reference-dimension-radius-none);
   }
 
-  .pb-link-tabs [data-muxui-tabs-variant='underline'] .muxui-tabs__tab[aria-current='page'] {
-    /* The underline sits on the list's own 2px line, as Mux's moving indicator does, so the bar keeps its height. */
-    margin-block-end: -2px; /* layout */
-    border-block-end: 2px solid var(--muxui-semantic-selection-track);
+  .pb-link-tabs [data-muxui-tabs-variant='underline'] .muxui-tabs__tab:not([data-muxui-state-selected]) {
+    outline: none;
   }
 
   .pb-link-tabs [data-muxui-tabs-variant='segment'] .muxui-tabs__tab {
     /* Mux's segment tabs never shrink (flex: 0 0 auto); these may, so a long label wraps. */
     flex: 0 1 auto;
-    border-radius: var(--muxui-semantic-shape-option-radius);
   }
 
-  .pb-link-tabs [data-muxui-tabs-variant='segment'] .muxui-tabs__tab[aria-current='page'] {
-    color: var(--muxui-semantic-content-on-solid);
-    background-color: var(--muxui-semantic-surface-emphasis);
-  }
-
-  /* Forced colours (Windows high contrast) replace every colour and background, so the segment's
-     fill disappears and the underline merges with the list's own border. Mux's selected rules key
-     on aria-selected, which links do not have; an underline under the label survives. */
+  /* Forced colours replace every colour and background, and the underline variant's mark lies on
+     the list's own border, so the current tab also gets an underline under its label. */
   @media (forced-colors: active) {
     .pb-link-tabs .muxui-tabs__tab[aria-current='page'] {
       text-decoration-line: underline;
