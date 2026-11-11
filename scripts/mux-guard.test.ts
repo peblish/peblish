@@ -249,7 +249,7 @@ test('CSS written inside a script is reported: <style> elements, CSSOM calls and
   ]);
 });
 
-test("a <style> may hold the ?inline stylesheet only through its import, not a parameter, local or prop of that name", () => {
+test('a <style> may hold the ?inline stylesheet only through its import, not a parameter, local or prop of that name', () => {
   const source = lines(
     "import modCss from './mod.css?inline';", // 1
     'export function ModStyles({ modCss = defaultCss }) {', // 2
@@ -274,6 +274,30 @@ test("a <style> may hold the ?inline stylesheet only through its import, not a p
     'raw-element:9',
     'raw-element:13',
   ]);
+});
+
+test("a <style>'s content is its effective child: the children prop or the JSX children, comments and whitespace aside", () => {
+  const source = lines(
+    "import modCss from './mod.css?inline';", // 1
+    'export const A = () => (', // 2
+    '  <>', // 3
+    '    <style children={modCss} />', // 4: legal
+    '    <style href="a" precedence="a">', // 5: legal
+    "      {/* the moderation panels' stylesheet */}", // 6
+    '      {modCss}', // 7
+    '    </style>', // 8
+    '    <style> {modCss} </style>', // 9: legal
+    "    <style children={modCss}>{'.x { color: #f00; }'}</style>", // 10: the JSX children win
+    "    <style children={'.x { color: #f00; }'}>{/* none */}</style>", // 11
+    '    <style {...rest}>{modCss}</style>', // 12: the spread may set any prop, dangerouslySetInnerHTML too
+    '    <style {...{ children: modCss }} />', // 13: legal
+    '  </>', // 14
+    ');', // 15
+    "createElement('style', { children: modCss });", // 16: legal
+    "createElement('style', { children: modCss }, '.x { color: #f00; }');", // 17: the arguments win
+    'export const B = ({ modCss }) => <style children={modCss} />;', // 18: a prop, not the import
+  );
+  expect(tsx(source)).toEqual(['raw-element:10', 'raw-element:11', 'raw-element:12', 'raw-element:17', 'raw-element:18']);
 });
 
 test('the forms beside those holes: string and spread styles, tag variables, as props, typed OM and stylesheet links', () => {

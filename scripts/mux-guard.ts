@@ -185,22 +185,31 @@ function propertyName(name: ts.PropertyName): string | undefined {
   return undefined;
 }
 
+// The key under which `props` records an opaque spread or computed name, which may have set any prop.
+const opaque = '...';
+
 /**
  * Adds an object's properties to `props`, as a spread does. An object literal is read property by property;
  * anything else (rest props, a variable) is opaque, as is a computed name, and may set any prop, so it takes
- * away a `type` written before it (the hidden-input allowance needs to see the final type).
+ * away a `type` written before it (the hidden-input allowance needs to see the final type) and is recorded
+ * under `opaque`.
  */
 function spreadProps(props: Props, expression: ts.Expression) {
   const object = unwrap(expression);
-  if (!ts.isObjectLiteralExpression(object)) return void props.delete('type');
+  if (!ts.isObjectLiteralExpression(object)) {
+    props.delete('type');
+    return void props.set(opaque, object);
+  }
   for (const property of object.properties) {
     if (ts.isSpreadAssignment(property)) {
       spreadProps(props, property.expression);
       continue;
     }
     const name = property.name && propertyName(property.name);
-    if (name === undefined) props.delete('type');
-    else if (ts.isPropertyAssignment(property)) props.set(name, property.initializer);
+    if (name === undefined) {
+      props.delete('type');
+      props.set(opaque, undefined);
+    } else if (ts.isPropertyAssignment(property)) props.set(name, property.initializer);
     else if (ts.isShorthandPropertyAssignment(property)) props.set(name, property.name);
     else props.set(name, undefined);
   }
@@ -476,12 +485,21 @@ export function scanScript(file: string, text: string): Violation[] {
         : [],
     ),
   );
+  /**
+   * Whether a <style> renders only such a stylesheet. Its content is the JSX children (or a factory's child
+   * arguments) when there are any besides whitespace and comments, otherwise its `children` prop; a spread that
+   * may have set any prop leaves the content unknown.
+   */
   const inlinedSheet = (props: Props, children: readonly ts.Node[]) => {
-    const content = children.filter((child) => !(ts.isJsxText(child) && child.containsOnlyTriviaWhiteSpaces));
-    const only = content.length === 1 ? content[0]! : undefined;
+    const written = children.filter(
+      (child) => !(ts.isJsxText(child) && child.text.trim() === '') && !(ts.isJsxExpression(child) && child.expression === undefined),
+    );
+    const content = written.length ? written : props.has('children') ? [props.get('children')] : [];
+    const only = content.length === 1 ? content[0] : undefined;
     const expression = only && ts.isJsxExpression(only) ? only.expression : only && ts.isExpression(only) ? only : undefined;
     return (
       !props.has('dangerouslySetInnerHTML') &&
+      !props.has(opaque) &&
       expression !== undefined &&
       ts.isIdentifier(expression) &&
       inlineSheets.has(expression.text) &&
@@ -560,7 +578,8 @@ export function scanScript(file: string, text: string): Violation[] {
     const cloned = /(^|\.)cloneElement$/.test(callee);
     const tag = !cloned && type && ts.isStringLiteralLike(type) ? type.text : undefined;
     const children = props.get('children');
-    element(node, tag, props, children ? [children, ...rest] : rest, tag && `${callee}('${tag}')`);
+    // As in React, child arguments replace a `children` prop.
+    element(node, tag, props, rest.length || !children ? rest : [children], tag && `${callee}('${tag}')`);
   };
 
   const visit = (node: ts.Node): void => {
