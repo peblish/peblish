@@ -1,3 +1,6 @@
+import { Link } from '@peblish/ui/components/link';
+import { Notice } from '@peblish/ui/components/notice';
+import { Text } from '@peblish/ui/components/text';
 import { useTranslate } from '../../../i18n/use-translate.ts';
 import { useRouteHydrated } from '../../../shell/hydration.ts';
 import { communityPath } from '../../../shell/paths.ts';
@@ -16,14 +19,17 @@ export function FormPage({ data, error, back }: { data: FormData; error: string 
     );
   const reason = data.status === 'refused' ? data.reason : 'target.not_found';
   return (
-    <main className="cm-form" data-state="refused">
-      <h1>{t('communities', 'form.refused')}</h1>
-      <p role="alert">{t('communities', errorKey(reason))}</p>
-      {back !== undefined && (
-        <p>
-          <a href={communityPath({ handle: back })}>{t('communities', 'form.back')}</a>
-        </p>
-      )}
+    <main className="cm-form cm-refused" data-state="refused">
+      <Text as="h1" variant="heading" size="md">
+        {t('communities', 'form.refused')}
+      </Text>
+      <Notice
+        tone="danger"
+        role="alert"
+        action={back !== undefined ? <Link href={communityPath({ handle: back })}>{t('communities', 'form.back')}</Link> : undefined}
+      >
+        {t('communities', errorKey(reason))}
+      </Notice>
     </main>
   );
 }

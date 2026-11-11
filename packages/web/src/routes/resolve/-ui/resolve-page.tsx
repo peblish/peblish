@@ -1,6 +1,11 @@
 import { asResolveError, maxLookupLength, type ResolveError } from '@peblish/core/resolve/outcome';
 import { parseLookup } from '@peblish/core/resolve/parse';
 import { Button } from '@peblish/ui/components/button';
+import { EmptyState } from '@peblish/ui/components/empty-state';
+import { Input } from '@peblish/ui/components/input';
+import { Link } from '@peblish/ui/components/link';
+import { Notice } from '@peblish/ui/components/notice';
+import { Text } from '@peblish/ui/components/text';
 import { useRouter } from '@tanstack/react-router';
 import { type } from 'arktype';
 import { useRef, useState, type FormEvent } from 'react';
@@ -10,7 +15,7 @@ import { openInRouter } from '../../../shell/client-links.ts';
 import { useRouteHydrated } from '../../../shell/hydration.ts';
 import { directoryPaths } from '../../../shell/paths.ts';
 
-// /resolve after directory-table.html: one field for a handle or a link. A GET only shows the
+// /resolve after directory-table.html, in Mux UI: one field for a handle or a link. A GET only shows the
 // form (?q= prefills it); the POST does the finding. Without script the answer is a 303 to the
 // local page or back here with an error. Hydrated, the form posts by fetch, shows a pending line
 // with Cancel, and opens the page it is sent to.
@@ -31,22 +36,25 @@ export function ResolvePage({ signedIn, q, error: initial }: { signedIn: boolean
   return (
     <main className="pb-page dir">
       <div className="dir-toolbar">
-        <h1>{t('directory', 'resolve.title')}</h1>
+        <Text as="h1" variant="heading" size="sm">
+          {t('directory', 'resolve.title')}
+        </Text>
       </div>
       {signedIn ? (
         <ResolveForm q={q} initial={asResolveError(initial)} />
       ) : (
-        <section className="dir-empty">
-          <h2>{t('directory', 'resolve.signIn.title')}</h2>
-          <p>{t('directory', 'resolve.signIn.body')}</p>
-          <p>
-            <a href={`/auth/sign-in?redirect=${encodeURIComponent(directoryPaths.find)}`}>{t('directory', 'resolve.signIn.link')}</a>
-          </p>
-        </section>
+        <EmptyState
+          title={t('directory', 'resolve.signIn.title')}
+          action={
+            <Link href={`/auth/sign-in?redirect=${encodeURIComponent(directoryPaths.find)}`}>{t('directory', 'resolve.signIn.link')}</Link>
+          }
+        >
+          {t('directory', 'resolve.signIn.body')}
+        </EmptyState>
       )}
-      <p className="dir-hint">
-        <a href={directoryPaths.browse}>{t('directory', 'resolve.browse')}</a>
-      </p>
+      <Text as="p" size="sm">
+        <Link href={directoryPaths.browse}>{t('directory', 'resolve.browse')}</Link>
+      </Text>
     </main>
   );
 }
@@ -86,42 +94,45 @@ function ResolveForm({ q, initial }: { q: string; initial: ResolveError | undefi
 
   return (
     <form className="dir-search dir-resolve" method="post" action={directoryPaths.find} onSubmit={submit} aria-busy={asking !== null}>
-      <div className="dir-field">
-        <label htmlFor="resolve-q">{t('directory', 'resolve.label')}</label>
-        <input
-          id="resolve-q"
-          type="text"
-          name="q"
-          defaultValue={q}
-          maxLength={maxLookupLength}
-          required
-          autoComplete="off"
-          autoCapitalize="none"
-          spellCheck={false}
-          aria-describedby="resolve-hint"
-        />
-        <span id="resolve-hint" className="dir-muted">
-          {t('directory', 'resolve.hint')}
-        </span>
-      </div>
+      {/* Mux Input parts rather than the app's TextField, which has no autoCapitalize or spellCheck. */}
+      <Input.Root className="dir-field" defaultValue={q} required>
+        <Input.Label>{t('directory', 'resolve.label')}</Input.Label>
+        <Input.Input name="q" maxLength={maxLookupLength} autoComplete="off" autoCapitalize="none" spellCheck={false} />
+        <Input.Description>{t('directory', 'resolve.hint')}</Input.Description>
+      </Input.Root>
       <div className="dir-buttons">
         <Button type="submit" disabled={asking !== null}>
           {t('directory', 'resolve.submit')}
         </Button>
       </div>
       {asking && (
-        <p className="dir-pending" role="status">
-          {t('directory', 'resolve.pending', { host: asking.host ?? t('directory', 'resolve.pending.unknown') })}{' '}
-          <Button type="button" onActivate={() => cancel.current?.abort()}>
-            {t('directory', 'resolve.cancel')}
-          </Button>
-        </p>
+        <Notice
+          role="status"
+          className="dir-pending"
+          action={
+            <Button type="button" variant="neutral" size="sm" onActivate={() => cancel.current?.abort()}>
+              {t('directory', 'resolve.cancel')}
+            </Button>
+          }
+        >
+          {t('directory', 'resolve.pending', { host: asking.host ?? t('directory', 'resolve.pending.unknown') })}
+        </Notice>
       )}
       {error && (
-        <p className="dir-error" role="alert">
-          {t('directory', errorKey(error))}{' '}
-          {error === 'peer.unreachable' && <Button type="submit">{t('directory', 'resolve.retry')}</Button>}
-        </p>
+        <Notice
+          tone="danger"
+          role="alert"
+          className="dir-pending"
+          action={
+            error === 'peer.unreachable' ? (
+              <Button type="submit" variant="neutral" size="sm">
+                {t('directory', 'resolve.retry')}
+              </Button>
+            ) : undefined
+          }
+        >
+          {t('directory', errorKey(error))}
+        </Notice>
       )}
     </form>
   );

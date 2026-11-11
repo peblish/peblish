@@ -1,10 +1,19 @@
 import { insertSpoiler } from '@peblish/core/markdown/toolbar';
+import { Badge } from '@peblish/ui/components/badge';
 import { Button } from '@peblish/ui/components/button';
+import { Card } from '@peblish/ui/components/card';
 import { Checkbox } from '@peblish/ui/components/checkbox';
+import { FileTrigger } from '@peblish/ui/components/file-trigger';
+import { IconButton } from '@peblish/ui/components/icon-button';
+import { ArrowDown, ArrowUp, CloseIcon } from '@peblish/ui/components/icons';
+import { Link } from '@peblish/ui/components/link';
+import { Notice } from '@peblish/ui/components/notice';
+import { Text } from '@peblish/ui/components/text';
 import { TextField } from '@peblish/ui/components/text-field';
+import { useHydrated } from '@peblish/ui/composer/use-hydrated.ts';
 import { MarkdownEditor } from '@peblish/ui/composer/markdown-editor';
 import { useRouter } from '@tanstack/react-router';
-import { useState, type FormEvent } from 'react';
+import { useState, type FormEvent, type ReactNode } from 'react';
 import { useTranslate } from '../../../i18n/use-translate.ts';
 import type { MessageKey } from '../../../i18n/translate.ts';
 import { openInRouter } from '../../../shell/client-links.ts';
@@ -13,13 +22,13 @@ import { communityPath, editCommunityPath, newCommunityPath } from '../../../she
 import { previewBody } from '../../submit/-load.ts';
 import { useEditorLabels } from '../../submit/-ui/labels.ts';
 import { errorKey } from '../-errors.ts';
-import { useHydrated } from './use-hydrated.ts';
 import { communityRulesMax, formLanguages, problemsOf, readFormValues, type FieldProblem, type FormValues } from '../-form.ts';
 
-// The community form after the R2 mock community-form-page: one page with a section index and a
-// sticky save bar, for a new community (admins) and the edit page (owner, moderator, admin). It
-// posts to its own address and works without JavaScript; hydrated, it checks the fields with the
-// function the server uses, posts by fetch and keeps what was typed when something is refused.
+// The community form after the R2 mock community-form-page, in Mux UI: one page with a section
+// index, each section an outlined Card, and a sticky save bar, for a new community (admins) and
+// the edit page (owner, moderator, admin). It posts to its own address and works without
+// JavaScript; hydrated, it checks the fields with the function the server uses, posts by fetch
+// and keeps what was typed when something is refused.
 
 export interface CommunityFormProps {
   /** A new community, with a name to choose; else an edit of `handle`, whose name is fixed. */
@@ -35,6 +44,23 @@ let nextKey = 0;
 type Row = { key: number; title: string; body: string };
 
 const sections = ['basics', 'rules', 'images', 'content', 'visibility'] as const;
+type Section = (typeof sections)[number];
+
+/** One part of the form: a named section holding an outlined Card with its heading. */
+function FormSection({ id, title, children }: { id: Section; title: string; children: ReactNode }) {
+  return (
+    <section id={id} aria-labelledby={`${id}-title`}>
+      <Card.Root variant="outlined" className="cm-section">
+        <Card.Header>
+          <Text as="h2" variant="title" size="sm" id={`${id}-title`}>
+            {title}
+          </Text>
+        </Card.Header>
+        <Card.Body className="cm-section-body">{children}</Card.Body>
+      </Card.Root>
+    </section>
+  );
+}
 
 export function CommunityForm({ handle, initial, uploadsOff, error }: CommunityFormProps) {
   const { t } = useTranslate();
@@ -89,15 +115,21 @@ export function CommunityForm({ handle, initial, uploadsOff, error }: CommunityF
   return (
     <main className="cm-form" data-state={creating ? 'create' : 'edit'}>
       <header className="cm-form-head">
-        <h1>{message(creating ? 'form.title.create' : 'form.title.edit')}</h1>
-        {handle !== null && <p className="cm-muted">!{handle}</p>}
+        <Text as="h1" variant="heading" size="md">
+          {message(creating ? 'form.title.create' : 'form.title.edit')}
+        </Text>
+        {handle !== null && (
+          <Text as="p" color="muted">
+            !{handle}
+          </Text>
+        )}
       </header>
       <div className="cm-form-layout">
         <nav className="cm-index" aria-label={message('form.index')}>
           <ul>
             {sections.map((section) => (
               <li key={section}>
-                <a href={`#${section}`}>{message(`form.section.${section}`)}</a>
+                <Link href={`#${section}`}>{message(`form.section.${section}`)}</Link>
               </li>
             ))}
           </ul>
@@ -111,18 +143,17 @@ export function CommunityForm({ handle, initial, uploadsOff, error }: CommunityF
           noValidate
         >
           {failure && !failure.startsWith('name.') && (
-            <p role="alert" className="cm-error">
+            <Notice tone="danger" role="alert">
               {t('communities', errorKey(failure))}
-            </p>
+            </Notice>
           )}
           {Object.keys(problems).length > 0 && (
-            <p role="alert" className="cm-error">
+            <Notice tone="danger" role="alert">
               {message('form.error.summary')}
-            </p>
+            </Notice>
           )}
 
-          <section id="basics" aria-labelledby="basics-title">
-            <h2 id="basics-title">{message('form.section.basics')}</h2>
+          <FormSection id="basics" title={message('form.section.basics')}>
             {creating ? (
               <TextField
                 label={message('form.name.label')}
@@ -136,11 +167,14 @@ export function CommunityForm({ handle, initial, uploadsOff, error }: CommunityF
                 errorMessage={t('communities', errorKey(problems.name ? 'name.invalid' : failure))}
               />
             ) : (
-              <p>
-                <strong>{message('form.address')}</strong> !{handle} <span className="cm-tag">{message('form.fixed')}</span>
-                <br />
-                <span className="cm-muted">{message('form.name.fixed')}</span>
-              </p>
+              <div>
+                <Text as="p">
+                  <Text variant="label">{message('form.address')}</Text> !{handle} <Badge>{message('form.fixed')}</Badge>
+                </Text>
+                <Text as="p" size="sm" color="muted">
+                  {message('form.name.fixed')}
+                </Text>
+              </div>
             )}
             <TextField
               label={message('form.displayName.label')}
@@ -170,10 +204,9 @@ export function CommunityForm({ handle, initial, uploadsOff, error }: CommunityF
               invalid={problems.description === true}
               errorMessage={message('form.error.description')}
             />
-          </section>
+          </FormSection>
 
-          <section id="rules" aria-labelledby="rules-title">
-            <h2 id="rules-title">{message('form.section.rules')}</h2>
+          <FormSection id="rules" title={message('form.section.rules')}>
             <ol className="cm-rule-rows">
               {rows.map((row, index) => (
                 <li key={row.key}>
@@ -186,39 +219,49 @@ export function CommunityForm({ handle, initial, uploadsOff, error }: CommunityF
                     }
                     maxLength={200}
                   />
+                  {/* The rule's text is kept as it was: this form edits titles only. */}
                   <input type="hidden" name={`rules.${index}.body`} value={row.body} />
                   <span className="cm-rule-buttons">
-                    <button
-                      type="button"
+                    <IconButton
+                      variant="ghost"
                       disabled={!hydrated || index === 0}
-                      onClick={() => move(index, -1)}
+                      onActivate={() => move(index, -1)}
                       aria-label={message('form.rule.up', { n: index + 1 })}
                     >
-                      ↑
-                    </button>
-                    <button
-                      type="button"
+                      <ArrowUp />
+                    </IconButton>
+                    <IconButton
+                      variant="ghost"
                       disabled={!hydrated || index === rows.length - 1}
-                      onClick={() => move(index, 1)}
+                      onActivate={() => move(index, 1)}
                       aria-label={message('form.rule.down', { n: index + 1 })}
                     >
-                      ↓
-                    </button>
-                    <button
-                      type="button"
+                      <ArrowDown />
+                    </IconButton>
+                    <IconButton
+                      variant="danger-ghost"
                       disabled={!hydrated}
-                      onClick={() => setRows((current) => current.filter((other) => other.key !== row.key))}
+                      onActivate={() => {
+                        setRows((current) => current.filter((other) => other.key !== row.key));
+                        setDirty(true);
+                      }}
                       aria-label={message('form.rule.remove', { n: index + 1 })}
                     >
-                      ×
-                    </button>
+                      <CloseIcon />
+                    </IconButton>
                   </span>
                 </li>
               ))}
             </ol>
-            <p className={problems.rules ? 'cm-error' : 'cm-muted'} role={problems.rules ? 'alert' : undefined}>
+            <Text
+              as="p"
+              size="sm"
+              color={problems.rules ? undefined : 'muted'}
+              className={problems.rules ? 'cm-error' : undefined}
+              role={problems.rules ? 'alert' : undefined}
+            >
               {problems.rules ? message('form.error.rules') : message('form.rules.count', { count: filledRules, max: communityRulesMax })}
-            </p>
+            </Text>
             <Button
               type="button"
               variant="neutral"
@@ -230,25 +273,32 @@ export function CommunityForm({ handle, initial, uploadsOff, error }: CommunityF
             >
               {message('form.rules.add')}
             </Button>
-          </section>
+          </FormSection>
 
-          <section id="images" aria-labelledby="images-title">
-            <h2 id="images-title">{message('form.section.images')}</h2>
+          <FormSection id="images" title={message('form.section.images')}>
             {(['icon', 'banner'] as const).map((kind) => (
-              <p key={kind}>
-                <label>
-                  {message(`form.images.${kind}`)} <input type="file" disabled />
-                </label>{' '}
-                {uploadsOff && <span className="cm-tag">{message('form.images.off')}</span>}
-                <br />
-                <span className="cm-muted">{message(`form.images.${kind}Hint`)}</span>
-              </p>
+              <div key={kind} className="cm-image-row">
+                <span className="cm-image-pick">
+                  <FileTrigger acceptedFileTypes={['image/*']} disabled>
+                    <Button variant="neutral" disabled>
+                      {message(`form.images.${kind}`)}
+                    </Button>
+                  </FileTrigger>
+                  {uploadsOff && <Badge>{message('form.images.off')}</Badge>}
+                </span>
+                <Text as="p" size="sm" color="muted">
+                  {message(`form.images.${kind}Hint`)}
+                </Text>
+              </div>
             ))}
-            {uploadsOff && <p className="cm-muted">{message('form.images.note')}</p>}
-          </section>
+            {uploadsOff && (
+              <Text as="p" size="sm" color="muted">
+                {message('form.images.note')}
+              </Text>
+            )}
+          </FormSection>
 
-          <section id="content" aria-labelledby="content-title">
-            <h2 id="content-title">{message('form.section.content')}</h2>
+          <FormSection id="content" title={message('form.section.content')}>
             <Checkbox name="sensitive" checked={nsfw || nsfl} disabled={nsfl} onChange={setNsfw} description={message('form.nsfw.hint')}>
               {message('form.nsfw.label')}
             </Checkbox>
@@ -267,37 +317,44 @@ export function CommunityForm({ handle, initial, uploadsOff, error }: CommunityF
               {message('form.restricted.label')}
             </Checkbox>
             <fieldset className="cm-languages">
-              <legend>{message('form.languages.legend')}</legend>
+              <legend>
+                <Text variant="label">{message('form.languages.legend')}</Text>
+              </legend>
               {formLanguages.map((code) => (
                 <Checkbox key={code} name={`lang.${code}`} defaultChecked={initial.languages.includes(code)}>
                   {message(`form.language.${code}`)}
                 </Checkbox>
               ))}
-              <p className="cm-muted">{message('form.languages.hint')}</p>
+              <Text as="p" size="sm" color="muted">
+                {message('form.languages.hint')}
+              </Text>
             </fieldset>
-          </section>
+          </FormSection>
 
-          <section id="visibility" aria-labelledby="visibility-title">
-            <h2 id="visibility-title">{message('form.section.visibility')}</h2>
+          <FormSection id="visibility" title={message('form.section.visibility')}>
             <Checkbox name="discoverable" defaultChecked={initial.discoverable} description={message('form.discoverable.hint')}>
               {message('form.discoverable.label')}
             </Checkbox>
             <Checkbox name="indexable" defaultChecked={initial.indexable} description={message('form.indexable.hint')}>
               {message('form.indexable.label')}
             </Checkbox>
-          </section>
+          </FormSection>
 
-          {!creating && <p className="cm-muted">{message('form.log')}</p>}
+          {!creating && (
+            <Text as="p" size="sm" color="muted">
+              {message('form.log')}
+            </Text>
+          )}
 
           <div className="cm-savebar">
             <Button type="submit" variant="primary" pending={busy}>
               {message(creating ? 'form.create' : 'form.save')}
             </Button>
-            <a href={creating ? '/' : communityPath({ handle })}>{message('form.cancel')}</a>
-            {creating && <span className="cm-tag">{message('form.adminOnly')}</span>}
-            <span role="status" className="cm-muted">
+            <Link href={creating ? '/' : communityPath({ handle })}>{message('form.cancel')}</Link>
+            {creating && <Badge>{message('form.adminOnly')}</Badge>}
+            <Text size="sm" color="muted" role="status">
               {dirty ? message('form.dirty') : ''}
-            </span>
+            </Text>
           </div>
         </form>
       </div>

@@ -91,8 +91,11 @@ test.describe('the directory, signed out', () => {
     const log = recordConsole(page);
     await gotoHydrated(page, search());
     await expect(page.getByRole('heading', { level: 1, name: 'Communities' })).toBeVisible();
-    await expect(page.getByRole('group', { name: 'Scope' }).getByRole('link', { name: /^All 2$/ })).toHaveAttribute('aria-current', 'true');
-    await expect(page.getByRole('group', { name: 'Scope' }).getByRole('link', { name: /^Local 1$/ })).toBeVisible();
+    await expect(page.getByRole('navigation', { name: 'Scope' }).getByRole('link', { name: /^All 2$/ })).toHaveAttribute(
+      'aria-current',
+      'page',
+    );
+    await expect(page.getByRole('navigation', { name: 'Scope' }).getByRole('link', { name: /^Local 1$/ })).toBeVisible();
     await expect(row(page, seed.communities.local)).toContainText('local');
     await expect(row(page, seed.communities.remote)).toContainText(`${seed.host} · local copy refreshed`);
     await expect(row(page, seed.communities.remote).getByRole('link', { name: 'Sign in to join' })).toHaveAttribute(
@@ -127,17 +130,20 @@ test.describe('the directory, signed out', () => {
   test('the sort, the scope and the search are plain links and a GET form', async ({ page }) => {
     await gotoHydrated(page, search());
     await page
-      .getByRole('group', { name: 'Scope' })
+      .getByRole('navigation', { name: 'Scope' })
       .getByRole('link', { name: /^Local/ })
       .click();
     await page.waitForURL(/scope=local/);
     await expect(row(page, seed.communities.local)).toBeVisible();
     await expect(row(page, seed.communities.remote)).toHaveCount(0);
-    await page.getByRole('group', { name: 'Sort' }).getByRole('link', { name: 'Newest' }).click();
+    await page.getByRole('navigation', { name: 'Sort' }).getByRole('link', { name: 'Newest' }).click();
     await page.waitForURL(/sort=newest/);
-    await expect(page.getByRole('group', { name: 'Sort' }).getByRole('link', { name: 'Newest' })).toHaveAttribute('aria-current', 'true');
+    await expect(page.getByRole('navigation', { name: 'Sort' }).getByRole('link', { name: 'Newest' })).toHaveAttribute(
+      'aria-current',
+      'page',
+    );
     await page.getByRole('searchbox', { name: 'Search communities' }).fill(`${seed.suffix} nothing`);
-    await page.getByRole('search').getByRole('button', { name: 'Search' }).click();
+    await page.getByRole('search').getByRole('button', { name: 'Search', exact: true }).click();
     await page.waitForURL(/q=.*nothing/);
     await expect(page.getByRole('heading', { name: 'No communities match' })).toBeVisible();
     // The scope and sort survive a search.
@@ -161,18 +167,18 @@ test.describe('the directory, signed in', () => {
     const { context, page } = await as(browser, viewerState);
     const log = recordConsole(page);
     await gotoHydrated(page, search());
-    const nsfw = page.getByRole('group', { name: 'NSFW' });
-    await expect(nsfw.getByRole('link', { name: 'Hide NSFW' })).toHaveAttribute('aria-current', 'true');
+    const nsfw = page.getByRole('navigation', { name: 'NSFW' });
+    await expect(nsfw.getByRole('link', { name: 'Hide NSFW' })).toHaveAttribute('aria-current', 'page');
     await expect(row(page, seed.communities.adult)).toHaveCount(0);
     await expectAccessible(page);
 
     await nsfw.getByRole('link', { name: 'Show NSFW' }).click();
     await page.waitForURL(/nsfw=show/);
-    await expect(row(page, seed.communities.adult)).toContainText('[NSFW]');
+    await expect(row(page, seed.communities.adult).getByText('NSFW', { exact: true })).toBeVisible();
     await expect(row(page, seed.communities.local)).toBeVisible();
     await expect(row(page, seed.communities.remoteAdult)).toHaveCount(0);
 
-    await page.getByRole('group', { name: 'NSFW' }).getByRole('link', { name: 'Only NSFW' }).click();
+    await page.getByRole('navigation', { name: 'NSFW' }).getByRole('link', { name: 'Only NSFW' }).click();
     await page.waitForURL(/nsfw=only/);
     await expect(row(page, seed.communities.adult)).toBeVisible();
     await expect(row(page, seed.communities.local)).toHaveCount(0);

@@ -1,60 +1,71 @@
-/* The NSFW gate after the R2 mock nsfw-gate-page.html: structure and states, not final styling. */
+/* The NSFW gate after the R2 mock nsfw-gate-page: one Mux Card in a narrow column. Mux tokens only. */
 @layer app {
   .gate {
-    max-width: 520px;
+    max-inline-size: 34rem;
     margin: 0 auto;
-    padding: 48px 16px;
-    font-size: 14px;
-    line-height: 1.5;
+    padding: var(--muxui-semantic-layout-section-gap) var(--muxui-semantic-layout-inset-large);
   }
-  .gate h1 {
-    margin: 0 0 8px;
-    font-size: 22px;
-    line-height: 1.25;
+  .gate-card {
+    display: flex;
+    flex-direction: column;
+    gap: var(--muxui-semantic-layout-content-gap);
   }
-  .gate p {
-    margin: 0 0 12px;
-  }
-  .gate a {
-    color: var(--muxui-semantic-content-link);
-  }
-  .gate-flag {
-    display: inline-block;
-    padding: 0 5px;
-    border: 1px solid var(--muxui-semantic-border-default);
-    border-radius: 3px;
-    font-size: 12px;
-  }
-  .gate-note,
-  .gate-links {
-    color: var(--muxui-semantic-content-muted);
+  .gate-card h1,
+  .gate-card p {
+    margin: 0;
   }
   .gate-actions {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 12px 16px;
-    margin: 16px 0;
+    gap: var(--muxui-semantic-layout-control-gap) var(--muxui-semantic-layout-content-gap);
+  }
+  .gate-actions form {
+    margin: 0;
+  }
+  .gate-declare {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--muxui-semantic-layout-content-gap);
   }
   .gate-declare fieldset {
-    display: grid;
-    grid-template-columns: 5rem minmax(0, 1fr) 6rem;
-    gap: 12px;
-    align-items: end;
-    margin: 0 0 12px;
+    margin: 0;
     padding: 0;
     border: 0;
+    min-inline-size: 0;
+    inline-size: 100%;
   }
   .gate-declare legend {
-    margin-bottom: 8px;
+    margin-block-end: var(--muxui-semantic-layout-tight-gap);
     padding: 0;
-    font-weight: 600;
   }
-  .gate-error {
-    color: var(--muxui-semantic-content-danger, #b00020);
+  .gate-date {
+    display: grid;
+    grid-template-columns: 5rem minmax(0, 1fr) 6rem;
+    gap: var(--muxui-semantic-layout-control-gap);
+    align-items: end;
+  }
+  /* A link that is a page's main action (the gate's Sign in, the community's New post): a Mux Link
+     drawn with the tokens of Mux's primary Button. This file loads wherever either one shows. */
+  .cm-cta {
+    display: inline-flex;
+    align-items: center;
+    min-block-size: var(--muxui-semantic-control-size-md);
+    padding-inline: var(--muxui-semantic-control-padding-inline);
+    border-radius: var(--muxui-semantic-control-radius);
+    background: var(--muxui-semantic-selection-track);
+    color: var(--muxui-semantic-action-foreground);
+    font-weight: var(--muxui-semantic-typography-control-weight);
+    box-shadow: var(--muxui-semantic-elevation-control);
+    text-decoration: none;
+  }
+  .cm-cta:hover {
+    background: var(--muxui-semantic-action-background-hover);
+    color: var(--muxui-semantic-action-foreground);
   }
   .gate-hide {
     display: inline-block;
-    margin: 0 0 0 8px;
+    margin: 0 0 0 var(--muxui-semantic-layout-tight-gap);
   }
 }
