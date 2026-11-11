@@ -16,8 +16,8 @@ const text = (file: string) => readFileSync(join(folder, file), 'utf8');
 
 /** The tokens publishing fills from the operator's settings and the date. */
 const filled = ['{{OPERATOR_NAME}}', '{{POSTAL_ADDRESS}}', '{{JURISDICTION}}', '{{CONTACT_EMAIL}}', '{{EFFECTIVE_DATE}}'];
-/** The facts still unknown at launch (the mail provider, where backups live, the PieFed archive's deletion date on cutover day). */
-const kept = ['{{EMAIL_PROVIDER_AND_LOCATION}}', '{{BACKUP_PROVIDER_AND_LOCATION}}', '{{PIEFED_ARCHIVE_DELETE_DATE}}'];
+/** The one fact unknown until cutover day, which the operator writes into the privacy policy then. */
+const kept = '{{PIEFED_ARCHIVE_DELETE_DATE}}';
 
 describe('every shipped file follows the README step 3', () => {
   test('there is one English text for each page the drafts cover, named for its slug', () => {
@@ -41,6 +41,8 @@ describe('every shipped file follows the README step 3', () => {
       expect(body).not.toMatch(/REPORT_FORM_URL|INTIMATE_IMAGE_FORM_URL/);
       expect(body).not.toMatch(/\]\([^)]*\.md[)#]/);
       expect(body).not.toContain('—');
+      // No source labels ([L], [R], [I], [I; L]): the citation links stand on their own.
+      expect(body).not.toMatch(/\[[LRI](?:[;:][^\]]*)?\]/);
       // A link to another page of the instance names a page it has.
       for (const [, target] of body.matchAll(/\]\(\/([^)#]*)\)/g)) expect(pageSlugs, `${file} links to /${target}`).toContain(target);
     });
@@ -51,10 +53,10 @@ describe('every shipped file follows the README step 3', () => {
       for (const token of tokensIn(text(`${slug}.en.md`))) expect(filled, `${slug}.en.md`).toContain(token);
   });
 
-  test('beyond those five, only the privacy policy keeps tokens: the facts it cannot publish without, which the operator writes in', () => {
+  test('beyond those five, the only token is the archive deletion date in the privacy policy, so it cannot publish before cutover day', () => {
     for (const file of files)
-      for (const token of tokensIn(text(file))) expect([...filled, ...(file === 'privacy.en.md' ? kept : [])], file).toContain(token);
-    for (const token of kept) expect(text('privacy.en.md')).toContain(token);
+      for (const token of tokensIn(text(file))) expect([...filled, ...(file === 'privacy.en.md' ? [kept] : [])], file).toContain(token);
+    expect(text('privacy.en.md')).toContain(kept);
   });
 });
 
