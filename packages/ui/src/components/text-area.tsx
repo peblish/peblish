@@ -1,5 +1,5 @@
 import { TextArea } from '@muxui/react';
-import { useErrorPartId, useFieldProblem } from './field-problem.tsx';
+import { FieldAlert, useErrorPartId, useFieldProblem } from './field-problem.tsx';
 import type { ReactNode } from 'react';
 
 export interface TextAreaFieldProps {
@@ -80,7 +80,7 @@ export function TextAreaField({
       {description && <TextArea.Description>{description}</TextArea.Description>}
       {message ? (
         <TextArea.Error id={partId}>
-          <span role="alert">{message}</span>
+          <FieldAlert>{message}</FieldAlert>
         </TextArea.Error>
       ) : null}
     </TextArea.Root>

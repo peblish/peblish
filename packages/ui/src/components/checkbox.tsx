@@ -1,6 +1,6 @@
 import { CheckboxField } from '@muxui/react';
 import type { ReactNode } from 'react';
-import { useErrorPartId, useFieldProblem } from './field-problem.tsx';
+import { FieldAlert, useErrorPartId, useFieldProblem } from './field-problem.tsx';
 
 export interface CheckboxProps {
   /** The label. */
@@ -46,7 +46,7 @@ export function Checkbox({ children, description, errorMessage, invalid, onChang
       {description && <CheckboxField.Description>{description}</CheckboxField.Description>}
       {message ? (
         <CheckboxField.Error id={partId}>
-          <span role="alert">{message}</span>
+          <FieldAlert>{message}</FieldAlert>
         </CheckboxField.Error>
       ) : null}
     </CheckboxField.Root>

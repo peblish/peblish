@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useId, useRef, useState, type RefObject } from 'react';
+import { createContext, useCallback, useContext, useEffect, useId, useRef, useState, type ReactNode, type RefObject } from 'react';
 
 /**
  * What a field says when the browser finds its value invalid and the caller gave no message of
@@ -178,4 +178,12 @@ export function useErrorPartId(shown: boolean, errorId: string): string | undefi
   const [gone, setGone] = useState(false);
   if (fromStart && !shown && !gone) setGone(true);
   return shown && (!fromStart || gone) ? errorId : undefined;
+}
+
+/**
+ * The words of a field's error, announced when they appear. It goes inside Mux's error part, which
+ * drops a `role` prop of its own, so the role sits on this inner span.
+ */
+export function FieldAlert({ children }: { children: ReactNode }) {
+  return <span role="alert">{children}</span>;
 }

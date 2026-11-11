@@ -1,6 +1,6 @@
 import { SelectNative } from '@muxui/react';
 import type { ReactNode } from 'react';
-import { useFieldProblem } from './field-problem.tsx';
+import { FieldAlert, useFieldProblem } from './field-problem.tsx';
 
 export interface SelectItem {
   id: string;
@@ -47,7 +47,7 @@ export function Select({ label, description, errorMessage, items, onChange, plac
       ref={ref}
       label={label}
       description={description}
-      errorMessage={message ? <span role="alert">{message}</span> : undefined}
+      errorMessage={message ? <FieldAlert>{message}</FieldAlert> : undefined}
       invalid={problem !== undefined || invalid === true}
       className={className}
       onChange={(event) => onChange?.(event.target.value)}

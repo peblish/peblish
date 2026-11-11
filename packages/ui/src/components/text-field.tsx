@@ -1,5 +1,5 @@
 import { Input } from '@muxui/react';
-import { useErrorPartId, useFieldProblem } from './field-problem.tsx';
+import { FieldAlert, useErrorPartId, useFieldProblem } from './field-problem.tsx';
 import type { HTMLInputAutoCompleteAttribute, HTMLInputTypeAttribute, ReactNode } from 'react';
 
 export interface TextFieldProps {
@@ -100,7 +100,7 @@ export function TextField({
       {description && <Input.Description>{description}</Input.Description>}
       {message ? (
         <Input.Error id={partId}>
-          <span role="alert">{message}</span>
+          <FieldAlert>{message}</FieldAlert>
         </Input.Error>
       ) : null}
     </Input.Root>
