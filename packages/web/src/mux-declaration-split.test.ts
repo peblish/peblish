@@ -113,6 +113,10 @@ test.each([
     'a getter run by an unread member read',
     "import { registerOverlay } from './registry.js';\nconst unused = ({ get value() { registerOverlay(); return 0; } }).value;\n",
   ],
+  [
+    'a property set whose computed key runs code',
+    "import { registerOverlay } from './registry.js';\nconst unused = {};\nunused[registerOverlay()] = true;\n",
+  ],
 ])('the build fails on a top-level initialiser that may have effects: %s', { timeout: 30_000 }, async (_, drift) => {
   await expect(buildOverlays(tooltip + drift)).rejects.toThrow(/peblish:split-mux-declarations: .*may have effects/);
 });
@@ -173,6 +177,18 @@ test.each([
   ['a destructured binding', getter + 'const { value } = box;\n'],
   ['a using declaration', 'using unused = items;\n'],
   ['a top-level statement that is not a declaration', 'if (items) registerOverlay();\n'],
+  ['a property set with a key the check cannot read', "const KEY = 'value';\nconst box = {};\nbox[KEY] = 1;\n"],
+  ['a property set on __proto__', 'const box = {};\nbox.__proto__ = { get value() { registerOverlay(); return 0; } };\n'],
+  ['a property set on a computed __proto__', "const box = {};\nbox['__proto__'] = items;\n"],
+  ['a compound assignment', 'const box = { count: 0 };\nbox.count += 1;\n'],
+  ['a logical assignment', 'const box = {};\nbox.value ||= 1;\n'],
+  ['a property set through a setter', 'const box = { set value(next) { registerOverlay(); } };\nbox.value = 1;\n'],
+  ['a property set on an import', 'items.value = 1;\n'],
+  ['a property set on a namespace', 'registry.value = 1;\n'],
+  ['a property set on a class instance', 'const instance = /*#__PURE__*/ new Base();\ninstance.value = 1;\n'],
+  ['a property set on a frozen value', 'const box = Object.freeze({});\nbox.value = 1;\n'],
+  ['a property set on a member', 'const box = { inner: {} };\nbox.inner.value = 1;\n'],
+  ['a binding reassigned', 'let box = {};\nbox = items;\n'],
 ])('the split refuses a value that runs code on load: %s', (_, body) =>
   expect(declarations(body)).toThrow(/peblish:split-mux-declarations: .*may have effects/),
 );
@@ -192,7 +208,11 @@ test('the forms Mux rc.7 uses at the top level of overlays.js pass', () => {
       'export const Dialog = /*#__PURE__*/ (() => { const component = React.forwardRef(function Dialog() { return null; }); return component; })();',
       'const LABEL = `Tooltip-${DURATION * 2}`;',
       "const NAMES = new Map([['top', GEOMETRY.placement]]);",
+      "Tooltip.displayName = 'Tooltip';",
+      'function helper() {}',
+      "helper.displayName = 'helper';",
+      "NONE['key'] = 1;",
     ].join('\n'),
   )();
-  expect(parts.size).toBe(13);
+  expect(parts.size).toBe(14);
 });

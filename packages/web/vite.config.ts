@@ -49,16 +49,18 @@ type Class = Extract<Expression, { superClass: unknown }>;
 /**
  * What a top-level value is known to be, which decides what may be done with it without running code:
  * - primitive: a string, number, boolean, bigint, null or undefined, which an operator converts without a call;
- * - plain: an object or array literal with no accessor and no `__proto__`, whose properties may be read;
+ * - plain: an object or array literal with no accessor and no `__proto__`, whose properties may be read and set;
  * - frozen: Object.freeze of a plain literal, whose properties may be read;
- * - function: a function, or a class with no heritage and no static accessor, whose properties may be read;
- * - component: what React's forwardRef or memo returns;
+ * - function: a function, or a class with no heritage and no static accessor, whose properties may be read and set;
+ * - component: what React's forwardRef or memo returns, whose properties may be set (`Tooltip.displayName = ...`);
  * - namespace: a module namespace, or React, whose exports may be read;
  * - builtin: a global constructor the module does not shadow, which a class may extend;
  * - other: anything else free of effects, which may only be passed along.
  */
 type Kind = 'primitive' | 'plain' | 'frozen' | 'function' | 'component' | 'namespace' | 'builtin' | 'other';
 const readable = new Set<Kind>(['plain', 'frozen', 'function', 'namespace']);
+// A property set on one of these runs no setter but React's, which in development only names the component itself.
+const writable = new Set<Kind>(['plain', 'function', 'component']);
 
 // The globals a top-level value may name, unless the module declares a binding of that name.
 const builtins = new Map<string, Kind>([
@@ -99,7 +101,9 @@ const effect = (node: { start: number; end: number }): never => {
  * forwardRef, memo or createContext, Object.freeze of a plain literal, or a new Set, Map, WeakSet or WeakMap with no
  * argument or an array literal (of array literals, for a map). Everything else is rejected, among it getters reached
  * by a read, `in`, `instanceof`, `delete`, optional chains, tagged templates, assignments, `await`, `import()` and
- * `using`. Default parameter values and function bodies do not run at definition and are not checked.
+ * `using`. The one statement accepted beside declarations and imports is a property set, `target.key = value`, on a
+ * plain, function or component binding with a literal key other than `__proto__` and an accepted value. Default
+ * parameter values and function bodies do not run at definition and are not checked.
  */
 function assertPureTopLevel(file: string, code: string, drift: (file: string, what: string) => never) {
   const { program, comments } = parseModule(file, code);
@@ -288,8 +292,19 @@ function assertPureTopLevel(file: string, code: string, drift: (file: string, wh
         }
         return;
       case 'ExpressionStatement': {
+        // Only `target.key = value`: a compound operator reads and converts, a key the check cannot read could spell
+        // `__proto__`, and a target that may hold a setter (an import, a class instance, anything not built here
+        // from a literal) could run one.
         const { expression } = node;
-        if (expression.type !== 'AssignmentExpression') return effect(expression);
+        if (expression.type !== 'AssignmentExpression' || expression.operator !== '=') return effect(expression);
+        const { left } = expression;
+        if (left.type !== 'MemberExpression' || left.optional || left.object.type !== 'Identifier') return effect(left);
+        if (!writable.has(valueOf(left.object))) effect(left.object);
+        const { property } = left;
+        const key = !left.computed
+          ? property.type === 'Identifier' && property.name
+          : property.type === 'Literal' && ['string', 'number'].includes(typeof property.value) && String(property.value);
+        if (!key || key === '__proto__') effect(property);
         valueOf(expression.right);
         return;
       }
