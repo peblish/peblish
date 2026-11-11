@@ -3,6 +3,7 @@
 @layer app {
   .pb-inbox {
     display: grid;
+    grid-template-columns: minmax(0, 1fr);
     gap: var(--muxui-semantic-layout-group-gap);
   }
 
@@ -46,8 +47,19 @@
 
   .pb-notice__body {
     display: grid;
+    grid-template-columns: minmax(0, 1fr);
     gap: var(--muxui-semantic-layout-micro-gap);
     min-width: 0;
+  }
+
+  /* A long remote handle or title breaks anywhere rather than run past the Card, which hides
+     overflow; Handle keeps itself on one line elsewhere. */
+  .pb-notice__text {
+    overflow-wrap: anywhere;
+  }
+
+  .pb-notice .pb-handle {
+    white-space: normal;
   }
 
   .pb-notice__body p {

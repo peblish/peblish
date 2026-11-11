@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
-import { expect, test, type Browser, type Page } from '@playwright/test';
+import { expect, test, type Browser, type Locator, type Page } from '@playwright/test';
 import { expectAccessible, landed, signIn } from '../auth/support.ts';
 import { gotoHydrated, recordConsole } from '../support/route-marker.ts';
 
@@ -238,6 +238,15 @@ test.describe('the inbox of a person who was replied to, mentioned, moderated an
     await expect(page).toHaveURL(/\/notifications\?cursor=[0-9a-f-]{36}$/);
     await expect(rows(page)).toHaveCount(5);
     await expect(page.getByRole('link', { name: 'Older' })).toHaveCount(0);
+    // Older keeps the filter.
+    await page.goto('/notifications?filter=mentions');
+    await page.getByRole('link', { name: 'Older' }).click();
+    await expect(page).toHaveURL(/\/notifications\?filter=mentions&cursor=[0-9a-f-]{36}$/);
+    await expect(rows(page)).toHaveCount(5);
+    await expect(page.getByRole('navigation', { name: 'Filter' }).getByRole('link', { name: /^Mentions/ })).toHaveAttribute(
+      'aria-current',
+      'page',
+    );
     await page.context().close();
   });
 });
@@ -258,5 +267,102 @@ test.describe('in German', () => {
     await expectAccessible(german);
     expect(log.hydrationProblems()).toEqual([]);
     await context.close();
+  });
+});
+
+// The review cases (lane e2, after the Mux restyle), on their own cast (e2e/notifications/seed.ts).
+type Review = {
+  reader: { name: string };
+  long: { handle: string; name: string; host: string };
+  ada: { name: string };
+  cy: { name: string };
+  titles: { long: string; ada: string; cy: string };
+};
+
+/**
+ * Nothing in `box` is cut off: no element that hides overflow holds wider content, every handle
+ * (its host included) lies inside the box, and the page does not scroll sideways.
+ */
+async function expectUnclipped(box: Locator) {
+  const problems = await box.evaluate((root) => {
+    const out: string[] = [];
+    const page = document.documentElement;
+    if (page.scrollWidth > page.clientWidth) out.push(`the page scrolls sideways (${page.scrollWidth} > ${page.clientWidth})`);
+    const edge = root.getBoundingClientRect();
+    for (const element of [root, ...root.querySelectorAll<HTMLElement>('*')]) {
+      // A visually hidden text (1px, clipped) is meant to hide.
+      const hides = ['hidden', 'clip', 'auto', 'scroll'].includes(getComputedStyle(element).overflowX) && element.clientWidth > 1;
+      if (hides && element.scrollWidth > element.clientWidth + 1)
+        out.push(`${element.className || element.tagName} hides ${element.scrollWidth - element.clientWidth}px`);
+    }
+    for (const element of root.querySelectorAll('.pb-handle, .pb-handle__host, a'))
+      for (const rect of element.getClientRects())
+        if (rect.left < edge.left - 0.5 || rect.right > edge.right + 0.5)
+          out.push(`${element.className || element.tagName} "${element.textContent}" runs past the box`);
+    return out;
+  });
+  expect(problems).toEqual([]);
+}
+
+test.describe('review cases', () => {
+  let review: Review;
+  test.beforeAll(() => {
+    test.setTimeout(120_000);
+    review = JSON.parse(
+      execFileSync('node', ['e2e/notifications/seed.ts'], { cwd: join(import.meta.dirname, '../..'), encoding: 'utf8' }),
+    ) as Review;
+  });
+
+  for (const width of [320, 400]) {
+    test(`at ${width} px a long remote handle and title wrap inside the row`, async ({ page }) => {
+      await signedIn(page, review.reader.name);
+      await page.setViewportSize({ width, height: 800 });
+      await gotoHydrated(page, '/notifications');
+      const row = rows(page).filter({ hasText: review.long.name });
+      await expect(row).toContainText(`@${review.long.handle}`);
+      await expect(row.locator('.pb-handle__host')).toHaveText(`@${review.long.host}`);
+      await expect(row.getByRole('link', { name: review.titles.long })).toBeVisible();
+      await expectUnclipped(row);
+      await expectUnclipped(page.getByRole('list', { name: 'Notices' }));
+    });
+  }
+
+  test('each Mark read button is named for its row, in English and German, and keeps its visible text', async ({ page, browser }) => {
+    await signedIn(page, review.reader.name);
+    await gotoHydrated(page, '/notifications');
+    const named = [
+      [`@${review.long.handle}`, review.titles.long],
+      [`@${review.ada.name}`, review.titles.ada],
+      [`@${review.cy.name}`, review.titles.cy],
+    ] as const;
+    for (const [actor, subject] of named)
+      await expect(page.getByRole('button', { name: `Mark read: ${actor}, ${subject}`, exact: true })).toHaveText('Mark read');
+    await expect(page.getByRole('button', { name: /^Mark read/ })).toHaveCount(3);
+
+    const context = await browser.newContext({ locale: 'de-DE', storageState: await page.context().storageState() });
+    const german = await context.newPage();
+    await gotoHydrated(german, '/notifications');
+    for (const [actor, subject] of named)
+      await expect(german.getByRole('button', { name: `Als gelesen markieren: ${actor}, ${subject}`, exact: true })).toHaveText(
+        'Als gelesen markieren',
+      );
+    // Marked read, the row's button is Mark unread, named the same way.
+    await rows(german, 'Benachrichtigungen')
+      .filter({ hasText: review.ada.name })
+      .getByRole('button', { name: /^Als gelesen markieren/ })
+      .click();
+    await expect(
+      german.getByRole('button', { name: `Als ungelesen markieren: @${review.ada.name}, ${review.titles.ada}`, exact: true }),
+    ).toHaveText('Als ungelesen markieren');
+    await context.close();
+  });
+
+  test('a filter with nothing in it shows the empty state and no list or Older link', async ({ page }) => {
+    await signedIn(page, review.reader.name);
+    await gotoHydrated(page, '/notifications?filter=mentions');
+    await expect(page.getByText('Nothing new. Replies, mentions and moderator messages land here.')).toBeVisible();
+    await expect(page.getByRole('list', { name: 'Notices' })).toHaveCount(0);
+    await expect(page.getByRole('link', { name: 'Older' })).toHaveCount(0);
+    await expectAccessible(page);
   });
 });

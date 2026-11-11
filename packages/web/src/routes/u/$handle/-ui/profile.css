@@ -13,11 +13,20 @@
     top: var(--muxui-semantic-layout-inset-medium);
   }
 
+  /* One track that never grows past the card: a long name, handle or host wraps instead (the Card hides overflow). */
   .prof-head,
   .prof-body {
     display: grid;
+    grid-template-columns: minmax(0, 1fr);
     gap: var(--muxui-semantic-layout-tight-gap);
     justify-items: start;
+  }
+
+  /* Handle keeps itself on one line elsewhere; here a long remote one breaks anywhere, host included. */
+  .prof-head .pb-handle,
+  .prof-body dd {
+    white-space: normal;
+    overflow-wrap: anywhere;
   }
 
   .prof-body {
