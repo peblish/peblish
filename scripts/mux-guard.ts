@@ -8,11 +8,12 @@
 // layout markup composed only of Mux components and styled only with Mux tokens. In every mode an
 // entry of mux-guard.exceptions.json that does not match exactly its `count` violations fails.
 //
-// Scope: every .ts and .tsx under packages/web/src and packages/ui/src except tests, fixtures and
-// pure wrapper modules (a file whose only statements re-export @muxui/react), and every stylesheet
-// there except packages/ui/src/styles.css (Mux's own). tools/*/src is read only for mux-import.
+// Scope: every script and stylesheet the build can import (.ts .tsx .mts .cts .js .jsx .mjs .cjs .css)
+// anywhere under packages/* and tools/*, except node_modules, build output, generated *.gen.ts files,
+// tests, fixtures and pure wrapper modules (a file whose only statements re-export @muxui/react).
+// packages/ui/src/styles.css, which imports Mux's own stylesheet, may hold only @import and @layer.
 import { globSync, readFileSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, posix } from 'node:path';
 import { gunzipSync } from 'node:zlib';
 import ts from 'typescript';
 
@@ -43,6 +44,8 @@ export const cssRules = [
   'css-token-value',
   'css-blur',
   'css-element-selector',
+  'css-import',
+  'css-mux-stylesheet',
 ] as const;
 export const rules = [...scriptRules, ...cssRules] as const;
 export type Rule = (typeof rules)[number];
@@ -116,11 +119,11 @@ const insertions = new Set([
 const isMux = (specifier: string) => specifier === '@muxui/react' || specifier.startsWith('@muxui/react/');
 const lineOf = (source: ts.SourceFile, node: ts.Node) => source.getLineAndCharacterOfPosition(node.getStart(source)).line + 1;
 
-/** Lines of every import, export-from, dynamic import or import type of @muxui/react. */
-function muxImportLines(source: ts.SourceFile): number[] {
-  const lines: number[] = [];
+/** Every import, export-from, dynamic import or import type with a written specifier, and its line. */
+function importSpecifiers(source: ts.SourceFile): { line: number; specifier: string }[] {
+  const found: { line: number; specifier: string }[] = [];
   const add = (node: ts.Node, specifier: ts.Node | undefined) => {
-    if (specifier && ts.isStringLiteralLike(specifier) && isMux(specifier.text)) lines.push(lineOf(source, node));
+    if (specifier && ts.isStringLiteralLike(specifier)) found.push({ line: lineOf(source, node), specifier: specifier.text });
   };
   const visit = (node: ts.Node): void => {
     if (ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) add(node, node.moduleSpecifier);
@@ -131,8 +134,14 @@ function muxImportLines(source: ts.SourceFile): number[] {
     ts.forEachChild(node, visit);
   };
   visit(source);
-  return lines;
+  return found;
 }
+
+/** Lines of every import, export-from, dynamic import or import type of @muxui/react. */
+const muxImportLines = (source: ts.SourceFile) =>
+  importSpecifiers(source)
+    .filter(({ specifier }) => isMux(specifier))
+    .map(({ line }) => line);
 
 /** A pure wrapper: every statement is an export-from of @muxui/react (values or types). */
 export function isWrapper(source: ts.SourceFile): boolean {
@@ -321,15 +330,46 @@ function styleProblems(node: ts.Expression): string[] {
   });
 }
 
-/** Scans a .ts or .tsx file for every script rule. */
+const scriptKinds: Record<string, ts.ScriptKind> = {
+  tsx: ts.ScriptKind.TSX,
+  jsx: ts.ScriptKind.JSX,
+  js: ts.ScriptKind.JS,
+  mjs: ts.ScriptKind.JS,
+  cjs: ts.ScriptKind.JS,
+};
+// Folders the build writes or a package manager fills, which the walk skips.
+const unwalked = /(^|\/)(node_modules|dist|build|coverage|\.output|\.nitro|\.vite|\.turbo|\.tanstack)\//;
+
+/** Whether the guard reads this repository path: a source file under packages/* or tools/*, outside build output. */
+export function walked(file: string): boolean {
+  return /^(packages|tools)\/[^/]+\//.test(file) && !unwalked.test(file) && !file.endsWith('.gen.ts') && !isTestOrFixture(file);
+}
+
+/**
+ * A stylesheet import the guard cannot follow: one that lands outside the walk (a package's own CSS, a file
+ * outside packages/* and tools/*). Relative paths and @peblish/ui's are resolved; Mux's own stylesheet may be
+ * imported by packages/ui/src/styles.css alone (and anywhere else outside packages/ui/src is mux-import).
+ */
+function unreadImport(file: string, specifier: string): boolean {
+  const path = specifier.replace(/[?#].*$/, '');
+  if (isMux(path)) return file !== muxStylesheet && file.startsWith('packages/ui/src/');
+  if (path.startsWith('.')) return !walked(posix.normalize(posix.join(posix.dirname(file), path)));
+  if (path.startsWith('@peblish/ui/')) return !walked(`packages/ui/src/${path.slice('@peblish/ui/'.length)}`);
+  return true;
+}
+
+/** Scans a script for every script rule. */
 export function scanScript(file: string, text: string): Violation[] {
-  const tsx = file.endsWith('.tsx');
-  const source = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true, tsx ? ts.ScriptKind.TSX : ts.ScriptKind.TS);
+  const kind = scriptKinds[file.slice(file.lastIndexOf('.') + 1)] ?? ts.ScriptKind.TS;
+  const source = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true, kind);
   const out: Violation[] = [];
   if (!file.startsWith('packages/ui/src/')) {
     for (const line of muxImportLines(source)) out.push({ file, line, rule: 'mux-import', detail: '@muxui/react' });
   }
-  if (!/^packages\/(ui|web)\/src\//.test(file) || isWrapper(source)) return out;
+  for (const { line, specifier } of importSpecifiers(source))
+    if (/\.css([?#]|$)/.test(specifier) && unreadImport(file, specifier))
+      out.push({ file, line, rule: 'css-import', detail: `${specifier} is a stylesheet the guard does not read` });
+  if (isWrapper(source)) return out;
 
   const anchor: string[] = [];
   const add = (node: ts.Node, rule: Rule, detail: string) =>
@@ -790,10 +830,13 @@ export function scanCss(
     out.push({ file, line, rule, detail: detail.replace(/\s+/g, ' '), anchor });
   const { items, layoutComments } = cssItems(css);
   let layoutUsed = 0;
-  if (!file.startsWith('packages/ui/src/')) {
-    for (const { kind, line, text, anchor } of items) {
-      if (kind === 'statement' && /^@import\s+(url\()?\s*['"]@muxui\/react(\/|['"])/i.test(text)) add(line, 'mux-import', text, anchor);
-    }
+  for (const { kind, line, text, anchor } of items) {
+    const specifier = kind === 'statement' ? /^@import\s+(?:url\(\s*)?(['"]?)([^'"()\s]+)\1/i.exec(text)?.[2] : undefined;
+    if (specifier && isMux(specifier) && !file.startsWith('packages/ui/src/')) add(line, 'mux-import', text, anchor);
+    else if (specifier && unreadImport(file, specifier)) add(line, 'css-import', `${text} is a stylesheet the guard does not read`, anchor);
+    // The stylesheet that imports Mux's own is read only for this: it holds nothing but imports and layer order.
+    if (file === muxStylesheet && !(kind === 'statement' && !anchor.length && /^@(import|layer)\s/i.test(text)))
+      add(line, 'css-mux-stylesheet', `${text} (${muxStylesheet} holds only @import and @layer statements)`, anchor);
   }
   // Custom properties, whatever their prefix. A name this file sets to anything but tokens is not a token here,
   // even a tokens.css alias. A --muxui-* name Mux does not define is unknown wherever it is set or read, so a
@@ -923,7 +966,7 @@ export function area(file: string): (typeof areas)[number] {
   return (route && routeAreas[route]) || 'shell';
 }
 
-const isTestOrFixture = (file: string) => /\.test\.tsx?$|(^|\/)__fixtures__\//.test(file);
+const isTestOrFixture = (file: string) => /\.test\.[cm]?[jt]sx?$|(^|\/)__fixtures__\//.test(file);
 
 export type Exception = { file: string; rule: Rule; match: string; anchor?: string; count?: number; reason: string };
 
@@ -976,10 +1019,13 @@ export function applyExceptions(violations: Violation[], exceptions: Exception[]
   return { kept: violations.filter((v) => !exceptions.some((exception) => matches(exception, v))), problems };
 }
 
+/** Every script and stylesheet the build can import, under packages/* and tools/* (see `walked` for what is left out). */
+export const scriptGlob = '{packages,tools}/*/**/*.{ts,tsx,mts,cts,js,jsx,mjs,cjs}';
+export const cssGlob = '{packages,tools}/*/**/*.css';
+
 /** Every violation in the repository before exceptions, and the /* layout *\/ counts. */
 export function scanRepository() {
-  const files = (pattern: string) =>
-    globSync(pattern, { cwd: root }).filter((file) => !isTestOrFixture(file) && !file.includes('/node_modules/'));
+  const files = (pattern: string) => globSync(pattern, { cwd: root, exclude: (name) => name === 'node_modules' }).filter(walked);
   const tokensCss = readFileSync(join(root, tokensFile), 'utf8');
   const context: CssContext = {
     aliases: pureAliases(tokensCss),
@@ -988,19 +1034,13 @@ export function scanRepository() {
   };
   const layout = { comments: 0, used: 0 };
   const violations = [
-    ...files('{packages,tools}/*/src/**/*.{ts,tsx}')
-      .filter((file) => !file.endsWith('.gen.ts'))
-      .flatMap((file) => scanScript(file, readFileSync(join(root, file), 'utf8'))),
-    ...files('{packages,tools}/*/src/**/*.css')
-      .filter((file) => file !== muxStylesheet)
-      .flatMap((file) => {
-        const found = scanCss(file, readFileSync(join(root, file), 'utf8'), context);
-        // Only the ui and web stylesheets are UI; elsewhere only the import rule applies.
-        if (!/^packages\/(ui|web)\/src\//.test(file)) return found.violations.filter((v) => v.rule === 'mux-import');
-        layout.comments += found.layout.comments;
-        layout.used += found.layout.used;
-        return found.violations;
-      }),
+    ...files(scriptGlob).flatMap((file) => scanScript(file, readFileSync(join(root, file), 'utf8'))),
+    ...files(cssGlob).flatMap((file) => {
+      const found = scanCss(file, readFileSync(join(root, file), 'utf8'), context);
+      layout.comments += found.layout.comments;
+      layout.used += found.layout.used;
+      return found.violations;
+    }),
   ];
   const order = (v: Violation) => areas.indexOf(area(v.file));
   violations.sort(

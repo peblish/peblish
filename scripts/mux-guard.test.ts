@@ -1,10 +1,11 @@
 import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, matchesGlob } from 'node:path';
 import { expect, test } from 'vitest';
 import {
   applyExceptions,
   area,
   count,
+  cssGlob,
   muxTarball,
   muxTokens,
   parseExceptions,
@@ -12,10 +13,12 @@ import {
   regressions,
   scanCss,
   scanScript,
+  scriptGlob,
   tarFile,
   type CssContext,
   vendoredTarball,
   type Violation,
+  walked,
 } from './mux-guard.ts';
 
 const found = (violations: { rule: string; line: number }[]) => violations.map(({ rule, line }) => `${rule}:${line}`);
@@ -236,6 +239,59 @@ test('mux-import reports @muxui/react outside packages/ui/src in scripts and sty
   const sheet = "@import '@muxui/react/styles.css';\n/* @import '@muxui/react'; */";
   expect(css(sheet)).toEqual(['mux-import:1']);
   expect(css(sheet, none, 'packages/ui/src/styles.css')).toEqual([]);
+});
+
+test('every source file of every package and tool is checked, whatever its extension or folder', () => {
+  const button = 'export const A = () => <button>go</button>;';
+  expect(tsx(button, 'packages/web/app/a.jsx')).toEqual(['raw-element:1']);
+  expect(tsx(button, 'packages/ui/stories/a.tsx')).toEqual(['raw-element:1']);
+  expect(tsx(button, 'packages/core/src/mail/a.tsx')).toEqual(['raw-element:1']);
+  expect(tsx("import { createElement as h } from 'react';\nh('button');", 'packages/web/src/a.mts')).toEqual(['raw-element:2']);
+  expect(tsx(button, 'packages/web/src/a.test.tsx')).toEqual(['raw-element:1']); // scanScript itself does not skip tests; the walk does
+});
+
+test('the walk takes every extension the build can import and skips only tests, fixtures, generated files and output', () => {
+  for (const file of ['packages/web/src/a.mts', 'packages/web/src/a.cjs', 'packages/web/app/a.jsx', 'tools/x/a.mjs', 'packages/ui/a.css'])
+    expect([file, matchesGlob(file, file.endsWith('.css') ? cssGlob : scriptGlob) && walked(file)]).toEqual([file, true]);
+  for (const file of [
+    'packages/web/src/a.test.mts',
+    'packages/web/src/__fixtures__/a.tsx',
+    'packages/web/src/routeTree.gen.ts',
+    'packages/web/dist/a.js',
+    'packages/web/.output/a.mjs',
+    'packages/ui/node_modules/x/a.css',
+    'e2e/a.ts',
+  ])
+    expect([file, walked(file)]).toEqual([file, false]);
+});
+
+test("Mux's stylesheet holds only @import and @layer; no stylesheet may be imported from outside the walk", () => {
+  const mux = lines(
+    '@layer reset, muxui.tokens, muxui.components, muxui.utilities, app; /* order */', // 1
+    "@import '@muxui/react/styles.css';", // 2
+    '.x { color: #f00 !important; }', // 3
+  );
+  expect(css(mux, anyDefined, 'packages/ui/src/styles.css')).toEqual([
+    'css-mux-stylesheet:3',
+    'css-mux-stylesheet:3',
+    'css-colour:3',
+    'css-important:3',
+  ]);
+  const sheet = lines(
+    "@import '@peblish/ui/tokens/tokens.css';", // 1: legal
+    "@import './shell/shell.css';", // 2: legal
+    "@import url('../../../../vendor/theme.css');", // 3
+    "@import 'some-library/dist/theme.css' layer(app);", // 4
+    "@import '@muxui/react/styles.css';", // 5: mux-import, not both
+  );
+  expect(css(sheet, anyDefined)).toEqual(['css-import:3', 'css-import:4', 'mux-import:5']);
+  const script = lines(
+    "import appCss from '../styles.css?url';", // 1: legal
+    "import '@peblish/ui/composer/composer.css';", // 2: legal
+    "import 'some-library/dist/theme.css';", // 3
+    "import muxCss from '@muxui/react/styles.css?inline';", // 4: Mux's stylesheet outside styles.css
+  );
+  expect(found(scanScript('packages/ui/src/a.ts', script))).toEqual(['css-import:3', 'css-import:4']);
 });
 
 test('css-colour reports hex, colour functions and named colours, not tokens or neutral keywords', () => {
