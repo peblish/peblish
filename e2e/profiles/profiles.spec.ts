@@ -206,9 +206,9 @@ test.describe('signed in', () => {
     await name.fill('Pat Q. Profile');
     const bio = page.getByRole('textbox', { name: 'Bio' });
     await bio.fill('A **bold** bio');
-    await page.getByRole('button', { name: 'Preview' }).click();
+    await page.getByRole('radio', { name: 'Preview' }).click();
     await expect(page.locator('.pb-prose strong', { hasText: 'bold' })).toBeVisible();
-    await page.getByRole('button', { name: 'Write' }).click();
+    await page.getByRole('radio', { name: 'Write' }).click();
     await page.getByRole('button', { name: 'Save changes' }).click();
     await expect(page.getByRole('status')).toContainText('Profile saved.');
     // The card on the left shows the new name once the data reloads.
