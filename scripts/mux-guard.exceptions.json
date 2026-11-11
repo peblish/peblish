@@ -1,0 +1,65 @@
+[
+  {
+    "file": "packages/ui/src/components/prose.tsx",
+    "rule": "raw-html",
+    "match": "<div dangerouslySetInnerHTML>",
+    "anchor": "Prose",
+    "reason": "Prose renders the Markdown pipeline's sanitised HTML as its own markup, for security; Mux Markdown would parse and render untrusted source on the client."
+  },
+  {
+    "file": "packages/ui/src/components/prose.tsx",
+    "rule": "widget-handler",
+    "match": "<div onClick onKeyDown>",
+    "anchor": "Prose",
+    "reason": "Prose's root delegates clicks and keys to the spoilers inside the sanitised HTML; it is not a widget of its own."
+  },
+  {
+    "file": "packages/ui/src/components/prose.tsx",
+    "rule": "raw-element",
+    "match": "createElement('button')",
+    "anchor": "Prose",
+    "reason": "The spoiler reveal button is created inside the sanitised HTML, before a compound spoiler, where no React component can be rendered."
+  },
+  {
+    "file": "packages/ui/src/components/prose.tsx",
+    "rule": "widget-role",
+    "match": "setAttribute('role', 'button')",
+    "anchor": "Prose",
+    "reason": "A leaf spoiler inside the sanitised HTML becomes its own reveal button; no React component can be rendered there."
+  },
+  {
+    "file": "packages/ui/src/components/prose.css",
+    "rule": "css-element-selector",
+    "match": ".pb-prose ",
+    "count": 25,
+    "reason": "Prose's stylesheet styles the elements of the sanitised Markdown HTML, which are plain HTML by design (see the prose.tsx exceptions)."
+  },
+  {
+    "file": "packages/ui/src/components/post-card.tsx",
+    "rule": "raw-element",
+    "match": "<a>",
+    "anchor": "PostCard",
+    "reason": "The decorative thumbnail link is removed from the tab order and the accessibility tree; Mux Link drops tabIndex and aria-hidden."
+  },
+  {
+    "file": "packages/ui/src/components/post-card.css",
+    "rule": "css-blur",
+    "match": "blur(",
+    "anchor": "[data-hidden] .pb-post__thumb img",
+    "reason": "A static blur hides a hidden or NSFW thumbnail; it is not animated, so it does not repaint."
+  },
+  {
+    "file": "packages/web/src/routes/admin/reports/-ui/queue.css",
+    "rule": "css-blur",
+    "match": "blur(",
+    "anchor": ".rq-quote blockquote[data-hidden]",
+    "reason": "A static blur hides reported text until a moderator chooses Show; it is not animated, so it does not repaint."
+  },
+  {
+    "file": "packages/ui/src/tokens/tokens.css",
+    "rule": "css-important",
+    "match": "scroll-behavior",
+    "anchor": "*",
+    "reason": "Reduced motion must turn off smooth scrolling everywhere, including where a component sets it."
+  }
+]
