@@ -1,5 +1,5 @@
 import { crc32, deflateSync } from 'node:zlib';
-import { expect, test, type BrowserContext } from '@playwright/test';
+import { expect, test, type BrowserContext, type Page } from '@playwright/test';
 import { gotoHydrated } from '../support/route-marker.ts';
 import { choose, chooseType, seed, type Seed, setUploads, signedIn } from './support.ts';
 
@@ -31,6 +31,28 @@ function png(): Buffer {
     chunk('IEND', Buffer.alloc(0)),
   ]);
 }
+
+/** Drops a PNG named `name` on the image field's drop zone, as a drag from the desktop does. */
+async function drop(page: Page, name: string) {
+  const dataTransfer = await page.evaluateHandle(
+    ([name, bytes]) => {
+      // A DataTransfer made by a script has no file-system entry for its files, and React Aria
+      // skips a dropped file without one; a real drag from the desktop has it.
+      DataTransferItem.prototype.webkitGetAsEntry = function () {
+        return this.kind === 'file' ? ({ isFile: true, isDirectory: false } as FileSystemEntry) : null;
+      };
+      const transfer = new DataTransfer();
+      transfer.items.add(new File([Uint8Array.from(atob(bytes!), (char) => char.charCodeAt(0))], name!, { type: 'image/png' }));
+      return transfer;
+    },
+    [name, png().toString('base64')],
+  );
+  const zone = page.locator('.cmp__drop');
+  for (const type of ['dragenter', 'dragover', 'drop']) await zone.dispatchEvent(type, { dataTransfer });
+}
+
+/** The name of the file the form's own image field holds, or null. */
+const held = (page: Page) => page.locator('input[name="image"]').evaluate((input: HTMLInputElement) => input.files?.[0]?.name ?? null);
 
 let world: Seed;
 let poster: BrowserContext;
@@ -79,7 +101,9 @@ test('with uploads on an image is cleaned, stored and posted, and a bad file is 
   await page.getByLabel('Alt text').fill('A single red pixel');
 
   await page.getByRole('button', { name: 'Post', exact: true }).click();
-  await expect(page.getByText('Choose an image to upload.')).toBeVisible();
+  // Announced, and still the field's description.
+  await expect(page.getByRole('alert')).toHaveText('Choose an image to upload.');
+  await expect(page.getByLabel('Image file')).toHaveAccessibleDescription(/Choose an image to upload\./);
 
   await page.getByLabel('Image file').setInputFiles({ name: 'notes.txt', mimeType: 'text/plain', buffer: Buffer.from('not an image') });
   await page.getByRole('button', { name: 'Post', exact: true }).click();
@@ -96,4 +120,60 @@ test('with uploads on an image is cleaned, stored and posted, and a bad file is 
   // The post links the stored image on this instance; nothing serves it until the scanning lane lands.
   await expect(page.locator('.post-image img')).toHaveAttribute('src', /\/media\/[0-9a-f-]{36}$/);
   await page.close();
+});
+
+test('a dropped image stays in the form while other fields change, also after one was picked, and posts', async () => {
+  setUploads(true);
+  const page = await poster.newPage();
+  const errors: string[] = [];
+  page.on('pageerror', (error) => errors.push(error.message));
+  await gotoHydrated(page, '/submit');
+  await choose(page, world.communities.open.handle);
+  await chooseType(page, 'Image');
+  await drop(page, 'dropped.png');
+  await expect.poll(() => held(page)).toBe('dropped.png');
+  await page.getByLabel('Title').fill('A dropped image');
+  await page.getByLabel('Alt text').fill('Dropped, then the words');
+  expect(await held(page)).toBe('dropped.png');
+
+  // Picked first, then another dropped over it: the dropped one is kept, and nothing throws.
+  await page.getByLabel('Image file').setInputFiles({ name: 'picked.png', mimeType: 'image/png', buffer: png() });
+  await page.getByLabel('Alt text').fill('Picked');
+  expect(await held(page)).toBe('picked.png');
+  await drop(page, 'second.png');
+  await expect.poll(() => held(page)).toBe('second.png');
+  await page.getByLabel('Alt text').fill('Picked, then dropped over');
+  await page.getByLabel('Title').fill('A dropped image, kept');
+  expect(await held(page)).toBe('second.png');
+  expect(errors).toEqual([]);
+
+  await page.getByRole('button', { name: 'Post', exact: true }).click();
+  await page.waitForURL(/\/post\/[0-9a-f-]{36}$/);
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('A dropped image, kept');
+  await expect(page.locator('.post-image img')).toHaveAttribute('src', /\/media\/[0-9a-f-]{36}$/);
+  expect(errors).toEqual([]);
+  await page.close();
+});
+
+test('an image posts with scripts off, as a plain form', async ({ browser, baseURL }) => {
+  setUploads(true);
+  const context = await browser.newContext({ baseURL, javaScriptEnabled: false });
+  const page = await context.newPage();
+  await page.goto('/auth/sign-in');
+  await page.getByLabel('Email or handle').fill(`@${world.people.poster}`);
+  await page.getByLabel('Password', { exact: true }).fill(world.password);
+  await page.getByRole('button', { name: 'Sign in' }).click();
+  await page.waitForURL('/');
+  await page.goto('/submit');
+  await choose(page, world.communities.open.handle);
+  await chooseType(page, 'Image');
+  await expect(page.getByLabel('Image file')).toBeVisible();
+  await page.getByLabel('Title').fill('An image without JavaScript');
+  await page.getByLabel('Alt text').fill('A red pixel, posted plainly');
+  await page.getByLabel('Image file').setInputFiles({ name: 'plain.png', mimeType: 'image/png', buffer: png() });
+  await page.getByRole('button', { name: 'Post', exact: true }).click();
+  await page.waitForURL(/\/post\/[0-9a-f-]{36}$/);
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('An image without JavaScript');
+  await expect(page.locator('.post-image img')).toHaveAttribute('src', /\/media\/[0-9a-f-]{36}$/);
+  await context.close();
 });

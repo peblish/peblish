@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
-import type { Browser, BrowserContext, Locator } from '@playwright/test';
+import { expect, type Browser, type BrowserContext, type Locator } from '@playwright/test';
 import { landed, signIn } from '../auth/support.ts';
 import { gotoHydrated } from '../support/route-marker.ts';
 
@@ -43,9 +43,14 @@ export const community = (within: Pick<Locator, 'getByRole'>, handle: string) =>
 /** The label around a radio. Mux UI draws its own radio and hides the native one, so a click goes to the label, as a person's does. */
 export const radioLabel = (radio: Locator) => radio.locator('xpath=ancestor::label[1]');
 
+/** Clicks the radio's label and checks the radio took the choice (what `check()` would have verified). */
+async function pick(radio: Locator) {
+  await radioLabel(radio).click();
+  await expect(radio).toBeChecked();
+}
+
 /** Chooses the community in the picker by its row. */
-export const choose = (within: Pick<Locator, 'getByRole'>, handle: string) => radioLabel(community(within, handle)).click();
+export const choose = (within: Pick<Locator, 'getByRole'>, handle: string) => pick(community(within, handle));
 
 /** Chooses a post type (Text, Link, Image) by its label. */
-export const chooseType = (within: Pick<Locator, 'getByRole'>, name: string) =>
-  radioLabel(within.getByRole('radio', { name, exact: true })).click();
+export const chooseType = (within: Pick<Locator, 'getByRole'>, name: string) => pick(within.getByRole('radio', { name, exact: true }));

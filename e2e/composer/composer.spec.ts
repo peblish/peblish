@@ -1,4 +1,4 @@
-import { expect, test, type BrowserContext, type Page } from '@playwright/test';
+import { expect, test, type BrowserContext, type Page, type Route } from '@playwright/test';
 import { expectAccessible, landed, signIn } from '../auth/support.ts';
 import { gotoHydrated, recordConsole } from '../support/route-marker.ts';
 import { choose, chooseType, community, radioLabel, seed, type Seed, signedIn } from './support.ts';
@@ -354,4 +354,89 @@ test("a draft is the signed-in person's: someone else on the same browser does n
   await expect(body(page)).toHaveValue('');
   await expect(page.getByRole('status')).toHaveText('');
   await shared.close();
+});
+
+test('a missing community is announced and stays in view below a list that scrolls', async () => {
+  const page = await poster.newPage();
+  await gotoHydrated(page, '/submit');
+  // The list is taller than its box, so it scrolls: the case where an error inside the scrolling part would be out of sight.
+  const scrolls = await community(page, world.communities.open.handle).evaluate((radio) => {
+    for (let node = radio.parentElement; node; node = node.parentElement) {
+      if (getComputedStyle(node).overflowY === 'auto') return node.scrollHeight > node.clientHeight;
+    }
+    return false;
+  });
+  expect(scrolls).toBe(true);
+  await page.getByLabel('Title').fill('Nowhere to post');
+  await post(page).click();
+  const alert = page.getByRole('alert');
+  await expect(alert).toHaveText('Choose a community to post in.');
+  // Posting scrolled the page down to the button; back at the top the error is in sight, not under the list's scroll.
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await expect(alert).toBeInViewport();
+  // Still the group's description, so it is read with the field too.
+  await expect(page.getByRole('radiogroup', { name: 'Community' })).toHaveAccessibleDescription('Choose a community to post in.');
+  await page.close();
+});
+
+test('an edit is of the post the body names, and the authority check is on that post', async () => {
+  /** Creates a post as the page's person and gives its id. */
+  async function create(page: Page, title: string) {
+    await gotoHydrated(page, '/submit');
+    await fill(page, world.communities.open.handle, title, 'Words');
+    await post(page).click();
+    await page.waitForURL(/\/post\/[0-9a-f-]{36}$/);
+    return page.url().split('/').at(-1)!;
+  }
+  const mine = await poster.newPage();
+  const theirs = await moderator.newPage();
+  const own = await create(mine, 'Mine to edit');
+  const other = await create(theirs, 'Someone else owns this');
+  const send = (query: string, body: string, title: string) =>
+    mine.evaluate(
+      async ([query, body, title]) => {
+        const form = new FormData();
+        form.set('edit', body!);
+        form.set('title', title!);
+        form.set('body', 'Changed');
+        const response = await fetch(`/submit?edit=${query}`, { method: 'POST', body: form, headers: { accept: 'application/json' } });
+        return { status: response.status, body: (await response.json()) as unknown };
+      },
+      [query, body, title],
+    );
+  // The address names someone else's post, the body the poster's own: the body's is edited.
+  expect(await send(other, own, 'Edited by its body id')).toEqual({ status: 200, body: { redirect: `/post/${own}` } });
+  // The reverse: the post written is someone else's, and it is refused for that post.
+  expect(await send(own, other, 'Taken over')).toEqual({ status: 400, body: { error: 'post.author_required' } });
+  await mine.goto(`/post/${own}`);
+  await expect(mine.getByRole('heading', { level: 1 })).toHaveText('Edited by its body id');
+  await mine.goto(`/post/${other}`);
+  await expect(mine.getByRole('heading', { level: 1 })).toHaveText('Someone else owns this');
+  await mine.close();
+  await theirs.close();
+});
+
+test('an enhanced post that fails leaves the form usable for a second try', async () => {
+  const page = await poster.newPage();
+  await gotoHydrated(page, '/submit');
+  await fill(page, world.communities.open.handle, 'Sent on the third try', 'Kept through the failures');
+  /** Answers the next post to /submit with `answer`; later ones go through. */
+  const failNext = (answer: (route: Route) => Promise<void>) => page.route('**/submit', answer, { times: 1 });
+
+  await failNext((route) => route.abort('connectionfailed'));
+  await post(page).click();
+  await expect(page.getByRole('alert')).toHaveText('The server could not be reached. Check your connection and try again.');
+  await expect(post(page)).toBeEnabled();
+
+  await failNext((route) => route.fulfill({ status: 502, contentType: 'text/html', body: '<h1>Bad gateway</h1>' }));
+  await post(page).click();
+  await expect(page.getByRole('alert')).toHaveText('Something went wrong. Try again.');
+  await expect(page.getByLabel('Title')).toHaveValue('Sent on the third try');
+  await expect(body(page)).toHaveValue('Kept through the failures');
+  await expect(post(page)).toBeEnabled();
+
+  await post(page).click();
+  await page.waitForURL(/\/post\/[0-9a-f-]{36}$/);
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('Sent on the third try');
+  await page.close();
 });

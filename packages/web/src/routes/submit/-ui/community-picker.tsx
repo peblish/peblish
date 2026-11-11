@@ -12,7 +12,8 @@ import type { PickerCommunity } from '../-types.ts';
  * The community list (composer-page): one radio per community, so the choice is a form field
  * that works before and without JavaScript. The filter box narrows the list once hydrated; a
  * row it hides stays in the form, so the chosen community is never dropped. A community the
- * person may not post in is disabled, with the reason beside it.
+ * person may not post in is disabled, with the reason beside it. Only the options scroll: the
+ * group's error comes after them, always in sight, and is an alert as well as its description.
  */
 export function CommunityPicker({
   communities,
@@ -60,26 +61,28 @@ export function CommunityPicker({
           value={value ?? ''}
           onChange={onChange}
           invalid={error !== undefined}
-          errorMessage={error}
+          errorMessage={error === undefined ? undefined : <span role="alert">{error}</span>}
           className="cmp__list"
         >
-          {communities.map((community) => (
-            <RadioField.Root
-              key={community.id}
-              value={community.id}
-              disabled={!community.canPost}
-              hidden={!shown(community)}
-              className="cmp__row"
-            >
-              <RadioField.Button>
-                <RadioField.Indicator>
-                  <RadioField.Dot />
-                </RadioField.Indicator>
-                <Handle prefix="!" handle={community.handle} />
-              </RadioField.Button>
-              <RadioField.Description>{describe(community)}</RadioField.Description>
-            </RadioField.Root>
-          ))}
+          <div className="cmp__options">
+            {communities.map((community) => (
+              <RadioField.Root
+                key={community.id}
+                value={community.id}
+                disabled={!community.canPost}
+                hidden={!shown(community)}
+                className="cmp__row"
+              >
+                <RadioField.Button>
+                  <RadioField.Indicator>
+                    <RadioField.Dot />
+                  </RadioField.Indicator>
+                  <Handle prefix="!" handle={community.handle} />
+                </RadioField.Button>
+                <RadioField.Description>{describe(community)}</RadioField.Description>
+              </RadioField.Root>
+            ))}
+          </div>
         </RadioGroup>
       )}
       {communities.length > 0 && communities.every((community) => !shown(community)) && (

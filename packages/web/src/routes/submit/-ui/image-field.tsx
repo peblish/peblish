@@ -1,7 +1,7 @@
 import { DropZone, type MuxUIDropEvent } from '@peblish/ui/components/drop-zone';
 import { Input } from '@peblish/ui/components/input';
 import { ProgressBar } from '@peblish/ui/components/progress-bar';
-import { useRef, type ReactNode } from 'react';
+import { useId, useRef, type ReactNode } from 'react';
 import { useTranslate } from '../../../i18n/use-translate.ts';
 
 /**
@@ -9,7 +9,7 @@ import { useTranslate } from '../../../i18n/use-translate.ts';
  * without JavaScript, inside a drop target that puts a dropped or pasted image into that field.
  * Mux UI's FileTrigger is not used: its input has no name and its button does nothing before
  * hydration, so the form would no longer carry the file. While the post is sending, the bar
- * shows how much of the file has gone.
+ * shows how much of the file has gone. A refusal is an alert as well as the field's description.
  */
 export function ImageField({
   error,
@@ -21,6 +21,9 @@ export function ImageField({
 }) {
   const { t } = useTranslate();
   const input = useRef<HTMLInputElement>(null);
+  // Mux UI's Input links the error to the field by the id the error has when it mounts, and
+  // React Aria names an error that appears later only a render after that, so it is named here.
+  const errorId = useId();
 
   async function take(event: MuxUIDropEvent) {
     const item = event.items.find((dropped) => dropped.kind === 'file');
@@ -29,6 +32,11 @@ export function ImageField({
     const files = new DataTransfer();
     files.items.add(await item.getFile());
     field.files = files.files;
+    // Mux UI's Input keeps the field's value in React Aria state, which only a change event
+    // updates: without one the next render writes the old value back, which empties the field
+    // or, after a picked file, throws. A picked file fires input then change; so does this.
+    field.dispatchEvent(new Event('input', { bubbles: true }));
+    field.dispatchEvent(new Event('change', { bubbles: true }));
   }
 
   return (
@@ -37,7 +45,11 @@ export function ImageField({
         <Input.Label>{t('composer', 'image.label')}</Input.Label>
         <Input.Input ref={input} type="file" name="image" accept="image/jpeg,image/png,image/webp,image/gif" />
         <Input.Description>{t('composer', 'image.hint')}</Input.Description>
-        {error !== undefined && <Input.Error>{error}</Input.Error>}
+        {error !== undefined && (
+          <Input.Error id={errorId} role="alert">
+            {error}
+          </Input.Error>
+        )}
       </Input.Root>
       {progress !== null && <ProgressBar label={t('composer', 'image.sending')} value={progress} />}
     </DropZone>
