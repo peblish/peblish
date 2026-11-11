@@ -1,12 +1,13 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import { once } from 'node:events';
-import { createServer, type Server } from 'node:net';
+import { connect, createServer, type Server } from 'node:net';
 import { join } from 'node:path';
 import { expect, test } from '@playwright/test';
 
-// The built web server's probes and shutdown, each against its own server process: /healthz
+// The built web server's probes, shutdown and log, each against its own server process: /healthz
 // never touches the database, /readyz answers 503 with Retry-After within its timeout when
-// the database is unusable, and SIGTERM after a database-backed request exits cleanly.
+// the database is unusable, SIGTERM after a database-backed request exits cleanly, and a client
+// that leaves mid-request writes nothing to the log while a real failure still does.
 
 const entry = join(import.meta.dirname, '../../packages/web/.output/server/index.mjs');
 
@@ -75,6 +76,16 @@ async function probe(origin: string, path: string) {
   return { status: response.status, retryAfter: response.headers.get('retry-after'), seconds: (Date.now() - started) / 1_000 };
 }
 
+/** Sends a GET for `path` on a raw connection and closes it after `ms`, before any reply: a browser that navigated on. */
+async function leaveEarly(origin: string, path: string, ms: number): Promise<void> {
+  const { hostname, port } = new URL(origin);
+  const socket = connect(Number(port), hostname);
+  await once(socket, 'connect');
+  socket.write(`GET ${path} HTTP/1.1\r\nHost: ${hostname}:${port}\r\nSec-Fetch-Site: same-origin\r\n\r\n`);
+  await new Promise((resolve) => setTimeout(resolve, ms));
+  socket.destroy();
+}
+
 test.describe('server lifecycle', () => {
   // These start their own servers from the local build; against BASE_URL there is no build to start.
   test.skip(Boolean(process.env.BASE_URL), 'starts its own servers from packages/web/.output');
@@ -107,6 +118,32 @@ test.describe('server lifecycle', () => {
       }
     });
   }
+
+  test('a client that leaves mid-request writes nothing to the log', async () => {
+    // The hanging database holds the page loader and the media proxy open until the client leaves.
+    const database = await silentDatabase();
+    const server = await boot(database.url);
+    try {
+      await leaveEarly(server.origin, '/', 500);
+      await leaveEarly(server.origin, '/media/proxy/signature/target', 500);
+      // Long enough for the server to see each close and settle the request it was serving.
+      await new Promise((resolve) => setTimeout(resolve, 1_000));
+      expect(server.output()).not.toMatch(/abort|error/i);
+    } finally {
+      await stop(server);
+      database.server.close();
+    }
+  });
+
+  test('a page that fails on the server is still logged', async () => {
+    const server = await boot('not a database url');
+    try {
+      expect((await fetch(`${server.origin}/`)).status).toBeGreaterThanOrEqual(500);
+      await expect.poll(() => server.output()).toMatch(/error/i);
+    } finally {
+      await stop(server);
+    }
+  });
 
   test('a healthy database: /readyz is 200, and SIGTERM afterwards exits cleanly', async () => {
     const databaseUrl = process.env.DATABASE_URL;
