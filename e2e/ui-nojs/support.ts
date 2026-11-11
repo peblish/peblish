@@ -80,24 +80,65 @@ export function drawing(page: Page) {
   );
 }
 
+/** The kinds of control Mux's before-hydration rules draw, as `removeInputStateRules` counts them. */
+export type InputStateFamily = 'checkbox background' | 'checkbox tick' | 'radio' | 'switch';
+
 /**
  * Deletes Mux's rules that draw a choice control from its native input while React's state attribute
- * is stale (an attribute compared with `:has(input:...)`); returns how many it deleted.
+ * is stale: a compound selector that tests a `data-muxui-state-selected`, `-indeterminate` or
+ * `-focused` attribute and `:has(input:...)` together. Returns how many it deleted, in all and per
+ * family (a rule may count for more than one), so a caller can tell every family was found.
  */
-export function removeInputStateRules(page: Page): Promise<number> {
+export function removeInputStateRules(page: Page): Promise<{ removed: number; families: Record<InputStateFamily, number> }> {
   return page.evaluate(() => {
-    const stale = /data-muxui-state-(selected|focused)\b[^,]*:has\(input:/;
+    /** `text` cut at each top-level `separator` (outside brackets, parentheses and quotes). */
+    const split = (text: string, separator: (char: string) => boolean) => {
+      const parts: string[] = [];
+      let depth = 0;
+      let quote = '';
+      let start = 0;
+      for (let index = 0; index < text.length; index++) {
+        const char = text[index]!;
+        if (quote) {
+          if (char === '\\') index++;
+          else if (char === quote) quote = '';
+        } else if (char === '"' || char === "'") quote = char;
+        else if (char === '(' || char === '[') depth++;
+        else if (char === ')' || char === ']') depth--;
+        else if (depth === 0 && separator(char)) {
+          parts.push(text.slice(start, index));
+          start = index + 1;
+        }
+      }
+      parts.push(text.slice(start));
+      return parts.map((part) => part.trim()).filter(Boolean);
+    };
+    const stale = (compound: string) =>
+      /\[data-muxui-state-(selected|indeterminate|focused)\]/.test(compound) && compound.includes(':has(input:');
+    // A selector list's complex selectors, then each one's compounds (cut at descendant and other combinators).
+    const isStale = (selectorText: string) =>
+      split(selectorText, (char) => char === ',').some((complex) => split(complex, (char) => /[\s>+~]/.test(char)).some(stale));
+
+    const families: Record<InputStateFamily, number> = { 'checkbox background': 0, 'checkbox tick': 0, radio: 0, switch: 0 };
     let removed = 0;
+    const count = (rule: CSSStyleRule) => {
+      const selector = rule.selectorText;
+      if (/checkbox/.test(selector) && /::after|\bsvg\b/.test(selector)) families['checkbox tick']++;
+      else if (/checkbox/.test(selector) && rule.style.backgroundColor) families['checkbox background']++;
+      if (/muxui-radio/.test(selector)) families.radio++;
+      if (/muxui-switch/.test(selector)) families.switch++;
+    };
     const sweep = (list: CSSRuleList, owner: CSSStyleSheet | CSSGroupingRule) => {
       for (let index = list.length - 1; index >= 0; index--) {
         const rule = list[index];
-        if (rule instanceof CSSStyleRule && stale.test(rule.selectorText)) {
+        if (rule instanceof CSSStyleRule && isStale(rule.selectorText)) {
+          count(rule);
           owner.deleteRule(index);
           removed++;
         } else if (rule instanceof CSSGroupingRule) sweep(rule.cssRules, rule);
       }
     };
     for (const sheet of document.styleSheets) sweep(sheet.cssRules, sheet);
-    return removed;
+    return { removed, families };
   });
 }
