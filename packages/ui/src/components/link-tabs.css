@@ -37,13 +37,49 @@
     border-radius: var(--muxui-reference-dimension-radius-none);
   }
 
-  .pb-link-tabs [data-muxui-tabs-variant='underline'] .muxui-tabs__tab:not([data-muxui-state-selected]) {
-    outline: none;
+  /* Mux Link's outline goes from an unselected underline tab, which Mux's shadow rings instead. Forced
+     colours drop shadows, so there the tab keeps an outline (below). */
+  @media (forced-colors: none) {
+    .pb-link-tabs [data-muxui-tabs-variant='underline'] .muxui-tabs__tab:not([data-muxui-state-selected]) {
+      outline: none;
+    }
+  }
+
+  /* Mux clears a selected tab's outline and draws its focus outline only once a script marks the tab
+     focused (data-muxui-state-focus-visible). A link is focused before hydration, with scripts off and
+     as a router link too, so :focus-visible draws that same outline on the current tab. */
+  .pb-link-tabs .muxui-tabs__tab[data-muxui-state-selected]:focus-visible {
+    outline: 2px solid var(--muxui-semantic-focus-ring);
+    outline-offset: 2px;
   }
 
   .pb-link-tabs [data-muxui-tabs-variant='segment'] .muxui-tabs__tab {
     /* Mux's segment tabs never shrink (flex: 0 0 auto); these may, so a long label wraps. */
     flex: 0 1 auto;
+  }
+
+  /* Mux's hover and pressed fills are translucent: on a hydrated Mux Tabs bar they lie over a separate
+     selection layer, which a link does not have, so the current segment tab lost its fill (in dark,
+     dark text on the dark rail). It keeps its fill in every state, and Mux's hover wash or pressed fill
+     lies over it as a background image, as on that bar. Forced colours keep Mux's Highlight fill. */
+  @media (forced-colors: none) {
+    .pb-link-tabs [data-muxui-tabs-variant='segment'] .muxui-tabs__tab[data-muxui-state-selected] {
+      background-color: var(--muxui-component-tabs-selected-background);
+    }
+
+    .pb-link-tabs [data-muxui-tabs-variant='segment'] .muxui-tabs__tab[data-muxui-state-selected]:is(:hover, [data-muxui-state-hovered]) {
+      background-image: linear-gradient(
+        color-mix(in srgb, var(--muxui-component-tabs-selected-foreground) 4%, transparent),
+        color-mix(in srgb, var(--muxui-component-tabs-selected-foreground) 4%, transparent)
+      );
+    }
+
+    .pb-link-tabs [data-muxui-tabs-variant='segment'] .muxui-tabs__tab[data-muxui-state-selected]:is(:active, [data-muxui-state-pressed]) {
+      background-image: linear-gradient(
+        var(--muxui-semantic-action-neutral-background-pressed),
+        var(--muxui-semantic-action-neutral-background-pressed)
+      );
+    }
   }
 
   /* Forced colours replace every colour and background, and the underline variant's mark lies on
@@ -53,6 +89,19 @@
       text-decoration-line: underline;
       text-decoration-thickness: 0.15em;
       text-underline-offset: 0.3em;
+    }
+
+    /* A focused unselected underline tab takes the outline Mux Tabs draw in forced colours (Mux Link's
+       own would sit 1px further out). */
+    .pb-link-tabs [data-muxui-tabs-variant='underline'] .muxui-tabs__tab:not([data-muxui-state-selected]):focus-visible {
+      outline: 2px solid Highlight;
+      outline-offset: 1px;
+    }
+
+    /* Mux paints the current segment tab Highlight and keeps forced colours off it, which would leave
+       its focus outline in the ordinary ring colour; it takes the system colour too. */
+    .pb-link-tabs [data-muxui-tabs-variant='segment'] .muxui-tabs__tab[data-muxui-state-selected]:focus-visible {
+      outline-color: Highlight;
     }
   }
 }
