@@ -47,7 +47,11 @@ test.beforeAll(async ({ browser }) => {
   undeclaredState = await stateOf(browser, seed.undeclared.name);
 });
 
-async function as(browser: Browser, state: typeof viewerState | null, options: { javaScriptEnabled?: boolean; locale?: string } = {}) {
+async function as(
+  browser: Browser,
+  state: typeof viewerState | null,
+  options: { javaScriptEnabled?: boolean; locale?: string; viewport?: { width: number; height: number } } = {},
+) {
   const context = await browser.newContext({ ...(state && { storageState: state }), ...options });
   return { context, page: await context.newPage() };
 }
@@ -151,6 +155,53 @@ test.describe('the directory, signed out', () => {
     expect(page.url()).toMatch(/sort=newest/);
   });
 
+  test('the search is sent by Enter, and without JavaScript by the button and by Enter', async ({ page, browser }) => {
+    const field = (on: Page) => on.getByRole('searchbox', { name: 'Search communities' });
+    await gotoHydrated(page, '/communities?scope=local');
+    await field(page).fill(seed.communities.local);
+    await field(page).press('Enter');
+    await page.waitForURL(/[?&]q=/);
+    expect(new URL(page.url()).searchParams.get('q')).toBe(seed.communities.local);
+    expect(page.url()).toMatch(/scope=local/);
+    await expect(row(page, seed.communities.local)).toBeVisible();
+
+    const { context, page: plain } = await as(browser, null, { javaScriptEnabled: false });
+    await plain.goto('/communities?sort=newest');
+    await field(plain).fill(`${seed.suffix} nothing`);
+    await plain.getByRole('search').getByRole('button', { name: 'Search', exact: true }).click();
+    await plain.waitForURL(/[?&]q=/);
+    expect(new URL(plain.url()).searchParams.get('q')).toBe(`${seed.suffix} nothing`);
+    expect(plain.url()).toMatch(/sort=newest/);
+    await expect(plain.getByRole('heading', { name: 'No communities match' })).toBeVisible();
+    await field(plain).fill(seed.communities.remote);
+    await field(plain).press('Enter');
+    await plain.waitForURL((url) => url.searchParams.get('q') === seed.communities.remote);
+    await expect(row(plain, seed.communities.remote)).toBeVisible();
+    await context.close();
+  });
+
+  test('on a phone the table scrolls inside its own box and the page never scrolls sideways', async ({ browser }) => {
+    for (const width of [375, 320]) {
+      const { context, page } = await as(browser, null, { viewport: { width, height: 800 } });
+      await gotoHydrated(page, search());
+      await expect(row(page, seed.communities.local)).toBeVisible();
+      const geometry = await page.evaluate(() => {
+        const box = document.querySelector('.dir-scroll');
+        // Asking the page to scroll sideways shows what a swipe would reach, whatever escapes the box.
+        window.scrollTo(10_000, 0);
+        return {
+          page: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+          scrolledX: window.scrollX,
+          box: box ? box.scrollWidth - box.clientWidth : -1,
+        };
+      });
+      // The rows are wider than the phone, so the box scrolls; the page does not.
+      expect(geometry.box, `${width}px`).toBeGreaterThan(0);
+      expect([width, geometry.page, geometry.scrolledX]).toEqual([width, 0, 0]);
+      await context.close();
+    }
+  });
+
   test('a search that looks like a handle offers to find it and leaves the list whole', async ({ page }) => {
     await gotoHydrated(page, `/communities?q=${encodeURIComponent('!lab@lemmy.example')}`);
     await expect(page.getByText('That looks like a handle or a link.')).toBeVisible();
@@ -183,6 +234,56 @@ test.describe('the directory, signed in', () => {
     await expect(row(page, seed.communities.adult)).toBeVisible();
     await expect(row(page, seed.communities.local)).toHaveCount(0);
     expect(log.hydrationProblems()).toEqual([]);
+    await context.close();
+  });
+
+  test('the scope, sort, NSFW choice, search and page keep each other when combined, and a new search starts at page 1', async ({
+    browser,
+  }) => {
+    const { context, page } = await as(browser, viewerState, { javaScriptEnabled: false });
+    const q = seed.suffix;
+    await page.goto(`/communities?scope=local&sort=newest&nsfw=show&q=${q}&page=2`);
+    /** The parts of a link's address, sorted so the order does not matter. */
+    const parts = async (link: ReturnType<Page['getByRole']>) => {
+      const href = await link.getAttribute('href');
+      return [...new URL(href ?? '', 'http://x').searchParams].sort(([a], [b]) => a.localeCompare(b));
+    };
+    const nav = (name: string) => page.getByRole('navigation', { name });
+    expect(await parts(nav('Scope').getByRole('link', { name: /^All/ }))).toEqual([
+      ['nsfw', 'show'],
+      ['q', q],
+      ['sort', 'newest'],
+    ]);
+    expect(await parts(nav('Sort').getByRole('link', { name: 'A to Z' }))).toEqual([
+      ['nsfw', 'show'],
+      ['q', q],
+      ['scope', 'local'],
+      ['sort', 'name'],
+    ]);
+    expect(await parts(nav('NSFW').getByRole('link', { name: 'Only NSFW' }))).toEqual([
+      ['nsfw', 'only'],
+      ['q', q],
+      ['scope', 'local'],
+      ['sort', 'newest'],
+    ]);
+    // Page 2 links back to page 1 with everything else.
+    expect(await parts(page.getByRole('link', { name: /Previous/ }))).toEqual([
+      ['nsfw', 'show'],
+      ['q', q],
+      ['scope', 'local'],
+      ['sort', 'newest'],
+    ]);
+    // A search keeps the scope, the sort and the NSFW choice and goes back to page 1.
+    await page.getByRole('searchbox', { name: 'Search communities' }).fill(seed.communities.adult);
+    await page.getByRole('search').getByRole('button', { name: 'Search', exact: true }).click();
+    await page.waitForURL((url) => url.searchParams.get('q') === seed.communities.adult);
+    expect([...new URL(page.url()).searchParams].sort(([a], [b]) => a.localeCompare(b))).toEqual([
+      ['nsfw', 'show'],
+      ['q', seed.communities.adult],
+      ['scope', 'local'],
+      ['sort', 'newest'],
+    ]);
+    await expect(row(page, seed.communities.adult)).toBeVisible();
     await context.close();
   });
 
@@ -323,6 +424,46 @@ test.describe('resolve', () => {
     await expect(plain.page.getByRole('textbox', { name: 'Handle or link' })).toHaveValue('nonsense');
     await plain.context.close();
     await context.close();
+  });
+
+  test('Cancel stops a pending lookup; Try again sends it again, hydrated and without JavaScript', async ({ browser }) => {
+    const handle = `${seed.communities.remote}@${seed.host}`;
+    const { context, page } = await as(browser, viewerState);
+    // The other server is stood in for: the first lookup never answers, the second answers late as unreachable.
+    let calls = 0;
+    await page.route('**/resolve', async (route) => {
+      if (route.request().method() !== 'POST') return route.continue();
+      calls += 1;
+      if (calls === 1) return; // left hanging until the page aborts it
+      if (calls === 2) return route.fulfill({ status: 504, json: { error: 'peer.unreachable' } });
+      return route.continue();
+    });
+    await gotoHydrated(page, '/resolve');
+    await page.getByRole('textbox', { name: 'Handle or link' }).fill(`!${handle}`);
+    await page.getByRole('button', { name: 'Find' }).click();
+    const pending = page.getByRole('status').filter({ hasText: `Asking ${seed.host}` });
+    await expect(pending).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Find' })).toBeDisabled();
+    await pending.getByRole('button', { name: 'Cancel' }).click();
+    await expect(pending).toHaveCount(0);
+    await expect(page.getByRole('alert')).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Find' })).toBeEnabled();
+
+    await page.getByRole('button', { name: 'Find' }).click();
+    const failed = page.getByRole('alert');
+    await expect(failed).toContainText('That server did not answer in time.');
+    await failed.getByRole('button', { name: 'Try again' }).click();
+    await page.waitForURL(`**/c/${handle}`);
+    expect(calls).toBe(3);
+    await context.close();
+
+    // Without script the refusal comes back in the address, and Try again posts the same words again.
+    const plain = await as(browser, viewerState, { javaScriptEnabled: false });
+    await plain.page.goto(`/resolve?q=${encodeURIComponent(`!${handle}`)}&error=peer.unreachable`);
+    await expect(plain.page.getByRole('alert')).toContainText('That server did not answer in time.');
+    await plain.page.getByRole('button', { name: 'Try again' }).click();
+    await plain.page.waitForURL(`**/c/${handle}`);
+    await plain.context.close();
   });
 
   test('a held remote community and person open on their pages here, not a not-found page', async ({ browser }) => {

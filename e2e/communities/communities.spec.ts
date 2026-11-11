@@ -308,6 +308,52 @@ test.describe('the community page', () => {
     await admin.context().close();
   });
 
+  test('without JavaScript a moderator reaches every Mod tools destination; opened, Modlog is listed once', async ({ browser }) => {
+    const { restricted } = seed.communities;
+    const signed = await (await browser.newContext()).newPage();
+    await signedIn(signed, seed.people.moderator);
+    // Opened in place once hydrated: Reports, Edit community and the moderation slot's Modlog, each once.
+    await gotoHydrated(signed, community(restricted.handle));
+    await signed.getByRole('button', { name: 'Mod tools' }).click();
+    const tools = signed.locator('.cm-tools');
+    await expect(tools.getByRole('link')).toHaveText(['Reports', 'Edit community', 'Modlog']);
+
+    const plain = await (
+      await browser.newContext({ javaScriptEnabled: false, storageState: await signed.context().storageState() })
+    ).newPage();
+    await signed.context().close();
+    await plain.goto(community(restricted.handle));
+    await plain.getByRole('link', { name: 'Mod tools' }).click();
+    await plain.waitForURL(/[?&]tools=1/);
+    await expect(plain.getByRole('link', { name: 'Reports' })).toHaveAttribute('href', /\/admin\/reports\?community=/);
+    await expect(plain.locator('.cm-tools').getByRole('link', { name: 'Modlog' })).toHaveAttribute('href', /\/modlog\?community=/);
+    await plain.getByRole('link', { name: 'Edit community' }).click();
+    await plain.waitForURL(`**/c/${restricted.handle}/edit`);
+    await expect(plain.getByRole('heading', { level: 1 })).toHaveText('Edit community');
+    await plain.context().close();
+  });
+
+  test('rule texts read without JavaScript', async ({ browser }) => {
+    const plain = await (await browser.newContext({ javaScriptEnabled: false })).newPage();
+    await plain.goto(community(seed.communities.open.handle));
+    await expect(plain.locator('.cm-rules > li').first()).toContainText('Be civil');
+    await expect(plain.getByText('No harassment.')).toBeVisible();
+    await plain.context().close();
+  });
+
+  test('without JavaScript a pending join to a remote community is cancelled with a plain form post', async ({ page, browser }) => {
+    await signedIn(page, seed.people.member);
+    const plain = await (
+      await browser.newContext({ javaScriptEnabled: false, storageState: await page.context().storageState() })
+    ).newPage();
+    await plain.goto(community(seed.communities.remote.handle));
+    await plain.getByRole('button', { name: 'Join', exact: true }).click();
+    await expect(plain.getByRole('button', { name: 'Pending' })).toBeVisible();
+    await plain.getByRole('button', { name: 'Pending' }).click();
+    await expect(plain.getByRole('button', { name: 'Join', exact: true })).toBeVisible();
+    await plain.context().close();
+  });
+
   test('unknown, and noindex only when the community says so', async ({ page }) => {
     const missing = await html(page, '/c/nobody_here');
     expect(missing.status).toBe(404);
@@ -420,6 +466,22 @@ test.describe('the community form', () => {
     await gotoHydrated(page, `/c/${restricted.handle}/edit`);
     await expect(page.getByLabel('Title')).toHaveValue('Renamed notices');
     await expect(page.getByRole('checkbox', { name: 'Posting restricted to moderators' })).not.toBeChecked();
+  });
+
+  test("a moderator's edit without JavaScript is a plain form post and a 303 to the page", async ({ page, browser }) => {
+    const { restricted } = seed.communities;
+    await signedIn(page, seed.people.moderator);
+    const plain = await (
+      await browser.newContext({ javaScriptEnabled: false, storageState: await page.context().storageState() })
+    ).newPage();
+    await plain.goto(`/c/${restricted.handle}/edit`);
+    await plain.getByLabel('Title').fill('Edited without script');
+    await plain.getByRole('textbox', { name: 'Rule 1', exact: true }).fill('Plain rule');
+    await plain.getByRole('button', { name: 'Save changes' }).click();
+    await plain.waitForURL(`**${community(restricted.handle)}`);
+    await expect(plain.getByRole('heading', { level: 1 })).toHaveText('Edited without script');
+    await expect(plain.locator('.cm-rules > li')).toHaveText(['Plain rule']);
+    await plain.context().close();
   });
 });
 
