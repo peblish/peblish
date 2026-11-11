@@ -1,202 +1,137 @@
-/* A profile after the R2 mock profile-side.html and the R2b mock profile-edit-inline.html:
-   structure and states, not final styling. The sort links reuse the feed toolbar's .feed-seg. */
+/* A profile (profile-side) and its edit page (profile-edit-inline): layout only, on Mux UI tokens.
+   The card is a Mux Card, the tabs and sort are LinkTabs, notices are Notice. */
 @layer app {
   .prof-lay {
     display: grid;
-    grid-template-columns: 260px minmax(0, 1fr);
-    gap: 24px;
+    grid-template-columns: 280px minmax(0, 1fr);
+    gap: var(--muxui-semantic-layout-content-gap);
     align-items: start;
   }
+
   .prof-card {
     position: sticky;
-    top: 16px;
-    border-top: 1px solid var(--pb-fg);
-    padding-top: 12px;
+    top: var(--muxui-semantic-layout-inset-medium);
   }
-  .prof-avatar {
-    display: block;
-    width: 64px;
-    height: 64px;
-    border-radius: 4px;
-    object-fit: cover;
-  }
-  .prof-initial {
+
+  .prof-head,
+  .prof-body {
     display: grid;
-    place-items: center;
-    background: var(--pb-hover);
-    border: 1px solid var(--pb-line);
-    font-size: 28px;
-    font-weight: 600;
+    gap: var(--muxui-semantic-layout-tight-gap);
+    justify-items: start;
   }
-  .prof-card h1 {
-    margin-top: 10px;
-    font-size: 20px;
-    overflow-wrap: anywhere;
+
+  .prof-body {
+    gap: var(--muxui-semantic-layout-group-gap);
   }
-  .prof-handle,
-  .prof-badges {
-    margin: 2px 0 6px;
-  }
-  .prof-badges {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 4px;
-  }
-  .prof-card .pb-badge {
-    padding: 0 5px;
-    border: 1px solid var(--pb-line);
-    border-radius: 3px;
-    font-size: 12px;
-  }
-  .prof-bio {
-    margin: 8px 0;
-  }
-  .prof-facts {
-    margin: 10px 0;
-    display: grid;
-    gap: 2px;
-  }
-  .prof-facts div {
-    display: flex;
-    gap: 8px;
-  }
-  .prof-facts dt {
-    min-width: 5.5em;
-    color: var(--pb-muted);
-  }
-  .prof-facts dd {
+
+  .prof-head p,
+  .prof-name {
     margin: 0;
   }
-  .prof-actions {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-    margin: 10px 0 0;
+
+  .prof-name {
+    margin-block-start: var(--muxui-semantic-layout-tight-gap);
+    overflow-wrap: anywhere;
   }
-  .prof-actions a,
-  .prof-actions button {
-    text-align: center;
-  }
-  .prof-tabs {
+
+  .prof-badges {
     display: flex;
     flex-wrap: wrap;
-    border-bottom: 1px solid var(--pb-fg);
+    gap: var(--muxui-semantic-layout-micro-gap);
   }
-  .prof-tabs a {
-    padding: 5px 12px;
-    margin-bottom: -1px;
-    border-bottom: 2px solid transparent;
-    color: var(--pb-muted);
-    text-decoration: none;
+
+  .prof-bio {
+    margin: 0;
   }
-  .prof-tabs a[aria-current='page'] {
-    border-bottom-color: var(--pb-fg);
-    color: var(--pb-fg);
-    font-weight: 600;
+
+  .prof-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--muxui-semantic-layout-action-gap);
   }
-  .prof-tabcount {
-    color: var(--pb-muted);
-    font-weight: 400;
+
+  .prof-main {
+    display: grid;
+    gap: var(--muxui-semantic-layout-group-gap);
+    min-width: 0;
   }
+
   .prof-toolbar {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 6px 16px;
-    padding: 8px 0;
+    justify-content: space-between;
+    gap: var(--muxui-semantic-layout-action-gap);
   }
+
   .prof-list {
+    display: grid;
     margin: 0;
     padding: 0;
     list-style: none;
   }
-  .prof-comment {
-    padding: 8px 0;
-    border-bottom: 1px solid var(--pb-line);
+
+  .prof-list[data-density='card'] {
+    gap: var(--muxui-semantic-layout-group-gap);
   }
-  .prof-comment-meta,
-  .prof-comment-actions {
-    margin: 0 0 4px;
-    color: var(--pb-muted);
+
+  .prof-list:not([data-density='card']) > .prof-comment {
+    padding-block: var(--muxui-semantic-layout-inset-small);
+    border-block-end: 1px solid var(--muxui-semantic-border-faint);
   }
+
+  .prof-comment-body {
+    display: grid;
+    gap: var(--muxui-semantic-layout-tight-gap);
+  }
+
+  .prof-comment-body > p {
+    margin: 0;
+  }
+
   .prof-comment-actions {
     display: flex;
     flex-wrap: wrap;
-    gap: 4px 12px;
+    align-items: center;
+    gap: var(--muxui-semantic-layout-micro-gap) var(--muxui-semantic-layout-action-gap);
   }
-  .prof-score {
-    color: var(--pb-fg);
-    font-weight: 600;
-  }
-  .prof-empty,
-  .prof-notice {
-    margin: 12px 0;
-    padding: 8px 10px;
-    border: 1px solid var(--pb-line);
-    border-left-width: 3px;
-  }
-  .prof-notice > p {
-    margin: 0 0 8px;
-  }
+
   .prof-form {
     display: grid;
-    gap: 14px;
+    gap: var(--muxui-semantic-layout-section-gap);
     max-width: 640px;
   }
+
   .prof-form h2 {
-    font-size: 18px;
+    margin: 0;
   }
+
   .prof-field {
     display: grid;
-    gap: 3px;
+    gap: var(--muxui-semantic-layout-micro-gap);
   }
-  .prof-field > label,
-  .prof-field > .lb {
-    font-weight: 600;
-  }
-  .prof-field input[type='text'] {
-    font: inherit;
-    color: var(--muxui-semantic-field-content);
-    background: var(--muxui-semantic-field-background);
-    border: 1px solid var(--muxui-semantic-field-border);
-    border-radius: 2px;
-    padding: 5px 7px;
-    width: 100%;
-    box-sizing: border-box;
-  }
-  .prof-hint {
-    color: var(--pb-muted);
-  }
+
   .prof-count {
     justify-self: end;
-    color: var(--pb-muted);
     font-variant-numeric: tabular-nums;
   }
+
   .prof-count[data-over] {
-    color: var(--pb-error);
+    color: var(--muxui-semantic-feedback-invalid);
   }
+
   .prof-buttons {
     display: flex;
-    gap: 8px;
     align-items: center;
+    gap: var(--muxui-semantic-layout-action-gap);
   }
-  .prof-saved,
-  .prof-error {
-    margin: 0;
-    padding: 6px 8px;
-    border: 1px solid var(--pb-line);
-    border-left-width: 3px;
-  }
-  .prof-saved {
-    border-left-color: var(--pb-ok);
-  }
-  .prof-error {
-    border-left-color: var(--pb-error);
-  }
+
   @media (max-width: 760px) {
     .prof-lay {
       grid-template-columns: minmax(0, 1fr);
     }
+
     .prof-card {
       position: static;
     }

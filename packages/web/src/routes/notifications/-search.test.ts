@@ -1,7 +1,7 @@
 import { notificationKinds } from '@peblish/core/notifications/view';
 import { expect, test } from 'vitest';
 import { catalogues } from '../../registry/i18n.gen.ts';
-import { inboxHref, parseInboxSearch } from './-search.ts';
+import { inboxAction, inboxHref, parseInboxSearch } from './-search.ts';
 
 test('the notifications catalogue has the same keys in en and de, and a type label for every kind', () => {
   expect(Object.keys(catalogues.notifications.de).sort()).toEqual(Object.keys(catalogues.notifications.en).sort());
@@ -34,4 +34,11 @@ test('the inbox address leaves out what is default', () => {
   expect(inboxHref({ filter: 'all' })).toBe('/notifications');
   expect(inboxHref({ filter: 'mentions' })).toBe('/notifications?filter=mentions');
   expect(inboxHref({ filter: 'replies', cursor: 'abc', error: 'invalid' })).toBe('/notifications?filter=replies&cursor=abc&error=invalid');
+});
+
+test('a form posts its intent, notice and page in the address', () => {
+  expect(inboxAction({ intent: 'read_all' })).toBe('/notifications?intent=read_all');
+  expect(inboxAction({ intent: 'read', id: 'n1' }, { filter: 'replies', cursor: 'c1' })).toBe(
+    '/notifications?intent=read&id=n1&filter=replies&cursor=c1',
+  );
 });

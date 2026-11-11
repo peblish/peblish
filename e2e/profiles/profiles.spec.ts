@@ -81,7 +81,7 @@ test.describe('anyone', () => {
 
   test('the Top sort is a link and a bad cursor starts again at the first page', async ({ page }) => {
     await gotoHydrated(page, `${profile(seed.owner.name)}?tab=posts`);
-    await page.getByRole('group', { name: 'Sort' }).getByRole('link', { name: 'Top' }).click();
+    await page.getByRole('navigation', { name: 'Sort' }).getByRole('link', { name: 'Top' }).click();
     await expect(page).toHaveURL(/sort=top/);
     await expect(page.getByText(seed.posts.owner[0]!)).toBeVisible();
     await gotoHydrated(page, `${profile(seed.owner.name)}?tab=posts&after=garbage&sort=nonsense`);
@@ -156,7 +156,9 @@ test.describe('signed in', () => {
     // A member's comment rows carry the action slots (the Block form among them): they hydrate cleanly.
     const log = recordConsole(page);
     await gotoHydrated(page, `${profile(seed.owner.name)}?tab=comments`);
-    await expect(page.locator('.prof-comment').getByRole('button', { name: 'Block' }).first()).toBeVisible();
+    await expect(
+      page.getByRole('list', { name: 'Posts and comments' }).getByRole('listitem').getByRole('button', { name: 'Block' }).first(),
+    ).toBeVisible();
     expect(log.hydrationProblems()).toEqual([]);
   });
 

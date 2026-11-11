@@ -1,6 +1,10 @@
 import { insertSpoiler } from '@peblish/core/markdown/toolbar';
 import { bioMax, displayNameMax } from '@peblish/core/profiles/input';
 import { Button } from '@peblish/ui/components/button';
+import { Link } from '@peblish/ui/components/link';
+import { Notice } from '@peblish/ui/components/notice';
+import { Text } from '@peblish/ui/components/text';
+import { TextField } from '@peblish/ui/components/text-field';
 import { MarkdownEditor } from '@peblish/ui/composer/markdown-editor';
 import { useRouter } from '@tanstack/react-router';
 import { type } from 'arktype';
@@ -14,7 +18,21 @@ import type { EditData } from '../-load.ts';
 const Answer = type({ 'saved?': 'boolean', 'error?': 'string' });
 const known = new Set(['profile.invalid', 'auth.required', 'auth.site_banned', 'target.deleted', 'generic', 'network']);
 
-/** profile-edit-inline.html: the display name and the bio with Write and Preview. Posts by fetch once hydrated, else natively (303 back). */
+/** The character count under a field, which turns to the danger colour past the limit. */
+function Count({ count, max, over }: { count: string; max: string; over: boolean }) {
+  const { t } = useTranslate();
+  return (
+    <Text size="sm" color="muted" className="prof-count" data-over={over || undefined}>
+      {t('profiles', 'edit.count', { count, max })}
+    </Text>
+  );
+}
+
+/**
+ * profile-edit-inline.html: the display name and the bio with Write and Preview. Posts by fetch once
+ * hydrated, else natively (303 back). A plain `form`: Mux UI's Form lives in its heavy fields module,
+ * and the light fields here need nothing from it.
+ */
 export function EditForm({ data, saved, error: initial }: { data: EditData; saved: boolean; error: string | undefined }) {
   const { t, locale } = useTranslate();
   const router = useRouter();
@@ -24,6 +42,7 @@ export function EditForm({ data, saved, error: initial }: { data: EditData; save
   const [state, setState] = useState<{ saved: boolean; error: string | undefined }>({ saved, error: initial });
   const [busy, setBusy] = useState(false);
   const path = userPath(data.profile.person);
+  const handle = `@${data.profile.person.handle}`;
   const number = (n: number) => new Intl.NumberFormat(locale).format(n);
   const overName = displayName.length > displayNameMax;
   const overBio = bio.length > bioMax;
@@ -52,43 +71,41 @@ export function EditForm({ data, saved, error: initial }: { data: EditData; save
   const errorKey = state.error && (known.has(state.error) ? state.error : 'generic');
   return (
     <form method="post" action={`${path}/edit`} aria-busy={busy} className="prof-form" onSubmit={submit}>
-      <h2>{t('profiles', 'edit.title')}</h2>
+      <Text as="h2" variant="heading" size="sm">
+        {t('profiles', 'edit.title')}
+      </Text>
       {state.saved && (
-        <p className="prof-saved" role="status">
-          {t('profiles', 'edit.saved')} <a href={path}>{t('profiles', 'edit.view')}</a>
-        </p>
+        <Notice tone="success" role="status" action={<Link href={path}>{t('profiles', 'edit.view')}</Link>}>
+          {t('profiles', 'edit.saved')}
+        </Notice>
       )}
       {errorKey && (
-        <p className="prof-error" role="alert">
+        <Notice tone="danger" role="alert">
           {t('profiles', `edit.error.${errorKey}` as 'edit.error.generic', { name: displayNameMax, bio: number(bioMax) })}
-        </p>
+        </Notice>
       )}
 
       <div className="prof-field">
-        <label htmlFor="prof-name">{t('profiles', 'edit.displayName')}</label>
-        <input
-          id="prof-name"
+        <TextField
+          label={t('profiles', 'edit.displayName')}
           name="displayName"
-          type="text"
           autoComplete="name"
           value={displayName}
-          onChange={(event) => setDisplayName(event.target.value)}
-          aria-describedby="prof-name-hint"
-          aria-invalid={overName || undefined}
+          onChange={setDisplayName}
+          description={t('profiles', 'edit.displayNameHint', { handle })}
+          invalid={overName}
         />
-        <span id="prof-name-hint" className="prof-hint">
-          {t('profiles', 'edit.displayNameHint', { handle: `@${data.profile.person.handle}` })}
-        </span>
-        <span className="prof-count" data-over={overName || undefined}>
-          {t('profiles', 'edit.count', { count: number(displayName.length), max: number(displayNameMax) })}
-        </span>
-        <span className="prof-hint">{t('profiles', 'edit.handle', { handle: `@${data.profile.person.handle}` })}</span>
+        <Count count={number(displayName.length)} max={number(displayNameMax)} over={overName} />
+        <Text size="sm" color="muted">
+          {t('profiles', 'edit.handle', { handle })}
+        </Text>
       </div>
 
       <div className="prof-field">
-        <span className="lb" id="prof-bio-label">
+        {/* The editor names its textarea itself and leaves the visible label to the page. */}
+        <Text as="div" variant="label">
           {t('profiles', 'edit.bio')}
-        </span>
+        </Text>
         <MarkdownEditor
           name="bio"
           label={t('profiles', 'edit.bio')}
@@ -105,17 +122,17 @@ export function EditForm({ data, saved, error: initial }: { data: EditData; save
           description={t('profiles', 'edit.bioHint')}
           invalid={overBio}
         />
-        <span className="prof-count" data-over={overBio || undefined}>
-          {t('profiles', 'edit.count', { count: number(bio.length), max: number(bioMax) })}
-        </span>
+        <Count count={number(bio.length)} max={number(bioMax)} over={overBio} />
       </div>
 
-      <p className="prof-hint">{t('profiles', 'edit.public')}</p>
+      <Text as="p" size="sm" color="muted">
+        {t('profiles', 'edit.public')}
+      </Text>
       <div className="prof-buttons">
         <Button type="submit" variant="primary" disabled={overName || overBio || busy}>
           {t('profiles', 'edit.save')}
         </Button>
-        <a href={path}>{t('profiles', 'edit.cancel')}</a>
+        <Link href={path}>{t('profiles', 'edit.cancel')}</Link>
       </div>
     </form>
   );
