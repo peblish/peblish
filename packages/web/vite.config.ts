@@ -4,7 +4,7 @@ import viteReact from '@vitejs/plugin-react';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { nitro } from 'nitro/vite';
-import { defineConfig, parseSync, type Plugin } from 'vite';
+import { defineConfig, parseSync, type Plugin, Visitor } from 'vite';
 
 /** The locales the UI ships (src/i18n/negotiate.ts); React Aria's translated strings for any other are dropped from the bundle. */
 const locales = ['en-US', 'de-DE'];
@@ -25,6 +25,8 @@ const vendorGroups = {
 const substrateQuery = '?mux-substrate=';
 const substrateHelpers = 'helpers';
 
+const substratePartId = (file: string, part: string) => JSON.stringify(file + substrateQuery + part);
+
 function substrateDrift(file: string, what: string): never {
   throw new Error(
     `peblish:split-mux-substrate: ${what} in ${file}. Mux UI's substrate.js changed shape; update splitMuxSubstrate in vite.config.ts.`,
@@ -37,14 +39,39 @@ function parseProgram(file: string, code: string) {
   return program;
 }
 
-/** substrate.js in three parts: its imports, its helpers (every top-level statement that is not exported) and its exported wrappers by name. */
-function splitSubstrate(file: string) {
-  const code = readFileSync(file, 'utf8');
+/**
+ * Each identifier a program reads, with its offset: every Identifier except non-computed member, key and meta-property
+ * names. Bindings count too, so a local that shadows a wrapper's name fails closed.
+ */
+function identifierReads(program: ReturnType<typeof parseProgram>) {
+  const reads: { name: string; at: number }[] = [];
+  const names = new Set<object>();
+  const key = (node: { computed: boolean; key: object }) => void (node.computed || names.add(node.key));
+  new Visitor({
+    MemberExpression: (node) => void (node.computed || names.add(node.property)),
+    Property: (node) => void (node.computed || node.shorthand || names.add(node.key)),
+    MethodDefinition: key,
+    PropertyDefinition: key,
+    AccessorProperty: key,
+    MetaProperty: (node) => void names.add(node.meta).add(node.property),
+    Identifier: (node) => void (names.has(node) || reads.push({ name: node.name, at: node.start })),
+  }).visit(program);
+  return reads;
+}
+
+/**
+ * substrate.js in three parts: its imports, its helpers (every top-level statement that is not exported) and its
+ * exported wrappers by name. Each wrapper's module imports only the helpers, so a wrapper or helper that reads another
+ * wrapper is drift.
+ */
+export function splitSubstrate(file: string, code = readFileSync(file, 'utf8')) {
   const imports: string[] = [];
   const helpers: string[] = [];
   const names: string[] = [];
   const wrappers = new Map<string, string>();
-  for (const node of parseProgram(file, code).body) {
+  const statements: { node: { start: number; end: number }; wrapper?: string }[] = [];
+  const program = parseProgram(file, code);
+  for (const node of program.body) {
     const text = code.slice(node.start, node.end);
     if (node.type === 'ImportDeclaration') imports.push(text);
     else if (node.type === 'ExportNamedDeclaration') {
@@ -52,19 +79,49 @@ function splitSubstrate(file: string) {
       const id = declarator.length === 1 ? declarator[0]!.id : undefined;
       if (id?.type !== 'Identifier') substrateDrift(file, 'an export other than `export const AriaX = ...`');
       wrappers.set(id.name, text);
+      statements.push({ node, wrapper: id.name });
     } else if (node.type.startsWith('Export')) substrateDrift(file, `an ${node.type}`);
     else {
       if (node.type === 'FunctionDeclaration' && node.id) names.push(node.id.name);
-      if (node.type === 'VariableDeclaration')
+      else if (node.type === 'VariableDeclaration')
         for (const { id } of node.declarations) {
           if (id.type !== 'Identifier') substrateDrift(file, 'a destructured helper');
           names.push(id.name);
         }
+      else substrateDrift(file, `a top-level ${node.type}`);
       helpers.push(text);
+      statements.push({ node });
     }
   }
   if (wrappers.size === 0) substrateDrift(file, 'no `export const AriaX` wrappers');
+  for (const { name, at } of identifierReads(program)) {
+    if (!wrappers.has(name)) continue;
+    const statement = statements.find(({ node }) => node.start <= at && at < node.end);
+    if (statement && statement.wrapper !== name)
+      substrateDrift(file, `${statement.wrapper ?? 'a helper'} reading the exported wrapper ${name}`);
+  }
   return { imports: imports.join('\n'), helpers: helpers.join('\n'), names: names.join(', '), wrappers };
+}
+
+/** Points each `import { AriaX } from './substrate.js'` in a Mux file (`id`) at the module that holds only AriaX. */
+export function rewriteSubstrateImports(id: string, code: string) {
+  const file = join(dirname(id), 'substrate.js');
+  let out = '';
+  let last = 0;
+  for (const node of parseProgram(id, code).body) {
+    if (!('source' in node) || node.source?.value !== './substrate.js') continue;
+    if (node.type !== 'ImportDeclaration') substrateDrift(id, 'a re-export of substrate.js');
+    if (node.specifiers.length === 0) substrateDrift(id, 'a side-effect-only import of substrate.js');
+    const imports = node.specifiers.map((specifier) =>
+      specifier.type === 'ImportSpecifier' && specifier.imported.type === 'Identifier'
+        ? `import { ${specifier.imported.name} as ${specifier.local.name} } from ${substratePartId(file, specifier.imported.name)};`
+        : substrateDrift(id, 'a default or namespace import of substrate.js'),
+    );
+    out += code.slice(last, node.start) + imports.join(' ');
+    last = node.end;
+  }
+  // The rewrite moves code across lines, so client source maps need mappings for it and for the virtual modules first.
+  return last === 0 ? null : { code: out + code.slice(last), map: null };
 }
 
 /**
@@ -81,7 +138,6 @@ function splitSubstrate(file: string) {
  */
 export function splitMuxSubstrate(): Plugin {
   const parts = new Map<string, ReturnType<typeof splitSubstrate>>();
-  const partId = (file: string, part: string) => JSON.stringify(file + substrateQuery + part);
   return {
     name: 'peblish:split-mux-substrate',
     apply: 'build',
@@ -98,30 +154,14 @@ export function splitMuxSubstrate(): Plugin {
           return { code: `${substrate.imports}\n${substrate.helpers}\nexport { ${substrate.names} };\n`, moduleSideEffects: false };
         const wrapper = substrate.wrappers.get(part) ?? substrateDrift(file, `no wrapper named ${part}`);
         return {
-          code: `${substrate.imports}\nimport { ${substrate.names} } from ${partId(file, substrateHelpers)};\n${wrapper}\n`,
+          code: `${substrate.imports}\nimport { ${substrate.names} } from ${substratePartId(file, substrateHelpers)};\n${wrapper}\n`,
           moduleSideEffects: false,
         };
       },
     },
     transform: {
       filter: { id: /[\\/]@muxui[\\/]react[\\/]generated[\\/][^\\/?]+\.m?js$/, code: './substrate.js' },
-      handler(code, id) {
-        const file = join(dirname(id), 'substrate.js');
-        let out = '';
-        let last = 0;
-        for (const node of parseProgram(id, code).body) {
-          if (!('source' in node) || node.source?.value !== './substrate.js') continue;
-          if (node.type !== 'ImportDeclaration') substrateDrift(id, 'a re-export of substrate.js');
-          const imports = node.specifiers.map((specifier) =>
-            specifier.type === 'ImportSpecifier' && specifier.imported.type === 'Identifier'
-              ? `import { ${specifier.imported.name} as ${specifier.local.name} } from ${partId(file, specifier.imported.name)};`
-              : substrateDrift(id, 'a default or namespace import of substrate.js'),
-          );
-          out += code.slice(last, node.start) + imports.join(' ');
-          last = node.end;
-        }
-        return last === 0 ? null : { code: out + code.slice(last), map: null };
-      },
+      handler: (code, id) => rewriteSubstrateImports(id, code),
     },
   };
 }
