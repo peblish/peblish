@@ -1,4 +1,4 @@
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { closePools } from '../db/pools.ts';
 import { db } from '../db/read.ts';
 import { localInstance } from '../db/local-instance.ts';
@@ -135,6 +135,25 @@ async function e2e() {
     /** A remote person held here, whom a lookup sends to /u/<name>@<host>. */
     remotePerson: person.name,
   };
+}
+
+/**
+ * A listed remote community whose name carries a right-to-left override, with the most
+ * subscribers, so it heads the directory's default order (by subscribers) and every visit to
+ * /communities draws one handle with the replacement mark (the payload budget's font check, which
+ * e2e/payload/seed.ts runs this for). Made only when the community with the most subscribers is
+ * not already one, so repeated runs add no more. Escapes only: no control character here.
+ */
+export async function seedBidiCommunityOnTop() {
+  const [most] = await writer().execute<{ name: string; subscribers: number }>(
+    sql`select actors.name, count(*)::int as subscribers from follows join actors on actors.id = follows.followee_id
+        where follows.state = 'accepted' and actors.kind = 'Group' group by actors.id order by subscribers desc limit 1`,
+  );
+  if (most && /[\u202a-\u202e\u2066-\u2069\u200e\u200f\u061c]/.test(most.name)) return;
+  const suffix = Math.random().toString(36).slice(2, 8);
+  const far = await seedInstance(`bidi-${suffix}.example`, false);
+  const community = await seedActor(far, 'Group', `bidi\u202E${suffix}`);
+  for (let i = 0; i <= (most?.subscribers ?? 0); i++) await seedFollow(await seedActor(far, 'Person', `fan_${suffix}_${i}`), community);
 }
 
 if (import.meta.main) {

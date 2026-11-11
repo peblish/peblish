@@ -45,21 +45,6 @@
     overflow-wrap: anywhere;
   }
 
-  a {
-    color: inherit;
-  }
-
-  a:hover {
-    text-decoration: underline;
-  }
-
-  h1,
-  h2,
-  h3,
-  h4 {
-    margin: 0;
-  }
-
   .pb-sr {
     position: absolute;
     width: 1px;

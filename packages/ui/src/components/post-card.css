@@ -76,17 +76,10 @@
 
   .pb-post__title .muxui-link {
     /* Inline, so a long title wraps with the tags and domain around it. Mux gap: Link has no
-       inherit tone and no inline mode. */
+       inline mode. Its colour comes from pb-link-quiet (link.css). */
     display: inline;
-    color: inherit;
     font-weight: inherit;
     line-height: inherit;
-  }
-
-  /* The links in a post underline on hover only (the global a:hover rule). Mux gap: Link has no
-     underline option. */
-  .pb-post__body .muxui-link:not(:hover) {
-    text-decoration: none;
   }
 
   /* A one-line title is at least 24px tall: WCAG 2.2's target size when another link is within 12px. */

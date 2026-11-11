@@ -107,3 +107,38 @@ for (const scheme of ['Light', 'Dark'] as const) {
     await signedIn.context().close();
   });
 }
+
+// Links are Mux Link as it comes (link colour) or quiet in muted text (pb-link-muted, link.css),
+// and sit on the page, on raised cards and on quiet fills. Axe sees the links a page happens to
+// show; this measures each colour on each surface, at rest and hovered, whatever the seed shows.
+// (The sidebar footer's muted links and the top bar's are measured above, on their own surfaces.)
+const surfaces = ['surface-background', 'surface-raised', 'surface-subtle'] as const;
+const inks = ['content-link', 'content-link-hover', 'content-muted'] as const;
+for (const scheme of ['Light', 'Dark'] as const) {
+  test(`in ${scheme}, link and muted text reach 4.5:1 on the page, raised and subtle surfaces`, async ({ page }) => {
+    await gotoHydrated(page, '/all');
+    await choose(page, scheme);
+    await page
+      .locator('main')
+      .first()
+      .evaluate(
+        (main, [surfaces, inks]) => {
+          for (const surface of surfaces) {
+            const box = main.appendChild(document.createElement('div'));
+            box.style.background = `var(--muxui-semantic-${surface})`;
+            for (const ink of inks) {
+              const sample = box.appendChild(document.createElement('span'));
+              sample.dataset.sample = `${ink} on ${surface}`;
+              sample.style.color = `var(--muxui-semantic-${ink})`;
+              sample.textContent = 'Aa';
+            }
+          }
+        },
+        [surfaces, inks] as const,
+      );
+    const samples = Object.fromEntries(
+      surfaces.flatMap((surface) => inks.map((ink) => [`${ink} on ${surface}`, page.locator(`[data-sample="${ink} on ${surface}"]`)])),
+    );
+    await measure(page, scheme, samples);
+  });
+}

@@ -312,7 +312,9 @@ function Detail({ row }: { row: QuarantineRow }) {
                   <ul className="media-used-by">
                     {row.livePosts.map((post) => (
                       <li key={post.id}>
-                        <Link href={`/post/${post.id}`}>{post.title}</Link>
+                        <Link className="pb-link-quiet" href={`/post/${post.id}`}>
+                          {post.title}
+                        </Link>
                       </li>
                     ))}
                   </ul>

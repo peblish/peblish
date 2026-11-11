@@ -250,6 +250,20 @@ test.describe('anyone', () => {
     }
   });
 
+  test('a remote title with a right-to-left override is isolated and drawn without it, in the feed and on its page', async ({ page }) => {
+    const { hostile } = names;
+    const controls = /[\u202a-\u202e\u2066-\u2069\u200e\u200f\u061c]/g;
+    const plain = hostile.title.replace(controls, '');
+    await gotoHydrated(page, '/all?sort=new');
+    const title = page.locator(`.pb-post__title a[href="/post/${hostile.id}"]`).first();
+    await expect(title.locator('bdi')).toHaveText(plain);
+    expect(await title.textContent()).not.toMatch(controls);
+    await gotoHydrated(page, `/post/${hostile.id}`);
+    const heading = page.getByRole('heading', { level: 1, name: plain });
+    await expect(heading.locator('bdi')).toHaveText(plain);
+    expect(await heading.textContent()).not.toMatch(controls);
+  });
+
   test('a directional override in a remote username cannot move or reverse the host', async ({ page }) => {
     const { hostile } = names;
     await gotoHydrated(page, '/all?sort=new');

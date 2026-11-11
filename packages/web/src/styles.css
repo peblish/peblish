@@ -2,6 +2,7 @@
    measures Mux's alone. Same layer order as there; the first statement that names the layers wins. */
 @layer reset, muxui.tokens, muxui.components, muxui.utilities, app;
 @import '@peblish/ui/tokens/tokens.css';
+@import '@peblish/ui/components/link.css';
 @import '@peblish/ui/density/density-control.css';
 @import '@peblish/ui/components/vote-control.css';
 @import '@peblish/ui/components/post-card.css';

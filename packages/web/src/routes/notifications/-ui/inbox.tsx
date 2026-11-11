@@ -5,7 +5,7 @@ import { Badge } from '@peblish/ui/components/badge';
 import { Button } from '@peblish/ui/components/button';
 import { Card } from '@peblish/ui/components/card';
 import { EmptyState } from '@peblish/ui/components/empty-state';
-import { Handle, neutraliseBidi } from '@peblish/ui/components/handle';
+import { BidiText, Handle, neutraliseBidi } from '@peblish/ui/components/handle';
 import { Link } from '@peblish/ui/components/link';
 import { LinkTabs } from '@peblish/ui/components/link-tabs';
 import { Notice } from '@peblish/ui/components/notice';
@@ -211,7 +211,9 @@ function NoticeRow({
           {!account && (
             <>
               {' '}
-              {target && <Link href={target}>{item.postTitle ?? t('notifications', 'open')}</Link>}
+              {target && (
+                <Link href={target}>{item.postTitle !== null ? <BidiText text={item.postTitle} /> : t('notifications', 'open')}</Link>
+              )}
               {community && (
                 <Text color="muted">
                   {' '}

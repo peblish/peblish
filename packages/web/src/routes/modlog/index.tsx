@@ -169,7 +169,7 @@ function Rail({
   const communityTotal = facets.communities.reduce((sum, row) => sum + row.count, 0);
   const item = (label: React.ReactNode, count: number, target: string, current: boolean) => (
     <li>
-      <Link href={target} current={current} className="modlog-rail-link">
+      <Link href={target} current={current} className="modlog-rail-link pb-link-quiet">
         <Text className="modlog-rail-label">{label}</Text>
         <Note>{number.format(count)}</Note>
       </Link>
@@ -245,7 +245,7 @@ function Entry({ line }: { line: LineView }) {
       <div className="modlog-l2">
         {moderator && (!line.relayed || line.staff) ? (
           moderator.id ? (
-            <Link href={userPath(moderator)}>
+            <Link className="pb-link-muted" href={userPath(moderator)}>
               <Handle prefix="@" handle={moderator.handle} />
             </Link>
           ) : (

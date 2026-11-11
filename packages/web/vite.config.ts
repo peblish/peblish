@@ -134,9 +134,9 @@ function effectIn(node: Expression | null | undefined, pureCalls: ReadonlySet<nu
 
 /**
  * Fails the build on the first top-level initialiser or property-set value in `code` that may have effects
- * (see effectIn). Function declarations and imports have none.
+ * (see effectIn), through `drift` (the split's own error). Function declarations and imports have none.
  */
-function assertPureTopLevel(file: string, code: string) {
+function assertPureTopLevel(file: string, code: string, drift: (file: string, what: string) => never) {
   const { program, comments } = parseModule(file, code);
   // A call is marked pure when a /*#__PURE__*/ or /* @__PURE__ */ comment is all that comes before it.
   const pureCalls = new Set(
@@ -164,10 +164,7 @@ function assertPureTopLevel(file: string, code: string) {
       const effect = effectIn(value, pureCalls, react);
       if (!effect) continue;
       const line = code.slice(0, effect.start).split('\n').length;
-      declarationDrift(
-        file,
-        `a top-level value that may have effects (line ${line}: ${code.slice(effect.start, effect.end).slice(0, 80)})`,
-      );
+      drift(file, `a top-level value that may have effects (line ${line}: ${code.slice(effect.start, effect.end).slice(0, 80)})`);
     }
   }
 }
@@ -195,7 +192,8 @@ function identifierReads(program: ReturnType<typeof parseProgram>) {
 /**
  * substrate.js in three parts: its imports, its helpers (every top-level statement that is not exported) and its
  * exported wrappers by name. Each wrapper's module imports only the helpers, so a wrapper or helper that reads another
- * wrapper is drift.
+ * wrapper is drift. Every initialiser must also be free of effects (effectIn): a wrapper no route imports is left out
+ * of the client, so an effect in it would run on the server and silently not in the browser.
  */
 export function splitSubstrate(file: string, code = readFileSync(file, 'utf8')) {
   const imports: string[] = [];
@@ -233,6 +231,7 @@ export function splitSubstrate(file: string, code = readFileSync(file, 'utf8')) 
     if (statement && statement.wrapper !== name)
       substrateDrift(file, `${statement.wrapper ?? 'a helper'} reading the exported wrapper ${name}`);
   }
+  assertPureTopLevel(file, code, substrateDrift);
   return { imports: imports.join('\n'), helpers: helpers.join('\n'), names: names.join(', '), wrappers };
 }
 
@@ -328,7 +327,7 @@ const splitByDeclaration = /[\\/]@muxui[\\/]react[\\/]generated[\\/]overlays\.js
  */
 export function splitDeclarations(file: string, code = readFileSync(file, 'utf8')) {
   const program = parseProgram(file, code);
-  assertPureTopLevel(file, code);
+  assertPureTopLevel(file, code, declarationDrift);
   const imports: string[] = [];
   const declarations = new Map<string, { names: string[]; exported: boolean; text: string; ranges: { start: number; end: number }[] }>();
   const owner = new Map<string, string>();

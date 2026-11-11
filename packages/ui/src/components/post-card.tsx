@@ -3,7 +3,7 @@ import { useId, useState } from 'react';
 import { Badge, type BadgeLabels } from './badge.tsx';
 import { Button } from './button.tsx';
 import { Card } from './card.tsx';
-import { Handle, neutraliseBidi } from './handle.tsx';
+import { BidiText, Handle, neutraliseBidi } from './handle.tsx';
 import { ImageIcon, LinkIcon, TextIcon } from './icons.tsx';
 import { Image } from './image.tsx';
 import { Link } from './link.tsx';
@@ -148,7 +148,10 @@ export function PostCard({
           {post.locked && <Badge kind="locked">{labels.locked}</Badge>}
           {post.sensitive && <Badge kind="nsfw">{labels.nsfw}</Badge>}
           {post.nsfl && <Badge kind="nsfl">{labels.nsfl}</Badge>}
-          <Link href={hrefs.post}>{title}</Link>
+          <Link className="pb-link-quiet" href={hrefs.post}>
+            {/* A title from another server is isolated, its directional controls removed. */}
+            <BidiText text={title} />
+          </Link>
           {domain && !gone && (
             <Text size="xs" color="muted" className="pb-post__domain">
               {/* The domain comes from the post's link: isolated and left to right, like a handle's host. */}
@@ -162,7 +165,7 @@ export function PostCard({
           </Link>{' '}
           <span className="pb-post__by">
             {labels.by}{' '}
-            <Link href={hrefs.author}>
+            <Link className="pb-link-muted" href={hrefs.author}>
               <Handle prefix="@" handle={post.author.handle} />
             </Link>
             {post.authorBadge && <Badge kind={post.authorBadge} labels={labels.badges} />}
@@ -175,7 +178,7 @@ export function PostCard({
           </Text>
         )}
         <Text as="div" size="sm" className="pb-post__actions">
-          <Link className="pb-post__comments" href={hrefs.post}>
+          <Link className="pb-post__comments pb-link-quiet" href={hrefs.post}>
             {labels.comments(post.counts.comments)}
           </Link>
           {sensitive && (
@@ -211,7 +214,8 @@ export function PostCard({
         onVote={onVote}
         disabled={voteDisabled}
         labels={labels.vote}
-        label={labels.voteOn ? labels.voteOn(title) : `${labels.vote.group}: ${title}`}
+        // Named as the title is shown: its directional controls as the replacement mark, as the inbox's names are.
+        label={labels.voteOn ? labels.voteOn(neutraliseBidi(title)) : `${labels.vote.group}: ${neutraliseBidi(title)}`}
         locale={locale}
       />
       {card ? (

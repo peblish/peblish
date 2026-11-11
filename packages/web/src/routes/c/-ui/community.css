@@ -7,7 +7,8 @@
     margin: 0 auto;
     padding: 0 var(--muxui-semantic-layout-inset-large) var(--muxui-semantic-layout-section-gap);
   }
-  /* Mux Text sets no margin, so Text rendered as a paragraph would keep the browser's (headings are reset in tokens.css). */
+  /* Mux's base styles give a paragraph a one-line bottom margin unless it is the last one; the gaps space
+     these parts, so Text rendered as a paragraph keeps none. */
   :is(.cm-page, .cm-form) .muxui-text {
     margin: 0;
   }
