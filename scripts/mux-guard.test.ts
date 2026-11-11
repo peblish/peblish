@@ -138,6 +138,23 @@ test('inline-style reports colour, type and motion values and spacing that is no
   ]);
 });
 
+test('an inline style sets a Mux token only to a written var() of a Mux token, whatever kind of expression the value is', () => {
+  const source = lines(
+    "const tint = '#f00';", // 1
+    'export const A = () => (', // 2
+    '  <>', // 3
+    "    <div style={{ '--muxui-semantic-content-default': tint }} />", // 4
+    "    <div style={{ '--muxui-semantic-content-default': `var(--muxui-semantic-${tone})` }} />", // 5
+    "    <div style={{ '--muxui-semantic-typography-control-weight': 900 }} />", // 6
+    "    <div style={{ '--pb-x': `var(--muxui-made-up) ${x}` }} />", // 7
+    "    <div style={{ '--muxui-semantic-layout-group-gap': 'var(--muxui-semantic-layout-tight-gap)' }} />", // 8: legal
+    "    <div style={{ '--depth': depth, '--pb-tint': tint }} />", // 9: data and other custom properties, legal
+    '  </>', // 10
+    ');', // 11
+  );
+  expect(tsx(source)).toEqual(['inline-style:4', 'inline-style:5', 'inline-style:6', 'inline-style:7']);
+});
+
 test('raw-html and createElement report HTML made outside React, but not scripts or detached elements', () => {
   const source = lines(
     'export function A() {', // 1

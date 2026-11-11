@@ -202,11 +202,20 @@ function styleProblems(node: ts.Expression): string[] {
     const name = property.name.text.startsWith('--') ? property.name.text : kebab(property.name.text);
     const value = unwrap(property.initializer);
     const literal = ts.isStringLiteralLike(value) ? value.text.trim() : ts.isNumericLiteral(value) ? value.text : undefined;
+    // The written text of the value, a template's literal parts included, for the token names it reads.
+    const written = ts.isTemplateExpression(value)
+      ? [value.head.text, ...value.templateSpans.map((span) => span.literal.text)]
+      : [literal ?? ''];
     // A --muxui-* name Mux UI does not define is no token, set or read (as in stylesheets).
-    const made = [name, ...[...(literal ?? '').matchAll(/var\(\s*(--muxui-[\w-]+)/g)].map((match) => match[1]!)].find(
+    const made = [name, ...written.flatMap((text) => [...text.matchAll(/var\(\s*(--muxui-[\w-]+)/g)].map((match) => match[1]!))].find(
       (token) => token.startsWith('--muxui-') && !muxTokens().has(token),
     );
     if (made) return [`${name}: ${made} is not a Mux UI token`];
+    // Setting a Mux token inline is theming, so only to another Mux token, written out: `'var(--muxui-...)'`.
+    if (name.startsWith('--muxui-'))
+      return ts.isStringLiteralLike(value) && /^var\(\s*--muxui-[\w-]+\s*\)$/.test(value.text.trim())
+        ? []
+        : [`${name}: ${literal ?? property.initializer.getText()} (only a var() of a Mux token may set a Mux token)`];
     if (name.startsWith('--')) {
       // A custom property may carry data (a depth, a count); a string it sets must be tokens.
       return literal !== undefined && ts.isStringLiteralLike(value) && literals(literal, anyAlias).length ? [`${name}: ${literal}`] : [];
