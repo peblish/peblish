@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, expect, test } from 'vitest';
@@ -50,4 +50,39 @@ test('a Button-only entry does not load React Aria Menu once substrate.js is spl
   expect(whole.some(reactAriaMenu), 'the control: one substrate.js module drags Menu into the shared chunk').toBe(true);
   expect(split.some(reactAriaMenu)).toBe(false);
   expect(split.some((id) => id.endsWith('?mux-substrate=AriaButton'))).toBe(true);
+});
+
+test('a Mux file that names substrate.js by another relative path is split too', { timeout: 30_000 }, async () => {
+  const root = mkdtempSync(join(tmpdir(), 'peblish-mux-path-'));
+  try {
+    const generated = join(root, 'node_modules/@muxui/react/generated');
+    mkdirSync(generated, { recursive: true });
+    writeFileSync(
+      join(generated, 'substrate.js'),
+      "import * as RAC from 'react-aria-components';\nfunction withMuxState(component) { return component; }\n" +
+        'export const AriaButton = /*#__PURE__*/ withMuxState(RAC.Button);\nexport const AriaMenu = /*#__PURE__*/ withMuxState(RAC.Menu);\n',
+    );
+    writeFileSync(
+      join(generated, 'button.js'),
+      "import { AriaButton } from '../generated/substrate.js';\nexport const Button = AriaButton;\n",
+    );
+    writeFileSync(
+      join(root, 'entry.js'),
+      `import { Button } from ${JSON.stringify(join(generated, 'button.js'))};\nglobalThis.button = Button;\n`,
+    );
+    const result = await build({
+      configFile: false,
+      logLevel: 'silent',
+      root,
+      plugins: [splitMuxSubstrate()],
+      build: { write: false, minify: false, rolldownOptions: { input: join(root, 'entry.js'), external: [/^react-aria-components$/] } },
+    });
+    const modules = (Array.isArray(result) ? result : [result]).flatMap((output) =>
+      'output' in output ? output.output.flatMap((item) => (item.type === 'chunk' ? item.moduleIds : [])) : [],
+    );
+    expect(modules.some((id) => id.endsWith('substrate.js?mux-substrate=AriaButton'))).toBe(true);
+    expect(modules.some((id) => id.endsWith('substrate.js'))).toBe(false);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });

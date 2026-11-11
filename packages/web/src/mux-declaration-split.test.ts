@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, expect, test } from 'vitest';
 import { build, type Plugin, type Rolldown } from 'vite';
-import { splitMuxDeclarations, splitMuxSubstrate } from '../vite.config.ts';
+import { splitDeclarations, splitMuxDeclarations, splitMuxSubstrate } from '../vite.config.ts';
 
 // The client build's split of Mux UI's overlays.js by declaration (vite.config.ts), on the
 // vendored package. Two entries, as two routes would be: one with the Tooltip alone (what the
@@ -109,6 +109,14 @@ test.each([
     'a pure-marked call with an effect in its arguments',
     "import { make, registerOverlay } from './registry.js';\nconst made = /*#__PURE__*/ make(registerOverlay(Tooltip));\n",
   ],
+  [
+    'a getter run by an unread member read',
+    "import { registerOverlay } from './registry.js';\nconst unused = ({ get value() { registerOverlay(); return 0; } }).value;\n",
+  ],
+  [
+    'a property set whose computed key runs code',
+    "import { registerOverlay } from './registry.js';\nconst unused = {};\nunused[registerOverlay()] = true;\n",
+  ],
 ])('the build fails on a top-level initialiser that may have effects: %s', { timeout: 30_000 }, async (_, drift) => {
   await expect(buildOverlays(tooltip + drift)).rejects.toThrow(/peblish:split-mux-declarations: .*may have effects/);
 });
@@ -128,4 +136,83 @@ test('pure initialisers pass, and one nothing reads is left out', { timeout: 30_
   );
   expect(code).toMatch(/displayName = ["']Tooltip["']/);
   expect(code).not.toContain('unread');
+});
+
+// The same check without a build: each value runs code when the module loads, often through an implicit call (a
+// getter, an iterator, a conversion), so the split must refuse it.
+const registry = "import * as registry from './registry.js';\nimport { registerOverlay, Base, items } from './registry.js';\n";
+const getter = 'const box = { get value() { registerOverlay(); return 0; } };\n';
+const converts = 'const box = { toString() { registerOverlay(); return "box"; } };\n';
+const declarations = (body: string) => () => splitDeclarations('/mux/generated/overlays.js', tooltip + registry + body);
+
+test.each([
+  ['a getter on a binding', getter + 'const unused = box.value;\n'],
+  ['a getter in an object literal reached through a binding', getter + 'const unused = { box }.box.value;\n'],
+  ['a member read on a named import', 'const unused = items.length;\n'],
+  ['a member read on a member read', 'const unused = registry.items.length;\n'],
+  ['a collection built from an iterable', 'const unused = new Set(items);\n'],
+  ['a map built from entries that are not array literals', 'const unused = new Map([items]);\n'],
+  ['Array.from', 'const unused = Array.from(items);\n'],
+  ['a function that shadows a builtin collection', 'function Set() { registerOverlay(); }\nconst unused = new Set();\n'],
+  ['a binding that shadows Object', 'const Object = { freeze: registerOverlay };\nconst unused = Object.freeze({});\n'],
+  ['Object.freeze of a binding', 'const unused = Object.freeze(items);\n'],
+  ['an array spread', 'const unused = [...items];\n'],
+  ['an object spread', getter + 'const unused = { ...box };\n'],
+  ['a template that converts an object', converts + 'const unused = `${box}`;\n'],
+  ['an operator that converts an object', converts + "const unused = box + '';\n"],
+  ['a computed member key that converts an object', converts + 'const unused = { a: 1 }[box];\n'],
+  ['a computed object key that converts an object', converts + 'const unused = { [box]: 1 };\n'],
+  ['instanceof', 'const unused = Tooltip instanceof Base;\n'],
+  ['in', "const unused = 'value' in items;\n"],
+  ['delete', 'const unused = delete items.value;\n'],
+  ['an optional chain', 'const unused = registry?.items;\n'],
+  ['an undeclared global', 'const unused = document;\n'],
+  ['a binding read before it is initialised', 'const unused = later;\nconst later = 1;\n'],
+  ['a class with a static block', 'const Panel = class { static { registerOverlay(); } };\n'],
+  ['a class with a computed member name', "const KEY = 'open';\nconst Panel = class { [KEY]() {} };\n"],
+  ['a class extending an import', 'const Panel = class extends Base {};\n'],
+  ['a class with a static value that runs code', getter + 'const Panel = class { static value = box.value; };\n'],
+  ['await', 'const unused = await items;\n'],
+  ['a dynamic import', "const unused = import('./registry.js');\n"],
+  ['a destructured binding', getter + 'const { value } = box;\n'],
+  ['a using declaration', 'using unused = items;\n'],
+  ['a top-level statement that is not a declaration', 'if (items) registerOverlay();\n'],
+  ['a property set with a key the check cannot read', "const KEY = 'value';\nconst box = {};\nbox[KEY] = 1;\n"],
+  ['a property set on __proto__', 'const box = {};\nbox.__proto__ = { get value() { registerOverlay(); return 0; } };\n'],
+  ['a property set on a computed __proto__', "const box = {};\nbox['__proto__'] = items;\n"],
+  ['a compound assignment', 'const box = { count: 0 };\nbox.count += 1;\n'],
+  ['a logical assignment', 'const box = {};\nbox.value ||= 1;\n'],
+  ['a property set through a setter', 'const box = { set value(next) { registerOverlay(); } };\nbox.value = 1;\n'],
+  ['a property set on an import', 'items.value = 1;\n'],
+  ['a property set on a namespace', 'registry.value = 1;\n'],
+  ['a property set on a class instance', 'const instance = /*#__PURE__*/ new Base();\ninstance.value = 1;\n'],
+  ['a property set on a frozen value', 'const box = Object.freeze({});\nbox.value = 1;\n'],
+  ['a property set on a member', 'const box = { inner: {} };\nbox.inner.value = 1;\n'],
+  ['a binding reassigned', 'let box = {};\nbox = items;\n'],
+])('the split refuses a value that runs code on load: %s', (_, body) =>
+  expect(declarations(body)).toThrow(/peblish:split-mux-declarations: .*may have effects/),
+);
+
+test('the forms Mux rc.7 uses at the top level of overlays.js pass', () => {
+  const { declarations: parts } = declarations(
+    [
+      "const useLayout = typeof window === 'undefined' ? React.useEffect : React.useLayoutEffect;",
+      "const GEOMETRY = Object.freeze({ placement: 'bottom', offset: 8, shouldFlip: true });",
+      'const DURATION = 5000;',
+      'const FOLLOW = undefined;',
+      "const PRESETS = ['data-muxui-theme', 'data-muxui-contrast'];",
+      'const NONE = {};',
+      "const isDom = (element) => typeof element.type === 'string';",
+      "const PLACEMENTS = new Set(['top-start', 'top-end']);",
+      'const Context = React.createContext(null);',
+      'export const Dialog = /*#__PURE__*/ (() => { const component = React.forwardRef(function Dialog() { return null; }); return component; })();',
+      'const LABEL = `Tooltip-${DURATION * 2}`;',
+      "const NAMES = new Map([['top', GEOMETRY.placement]]);",
+      "Tooltip.displayName = 'Tooltip';",
+      'function helper() {}',
+      "helper.displayName = 'helper';",
+      "NONE['key'] = 1;",
+    ].join('\n'),
+  )();
+  expect(parts.size).toBe(14);
 });
