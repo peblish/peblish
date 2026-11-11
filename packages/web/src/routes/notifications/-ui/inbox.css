@@ -7,10 +7,6 @@
     gap: var(--muxui-semantic-layout-group-gap);
   }
 
-  .pb-inbox h1 {
-    margin: 0;
-  }
-
   .pb-inbox__head {
     display: flex;
     flex-wrap: wrap;
@@ -62,7 +58,9 @@
     white-space: normal;
   }
 
-  .pb-notice__body p {
+  .pb-notice__text,
+  .pb-notice__excerpt,
+  .pb-notice__statement {
     margin: 0;
   }
 

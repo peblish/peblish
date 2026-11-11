@@ -94,6 +94,7 @@ export function EditForm({ data, saved, error: initial }: { data: EditData; save
           onChange={setDisplayName}
           description={t('profiles', 'edit.displayNameHint', { handle })}
           invalid={overName}
+          errorMessage={t('profiles', 'edit.displayNameTooLong', { max: number(displayNameMax) })}
         />
         <Count count={number(displayName.length)} max={number(displayNameMax)} over={overName} />
         <Text size="sm" color="muted">
@@ -121,6 +122,7 @@ export function EditForm({ data, saved, error: initial }: { data: EditData; save
           rows={7}
           description={t('profiles', 'edit.bioHint')}
           invalid={overBio}
+          errorMessage={t('profiles', 'edit.bioTooLong', { max: number(bioMax) })}
         />
         <Count count={number(bio.length)} max={number(bioMax)} over={overBio} />
       </div>

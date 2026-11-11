@@ -5,7 +5,7 @@ import { profileSorts, profileTabs } from '@peblish/core/profiles/input';
 import { publicActorRef, readActivity, readProfile, type Profile } from '@peblish/core/profiles/read';
 import type { Uuid } from '@peblish/schema/ids';
 import type { ActorRef, CommentView } from '@peblish/schema/views';
-import { absoluteTime, compactAge } from '@peblish/ui/components/time';
+import { compactAge } from '@peblish/ui/components/time';
 import { redirect } from '@tanstack/react-router';
 import { createServerFn } from '@tanstack/react-start';
 import { getRequestHeader, setResponseStatus } from '@tanstack/react-start/server';
@@ -44,8 +44,6 @@ export type ProfileData = {
   next: string | null;
   /** The clock the post cards print their ages against, so server and browser agree. */
   now: string;
-  /** Each comment's time as text in the request's locale. */
-  times: Record<string, { age: string; title: string }>;
 };
 
 /**
@@ -79,7 +77,6 @@ async function buildProfile(
         viewer,
       )
     : { items: [], next: null };
-  const times: ProfileData['times'] = {};
   const entries = page.items.map((item): ProfileEntry => {
     if (item.kind === 'post') return { kind: 'post', item: feedItem(item.post, renderer.image) };
     const { view, body, post, community } = item.comment;
@@ -89,7 +86,6 @@ async function buildProfile(
         : body
           ? renderer.sanitize(body.html, { baseUrl: body.baseUrl, content: { kind: 'comment', id: view.id, apId: view.apId } }).html
           : null;
-    times[view.id] = { age: compactAge(view.publishedAt, now, locale), title: absoluteTime(view.publishedAt, locale) };
     return { kind: 'comment', view: { ...view, contentHtml }, post, community: publicActorRef(community) };
   });
 
@@ -125,7 +121,6 @@ async function buildProfile(
       entries,
       next: page.next,
       now: now.toISOString(),
-      times,
     },
   };
 }

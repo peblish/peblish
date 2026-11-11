@@ -33,7 +33,7 @@
     gap: var(--muxui-semantic-layout-group-gap);
   }
 
-  .prof-head p,
+  .prof-handle,
   .prof-name {
     margin: 0;
   }
@@ -95,7 +95,7 @@
     gap: var(--muxui-semantic-layout-tight-gap);
   }
 
-  .prof-comment-body > p {
+  .prof-comment-meta {
     margin: 0;
   }
 
@@ -110,10 +110,6 @@
     display: grid;
     gap: var(--muxui-semantic-layout-section-gap);
     max-width: 640px;
-  }
-
-  .prof-form h2 {
-    margin: 0;
   }
 
   .prof-field {

@@ -1,11 +1,13 @@
 import { Card } from '@peblish/ui/components/card';
 import { EmptyState } from '@peblish/ui/components/empty-state';
+import { Handle } from '@peblish/ui/components/handle';
 import { Link } from '@peblish/ui/components/link';
 import { LinkTabs } from '@peblish/ui/components/link-tabs';
 import { Pager } from '@peblish/ui/components/pager';
 import { PostCard } from '@peblish/ui/components/post-card';
 import { Prose } from '@peblish/ui/components/prose';
 import { Text } from '@peblish/ui/components/text';
+import { Time } from '@peblish/ui/components/time';
 import { DensityControl } from '@peblish/ui/density/density-control';
 import { profileSorts, profileTabs } from '@peblish/core/profiles/input';
 import type { ReactNode } from 'react';
@@ -35,9 +37,8 @@ function Surface({ card, children }: { card: boolean; children: ReactNode }) {
 }
 
 function CommentRow({ entry, data, path, card }: { entry: Comment; data: ProfileData; path: string; card: boolean }) {
-  const { t } = useTranslate();
+  const { t, locale } = useTranslate();
   const { view, post, community } = entry;
-  const time = data.times[view.id];
   const slotViewer: SlotViewer | null = data.viewer && {
     actorId: data.viewer.actorId,
     moderator: data.moderatedCommunities.some((moderated) => moderated.id === community.id),
@@ -55,20 +56,17 @@ function CommentRow({ entry, data, path, card }: { entry: Comment; data: Profile
   return (
     <li className="prof-comment" id={`comment-${view.id}`}>
       <Surface card={card}>
-        <Text as="p" size="sm" color="muted">
+        <Text as="p" size="sm" color="muted" className="prof-comment-meta">
           <Text variant="label" size="sm" color="default">
             {t('profiles', 'comment.score', { count: view.counts.upvotes - view.counts.downvotes })}
           </Text>{' '}
           {t('profiles', 'comment.on')} <Link href={postPath(post.id)}>{post.title}</Link> {t('profiles', 'comment.in')}{' '}
-          <Link href={communityPath(community)}>!{community.handle}</Link>
-          {time && (
-            <>
-              {' · '}
-              <time dateTime={view.publishedAt} title={time.title}>
-                {time.age}
-              </time>
-            </>
-          )}
+          <Link href={communityPath(community)}>
+            <Handle prefix="!" handle={community.handle} />
+          </Link>
+          {' · '}
+          {/* Against the loader's clock, so the server and the browser print the same age. */}
+          <Time iso={view.publishedAt} locale={locale} now={new Date(data.now)} />
         </Text>
         {view.contentHtml && <Prose html={view.contentHtml} className="prof-comment-text" />}
         {/* A div: the slots hold forms and menus, which a <p> cannot contain (the parser would close it). */}

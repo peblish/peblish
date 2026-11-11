@@ -2,7 +2,7 @@ import { Avatar } from '@peblish/ui/components/avatar';
 import { Badge, type BadgeLabels } from '@peblish/ui/components/badge';
 import { Card } from '@peblish/ui/components/card';
 import { FactList, type Fact } from '@peblish/ui/components/fact-list';
-import { Handle } from '@peblish/ui/components/handle';
+import { BidiText, Handle, neutraliseBidi } from '@peblish/ui/components/handle';
 import { Prose } from '@peblish/ui/components/prose';
 import { Text } from '@peblish/ui/components/text';
 import type { ReactNode } from 'react';
@@ -19,6 +19,8 @@ export function ProfileCard({ data, children }: { data: ProfileData; children?: 
   const date = useDate();
   const { person, badges } = data;
   const name = person.displayName || person.name;
+  // A remote name may carry directional controls: the heading isolates it (BidiText), the initial and alt text drop them.
+  const plainName = neutraliseBidi(name, '');
   const deleted = data.state === 'deleted';
   const count = (n: number) => new Intl.NumberFormat(locale).format(n);
   const roles: BadgeLabels = { admin: t('profiles', 'badge.admin'), moderator: t('profiles', 'badge.moderator'), op: '' };
@@ -44,22 +46,22 @@ export function ProfileCard({ data, children }: { data: ProfileData; children?: 
         <Card.Header className="prof-head">
           {/* Without a picture the initial is decorative: the heading names the person. */}
           <Avatar.Root size="lg" aria-hidden={data.avatarSrc ? undefined : 'true'}>
-            {data.avatarSrc && <Avatar.Image src={data.avatarSrc} alt={t('profiles', 'card.avatar', { name })} />}
-            <Avatar.Fallback>{name.slice(0, 1).toUpperCase()}</Avatar.Fallback>
+            {data.avatarSrc && <Avatar.Image src={data.avatarSrc} alt={t('profiles', 'card.avatar', { name: plainName })} />}
+            <Avatar.Fallback>{plainName.slice(0, 1).toUpperCase()}</Avatar.Fallback>
           </Avatar.Root>
           <Text as="h1" variant="title" size="lg" className="prof-name">
-            {name}
+            <BidiText text={name} />
           </Text>
-          <Text as="p" variant="mono" size="sm" color="muted">
+          <Text as="p" variant="mono" size="sm" color="muted" className="prof-handle">
             <Handle prefix="@" handle={person.handle} />
           </Text>
           {!deleted && (badges.admin || badges.moderator || badges.bot || badges.you) && (
-            <p className="prof-badges">
+            <div className="prof-badges">
               {badges.admin && <Badge kind="admin" labels={roles} />}
               {badges.moderator && <Badge kind="moderator" labels={roles} />}
               {badges.bot && <Badge kind="bot">{t('profiles', 'badge.bot')}</Badge>}
               {badges.you && <Badge kind="you">{t('profiles', 'badge.you')}</Badge>}
-            </p>
+            </div>
           )}
         </Card.Header>
         {(data.bioHtml || !deleted) && (
