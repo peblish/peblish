@@ -1,10 +1,11 @@
 import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, matchesGlob } from 'node:path';
 import { expect, test } from 'vitest';
 import {
   applyExceptions,
   area,
   count,
+  cssGlob,
   muxTarball,
   muxTokens,
   parseExceptions,
@@ -12,10 +13,12 @@ import {
   regressions,
   scanCss,
   scanScript,
+  scriptGlob,
   tarFile,
   type CssContext,
   vendoredTarball,
   type Violation,
+  walked,
 } from './mux-guard.ts';
 
 const found = (violations: { rule: string; line: number }[]) => violations.map(({ rule, line }) => `${rule}:${line}`);
@@ -138,6 +141,148 @@ test('inline-style reports colour, type and motion values and spacing that is no
   ]);
 });
 
+test('an inline style sets a Mux token only to a written var() of a Mux token, whatever kind of expression the value is', () => {
+  const source = lines(
+    "const tint = '#f00';", // 1
+    'export const A = () => (', // 2
+    '  <>', // 3
+    "    <div style={{ '--muxui-semantic-content-default': tint }} />", // 4
+    "    <div style={{ '--muxui-semantic-content-default': `var(--muxui-semantic-${tone})` }} />", // 5
+    "    <div style={{ '--muxui-semantic-typography-control-weight': 900 }} />", // 6
+    "    <div style={{ '--pb-x': `var(--muxui-made-up) ${x}` }} />", // 7
+    "    <div style={{ '--muxui-semantic-layout-group-gap': 'var(--muxui-semantic-layout-tight-gap)' }} />", // 8: legal
+    "    <div style={{ '--depth': depth, '--pb-tint': tint }} />", // 9: data and other custom properties, legal
+    '  </>', // 10
+    ');', // 11
+  );
+  expect(tsx(source)).toEqual(['inline-style:4', 'inline-style:5', 'inline-style:6', 'inline-style:7']);
+});
+
+test('a spread of an object literal counts as its props, in order; a spread of a variable stays allowed', () => {
+  const source = lines(
+    'export const A = (rest: Props) => (', // 1
+    '  <>', // 2
+    '    <input type="hidden" {...{ type: \'text\' }} />', // 3
+    "    <div {...{ role: 'button', style: { color: '#f00' } }} />", // 4
+    '    <span {...{ ...{ onClick: go } }} />', // 5
+    '    <input type="hidden" {...rest} />', // 6: rest may set the type
+    '    <input {...{ type: \'text\' }} type="hidden" name="id" />', // 7: legal, the later type wins
+    '    <div {...rest} className="pb-row" />', // 8: legal, rest props pass through
+    '  </>', // 9
+    ');', // 10
+  );
+  expect(tsx(source)).toEqual(['raw-element:3', 'inline-style:4', 'widget-role:4', 'widget-handler:5', 'raw-element:6']);
+});
+
+test('React factories, however imported or renamed, get the element rules over their props', () => {
+  const source = lines(
+    "import { createElement as h } from 'react';", // 1
+    "import * as R from 'react';", // 2
+    "import { jsx } from 'react/jsx-runtime';", // 3
+    "createElement('div', { role: 'button', style: { color: '#f00' } });", // 4
+    "h('button', null, 'go');", // 5
+    "h('a', { href: '/x' });", // 6
+    "R.createElement('span', { onClick: go }, 'text');", // 7
+    "jsx('div', { children: 'words' });", // 8
+    'const make = R.createElement;', // 9
+    "make('table');", // 10
+    "h(Card, { style: { padding: '13px' } });", // 11
+    "h('div', { className: 'pb-row' }, h(Text, null, 'ok'));", // 12: legal
+    "document.createElement('div').setAttribute('data-x', '1');", // 13: legal, not React
+  );
+  expect(tsx(source)).toEqual([
+    'inline-style:4',
+    'widget-role:4',
+    'raw-element:5',
+    'raw-element:6',
+    'widget-handler:7',
+    'bare-text:7',
+    'bare-text:8',
+    'raw-element:10',
+    'inline-style:11',
+  ]);
+});
+
+test('CSS written inside a script is reported: <style> elements, CSSOM calls and writes to an element style', () => {
+  const source = lines(
+    "import modCss from './mod.css?inline';", // 1
+    'export const A = () => (', // 2
+    '  <>', // 3
+    "    <style>{'.x { color: #f00; padding: 13px !important; }'}</style>", // 4
+    '    <style>{`.x { color: #f00; }`}</style>', // 5
+    '    <style dangerouslySetInnerHTML={{ __html: modCss }} />', // 6
+    "    <div style={{ cssText: 'color: #f00' }} />", // 7
+    '    <style href="mod-panels" precedence="mod-panels">', // 8: legal, a stylesheet file the guard reads
+    '      {modCss}', // 9
+    '    </style>', // 10
+    '  </>', // 11
+    ');', // 12
+    "createElement('style', null, '.x { color: #f00; }');", // 13
+    "document.head.append(document.createElement('style'));", // 14
+    "sheet.insertRule('.x { color: #f00; }');", // 15
+    "sheet.replaceSync('.x { color: #f00; }');", // 16
+    'document.adoptedStyleSheets = [sheet];', // 17
+    "el.style.cssText = 'color: #f00';", // 18
+    "el.style.setProperty('--muxui-semantic-content-default', '#f00');", // 19
+    "el.style.color = '#f00';", // 20
+    "el['style'] = 'color: #f00';", // 21
+    "el.setAttribute('style', 'color: #f00');", // 22
+    "Object.assign(el.style, { color: '#f00' });", // 23
+    'const width = el.style.width;', // 24: legal, a read
+  );
+  expect(tsx(source)).toEqual([
+    'raw-element:4',
+    'raw-element:5',
+    'raw-element:6',
+    'inline-style:7',
+    'raw-element:13',
+    'raw-element:14',
+    'inline-style:15',
+    'inline-style:16',
+    'inline-style:17',
+    'inline-style:18',
+    'inline-style:19',
+    'inline-style:20',
+    'inline-style:21',
+    'inline-style:22',
+    'inline-style:23',
+  ]);
+});
+
+test('the forms beside those holes: string and spread styles, tag variables, as props, typed OM and stylesheet links', () => {
+  const source = lines(
+    "const Tag = level ? 'h2' : 'button';", // 1
+    'export const A = () => (', // 2
+    '  <>', // 3
+    '    <div style="color: #f00" />', // 4
+    "    <div style={{ ...{ color: '#f00' } }} />", // 5
+    "    <div style={{ WebkitBoxShadow: '0 1px 2px #000' }} />", // 6
+    '    <Tag onClick={go} />', // 7
+    '    <Text as="button" onClick={go}>go</Text>', // 8
+    '    <link rel="stylesheet" href="https://example.com/theme.css" />', // 9
+    '    <Text as="h2" className={`pb-title ${size}`}>ok</Text>', // 10: legal
+    '    <link rel="stylesheet" href={appCss} />', // 11: legal, an imported file
+    '  </>', // 12
+    ');', // 13
+    "el.attributeStyleMap.set('color', '#f00');", // 14
+    "export const head = () => ({ links: [{ rel: 'stylesheet', href: '/theme.css' }, { rel: 'stylesheet', href: appCss }] });", // 15
+  );
+  expect(tsx(source)).toEqual([
+    'inline-style:4',
+    'inline-style:5',
+    'inline-style:6',
+    'text-element:7',
+    'raw-element:7',
+    'raw-element:8',
+    'css-import:9',
+    'inline-style:14',
+    'css-import:15',
+  ]);
+  expect(
+    css('.a { -webkit-box-shadow: 0 1px 2px var(--muxui-x); -webkit-border-radius: 4px; -webkit-line-clamp: 2; }', anyDefined),
+  ).toEqual(['css-shadow:1', 'css-radius:1']);
+});
+
 test('raw-html and createElement report HTML made outside React, but not scripts or detached elements', () => {
   const source = lines(
     'export function A() {', // 1
@@ -174,6 +319,59 @@ test('mux-import reports @muxui/react outside packages/ui/src in scripts and sty
   const sheet = "@import '@muxui/react/styles.css';\n/* @import '@muxui/react'; */";
   expect(css(sheet)).toEqual(['mux-import:1']);
   expect(css(sheet, none, 'packages/ui/src/styles.css')).toEqual([]);
+});
+
+test('every source file of every package and tool is checked, whatever its extension or folder', () => {
+  const button = 'export const A = () => <button>go</button>;';
+  expect(tsx(button, 'packages/web/app/a.jsx')).toEqual(['raw-element:1']);
+  expect(tsx(button, 'packages/ui/stories/a.tsx')).toEqual(['raw-element:1']);
+  expect(tsx(button, 'packages/core/src/mail/a.tsx')).toEqual(['raw-element:1']);
+  expect(tsx("import { createElement as h } from 'react';\nh('button');", 'packages/web/src/a.mts')).toEqual(['raw-element:2']);
+  expect(tsx(button, 'packages/web/src/a.test.tsx')).toEqual(['raw-element:1']); // scanScript itself does not skip tests; the walk does
+});
+
+test('the walk takes every extension the build can import and skips only tests, fixtures, generated files and output', () => {
+  for (const file of ['packages/web/src/a.mts', 'packages/web/src/a.cjs', 'packages/web/app/a.jsx', 'tools/x/a.mjs', 'packages/ui/a.css'])
+    expect([file, matchesGlob(file, file.endsWith('.css') ? cssGlob : scriptGlob) && walked(file)]).toEqual([file, true]);
+  for (const file of [
+    'packages/web/src/a.test.mts',
+    'packages/web/src/__fixtures__/a.tsx',
+    'packages/web/src/routeTree.gen.ts',
+    'packages/web/dist/a.js',
+    'packages/web/.output/a.mjs',
+    'packages/ui/node_modules/x/a.css',
+    'e2e/a.ts',
+  ])
+    expect([file, walked(file)]).toEqual([file, false]);
+});
+
+test("Mux's stylesheet holds only @import and @layer; no stylesheet may be imported from outside the walk", () => {
+  const mux = lines(
+    '@layer reset, muxui.tokens, muxui.components, muxui.utilities, app; /* order */', // 1
+    "@import '@muxui/react/styles.css';", // 2
+    '.x { color: #f00 !important; }', // 3
+  );
+  expect(css(mux, anyDefined, 'packages/ui/src/styles.css')).toEqual([
+    'css-mux-stylesheet:3',
+    'css-mux-stylesheet:3',
+    'css-colour:3',
+    'css-important:3',
+  ]);
+  const sheet = lines(
+    "@import '@peblish/ui/tokens/tokens.css';", // 1: legal
+    "@import './shell/shell.css';", // 2: legal
+    "@import url('../../../../vendor/theme.css');", // 3
+    "@import 'some-library/dist/theme.css' layer(app);", // 4
+    "@import '@muxui/react/styles.css';", // 5: mux-import, not both
+  );
+  expect(css(sheet, anyDefined)).toEqual(['css-import:3', 'css-import:4', 'mux-import:5']);
+  const script = lines(
+    "import appCss from '../styles.css?url';", // 1: legal
+    "import '@peblish/ui/composer/composer.css';", // 2: legal
+    "import 'some-library/dist/theme.css';", // 3
+    "import muxCss from '@muxui/react/styles.css?inline';", // 4: Mux's stylesheet outside styles.css
+  );
+  expect(found(scanScript('packages/ui/src/a.ts', script))).toEqual(['css-import:3', 'css-import:4']);
 });
 
 test('css-colour reports hex, colour functions and named colours, not tokens or neutral keywords', () => {
@@ -232,7 +430,9 @@ test('radius, shadow and font values must come from Mux tokens or a pure alias',
     'css-font-family:11',
     'css-font-size:14',
     'css-font-size:16',
+    'css-line-height:16',
     'css-font-family:17',
+    'css-font-weight:17',
   ]);
 });
 
@@ -265,6 +465,31 @@ test('spacing, weight, line height and letter spacing must be tokens, zero or a 
     'css-font-weight:10',
     'css-line-height:11',
     'css-letter-spacing:13',
+  ]);
+});
+
+test('a var() fallback is checked as the value it stands in for; a font shorthand writes no weight or line height', () => {
+  const sheet = lines(
+    '.a {', // 1
+    '  gap: var(--muxui-semantic-layout-group-gap, 13px);', // 2
+    '  padding: var(--muxui-a, var(--muxui-b, 4px)) 0;', // 3
+    '  margin: var(--muxui-a, calc(2px + 1px));', // 4
+    '  transition: opacity var(--muxui-d, 200ms);', // 5
+    '  font: 700 var(--muxui-size)/1.7 var(--muxui-family);', // 6
+    '  font: var(--muxui-weight, bold) var(--muxui-size) var(--muxui-family);', // 7
+    '  font: italic var(--muxui-weight) var(--muxui-size)/var(--muxui-leading) var(--muxui-family);', // 8: legal
+    '  gap: var(--muxui-a, var(--muxui-b));', // 9: legal
+    '  font: calc(var(--muxui-size) * 1.2) / normal var(--muxui-family);', // 10: legal
+    '}',
+  );
+  expect(css(sheet, anyDefined)).toEqual([
+    'css-spacing:2',
+    'css-spacing:3',
+    'css-spacing:4',
+    'css-motion:5',
+    'css-font-weight:6',
+    'css-line-height:6',
+    'css-font-weight:7',
   ]);
 });
 
@@ -362,6 +587,40 @@ test('a real Mux token or tokens.css alias may be set to tokens (theming) but no
   expect(css(sheet, themed)).toEqual(['css-token-value:5', 'css-token-value:6', 'css-token-value:7', 'css-token-value:8', 'css-spacing:9']);
 });
 
+test("@property may not register a --muxui-* name; another registration's initial-value is checked as its definition", () => {
+  const sheet = lines(
+    "@property --muxui-semantic-layout-group-gap { syntax: '<length>'; inherits: true; initial-value: 13px; }", // 1
+    "@property --muxui-my-gap { syntax: '*'; inherits: false; }", // 2
+    "@property --pb-gap { syntax: '<length>'; inherits: true; initial-value: 1rem; }", // 3
+    "@property --wide { syntax: '<length>'; inherits: false; initial-value: 13px; }", // 4
+    '.x { padding: var(--wide); }', // 5
+    "@property --angle { syntax: '<angle>'; inherits: false; initial-value: 0deg; }", // 6: legal
+    '.y { rotate: var(--angle); }', // 7: legal
+  );
+  expect(css(sheet, themed)).toEqual(['css-token-value:1', 'css-unknown-token:2', 'css-token-value:3', 'css-spacing:5']);
+});
+
+test('CSS escapes are decoded outside strings before any check; in selectors and strings they stay allowed', () => {
+  const sheet = lines(
+    '.a { color: r\\67 b(255 0 0); }', // 1
+    '.b { margin: 0 !impor\\74 ant; }', // 2
+    '.c { p\\61 dding: 13px; }', // 3
+    '.d { --muxui-\\73 emantic-layout-group-gap: 13px; }', // 4
+    '.e \\62 utton { margin: 0; }', // 5
+    "@property --muxui-\\73 emantic-layout-group-gap { syntax: '*'; inherits: true; }", // 6
+    ".f::before { content: '\\201C'; }", // 7: legal, an escape in a string
+    '.w-1\\/2, .g\\:hover { margin: 0; }', // 8: legal, escapes in class names
+  );
+  expect(css(sheet, themed)).toEqual([
+    'css-element-selector:5',
+    'css-token-value:6',
+    'css-colour:1',
+    'css-important:2',
+    'css-spacing:3',
+    'css-token-value:4',
+  ]);
+});
+
 test('css-blur reports blurs; css-element-selector reports styling by tag, not by class, inside Mux parts or in :has()', () => {
   const sheet = lines(
     '.a img { filter: blur(14px); }', // 1
@@ -381,6 +640,26 @@ test('css-blur reports blurs; css-element-selector reports styling by tag, not b
     'css-element-selector:8',
     'css-element-selector:9',
     'css-blur:1',
+  ]);
+});
+
+test('an element is inside Mux markup only as a descendant or child of a .muxui-* compound, on every branch', () => {
+  const sheet = lines(
+    '.muxui-link + a { margin: 0; }', // 1
+    '.muxui-link ~ p { margin: 0; }', // 2
+    ':is(.plain, .muxui-link) a { margin: 0; }', // 3
+    ':where(.muxui-card, .plain) > button { margin: 0; }', // 4
+    '.muxui-card :is(.plain, .x + a) { margin: 0; }', // 5: legal, both branches are inside the card
+    '.muxui-card > :where(a, .x) { margin: 0; }', // 6: legal
+    '.muxui-list li + li a { margin: 0; }', // 7: legal, the siblings are inside the list
+    '.muxui-tabs a:nth-child(2n + 1) { margin: 0; }', // 8: legal
+    'a.muxui-link { margin: 0; }', // 9: legal, Mux renders this anchor itself
+  );
+  expect(css(sheet, anyDefined)).toEqual([
+    'css-element-selector:1',
+    'css-element-selector:2',
+    'css-element-selector:3',
+    'css-element-selector:4',
   ]);
 });
 
@@ -435,6 +714,37 @@ test('an exception hides exactly its count of violations; a stale or too broad o
     'a.tsx raw-element "<" matches 3, expected 1',
   ]);
   expect(() => parseExceptions('[{ "file": "a.tsx", "rule": "raw-element", "match": "<a>" }]')).toThrow(/reason/);
+});
+
+test('a selector exception holds for every branch of the list; a declaration exception can name its value and at-rule', () => {
+  const file = 'packages/ui/src/a.css';
+  const sheet = lines(
+    '.pb-prose a, button { margin: 0; }', // 1: a global button rule rides on the prose exception
+    '.pb-prose td, .pb-prose th { margin: 0; }', // 2: legal
+    '@media (prefers-reduced-motion: reduce) { * { scroll-behavior: smooth !important; } }', // 3
+    '* { scroll-behavior: auto !important; }', // 4: outside the media query
+    '@media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; } }', // 5: legal
+  );
+  const exceptions = parseExceptions(
+    JSON.stringify([
+      { file, rule: 'css-element-selector', match: '.pb-prose ', count: 2, reason: 'prose' },
+      {
+        file,
+        rule: 'css-important',
+        match: 'scroll-behavior',
+        anchor: '*',
+        value: 'auto',
+        condition: '@media (prefers-reduced-motion: reduce)',
+        reason: 'reduced motion',
+      },
+    ]),
+  );
+  const { kept, problems } = applyExceptions(scanCss(file, sheet, anyDefined).violations, exceptions);
+  expect(found(kept)).toEqual(['css-element-selector:1', 'css-important:3', 'css-important:4']);
+  expect(problems).toEqual([`${file} css-element-selector ".pb-prose " matches 1, expected 2`]);
+  expect(() => parseExceptions(JSON.stringify([{ file, rule: 'css-important', match: 'x', condition: 'media', reason: 'r' }]))).toThrow(
+    /condition/,
+  );
 });
 
 test('report mode fails only where a file and rule rose above the baseline', () => {

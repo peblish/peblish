@@ -53,6 +53,8 @@
     "rule": "css-important",
     "match": "scroll-behavior",
     "anchor": "*",
+    "value": "auto",
+    "condition": "@media (prefers-reduced-motion: reduce)",
     "reason": "Reduced motion must turn off smooth scrolling everywhere, including where a component sets it."
   },
   {
