@@ -1,3 +1,5 @@
+import { Link } from '@peblish/ui/components/link';
+import { Text } from '@peblish/ui/components/text';
 import { createFileRoute, notFound, redirect } from '@tanstack/react-router';
 import { type } from 'arktype';
 import { useTranslate } from '../../../i18n/use-translate.ts';
@@ -34,19 +36,24 @@ function Sent() {
   useRouteHydrated();
   const sent = Route.useLoaderData();
   return (
-    <main className="rp-page rp-sent">
-      <h1>{t('reports', 'sent.title', { number: sent.number })}</h1>
-      <p>
+    <main className="rp-page">
+      <Text as="h1" variant="display" size="sm">
+        {t('reports', 'sent.title', { number: sent.number })}
+      </Text>
+      {/* The anonymity promise holds only for a report that stayed here; a forwarded one names every host that can see it. */}
+      <Text as="p">
         {sent.forwardedTo.length > 0
           ? t('reports', 'sent.promise.forwarded', { hosts: hostList(locale, sent.forwardedTo) })
           : t('reports', 'sent.promise')}
-      </p>
-      {sent.blockHandle && (
-        <a href={`/settings/blocks?person=${encodeURIComponent(sent.blockHandle)}`}>
-          {t('reports', 'sent.block', { handle: `@${sent.blockHandle}` })}
-        </a>
-      )}
-      <a href={sent.back}>{t('reports', 'sent.done')}</a>
+      </Text>
+      <div className="rp-buttons">
+        {sent.blockHandle && (
+          <Link href={`/settings/blocks?person=${encodeURIComponent(sent.blockHandle)}`}>
+            {t('reports', 'sent.block', { handle: `@${sent.blockHandle}` })}
+          </Link>
+        )}
+        <Link href={sent.back}>{t('reports', 'sent.done')}</Link>
+      </div>
     </main>
   );
 }

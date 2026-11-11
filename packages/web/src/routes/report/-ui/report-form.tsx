@@ -1,5 +1,13 @@
 import type { ReportForm } from '@peblish/core/reports/form';
 import { Button } from '@peblish/ui/components/button';
+import { Card } from '@peblish/ui/components/card';
+import { Checkbox } from '@peblish/ui/components/checkbox';
+import { Input } from '@peblish/ui/components/input';
+import { Link } from '@peblish/ui/components/link';
+import { RadioField } from '@peblish/ui/components/radio-field';
+import { RadioGroup } from '@peblish/ui/components/radio-group';
+import { Text } from '@peblish/ui/components/text';
+import { TextAreaField } from '@peblish/ui/components/text-area';
 import { type } from 'arktype';
 import { useState, type FormEvent } from 'react';
 import { useTranslate } from '../../../i18n/use-translate.ts';
@@ -11,11 +19,12 @@ const Answer = type({ 'redirect?': 'string', 'error?': 'string' });
 const kindOf = (form: ReportForm) => (form.target.kind === 'actor' ? form.about.kind : form.target.kind);
 
 /**
- * The report form: what is reported, the quote, a category (native radios, each with one help
- * line), details, and, when it can go to another instance, a checkbox for that. A plain POST
- * to /report that works without JavaScript; once hydrated it posts by fetch and follows the
- * redirect, keeping what was typed on an error. The routing line under the categories follows
- * the chosen radio in CSS, so it is right in both modes.
+ * The report form: what is reported, the quote, a category (a Mux RadioGroup, each option with
+ * one help line), details, and, when it can go to another instance, a checkbox naming every host
+ * it would go to. A plain POST to /report that works without JavaScript (Mux renders real radios,
+ * textarea and checkbox); once hydrated it posts by fetch and follows the redirect, keeping what
+ * was typed on an error. The routing line under the categories, and the forward checkbox, follow
+ * the chosen radio in CSS, so they are right in both modes.
  */
 export function ReportFormView({
   form,
@@ -56,87 +65,90 @@ export function ReportFormView({
 
   return (
     <form method="post" action="/report" className="rp-form" aria-busy={busy} onSubmit={submit}>
-      <p className="rp-about">
-        <b>{t('reports', `queue.type.${kindOf(form)}`)}</b>{' '}
+      <Text as="p">
+        <Text variant="label">{t('reports', `queue.type.${kindOf(form)}`)}</Text>{' '}
         {form.about.community
           ? t('reports', 'form.aboutBy', { handle: `@${form.about.handle}`, community: `!${form.about.community}` })
           : t('reports', 'form.aboutPerson', {
               handle: form.about.kind === 'community' ? `!${form.about.handle}` : `@${form.about.handle}`,
             })}
-      </p>
+      </Text>
       {form.quote && (
-        <blockquote className="rp-quote">
-          <span className="rp-quote__label">{t('reports', 'form.quote')}</span>
-          {form.quote}
-        </blockquote>
+        <Card.Root variant="filled" padding="sm" className="rp-quote">
+          <Text as="div" variant="label" size="sm" color="muted">
+            {t('reports', 'form.quote')}
+          </Text>
+          <blockquote>{form.quote}</blockquote>
+        </Card.Root>
       )}
       {error && (
-        <p className="rp-error" role="alert">
+        <Text as="p" className="rp-error" role="alert">
           {t('reports', errorKey(error))}
-        </p>
+        </Text>
       )}
-      <input type="hidden" name="kind" value={form.target.kind} />
-      <input type="hidden" name="id" value={form.target.id} />
-      <input type="hidden" name="back" value={back} />
-      <fieldset className="rp-categories">
-        <legend>{t('reports', 'form.category')}</legend>
+      <Input.Input type="hidden" name="kind" value={form.target.kind} />
+      <Input.Input type="hidden" name="id" value={form.target.id} />
+      <Input.Input type="hidden" name="back" value={back} />
+      <RadioGroup label={t('reports', 'form.category')} name="category" required defaultValue={initialCategory}>
         {form.categories.map((option) => (
-          <label key={option.key} className="rp-cat">
-            <input
-              type="radio"
-              name="category"
-              value={option.key}
-              required
-              defaultChecked={initialCategory === option.key}
-              data-audience={option.audience}
-              data-forwardable={option.forwardable}
-            />
-            <span>
-              <span className="rp-cat__name">{t('reports', `category.${option.key}`)}</span>
-              <span className="rp-help">{t('reports', `category.${option.key}.help`)}</span>
-            </span>
-          </label>
+          // The data attributes let the CSS below show the routing line and the forward checkbox.
+          <RadioField.Root
+            key={option.key}
+            value={option.key}
+            className="rp-cat"
+            data-audience={option.audience}
+            data-forwardable={option.forwardable}
+          >
+            <RadioField.Button>
+              <RadioField.Indicator>
+                <RadioField.Dot />
+              </RadioField.Indicator>
+              {t('reports', `category.${option.key}`)}
+            </RadioField.Button>
+            <RadioField.Description>{t('reports', `category.${option.key}.help`)}</RadioField.Description>
+          </RadioField.Root>
         ))}
-      </fieldset>
-      <div className="rp-field">
-        <label htmlFor="report-details">{t('reports', 'form.details')}</label>
-        <textarea id="report-details" name="details" rows={4} maxLength={2000} aria-describedby="report-details-hint" />
-        <span id="report-details-hint" className="rp-help">
-          {t('reports', 'form.details.hint')} {t('reports', 'form.details.limit')}
-        </span>
-      </div>
+      </RadioGroup>
+      <TextAreaField
+        label={t('reports', 'form.details')}
+        description={`${t('reports', 'form.details.hint')} ${t('reports', 'form.details.limit')}`}
+        name="details"
+        rows={4}
+        maxLength={2000}
+      />
       {canForward && (
-        <label className="rp-forward">
-          <input type="checkbox" name="forward" value="yes" />
+        <div className="rp-forward">
+          <Checkbox name="forward" value="yes">
+            {t('reports', 'form.forward', { hosts: hostList(locale, form.hosts) })}
+          </Checkbox>
           {/* The hosts named here; the report is sent on to no other. */}
-          <input type="hidden" name="hosts" value={form.hosts.join(' ')} />
-          <span>{t('reports', 'form.forward', { hosts: hostList(locale, form.hosts) })}</span>
-        </label>
+          <Input.Input type="hidden" name="hosts" value={form.hosts.join(' ')} />
+        </div>
       )}
       <div className="rp-routes" aria-live="polite">
-        <p className="rp-route" data-for="none">
+        <Text as="p" className="rp-route" data-for="none">
           {t('reports', 'route.none')}
-        </p>
-        <p className="rp-route" data-for="moderators">
+        </Text>
+        <Text as="p" className="rp-route" data-for="moderators">
           {t('reports', 'route.moderators')}
-        </p>
-        <p className="rp-route" data-for="admins">
+        </Text>
+        <Text as="p" className="rp-route" data-for="admins">
           {t('reports', 'route.admins')}
-        </p>
-        <p className="rp-route rp-warning" data-for="admins">
+        </Text>
+        <Text as="p" variant="label" className="rp-route" data-for="admins">
           {t('reports', 'route.warning')}
-        </p>
+        </Text>
       </div>
       <div className="rp-buttons">
         <Button type="submit" variant="primary">
           {t('reports', 'form.submit')}
         </Button>
         {onCancel ? (
-          <button type="button" className="pb-linkbutton" onClick={onCancel}>
+          <Button variant="ghost" onActivate={onCancel}>
             {t('reports', 'form.cancel')}
-          </button>
+          </Button>
         ) : (
-          <a href={back}>{t('reports', 'form.cancel')}</a>
+          <Link href={back}>{t('reports', 'form.cancel')}</Link>
         )}
       </div>
     </form>
