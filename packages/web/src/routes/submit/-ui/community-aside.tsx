@@ -1,5 +1,9 @@
-import { Prose } from '@peblish/ui/components/prose';
+import { Card } from '@peblish/ui/components/card';
+import { Disclosure } from '@peblish/ui/components/disclosure';
 import { Handle } from '@peblish/ui/components/handle';
+import { Link } from '@peblish/ui/components/link';
+import { Prose } from '@peblish/ui/components/prose';
+import { Text } from '@peblish/ui/components/text';
 import { useTranslate } from '../../../i18n/use-translate.ts';
 import type { CommunityPanel } from '../-types.ts';
 
@@ -8,46 +12,67 @@ export function CommunityAside({ panel, loading }: { panel: CommunityPanel | nul
   const { t } = useTranslate();
   return (
     <aside className="cmp__aside" aria-label={t('composer', 'panel.label')} aria-busy={loading}>
-      {panel === null ? (
-        <p className="pb-muted">{loading ? t('composer', 'panel.loading') : t('composer', 'panel.choose')}</p>
-      ) : (
-        <>
-          <h2 className="cmp__community">
-            <Handle prefix="!" handle={panel.handle} />
-          </h2>
-          {panel.summary && <p>{panel.summary}</p>}
-          {panel.sensitive && <p className="pb-muted">{t('composer', 'panel.sensitive')}</p>}
-          {panel.restricted && <p className="pb-muted">{t('composer', 'panel.restricted')}</p>}
-          {panel.warning && (
-            <>
-              <h3>{t('composer', 'panel.warning')}</h3>
-              <p>{panel.warning}</p>
-            </>
-          )}
-          <h3>{t('composer', 'panel.rules')}</h3>
-          {panel.rules.length === 0 ? (
-            <p className="pb-muted">{t('composer', 'panel.noRules')}</p>
-          ) : (
-            <ol className="cmp__rules">
-              {panel.rules.map(({ title, html }, index) => (
-                <li key={`${index}-${title}`}>
-                  {html ? (
-                    <details>
-                      <summary>{title}</summary>
-                      <Prose html={html} />
-                    </details>
-                  ) : (
-                    title
-                  )}
-                </li>
-              ))}
-            </ol>
-          )}
-          <p>
-            <a href={panel.href}>{t('composer', 'panel.more')}</a>
-          </p>
-        </>
-      )}
+      <Card.Root variant="outlined" padding="md">
+        {panel === null ? (
+          <Card.Body>
+            <Text as="p" color="muted">
+              {loading ? t('composer', 'panel.loading') : t('composer', 'panel.choose')}
+            </Text>
+          </Card.Body>
+        ) : (
+          <>
+            <Card.Header>
+              <Text as="h2" variant="title" size="sm">
+                <Handle prefix="!" handle={panel.handle} />
+              </Text>
+            </Card.Header>
+            <Card.Body className="cmp__aside-body">
+              {panel.summary && <Text as="p">{panel.summary}</Text>}
+              {panel.sensitive && (
+                <Text as="p" color="muted">
+                  {t('composer', 'panel.sensitive')}
+                </Text>
+              )}
+              {panel.restricted && (
+                <Text as="p" color="muted">
+                  {t('composer', 'panel.restricted')}
+                </Text>
+              )}
+              {panel.warning && (
+                <>
+                  <Text as="h3" variant="label" size="md">
+                    {t('composer', 'panel.warning')}
+                  </Text>
+                  <Text as="p">{panel.warning}</Text>
+                </>
+              )}
+              <Text as="h3" variant="label" size="md">
+                {t('composer', 'panel.rules')}
+              </Text>
+              {panel.rules.length === 0 ? (
+                <Text as="p" color="muted">
+                  {t('composer', 'panel.noRules')}
+                </Text>
+              ) : (
+                <ol className="cmp__rules">
+                  {panel.rules.map(({ title, html }, index) => (
+                    <li key={`${index}-${title}`}>
+                      {html ? (
+                        <Disclosure title={title}>
+                          <Prose html={html} />
+                        </Disclosure>
+                      ) : (
+                        <Text>{title}</Text>
+                      )}
+                    </li>
+                  ))}
+                </ol>
+              )}
+              <Link href={panel.href}>{t('composer', 'panel.more')}</Link>
+            </Card.Body>
+          </>
+        )}
+      </Card.Root>
     </aside>
   );
 }

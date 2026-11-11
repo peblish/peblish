@@ -3,6 +3,10 @@ import { normalizeTitle, postTitleMaxLength } from '@peblish/core/posts/input';
 import { markdownMaxLength } from '@peblish/schema/markdown';
 import { Button } from '@peblish/ui/components/button';
 import { Checkbox } from '@peblish/ui/components/checkbox';
+import { Link } from '@peblish/ui/components/link';
+import { RadioField } from '@peblish/ui/components/radio-field';
+import { RadioGroup } from '@peblish/ui/components/radio-group';
+import { Text } from '@peblish/ui/components/text';
 import { TextField } from '@peblish/ui/components/text-field';
 import { MarkdownEditor } from '@peblish/ui/composer/markdown-editor';
 import { useHydrated } from '@peblish/ui/composer/use-hydrated.ts';
@@ -24,9 +28,38 @@ import { CommunityAside } from './community-aside.tsx';
 import { CommunityPicker } from './community-picker.tsx';
 import { clearDraft, readDraft, removeUnscopedDrafts, writeDraft } from './drafts.ts';
 import { ErrorText } from './error-text.tsx';
+import { ImageField } from './image-field.tsx';
 import { useEditorLabels } from './labels.ts';
 
 const Answer = type({ 'redirect?': 'string', 'error?': 'string' });
+
+/**
+ * Posts the form as fetch would, through XMLHttpRequest because only it reports how much of the
+ * body has gone (the image's progress bar). Resolves with the answer's text; rejects when the
+ * connection fails.
+ */
+function send(action: string, body: FormData, onProgress: (percent: number) => void): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const request = new XMLHttpRequest();
+    request.open('POST', action);
+    request.setRequestHeader('accept', 'application/json');
+    request.upload.addEventListener('progress', (event) => {
+      if (event.lengthComputable) onProgress(Math.round((event.loaded / event.total) * 100));
+    });
+    request.addEventListener('load', () => resolve(request.responseText));
+    request.addEventListener('error', () => reject(new Error('network')));
+    request.addEventListener('abort', () => reject(new Error('network')));
+    request.send(body);
+  });
+}
+
+const parseAnswer = (text: string) => {
+  try {
+    return Answer(JSON.parse(text));
+  } catch {
+    return undefined;
+  }
+};
 
 export type ReadyData = Extract<ComposerData, { status: 'ready' }>;
 
@@ -99,10 +132,10 @@ export function Composer({ data, error: initialError, onDone, onDiscard, keepOnC
   const [panel, setPanel] = useState<CommunityPanel | null>(data.panel);
   const [error, setError] = useState(initialError);
   const [busy, setBusy] = useState(false);
+  const [progress, setProgress] = useState<number | null>(null);
   const [note, setNote] = useState<'saved' | 'restored' | 'not-saved' | null>(null);
   const enhanced = useHydrated();
   const formElement = useRef<HTMLFormElement>(null);
-  const file = useRef<HTMLInputElement>(null);
   const panelRequest = useRef(0);
   // What the unmount cleanup needs to know, read at that moment.
   const latest = useRef(form);
@@ -172,6 +205,9 @@ export function Composer({ data, error: initialError, onDone, onDiscard, keepOnC
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    const body = new FormData(event.currentTarget);
+    const image = body.get('image');
+    const hasImage = image instanceof File && image.size > 0;
     const found = firstProblem({
       creating: !edit,
       community: form.community,
@@ -179,19 +215,17 @@ export function Composer({ data, error: initialError, onDone, onDiscard, keepOnC
       title: form.title,
       url: form.url,
       body: form.body,
-      hasImage: (file.current?.files?.length ?? 0) > 0,
+      hasImage,
     });
     if (found) return setError(found);
     setBusy(true);
     setError(undefined);
+    const sendsImage = form.type === 'image' && hasImage;
+    if (sendsImage) setProgress(0);
     try {
-      const response = await fetch('/submit', {
-        method: 'POST',
-        body: new FormData(event.currentTarget),
-        headers: { accept: 'application/json' },
-      });
+      const text = await send(action, body, (percent) => sendsImage && setProgress(percent));
       // Not JSON at all (a proxy's error page): the server did not decide this, and nothing is wrong with the connection.
-      const answer = await response.json().then(Answer, () => undefined);
+      const answer = parseAnswer(text);
       if (!answer || answer instanceof type.errors) return setError('generic');
       if (answer.redirect) {
         finished.current = true;
@@ -202,6 +236,7 @@ export function Composer({ data, error: initialError, onDone, onDiscard, keepOnC
       setError('network');
     } finally {
       setBusy(false);
+      setProgress(null);
     }
   }
 
@@ -223,50 +258,53 @@ export function Composer({ data, error: initialError, onDone, onDiscard, keepOnC
     onDiscard();
   }
 
+  const imageOff = !data.uploads;
+  // An edit names its post in the address the form posts to (-submit.ts reads it there).
+  const action = edit ? `/submit?${new URLSearchParams({ edit: edit.id })}` : '/submit';
   return (
-    <div className="cmp">
+    // An edit's type is fixed and has no radios: the attribute shows its fields instead.
+    <div className="cmp" data-type={edit ? form.type : undefined}>
       <form
         ref={formElement}
         className="cmp__form"
         method="post"
-        action="/submit"
+        action={action}
         encType="multipart/form-data"
         noValidate
         aria-busy={busy}
         onSubmit={submit}
       >
         {edit ? (
-          <>
-            <input type="hidden" name="edit" value={edit.id} />
-            {/* The post's type cannot change, but the CSS that shows its fields reads this radio like the choice below. */}
-            <input type="radio" name="type" value={form.type} defaultChecked hidden />
-            <p className="cmp__editing">{t('composer', 'edit.in', { community: panel ? `!${panel.handle}` : '' })}</p>
-          </>
+          <Text as="p" className="cmp__editing">
+            {t('composer', 'edit.in', { community: panel ? `!${panel.handle}` : '' })}
+          </Text>
         ) : (
           <>
             <CommunityPicker communities={data.communities} value={form.community} onChange={choose} error={fieldError('community')} />
-            <fieldset className="cmp__types">
-              <legend className="pb-sr">{t('composer', 'type.label')}</legend>
+            {/* Real radios: the choice posts without JavaScript, and the CSS shows each type's fields by the checked one. */}
+            <RadioGroup
+              aria-label={t('composer', 'type.label')}
+              name="type"
+              orientation="horizontal"
+              value={form.type}
+              onChange={(kind) => {
+                const next = postTypes.find((candidate) => candidate === kind);
+                if (next) change({ type: next });
+              }}
+              className="cmp__types"
+            >
               {postTypes.map((kind) => (
-                <label key={kind} className="cmp__type">
-                  <input
-                    type="radio"
-                    name="type"
-                    value={kind}
-                    checked={form.type === kind}
-                    disabled={kind === 'image' && !data.uploads}
-                    aria-describedby={kind === 'image' && !data.uploads ? 'cmp-image-off' : undefined}
-                    onChange={() => change({ type: kind })}
-                  />
-                  <span>{t('composer', `type.${kind}`)}</span>
-                </label>
+                <RadioField.Root key={kind} value={kind} disabled={kind === 'image' && imageOff}>
+                  <RadioField.Button>
+                    <RadioField.Indicator>
+                      <RadioField.Dot />
+                    </RadioField.Indicator>
+                    {t('composer', `type.${kind}`)}
+                  </RadioField.Button>
+                  {kind === 'image' && imageOff && <RadioField.Description>{t('composer', 'type.imageOff')}</RadioField.Description>}
+                </RadioField.Root>
               ))}
-            </fieldset>
-            {!data.uploads && (
-              <p id="cmp-image-off" className="cmp__note">
-                {t('composer', 'type.imageOff')}
-              </p>
-            )}
+            </RadioGroup>
           </>
         )}
 
@@ -298,22 +336,7 @@ export function Composer({ data, error: initialError, onDone, onDiscard, keepOnC
 
         {data.uploads && !edit && (
           <div className="cmp__only-image">
-            <div className="cmp__field">
-              <label htmlFor="cmp-image">{t('composer', 'image.label')}</label>
-              <input
-                ref={file}
-                id="cmp-image"
-                type="file"
-                name="image"
-                accept="image/jpeg,image/png,image/webp,image/gif"
-                aria-invalid={problem('image') !== undefined}
-                aria-describedby="cmp-image-hint"
-              />
-              <span id="cmp-image-hint" className="pb-muted">
-                {t('composer', 'image.hint')}
-              </span>
-              {fieldError('image') && <p role="alert">{fieldError('image')}</p>}
-            </div>
+            <ImageField error={fieldError('image')} progress={progress} />
             <TextField
               label={t('composer', 'alt.label')}
               name="alt"
@@ -326,9 +349,12 @@ export function Composer({ data, error: initialError, onDone, onDiscard, keepOnC
         )}
 
         <div className="cmp__only-text cmp__field">
-          <span id="cmp-body-label" className="cmp__label">
-            {t('composer', 'body.label')} <span className="pb-muted">{t('composer', 'body.optional')}</span>
-          </span>
+          <Text as="span" variant="label" size="sm" id="cmp-body-label">
+            {t('composer', 'body.label')}{' '}
+            <Text color="muted" variant="label" size="sm">
+              {t('composer', 'body.optional')}
+            </Text>
+          </Text>
           <MarkdownEditor
             name="body"
             label={t('composer', 'body.label')}
@@ -341,7 +367,13 @@ export function Composer({ data, error: initialError, onDone, onDiscard, keepOnC
               if (!rendered) throw new Error('preview refused');
               return rendered.html;
             }}
-            previewLead={form.title ? <h3>{normalizeTitle(form.title)}</h3> : undefined}
+            previewLead={
+              form.title ? (
+                <Text as="h3" variant="title" size="md">
+                  {normalizeTitle(form.title)}
+                </Text>
+              ) : undefined
+            }
             description={t('composer', 'body.hint', { max: new Intl.NumberFormat(locale).format(markdownMaxLength) })}
             invalid={problem('body') !== undefined || form.body.length > markdownMaxLength}
             errorMessage={fieldError('body') ?? t('composer', 'error.body.too_long')}
@@ -375,25 +407,23 @@ export function Composer({ data, error: initialError, onDone, onDiscard, keepOnC
             {edit ? t('composer', 'actions.save') : t('composer', 'actions.post')}
           </Button>
           {!edit && (
-            <Button type="button" onActivate={saveDraft} disabled={!enhanced || busy || form.type === 'image'}>
+            <Button variant="neutral" onActivate={saveDraft} disabled={!enhanced || busy || form.type === 'image'}>
               {t('composer', 'actions.draft')}
             </Button>
           )}
           {edit ? (
-            <a className="pb-linkbutton" href={`/post/${edit.id}`}>
-              {t('composer', 'actions.cancel')}
-            </a>
+            <Link href={`/post/${edit.id}`}>{t('composer', 'actions.cancel')}</Link>
           ) : (
-            <button type="button" className="pb-linkbutton" onClick={discard} disabled={!enhanced}>
+            <Button variant="ghost" onActivate={discard} disabled={!enhanced}>
               {t('composer', 'actions.discard')}
-            </button>
+            </Button>
           )}
           <span className="cmp__spacer" />
-          <span className="pb-muted">{t('composer', 'as', { handle: data.me })}</span>
+          <Text color="muted">{t('composer', 'as', { handle: data.me })}</Text>
         </div>
-        <p className="pb-muted" role="status">
+        <Text as="p" color="muted" role="status" className="cmp__status">
           {note && t('composer', `draft.${note}`)}
-        </p>
+        </Text>
       </form>
       <CommunityAside panel={panel} loading={form.community !== null && panel === null} />
     </div>

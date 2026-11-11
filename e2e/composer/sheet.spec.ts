@@ -1,7 +1,7 @@
 import { expect, test, type BrowserContext, type Page } from '@playwright/test';
 import { expectAccessible } from '../auth/support.ts';
 import { gotoHydrated, recordConsole } from '../support/route-marker.ts';
-import { community, seed, signedIn, type Seed } from './support.ts';
+import { choose, seed, type Seed, signedIn } from './support.ts';
 
 // The shell's "Create post" opens the composer as a bottom sheet over the page it is on: the
 // page stays mounted underneath, and the sheet's code is loaded only then.
@@ -74,7 +74,7 @@ test('posting from the sheet closes it and opens the new post', async () => {
   const page = await poster.newPage();
   await gotoHydrated(page, '/');
   await create(page).click();
-  await community(sheet(page), world.communities.open.handle).check();
+  await choose(sheet(page), world.communities.open.handle);
   await sheet(page).getByLabel('Title').fill('Posted from the sheet');
   await sheet(page).getByRole('textbox', { name: 'Body', exact: true }).fill('Written over the feed.');
   await sheet(page).getByRole('button', { name: 'Post', exact: true }).click();

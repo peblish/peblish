@@ -1,3 +1,5 @@
+import { Link } from '@peblish/ui/components/link';
+import { Text } from '@peblish/ui/components/text';
 import composerCss from '@peblish/ui/composer/composer.css?url';
 import { createFileRoute, getRouteApi, redirect, useRouter } from '@tanstack/react-router';
 import { type } from 'arktype';
@@ -20,8 +22,8 @@ import submitCss from './-ui/submit.css?url';
 const root = getRouteApi('__root__');
 
 /** A search value as a string: the router parses ?a=1 into a number. */
-const Text = type('string | number').pipe((value) => String(value));
-const Search = type({ 'edit?': Text, 'community?': Text, 'error?': Text, 'flash?': Text });
+const SearchText = type('string | number').pipe((value) => String(value));
+const Search = type({ 'edit?': SearchText, 'community?': SearchText, 'error?': SearchText, 'flash?': SearchText });
 
 export const Route = createFileRoute('/submit/')({
   validateSearch: Search,
@@ -85,13 +87,17 @@ function Submit() {
   const editing = search.edit !== undefined;
   return (
     <main className="cmp-page">
-      <h1>{editing ? t('composer', 'title.edit') : t('composer', 'title.create')}</h1>
+      <Text as="h1" variant="heading" size="sm" className="cmp-page__title">
+        {editing ? t('composer', 'title.edit') : t('composer', 'title.create')}
+      </Text>
       {data.status === 'unavailable' ? (
         <>
-          <p role="alert">{t('composer', `unavailable.${data.reason}`)}</p>
-          <p>
-            <a href="/">{t('composer', 'back')}</a>
+          <p role="alert" className="cmp__error">
+            {t('composer', `unavailable.${data.reason}`)}
           </p>
+          <Text as="p">
+            <Link href="/">{t('composer', 'back')}</Link>
+          </Text>
         </>
       ) : (
         <Composer

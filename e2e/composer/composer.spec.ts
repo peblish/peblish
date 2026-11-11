@@ -1,7 +1,7 @@
 import { expect, test, type BrowserContext, type Page } from '@playwright/test';
 import { expectAccessible, landed, signIn } from '../auth/support.ts';
 import { gotoHydrated, recordConsole } from '../support/route-marker.ts';
-import { community, seed, signedIn, type Seed } from './support.ts';
+import { choose, chooseType, community, radioLabel, seed, type Seed, signedIn } from './support.ts';
 import { siteName } from '../support/site-name.ts';
 
 // The composer as a page, end to end on the built server and the lane database: the picker and
@@ -39,7 +39,7 @@ const post = (page: Page) => page.getByRole('button', { name: 'Post', exact: tru
 
 /** The Markdown body of a new post, with the community chosen and a title; what each test then does with it differs. */
 async function fill(page: Page, handle: string, title: string, text: string) {
-  await community(page, handle).check();
+  await choose(page, handle);
   await page.getByLabel('Title').fill(title);
   await body(page).fill(text);
 }
@@ -72,7 +72,7 @@ test('the picker leaves out removed communities, hides age-gated ones from someo
   // A remote community's own restriction applies as it does for a local one, and its handle has the host.
   await expect(community(declared, remoteStaff.handle)).toBeDisabled();
   // An NSFL community marks every post sensitive, as an NSFW one does.
-  await community(declared, gated.handle).check();
+  await choose(declared, gated.handle);
   await expect(declared.getByRole('checkbox', { name: 'NSFW' })).toBeChecked();
   await expect(declared.getByRole('checkbox', { name: 'NSFW' })).toBeDisabled();
   await declared.close();
@@ -94,7 +94,7 @@ test('the panel does not exist for an age-gated community when the viewer has no
   /** Chooses `open` in the picker, then asks for another community's panel the way the page does. */
   async function askPanel(page: Page) {
     const call = page.waitForRequest((request) => request.url().includes('/_serverFn/') && request.url().includes(open.id));
-    await community(page, open.handle).check();
+    await choose(page, open.handle);
     const url = (await call).url();
     await expect(page.getByRole('complementary', { name: 'Community rules' })).toContainText(open.handle);
     return (id: string) =>
@@ -138,7 +138,7 @@ test('the chosen community shows its rules and posting warning beside the form',
   await gotoHydrated(page, '/submit');
   const aside = page.getByRole('complementary', { name: 'Community rules' });
   await expect(aside).toContainText('Choose a community');
-  await community(page, world.communities.open.handle).check();
+  await choose(page, world.communities.open.handle);
   await expect(aside.getByRole('heading', { level: 2 })).toContainText(world.communities.open.handle);
   await expect(aside).toContainText('Read the rules before you post.');
   await expect(aside.getByRole('listitem')).toHaveCount(2);
@@ -147,7 +147,7 @@ test('the chosen community shows its rules and posting warning beside the form',
   // The filter narrows the list and never drops the chosen community from the form.
   await page.getByRole('searchbox', { name: 'Search communities' }).fill('tech_');
   await expect(community(page, world.communities.open.handle)).toHaveCount(0);
-  await expect(community(page, world.communities.remote.handle)).toBeVisible();
+  await expect(radioLabel(community(page, world.communities.remote.handle))).toBeVisible();
   await expect(page.locator('input[name="community"]:checked')).toHaveValue(world.communities.open.id);
   await page.close();
 });
@@ -192,7 +192,7 @@ test('editing: the author changes the post, and Preview already carries the publ
   await expect(page.getByRole('searchbox', { name: 'Search communities' })).toHaveCount(0);
   await page.getByLabel('Title').fill('After the edit');
   await body(page).fill('Second[^1] version.\n\n[^1]: Another note.');
-  await page.getByRole('button', { name: 'Preview' }).click();
+  await page.getByRole('radio', { name: 'Preview' }).click();
   const previewed = await page.locator('.pb-md__preview .pb-prose').innerHTML();
   await page.getByRole('button', { name: 'Save changes' }).click();
   await page.waitForURL(/\/post\/[0-9a-f-]{36}$/);
@@ -224,8 +224,8 @@ test('only the author can open the edit form', async () => {
 test('a link post: a bad address is refused, a page that cannot be fetched gives no title to take, then the typed title posts', async () => {
   const page = await poster.newPage();
   await gotoHydrated(page, '/submit');
-  await community(page, world.communities.open.handle).check();
-  await page.locator('label.cmp__type', { hasText: 'Link' }).click();
+  await choose(page, world.communities.open.handle);
+  await chooseType(page, 'Link');
   // The text fields give way to the address field.
   await expect(page.getByLabel('URL')).toBeVisible();
   await expect(body(page)).toBeHidden();
@@ -250,7 +250,7 @@ test('the title counts its characters and refuses more than 200', async () => {
   await gotoHydrated(page, '/submit');
   await page.getByLabel('Title').fill('x'.repeat(201));
   await expect(page.getByText('201 / 200')).toBeVisible();
-  await community(page, world.communities.open.handle).check();
+  await choose(page, world.communities.open.handle);
   await post(page).click();
   await expect(page.getByText('The title can have up to 200 characters.')).toBeVisible();
   await page.getByLabel('Title').fill('x'.repeat(200));
@@ -301,16 +301,16 @@ test('a draft is kept in this browser per community, restored, and cleared by po
   await page.reload();
   await page.locator('html[data-hydrated="1"]').waitFor({ state: 'attached' });
   await expect(page.getByLabel('Title')).toHaveValue('');
-  await community(page, world.communities.remote.handle).check();
+  await choose(page, world.communities.remote.handle);
   await expect(page.getByLabel('Title')).toHaveValue('');
-  await community(page, world.communities.open.handle).check();
+  await choose(page, world.communities.open.handle);
   await expect(page.getByLabel('Title')).toHaveValue('A draft title');
   await expect(body(page)).toHaveValue('Draft body');
   await expect(page.getByRole('status')).toHaveText('Your saved draft for this community is back.');
   await page.getByRole('button', { name: 'Discard' }).click();
   await page.waitForURL('/');
   await gotoHydrated(page, '/submit');
-  await community(page, world.communities.open.handle).check();
+  await choose(page, world.communities.open.handle);
   await expect(page.getByLabel('Title')).toHaveValue('');
   await page.close();
 });
@@ -331,7 +331,7 @@ test("a draft is the signed-in person's: someone else on the same browser does n
   );
   // The unscoped draft is never offered, and the next visit removes it.
   await gotoHydrated(page, '/submit');
-  await community(page, open.handle).check();
+  await choose(page, open.handle);
   await expect(page.getByLabel('Title')).toHaveValue('');
   expect(await page.evaluate((key) => localStorage.getItem(key), legacy)).toBeNull();
 
@@ -340,7 +340,7 @@ test("a draft is the signed-in person's: someone else on the same browser does n
   await expect(page.getByRole('status')).toHaveText('Draft saved in this browser.');
   await page.reload();
   await page.locator('html[data-hydrated="1"]').waitFor({ state: 'attached' });
-  await community(page, open.handle).check();
+  await choose(page, open.handle);
   await expect(page.getByLabel('Title')).toHaveValue("Ann's draft");
 
   // The moderator signs in on the same browser: the draft stays with the poster.
@@ -349,7 +349,7 @@ test("a draft is the signed-in person's: someone else on the same browser does n
   await signIn(page, `@${world.people.moderator}`, world.password);
   await landed(page, '/');
   await gotoHydrated(page, '/submit');
-  await community(page, open.handle).check();
+  await choose(page, open.handle);
   await expect(page.getByLabel('Title')).toHaveValue('');
   await expect(body(page)).toHaveValue('');
   await expect(page.getByRole('status')).toHaveText('');

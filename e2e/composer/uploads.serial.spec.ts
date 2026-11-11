@@ -1,7 +1,7 @@
 import { crc32, deflateSync } from 'node:zlib';
 import { expect, test, type BrowserContext } from '@playwright/test';
 import { gotoHydrated } from '../support/route-marker.ts';
-import { community, seed, setUploads, signedIn, type Seed } from './support.ts';
+import { choose, chooseType, seed, type Seed, setUploads, signedIn } from './support.ts';
 
 // The Image type: disabled, with its reason, while uploads.enabled is off (the default until
 // scanning is live), and a working upload path behind the switch. The spec flips the switch on
@@ -72,8 +72,8 @@ test('with uploads on an image is cleaned, stored and posted, and a bad file is 
   const page = await poster.newPage();
   await gotoHydrated(page, '/submit');
   await expect(page.getByRole('radio', { name: 'Image' })).toBeEnabled();
-  await community(page, world.communities.open.handle).check();
-  await page.locator('label.cmp__type', { hasText: 'Image' }).click();
+  await choose(page, world.communities.open.handle);
+  await chooseType(page, 'Image');
   await expect(page.getByLabel('Image file')).toBeVisible();
   await page.getByLabel('Title').fill('An uploaded image');
   await page.getByLabel('Alt text').fill('A single red pixel');
