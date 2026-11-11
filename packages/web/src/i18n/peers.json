@@ -34,7 +34,8 @@
     "none": "none",
     "settingsLink": "Change in Settings",
     "controls": "Controls",
-    "controlsFor": "Controls for {host}"
+    "controlsFor": "Controls for {host}",
+    "controlsMissing": "No peer {host} is in the list."
   },
   "de": {
     "title": "Peers",
@@ -71,6 +72,7 @@
     "none": "keine",
     "settingsLink": "In den Einstellungen ändern",
     "controls": "Steuerung",
-    "controlsFor": "Steuerung für {host}"
+    "controlsFor": "Steuerung für {host}",
+    "controlsMissing": "Der Peer {host} ist nicht in der Liste."
   }
 }

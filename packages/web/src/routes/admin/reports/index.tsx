@@ -120,7 +120,8 @@ function Queue() {
     tab: data.tab,
     community: data.community,
     sort: data.sort,
-    cursor: null,
+    // Kept in every row link and form's way back, so a later page stays that page; the tabs and the filter drop it.
+    cursor: search.cursor ?? null,
     show: search.show ?? null,
     details: search.details ?? null,
   };
