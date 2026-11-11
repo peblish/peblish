@@ -20,7 +20,9 @@
     inline-size: 14rem;
   }
   /* Mux Table has no breakpoint: on a narrow screen the table scrolls inside its card. */
+  /* Positioned, so Mux Table's absolutely placed hidden labels stay inside the scrolling card. */
   .rq-table {
+    position: relative;
     overflow-x: auto;
   }
   .rq-table .muxui-table {

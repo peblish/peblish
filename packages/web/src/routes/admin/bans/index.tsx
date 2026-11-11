@@ -9,12 +9,14 @@ import { Text } from '@peblish/ui/components/text';
 import { TextField } from '@peblish/ui/components/text-field';
 import { createFileRoute } from '@tanstack/react-router';
 import { useTranslate } from '../../../i18n/use-translate.ts';
+import { forbidden, sameOrigin } from '../../../server/auth.ts';
 import { useRouteHydrated } from '../../../shell/hydration.ts';
 import { adminPaths, userPath } from '../../../shell/paths.ts';
 import { useDate } from '../../auth/-ui/page.tsx';
 import { BanFields, Panel, ReasonFields } from '../../modlog/-ui/panels.tsx';
 import { Denial } from '../-denial.tsx';
 import { loadBans } from './-load.ts';
+import { NoEnterSubmit } from '../peers/-ui/no-enter-submit.tsx';
 import bansCss from './-ui/bans.css?url';
 
 // /admin/bans: the Bans tab (R2 pick admin-tabs). Who is banned from this instance, a form to
@@ -24,6 +26,8 @@ import bansCss from './-ui/bans.css?url';
 // The table only reads. Lift opens its panel below the table for the ban chosen with
 // ?lift=<person id> (a refusal comes back with ?modFor=site_unban:<id> and opens it too): the
 // panel's reason box cannot sit in a Mux Table cell, whose grid takes arrow keys and letters.
+// When the two disagree nothing opens, and a ban that is not in the list opens nothing and says so.
+// Enter in either panel's fields bans or lifts nothing: only the panel's own button does.
 
 type Search = { person?: string; lift?: string; modFor?: string };
 
@@ -40,6 +44,17 @@ export const Route = createFileRoute('/admin/bans/')({
   loader: ({ deps }) => loadBans({ data: deps }),
   head: () => ({ links: [{ rel: 'stylesheet', href: bansCss }] }),
   component: Bans,
+  server: {
+    handlers: {
+      // Only the panels' hidden first button posts here: Enter in one of their fields without
+      // scripts (NoEnterSubmit). It decides nothing and goes back to the panel it came from.
+      POST: ({ request }) => {
+        if (!sameOrigin(request)) return forbidden();
+        const url = new URL(request.url);
+        return new Response(null, { status: 303, headers: { location: `${url.pathname}${url.search}` } });
+      },
+    },
+  },
 });
 
 /** The chosen ban's Lift panel, open, with the optional reason. */
@@ -62,6 +77,7 @@ function LiftPanel({ ban }: { ban: SiteBanRow }) {
           submit={t('bans', 'liftSubmit')}
           defaultOpen
         >
+          <NoEnterSubmit formAction={`${adminPaths.bans}?${new URLSearchParams({ lift: ban.person.id })}`} />
           <ReasonFields required={false} id={`lift-${ban.person.id}`} />
         </Panel>
       </Card.Body>
@@ -88,7 +104,9 @@ function Bans() {
       </main>
     );
   const { bans, candidate } = data;
-  const lifting = bans.find((ban) => ban.person.id === search.lift || search.modFor === `site_unban:${ban.person.id}`);
+  const refused = search.modFor?.startsWith('site_unban:') ? search.modFor.slice('site_unban:'.length) : undefined;
+  const wanted = search.lift !== undefined && refused !== undefined && search.lift !== refused ? undefined : (search.lift ?? refused);
+  const lifting = wanted ? bans.find((ban) => ban.person.id === wanted) : undefined;
   return (
     <main className="pb-page bans-page">
       <Text as="h1" variant="heading" size="sm">
@@ -134,6 +152,7 @@ function Bans() {
                   submit={t('bans', 'ban')}
                   defaultOpen
                 >
+                  <NoEnterSubmit formAction={`${adminPaths.bans}?${new URLSearchParams({ person: candidate.person.handle })}`} />
                   <BanFields id="confirm" person={candidate.person.id} />
                   <ReasonFields required id="confirm" />
                 </Panel>
@@ -180,6 +199,11 @@ function Bans() {
         </Card.Root>
       )}
       {lifting && <LiftPanel key={lifting.person.id} ban={lifting} />}
+      {wanted && !lifting && (
+        <Notice tone="warning" role="alert" data-testid="lift-missing">
+          {t('bans', 'liftMissing')}
+        </Notice>
+      )}
     </main>
   );
 }

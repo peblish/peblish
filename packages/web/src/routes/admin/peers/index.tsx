@@ -22,6 +22,7 @@ import { errorKey } from '../../modlog/-ui/panels.tsx';
 import { Denial } from '../-denial.tsx';
 import { changes, hostFrom, Body } from './-act.ts';
 import { loadPeers } from './-load.ts';
+import { NoEnterSubmit } from './-ui/no-enter-submit.tsx';
 import peersCss from './-ui/peers.css?url';
 
 // /admin/peers: the Peers tab (R2 pick admin-tabs). Every instance we know of, with what this
@@ -31,7 +32,8 @@ import peersCss from './-ui/peers.css?url';
 //
 // The table only reads; a peer's controls (a reason box and one button per change, as before)
 // open below it for the peer chosen with ?peer=<host>. A text field cannot sit in a Mux Table
-// cell: the grid takes the arrow keys and typed letters for its own navigation.
+// cell: the grid takes the arrow keys and typed letters for its own navigation. A host in the
+// address that is not in the list opens nothing and says so; anything but one host opens nothing.
 
 const Search = (raw: Record<string, unknown>): { error?: string; peer?: string } => ({
   ...(typeof raw.error === 'string' ? { error: raw.error } : {}),
@@ -146,6 +148,8 @@ function PeerControls({ peer }: { peer: PeerRow }) {
       <Card.Body>
         <PeerState peer={peer} />
         <PeerForm className="peers-form">
+          {/* Enter in the reason box presses nothing: the first button here would be Approve media. */}
+          <NoEnterSubmit />
           <input type="hidden" name="domain" value={peer.domain} />
           <TextField name="reason" label={t('peers', 'reason')} maxLength={10000} />
           <div className="peers-buttons">
@@ -249,6 +253,11 @@ function Peers() {
         </Card.Root>
       )}
       {selected && <PeerControls key={selected.domain} peer={selected} />}
+      {chosen && !selected && (
+        <Notice tone="warning" role="alert" data-testid="peer-missing">
+          {t('peers', 'controlsMissing', { host: chosen })}
+        </Notice>
+      )}
       <Text as="p" color="muted">
         {t('peers', 'trusted', { hosts: data.trusted.length > 0 ? data.trusted.join(', ') : t('peers', 'none') })}{' '}
         <Link href={adminPaths.settings}>{t('peers', 'settingsLink')}</Link>

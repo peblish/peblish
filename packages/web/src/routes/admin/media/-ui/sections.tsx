@@ -15,10 +15,12 @@ import { Table } from '@peblish/ui/components/table';
 import { Tabs } from '@peblish/ui/components/tabs';
 import { Text } from '@peblish/ui/components/text';
 import { TextField } from '@peblish/ui/components/text-field';
+import { useState } from 'react';
 import { translatePlural } from '../../../../i18n/translate.ts';
 import { useTranslate } from '../../../../i18n/use-translate.ts';
 import { adminPaths } from '../../../../shell/paths.ts';
 import { useDate } from '../../../auth/-ui/page.tsx';
+import { NoEnterSubmit } from '../../peers/-ui/no-enter-submit.tsx';
 
 // The sections of the Media tab (R2b media-split). Every form is a plain POST, so the decisions
 // work without JavaScript; the decision panels open and close with it. No image is rendered or
@@ -128,13 +130,34 @@ export function SubNav({ section, counts }: { section: Section; counts: MediaOve
 
 const hidden = (name: string, value: string) => <input type="hidden" name={name} value={value} />;
 
+/** What the admin has set in the three decisions so far, for one image. */
+type Draft = { removePosts: boolean; note: string; authority: string; reference: string; until: string; releaseNote: string };
+
 /**
  * One shared decision control: three exclusive panels as Mux Tabs, Confirm first, each a plain POST
  * form. The selected panel is in the server's page, so Confirm works without JavaScript.
+ *
+ * Mux Tabs unmount the panels not shown, so every field is controlled from the draft held here:
+ * an unticked "remove posts" or a note stays as it was after a look at another decision. Only the
+ * panel shown is in the page, so the decision posted is always the one on screen. The caller keys
+ * this by the image, so one image's draft never shows on another. A disabled first submit button
+ * in each form makes Enter in a field decide nothing.
  */
 function Decision({ row }: { row: QuarantineRow }) {
   const { t } = useTranslate();
   const tomorrow = new Date(Date.parse(row.quarantinedAt) + 366 * 86_400_000).toISOString().slice(0, 10);
+  const [draft, setDraft] = useState<Draft>({
+    removePosts: true,
+    note: '',
+    authority: '',
+    reference: '',
+    until: tomorrow,
+    releaseNote: '',
+  });
+  const field =
+    <K extends keyof Draft>(key: K) =>
+    (value: Draft[K]) =>
+      setDraft((current) => ({ ...current, [key]: value }));
   return (
     <Tabs
       aria-label={t('mediascan', 'media.decision')}
@@ -146,14 +169,21 @@ function Decision({ row }: { row: QuarantineRow }) {
           label: t('mediascan', 'media.confirm.title'),
           panel: (
             <form method="post" action={adminPaths.media} aria-label={t('mediascan', 'media.confirm.title')} className="media-form">
+              <NoEnterSubmit />
               {hidden('item', row.mediaId)}
               <Text as="p" size="sm" color="muted">
                 {t('mediascan', 'media.confirm.help')}
               </Text>
-              <Checkbox name="removePosts" defaultChecked>
+              <Checkbox name="removePosts" checked={draft.removePosts} onChange={field('removePosts')}>
                 {t('mediascan', 'media.confirm.removePosts')}
               </Checkbox>
-              <TextField name="note" maxLength={500} label={`${t('mediascan', 'media.note')} ${t('mediascan', 'media.optional')}`} />
+              <TextField
+                name="note"
+                maxLength={500}
+                label={`${t('mediascan', 'media.note')} ${t('mediascan', 'media.optional')}`}
+                value={draft.note}
+                onChange={field('note')}
+              />
               <div>
                 <Button type="submit" name="intent" value="confirm" variant="primary">
                   {t('mediascan', 'media.confirm.submit')}
@@ -167,6 +197,7 @@ function Decision({ row }: { row: QuarantineRow }) {
           label: t('mediascan', 'media.hold.title'),
           panel: (
             <form method="post" action={adminPaths.media} aria-label={t('mediascan', 'media.hold.heading')} className="media-form">
+              <NoEnterSubmit />
               {hidden('item', row.mediaId)}
               <Text as="p" size="sm" color="muted">
                 {t('mediascan', 'media.hold.help')}
@@ -175,7 +206,8 @@ function Decision({ row }: { row: QuarantineRow }) {
                 name="authority"
                 label={t('mediascan', 'media.hold.authority')}
                 placeholder={t('mediascan', 'media.hold.authorityChoose')}
-                defaultValue=""
+                value={draft.authority}
+                onChange={field('authority')}
                 required
                 items={holdAuthorities.map((authority) => ({ id: authority, label: t('mediascan', `media.hold.authority.${authority}`) }))}
               />
@@ -185,9 +217,11 @@ function Decision({ row }: { row: QuarantineRow }) {
                 required
                 label={t('mediascan', 'media.hold.reference')}
                 placeholder={t('mediascan', 'media.hold.referencePlaceholder')}
+                value={draft.reference}
+                onChange={field('reference')}
               />
               {/* A native date input on Mux's Input parts: it posts YYYY-MM-DD without JavaScript. */}
-              <Input.Root defaultValue={tomorrow} required>
+              <Input.Root value={draft.until} onChange={field('until')} required>
                 <Input.Label>{t('mediascan', 'media.hold.until')}</Input.Label>
                 <Input.Input type="date" name="until" />
               </Input.Root>
@@ -204,6 +238,7 @@ function Decision({ row }: { row: QuarantineRow }) {
           label: t('mediascan', 'media.release.title'),
           panel: (
             <form method="post" action={adminPaths.media} aria-label={t('mediascan', 'media.release.title')} className="media-form">
+              <NoEnterSubmit />
               {hidden('item', row.mediaId)}
               <Text as="p" size="sm" color="muted">
                 {t('mediascan', 'media.release.help')}
@@ -214,6 +249,8 @@ function Decision({ row }: { row: QuarantineRow }) {
                 required
                 label={t('mediascan', 'media.release.note')}
                 placeholder={t('mediascan', 'media.release.notePlaceholder')}
+                value={draft.releaseNote}
+                onChange={field('releaseNote')}
               />
               <div>
                 <Button type="submit" name="intent" value="release" variant="neutral">
@@ -300,7 +337,7 @@ function Detail({ row }: { row: QuarantineRow }) {
               : []),
           ]}
         />
-        <Decision row={row} />
+        <Decision key={row.mediaId} row={row} />
       </Card.Body>
     </Card.Root>
   );
