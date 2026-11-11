@@ -42,6 +42,12 @@
     overflow-wrap: anywhere;
   }
 
+  /* Mux UI rc.7 bug: Avatar's fallback is 100% of the avatar plus its padding under the browser's
+     content-box, so it overflows the circle and its initial sits off centre. Layout only. */
+  .muxui-avatar__fallback {
+    box-sizing: border-box;
+  }
+
   .pb-sr {
     position: absolute;
     width: 1px;

@@ -126,6 +126,7 @@ The other jobs, straight from Mux (prefix `--muxui-`): text `semantic-content-de
 Mux UI rc.7 components bring their own font and box model: they no longer take font, box sizing or Separator margin from the page, and Mux's base rule gives the body its text face, size (fluid 14 to 16px), line height and colour. What `tokens.css` adds:
 
 - `*, *::before, *::after { box-sizing: border-box }`, in the `reset` layer, for the app's own elements. Mux reverts its own elements to the browser's box model (content-box for most), so an app rule that gives a Mux part a width including its padding (`inline-size: 100%` on a `Card`) also sets `box-sizing: border-box` on it, as `auth.css` does for the auth card.
+- `.muxui-avatar__fallback { box-sizing: border-box }`: a Mux UI rc.7 bug, the fallback is 100% wide plus its padding, so without this the initial sits off centre.
 - `body`: no margin, the page surface (`--muxui-semantic-surface-background`) and `overflow-wrap: anywhere`.
 - The app has no `:focus-visible` rule of its own; Mux's applies.
 - `.pb-page` padding takes Mux layout tokens.
