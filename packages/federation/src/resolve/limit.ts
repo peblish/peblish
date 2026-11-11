@@ -1,4 +1,5 @@
 import { hostBlocked } from '@peblish/core/resolve/blocked';
+import { assertFederationOn } from '../actors/federation-switch.ts';
 import { BlockedDestinationError } from '../actors/safe-fetch.ts';
 import type { Fetcher } from '../actors/document.ts';
 
@@ -40,6 +41,8 @@ export function limit(inner: Fetcher, { now = Date.now }: { now?: () => number }
       blockedHost ??= host;
       throw new BlockedDestinationError(`${host} is a blocked instance`);
     }
+    // The block check is a database wait: a pause during it stops this request.
+    await assertFederationOn();
     used += 1;
     return inner(url, { ...init, timeoutMs: Math.min(init.timeoutMs, left) });
   };

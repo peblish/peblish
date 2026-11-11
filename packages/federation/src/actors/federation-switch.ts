@@ -11,8 +11,11 @@ import { readSetting } from '@peblish/core/settings/read';
 //   the recheck of held objects.
 // - Every other read of a peer's document (an actor, a signing key, NodeInfo, WebFinger, an
 //   object, a collection) throws FederationPaused before a request is made (fetchJson in
-//   actors/document.ts, the one place they are read), before each redirect hop too, and again when
-//   a request leaves a host's politeness queue (remote-fetch/polite.ts). FederationPaused is not a FetchFailure, so
+//   actors/document.ts, the one place they are read, once the request's headers and signature are
+//   ready), before each redirect hop too. A fetcher that waits before it forwards a request reads
+//   the switch again after its wait: a host's politeness queue (remote-fetch/polite.ts), the inbound
+//   pipeline's lease renewal (inbound/pipeline.ts), the held-signer lookup of an inbox POST
+//   (inbound/receive.ts) and a search's block check (resolve/limit.ts). FederationPaused is not a FetchFailure, so
 //   nothing records it as the peer's failure: the inbox answers 503 with Retry-After
 //   (inbound/receive.ts), the inbound pipeline puts the row back in line with its attempt given
 //   back (inbound/pipeline.ts), a NodeInfo check records nothing (nodeinfo/client.ts), and a
