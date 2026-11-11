@@ -107,6 +107,7 @@ lane_env=$(sh scripts/lane.sh g0) && eval "$lane_env"   # this lane's database, 
 pnpm check                         # build, typecheck, lint (boundaries, oxlint, prettier), tests
 pnpm e2e                           # Playwright against the build, on $PORT; BASE_URL=<url> pnpm e2e targets a running server instead (no DATABASE_URL needed)
                                    # *.serial.spec.ts (specs that save a shared site setting) run one at a time in a second run after the rest, whether or not it failed (e2e/run.ts); pnpm e2e --project serial runs them alone
+                                   # E2E_SHARD=1/2 pnpm e2e runs one of CI's two runners' parts (the serial specs run on the last); scripts/e2e-shards.ts checks the parts add up
 pnpm dev                           # pnpm gen, then the dev server on $PORT
 ```
 
