@@ -1,27 +1,62 @@
 import type { SessionView } from '@peblish/schema/session';
 import { Avatar } from '@peblish/ui/components/avatar';
+import { Button } from '@peblish/ui/components/button';
 import { LogInIcon, UserPlusIcon } from '@peblish/ui/components/icons';
 import { Link } from '@peblish/ui/components/link';
 import { Menu } from '@peblish/ui/components/menu';
 import { useRouter } from '@tanstack/react-router';
-import { useRef } from 'react';
 import { useTranslate } from '../i18n/use-translate.ts';
 import { openInRouter } from './client-links.ts';
 import { adminPaths, userPath } from './paths.ts';
 
 const signOutAction = '/auth/sign-out';
+/** The account list at the foot of every page (AccountLinks), which the no-script Account link points at. */
+const accountLinksId = 'pb-account-links';
+/** The one sign-out form: in AccountLinks, submitted by its own button or by the menu's Sign out. */
+const signOutFormId = 'pb-sign-out';
+
+type Translate = ReturnType<typeof useTranslate>['t'];
+
+/** The account's pages, in the menu's order: Invites and Admin for admins only. */
+function accountPages(session: SessionView, t: Translate) {
+  return [
+    { id: 'profile', href: userPath({ handle: session.name }), label: t('shell', 'account.profile') },
+    { id: 'settings', href: '/settings/account', label: t('shell', 'account.settings') },
+    { id: 'security', href: '/settings/security', label: t('shell', 'account.security') },
+    ...(session.siteRole === 'admin'
+      ? [
+          { id: 'invites', href: adminPaths.registration, label: t('shell', 'account.invites') },
+          { id: 'admin', href: adminPaths.settings, label: t('shell', 'account.admin') },
+        ]
+      : []),
+  ];
+}
+
+/** The avatar and the name, as the menu's button and the no-script link both show them. */
+function AccountName({ name, label }: { name: string; label: string }) {
+  return (
+    <>
+      <Avatar.Root size="sm" aria-hidden="true">
+        <Avatar.Fallback>{name.slice(0, 1).toUpperCase()}</Avatar.Fallback>
+      </Avatar.Root>
+      <span className="pb-sr">{label}: </span>
+      <span className="pb-account__name">{name}</span>
+    </>
+  );
+}
 
 /**
  * The account area of the top bar: sign-in and sign-up links when signed out; when signed in,
  * a Mux menu with the profile, settings, security, invites and the admin pages (admins) and
  * sign-out. Menu items are not links in Mux UI, so each one navigates through the router, and
- * sign-out submits a real form posting to /auth/sign-out (which answers with a redirect). The
- * menu needs scripts; without them the settings page still has its own sign-out form.
+ * sign-out submits the real form in AccountLinks (posting to /auth/sign-out, which answers with
+ * a redirect). The menu needs scripts: with none (`scripting: none`, shell.css) its button gives
+ * way to a plain link, with the same look and name, to the account list at the foot of the page.
+ * A browser that does not know the media feature keeps the menu.
  */
 export function Account({ session }: { session: SessionView | null }) {
   const { t } = useTranslate();
   const router = useRouter();
-  const signOut = useRef<HTMLFormElement>(null);
   if (!session) {
     return (
       <nav className="pb-account" aria-label={t('shell', 'account.menu')}>
@@ -38,42 +73,55 @@ export function Account({ session }: { session: SessionView | null }) {
     );
   }
   const name = session.displayName ?? session.name;
-  const pages = [
-    { id: 'profile', href: userPath({ handle: session.name }), label: t('shell', 'account.profile') },
-    { id: 'settings', href: '/settings/account', label: t('shell', 'account.settings') },
-    { id: 'security', href: '/settings/security', label: t('shell', 'account.security') },
-    ...(session.siteRole === 'admin'
-      ? [
-          { id: 'invites', href: adminPaths.registration, label: t('shell', 'account.invites') },
-          { id: 'admin', href: adminPaths.settings, label: t('shell', 'account.admin') },
-        ]
-      : []),
-  ];
+  const label = t('shell', 'account.menu');
+  const signOut = () => document.querySelector<HTMLFormElement>(`#${signOutFormId}`)?.requestSubmit();
   return (
     <div className="pb-account">
       <Menu.Root>
         <Menu.Trigger className="pb-account__trigger">
-          <Avatar.Root size="sm" aria-hidden="true">
-            <Avatar.Fallback>{name.slice(0, 1).toUpperCase()}</Avatar.Fallback>
-          </Avatar.Root>
-          <span className="pb-sr">{t('shell', 'account.menu')}: </span>
-          <span className="pb-account__name">{name}</span>
+          <AccountName name={name} label={label} />
         </Menu.Trigger>
         <Menu.Popup placement="bottom-end">
-          <Menu.List aria-label={t('shell', 'account.menu')}>
-            {pages.map(({ id, href, label }) => (
+          <Menu.List aria-label={label}>
+            {accountPages(session, t).map(({ id, href, label }) => (
               <Menu.Item key={id} id={id} onAction={() => openInRouter(router, href)}>
                 {label}
               </Menu.Item>
             ))}
             <Menu.Separator />
-            <Menu.Item id="sign-out" onAction={() => signOut.current?.requestSubmit()}>
+            <Menu.Item id="sign-out" onAction={signOut}>
               {t('shell', 'account.signOut')}
             </Menu.Item>
           </Menu.List>
         </Menu.Popup>
       </Menu.Root>
-      <form ref={signOut} method="post" action={signOutAction} hidden />
+      <Link className="pb-account__trigger pb-account__no-script" href={`#${accountLinksId}`}>
+        <AccountName name={name} label={label} />
+      </Link>
     </div>
+  );
+}
+
+/**
+ * The account's pages and sign-out as plain links and a form, at the foot of every page for a
+ * signed-in viewer. Shown only with scripts off (shell.css), where the account menu cannot open;
+ * otherwise it is not displayed, and its form is the one the menu's Sign out submits.
+ */
+export function AccountLinks({ session }: { session: SessionView }) {
+  const { t } = useTranslate();
+  return (
+    <nav id={accountLinksId} className="pb-account-links" aria-label={t('shell', 'account.menu')}>
+      {accountPages(session, t).map(({ id, href, label }) => (
+        <Link key={id} href={href}>
+          {label}
+        </Link>
+      ))}
+      {/* The form stays empty and hidden, as the menu's was: its button is outside it (the form
+          attribute), so a page's own `form button[type=submit]` is still the page's only one. */}
+      <form id={signOutFormId} method="post" action={signOutAction} hidden />
+      <Button type="submit" form={signOutFormId} variant="neutral" size="sm">
+        {t('shell', 'account.signOut')}
+      </Button>
+    </nav>
   );
 }
