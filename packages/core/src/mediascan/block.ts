@@ -32,7 +32,8 @@ export const categoryOf = (evidence: Pick<Evidence, 'source' | 'classification'>
  * category, makes a backup restore re-apply all of it (tools/cutover/src/drill.ts). The bytes are
  * not touched here: the purge job (or the caller, afterwards) deletes them unless a hold keeps
  * them. `by` is null for the expiry. The caller has locked the quarantined row (so it takes the
- * hash lock after it: hash-lock.ts).
+ * hash lock after it: hash-lock.ts). The hash lock comes before the ledger row, so the ledger
+ * orders this block and a list change by hand on the same hash (list.ts) as the list saw them.
  */
 export async function blockMedia(
   t: QuarantineTx,
@@ -40,6 +41,7 @@ export async function blockMedia(
 ): Promise<{ quarantinedCopies: number }> {
   assertMove(input.action, input.from, 'blocked', 'media.not_quarantined');
   const category = categoryOf(input.evidence);
+  if (input.sha256) await lockHash(t.db, input.sha256);
   await t.db.update(media).set({ scanState: 'blocked', deletedAt: input.now }).where(eq(media.id, input.mediaId));
   await t.db.insert(deletionLedger).values({
     subjectKind: 'media',

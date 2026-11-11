@@ -4,7 +4,7 @@ import { crossCheckKeyFiles, exportBundle, inventory } from './archive.ts';
 import { readBundle, rehostBundle, writeBundle } from './bundle.ts';
 import { backup, exportLedger, reapplyLedger, readLedgerExport, restore, runDrill } from './drill.ts';
 import { CutoverError, describe } from './errors.ts';
-import { importBundle } from './import.ts';
+import { importBundleFile } from './import.ts';
 import { verifyImport } from './verify.ts';
 
 // The cutover tool (deploy/cutover.md has the runbook):
@@ -103,7 +103,7 @@ async function main(): Promise<number> {
       return 0;
     }
     case 'import': {
-      const report = await importBundle(readBundle(need('bundle')), {
+      const report = await importBundleFile(need('bundle'), {
         publicOrigin: need('PUBLIC_ORIGIN'),
         ...(values['rehearsal-host'] ? { rehearsalHost: values['rehearsal-host'] } : {}),
       });

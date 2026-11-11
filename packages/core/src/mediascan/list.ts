@@ -67,7 +67,9 @@ export const addBlockedHash = defineMutation({
 /**
  * Removes an entry. Images already quarantined or blocked under it stay as they are; only later
  * uploads are no longer matched by it. A `media.hash_removed` deletion_ledger row makes a backup
- * restore take the hash off the list again, after any earlier row that listed it.
+ * restore take the hash off the list again, after any earlier row that listed it. Under the hash
+ * lock, as a block and an addition are, so a block in progress commits its listing (and its
+ * ledger row) wholly before this removal or after it.
  */
 export const removeBlockedHash = defineMutation({
   action: 'media.blocklist',
@@ -76,6 +78,10 @@ export const removeBlockedHash = defineMutation({
   async run(t, grant, _input: Record<string, never>) {
     const { entryId } = grant.subject;
     if (entryId === null) throw new Refused('media.blocklist', 'target.not_found');
+    // The recheck holds the entry's row lock, so its value cannot change before the delete.
+    const [entry] = await t.db.select({ value: mediaBlocklist.value }).from(mediaBlocklist).where(eq(mediaBlocklist.id, entryId));
+    if (!entry) throw new Refused('media.blocklist', 'target.not_found');
+    await lockHash(t.db, entry.value);
     const [removed] = await t.db.delete(mediaBlocklist).where(eq(mediaBlocklist.id, entryId)).returning({ value: mediaBlocklist.value });
     if (!removed) throw new Refused('media.blocklist', 'target.not_found');
     await t.db.insert(deletionLedger).values({

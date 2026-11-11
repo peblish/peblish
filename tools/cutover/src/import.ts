@@ -20,7 +20,7 @@ import { and, eq, sql } from 'drizzle-orm';
 import { uuidv7 } from 'uuidv7';
 import { publicFingerprint } from './archive.ts';
 import { CutoverError } from './errors.ts';
-import { Bundle, rehostBundle, type Bundle as BundleType } from './bundle.ts';
+import { Bundle, readBundle, rehostBundle, type Bundle as BundleType } from './bundle.ts';
 
 // `import`: the bundle into a peblish database, in one transaction, idempotent. The database is
 // migrated without PUBLIC_ORIGIN (deploy/cutover.md), so the local instance row and the instance
@@ -361,7 +361,19 @@ const tally = (results: boolean[]): Tally => ({ created: results.filter(Boolean)
  * federation switch off (federationOff); after that a refusal or any error writes nothing.
  */
 export async function importBundle(input: unknown, options: ImportOptions): Promise<ImportReport> {
+  return importChecked(input, options, await federationOff());
+}
+
+/**
+ * The CLI's import: the federation switch goes off, committed, before the bundle file is read, so
+ * a file that is missing, not JSON or of the wrong shape leaves it off as well.
+ */
+export async function importBundleFile(path: string, options: ImportOptions): Promise<ImportReport> {
   const wasOn = await federationOff();
+  return importChecked(readBundle(path), options, wasOn);
+}
+
+async function importChecked(input: unknown, options: ImportOptions, wasOn: boolean): Promise<ImportReport> {
   const bundle = planImport(Bundle.assert(input), options);
   const origin = canonicalOrigin(bundle.source.origin);
   return tx(async (t) => {
