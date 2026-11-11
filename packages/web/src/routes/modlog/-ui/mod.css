@@ -1,65 +1,28 @@
-/* The moderator panels (lane MODF), after the R2 mock modlog-feed: structure and states, not final styling. */
+/* The moderator panels (lane MODF): a Mux Disclosure holding a form of Mux fields. Layout only, colours from Mux tokens. */
 @layer app {
   .mod-panel {
-    margin: 8px 0;
-    font-size: 14px;
+    margin-block: var(--muxui-semantic-layout-tight-gap);
+    max-inline-size: 520px;
   }
-  .mod-panel > summary {
-    cursor: pointer;
-    color: var(--muxui-semantic-content-muted);
-    width: fit-content;
+  .mod-form {
+    display: flex;
+    flex-direction: column;
+    gap: var(--muxui-semantic-layout-group-gap);
+    padding-block: var(--muxui-semantic-layout-tight-gap);
   }
-  .mod-panel form {
-    margin-top: 8px;
-    padding: 10px 12px;
-    max-width: 520px;
-    border: 1px solid var(--muxui-semantic-border-default);
-    border-radius: 6px;
+  .mod-length {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--muxui-semantic-layout-group-gap);
   }
-  .mod-fld {
-    display: grid;
-    gap: 4px;
-    margin-bottom: 10px;
-  }
-  .mod-fld textarea,
-  .mod-fld select,
-  .mod-fld input {
-    font: inherit;
-    max-width: 100%;
-  }
-  .mod-inline {
-    margin-top: 4px;
-  }
-  .mod-chk {
-    display: grid;
-    grid-template-columns: 20px 1fr;
-    column-gap: 6px;
-    margin-bottom: 10px;
-  }
-  /* Mux's reset strips native controls (appearance: none); these forms use the native box. */
-  .mod-chk input[type='checkbox'] {
-    appearance: auto;
-    inline-size: 16px;
-    block-size: 16px;
-    margin: 2px 0 0;
-  }
-  .mod-hint {
-    grid-column: 1 / -1;
-    color: var(--muxui-semantic-content-muted);
-    font-size: 13px;
-  }
-  .mod-chk .mod-hint {
-    grid-column: 2;
+  .mod-form p {
+    margin: 0;
   }
   .mod-error {
-    color: #b00020;
-    margin: 0 0 8px;
-  }
-  [data-muxui-color-scheme='dark'] .mod-error {
-    color: #ff7a8a;
+    color: var(--muxui-semantic-feedback-invalid);
   }
   .mod-actions {
     display: flex;
-    gap: 8px;
+    gap: var(--muxui-semantic-layout-action-gap);
   }
 }

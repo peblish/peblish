@@ -38,5 +38,5 @@ test('a profile ban with several moderated communities posts the community chose
   // The select is the form's only `community` field, so whichever one is chosen is what is sent.
   expect(form.match(/name="community"/g)).toHaveLength(1);
   expect(form).toMatch(/<select[^>]*name="community"/);
-  expect(form).not.toMatch(/type="hidden" name="community"/);
+  expect(form).not.toMatch(/<input[^>]*type="hidden"[^>]*name="community"/);
 });

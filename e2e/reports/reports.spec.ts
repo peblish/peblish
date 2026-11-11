@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
-import { expect, test, type Browser, type Page } from '@playwright/test';
+import { expect, test, type Browser, type Locator, type Page } from '@playwright/test';
 import { expectAccessible, freshTotp, landed, signIn } from '../auth/support.ts';
 import { gotoHydrated, recordConsole } from '../support/route-marker.ts';
 
@@ -49,6 +49,15 @@ async function signedIn(page: Page, name: string) {
   await page.waitForURL('/');
 }
 
+/**
+ * Chooses a Mux radio or checkbox as a person does, by its label: Mux draws the control over a
+ * visually hidden native input, which Playwright will not click. Returns once the input agrees.
+ */
+async function tick(control: Locator, checked = true) {
+  await control.locator('xpath=ancestor::label[1]').click();
+  await (checked ? expect(control).toBeChecked() : expect(control).not.toBeChecked());
+}
+
 const plain = async (browser: Browser) => (await browser.newContext({ javaScriptEnabled: false })).newPage();
 const formUrl = (id: string, back = '/') => `/report?kind=post&id=${id}&back=${encodeURIComponent(back)}`;
 
@@ -61,13 +70,13 @@ test.describe('the report form', () => {
     await expect(page.getByRole('heading', { name: 'Report this post' })).toBeVisible();
     // The routing line follows the choice in CSS: nothing chosen, then a category moderators see.
     await expect(page.getByText('Choose a category to see who will read your report.')).toBeVisible();
-    await page.getByRole('radio', { name: /^Something else/ }).check();
+    await tick(page.getByRole('radio', { name: /^Something else/ }));
     await expect(page.getByText(/The moderators of this community and the instance admins will see your report/)).toBeVisible();
     await page.getByRole('button', { name: 'Send report' }).click();
     await expect(page).toHaveURL(/error=details\.required/);
     await expect(page.getByRole('alert')).toHaveText('Add details when you choose Something else.');
     await expect(page.getByRole('radio', { name: /^Something else/ })).toBeChecked();
-    await page.getByRole('radio', { name: /^Spam/ }).check();
+    await tick(page.getByRole('radio', { name: /^Spam/ }));
     await page.getByRole('textbox', { name: 'Details' }).fill('Selling watches in every thread');
     await page.getByRole('button', { name: 'Send report' }).click();
     await expect(page).toHaveURL(/\/report\/sent\?n=\d+/);
@@ -98,7 +107,7 @@ test.describe('the report form', () => {
   test('the sent page is the reporter’s alone', async ({ page, browser }) => {
     await signedIn(page, seed.reporter.name);
     await page.goto(formUrl(seed.posts.form[1]!));
-    await page.getByRole('radio', { name: /^Spam/ }).check();
+    await tick(page.getByRole('radio', { name: /^Spam/ }));
     await page.getByRole('button', { name: 'Send report' }).click();
     await expect(page).toHaveURL(/\/report\/sent\?n=\d+/);
     const receipt = page.url();
@@ -121,11 +130,11 @@ test.describe('the report form', () => {
     const dialog = page.getByRole('dialog', { name: 'Report this post' });
     await expect(dialog).toBeVisible();
     await expect(dialog.getByText('Form three')).toBeVisible();
-    await dialog.getByRole('radio', { name: /^Child safety/ }).check();
+    await tick(dialog.getByRole('radio', { name: /^Child safety/ }));
     await expect(dialog.getByText(/Only the instance admins will see this report/)).toBeVisible();
     await expect(dialog.getByText(/Do not download, forward or attach/)).toBeVisible();
     await expectAccessible(page);
-    await dialog.getByRole('radio', { name: /^Threats or harassment/ }).check();
+    await tick(dialog.getByRole('radio', { name: /^Threats or harassment/ }));
     await dialog.getByRole('textbox', { name: 'Details' }).fill('Threatened me in a message');
     await dialog.getByRole('button', { name: 'Send report' }).click();
     await page.waitForURL(/\/report\/sent\?n=\d+/);
@@ -139,10 +148,10 @@ test.describe('the report form', () => {
     const page = await plain(browser);
     await signedIn(page, seed.reporter.name);
     await page.goto(formUrl(seed.posts.forwarded));
-    await page.getByRole('radio', { name: /^Spam/ }).check();
-    await page
-      .getByRole('checkbox', { name: `Also send to the moderators of ${seed.farHost}. They will see the report and your handle.` })
-      .check();
+    await tick(page.getByRole('radio', { name: /^Spam/ }));
+    await tick(
+      page.getByRole('checkbox', { name: `Also send to the moderators of ${seed.farHost}. They will see the report and your handle.` }),
+    );
     await page.getByRole('button', { name: 'Send report' }).click();
     await expect(page).toHaveURL(/\/report\/sent\?n=\d+/);
     await expect(page.getByText(`The moderators of ${seed.farHost} can also see the report, including your handle.`)).toBeVisible();

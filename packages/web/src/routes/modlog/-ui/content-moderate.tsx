@@ -1,4 +1,7 @@
 import type { ActorRef } from '@peblish/schema/views';
+import { Link } from '@peblish/ui/components/link';
+import { Select } from '@peblish/ui/components/select';
+import { Text } from '@peblish/ui/components/text';
 import { useState } from 'react';
 import { useTranslate } from '../../../i18n/use-translate.ts';
 import { modlogPath } from '../../../shell/paths.ts';
@@ -27,7 +30,9 @@ export function ContentModerate({ kind, ...props }: ContentActionProps & { kind:
             back={back}
             submit={t('modlog', 'panel.submit.restore')}
           >
-            <p className="mod-hint">{place}</p>
+            <Text as="p" size="sm" color="muted">
+              {place}
+            </Text>
             <ReasonFields required={false} id={`restore-${target.id}`} />
           </Panel>
         ) : (
@@ -39,7 +44,9 @@ export function ContentModerate({ kind, ...props }: ContentActionProps & { kind:
             back={back}
             submit={t('modlog', 'panel.submit.remove')}
           >
-            <p className="mod-hint">{place}</p>
+            <Text as="p" size="sm" color="muted">
+              {place}
+            </Text>
             <ReasonFields required id={`remove-${target.id}`} />
           </Panel>
         ))}
@@ -52,7 +59,9 @@ export function ContentModerate({ kind, ...props }: ContentActionProps & { kind:
           back={back}
           submit={t('modlog', 'panel.submit.ban')}
         >
-          <p className="mod-hint">{t('modlog', 'panel.ban.who', { author: `@${author.handle}`, community: `!${community.handle}` })}</p>
+          <Text as="p" size="sm" color="muted">
+            {t('modlog', 'panel.ban.who', { author: `@${author.handle}`, community: `!${community.handle}` })}
+          </Text>
           <BanFields id={`ban-${target.id}`} person={author.id} community={community.id} />
           <ReasonFields required id={`ban-${target.id}`} />
         </Panel>
@@ -87,23 +96,17 @@ export function ProfileModerateTools({ person, viewer, moderatedCommunities, bac
           submit={t('modlog', 'panel.submit.ban')}
         >
           {communities.length > 1 && (
-            <div className="mod-fld">
-              <label htmlFor={`ban-community-${person.id}`}>{t('modlog', 'panel.community')}</label>
-              <select
-                id={`ban-community-${person.id}`}
-                name="community"
-                value={community.id}
-                onChange={(event) => setCommunityId(event.currentTarget.value)}
-              >
-                {communities.map((one) => (
-                  <option key={one.id} value={one.id}>
-                    !{one.handle}
-                  </option>
-                ))}
-              </select>
-            </div>
+            <Select
+              label={t('modlog', 'panel.community')}
+              name="community"
+              value={community.id}
+              onChange={setCommunityId}
+              items={communities.map((one) => ({ id: one.id, label: `!${one.handle}` }))}
+            />
           )}
-          <p className="mod-hint">{t('modlog', 'panel.ban.who', { author: `@${person.handle}`, community: `!${community.handle}` })}</p>
+          <Text as="p" size="sm" color="muted">
+            {t('modlog', 'panel.ban.who', { author: `@${person.handle}`, community: `!${community.handle}` })}
+          </Text>
           <BanFields id={`ban-${person.id}`} person={person.id} community={community.id} />
           <ReasonFields required id={`ban-${person.id}`} />
         </Panel>
@@ -117,7 +120,9 @@ export function ProfileModerateTools({ person, viewer, moderatedCommunities, bac
           back={back}
           submit={t('modlog', 'panel.submit.ban')}
         >
-          <p className="mod-hint">{t('modlog', 'panel.ban.siteWho', { person: `@${person.handle}` })}</p>
+          <Text as="p" size="sm" color="muted">
+            {t('modlog', 'panel.ban.siteWho', { person: `@${person.handle}` })}
+          </Text>
           <BanFields id={`site-${person.id}`} person={person.id} />
           <ReasonFields required id={`site-${person.id}`} />
         </Panel>
@@ -133,7 +138,7 @@ export function CommunityModerateTools({ community, viewer }: CommunityActionPro
   return (
     <div className="mod-slot" data-testid="community-moderate">
       <ModStyles />
-      <a href={modlogPath(community.handle)}>{t('modlog', 'panel.modlog')}</a>
+      <Link href={modlogPath(community.handle)}>{t('modlog', 'panel.modlog')}</Link>
     </div>
   );
 }

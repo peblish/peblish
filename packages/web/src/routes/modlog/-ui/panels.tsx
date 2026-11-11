@@ -1,4 +1,10 @@
 import { Button } from '@peblish/ui/components/button';
+import { Checkbox } from '@peblish/ui/components/checkbox';
+import { Disclosure } from '@peblish/ui/components/disclosure';
+import { Input } from '@peblish/ui/components/input';
+import { Select } from '@peblish/ui/components/select';
+import { Text } from '@peblish/ui/components/text';
+import { TextAreaField } from '@peblish/ui/components/text-area';
 import { useRouter, useRouterState } from '@tanstack/react-router';
 import { type } from 'arktype';
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
@@ -7,11 +13,11 @@ import type { MessageKey } from '../../../i18n/translate.ts';
 import { loadBanCounts } from '../-counts.ts';
 import modCss from './mod.css?inline';
 
-// The moderator panels (R2 pick modlog-feed): a <details> that opens under the post, comment or
-// profile, and a plain form posting to /modlog/act. Without JavaScript the server answers 303
-// back to the page, and a refusal opens the same panel again with its message (?modError=...&
-// modFor=...). Once hydrated the form posts by fetch, shows a refusal in place and, on success,
-// reloads the page's data instead of navigating.
+// The moderator panels (R2 pick modlog-feed): a Mux Disclosure that opens under the post, comment
+// or profile, holding a plain form posting to /modlog/act. Opening one needs JavaScript; a panel
+// the server renders open (a refusal's ?modError=...&modFor=..., or `defaultOpen`) is a plain
+// form that posts and answers 303 without it. Once hydrated the form posts by fetch, shows a
+// refusal in place and, on success, reloads the page's data instead of navigating.
 
 const Answer = type({ 'ok?': 'boolean', 'error?': 'string' });
 
@@ -116,26 +122,16 @@ export function Panel({
   }
 
   return (
-    <>
+    <div className="mod-panel" data-testid={`mod-panel-${intent}`}>
       <ModStyles />
-      <details
-        className="mod-panel"
-        open={open}
-        onToggle={(event) => setOpen(event.currentTarget.open)}
-        data-testid={`mod-panel-${intent}`}
-      >
-        <summary>{summary}</summary>
-        <form method="post" action="/modlog/act" aria-busy={busy} onSubmit={onSubmit}>
-          <input type="hidden" name="intent" value={intent} />
-          <input type="hidden" name="back" value={back} />
-          {Object.entries(fields).map(([name, value]) => (
-            <input key={name} type="hidden" name={name} value={value} />
-          ))}
+      <Disclosure title={summary} expanded={open} onExpandedChange={setOpen}>
+        <form method="post" action="/modlog/act" className="mod-form" aria-busy={busy} onSubmit={onSubmit}>
+          <HiddenFields fields={{ intent, back, ...fields }} />
           {children}
           {error && (
-            <p className="mod-error" role="alert">
+            <Text as="p" size="sm" className="mod-error" role="alert">
               {t('modlog', errorKey(error))}
-            </p>
+            </Text>
           )}
           <div className="mod-actions">
             <Button
@@ -148,32 +144,51 @@ export function Panel({
             </Button>
           </div>
         </form>
-      </details>
-    </>
+      </Disclosure>
+    </div>
   );
 }
 
+/** Values the form posts that nobody types, as Mux inputs of type hidden. */
+export function HiddenFields({ fields }: { fields: Record<string, string> }) {
+  return Object.entries(fields).map(([name, value]) => <Input.Input key={name} type="hidden" name={name} value={value} />);
+}
+
 /** The reason box and the "show in the public modlog" switch every panel has. */
-export function ReasonFields({ required, id }: { required: boolean; id: string }) {
+export function ReasonFields({
+  required,
+}: {
+  required: boolean;
+  /** Unused since Mux ties labels to fields; kept for callers. */ id: string;
+}) {
   const { t } = useTranslate();
   return (
     <>
-      <div className="mod-fld">
-        <label htmlFor={`${id}-reason`}>{t('modlog', 'panel.reason')}</label>
-        <textarea id={`${id}-reason`} name="reason" rows={3} maxLength={10000} required={required} />
-        <span className="mod-hint">{t('modlog', 'panel.reasonHint')}</span>
-      </div>
-      <div className="mod-chk">
-        <input type="checkbox" id={`${id}-public`} name="public" defaultChecked />
-        <label htmlFor={`${id}-public`}>{t('modlog', 'panel.public')}</label>
-        <span className="mod-hint">{t('modlog', 'panel.publicHint')}</span>
-      </div>
+      <TextAreaField
+        label={t('modlog', 'panel.reason')}
+        description={t('modlog', 'panel.reasonHint')}
+        name="reason"
+        rows={3}
+        maxLength={10000}
+        required={required}
+      />
+      <Checkbox name="public" value="on" defaultChecked description={t('modlog', 'panel.publicHint')}>
+        {t('modlog', 'panel.public')}
+      </Checkbox>
     </>
   );
 }
 
 /** Length of a ban, and "Also remove their content" with the counts of what it would remove (fetched when the panel is shown). */
-export function BanFields({ id, person, community }: { id: string; person: string; community?: string }) {
+export function BanFields({
+  person,
+  community,
+}: {
+  /** Unused since Mux ties labels to fields; kept for callers. */
+  id: string;
+  person: string;
+  community?: string;
+}) {
   const { t } = useTranslate();
   const [counts, setCounts] = useState<{ posts: number; comments: number } | null>(null);
   const [custom, setCustom] = useState(false);
@@ -188,32 +203,30 @@ export function BanFields({ id, person, community }: { id: string; person: strin
   }, [person, community]);
   return (
     <>
-      <div className="mod-fld">
-        <label htmlFor={`${id}-duration`}>{t('modlog', 'panel.length')}</label>
-        <select
-          id={`${id}-duration`}
+      <div className="mod-length">
+        <Select
+          label={t('modlog', 'panel.length')}
           name="duration"
           defaultValue="7"
-          onChange={(event) => setCustom(event.currentTarget.value === 'custom')}
-        >
-          <option value="1">{t('modlog', 'panel.d1')}</option>
-          <option value="7">{t('modlog', 'panel.d7')}</option>
-          <option value="30">{t('modlog', 'panel.d30')}</option>
-          <option value="permanent">{t('modlog', 'panel.permanent')}</option>
-          <option value="custom">{t('modlog', 'panel.custom')}</option>
-        </select>
-        <label htmlFor={`${id}-until`} className="mod-inline">
-          {t('modlog', 'panel.until')}
-        </label>
-        <input id={`${id}-until`} type="date" name="until" required={custom} />
+          onChange={(value) => setCustom(value === 'custom')}
+          items={[
+            { id: '1', label: t('modlog', 'panel.d1') },
+            { id: '7', label: t('modlog', 'panel.d7') },
+            { id: '30', label: t('modlog', 'panel.d30') },
+            { id: 'permanent', label: t('modlog', 'panel.permanent') },
+            { id: 'custom', label: t('modlog', 'panel.custom') },
+          ]}
+        />
+        {/* Mux Input parts, not the facade TextField, which has no date type. */}
+        <Input.Root required={custom}>
+          <Input.Label>{t('modlog', 'panel.until')}</Input.Label>
+          <Input.Input type="date" name="until" />
+        </Input.Root>
       </div>
-      <div className="mod-chk">
-        <input type="checkbox" id={`${id}-remove`} name="removeContent" />
-        <label htmlFor={`${id}-remove`}>
-          {t('modlog', 'panel.removeContent')}
-          {counts && <> {t('modlog', 'panel.counts', { posts: counts.posts, comments: counts.comments })}</>}
-        </label>
-      </div>
+      <Checkbox name="removeContent" value="on">
+        {t('modlog', 'panel.removeContent')}
+        {counts && <> {t('modlog', 'panel.counts', { posts: counts.posts, comments: counts.comments })}</>}
+      </Checkbox>
     </>
   );
 }

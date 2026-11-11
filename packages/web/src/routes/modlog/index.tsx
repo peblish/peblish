@@ -1,5 +1,7 @@
 import { isActionGroup, type ActionGroup } from '@peblish/core/modlog/groups';
 import { Handle } from '@peblish/ui/components/handle';
+import { Link } from '@peblish/ui/components/link';
+import { Text } from '@peblish/ui/components/text';
 import { createFileRoute, notFound } from '@tanstack/react-router';
 import { DEFAULT_LOCALE } from '../../i18n/negotiate.ts';
 import { translate } from '../../i18n/translate.ts';
@@ -12,7 +14,8 @@ import { actionKey, banLength } from './-ui/labels.ts';
 import modlogCss from './-ui/modlog.css?url';
 
 // /modlog: the moderation log as a stream (R2 pick modlog-feed). Entries grouped by day, two lines
-// each, with a facet rail of counts. Public rows for everyone; staff also see private rows.
+// each, with a facet rail of counts. Built from Mux Text and Link; every filter and page is a link,
+// so the log reads and filters without JavaScript. Public rows for everyone; staff also see private rows.
 // A community's moderators and the admins reach more of it (core/modlog/filters.ts ModlogViewer).
 
 const truthy = (value: unknown) => value === true || value === 1 || value === '1' || value === 'true';
@@ -77,23 +80,28 @@ function ModlogPage() {
   return (
     <main className="modlog">
       <div className="modlog-head">
-        <h1>{t('modlog', 'title')}</h1>
-        <span>{chosen.community ? <Handle prefix="!" handle={chosen.community.handle} /> : t('modlog', 'allCommunities')}</span>
-        <span className="modlog-note">{t('modlog', 'timesInUtc')}</span>
-        {data.staff && <span className="modlog-note">{t('modlog', 'staffView')}</span>}
-        {!data.signedIn && <span className="modlog-note">{t('modlog', 'signedOut')}</span>}
+        <Text as="h1" variant="display" size="sm">
+          {t('modlog', 'title')}
+        </Text>
+        <Text>{chosen.community ? <Handle prefix="!" handle={chosen.community.handle} /> : t('modlog', 'allCommunities')}</Text>
+        <Note>{t('modlog', 'timesInUtc')}</Note>
+        {data.staff && <Note>{t('modlog', 'staffView')}</Note>}
+        {!data.signedIn && <Note>{t('modlog', 'signedOut')}</Note>}
       </div>
       <div className="modlog-layout">
         <Rail data={data} keep={keep} />
         <div className="modlog-body">
           {data.lines.length === 0 ? (
-            <p className="modlog-empty" data-testid="modlog-empty">
-              {filtered ? t('modlog', 'noMatch') : t('modlog', 'empty')} {filtered && <a href="/modlog">{t('modlog', 'clearFilters')}</a>}
-            </p>
+            <Text as="p" className="modlog-empty" data-testid="modlog-empty">
+              {filtered ? t('modlog', 'noMatch') : t('modlog', 'empty')}{' '}
+              {filtered && <Link href="/modlog">{t('modlog', 'clearFilters')}</Link>}
+            </Text>
           ) : (
             days.map(({ day, lines }) => (
               <section key={day} aria-label={day}>
-                <h2 className="modlog-day">{dayHeading(lines[0]!.entry.createdAt, locale)}</h2>
+                <Text as="h2" variant="title" size="sm" className="modlog-day">
+                  {dayHeading(lines[0]!.entry.createdAt, locale)}
+                </Text>
                 {lines.map((line) => (
                   <Entry key={line.entry.id} line={line} />
                 ))}
@@ -102,30 +110,43 @@ function ModlogPage() {
           )}
           {data.lines.length > 0 && (
             <nav className="modlog-pages" aria-label={t('modlog', 'older')}>
-              <span className="modlog-note" data-testid="modlog-range">
+              <Note data-testid="modlog-range">
                 {t('modlog', 'range', {
                   from: number.format(data.from),
                   to: number.format(data.from + data.lines.length - 1),
                   total: number.format(data.total),
                 })}
-              </span>
-              {chosen.cursor && <a href={href(keep)}>{t('modlog', 'newest')}</a>}
-              {data.next && <a href={href({ ...keep, cursor: data.next })}>{t('modlog', 'older')}</a>}
+              </Note>
+              {chosen.cursor && <Link href={href(keep)}>{t('modlog', 'newest')}</Link>}
+              {data.next && (
+                <Link href={href({ ...keep, cursor: data.next })} rel="next">
+                  {t('modlog', 'older')}
+                </Link>
+              )}
             </nav>
           )}
-          <p className="modlog-legend">
+          <Text as="p" size="sm" color="muted" className="modlog-legend">
             <span>
-              <b>{t('modlog', 'marker.relayed')}</b> {t('modlog', 'legend.relayed')}
+              <Text variant="label" size="sm">
+                {t('modlog', 'marker.relayed')}
+              </Text>{' '}
+              {t('modlog', 'legend.relayed')}
             </span>
             <span>
-              <b>{t('modlog', 'marker.withheld')}</b> {t('modlog', 'legend.withheld')}
+              <Text variant="label" size="sm">
+                {t('modlog', 'marker.withheld')}
+              </Text>{' '}
+              {t('modlog', 'legend.withheld')}
             </span>
             {data.staff && (
               <span>
-                <b>{t('modlog', 'marker.private')}</b> {t('modlog', 'legend.private')}
+                <Text variant="label" size="sm">
+                  {t('modlog', 'marker.private')}
+                </Text>{' '}
+                {t('modlog', 'legend.private')}
               </span>
             )}
-          </p>
+          </Text>
         </div>
       </div>
     </main>
@@ -145,15 +166,15 @@ function Rail({
   const communityTotal = facets.communities.reduce((sum, row) => sum + row.count, 0);
   const item = (label: React.ReactNode, count: number, target: string, current: boolean) => (
     <li>
-      <a href={target} aria-current={current ? 'true' : undefined}>
+      <Link href={target} current={current}>
         <span>{label}</span>
-        <span className="modlog-note">{number.format(count)}</span>
-      </a>
+        <Note>{number.format(count)}</Note>
+      </Link>
     </li>
   );
   return (
     <aside className="modlog-rail" aria-label={t('modlog', 'rail.label')}>
-      <h2>{t('modlog', 'rail.community')}</h2>
+      <RailHeading>{t('modlog', 'rail.community')}</RailHeading>
       <ul>
         {item(t('modlog', 'rail.all'), communityTotal, href({ ...keep, community: undefined }), !chosen.communityHandle)}
         {facets.communities.map((row) => {
@@ -167,7 +188,7 @@ function Rail({
         })}
         {item(t('modlog', 'rail.remote'), facets.remote, href({ ...keep, remote: chosen.remote ? undefined : true }), chosen.remote)}
       </ul>
-      <h2>{t('modlog', 'rail.action')}</h2>
+      <RailHeading>{t('modlog', 'rail.action')}</RailHeading>
       <ul>
         {groupOrder
           .filter((group) => group !== 'site' || data.staff || facets.groups.site > 0)
@@ -196,9 +217,11 @@ function Entry({ line }: { line: LineView }) {
   return (
     <article className="modlog-entry" data-testid="modlog-entry" data-action={entry.action}>
       <div className="modlog-l1">
-        <time dateTime={entry.createdAt}>{time}</time>
-        <b>
-          {!entry.public && <span className="modlog-tag">{t('modlog', 'marker.private')} </span>}
+        <Note>
+          <time dateTime={entry.createdAt}>{time}</time>
+        </Note>
+        <Text variant="label">
+          {!entry.public && <Marker>{t('modlog', 'marker.private')} </Marker>}
           {t('modlog', actionKey(entry.action, line.target))}
           {length && (
             <>
@@ -216,39 +239,38 @@ function Entry({ line }: { line: LineView }) {
                     })}
             </>
           )}
-        </b>
+        </Text>
         <Target line={line} />
       </div>
       <div className="modlog-l2">
         {moderator && (!line.relayed || line.staff) ? (
           moderator.id ? (
-            <a href={userPath(moderator)}>
+            <Link href={userPath(moderator)}>
               <Handle prefix="@" handle={moderator.handle} />
-            </a>
+            </Link>
           ) : (
             <Handle prefix="@" handle={moderator.handle} />
           )
         ) : (
           <span>{t('modlog', 'moderator.on', { host })}</span>
         )}
-        {line.relayed && <span className="modlog-tag"> {t('modlog', 'marker.relayed')}</span>}
+        {line.relayed && <Marker> {t('modlog', 'marker.relayed')}</Marker>}
         <span className="modlog-reason">
           {' · '}
           {entry.reasonWithheld ? (
             <>
-              <span className="modlog-tag">{t('modlog', 'marker.withheld')}</span>{' '}
-              <span className="modlog-note">{t('modlog', 'withheld.why', { host })}</span>
+              <Marker>{t('modlog', 'marker.withheld')}</Marker> <Note>{t('modlog', 'withheld.why', { host })}</Note>
             </>
           ) : entry.reason ? (
             entry.reason
           ) : (
-            <span className="modlog-note">{t('modlog', 'reason.none')}</span>
+            <Note>{t('modlog', 'reason.none')}</Note>
           )}
           {entry.details.removeContent && (
-            <span className="modlog-note">
+            <Note>
               {' · '}
               {t('modlog', 'ban.removed', { posts: entry.details.removedPosts ?? 0, comments: entry.details.removedComments ?? 0 })}
-            </span>
+            </Note>
           )}
         </span>
       </div>
@@ -274,45 +296,65 @@ function Target({ line }: { line: LineView }) {
       const name = target.label ?? (path ? t('modlog', 'target.hidden') : t('modlog', 'target.gone'));
       return (
         <span className="modlog-target">
-          <span className="modlog-note">{t('modlog', `target.${target.kind}`)}</span> {path ? <a href={path}>{name}</a> : name}
-          <span className="modlog-note">
+          <Note>{t('modlog', `target.${target.kind}`)}</Note> {path ? <Link href={path}>{name}</Link> : name}
+          <Note>
             {target.author && ` ${t('modlog', 'target.by', { author: `@${target.author.handle}` })}`}
             {community && ` ${t('modlog', 'target.in', { community: `!${community.handle}` })}`}
-          </span>
+          </Note>
         </span>
       );
     }
     case 'person':
       return (
         <span className="modlog-target">
-          <span className="modlog-note">{t('modlog', 'target.person')}</span>{' '}
+          <Note>{t('modlog', 'target.person')}</Note>{' '}
           {target.person.id ? (
-            <a href={userPath(target.person)}>
+            <Link href={userPath(target.person)}>
               <Handle prefix="@" handle={target.person.handle} />
-            </a>
+            </Link>
           ) : (
             <Handle prefix="@" handle={target.person.handle} />
           )}
-          {community && <span className="modlog-note"> {t('modlog', 'target.in', { community: `!${community.handle}` })}</span>}
+          {community && <Note> {t('modlog', 'target.in', { community: `!${community.handle}` })}</Note>}
         </span>
       );
     case 'community':
       return (
         <span className="modlog-target">
-          <span className="modlog-note">{t('modlog', 'target.community')}</span>{' '}
-          <a href={communityPath(target.community)}>
+          <Note>{t('modlog', 'target.community')}</Note>{' '}
+          <Link href={communityPath(target.community)}>
             <Handle prefix="!" handle={target.community.handle} />
-          </a>
+          </Link>
         </span>
       );
     case 'instance':
       return (
         <span className="modlog-target">
-          <span className="modlog-note">{t('modlog', 'target.instance')}</span> {target.host}
+          <Note>{t('modlog', 'target.instance')}</Note> {target.host}
         </span>
       );
   }
 }
+
+/** Secondary text: times, counts, hints. */
+const Note = ({ children, ...rest }: { children: React.ReactNode; 'data-testid'?: string }) => (
+  <Text size="sm" color="muted" {...rest}>
+    {children}
+  </Text>
+);
+
+/** A marker on an entry ([mods only], [relayed], [withheld]): small muted label text. */
+const Marker = ({ children }: { children: React.ReactNode }) => (
+  <Text variant="label" size="sm" color="muted">
+    {children}
+  </Text>
+);
+
+const RailHeading = ({ children }: { children: React.ReactNode }) => (
+  <Text as="h2" variant="label" size="sm" color="muted">
+    {children}
+  </Text>
+);
 
 /** Day by day in UTC, in the order given (newest first). */
 function groupByDay(lines: LineView[]) {

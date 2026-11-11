@@ -2,6 +2,8 @@ import { attempt } from '@peblish/core/identity/throttle';
 import { createReportAs } from '@peblish/core/reports/actions';
 import { ReportCategory, mayFederate } from '@peblish/core/reports/categories';
 import { Uuid } from '@peblish/schema/ids';
+import { Link } from '@peblish/ui/components/link';
+import { Text } from '@peblish/ui/components/text';
 import { createFileRoute, notFound, redirect } from '@tanstack/react-router';
 import { type } from 'arktype';
 import { useTranslate } from '../../i18n/use-translate.ts';
@@ -115,14 +117,20 @@ function ReportPage() {
     <main className="rp-page">
       {form && kind ? (
         <>
-          <h1>{t('reports', `form.title.${kind}`)}</h1>
+          <Text as="h1" variant="display" size="sm">
+            {t('reports', `form.title.${kind}`)}
+          </Text>
           <ReportFormView form={form} back={back} initialError={asReportError(search.error)} initialCategory={search.category} />
         </>
       ) : (
         <>
-          <h1>{t('reports', 'form.open')}</h1>
-          <p role="alert">{t('reports', errorKey(asReportError(refusal) ?? 'generic'))}</p>
-          <a href={back}>{t('reports', 'sent.done')}</a>
+          <Text as="h1" variant="display" size="sm">
+            {t('reports', 'form.open')}
+          </Text>
+          <Text as="p" role="alert">
+            {t('reports', errorKey(asReportError(refusal) ?? 'generic'))}
+          </Text>
+          <Link href={back}>{t('reports', 'sent.done')}</Link>
         </>
       )}
     </main>
