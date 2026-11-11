@@ -9,3 +9,9 @@
 @import '@peblish/ui/components/reply-bar.css';
 @import '@peblish/ui/components/prose.css';
 @import './shell/shell.css';
+@import '@peblish/ui/components/badge.css';
+@import '@peblish/ui/components/notice.css';
+@import '@peblish/ui/components/link-tabs.css';
+@import '@peblish/ui/components/pager.css';
+@import '@peblish/ui/components/fact-list.css';
+@import '@peblish/ui/components/empty-state.css';

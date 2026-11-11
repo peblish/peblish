@@ -1,0 +1,32 @@
+/* Notice: the status stripe and the spacing between title, body and action. */
+@layer app {
+  .pb-alert {
+    display: grid;
+    gap: var(--muxui-semantic-layout-description-gap);
+    border-inline-start: 3px solid var(--muxui-semantic-border-default);
+  }
+
+  .pb-alert--success {
+    border-inline-start-color: var(--muxui-semantic-status-success);
+  }
+
+  .pb-alert--warning {
+    border-inline-start-color: var(--muxui-semantic-status-warning);
+  }
+
+  .pb-alert--danger {
+    border-inline-start-color: var(--muxui-semantic-feedback-invalid);
+  }
+
+  .pb-alert__title,
+  .pb-alert__body > p {
+    margin: 0;
+  }
+
+  .pb-alert__action {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--muxui-semantic-layout-group-gap);
+    margin-block-start: var(--muxui-semantic-layout-description-gap);
+  }
+}

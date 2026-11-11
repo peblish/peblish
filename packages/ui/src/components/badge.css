@@ -1,0 +1,58 @@
+/* Badge: a pill on Mux UI's TagGroup hue tokens (foreground on the weak tint), so it follows the scheme. */
+@layer app {
+  .pb-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 0 var(--muxui-semantic-layout-inset-tight);
+    border-radius: var(--muxui-semantic-shape-pill-radius);
+    font-family: var(--muxui-semantic-typography-label-font-family);
+    font-size: var(--muxui-semantic-typography-badge-size);
+    font-weight: var(--muxui-semantic-typography-label-weight);
+    line-height: var(--muxui-semantic-typography-compact-line-height);
+    letter-spacing: normal;
+    white-space: nowrap;
+    vertical-align: middle;
+    color: var(--muxui-component-taggroup-tag-foreground);
+    background: var(--muxui-component-taggroup-tag-background);
+  }
+
+  .pb-badge--brand {
+    color: var(--muxui-component-taggroup-brand-foreground);
+    background: var(--muxui-component-taggroup-brand-tint-weak);
+  }
+
+  .pb-badge--success {
+    color: var(--muxui-component-taggroup-success-foreground);
+    background: var(--muxui-component-taggroup-success-tint-weak);
+  }
+
+  .pb-badge--warning {
+    color: var(--muxui-component-taggroup-warning-foreground);
+    background: var(--muxui-component-taggroup-warning-tint-weak);
+  }
+
+  .pb-badge--danger {
+    color: var(--muxui-component-taggroup-error-foreground);
+    background: var(--muxui-component-taggroup-error-tint-weak);
+  }
+
+  .pb-badge--admin {
+    color: var(--muxui-component-taggroup-fuchsia-foreground);
+    background: var(--muxui-component-taggroup-fuchsia-tint-weak);
+  }
+
+  .pb-badge--moderator {
+    color: var(--muxui-component-taggroup-emerald-foreground);
+    background: var(--muxui-component-taggroup-emerald-tint-weak);
+  }
+
+  .pb-badge--op {
+    color: var(--muxui-component-taggroup-sky-foreground);
+    background: var(--muxui-component-taggroup-sky-tint-weak);
+  }
+
+  .pb-badge--bot {
+    color: var(--muxui-component-taggroup-violet-foreground);
+    background: var(--muxui-component-taggroup-violet-tint-weak);
+  }
+}

@@ -1,0 +1,39 @@
+/* LinkTabs: Mux Tabs' look on links. Mux draws its underline and segment pill with motion after
+   hydration; these rules draw the current tab statically and undo Mux Link's own link colour. */
+@layer app {
+  .pb-link-tabs .muxui-tabs__list {
+    flex-wrap: wrap;
+  }
+
+  .pb-link-tabs .muxui-tabs__tab {
+    color: var(--muxui-semantic-content-default);
+    font-size: var(--muxui-semantic-typography-body-size);
+    font-weight: var(--muxui-semantic-typography-control-weight);
+    text-decoration: none;
+  }
+
+  .pb-link-tabs .muxui-tabs__tab:hover,
+  .pb-link-tabs .muxui-tabs__tab[data-muxui-state-hovered] {
+    color: var(--muxui-semantic-content-default);
+    background-color: var(--muxui-semantic-surface-subtle);
+  }
+
+  .pb-link-tabs .muxui-tabs__tab[aria-current='page'] {
+    color: var(--muxui-semantic-content-strong);
+    background-color: transparent;
+  }
+
+  .pb-link-tabs [data-muxui-tabs-variant='underline'] .muxui-tabs__tab[aria-current='page'] {
+    margin-block-end: -2px;
+    border-block-end: 2px solid var(--muxui-semantic-selection-track);
+  }
+
+  .pb-link-tabs [data-muxui-tabs-variant='segment'] .muxui-tabs__tab {
+    border-radius: var(--muxui-semantic-shape-option-radius);
+  }
+
+  .pb-link-tabs [data-muxui-tabs-variant='segment'] .muxui-tabs__tab[aria-current='page'] {
+    color: var(--muxui-semantic-content-on-solid);
+    background-color: var(--muxui-semantic-surface-emphasis);
+  }
+}
