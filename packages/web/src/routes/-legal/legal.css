@@ -1,22 +1,19 @@
-/* The public pages at /<slug> (lane ADM): the legal and about texts. */
+/* The public pages at /<slug>: the legal and about texts. Headings and the rule are Mux Text and
+   Separator; this file only lays them out. */
 @layer app {
   .legal-page {
     max-width: 760px;
     margin: 0 auto;
-    padding: 24px 16px 40px;
+    padding: var(--muxui-semantic-layout-inset-xlarge) var(--muxui-semantic-layout-inset-large);
   }
-  .legal-page h1 {
-    font-size: 22px;
-    margin: 0 0 12px;
+  .legal-page .legal-title {
+    margin: 0 0 var(--muxui-semantic-layout-group-gap);
   }
-  .legal-page .legal-list {
-    margin-top: 28px;
-    padding-top: 12px;
-    border-top: 1px solid var(--muxui-semantic-border-default);
+  .legal-page .legal-rule {
+    margin-block: var(--muxui-semantic-layout-section-gap) var(--muxui-semantic-layout-group-gap);
   }
   .legal-page .legal-list h2 {
-    font-size: 14px;
-    margin: 0 0 6px;
+    margin: 0 0 var(--muxui-semantic-layout-tight-gap);
   }
   .legal-page .legal-list ul {
     list-style: none;
@@ -24,6 +21,6 @@
     padding: 0;
     display: flex;
     flex-wrap: wrap;
-    gap: 4px 16px;
+    gap: var(--muxui-semantic-layout-tight-gap) var(--muxui-semantic-layout-content-gap);
   }
 }

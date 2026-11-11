@@ -35,6 +35,14 @@ async function freshPage(browser: Browser): Promise<Page> {
   return (await browser.newContext()).newPage();
 }
 
+/** Ticks the terms box as a keyboard user does: Mux's checkbox keeps its native input visually hidden, at no size. */
+async function checkTerms(page: Page): Promise<void> {
+  const terms = page.getByRole('checkbox', { name: /^I agree to the Terms/ });
+  await terms.focus();
+  await page.keyboard.press('Space');
+  await expect(terms).toBeChecked();
+}
+
 /** The two-factor step with one of the recovery codes (each works once). */
 async function withRecoveryCode(page: Page, code: string | undefined): Promise<void> {
   await landed(page, /\/auth\/two-factor/);
@@ -103,7 +111,7 @@ test('the invite link leads to sign-up; the account needs its email verified', a
   await page.getByLabel('Day').fill('14');
   await page.getByLabel('Month').selectOption({ label: 'March' });
   await page.getByLabel('Year').fill('1994');
-  await page.getByRole('checkbox').check();
+  await checkTerms(page);
   await page.getByRole('button', { name: 'Create account' }).click();
   await landed(page, '/auth/verify');
   await expect(page.getByRole('heading', { name: 'Check your email' })).toBeVisible();
@@ -230,7 +238,7 @@ test('an under-16 date of birth blocks sign-up from this browser for 24 hours', 
   await page.getByLabel('Day').fill('1');
   await page.getByLabel('Month').selectOption({ label: 'January' });
   await page.getByLabel('Year').fill(String(year));
-  await page.getByRole('checkbox').check();
+  await checkTerms(page);
   await page.getByRole('button', { name: 'Create account' }).click();
   await landed(page, '/auth/sign-up');
   await expect(page.getByRole('heading', { name: "You can't create an account" })).toBeVisible();

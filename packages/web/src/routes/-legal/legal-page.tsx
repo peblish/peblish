@@ -1,4 +1,7 @@
+import { Link } from '@peblish/ui/components/link';
 import { Prose } from '@peblish/ui/components/prose';
+import { Separator } from '@peblish/ui/components/separator';
+import { Text } from '@peblish/ui/components/text';
 import { useTranslate } from '../../i18n/use-translate.ts';
 import { useRouteHydrated } from '../../shell/hydration.ts';
 import type { LegalPageData } from './load.ts';
@@ -15,30 +18,39 @@ export function LegalPage({ data }: { data: LegalPageData }) {
     <main className="legal-page">
       {page ? (
         <article lang={page.language}>
-          <h1>{page.title}</h1>
+          <Text as="h1" variant="heading" size="md" className="legal-title">
+            {page.title}
+          </Text>
           <Prose html={page.html} />
         </article>
       ) : (
         about && (
           <article>
-            <h1>{t('admin', 'legal.about.title', { name: about.name })}</h1>
-            {about.description && <p>{about.description}</p>}
+            <Text as="h1" variant="heading" size="md" className="legal-title">
+              {t('admin', 'legal.about.title', { name: about.name })}
+            </Text>
+            {about.description && <Text as="p">{about.description}</Text>}
           </article>
         )
       )}
       {links.length > 0 && (
-        <nav className="legal-list" aria-labelledby="legal-list">
-          <h2 id="legal-list">{t('admin', 'legal.list')}</h2>
-          <ul>
-            {links.map((link) => (
-              <li key={link.slug}>
-                <a href={`/${link.slug}`} aria-current={link.slug === data.slug ? 'page' : undefined}>
-                  {link.title}
-                </a>
-              </li>
-            ))}
-          </ul>
-        </nav>
+        <>
+          <Separator className="legal-rule" />
+          <nav className="legal-list" aria-labelledby="legal-list">
+            <Text as="h2" variant="label" size="md" id="legal-list">
+              {t('admin', 'legal.list')}
+            </Text>
+            <ul>
+              {links.map((link) => (
+                <li key={link.slug}>
+                  <Link href={`/${link.slug}`} current={link.slug === data.slug}>
+                    {link.title}
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </nav>
+        </>
       )}
     </main>
   );

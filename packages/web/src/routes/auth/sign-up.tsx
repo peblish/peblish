@@ -4,7 +4,13 @@ import { attempt } from '@peblish/core/identity/throttle';
 import { register } from '@peblish/core/registration/register';
 import { ageOn, dateOfBirth, SignUpBody } from '@peblish/schema/identity';
 import { Button } from '@peblish/ui/components/button';
-import { createFileRoute, Link } from '@tanstack/react-router';
+import { Checkbox } from '@peblish/ui/components/checkbox';
+import { Group } from '@peblish/ui/components/group';
+import { Link } from '@peblish/ui/components/link';
+import { Select } from '@peblish/ui/components/select';
+import { Separator } from '@peblish/ui/components/separator';
+import { Text } from '@peblish/ui/components/text';
+import { createFileRoute } from '@tanstack/react-router';
 import { createServerFn } from '@tanstack/react-start';
 import { getRequest, setResponseHeader } from '@tanstack/react-start/server';
 import { type } from 'arktype';
@@ -25,7 +31,7 @@ import {
 import { useRouteHydrated } from '../../shell/hydration.ts';
 import { asFormError } from './-ui/errors.ts';
 import { AuthForm, Field, rich } from './-ui/form.tsx';
-import { AuthPage, authHead, SearchText } from './-ui/page.tsx';
+import { AuthCard, authHead, SearchText } from './-ui/page.tsx';
 
 const Search = type({ 'error?': SearchText, 'invite?': SearchText, 'username?': SearchText });
 
@@ -93,17 +99,23 @@ export const Route = createFileRoute('/auth/sign-up')({
 function SignUp() {
   const data = Route.useLoaderData();
   useRouteHydrated();
-  return <AuthPage>{data.blocked ? <UnderSixteen host={data.host} /> : <SignUpForm />}</AuthPage>;
+  return <AuthCard>{data.blocked ? <UnderSixteen host={data.host} /> : <SignUpForm />}</AuthCard>;
 }
 
 function UnderSixteen({ host }: { host: string }) {
   const { t } = useTranslate();
   return (
-    <div role="alert">
-      <h1>{t('auth', 'under16.title')}</h1>
-      <p>{t('auth', 'under16.body', { host })}</p>
-      <p className="hint">{t('auth', 'under16.retry')}</p>
-      <a href="/">{t('auth', 'under16.back', { host })}</a>
+    <div role="alert" className="auth-form">
+      <Text as="h1" variant="heading" size="sm">
+        {t('auth', 'under16.title')}
+      </Text>
+      <Text as="p">{t('auth', 'under16.body', { host })}</Text>
+      <Text as="p" size="sm" color="muted">
+        {t('auth', 'under16.retry')}
+      </Text>
+      <Text as="p">
+        <Link href="/">{t('auth', 'under16.back', { host })}</Link>
+      </Text>
     </div>
   );
 }
@@ -112,11 +124,14 @@ function SignUpForm() {
   const { locale, t } = useTranslate();
   const search = Route.useSearch();
   const { host, invite } = Route.useLoaderData();
-  const dobLabel = useId();
+  const dob = useId();
   const monthName = new Intl.DateTimeFormat(locale, { month: 'long', timeZone: 'UTC' });
+  const months = Array.from({ length: 12 }, (_, month) => ({ id: String(month + 1), label: monthName.format(Date.UTC(2000, month, 1)) }));
   return (
-    <AuthForm action="/auth/sign-up" label={t('auth', 'signUp.title')} error={asFormError(search.error)}>
-      <h1>{t('auth', 'signUp.title')}</h1>
+    <AuthForm action="/auth/sign-up" label={t('auth', 'signUp.title')} error={asFormError(search.error)} className="auth-form">
+      <Text as="h1" variant="heading" size="sm">
+        {t('auth', 'signUp.title')}
+      </Text>
       <Field
         label={t('auth', 'signUp.invite')}
         name="invite"
@@ -125,11 +140,11 @@ function SignUpForm() {
         autoComplete="off"
         hint={
           invite?.status === 'valid' && invite.inviter ? (
-            <span className="ok-t">
+            <span className="auth-tone auth-tone--ok">
               {t('auth', 'signUp.inviteValid', { inviter: invite.inviter.handle, left: invite.usesLeft, max: invite.maxUses })}
             </span>
           ) : invite && invite.status !== 'valid' ? (
-            <span className="err-t">{t('auth', `error.invite.${invite.status}`)}</span>
+            <span className="auth-tone auth-tone--error">{t('auth', `error.invite.${invite.status}`)}</span>
           ) : undefined
         }
       />
@@ -152,53 +167,50 @@ function SignUpForm() {
         autoComplete="new-password"
         hint={t('auth', 'signUp.passwordHint')}
       />
-      <div className="fld">
-        <span className="lb" id={dobLabel}>
+      <div className="auth-dob">
+        <Text as="span" variant="label" size="md" id={`${dob}-label`}>
           {t('auth', 'signUp.dob')}
-        </span>
-        <div className="dob" role="group" aria-labelledby={dobLabel}>
-          <label>
-            <span className="sr">{t('auth', 'signUp.day')}</span>
-            <input name="day" inputMode="numeric" maxLength={2} required placeholder={t('auth', 'signUp.dayPlaceholder')} />
-          </label>
-          <label>
-            <span className="sr">{t('auth', 'signUp.month')}</span>
-            <select name="month" required defaultValue="">
-              <option value="" disabled>
-                {t('auth', 'signUp.month')}
-              </option>
-              {Array.from({ length: 12 }, (_, month) => (
-                <option key={month} value={month + 1}>
-                  {monthName.format(Date.UTC(2000, month, 1))}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            <span className="sr">{t('auth', 'signUp.year')}</span>
-            <input name="year" inputMode="numeric" maxLength={4} required placeholder={t('auth', 'signUp.yearPlaceholder')} />
-          </label>
-        </div>
-        <span className="hint">{t('auth', 'signUp.dobHint')}</span>
+        </Text>
+        <Group aria-labelledby={`${dob}-label`} aria-describedby={`${dob}-hint`} className="auth-dob__parts">
+          <Field
+            label={t('auth', 'signUp.day')}
+            name="day"
+            inputMode="numeric"
+            maxLength={2}
+            required
+            placeholder={t('auth', 'signUp.dayPlaceholder')}
+          />
+          <Select label={t('auth', 'signUp.month')} name="month" required defaultValue="" placeholder="" items={months} />
+          <Field
+            label={t('auth', 'signUp.year')}
+            name="year"
+            inputMode="numeric"
+            maxLength={4}
+            required
+            placeholder={t('auth', 'signUp.yearPlaceholder')}
+          />
+        </Group>
+        <Text as="span" size="sm" color="muted" id={`${dob}-hint`}>
+          {t('auth', 'signUp.dobHint')}
+        </Text>
       </div>
-      <label className="chk">
-        <input type="checkbox" name="terms" required />
+      <Checkbox name="terms" required>
+        {/* One span: the label lays its children out as flex items. */}
         <span>
           {rich(t('auth', 'signUp.terms'), {
-            terms: <a href="/terms">{t('auth', 'signUp.termsLink')}</a>,
-            privacy: <a href="/privacy">{t('auth', 'signUp.privacyLink')}</a>,
-            rules: <a href="/rules">{t('auth', 'signUp.rulesLink')}</a>,
+            terms: <Link href="/terms">{t('auth', 'signUp.termsLink')}</Link>,
+            privacy: <Link href="/privacy">{t('auth', 'signUp.privacyLink')}</Link>,
+            rules: <Link href="/rules">{t('auth', 'signUp.rulesLink')}</Link>,
           })}
         </span>
-      </label>
-      <div className="btns">
-        <Button type="submit" variant="primary">
-          {t('auth', 'signUp.submit')}
-        </Button>
-        <span className="hint">
-          {t('auth', 'signUp.haveAccount')} <Link to="/auth/sign-in">{t('auth', 'signUp.signIn')}</Link>
-        </span>
-      </div>
+      </Checkbox>
+      <Button type="submit" variant="primary" className="auth-submit">
+        {t('auth', 'signUp.submit')}
+      </Button>
+      <Separator />
+      <Text as="p" size="sm" color="muted">
+        {t('auth', 'signUp.haveAccount')} <Link href="/auth/sign-in">{t('auth', 'signUp.signIn')}</Link>
+      </Text>
     </AuthForm>
   );
 }

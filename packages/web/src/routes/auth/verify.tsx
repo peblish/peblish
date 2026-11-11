@@ -2,15 +2,19 @@ import { auth } from '@peblish/core/identity/auth';
 import { attempt } from '@peblish/core/identity/throttle';
 import { maskEmail, verifyEmailToken } from '@peblish/core/identity/verify';
 import { Button } from '@peblish/ui/components/button';
-import { createFileRoute, Link, redirect } from '@tanstack/react-router';
+import { Link } from '@peblish/ui/components/link';
+import { Notice } from '@peblish/ui/components/notice';
+import { Text } from '@peblish/ui/components/text';
+import { createFileRoute, redirect } from '@tanstack/react-router';
 import { createServerFn } from '@tanstack/react-start';
 import { type } from 'arktype';
+import type { MessageKey } from '../../i18n/translate.ts';
 import { useTranslate } from '../../i18n/use-translate.ts';
 import { forbidden, formSession, pageSession, sameOrigin } from '../../server/auth.ts';
 import { useRouteHydrated } from '../../shell/hydration.ts';
 import { asFormError } from './-ui/errors.ts';
 import { AuthForm, rich } from './-ui/form.tsx';
-import { AuthPage, authHead, SearchText } from './-ui/page.tsx';
+import { AuthCard, authHead, SearchText } from './-ui/page.tsx';
 
 const Search = type({ 'error?': SearchText, 'token?': SearchText, 'sent?': SearchText });
 
@@ -65,55 +69,66 @@ function Verify() {
   const search = Route.useSearch();
   useRouteHydrated();
   const resend = (
-    <AuthForm action="/auth/verify" label={t('auth', 'verify.resend')} error={asFormError(search.error)}>
-      <div className="btns">
-        <Button type="submit" variant="neutral">
-          {t('auth', 'verify.resend')}
-        </Button>
-      </div>
+    <AuthForm action="/auth/verify" label={t('auth', 'verify.resend')} error={asFormError(search.error)} className="auth-form">
+      <Button type="submit" variant="neutral" className="auth-submit">
+        {t('auth', 'verify.resend')}
+      </Button>
     </AuthForm>
   );
   const signInForLink = (
-    <p>
-      {t('auth', 'verify.signInForLink')} <Link to="/auth/sign-in">{t('auth', 'verify.signIn')}</Link>
-    </p>
+    <Text as="p">
+      {t('auth', 'verify.signInForLink')} <Link href="/auth/sign-in">{t('auth', 'verify.signIn')}</Link>
+    </Text>
+  );
+  const title = (key: MessageKey<'auth'>, tone?: 'ok' | 'warn') => (
+    <Text as="h1" variant="heading" size="sm" className={tone ? `auth-tone auth-tone--${tone}` : undefined}>
+      {t('auth', key)}
+    </Text>
   );
   return (
-    <AuthPage>
-      <div data-state={state}>
+    <AuthCard state={state}>
+      <div className="auth-form">
         {state === 'pending' && (
           <>
-            <h1>{t('auth', 'verify.title')}</h1>
-            <p>{rich(t('auth', 'verify.sent'), { email: <b>{email}</b> })}</p>
-            <p className="auth-note">
-              <b>{t('auth', 'verify.pending')}</b> <span className="muted">{t('auth', 'verify.pendingBody')}</span>
-            </p>
-            {search.sent && <p className="ok-t">{t('auth', 'verify.resent')}</p>}
+            {title('verify.title')}
+            <Text as="p">{rich(t('auth', 'verify.sent'), { email: <b>{email}</b> })}</Text>
+            <Notice tone="warning" title={t('auth', 'verify.pending')}>
+              {t('auth', 'verify.pendingBody')}
+            </Notice>
+            {search.sent && (
+              <Notice tone="success" role="status">
+                {t('auth', 'verify.resent')}
+              </Notice>
+            )}
             {resend}
           </>
         )}
         {state === 'verified' && (
           <>
-            <h1 className="ok-t">{t('auth', 'verify.verifiedTitle')}</h1>
-            <p>{t('auth', 'verify.verifiedBody')}</p>
-            <a href="/">{t('auth', 'verify.continue')}</a>
+            {title('verify.verifiedTitle', 'ok')}
+            <Text as="p">{t('auth', 'verify.verifiedBody')}</Text>
+            <Text as="p">
+              <Link href="/">{t('auth', 'verify.continue')}</Link>
+            </Text>
           </>
         )}
         {state === 'used' && (
           <>
-            <h1>{t('auth', 'verify.usedTitle')}</h1>
-            <p>{t('auth', 'verify.usedBody')}</p>
-            <Link to="/auth/sign-in">{t('auth', 'verify.signIn')}</Link>
+            {title('verify.usedTitle')}
+            <Text as="p">{t('auth', 'verify.usedBody')}</Text>
+            <Text as="p">
+              <Link href="/auth/sign-in">{t('auth', 'verify.signIn')}</Link>
+            </Text>
           </>
         )}
         {(state === 'expired' || state === 'invalid') && (
           <>
-            <h1 className="warn-t">{t('auth', state === 'expired' ? 'verify.expiredTitle' : 'verify.invalidTitle')}</h1>
-            <p>{t('auth', state === 'expired' ? 'verify.expiredBody' : 'verify.invalidBody')}</p>
+            {title(state === 'expired' ? 'verify.expiredTitle' : 'verify.invalidTitle', 'warn')}
+            <Text as="p">{t('auth', state === 'expired' ? 'verify.expiredBody' : 'verify.invalidBody')}</Text>
             {signedIn ? resend : signInForLink}
           </>
         )}
       </div>
-    </AuthPage>
+    </AuthCard>
   );
 }

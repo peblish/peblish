@@ -2,14 +2,18 @@ import { auth, authErrorCode } from '@peblish/core/identity/auth';
 import { attempt } from '@peblish/core/identity/throttle';
 import { PASSWORD_MAX, PASSWORD_MIN } from '@peblish/schema/identity';
 import { Button } from '@peblish/ui/components/button';
-import { createFileRoute, Link } from '@tanstack/react-router';
+import { Link } from '@peblish/ui/components/link';
+import { Notice } from '@peblish/ui/components/notice';
+import { Separator } from '@peblish/ui/components/separator';
+import { Text } from '@peblish/ui/components/text';
+import { createFileRoute } from '@tanstack/react-router';
 import { type } from 'arktype';
 import { useTranslate } from '../../i18n/use-translate.ts';
 import { clientIp, forbidden, readForm, respond, sameOrigin } from '../../server/auth.ts';
 import { useRouteHydrated } from '../../shell/hydration.ts';
 import { asFormError } from './-ui/errors.ts';
-import { AuthForm, Field } from './-ui/form.tsx';
-import { AuthPage, authHead, SearchText } from './-ui/page.tsx';
+import { AuthForm, Field, Hidden } from './-ui/form.tsx';
+import { AuthCard, authHead, SearchText } from './-ui/page.tsx';
 
 const Search = type({ 'error?': SearchText, 'token?': SearchText, 'sent?': SearchText });
 const Body = type({ intent: "'request'", email: 'string' }).or({ intent: "'reset'", token: 'string', password: 'string' });
@@ -57,11 +61,13 @@ function Reset() {
   useRouteHydrated();
   if (search.token)
     return (
-      <AuthPage>
-        <AuthForm action="/auth/reset" label={t('auth', 'reset.newTitle')} error={asFormError(search.error)}>
-          <h1>{t('auth', 'reset.newTitle')}</h1>
-          <input type="hidden" name="intent" value="reset" />
-          <input type="hidden" name="token" value={search.token} />
+      <AuthCard>
+        <AuthForm action="/auth/reset" label={t('auth', 'reset.newTitle')} error={asFormError(search.error)} className="auth-form">
+          <Text as="h1" variant="heading" size="sm">
+            {t('auth', 'reset.newTitle')}
+          </Text>
+          <Hidden name="intent" value="reset" />
+          <Hidden name="token" value={search.token} />
           <Field
             label={t('auth', 'reset.newPassword')}
             name="password"
@@ -71,28 +77,29 @@ function Reset() {
             autoComplete="new-password"
             hint={t('auth', 'reset.newHint')}
           />
-          <Button type="submit" variant="primary">
+          <Button type="submit" variant="primary" className="auth-submit">
             {t('auth', 'reset.save')}
           </Button>
         </AuthForm>
-      </AuthPage>
+      </AuthCard>
     );
   return (
-    <AuthPage>
-      <AuthForm action="/auth/reset" label={t('auth', 'reset.title')} error={asFormError(search.error)}>
-        <h1>{t('auth', 'reset.title')}</h1>
-        {search.sent ? <p className="auth-note ok-t">{t('auth', 'reset.sent')}</p> : <p>{t('auth', 'reset.intro')}</p>}
-        <input type="hidden" name="intent" value="request" />
+    <AuthCard>
+      <AuthForm action="/auth/reset" label={t('auth', 'reset.title')} error={asFormError(search.error)} className="auth-form">
+        <Text as="h1" variant="heading" size="sm">
+          {t('auth', 'reset.title')}
+        </Text>
+        {search.sent ? <Notice tone="success">{t('auth', 'reset.sent')}</Notice> : <Text as="p">{t('auth', 'reset.intro')}</Text>}
+        <Hidden name="intent" value="request" />
         <Field label={t('auth', 'reset.email')} name="email" type="email" required autoComplete="email" />
-        <div className="btns">
-          <Button type="submit" variant="primary">
-            {t('auth', 'reset.submit')}
-          </Button>
-          <Link to="/auth/sign-in" className="hint">
-            {t('auth', 'reset.back')}
-          </Link>
-        </div>
+        <Button type="submit" variant="primary" className="auth-submit">
+          {t('auth', 'reset.submit')}
+        </Button>
+        <Separator />
+        <Text as="p" size="sm">
+          <Link href="/auth/sign-in">{t('auth', 'reset.back')}</Link>
+        </Text>
       </AuthForm>
-    </AuthPage>
+    </AuthCard>
   );
 }

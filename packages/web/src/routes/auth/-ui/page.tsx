@@ -1,3 +1,4 @@
+import { Card } from '@peblish/ui/components/card';
 import { notFound } from '@tanstack/react-router';
 import { type } from 'arktype';
 import type { ReactNode } from 'react';
@@ -13,9 +14,23 @@ export const authHead = () => ({ links: [{ rel: 'stylesheet', href: authCss }] }
  */
 export const SearchText = type('string | number').pipe((value) => String(value));
 
-/** The narrow column the sign-in, sign-up, verify and reset pages share. */
+/** A plain column (narrow, or `wide` for tables): settings, admin and other pages that are not one task. */
 export function AuthPage({ children, wide = false }: { children: ReactNode; wide?: boolean }) {
   return <main className={wide ? 'auth-page wide' : 'auth-page'}>{children}</main>;
+}
+
+/**
+ * One task on its own page (sign in, sign up, two-factor, reset, verify, an invite): an outlined
+ * Mux Card centred in the page, its parts stacked with Mux's group gap.
+ */
+export function AuthCard({ children, state }: { children: ReactNode; state?: string }) {
+  return (
+    <main className="auth-center" data-state={state}>
+      <Card.Root variant="outlined" padding="lg" className="auth-card">
+        {children}
+      </Card.Root>
+    </main>
+  );
 }
 
 /** Day and month, in the request's locale and in UTC, so server and client render the same text. */
