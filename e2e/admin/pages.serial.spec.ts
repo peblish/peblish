@@ -71,11 +71,18 @@ test('publishing is refused while the operator details are empty, and the editor
   await expectAccessible(page);
 });
 
-test('a page that names an agent or a representative cannot publish until the operator writes them in', async () => {
-  await gotoHydrated(page, '/admin/pages/dmca/en');
+test('a page that holds a token the site does not fill cannot publish, and the alert names it beside the empty operator details', async () => {
+  // The privacy policy's archive deletion date is written in by hand on cutover day; no setting fills it.
+  await gotoHydrated(page, '/admin/pages/privacy/en');
   await page.getByRole('button', { name: 'Publish' }).click();
   await page.waitForURL(/error=page.unresolved_tokens/);
-  await expect(page.getByRole('alert').locator('code').filter({ hasText: 'DMCA_AGENT_NAME' })).toBeVisible();
+  await expect(page.getByRole('alert').locator('code')).toHaveText([
+    '{{OPERATOR_NAME}}',
+    '{{JURISDICTION}}',
+    '{{CONTACT_EMAIL}}',
+    '{{POSTAL_ADDRESS}}',
+    '{{PIEFED_ARCHIVE_DELETE_DATE}}',
+  ]);
 });
 
 test('with the operator details filled in, rules publishes, and a signed-out visitor reads it with the details in place', async ({

@@ -2,7 +2,7 @@
 
 Effective date: {{EFFECTIVE_DATE}}.
 
-Service provider: {{OPERATOR_NAME}}, operating feddit.com. Provider street address: {{POSTAL_ADDRESS}}. General contact: {{CONTACT_EMAIL}}. Governing jurisdiction in our terms: {{JURISDICTION}}, Australia.
+Service provider: {{OPERATOR_NAME}}, operating feddit.com. Provider postal address: {{POSTAL_ADDRESS}}. General contact: {{CONTACT_EMAIL}}. Governing jurisdiction in our terms: {{JURISDICTION}}, Australia.
 
 ## Send a notice
 
