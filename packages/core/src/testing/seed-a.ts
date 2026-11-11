@@ -145,7 +145,8 @@ if (import.meta.main) {
     const [command, name] = process.argv.slice(2);
     if (command === 'e2e-admin') console.log(JSON.stringify(await e2eAdmin()));
     else if (command === 'deleted' && name) console.log(JSON.stringify(await deletionRecord(name)));
-    else throw new Error('usage: node packages/core/src/testing/seed-a.ts e2e-admin | deleted <name>');
+    else if (command === 'e2e-person' && name) console.log(JSON.stringify(await seedAccount(name)));
+    else throw new Error('usage: node packages/core/src/testing/seed-a.ts e2e-admin | deleted <name> | e2e-person <name>');
   } finally {
     await closePools();
   }

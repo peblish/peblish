@@ -2,7 +2,7 @@ import { putFlash, takeFlash } from '@peblish/core/identity/flash';
 import { mediaOverview, type MediaOverview } from '@peblish/core/mediascan/overview';
 import { addToBlocklist, blockCategories, removeFromBlocklist } from '@peblish/core/mediascan/list';
 import { confirmQuarantined, holdQuarantined, releaseQuarantined } from '@peblish/core/mediascan/review';
-import { createFileRoute, Link, redirect } from '@tanstack/react-router';
+import { createFileRoute, redirect } from '@tanstack/react-router';
 import { createServerFn } from '@tanstack/react-start';
 import { setResponseStatus } from '@tanstack/react-start/server';
 import { type } from 'arktype';
@@ -12,6 +12,8 @@ import { forbidden, formSession, pageSession, principalOf, readForm, sameOrigin 
 import { useRouteHydrated } from '../../../shell/hydration.ts';
 import { adminPaths } from '../../../shell/paths.ts';
 import { authHead, SearchText } from '../../auth/-ui/page.tsx';
+import { Denial } from '../-denial.tsx';
+import { accessOf } from '../settings/-access.ts';
 import { Evidence, Failed, Hashes, Review, sections, Status, StatusStrip, SubNav, Warning, type Section } from './-ui/sections.tsx';
 import mediaCss from './-ui/media.css?url';
 
@@ -55,7 +57,7 @@ const Notice = type({
 const loadMedia = createServerFn({ method: 'GET' }).handler(async () => {
   const session = await pageSession();
   if (!session) throw redirect({ to: '/auth/sign-in', search: { redirect: '/admin/media' } });
-  const access = session.role !== 'admin' ? 'not-admin' : session.view.siteRole !== 'admin' ? 'needs-two-factor' : 'ok';
+  const access = accessOf(session);
   if (access !== 'ok') {
     // A denial is a 403 with no data, as the Reports tab answers one.
     setResponseStatus(403);
@@ -178,13 +180,14 @@ function MediaTab() {
     return (
       <main className="auth-page">
         <h1>{t('mediascan', 'media.title')}</h1>
-        {data.access === 'needs-two-factor' ? (
-          <p role="alert">
-            {t('mediascan', 'media.needsTwoFactor')} <Link to="/settings/security">{t('mediascan', 'media.securityLink')}</Link>
-          </p>
-        ) : (
-          <p role="alert">{t('mediascan', 'media.notAdmin')}</p>
-        )}
+        <Denial
+          access={data.access}
+          copy={{
+            needsTwoFactor: t('mediascan', 'media.needsTwoFactor'),
+            securityLink: t('mediascan', 'media.securityLink'),
+            notAdmin: t('mediascan', 'media.notAdmin'),
+          }}
+        />
       </main>
     );
   const { overview, notice } = data;

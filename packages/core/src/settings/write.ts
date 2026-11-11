@@ -62,7 +62,8 @@ export const invalidSetting = (patch: SettingsPatch): string | null => {
  * flight, see media/settings.ts and registration/settings.ts), and a reader that comes later
  * sees the new value. A patch that changes nothing writes nothing. A change writes one modlog
  * row (settings.update, no community or target, not public) with each changed key's value
- * before and after, and settings.updated, in the same transaction.
+ * before and after, and settings.updated, in the same transaction. A grant whose subject names
+ * `values` (the import turning the federation switch off) writes exactly those values.
  */
 export const updateSettings = defineMutation({
   action: 'settings.update',
@@ -72,6 +73,9 @@ export const updateSettings = defineMutation({
     const entries = checked(patch);
     const keys = new Set(grant.subject.keys);
     if (!entries || entries.length !== keys.size || !entries.every(([key]) => keys.has(key)))
+      throw new Refused('settings.update', 'settings.invalid');
+    const { values } = grant.subject;
+    if (values && !entries.every(([key, value]) => Object.hasOwn(values, key) && isDeepStrictEqual(values[key], value)))
       throw new Refused('settings.update', 'settings.invalid');
     const changes: Record<string, { before: unknown; after: unknown }> = {};
     for (const [key, after] of entries) {

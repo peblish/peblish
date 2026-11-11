@@ -25,7 +25,7 @@ const switches = [
   ['registration.enabled', 'Registration', 'Pause registration', 'Resume registration'],
   ['posting.enabled', 'Posting', 'Pause posting', 'Resume posting'],
   ['remote_media.enabled', 'Remote media', 'Pause remote media', 'Resume remote media'],
-  ['delivery.enabled', 'Outgoing delivery', 'Pause delivery', 'Resume delivery'],
+  ['delivery.enabled', 'Sending and fetching', 'Pause sending and fetching', 'Resume sending and fetching'],
 ] as const;
 
 for (const [key, label, pause, resume] of switches) {

@@ -115,6 +115,29 @@ It refuses once an admin exists (`admin.exists`). It marks the email verified an
 16+ declaration. Then sign in and turn on two-factor at `/settings/security`: every admin
 action refuses an admin without it.
 
+## Staging
+
+The private staging project `peblish-staging` (`https://staging.peblish.com`, stood up
+2026-11-10) found four things the shape above does not say:
+
+- Source: the repository refuses deploy keys ("Deploy keys are disabled for this repository")
+  and the panel's GitHub account cannot see it, so `web` and `worker` use Easypanel's upload
+  source: a `git archive` zip of `main` posted to `/api/upload-code/<project>/<service>`, which
+  builds with the Dockerfile and deploys. Redeploying after a merge means uploading the new
+  archive to both services.
+- `worker` cannot run `web`'s image: an image source of `easypanel/<project>/web:latest` fails
+  with "pull access denied", because Easypanel's builds are in no registry. Give `worker`
+  the same source as `web` and let it build its own copy (Docker's layer cache makes it quick).
+- MinIO refuses a Host header with an underscore ("Invalid Request (invalid hostname)"), so
+  `S3_ENDPOINT=http://<project>_minio:9000` fails every upload. Easypanel also resolves the
+  hyphen alias, so use `http://<project>-minio:9000`. Do not use the bare service name
+  (`minio`): it can resolve to another project's service on Easypanel's shared network.
+  `DATABASE_URL` and `SMTP_URL` work with the underscore names.
+- Staging-only settings: `MEDIASCAN_LOCAL_ONLY=1` (no Arachnid account yet), Mailpit as the
+  sandbox sender with no public domain, Easypanel basic auth on the `web` domain, and the
+  `delivery.enabled` and `registration.enabled` switches off, so staging never federates or
+  takes sign-ups. `uploads.enabled` stays off outside a test.
+
 ## Health and federation endpoints
 
 - `/healthz` is liveness: the process answers, without touching the database, so a

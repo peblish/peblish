@@ -1,6 +1,7 @@
 import { userAgent } from '../federation.ts';
 import { instanceSigningKey } from '../signing/instance.ts';
 import { signFetch } from '../signing/sign.ts';
+import { assertFederationOn, FederationPaused } from './federation-switch.ts';
 import { BlockedDestinationError, safeFetch, type SafeResponse } from './safe-fetch.ts';
 
 // The one way federation reads a document from a peer: an actor, a WebFinger answer, a
@@ -59,7 +60,9 @@ export const fetchActivity = (url: string, fetch: Fetcher, { maxRedirects = 0 }:
  * result is where the document finally came from, which is what its id must live under. With
  * `signed` the first request carries the instance's HTTP signature, for peers that only answer
  * authenticated fetches; a redirected hop goes out unsigned, as the signature vouches for one
- * request. The whole read has one deadline. WebFinger and NodeInfo keep three redirects.
+ * request. The whole read has one deadline. WebFinger and NodeInfo keep three redirects. The
+ * federation switch is read before each request, redirect hops included, once its headers are
+ * ready: while it is off this throws FederationPaused and sends nothing more (federation-switch.ts).
  */
 export async function fetchJson(
   url: string,
@@ -72,13 +75,19 @@ export async function fetchJson(
   let hops = 0;
   let response: SafeResponse;
   for (;;) {
+    const headers = new Headers({ accept, 'user-agent': await userAgent() });
+    if (signed && hops === 0) {
+      for (const [name, value] of await signatures(target)) headers.set(name, value);
+    }
+    // Read last, after the waits above (the signing key is a database read), before every request,
+    // each redirect hop included, and outside the try below, which would make it a peer's failure.
+    await assertFederationOn();
     try {
-      const headers = new Headers({ accept, 'user-agent': await userAgent() });
-      if (signed && hops === 0) {
-        for (const [name, value] of await signatures(target)) headers.set(name, value);
-      }
       response = await fetch(target, { ...documentLimits, maxRedirects: 0, timeoutMs: Math.max(1, deadline - Date.now()), headers });
     } catch (error) {
+      // A fetcher with a wait of its own checks the switch again after it (remote-fetch/polite.ts,
+      // the inbound pipeline's lease renewal, the held-signer lookup, a search's block check).
+      if (error instanceof FederationPaused) throw error;
       if (error instanceof BlockedDestinationError) throw new FetchFailure('blocked', error.message);
       throw new FetchFailure('unreachable', error instanceof Error ? error.message : String(error));
     }

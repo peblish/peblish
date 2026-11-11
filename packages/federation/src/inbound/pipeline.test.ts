@@ -194,7 +194,8 @@ describe('rows that cannot be applied', () => {
         id: activityId(lemmy, 'create'),
         type: 'Create',
         actor: lemmyuser,
-        object: { type: 'Page', id: `${lemmy}/post/1` },
+        to: [PUBLIC],
+        object: { type: 'Page', id: `${lemmy}/post/1`, to: [PUBLIC] },
       }),
     );
     await processPending();

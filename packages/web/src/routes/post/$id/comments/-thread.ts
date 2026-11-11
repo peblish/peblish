@@ -59,9 +59,9 @@ export const requestedAfter = (): string | null => URL.parse(getRequest().url)?.
 function render(renderer: MarkdownRenderer, { view, body }: ThreadComment): CommentView {
   const contentHtml =
     body?.kind === 'markdown'
-      ? renderer.render(body.source, { idPrefix: view.id }).html
+      ? renderer.render(body.source, { idPrefix: view.id, content: { kind: 'comment', id: view.id, apId: view.apId } }).html
       : body
-        ? renderer.sanitize(body.html, { baseUrl: body.baseUrl }).html
+        ? renderer.sanitize(body.html, { baseUrl: body.baseUrl, content: { kind: 'comment', id: view.id, apId: view.apId } }).html
         : null;
   return { ...view, contentHtml };
 }

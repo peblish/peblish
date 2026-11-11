@@ -1,0 +1,20 @@
+{
+  "name": "@peblish/cutover",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "license": "AGPL-3.0-only",
+  "description": "The feddit.com cutover: inventory and export of the PieFed archive, import into peblish, key verification, the backup and restore drill (deploy/cutover.md).",
+  "scripts": {
+    "cutover": "node src/cli.ts"
+  },
+  "dependencies": {
+    "@peblish/core": "workspace:*",
+    "@peblish/federation": "workspace:*",
+    "@peblish/schema": "workspace:*",
+    "arktype": "2.2.9",
+    "drizzle-orm": "0.45.4",
+    "postgres": "3.4.9",
+    "uuidv7": "1.2.1"
+  }
+}

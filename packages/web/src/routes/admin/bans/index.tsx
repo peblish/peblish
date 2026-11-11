@@ -1,9 +1,10 @@
-import { createFileRoute, Link } from '@tanstack/react-router';
+import { createFileRoute } from '@tanstack/react-router';
 import { useTranslate } from '../../../i18n/use-translate.ts';
 import { useRouteHydrated } from '../../../shell/hydration.ts';
 import { adminPaths, userPath } from '../../../shell/paths.ts';
 import { authHead, AuthPage, useDate } from '../../auth/-ui/page.tsx';
 import { BanFields, Panel, ReasonFields } from '../../modlog/-ui/panels.tsx';
+import { Denial } from '../-denial.tsx';
 import { loadBans } from './-load.ts';
 
 // /admin/bans: the Bans tab (R2 pick admin-tabs). Who is banned from this instance, a form to
@@ -31,13 +32,10 @@ function Bans() {
     return (
       <AuthPage>
         <h1>{t('bans', 'title')}</h1>
-        {data.access === 'needs-two-factor' ? (
-          <p role="alert">
-            {t('bans', 'needsTwoFactor')} <Link to="/settings/security">{t('bans', 'securityLink')}</Link>
-          </p>
-        ) : (
-          <p role="alert">{t('bans', 'notAdmin')}</p>
-        )}
+        <Denial
+          access={data.access}
+          copy={{ needsTwoFactor: t('bans', 'needsTwoFactor'), securityLink: t('bans', 'securityLink'), notAdmin: t('bans', 'notAdmin') }}
+        />
       </AuthPage>
     );
   const { bans, candidate } = data;

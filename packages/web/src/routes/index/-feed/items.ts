@@ -1,4 +1,5 @@
 import { isImageContentType } from '@peblish/core/media/image-src';
+import type { ImageContent } from '@peblish/core/media/image-src';
 import type { PostView } from '@peblish/schema/views';
 
 /** One post of a page: the view, and the picture the card may load (already through the proxy rule). */
@@ -20,10 +21,10 @@ function originOf(url: string): string | null {
  * marks the post as an image and prints the host it already prints for any link, and the
  * remote path and query stay on the server.
  */
-export function feedItem(post: PostView, image: (url: string | null) => string | null): FeedItem {
+export function feedItem(post: PostView, image: (url: string | null, content: ImageContent) => string | null): FeedItem {
   const isImage = isImageContentType(post.urlContentType);
   return {
     post: { ...post, thumbnailUrl: null, url: isImage && post.url ? originOf(post.url) : post.url },
-    thumbnailSrc: image(post.thumbnailUrl ?? (isImage ? post.url : null)),
+    thumbnailSrc: image(post.thumbnailUrl ?? (isImage ? post.url : null), { kind: 'post', id: post.id, apId: post.apId }),
   };
 }

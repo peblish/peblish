@@ -4,7 +4,7 @@ import { createInviteAs, listInvites, lookupInvite, revokeInviteAs } from '@pebl
 import { registrationOverview } from '@peblish/core/registration/settings';
 import { InviteCreateBody, type InviteRow, type InviteStatus } from '@peblish/schema/invite';
 import { Button } from '@peblish/ui/components/button';
-import { createFileRoute, Link, redirect } from '@tanstack/react-router';
+import { createFileRoute, redirect } from '@tanstack/react-router';
 import { createServerFn } from '@tanstack/react-start';
 import { type } from 'arktype';
 import { useState } from 'react';
@@ -14,6 +14,8 @@ import { useRouteHydrated } from '../../../shell/hydration.ts';
 import { adminPaths } from '../../../shell/paths.ts';
 import { asFormError } from '../../auth/-ui/errors.ts';
 import { AuthForm, Field } from '../../auth/-ui/form.tsx';
+import { Denial } from '../-denial.tsx';
+import { accessOf } from '../settings/-access.ts';
 import { authHead, SearchText, useDate } from '../../auth/-ui/page.tsx';
 
 const Search = type({ 'error?': SearchText });
@@ -26,7 +28,7 @@ const loadRegistration = createServerFn({ method: 'GET' }).handler(async () => {
   const session = await pageSession();
   if (!session) throw redirect({ to: '/auth/sign-in', search: { redirect: '/admin/registration' } });
   const { origin, handle } = await localHandles();
-  const access = session.role !== 'admin' ? 'not-admin' : session.view.siteRole !== 'admin' ? 'needs-two-factor' : 'ok';
+  const access = accessOf(session);
   if (access !== 'ok') return { access } as const;
   const [registration, invites, code] = await Promise.all([registrationOverview(), listInvites(), takeFlash(session.sessionId, CREATED)]);
   // The code of the invite just made, on the first view after making it and never again.
@@ -94,13 +96,14 @@ function Registration() {
     return (
       <main className="auth-page">
         <h1>{t('invites', 'admin.title')}</h1>
-        {data.access === 'needs-two-factor' ? (
-          <p role="alert">
-            {t('invites', 'admin.needsTwoFactor')} <Link to="/settings/security">{t('invites', 'admin.securityLink')}</Link>
-          </p>
-        ) : (
-          <p role="alert">{t('invites', 'admin.notAdmin')}</p>
-        )}
+        <Denial
+          access={data.access}
+          copy={{
+            needsTwoFactor: t('invites', 'admin.needsTwoFactor'),
+            securityLink: t('invites', 'admin.securityLink'),
+            notAdmin: t('invites', 'admin.notAdmin'),
+          }}
+        />
       </main>
     );
   return (

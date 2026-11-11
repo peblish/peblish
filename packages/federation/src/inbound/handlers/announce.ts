@@ -10,6 +10,7 @@ import type { Activity, ContentObject } from '../../mapping/records.ts';
 import { checkActivityOrigin, checkNotEcho } from '../authorize.ts';
 import type { InboundContext, InboundHandler } from '../handler.ts';
 import { skip } from '../reasons.ts';
+import { notPublic } from '../visibility.ts';
 
 // The community's Announce (FEP-1b12): a remote community wraps what happened in it and sends
 // it to its followers. It carries no change of its own; this handler vets the announcement and
@@ -42,6 +43,14 @@ function announced(object: Activity | ContentObject, raw: JsonObject): Announced
 
 /** The announced thing as its own origin serves it, or a skip when it does not serve it. */
 async function readFromOrigin(ctx: InboundContext, expected: Announced): Promise<Announced> {
+  const read = await readOriginCopy(ctx, expected);
+  // The origin's copy replaces the embedded one, so it is held to the same rule (classify.ts held the embedded one).
+  const hidden = notPublic(read.raw);
+  if (hidden) throw hidden;
+  return read;
+}
+
+async function readOriginCopy(ctx: InboundContext, expected: Announced): Promise<Announced> {
   const { id, actorApId } = expected.activity;
   let json: unknown;
   try {

@@ -7,11 +7,12 @@ import { readSetting } from '@peblish/core/settings/read';
 import { tx } from '@peblish/core/tx/tx';
 import { and, eq, gt, sql } from 'drizzle-orm';
 import type { Fetcher } from '../actors/document.ts';
+import { assertFederationOn } from '../actors/federation-switch.ts';
 import { safeFetch } from '../actors/safe-fetch.ts';
 import { FetchRefused, verifyInboundSignature } from '../signing/inbound.ts';
 import { parseSignature } from '../signing/verify.ts';
 import { clientAddress, peerOf } from './client.ts';
-import { takeIntake, takeKeyLookup } from './throttle.ts';
+import { takeIntake, takeIntakeBytes, takeKeyLookup } from './throttle.ts';
 
 // The inbox's front door (lane FED-A's http.ts routes every inbox POST here). It does the
 // least that is safe and answers fast; applying the activity is the pipeline's, a moment later
@@ -20,16 +21,18 @@ import { takeIntake, takeKeyLookup } from './throttle.ts';
 //   inbox.enabled off  503 + Retry-After   the one maintenance answer an inbox may give
 //   body over 512 KiB  413                 by Content-Length, or counted as a chunked body streams in
 //   bad signature      401                 draft-cavage, the key's owner is the activity's actor
+//   federation paused  503 + Retry-After   the signer's key had to be fetched while the switch is off (delivery.enabled)
 //   an account's own   202                 a Delete of an account we do not hold, signed with a key that can no
 //   Delete, no key                         longer be fetched (Mastodon sends it after the account is gone):
 //                                          nothing to apply, answered so the peer stops retrying
 //   blocked peer       403                 the signer's instance is blocked here (peers/gate.ts); nothing is stored
 //   paused peer        503 + Retry-After   the signer's instance has its inbox paused; it retries, nothing is lost
 //   not an activity    400                 or a body that is not strictly UTF-8: the relay sends the exact bytes, which
-//                                          must then be exactly the text that was read
+//                                          must then be exactly the text that was read; or a type or id over its limit
 //   throttled          429 + Retry-After   too many key lookups from this address or for this host (throttle.ts), or
 //                                          the signer or its instance is over its request rate or has too many
-//                                          bytes waiting in inbox_raw
+//                                          bytes waiting in inbox_raw, or its instance, or everyone, has stored
+//                                          its hour's bytes (throttle.ts takeIntakeBytes)
 //   a repeat           202                 the same body, or an activity id seen within the hour, is not stored again
 //                                          and costs none of the signer's allowance (it is recognised first)
 //   stored             202                 the exact bytes, in inbox_raw; the repeat check, the pending count and the
@@ -39,6 +42,11 @@ import { takeIntake, takeKeyLookup } from './throttle.ts';
 // not expect, a storage error included, is the 503 peers retry.
 
 export const maxBodyBytes = 512 * 1024;
+
+/** The longest activity `type` taken (no ActivityPub type comes near it): it is stored in a column of its own, outside the body. */
+export const maxActivityTypeLength = 64;
+/** The longest activity `id` taken: it is stored in a column of its own and matched by the repeat check, so it survives the body cut. */
+export const maxActivityIdLength = 2048;
 const retryAfter = { 'Retry-After': '300' };
 /** Bytes a signer, and all the signers of one instance, may have waiting in inbox_raw (a pipeline that falls behind makes peers wait). */
 export const pendingBytesLimit = { signer: 8 * 1024 * 1024, instance: 32 * 1024 * 1024 };
@@ -152,6 +160,8 @@ export type ReceiveOptions = {
   fetch?: Fetcher;
   /** The address of the connection's peer, when the caller knows it better than the request does (`request.ip`). */
   peer?: string;
+  /** For tests: the held-signer lookup (namesHeldSigner), so a test can pause federation while it waits. */
+  heldSigner?: (request: Request, body: Uint8Array) => Promise<boolean>;
 };
 
 /** Most fetches the lookup of one request's signing key may make: the key document, the actor, its NodeInfo, a hop or two. */
@@ -203,12 +213,15 @@ export async function receiveInbound(request: Request, options: ReceiveOptions =
     let throttled = false;
     let fetches = 0;
     const base = options.fetch ?? safeFetch;
+    const heldSigner = options.heldSigner ?? namesHeldSigner;
     const address = clientAddress(request.headers, options.peer ?? peerOf(request));
     // Finding a signer's key is a few fetches (the key document, the actor, its NodeInfo), but one
     // lookup: it is charged once, at the first, to the client and to the host the key id names.
     const limited: Fetcher = async (url, init) => {
       if (fetches === 0) {
-        const kind = (await namesHeldSigner(request, body)) ? 'refresh' : 'discovery';
+        const kind = (await heldSigner(request, body)) ? 'refresh' : 'discovery';
+        // The lookup is a database wait: a pause during it stops the request (the signature answers `paused`), and spends no lookup.
+        await assertFederationOn();
         if (!takeKeyLookup(kind, { address, host: new URL(String(url)).host })) {
           throttled = true;
           throw new FetchRefused('too many lookups of signing keys');
@@ -219,6 +232,8 @@ export async function receiveInbound(request: Request, options: ReceiveOptions =
     };
     const signature = await verifyInboundSignature(request, body, { fetch: limited });
     if (!signature.ok) {
+      // The signer's key had to be fetched, and federation is paused: the peer asks again later.
+      if (signature.reason === 'paused') return refuse(503, 'federation is paused here', retryAfter);
       if (throttled) return refuse(429, 'slow down', retryAfter);
       if (signature.reason === 'key_unknown' && (await isGoneAccountsDelete(body))) return refuse(202, 'skipped: actor.unresolvable');
       return refuse(401, `signature: ${signature.reason}`);
@@ -232,6 +247,8 @@ export async function receiveInbound(request: Request, options: ReceiveOptions =
     }
     const actor = isObject(activity) ? idOf(activity.actor) : null;
     if (!isObject(activity) || typeof activity.type !== 'string' || actor === null) return refuse(400, 'not an activity');
+    if (activity.type.length > maxActivityTypeLength) return refuse(400, 'the activity type is too long');
+    if (typeof activity.id === 'string' && activity.id.length > maxActivityIdLength) return refuse(400, 'the activity id is too long');
     // The key must be the actor's own: a server speaks for its own people, and nobody else's.
     if (signature.ownerApId !== actor) return refuse(401, 'signature: the key does not belong to the actor');
     // What the admin decided about this peer (M18): a paused inbox asks it to come back, a blocked one is refused. Nothing is stored either way.
@@ -246,6 +263,8 @@ export async function receiveInbound(request: Request, options: ReceiveOptions =
     const receipt = receiptKey(actor, body);
     if (await isRepeat(db(), receipt, actor, activityId, now)) return new Response(null, { status: 202 });
     if (!takeIntake(actor, now)) return refuse(429, 'slow down', retryAfter);
+    const refund = takeIntakeBytes(actor, body.byteLength, now);
+    if (!refund) return refuse(429, 'too many bytes this hour', retryAfter);
 
     const { pathname, search } = new URL(request.url);
     const headers = { method: request.method, path: `${pathname}${search}`, signer: signature.ownerApId, keyId: signature.keyId } as Record<
@@ -256,7 +275,13 @@ export async function receiveInbound(request: Request, options: ReceiveOptions =
       const value = request.headers.get(name);
       if (value !== null) headers[name] = value;
     }
-    const outcome = await admit({ activityId, activityType: activity.type as string, actorApId: actor, body, headers }, receipt, now);
+    const outcome = await admit({ activityId, activityType: activity.type as string, actorApId: actor, body, headers }, receipt, now).catch(
+      (error: unknown) => {
+        refund();
+        throw error;
+      },
+    );
+    if (outcome !== 'stored') refund();
     if (outcome === 'full') return refuse(429, 'too much of yours is waiting to be processed', retryAfter);
     return new Response(null, { status: 202 });
   } catch (error) {

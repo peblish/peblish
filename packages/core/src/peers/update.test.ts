@@ -50,6 +50,24 @@ test('peer.update: a two-factor admin may; everyone else gets auth.admin_require
   expect(await ask(asAdmin, 'lemmy.test')).toMatchObject({ ok: true, grant: { authority: { kind: 'site-admin', actorId: andrew.id } } });
 });
 
+test('peer.update: the instance may while importing (the cutover), and only then; its own host and bad hosts are still refused', async () => {
+  const { instance } = await setup();
+  const self = await seedActor(instance, 'Application', 'feddit.test', { apId: 'https://feddit.test/' });
+  const as = (job: 'import' | 'registration' | 'scheduled') => ({ kind: 'system', actorId: self.id, job }) as const;
+  const ask = (job: 'import' | 'registration' | 'scheduled', domain: string) => authorize('peer.update', as(job), { domain });
+  expect(await ask('import', 'lemmy.test')).toMatchObject({
+    ok: true,
+    grant: { authority: { kind: 'system', actorId: self.id, job: 'import', ref: null } },
+  });
+  expect(await ask('registration', 'lemmy.test')).toEqual({ ok: false, reason: 'auth.admin_required' });
+  expect(await ask('scheduled', 'lemmy.test')).toEqual({ ok: false, reason: 'auth.admin_required' });
+  expect(await ask('import', 'feddit.test')).toEqual({ ok: false, reason: 'peer.local_instance' });
+  expect(await ask('import', 'Lemmy.test')).toEqual({ ok: false, reason: 'peer.invalid_domain' });
+  // The rechecked mutation runs under that grant and writes the block.
+  await updatePeer(await grantFor('peer.update', as('import'), { domain: 'lemmy.test' }), { blocked: true, reason: 'imported' });
+  expect((await controls('lemmy.test'))?.peer_controls).toMatchObject({ blocked: true, changedBy: self.id });
+});
+
 test('an unseen host is added, controls are upserted, and one non-public modlog row and one event record the change', async () => {
   const { andrew, asAdmin } = await setup();
   const approve = await updatePeer(await grantFor('peer.update', asAdmin, { domain: 'lemmy.test' }), {

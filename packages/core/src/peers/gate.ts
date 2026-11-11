@@ -60,6 +60,19 @@ export async function deliveryBlocked(instanceId: Uuid, q: Queryable = db()): Pr
   return row?.blocked === true;
 }
 
+/** The most specific known instance at or above `host` (itself, or a parent domain), with its media controls; undefined when none is known. */
+async function closestPeer(host: string, q: Queryable) {
+  const rows = await q
+    .select({ domain: instances.domain, local: instances.local, media: peerControls.media, blocked: peerControls.blocked })
+    .from(instances)
+    .leftJoin(peerControls, eq(peerControls.instanceId, instances.id))
+    .where(inArray(instances.domain, hostAndParents(host.toLowerCase())));
+  return rows.toSorted((a, b) => b.domain.length - a.domain.length)[0];
+}
+
+const approved = (peer: { local: boolean; media: string | null; blocked: boolean | null }) =>
+  peer.local || (peer.media === 'approved' && peer.blocked !== true);
+
 /**
  * Whether media from this host may reach viewers through the proxy. A host at or under a known
  * peer's domain needs the most specific such peer to be approved and not blocked; a host that
@@ -67,14 +80,19 @@ export async function deliveryBlocked(instanceId: Uuid, q: Queryable = db()): Pr
  * on this server's own domain.
  */
 export async function mediaAllowed(host: string, q: Queryable = db()): Promise<boolean> {
-  const rows = await q
-    .select({ domain: instances.domain, local: instances.local, media: peerControls.media, blocked: peerControls.blocked })
-    .from(instances)
-    .leftJoin(peerControls, eq(peerControls.instanceId, instances.id))
-    .where(inArray(instances.domain, hostAndParents(host.toLowerCase())));
-  const closest = rows.toSorted((a, b) => b.domain.length - a.domain.length)[0];
-  if (!closest || closest.local) return true;
-  return closest.media === 'approved' && closest.blocked !== true;
+  const closest = await closestPeer(host, q);
+  return !closest || approved(closest);
+}
+
+/**
+ * Whether images of content this peer supplied may reach viewers, wherever they are hosted: the
+ * peer (the most specific known instance at or above `host`) must be this server or approved and
+ * not blocked. Unlike `mediaAllowed`, an unknown supplier is refused: content always comes from
+ * a known instance, so an unknown one is never approved.
+ */
+export async function supplierMediaAllowed(host: string, q: Queryable = db()): Promise<boolean> {
+  const closest = await closestPeer(host, q);
+  return closest !== undefined && approved(closest);
 }
 
 /**

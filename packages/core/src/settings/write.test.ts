@@ -2,6 +2,9 @@ import type { Principal } from '@peblish/schema/authz';
 import { eq, sql } from 'drizzle-orm';
 import { beforeEach, describe, expect, test } from 'vitest';
 import { authorize } from '../authz/authorize.ts';
+import type { SubjectOf } from '../authz/policy.ts';
+import { systemPrincipal } from '../authz/system.ts';
+import { ensureLocalInstance } from '../db/bootstrap.ts';
 import { db } from '../db/read.ts';
 import { authUser } from '../db/tables/auth.ts';
 import { modlog } from '../db/tables/moderation.ts';
@@ -47,6 +50,64 @@ describe('settings.update policy', () => {
       new Refused('settings.update', 'auth.admin_required'),
     );
     expect(await stored('site.name')).toBeUndefined();
+    expect(await writeCounts()).toEqual({ modlog: 0, outbox: 0 });
+  });
+});
+
+describe('settings.update for the system import principal (TN9)', () => {
+  const off = { keys: ['delivery.enabled'], values: { 'delivery.enabled': false } };
+
+  test('may turn the federation switch off, and the change is recorded as an admin change is: the modlog row and the event', async () => {
+    await ensureLocalInstance(writer(), 'https://feddit.test');
+    const importer = await systemPrincipal(db(), 'import');
+    const decision = await authorize('settings.update', importer, off);
+    if (!decision.ok) throw new Error(decision.reason);
+    const authority = { kind: 'system', actorId: importer.actorId, job: 'import', ref: null };
+    expect(decision.grant.authority).toEqual(authority);
+    const result = await updateSettings(decision.grant, { 'delivery.enabled': false });
+    expect(result.changed).toEqual(['delivery.enabled']);
+    expect(await stored('delivery.enabled')).toMatchObject({ value: false, updatedBy: importer.actorId });
+    const rows = await db().select().from(modlog);
+    expect(rows).toMatchObject([
+      {
+        action: 'settings.update',
+        actorId: importer.actorId,
+        public: false,
+        authority,
+        details: { public: false, changes: { 'delivery.enabled': { before: true, after: false } } },
+      },
+    ]);
+    expect(await outboxEvents()).toEqual([
+      { type: 'settings.updated', v: 1, keys: ['delivery.enabled'], actorId: importer.actorId, modlogId: rows[0]!.id },
+    ]);
+  });
+
+  test('may change nothing else: the switch on, no values, another key, a second key or another job are refused, and the body writes only the granted value', async () => {
+    await ensureLocalInstance(writer(), 'https://feddit.test');
+    const [importer, registration, scheduled] = await Promise.all(
+      (['import', 'registration', 'scheduled'] as const).map((job) => systemPrincipal(db(), job)),
+    );
+    const table: [string, Principal, SubjectOf<'settings.update'>][] = [
+      ['the switch on', importer!, { keys: ['delivery.enabled'], values: { 'delivery.enabled': true } }],
+      ['no values', importer!, { keys: ['delivery.enabled'] }],
+      ['another key', importer!, { keys: ['inbox.enabled'], values: { 'inbox.enabled': false } }],
+      [
+        'a second key',
+        importer!,
+        { keys: ['delivery.enabled', 'inbox.enabled'], values: { 'delivery.enabled': false, 'inbox.enabled': false } },
+      ],
+      ['the registration job', registration!, off],
+      ['scheduled jobs', scheduled!, off],
+    ];
+    for (const [who, principal, subject] of table)
+      expect(await authorize('settings.update', principal, subject), who).toEqual({ ok: false, reason: 'auth.admin_required' });
+
+    const decision = await authorize('settings.update', importer!, off);
+    if (!decision.ok) throw new Error(decision.reason);
+    await expect(updateSettings(decision.grant, { 'delivery.enabled': true })).rejects.toThrowError(
+      new Refused('settings.update', 'settings.invalid'),
+    );
+    expect(await stored('delivery.enabled')).toBeUndefined();
     expect(await writeCounts()).toEqual({ modlog: 0, outbox: 0 });
   });
 });

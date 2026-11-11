@@ -1,7 +1,7 @@
 import { bigint, index, integer, pgTable, primaryKey, text, uuid } from 'drizzle-orm/pg-core';
 import { at } from '../db/columns.ts';
 import { actors } from '../db/tables/actors.ts';
-import { authUser } from '../db/tables/auth.ts';
+import { authSession, authUser } from '../db/tables/auth.ts';
 
 /**
  * The 16+ declaration (decision 2026-11-08): the row is the fact that the person declared it,
@@ -25,6 +25,20 @@ export const totpSteps = pgTable('totp_steps', {
     .primaryKey()
     .references(() => authUser.id, { onDelete: 'cascade' }),
   step: bigint('step', { mode: 'number' }).notNull(),
+});
+
+/**
+ * The sessions that passed two-factor themselves: created by the sign-in challenge (a TOTP or
+ * recovery code) or by confirming a TOTP setup, or carried to a session that replaced one of
+ * them (a password change). Admin authority needs the session's row here, not only the
+ * account's two-factor setting, so a session signed in with the password alone never gains it
+ * (identity/session-two-factor.ts). Goes with its session.
+ */
+export const sessionTwoFactor = pgTable('session_two_factor', {
+  sessionId: uuid('session_id')
+    .primaryKey()
+    .references(() => authSession.id, { onDelete: 'cascade' }),
+  verifiedAt: at('verified_at').notNull().defaultNow(),
 });
 
 /**
