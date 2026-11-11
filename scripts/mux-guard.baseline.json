@@ -1,260 +1,198 @@
 {
-  "packages/ui/src/components/comment-thread.css": {
-    "css-font-size": 4
-  },
   "packages/ui/src/components/comment-thread.tsx": {
-    "raw-element": 5
+    "raw-element": 1,
+    "widget-handler": 1
+  },
+  "packages/ui/src/components/empty-state.css": {
+    "css-element-selector": 1
+  },
+  "packages/ui/src/components/link-tabs.css": {
+    "css-spacing": 1
+  },
+  "packages/ui/src/components/notice.css": {
+    "css-element-selector": 1
   },
   "packages/ui/src/components/post-card.css": {
-    "css-font-size": 11
-  },
-  "packages/ui/src/components/post-card.tsx": {
-    "raw-element": 2
+    "css-element-selector": 2
   },
   "packages/ui/src/components/prose.css": {
-    "css-colour": 12,
-    "css-radius": 4,
-    "css-font-family": 1,
-    "css-font-size": 3
-  },
-  "packages/ui/src/components/reply-bar.css": {
-    "css-font-size": 1
-  },
-  "packages/ui/src/components/reply-bar.tsx": {
-    "raw-element": 3
-  },
-  "packages/ui/src/components/vote-control.css": {
-    "css-radius": 1,
-    "css-font-size": 2
-  },
-  "packages/ui/src/components/vote-control.tsx": {
-    "raw-element": 2
+    "css-line-height": 1
   },
   "packages/ui/src/composer/composer.css": {
-    "css-radius": 1,
-    "css-font-size": 3
+    "css-spacing": 3,
+    "css-motion": 1
+  },
+  "packages/ui/src/composer/editor-icons.tsx": {
+    "raw-element": 1
   },
   "packages/ui/src/composer/markdown-editor.tsx": {
-    "raw-element": 2
-  },
-  "packages/ui/src/density/density-control.css": {
-    "css-radius": 1
-  },
-  "packages/ui/src/density/density-control.tsx": {
-    "raw-element": 1
+    "widget-handler": 1,
+    "text-element": 1,
+    "widget-role": 1
   },
   "packages/ui/src/tokens/tokens.css": {
-    "css-colour": 26,
-    "css-font-size": 2
+    "css-element-selector": 3
   },
   "packages/web/src/routes/-legal/legal.css": {
-    "css-font-size": 2
+    "css-element-selector": 1
   },
-  "packages/web/src/routes/admin/bans/index.tsx": {
-    "raw-element": 21
+  "packages/web/src/routes/admin/-admin.css": {
+    "css-element-selector": 3
+  },
+  "packages/web/src/routes/admin/bans/-ui/bans.css": {
+    "css-element-selector": 1
   },
   "packages/web/src/routes/admin/media/-ui/media.css": {
-    "css-font-family": 1,
-    "css-font-size": 3
+    "css-element-selector": 1
   },
   "packages/web/src/routes/admin/media/-ui/sections.tsx": {
-    "raw-element": 63
+    "text-element": 1
   },
-  "packages/web/src/routes/admin/pages/index.tsx": {
-    "raw-element": 15
+  "packages/web/src/routes/admin/pages/$slug/$language.tsx": {
+    "text-element": 2
   },
-  "packages/web/src/routes/admin/peers/index.tsx": {
-    "raw-element": 21
+  "packages/web/src/routes/admin/peers/-ui/peers.css": {
+    "css-element-selector": 1
   },
   "packages/web/src/routes/admin/registration/index.tsx": {
-    "raw-element": 25
+    "text-element": 3,
+    "bare-text": 1
   },
   "packages/web/src/routes/admin/reports/-ui/queue.css": {
-    "css-colour": 1,
-    "css-radius": 2,
-    "css-font-size": 5
+    "css-element-selector": 3
   },
   "packages/web/src/routes/admin/reports/-ui/queue.tsx": {
-    "raw-element": 26
-  },
-  "packages/web/src/routes/admin/reports/index.tsx": {
-    "raw-element": 4
-  },
-  "packages/web/src/routes/admin/settings/-admin.css": {
-    "css-radius": 1,
-    "css-font-size": 2
-  },
-  "packages/web/src/routes/admin/settings/-ui.tsx": {
-    "raw-element": 1
-  },
-  "packages/web/src/routes/admin/settings/index.tsx": {
-    "raw-element": 6
+    "raw-element": 1,
+    "text-element": 1
   },
   "packages/web/src/routes/auth/-ui/auth.css": {
-    "css-colour": 6,
-    "css-radius": 1,
-    "css-font-family": 1,
-    "css-font-size": 10
+    "css-element-selector": 18,
+    "css-letter-spacing": 2,
+    "css-spacing": 44,
+    "css-line-height": 1,
+    "css-font-weight": 5
   },
-  "packages/web/src/routes/auth/-ui/form.tsx": {
-    "raw-element": 1
-  },
-  "packages/web/src/routes/auth/reset.tsx": {
-    "raw-element": 3
-  },
-  "packages/web/src/routes/auth/sign-in.tsx": {
+  "packages/web/src/routes/auth/-ui/qr.tsx": {
     "raw-element": 1
   },
   "packages/web/src/routes/auth/sign-up.tsx": {
-    "raw-element": 4
+    "widget-role": 1,
+    "bare-text": 2
   },
-  "packages/web/src/routes/auth/two-factor.tsx": {
-    "raw-element": 2
+  "packages/web/src/routes/auth/verify.tsx": {
+    "text-element": 1
   },
   "packages/web/src/routes/c/-ui/community-form.tsx": {
-    "raw-element": 5
-  },
-  "packages/web/src/routes/c/-ui/community-page.tsx": {
-    "raw-element": 6
+    "raw-element": 2
   },
   "packages/web/src/routes/c/-ui/community.css": {
-    "css-colour": 1,
-    "css-radius": 4,
-    "css-font-size": 6
+    "css-element-selector": 3,
+    "css-spacing": 1
   },
   "packages/web/src/routes/c/-ui/gate.css": {
-    "css-colour": 1,
-    "css-radius": 1,
-    "css-font-size": 3
+    "css-element-selector": 3
   },
   "packages/web/src/routes/c/-ui/gate.tsx": {
-    "raw-element": 6
+    "raw-element": 2
   },
   "packages/web/src/routes/communities/-ui/directory-page.tsx": {
-    "raw-element": 17
+    "bare-text": 1,
+    "raw-element": 1
   },
   "packages/web/src/routes/communities/-ui/directory.css": {
-    "css-colour": 2,
-    "css-radius": 2,
-    "css-font-size": 5
-  },
-  "packages/web/src/routes/communities/-ui/follow-form.tsx": {
-    "raw-element": 3
+    "css-element-selector": 1,
+    "css-spacing": 1
   },
   "packages/web/src/routes/index/-feed/feed.css": {
-    "css-radius": 1,
-    "css-font-size": 2
-  },
-  "packages/web/src/routes/invite/$code.tsx": {
-    "raw-element": 1
+    "css-element-selector": 1
   },
   "packages/web/src/routes/kit/-kit.css": {
-    "css-font-size": 3
+    "css-element-selector": 4,
+    "css-spacing": 3
   },
-  "packages/web/src/routes/modlog/-ui/content-moderate.tsx": {
-    "raw-element": 1
+  "packages/web/src/routes/kit/index.tsx": {
+    "text-element": 7
   },
   "packages/web/src/routes/modlog/-ui/mod.css": {
-    "css-colour": 2,
-    "css-radius": 1,
-    "css-font-size": 2
+    "css-element-selector": 1
   },
   "packages/web/src/routes/modlog/-ui/modlog.css": {
-    "css-font-family": 1,
-    "css-font-size": 7
+    "css-element-selector": 4,
+    "css-spacing": 1
   },
-  "packages/web/src/routes/modlog/-ui/panels.tsx": {
-    "raw-element": 10
+  "packages/web/src/routes/modlog/index.tsx": {
+    "bare-text": 6,
+    "raw-element": 1
   },
   "packages/web/src/routes/notifications/-ui/inbox.css": {
-    "css-radius": 1,
-    "css-font-size": 7
+    "css-element-selector": 2
   },
   "packages/web/src/routes/notifications/-ui/inbox.tsx": {
-    "raw-element": 7
+    "bare-text": 1,
+    "text-element": 1
   },
   "packages/web/src/routes/post/$id/comments/-ui/comments.css": {
-    "css-font-size": 3
+    "css-element-selector": 2
   },
-  "packages/web/src/routes/post/$id/comments/-ui/permalink-page.tsx": {
-    "raw-element": 8
-  },
-  "packages/web/src/routes/post/$id/comments/-ui/thread-section.tsx": {
-    "raw-element": 3
-  },
-  "packages/web/src/routes/post/-ui/action-form.tsx": {
+  "packages/web/src/routes/post/-ui/post-page.tsx": {
+    "bare-text": 1,
     "raw-element": 1
   },
   "packages/web/src/routes/post/-ui/post.css": {
-    "css-colour": 2,
-    "css-radius": 4,
-    "css-font-size": 4
-  },
-  "packages/web/src/routes/report/-ui/report-control.tsx": {
-    "raw-element": 2
+    "css-element-selector": 4
   },
   "packages/web/src/routes/report/-ui/report-form.tsx": {
-    "raw-element": 8
+    "text-element": 1
   },
   "packages/web/src/routes/report/-ui/report.css": {
-    "css-colour": 2,
-    "css-radius": 2,
-    "css-font-size": 3
+    "css-element-selector": 2
   },
-  "packages/web/src/routes/resolve/-ui/resolve-page.tsx": {
-    "raw-element": 1
-  },
-  "packages/web/src/routes/settings/account/index.tsx": {
-    "raw-element": 1
-  },
-  "packages/web/src/routes/settings/blocks/-ui/block-action.tsx": {
-    "raw-element": 1
-  },
-  "packages/web/src/routes/settings/blocks/-ui/block-form.tsx": {
-    "raw-element": 1
-  },
-  "packages/web/src/routes/settings/blocks/-ui/blocks-page.tsx": {
-    "raw-element": 2
-  },
-  "packages/web/src/routes/settings/blocks/-ui/blocks.css": {
-    "css-radius": 1
+  "packages/web/src/routes/settings/-ui/settings.css": {
+    "css-element-selector": 4
   },
   "packages/web/src/routes/settings/security/index.tsx": {
-    "raw-element": 8
-  },
-  "packages/web/src/routes/submit/-ui/community-aside.tsx": {
-    "raw-element": 2
+    "text-element": 1
   },
   "packages/web/src/routes/submit/-ui/community-picker.tsx": {
-    "raw-element": 1
+    "widget-role": 2,
+    "text-element": 1
+  },
+  "packages/web/src/routes/submit/-ui/composer-sheet.tsx": {
+    "text-element": 2,
+    "widget-role": 2
   },
   "packages/web/src/routes/submit/-ui/composer.tsx": {
-    "raw-element": 5
+    "text-element": 2,
+    "widget-role": 2
   },
   "packages/web/src/routes/submit/-ui/submit.css": {
-    "css-shadow": 1,
-    "css-font-size": 5
+    "css-spacing": 7,
+    "css-element-selector": 2
   },
-  "packages/web/src/routes/u/$handle/-ui/edit-form.tsx": {
+  "packages/web/src/routes/submit/index.tsx": {
+    "text-element": 1,
+    "widget-role": 1
+  },
+  "packages/web/src/routes/u/$handle/-ui/activity.tsx": {
     "raw-element": 1
   },
+  "packages/web/src/routes/u/$handle/-ui/profile-card.tsx": {
+    "text-element": 1
+  },
   "packages/web/src/routes/u/$handle/-ui/profile.css": {
-    "css-radius": 3,
-    "css-font-size": 4
+    "css-element-selector": 3
   },
   "packages/web/src/shell/account.tsx": {
-    "raw-element": 3
+    "bare-text": 1
+  },
+  "packages/web/src/shell/create-post.tsx": {
+    "raw-element": 1,
+    "bare-text": 1
   },
   "packages/web/src/shell/shell.css": {
-    "css-colour": 1,
-    "css-radius": 4,
-    "css-shadow": 3,
-    "css-font-size": 6
+    "css-element-selector": 2
   },
-  "packages/web/src/shell/sidebar.tsx": {
-    "raw-element": 3
-  },
-  "packages/web/src/shell/theme-menu.tsx": {
-    "raw-element": 3
+  "packages/web/src/shell/shell.tsx": {
+    "raw-element": 1
   }
 }
