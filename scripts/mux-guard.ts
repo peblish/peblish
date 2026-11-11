@@ -545,6 +545,36 @@ export function scanScript(file: string, text: string): Violation[] {
   return out;
 }
 
+/**
+ * Decodes CSS escapes (`\67 ` is `g`, `\:` is `:`) outside quoted strings, so `r\67 b(...)` and
+ * `!impor\74 ant` are checked as what they mean. In a selector (`ident`), an escaped character that cannot
+ * stand in a name becomes `_`, so `.w-1\/2` stays one class name.
+ */
+export function unescapeCss(text: string, ident = false): string {
+  if (!text.includes('\\')) return text;
+  let out = '';
+  for (let i = 0; i < text.length; i++) {
+    const char = text[i]!;
+    if (char === '"' || char === "'") {
+      let j = i + 1;
+      while (j < text.length && text[j] !== char) j += text[j] === '\\' ? 2 : 1;
+      out += text.slice(i, j + 1);
+      i = j;
+      continue;
+    }
+    if (char !== '\\' || i + 1 >= text.length) {
+      out += char;
+      continue;
+    }
+    const hex = /^([0-9a-f]{1,6})[ \t\n\r\f]?/i.exec(text.slice(i + 1, i + 8));
+    const code = hex ? parseInt(hex[1]!, 16) : text.codePointAt(i + 1)!;
+    const decoded = hex && (code === 0 || code > 0x10ffff) ? '\ufffd' : String.fromCodePoint(code);
+    out += ident && !/[\w-]/.test(decoded) ? '_' : decoded;
+    i += hex ? hex[0].length : decoded.length;
+  }
+  return out;
+}
+
 type CssItem = { kind: 'prelude' | 'statement'; line: number; text: string; anchor: string[]; layout: boolean };
 
 const layoutComment = /^\/\*\s*layout\s*\*\/$/;
@@ -565,7 +595,7 @@ function cssItems(css: string): { items: CssItem[]; layoutComments: number } {
   let layoutComments = 0;
   let last: { item: CssItem; line: number } | undefined;
   const flush = (kind: CssItem['kind']) => {
-    const text = buffer.trim();
+    const text = unescapeCss(buffer.trim(), kind === 'prelude');
     if (text) {
       const item = { kind, line: start, text, anchor: [...stack], layout };
       items.push(item);

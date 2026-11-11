@@ -566,6 +566,27 @@ test("@property may not register a --muxui-* name; another registration's initia
   expect(css(sheet, themed)).toEqual(['css-token-value:1', 'css-unknown-token:2', 'css-token-value:3', 'css-spacing:5']);
 });
 
+test('CSS escapes are decoded outside strings before any check; in selectors and strings they stay allowed', () => {
+  const sheet = lines(
+    '.a { color: r\\67 b(255 0 0); }', // 1
+    '.b { margin: 0 !impor\\74 ant; }', // 2
+    '.c { p\\61 dding: 13px; }', // 3
+    '.d { --muxui-\\73 emantic-layout-group-gap: 13px; }', // 4
+    '.e \\62 utton { margin: 0; }', // 5
+    "@property --muxui-\\73 emantic-layout-group-gap { syntax: '*'; inherits: true; }", // 6
+    ".f::before { content: '\\201C'; }", // 7: legal, an escape in a string
+    '.w-1\\/2, .g\\:hover { margin: 0; }', // 8: legal, escapes in class names
+  );
+  expect(css(sheet, themed)).toEqual([
+    'css-element-selector:5',
+    'css-token-value:6',
+    'css-colour:1',
+    'css-important:2',
+    'css-spacing:3',
+    'css-token-value:4',
+  ]);
+});
+
 test('css-blur reports blurs; css-element-selector reports styling by tag, not by class, inside Mux parts or in :has()', () => {
   const sheet = lines(
     '.a img { filter: blur(14px); }', // 1
