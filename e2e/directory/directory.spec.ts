@@ -254,7 +254,8 @@ test.describe('resolve', () => {
     await gotoHydrated(page, '/resolve?q=%21lab%40lemmy.example');
     await expect(page.getByRole('heading', { level: 1 })).toHaveText('Find a community, person or post');
     await expect(page.getByRole('heading', { name: 'Sign in to find things on other servers' })).toBeVisible();
-    await expect(page.getByRole('textbox')).toHaveCount(0);
+    // The page offers no field; the shell's own sidebar filter is outside main.
+    await expect(page.getByRole('main').getByRole('textbox')).toHaveCount(0);
     await expectAccessible(page);
     expect(log.hydrationProblems()).toEqual([]);
     const answer = await page.request.post('/resolve', { form: { q: '!lab@lemmy.example' }, headers: { accept: 'application/json' } });
