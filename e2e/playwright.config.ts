@@ -19,6 +19,8 @@ function laneDatabaseUrl(): string {
 
 /** Which run of e2e/run.ts this is: each keeps its own results and report, so the serial run does not wipe the parallel one's. */
 const phase = process.env.E2E_PHASE ?? 'all';
+/** A shard (E2E_SHARD, e2e/run.ts) reads how many tests each run ran from these results. */
+const counts = process.env.E2E_SHARD ? [['json', { outputFile: `./artifacts/results/${phase}.json` }] as const] : [];
 
 export default defineConfig({
   testDir: '.',
@@ -29,7 +31,11 @@ export default defineConfig({
   expect: { timeout: 5_000 },
   forbidOnly: Boolean(process.env.CI),
   retries: 0,
-  reporter: process.env.CI ? [['list'], ['html', { outputFolder: `./artifacts/report/${phase}`, open: 'never' }]] : 'list',
+  reporter: [
+    ['list'],
+    ...(process.env.CI ? [['html', { outputFolder: `./artifacts/report/${phase}`, open: 'never' }] as const] : []),
+    ...counts,
+  ],
   use: { baseURL, locale: 'en-US', trace: 'retain-on-failure' },
   // Specs that save a shared site setting (kill switches, uploads, remote media, the site and
   // operator details) or render something such a save changes are named *.serial.spec.ts: they

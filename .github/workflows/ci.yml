@@ -14,11 +14,13 @@ concurrency:
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
+  # pnpm check and the Playwright suite run side by side: check on one runner, the browser tests
+  # split across two (e2e below), so a PR waits for the longest of them rather than their sum.
   check:
-    name: check, e2e, bundle report
+    name: check, drift, migrations, bundle report
     runs-on: ubuntu-24.04
-    # About 20 minutes on a typical runner; a slow one took over 30 (PR #6), so leave headroom.
-    timeout-minutes: 45
+    # About 10 minutes on a typical runner; a slow one takes half again as long, so leave headroom.
+    timeout-minutes: 25
     services:
       postgres:
         image: postgres:17.11@sha256:ff87138949ad9a46f32ff23bd6852b52ce024a13dffe9b4087be98292cdd3b4f
@@ -31,20 +33,13 @@ jobs:
           --health-cmd "pg_isready -U peblish -d peblish"
           --health-interval 2s
           --health-retries 30
-      # The auth e2e flows read verification and reset mail from Mailpit's API on 18426, as locally.
-      mailpit:
-        image: axllent/mailpit:v1.31.4@sha256:b68349e3a014b90c5610bfb26b2ae36f3892d7b8cf25ee140c6c71c98d2fcf48
-        ports: ['18425:1025', '18426:8025']
     env:
       # Tests recreate the _test database from the migrations; DATABASE_URL is the fresh
-      # database the service starts with, migrated below.
+      # database the service starts with, migrated below. Mail goes to a recording transport
+      # in the tests, so this job has no Mailpit and no SMTP_URL.
       TEST_DATABASE_URL: postgres://peblish:peblish@127.0.0.1:5432/peblish_ci_test
       DATABASE_URL: postgres://peblish:peblish@127.0.0.1:5432/peblish
       PUBLIC_ORIGIN: https://ci.peblish.test
-      SMTP_URL: smtp://127.0.0.1:18425
-      # The UI lane's component gallery at /kit answers 404 without it; Playwright's
-      # webServer.env is merged over this environment, so the e2e server sees it too.
-      PEBLISH_UI_KIT: '1'
       # The S3 adapter's tests run against the MinIO started below; the bucket is created by the test.
       S3_ENDPOINT: http://127.0.0.1:18490
       S3_BUCKET: peblish-ci
@@ -86,21 +81,129 @@ jobs:
         run: pnpm db:drift
       - name: Migrations apply to a fresh database
         run: pnpm db:migrate
+      # From the build pnpm check made; the budget itself is enforced by e2e/payload on the first e2e shard.
+      - name: Bundle size summary
+        run: node scripts/bundle-report.ts >> "$GITHUB_STEP_SUMMARY"
+
+  # The Playwright suite on two runners, each with its own Postgres, Mailpit, MinIO and build.
+  # E2E_SHARD (e2e/run.ts) gives each runner its part of the parallel project by Playwright's
+  # --shard, which keeps a spec file whole, so e2e/payload runs once, on shard 1. The serial
+  # project runs on the last shard, which has the smaller part. e2e-shards checks the counts.
+  e2e:
+    name: e2e, shard ${{ matrix.shard }} of ${{ strategy.job-total }}
+    runs-on: ubuntu-24.04
+    # About 7 minutes on a typical runner (12 for the whole suite on one runner before the split).
+    timeout-minutes: 25
+    strategy:
+      # Both shards finish, so one run shows every failing spec.
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
+    services:
+      postgres:
+        image: postgres:17.11@sha256:ff87138949ad9a46f32ff23bd6852b52ce024a13dffe9b4087be98292cdd3b4f
+        env:
+          POSTGRES_USER: peblish
+          POSTGRES_PASSWORD: peblish
+          POSTGRES_DB: peblish
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U peblish -d peblish"
+          --health-interval 2s
+          --health-retries 30
+      # The auth e2e flows read verification and reset mail from Mailpit's API on 18426, as locally.
+      mailpit:
+        image: axllent/mailpit:v1.31.4@sha256:b68349e3a014b90c5610bfb26b2ae36f3892d7b8cf25ee140c6c71c98d2fcf48
+        ports: ['18425:1025', '18426:8025']
+    env:
+      # The e2e server's database, migrated below.
+      DATABASE_URL: postgres://peblish:peblish@127.0.0.1:5432/peblish
+      PUBLIC_ORIGIN: https://ci.peblish.test
+      SMTP_URL: smtp://127.0.0.1:18425
+      # The UI lane's component gallery at /kit answers 404 without it; Playwright's
+      # webServer.env is merged over this environment, so the e2e server sees it too.
+      PEBLISH_UI_KIT: '1'
+      # Uploads in the e2e specs are stored in the MinIO started below.
+      S3_ENDPOINT: http://127.0.0.1:18490
+      S3_BUCKET: peblish-ci
+      S3_REGION: us-east-1
+      S3_ACCESS_KEY_ID: peblish
+      S3_SECRET_ACCESS_KEY: peblish-dev-secret
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Object store (MinIO) for uploads
+        run: |
+          docker run -d --name minio -p 18490:9000 -e MINIO_ROOT_USER=peblish -e MINIO_ROOT_PASSWORD=peblish-dev-secret \
+            pgsty/minio:RELEASE.2026-08-04T00-00-00Z@sha256:b6bfe7239bfc83fb90d31612d9704d86039dd714f7904b3f1ad68f211e602372 server /data
+          for _ in $(seq 1 30); do curl -fsS http://127.0.0.1:18490/minio/health/live && break; sleep 1; done
+      - run: pnpm build
+      - name: Migrations for the e2e server's database
+        run: pnpm db:migrate
+      # The browsers are keyed on the installed Playwright; the system packages install every run.
+      - name: Playwright version
+        id: playwright
+        run: echo "version=$(pnpm exec playwright --version | awk '{ print $2 }')" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ runner.arch }}-${{ steps.playwright.outputs.version }}
       - name: Install Chromium for Playwright
         run: pnpm exec playwright install --with-deps chromium
       - name: Playwright (hydration marker in en-US and de-DE, axe, payload budget)
         run: pnpm e2e
         env:
+          E2E_SHARD: ${{ matrix.shard }}/${{ strategy.job-total }}
           # Uploads scan against the local hash list only (e2e/playwright.config.ts sets it too).
           MEDIASCAN_LOCAL_ONLY: '1'
-      - name: Bundle size summary (the budget itself is enforced by the Playwright step)
-        run: node scripts/bundle-report.ts >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: e2e-counts-${{ matrix.shard }}
+          path: e2e/artifacts/counts
+          if-no-files-found: error
+          retention-days: 7
       - if: failure()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: e2e-artifacts
+          name: e2e-artifacts-${{ matrix.shard }}
           path: e2e/artifacts
           retention-days: 7
+
+  # A shard that selects no test passes in Playwright, so a matrix or E2E_SHARD typo could skip
+  # part of the suite unnoticed: this fails unless every shard passed and their counts add up.
+  # It also runs, and fails, when a shard failed, so it can stand as the one e2e status check.
+  e2e-shards:
+    name: e2e shards ran the whole suite
+    if: ${{ !cancelled() }}
+    needs: e2e
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Every e2e shard passed
+        if: needs.e2e.result != 'success'
+        run: |
+          echo "the e2e shards ended ${{ needs.e2e.result }}"
+          exit 1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: e2e-counts-*
+          merge-multiple: true
+          path: e2e-counts
+      - name: The shards' counts add up to the whole suite
+        run: node scripts/e2e-shards.ts e2e-counts
 
   image:
     name: image migrates, runs the worker and serves web
