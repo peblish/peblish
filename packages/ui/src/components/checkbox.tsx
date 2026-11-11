@@ -1,6 +1,6 @@
 import { CheckboxField } from '@muxui/react';
 import type { ReactNode } from 'react';
-import { FieldAlert, useErrorPartId, useFieldProblem } from './field-problem.tsx';
+import { useFieldProblem } from './field-problem.tsx';
 
 export interface CheckboxProps {
   /** The label. */
@@ -25,10 +25,9 @@ export interface CheckboxProps {
 
 /** A checkbox with its label, built on Mux UI's CheckboxField (the React Aria Checkbox costs 14 kB gzip more). */
 export function Checkbox({ children, description, errorMessage, invalid, onChange, ...rest }: CheckboxProps) {
-  const { ref, problem, errorId, recheck } = useFieldProblem<HTMLDivElement>();
+  const { ref, problem, recheck } = useFieldProblem<HTMLDivElement>();
   // The caller's message wins; otherwise the browser's verdict, which also marks the box invalid.
   const message = invalid && errorMessage ? errorMessage : problem;
-  const partId = useErrorPartId(Boolean(message), errorId);
   return (
     <CheckboxField.Root
       ref={ref}
@@ -44,11 +43,7 @@ export function Checkbox({ children, description, errorMessage, invalid, onChang
         {children}
       </CheckboxField.Button>
       {description && <CheckboxField.Description>{description}</CheckboxField.Description>}
-      {message ? (
-        <CheckboxField.Error id={partId}>
-          <FieldAlert>{message}</FieldAlert>
-        </CheckboxField.Error>
-      ) : null}
+      {message ? <CheckboxField.Error role="alert">{message}</CheckboxField.Error> : null}
     </CheckboxField.Root>
   );
 }

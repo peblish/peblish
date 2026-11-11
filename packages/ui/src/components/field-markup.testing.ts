@@ -24,6 +24,6 @@ export function descriptionOf(html: string, element: 'input' | 'textarea' | 'sel
   });
 }
 
-/** The text of every role="alert" in the markup. */
+/** The text of every element with role="alert" in the markup. */
 export const alertsOf = (html: string): string[] =>
-  [...html.matchAll(/<span role="alert">(.*?)<\/span>/g)].map((match) => text(match[1] ?? ''));
+  [...html.matchAll(/<(\w+)\b[^>]*\brole="alert"[^>]*>(.*?)<\/\1>/g)].map((match) => text(match[2] ?? ''));

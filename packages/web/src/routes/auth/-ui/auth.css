@@ -7,7 +7,10 @@
     justify-items: center;
     padding: var(--muxui-semantic-layout-inset-xlarge) var(--muxui-semantic-layout-inset-large);
   }
+  /* Mux UI rc.7 gives its own elements the browser's box model (content-box), so the card's
+     padding and border count inside this width only with border-box. */
   .auth-card {
+    box-sizing: border-box;
     inline-size: min(26rem, 100%);
   }
   .auth-form {

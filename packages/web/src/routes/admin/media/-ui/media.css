@@ -87,9 +87,7 @@
     font-size: var(--muxui-semantic-typography-mono-s-font-size);
   }
   /* Mux Table has no breakpoint: on a narrow screen a table scrolls inside its card. */
-  /* Positioned, so Mux Table's absolutely placed hidden labels stay inside the scrolling card. */
   .media-table {
-    position: relative;
     overflow-x: auto;
   }
   .media-table .muxui-table {

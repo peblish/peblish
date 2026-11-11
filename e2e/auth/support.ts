@@ -100,8 +100,20 @@ export async function signOut(page: Page): Promise<void> {
   await page.waitForURL('/');
 }
 
-/** WCAG 2.2 AA and best practice, as the shell's a11y spec runs it. */
+/**
+ * WCAG 2.2 AA and best practice, as the shell's a11y spec runs it. Measured once every finite
+ * animation and transition has ended: a panel that is still fading in (Mux's Disclosure) would
+ * read as low contrast.
+ */
 export async function expectAccessible(page: Page): Promise<void> {
+  await page.evaluate(() =>
+    Promise.allSettled(
+      document
+        .getAnimations()
+        .filter((animation) => animation.effect?.getComputedTiming().endTime !== Infinity)
+        .map((animation) => animation.finished),
+    ),
+  );
   const results = await new AxeBuilder({ page })
     .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa', 'best-practice'])
     .analyze();

@@ -78,16 +78,6 @@
     margin-block-start: var(--muxui-semantic-layout-group-gap);
   }
 
-  /* Mux gap: nav icons are neutral-70, under 3:1 on the dark sidebar (2.5:1). The muted text colour
-     instead, and the text colour on hover and for the current page, as Mux does. */
-  .pb-nav .muxui-sidebar__nav-icon {
-    color: var(--muxui-semantic-content-muted);
-  }
-
-  .pb-nav :is(.muxui-sidebar__nav-link:hover, .muxui-sidebar__nav-link--current) .muxui-sidebar__nav-icon {
-    color: var(--muxui-semantic-content-default);
-  }
-
   /* A community row: a small Mux Avatar with the initial (nested rows have no icon slot), then the
      handle. Mux gap: Avatar's smallest size is the control height, too tall for a nav row. */
   .pb-nav__community {

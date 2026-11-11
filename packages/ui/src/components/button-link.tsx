@@ -40,10 +40,9 @@ export interface ButtonLinkProps extends Native {
 /**
  * A real link that looks exactly like a Mux `Button`. Mux's stylesheet already styles
  * `.muxui-link.muxui-button` as a button (its link rules skip `.muxui-button`), so this puts
- * Button's class and variant and size attributes on a Mux `Link`, and the look follows Mux.
- * button-link.css only undoes the app's base `a` rules and puts back the outline Mux's link
- * rule removes. It stays a link: role link, followed without script, opens in a new tab on a
- * modified click.
+ * Button's class and variant and size attributes on a Mux `Link`, and the look follows Mux
+ * (since rc.7 such a link computes exactly as a Button, with no app CSS). It stays a link: role
+ * link, followed without script, opens in a new tab on a modified click.
  */
 export function ButtonLink({
   href,

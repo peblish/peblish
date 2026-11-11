@@ -1,7 +1,7 @@
 /* Quiet links. A Mux Link as it comes is a text link: link colour, underlined, the link hover and
    pressed colours. Titles, meta lines, the site name, the sidebar's footer and links that are
    navigation or controls take the look of the RM mock's direction A instead: the colour around
-   them and no underline until hovered. Mux gap (rc.6): Link has no tone or underline prop, so a
+   them and no underline until hovered. Mux gap (rc.7): Link has no tone or underline prop, so a
    link opts in with one of these classes. They sit in the app layer, above Mux's, so they win over
    every Mux link state, and are linked before the areas' stylesheets, so an area that gives its
    link a colour of its own (the site name) still wins. Mux's focus ring stays. */

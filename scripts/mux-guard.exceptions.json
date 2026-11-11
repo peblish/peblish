@@ -35,13 +35,6 @@
     "reason": "Prose's stylesheet styles the elements of the sanitised Markdown HTML, which are plain HTML by design (see the prose.tsx exceptions)."
   },
   {
-    "file": "packages/ui/src/components/post-card.tsx",
-    "rule": "raw-element",
-    "match": "<a>",
-    "anchor": "PostCard",
-    "reason": "The decorative thumbnail link is removed from the tab order and the accessibility tree; Mux Link drops tabIndex and aria-hidden."
-  },
-  {
     "file": "packages/ui/src/components/post-card.css",
     "rule": "css-blur",
     "match": "blur(",
@@ -70,17 +63,11 @@
     "reason": "Quote keeps the blockquote element for its meaning; Mux Text cannot render one, and the quoted words inside it are a Mux Text."
   },
   {
-    "file": "packages/ui/src/components/button-link.css",
-    "rule": "css-shadow",
-    "match": "0 0 0 2px var(--muxui-semantic-focus-inner)",
-    "reason": "ButtonLink repeats Mux Button's own focus ring, built only from Mux's focus tokens, because Mux's later link rule would draw the thinner link ring on it; no single Mux token holds the whole ring."
-  },
-  {
     "file": "packages/ui/src/components/field-problem.tsx",
     "rule": "widget-role",
     "match": "<span role=\"alert\">",
     "anchor": "FieldAlert",
-    "reason": "A field's error must be announced when it appears, and Mux's error parts drop a role prop, so the alert role sits on one inner span that every field wrapper shares."
+    "reason": "A field's error must be announced when it appears, and in Mux UI rc.7 SelectNative's and RadioGroup's error parts still drop a role prop, so for those two the alert role sits on one inner span; every other Mux error part takes role=\"alert\" itself."
   },
   {
     "file": "packages/web/src/routes/auth/-ui/qr.tsx",

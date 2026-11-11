@@ -1,5 +1,5 @@
 import { Input } from '@muxui/react';
-import { FieldAlert, useErrorPartId, useFieldProblem } from './field-problem.tsx';
+import { useFieldProblem } from './field-problem.tsx';
 import type { HTMLInputAutoCompleteAttribute, HTMLInputTypeAttribute, ReactNode } from 'react';
 
 export interface TextFieldProps {
@@ -72,10 +72,9 @@ export function TextField({
   autoFocus,
   className,
 }: TextFieldProps) {
-  const { ref, problem, errorId } = useFieldProblem<HTMLDivElement>();
+  const { ref, problem } = useFieldProblem<HTMLDivElement>();
   // The caller's message wins; otherwise the browser's verdict, which also marks the field invalid.
   const message = invalid && errorMessage ? errorMessage : problem;
-  const partId = useErrorPartId(Boolean(message), errorId);
   return (
     <Input.Root
       ref={ref}
@@ -106,11 +105,7 @@ export function TextField({
         autoFocus={autoFocus}
       />
       {description && <Input.Description>{description}</Input.Description>}
-      {message ? (
-        <Input.Error id={partId}>
-          <FieldAlert>{message}</FieldAlert>
-        </Input.Error>
-      ) : null}
+      {message ? <Input.Error role="alert">{message}</Input.Error> : null}
     </Input.Root>
   );
 }

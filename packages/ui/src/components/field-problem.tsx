@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useId, useRef, useState, type ReactNode, type RefObject } from 'react';
+import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
 
 /**
  * What a field says when the browser finds its value invalid and the caller gave no message of
@@ -97,8 +97,7 @@ export function explainValidity(control: JudgedControl, labels: FieldLabels): st
 }
 
 /**
- * The browser's verdict on the control inside `ref`, in the page's language, with the stable id
- * its message is shown under. It follows React Aria's native validation: a blocked submit (the
+ * The browser's verdict on the control inside `ref`, in the page's language. It follows React Aria's native validation: a blocked submit (the
  * `invalid` event) or a committed edit (`change`) shows the current verdict, a fixed value clears
  * it at the next commit, and a form reset clears it. React Aria focuses the first invalid control
  * and stops the browser's bubble for its own fields; a control it does not manage (`native`, the
@@ -115,14 +114,11 @@ export function useFieldProblem<E extends HTMLElement>(
 ): {
   ref: RefObject<E | null>;
   problem: string | undefined;
-  errorId: string;
   recheck: () => void;
 } {
   const labels = useContext(FieldLabelsContext);
   const ref = useRef<E>(null);
   const [problem, setProblem] = useState<string>();
-  // Mux UI rc.6 links a late error part to its control only when the part has its id on mount.
-  const errorId = useId();
   const native = options.native === true;
   const [asked, setAsked] = useState(0);
 
@@ -165,24 +161,13 @@ export function useFieldProblem<E extends HTMLElement>(
   }, [native, commit]);
 
   const recheck = useCallback(() => setAsked((count) => count + 1), []);
-  return { ref, problem, errorId, recheck };
+  return { ref, problem, recheck };
 }
 
 /**
- * The id to give a field's error part. An error there from the first render (a refusal the server
- * rendered) keeps React Aria's own id, which links it in the server's markup too; one that appears
- * later gets the stable `errorId`, since Mux UI rc.6 only links a late part that has an id on mount.
- */
-export function useErrorPartId(shown: boolean, errorId: string): string | undefined {
-  const [fromStart] = useState(shown);
-  const [gone, setGone] = useState(false);
-  if (fromStart && !shown && !gone) setGone(true);
-  return shown && (!fromStart || gone) ? errorId : undefined;
-}
-
-/**
- * The words of a field's error, announced when they appear. It goes inside Mux's error part, which
- * drops a `role` prop of its own, so the role sits on this inner span.
+ * The words of a field's error, announced when they appear, for the two Mux error parts that still
+ * drop a `role` prop in rc.7: SelectNative's and RadioGroup's (React Aria's FieldError). Every other
+ * Mux error part (Input, TextArea, CheckboxField) takes `role="alert"` itself.
  */
 export function FieldAlert({ children }: { children: ReactNode }) {
   return <span role="alert">{children}</span>;

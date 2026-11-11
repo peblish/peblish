@@ -245,6 +245,7 @@ function Peers() {
                   <Link
                     href={`${adminPaths.peers}?${new URLSearchParams({ peer: peer.domain })}#peer-controls`}
                     aria-label={t('peers', 'controlsFor', { host: peer.domain })}
+                    className="peers-controls-link"
                   >
                     {t('peers', 'controls')}
                   </Link>

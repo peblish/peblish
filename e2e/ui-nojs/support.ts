@@ -54,15 +54,11 @@ export async function pixelDiff(browser: Browser, a: Buffer, b: Buffer): Promise
   }
 }
 
-/** The focus ring's colours, inner then outer: Mux's two box-shadows, or the stylesheet's two outlines. */
+/** The focus ring's colours, inner then outer, from Mux's two box-shadows; none when no ring shows. */
 export const ringColours = (indicator: Locator) =>
-  indicator.evaluate((element) => {
-    const shadows = getComputedStyle(element).boxShadow.match(/rgba?\([^)]*\)/g);
-    if (shadows) return shadows;
-    return [getComputedStyle(element, '::before').outlineColor, getComputedStyle(element).outlineColor];
-  });
+  indicator.evaluate((element) => getComputedStyle(element).boxShadow.match(/rgba?\([^)]*\)/g) ?? []);
 
-/** The computed paint of every Mux radio and checkbox on the page: what native-state.css could change. */
+/** The computed paint of every Mux radio and checkbox on the page: what the rules that draw from the input could change. */
 export function drawing(page: Page) {
   return page.evaluate(() =>
     [...document.querySelectorAll('.muxui-radio-field__button, .muxui-checkbox-field__button')].map((button) => {
@@ -84,15 +80,18 @@ export function drawing(page: Page) {
   );
 }
 
-/** Deletes native-state.css's rules from the page's stylesheets; returns how many it deleted. */
-export function removeNativeStateRules(page: Page): Promise<number> {
+/**
+ * Deletes Mux's rules that draw a choice control from its native input while React's state attribute
+ * is stale (an attribute compared with `:has(input:...)`); returns how many it deleted.
+ */
+export function removeInputStateRules(page: Page): Promise<number> {
   return page.evaluate(() => {
-    const ours = /__button(:not\(\[data-muxui-state-(selected|focused)\]\)|\[data-muxui-state-selected\]):has\(input:/;
+    const stale = /data-muxui-state-(selected|focused)\b[^,]*:has\(input:/;
     let removed = 0;
     const sweep = (list: CSSRuleList, owner: CSSStyleSheet | CSSGroupingRule) => {
       for (let index = list.length - 1; index >= 0; index--) {
         const rule = list[index];
-        if (rule instanceof CSSStyleRule && ours.test(rule.selectorText)) {
+        if (rule instanceof CSSStyleRule && stale.test(rule.selectorText)) {
           owner.deleteRule(index);
           removed++;
         } else if (rule instanceof CSSGroupingRule) sweep(rule.cssRules, rule);

@@ -1,5 +1,5 @@
 import { TextArea } from '@muxui/react';
-import { FieldAlert, useErrorPartId, useFieldProblem } from './field-problem.tsx';
+import { useFieldProblem } from './field-problem.tsx';
 import type { ReactNode } from 'react';
 
 export interface TextAreaFieldProps {
@@ -51,10 +51,9 @@ export function TextAreaField({
   autoFocus,
   className,
 }: TextAreaFieldProps) {
-  const { ref, problem, errorId } = useFieldProblem<HTMLDivElement>();
+  const { ref, problem } = useFieldProblem<HTMLDivElement>();
   // The caller's message wins; otherwise the browser's verdict, which also marks the field invalid.
   const message = invalid && errorMessage ? errorMessage : problem;
-  const partId = useErrorPartId(Boolean(message), errorId);
   return (
     <TextArea.Root
       ref={ref}
@@ -78,11 +77,7 @@ export function TextAreaField({
         autoFocus={autoFocus}
       />
       {description && <TextArea.Description>{description}</TextArea.Description>}
-      {message ? (
-        <TextArea.Error id={partId}>
-          <FieldAlert>{message}</FieldAlert>
-        </TextArea.Error>
-      ) : null}
+      {message ? <TextArea.Error role="alert">{message}</TextArea.Error> : null}
     </TextArea.Root>
   );
 }

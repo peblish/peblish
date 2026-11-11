@@ -1,0 +1,8 @@
+/* Mux HeaderNav's bar is 64px plus a 1px bottom border, which Mux UI rc.7's content-box adds on
+   top (65px). The picked layout's top bar is 64px. Layout only: delete when Mux sizes it as
+   border-box itself. */
+@layer app {
+  .muxui-header-nav {
+    box-sizing: border-box;
+  }
+}

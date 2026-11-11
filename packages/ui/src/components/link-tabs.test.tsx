@@ -16,7 +16,10 @@ test('a labelled nav of Mux links with the tab classes, the active one marked cu
   expect(links[0]).toContain('href="/admin"');
   expect(links[0]).toContain('class="muxui-link muxui-tabs__tab"');
   expect(links[0]).toContain('aria-current="page"');
+  // Mux Tabs' selected state, so Mux's stylesheet draws the current tab as selected.
+  expect(links[0]).toContain('data-muxui-state-selected=""');
   expect(links[1]).not.toContain('aria-current');
+  expect(links[1]).not.toContain('data-muxui-state-selected');
 });
 
 test('a custom link component gets to, the tab class and aria-current', () => {
@@ -27,8 +30,12 @@ test('a custom link component gets to, the tab class and aria-current', () => {
   );
   const html = renderToStaticMarkup(<LinkTabs aria-label="Sort" variant="segment" items={items} link={RouterLink} />);
   expect(html).toContain('data-muxui-tabs-variant="segment"');
-  expect(html).toContain('<a data-router="" href="/admin" class="muxui-tabs__tab" aria-current="page">Reports</a>');
-  expect(html).toContain('<a data-router="" href="/admin/bans" class="muxui-tabs__tab">Bans</a>');
+  expect(html).toContain(
+    '<a data-router="" href="/admin" class="muxui-tabs__tab" aria-current="page" data-muxui-state-selected=""><span class="muxui-tabs__tab-label">Reports</span></a>',
+  );
+  expect(html).toContain(
+    '<a data-router="" href="/admin/bans" class="muxui-tabs__tab"><span class="muxui-tabs__tab-label">Bans</span></a>',
+  );
 });
 
 test('native attributes reach the nav, and the name stays the one given', () => {

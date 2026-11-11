@@ -5,6 +5,7 @@ import {
   applyExceptions,
   area,
   count,
+  muxTarball,
   muxTokens,
   parseExceptions,
   pureAliases,
@@ -13,6 +14,7 @@ import {
   scanScript,
   tarFile,
   type CssContext,
+  vendoredTarball,
   type Violation,
 } from './mux-guard.ts';
 
@@ -397,10 +399,19 @@ test('an alias counts as a token only when every definition is purely Mux tokens
   expect([...pureAliases(tokens)]).toEqual(['--pb-fg', '--pb-font']);
 });
 
+test("the vendored tarball is the one packages/ui's file: dependency names", () => {
+  const dependency = (spec: string) => JSON.stringify({ dependencies: { '@muxui/react': spec } });
+  expect(vendoredTarball(dependency('file:../../vendor/muxui/muxui-react-9.tgz'))).toBe(
+    join(import.meta.dirname, '../vendor/muxui/muxui-react-9.tgz'),
+  );
+  expect(() => vendoredTarball(dependency('0.1.0'))).toThrow(/file: tarball/);
+  expect(readFileSync(muxTarball).length).toBeGreaterThan(0);
+});
+
 test('the Mux token list comes from the vendored tarball', () => {
-  const tarball = join(import.meta.dirname, '../vendor/muxui/muxui-react-0.1.0-rc.6.tgz');
+  const tarball = muxTarball;
   const tokens = muxTokens();
-  expect(tokens.size).toBe(1221);
+  expect(tokens.size).toBe(1220);
   expect(tokens.has('--muxui-semantic-content-default')).toBe(true);
   expect(tokens.has('--muxui-semantic-content-danger')).toBe(false);
   expect(muxTokens()).toBe(tokens);
