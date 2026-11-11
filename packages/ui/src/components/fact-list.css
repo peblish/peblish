@@ -5,9 +5,19 @@
     margin: 0;
   }
 
+  /* A long translated label or value wraps, even inside one long word, rather than widen the list. */
+  .pb-facts dt,
+  .pb-facts dd {
+    min-inline-size: 0;
+    overflow-wrap: anywhere;
+  }
+
   .pb-facts--rows {
     display: grid;
-    grid-template-columns: max-content minmax(0, 1fr);
+    /* The label column fits its longest label, capped at 40% of the list so the value keeps the rest.
+       The 8em floor keeps a short label on one line when a parent shrink-wraps the list (the
+       profile card does), since 40% of a shrink-wrapped list can be narrower than the label. */
+    grid-template-columns: fit-content(max(40%, 8em)) minmax(0, 1fr);
     gap: var(--muxui-semantic-layout-tight-gap) var(--muxui-semantic-layout-action-gap);
   }
 
@@ -24,5 +34,7 @@
   .pb-facts--inline .pb-facts__item {
     display: grid;
     gap: var(--muxui-semantic-layout-dense-gap);
+    min-inline-size: 0;
+    max-inline-size: 100%;
   }
 }

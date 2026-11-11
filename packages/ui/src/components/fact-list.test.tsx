@@ -18,3 +18,8 @@ test('a dl of label and value pairs in Mux text styles', () => {
   expect(html).toContain('<dd><div class="muxui-text muxui-text--body-sm">12</div></dd>');
   expect(renderToStaticMarkup(<FactList layout="inline" items={[]} />)).toContain('pb-facts--inline');
 });
+
+test('native attributes reach the dl', () => {
+  const html = renderToStaticMarkup(<FactList id="f" aria-describedby="note" items={[{ label: 'Joined', value: '3 May' }]} />);
+  expect(html).toMatch(/^<dl id="f" aria-describedby="note" class="pb-facts pb-facts--rows">/);
+});

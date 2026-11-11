@@ -19,3 +19,10 @@ test('the heading level follows the outline and the optional parts stay out', ()
   expect(html).not.toContain('<p');
   expect(html).not.toContain('pb-empty-state__action');
 });
+
+test('native attributes reach the root div', () => {
+  const html = renderToStaticMarkup(
+    <EmptyState title="Nothing here" id="e" data-testid="empty" aria-describedby="note" className="extra" />,
+  );
+  expect(html).toMatch(/^<div id="e" data-testid="empty" aria-describedby="note" class="pb-empty-state extra">/);
+});

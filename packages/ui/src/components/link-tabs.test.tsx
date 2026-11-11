@@ -30,3 +30,12 @@ test('a custom link component gets to, the tab class and aria-current', () => {
   expect(html).toContain('<a data-router="" href="/admin" class="muxui-tabs__tab" aria-current="page">Reports</a>');
   expect(html).toContain('<a data-router="" href="/admin/bans" class="muxui-tabs__tab">Bans</a>');
 });
+
+test('native attributes reach the nav, and the name stays the one given', () => {
+  const html = renderToStaticMarkup(
+    <LinkTabs aria-label="Admin" id="tabs" data-testid="admin-tabs" aria-describedby="note" items={items} />,
+  );
+  expect(html).toMatch(
+    /^<nav id="tabs" data-testid="admin-tabs" aria-describedby="note" aria-label="Admin" class="muxui-tabs pb-link-tabs">/,
+  );
+});

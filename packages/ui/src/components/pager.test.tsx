@@ -31,3 +31,10 @@ test('load more is a neutral Mux button that can be pending', () => {
   expect(html).toContain('aria-busy="true"');
   expect(html).toContain('>Load more</span>');
 });
+
+test('native attributes reach the nav', () => {
+  const html = renderToStaticMarkup(
+    <Pager aria-label="More posts" id="p" data-testid="pager" aria-describedby="note" next={{ href: '/?page=2', label: 'Next' }} />,
+  );
+  expect(html).toMatch(/^<nav id="p" data-testid="pager" aria-describedby="note" aria-label="More posts" class="pb-pager">/);
+});
