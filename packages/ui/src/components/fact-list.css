@@ -1,0 +1,28 @@
+/* FactList: two columns of label and value, or pairs in a wrapping row. */
+@layer app {
+  .pb-facts,
+  .pb-facts dd {
+    margin: 0;
+  }
+
+  .pb-facts--rows {
+    display: grid;
+    grid-template-columns: max-content minmax(0, 1fr);
+    gap: var(--muxui-semantic-layout-tight-gap) var(--muxui-semantic-layout-action-gap);
+  }
+
+  .pb-facts--rows .pb-facts__item {
+    display: contents;
+  }
+
+  .pb-facts--inline {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--muxui-semantic-layout-group-gap) var(--muxui-semantic-layout-content-gap);
+  }
+
+  .pb-facts--inline .pb-facts__item {
+    display: grid;
+    gap: var(--muxui-semantic-layout-dense-gap);
+  }
+}

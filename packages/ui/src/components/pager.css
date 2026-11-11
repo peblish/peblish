@@ -1,0 +1,11 @@
+/* Pager and LoadMore: one row under the list. */
+@layer app {
+  .pb-pager {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+    gap: var(--muxui-semantic-layout-action-gap);
+    padding-block: var(--muxui-semantic-layout-section-gap);
+  }
+}
