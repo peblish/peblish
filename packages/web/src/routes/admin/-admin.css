@@ -1,0 +1,159 @@
+/* The admin frame (lane ADMIN-A): the tab bar above every admin page, and the Settings, Pages
+   and Registration tabs. Layout only; colour, type and shape come from Mux components and tokens.
+   Linked by the admin layout route, so it reaches every admin page. */
+@layer app {
+  .adm-tabs {
+    max-width: var(--pb-page-width);
+    margin: var(--muxui-semantic-layout-inset-medium) auto 0;
+    padding-inline: var(--muxui-semantic-layout-inset-large);
+  }
+
+  /* An admin page: a heading, its notices, then sections separated by Mux's section gap. */
+  .adm-page {
+    display: grid;
+    gap: var(--muxui-semantic-layout-section-gap);
+    align-content: start;
+  }
+
+  .adm-page > h1,
+  .adm-page h2,
+  .adm-page p {
+    margin: 0;
+  }
+
+  .adm-section {
+    display: grid;
+    gap: var(--muxui-semantic-layout-group-gap);
+  }
+
+  /* A form of stacked fields, narrower than the page so lines stay readable. */
+  .adm-form {
+    display: grid;
+    gap: var(--muxui-semantic-layout-section-gap);
+    max-width: 640px;
+  }
+
+  /* The page editor uses the whole column for its Markdown. */
+  .adm-wide {
+    max-width: none;
+  }
+
+  .adm-number {
+    max-width: 160px;
+  }
+
+  .adm-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--muxui-semantic-layout-group-gap);
+  }
+
+  /* The kill switches: one row each, what it does on the left and its one button on the right. */
+  .adm-switches {
+    display: grid;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .adm-switch {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--muxui-semantic-layout-group-gap);
+    padding-block: var(--muxui-semantic-layout-inset-small);
+    border-block-end: 1px solid var(--muxui-semantic-border-faint);
+  }
+
+  .adm-switch:last-child {
+    border-block-end: 0;
+  }
+
+  .adm-switch__text {
+    display: grid;
+    flex: 1 1 280px;
+    gap: var(--muxui-semantic-layout-description-gap);
+    min-width: 0;
+  }
+
+  .adm-switch__name {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--muxui-semantic-layout-tight-gap);
+  }
+
+  /* Tables scroll sideways on a phone instead of squeezing their columns. */
+  .adm-table {
+    overflow-x: auto;
+  }
+
+  .adm-table > * {
+    min-width: 760px;
+  }
+
+  .adm-cell {
+    display: grid;
+    gap: var(--muxui-semantic-layout-description-gap);
+    justify-items: start;
+  }
+
+  .adm-tokens {
+    margin: 0;
+    padding-inline-start: var(--muxui-semantic-layout-inset-large);
+  }
+
+  .adm-tokens code {
+    font-family: var(--muxui-semantic-typography-mono-font-family);
+    font-size: var(--muxui-semantic-typography-mono-s-font-size);
+  }
+
+  /* The registration line: state, accounts against the cap, and the link to change them. */
+  .adm-summary {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--muxui-semantic-layout-group-gap);
+  }
+
+  .adm-meter {
+    flex: 1 1 220px;
+    max-width: 360px;
+  }
+
+  .adm-create {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: var(--muxui-semantic-layout-group-gap);
+  }
+
+  .adm-create > * {
+    flex: 1 1 160px;
+  }
+
+  .adm-create > button {
+    flex: 0 0 auto;
+  }
+
+  .adm-used-by {
+    display: grid;
+    gap: var(--muxui-semantic-layout-description-gap);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .adm-used-by li {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: var(--muxui-semantic-layout-tight-gap);
+  }
+
+  .adm-break {
+    overflow-wrap: anywhere;
+  }
+}

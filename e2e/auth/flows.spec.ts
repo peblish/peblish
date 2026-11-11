@@ -97,7 +97,7 @@ test('the admin signs in with a TOTP code and creates an invite', async ({ page 
   expect(new URL(page.url()).search).toBe('');
   inviteCode = (await page.getByTestId('invite-code').textContent()) ?? '';
   expect(inviteCode).toMatch(/^PB-[2-9A-Z]{4}-[2-9A-Z]{4}$/);
-  const row = page.getByTestId('invite-row').filter({ hasText: `e2e ${person.name}` });
+  const row = page.getByRole('row').filter({ hasText: `e2e ${person.name}` });
   await expect(row).toContainText('0 / 2');
   await expect(row).toContainText('Active');
   await expectAccessible(page);

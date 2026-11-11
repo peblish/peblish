@@ -122,6 +122,11 @@
     "pages.preview": "The saved draft, as visitors will see it",
     "pages.preview.empty": "Nothing is saved for this language yet.",
     "pages.state.label": "Status",
+    "pages.trail": "Location",
+    "pages.language.label": "Language",
+    "pages.tabs": "Editor",
+    "pages.tab.edit": "Edit",
+    "pages.tab.preview": "Preview",
     "legal.list": "Legal and safety",
     "legal.about.title": "About {name}"
   },
@@ -248,6 +253,11 @@
     "pages.preview": "Der gespeicherte Entwurf, wie Besucher ihn sehen werden",
     "pages.preview.empty": "Für diese Sprache ist noch nichts gespeichert.",
     "pages.state.label": "Status",
+    "pages.trail": "Position",
+    "pages.language.label": "Sprache",
+    "pages.tabs": "Editor",
+    "pages.tab.edit": "Bearbeiten",
+    "pages.tab.preview": "Vorschau",
     "legal.list": "Rechtliches und Sicherheit",
     "legal.about.title": "Über {name}"
   }

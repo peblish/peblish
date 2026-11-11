@@ -69,8 +69,9 @@ test('every kill switch is a row with its state, what pausing does and one butto
   ] as const) {
     const row = page.locator(`[data-switch="${key}"]`);
     await expect(row.getByText(label, { exact: true })).toBeVisible();
-    await expect(row.locator('.hint')).toContainText(/\S/);
     await expect(row.getByRole('button')).toHaveCount(1);
+    // What pausing does is the button's description.
+    await expect(row.getByRole('button')).toHaveAccessibleDescription(/\S/);
   }
 });
 

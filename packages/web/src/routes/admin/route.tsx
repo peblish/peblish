@@ -1,18 +1,22 @@
+import { LinkTabs } from '@peblish/ui/components/link-tabs';
 import { createFileRoute, getRouteApi, Outlet, useRouterState } from '@tanstack/react-router';
 import { useTranslate } from '../../i18n/use-translate.ts';
 import { privateResponses } from '../../server/auth.ts';
 import { adminPaths } from '../../shell/paths.ts';
 import { noGroupPage } from '../auth/-ui/page.tsx';
+import adminCss from './-admin.css?url';
 
 // Every response under /admin is personal: never from a shared cache (server/auth.ts).
 //
-// The layout draws the admin-tabs tab bar above each admin page, as plain links (no Mux Tabs:
-// the first-tap rule). Admins see every tab; a moderator who is not an admin sees only Reports,
+// The layout draws the admin-tabs tab bar above each admin page: LinkTabs, real links with Mux
+// Tabs' look, since each tab is its own route (Mux Tabs are buttons). It also links the admin
+// stylesheet for every page under it. Admins see every tab; a moderator who is not an admin sees only Reports,
 // the one admin page open to moderators. Each page still checks who may see it (signed out,
 // not an admin, two-factor off), as /admin/registration does; this layout only chooses the tabs.
 export const Route = createFileRoute('/admin')({
   beforeLoad: noGroupPage('/admin'),
   server: { middleware: [privateResponses] },
+  head: () => ({ links: [{ rel: 'stylesheet', href: adminCss }] }),
   component: AdminLayout,
 });
 
@@ -36,13 +40,15 @@ function AdminLayout() {
   return (
     <>
       {shown.length > 0 && (
-        <nav className="admin-tabs" aria-label={t('shell', 'admin.tabs')}>
-          {shown.map(({ key, href }) => (
-            <a key={key} href={href} aria-current={pathname === href || pathname.startsWith(`${href}/`) ? 'page' : undefined}>
-              {t('shell', `admin.tab.${key}`)}
-            </a>
-          ))}
-        </nav>
+        <LinkTabs
+          aria-label={t('shell', 'admin.tabs')}
+          className="adm-tabs"
+          items={shown.map(({ key, href }) => ({
+            to: href,
+            label: t('shell', `admin.tab.${key}`),
+            active: pathname === href || pathname.startsWith(`${href}/`),
+          }))}
+        />
       )}
       <Outlet />
     </>
