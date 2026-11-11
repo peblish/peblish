@@ -682,6 +682,37 @@ test('an exception hides exactly its count of violations; a stale or too broad o
   expect(() => parseExceptions('[{ "file": "a.tsx", "rule": "raw-element", "match": "<a>" }]')).toThrow(/reason/);
 });
 
+test('a selector exception holds for every branch of the list; a declaration exception can name its value and at-rule', () => {
+  const file = 'packages/ui/src/a.css';
+  const sheet = lines(
+    '.pb-prose a, button { margin: 0; }', // 1: a global button rule rides on the prose exception
+    '.pb-prose td, .pb-prose th { margin: 0; }', // 2: legal
+    '@media (prefers-reduced-motion: reduce) { * { scroll-behavior: smooth !important; } }', // 3
+    '* { scroll-behavior: auto !important; }', // 4: outside the media query
+    '@media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; } }', // 5: legal
+  );
+  const exceptions = parseExceptions(
+    JSON.stringify([
+      { file, rule: 'css-element-selector', match: '.pb-prose ', count: 2, reason: 'prose' },
+      {
+        file,
+        rule: 'css-important',
+        match: 'scroll-behavior',
+        anchor: '*',
+        value: 'auto',
+        condition: '@media (prefers-reduced-motion: reduce)',
+        reason: 'reduced motion',
+      },
+    ]),
+  );
+  const { kept, problems } = applyExceptions(scanCss(file, sheet, anyDefined).violations, exceptions);
+  expect(found(kept)).toEqual(['css-element-selector:1', 'css-important:3', 'css-important:4']);
+  expect(problems).toEqual([`${file} css-element-selector ".pb-prose " matches 1, expected 2`]);
+  expect(() => parseExceptions(JSON.stringify([{ file, rule: 'css-important', match: 'x', condition: 'media', reason: 'r' }]))).toThrow(
+    /condition/,
+  );
+});
+
 test('report mode fails only where a file and rule rose above the baseline', () => {
   const counts = count([
     { file: 'a.css', line: 1, rule: 'css-colour', detail: '' },

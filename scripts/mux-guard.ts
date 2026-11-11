@@ -62,8 +62,11 @@ const muxStylesheet = 'packages/ui/src/styles.css';
 const timeModule = 'packages/ui/src/components/time.tsx';
 const iconsModule = 'packages/ui/src/components/icons.tsx';
 
-/** `anchor` names what encloses a violation (components and functions, or CSS preludes), for exceptions. */
-export type Violation = { file: string; line: number; rule: Rule; detail: string; anchor?: string[] };
+/**
+ * `anchor` names what encloses a violation (components and functions, or CSS preludes), for exceptions; a CSS
+ * declaration's violation also carries its `value`, and a type selector's its `selector` list.
+ */
+export type Violation = { file: string; line: number; rule: Rule; detail: string; anchor?: string[]; value?: string; selector?: string };
 export type Counts = Record<string, Partial<Record<Rule, number>>>;
 
 // Elements Mux has a component for, and what to use instead.
@@ -1044,9 +1047,11 @@ export function scanCss(
         `${text} (${elements.map((tag) => `${tag}: ${textTags.has(tag) ? 'Text' : replacements[tag]}`).join(', ')})`,
         anchor,
       );
+    if (elements.length) out.at(-1)!.selector = text;
   }
   for (const { line, property, value, text, anchor, layout, important } of declarations(css)) {
     const where = [...anchor];
+    const first = out.length;
     if (colourLiteral(value)) add(line, 'css-colour', text, where);
     if (/^border(-[a-z]+)*-radius$/.test(property) && handWritten(value, local).length) add(line, 'css-radius', text, where);
     if ((property === 'box-shadow' || property === 'text-shadow') && handWritten(value, local).length) add(line, 'css-shadow', text, where);
@@ -1085,6 +1090,7 @@ export function scanCss(
       const name = match[1]!;
       if (made(name) || (!context.defined.has(name) && !own.has(name))) add(line, 'css-unknown-token', `var(${name}) in ${text}`, where);
     }
+    for (const violation of out.slice(first)) violation.value = value;
   }
   return { violations: out, layout: { comments: layoutComments, used: layoutUsed } };
 }
@@ -1154,11 +1160,25 @@ export function area(file: string): (typeof areas)[number] {
 
 const isTestOrFixture = (file: string) => /\.test\.[cm]?[jt]sx?$|(^|\/)__fixtures__\//.test(file);
 
-export type Exception = { file: string; rule: Rule; match: string; anchor?: string; count?: number; reason: string };
+/**
+ * A written exception. `match` is a substring of the violation's text (for a type selector, of every branch of
+ * its selector list); `anchor` an enclosing component, function or CSS prelude; `value` a CSS declaration's
+ * exact value; `condition` an enclosing at-rule's prelude, such as a media query.
+ */
+export type Exception = {
+  file: string;
+  rule: Rule;
+  match: string;
+  anchor?: string;
+  value?: string;
+  condition?: string;
+  count?: number;
+  reason: string;
+};
 
 function isException(entry: unknown): entry is Exception {
   if (typeof entry !== 'object' || entry === null) return false;
-  const { file, rule, match, anchor, count, reason } = entry as Record<string, unknown>;
+  const { file, rule, match, anchor, value, condition, count, reason } = entry as Record<string, unknown>;
   return (
     typeof file === 'string' &&
     rules.some((known) => known === rule) &&
@@ -1167,6 +1187,8 @@ function isException(entry: unknown): entry is Exception {
     typeof reason === 'string' &&
     reason.trim() !== '' &&
     (anchor === undefined || typeof anchor === 'string') &&
+    (value === undefined || typeof value === 'string') &&
+    (condition === undefined || (typeof condition === 'string' && condition.startsWith('@'))) &&
     (count === undefined || (typeof count === 'number' && Number.isInteger(count) && count > 0))
   );
 }
@@ -1177,7 +1199,9 @@ export function parseExceptions(json: string): Exception[] {
   if (!Array.isArray(entries)) throw new Error('mux-guard: the exceptions file must be an array');
   entries.forEach((entry: unknown, index) => {
     if (!isException(entry))
-      throw new Error(`mux-guard: exception ${index} needs file, a known rule, match and reason (anchor and count optional)`);
+      throw new Error(
+        `mux-guard: exception ${index} needs file, a known rule, match and reason (anchor, value, an @ condition and count optional)`,
+      );
   });
   return entries;
 }
@@ -1186,7 +1210,11 @@ const matches = (exception: Exception, v: Violation) =>
   v.file === exception.file &&
   v.rule === exception.rule &&
   v.detail.includes(exception.match) &&
-  (exception.anchor === undefined || (v.anchor ?? []).includes(exception.anchor));
+  // A selector list's every branch must match on its own, so `.pb-prose a, button` does not pass as `.pb-prose `.
+  (v.selector === undefined || selectorBranches(v.selector).every((branch) => branch.includes(exception.match))) &&
+  (exception.anchor === undefined || (v.anchor ?? []).includes(exception.anchor)) &&
+  (exception.value === undefined || v.value === exception.value) &&
+  (exception.condition === undefined || (v.anchor ?? []).includes(exception.condition));
 
 /**
  * Drops the excepted violations. Each exception must match exactly `count` (default 1) violations:
