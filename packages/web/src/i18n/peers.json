@@ -32,7 +32,9 @@
     "unblock": "Unblock",
     "trusted": "Trusted for modlog reasons: {hosts}.",
     "none": "none",
-    "settingsLink": "Change in Settings"
+    "settingsLink": "Change in Settings",
+    "controls": "Controls",
+    "controlsFor": "Controls for {host}"
   },
   "de": {
     "title": "Peers",
@@ -67,6 +69,8 @@
     "unblock": "Entblocken",
     "trusted": "Für Modlog-Begründungen vertraut: {hosts}.",
     "none": "keine",
-    "settingsLink": "In den Einstellungen ändern"
+    "settingsLink": "In den Einstellungen ändern",
+    "controls": "Steuerung",
+    "controlsFor": "Steuerung für {host}"
   }
 }

@@ -1,135 +1,121 @@
-/* The admin Media tab, after the R2b pick media-split: a status strip, sub-sections, a list and
-   detail pane for review with one shared decision control. Structure and states, not final styling. */
+/* The admin Media tab, after the R2b pick media-split: the status strip, the section tabs, the
+   review list beside the detail card with one shared decision control, the tables and the
+   evidence records. Layout only; the look is Mux UI's. */
 @layer app {
-  .media-admin .strip {
+  .media-admin {
+    max-width: 1180px;
     display: flex;
-    gap: 6px 18px;
+    flex-direction: column;
+    gap: var(--muxui-semantic-layout-content-gap);
+  }
+  .media-admin > h1,
+  .media-admin p {
+    margin: 0;
+  }
+  .media-strip {
+    display: flex;
     flex-wrap: wrap;
     align-items: center;
-    margin: 8px 0 12px;
-    font-size: 13px;
+    gap: var(--muxui-semantic-layout-control-gap) var(--muxui-semantic-layout-group-gap);
   }
-  .media-admin .flash {
-    border-left: 2px solid currentColor;
-    padding: 2px 0 2px 10px;
-    margin: 0 0 12px;
+  .media-hex {
+    overflow-wrap: anywhere;
   }
-  .media-admin .flash.warn {
-    color: var(--auth-warn);
-  }
-  .media-admin .flash.ok {
-    color: var(--auth-ok);
-  }
-  .media-admin .flash.err {
-    color: var(--auth-err);
-  }
-  .media-admin .subnav {
-    display: flex;
-    gap: 4px 14px;
-    flex-wrap: wrap;
-    border-bottom: 1px solid var(--auth-line);
-    margin: 0 0 14px;
-    padding: 0 0 6px;
-  }
-  .media-admin .subnav a[aria-current='page'] {
-    font-weight: 700;
-    text-decoration: underline;
-  }
-  .media-admin .md {
+  .media-split {
     display: grid;
     grid-template-columns: minmax(220px, 300px) minmax(0, 1fr);
-    gap: 18px;
+    gap: var(--muxui-semantic-layout-content-gap);
     align-items: start;
   }
-  .media-admin .ml {
+  .media-list {
     list-style: none;
     margin: 0;
     padding: 0;
-    border-top: 1px solid var(--auth-line);
-  }
-  .media-admin .ml a {
-    display: block;
-    padding: 6px 8px;
-    border-bottom: 1px solid var(--auth-line);
-    text-decoration: none;
-    color: inherit;
-  }
-  .media-admin .ml a[aria-current='true'] {
-    outline: 2px solid currentColor;
-    outline-offset: -2px;
-  }
-  .media-admin .row {
     display: flex;
-    gap: 8px;
-    align-items: baseline;
+    flex-direction: column;
   }
-  .media-admin .row .sp {
-    flex: 1;
+  .media-list li + li {
+    border-block-start: 1px solid var(--muxui-semantic-border-faint);
   }
-  .media-admin .kv {
-    display: grid;
-    grid-template-columns: 120px minmax(0, 1fr);
-    gap: 4px 12px;
-    margin: 0 0 14px;
+  /* A row is a whole link: its lines stack, the chosen one is filled with the selection colour. */
+  .media-list__item {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    text-align: start;
+    gap: var(--muxui-semantic-layout-micro-gap);
+    padding: var(--muxui-semantic-layout-inset-tight) var(--muxui-semantic-layout-inset-small);
+    color: inherit;
+    text-decoration: none;
   }
-  .media-admin .kv dt {
-    color: var(--auth-muted);
+  .media-list__item:hover {
+    background: var(--muxui-semantic-surface-hover);
   }
-  .media-admin .kv dd {
+  .media-list__item[aria-current] {
+    background: var(--muxui-semantic-selection-background);
+  }
+  .media-list__head {
+    display: flex;
+    justify-content: space-between;
+    gap: var(--muxui-semantic-layout-tight-gap);
+  }
+  .media-detail .muxui-card__body,
+  .media-evidence .muxui-card__body {
+    display: flex;
+    flex-direction: column;
+    gap: var(--muxui-semantic-layout-content-gap);
+  }
+  .media-used-by {
     margin: 0;
+    padding-inline-start: var(--muxui-semantic-layout-inset-large);
   }
-  .media-admin .hx {
-    font:
-      12px ui-monospace,
-      SFMono-Regular,
-      Menlo,
-      monospace;
-    overflow-wrap: anywhere;
+  .media-form {
+    display: flex;
+    flex-direction: column;
+    gap: var(--muxui-semantic-layout-control-gap);
+    padding-block: var(--muxui-semantic-layout-inset-tight);
+    max-width: 40rem;
   }
-  .media-admin details.decide {
-    border: 1px solid var(--auth-line);
-    padding: 6px 10px;
-    margin: 0 0 8px;
-  }
-  .media-admin details.decide summary {
-    cursor: pointer;
-    font-weight: 600;
-  }
-  .media-admin details.decide form {
-    margin-top: 8px;
-  }
-  .media-admin .add-hash {
+  .media-add-hash {
     display: grid;
     grid-template-columns: minmax(0, 3fr) auto minmax(0, 2fr) auto;
-    gap: 8px;
+    gap: var(--muxui-semantic-layout-control-gap);
     align-items: end;
-    margin: 0 0 14px;
   }
-  .media-admin .add-hash .fld {
-    margin: 0;
+  .media-add-hash .media-hex {
+    font-family: var(--muxui-semantic-typography-mono-font-family);
+    font-size: var(--muxui-semantic-typography-mono-s-font-size);
   }
-  .media-admin pre.manifest {
+  /* Mux Table has no breakpoint: on a narrow screen a table scrolls inside its card. */
+  .media-table {
+    overflow-x: auto;
+  }
+  .media-table .muxui-table {
+    inline-size: 100%;
+    min-inline-size: 36rem;
+  }
+  .media-evidence-list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--muxui-semantic-layout-control-gap);
+  }
+  .media-manifest {
     max-height: 320px;
     overflow: auto;
-    border: 1px solid var(--auth-line);
-    padding: 8px;
-    font-size: 12px;
+    margin: 0;
+    padding: var(--muxui-semantic-layout-inset-small);
+    border: 1px solid var(--muxui-semantic-border-subtle);
+    border-radius: var(--muxui-semantic-control-radius);
+    background: var(--muxui-semantic-surface-subtle);
+    font-family: var(--muxui-semantic-typography-mono-font-family);
+    font-size: var(--muxui-semantic-typography-mono-xs-font-size);
     white-space: pre-wrap;
     overflow-wrap: anywhere;
   }
   @media (max-width: 860px) {
-    .media-admin .md {
+    .media-split,
+    .media-add-hash {
       grid-template-columns: minmax(0, 1fr);
-    }
-    .media-admin .add-hash {
-      grid-template-columns: minmax(0, 1fr);
-    }
-    .media-admin .kv {
-      grid-template-columns: minmax(0, 1fr);
-      gap: 0;
-    }
-    .media-admin .kv dd {
-      margin-bottom: 6px;
     }
   }
 }

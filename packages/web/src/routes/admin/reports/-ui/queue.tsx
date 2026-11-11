@@ -1,9 +1,18 @@
 import type { QueueGroup, QueueSubject } from '@peblish/core/reports/read';
 import type { QueueTab } from '@peblish/core/reports/scope';
 import { Button } from '@peblish/ui/components/button';
+import { Card } from '@peblish/ui/components/card';
+import { Disclosure } from '@peblish/ui/components/disclosure';
+import { Link } from '@peblish/ui/components/link';
+import { Notice } from '@peblish/ui/components/notice';
+import { Select } from '@peblish/ui/components/select';
+import { Table } from '@peblish/ui/components/table';
+import { Text } from '@peblish/ui/components/text';
+import { TextAreaField } from '@peblish/ui/components/text-area';
+import { TextField } from '@peblish/ui/components/text-field';
 import { useRouter } from '@tanstack/react-router';
 import { type } from 'arktype';
-import { useState, type FormEvent, type ReactNode } from 'react';
+import { useEffect, useState, type FormEvent, type MouseEvent, type ReactNode } from 'react';
 import { useTranslate } from '../../../../i18n/use-translate.ts';
 import { rich } from '../../../auth/-ui/form.tsx';
 import { useDate } from '../../../auth/-ui/page.tsx';
@@ -13,7 +22,16 @@ import { asReportError, errorKey, type ReportError } from '../../../report/-ui/e
 const Answer = type({ 'redirect?': 'string', 'error?': 'string' });
 
 /** The queue's own address with the tab, community and sort the viewer chose, for links and for where a form returns. */
-export type QueueView = { tab: QueueTab; community: string | null; sort: string; cursor?: string | null; show?: string | null };
+export type QueueView = {
+  tab: QueueTab;
+  community: string | null;
+  sort: string;
+  cursor?: string | null;
+  /** The group whose quote is shown. */
+  show?: string | null;
+  /** The group whose reporters and details are shown. */
+  details?: string | null;
+};
 
 export const queueHref = (view: QueueView, change: Partial<QueueView> = {}) => {
   const next = { ...view, ...change };
@@ -23,6 +41,7 @@ export const queueHref = (view: QueueView, change: Partial<QueueView> = {}) => {
   params.set('sort', next.sort);
   if (next.cursor) params.set('cursor', next.cursor);
   if (next.show) params.set('show', next.show);
+  if (next.details) params.set('details', next.details);
   return `/admin/reports?${params}`;
 };
 
@@ -30,6 +49,45 @@ const subjectKind = (subject: QueueSubject) =>
   subject.kind === 'actor' ? (subject.person.kind === 'Group' ? 'community' : 'person') : subject.kind === 'gone' ? 'post' : subject.kind;
 
 const targetValue = (group: QueueGroup) => `${group.target.kind}:${group.target.id}`;
+
+/**
+ * Mux Table is a React Aria grid: in a cell it takes the arrow keys, Tab and typed letters to move
+ * between cells. The queue's rows hold forms, so while focus is in a text field or select of a
+ * row the keys are kept from the grid (a capture listener on window runs before React's) and do
+ * what they do in any field. Buttons and links in the rows keep the grid's keys.
+ */
+function useFieldKeys() {
+  useEffect(() => {
+    const keep = (event: KeyboardEvent) => {
+      const target = event.target;
+      if (target instanceof Element && target.matches('input, textarea, select') && target.closest('.rq-table .muxui-table__cell'))
+        event.stopPropagation();
+    };
+    window.addEventListener('keydown', keep, true);
+    return () => window.removeEventListener('keydown', keep, true);
+  }, []);
+}
+
+/**
+ * A link that shows or hides part of a row. Without JavaScript it is a link to the queue with the
+ * part shown; hydrated, a plain click toggles it in the browser and nothing is stored.
+ */
+function Toggle({ shown, href, onToggle, children }: { shown: boolean; href: string; onToggle: () => void; children: ReactNode }) {
+  return (
+    <Link
+      href={href}
+      aria-expanded={shown}
+      className="rq-toggle"
+      onClickCapture={(event: MouseEvent<HTMLElement>) => {
+        if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+        event.preventDefault();
+        onToggle();
+      }}
+    >
+      {children}
+    </Link>
+  );
+}
 
 /** Age as the biggest whole unit, counted from when the page's data was read. */
 function Age({ iso, now }: { iso: string; now: number }) {
@@ -87,9 +145,9 @@ function QueueForm({ group, back, children, className }: { group: QueueGroup; ba
       <input type="hidden" name="audience" value={group.audience} />
       <input type="hidden" name="back" value={back} />
       {error && (
-        <p className="rq-error" role="alert">
+        <Notice tone="danger" role="alert">
           {t('reports', errorKey(error))}
-        </p>
+        </Notice>
       )}
       {children}
     </form>
@@ -110,87 +168,116 @@ function Content({ group, view }: { group: QueueGroup; view: QueueView }) {
   const kind = subjectKind(subject);
   return (
     <div className="rq-content">
-      <p className="rq-meta">
-        <b>{t('reports', `queue.type.${kind}`)}</b>
+      <Text as="p" size="sm">
+        <Text variant="label" size="sm">
+          {t('reports', `queue.type.${kind}`)}
+        </Text>
         {subject.kind === 'post' || subject.kind === 'comment' ? (
           <>
             {' '}
             {rich(t('reports', 'queue.where'), {
-              community: <a href={communityPath(subject.community)}>!{subject.community.handle}</a>,
-              author: <a href={userPath(subject.author)}>@{subject.author.handle}</a>,
+              community: <Link href={communityPath(subject.community)}>!{subject.community.handle}</Link>,
+              author: <Link href={userPath(subject.author)}>@{subject.author.handle}</Link>,
             })}
           </>
         ) : subject.kind === 'actor' ? (
           <>
             {' '}
-            <a href={subject.person.kind === 'Group' ? communityPath(subject.person) : userPath(subject.person)}>
+            <Link href={subject.person.kind === 'Group' ? communityPath(subject.person) : userPath(subject.person)}>
               {subject.person.kind === 'Group' ? '!' : '@'}
               {subject.person.handle}
-            </a>
+            </Link>
           </>
         ) : null}
-      </p>
+      </Text>
       {(subject.kind === 'post' || subject.kind === 'comment') && subject.quote && (
         <div className="rq-quote">
+          {/* Blur by default: in the markup, but blurred, unselectable and hidden from assistive technology until Show. */}
           <blockquote aria-hidden={shown ? undefined : 'true'} data-hidden={shown ? undefined : 'true'}>
             {subject.quote}
           </blockquote>
-          <a
-            className="pb-linkbutton"
-            href={queueHref(view, { show: shown ? null : group.key })}
-            aria-expanded={shown}
-            onClick={(event) => {
-              if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey) return;
-              event.preventDefault();
-              setShown(!shown);
-            }}
-          >
+          <Toggle shown={shown} href={queueHref(view, { show: shown ? null : group.key })} onToggle={() => setShown(!shown)}>
             {shown ? t('reports', 'queue.hide') : t('reports', 'queue.show')}
-          </a>
-          {!shown && <span className="rq-hint">{t('reports', 'queue.hidden')}</span>}
+          </Toggle>
+          {!shown && (
+            <Text size="sm" color="muted">
+              {t('reports', 'queue.hidden')}
+            </Text>
+          )}
         </div>
       )}
       {(subject.kind === 'post' || subject.kind === 'comment') && !subject.quote && subject.withheld && (
-        <p className="rq-hint">{t('reports', `queue.withheld.${subject.withheld}`)}</p>
+        <Text as="p" size="sm" color="muted">
+          {t('reports', `queue.withheld.${subject.withheld}`)}
+        </Text>
       )}
-      {subject.kind === 'gone' && <p className="rq-hint">{t('reports', 'queue.gone')}</p>}
+      {subject.kind === 'gone' && (
+        <Text as="p" size="sm" color="muted">
+          {t('reports', 'queue.gone')}
+        </Text>
+      )}
       {open && (
-        <a className="rq-open" href={open}>
+        <Link href={open} className="rq-open">
           {t('reports', 'queue.open')}
-        </a>
+        </Link>
       )}
     </div>
   );
 }
 
-function Reports({ group }: { group: QueueGroup }) {
+function Reports({ group, view }: { group: QueueGroup; view: QueueView }) {
   const { t, locale } = useTranslate();
   const date = useDate();
+  const [shown, setShown] = useState(view.details === group.key);
   const count = new Intl.PluralRules(locale).select(group.count) === 'one' ? 'queue.reports.one' : 'queue.reports.other';
   return (
-    <div>
-      <p className="rq-count">
+    <div className="rq-reports">
+      <Text as="p" size="sm">
         {t('reports', count, { count: group.count })}
         {group.escalatedBy && (
-          <span className="rq-hint"> {t('reports', 'queue.escalatedBy', { handle: `@${group.escalatedBy.handle}` })}</span>
+          <Text size="sm" color="muted">
+            {' '}
+            {t('reports', 'queue.escalatedBy', { handle: `@${group.escalatedBy.handle}` })}
+          </Text>
         )}
-      </p>
-      <p className="rq-hint">{group.categories.map((category) => t('reports', `category.${category}`)).join(', ')}</p>
-      <details>
-        <summary>{t('reports', 'queue.details')}</summary>
-        <ul className="rq-reporters">
-          {group.reports.map((report) => (
-            <li key={report.id}>
-              <b>#{report.number}</b> {t('reports', `category.${report.category}`)}
+      </Text>
+      <Text as="p" size="sm" color="muted">
+        {group.categories.map((category) => t('reports', `category.${category}`)).join(', ')}
+      </Text>
+      {/* A link, not a Mux Disclosure: the row stays readable and openable without JavaScript, and a read-only row holds no button. */}
+      <Toggle shown={shown} href={queueHref(view, { details: shown ? null : group.key })} onToggle={() => setShown(!shown)}>
+        {t('reports', 'queue.details')}
+      </Toggle>
+      <ul className="rq-reporters" hidden={!shown}>
+        {group.reports.map((report) => (
+          <li key={report.id}>
+            <Text size="sm">
+              <Text variant="label" size="sm">
+                #{report.number}
+              </Text>{' '}
+              {t('reports', `category.${report.category}`)}
               {report.reporter && <> @{report.reporter.handle}</>}
-              {report.remote && <span className="rq-hint"> ({t('reports', 'queue.remote')})</span>}
-              <span className="rq-hint"> {date(report.createdAt)}</span>
-              <br />
-              {report.details ?? <span className="rq-hint">{t('reports', 'queue.noDetails')}</span>}
-            </li>
-          ))}
-        </ul>
-      </details>
+              {report.remote && (
+                <Text size="sm" color="muted">
+                  {' '}
+                  ({t('reports', 'queue.remote')})
+                </Text>
+              )}
+              <Text size="sm" color="muted">
+                {' '}
+                {date(report.createdAt)}
+              </Text>
+            </Text>
+            <Text as="p" size="sm">
+              {report.details ?? (
+                <Text size="sm" color="muted">
+                  {t('reports', 'queue.noDetails')}
+                </Text>
+              )}
+            </Text>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }
@@ -199,12 +286,12 @@ const rules = [1, 2, 3, 4, 5, 6, 7] as const;
 
 function Actions({ group, tab, admin, view }: { group: QueueGroup; tab: QueueTab; admin: boolean; view: QueueView }) {
   const { t } = useTranslate();
-  const back = queueHref(view, { show: null });
+  const back = queueHref(view, { show: null, details: null });
   const isContent = group.subject.kind === 'post' || group.subject.kind === 'comment';
   if (tab === 'resolved' || tab === 'dismissed') {
     const closed = group.closed;
     return closed ? (
-      <p className="rq-hint">
+      <Text as="p" size="sm" color="muted">
         {t('reports', 'queue.closed', {
           resolution: t(
             'reports',
@@ -213,70 +300,81 @@ function Actions({ group, tab, admin, view }: { group: QueueGroup; tab: QueueTab
           handle: closed.by ? `@${closed.by.handle}` : '',
         })}
         {closed.note && <> {closed.note}</>}
-      </p>
+      </Text>
     ) : null;
   }
-  if (group.audience === 'admins' && !admin) return <p className="rq-hint">{t('reports', 'queue.readOnly')}</p>;
+  if (group.audience === 'admins' && !admin)
+    return (
+      <Text as="p" size="sm" color="muted">
+        {t('reports', 'queue.readOnly')}
+      </Text>
+    );
   return (
     <div className="rq-actions">
       <QueueForm group={group} back={back} className="rq-act">
-        <label className="rq-note">
-          <span>{t('reports', 'queue.note')}</span>
-          <input type="text" name="note" maxLength={2000} aria-describedby={`note-${group.key}`} />
-          <span id={`note-${group.key}`} className="rq-hint">
-            {t('reports', 'queue.note.hint')}
-          </span>
-        </label>
+        <TextField
+          name="note"
+          size="sm"
+          maxLength={2000}
+          label={t('reports', 'queue.note')}
+          description={t('reports', 'queue.note.hint')}
+        />
         <div className="rq-buttons">
-          <Button type="submit" name="intent" value="resolve" variant="primary">
+          <Button type="submit" name="intent" value="resolve" variant="primary" size="sm">
             {t('reports', 'queue.resolve')}
           </Button>
-          <Button type="submit" name="intent" value="dismiss">
+          <Button type="submit" name="intent" value="dismiss" variant="neutral" size="sm">
             {t('reports', 'queue.dismiss')}
           </Button>
         </div>
       </QueueForm>
       {isContent && (
-        <details className="rq-remove">
-          <summary>{t('reports', 'queue.remove')}</summary>
+        <Disclosure title={t('reports', 'queue.remove')} className="rq-remove">
           <QueueForm group={group} back={back} className="rq-act">
-            <input type="hidden" name="intent" value="remove" />
-            <p className="rq-hint">{t('reports', 'queue.remove.title')}</p>
-            <label className="rq-note">
-              <span>{t('reports', 'queue.remove.rule')}</span>
-              <select name="rule" required defaultValue="">
-                <option value="" disabled />
-                {rules.map((rule) => (
-                  <option key={rule} value={rule}>
-                    {t('reports', `queue.rule.${rule}`)}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="rq-note">
-              <span>{t('reports', 'queue.remove.explanation')}</span>
-              <textarea name="explanation" rows={3} maxLength={2000} required aria-describedby={`explain-${group.key}`} />
-              <span id={`explain-${group.key}`} className="rq-hint">
-                {t('reports', 'queue.remove.hint')}
-              </span>
-            </label>
-            <p className="rq-hint">{t('reports', 'queue.remove.ban')}</p>
-            <Button type="submit" variant="primary">
-              {t('reports', 'queue.remove.submit')}
-            </Button>
+            <Text as="p" size="sm" color="muted">
+              {t('reports', 'queue.remove.title')}
+            </Text>
+            <Select
+              name="rule"
+              size="sm"
+              required
+              placeholder=""
+              defaultValue=""
+              label={t('reports', 'queue.remove.rule')}
+              items={rules.map((rule) => ({ id: String(rule), label: t('reports', `queue.rule.${rule}`) }))}
+            />
+            <TextAreaField
+              name="explanation"
+              size="sm"
+              rows={3}
+              maxLength={2000}
+              required
+              label={t('reports', 'queue.remove.explanation')}
+              description={t('reports', 'queue.remove.hint')}
+            />
+            <Text as="p" size="sm" color="muted">
+              {t('reports', 'queue.remove.ban')}
+            </Text>
+            <div>
+              <Button type="submit" name="intent" value="remove" variant="danger" size="sm">
+                {t('reports', 'queue.remove.submit')}
+              </Button>
+            </div>
           </QueueForm>
-        </details>
+        </Disclosure>
       )}
       {group.audience === 'moderators' && (
-        <QueueForm group={group} back={back} className="rq-act">
-          <input type="hidden" name="intent" value="escalate" />
-          <Button type="submit">{t('reports', 'queue.escalate')}</Button>
+        <QueueForm group={group} back={back}>
+          <Button type="submit" name="intent" value="escalate" variant="neutral" size="sm">
+            {t('reports', 'queue.escalate')}
+          </Button>
         </QueueForm>
       )}
       {group.audience === 'admins' && tab === 'escalated' && admin && (
-        <QueueForm group={group} back={back} className="rq-act">
-          <input type="hidden" name="intent" value="back" />
-          <Button type="submit">{t('reports', 'queue.sendBack')}</Button>
+        <QueueForm group={group} back={back}>
+          <Button type="submit" name="intent" value="back" variant="neutral" size="sm">
+            {t('reports', 'queue.sendBack')}
+          </Button>
         </QueueForm>
       )}
     </div>
@@ -298,34 +396,27 @@ export function QueueTable({
   now: number;
 }) {
   const { t } = useTranslate();
+  useFieldKeys();
   return (
-    <table className="rq-table">
-      <thead>
-        <tr>
-          <th scope="col">{t('reports', 'queue.col.content')}</th>
-          <th scope="col">{t('reports', 'queue.col.reports')}</th>
-          <th scope="col">{t('reports', 'queue.col.age')}</th>
-          <th scope="col">{t('reports', 'queue.col.actions')}</th>
-        </tr>
-      </thead>
-      <tbody>
-        {groups.map((group) => (
-          <tr key={group.key} id={`g-${group.key}`}>
-            <td>
-              <Content group={group} view={view} />
-            </td>
-            <td>
-              <Reports group={group} />
-            </td>
-            <td>
-              <Age iso={group.oldestAt} now={now} />
-            </td>
-            <td>
-              <Actions group={group} tab={tab} admin={admin} view={view} />
-            </td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
+    <Card.Root variant="outlined" padding="sm" className="rq-table">
+      <Table
+        aria-label={t('reports', 'queue.title')}
+        columns={[
+          { id: 'content', label: t('reports', 'queue.col.content'), isRowHeader: true },
+          { id: 'reports', label: t('reports', 'queue.col.reports') },
+          { id: 'age', label: t('reports', 'queue.col.age') },
+          { id: 'actions', label: t('reports', 'queue.col.actions') },
+        ]}
+        rows={groups.map((group) => ({
+          id: group.key,
+          values: {
+            content: <Content group={group} view={view} />,
+            reports: <Reports group={group} view={view} />,
+            age: <Age iso={group.oldestAt} now={now} />,
+            actions: <Actions group={group} tab={tab} admin={admin} view={view} />,
+          },
+        }))}
+      />
+    </Card.Root>
   );
 }

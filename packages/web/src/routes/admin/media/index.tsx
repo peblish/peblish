@@ -2,6 +2,8 @@ import { putFlash, takeFlash } from '@peblish/core/identity/flash';
 import { mediaOverview, type MediaOverview } from '@peblish/core/mediascan/overview';
 import { addToBlocklist, blockCategories, removeFromBlocklist } from '@peblish/core/mediascan/list';
 import { confirmQuarantined, holdQuarantined, releaseQuarantined } from '@peblish/core/mediascan/review';
+import { Notice as NoticeBox } from '@peblish/ui/components/notice';
+import { Text } from '@peblish/ui/components/text';
 import { createFileRoute, redirect } from '@tanstack/react-router';
 import { createServerFn } from '@tanstack/react-start';
 import { setResponseStatus } from '@tanstack/react-start/server';
@@ -11,7 +13,7 @@ import { useTranslate } from '../../../i18n/use-translate.ts';
 import { forbidden, formSession, pageSession, principalOf, readForm, sameOrigin } from '../../../server/auth.ts';
 import { useRouteHydrated } from '../../../shell/hydration.ts';
 import { adminPaths } from '../../../shell/paths.ts';
-import { authHead, SearchText } from '../../auth/-ui/page.tsx';
+import { SearchText } from '../../auth/-ui/page.tsx';
 import { Denial } from '../-denial.tsx';
 import { accessOf } from '../settings/-access.ts';
 import { Evidence, Failed, Hashes, Review, sections, Status, StatusStrip, SubNav, Warning, type Section } from './-ui/sections.tsx';
@@ -92,7 +94,7 @@ const page = (section: Section, extra: Record<string, string | undefined> = {}) 
 export const Route = createFileRoute('/admin/media/')({
   validateSearch: Search,
   loader: () => loadMedia(),
-  head: () => ({ links: [...(authHead().links ?? []), { rel: 'stylesheet', href: mediaCss }] }),
+  head: () => ({ links: [{ rel: 'stylesheet', href: mediaCss }] }),
   component: MediaTab,
   server: {
     handlers: {
@@ -165,9 +167,9 @@ function NoticeBanner({ notice }: { notice: typeof Notice.infer }) {
   else if (notice.kind === 'hash-removed') parts.push(t('mediascan', 'media.notice.hashRemoved'));
   else parts.push(t('mediascan', notice.kind === 'released' ? 'media.notice.released' : 'media.notice.held'));
   return (
-    <p className="flash ok" role="status" data-testid="media-notice">
+    <NoticeBox tone="success" role="status" data-testid="media-notice">
       {parts.join(' ')}
-    </p>
+    </NoticeBox>
   );
 }
 
@@ -178,8 +180,10 @@ function MediaTab() {
   useRouteHydrated();
   if (data.access !== 'ok')
     return (
-      <main className="auth-page">
-        <h1>{t('mediascan', 'media.title')}</h1>
+      <main className="pb-page media-admin">
+        <Text as="h1" variant="heading" size="sm">
+          {t('mediascan', 'media.title')}
+        </Text>
         <Denial
           access={data.access}
           copy={{
@@ -194,15 +198,17 @@ function MediaTab() {
   const section: Section = sections.find((key) => key === search.section) ?? 'review';
   const error = asErrorCode(search.error);
   return (
-    <main className="auth-page wide media-admin">
-      <h1>{t('mediascan', 'media.title')}</h1>
+    <main className="pb-page media-admin">
+      <Text as="h1" variant="heading" size="sm">
+        {t('mediascan', 'media.title')}
+      </Text>
       <Warning scanner={overview.scanner} />
       <StatusStrip overview={overview} />
       {notice && <NoticeBanner notice={notice} />}
       {search.error && (
-        <p className="flash err" role="alert" data-testid="media-error">
-          <b>{t('mediascan', 'media.failedTitle')}</b> {t('mediascan', `error.${error ?? 'generic'}`)}
-        </p>
+        <NoticeBox tone="danger" role="alert" title={t('mediascan', 'media.failedTitle')} data-testid="media-error">
+          {t('mediascan', `error.${error ?? 'generic'}`)}
+        </NoticeBox>
       )}
       <SubNav section={section} counts={overview.counts} />
       <Sections section={section} overview={overview} item={search.item} value={search.value} />

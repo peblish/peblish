@@ -1,12 +1,28 @@
 import type { EvidenceRow, FailedRow, HashRow, MediaOverview, QuarantineRow } from '@peblish/core/mediascan/overview';
+import { Badge } from '@peblish/ui/components/badge';
 import { Button } from '@peblish/ui/components/button';
+import { Card } from '@peblish/ui/components/card';
+import { Checkbox } from '@peblish/ui/components/checkbox';
+import { Disclosure } from '@peblish/ui/components/disclosure';
+import { EmptyState } from '@peblish/ui/components/empty-state';
+import { FactList } from '@peblish/ui/components/fact-list';
+import { Input } from '@peblish/ui/components/input';
+import { Link } from '@peblish/ui/components/link';
+import { LinkTabs } from '@peblish/ui/components/link-tabs';
+import { Notice } from '@peblish/ui/components/notice';
+import { Select } from '@peblish/ui/components/select';
+import { Table } from '@peblish/ui/components/table';
+import { Tabs } from '@peblish/ui/components/tabs';
+import { Text } from '@peblish/ui/components/text';
+import { TextField } from '@peblish/ui/components/text-field';
 import { translatePlural } from '../../../../i18n/translate.ts';
 import { useTranslate } from '../../../../i18n/use-translate.ts';
 import { adminPaths } from '../../../../shell/paths.ts';
 import { useDate } from '../../../auth/-ui/page.tsx';
 
-// The sections of the Media tab (R2b media-split). Every one is plain HTML with plain POST forms,
-// so the tab works without JavaScript. No image is rendered or linked anywhere in it.
+// The sections of the Media tab (R2b media-split). Every form is a plain POST, so the decisions
+// work without JavaScript; the decision panels open and close with it. No image is rendered or
+// linked anywhere in it.
 
 export const sections = ['review', 'failed', 'hashes', 'evidence', 'status'] as const;
 export type Section = (typeof sections)[number];
@@ -18,8 +34,9 @@ type HoldAuthority = NonNullable<QuarantineRow['holdAuthority']>;
 /** Who may direct a hold (core evidence/tables.ts holdAuthorities); only AFP keeps the image file. */
 export const holdAuthorities = ['afp', 'ncmec', 'nca'] as const satisfies readonly HoldAuthority[];
 
-const authorityLabel = (authority: HoldAuthority | null, t: ReturnType<typeof useTranslate>['t']) =>
-  authority ? t('mediascan', `media.hold.authority.${authority}`) : '';
+type T = ReturnType<typeof useTranslate>['t'];
+
+const authorityLabel = (authority: HoldAuthority | null, t: T) => (authority ? t('mediascan', `media.hold.authority.${authority}`) : '');
 
 /** `2026-11-09 14:05 UTC`: the same text on server and client, whatever the viewer's zone. */
 const stamp = (iso: string) => `${iso.slice(0, 10)} ${iso.slice(11, 16)} UTC`;
@@ -27,45 +44,59 @@ const shortHash = (hash: string | null) => (hash ? `${hash.slice(0, 8)}…${hash
 
 function Who({ person }: { person: { handle: string } | null }) {
   const { t } = useTranslate();
-  return person ? <span>{person.handle}</span> : <span className="muted">{t('mediascan', 'media.hash.bySystem')}</span>;
+  return person ? (
+    <span>{person.handle}</span>
+  ) : (
+    <Text size="sm" color="muted">
+      {t('mediascan', 'media.hash.bySystem')}
+    </Text>
+  );
 }
+
+/** A hash or other machine value: mono, wrapping anywhere. */
+const Hex = ({ children, title, testId }: { children: string; title?: string; testId?: string }) => (
+  <Text variant="mono" size="sm" className="media-hex" title={title} data-testid={testId}>
+    {children}
+  </Text>
+);
 
 export function Warning({ scanner }: { scanner: MediaOverview['scanner'] }) {
   const { t } = useTranslate();
   if (scanner.kind === 'provider') return null;
   const key = scanner.kind === 'none' ? 'none' : 'local';
   return (
-    <p className="flash warn" role="alert" data-testid="scanner-warning">
-      <b>{t('mediascan', `media.warn.${key}.title`)}</b> {t('mediascan', `media.warn.${key}.text`)}
-    </p>
+    <Notice tone="warning" role="alert" title={t('mediascan', `media.warn.${key}.title`)} data-testid="scanner-warning">
+      {t('mediascan', `media.warn.${key}.text`)}
+    </Notice>
   );
 }
 
 export function StatusStrip({ overview }: { overview: MediaOverview }) {
   const { t } = useTranslate();
   const { scanner } = overview;
-  const onOff = (on: boolean) => <b className={on ? 'ok-t' : undefined}>{t('mediascan', on ? 'media.on' : 'media.off')}</b>;
+  const onOff = (on: boolean) => <Badge tone={on ? 'success' : 'neutral'}>{t('mediascan', on ? 'media.on' : 'media.off')}</Badge>;
   return (
-    <div className="strip" data-testid="media-status">
-      <span>
-        {t('mediascan', 'media.scanner')}{' '}
-        {scanner.kind === 'provider' ? (
-          <b className="ok-t">{t('mediascan', 'media.scanner.provider', { name: scanner.providers.join(', ') })}</b>
-        ) : (
-          <b className="warn-t">{t('mediascan', scanner.kind === 'local-only' ? 'media.scanner.local' : 'media.scanner.none')}</b>
-        )}
-      </span>
-      <span>
-        {t('mediascan', 'media.uploads')} {onOff(overview.uploadsEnabled)}
-      </span>
-      <span>
-        {t('mediascan', 'media.remote')} {onOff(overview.remoteMediaEnabled)}
-      </span>
-      <span>
-        {t('mediascan', 'media.hashes')} {overview.counts.hashes}
-      </span>
+    <div className="media-strip" data-testid="media-status">
+      <FactList
+        layout="inline"
+        items={[
+          {
+            key: 'scanner',
+            label: t('mediascan', 'media.scanner'),
+            value:
+              scanner.kind === 'provider' ? (
+                <Badge tone="success">{t('mediascan', 'media.scanner.provider', { name: scanner.providers.join(', ') })}</Badge>
+              ) : (
+                <Badge tone="warning">{t('mediascan', scanner.kind === 'local-only' ? 'media.scanner.local' : 'media.scanner.none')}</Badge>
+              ),
+          },
+          { key: 'uploads', label: t('mediascan', 'media.uploads'), value: onOff(overview.uploadsEnabled) },
+          { key: 'remote', label: t('mediascan', 'media.remote'), value: onOff(overview.remoteMediaEnabled) },
+          { key: 'hashes', label: t('mediascan', 'media.hashes'), value: overview.counts.hashes },
+        ]}
+      />
       {/* uploads.enabled and remote_media.enabled are changed in the admin settings (lane ADM). */}
-      <a href={adminPaths.settings}>{t('mediascan', 'media.settingsLink')}</a>
+      <Link href={adminPaths.settings}>{t('mediascan', 'media.settingsLink')}</Link>
     </div>
   );
 }
@@ -79,118 +110,125 @@ export function SubNav({ section, counts }: { section: Section; counts: MediaOve
     evidence: counts.evidence,
   };
   return (
-    <nav className="subnav" aria-label={t('mediascan', 'media.sections')}>
-      {sections.map((key) => (
-        <a key={key} href={`${adminPaths.media}?section=${key}`} aria-current={key === section ? 'page' : undefined}>
-          {t('mediascan', `media.nav.${key}`)}
-          {n[key] !== undefined && <span className="muted"> {n[key]}</span>}
-        </a>
-      ))}
-    </nav>
+    <LinkTabs
+      aria-label={t('mediascan', 'media.sections')}
+      items={sections.map((key) => ({
+        to: `${adminPaths.media}?section=${key}`,
+        active: key === section,
+        label: (
+          <>
+            {t('mediascan', `media.nav.${key}`)}
+            {n[key] !== undefined && <Text color="muted"> {n[key]}</Text>}
+          </>
+        ),
+      }))}
+    />
   );
 }
 
 const hidden = (name: string, value: string) => <input type="hidden" name={name} value={value} />;
 
-/** One shared decision control: three exclusive panels, each a plain POST form. */
+/**
+ * One shared decision control: three exclusive panels as Mux Tabs, Confirm first, each a plain POST
+ * form. The selected panel is in the server's page, so Confirm works without JavaScript.
+ */
 function Decision({ row }: { row: QuarantineRow }) {
   const { t } = useTranslate();
   const tomorrow = new Date(Date.parse(row.quarantinedAt) + 366 * 86_400_000).toISOString().slice(0, 10);
   return (
-    <div aria-label={t('mediascan', 'media.decision')} role="group">
-      <details className="decide" name="decision" open>
-        <summary>{t('mediascan', 'media.confirm.title')}</summary>
-        <form method="post" action={adminPaths.media} aria-label={t('mediascan', 'media.confirm.title')}>
-          {hidden('intent', 'confirm')}
-          {hidden('item', row.mediaId)}
-          <p className="hint">{t('mediascan', 'media.confirm.help')}</p>
-          <label className="chk">
-            <input type="checkbox" name="removePosts" defaultChecked />
-            <span>{t('mediascan', 'media.confirm.removePosts')}</span>
-          </label>
-          <div className="fld">
-            <label htmlFor="confirm-note">
-              {t('mediascan', 'media.note')} <span className="hint">{t('mediascan', 'media.optional')}</span>
-            </label>
-            <input id="confirm-note" type="text" name="note" maxLength={500} />
-          </div>
-          <div className="btns">
-            <Button type="submit" variant="primary">
-              {t('mediascan', 'media.confirm.submit')}
-            </Button>
-          </div>
-        </form>
-      </details>
-      <details className="decide" name="decision">
-        <summary>{t('mediascan', 'media.hold.title')}</summary>
-        <form method="post" action={adminPaths.media} aria-label={t('mediascan', 'media.hold.heading')}>
-          {hidden('intent', 'hold')}
-          {hidden('item', row.mediaId)}
-          <p className="hint">{t('mediascan', 'media.hold.help')}</p>
-          <div className="fld">
-            <label htmlFor="hold-authority">{t('mediascan', 'media.hold.authority')}</label>
-            <select id="hold-authority" name="authority" required defaultValue="">
-              <option value="" disabled>
-                {t('mediascan', 'media.hold.authorityChoose')}
-              </option>
-              {holdAuthorities.map((authority) => (
-                <option key={authority} value={authority}>
-                  {t('mediascan', `media.hold.authority.${authority}`)}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="fld">
-            <label htmlFor="hold-ref">{t('mediascan', 'media.hold.reference')}</label>
-            <input
-              id="hold-ref"
-              type="text"
-              name="reference"
-              maxLength={200}
-              required
-              placeholder={t('mediascan', 'media.hold.referencePlaceholder')}
-            />
-          </div>
-          <div className="fld">
-            <label htmlFor="hold-until">{t('mediascan', 'media.hold.until')}</label>
-            <input id="hold-until" type="date" name="until" required defaultValue={tomorrow} />
-          </div>
-          <div className="btns">
-            <Button type="submit" variant="neutral">
-              {t('mediascan', 'media.hold.submit')}
-            </Button>
-          </div>
-        </form>
-      </details>
-      <details className="decide" name="decision">
-        <summary>{t('mediascan', 'media.release.title')}</summary>
-        <form method="post" action={adminPaths.media} aria-label={t('mediascan', 'media.release.title')}>
-          {hidden('intent', 'release')}
-          {hidden('item', row.mediaId)}
-          <p className="hint">{t('mediascan', 'media.release.help')}</p>
-          <div className="fld">
-            <label htmlFor="release-note">{t('mediascan', 'media.release.note')}</label>
-            <input
-              id="release-note"
-              type="text"
-              name="note"
-              maxLength={500}
-              required
-              placeholder={t('mediascan', 'media.release.notePlaceholder')}
-            />
-          </div>
-          <div className="btns">
-            <Button type="submit" variant="neutral">
-              {t('mediascan', 'media.release.submit')}
-            </Button>
-          </div>
-        </form>
-      </details>
-    </div>
+    <Tabs
+      aria-label={t('mediascan', 'media.decision')}
+      defaultValue="confirm"
+      className="media-decision"
+      items={[
+        {
+          id: 'confirm',
+          label: t('mediascan', 'media.confirm.title'),
+          panel: (
+            <form method="post" action={adminPaths.media} aria-label={t('mediascan', 'media.confirm.title')} className="media-form">
+              {hidden('item', row.mediaId)}
+              <Text as="p" size="sm" color="muted">
+                {t('mediascan', 'media.confirm.help')}
+              </Text>
+              <Checkbox name="removePosts" defaultChecked>
+                {t('mediascan', 'media.confirm.removePosts')}
+              </Checkbox>
+              <TextField name="note" maxLength={500} label={`${t('mediascan', 'media.note')} ${t('mediascan', 'media.optional')}`} />
+              <div>
+                <Button type="submit" name="intent" value="confirm" variant="primary">
+                  {t('mediascan', 'media.confirm.submit')}
+                </Button>
+              </div>
+            </form>
+          ),
+        },
+        {
+          id: 'hold',
+          label: t('mediascan', 'media.hold.title'),
+          panel: (
+            <form method="post" action={adminPaths.media} aria-label={t('mediascan', 'media.hold.heading')} className="media-form">
+              {hidden('item', row.mediaId)}
+              <Text as="p" size="sm" color="muted">
+                {t('mediascan', 'media.hold.help')}
+              </Text>
+              <Select
+                name="authority"
+                label={t('mediascan', 'media.hold.authority')}
+                placeholder={t('mediascan', 'media.hold.authorityChoose')}
+                defaultValue=""
+                required
+                items={holdAuthorities.map((authority) => ({ id: authority, label: t('mediascan', `media.hold.authority.${authority}`) }))}
+              />
+              <TextField
+                name="reference"
+                maxLength={200}
+                required
+                label={t('mediascan', 'media.hold.reference')}
+                placeholder={t('mediascan', 'media.hold.referencePlaceholder')}
+              />
+              {/* A native date input on Mux's Input parts: it posts YYYY-MM-DD without JavaScript. */}
+              <Input.Root defaultValue={tomorrow} required>
+                <Input.Label>{t('mediascan', 'media.hold.until')}</Input.Label>
+                <Input.Input type="date" name="until" />
+              </Input.Root>
+              <div>
+                <Button type="submit" name="intent" value="hold" variant="neutral">
+                  {t('mediascan', 'media.hold.submit')}
+                </Button>
+              </div>
+            </form>
+          ),
+        },
+        {
+          id: 'release',
+          label: t('mediascan', 'media.release.title'),
+          panel: (
+            <form method="post" action={adminPaths.media} aria-label={t('mediascan', 'media.release.title')} className="media-form">
+              {hidden('item', row.mediaId)}
+              <Text as="p" size="sm" color="muted">
+                {t('mediascan', 'media.release.help')}
+              </Text>
+              <TextField
+                name="note"
+                maxLength={500}
+                required
+                label={t('mediascan', 'media.release.note')}
+                placeholder={t('mediascan', 'media.release.notePlaceholder')}
+              />
+              <div>
+                <Button type="submit" name="intent" value="release" variant="neutral">
+                  {t('mediascan', 'media.release.submit')}
+                </Button>
+              </div>
+            </form>
+          ),
+        },
+      ]}
+    />
   );
 }
 
-function verdictOf(row: QuarantineRow, t: ReturnType<typeof useTranslate>['t']) {
+function verdictOf(row: QuarantineRow, t: T) {
   const kind = t('mediascan', row.matchType ? `media.match.${row.matchType}` : 'media.match.none');
   return row.classification === 'test' ? `${kind}, ${t('mediascan', 'media.d.test')}` : `${kind}, ${row.classification}`;
 }
@@ -199,103 +237,119 @@ function Detail({ row }: { row: QuarantineRow }) {
   const { t, locale } = useTranslate();
   const date = useDate();
   return (
-    <div data-testid="media-detail">
-      <h2>
-        <span className="mono">{shortHash(row.sha256)}</span>
-      </h2>
-      <dl className="kv">
-        <dt>{t('mediascan', 'media.d.verdict')}</dt>
-        <dd>{verdictOf(row, t)}</dd>
-        <dt>{t('mediascan', 'media.d.provider')}</dt>
-        <dd>{row.source}</dd>
-        <dt>{t('mediascan', 'media.d.uploader')}</dt>
-        <dd>
-          <Who person={row.uploader} />
-        </dd>
-        <dt>{t('mediascan', 'media.d.uploaded')}</dt>
-        <dd>{stamp(row.uploadedAt)}</dd>
-        <dt>{t('mediascan', 'media.d.quarantined')}</dt>
-        <dd>{stamp(row.quarantinedAt)}</dd>
-        <dt>{t('mediascan', 'media.d.sha')}</dt>
-        <dd className="hx">{row.sha256}</dd>
-        <dt>{t('mediascan', 'media.d.type')}</dt>
-        <dd>
-          {row.mimeType},{' '}
-          {row.byteSize === null ? '' : `${new Intl.NumberFormat(locale).format(Math.max(1, Math.round(row.byteSize / 1024)))} kB`}
-        </dd>
-        <dt>{t('mediascan', 'media.d.posts')}</dt>
-        <dd>
-          {row.livePosts.length === 0 ? (
-            t('mediascan', 'media.d.none')
-          ) : (
-            <ul className="used-by">
-              {row.livePosts.map((post) => (
-                <li key={post.id}>
-                  <a href={`/post/${post.id}`}>{post.title}</a>
-                </li>
-              ))}
-            </ul>
-          )}
-        </dd>
-        {row.holdReference && row.holdUntil && (
-          <>
-            <dt>{t('mediascan', 'media.d.hold')}</dt>
-            <dd>
-              {t('mediascan', 'media.d.holdValue', {
-                authority: authorityLabel(row.holdAuthority, t),
-                reference: row.holdReference,
-                date: date(row.holdUntil),
-              })}
-            </dd>
-          </>
-        )}
-        {/* Only an AFP hold stops the automatic block; under an NCMEC or NCA hold it still comes. */}
-        {!row.bytesHeld && (
-          <>
-            <dt>{t('mediascan', 'media.d.autoBlock')}</dt>
-            <dd>{t('mediascan', 'media.d.autoBlockAt', { date: stamp(row.blocksAt) })}</dd>
-          </>
-        )}
-      </dl>
-      <Decision row={row} />
-    </div>
+    <Card.Root variant="outlined" padding="sm" className="media-detail" data-testid="media-detail">
+      <Card.Header>
+        <Text as="h2" variant="mono" size="md">
+          {shortHash(row.sha256)}
+        </Text>
+      </Card.Header>
+      <Card.Body>
+        <FactList
+          items={[
+            { key: 'verdict', label: t('mediascan', 'media.d.verdict'), value: verdictOf(row, t) },
+            { key: 'provider', label: t('mediascan', 'media.d.provider'), value: row.source },
+            { key: 'uploader', label: t('mediascan', 'media.d.uploader'), value: <Who person={row.uploader} /> },
+            { key: 'uploaded', label: t('mediascan', 'media.d.uploaded'), value: stamp(row.uploadedAt) },
+            { key: 'quarantined', label: t('mediascan', 'media.d.quarantined'), value: stamp(row.quarantinedAt) },
+            { key: 'sha', label: t('mediascan', 'media.d.sha'), value: <Hex>{row.sha256 ?? ''}</Hex> },
+            {
+              key: 'type',
+              label: t('mediascan', 'media.d.type'),
+              value: `${row.mimeType}, ${
+                row.byteSize === null ? '' : `${new Intl.NumberFormat(locale).format(Math.max(1, Math.round(row.byteSize / 1024)))} kB`
+              }`,
+            },
+            {
+              key: 'posts',
+              label: t('mediascan', 'media.d.posts'),
+              value:
+                row.livePosts.length === 0 ? (
+                  t('mediascan', 'media.d.none')
+                ) : (
+                  <ul className="media-used-by">
+                    {row.livePosts.map((post) => (
+                      <li key={post.id}>
+                        <Link href={`/post/${post.id}`}>{post.title}</Link>
+                      </li>
+                    ))}
+                  </ul>
+                ),
+            },
+            ...(row.holdReference && row.holdUntil
+              ? [
+                  {
+                    key: 'hold',
+                    label: t('mediascan', 'media.d.hold'),
+                    value: t('mediascan', 'media.d.holdValue', {
+                      authority: authorityLabel(row.holdAuthority, t),
+                      reference: row.holdReference,
+                      date: date(row.holdUntil),
+                    }),
+                  },
+                ]
+              : []),
+            // Only an AFP hold stops the automatic block; under an NCMEC or NCA hold it still comes.
+            ...(!row.bytesHeld
+              ? [
+                  {
+                    key: 'auto',
+                    label: t('mediascan', 'media.d.autoBlock'),
+                    value: t('mediascan', 'media.d.autoBlockAt', { date: stamp(row.blocksAt) }),
+                  },
+                ]
+              : []),
+          ]}
+        />
+        <Decision row={row} />
+      </Card.Body>
+    </Card.Root>
   );
 }
 
 export function Review({ overview, item }: { overview: MediaOverview; item: string | undefined }) {
   const { t, locale } = useTranslate();
   const rows = overview.quarantine;
-  if (rows.length === 0) return <p className="muted">{t('mediascan', 'media.review.empty')}</p>;
+  if (rows.length === 0) return <EmptyState title={t('mediascan', 'media.review.empty')} />;
   const selected = rows.find((row) => row.mediaId === item) ?? rows[0]!;
   return (
     <>
-      <div className="md">
-        <ul className="ml" aria-label={t('mediascan', 'media.review.list')}>
-          {rows.map((row) => (
-            <li key={row.mediaId} data-testid="quarantine-row">
-              <a href={`${adminPaths.media}?section=review&item=${row.mediaId}`} aria-current={row === selected ? 'true' : undefined}>
-                <span className="row">
-                  <b className="mono">{shortHash(row.sha256)}</b>
-                  <span className="sp" />
-                  <span className="muted">{stamp(row.quarantinedAt).slice(0, 10)}</span>
-                </span>
-                <span className="muted">
-                  <Who person={row.uploader} />, {verdictOf(row, t)}
-                </span>
-                <br />
-                <span className="muted">
-                  {row.source},{' '}
-                  {row.livePosts.length === 0
-                    ? t('mediascan', 'media.review.noPosts')
-                    : translatePlural(locale, 'mediascan', 'media.review.posts', row.livePosts.length)}
-                </span>
-              </a>
-            </li>
-          ))}
-        </ul>
+      <div className="media-split">
+        <Card.Root variant="outlined" padding="sm" className="media-list-card">
+          <ul className="media-list" aria-label={t('mediascan', 'media.review.list')}>
+            {rows.map((row) => (
+              <li key={row.mediaId} data-testid="quarantine-row">
+                <Link
+                  href={`${adminPaths.media}?section=review&item=${row.mediaId}`}
+                  current={row === selected}
+                  className="media-list__item"
+                >
+                  <span className="media-list__head">
+                    <Text variant="mono" size="sm">
+                      {shortHash(row.sha256)}
+                    </Text>
+                    <Text size="sm" color="muted">
+                      {stamp(row.quarantinedAt).slice(0, 10)}
+                    </Text>
+                  </span>
+                  <Text size="sm" color="muted">
+                    <Who person={row.uploader} />, {verdictOf(row, t)}
+                  </Text>
+                  <Text size="sm" color="muted">
+                    {row.source},{' '}
+                    {row.livePosts.length === 0
+                      ? t('mediascan', 'media.review.noPosts')
+                      : translatePlural(locale, 'mediascan', 'media.review.posts', row.livePosts.length)}
+                  </Text>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </Card.Root>
         <Detail row={selected} />
       </div>
-      <p className="hint">{t('mediascan', 'media.metadataOnly')}</p>
+      <Text as="p" size="sm" color="muted">
+        {t('mediascan', 'media.metadataOnly')}
+      </Text>
     </>
   );
 }
@@ -305,34 +359,32 @@ export function Failed({ rows }: { rows: FailedRow[] }) {
   return (
     <>
       {rows.length === 0 ? (
-        <p className="muted">{t('mediascan', 'media.failed.empty')}</p>
+        <EmptyState title={t('mediascan', 'media.failed.empty')} />
       ) : (
-        <table className="invites">
-          <thead>
-            <tr>
-              <th>{t('mediascan', 'media.failed.upload')}</th>
-              <th>{t('mediascan', 'media.failed.uploader')}</th>
-              <th>{t('mediascan', 'media.failed.time')}</th>
-              <th>{t('mediascan', 'media.failed.reason')}</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((row) => (
-              <tr key={row.mediaId} data-testid="failed-row">
-                <td data-label={t('mediascan', 'media.failed.upload')} className="mono">
-                  {row.mediaId.slice(-8)}
-                </td>
-                <td data-label={t('mediascan', 'media.failed.uploader')}>
-                  <Who person={row.uploader} />
-                </td>
-                <td data-label={t('mediascan', 'media.failed.time')}>{stamp(row.at)}</td>
-                <td data-label={t('mediascan', 'media.failed.reason')}>{row.reason}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <Card.Root variant="outlined" padding="sm" className="media-table">
+          <Table
+            aria-label={t('mediascan', 'media.nav.failed')}
+            columns={[
+              { id: 'upload', label: t('mediascan', 'media.failed.upload'), isRowHeader: true },
+              { id: 'uploader', label: t('mediascan', 'media.failed.uploader') },
+              { id: 'time', label: t('mediascan', 'media.failed.time') },
+              { id: 'reason', label: t('mediascan', 'media.failed.reason') },
+            ]}
+            rows={rows.map((row) => ({
+              id: row.mediaId,
+              values: {
+                upload: <Hex>{row.mediaId.slice(-8)}</Hex>,
+                uploader: <Who person={row.uploader} />,
+                time: stamp(row.at),
+                reason: row.reason,
+              },
+            }))}
+          />
+        </Card.Root>
       )}
-      <p className="hint">{t('mediascan', 'media.failed.help')}</p>
+      <Text as="p" size="sm" color="muted">
+        {t('mediascan', 'media.failed.help')}
+      </Text>
     </>
   );
 }
@@ -341,158 +393,166 @@ export function Hashes({ rows, value }: { rows: HashRow[]; value: string | undef
   const { t } = useTranslate();
   return (
     <>
-      <form method="post" action={adminPaths.media} className="add-hash" aria-label={t('mediascan', 'media.hash.add')}>
-        {hidden('intent', 'add-hash')}
-        <div className="fld">
-          <label htmlFor="hash-value">{t('mediascan', 'media.hash.value')}</label>
-          <input
-            id="hash-value"
-            type="text"
+      <form method="post" action={adminPaths.media} className="media-add-hash" aria-label={t('mediascan', 'media.hash.add')}>
+        {/* Mux's Input parts rather than TextField: the hash is mono, without autocomplete or spell checking. */}
+        <Input.Root defaultValue={value} required>
+          <Input.Label>{t('mediascan', 'media.hash.value')}</Input.Label>
+          <Input.Input
             name="value"
-            className="mono"
-            required
+            className="media-hex"
             autoComplete="off"
             spellCheck={false}
-            defaultValue={value}
             placeholder={t('mediascan', 'media.hash.valuePlaceholder')}
           />
-        </div>
-        <div className="fld">
-          <label htmlFor="hash-category">{t('mediascan', 'media.hash.category')}</label>
-          <select id="hash-category" name="category" defaultValue="csam">
-            {blockCategories.map((category) => (
-              <option key={category} value={category}>
-                {t('mediascan', `media.category.${category}`)}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div className="fld">
-          <label htmlFor="hash-reason">{t('mediascan', 'media.hash.reason')}</label>
-          <input id="hash-reason" type="text" name="reason" maxLength={500} placeholder={t('mediascan', 'media.hash.reasonPlaceholder')} />
-        </div>
-        <Button type="submit" variant="primary">
+        </Input.Root>
+        <Select
+          name="category"
+          label={t('mediascan', 'media.hash.category')}
+          defaultValue="csam"
+          items={blockCategories.map((category) => ({ id: category, label: t('mediascan', `media.category.${category}`) }))}
+        />
+        <TextField
+          name="reason"
+          maxLength={500}
+          label={t('mediascan', 'media.hash.reason')}
+          placeholder={t('mediascan', 'media.hash.reasonPlaceholder')}
+        />
+        <Button type="submit" name="intent" value="add-hash" variant="primary">
           {t('mediascan', 'media.hash.submit')}
         </Button>
       </form>
       {rows.length === 0 ? (
-        <p className="muted">{t('mediascan', 'media.hash.empty')}</p>
+        <EmptyState title={t('mediascan', 'media.hash.empty')} />
       ) : (
-        <table className="invites">
-          <thead>
-            <tr>
-              <th>{t('mediascan', 'media.hash.colHash')}</th>
-              <th>{t('mediascan', 'media.hash.colCategory')}</th>
-              <th>{t('mediascan', 'media.hash.colReason')}</th>
-              <th>{t('mediascan', 'media.hash.colAdded')}</th>
-              <th>
-                <span className="sr">{t('mediascan', 'media.hash.remove')}</span>
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((row) => (
-              <tr key={row.id} data-testid="hash-row">
-                <td data-label={t('mediascan', 'media.hash.colHash')}>
-                  <span className="hx" title={row.sha256}>
+        <Card.Root variant="outlined" padding="sm" className="media-table">
+          <Table
+            aria-label={t('mediascan', 'media.nav.hashes')}
+            columns={[
+              { id: 'hash', label: t('mediascan', 'media.hash.colHash'), isRowHeader: true },
+              { id: 'category', label: t('mediascan', 'media.hash.colCategory') },
+              { id: 'reason', label: t('mediascan', 'media.hash.colReason') },
+              { id: 'added', label: t('mediascan', 'media.hash.colAdded') },
+              { id: 'remove', label: t('mediascan', 'media.hash.remove') },
+            ]}
+            rows={rows.map((row) => ({
+              id: row.id,
+              values: {
+                // The test id marks the listed hash (a Mux Table row takes no attributes).
+                hash: (
+                  <Hex title={row.sha256} testId="hash-row">
                     {shortHash(row.sha256)}
-                  </span>
-                </td>
-                <td data-label={t('mediascan', 'media.hash.colCategory')}>
-                  {t('mediascan', `media.category.${row.category as (typeof blockCategories)[number]}`)}
-                </td>
-                <td data-label={t('mediascan', 'media.hash.colReason')}>{row.reason}</td>
-                <td data-label={t('mediascan', 'media.hash.colAdded')}>
-                  {stamp(row.addedAt).slice(0, 10)} <Who person={row.addedBy} />
-                </td>
-                <td data-label="">
+                  </Hex>
+                ),
+                category: t('mediascan', `media.category.${row.category as (typeof blockCategories)[number]}`),
+                reason: row.reason,
+                added: (
+                  <>
+                    {stamp(row.addedAt).slice(0, 10)} <Who person={row.addedBy} />
+                  </>
+                ),
+                remove: (
                   <form method="post" action={adminPaths.media}>
-                    {hidden('intent', 'remove-hash')}
                     {hidden('entry', row.id)}
-                    <Button type="submit" variant="neutral" size="sm">
+                    <Button type="submit" name="intent" value="remove-hash" variant="neutral" size="sm">
                       {t('mediascan', 'media.hash.remove')}
                     </Button>
                   </form>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+                ),
+              },
+            }))}
+          />
+        </Card.Root>
       )}
-      <p className="hint">{t('mediascan', 'media.hash.help')}</p>
+      <Text as="p" size="sm" color="muted">
+        {t('mediascan', 'media.hash.help')}
+      </Text>
     </>
+  );
+}
+
+/** One manifest as a record: its facts, and the manifest itself one disclosure away. */
+function Manifest({ row }: { row: EvidenceRow }) {
+  const { t } = useTranslate();
+  const date = useDate();
+  return (
+    <Card.Root variant="outlined" padding="sm" className="media-evidence" data-testid="evidence-row">
+      <Card.Header>
+        <Text as="h2" variant="label" size="md">
+          {t('mediascan', 'media.evidence.manifest')} <Hex title={row.manifestSha256}>{shortHash(row.manifestSha256)}</Hex>
+        </Text>
+      </Card.Header>
+      <Card.Body>
+        <FactList
+          layout="inline"
+          items={[
+            { key: 'upload', label: t('mediascan', 'media.evidence.upload'), value: <Hex>{row.mediaId.slice(-8)}</Hex> },
+            {
+              key: 'decision',
+              label: t('mediascan', 'media.evidence.decision'),
+              value: (
+                <>
+                  {row.status === 'open' || !row.decidedAt
+                    ? t('mediascan', 'media.evidence.open')
+                    : t('mediascan', row.status === 'confirmed' ? 'media.evidence.confirmed' : 'media.evidence.released', {
+                        date: date(row.decidedAt),
+                      })}
+                  {row.status !== 'open' && (
+                    <>
+                      {' '}
+                      <Text size="sm" color="muted">
+                        {row.decidedBy
+                          ? t('mediascan', 'media.evidence.by', { who: row.decidedBy.handle })
+                          : t('mediascan', 'media.evidence.bySystem')}
+                      </Text>
+                    </>
+                  )}
+                </>
+              ),
+            },
+            { key: 'bytes', label: t('mediascan', 'media.evidence.bytes'), value: t('mediascan', `media.evidence.bytes.${row.bytes}`) },
+            {
+              key: 'hold',
+              label: t('mediascan', 'media.evidence.hold'),
+              value:
+                row.holdReference && row.holdUntil ? (
+                  <>
+                    <Text variant="mono" size="sm">
+                      {authorityLabel(row.holdAuthority, t)} {row.holdReference}
+                    </Text>{' '}
+                    <Text size="sm" color="muted">
+                      {date(row.holdUntil)}
+                    </Text>
+                  </>
+                ) : (
+                  <Text size="sm" color="muted">
+                    {t('mediascan', 'media.evidence.none')}
+                  </Text>
+                ),
+            },
+            { key: 'retain', label: t('mediascan', 'media.evidence.retain'), value: row.retainUntil ? date(row.retainUntil) : '' },
+          ]}
+        />
+        <Disclosure title={t('mediascan', 'media.evidence.view')}>
+          <pre className="media-manifest">{row.manifest}</pre>
+        </Disclosure>
+      </Card.Body>
+    </Card.Root>
   );
 }
 
 export function Evidence({ rows }: { rows: EvidenceRow[] }) {
   const { t } = useTranslate();
-  const date = useDate();
-  if (rows.length === 0) return <p className="muted">{t('mediascan', 'media.evidence.empty')}</p>;
+  if (rows.length === 0) return <EmptyState title={t('mediascan', 'media.evidence.empty')} />;
   return (
     <>
-      <table className="invites">
-        <thead>
-          <tr>
-            <th>{t('mediascan', 'media.evidence.manifest')}</th>
-            <th>{t('mediascan', 'media.evidence.upload')}</th>
-            <th>{t('mediascan', 'media.evidence.decision')}</th>
-            <th>{t('mediascan', 'media.evidence.bytes')}</th>
-            <th>{t('mediascan', 'media.evidence.hold')}</th>
-            <th>{t('mediascan', 'media.evidence.retain')}</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((row) => (
-            <tr key={row.evidenceId} data-testid="evidence-row">
-              <td data-label={t('mediascan', 'media.evidence.manifest')}>
-                <span className="hx" title={row.manifestSha256}>
-                  {shortHash(row.manifestSha256)}
-                </span>
-                <details>
-                  <summary>{t('mediascan', 'media.evidence.view')}</summary>
-                  <pre className="manifest">{row.manifest}</pre>
-                </details>
-              </td>
-              <td data-label={t('mediascan', 'media.evidence.upload')} className="mono">
-                {row.mediaId.slice(-8)}
-              </td>
-              <td data-label={t('mediascan', 'media.evidence.decision')}>
-                {row.status === 'open' || !row.decidedAt
-                  ? t('mediascan', 'media.evidence.open')
-                  : t('mediascan', row.status === 'confirmed' ? 'media.evidence.confirmed' : 'media.evidence.released', {
-                      date: date(row.decidedAt),
-                    })}
-                {row.status !== 'open' && (
-                  <>
-                    <br />
-                    <span className="muted">
-                      {row.decidedBy
-                        ? t('mediascan', 'media.evidence.by', { who: row.decidedBy.handle })
-                        : t('mediascan', 'media.evidence.bySystem')}
-                    </span>
-                  </>
-                )}
-              </td>
-              <td data-label={t('mediascan', 'media.evidence.bytes')}>{t('mediascan', `media.evidence.bytes.${row.bytes}`)}</td>
-              <td data-label={t('mediascan', 'media.evidence.hold')}>
-                {row.holdReference && row.holdUntil ? (
-                  <>
-                    <span className="mono">
-                      {authorityLabel(row.holdAuthority, t)} {row.holdReference}
-                    </span>
-                    <br />
-                    <span className="muted">{date(row.holdUntil)}</span>
-                  </>
-                ) : (
-                  <span className="muted">{t('mediascan', 'media.evidence.none')}</span>
-                )}
-              </td>
-              <td data-label={t('mediascan', 'media.evidence.retain')}>{row.retainUntil ? date(row.retainUntil) : ''}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      <p className="hint">{t('mediascan', 'media.evidence.help')}</p>
+      <div className="media-evidence-list">
+        {rows.map((row) => (
+          <Manifest key={row.evidenceId} row={row} />
+        ))}
+      </div>
+      <Text as="p" size="sm" color="muted">
+        {t('mediascan', 'media.evidence.help')}
+      </Text>
     </>
   );
 }
@@ -500,36 +560,51 @@ export function Evidence({ rows }: { rows: EvidenceRow[] }) {
 export function Status({ overview }: { overview: MediaOverview }) {
   const { t, locale } = useTranslate();
   const { scanner, counts } = overview;
+  const setting = (key: string, on: boolean) => ({
+    key,
+    label: (
+      <Text variant="mono" size="sm">
+        {key}
+      </Text>
+    ),
+    value: (
+      <>
+        {t('mediascan', on ? 'media.on' : 'media.off')} <Link href={adminPaths.settings}>{t('mediascan', 'media.settingsLink')}</Link>
+      </>
+    ),
+  });
   return (
-    <dl className="kv" data-testid="media-status-detail">
-      <dt>{t('mediascan', 'media.status.scanner')}</dt>
-      <dd>
-        {scanner.kind === 'provider'
-          ? t('mediascan', 'media.scanner.provider', { name: scanner.providers.join(', ') })
-          : scanner.kind === 'local-only'
-            ? t('mediascan', 'media.scanner.local')
-            : `${t('mediascan', 'media.scanner.none')}. ${t('mediascan', 'media.status.noProvider')}`}
-      </dd>
-      <dt>{t('mediascan', 'media.status.list')}</dt>
-      <dd>{translatePlural(locale, 'mediascan', 'media.status.listValue', counts.hashes)}</dd>
-      <dt className="mono">uploads.enabled</dt>
-      <dd>
-        {t('mediascan', overview.uploadsEnabled ? 'media.on' : 'media.off')}{' '}
-        <a href={adminPaths.settings}>{t('mediascan', 'media.settingsLink')}</a>
-      </dd>
-      <dt className="mono">remote_media.enabled</dt>
-      <dd>
-        {t('mediascan', overview.remoteMediaEnabled ? 'media.on' : 'media.off')}{' '}
-        <a href={adminPaths.settings}>{t('mediascan', 'media.settingsLink')}</a>
-      </dd>
-      <dt>{t('mediascan', 'media.status.quarantined')}</dt>
-      <dd>{counts.quarantined}</dd>
-      <dt>{t('mediascan', 'media.status.failed')}</dt>
-      <dd>{counts.failed24h}</dd>
-      <dt>{t('mediascan', 'media.status.blocked')}</dt>
-      <dd>{counts.blocked}</dd>
-      <dt>{t('mediascan', 'media.status.window')}</dt>
-      <dd>{translatePlural(locale, 'mediascan', 'media.status.windowValue', overview.undecidedPurgeDays)}</dd>
-    </dl>
+    <Card.Root variant="outlined" padding="sm" className="media-status">
+      <FactList
+        data-testid="media-status-detail"
+        items={[
+          {
+            key: 'scanner',
+            label: t('mediascan', 'media.status.scanner'),
+            value:
+              scanner.kind === 'provider'
+                ? t('mediascan', 'media.scanner.provider', { name: scanner.providers.join(', ') })
+                : scanner.kind === 'local-only'
+                  ? t('mediascan', 'media.scanner.local')
+                  : `${t('mediascan', 'media.scanner.none')}. ${t('mediascan', 'media.status.noProvider')}`,
+          },
+          {
+            key: 'list',
+            label: t('mediascan', 'media.status.list'),
+            value: translatePlural(locale, 'mediascan', 'media.status.listValue', counts.hashes),
+          },
+          setting('uploads.enabled', overview.uploadsEnabled),
+          setting('remote_media.enabled', overview.remoteMediaEnabled),
+          { key: 'quarantined', label: t('mediascan', 'media.status.quarantined'), value: counts.quarantined },
+          { key: 'failed', label: t('mediascan', 'media.status.failed'), value: counts.failed24h },
+          { key: 'blocked', label: t('mediascan', 'media.status.blocked'), value: counts.blocked },
+          {
+            key: 'window',
+            label: t('mediascan', 'media.status.window'),
+            value: translatePlural(locale, 'mediascan', 'media.status.windowValue', overview.undecidedPurgeDays),
+          },
+        ]}
+      />
+    </Card.Root>
   );
 }

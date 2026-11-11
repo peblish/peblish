@@ -1,0 +1,29 @@
+/* The Bans tab: the find form, the confirmation card, the bans table in an outlined card, the Lift panel. Layout only; the look is Mux UI's. */
+@layer app {
+  .bans-page {
+    max-width: 1180px;
+    display: flex;
+    flex-direction: column;
+    gap: var(--muxui-semantic-layout-content-gap);
+  }
+  .bans-page > h1 {
+    margin: 0;
+  }
+  .bans-find {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--muxui-semantic-layout-control-gap);
+  }
+  .bans-find > :first-child {
+    inline-size: min(28rem, 100%);
+  }
+  /* Mux Table has no breakpoint: on a narrow screen the table scrolls inside its card. */
+  .bans-table {
+    overflow-x: auto;
+  }
+  .bans-table .muxui-table {
+    inline-size: 100%;
+    min-inline-size: 52rem;
+  }
+}

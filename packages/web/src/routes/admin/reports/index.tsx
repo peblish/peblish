@@ -1,6 +1,13 @@
 import { removeFromReportAs, resolveReportsAs, routeReportsAs } from '@peblish/core/reports/actions';
 import type { ReportTarget } from '@peblish/core/reports/types';
 import { Uuid } from '@peblish/schema/ids';
+import { Button } from '@peblish/ui/components/button';
+import { EmptyState } from '@peblish/ui/components/empty-state';
+import { LinkTabs } from '@peblish/ui/components/link-tabs';
+import { Notice } from '@peblish/ui/components/notice';
+import { Link } from '@peblish/ui/components/link';
+import { Select } from '@peblish/ui/components/select';
+import { Text } from '@peblish/ui/components/text';
 import { createFileRoute, redirect } from '@tanstack/react-router';
 import { type } from 'arktype';
 import { useTranslate } from '../../../i18n/use-translate.ts';
@@ -28,6 +35,7 @@ const Search = type({
   'sort?': 'string',
   'cursor?': SearchText,
   'show?': 'string',
+  'details?': 'string',
   'error?': 'string',
 });
 
@@ -98,68 +106,80 @@ function Queue() {
   const search = Route.useSearch();
   if (data.access !== 'ok') {
     return (
-      <main className="rq-page">
-        <h1>{t('reports', 'queue.title')}</h1>
-        <p role="alert">{t('reports', 'queue.notStaff')}</p>
+      <main className="pb-page rq-page">
+        <Text as="h1" variant="heading" size="sm">
+          {t('reports', 'queue.title')}
+        </Text>
+        <Notice tone="danger" role="alert">
+          {t('reports', 'queue.notStaff')}
+        </Notice>
       </main>
     );
   }
-  const view: QueueView = { tab: data.tab, community: data.community, sort: data.sort, cursor: null, show: search.show ?? null };
+  const view: QueueView = {
+    tab: data.tab,
+    community: data.community,
+    sort: data.sort,
+    cursor: null,
+    show: search.show ?? null,
+    details: search.details ?? null,
+  };
   const tabs = data.admin
     ? (['open', 'escalated', 'admins', 'resolved', 'dismissed'] as const)
     : (['open', 'escalated', 'resolved', 'dismissed'] as const);
   const error = asReportError(search.error);
   return (
-    <main className="rq-page">
-      <h1>{t('reports', 'queue.title')}</h1>
-      <nav className="rq-tabs" aria-label={t('reports', 'queue.tabs')}>
-        {tabs.map((tab) => (
-          <a key={tab} href={queueHref(view, { tab, cursor: null, show: null })} aria-current={tab === data.tab ? 'page' : undefined}>
-            {t('reports', `queue.tab.${tab}`)}
-          </a>
-        ))}
-      </nav>
+    <main className="pb-page rq-page">
+      <Text as="h1" variant="heading" size="sm">
+        {t('reports', 'queue.title')}
+      </Text>
+      <LinkTabs
+        aria-label={t('reports', 'queue.tabs')}
+        items={tabs.map((tab) => ({
+          to: queueHref(view, { tab, cursor: null, show: null, details: null }),
+          label: t('reports', `queue.tab.${tab}`),
+          active: tab === data.tab,
+        }))}
+      />
       <form method="get" action="/admin/reports" className="rq-filter">
         <input type="hidden" name="tab" value={data.tab} />
-        <label>
-          {t('reports', 'queue.community')}
-          <select name="community" defaultValue={data.community ?? ''}>
-            <option value="">{t('reports', 'queue.community.all')}</option>
-            {data.communities.map((community) => (
-              <option key={community.id} value={community.id}>
-                !{community.handle}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          {t('reports', 'queue.sort')}
-          <select name="sort" defaultValue={data.sort}>
-            {(['oldest', 'newest', 'most'] as const).map((sort) => (
-              <option key={sort} value={sort}>
-                {t('reports', `queue.sort.${sort}`)}
-              </option>
-            ))}
-          </select>
-        </label>
-        <button type="submit" className="pb-linkbutton">
+        <Select
+          name="community"
+          size="sm"
+          label={t('reports', 'queue.community')}
+          defaultValue={data.community ?? ''}
+          items={[
+            { id: '', label: t('reports', 'queue.community.all') },
+            ...data.communities.map((community) => ({ id: community.id, label: `!${community.handle}` })),
+          ]}
+        />
+        <Select
+          name="sort"
+          size="sm"
+          label={t('reports', 'queue.sort')}
+          defaultValue={data.sort}
+          items={(['oldest', 'newest', 'most'] as const).map((sort) => ({ id: sort, label: t('reports', `queue.sort.${sort}`) }))}
+        />
+        <Button type="submit" variant="neutral" size="sm">
           {t('reports', 'queue.apply')}
-        </button>
+        </Button>
       </form>
       {error && (
-        <p className="rq-error" role="alert">
+        <Notice tone="danger" role="alert">
           {t('reports', errorKey(error))}
-        </p>
+        </Notice>
       )}
       {data.groups.length === 0 ? (
-        <p className="rq-empty">{t('reports', data.tab === 'open' ? 'queue.empty.open' : 'queue.empty.other')}</p>
+        <EmptyState title={t('reports', data.tab === 'open' ? 'queue.empty.open' : 'queue.empty.other')} />
       ) : (
         <QueueTable groups={data.groups} tab={data.tab} admin={data.admin} view={view} now={data.now} />
       )}
       {data.next && (
-        <p>
-          <a href={queueHref(view, { cursor: data.next, show: null })}>{t('reports', 'queue.more')}</a>
-        </p>
+        <Text as="p">
+          <Link href={queueHref(view, { cursor: data.next, show: null, details: null })} rel="next">
+            {t('reports', 'queue.more')}
+          </Link>
+        </Text>
       )}
     </main>
   );
