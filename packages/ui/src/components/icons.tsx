@@ -1,80 +1,74 @@
-import type { SVGProps } from 'react';
+import {
+  ArrowBigDown,
+  ArrowBigUp,
+  ChevronDown as LucideChevronDown,
+  ChevronRight as LucideChevronRight,
+  Compass,
+  Flame,
+  Globe,
+  House,
+  Image,
+  Inbox,
+  Link,
+  LogIn,
+  MapPin,
+  Menu,
+  Network,
+  Plus,
+  Search,
+  Shield,
+  ShieldCheck,
+  Text,
+  UserPlus,
+  Users,
+  X,
+  type LucideIcon,
+  type LucideProps,
+} from 'lucide-react';
 
-// Small inline icons. Drawn here rather than typed as characters: a glyph outside the Latin
-// font slices (the vote triangles, arrows) makes the browser fetch the 876 kB full Inter file.
+// Icons from Lucide, the set Mux UI draws its own with, imported by name so the bundle keeps
+// only these. Drawn as SVG rather than typed as characters: a glyph outside the Latin font
+// slices (the vote triangles, arrows) makes the browser fetch the 876 kB full Inter file.
 
-function Icon({ children, ...props }: SVGProps<SVGSVGElement>) {
-  return (
-    <svg
-      viewBox="0 0 16 16"
-      width="1em"
-      height="1em"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.5"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-      focusable="false"
-      {...props}
-    >
-      {children}
-    </svg>
-  );
+export type IconProps = Omit<LucideProps, 'ref'>;
+
+/**
+ * One icon: 1em square (so it follows the text or the CSS around it, as Mux's Sidebar does with
+ * its icon class), stroked in currentColor, and hidden from assistive technology unless the
+ * caller names it (Lucide adds aria-hidden when no aria-* prop, role or title is given). `defaults` are props the glyph always starts from, such as a fill.
+ */
+function icon(Glyph: LucideIcon, defaults: IconProps = {}) {
+  const Icon = (props: IconProps) => <Glyph size="1em" focusable="false" {...defaults} {...props} />;
+  Icon.displayName = Glyph.displayName;
+  return Icon;
 }
 
-type IconProps = SVGProps<SVGSVGElement>;
+/** The vote arrows, filled: the colour says whether the vote is cast. Also the move up and down buttons. */
+export const ArrowUp = icon(ArrowBigUp, { fill: 'currentColor' });
+export const ArrowDown = icon(ArrowBigDown, { fill: 'currentColor' });
+export const TextIcon = icon(Text);
+export const LinkIcon = icon(Link);
+export const ImageIcon = icon(Image);
+export const MenuIcon = icon(Menu);
+export const CloseIcon = icon(X);
+export const PlusIcon = icon(Plus);
+export const ChevronRight = icon(LucideChevronRight);
+export const ChevronDown = icon(LucideChevronDown);
 
-/** A filled triangle: the vote arrows. */
-export const ArrowUp = (props: IconProps) => (
-  <Icon fill="currentColor" stroke="none" {...props}>
-    <path d="M8 3 14 12H2z" />
-  </Icon>
-);
-export const ArrowDown = (props: IconProps) => (
-  <Icon fill="currentColor" stroke="none" {...props}>
-    <path d="M8 13 2 4h12z" />
-  </Icon>
-);
-export const TextIcon = (props: IconProps) => (
-  <Icon {...props}>
-    <path d="M2.5 4h11M2.5 8h11M2.5 12h7" />
-  </Icon>
-);
-export const LinkIcon = (props: IconProps) => (
-  <Icon {...props}>
-    <path d="M6.5 9.5a3 3 0 0 0 4.2 0l2.3-2.3a3 3 0 0 0-4.2-4.2l-.8.8M9.5 6.5a3 3 0 0 0-4.2 0L3 8.8A3 3 0 0 0 7.2 13l.8-.8" />
-  </Icon>
-);
-export const ImageIcon = (props: IconProps) => (
-  <Icon {...props}>
-    <rect x="2" y="3" width="12" height="10" rx="1.5" />
-    <circle cx="6" cy="7" r="1" />
-    <path d="m3 12 3.5-3.5L9 11l2-2 3 3" />
-  </Icon>
-);
-export const MenuIcon = (props: IconProps) => (
-  <Icon {...props}>
-    <path d="M2.5 4h11M2.5 8h11M2.5 12h11" />
-  </Icon>
-);
-export const CloseIcon = (props: IconProps) => (
-  <Icon {...props}>
-    <path d="m3.5 3.5 9 9M12.5 3.5l-9 9" />
-  </Icon>
-);
-export const PlusIcon = (props: IconProps) => (
-  <Icon {...props}>
-    <path d="M8 3v10M3 8h10" />
-  </Icon>
-);
-export const ChevronRight = (props: IconProps) => (
-  <Icon {...props}>
-    <path d="m6 3 5 5-5 5" />
-  </Icon>
-);
-export const ChevronDown = (props: IconProps) => (
-  <Icon {...props}>
-    <path d="m3 6 5 5 5-5" />
-  </Icon>
-);
+// The sidebar's navigation (shell/sidebar.tsx, mock direction A where it shows one). Each fits
+// Sidebar.NavItem's `icon` slot, which passes a class name and sizes it.
+export const HouseIcon = icon(House);
+export const MapPinIcon = icon(MapPin);
+export const GlobeIcon = icon(Globe);
+export const FlameIcon = icon(Flame);
+export const ShieldIcon = icon(Shield);
+export const InboxIcon = icon(Inbox);
+export const ShieldCheckIcon = icon(ShieldCheck);
+export const UsersIcon = icon(Users);
+export const NetworkIcon = icon(Network);
+export const CompassIcon = icon(Compass);
+export const SearchIcon = icon(Search);
+
+// The phone bar's signed-out actions when they collapse to icons (shell/account.tsx).
+export const LogInIcon = icon(LogIn);
+export const UserPlusIcon = icon(UserPlus);

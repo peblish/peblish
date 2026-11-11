@@ -1,5 +1,6 @@
 import type { SessionView } from '@peblish/schema/session';
 import { Avatar } from '@peblish/ui/components/avatar';
+import { LogInIcon, UserPlusIcon } from '@peblish/ui/components/icons';
 import { Link } from '@peblish/ui/components/link';
 import { Menu } from '@peblish/ui/components/menu';
 import { useRouter } from '@tanstack/react-router';
@@ -24,9 +25,14 @@ export function Account({ session }: { session: SessionView | null }) {
   if (!session) {
     return (
       <nav className="pb-account" aria-label={t('shell', 'account.menu')}>
-        <Link href="/auth/sign-in">{t('shell', 'account.signIn')}</Link>
+        {/* On the narrowest phone bars the labels give way to the icons (shell.css); the names stay. */}
+        <Link className="pb-sign-in" href="/auth/sign-in">
+          <LogInIcon />
+          <span className="pb-action__label">{t('shell', 'account.signIn')}</span>
+        </Link>
         <Link className="pb-cta" href="/auth/sign-up">
-          {t('shell', 'account.signUp')}
+          <UserPlusIcon />
+          <span className="pb-action__label">{t('shell', 'account.signUp')}</span>
         </Link>
       </nav>
     );

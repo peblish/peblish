@@ -121,6 +121,9 @@ importers:
       '@peblish/schema':
         specifier: workspace:*
         version: link:../schema
+      lucide-react:
+        specifier: 1.37.0
+        version: 1.37.0(react@19.2.9)
     devDependencies:
       '@types/react':
         specifier: 19.2.17

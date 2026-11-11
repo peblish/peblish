@@ -93,7 +93,7 @@ export function Shell({ children }: { children: ReactNode }) {
           </section>
         </header>
         <div className="pb-app__side">
-          <Sidebar.Root className="pb-side" aria-label={t('shell', 'sidebar.label')}>
+          <Sidebar.Root className="pb-side" hideBorder aria-label={t('shell', 'sidebar.label')}>
             <Sidebar.Header>
               <Brand siteName={shell.siteName} />
             </Sidebar.Header>

@@ -47,7 +47,7 @@ export function CreatePost() {
         }}
       >
         <PlusIcon />
-        <span>{t('shell', 'create')}</span>
+        <span className="pb-action__label">{t('shell', 'create')}</span>
       </a>
       {open && (
         <Suspense fallback={null}>

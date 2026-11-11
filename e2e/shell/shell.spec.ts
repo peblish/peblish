@@ -11,6 +11,18 @@ test('the sidebar holds the feeds, the directory links and the site pages, and t
   const side = page.getByRole('complementary', { name: 'Sidebar' });
   const feeds = side.getByRole('navigation', { name: 'Feeds' });
   for (const name of ['Local', 'All', 'Popular']) await expect(feeds.getByRole('link', { name })).toBeVisible();
+  // Every nav item draws its icon, so Mux adds no letter mark: a link's text is its label alone.
+  // (Nested community rows lead with an Avatar of the initial instead, hidden from the name.)
+  const labels = { Feeds: ['Local', 'All', 'Popular'], Communities: ['Browse all communities', 'Find by handle'] };
+  for (const [list, names] of Object.entries(labels)) {
+    const items = side.getByRole('navigation', { name: list }).locator('a.muxui-sidebar__nav-link:not(.muxui-sidebar__nav-child-link)');
+    await expect(items).toHaveCount(names.length);
+    for (const [index, name] of names.entries()) {
+      await expect(items.nth(index)).toHaveAccessibleName(name);
+      expect(await items.nth(index).textContent()).toBe(name);
+      await expect(items.nth(index).locator('svg.muxui-sidebar__nav-icon')).toHaveCount(1);
+    }
+  }
   // Subscribed and Moderating need a signed-in viewer.
   await expect(feeds.getByRole('link', { name: 'Subscribed' })).toHaveCount(0);
   const communities = side.getByRole('navigation', { name: 'Communities' });
@@ -24,12 +36,12 @@ test('the sidebar holds the feeds, the directory links and the site pages, and t
   await expect(page.getByRole('banner').getByRole('link', { name: 'Sign up' })).toHaveAttribute('href', '/auth/sign-up');
   await expect(page.getByRole('link', { name: 'Create post' })).toHaveCount(0);
 
-  // The sign-in form is narrower than the column, and sits in the middle of the width the sidebar leaves.
+  // The sign-in card is narrower than the column, and sits in the middle of the width the sidebar leaves.
   await page.getByRole('banner').getByRole('link', { name: 'Sign in' }).click();
   await page.waitForURL('**/auth/sign-in');
   await page.locator('html[data-hydrated="1"]').waitFor();
   const sideBox = (await side.boundingBox())!;
-  const main = (await page.getByRole('main').boundingBox())!;
+  const main = (await page.getByRole('main').locator('.muxui-card').boundingBox())!;
   const rest = { left: sideBox.x + sideBox.width, right: 1440 };
   const spaceLeft = main.x - rest.left;
   const spaceRight = rest.right - (main.x + main.width);
