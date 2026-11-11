@@ -41,6 +41,14 @@
     outline: none;
   }
 
+  /* Mux clears a selected tab's outline and draws its focus outline only once a script marks the tab
+     focused (data-muxui-state-focus-visible). A link is focused before hydration, with scripts off and
+     as a router link too, so :focus-visible draws that same outline on the current tab. */
+  .pb-link-tabs .muxui-tabs__tab[data-muxui-state-selected]:focus-visible {
+    outline: 2px solid var(--muxui-semantic-focus-ring);
+    outline-offset: 2px;
+  }
+
   .pb-link-tabs [data-muxui-tabs-variant='segment'] .muxui-tabs__tab {
     /* Mux's segment tabs never shrink (flex: 0 0 auto); these may, so a long label wraps. */
     flex: 0 1 auto;

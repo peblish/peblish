@@ -1,4 +1,4 @@
-import { expect, test, type Locator, type Page } from '@playwright/test';
+import { expect, test, type Browser, type Locator, type Page } from '@playwright/test';
 import { prefsCookie, skipWithoutKit } from '../support/kit.ts';
 import { gotoHydrated } from '../support/route-marker.ts';
 
@@ -97,5 +97,66 @@ for (const scheme of ['light', 'dark'] as const) {
       expect((await look(links.nth(1))).color, `${variant}: hover keeps the tab colour`).toBe((await look(tabs.nth(2))).color);
       await page.locator('body').click({ position: { x: 1, y: 1 } });
     }
+  });
+}
+
+const variants = ['underline', 'segment'] as const;
+
+/** A kit page in its own context: a scheme, and optionally scripts off or forced colours. */
+async function kit(
+  browser: Browser,
+  baseURL: string,
+  scheme: 'light' | 'dark',
+  options: { javaScriptEnabled?: boolean; forcedColors?: 'active' } = {},
+) {
+  const context = await browser.newContext({ viewport: { width: 1280, height: 800 }, ...options });
+  await context.addCookies([{ ...prefsCookie('card', scheme), url: baseURL }]);
+  const page = await context.newPage();
+  if (options.javaScriptEnabled === false) await page.goto('/kit');
+  else await gotoHydrated(page, '/kit');
+  return page;
+}
+const linksOf = (page: Page, variant: string) => page.getByTestId(`kit-tabs-${variant}`).getByRole('navigation').getByRole('link');
+
+/** What draws a focus ring on a tab: its outline and its shadow. */
+const ringOf = (tab: Locator) =>
+  tab.evaluate((element) => {
+    const style = getComputedStyle(element);
+    return { outline: `${style.outlineStyle} ${style.outlineWidth} ${style.outlineColor} ${style.outlineOffset}`, shadow: style.boxShadow };
+  });
+
+/** Focuses a tab from the keyboard (Tab from the element before it), so it matches :focus-visible. */
+async function keyboardFocus(page: Page, tab: Locator) {
+  await tab.focus();
+  await page.keyboard.press('Shift+Tab');
+  await page.keyboard.press('Tab');
+  await expect(tab).toBeFocused();
+  await settle(page);
+}
+
+// Keyboard focus rings every tab, the current one too, and the ring does not wait for scripts: with
+// scripts on Mux marks a focused link itself, with scripts off (or a router link) only :focus-visible does.
+for (const scheme of ['light', 'dark'] as const) {
+  test(`keyboard focus rings every LinkTab, the same with scripts on and off (${scheme})`, async ({ browser, baseURL }) => {
+    const pages = { on: await kit(browser, baseURL!, scheme), off: await kit(browser, baseURL!, scheme, { javaScriptEnabled: false }) };
+    for (const variant of variants)
+      for (const [which, index] of [
+        ['current', 0],
+        ['unselected', 1],
+      ] as const) {
+        const rings: Record<string, Awaited<ReturnType<typeof ringOf>>> = {};
+        for (const [scripts, page] of Object.entries(pages)) {
+          const tab = linksOf(page, variant).nth(index);
+          const rest = await ringOf(tab);
+          await keyboardFocus(page, tab);
+          rings[scripts] = await ringOf(tab);
+          const label = `${variant}, ${which} tab, scripts ${scripts}`;
+          // A ring is a 2px outline, or a shadow the tab does not have at rest (the segment's resting elevation is not one).
+          const outlined = !rings[scripts]!.outline.startsWith('none') && parseFloat(rings[scripts]!.outline.split(' ')[1]!) >= 2;
+          expect(outlined || rings[scripts]!.shadow !== rest.shadow, `${label}: focus draws a ring`).toBe(true);
+        }
+        expect(rings.off, `${variant}, ${which} tab: the same ring without scripts`).toEqual(rings.on);
+      }
+    await Promise.all(Object.values(pages).map((page) => page.context().close()));
   });
 }
