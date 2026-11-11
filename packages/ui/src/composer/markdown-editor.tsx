@@ -1,5 +1,6 @@
 import { useId, useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { Card } from '../components/card.tsx';
+import { FieldAlert } from '../components/field-problem.tsx';
 import { IconButton } from '../components/icon-button.tsx';
 import { Notice } from '../components/notice.tsx';
 import { Prose } from '../components/prose.tsx';
@@ -214,7 +215,7 @@ export function MarkdownEditor({
             // React Aria's FieldError, under TextArea.Error, drops a role, so the alert is inside it
             // (a Text would recolour the message).
             <TextArea.Error id={errorId}>
-              <span role="alert">{errorMessage}</span>
+              <FieldAlert>{errorMessage}</FieldAlert>
             </TextArea.Error>
           )}
         </TextArea.Root>
