@@ -7,6 +7,7 @@ import { Button } from '@peblish/ui/components/button';
 import { Checkbox } from '@peblish/ui/components/checkbox';
 import { Group } from '@peblish/ui/components/group';
 import { Link } from '@peblish/ui/components/link';
+import { Notice } from '@peblish/ui/components/notice';
 import { Select } from '@peblish/ui/components/select';
 import { Separator } from '@peblish/ui/components/separator';
 import { Text } from '@peblish/ui/components/text';
@@ -105,11 +106,13 @@ function SignUp() {
 function UnderSixteen({ host }: { host: string }) {
   const { t } = useTranslate();
   return (
-    <div role="alert" className="auth-form">
+    <div className="auth-form">
       <Text as="h1" variant="heading" size="sm">
         {t('auth', 'under16.title')}
       </Text>
-      <Text as="p">{t('auth', 'under16.body', { host })}</Text>
+      <Notice tone="warning" role="alert">
+        {t('auth', 'under16.body', { host })}
+      </Notice>
       <Text as="p" size="sm" color="muted">
         {t('auth', 'under16.retry')}
       </Text>
@@ -140,11 +143,13 @@ function SignUpForm() {
         autoComplete="off"
         hint={
           invite?.status === 'valid' && invite.inviter ? (
-            <span className="auth-tone auth-tone--ok">
+            <Text size="sm" className="auth-tone--ok">
               {t('auth', 'signUp.inviteValid', { inviter: invite.inviter.handle, left: invite.usesLeft, max: invite.maxUses })}
-            </span>
+            </Text>
           ) : invite && invite.status !== 'valid' ? (
-            <span className="auth-tone auth-tone--error">{t('auth', `error.invite.${invite.status}`)}</span>
+            <Text size="sm" className="auth-tone--error">
+              {t('auth', `error.invite.${invite.status}`)}
+            </Text>
           ) : undefined
         }
       />

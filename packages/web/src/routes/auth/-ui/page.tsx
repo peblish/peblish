@@ -14,11 +14,6 @@ export const authHead = () => ({ links: [{ rel: 'stylesheet', href: authCss }] }
  */
 export const SearchText = type('string | number').pipe((value) => String(value));
 
-/** A plain column (narrow, or `wide` for tables): settings, admin and other pages that are not one task. */
-export function AuthPage({ children, wide = false }: { children: ReactNode; wide?: boolean }) {
-  return <main className={wide ? 'auth-page wide' : 'auth-page'}>{children}</main>;
-}
-
 /**
  * One task on its own page (sign in, sign up, two-factor, reset, verify, an invite): an outlined
  * Mux Card centred in the page, its parts stacked with Mux's group gap.

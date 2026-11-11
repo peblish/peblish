@@ -81,5 +81,11 @@
     "match": "<span role=\"alert\">",
     "anchor": "FieldAlert",
     "reason": "A field's error must be announced when it appears, and Mux's error parts drop a role prop, so the alert role sits on one inner span that every field wrapper shares."
+  },
+  {
+    "file": "packages/web/src/routes/auth/-ui/qr.tsx",
+    "rule": "raw-element",
+    "match": "<svg>",
+    "reason": "The two-factor QR code is generated data drawn as an svg, not an icon; Mux has no QR component, and it must stay dark on light to scan."
   }
 ]

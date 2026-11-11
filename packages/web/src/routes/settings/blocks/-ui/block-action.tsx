@@ -22,7 +22,8 @@ export function BlockAction({
   const { t } = useTranslate();
   const label = t('blocks', kind === 'person' ? 'action.person' : 'action.community');
   return (
-    <BlockForm kind={kind} inline fields={{ intent: 'add', kind, target, back }}>
+    // Every slot is a flex row of actions, so the form is one item in it and needs no style.
+    <BlockForm kind={kind} fields={{ intent: 'add', kind, target, back }}>
       <Button type="submit" variant={look === 'link' ? 'ghost' : 'neutral'} size={look === 'link' ? 'sm' : 'md'}>
         {label}
       </Button>

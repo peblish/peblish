@@ -80,8 +80,8 @@ function Verify() {
       {t('auth', 'verify.signInForLink')} <Link href="/auth/sign-in">{t('auth', 'verify.signIn')}</Link>
     </Text>
   );
-  const title = (key: MessageKey<'auth'>, tone?: 'ok' | 'warn') => (
-    <Text as="h1" variant="heading" size="sm" className={tone ? `auth-tone auth-tone--${tone}` : undefined}>
+  const title = (key: MessageKey<'auth'>) => (
+    <Text as="h1" variant="heading" size="sm">
       {t('auth', key)}
     </Text>
   );
@@ -91,7 +91,15 @@ function Verify() {
         {state === 'pending' && (
           <>
             {title('verify.title')}
-            <Text as="p">{rich(t('auth', 'verify.sent'), { email: <b>{email}</b> })}</Text>
+            <Text as="p">
+              {rich(t('auth', 'verify.sent'), {
+                email: (
+                  <Text variant="label" size="md">
+                    {email}
+                  </Text>
+                ),
+              })}
+            </Text>
             <Notice tone="warning" title={t('auth', 'verify.pending')}>
               {t('auth', 'verify.pendingBody')}
             </Notice>
@@ -105,8 +113,8 @@ function Verify() {
         )}
         {state === 'verified' && (
           <>
-            {title('verify.verifiedTitle', 'ok')}
-            <Text as="p">{t('auth', 'verify.verifiedBody')}</Text>
+            {title('verify.verifiedTitle')}
+            <Notice tone="success">{t('auth', 'verify.verifiedBody')}</Notice>
             <Text as="p">
               <Link href="/">{t('auth', 'verify.continue')}</Link>
             </Text>
@@ -123,8 +131,8 @@ function Verify() {
         )}
         {(state === 'expired' || state === 'invalid') && (
           <>
-            {title(state === 'expired' ? 'verify.expiredTitle' : 'verify.invalidTitle', 'warn')}
-            <Text as="p">{t('auth', state === 'expired' ? 'verify.expiredBody' : 'verify.invalidBody')}</Text>
+            {title(state === 'expired' ? 'verify.expiredTitle' : 'verify.invalidTitle')}
+            <Notice tone="warning">{t('auth', state === 'expired' ? 'verify.expiredBody' : 'verify.invalidBody')}</Notice>
             {signedIn ? resend : signInForLink}
           </>
         )}
