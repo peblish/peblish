@@ -1,6 +1,6 @@
 import { createFileRoute } from '@tanstack/react-router';
 import { useRouteHydrated } from '../../../shell/hydration.ts';
-import { authHead } from '../../auth/-ui/page.tsx';
+import { settingsHead } from '../account/-nav.tsx';
 import { loadBlocks } from './-load.ts';
 import { handleBlocksPost } from './-post.ts';
 import { parseBlocksSearch, type BlockTab } from './-tabs.ts';
@@ -14,7 +14,7 @@ export const Route = createFileRoute('/settings/blocks/')({
   validateSearch: parseBlocksSearch,
   loaderDeps: ({ search }) => ({ tab: search.tab ?? ('people' as BlockTab), just: search.just }),
   loader: ({ deps }) => loadBlocks({ data: { tab: deps.tab, ...(deps.just ? { just: deps.just } : {}) } }),
-  head: () => ({ links: [...authHead().links, { rel: 'stylesheet', href: blocksCss }] }),
+  head: () => ({ links: [...settingsHead().links, { rel: 'stylesheet', href: blocksCss }] }),
   component: Blocks,
   server: { handlers: { POST: ({ request }) => handleBlocksPost(request) } },
 });

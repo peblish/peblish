@@ -47,6 +47,12 @@ async function sameSession(browser: Browser, page: Page, options: { javaScriptEn
 
 const tab = (page: Page, name: string) =>
   page.getByRole('navigation', { name: 'Kinds of block' }).getByRole('link', { name: new RegExp(`^${name}`) });
+/** The rows of the "Blocked <kind>" table: the ones with a row header, so not the column headers. */
+const blocked = (page: Page, kind: string) =>
+  page
+    .getByRole('grid', { name: `Blocked ${kind}` })
+    .getByRole('row')
+    .filter({ has: page.getByRole('rowheader') });
 /**
  * Walks All by New page by page and reports which of `titles` it saw. The lane database is shared
  * with the other specs, so a seeded post is not always on the first page: the walk goes on until
@@ -110,7 +116,7 @@ test('a person is blocked by handle, listed with the date, and unblocked from th
   await gotoHydrated(page, page.url());
   expect(log.hydrationProblems()).toEqual([]);
   await expect(tab(page, 'People')).toContainText('1');
-  const row = page.getByRole('list', { name: 'Blocked People' }).getByRole('listitem');
+  const row = blocked(page, 'People');
   await expect(row).toContainText(seed.noisy.name);
   await expect(row).toContainText('Blocked ');
 
@@ -125,13 +131,11 @@ test('a person is blocked by handle, listed with the date, and unblocked from th
     await page.getByRole('button', { name: 'Block', exact: true }).click();
     await expect(page.getByRole('status')).toBeVisible();
   }
-  await expect(page.getByRole('list', { name: 'Blocked People' }).getByRole('listitem')).toHaveCount(1);
-  // The page reloads its data after each add; a click that lands in the swap is repeated.
-  const unblock = page.getByRole('button', { name: `Unblock @${seed.noisy.name}` });
-  await expect(async () => {
-    if (await unblock.count()) await unblock.click();
-    await expect(page.getByText('You have not blocked anyone.')).toBeVisible({ timeout: 1_500 });
-  }).toPass();
+  await expect(blocked(page, 'People')).toHaveCount(1);
+  // From the page as the settings column links it (no ?tab=), one Unblock empties the list in place.
+  await gotoHydrated(page, '/settings/blocks');
+  await page.getByRole('button', { name: `Unblock @${seed.noisy.name}` }).click();
+  await expect(page.getByText('You have not blocked anyone.')).toBeVisible();
 });
 
 test('without JavaScript the same forms block and unblock', async ({ page, browser }) => {
@@ -142,7 +146,7 @@ test('without JavaScript the same forms block and unblock', async ({ page, brows
   await plain.getByLabel('Block a community by handle').fill(`!${seed.remoteCommunity.handle}`);
   await plain.getByRole('button', { name: 'Block', exact: true }).click();
   await expect(plain.getByRole('status')).toContainText(`Blocked !${seed.remoteCommunity.handle}.`);
-  await expect(plain.getByRole('list', { name: 'Blocked Communities' }).getByRole('listitem')).toHaveCount(1);
+  await expect(blocked(plain, 'Communities')).toHaveCount(1);
   await plain.getByRole('button', { name: `Unblock !${seed.remoteCommunity.handle}` }).click();
   await expect(plain.getByText('You have not blocked any communities.')).toBeVisible();
 
@@ -214,7 +218,7 @@ test('an instance block hides what lives there', async ({ page }) => {
   await gotoHydrated(page, '/settings/blocks?tab=instances');
   await page.getByLabel('Block an instance by host').fill(`https://${seed.remoteHost}/`);
   await page.getByRole('button', { name: 'Block', exact: true }).click();
-  const row = page.getByRole('list', { name: 'Blocked Instances' }).getByRole('listitem');
+  const row = blocked(page, 'Instances');
   await expect(row).toContainText(seed.remoteHost);
   await expect(row).toContainText('hides 2 people, 1 community');
   // The remote post is newer than the friend's, so the page with the friend's post would show it.
