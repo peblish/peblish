@@ -27,6 +27,12 @@
     inline-size: 100%;
     min-inline-size: 48rem;
   }
+  /* Once the Controls link has had focus, Mux Table (React Aria's grid) makes its cell the table's
+     tab stop, and the link covers most of that cell: room beside the link keeps the cell's own
+     target at least 24px wide (WCAG 2.5.8, axe's target-size). */
+  .peers-controls-link {
+    margin-inline-end: var(--muxui-semantic-layout-content-gap);
+  }
   .peers-state {
     display: inline-flex;
     flex-wrap: wrap;
