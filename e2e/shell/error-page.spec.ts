@@ -45,6 +45,21 @@ test('an unknown address still answers 404', async ({ page }) => {
   await expect(page.getByRole('heading', { name: 'Page not found' })).toBeVisible();
 });
 
+test('an unknown community answers 404 with its own page, and a remote one offers the lookup on its server', async ({ page }) => {
+  const remote = await page.goto('/c/no_such_community@far-away.example');
+  expect(remote?.status()).toBe(404);
+  await expect(page.getByRole('heading', { level: 1, name: 'Community not found' })).toBeVisible();
+  await expect(page.getByText('This community does not exist, was deleted or was removed.')).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Look for it on its server' })).toHaveAttribute(
+    'href',
+    `/resolve?${new URLSearchParams({ q: '!no_such_community@far-away.example' })}`,
+  );
+  const local = await page.goto('/c/no_such_community_here');
+  expect(local?.status()).toBe(404);
+  await expect(page.getByRole('heading', { level: 1, name: 'Community not found' })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Look for it on its server' })).toHaveCount(0);
+});
+
 test('Try again reruns the failed loader once, and shows the page when it loads', async ({ page }) => {
   await gotoHydrated(page, '/');
   // The resolver page's loader is a server function; fail every call until released.

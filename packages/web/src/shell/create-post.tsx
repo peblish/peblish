@@ -1,5 +1,6 @@
 import { ButtonLink } from '@peblish/ui/components/button-link';
 import { PlusIcon } from '@peblish/ui/components/icons';
+import { Text } from '@peblish/ui/components/text';
 import { getRouteApi, useRouterState } from '@tanstack/react-router';
 import { lazy, Suspense, useState, type MouseEvent } from 'react';
 import { useTranslate } from '../i18n/use-translate.ts';
@@ -51,7 +52,7 @@ export function CreatePost() {
         }}
       >
         <PlusIcon />
-        <span className="pb-action__label">{t('shell', 'create')}</span>
+        <Text className="pb-action__label">{t('shell', 'create')}</Text>
       </ButtonLink>
       {open && (
         <Suspense fallback={null}>

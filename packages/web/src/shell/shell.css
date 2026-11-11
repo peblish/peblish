@@ -49,29 +49,20 @@
     overflow-y: auto;
   }
 
+  /* The site name shrinks to what the bar leaves; its Text (truncate) ends it in an ellipsis. */
   .pb-brand,
   .pb-bar-brand {
     min-inline-size: 0;
-    overflow: hidden;
     color: var(--muxui-semantic-content-strong);
     text-decoration: none;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  /* The Text inside the brand is what overflows, so it carries the ellipsis. */
-  :is(.pb-brand, .pb-bar-brand) > .muxui-text {
-    display: block;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
   }
 
   .pb-app__drawer-foot {
     padding: var(--muxui-semantic-layout-inset-medium) var(--muxui-semantic-layout-inset-large);
   }
 
-  /* The four navigation lists read as one column: Mux's list padding once, at the outer edges. */
+  /* The four navigation lists read as one column: Mux's list padding once, at the outer edges.
+     Mux gap: a nav list always pads itself and scrolls on its own; there is no static list to stack. */
   .pb-nav {
     display: flex;
     flex-direction: column;
@@ -88,7 +79,7 @@
     margin-block-start: var(--muxui-semantic-layout-group-gap);
   }
 
-  /* Mux draws nav icons in neutral-70, under 3:1 on the dark sidebar (2.5:1): the muted text colour
+  /* Mux gap: nav icons are neutral-70, under 3:1 on the dark sidebar (2.5:1). The muted text colour
      instead, and the text colour on hover and for the current page, as Mux does. */
   .pb-nav .muxui-sidebar__nav-icon {
     color: var(--muxui-semantic-content-muted);
@@ -98,7 +89,8 @@
     color: var(--muxui-semantic-content-default);
   }
 
-  /* A community row: a small Mux Avatar with the initial (nested rows have no icon slot), then the handle. */
+  /* A community row: a small Mux Avatar with the initial (nested rows have no icon slot), then the
+     handle. Mux gap: Avatar's smallest size is the control height, too tall for a nav row. */
   .pb-nav__community {
     display: flex;
     align-items: center;
@@ -111,10 +103,6 @@
     inline-size: 1.25rem;
     block-size: 1.25rem;
     font-size: var(--muxui-semantic-typography-badge-size);
-  }
-
-  .pb-nav__community .muxui-avatar__fallback {
-    padding: 0;
   }
 
   /* Mux's label is nowrap; a long handle (a remote host) ends in an ellipsis here, inside the
@@ -172,15 +160,15 @@
     white-space: nowrap;
   }
 
-  /* Create post and Sign up are ButtonLinks (Mux's primary Button look); only the icon's size is the app's. */
-  .pb-create svg {
-    inline-size: 1em;
-    block-size: 1em;
+  /* Create post and Sign up are ButtonLinks (Mux's primary Button look), Sign in a Mux Link. Mux
+     gap: Text always sets its own colour and type, with no tone that takes them from the control
+     around it, so each label takes its control's here. */
+  .pb-action__label {
+    color: inherit;
+    font: inherit;
   }
 
   .pb-sign-in {
-    display: inline-flex;
-    align-items: center;
     justify-content: center;
   }
 
@@ -189,7 +177,7 @@
     display: none;
   }
 
-  /* The account menu's trigger: Mux's Menu.Trigger is an unstyled button. */
+  /* The account menu's trigger. Mux gap: Menu.Trigger is an unstyled button, with no Button variants. */
   .pb-account__trigger {
     display: inline-flex;
     align-items: center;
@@ -258,7 +246,7 @@
 
     /* Mux's bar (the header Sidebar.MobileTrigger renders) and the brand with the actions share
        one cell: Mux paints the bar and keeps its button at the end, the brand and the actions lie
-       over the rest. */
+       over the rest. Mux gap: the phone header has no slot for actions beside its logo. */
     .pb-app__bar {
       display: grid;
       position: sticky;
@@ -277,7 +265,7 @@
       gap: var(--muxui-semantic-layout-control-gap);
       min-inline-size: 0;
       margin-inline: var(--muxui-semantic-layout-inset-large)
-        calc(var(--muxui-semantic-layout-inset-large) + var(--muxui-control-size-md) + var(--muxui-semantic-layout-control-gap));
+        calc(var(--muxui-semantic-layout-inset-large) + var(--muxui-semantic-control-size-md) + var(--muxui-semantic-layout-control-gap));
     }
 
     .pb-app__bar .muxui-sidebar__mobile-header {

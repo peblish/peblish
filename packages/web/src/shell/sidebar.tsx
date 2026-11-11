@@ -2,7 +2,7 @@ import { unreadCap } from '@peblish/core/notifications/view';
 import type { SessionView } from '@peblish/schema/session';
 import type { ActorRef } from '@peblish/schema/views';
 import { Avatar } from '@peblish/ui/components/avatar';
-import { Handle } from '@peblish/ui/components/handle';
+import { Handle, neutraliseBidi } from '@peblish/ui/components/handle';
 import {
   CompassIcon,
   FlameIcon,
@@ -35,7 +35,7 @@ const badgeText = (count: number) => (count >= unreadCap ? `${unreadCap - 1}+` :
 export function Brand({ siteName, className = 'pb-brand' }: { siteName: string; className?: 'pb-brand' | 'pb-bar-brand' }) {
   return (
     <Link className={className} href="/">
-      <Text variant="title" size="sm">
+      <Text variant="title" size="sm" truncate>
         {siteName}
       </Text>
     </Link>
@@ -65,7 +65,7 @@ export function Navigation({ session, shell, pathname }: { session: SessionView 
     value > 0 ? (
       <>
         {badgeText(value)}
-        <span className="pb-sr"> {word}</span>
+        <Text className="pb-sr"> {word}</Text>
       </>
     ) : undefined;
   // Nested rows have no icon slot (Mux draws their label only), so each community's label starts
@@ -81,7 +81,8 @@ export function Navigation({ session, shell, pathname }: { session: SessionView 
           const label = (
             <span className="pb-nav__community">
               <Avatar.Root size="sm" aria-hidden="true">
-                <Avatar.Fallback>{[...community.name][0]?.toUpperCase()}</Avatar.Fallback>
+                {/* A remote name may start with a directional control, which has no glyph to show. */}
+                <Avatar.Fallback>{[...neutraliseBidi(community.name, '')][0]?.toUpperCase()}</Avatar.Fallback>
               </Avatar.Root>
               <Handle prefix="!" handle={community.handle} />
             </span>

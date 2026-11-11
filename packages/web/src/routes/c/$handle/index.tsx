@@ -1,5 +1,5 @@
+import { EmptyState } from '@peblish/ui/components/empty-state';
 import { Link } from '@peblish/ui/components/link';
-import { Text } from '@peblish/ui/components/text';
 import { createFileRoute, notFound } from '@tanstack/react-router';
 import { DEFAULT_LOCALE } from '../../../i18n/negotiate.ts';
 import { useTranslate } from '../../../i18n/use-translate.ts';
@@ -67,18 +67,20 @@ function CommunityNotFound({ handle }: { handle: string }) {
   const { t } = useTranslate();
   useRouteHydrated();
   return (
-    <main className="cm-page cm-missing" data-state="not-found">
-      <Text as="h1" variant="heading" size="md">
-        {t('communities', 'page.notFound.title')}
-      </Text>
-      <Text as="p">{t('communities', 'page.notFound.body')}</Text>
-      {handle.includes('@') && (
-        <Text as="p">
-          <Link href={`${directoryPaths.find}?${new URLSearchParams({ q: `!${handle}` })}`}>
-            {t('communities', 'page.notFound.resolve')}
-          </Link>
-        </Text>
-      )}
+    <main className="pb-page" data-state="not-found">
+      <EmptyState
+        level={1}
+        title={t('communities', 'page.notFound.title')}
+        action={
+          handle.includes('@') ? (
+            <Link href={`${directoryPaths.find}?${new URLSearchParams({ q: `!${handle}` })}`}>
+              {t('communities', 'page.notFound.resolve')}
+            </Link>
+          ) : undefined
+        }
+      >
+        {t('communities', 'page.notFound.body')}
+      </EmptyState>
     </main>
   );
 }

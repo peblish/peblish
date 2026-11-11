@@ -4,10 +4,16 @@ import { useEffect } from 'react';
 /**
  * Opens `href` through the router when it is one of the app's pages, and with a page load when
  * it is not (an API path, a file, a page the router does not know yet, which then answers 404
- * itself).
+ * itself). A `#` link to this same page (the skip link, a Mux Link) moves to its target as the
+ * browser does for a plain link: scrolled to, and focused when it can take focus.
  */
 export function openInRouter(router: AnyRouter, href: string): void {
-  const url = new URL(href, window.location.origin);
+  const url = new URL(href, window.location.href);
+  if (href.startsWith('#')) {
+    window.location.hash = url.hash;
+    document.getElementById(decodeURIComponent(url.hash.slice(1)))?.focus();
+    return;
+  }
   const [, , found] = router.getMatchedRoutes(url.pathname);
   if (url.origin !== window.location.origin || !found) window.location.assign(href);
   else void router.navigate({ href: url.pathname + url.search + url.hash });
