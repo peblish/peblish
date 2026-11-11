@@ -1,12 +1,12 @@
 import { expect, test, type Browser, type BrowserContext, type Locator, type Page } from '@playwright/test';
 import { community, radioLabel, seed, signedIn, type Seed } from '../composer/support.ts';
 import { gotoHydrated } from '../support/route-marker.ts';
-import { drawing, pixelDiff, removeNativeStateRules, ringColours, shot } from './support.ts';
+import { drawing, pixelDiff, removeInputStateRules, ringColours, shot } from './support.ts';
 
 // Mux UI draws its radios and checkboxes from data attributes React sets, over a hidden native
-// input. packages/ui/src/components/native-state.css draws them from the input while those
-// attributes are stale: without JavaScript the drawing follows the visitor's clicks and keys, and
-// with JavaScript it changes nothing.
+// input. Since rc.7 its stylesheet also draws them from the input while those attributes are
+// stale: without JavaScript the drawing follows the visitor's clicks and keys, and with JavaScript
+// those rules change nothing.
 test.skip(Boolean(process.env.BASE_URL), 'needs the lane database for its seed (DATABASE_URL)');
 
 let world: Seed;
@@ -88,15 +88,15 @@ test.describe('without JavaScript', () => {
     await looksLike(browser, await shot(radioIndicator(link)), selected, unselected);
     await looksLike(browser, await shot(radioIndicator(text)), unselected, selected);
     // A click is not keyboard focus: no ring.
-    await expect(radioIndicator(link)).toHaveCSS('outline-style', 'none');
+    expect(await ringColours(radioIndicator(link))).toEqual([]);
 
     await page.keyboard.press('ArrowUp');
     await expect(text).toBeChecked();
     await expect(text).toBeFocused();
     await expect(dot(text)).toHaveCSS('opacity', '1');
     await expect(dot(link)).toHaveCSS('opacity', '0');
-    await expect(radioIndicator(text)).toHaveCSS('outline-style', 'solid');
-    await expect(radioIndicator(link)).toHaveCSS('outline-style', 'none');
+    expect(await ringColours(radioIndicator(text))).toHaveLength(2);
+    expect(await ringColours(radioIndicator(link))).toEqual([]);
     expect(await pixelDiff(browser, await shot(radioIndicator(text)), selected)).toBeGreaterThan(0.1);
 
     const open_ = community(page, world.communities.open.handle);
@@ -160,7 +160,7 @@ test.describe('without JavaScript', () => {
 });
 
 for (const scheme of ['light', 'dark'] as const) {
-  test(`with JavaScript the stylesheet changes nothing, and a hydrated control looks like one drawn without it (${scheme})`, async ({
+  test(`with JavaScript the rules that draw from the input change nothing, and a hydrated control looks like one drawn without it (${scheme})`, async ({
     browser,
     baseURL,
   }) => {
@@ -186,7 +186,7 @@ for (const scheme of ['light', 'dark'] as const) {
     await hydrated.addStyleTag({ content: '*, ::before, ::after { transition: none !important; }' });
 
     const before = await drawing(hydrated);
-    expect(await removeNativeStateRules(hydrated)).toBeGreaterThanOrEqual(10);
+    expect(await removeInputStateRules(hydrated)).toBeGreaterThanOrEqual(10);
     expect(await drawing(hydrated)).toEqual(before);
 
     const parts = (page: Page) => [
@@ -198,8 +198,7 @@ for (const scheme of ['light', 'dark'] as const) {
     const plainParts = parts(plain);
     for (const [index, part] of parts(hydrated).entries()) {
       // React's tick icon against the stylesheet's mask: the same pixels. Text has keyboard focus: its
-      // inside is compared here and its ring by colour below. Mux's ring is a box-shadow and the plain
-      // page's two outlines, which can land a pixel apart (Chrome draws Mux's 1.5px border 1px wide at 1x).
+      // inside is compared here and its ring by colour below.
       const margin = index === 0 ? -4 : 5;
       expect(await pixelDiff(browser, await shot(part, margin), await shot(plainParts[index]!, margin))).toBe(0);
     }
