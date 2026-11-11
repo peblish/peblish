@@ -106,7 +106,7 @@ Weight differs a lot (gzip, one wrapper alone, React excluded): `separator` 30 k
 
 ## Tokens
 
-Style only with Mux tokens (`var(--muxui-...)`), or the few `--pb-*` aliases below (every other job uses the Mux token itself, listed under the table; role badges are `Badge`), which are themselves only Mux tokens. No hex, rgb or hsl, no hand-written radius, shadow, font family or font size. Layout (grid, flex, widths, gaps) is fine. The app uses Mux UI's own light and dark schemes (`data-muxui-color-scheme` on `<html>`); there is no true black. Appearance is System, Light, Dark; a stored `scheme=black` still renders as dark (`theme/root.tsx` maps it) until the shell lane drops the choice.
+Style only with Mux tokens (`var(--muxui-...)`), or the few `--pb-*` aliases below (every other job uses the Mux token itself, listed under the table; role badges are `Badge`), which are themselves only Mux tokens. No hex, rgb or hsl, no hand-written radius, shadow, font family or font size. Layout (grid, flex, widths, gaps) is fine. The app uses Mux UI's own light and dark schemes (`data-muxui-color-scheme` on `<html>`); there is no true black. Appearance is System, Light, Dark; a `scheme=black` cookie stored before that choice was removed still renders as dark (`theme/root.tsx` maps it).
 
 | Token             | Role                            | Mux token                                       |
 | ----------------- | ------------------------------- | ----------------------------------------------- |

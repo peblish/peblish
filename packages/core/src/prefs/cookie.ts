@@ -7,7 +7,7 @@ import { type } from 'arktype';
 const Density = type("'card' | 'classic' | 'compact'");
 const Scheme = type("'system' | 'light' | 'dark' | 'black'");
 
-/** The feed density and the colour scheme ('black' is the true #000 dark scheme). */
+/** The feed density and the colour scheme ('black' is an old cookie's value: the choice is gone and it renders as dark). */
 export const Prefs = type({ density: Density, scheme: Scheme });
 export type Prefs = typeof Prefs.infer;
 
