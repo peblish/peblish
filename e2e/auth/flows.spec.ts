@@ -35,6 +35,24 @@ async function freshPage(browser: Browser): Promise<Page> {
   return (await browser.newContext()).newPage();
 }
 
+/**
+ * The sidebar's You links, by accessible name: Mux's Sidebar puts an aria-hidden letter mark in each
+ * link without an icon, so the visible text reads "IInbox" while the name is "Inbox".
+ */
+async function expectYouLinks(page: Page, names: readonly (string | RegExp)[]): Promise<void> {
+  const links = page.getByRole('navigation', { name: 'You' }).getByRole('link');
+  await expect(links).toHaveCount(names.length);
+  for (const [index, name] of names.entries()) await expect(links.nth(index)).toHaveAccessibleName(name);
+}
+
+/** Ticks the terms box as a keyboard user does: Mux's checkbox keeps its native input visually hidden, at no size. */
+async function checkTerms(page: Page): Promise<void> {
+  const terms = page.getByRole('checkbox', { name: /^I agree to the Terms/ });
+  await terms.focus();
+  await page.keyboard.press('Space');
+  await expect(terms).toBeChecked();
+}
+
 /** The two-factor step with one of the recovery codes (each works once). */
 async function withRecoveryCode(page: Page, code: string | undefined): Promise<void> {
   await landed(page, /\/auth\/two-factor/);
@@ -64,12 +82,14 @@ test('the admin signs in with a TOTP code and creates an invite', async ({ page 
   await expect(tabs.getByRole('link')).toHaveText(['Settings', 'Pages', 'Reports', 'Bans', 'Peers', 'Media', 'Registration and invites']);
   await expect(tabs.getByRole('link', { name: 'Registration and invites' })).toHaveAttribute('aria-current', 'page');
   // Each link may carry a count: the lane database keeps notices and open reports from other specs.
-  await expect(page.getByRole('navigation', { name: 'You' }).getByRole('link')).toHaveText([
-    /^Inbox(\s+\d+\+?\s+unread)?\s*$/,
-    /^Moderation queue(\s+\d+\+?\s+open)?\s*$/,
-  ]);
-  // The account menu is a closed <details>, so its links are matched by address, not by role.
-  await expect(page.locator('.pb-account a[href="/admin/settings"]')).toHaveText('Admin');
+  await expectYouLinks(page, [/^Inbox(\s+\d+\+?\s+unread)?$/, /^Moderation queue(\s+\d+\+?\s+open)?$/]);
+  // The account menu is a Mux Menu: its entries exist only while it is open, as menu items.
+  await page
+    .getByRole('banner')
+    .getByRole('button', { name: /^Account:/ })
+    .click();
+  await expect(page.getByRole('menu', { name: 'Account' }).getByRole('menuitem', { name: 'Admin' })).toBeVisible();
+  await page.keyboard.press('Escape');
   await page.getByLabel('Label').fill(`e2e ${person.name}`);
   await page.getByLabel('Max uses').fill('2');
   await page.getByRole('button', { name: 'Create' }).click();
@@ -103,7 +123,7 @@ test('the invite link leads to sign-up; the account needs its email verified', a
   await page.getByLabel('Day').fill('14');
   await page.getByLabel('Month').selectOption({ label: 'March' });
   await page.getByLabel('Year').fill('1994');
-  await page.getByRole('checkbox').check();
+  await checkTerms(page);
   await page.getByRole('button', { name: 'Create account' }).click();
   await landed(page, '/auth/verify');
   await expect(page.getByRole('heading', { name: 'Check your email' })).toBeVisible();
@@ -121,7 +141,7 @@ test('TOTP turns on with a code and shows the recovery codes once', async ({ pag
   await signIn(page, person.name, person.password);
   await landed(page, '/');
   // A member who moderates nothing: the Inbox and no Moderation queue; no admin tabs on an admin page.
-  await expect(page.getByRole('navigation', { name: 'You' }).getByRole('link')).toHaveText(['Inbox']);
+  await expectYouLinks(page, ['Inbox']);
   await gotoHydrated(page, '/admin/registration');
   await expect(page.getByRole('navigation', { name: 'Admin sections' })).toHaveCount(0);
   await gotoHydrated(page, '/settings/security');
@@ -230,7 +250,7 @@ test('an under-16 date of birth blocks sign-up from this browser for 24 hours', 
   await page.getByLabel('Day').fill('1');
   await page.getByLabel('Month').selectOption({ label: 'January' });
   await page.getByLabel('Year').fill(String(year));
-  await page.getByRole('checkbox').check();
+  await checkTerms(page);
   await page.getByRole('button', { name: 'Create account' }).click();
   await landed(page, '/auth/sign-up');
   await expect(page.getByRole('heading', { name: "You can't create an account" })).toBeVisible();

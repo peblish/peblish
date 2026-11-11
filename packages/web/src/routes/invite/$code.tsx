@@ -1,13 +1,17 @@
 import { localHandles } from '@peblish/core/identity/handles';
 import { Button } from '@peblish/ui/components/button';
-import { createFileRoute, Link } from '@tanstack/react-router';
+import { Link } from '@peblish/ui/components/link';
+import { Separator } from '@peblish/ui/components/separator';
+import { Text } from '@peblish/ui/components/text';
+import { createFileRoute } from '@tanstack/react-router';
 import { createServerFn } from '@tanstack/react-start';
 import { getRequest, setResponseHeader } from '@tanstack/react-start/server';
 import { type } from 'arktype';
 import { useTranslate } from '../../i18n/use-translate.ts';
 import { lookupInviteFor, PRIVATE_NO_STORE } from '../../server/auth.ts';
 import { useRouteHydrated } from '../../shell/hydration.ts';
-import { authHead, useDate } from '../auth/-ui/page.tsx';
+import { Hidden } from '../auth/-ui/form.tsx';
+import { AuthCard, authHead, useDate } from '../auth/-ui/page.tsx';
 
 const loadInvite = createServerFn({ method: 'GET' })
   .validator(type({ code: 'string' }))
@@ -32,70 +36,83 @@ function InviteLanding() {
   const { host, code, invite } = Route.useLoaderData();
   const date = useDate();
   useRouteHydrated();
+  const title = (text: string) => (
+    <Text as="h1" variant="heading" size="sm">
+      {text}
+    </Text>
+  );
   if (!invite)
     return (
-      <main className="auth-page" data-state="limited">
-        <h1>{t('invites', 'landing.limitedTitle')}</h1>
-        <p>{t('invites', 'landing.limitedBody')}</p>
-      </main>
+      <AuthCard state="limited">
+        <div className="auth-form">
+          {title(t('invites', 'landing.limitedTitle'))}
+          <Text as="p">{t('invites', 'landing.limitedBody')}</Text>
+        </div>
+      </AuthCard>
     );
   const inviter = invite.inviter ? `@${invite.inviter.handle}` : t('invites', 'landing.someone');
   const elsewhere = (
-    <div className="btns">
-      <Link to="/auth/sign-up">{t('invites', 'landing.otherCode')}</Link>
-      <Link to="/auth/sign-in">{t('invites', 'landing.signIn')}</Link>
-    </div>
+    <>
+      <Separator />
+      <div className="auth-links">
+        <Link href="/auth/sign-up">{t('invites', 'landing.otherCode')}</Link>
+        <Link href="/auth/sign-in">{t('invites', 'landing.signIn')}</Link>
+      </div>
+    </>
   );
   return (
-    <main className="auth-page" data-state={invite.status}>
-      {invite.status === 'valid' && (
-        <>
-          <h1>{t('invites', 'landing.validTitle', { host })}</h1>
-          <p>
-            {invite.usesLeft === 1
-              ? t('invites', 'landing.validByOne', { inviter, code })
-              : t('invites', 'landing.validBy', { inviter, code, left: invite.usesLeft })}
-          </p>
-          <p>{t('invites', 'landing.validAbout', { host })}</p>
-          <div className="btns">
-            <form method="get" action="/auth/sign-up">
-              <input type="hidden" name="invite" value={code} />
-              <Button type="submit" variant="primary">
+    <AuthCard state={invite.status}>
+      <div className="auth-form">
+        {invite.status === 'valid' && (
+          <>
+            {title(t('invites', 'landing.validTitle', { host }))}
+            <Text as="p">
+              {invite.usesLeft === 1
+                ? t('invites', 'landing.validByOne', { inviter, code })
+                : t('invites', 'landing.validBy', { inviter, code, left: invite.usesLeft })}
+            </Text>
+            <Text as="p">{t('invites', 'landing.validAbout', { host })}</Text>
+            <form method="get" action="/auth/sign-up" className="auth-form">
+              <Hidden name="invite" value={code} />
+              <Button type="submit" variant="primary" className="auth-submit">
                 {t('invites', 'landing.continue')}
               </Button>
             </form>
-            <Link to="/auth/sign-in">{t('invites', 'landing.haveAccount')}</Link>
-          </div>
-        </>
-      )}
-      {invite.status === 'expired' && (
-        <>
-          <h1>{t('invites', 'landing.expiredTitle')}</h1>
-          <p>{t('invites', 'landing.expiredBody', { date: invite.expiresAt ? date(invite.expiresAt) : '', inviter })}</p>
-          {elsewhere}
-        </>
-      )}
-      {invite.status === 'exhausted' && (
-        <>
-          <h1>{t('invites', 'landing.exhaustedTitle')}</h1>
-          <p>{t('invites', 'landing.exhaustedBody', { inviter })}</p>
-          {elsewhere}
-        </>
-      )}
-      {invite.status === 'revoked' && (
-        <>
-          <h1>{t('invites', 'landing.revokedTitle')}</h1>
-          <p>{t('invites', 'landing.revokedBody')}</p>
-          {elsewhere}
-        </>
-      )}
-      {invite.status === 'unknown' && (
-        <>
-          <h1>{t('invites', 'landing.unknownTitle')}</h1>
-          <p>{t('invites', 'landing.unknownBody')}</p>
-          {elsewhere}
-        </>
-      )}
-    </main>
+            <Separator />
+            <Text as="p" size="sm">
+              <Link href="/auth/sign-in">{t('invites', 'landing.haveAccount')}</Link>
+            </Text>
+          </>
+        )}
+        {invite.status === 'expired' && (
+          <>
+            {title(t('invites', 'landing.expiredTitle'))}
+            <Text as="p">{t('invites', 'landing.expiredBody', { date: invite.expiresAt ? date(invite.expiresAt) : '', inviter })}</Text>
+            {elsewhere}
+          </>
+        )}
+        {invite.status === 'exhausted' && (
+          <>
+            {title(t('invites', 'landing.exhaustedTitle'))}
+            <Text as="p">{t('invites', 'landing.exhaustedBody', { inviter })}</Text>
+            {elsewhere}
+          </>
+        )}
+        {invite.status === 'revoked' && (
+          <>
+            {title(t('invites', 'landing.revokedTitle'))}
+            <Text as="p">{t('invites', 'landing.revokedBody')}</Text>
+            {elsewhere}
+          </>
+        )}
+        {invite.status === 'unknown' && (
+          <>
+            {title(t('invites', 'landing.unknownTitle'))}
+            <Text as="p">{t('invites', 'landing.unknownBody')}</Text>
+            {elsewhere}
+          </>
+        )}
+      </div>
+    </AuthCard>
   );
 }

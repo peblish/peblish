@@ -2,14 +2,18 @@ import { auth, authErrorCode } from '@peblish/core/identity/auth';
 import { localHandles, loginEmail } from '@peblish/core/identity/handles';
 import { attempt } from '@peblish/core/identity/throttle';
 import { Button } from '@peblish/ui/components/button';
-import { createFileRoute, Link } from '@tanstack/react-router';
+import { Link } from '@peblish/ui/components/link';
+import { Notice } from '@peblish/ui/components/notice';
+import { Separator } from '@peblish/ui/components/separator';
+import { Text } from '@peblish/ui/components/text';
+import { createFileRoute } from '@tanstack/react-router';
 import { type } from 'arktype';
 import { useTranslate } from '../../i18n/use-translate.ts';
 import { clientIp, forbidden, forwardedHeaders, readForm, respond, safeRedirect, sameOrigin } from '../../server/auth.ts';
 import { useRouteHydrated } from '../../shell/hydration.ts';
 import { asFormError } from './-ui/errors.ts';
-import { AuthForm, Field } from './-ui/form.tsx';
-import { AuthPage, authHead, SearchText } from './-ui/page.tsx';
+import { AuthForm, Field, Hidden } from './-ui/form.tsx';
+import { AuthCard, authHead, SearchText } from './-ui/page.tsx';
 
 const Search = type({ 'error?': SearchText, 'redirect?': SearchText, 'reset?': SearchText });
 const Body = type({ identifier: 'string', password: 'string', 'redirect?': 'string' });
@@ -60,11 +64,13 @@ function SignIn() {
   const search = Route.useSearch();
   useRouteHydrated();
   return (
-    <AuthPage>
-      <AuthForm action="/auth/sign-in" label={t('auth', 'signIn.title')} error={asFormError(search.error)}>
-        <h1>{t('auth', 'signIn.title')}</h1>
-        {search.reset && <p className="auth-note ok-t">{t('auth', 'signIn.resetDone')}</p>}
-        {search.redirect && <input type="hidden" name="redirect" value={search.redirect} />}
+    <AuthCard>
+      <AuthForm action="/auth/sign-in" label={t('auth', 'signIn.title')} error={asFormError(search.error)} className="auth-form">
+        <Text as="h1" variant="heading" size="sm">
+          {t('auth', 'signIn.title')}
+        </Text>
+        {search.reset && <Notice tone="success">{t('auth', 'signIn.resetDone')}</Notice>}
+        {search.redirect && <Hidden name="redirect" value={search.redirect} />}
         <Field
           label={t('auth', 'signIn.identifier')}
           name="identifier"
@@ -80,20 +86,19 @@ function SignIn() {
           required
           autoComplete="current-password"
           aside={
-            <Link to="/auth/reset" className="hint">
-              {t('auth', 'signIn.forgot')}
-            </Link>
+            <Text size="sm">
+              <Link href="/auth/reset">{t('auth', 'signIn.forgot')}</Link>
+            </Text>
           }
         />
-        <div className="btns">
-          <Button type="submit" variant="primary">
-            {t('auth', 'signIn.submit')}
-          </Button>
-          <span className="hint">
-            {t('auth', 'signIn.noAccount')} <Link to="/auth/sign-up">{t('auth', 'signIn.signUp')}</Link>
-          </span>
-        </div>
+        <Button type="submit" variant="primary" className="auth-submit">
+          {t('auth', 'signIn.submit')}
+        </Button>
+        <Separator />
+        <Text as="p" size="sm" color="muted">
+          {t('auth', 'signIn.noAccount')} <Link href="/auth/sign-up">{t('auth', 'signIn.signUp')}</Link>
+        </Text>
       </AuthForm>
-    </AuthPage>
+    </AuthCard>
   );
 }

@@ -1,4 +1,5 @@
 import { Button } from '@peblish/ui/components/button';
+import { Card } from '@peblish/ui/components/card';
 import { Checkbox } from '@peblish/ui/components/checkbox';
 import { CommentThread } from '@peblish/ui/components/comment-thread';
 import { Dialog } from '@peblish/ui/components/dialog';
@@ -8,6 +9,8 @@ import { PostCard, type Density } from '@peblish/ui/components/post-card';
 import { Prose } from '@peblish/ui/components/prose';
 import { ReplyBar } from '@peblish/ui/components/reply-bar';
 import { Select } from '@peblish/ui/components/select';
+import { Separator } from '@peblish/ui/components/separator';
+import { Text } from '@peblish/ui/components/text';
 import { TextAreaField } from '@peblish/ui/components/text-area';
 import { TextField } from '@peblish/ui/components/text-field';
 import { ToastProvider, useToast } from '@peblish/ui/components/toast';
@@ -80,10 +83,14 @@ function KitPage() {
 
   return (
     <main className="pb-page kit">
-      <h1>Component gallery</h1>
+      <Text as="h1" variant="display" size="sm">
+        Component gallery
+      </Text>
 
       <section aria-labelledby="kit-type">
-        <h2 id="kit-type">Type and locale</h2>
+        <Text as="h2" variant="heading" size="sm" id="kit-type">
+          Type and locale
+        </Text>
         <p>{t('shell', 'tagline')}</p>
         <p>
           <em>Italic text</em> and <code className="pb-mono">monospace text</code>.
@@ -100,7 +107,9 @@ function KitPage() {
       </section>
 
       <section aria-labelledby="kit-feed">
-        <h2 id="kit-feed">Feed</h2>
+        <Text as="h2" variant="heading" size="sm" id="kit-feed">
+          Feed
+        </Text>
         <div className="kit-toolbar">
           <DensityControl value={prefs.density} onChange={(density) => setPrefs({ density })} labels={densityLabels} />
         </div>
@@ -123,10 +132,14 @@ function KitPage() {
       </section>
 
       <section aria-labelledby="kit-densities">
-        <h2 id="kit-densities">Post card densities</h2>
+        <Text as="h2" variant="heading" size="sm" id="kit-densities">
+          Post card densities
+        </Text>
         {densities.map((density) => (
           <div key={density} data-testid={`kit-density-${density}`}>
-            <h3>{density}</h3>
+            <Text as="h3" variant="title" size="sm">
+              {density}
+            </Text>
             <PostCard
               post={posts.link}
               density={density}
@@ -152,7 +165,9 @@ function KitPage() {
       </section>
 
       <section aria-labelledby="kit-withheld">
-        <h2 id="kit-withheld">Thumbnail not loaded</h2>
+        <Text as="h2" variant="heading" size="sm" id="kit-withheld">
+          Thumbnail not loaded
+        </Text>
         <div data-testid="kit-withheld">
           <PostCard
             post={posts.withheld}
@@ -168,7 +183,9 @@ function KitPage() {
       </section>
 
       <section aria-labelledby="kit-vote">
-        <h2 id="kit-vote">Vote control</h2>
+        <Text as="h2" variant="heading" size="sm" id="kit-vote">
+          Vote control
+        </Text>
         <div className="kit-row">
           <div data-testid="kit-vote-column">
             <VoteControl score={842} myVote={0} labels={voteLabels} locale={locale} />
@@ -192,7 +209,9 @@ function KitPage() {
       </section>
 
       <section aria-labelledby="kit-thread">
-        <h2 id="kit-thread">Comment thread</h2>
+        <Text as="h2" variant="heading" size="sm" id="kit-thread">
+          Comment thread
+        </Text>
         <div data-testid="kit-thread">
           <CommentThread
             comments={thread}
@@ -208,7 +227,9 @@ function KitPage() {
             now={now}
           />
         </div>
-        <h3>Fifty levels deep</h3>
+        <Text as="h3" variant="title" size="sm">
+          Fifty levels deep
+        </Text>
         <div data-testid="kit-deep-thread">
           <CommentThread
             comments={deepThread}
@@ -223,7 +244,9 @@ function KitPage() {
       </section>
 
       <section aria-labelledby="kit-prose">
-        <h2 id="kit-prose">Rendered content</h2>
+        <Text as="h2" variant="heading" size="sm" id="kit-prose">
+          Rendered content
+        </Text>
         <div data-testid="kit-prose">
           <Prose html={markdown} />
           <Prose html={remote} className="kit-remote" />
@@ -231,7 +254,9 @@ function KitPage() {
       </section>
 
       <section aria-labelledby="kit-facade">
-        <h2 id="kit-facade">Facade</h2>
+        <Text as="h2" variant="heading" size="sm" id="kit-facade">
+          Facade
+        </Text>
         <div className="kit-stack">
           <div className="kit-row">
             <Button variant="primary" onActivate={() => toast.add('Saved', { variant: 'success' })}>
@@ -278,7 +303,40 @@ function KitPage() {
         </div>
       </section>
 
-      <h2>Reply bar</h2>
+      <section aria-labelledby="kit-surfaces">
+        <Text as="h2" variant="heading" size="sm" id="kit-surfaces">
+          Surfaces and text
+        </Text>
+        <div className="kit-cards">
+          {(['outlined', 'filled', 'elevated'] as const).map((variant) => (
+            <Card.Root key={variant} variant={variant} padding="sm">
+              <Card.Header>
+                <Text as="h3" variant="title" size="sm">
+                  {variant}
+                </Text>
+              </Card.Header>
+              <Card.Body>
+                <Text color="muted">A Mux Card, {variant}.</Text>
+              </Card.Body>
+            </Card.Root>
+          ))}
+        </div>
+        <Separator />
+        <div className="kit-stack">
+          <Text variant="label">Label text</Text>
+          <Text>Body text</Text>
+          <Text size="sm" color="muted">
+            Small muted text
+          </Text>
+          <Text variant="mono" size="sm">
+            mono 12:34
+          </Text>
+        </div>
+      </section>
+
+      <Text as="h2" variant="heading" size="sm">
+        Reply bar
+      </Text>
       <ReplyBar
         docked={false}
         target={replyTarget}

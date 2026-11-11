@@ -1,14 +1,17 @@
 import { auth, authErrorCode } from '@peblish/core/identity/auth';
 import { localHandles } from '@peblish/core/identity/handles';
 import { Button } from '@peblish/ui/components/button';
-import { createFileRoute, Link } from '@tanstack/react-router';
+import { Link } from '@peblish/ui/components/link';
+import { Separator } from '@peblish/ui/components/separator';
+import { Text } from '@peblish/ui/components/text';
+import { createFileRoute } from '@tanstack/react-router';
 import { type } from 'arktype';
 import { useTranslate } from '../../i18n/use-translate.ts';
 import { forbidden, forwardedHeaders, readForm, respond, safeRedirect, sameOrigin } from '../../server/auth.ts';
 import { useRouteHydrated } from '../../shell/hydration.ts';
 import { asFormError } from './-ui/errors.ts';
-import { AuthForm, Field } from './-ui/form.tsx';
-import { AuthPage, authHead, SearchText } from './-ui/page.tsx';
+import { AuthForm, Field, Hidden } from './-ui/form.tsx';
+import { AuthCard, authHead, SearchText } from './-ui/page.tsx';
 
 const Search = type({ 'error?': SearchText, 'redirect?': SearchText, 'recovery?': SearchText });
 const Body = type({ code: 'string', method: "'totp' | 'recovery'", 'redirect?': 'string' });
@@ -59,19 +62,33 @@ function TwoFactor() {
   const search = Route.useSearch();
   const recovery = search.recovery !== undefined;
   useRouteHydrated();
+  const other = new URLSearchParams();
+  if (search.redirect) other.set('redirect', search.redirect);
+  if (!recovery) other.set('recovery', 'yes');
+  const query = other.toString();
+  const otherHref = query ? `/auth/two-factor?${query}` : '/auth/two-factor';
   return (
-    <AuthPage>
+    <AuthCard>
       <AuthForm
         action="/auth/two-factor"
         label={t('auth', recovery ? 'twoFactor.recoveryTitle' : 'twoFactor.title')}
         error={asFormError(search.error)}
+        className="auth-form"
       >
-        <h1>{t('auth', recovery ? 'twoFactor.recoveryTitle' : 'twoFactor.title')}</h1>
-        <p>{t('auth', recovery ? 'twoFactor.recoveryIntro' : 'twoFactor.intro')}</p>
-        <input type="hidden" name="method" value={recovery ? 'recovery' : 'totp'} />
-        {search.redirect && <input type="hidden" name="redirect" value={search.redirect} />}
+        <Text as="h1" variant="heading" size="sm">
+          {t('auth', recovery ? 'twoFactor.recoveryTitle' : 'twoFactor.title')}
+        </Text>
+        <Text as="p">{t('auth', recovery ? 'twoFactor.recoveryIntro' : 'twoFactor.intro')}</Text>
+        <Hidden name="method" value={recovery ? 'recovery' : 'totp'} />
+        {search.redirect && <Hidden name="redirect" value={search.redirect} />}
         {recovery ? (
-          <Field label={t('auth', 'twoFactor.recoveryCode')} name="code" required autoComplete="off" className="code-input mono" />
+          <Field
+            label={t('auth', 'twoFactor.recoveryCode')}
+            name="code"
+            required
+            autoComplete="off"
+            className="auth-code auth-code--mono"
+          />
         ) : (
           <Field
             label={t('auth', 'twoFactor.code')}
@@ -81,18 +98,17 @@ function TwoFactor() {
             autoComplete="one-time-code"
             maxLength={6}
             placeholder="123456"
-            className="code-input"
+            className="auth-code"
           />
         )}
-        <div className="btns">
-          <Button type="submit" variant="primary">
-            {t('auth', 'twoFactor.submit')}
-          </Button>
-          <Link to="/auth/two-factor" search={{ redirect: search.redirect, recovery: recovery ? undefined : 'yes' }} className="hint">
-            {t('auth', recovery ? 'twoFactor.useApp' : 'twoFactor.useRecovery')}
-          </Link>
-        </div>
+        <Button type="submit" variant="primary" className="auth-submit">
+          {t('auth', 'twoFactor.submit')}
+        </Button>
+        <Separator />
+        <Text as="p" size="sm">
+          <Link href={otherHref}>{t('auth', recovery ? 'twoFactor.useApp' : 'twoFactor.useRecovery')}</Link>
+        </Text>
       </AuthForm>
-    </AuthPage>
+    </AuthCard>
   );
 }

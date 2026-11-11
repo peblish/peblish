@@ -1,32 +1,93 @@
-/* Lane A's pages (auth, invite, settings, admin registration), after the R1 mocks
-   auth-pages.html and invites-table.html: structure and states, not final styling. */
+/* The auth pages (sign in, sign up, two-factor, reset, verify, the invite landing) are one Mux
+   Card each (AuthCard in page.tsx); the rules at the top lay them out. The rest, from .auth-page
+   down, is the older column that settings, admin and invites still use (AuthPage, the raw
+   classes): kept, on Mux tokens, until those pages move off it. */
 @layer app {
+  .auth-center {
+    display: grid;
+    justify-items: center;
+    padding: var(--muxui-semantic-layout-inset-xlarge) var(--muxui-semantic-layout-inset-large);
+  }
+  .auth-card {
+    inline-size: min(26rem, 100%);
+  }
+  .auth-form {
+    display: flex;
+    flex-direction: column;
+    gap: var(--muxui-semantic-layout-group-gap);
+    margin: 0;
+  }
+  .auth-form :where(h1, p) {
+    margin: 0;
+  }
+  .auth-field {
+    margin-block-end: var(--muxui-semantic-layout-group-gap);
+  }
+  .auth-form .auth-field {
+    margin: 0;
+  }
+  .auth-field__head {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: var(--muxui-semantic-layout-tight-gap);
+  }
+  .auth-submit {
+    inline-size: 100%;
+  }
+  .auth-links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--muxui-semantic-layout-tight-gap) var(--muxui-semantic-layout-content-gap);
+  }
+  .auth-dob {
+    display: grid;
+    gap: var(--muxui-semantic-layout-tight-gap);
+  }
+  .auth-dob__parts {
+    display: grid;
+    grid-template-columns: minmax(0, 5rem) minmax(0, 1fr) minmax(0, 6rem);
+    gap: var(--muxui-semantic-layout-tight-gap);
+    align-items: end;
+  }
+  .auth-code {
+    max-inline-size: 10rem;
+    letter-spacing: 0.2em;
+  }
+  .auth-code--mono {
+    font-family: var(--muxui-semantic-typography-mono-font-family);
+  }
+  .auth-tone--ok {
+    color: var(--pb-ok);
+  }
+  .auth-tone--warn {
+    color: var(--pb-warn);
+  }
+  .auth-tone--error {
+    color: var(--pb-error);
+  }
+
   .auth-page {
-    --auth-err: #b00020;
-    --auth-ok: #0b6b2f;
-    --auth-warn: #8a5200;
+    --auth-err: var(--pb-error);
+    --auth-ok: var(--pb-ok);
+    --auth-warn: var(--pb-warn);
     --auth-line: var(--muxui-semantic-border-default);
     --auth-muted: var(--muxui-semantic-content-muted);
     max-width: 440px;
     margin: 0 auto;
     padding: 28px 16px 36px;
-    font-size: 14px;
+    font-size: var(--muxui-semantic-typography-text-s-font-size);
     line-height: 1.45;
-  }
-  [data-muxui-color-scheme='dark'] .auth-page {
-    --auth-err: #ff7a8a;
-    --auth-ok: #4fdc84;
-    --auth-warn: #f5b84a;
   }
   .auth-page.wide {
     max-width: 1180px;
   }
   .auth-page h1 {
-    font-size: 18px;
+    font-size: var(--muxui-semantic-typography-title-m-font-size);
     margin: 0 0 12px;
   }
   .auth-page h2 {
-    font-size: 15px;
+    font-size: var(--muxui-semantic-typography-title-s-font-size);
     margin: 0 0 6px;
   }
   .auth-page p {
@@ -35,13 +96,14 @@
   .auth-page a {
     color: var(--muxui-semantic-content-link);
   }
-  .auth-page input:not([type='checkbox']),
-  .auth-page select {
+  /* Raw controls only: the Mux fields (Field, Select) keep their own look. */
+  .auth-page input:not([type='checkbox'], [type='hidden'], .muxui-input),
+  .auth-page select:not(.muxui-select-native) {
     font: inherit;
     color: var(--muxui-semantic-field-content);
     background: var(--muxui-semantic-field-background);
     border: 1px solid var(--muxui-semantic-field-border);
-    border-radius: 2px;
+    border-radius: var(--muxui-semantic-shape-radius-xs);
     padding: 5px 7px;
     width: 100%;
     min-width: 0;
@@ -64,7 +126,7 @@
   }
   .hint,
   .muted {
-    font-size: 12px;
+    font-size: var(--muxui-semantic-typography-text-xs-font-size);
     color: var(--auth-muted);
   }
   .ok-t {
@@ -78,7 +140,7 @@
   }
   .auth-error {
     color: var(--auth-err);
-    font-size: 13px;
+    font-size: var(--muxui-semantic-typography-text-s-font-size);
   }
   .auth-note {
     border-left: 2px solid currentColor;
@@ -122,11 +184,8 @@
     white-space: nowrap;
   }
   .mono {
-    font:
-      13px ui-monospace,
-      SFMono-Regular,
-      Menlo,
-      monospace;
+    font-family: var(--muxui-semantic-typography-mono-font-family);
+    font-size: var(--muxui-semantic-typography-mono-s-font-size);
   }
   .code-input {
     max-width: 160px;
@@ -213,7 +272,7 @@
     align-items: center;
   }
   .you {
-    font-size: 11px;
+    font-size: var(--muxui-semantic-typography-text-xs-font-size);
     font-weight: 700;
     margin-left: 5px;
     color: var(--auth-warn);
@@ -234,7 +293,8 @@
     padding: 10px 0;
     margin: 10px 0 14px;
   }
-  .invite-create .fld {
+  .invite-create .fld,
+  .invite-create .auth-field {
     margin: 0;
   }
   .invite-new {
@@ -248,7 +308,7 @@
   }
   .invites th {
     text-align: left;
-    font-size: 12px;
+    font-size: var(--muxui-semantic-typography-text-xs-font-size);
     border-bottom: 1px solid currentColor;
   }
   .invites th,
@@ -302,7 +362,7 @@
     .invites td::before {
       content: attr(data-label);
       color: var(--auth-muted);
-      font-size: 12px;
+      font-size: var(--muxui-semantic-typography-text-xs-font-size);
     }
   }
   @media (max-width: 760px) {
@@ -315,9 +375,9 @@
       grid-auto-flow: column;
       overflow: auto;
     }
-    .auth-page input:not([type='checkbox']),
-    .auth-page select {
-      font-size: 16px;
+    .auth-page input:not([type='checkbox'], [type='hidden'], .muxui-input),
+    .auth-page select:not(.muxui-select-native) {
+      font-size: var(--muxui-semantic-typography-utility-size);
     }
   }
 }

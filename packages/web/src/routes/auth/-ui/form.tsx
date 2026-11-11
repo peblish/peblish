@@ -1,5 +1,7 @@
+import { Input } from '@peblish/ui/components/input';
+import { Notice } from '@peblish/ui/components/notice';
 import { type } from 'arktype';
-import { Fragment, useId, useState, type FormEvent, type InputHTMLAttributes, type ReactNode } from 'react';
+import { Fragment, useState, type FormEvent, type InputHTMLAttributes, type ReactNode } from 'react';
 import { useTranslate } from '../../../i18n/use-translate.ts';
 import { asFormError, errorKey, type FormError } from './errors.ts';
 
@@ -9,7 +11,7 @@ const Answer = type({ 'redirect?': 'string', 'error?': 'string' });
  * A form that posts to its route and works without JavaScript (the server answers 303).
  * Once hydrated it posts by fetch instead (Accept: application/json), so an error keeps
  * what was typed, and follows the redirect the server names with a full navigation, since
- * these forms change who is signed in.
+ * these forms change who is signed in. The error shows first, as a danger Notice.
  */
 export function AuthForm({
   action,
@@ -50,37 +52,55 @@ export function AuthForm({
   return (
     <form method="post" action={action} aria-label={label} aria-busy={busy} className={className} onSubmit={submit}>
       {error && (
-        <p className="auth-error" role="alert">
+        <Notice tone="danger" role="alert">
           {t('auth', errorKey(error))}
-        </p>
+        </Notice>
       )}
       {children}
     </form>
   );
 }
 
-/** A labelled input with an optional hint underneath, linked for screen readers. */
+/**
+ * A labelled Mux text field with an optional hint underneath (its description, linked for screen
+ * readers) and an optional `aside` beside the label, such as a "Forgot?" link. The other props
+ * are the input's own attributes; the value props and the flags go to the field root, which
+ * controls the input.
+ */
 export function Field({
   label,
   hint,
   aside,
+  value,
+  defaultValue,
+  required,
+  disabled,
+  readOnly,
   ...input
 }: { label: string; hint?: ReactNode; aside?: ReactNode } & InputHTMLAttributes<HTMLInputElement>) {
-  const id = useId();
+  const text = (given: typeof value) => (given === undefined ? undefined : String(given));
   return (
-    <div className="fld">
-      <div className="fld-head">
-        <label htmlFor={id}>{label}</label>
+    <Input.Root
+      className="auth-field"
+      value={text(value)}
+      defaultValue={text(defaultValue)}
+      required={required}
+      disabled={disabled}
+      readOnly={readOnly}
+    >
+      <div className="auth-field__head">
+        <Input.Label>{label}</Input.Label>
         {aside}
       </div>
-      <input id={id} aria-describedby={hint ? `${id}-hint` : undefined} {...input} />
-      {hint && (
-        <span id={`${id}-hint`} className="hint">
-          {hint}
-        </span>
-      )}
-    </div>
+      <Input.Input {...input} />
+      {hint && <Input.Description>{hint}</Input.Description>}
+    </Input.Root>
   );
+}
+
+/** A value the form posts that nobody sees or edits (an intent, a token, where to go next). */
+export function Hidden({ name, value }: { name: string; value: string }) {
+  return <Input.Input type="hidden" name={name} value={value} />;
 }
 
 /** A translated message whose {placeholders} are elements: links, emphasis. */
