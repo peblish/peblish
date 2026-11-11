@@ -18,14 +18,41 @@ const { Denial } = await import('./-denial.tsx');
 
 const copy = { needsTwoFactor: 'Turn it on.', securityLink: 'Security', notAdmin: 'Admins only.' };
 
-/** How many alerts the server markup holds, its text and its links (no DOM in these tests). */
+/**
+ * The inner markup of every element with role="alert", found by counting its own tag's openings
+ * and closings (no DOM in these tests), so text and links outside an alert never count.
+ */
+function alertBodies(html: string): string[] {
+  return [...html.matchAll(/<([a-z][a-z0-9]*)\b[^>]*\brole="alert"[^>]*>/g)].map((open) => {
+    const start = open.index + open[0].length;
+    const tags = new RegExp(`<(/?)${open[1]}\\b[^>]*>`, 'g');
+    tags.lastIndex = start;
+    let depth = 1;
+    for (let tag = tags.exec(html); tag; tag = tags.exec(html)) {
+      depth += tag[1] ? -1 : 1;
+      if (depth === 0) return html.slice(start, tag.index);
+    }
+    throw new Error('an alert is never closed');
+  });
+}
+
+/** How many alerts the server markup holds, and the text and links inside them. */
 function read(html: string) {
+  const inside = alertBodies(html).join(' ');
   return {
-    alerts: html.match(/role="alert"/g)?.length ?? 0,
-    text: html.replace(/<[^>]+>/g, ''),
-    links: [...html.matchAll(/<a\b[^>]*href="([^"]*)"[^>]*>(.*?)<\/a>/g)].map(([, href, text]) => [text, href]),
+    alerts: alertBodies(html).length,
+    text: inside.replace(/<[^>]+>/g, ''),
+    links: [...inside.matchAll(/<a\b[^>]*href="([^"]*)"[^>]*>(.*?)<\/a>/g)].map(([, href, text]) => [text, href]),
   };
 }
+
+test('only what is inside the alert counts: an empty alert beside the words reads as empty', () => {
+  expect(read('<div role="alert"><div></div></div><p>Admins only. <a href="/x">Security</a></p>')).toEqual({
+    alerts: 1,
+    text: '',
+    links: [],
+  });
+});
 
 test.each(['en', 'de'])(
   'an admin page tells an account with two-factor on, whose session skipped it, to sign in again with a code (%s)',

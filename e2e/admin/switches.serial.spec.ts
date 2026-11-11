@@ -46,6 +46,7 @@ for (const [key, label, pause, resume] of switches) {
     }
     await page.waitForURL(/saved=/);
     await expect(page.locator(`[data-switch="${key}"]`).getByRole('button', { name: pause })).toBeVisible();
+    await expect(page.locator(`[data-switch="${key}"]`).getByText('On', { exact: true })).toBeVisible();
     const log = own().slice(before);
     expect(log).toEqual([
       { changes: { [key]: { before: true, after: false } }, public: false },
@@ -76,4 +77,40 @@ test('pausing the inbox makes it answer 503 with Retry-After, and it goes back t
     { changes: { 'inbox.enabled': { before: true, after: false } }, public: false },
     { changes: { 'inbox.enabled': { before: false, after: true } }, public: false },
   ]);
+});
+
+test('Image uploads: turning them on is marked On, turning them off again is marked Paused', async () => {
+  const row = () => page.locator('[data-switch="uploads.enabled"]');
+  await gotoHydrated(page, '/admin/settings');
+  await row().getByRole('button', { name: 'Turn uploads on' }).click();
+  try {
+    await page.waitForURL(/saved=/);
+    await expect(row().getByText('On', { exact: true })).toBeVisible();
+  } finally {
+    // Uploads stay off until scanning is live: put it back before anything else.
+    if (await row().getByRole('button', { name: 'Turn uploads off' }).isVisible())
+      await row().getByRole('button', { name: 'Turn uploads off' }).click();
+  }
+  await page.waitForURL(/saved=/);
+  await expect(row().getByRole('status')).toHaveText('Paused');
+  await expect(row().getByRole('button', { name: 'Turn uploads on' })).toBeVisible();
+});
+
+test('with scripts off a switch posts plainly, and the row shows the stored state each time', async ({ browser }) => {
+  const context = await browser.newContext({ javaScriptEnabled: false, storageState: await page.context().storageState() });
+  const plain = await context.newPage();
+  const row = () => plain.locator('[data-switch="registration.enabled"]');
+  await plain.goto('/admin/settings');
+  await row().getByRole('button', { name: 'Pause registration' }).click();
+  try {
+    await plain.waitForURL(/saved=/);
+    await expect(row().getByRole('status')).toHaveText('Paused');
+  } finally {
+    if (await row().getByRole('button', { name: 'Resume registration' }).isVisible())
+      await row().getByRole('button', { name: 'Resume registration' }).click();
+  }
+  await plain.waitForURL(/saved=/);
+  await expect(row().getByText('On', { exact: true })).toBeVisible();
+  await expect(row().getByRole('button', { name: 'Pause registration' })).toBeVisible();
+  await context.close();
 });

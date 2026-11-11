@@ -2,8 +2,10 @@ import { listPages, readDraft, unresolvedTokens } from '@peblish/core/pages/read
 import { publishPageAs, unpublishPageAs } from '@peblish/core/pages/publish';
 import { savePageAs } from '@peblish/core/pages/save';
 import { isPageLanguage, isPageSlug, pageLanguages } from '@peblish/core/pages/slugs';
+import { useHydrated } from '@peblish/ui/composer/use-hydrated.ts';
 import { Breadcrumbs } from '@peblish/ui/components/breadcrumbs';
 import { Button } from '@peblish/ui/components/button';
+import { Input } from '@peblish/ui/components/input';
 import { Link } from '@peblish/ui/components/link';
 import { LinkTabs } from '@peblish/ui/components/link-tabs';
 import { Notice } from '@peblish/ui/components/notice';
@@ -14,9 +16,9 @@ import { TextAreaField } from '@peblish/ui/components/text-area';
 import { TextField } from '@peblish/ui/components/text-field';
 import { createFileRoute, notFound, redirect } from '@tanstack/react-router';
 import { createServerFn } from '@tanstack/react-start';
-import { setResponseStatus } from '@tanstack/react-start/server';
+import { getRequest, setResponseStatus } from '@tanstack/react-start/server';
 import { type } from 'arktype';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useTranslate } from '../../../../i18n/use-translate.ts';
 import { forbidden, formSession, pageSession, principalOf, readForm, sameOrigin } from '../../../../server/auth.ts';
 import { createMarkdownRenderer } from '../../../../server/markdown.ts';
@@ -29,8 +31,7 @@ import { StatusCell } from '../-status.tsx';
 // /admin/pages/<slug>/<language>: the editor. Save draft keeps what visitors see as it is;
 // Publish saves the form and then publishes it (refused while a {{TOKEN}} has no value, with
 // the tokens listed); Unpublish takes the page off the site and keeps the draft. The Preview tab
-// renders the saved draft as the public page renders it. Mux Tabs mount only the shown panel, so
-// the form's values live in state and survive a look at the preview. An unknown slug or language is a 404.
+// renders the typed text as the public page renders it (PageForm). An unknown slug or language is a 404.
 
 const Search = type({ 'saved?': SearchText, 'error?': SearchText });
 const Params = type({ slug: 'string', language: 'string' });
@@ -51,7 +52,6 @@ const loadEditor = createServerFn({ method: 'GET' })
     }
     const [draft, rows, unresolved] = await Promise.all([readDraft(slug, language), listPages(), unresolvedTokens(slug, language)]);
     const row = rows.find((candidate) => candidate.slug === slug && candidate.language === language);
-    const renderer = await createMarkdownRenderer();
     return {
       access,
       slug,
@@ -59,8 +59,19 @@ const loadEditor = createServerFn({ method: 'GET' })
       row,
       draft: { title: draft?.title ?? '', bodyMd: draft?.bodyMd ?? '' },
       unresolved,
-      previewHtml: draft ? renderer.render(draft.bodyMd).html : null,
     } as const;
+  });
+
+/**
+ * The Preview tab's rendering of the typed body, with the renderer the public page uses. Only an
+ * admin may ask; a cross-site, signed-out or refused call answers null.
+ */
+const previewPage = createServerFn({ method: 'POST' })
+  .validator(type({ body: 'string <= 50000' }))
+  .handler(async ({ data }): Promise<{ html: string } | null> => {
+    const session = sameOrigin(getRequest()) ? await pageSession() : null;
+    if (!session || accessOf(session) !== 'ok') return null;
+    return { html: (await createMarkdownRenderer()).render(data.body).html };
   });
 
 export const Route = createFileRoute('/admin/pages/$slug/$language')({
@@ -112,7 +123,7 @@ function Editor() {
   const search = Route.useSearch();
   useRouteHydrated();
   if (data.access !== 'ok') return <AccessNotice access={data.access} title={t('admin', 'pages.title')} />;
-  const { slug, language, row, draft, unresolved, previewHtml } = data;
+  const { slug, language, row, draft, unresolved } = data;
   const name = t('admin', `pages.slug.${slug}`);
   const title = t('admin', 'pages.editor.title', { page: name, language: t('admin', `pages.language.${language}`) });
   const live = row?.status === 'published' || row?.status === 'changed';
@@ -175,63 +186,118 @@ function Editor() {
                 : t('admin', 'pages.error.generic')}
           </Notice>
         ))}
+      {/* Keyed by page and language, so typing in one language never shows up in another. */}
+      <PageForm key={`${slug}/${language}`} here={hereOf(slug, language)} language={language} draft={draft} live={live} />
+    </main>
+  );
+}
+
+type Preview = { status: 'idle' | 'loading' | 'failed' } | { status: 'ready'; html: string };
+
+/**
+ * The editor form: title and Markdown in the Edit tab, the actions below both tabs, each a submit
+ * button naming its intent. A plain POST, so Edit and Save work before hydration and with scripts
+ * off. Mux Tabs unmount the hidden panel, so the title and body live in this component's state:
+ * while Preview shows, they ride in hidden inputs instead, and the form always posts each field once.
+ * Preview needs scripts (its tab is disabled until hydration): it asks the server to render the
+ * typed text with the renderer the public page uses.
+ */
+function PageForm({
+  here,
+  language,
+  draft,
+  live,
+}: {
+  here: string;
+  language: string;
+  draft: { title: string; bodyMd: string };
+  live: boolean;
+}) {
+  const { t } = useTranslate();
+  const hydrated = useHydrated();
+  const [title, setTitle] = useState(draft.title);
+  const [body, setBody] = useState(draft.bodyMd);
+  const [tab, setTab] = useState('edit');
+  const [preview, setPreview] = useState<Preview>({ status: 'idle' });
+  const requested = useRef(0);
+
+  async function show(next: string) {
+    setTab(next);
+    if (next !== 'preview') return;
+    const mine = ++requested.current;
+    if (body.trim() === '') return setPreview({ status: 'idle' });
+    setPreview({ status: 'loading' });
+    const rendered = await previewPage({ data: { body } }).catch(() => null);
+    if (mine === requested.current) setPreview(rendered ? { status: 'ready', html: rendered.html } : { status: 'failed' });
+  }
+
+  return (
+    <form className="adm-form adm-wide" method="post" action={here} aria-label={t('admin', 'pages.editor.formLabel')}>
       <Tabs
         aria-label={t('admin', 'pages.tabs')}
-        defaultValue="edit"
+        value={tab}
+        onChange={(next) => void show(next)}
         items={[
           {
             id: 'edit',
             label: t('admin', 'pages.tab.edit'),
-            panel: <PageForm here={hereOf(slug, language)} draft={draft} live={live} />,
+            panel: (
+              <div className="adm-section">
+                <TextField
+                  name="title"
+                  label={t('admin', 'pages.field.title')}
+                  value={title}
+                  onChange={setTitle}
+                  maxLength={120}
+                  required
+                />
+                <TextAreaField
+                  name="body"
+                  label={t('admin', 'pages.field.body')}
+                  description={t('admin', 'pages.field.body.hint')}
+                  value={body}
+                  onChange={setBody}
+                  rows={24}
+                  maxLength={50000}
+                />
+              </div>
+            ),
           },
           {
             id: 'preview',
             label: t('admin', 'pages.tab.preview'),
+            disabled: !hydrated,
             panel: (
-              <section className="adm-section" aria-labelledby="preview">
+              <section className="adm-section" aria-labelledby="preview" aria-busy={preview.status === 'loading'}>
                 <SectionTitle id="preview">{t('admin', 'pages.preview')}</SectionTitle>
-                {previewHtml === null ? (
-                  <Text as="p" color="muted">
-                    {t('admin', 'pages.preview.empty')}
-                  </Text>
-                ) : (
+                {preview.status === 'ready' ? (
                   <article lang={language}>
                     <Text as="h1" variant="heading" size="md">
-                      {draft.title}
+                      {title}
                     </Text>
-                    <Prose html={previewHtml} />
+                    <Prose html={preview.html} />
                   </article>
+                ) : preview.status === 'failed' ? (
+                  <Notice role="alert" tone="danger">
+                    {t('admin', 'pages.preview.failed')}
+                  </Notice>
+                ) : (
+                  <Text as="p" color="muted">
+                    {t('admin', preview.status === 'loading' ? 'pages.preview.loading' : 'pages.preview.empty')}
+                  </Text>
                 )}
               </section>
             ),
           },
         ]}
       />
-    </main>
-  );
-}
-
-/**
- * The editor form: title, Markdown body and the three actions, each a submit button naming its
- * intent. A plain POST, so it works before hydration.
- */
-function PageForm({ here, draft, live }: { here: string; draft: { title: string; bodyMd: string }; live: boolean }) {
-  const { t } = useTranslate();
-  // State, not the fields' own: the Preview tab unmounts this panel, and coming back must keep the edit.
-  const [title, setTitle] = useState(draft.title);
-  const [body, setBody] = useState(draft.bodyMd);
-  return (
-    <form className="adm-form adm-wide" method="post" action={here} aria-label={t('admin', 'pages.editor.formLabel')}>
-      <TextField name="title" label={t('admin', 'pages.field.title')} value={title} onChange={setTitle} maxLength={120} required />
-      <TextAreaField
-        name="body"
-        label={t('admin', 'pages.field.body')}
-        description={t('admin', 'pages.field.body.hint')}
-        value={body}
-        onChange={setBody}
-        rows={24}
-        maxLength={50000}
-      />
+      {/* The Edit panel is unmounted while Preview shows: these carry its values instead. */}
+      {tab === 'preview' && (
+        <>
+          <Input.Input type="hidden" name="title" value={title} />
+          <Input.Input type="hidden" name="body" value={body} />
+        </>
+      )}
       <div className="adm-actions">
         <Button type="submit" name="intent" value="save" variant="neutral">
           {t('admin', 'pages.save')}

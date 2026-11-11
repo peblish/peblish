@@ -34,7 +34,7 @@ const pageRow = (on: Page, name: string) => on.getByRole('row').filter({ has: on
 /** One language's cell in a page's row: its status and Edit link. */
 const languageCell = (on: Page, name: string, language: 'en' | 'de') => pageRow(on, name).locator(`[data-language="${language}"]`);
 
-/** The editor's Preview tab, opened: the saved draft as visitors will see it. */
+/** The editor's Preview tab, opened: the typed text as visitors will see it. */
 async function openPreview(on: Page) {
   await on.getByRole('tab', { name: 'Preview' }).click();
   return on.getByRole('tabpanel', { name: 'Preview' });
@@ -71,7 +71,7 @@ test('publishing is refused while the operator details are empty, and the editor
   await gotoHydrated(page, rules);
   await expect(page.getByLabel('Title')).toHaveValue('Community rules');
   const preview = await openPreview(page);
-  await expect(preview.getByRole('heading', { name: 'The saved draft, as visitors will see it' })).toBeVisible();
+  await expect(preview.getByRole('heading', { name: 'Your text, as visitors will see it' })).toBeVisible();
   await expect(preview).toContainText('{{CONTACT_EMAIL}}');
   await page.getByRole('tab', { name: 'Edit' }).click();
   await page.getByRole('button', { name: 'Publish' }).click();
@@ -147,6 +147,61 @@ test('an edit stays a draft until it is published: the list says so and visitors
   const { context, page: reader } = await visitor(browser);
   await gotoHydrated(reader, '/rules');
   await expect(reader.getByRole('heading', { level: 1 })).toHaveText('Community rules');
+  await context.close();
+});
+
+test('typed text survives a look at the preview, which renders it, and stays with its own language', async () => {
+  await gotoHydrated(page, rules);
+  await page.getByLabel('Title').fill('Unsaved rules');
+  await page.getByLabel('Markdown').fill('Be **kind**, unsaved.');
+  const preview = await openPreview(page);
+  await expect(preview.getByRole('heading', { level: 1 })).toHaveText('Unsaved rules');
+  await expect(preview.locator('strong')).toHaveText('kind');
+  await page.getByRole('tab', { name: 'Edit' }).click();
+  await expect(page.getByLabel('Title')).toHaveValue('Unsaved rules');
+  await expect(page.getByLabel('Markdown')).toHaveValue('Be **kind**, unsaved.');
+  // Another language opens with its own stored text, not the English typing, and the preview follows it.
+  await page.getByRole('navigation', { name: 'Language' }).getByRole('link', { name: 'German' }).click();
+  await page.waitForURL(/\/admin\/pages\/rules\/de$/);
+  await expect(page.getByLabel('Title')).toHaveValue('');
+  await expect(page.getByLabel('Markdown')).toHaveValue('');
+  await expect((await openPreview(page)).getByText('Nothing is written for this language yet.')).toBeVisible();
+  await page.getByRole('tab', { name: 'Edit' }).click();
+  await page.getByRole('navigation', { name: 'Language' }).getByRole('link', { name: 'English' }).click();
+  await page.waitForURL(/\/admin\/pages\/rules\/en$/);
+  await expect(page.getByLabel('Title')).toHaveValue('House rules');
+});
+
+test('Save draft while the preview is showing stores what was typed, once per field', async () => {
+  await gotoHydrated(page, rules);
+  const body = `${await page.getByLabel('Markdown').inputValue()}\n\nSaved from the preview.`;
+  await page.getByLabel('Markdown').fill(body);
+  await openPreview(page);
+  await expect(page.getByLabel('Markdown')).toHaveCount(0);
+  const posted = page.waitForRequest((request) => request.method() === 'POST' && request.url().endsWith(rules));
+  await page.getByRole('button', { name: 'Save draft' }).click();
+  const form = new URLSearchParams((await posted).postData() ?? '');
+  // A form post sends line breaks as CRLF; the server turns them back.
+  const sent = form.getAll('body').map((value) => value.replaceAll('\r\n', '\n'));
+  expect([form.getAll('title'), sent, form.getAll('intent')]).toEqual([['House rules'], [body], ['save']]);
+  await page.waitForURL(/saved=draft/);
+  await expect(page.getByRole('status')).toHaveText('Draft saved.');
+  await expect(page.getByLabel('Title')).toHaveValue('House rules');
+  await expect(page.getByLabel('Markdown')).toHaveValue(body);
+});
+
+test('with scripts off the editor is in the page and Save draft posts plainly; Preview waits for scripts', async ({ browser }) => {
+  const context = await browser.newContext({ javaScriptEnabled: false, storageState: await page.context().storageState() });
+  const plain = await context.newPage();
+  await plain.goto(rules);
+  await expect(plain.getByRole('tab', { name: 'Preview' })).toHaveAttribute('aria-disabled', 'true');
+  const body = `${await plain.getByLabel('Markdown').inputValue()}\n\nSaved without scripts.`;
+  await plain.getByLabel('Markdown').fill(body);
+  await plain.getByRole('button', { name: 'Save draft' }).click();
+  await plain.waitForURL(/saved=draft/);
+  await expect(plain.getByRole('status')).toHaveText('Draft saved.');
+  await expect(plain.getByLabel('Title')).toHaveValue('House rules');
+  await expect(plain.getByLabel('Markdown')).toHaveValue(body);
   await context.close();
 });
 
