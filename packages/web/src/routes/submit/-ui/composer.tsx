@@ -4,16 +4,16 @@ import { markdownMaxLength } from '@peblish/schema/markdown';
 import { Button } from '@peblish/ui/components/button';
 import { Checkbox } from '@peblish/ui/components/checkbox';
 import { Link } from '@peblish/ui/components/link';
+import { Notice } from '@peblish/ui/components/notice';
 import { RadioField } from '@peblish/ui/components/radio-field';
 import { RadioGroup } from '@peblish/ui/components/radio-group';
 import { Text } from '@peblish/ui/components/text';
-import { TextField } from '@peblish/ui/components/text-field';
 import { MarkdownEditor } from '@peblish/ui/composer/markdown-editor';
 import { useHydrated } from '@peblish/ui/composer/use-hydrated.ts';
 import { type } from 'arktype';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { useTranslate } from '../../../i18n/use-translate.ts';
-import { firstProblem } from '../-fields.ts';
+import { altTextMaxLength, firstProblem } from '../-fields.ts';
 import { loadCommunityPanel, previewBody } from '../-load.ts';
 import {
   asComposerError,
@@ -28,6 +28,7 @@ import { CommunityAside } from './community-aside.tsx';
 import { CommunityPicker } from './community-picker.tsx';
 import { clearDraft, readDraft, removeUnscopedDrafts, writeDraft } from './drafts.ts';
 import { ErrorText } from './error-text.tsx';
+import { ComposerField } from './field.tsx';
 import { ImageField } from './image-field.tsx';
 import { useEditorLabels } from './labels.ts';
 
@@ -215,6 +216,7 @@ export function Composer({ data, error: initialError, onDone, onDiscard, keepOnC
       title: form.title,
       url: form.url,
       body: form.body,
+      alt: form.alt,
       hasImage,
     });
     if (found) return setError(found);
@@ -308,19 +310,19 @@ export function Composer({ data, error: initialError, onDone, onDiscard, keepOnC
           </>
         )}
 
-        <TextField
+        <ComposerField
           label={t('composer', 'title.label')}
           name="title"
           value={form.title}
           onChange={(title) => change({ title })}
           description={t('composer', 'title.count', { count: titleLength, max: postTitleMaxLength })}
           invalid={problem('title') !== undefined || titleLength > postTitleMaxLength}
-          errorMessage={fieldError('title') ?? t('composer', 'error.title.too_long')}
+          error={fieldError('title') ?? t('composer', 'error.title.too_long')}
           className="cmp__field"
         />
 
         <div className="cmp__only-link">
-          <TextField
+          <ComposerField
             label={t('composer', 'url.label')}
             name="url"
             type="url"
@@ -329,7 +331,7 @@ export function Composer({ data, error: initialError, onDone, onDiscard, keepOnC
             onChange={(url) => change({ url })}
             description={t('composer', 'url.hint')}
             invalid={problem('url') !== undefined}
-            errorMessage={fieldError('url')}
+            error={fieldError('url')}
             className="cmp__field"
           />
         </div>
@@ -337,12 +339,14 @@ export function Composer({ data, error: initialError, onDone, onDiscard, keepOnC
         {data.uploads && !edit && (
           <div className="cmp__only-image">
             <ImageField error={fieldError('image')} progress={progress} />
-            <TextField
+            <ComposerField
               label={t('composer', 'alt.label')}
               name="alt"
               value={form.alt}
               onChange={(alt) => change({ alt })}
               description={t('composer', 'alt.hint')}
+              invalid={problem('alt') !== undefined || form.alt.length > altTextMaxLength}
+              error={fieldError('alt') ?? t('composer', 'error.alt.too_long')}
               className="cmp__field"
             />
           </div>
@@ -392,14 +396,14 @@ export function Composer({ data, error: initialError, onDone, onDiscard, keepOnC
         </Checkbox>
 
         {error && errorField(error) === null && (
-          <p className="cmp__error" role="alert">
+          <Notice tone="danger" role="alert">
             <ErrorText code={error} />
-          </p>
+          </Notice>
         )}
         {!canPost && (
-          <p className="cmp__error" role="alert">
+          <Notice tone="danger" role="alert">
             <ErrorText code="community.posting_restricted" />
-          </p>
+          </Notice>
         )}
 
         <div className="cmp__actions">

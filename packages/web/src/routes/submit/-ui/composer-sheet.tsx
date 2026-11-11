@@ -1,4 +1,5 @@
 import { Link } from '@peblish/ui/components/link';
+import { Notice } from '@peblish/ui/components/notice';
 import { Text } from '@peblish/ui/components/text';
 import { ComposerSheet } from '@peblish/ui/composer/sheet';
 import '@peblish/ui/composer/composer.css';
@@ -40,14 +41,14 @@ export default function ComposerSheetHost({ community, onClose }: { community?: 
         </Text>
       )}
       {data === 'failed' && (
-        <p role="alert" className="cmp__error">
-          {t('composer', 'loadFailed')} <Link href="/submit">{t('composer', 'openPage')}</Link>
-        </p>
+        <Notice tone="danger" role="alert" action={<Link href="/submit">{t('composer', 'openPage')}</Link>}>
+          {t('composer', 'loadFailed')}
+        </Notice>
       )}
       {typeof data === 'object' && data.status === 'unavailable' && (
-        <p role="alert" className="cmp__error">
-          {t('composer', `unavailable.${data.reason}`)} <Link href="/submit">{t('composer', 'openPage')}</Link>
-        </p>
+        <Notice tone="danger" role="alert" action={<Link href="/submit">{t('composer', 'openPage')}</Link>}>
+          {t('composer', `unavailable.${data.reason}`)}
+        </Notice>
       )}
       {typeof data === 'object' && data.status === 'ready' && (
         <Composer

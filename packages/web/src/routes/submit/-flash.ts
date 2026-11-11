@@ -46,7 +46,8 @@ export function keepFlash(actorId: string, kept: Kept, now = Date.now()): string
       title: clip(kept.title, 1_000),
       url: clip(kept.url, 4_000),
       body: clip(kept.body, longestBody),
-      alt: clip(kept.alt, 1_000),
+      // Past the 1,000 a post stores, so text refused for its length comes back whole to be shortened.
+      alt: clip(kept.alt, 4_000),
     },
   });
   return id;

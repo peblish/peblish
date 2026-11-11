@@ -128,6 +128,17 @@ test('someone else does not get the words from a refusal link', async ({ page, b
   await other.close();
 });
 
+test("a community's rules can be read without JavaScript", async ({ page }) => {
+  await signIn(page, world.people.poster);
+  await page.goto(`/submit?community=${world.communities.open.handle}`);
+  const aside = page.getByRole('complementary', { name: 'Community rules' });
+  await expect(aside.getByRole('heading', { level: 2 })).toContainText(world.communities.open.handle);
+  // A rule's title and its text are both on the page, not behind a control that needs scripts.
+  await expect(aside.getByText('Be civil')).toBeVisible();
+  await expect(aside.getByText('No harassment, slurs or')).toBeVisible();
+  await expect(aside.getByText('Stay on topic')).toBeVisible();
+});
+
 test('a missing title comes back by its code, beside the field', async ({ page }) => {
   await signIn(page, world.people.poster);
   await page.goto('/submit');

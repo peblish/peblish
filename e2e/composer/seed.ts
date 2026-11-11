@@ -49,8 +49,22 @@ async function world() {
   const gone = await seedActor(lemmy, 'Group', `gone_${suffix}`);
   await seedCommunityRemoval(gone);
   const remoteStaff = await seedActor(lemmy, 'Group', `modsonly_${suffix}`, { postingRestrictedToMods: true });
+  // Names with no break in them, for the 320px layout: a local one with a long rule, a remote one on a long host.
+  const long = await seedActor(local, 'Group', `averyveryverylongcommunitynamewithnospaces_${suffix}`);
+  await writer()
+    .insert(communityRules)
+    .values([
+      {
+        communityId: long.id,
+        position: 1,
+        title: 'Postsabouttheweatherbelongintheweathercommunityplease',
+        bodyMd: 'See https://weather.far-away.test/a/very/long/path/without/any/spaces/in/it/at/all for that.',
+      },
+    ]);
+  const farHost = await seedInstance(`a-very-long-instance-host-name-${suffix}.far-away.test`, false);
+  const farAway = await seedActor(farHost, 'Group', `anotherlongremotecommunityname_${suffix}`);
   for (const person of [poster, unverified, moderator, banned, young]) {
-    for (const followee of [remote, gated, gone, remoteStaff]) {
+    for (const followee of [remote, gated, gone, remoteStaff, farAway]) {
       await writer()
         .insert(follows)
         .values({ followerId: person.actorId, followeeId: followee.id, state: 'accepted', acceptedAt: new Date() });
@@ -68,6 +82,8 @@ async function world() {
       gated: { id: gated.id, handle: `${gated.name}@${lemmy.domain}` },
       gone: { id: gone.id, handle: `${gone.name}@${lemmy.domain}` },
       remoteStaff: { id: remoteStaff.id, handle: `${remoteStaff.name}@${lemmy.domain}` },
+      long: { id: long.id, handle: long.name },
+      farAway: { id: farAway.id, handle: `${farAway.name}@${farHost.domain}` },
     },
   };
 }

@@ -45,3 +45,11 @@ test('the body is limited to the Markdown cap for a text post, and an image post
   expect(problem({ type: 'image', hasImage: true })).toBeNull();
   expect(problem({ type: 'image', creating: false })).toBeNull();
 });
+
+test("an image's alt text is limited to what a post stores, and is refused rather than cut", () => {
+  const image = { type: 'image', hasImage: true } as const;
+  expect(problem({ ...image, alt: 'a'.repeat(1000) })).toBeNull();
+  expect(problem({ ...image, alt: 'a'.repeat(1001) })).toBe('alt.too_long');
+  // Only an image post carries alt text.
+  expect(problem({ alt: 'a'.repeat(1001) })).toBeNull();
+});

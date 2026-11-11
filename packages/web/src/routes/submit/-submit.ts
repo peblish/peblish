@@ -33,7 +33,6 @@ const Fields = type({
   'nsfw?': 'string',
 });
 
-const altTextMaxLength = 1000;
 /** The most the fields themselves can weigh: a 50,000-character body at four bytes a character, and slack. */
 const fieldsBytes = 1024 * 1024;
 
@@ -71,7 +70,7 @@ export function parseSubmission(raw: Record<string, string>, image: Uint8Array |
     title: normalizeTitle(fields.title ?? ''),
     url: (fields.url ?? '').trim(),
     body: lineFeeds(fields.body ?? ''),
-    alt: lineFeeds(fields.alt ?? '').slice(0, altTextMaxLength),
+    alt: lineFeeds(fields.alt ?? ''),
     nsfw: fields.nsfw !== undefined,
     image,
   };

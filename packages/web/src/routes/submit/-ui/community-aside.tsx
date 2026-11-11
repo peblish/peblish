@@ -1,5 +1,4 @@
 import { Card } from '@peblish/ui/components/card';
-import { Disclosure } from '@peblish/ui/components/disclosure';
 import { Handle } from '@peblish/ui/components/handle';
 import { Link } from '@peblish/ui/components/link';
 import { Prose } from '@peblish/ui/components/prose';
@@ -7,7 +6,11 @@ import { Text } from '@peblish/ui/components/text';
 import { useTranslate } from '../../../i18n/use-translate.ts';
 import type { CommunityPanel } from '../-types.ts';
 
-/** The chosen community's rules and posting warning beside the form (composer-page). */
+/**
+ * The chosen community's rules and posting warning beside the form (composer-page). Each rule's
+ * title and text are shown in full: they are what a poster must read, and a closed Mux
+ * Disclosure would hide the text until scripts run.
+ */
 export function CommunityAside({ panel, loading }: { panel: CommunityPanel | null; loading: boolean }) {
   const { t } = useTranslate();
   return (
@@ -56,14 +59,11 @@ export function CommunityAside({ panel, loading }: { panel: CommunityPanel | nul
               ) : (
                 <ol className="cmp__rules">
                   {panel.rules.map(({ title, html }, index) => (
-                    <li key={`${index}-${title}`}>
-                      {html ? (
-                        <Disclosure title={title}>
-                          <Prose html={html} />
-                        </Disclosure>
-                      ) : (
-                        <Text>{title}</Text>
-                      )}
+                    <li key={`${index}-${title}`} className="cmp__rule">
+                      <Text as="p" variant="label" size="md">
+                        {title}
+                      </Text>
+                      {html && <Prose html={html} />}
                     </li>
                   ))}
                 </ol>
