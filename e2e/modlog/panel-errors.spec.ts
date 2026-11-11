@@ -3,10 +3,10 @@ import { postsTo } from '../admin-safety/support.ts';
 import { gotoHydrated } from '../support/route-marker.ts';
 import { seedWorld, signedIn, type World } from './support.ts';
 
-// A refusal that no longer applies must not lock a moderator panel: once the moderator fixes what
-// was refused, the next click posts. A reason of only spaces passes the browser's `required` but
-// the server refuses it (reason.required), in place with scripts on or at the refusal address the
-// server renders.
+// A refusal or a browser verdict that no longer applies must not lock a moderator panel: once the
+// moderator fixes what was refused, the next click posts. A reason of only spaces passes the
+// browser's `required` but the server refuses it (reason.required), in place with scripts on or
+// at the refusal address the server renders; a missing end date stops stale once the length changes.
 test.skip(Boolean(process.env.BASE_URL), 'needs the lane database for its seed (DATABASE_URL)');
 test.describe.configure({ mode: 'serial', timeout: 90_000 });
 
@@ -70,4 +70,22 @@ test('at a refusal address the server rendered, a corrected reason removes the p
   await panel.getByRole('button', { name: 'Remove', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Restore post', exact: true })).toBeVisible();
   expect(sent).toHaveLength(1);
+});
+
+test('a missing end date stops counting once the length is a fixed one, and the next click bans', async ({ page }) => {
+  const sent = await moderator(page);
+  await gotoHydrated(page, `/post/${world.posts.author}`);
+  const panel = page.getByTestId('post-moderate').getByTestId('mod-panel-ban');
+  await panel.getByRole('button', { name: /^Ban from !/ }).click();
+  await reason(panel).fill('Rule 2: flooding');
+  await panel.getByLabel('Length').selectOption('custom');
+  await panel.getByRole('button', { name: 'Ban', exact: true }).click();
+  await expect(panel.getByText('Fill in this field.')).toBeVisible();
+  expect(sent).toHaveLength(0);
+  await panel.getByLabel('Length').selectOption('30');
+  await expect(panel.getByText('Fill in this field.')).toHaveCount(0);
+  await panel.getByRole('button', { name: 'Ban', exact: true }).click();
+  await expect(panel.locator('form')).toBeHidden();
+  expect(sent).toHaveLength(1);
+  expect(sent[0]!.get('duration')).toBe('30');
 });

@@ -268,10 +268,18 @@ export function BanFields({
 /**
  * The last day of a custom ban. Mux Input parts, since the facade TextField has no date type, with
  * the shared field hook, so a missing day is explained under the field in the page's language.
+ * A shown problem is judged again when the length switches `required`: a missing day stops
+ * counting for a fixed or permanent ban (it would otherwise keep the field invalid and cancel the
+ * next submit), while a constraint that still applies stays.
  */
 function UntilField({ required }: { required: boolean }) {
   const { t } = useTranslate();
-  const { ref, problem, errorId } = useFieldProblem<HTMLDivElement>();
+  const { ref, problem, errorId, recheck } = useFieldProblem<HTMLDivElement>();
+  const [judgedRequired, setJudgedRequired] = useState(required);
+  if (judgedRequired !== required) {
+    setJudgedRequired(required);
+    if (problem) recheck();
+  }
   const partId = useErrorPartId(Boolean(problem), errorId);
   return (
     <Input.Root ref={ref} required={required} invalid={problem !== undefined}>
