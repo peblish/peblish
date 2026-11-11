@@ -2,7 +2,7 @@ import optimizeLocales from '@react-aria/optimize-locales-plugin';
 import { tanstackStart } from '@tanstack/react-start/plugin/vite';
 import viteReact from '@vitejs/plugin-react';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { nitro } from 'nitro/vite';
 import { defineConfig, parseSync, type Plugin, Visitor } from 'vite';
 
@@ -391,23 +391,64 @@ export function splitSubstrate(file: string, code = readFileSync(file, 'utf8')) 
   return { imports: imports.join('\n'), helpers: helpers.join('\n'), names: names.join(', '), wrappers };
 }
 
-/** Points each `import { AriaX } from './substrate.js'` in a Mux file (`id`) at the module that holds only AriaX. */
+/**
+ * Whether the module specifier `source`, in the Mux file `id`, names the substrate.js beside it. A relative or absolute
+ * path is resolved before comparing, so `'././substrate.js'` names it too. A spelling that may name it but cannot be
+ * proven to (no extension, a query, a package path) fails the build, since leaving it would load substrate.js whole.
+ */
+function namesSubstrate(id: string, source: string) {
+  const file = join(dirname(id), 'substrate.js');
+  if (source.startsWith(file + substrateQuery)) return false;
+  const path = source.replace(/[?#].*$/s, '');
+  const relative = /^\.\.?[\\/]/.test(path) || isAbsolute(path);
+  const resolved = relative ? resolve(dirname(id), path) : path;
+  if (relative && resolved === file && path === source) return true;
+  const named = relative
+    ? resolved.replace(/\.m?js$/, '') === file.replace(/\.js$/, '')
+    : /[\\/]substrate(\.m?js)?$|^substrate\.m?js$/.test(path);
+  if (named) substrateDrift(id, `a reference to substrate.js as '${source}', which the split cannot rewrite`);
+  return false;
+}
+
+/**
+ * Points each `import { AriaX } from './substrate.js'` in a Mux file (`id`) at the module that holds only AriaX. Fails
+ * closed on every other way to reach substrate.js (a default, namespace or side-effect-only import, a re-export, a
+ * dynamic import, any other string naming it), since each would load the whole module and undo the split. A dynamic
+ * import of a computed name cannot be seen here.
+ */
 export function rewriteSubstrateImports(id: string, code: string) {
   const file = join(dirname(id), 'substrate.js');
+  const program = parseProgram(id, code);
+  const rewritten = new Set<number>();
   let out = '';
   let last = 0;
-  for (const node of parseProgram(id, code).body) {
-    if (!('source' in node) || node.source?.value !== './substrate.js') continue;
-    if (node.type !== 'ImportDeclaration') substrateDrift(id, 'a re-export of substrate.js');
+  for (const node of program.body) {
+    if (node.type !== 'ImportDeclaration' || !namesSubstrate(id, node.source.value)) continue;
     if (node.specifiers.length === 0) substrateDrift(id, 'a side-effect-only import of substrate.js');
+    if (node.phase || node.attributes.length > 0) substrateDrift(id, 'an import of substrate.js with a phase or attributes');
     const imports = node.specifiers.map((specifier) =>
       specifier.type === 'ImportSpecifier' && specifier.imported.type === 'Identifier'
         ? `import { ${specifier.imported.name} as ${specifier.local.name} } from ${substratePartId(file, specifier.imported.name)};`
-        : substrateDrift(id, 'a default or namespace import of substrate.js'),
+        : substrateDrift(
+            id,
+            `${specifier.type === 'ImportNamespaceSpecifier' ? 'a namespace' : 'a default or string-named'} import of substrate.js`,
+          ),
     );
+    rewritten.add(node.source.start);
     out += code.slice(last, node.start) + imports.join(' ');
     last = node.end;
   }
+  // Any other string naming substrate.js: a re-export, `import()`, or a path handed to code.
+  const unrewritten = (what: string) => (node: { start: number; value: unknown }) => {
+    if (typeof node.value === 'string' && !rewritten.has(node.start) && namesSubstrate(id, node.value)) substrateDrift(id, what);
+  };
+  new Visitor({
+    ExportNamedDeclaration: (node) => node.source && unrewritten('a re-export of substrate.js')(node.source),
+    ExportAllDeclaration: (node) => unrewritten('a re-export of substrate.js')(node.source),
+    ImportExpression: (node) => node.source.type === 'Literal' && unrewritten('a dynamic import of substrate.js')(node.source),
+    Literal: unrewritten('a reference to substrate.js'),
+    TemplateElement: (node) => unrewritten('a reference to substrate.js')({ start: node.start, value: node.value.cooked }),
+  }).visit(program);
   // The rewrite moves code across lines, so client source maps need mappings for it and for the virtual modules first.
   return last === 0 ? null : { code: out + code.slice(last), map: null };
 }
@@ -448,7 +489,7 @@ export function splitMuxSubstrate(): Plugin {
       },
     },
     transform: {
-      filter: { id: /[\\/]@muxui[\\/]react[\\/]generated[\\/][^\\/?]+\.m?js$/, code: './substrate.js' },
+      filter: { id: /[\\/]@muxui[\\/]react[\\/]generated[\\/][^\\/?]+\.m?js$/, code: 'substrate' },
       handler: (code, id) => rewriteSubstrateImports(id, code),
     },
   };

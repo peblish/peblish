@@ -52,6 +52,42 @@ describe('rewriteSubstrateImports', () => {
   test.each(["import './substrate.js';\n", "import {} from './substrate.js';\n"])('rejects the side-effect-only %s', (code) =>
     expect(rewrite(code)).toThrow('a side-effect-only import of substrate.js'),
   );
+
+  test('rewrites the named imports overlays.js makes, aliases included', () => {
+    const code = "import { AriaDropZone, AriaToastRegion as UNSTABLE_ToastRegion } from './substrate.js';\n";
+    expect(rewriteSubstrateImports('/mux/generated/overlays.js', code)?.code).toBe(
+      'import { AriaDropZone as AriaDropZone } from "/mux/generated/substrate.js?mux-substrate=AriaDropZone"; ' +
+        'import { AriaToastRegion as UNSTABLE_ToastRegion } from "/mux/generated/substrate.js?mux-substrate=AriaToastRegion";\n',
+    );
+  });
+
+  test.each(['././substrate.js', '../generated/substrate.js', '/mux/generated/substrate.js'])(
+    'resolves the path %s to substrate.js and rewrites it',
+    (path) =>
+      expect(rewrite(`import { AriaButton } from '${path}';\n`)()?.code).toBe(
+        'import { AriaButton as AriaButton } from "/mux/generated/substrate.js?mux-substrate=AriaButton";\n',
+      ),
+  );
+
+  test('leaves a different module alone', () =>
+    expect(rewrite("import { a } from './substrate-motion.mjs';\nimport { b } from '../other/substrate.js';\n")()).toBeNull());
+
+  // Each would load substrate.js whole, so the split would silently stop working.
+  test.each([
+    ['a dynamic import', "const load = () => import('./substrate.js');\n", 'a dynamic import of substrate.js'],
+    ['a dynamic import through a template', 'const load = () => import(`./substrate.js`);\n', 'a reference to substrate.js'],
+    ['a dynamic import by another path', "const load = () => import('././substrate.js');\n", 'a dynamic import of substrate.js'],
+    ['a re-export', "export { AriaButton } from './substrate.js';\n", 'a re-export of substrate.js'],
+    ['a re-export by another path', "export * from '././substrate.js';\n", 'a re-export of substrate.js'],
+    ['a namespace import', "import * as substrate from './substrate.js';\n", 'a namespace import of substrate.js'],
+    ['a default import', "import substrate from './substrate.js';\n", 'a default or string-named import of substrate.js'],
+    ['a string-named import', "import { 'AriaButton' as B } from './substrate.js';\n", 'a default or string-named import of substrate.js'],
+    ['an import with attributes', "import { AriaButton } from './substrate.js' with { type: 'js' };\n", 'with a phase or attributes'],
+    ['a path handed to code', "const url = new URL('./substrate.js', import.meta.url);\n", 'a reference to substrate.js'],
+    ['an import without the extension', "import { AriaButton } from './substrate';\n", "as './substrate', which the split cannot rewrite"],
+    ['an import with a query', "import { AriaButton } from './substrate.js?raw';\n", 'which the split cannot rewrite'],
+    ['an import by package path', "import { AriaButton } from '@muxui/react/generated/substrate.js';\n", 'which the split cannot rewrite'],
+  ])('rejects %s', (_, code, error) => expect(rewrite(code)).toThrow(error));
 });
 
 // The vendored rc.7 files pass every check and split into the parts the client build has always had.
