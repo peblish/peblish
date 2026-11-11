@@ -3,7 +3,7 @@ import type { ReactNode } from 'react';
 // Names and hosts from other servers can carry directional controls (embeddings, overrides,
 // isolates and marks) that would reorder the text around them: `jun<U+202E>...@evil.example`
 // could be drawn to read as another account on another server. Escapes only in this file.
-const bidiControls = /[‪-‮⁦-⁩‎‏؜]/g;
+const bidiControls = /[\u202A-\u202E\u2066-\u2069\u200E\u200F\u061C]/g;
 
 /**
  * `text` with every directional control character replaced, for display only: by an interrobang
