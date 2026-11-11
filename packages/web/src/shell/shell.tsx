@@ -64,9 +64,8 @@ function useFocusLostToPage(pathname: string | undefined) {
  * gets the scripted layout.
  *
  * On the phone bar the brand and the actions sit beside Sidebar.MobileTrigger, laid over its
- * bar by CSS, not in its `logo` slot: that slot is inside React Aria's DialogTrigger, whose press
- * handler every pressable inside inherits, so a tap on Account (or on the brand on its own page)
- * would open the drawer too. The trigger sits in a <section> so its <header> is not a second
+ * bar by CSS: Mux has no slot for actions beside its `logo`, and the brand stays with them. (The
+ * `logo` slot itself keeps a press its own since Mux UI rc.7.) The trigger sits in a <section> so its <header> is not a second
  * banner beside the bar's own.
  */
 export function Shell({ children }: { children: ReactNode }) {

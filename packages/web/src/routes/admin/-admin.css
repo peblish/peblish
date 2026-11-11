@@ -117,7 +117,7 @@
     max-width: 360px;
   }
 
-  /* The label already says "15 / 25 accounts": the Meter's own reading (plain digits) only repeats it. */
+  /* The label already says "15 / 25 accounts": the Meter's own reading (a percentage) only repeats it. */
   .adm-meter .muxui-value-output {
     display: none;
   }

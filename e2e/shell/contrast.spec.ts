@@ -44,7 +44,8 @@ async function choose(page: Page, scheme: 'Light' | 'Dark') {
   await page.getByRole('radiogroup', { name: 'Appearance' }).getByRole('radio', { name: scheme }).click();
   await page.keyboard.press('Escape');
   await expect(page.locator('html')).toHaveAttribute('data-muxui-color-scheme', scheme.toLowerCase());
-  // Mux eases link colours: measure once every transition has ended (or was cancelled).
+  // Mux eases Button colours on a scheme change (a resting Link no longer since rc.7): measure once
+  // every transition has ended (or was cancelled).
   await page.evaluate(() => Promise.allSettled(document.getAnimations().map((animation) => animation.finished)));
 }
 
