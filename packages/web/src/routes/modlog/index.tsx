@@ -1,5 +1,6 @@
 import { isActionGroup, type ActionGroup } from '@peblish/core/modlog/groups';
-import { Handle } from '@peblish/ui/components/handle';
+import { EmptyState } from '@peblish/ui/components/empty-state';
+import { BidiText, Handle } from '@peblish/ui/components/handle';
 import { Link } from '@peblish/ui/components/link';
 import { Pager } from '@peblish/ui/components/pager';
 import { Text } from '@peblish/ui/components/text';
@@ -13,6 +14,7 @@ import { rootTitleData } from '../../shell/title.ts';
 import { loadModlog, modlogEntryValid, type LineView, type ModlogData, type ModlogSearch } from './-load.ts';
 import { actionKey, banLength } from './-ui/labels.ts';
 import modlogCss from './-ui/modlog.css?url';
+import { placeholders, withNames } from './-ui/rich.tsx';
 
 // /modlog: the moderation log as a stream (R2 pick modlog-feed). Entries grouped by day, two lines
 // each, with a facet rail of counts. Built from Mux Text and Link and the shared Pager; every filter and page is a link,
@@ -93,10 +95,11 @@ function ModlogPage() {
         <Rail data={data} keep={keep} />
         <div className="modlog-body">
           {data.lines.length === 0 ? (
-            <Text as="p" className="modlog-empty" data-testid="modlog-empty">
-              {filtered ? t('modlog', 'noMatch') : t('modlog', 'empty')}{' '}
-              {filtered && <Link href="/modlog">{t('modlog', 'clearFilters')}</Link>}
-            </Text>
+            <EmptyState
+              title={filtered ? t('modlog', 'noMatch') : t('modlog', 'empty')}
+              action={filtered && <Link href="/modlog">{t('modlog', 'clearFilters')}</Link>}
+              data-testid="modlog-empty"
+            />
           ) : (
             days.map(({ day, lines }) => (
               <section key={day} aria-label={day}>
@@ -115,35 +118,35 @@ function ModlogPage() {
               first={chosen.cursor ? { href: href(keep), label: t('modlog', 'newest') } : undefined}
               next={data.next ? { href: href({ ...keep, cursor: data.next }), label: t('modlog', 'older') } : undefined}
             >
-              <span data-testid="modlog-range">
+              <Text size="sm" color="muted" data-testid="modlog-range">
                 {t('modlog', 'range', {
                   from: number.format(data.from),
                   to: number.format(data.from + data.lines.length - 1),
                   total: number.format(data.total),
                 })}
-              </span>
+              </Text>
             </Pager>
           )}
           <Text as="p" size="sm" color="muted" className="modlog-legend">
-            <span>
+            <Text size="sm" color="muted">
               <Text variant="label" size="sm">
                 {t('modlog', 'marker.relayed')}
               </Text>{' '}
               {t('modlog', 'legend.relayed')}
-            </span>
-            <span>
+            </Text>
+            <Text size="sm" color="muted">
               <Text variant="label" size="sm">
                 {t('modlog', 'marker.withheld')}
               </Text>{' '}
               {t('modlog', 'legend.withheld')}
-            </span>
+            </Text>
             {data.staff && (
-              <span>
+              <Text size="sm" color="muted">
                 <Text variant="label" size="sm">
                   {t('modlog', 'marker.private')}
                 </Text>{' '}
                 {t('modlog', 'legend.private')}
-              </span>
+              </Text>
             )}
           </Text>
         </div>
@@ -165,8 +168,8 @@ function Rail({
   const communityTotal = facets.communities.reduce((sum, row) => sum + row.count, 0);
   const item = (label: React.ReactNode, count: number, target: string, current: boolean) => (
     <li>
-      <Link href={target} current={current}>
-        <span>{label}</span>
+      <Link href={target} current={current} className="modlog-rail-link">
+        <Text className="modlog-rail-label">{label}</Text>
         <Note>{number.format(count)}</Note>
       </Link>
     </li>
@@ -251,10 +254,10 @@ function Entry({ line }: { line: LineView }) {
             <Handle prefix="@" handle={moderator.handle} />
           )
         ) : (
-          <span>{t('modlog', 'moderator.on', { host })}</span>
+          <Text>{t('modlog', 'moderator.on', { host })}</Text>
         )}
         {line.relayed && <Marker> {t('modlog', 'marker.relayed')}</Marker>}
-        <span className="modlog-reason">
+        <Text className="modlog-reason">
           {' · '}
           {entry.reasonWithheld ? (
             <>
@@ -271,7 +274,7 @@ function Entry({ line }: { line: LineView }) {
               {t('modlog', 'ban.removed', { posts: entry.details.removedPosts ?? 0, comments: entry.details.removedComments ?? 0 })}
             </Note>
           )}
-        </span>
+        </Text>
       </div>
     </article>
   );
@@ -292,20 +295,22 @@ function Target({ line }: { line: LineView }) {
           : target.postId && target.commentId
             ? commentPath(target.postId, target.commentId)
             : null;
-      const name = target.label ?? (path ? t('modlog', 'target.hidden') : t('modlog', 'target.gone'));
+      // A title or excerpt, possibly from another server.
+      const name =
+        target.label !== null ? <BidiText text={target.label} /> : path ? t('modlog', 'target.hidden') : t('modlog', 'target.gone');
       return (
-        <span className="modlog-target">
+        <Text className="modlog-target">
           <Note>{t('modlog', `target.${target.kind}`)}</Note> {path ? <Link href={path}>{name}</Link> : name}
           <Note>
-            {target.author && ` ${t('modlog', 'target.by', { author: `@${target.author.handle}` })}`}
-            {community && ` ${t('modlog', 'target.in', { community: `!${community.handle}` })}`}
+            {target.author && <> {named(t, 'target.by', { author: `@${target.author.handle}` })}</>}
+            {community && <> {named(t, 'target.in', { community: `!${community.handle}` })}</>}
           </Note>
-        </span>
+        </Text>
       );
     }
     case 'person':
       return (
-        <span className="modlog-target">
+        <Text className="modlog-target">
           <Note>{t('modlog', 'target.person')}</Note>{' '}
           {target.person.id ? (
             <Link href={userPath(target.person)}>
@@ -314,26 +319,30 @@ function Target({ line }: { line: LineView }) {
           ) : (
             <Handle prefix="@" handle={target.person.handle} />
           )}
-          {community && <Note> {t('modlog', 'target.in', { community: `!${community.handle}` })}</Note>}
-        </span>
+          {community && <Note> {named(t, 'target.in', { community: `!${community.handle}` })}</Note>}
+        </Text>
       );
     case 'community':
       return (
-        <span className="modlog-target">
+        <Text className="modlog-target">
           <Note>{t('modlog', 'target.community')}</Note>{' '}
           <Link href={communityPath(target.community)}>
             <Handle prefix="!" handle={target.community.handle} />
           </Link>
-        </span>
+        </Text>
       );
     case 'instance':
       return (
-        <span className="modlog-target">
-          <Note>{t('modlog', 'target.instance')}</Note> {target.host}
-        </span>
+        <Text className="modlog-target">
+          <Note>{t('modlog', 'target.instance')}</Note> <BidiText text={target.host} />
+        </Text>
       );
   }
 }
+
+/** A message naming a handle from another server, the handle isolated in it. */
+const named = (t: ReturnType<typeof useTranslate>['t'], key: 'target.by' | 'target.in', names: Record<string, string>) =>
+  withNames(t('modlog', key, placeholders(names)), names);
 
 /** Secondary text: times, counts, hints. */
 const Note = ({ children }: { children: React.ReactNode }) => (
@@ -350,7 +359,7 @@ const Marker = ({ children }: { children: React.ReactNode }) => (
 );
 
 const RailHeading = ({ children }: { children: React.ReactNode }) => (
-  <Text as="h2" variant="label" size="sm" color="muted">
+  <Text as="h2" variant="label" size="sm" color="muted" className="modlog-rail-heading">
     {children}
   </Text>
 );

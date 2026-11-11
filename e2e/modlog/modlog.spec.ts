@@ -29,24 +29,24 @@ test('a moderator removes a comment from the panel under it, then restores it', 
   await gotoHydrated(page, postUrl());
   const comment = page.locator(`#comment-${world.comments.spam}`);
   await expect(comment).toContainText(`Buy now ${world.suffix}`);
-  await comment.getByText('Remove comment', { exact: true }).click();
+  await comment.getByRole('button', { name: 'Remove comment', exact: true }).click();
   // A reason is required: nothing is sent without one.
   await comment.getByRole('button', { name: 'Remove', exact: true }).click();
   await expect(comment.getByRole('textbox', { name: 'Reason' })).toBeFocused();
   await comment.getByRole('textbox', { name: 'Reason' }).fill('Spam, affiliate links');
   await comment.getByRole('button', { name: 'Remove', exact: true }).click();
-  await expect(comment.getByText('Restore comment', { exact: true })).toBeVisible();
+  await expect(comment.getByRole('button', { name: 'Restore comment', exact: true })).toBeVisible();
   await expect(comment).not.toContainText(`Buy now ${world.suffix}`);
-  await comment.getByText('Restore comment', { exact: true }).click();
+  await comment.getByRole('button', { name: 'Restore comment', exact: true }).click();
   await comment.getByRole('textbox', { name: 'Reason' }).fill('Removed by mistake');
   await comment.getByRole('button', { name: 'Restore', exact: true }).click();
-  await expect(comment.getByText('Remove comment', { exact: true })).toBeVisible();
+  await expect(comment.getByRole('button', { name: 'Remove comment', exact: true })).toBeVisible();
   await expect(comment).toContainText(`Buy now ${world.suffix}`);
   // The same removal again, to leave one public entry behind.
-  await comment.getByText('Remove comment', { exact: true }).click();
+  await comment.getByRole('button', { name: 'Remove comment', exact: true }).click();
   await comment.getByRole('textbox', { name: 'Reason' }).fill('Spam, affiliate links');
   await comment.getByRole('button', { name: 'Remove', exact: true }).click();
-  await expect(comment.getByText('Restore comment', { exact: true })).toBeVisible();
+  await expect(comment.getByRole('button', { name: 'Restore comment', exact: true })).toBeVisible();
   expect(console.hydrationProblems()).toEqual([]);
 });
 
@@ -57,7 +57,7 @@ test('the moderator bans the author from the community and removes their content
   await gotoHydrated(page, postUrl());
   const comment = page.locator(`#comment-${world.comments.spam}`);
   const panel = comment.getByTestId('mod-panel-ban');
-  await panel.getByText(/^Ban from !/).click();
+  await panel.getByRole('button', { name: /^Ban from !/ }).click();
   await panel.getByLabel('Length').selectOption('7');
   await tick(panel.getByRole('checkbox', { name: /^Also remove their content/ }));
   await tick(panel.getByRole('checkbox', { name: 'Show the reason in the public modlog' }), false);
@@ -120,9 +120,9 @@ test('the modlog shows the public log to a visitor and the private rows to the c
   await admin.close();
 });
 
-// Opening a panel needs JavaScript (a Mux Disclosure). What stays a plain form is a panel the server
-// renders open: the one a refusal names in the address (?modFor=...&modError=...), which is how a
-// form sent without scripts comes back.
+// Without JavaScript a closed panel is a link to the address that names it (?modFor=<panel>), where
+// the server renders it open as a plain form; a refusal comes back to the same address with
+// ?modError=<code> as well.
 test('with JavaScript off an open panel is a plain form: the post answers 303 and a refusal opens the panel again', async ({ browser }) => {
   const context = await browser.newContext({ javaScriptEnabled: false });
   const page = await context.newPage();
@@ -139,7 +139,7 @@ test('with JavaScript off an open panel is a plain form: the post answers 303 an
   // covers the open panel's submit button.
   await comment.getByRole('button', { name: 'Restore', exact: true }).click();
   await expect(page).not.toHaveURL(/modFor=/);
-  await expect(comment.getByRole('button', { name: 'Remove comment', exact: true })).toBeVisible();
+  await expect(comment.getByRole('link', { name: 'Remove comment', exact: true })).toBeVisible();
   // This page holds the Remove form open while another moderator session removes the comment: the
   // form is refused with a code, and the page comes back with that panel open and its message.
   await page.goto(panelFor('generic'));
@@ -148,15 +148,41 @@ test('with JavaScript off an open panel is a plain form: the post answers 303 an
   await signedIn(second, world, world.moderator.name);
   await gotoHydrated(second, postUrl());
   const there = second.locator(`#comment-${world.comments.spam}`);
-  await there.getByText('Remove comment', { exact: true }).click();
+  await there.getByRole('button', { name: 'Remove comment', exact: true }).click();
   await there.getByRole('textbox', { name: 'Reason' }).fill('Spam');
   await there.getByRole('button', { name: 'Remove', exact: true }).click();
-  await expect(there.getByText('Restore comment', { exact: true })).toBeVisible();
+  await expect(there.getByRole('button', { name: 'Restore comment', exact: true })).toBeVisible();
   await second.close();
   // The keyboard: focus the submit button and press Enter.
   await comment.getByRole('button', { name: 'Remove', exact: true }).press('Enter');
   await page.waitForURL(new RegExp(`modError=target\\.removed`));
   await expect(page.locator(`#comment-${world.comments.spam}`).getByRole('alert')).toHaveText('That is already removed.');
+  await context.close();
+});
+
+test('with JavaScript off a moderator opens the Remove panel through its link and removes the post', async ({ browser }) => {
+  const context = await browser.newContext({ javaScriptEnabled: false });
+  const page = await context.newPage();
+  await page.goto('/auth/sign-in');
+  await page.getByLabel('Email or handle').fill(`@${world.moderator.name}`);
+  await page.getByLabel('Password', { exact: true }).fill(world.password);
+  await page.getByRole('button', { name: 'Sign in' }).click();
+  await page.waitForURL('/');
+  await page.goto(postUrl());
+  const slot = page.getByTestId('post-moderate');
+  // Closed, the panel is a link (its trigger needs scripts), and its form is not on show.
+  await expect(slot.getByRole('button', { name: 'Remove post' })).toHaveCount(0);
+  await expect(slot.getByRole('textbox', { name: 'Reason' })).toHaveCount(0);
+  await slot.getByRole('link', { name: 'Remove post', exact: true }).click();
+  await expect(page).toHaveURL(`${postUrl()}?modFor=content%3A${world.posts.author}#mod-content-${world.posts.author}`);
+  // Open at that address: the form, with no refusal on it, and no trigger that cannot work.
+  const open = page.getByTestId('post-moderate');
+  await expect(open.getByRole('alert')).toHaveCount(0);
+  await open.getByRole('textbox', { name: 'Reason' }).fill('Off topic for this community');
+  await open.getByRole('button', { name: 'Remove', exact: true }).click();
+  await expect(page).toHaveURL(postUrl());
+  await expect(page.getByText(/Removed\. Only moderators/)).toBeVisible();
+  await expect(page.getByTestId('post-moderate').getByRole('link', { name: 'Restore post', exact: true })).toBeVisible();
   await context.close();
 });
 

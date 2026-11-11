@@ -1,4 +1,5 @@
 import type { ActorRef } from '@peblish/schema/views';
+import { BidiText, neutraliseBidi } from '@peblish/ui/components/handle';
 import { Link } from '@peblish/ui/components/link';
 import { Select } from '@peblish/ui/components/select';
 import { Text } from '@peblish/ui/components/text';
@@ -7,6 +8,7 @@ import { useTranslate } from '../../../i18n/use-translate.ts';
 import { modlogPath } from '../../../shell/paths.ts';
 import type { CommunityActionProps, ContentActionProps, ProfileActionProps } from '../../-actions/props.ts';
 import { BanFields, ModStyles, Panel, ReasonFields } from './panels.tsx';
+import { placeholders, withNames } from './rich.tsx';
 
 // What the four `moderate` slots draw (decisions, "Shared slots"). Each decides for itself
 // whether it shows anything: only a moderator of the community or an admin sees a panel.
@@ -17,7 +19,10 @@ export function ContentModerate({ kind, ...props }: ContentActionProps & { kind:
   const { target, author, community, removed, deleted, viewer, back } = props;
   if (!viewer.moderator && !viewer.admin) return null;
   const self = author.id === viewer.actorId;
-  const place = t('modlog', 'panel.target', { author: `@${author.handle}`, community: `!${community.handle}` });
+  // Handles from other servers, isolated in the sentences that name them.
+  const names = { author: `@${author.handle}`, community: `!${community.handle}` };
+  const say = (key: 'panel.target' | 'panel.ban.who') => withNames(t('modlog', key, placeholders(names)), names);
+  const place = say('panel.target');
   return (
     <div className="mod-slot" data-testid={`${kind}-moderate`}>
       {!deleted &&
@@ -30,7 +35,7 @@ export function ContentModerate({ kind, ...props }: ContentActionProps & { kind:
             back={back}
             submit={t('modlog', 'panel.submit.restore')}
           >
-            <Text as="p" size="sm" color="muted">
+            <Text as="p" size="sm" color="muted" className="mod-note">
               {place}
             </Text>
             <ReasonFields required={false} id={`restore-${target.id}`} />
@@ -44,7 +49,7 @@ export function ContentModerate({ kind, ...props }: ContentActionProps & { kind:
             back={back}
             submit={t('modlog', 'panel.submit.remove')}
           >
-            <Text as="p" size="sm" color="muted">
+            <Text as="p" size="sm" color="muted" className="mod-note">
               {place}
             </Text>
             <ReasonFields required id={`remove-${target.id}`} />
@@ -53,14 +58,17 @@ export function ContentModerate({ kind, ...props }: ContentActionProps & { kind:
       {!self && author.kind === 'Person' && (
         <Panel
           panel={`ban:${author.id}`}
-          summary={t('modlog', 'panel.ban.community', { community: `!${community.handle}` })}
+          // The author may have a post and comments on one page, each with this panel.
+          id={`mod-ban-${target.id}`}
+          // One run: the trigger lays out its children as flex items, so a BidiText inside the sentence would sit apart.
+          summary={<BidiText text={t('modlog', 'panel.ban.community', names)} />}
           intent="ban"
           fields={{ community: community.id, person: author.id }}
           back={back}
           submit={t('modlog', 'panel.submit.ban')}
         >
-          <Text as="p" size="sm" color="muted">
-            {t('modlog', 'panel.ban.who', { author: `@${author.handle}`, community: `!${community.handle}` })}
+          <Text as="p" size="sm" color="muted" className="mod-note">
+            {say('panel.ban.who')}
           </Text>
           <BanFields id={`ban-${target.id}`} person={author.id} community={community.id} />
           <ReasonFields required id={`ban-${target.id}`} />
@@ -81,14 +89,16 @@ export function ProfileModerateTools({ person, viewer, moderatedCommunities, bac
   const communities = moderatedCommunities;
   if (communities.length === 0 && !viewer.admin) return null;
   const community: ActorRef | undefined = communities.find((one) => one.id === communityId) ?? communities[0];
+  const names = { person: `@${person.handle}`, author: `@${person.handle}`, community: community ? `!${community.handle}` : '' };
+  const say = (key: 'panel.ban.who' | 'panel.ban.siteWho') => withNames(t('modlog', key, placeholders(names)), names);
   return (
     <div className="mod-slot" data-testid="profile-moderate">
       {community && (
         <Panel
           panel={`ban:${person.id}`}
-          summary={t('modlog', 'panel.ban.community', {
-            community: communities.length === 1 ? `!${community.handle}` : t('modlog', 'panel.ban.aCommunity'),
-          })}
+          summary={
+            communities.length === 1 ? <BidiText text={t('modlog', 'panel.ban.community', names)} /> : t('modlog', 'panel.ban.aCommunity')
+          }
           intent="ban"
           // With a choice, the select itself is the `community` field, so a form sent before hydration posts the chosen one.
           fields={communities.length > 1 ? { person: person.id } : { community: community.id, person: person.id }}
@@ -101,11 +111,11 @@ export function ProfileModerateTools({ person, viewer, moderatedCommunities, bac
               name="community"
               value={community.id}
               onChange={setCommunityId}
-              items={communities.map((one) => ({ id: one.id, label: `!${one.handle}` }))}
+              items={communities.map((one) => ({ id: one.id, label: neutraliseBidi(`!${one.handle}`, '') }))}
             />
           )}
-          <Text as="p" size="sm" color="muted">
-            {t('modlog', 'panel.ban.who', { author: `@${person.handle}`, community: `!${community.handle}` })}
+          <Text as="p" size="sm" color="muted" className="mod-note">
+            {say('panel.ban.who')}
           </Text>
           <BanFields id={`ban-${person.id}`} person={person.id} community={community.id} />
           <ReasonFields required id={`ban-${person.id}`} />
@@ -120,8 +130,8 @@ export function ProfileModerateTools({ person, viewer, moderatedCommunities, bac
           back={back}
           submit={t('modlog', 'panel.submit.ban')}
         >
-          <Text as="p" size="sm" color="muted">
-            {t('modlog', 'panel.ban.siteWho', { person: `@${person.handle}` })}
+          <Text as="p" size="sm" color="muted" className="mod-note">
+            {say('panel.ban.siteWho')}
           </Text>
           <BanFields id={`site-${person.id}`} person={person.id} />
           <ReasonFields required id={`site-${person.id}`} />

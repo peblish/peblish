@@ -41,7 +41,7 @@ function Sent() {
         {t('reports', 'sent.title', { number: sent.number })}
       </Text>
       {/* The anonymity promise holds only for a report that stayed here; a forwarded one names every host that can see it. */}
-      <Text as="p">
+      <Text as="p" className="rp-text">
         {sent.forwardedTo.length > 0
           ? t('reports', 'sent.promise.forwarded', { hosts: hostList(locale, sent.forwardedTo) })
           : t('reports', 'sent.promise')}
