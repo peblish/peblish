@@ -4,6 +4,7 @@ import { Badge } from '@peblish/ui/components/badge';
 import { Button } from '@peblish/ui/components/button';
 import { Card } from '@peblish/ui/components/card';
 import { EmptyState } from '@peblish/ui/components/empty-state';
+import { BidiText } from '@peblish/ui/components/handle';
 import { Link } from '@peblish/ui/components/link';
 import { Notice } from '@peblish/ui/components/notice';
 import { Table } from '@peblish/ui/components/table';
@@ -17,12 +18,13 @@ import { forbidden, formSession, principalOf, privateResponses, readForm, sameOr
 import { useRouteHydrated } from '../../../shell/hydration.ts';
 import { adminPaths } from '../../../shell/paths.ts';
 import { answer } from '../../post/-form.ts';
+import { rich } from '../../auth/-ui/form.tsx';
 import { useDate } from '../../auth/-ui/page.tsx';
 import { errorKey } from '../../modlog/-ui/panels.tsx';
 import { Denial } from '../-denial.tsx';
+import { NoEnterSubmit } from '../-no-enter-submit.tsx';
 import { changes, hostFrom, Body } from './-act.ts';
 import { loadPeers } from './-load.ts';
-import { NoEnterSubmit } from './-ui/no-enter-submit.tsx';
 import peersCss from './-ui/peers.css?url';
 
 // /admin/peers: the Peers tab (R2 pick admin-tabs). Every instance we know of, with what this
@@ -142,7 +144,7 @@ function PeerControls({ peer }: { peer: PeerRow }) {
     <Card.Root variant="outlined" padding="sm" className="peers-controls" id="peer-controls" data-testid="peer-controls">
       <Card.Header>
         <Text as="h2" variant="title" size="sm">
-          {t('peers', 'controlsFor', { host: peer.domain })}
+          {rich(t('peers', 'controlsFor'), { host: <BidiText text={peer.domain} /> })}
         </Text>
       </Card.Header>
       <Card.Body>
@@ -234,8 +236,8 @@ function Peers() {
             rows={data.peers.map((peer) => ({
               id: peer.instanceId,
               values: {
-                host: peer.domain,
-                software: peer.software ?? <Text color="muted">{t('peers', 'unknown')}</Text>,
+                host: <BidiText text={peer.domain} />,
+                software: peer.software ? <BidiText text={peer.software} /> : <Text color="muted">{t('peers', 'unknown')}</Text>,
                 people: number.format(peer.people),
                 heard: peer.lastHeardAt ? date(peer.lastHeardAt) : <Text color="muted">{t('peers', 'never')}</Text>,
                 state: <PeerState peer={peer} />,

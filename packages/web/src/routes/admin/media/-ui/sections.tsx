@@ -3,11 +3,11 @@ import { Badge } from '@peblish/ui/components/badge';
 import { Button } from '@peblish/ui/components/button';
 import { Card } from '@peblish/ui/components/card';
 import { Checkbox } from '@peblish/ui/components/checkbox';
-import { Disclosure } from '@peblish/ui/components/disclosure';
 import { EmptyState } from '@peblish/ui/components/empty-state';
 import { FactList } from '@peblish/ui/components/fact-list';
-import { Input } from '@peblish/ui/components/input';
+import { Handle } from '@peblish/ui/components/handle';
 import { Link } from '@peblish/ui/components/link';
+import { LinkedDisclosure } from '@peblish/ui/components/linked-disclosure';
 import { LinkTabs } from '@peblish/ui/components/link-tabs';
 import { Notice } from '@peblish/ui/components/notice';
 import { Select } from '@peblish/ui/components/select';
@@ -20,7 +20,8 @@ import { translatePlural } from '../../../../i18n/translate.ts';
 import { useTranslate } from '../../../../i18n/use-translate.ts';
 import { adminPaths } from '../../../../shell/paths.ts';
 import { useDate } from '../../../auth/-ui/page.tsx';
-import { NoEnterSubmit } from '../../peers/-ui/no-enter-submit.tsx';
+import { CheckedInput } from '../../-checked-input.tsx';
+import { NoEnterSubmit } from '../../-no-enter-submit.tsx';
 
 // The sections of the Media tab (R2b media-split). Every form is a plain POST, so the decisions
 // work without JavaScript; the decision panels open and close with it. No image is rendered or
@@ -47,7 +48,8 @@ const shortHash = (hash: string | null) => (hash ? `${hash.slice(0, 8)}…${hash
 function Who({ person }: { person: { handle: string } | null }) {
   const { t } = useTranslate();
   return person ? (
-    <span>{person.handle}</span>
+    // The overview's handle already starts with "@".
+    <Handle prefix="@" handle={person.handle.replace(/^@/, '')} />
   ) : (
     <Text size="sm" color="muted">
       {t('mediascan', 'media.hash.bySystem')}
@@ -221,10 +223,14 @@ function Decision({ row }: { row: QuarantineRow }) {
                 onChange={field('reference')}
               />
               {/* A native date input on Mux's Input parts: it posts YYYY-MM-DD without JavaScript. */}
-              <Input.Root value={draft.until} onChange={field('until')} required>
-                <Input.Label>{t('mediascan', 'media.hold.until')}</Input.Label>
-                <Input.Input type="date" name="until" />
-              </Input.Root>
+              <CheckedInput
+                label={t('mediascan', 'media.hold.until')}
+                type="date"
+                name="until"
+                value={draft.until}
+                onChange={field('until')}
+                required
+              />
               <div>
                 <Button type="submit" name="intent" value="hold" variant="neutral">
                   {t('mediascan', 'media.hold.submit')}
@@ -432,16 +438,16 @@ export function Hashes({ rows, value }: { rows: HashRow[]; value: string | undef
     <>
       <form method="post" action={adminPaths.media} className="media-add-hash" aria-label={t('mediascan', 'media.hash.add')}>
         {/* Mux's Input parts rather than TextField: the hash is mono, without autocomplete or spell checking. */}
-        <Input.Root defaultValue={value} required>
-          <Input.Label>{t('mediascan', 'media.hash.value')}</Input.Label>
-          <Input.Input
-            name="value"
-            className="media-hex"
-            autoComplete="off"
-            spellCheck={false}
-            placeholder={t('mediascan', 'media.hash.valuePlaceholder')}
-          />
-        </Input.Root>
+        <CheckedInput
+          label={t('mediascan', 'media.hash.value')}
+          defaultValue={value}
+          required
+          name="value"
+          className="media-hex"
+          autoComplete="off"
+          spellCheck={false}
+          placeholder={t('mediascan', 'media.hash.valuePlaceholder')}
+        />
         <Select
           name="category"
           label={t('mediascan', 'media.hash.category')}
@@ -507,8 +513,11 @@ export function Hashes({ rows, value }: { rows: HashRow[]; value: string | undef
   );
 }
 
+/** Where the server renders a manifest open: without scripts its disclosure is a link here. */
+const manifestHref = (id: string) => `${adminPaths.media}?section=evidence&manifest=${id}#manifest-${id}`;
+
 /** One manifest as a record: its facts, and the manifest itself one disclosure away. */
-function Manifest({ row }: { row: EvidenceRow }) {
+function Manifest({ row, open }: { row: EvidenceRow; open: boolean }) {
   const { t } = useTranslate();
   const date = useDate();
   return (
@@ -569,22 +578,30 @@ function Manifest({ row }: { row: EvidenceRow }) {
             { key: 'retain', label: t('mediascan', 'media.evidence.retain'), value: row.retainUntil ? date(row.retainUntil) : '' },
           ]}
         />
-        <Disclosure title={t('mediascan', 'media.evidence.view')}>
-          <pre className="media-manifest">{row.manifest}</pre>
-        </Disclosure>
+        <LinkedDisclosure
+          id={`manifest-${row.evidenceId}`}
+          title={t('mediascan', 'media.evidence.view')}
+          openHref={manifestHref(row.evidenceId)}
+          defaultExpanded={open}
+        >
+          <Text as="div" variant="mono" size="xs" className="media-manifest">
+            {row.manifest}
+          </Text>
+        </LinkedDisclosure>
       </Card.Body>
     </Card.Root>
   );
 }
 
-export function Evidence({ rows }: { rows: EvidenceRow[] }) {
+/** `open`: the manifest the address asks to show (`?manifest=<evidence id>`). */
+export function Evidence({ rows, open }: { rows: EvidenceRow[]; open: string | undefined }) {
   const { t } = useTranslate();
   if (rows.length === 0) return <EmptyState title={t('mediascan', 'media.evidence.empty')} />;
   return (
     <>
       <div className="media-evidence-list">
         {rows.map((row) => (
-          <Manifest key={row.evidenceId} row={row} />
+          <Manifest key={row.evidenceId} row={row} open={row.evidenceId === open} />
         ))}
       </div>
       <Text as="p" size="sm" color="muted">

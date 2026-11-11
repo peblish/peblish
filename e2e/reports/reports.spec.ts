@@ -186,6 +186,25 @@ test.describe('the queue', () => {
     await expect(row(page, seed.titles.hate)).toContainText('Slurs in the second paragraph');
   });
 
+  test('without JavaScript, Remove is a link to the queue with that row’s Remove form open', async ({ browser }) => {
+    const page = await plain(browser);
+    await signedIn(page, seed.moderator.name);
+    await page.goto(queue);
+    const hate = row(page, seed.titles.hate);
+    await expect(hate.getByLabel('Explanation')).toBeHidden();
+    const open = hate.getByRole('link', { name: 'Remove', exact: true });
+    await expect(open).toHaveAttribute('href', /[?&]remove=[^&#]+.*#rq-remove-/);
+    await open.click();
+    await expect(page).toHaveURL(/remove=/);
+    const form = row(page, seed.titles.hate);
+    await expect(form.getByLabel('Explanation')).toBeVisible();
+    await expect(form.getByLabel('Community rule')).toBeVisible();
+    await expect(form.getByRole('button', { name: 'Remove and resolve' })).toBeVisible();
+    // Only that row's form is open, and its way back drops the open form.
+    await expect(page.getByLabel('Explanation').filter({ visible: true })).toHaveCount(1);
+    await expect(form.locator('input[name="back"]').first()).not.toHaveAttribute('value', /remove=/);
+  });
+
   test('another community’s moderator sees only theirs', async ({ browser }) => {
     const page = await plain(browser);
     await signedIn(page, seed.outsider.name);
@@ -248,7 +267,7 @@ test.describe('the queue', () => {
     await expect(page).not.toHaveURL(/show=/);
     await expectAccessible(page);
     const remove = row(page, seed.titles.remove);
-    await remove.getByText('Remove', { exact: true }).click();
+    await remove.getByRole('button', { name: 'Remove', exact: true }).click();
     await remove.getByLabel('Community rule').selectOption('6');
     await remove.getByLabel('Explanation').fill('The link collects card numbers.');
     await remove.getByRole('button', { name: 'Remove and resolve' }).click();

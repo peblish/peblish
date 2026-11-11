@@ -85,7 +85,7 @@ test('typing in a row’s fields acts as in any field, and the key listener leav
 
   // The removal form's explanation: arrows move the caret and Enter is a new line, not a post.
   const remove = row(page, seed.titles.remove);
-  await remove.getByText('Remove', { exact: true }).click();
+  await remove.getByRole('button', { name: 'Remove', exact: true }).click();
   const explanation = remove.getByLabel('Explanation');
   const sent = postsTo(page, '/admin/reports');
   await explanation.click();

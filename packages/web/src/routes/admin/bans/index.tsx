@@ -2,21 +2,24 @@ import type { SiteBanRow } from '@peblish/core/bans/read';
 import { Button } from '@peblish/ui/components/button';
 import { Card } from '@peblish/ui/components/card';
 import { EmptyState } from '@peblish/ui/components/empty-state';
+import { BidiText, Handle } from '@peblish/ui/components/handle';
 import { Link } from '@peblish/ui/components/link';
 import { Notice } from '@peblish/ui/components/notice';
 import { Table } from '@peblish/ui/components/table';
 import { Text } from '@peblish/ui/components/text';
 import { TextField } from '@peblish/ui/components/text-field';
-import { createFileRoute } from '@tanstack/react-router';
+import { createFileRoute, useNavigate } from '@tanstack/react-router';
+import { useEffect, useState } from 'react';
 import { useTranslate } from '../../../i18n/use-translate.ts';
 import { forbidden, sameOrigin } from '../../../server/auth.ts';
 import { useRouteHydrated } from '../../../shell/hydration.ts';
 import { adminPaths, userPath } from '../../../shell/paths.ts';
+import { rich } from '../../auth/-ui/form.tsx';
 import { useDate } from '../../auth/-ui/page.tsx';
 import { BanFields, Panel, ReasonFields } from '../../modlog/-ui/panels.tsx';
 import { Denial } from '../-denial.tsx';
-import { loadBans } from './-load.ts';
-import { NoEnterSubmit } from '../peers/-ui/no-enter-submit.tsx';
+import { NoEnterSubmit } from '../-no-enter-submit.tsx';
+import { type BansData, loadBans } from './-load.ts';
 import bansCss from './-ui/bans.css?url';
 
 // /admin/bans: the Bans tab (R2 pick admin-tabs). Who is banned from this instance, a form to
@@ -64,7 +67,7 @@ function LiftPanel({ ban }: { ban: SiteBanRow }) {
     <Card.Root variant="outlined" padding="sm" id="ban-lift" data-testid="ban-lift">
       <Card.Header>
         <Text as="h2" variant="title" size="sm">
-          {t('bans', 'liftTitle', { handle: `@${ban.person.handle}` })}
+          {rich(t('bans', 'liftTitle'), { handle: <Handle prefix="@" handle={ban.person.handle} /> })}
         </Text>
       </Card.Header>
       <Card.Body>
@@ -89,7 +92,6 @@ function Bans() {
   const { t } = useTranslate();
   const data = Route.useLoaderData();
   const search = Route.useSearch();
-  const date = useDate();
   useRouteHydrated();
   if (data.access !== 'ok')
     return (
@@ -107,6 +109,32 @@ function Bans() {
   const refused = search.modFor?.startsWith('site_unban:') ? search.modFor.slice('site_unban:'.length) : undefined;
   const wanted = search.lift !== undefined && refused !== undefined && search.lift !== refused ? undefined : (search.lift ?? refused);
   const lifting = wanted ? bans.find((ban) => ban.person.id === wanted) : undefined;
+  return <BansPage bans={bans} candidate={candidate} wanted={wanted} lifting={lifting} />;
+}
+
+/**
+ * The page for an admin. A hydrated Lift reloads the list in place; once the lifted ban has left
+ * it, the address drops the selector, so the page shows the list and not "That ban is not in the list".
+ */
+function BansPage({
+  bans,
+  candidate,
+  wanted,
+  lifting,
+}: Pick<Extract<BansData, { access: 'ok' }>, 'bans' | 'candidate'> & {
+  wanted: string | undefined;
+  lifting: SiteBanRow | undefined;
+}) {
+  const { t } = useTranslate();
+  const date = useDate();
+  const navigate = useNavigate();
+  // The ban this view showed a Lift panel for: when it goes from the list, it was just lifted.
+  const [shown, setShown] = useState<string>();
+  if (lifting && shown !== lifting.person.id) setShown(lifting.person.id);
+  const lifted = wanted !== undefined && lifting === undefined && shown === wanted;
+  useEffect(() => {
+    if (lifted) void navigate({ to: adminPaths.bans, search: {}, replace: true });
+  }, [lifted, navigate]);
   return (
     <main className="pb-page bans-page">
       <Text as="h1" variant="heading" size="sm">
@@ -134,7 +162,7 @@ function Bans() {
         <Card.Root variant="outlined" padding="sm" aria-label={t('bans', 'confirm')} role="region" data-testid="ban-confirm">
           <Card.Header>
             <Text as="h2" variant="title" size="sm">
-              {t('bans', 'confirmTitle', { handle: `@${candidate.person.handle}` })}
+              {rich(t('bans', 'confirmTitle'), { handle: <Handle prefix="@" handle={candidate.person.handle} /> })}
             </Text>
           </Card.Header>
           <Card.Body>
@@ -179,10 +207,21 @@ function Bans() {
             rows={bans.map((ban) => ({
               id: ban.person.id,
               values: {
-                person: <Link href={userPath(ban.person)}>@{ban.person.handle}</Link>,
-                home: ban.home,
+                person: (
+                  <Link href={userPath(ban.person)}>
+                    <Handle prefix="@" handle={ban.person.handle} />
+                  </Link>
+                ),
+                home: <BidiText text={ban.home} />,
                 reason: ban.reason ?? <Text color="muted">{t('bans', 'noReason')}</Text>,
-                by: ban.source === 'remote' ? t('bans', 'byPeer', { host: ban.home }) : ban.bannedBy ? `@${ban.bannedBy.handle}` : '',
+                by:
+                  ban.source === 'remote' ? (
+                    rich(t('bans', 'byPeer'), { host: <BidiText text={ban.home} /> })
+                  ) : ban.bannedBy ? (
+                    <Handle prefix="@" handle={ban.bannedBy.handle} />
+                  ) : (
+                    ''
+                  ),
                 date: date(ban.createdAt),
                 ends: ban.expiresAt ? date(ban.expiresAt) : t('bans', 'permanent'),
                 actions: (
@@ -199,7 +238,7 @@ function Bans() {
         </Card.Root>
       )}
       {lifting && <LiftPanel key={lifting.person.id} ban={lifting} />}
-      {wanted && !lifting && (
+      {wanted && !lifting && !lifted && (
         <Notice tone="warning" role="alert" data-testid="lift-missing">
           {t('bans', 'liftMissing')}
         </Notice>

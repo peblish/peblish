@@ -212,7 +212,7 @@ test('a manifest opens and closes in place', async ({ page }) => {
   await gotoHydrated(page, '/admin/media?section=evidence');
   const record = page.getByTestId('evidence-row').first();
   const toggle = record.getByRole('button', { name: 'View manifest' });
-  const manifest = record.locator('pre');
+  const manifest = record.locator('.media-manifest');
   await expect(toggle).toHaveAttribute('aria-expanded', 'false');
   await expect(manifest).toBeHidden();
   await toggle.click();
@@ -223,4 +223,38 @@ test('a manifest opens and closes in place', async ({ page }) => {
   await expect(toggle).toHaveAttribute('aria-expanded', 'false');
   await expect(manifest).toBeHidden();
   await expect(page.locator('main img, main picture, main video, main canvas')).toHaveCount(0);
+});
+
+test('without scripts a manifest is a link to the page that shows it', async ({ page, browser }) => {
+  await signInAdmin(page);
+  const plain = await withoutScripts(page, browser);
+  await plain.goto('/admin/media?section=evidence');
+  const record = plain.getByTestId('evidence-row').first();
+  await expect(record.locator('.media-manifest')).toBeHidden();
+  const link = record.getByRole('link', { name: 'View manifest' });
+  await expect(link).toHaveAttribute('href', /^\/admin\/media\?section=evidence&manifest=[0-9a-f-]+#manifest-[0-9a-f-]+$/);
+  await link.click();
+  await expect(plain).toHaveURL(/manifest=/);
+  const shown = plain.locator(`[id="${new URL(plain.url()).hash.slice(1)}"]`);
+  await expect(shown.locator('.media-manifest')).toBeVisible();
+  await expect(shown.locator('.media-manifest')).toContainText('sha256');
+  await expect(shown.getByRole('link', { name: 'View manifest' })).toHaveCount(0);
+  await expect(plain.locator('.media-manifest').filter({ visible: true })).toHaveCount(1);
+  await plain.context().close();
+});
+
+test('an emptied hold date is explained under the field and nothing is posted', async ({ page }) => {
+  const item = seed<Item>('quarantined');
+  await signInAdmin(page);
+  await open(page, item);
+  const d = decision(page);
+  const sent = postsTo(page, '/admin/media');
+  await choose(d.tab('Hold'));
+  await d.detail.getByLabel('Directed by').selectOption('afp');
+  await d.reference.fill('AFP-1');
+  await d.until.fill('');
+  await d.detail.getByRole('button', { name: 'Record hold' }).click();
+  await expect(d.detail.getByRole('alert')).toHaveText('Fill in this field.');
+  await expect(d.until).toHaveAttribute('aria-describedby', /\S/);
+  expect(sent).toHaveLength(0);
 });

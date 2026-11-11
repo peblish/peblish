@@ -145,6 +145,7 @@
     "queue.closed.dismissed": "Dismissed",
     "queue.closed.removed": "Removed",
     "queue.more": "More",
+    "queue.pages": "More reports",
     "queue.back": "Back to the queue",
     "queue.where": "in {community} by {author}"
   },
@@ -294,6 +295,7 @@
     "queue.closed.dismissed": "Abgewiesen",
     "queue.closed.removed": "Entfernt",
     "queue.more": "Mehr",
+    "queue.pages": "Weitere Meldungen",
     "queue.back": "Zurück zur Liste",
     "queue.where": "in {community} von {author}"
   }
