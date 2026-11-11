@@ -128,9 +128,8 @@ export function PostCard({
   const parts = (
     <>
       {/* A second way to the post for pointer users: hidden from the tab order and from assistive
-          technology, which reach the post by its title. A plain anchor, since Mux UI's Link drops
-          tabIndex and aria-hidden. */}
-      <a className="pb-post__thumb" href={hrefs.post} tabIndex={-1} aria-hidden="true">
+          technology, which reach the post by its title. */}
+      <Link className="pb-post__thumb" href={hrefs.post} tabIndex={-1} aria-hidden="true">
         {picture ? (
           <Image src={picture} alt="" loading="lazy" decoding="async" fit="cover" className="pb-post__picture" />
         ) : (
@@ -141,7 +140,7 @@ export function PostCard({
             </Text>
           </span>
         )}
-      </a>
+      </Link>
       <div className="pb-post__body">
         <Text as={`h${headingLevel}`} id={titleId} {...titleType} className="pb-post__title">
           {post.featured && <Badge kind="pinned">{labels.pinned}</Badge>}

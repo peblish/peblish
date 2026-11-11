@@ -58,7 +58,7 @@ function Toggle({ shown, href, onToggle, children }: { shown: boolean; href: str
       href={href}
       aria-expanded={shown}
       className="rq-toggle"
-      onClickCapture={(event: MouseEvent<HTMLElement>) => {
+      onClick={(event: MouseEvent<HTMLElement>) => {
         if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
         event.preventDefault();
         onToggle();

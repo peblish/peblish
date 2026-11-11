@@ -31,7 +31,7 @@ export type GateData = {
 
 const months = Array.from({ length: 12 }, (_, index) => index + 1);
 
-/** Back one step in the browser's history, else the front page. Runs in the capture phase, before the Mux Link opens its href. */
+/** Back one step in the browser's history, else the front page. Mux's Link runs onClick before it opens its href. */
 function goBack(event: MouseEvent<HTMLElement>) {
   if (window.history.length > 1) {
     event.preventDefault();
@@ -77,7 +77,7 @@ export function GateNotice({ data, error }: { data: GateData; error?: string | u
     </form>
   );
   const goBackLink = (
-    <Link href="/" onClickCapture={goBack}>
+    <Link href="/" onClick={goBack}>
       {t('communities', 'gate.back')}
     </Link>
   );

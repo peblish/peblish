@@ -42,8 +42,8 @@ export function CreatePost() {
         size="sm"
         onPointerEnter={() => void loadSheet()}
         onFocus={() => void loadSheet()}
-        // A capture handler, so its preventDefault also stops the router navigation the Link would start.
-        onClickCapture={(event: MouseEvent<HTMLElement>) => {
+        // Mux's Link runs onClick before its own click handling, so preventDefault also stops the router navigation.
+        onClick={(event: MouseEvent<HTMLElement>) => {
           const modified = event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey;
           // On the composer's own page there is nothing to open over.
           if (modified || event.defaultPrevented || pathname.startsWith(createPostPath)) return;

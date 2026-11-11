@@ -58,7 +58,7 @@ export function ReportControl({ target, back, label }: { target: Target; back: s
     [key],
   );
 
-  // A capture handler, so its preventDefault also stops the router navigation the Link would start.
+  // Mux's Link runs onClick before its own click handling, so preventDefault also stops the router navigation.
   async function show(event: MouseEvent<HTMLElement>) {
     // A new tab, a download or a modified click keeps the link's own behaviour.
     if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
@@ -93,10 +93,10 @@ export function ReportControl({ target, back, label }: { target: Target; back: s
     <>
       <Link
         href={href}
-        onClickCapture={show}
+        onClick={show}
         className="rp-open pb-link-quiet"
-        // A static busy look (no animation) from the click until the dialog opens. A data attribute:
-        // React Aria's link drops aria-busy, and Mux takes data-pending for its own state attribute.
+        // A static busy look (no animation) from the click until the dialog opens. A data attribute
+        // of the app's own: Mux takes data-pending for its own state attribute.
         data-opening={pending || undefined}
       >
         {label ?? t('reports', 'form.open')}

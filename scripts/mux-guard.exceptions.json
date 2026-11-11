@@ -35,13 +35,6 @@
     "reason": "Prose's stylesheet styles the elements of the sanitised Markdown HTML, which are plain HTML by design (see the prose.tsx exceptions)."
   },
   {
-    "file": "packages/ui/src/components/post-card.tsx",
-    "rule": "raw-element",
-    "match": "<a>",
-    "anchor": "PostCard",
-    "reason": "The decorative thumbnail link is removed from the tab order and the accessibility tree; Mux Link drops tabIndex and aria-hidden."
-  },
-  {
     "file": "packages/ui/src/components/post-card.css",
     "rule": "css-blur",
     "match": "blur(",

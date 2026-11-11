@@ -76,6 +76,14 @@ test('the thumbnail loads from the resolved source, never from the post own URL'
   expect(html).not.toContain('tracker.example');
 });
 
+test('the thumbnail is a Mux Link to the post, out of the tab order and hidden from assistive technology', () => {
+  const thumb = /<a [^>]*class="[^"]*pb-post__thumb[^"]*"[^>]*>/.exec(render('/media/proxy/signed/thumb'))?.[0];
+  expect(thumb).toContain('muxui-link');
+  expect(thumb).toContain('href="/post/1"');
+  expect(thumb).toContain('tabindex="-1"');
+  expect(thumb).toContain('aria-hidden="true"');
+});
+
 test('without a resolved source the card shows its type mark and loads nothing, whatever the post carries', () => {
   const html = render(null);
   expect(html).not.toContain('<img');

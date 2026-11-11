@@ -274,8 +274,10 @@ test.describe('the queue', () => {
     await gotoHydrated(page, queue);
     const hate = row(page, seed.titles.hate);
     await expect(hate.locator('blockquote')).toHaveAttribute('aria-hidden', 'true');
+    await expect(hate.getByRole('link', { name: 'Show' })).toHaveAttribute('aria-expanded', 'false');
     await hate.getByRole('link', { name: 'Show' }).click();
     await expect(hate.locator('blockquote')).not.toHaveAttribute('aria-hidden', 'true');
+    await expect(hate.getByRole('link', { name: 'Hide' })).toHaveAttribute('aria-expanded', 'true');
     await expect(page).not.toHaveURL(/show=/);
     await expectAccessible(page);
     const remove = row(page, seed.titles.remove);
