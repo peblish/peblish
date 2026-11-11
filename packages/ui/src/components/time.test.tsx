@@ -65,3 +65,18 @@ test('the age stays the default', () => {
     '<time dateTime="2026-11-03T23:30:00Z" title="Nov 3, 2026, 11:30 PM UTC">3h</time>',
   );
 });
+
+test('the time format prints the clock time alone, 24-hour, in UTC', () => {
+  expect(renderToStaticMarkup(<Time iso="2026-11-03T09:05:00Z" locale="en-US" format="time" />)).toBe(
+    '<time dateTime="2026-11-03T09:05:00Z" title="Nov 3, 2026, 09:05 AM UTC">09:05</time>',
+  );
+  expect(renderToStaticMarkup(<Time iso={iso} locale="en-US" format="time" />)).toContain('>23:30</time>');
+  expect(renderToStaticMarkup(<Time iso={iso} locale="de-DE" format="time" />)).toBe(
+    '<time dateTime="2026-11-03T23:30:00Z" title="3. Nov. 2026, 23:30 UTC">23:30</time>',
+  );
+  // The moderation log's own formatter, which this replaces, prints the same text.
+  const modlog = (locale: string) =>
+    new Intl.DateTimeFormat(locale, { hour: '2-digit', minute: '2-digit', hourCycle: 'h23', timeZone: 'UTC' }).format(new Date(iso));
+  expect(renderToStaticMarkup(<Time iso={iso} locale="de-DE" format="time" />)).toContain(`>${modlog('de-DE')}</time>`);
+  expect(renderToStaticMarkup(<Time iso={iso} locale="en-US" format="time" />)).toContain(`>${modlog('en-US')}</time>`);
+});
