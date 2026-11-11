@@ -16,6 +16,6 @@ We address content accessible through our instance even if it originated elsewhe
 
 We refer apparent child exploitation and qualifying threats or violent material to appropriate authorities. We verify law-enforcement demands, preserve only justified evidence, disclose only what the applicable process permits or requires, and notify affected users where lawful and safe. We do not provide direct database access in response to a routine request. [L] [DSA Arts 9–10, 18](https://eur-lex.europa.eu/legal-content/EN/TXT/HTML/?uri=CELEX:32022R2065).
 
-Authority contact: {{CONTACT_EMAIL}}, English, subject “Legal notice: feddit.com”. Operator: {{OPERATOR_NAME}}, {{POSTAL_ADDRESS}}, {{JURISDICTION}}, Australia. Authorities should include their identity, legal basis, exact targets, scope, deadline and any notification restriction. A human handles requests. DSA representative: {{DSA_REPRESENTATIVE_DETAILS}}. Terrorist-content order contact and representative: {{TCO_CONTACT_AND_REPRESENTATIVE_DETAILS}}.
+Authority contact: {{CONTACT_EMAIL}}, English, subject “Legal notice: feddit.com”. Operator: {{OPERATOR_NAME}}, {{POSTAL_ADDRESS}}, {{JURISDICTION}}, Australia. Authorities should include their identity, legal basis, exact targets, scope, deadline and any notification restriction. A human handles requests. Terrorist-content order contact: {{CONTACT_EMAIL}}.
 
 For review, reply with the case number or use [moderation and appeals](/moderation-policy).

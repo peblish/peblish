@@ -16,6 +16,8 @@ const text = (file: string) => readFileSync(join(folder, file), 'utf8');
 
 /** The tokens publishing fills from the operator's settings and the date. */
 const filled = ['{{OPERATOR_NAME}}', '{{POSTAL_ADDRESS}}', '{{JURISDICTION}}', '{{CONTACT_EMAIL}}', '{{EFFECTIVE_DATE}}'];
+/** The facts still unknown at launch (the mail provider, where backups live, the PieFed archive's deletion date on cutover day). */
+const kept = ['{{EMAIL_PROVIDER_AND_LOCATION}}', '{{BACKUP_PROVIDER_AND_LOCATION}}', '{{PIEFED_ARCHIVE_DELETE_DATE}}'];
 
 describe('every shipped file follows the README step 3', () => {
   test('there is one English text for each page the drafts cover, named for its slug', () => {
@@ -49,15 +51,10 @@ describe('every shipped file follows the README step 3', () => {
       for (const token of tokensIn(text(`${slug}.en.md`))) expect(filled, `${slug}.en.md`).toContain(token);
   });
 
-  test('the texts that name an agent, a representative or a processor keep those tokens, so they cannot publish before the operator writes them in', () => {
-    for (const [file, token] of [
-      ['dmca.en.md', '{{DMCA_AGENT_NAME}}'],
-      ['illegal-content.en.md', '{{DSA_REPRESENTATIVE_DETAILS}}'],
-      ['illegal-content.en.md', '{{TCO_CONTACT_AND_REPRESENTATIVE_DETAILS}}'],
-      ['terms.en.md', '{{DSA_REPRESENTATIVE_DETAILS}}'],
-      ['privacy.en.md', '{{SAFETY_PROCESSORS_AND_DATA}}'],
-    ] as const)
-      expect(text(file), file).toContain(token);
+  test('beyond those five, only the privacy policy keeps tokens: the facts it cannot publish without, which the operator writes in', () => {
+    for (const file of files)
+      for (const token of tokensIn(text(file))) expect([...filled, ...(file === 'privacy.en.md' ? kept : [])], file).toContain(token);
+    for (const token of kept) expect(text('privacy.en.md')).toContain(token);
   });
 });
 

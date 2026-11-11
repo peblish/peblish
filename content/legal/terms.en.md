@@ -34,6 +34,6 @@ These terms are governed by the laws of {{JURISDICTION}}, Australia, subject to 
 
 ## Contact points
 
-Users and authorities can contact a human at {{CONTACT_EMAIL}} in English. Authority subject line: “Legal notice: feddit.com”. EU DSA representative: {{DSA_REPRESENTATIVE_DETAILS}}. The operator remains responsible for the service.
+Users and authorities can contact a human at {{CONTACT_EMAIL}} in English. Authority subject line: “Legal notice: feddit.com”. The operator remains responsible for the service.
 
 Basis: [L] [DSA Arts 11–14](https://eur-lex.europa.eu/legal-content/EN/TXT/HTML/?uri=CELEX:32022R2065), [UK OSA s10](https://www.legislation.gov.uk/ukpga/2023/50/section/10/data.html); [I] service commitments.
