@@ -4,7 +4,7 @@ import { createFileRoute, notFound } from '@tanstack/react-router';
 import { DEFAULT_LOCALE } from '../../../i18n/negotiate.ts';
 import { useTranslate } from '../../../i18n/use-translate.ts';
 import { useRouteHydrated } from '../../../shell/hydration.ts';
-import { rootTitleData } from '../../../shell/title.ts';
+import { headTitle, rootTitleData } from '../../../shell/title.ts';
 import { directoryPaths } from '../../../shell/paths.ts';
 import { parseFeedSearch, resolveFeedSearch } from '../../index/-feed/search.ts';
 import feedCss from '../../index/-feed/feed.css?url';
@@ -12,7 +12,7 @@ import { loadCommunityPage } from '../-load.ts';
 import { communityPost } from '../-intents.ts';
 import { CommunityPage } from '../-ui/community-page.tsx';
 import communityCss from '../-ui/community.css?url';
-import { GateNotice } from '../-ui/gate.tsx';
+import { GateNotice, gateTitle } from '../-ui/gate.tsx';
 import gateCss from '../-ui/gate.css?url';
 
 // /c/<handle>: the community page, or the NSFW gate in its place. `name` is a local community,
@@ -38,11 +38,20 @@ export const Route = createFileRoute('/c/$handle/')({
     if (data.kind === 'missing') throw notFound({ data });
     return data;
   },
-  head: ({ loaderData, matches }) => {
+  head: ({ loaderData, match, matches }) => {
     const { site } = rootTitleData(matches.find((match) => (match.routeId as string) === '__root__')?.loaderData, DEFAULT_LOCALE);
     const robots = !loaderData || loaderData.kind !== 'page' || !loaderData.indexable ? [{ name: 'robots', content: 'noindex' }] : [];
+    // Titled as the page shows: the community, its gate, or its own not-found page.
+    const title =
+      loaderData?.kind === 'page'
+        ? { title: `${loaderData.title} · ${site}` }
+        : loaderData?.kind === 'gate'
+          ? headTitle(matches, 'communities', gateTitle(loaderData))
+          : match.status === 'notFound'
+            ? headTitle(matches, 'communities', 'page.notFound.title')
+            : null;
     return {
-      meta: [...(loaderData?.kind === 'page' ? [{ title: `${loaderData.title} · ${site}` }] : []), ...robots],
+      meta: [...(title ? [title] : []), ...robots],
       links: [
         { rel: 'stylesheet', href: feedCss },
         { rel: 'stylesheet', href: communityCss },

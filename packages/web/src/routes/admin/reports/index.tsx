@@ -20,6 +20,7 @@ import { loadQueue } from './-load.ts';
 import { queueHref, type QueueView } from './-href.ts';
 import { QueueTable } from './-ui/queue.tsx';
 import queueCss from './-ui/queue.css?url';
+import { headTitle } from '../../../shell/title.ts';
 
 // /admin/reports: the report queue, open to moderators (their communities' groups, and their
 // own escalations read only) and to admins (everything). The admin layout draws the tab bar and
@@ -66,7 +67,7 @@ export const Route = createFileRoute('/admin/reports/')({
     }
     return data;
   },
-  head: () => ({ links: [{ rel: 'stylesheet', href: queueCss }] }),
+  head: ({ matches }) => ({ meta: [headTitle(matches, 'reports', 'queue.title')], links: [{ rel: 'stylesheet', href: queueCss }] }),
   component: Queue,
   server: {
     handlers: {

@@ -13,7 +13,7 @@ import { useFieldLabels, useProseLabels } from '../shell/labels.ts';
 import { PrefsProvider } from '../shell/prefs.tsx';
 import { getRootData } from '../shell/root-data.ts';
 import { Shell } from '../shell/shell.tsx';
-import { titleForRoute } from '../shell/title.ts';
+import { titleForMatches } from '../shell/title.ts';
 import { useViewerSync } from '../shell/viewer-sync.ts';
 import appCss from '../styles.css?url';
 
@@ -31,7 +31,7 @@ export const Route = createRootRoute({
       { charSet: 'utf-8' },
       { name: 'viewport', content: 'width=device-width, initial-scale=1' },
       // The page title convention (shell/title.ts); a route's own head title wins.
-      { title: titleForRoute(loaderData?.locale ?? DEFAULT_LOCALE, loaderData?.shell.siteName ?? '', matches.at(-1)?.routeId) },
+      { title: titleForMatches(loaderData?.locale ?? DEFAULT_LOCALE, loaderData?.shell.siteName ?? '', matches) },
     ],
     // Mux UI's stylesheet is its own file so the payload budget can measure it alone
     // (e2e/payload); the app's styles come after it and share its layer order.

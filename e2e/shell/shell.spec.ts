@@ -52,7 +52,7 @@ test('the sidebar holds the feeds, the directory links and the site pages, and t
 test('an unknown address answers with the shell and a page not found message', async ({ page }) => {
   await gotoHydrated(page, '/no-such-page');
   await expect(page.getByRole('heading', { name: 'Page not found' })).toBeVisible();
-  await expect(page).toHaveTitle(await siteName(page));
+  await expect(page).toHaveTitle(`Page not found · ${await siteName(page)}`);
 });
 
 test('every page has a title: the shell names the route, a route may name itself; the site is named, never the software', async ({
