@@ -1,4 +1,5 @@
 import { Input } from '@muxui/react';
+import { useErrorPartId, useFieldProblem } from './field-problem.tsx';
 import type { HTMLInputAutoCompleteAttribute, HTMLInputTypeAttribute, ReactNode } from 'react';
 
 export interface TextFieldProps {
@@ -6,7 +7,10 @@ export interface TextFieldProps {
   /** Keeps the label for assistive technology but not on screen. */
   hideLabel?: boolean;
   description?: ReactNode;
-  /** Shown while `invalid` is set. */
+  /**
+   * Shown while `invalid` is set. Without one, a value the browser refuses (required, email, link,
+   * length, pattern, range) is explained in the page's language once a post is tried or the edit is committed.
+   */
   errorMessage?: ReactNode;
   value?: string;
   defaultValue?: string;
@@ -17,6 +21,11 @@ export interface TextFieldProps {
   autoComplete?: HTMLInputAutoCompleteAttribute;
   inputMode?: 'text' | 'numeric' | 'email' | 'tel' | 'url' | 'search' | 'decimal' | 'none';
   maxLength?: number;
+  minLength?: number;
+  pattern?: string;
+  /** The smallest and largest number a `number` field takes. */
+  min?: number;
+  max?: number;
   required?: boolean;
   invalid?: boolean;
   disabled?: boolean;
@@ -45,6 +54,10 @@ export function TextField({
   autoComplete,
   inputMode,
   maxLength,
+  minLength,
+  pattern,
+  min,
+  max,
   required,
   invalid,
   disabled,
@@ -53,13 +66,18 @@ export function TextField({
   autoFocus,
   className,
 }: TextFieldProps) {
+  const { ref, problem, errorId } = useFieldProblem<HTMLDivElement>();
+  // The caller's message wins; otherwise the browser's verdict, which also marks the field invalid.
+  const message = invalid && errorMessage ? errorMessage : problem;
+  const partId = useErrorPartId(Boolean(message), errorId);
   return (
     <Input.Root
+      ref={ref}
       value={value}
       defaultValue={defaultValue}
       onChange={onChange}
       required={required}
-      invalid={invalid}
+      invalid={problem !== undefined || invalid === true}
       disabled={disabled}
       readOnly={readOnly}
       size={size}
@@ -73,10 +91,18 @@ export function TextField({
         autoComplete={autoComplete}
         inputMode={inputMode}
         maxLength={maxLength}
+        minLength={minLength}
+        pattern={pattern}
+        min={min}
+        max={max}
         autoFocus={autoFocus}
       />
       {description && <Input.Description>{description}</Input.Description>}
-      {invalid && errorMessage && <Input.Error>{errorMessage}</Input.Error>}
+      {message ? (
+        <Input.Error id={partId}>
+          <span role="alert">{message}</span>
+        </Input.Error>
+      ) : null}
     </Input.Root>
   );
 }

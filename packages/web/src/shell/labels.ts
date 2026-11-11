@@ -5,9 +5,10 @@ import type { ProseLabels } from '@peblish/ui/components/prose';
 import type { ReplyBarLabels } from '@peblish/ui/components/reply-bar';
 import type { VoteControlLabels } from '@peblish/ui/components/vote-control';
 import type { DensityControlLabels } from '@peblish/ui/density/density-control';
+import type { FieldLabels } from '@peblish/ui/components/field-problem';
 import { useMemo } from 'react';
 import { useTranslate } from '../i18n/use-translate.ts';
-import { translatePlural } from '../i18n/translate.ts';
+import { translate, translatePlural, type MessageKey } from '../i18n/translate.ts';
 
 // The strings @peblish/ui components take as props, built from the `ui` catalogue in the
 // request's locale. A page passes `labels` straight through:
@@ -95,4 +96,26 @@ export function useProseLabels(): ProseLabels {
   const { t } = useTranslate();
   const revealSpoiler = t('ui', 'prose.spoiler');
   return useMemo(() => ({ revealSpoiler }), [revealSpoiler]);
+}
+
+/** What a form field says when the browser refuses its value; the root provides it (FieldLabelsProvider), so every field has it. */
+export function useFieldLabels(): FieldLabels {
+  const { locale } = useTranslate();
+  return useMemo(() => {
+    const t = (key: MessageKey<'ui'>) => translate(locale, 'ui', key);
+    return {
+      locale,
+      required: t('field.required'),
+      requiredCheck: t('field.requiredCheck'),
+      requiredChoice: t('field.requiredChoice'),
+      email: t('field.email'),
+      url: t('field.url'),
+      tooShort: t('field.tooShort'),
+      tooLong: t('field.tooLong'),
+      pattern: t('field.pattern'),
+      rangeUnderflow: t('field.rangeUnderflow'),
+      rangeOverflow: t('field.rangeOverflow'),
+      invalid: t('field.invalid'),
+    };
+  }, [locale]);
 }

@@ -1,4 +1,5 @@
 import { TextArea } from '@muxui/react';
+import { useErrorPartId, useFieldProblem } from './field-problem.tsx';
 import type { ReactNode } from 'react';
 
 export interface TextAreaFieldProps {
@@ -6,7 +7,10 @@ export interface TextAreaFieldProps {
   /** Keeps the label for assistive technology but not on screen (a docked reply bar, a search box). */
   hideLabel?: boolean;
   description?: ReactNode;
-  /** Shown while `invalid` is set. */
+  /**
+   * Shown while `invalid` is set. Without one, a value the browser refuses (required, length) is
+   * explained in the page's language once a post is tried or the edit is committed.
+   */
   errorMessage?: ReactNode;
   value?: string;
   defaultValue?: string;
@@ -15,6 +19,7 @@ export interface TextAreaFieldProps {
   rows?: number;
   placeholder?: string;
   maxLength?: number;
+  minLength?: number;
   required?: boolean;
   invalid?: boolean;
   disabled?: boolean;
@@ -37,6 +42,7 @@ export function TextAreaField({
   rows,
   placeholder,
   maxLength,
+  minLength,
   required,
   invalid,
   disabled,
@@ -45,22 +51,38 @@ export function TextAreaField({
   autoFocus,
   className,
 }: TextAreaFieldProps) {
+  const { ref, problem, errorId } = useFieldProblem<HTMLDivElement>();
+  // The caller's message wins; otherwise the browser's verdict, which also marks the field invalid.
+  const message = invalid && errorMessage ? errorMessage : problem;
+  const partId = useErrorPartId(Boolean(message), errorId);
   return (
     <TextArea.Root
+      ref={ref}
       value={value}
       defaultValue={defaultValue}
       onChange={onChange}
       required={required}
-      invalid={invalid}
+      invalid={problem !== undefined || invalid === true}
       disabled={disabled}
       readOnly={readOnly}
       size={size}
       className={className}
     >
       <TextArea.Label className={hideLabel ? 'pb-sr' : undefined}>{label}</TextArea.Label>
-      <TextArea.TextArea name={name} rows={rows} placeholder={placeholder} maxLength={maxLength} autoFocus={autoFocus} />
+      <TextArea.TextArea
+        name={name}
+        rows={rows}
+        placeholder={placeholder}
+        maxLength={maxLength}
+        minLength={minLength}
+        autoFocus={autoFocus}
+      />
       {description && <TextArea.Description>{description}</TextArea.Description>}
-      {invalid && errorMessage && <TextArea.Error>{errorMessage}</TextArea.Error>}
+      {message ? (
+        <TextArea.Error id={partId}>
+          <span role="alert">{message}</span>
+        </TextArea.Error>
+      ) : null}
     </TextArea.Root>
   );
 }
