@@ -1,4 +1,5 @@
 import type { Density } from '../components/post-card.tsx';
+import { ToggleButton, ToggleButtonGroup } from '../components/toggle-button-group.tsx';
 
 export const densities = ['card', 'classic', 'compact'] as const satisfies readonly Density[];
 
@@ -10,11 +11,13 @@ export interface DensityControlLabels {
   compact: string;
 }
 
+const isDensity = (id: string | undefined): id is Density => densities.some((density) => density === id);
+
 /**
- * The always-visible Card / Classic / Compact switch in a feed's toolbar. It reports the new
- * density; the web app stores it in the preferences cookie (packages/web/src/shell/prefs.tsx).
- * Plain pressed buttons, not Mux UI's ToggleButtonGroup: that adds about 38 kB gzip (its
- * animation code) to every feed, and this is a likely first tap.
+ * The always-visible Card / Classic / Compact switch in a feed's toolbar: a Mux UI
+ * ToggleButtonGroup with single selection (a radio group named "View"; each density is a radio).
+ * It reports the new density; the web app stores it in the preferences cookie
+ * (packages/web/src/shell/prefs.tsx).
  */
 export function DensityControl({
   value,
@@ -26,12 +29,22 @@ export function DensityControl({
   labels: DensityControlLabels;
 }) {
   return (
-    <div className="pb-segmented" role="group" aria-label={labels.group}>
+    <ToggleButtonGroup
+      className="pb-density"
+      aria-label={labels.group}
+      size="sm"
+      selectionMode="single"
+      disallowEmptySelection
+      selectedIds={[value]}
+      onSelectionChange={([id]) => {
+        if (isDensity(id)) onChange(id);
+      }}
+    >
       {densities.map((density) => (
-        <button key={density} type="button" aria-pressed={value === density} onClick={() => onChange(density)}>
+        <ToggleButton key={density} id={density}>
           {labels[density]}
-        </button>
+        </ToggleButton>
       ))}
-    </div>
+    </ToggleButtonGroup>
   );
 }

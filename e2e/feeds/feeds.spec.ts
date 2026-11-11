@@ -56,7 +56,7 @@ test.describe('anyone', () => {
       await expect(page.getByRole('heading', { level: 1 })).toHaveText(
         { '/': 'Local', '/all': 'All', '/local': 'Local', '/popular': 'Popular', '/moderating': 'Moderating' }[path]!,
       );
-      await expect(page.getByRole('group', { name: 'View' })).toBeVisible();
+      await expect(page.getByRole('radiogroup', { name: 'View' })).toBeVisible();
       await expectAccessible(page);
       expect(log.hydrationProblems()).toEqual([]);
     });
@@ -73,10 +73,10 @@ test.describe('anyone', () => {
 
   test('the toolbar sorts by link: New, Old and Top with its period, and an unknown sort falls back', async ({ page }) => {
     await gotoHydrated(page, '/all');
-    await expect(page.getByRole('group', { name: 'Sort' }).getByRole('link', { name: 'Hot' })).toHaveAttribute('aria-current', 'true');
+    await expect(page.getByRole('group', { name: 'Sort' }).getByRole('link', { name: 'Hot' })).toHaveAttribute('aria-current', 'page');
     await page.getByRole('group', { name: 'Sort' }).getByRole('link', { name: 'Top' }).click();
     await page.waitForURL('**/all?sort=top');
-    await expect(page.getByRole('group', { name: 'Top of' }).getByRole('link', { name: 'Day' })).toHaveAttribute('aria-current', 'true');
+    await expect(page.getByRole('group', { name: 'Top of' }).getByRole('link', { name: 'Day' })).toHaveAttribute('aria-current', 'page');
     // The period is a link too: the top of the week is the best scored post first.
     await page.getByRole('group', { name: 'Top of' }).getByRole('link', { name: 'Week' }).click();
     await page.waitForURL('**/all?sort=top&period=week');
@@ -86,18 +86,18 @@ test.describe('anyone', () => {
     await expect(page.getByRole('group', { name: 'Top of' })).toHaveCount(0);
     await gotoHydrated(page, '/all?sort=bogus&period=nonsense');
     await expect(page).toHaveURL(/\/all$/);
-    await expect(page.getByRole('group', { name: 'Sort' }).getByRole('link', { name: 'Hot' })).toHaveAttribute('aria-current', 'true');
+    await expect(page.getByRole('group', { name: 'Sort' }).getByRole('link', { name: 'Hot' })).toHaveAttribute('aria-current', 'page');
   });
 
   test('the density switch changes the cards and the choice is kept', async ({ page }) => {
     await gotoHydrated(page, '/all?sort=top');
     const first = page.locator('.feed-list article').first();
     await expect(first).toHaveAttribute('data-density', 'classic');
-    await page.getByRole('group', { name: 'View' }).getByRole('button', { name: 'Compact' }).click();
+    await page.getByRole('radiogroup', { name: 'View' }).getByRole('radio', { name: 'Compact' }).click();
     await expect(first).toHaveAttribute('data-density', 'compact');
     await page.reload();
     await expect(page.locator('.feed-list article').first()).toHaveAttribute('data-density', 'compact');
-    await page.getByRole('group', { name: 'View' }).getByRole('button', { name: 'Classic' }).click();
+    await page.getByRole('radiogroup', { name: 'View' }).getByRole('radio', { name: 'Classic' }).click();
     await expect(page.locator('.feed-list article').first()).toHaveAttribute('data-density', 'classic');
   });
 

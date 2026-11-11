@@ -1,101 +1,106 @@
 @layer app {
+  /* A post: the vote column and a frame (a Mux Card in Card density, a plain row otherwise) that
+     holds the thumbnail and the text. Layout only; colour, type and shape come from Mux tokens. */
   .pb-post {
     display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
     align-items: start;
-    gap: 0 10px;
-    min-width: 0;
-    padding: 10px 0;
-    border-bottom: 1px solid var(--pb-line);
+    column-gap: var(--muxui-semantic-layout-group-gap);
+    min-inline-size: 0;
   }
 
   .pb-post__vote {
-    grid-area: v;
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  .pb-post__frame {
+    grid-column: 2;
+    grid-row: 1;
+    display: grid;
+    min-inline-size: 0;
   }
 
   .pb-post__thumb {
     grid-area: t;
     position: relative;
     display: block;
-    width: 72px;
-    height: 54px;
     overflow: hidden;
-    border: 1px solid var(--pb-line);
-    color: var(--pb-muted);
-    text-decoration: none;
-  }
-
-  .pb-post__thumb:hover {
+    border-radius: var(--muxui-semantic-shape-radius-s);
+    color: var(--muxui-semantic-content-muted);
     text-decoration: none;
   }
 
   .pb-post__thumb img {
     display: block;
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
+    inline-size: 100%;
+    block-size: 100%;
   }
 
   [data-hidden] .pb-post__thumb img {
     filter: blur(14px);
   }
 
-  /* The fallback for a post without a picture: a hatched box with the kind of post. */
+  /* The fallback for a post without a picture: a quiet tile with the kind of post. */
   .pb-post__mark {
     position: absolute;
     inset: 0;
     display: grid;
     place-items: center;
     align-content: center;
-    gap: 2px;
-    font-size: 11px;
-    background: repeating-linear-gradient(135deg, var(--pb-line) 0 3px, transparent 3px 8px);
-  }
-
-  .pb-post__mark > span {
-    padding: 0 3px;
-    background: var(--pb-bg);
+    gap: var(--muxui-semantic-layout-dense-gap);
+    background: var(--muxui-semantic-surface-subtle);
   }
 
   .pb-post__mark svg {
-    padding: 1px;
-    background: var(--pb-bg);
-    font-size: 14px;
+    inline-size: 1.25em;
+    block-size: 1.25em;
   }
 
   .pb-post__body {
     grid-area: b;
-    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--muxui-semantic-layout-dense-gap);
+    min-inline-size: 0;
+  }
+
+  .pb-post__body > * {
+    max-inline-size: 100%;
   }
 
   .pb-post__title {
     margin: 0;
-    font-size: 16px;
-    font-weight: 600;
-    line-height: 1.3;
   }
 
-  .pb-post__title a {
-    /* A one-line title is a 20px link: WCAG 2.2's 24px target size when another link is within 12px. */
-    display: inline-block;
-    min-block-size: 24px;
+  .pb-post__title .muxui-link {
+    /* Inline, so a long title wraps with the tags and domain around it. */
+    display: inline;
+    color: inherit;
+    font-weight: inherit;
+    line-height: inherit;
+  }
+
+  /* The links in a post underline on hover only (the global a:hover rule). */
+  .pb-post__body .muxui-link:not(:hover) {
     text-decoration: none;
   }
 
-  .pb-post__title a:hover {
-    text-decoration: underline;
+  /* A one-line title is at least 24px tall: WCAG 2.2's target size when another link is within 12px. */
+  .pb-post__title {
+    min-block-size: 24px;
   }
 
   .pb-post__domain {
-    margin-left: 0.4em;
-    font-size: 12px;
-    font-weight: 400;
-    color: var(--pb-muted);
+    margin-inline-start: var(--muxui-semantic-layout-tight-gap);
+    font-weight: var(--muxui-semantic-typography-text-font-weight);
+    white-space: nowrap;
   }
 
   .pb-tag {
-    margin-right: 5px;
-    font-size: 11px;
-    font-weight: 700;
+    margin-inline-end: var(--muxui-semantic-layout-tight-gap);
+    vertical-align: middle;
   }
 
   .pb-tag--pin {
@@ -110,23 +115,13 @@
     color: var(--pb-error);
   }
 
-  .pb-post__meta,
-  .pb-post__actions {
-    font-size: 12px;
-    color: var(--pb-muted);
-  }
-
-  .pb-post__meta a {
-    color: var(--pb-fg);
-    text-decoration: none;
-  }
-
-  .pb-post__meta a:hover {
-    text-decoration: underline;
+  .pb-post__meta .muxui-link {
+    display: inline;
+    line-height: inherit;
   }
 
   .pb-post__community {
-    font-weight: 600;
+    font-weight: var(--muxui-semantic-typography-label-weight);
   }
 
   .pb-handle {
@@ -134,14 +129,16 @@
   }
 
   .pb-handle__host {
-    color: var(--pb-muted);
-    font-weight: 400;
+    color: var(--muxui-semantic-content-secondary);
+    font-weight: var(--muxui-semantic-typography-text-font-weight);
   }
 
+  /* The role badge beside a name (Badge in badge.tsx), here until the shared Badge brings its own
+     styles; the comment thread and profiles use it too. */
   .pb-badge {
-    margin-left: 5px;
-    font-size: 11px;
-    font-weight: 700;
+    margin-inline-start: var(--muxui-semantic-layout-tight-gap);
+    font-size: var(--muxui-semantic-typography-badge-size);
+    font-weight: var(--muxui-semantic-typography-label-weight);
     letter-spacing: 0.03em;
   }
 
@@ -158,38 +155,76 @@
   }
 
   .pb-post__excerpt {
-    max-width: 72ch;
-    margin: 4px 0 0;
+    max-inline-size: 72ch;
+    margin: 0;
   }
 
   .pb-post__actions {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 0 12px;
+    gap: 0 var(--muxui-semantic-layout-group-gap);
   }
 
-  /* Touch targets of at least 24 px (WCAG 2.2, 2.5.8) for the small actions under a post. */
-  .pb-post__actions > a,
-  .pb-post__actions > button {
-    display: inline-flex;
-    align-items: center;
-    min-height: 24px;
-  }
-
+  /* Touch targets of at least 24 px (WCAG 2.2, 2.5.8) for the comments link. */
   .pb-post__comments {
-    color: var(--pb-fg);
-    text-decoration: none;
+    min-block-size: 24px;
   }
 
-  .pb-post__comments:hover {
-    text-decoration: underline;
+  /* Card: an outlined Mux Card around the vote column and the text, with a wide picture under
+     the text; a text post has no picture block. The Card spans both columns and shares them
+     (subgrid), so the vote, which sits outside it in the markup, lines up inside it. */
+  .pb-post[data-density='card'] {
+    padding-block-end: var(--muxui-semantic-layout-group-gap);
   }
 
-  /* Classic: vote column, a small thumbnail, then the text. */
+  .pb-post[data-density='card'] .pb-post__vote {
+    position: relative;
+    z-index: 1;
+    margin: var(--muxui-semantic-layout-inset-medium);
+    margin-inline-end: 0;
+  }
+
+  .pb-post[data-density='card'] .pb-post__frame {
+    grid-column: 1 / -1;
+    grid-template-columns: subgrid;
+    grid-template-areas:
+      '. b'
+      '. t';
+    row-gap: var(--muxui-semantic-layout-group-gap);
+  }
+
+  .pb-post[data-density='card'] .pb-post__body {
+    gap: var(--muxui-semantic-layout-tight-gap);
+  }
+
+  .pb-post[data-density='card'] .pb-post__thumb {
+    block-size: 190px;
+  }
+
+  /* Card shows a picture only when there is one: no empty tile for a text or link post. */
+  .pb-post[data-density='card']:not([data-picture]) .pb-post__thumb {
+    display: none;
+  }
+
+  /* Classic: a dense row with the vote column, a small thumbnail, then the text. */
+  .pb-post[data-density='classic'],
+  .pb-post[data-density='compact'] {
+    border-block-end: 1px solid var(--muxui-semantic-border-faint);
+  }
+
   .pb-post[data-density='classic'] {
-    grid-template-columns: 44px 72px minmax(0, 1fr);
-    grid-template-areas: 'v t b';
+    padding-block: var(--muxui-semantic-layout-inset-small);
+  }
+
+  .pb-post[data-density='classic'] .pb-post__frame {
+    grid-template-columns: 72px minmax(0, 1fr);
+    grid-template-areas: 't b';
+    column-gap: var(--muxui-semantic-layout-group-gap);
+  }
+
+  .pb-post[data-density='classic'] .pb-post__thumb {
+    block-size: 54px;
   }
 
   .pb-post[data-density='classic'] .pb-post__excerpt {
@@ -199,95 +234,54 @@
     -webkit-box-orient: vertical;
   }
 
-  /* Card: the text first, then a wide picture; a text post has no picture block. */
-  .pb-post[data-density='card'] {
-    grid-template-columns: 44px minmax(0, 1fr);
-    grid-template-areas:
-      'v b'
-      'v t';
-    padding: 16px 0;
-  }
-
-  .pb-post[data-density='card'] .pb-post__title {
-    font-size: 18px;
-  }
-
-  .pb-post[data-density='card'] .pb-post__thumb {
-    width: 100%;
-    height: 190px;
-    margin-top: 10px;
-  }
-
-  .pb-post[data-density='card'][data-kind='text'] .pb-post__thumb {
-    display: none;
-  }
-
-  .pb-post[data-density='card'] .pb-post__excerpt {
-    font-size: 15px;
-  }
-
-  .pb-post[data-density='card'] .pb-post__actions {
-    margin-top: 6px;
-    font-size: 13px;
-  }
-
   /* Compact: one line, the vote beside the title. */
   .pb-post[data-density='compact'] {
-    grid-template-columns: auto minmax(0, 1fr);
-    grid-template-areas: 'v b';
     align-items: center;
-    padding: 3px 0;
+    padding-block: var(--muxui-semantic-layout-dense-gap);
   }
 
   .pb-post[data-density='compact'] .pb-post__vote {
     flex-direction: row;
   }
 
-  .pb-post[data-density='compact'] .pb-vote__score {
-    min-width: 30px;
+  .pb-post[data-density='compact'] .pb-post__frame {
+    grid-template-areas: 'b';
   }
 
   .pb-post[data-density='compact'] .pb-post__thumb,
   .pb-post[data-density='compact'] .pb-post__excerpt,
-  .pb-post[data-density='compact'] .pb-post__actions button {
+  .pb-post[data-density='compact'] .pb-post__actions .muxui-button {
     display: none;
-  }
-
-  .pb-post[data-density='compact'] .pb-post__title {
-    overflow: hidden;
-    font-size: 14px;
-    text-overflow: ellipsis;
-    white-space: nowrap;
   }
 
   /* The title takes the first row; the meta and the comment count share the second. */
   .pb-post[data-density='compact'] .pb-post__body {
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
-    column-gap: 12px;
+    align-items: center;
+    column-gap: var(--muxui-semantic-layout-group-gap);
+    row-gap: 0;
   }
 
   .pb-post[data-density='compact'] .pb-post__title {
     grid-column: 1 / -1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   @media (max-width: 600px) {
-    .pb-post[data-density='classic'] {
-      grid-template-columns: 40px minmax(0, 1fr) 56px;
-      grid-template-areas: 'v b t';
+    .pb-post[data-density='classic'] .pb-post__frame {
+      grid-template-columns: minmax(0, 1fr) 56px;
+      grid-template-areas: 'b t';
     }
 
     .pb-post[data-density='classic'] .pb-post__thumb {
-      width: 56px;
-      height: 44px;
-    }
-
-    .pb-post[data-density='card'] {
-      grid-template-columns: 40px minmax(0, 1fr);
+      block-size: 44px;
     }
 
     .pb-post[data-density='card'] .pb-post__thumb {
-      height: 150px;
+      block-size: 150px;
     }
   }
 }

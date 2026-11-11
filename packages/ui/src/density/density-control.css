@@ -1,32 +1,37 @@
 @layer app {
-  /* A row of pressed buttons: the density switch, and the sort choice beside it. */
+  .pb-density {
+    flex: none;
+  }
+
+  /* A row of pressed buttons. The density switch no longer uses it (it is a Mux ToggleButtonGroup);
+     kept on Mux tokens for the comment sort, which still reads it until its lane moves to Mux. */
   .pb-segmented {
     display: inline-flex;
     flex: none;
-    border: 1px solid var(--pb-line);
-    border-radius: 2px;
+    border: 1px solid var(--muxui-semantic-border-default);
+    border-radius: var(--muxui-semantic-shape-option-radius);
   }
 
   .pb-segmented button {
-    padding: 3px 10px;
+    padding: var(--muxui-semantic-layout-dense-gap) var(--muxui-semantic-layout-inset-small);
     border: 0;
-    border-right: 1px solid var(--pb-line);
+    border-inline-end: 1px solid var(--muxui-semantic-border-default);
     background: none;
-    color: var(--pb-fg);
+    color: var(--muxui-semantic-content-default);
     font: inherit;
     cursor: pointer;
   }
 
   .pb-segmented button:last-child {
-    border-right: 0;
+    border-inline-end: 0;
   }
 
   .pb-segmented button:hover {
-    background: var(--pb-hover);
+    background: var(--muxui-semantic-surface-hover);
   }
 
   .pb-segmented button[aria-pressed='true'] {
-    background: var(--pb-fg);
-    color: var(--pb-bg);
+    background: var(--muxui-semantic-color-neutral-80);
+    color: var(--muxui-semantic-color-neutral-80-fg);
   }
 }

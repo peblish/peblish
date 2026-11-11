@@ -1,57 +1,58 @@
 @layer app {
+  /* The vote column: Mux ToggleButtons stacked around the score. Layout here; the arrows' look is
+     Mux UI's own, except that a voted arrow takes the up or down accent instead of the neutral fill. */
   .pb-vote {
     display: flex;
     flex: none;
     flex-direction: column;
     align-items: center;
+    gap: var(--muxui-semantic-layout-micro-gap);
   }
 
   .pb-vote--row {
     flex-direction: row;
   }
 
-  .pb-vote button {
-    display: inline-grid;
-    place-items: center;
-    min-width: 32px;
-    min-height: 28px;
-    padding: 0;
-    border: 0;
-    background: none;
-    font-size: 13px;
-    line-height: 1;
-    color: var(--pb-muted);
-    cursor: pointer;
-    border-radius: 3px;
+  /* In a row the arrows centre by flex, not by padding, so a host that sets a smaller minimum
+     height (a comment's actions) gets it; elsewhere Mux's own minimum height still applies. */
+  .pb-vote--row .muxui-toggle-button {
+    padding-block: 0;
   }
 
-  .pb-vote button:hover:not(:disabled) {
-    color: var(--pb-fg);
+  .pb-vote .muxui-toggle-button {
+    padding-inline: 0;
+    min-inline-size: var(--muxui-semantic-control-size-sm);
   }
 
-  .pb-vote button:disabled {
-    cursor: default;
-    opacity: 0.55;
+  .pb-vote .muxui-toggle-button[data-muxui-state-disabled] {
+    color: var(--muxui-semantic-content-faint);
   }
 
-  .pb-vote button[aria-pressed='true'].pb-vote__up {
+  .pb-vote .pb-vote__up[data-muxui-state-selected],
+  .pb-vote .pb-vote__up[data-muxui-state-selected]:hover {
+    background-color: var(--muxui-component-taggroup-orange-tint-weak);
+    outline-color: var(--pb-up);
     color: var(--pb-up);
   }
 
-  .pb-vote button[aria-pressed='true'].pb-vote__down {
+  .pb-vote .pb-vote__down[data-muxui-state-selected],
+  .pb-vote .pb-vote__down[data-muxui-state-selected]:hover {
+    background-color: var(--muxui-component-taggroup-indigo-tint-weak);
+    outline-color: var(--pb-down);
     color: var(--pb-down);
   }
 
   .pb-vote__score {
-    min-width: 2ch;
-    font-size: 13px;
-    font-weight: 700;
+    min-inline-size: 3ch;
     font-variant-numeric: tabular-nums;
-    line-height: 1.1;
     text-align: center;
   }
 
-  .pb-vote--row .pb-vote__score {
-    min-width: 30px;
+  .pb-vote[data-vote='up'] .pb-vote__score {
+    color: var(--pb-up);
+  }
+
+  .pb-vote[data-vote='down'] .pb-vote__score {
+    color: var(--pb-down);
   }
 }

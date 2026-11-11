@@ -1,8 +1,13 @@
 import type { PostView } from '@peblish/schema/views';
 import { useState } from 'react';
 import { Badge, type BadgeLabels } from './badge.tsx';
+import { Button } from './button.tsx';
+import { Card } from './card.tsx';
 import { Handle } from './handle.tsx';
 import { ImageIcon, LinkIcon, TextIcon } from './icons.tsx';
+import { Image } from './image.tsx';
+import { Link } from './link.tsx';
+import { Text } from './text.tsx';
 import { Time } from './time.tsx';
 import { VoteControl, type Vote, type VoteControlLabels } from './vote-control.tsx';
 
@@ -79,10 +84,12 @@ function domainOf(url: string): string | null {
 const markIcons = { text: TextIcon, link: LinkIcon, image: ImageIcon } as const;
 
 /**
- * One post in a feed, in one of three densities (Card, Classic, Compact) with the same markup:
- * the CSS lays it out by `data-density`. Plain links and buttons only. A sensitive (NSFW or
- * NSFL) post starts hidden: its picture is blurred and its excerpt withheld until "show".
- * The server decides what a signed-out viewer receives; this only renders it.
+ * One post in a feed, in one of three densities (Card, Classic, Compact) with the same parts: an
+ * outlined Mux Card in Card density, a dense row in Classic and Compact; the CSS lays them out by
+ * `data-density`. The vote control sits outside the Card, in the article's grid, so changing the
+ * density never remounts it (an optimistic vote stays). A sensitive (NSFW or NSFL) post starts
+ * hidden: its picture is blurred and its excerpt withheld until "show". The server decides what
+ * a signed-out viewer receives; this only renders it.
  */
 export function PostCard({
   post,
@@ -103,14 +110,87 @@ export function PostCard({
   const hidden = sensitive && !revealed;
   const gone = post.removed || post.deleted;
   const domain = post.url ? domainOf(post.url) : null;
-  const Heading = `h${headingLevel}` as const;
   const Mark = markIcons[kind];
+  const card = density === 'card';
+  const picture = gone ? null : thumbnailSrc;
+  // Dense rows take Mux's label role for the title, so a row stays one scan line (the RM mock's rows).
+  const titleType = card
+    ? ({ variant: 'title', size: 'md' } as const)
+    : ({ variant: 'label', size: density === 'classic' ? 'lg' : 'md' } as const);
+
+  const parts = (
+    <>
+      {/* A second way to the post for pointer users: hidden from the tab order and from assistive
+          technology, which reach the post by its title. A plain anchor, since Mux UI's Link drops
+          tabIndex and aria-hidden. */}
+      <a className="pb-post__thumb" href={hrefs.post} tabIndex={-1} aria-hidden="true">
+        {picture ? (
+          <Image src={picture} alt="" loading="lazy" decoding="async" fit="cover" />
+        ) : (
+          <span className="pb-post__mark">
+            <Mark />
+            <Text variant="label" size="xs">
+              {labels[kind]}
+            </Text>
+          </span>
+        )}
+      </a>
+      <div className="pb-post__body">
+        <Text as={`h${headingLevel}`} {...titleType} className="pb-post__title">
+          {post.featured && <Tag tone="pin">{labels.pinned}</Tag>}
+          {post.locked && <Tag tone="lock">{labels.locked}</Tag>}
+          {post.sensitive && <Tag tone="nsfw">{labels.nsfw}</Tag>}
+          {post.nsfl && <Tag tone="nsfw">{labels.nsfl}</Tag>}
+          <Link href={hrefs.post}>{post.removed ? labels.removed : post.deleted ? labels.deleted : post.title}</Link>
+          {domain && !gone && (
+            <Text size="xs" color="muted" className="pb-post__domain">
+              ({domain})
+            </Text>
+          )}
+        </Text>
+        <Text as="div" size="xs" color="muted" className="pb-post__meta">
+          <Link className="pb-post__community" href={hrefs.community}>
+            <Handle prefix="!" handle={post.community.handle} />
+          </Link>{' '}
+          <span className="pb-post__by">
+            {labels.by}{' '}
+            <Link href={hrefs.author}>
+              <Handle prefix="@" handle={post.author.handle} />
+            </Link>
+            {post.authorBadge && <Badge kind={post.authorBadge} labels={labels.badges} />}
+          </span>{' '}
+          · <Time iso={post.publishedAt} locale={locale} now={now} />
+        </Text>
+        {post.excerpt && !gone && !hidden && (
+          <Text as="p" size={card ? 'md' : 'sm'} className="pb-post__excerpt">
+            {post.excerpt}
+          </Text>
+        )}
+        <Text as="div" size="sm" className="pb-post__actions">
+          <Link className="pb-post__comments" href={hrefs.post}>
+            {labels.comments(post.counts.comments)}
+          </Link>
+          {sensitive && (
+            <Button variant="ghost" size="sm" aria-pressed={revealed} onActivate={() => setRevealed(!revealed)}>
+              {revealed ? labels.hide : labels.show}
+            </Button>
+          )}
+          {onShare && (
+            <Button variant="ghost" size="sm" onActivate={onShare}>
+              {labels.share}
+            </Button>
+          )}
+        </Text>
+      </div>
+    </>
+  );
 
   return (
     <article
       className="pb-post"
       data-density={density}
       data-kind={kind}
+      data-picture={picture ? true : undefined}
       data-pinned={post.featured || undefined}
       data-sensitive={sensitive || undefined}
       data-hidden={hidden || undefined}
@@ -124,55 +204,22 @@ export function PostCard({
         labels={labels.vote}
         locale={locale}
       />
-      <a className="pb-post__thumb" href={hrefs.post} tabIndex={-1} aria-hidden="true">
-        {thumbnailSrc && !gone ? (
-          <img src={thumbnailSrc} alt="" loading="lazy" decoding="async" />
-        ) : (
-          <span className="pb-post__mark">
-            <Mark />
-            <span>{labels[kind]}</span>
-          </span>
-        )}
-      </a>
-      <div className="pb-post__body">
-        <Heading className="pb-post__title">
-          {post.featured && <span className="pb-tag pb-tag--pin">{labels.pinned}</span>}
-          {post.locked && <span className="pb-tag pb-tag--lock">{labels.locked}</span>}
-          {post.sensitive && <span className="pb-tag pb-tag--nsfw">{labels.nsfw}</span>}
-          {post.nsfl && <span className="pb-tag pb-tag--nsfw">{labels.nsfl}</span>}
-          <a href={hrefs.post}>{post.removed ? labels.removed : post.deleted ? labels.deleted : post.title}</a>
-          {domain && !gone && <span className="pb-post__domain">({domain})</span>}
-        </Heading>
-        <div className="pb-post__meta">
-          <a className="pb-post__community" href={hrefs.community}>
-            <Handle prefix="!" handle={post.community.handle} />
-          </a>{' '}
-          <span className="pb-post__by">
-            {labels.by}{' '}
-            <a href={hrefs.author}>
-              <Handle prefix="@" handle={post.author.handle} />
-            </a>
-            {post.authorBadge && <Badge kind={post.authorBadge} labels={labels.badges} />}
-          </span>{' '}
-          · <Time iso={post.publishedAt} locale={locale} now={now} />
-        </div>
-        {post.excerpt && !gone && !hidden && <p className="pb-post__excerpt">{post.excerpt}</p>}
-        <div className="pb-post__actions">
-          <a className="pb-post__comments" href={hrefs.post}>
-            {labels.comments(post.counts.comments)}
-          </a>
-          {sensitive && (
-            <button type="button" className="pb-linkbutton" aria-pressed={revealed} onClick={() => setRevealed(!revealed)}>
-              {revealed ? labels.hide : labels.show}
-            </button>
-          )}
-          {onShare && (
-            <button type="button" className="pb-linkbutton" onClick={onShare}>
-              {labels.share}
-            </button>
-          )}
-        </div>
-      </div>
+      {card ? (
+        <Card.Root variant="outlined" padding="sm" className="pb-post__frame">
+          {parts}
+        </Card.Root>
+      ) : (
+        <div className="pb-post__frame">{parts}</div>
+      )}
     </article>
+  );
+}
+
+/** A state tag before the title (pinned, locked, NSFW, NSFL). */
+function Tag({ tone, children }: { tone: 'pin' | 'lock' | 'nsfw'; children: string }) {
+  return (
+    <Text variant="label" size="xs" className={`pb-tag pb-tag--${tone}`}>
+      {children}
+    </Text>
   );
 }
