@@ -7,7 +7,8 @@ import { expect, test } from '@playwright/test';
 // The built web server's probes, shutdown and log, each against its own server process: /healthz
 // never touches the database, /readyz answers 503 with Retry-After within its timeout when
 // the database is unusable, SIGTERM after a database-backed request exits cleanly, and a client
-// that leaves mid-request writes nothing to the log while a real failure still does.
+// that leaves mid-request writes nothing to the log while a real failure still does, and a
+// failed page's log line names no value from its address.
 
 const entry = join(import.meta.dirname, '../../packages/web/.output/server/index.mjs');
 
@@ -140,6 +141,25 @@ test.describe('server lifecycle', () => {
     try {
       expect((await fetch(`${server.origin}/`)).status).toBeGreaterThanOrEqual(500);
       await expect.poll(() => server.output()).toMatch(/error/i);
+    } finally {
+      await stop(server);
+    }
+  });
+
+  test("a page whose search parameters fail logs one line without the visitor's values", async () => {
+    const databaseUrl = process.env.DATABASE_URL;
+    if (!databaseUrl) throw new Error('DATABASE_URL is unset: run lane_env=$(sh scripts/lane.sh <lane>) && eval "$lane_env" first');
+    const server = await boot(databaseUrl);
+    try {
+      const marker = 'MARKER-typed-by-a-visitor';
+      const search = new URLSearchParams({ error: JSON.stringify({ a: marker }) });
+      expect((await fetch(`${server.origin}/post/00000000-0000-0000-0000-000000000000?${search}`)).status).toBe(500);
+      await expect.poll(() => server.output()).toContain('SearchParamError');
+      const logged = server
+        .output()
+        .split('\n')
+        .filter((line) => line && !line.startsWith('➜'));
+      expect(logged).toEqual(['route /post/$id/ failed: SearchParamError (error: domain)']);
     } finally {
       await stop(server);
     }
