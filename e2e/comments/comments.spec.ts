@@ -565,9 +565,33 @@ test.describe('a signed-in person', () => {
     const created = await post(page, seed.posts.empty, { intent: 'reply', body: `Mine to change ${seed.suffix}` });
     expect(created.status).toBe(200);
     const id = created.answer.id!;
-    await gotoHydrated(page, commentUrl(seed.posts.empty, id));
+
+    // Without JavaScript, Edit is a link to the page with the form open, and Save is a plain post.
+    const plain = await (await browser.newContext({ javaScriptEnabled: false })).newPage();
+    await plain.goto('/auth/sign-in');
+    await signIn(plain, `@${seed.replier.name}`, seed.password);
+    await plain.waitForURL('/');
+    await plain.goto(commentUrl(seed.posts.empty, id));
+    const plainOwn = plain.getByRole('group', { name: 'Your comment' });
+    await plainOwn.getByRole('link', { name: 'Edit', exact: true }).click();
+    await expect(plain).toHaveURL(new RegExp(`${commentUrl(seed.posts.empty, id)}\\?edit=1$`));
+    await plainOwn.getByRole('textbox', { name: 'Edit your comment' }).fill(`No script **edit** ${seed.suffix}`);
+    await plainOwn.getByRole('button', { name: 'Save' }).click();
+    await expect(plain).toHaveURL(new RegExp(`${commentUrl(seed.posts.empty, id)}$`));
+    await expect(plain.locator(`#comment-${id}`).locator('strong')).toHaveText('edit');
+    await expect(plain.locator(`#comment-${id}`)).toContainText('edited');
+    await plain.close();
+
+    // Hydrated, Edit is the Mux Disclosure's own button, open on the ?edit=1 page and closed otherwise.
+    const log = recordConsole(page);
+    await gotoHydrated(page, `${commentUrl(seed.posts.empty, id)}?edit=1`);
     const own = page.getByRole('group', { name: 'Your comment' });
-    await own.getByText('Edit', { exact: true }).click();
+    await expect(own.getByRole('button', { name: 'Edit', exact: true })).toHaveAttribute('aria-expanded', 'true');
+    await expect(own.getByRole('textbox', { name: 'Edit your comment' })).toBeEditable();
+    expect(log.hydrationProblems()).toEqual([]);
+    await gotoHydrated(page, commentUrl(seed.posts.empty, id));
+    await expect(own.getByRole('link', { name: 'Edit' })).toHaveCount(0);
+    await own.getByRole('button', { name: 'Edit', exact: true }).click();
     await own.getByRole('textbox', { name: 'Edit your comment' }).fill(`Changed **text** ${seed.suffix}`);
     await own.getByRole('button', { name: 'Save' }).click();
     await expect(page).toHaveURL(new RegExp(`${commentUrl(seed.posts.empty, id)}$`));
@@ -632,5 +656,93 @@ test.describe('a moderator', () => {
     await signedIn(reader, seed.replier.name);
     expect((await html(reader, postUrl(seed.posts.tombstones))).text).not.toContain('Rule 3');
     await reader.close();
+  });
+});
+
+test.describe('the hydrated thread', () => {
+  test('folding a comment re-renders that comment alone, and choosing one to answer re-renders none', async ({ page }) => {
+    // A stand-in for React DevTools' hook, installed before React loads, so each commit can be
+    // read. A function component that renders gets new hook objects (its fiber's memoizedState);
+    // one that skips rendering keeps them. So a comment row rendered in a commit exactly when
+    // the state under its <li id="comment-..."> is another object than after the last commit.
+    await page.addInitScript(() => {
+      type Fiber = {
+        type: unknown;
+        memoizedProps: { id?: unknown } | null;
+        return: Fiber | null;
+        child: Fiber | null;
+        sibling: Fiber | null;
+        memoizedState: unknown;
+      };
+      const seen = new Map<string, unknown>();
+      const rendered: string[] = [];
+      Object.assign(window, {
+        renderedRows: rendered,
+        __REACT_DEVTOOLS_GLOBAL_HOOK__: {
+          supportsFiber: true,
+          renderers: new Map(),
+          inject: () => 1,
+          checkDCE: () => undefined,
+          onCommitFiberUnmount: () => undefined,
+          onPostCommitFiberRoot: () => undefined,
+          onCommitFiberRoot: (_renderer: number, root: { current: Fiber }) => {
+            const stack: Fiber[] = [root.current];
+            for (let fiber = stack.pop(); fiber; fiber = stack.pop()) {
+              const id = fiber.memoizedProps?.id;
+              if (fiber.type === 'li' && typeof id === 'string' && id.startsWith('comment-') && fiber.return) {
+                const state = fiber.return.memoizedState;
+                if (seen.get(id) !== state) rendered.push(id.slice('comment-'.length));
+                seen.set(id, state);
+              }
+              if (fiber.sibling) stack.push(fiber.sibling);
+              if (fiber.child) stack.push(fiber.child);
+            }
+          },
+        },
+      });
+    });
+    await signedIn(page, seed.replier.name);
+    await gotoHydrated(page, postUrl(seed.posts.thread));
+    const renderedAfter = async (act: () => Promise<void>) => {
+      await page.evaluate(() => {
+        (window as unknown as { renderedRows: string[] }).renderedRows.length = 0;
+      });
+      await act();
+      return page.evaluate(() => [...new Set((window as unknown as { renderedRows: string[] }).renderedRows)].sort());
+    };
+    const row = (id: string) => page.locator(`#comment-${id}`);
+    const fold = (id: string) => row(id).locator('> .pb-comment__head').getByRole('button');
+
+    // A comment with no replies, then one with a chain under it: the row alone, its replies unmount.
+    expect(
+      await renderedAfter(async () => {
+        await fold(seed.comments.third).click();
+        await expect(fold(seed.comments.third)).toHaveAttribute('aria-expanded', 'false');
+      }),
+    ).toEqual([seed.comments.third]);
+    expect(
+      await renderedAfter(async () => {
+        await fold(seed.comments.second).click();
+        await expect(fold(seed.comments.second)).toHaveAttribute('aria-expanded', 'false');
+      }),
+    ).toEqual([seed.comments.second]);
+    // Opened again, the row and the replies it mounts render, and nothing else.
+    const opened = await renderedAfter(async () => {
+      await fold(seed.comments.second).click();
+      await expect(fold(seed.comments.second)).toHaveAttribute('aria-expanded', 'true');
+    });
+    const below = await row(seed.comments.second)
+      .locator('li.pb-comment')
+      .evaluateAll((items) => items.map((item) => item.id.slice('comment-'.length)));
+    expect(below.length).toBeGreaterThan(0);
+    expect(opened).toEqual([seed.comments.second, ...below].sort());
+
+    // Choosing a comment to answer changes the reply bar only.
+    expect(
+      await renderedAfter(async () => {
+        await row(seed.comments.first).locator('> .pb-comment__main > .pb-comment__actions').getByRole('button', { name: 'Reply' }).click();
+        await expect(page.getByText('Replying to')).toBeVisible();
+      }),
+    ).toEqual([]);
   });
 });

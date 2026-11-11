@@ -77,26 +77,12 @@ function PostContent({ data, error }: { data: Extract<PostPageData, { kind: 'pos
         </Text>
         {(post.locked || post.featured || post.sensitive || post.nsfl) && (
           <div className="post-flags">
-            {post.locked && (
-              <span className="post-flag" data-flag="locked">
-                {t('posts', 'flag.locked')}
-              </span>
-            )}
-            {post.featured && (
-              <span className="post-flag" data-flag="pinned">
-                {t('posts', 'flag.pinned')}
-              </span>
-            )}
+            {post.locked && <Badge kind="locked">{t('posts', 'flag.locked')}</Badge>}
+            {post.featured && <Badge kind="pinned">{t('posts', 'flag.pinned')}</Badge>}
             {post.nsfl ? (
-              <span className="post-flag" data-flag="nsfl">
-                {t('posts', 'flag.nsfl')}
-              </span>
+              <Badge kind="nsfl">{t('posts', 'flag.nsfl')}</Badge>
             ) : (
-              post.sensitive && (
-                <span className="post-flag" data-flag="sensitive">
-                  {t('posts', 'flag.sensitive')}
-                </span>
-              )
+              post.sensitive && <Badge kind="nsfw">{t('posts', 'flag.sensitive')}</Badge>
             )}
             {(post.sensitive || post.nsfl) && viewerId && <HideNsfwForm handle={post.community.handle} back={back} />}
           </div>

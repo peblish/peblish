@@ -10,9 +10,9 @@ import { PermalinkPage } from './-ui/permalink-page.tsx';
 // under it. The page is personal like the post's (the gate, tombstones and the author's forms
 // depend on who looks), so the server function sets cache-control: no-store through pageSession.
 // ?sort= picks the order of the replies and ?after= (a cursor the page handed out) the page of
-// them; ?commentError= carries a refusal of a form without JavaScript, ?error= one of the NSFW gate's.
+// them; ?edit= opens the author's edit form (for a browser without JavaScript); ?commentError= carries a refusal of a form without JavaScript, ?error= one of the NSFW gate's.
 
-const Search = type({ 'sort?': 'unknown', 'after?': 'unknown', 'commentError?': 'unknown', 'error?': 'unknown' });
+const Search = type({ 'sort?': 'unknown', 'after?': 'unknown', 'edit?': 'unknown', 'commentError?': 'unknown', 'error?': 'unknown' });
 
 export const Route = createFileRoute('/post/$id/comments/$commentId')({
   validateSearch: Search,
@@ -42,7 +42,7 @@ export const Route = createFileRoute('/post/$id/comments/$commentId')({
 function PermalinkRoute() {
   const data = Route.useLoaderData();
   const { id, commentId } = Route.useParams();
-  const { error } = Route.useSearch();
+  const { error, edit } = Route.useSearch();
   // Keyed, so the router reusing this component for another comment's page keeps nothing of the last: a reply being typed, the comment it answers, folds, optimistic votes, a fetched page.
   return (
     <PermalinkPage
@@ -50,6 +50,7 @@ function PermalinkRoute() {
       data={data}
       postId={id}
       commentId={commentId}
+      editing={edit !== undefined}
       error={typeof error === 'string' ? error : undefined}
     />
   );

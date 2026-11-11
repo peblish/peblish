@@ -22,24 +22,6 @@
     align-items: center;
     gap: var(--muxui-semantic-layout-tight-gap);
   }
-  /* A state mark, coloured as the shared Badge colours one: TagGroup's hue on its weak tint. */
-  .post-flag {
-    padding: 0 var(--muxui-semantic-layout-inset-tight);
-    border-radius: var(--muxui-semantic-shape-pill-radius);
-    background: var(--muxui-component-taggroup-tag-background);
-    color: var(--muxui-component-taggroup-tag-foreground);
-    font-size: var(--muxui-semantic-typography-badge-size);
-    font-weight: var(--muxui-semantic-typography-label-weight);
-  }
-  .post-flag[data-flag='pinned'] {
-    background: var(--muxui-component-taggroup-brand-tint-weak);
-    color: var(--muxui-component-taggroup-brand-foreground);
-  }
-  .post-flag[data-flag='sensitive'],
-  .post-flag[data-flag='nsfl'] {
-    background: var(--muxui-component-taggroup-error-tint-weak);
-    color: var(--muxui-component-taggroup-error-foreground);
-  }
   .post-title {
     margin: 0 0 var(--muxui-semantic-layout-control-gap);
     overflow-wrap: anywhere;

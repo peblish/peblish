@@ -3,6 +3,7 @@ import { parseSort, threadSorts } from '@peblish/core/comments/sort';
 import { Button } from '@peblish/ui/components/button';
 import { ButtonGroup } from '@peblish/ui/components/button-group';
 import { CommentThread } from '@peblish/ui/components/comment-thread';
+import type { Vote } from '@peblish/ui/components/vote-control';
 import { Disclosure } from '@peblish/ui/components/disclosure';
 import { Link } from '@peblish/ui/components/link';
 import { ReplyBar } from '@peblish/ui/components/reply-bar';
@@ -10,7 +11,7 @@ import { Text } from '@peblish/ui/components/text';
 import type { CommentView } from '@peblish/schema/views';
 import { useRouter, useRouterState } from '@tanstack/react-router';
 import { type } from 'arktype';
-import { useEffect, useMemo, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
 import { useTranslate } from '../../../../../i18n/use-translate.ts';
 import { useCommentThreadLabels, useReplyBarLabels } from '../../../../../shell/labels.ts';
 import { commentPath, postPath, userPath } from '../../../../../shell/paths.ts';
@@ -42,6 +43,14 @@ function excerptOf(html: string | null): string {
     .replace(/\s+/g, ' ')
     .trim();
   return text.length > 80 ? `${text.slice(0, 79)}…` : text;
+}
+
+const authorHref = (comment: CommentView) => userPath(comment.author);
+
+async function vote(comment: CommentView, value: Vote) {
+  const result = await castVoteFn({ data: { target: { kind: 'comment', id: comment.id }, value } });
+  // A refusal throws, which puts the arrows and the score back.
+  if (!result.ok) throw new Error(result.reason);
 }
 
 export function ThreadSection({ data: loaded }: { data: ThreadData }) {
@@ -83,7 +92,11 @@ export function ThreadSection({ data: loaded }: { data: ThreadData }) {
   const pageHref = (cursor: string | null) =>
     `${data.focus ? commentPath(data.postId, data.focus.id) : postPath(data.postId)}?${new URLSearchParams({ sort: data.sort, ...(cursor && { after: cursor }) })}#comments`;
 
-  const labels = useCommentThreadLabels();
+  const freshLabels = useCommentThreadLabels();
+  // The thread's rows are memoised, and the labels are a fresh object each render but depend on
+  // the locale alone, so one object per locale lets a row skip re-rendering when this section does.
+  // oxlint-disable-next-line react/exhaustive-deps
+  const labels = useMemo(() => freshLabels, [locale]);
   const replyLabels = useReplyBarLabels();
   // The comment being answered: on a permalink page the one it starts from, else the post.
   const [targetId, setTargetId] = useState<string | null>(loaded.focus?.id ?? null);
@@ -126,30 +139,43 @@ export function ThreadSection({ data: loaded }: { data: ThreadData }) {
     void router.navigate({ href: `${window.location.pathname}?sort=${sort}#comments` });
   }
 
+  // What the thread calls while it renders keeps its identity until the data changes, so the rows' memo holds.
+  const { actions, postId } = data;
+  const focusId = data.focus?.id ?? null;
   // The action slots of one comment row; forms posted from them come back to this comment.
-  const renderActions = (actions: NonNullable<ThreadData['actions']>) => (comment: CommentView) => {
-    const props: ContentActionProps = {
-      target: { kind: 'comment', id: comment.id },
-      author: comment.author,
-      community: actions.community,
-      removed: comment.removed,
-      deleted: comment.deleted,
-      viewer: actions.viewer,
-      back: `${data.focus ? commentPath(data.postId, data.focus.id) : postPath(data.postId)}#comment-${comment.id}`,
-    };
-    return (
-      <>
-        <CommentReport {...props} />
-        <CommentBlock {...props} />
-        <CommentModerate {...props} />
-      </>
-    );
-  };
+  const renderActions = useMemo(
+    () =>
+      actions &&
+      ((comment: CommentView) => {
+        const props: ContentActionProps = {
+          target: { kind: 'comment', id: comment.id },
+          author: comment.author,
+          community: actions.community,
+          removed: comment.removed,
+          deleted: comment.deleted,
+          viewer: actions.viewer,
+          back: `${focusId ? commentPath(postId, focusId) : postPath(postId)}#comment-${comment.id}`,
+        };
+        return (
+          <>
+            <CommentReport {...props} />
+            <CommentBlock {...props} />
+            <CommentModerate {...props} />
+          </>
+        );
+      }),
+    [actions, focusId, postId],
+  );
+  // The comment a permalink starts from pages its own replies, below.
+  const continueHref = useCallback(
+    (comment: CommentView) => (comment.id === focusId ? null : commentPath(postId, comment.id)),
+    [focusId, postId],
+  );
 
-  const startReply = (comment: CommentView) => {
+  const startReply = useCallback((comment: CommentView) => {
     setTargetId(comment.id);
     document.querySelector<HTMLTextAreaElement>('.pb-reply textarea')?.focus();
-  };
+  }, []);
 
   return (
     <section id="comments" className="th-thread" data-slot="thread" aria-labelledby="comments-heading">
@@ -190,21 +216,16 @@ export function ThreadSection({ data: loaded }: { data: ThreadData }) {
         <CommentThread
           comments={data.comments}
           postAuthorId={data.postAuthorId}
-          // The comment a permalink starts from pages its own replies, below.
-          continueHref={(comment) => (comment.id === data.focus?.id ? null : commentPath(data.postId, comment.id))}
+          continueHref={continueHref}
           times={times}
-          authorHref={(comment) => userPath(comment.author)}
+          authorHref={authorHref}
           labels={labels}
           locale={locale}
           maxDepth={threadDisplayDepth}
           voteDisabled={data.viewerId === null}
-          onVote={async (comment, value) => {
-            const result = await castVoteFn({ data: { target: { kind: 'comment', id: comment.id }, value } });
-            // A refusal throws, which puts the arrows and the score back.
-            if (!result.ok) throw new Error(result.reason);
-          }}
+          onVote={vote}
           {...(data.reply === 'yes' && { onReply: startReply })}
-          {...(data.actions && { renderActions: renderActions(data.actions) })}
+          {...(renderActions && { renderActions })}
         />
       )}
       {urlError && (
