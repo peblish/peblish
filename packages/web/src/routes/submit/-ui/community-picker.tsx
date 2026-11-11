@@ -1,3 +1,5 @@
+import { Card } from '@peblish/ui/components/card';
+import { FieldAlert } from '@peblish/ui/components/field-problem';
 import { Handle } from '@peblish/ui/components/handle';
 import { Notice } from '@peblish/ui/components/notice';
 import { RadioField } from '@peblish/ui/components/radio-field';
@@ -62,10 +64,12 @@ export function CommunityPicker({
           value={value ?? ''}
           onChange={onChange}
           invalid={error !== undefined}
-          errorMessage={error === undefined ? undefined : <span role="alert">{error}</span>}
+          // The group's own error part is linked to it but is React Aria's FieldError, which drops a
+          // role (Mux UI rc.6), so the alert is the span inside it: a Text would recolour the message.
+          errorMessage={error === undefined ? undefined : <FieldAlert>{error}</FieldAlert>}
           className="cmp__list"
         >
-          <div className="cmp__options">
+          <Card.Root variant="outlined" padding="sm" className="cmp__options">
             {communities.map((community) => (
               <RadioField.Root
                 key={community.id}
@@ -83,7 +87,7 @@ export function CommunityPicker({
                 <RadioField.Description>{describe(community)}</RadioField.Description>
               </RadioField.Root>
             ))}
-          </div>
+          </Card.Root>
         </RadioGroup>
       )}
       {communities.length > 0 && communities.every((community) => !shown(community)) && (

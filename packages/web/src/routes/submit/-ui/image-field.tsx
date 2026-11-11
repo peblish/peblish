@@ -43,7 +43,7 @@ export function ImageField({
     <DropZone aria-label={t('composer', 'image.drop')} onDrop={(event) => void take(event)} className="cmp__drop">
       <Input.Root invalid={error !== undefined}>
         <Input.Label>{t('composer', 'image.label')}</Input.Label>
-        <Input.Input ref={input} type="file" name="image" accept="image/jpeg,image/png,image/webp,image/gif" />
+        <Input.Input ref={input} type="file" name="image" className="cmp__file" accept="image/jpeg,image/png,image/webp,image/gif" />
         <Input.Description>{t('composer', 'image.hint')}</Input.Description>
         {error !== undefined && (
           <Input.Error id={errorId} role="alert">

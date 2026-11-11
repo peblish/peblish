@@ -1,15 +1,22 @@
 import {
   ArrowBigDown,
   ArrowBigUp,
+  Bold,
   ChevronDown as LucideChevronDown,
   ChevronRight as LucideChevronRight,
+  Code,
   Compass,
+  EyeOff,
   Flame,
   Globe,
+  Heading,
   House,
   Image,
   Inbox,
+  Italic,
   Link,
+  List,
+  ListOrdered,
   LogIn,
   MapPin,
   Menu,
@@ -18,7 +25,9 @@ import {
   Search,
   Shield,
   ShieldCheck,
+  Strikethrough,
   Text,
+  TextQuote,
   UserPlus,
   Users,
   X,
@@ -72,3 +81,14 @@ export const SearchIcon = icon(Search);
 // The phone bar's signed-out actions when they collapse to icons (shell/account.tsx).
 export const LogInIcon = icon(LogIn);
 export const UserPlusIcon = icon(UserPlus);
+
+// The Markdown editor's formatting toolbar (composer/markdown-editor.tsx); its links reuse LinkIcon.
+export const BoldIcon = icon(Bold);
+export const ItalicIcon = icon(Italic);
+export const StrikethroughIcon = icon(Strikethrough);
+export const QuoteIcon = icon(TextQuote);
+export const CodeIcon = icon(Code);
+export const BulletListIcon = icon(List);
+export const NumberedListIcon = icon(ListOrdered);
+export const HeadingIcon = icon(Heading);
+export const SpoilerIcon = icon(EyeOff);
