@@ -61,5 +61,12 @@
     "match": "scroll-behavior",
     "anchor": "*",
     "reason": "Reduced motion must turn off smooth scrolling everywhere, including where a component sets it."
+  },
+  {
+    "file": "packages/ui/src/components/quote.tsx",
+    "rule": "text-element",
+    "match": "<blockquote>",
+    "anchor": "Quote",
+    "reason": "Quote keeps the blockquote element for its meaning; Mux Text cannot render one, and the quoted words inside it are a Mux Text."
   }
 ]
