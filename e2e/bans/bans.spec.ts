@@ -36,7 +36,10 @@ test('the admin bans a peer’s person by handle, sees it listed and in the publ
   await expect(confirm).toContainText(`Ban @${world.peer.person} from this instance?`);
   await expect(confirm).toContainText('posts: 1, comments: 0');
   await confirm.getByLabel('Length').selectOption('permanent');
-  await confirm.getByLabel('Also remove their content').check();
+  // A Mux checkbox draws over a hidden native input, which Playwright will not click: press its label.
+  const removeContent = confirm.getByRole('checkbox', { name: /^Also remove their content/ });
+  await removeContent.locator('xpath=ancestor::label[1]').click();
+  await expect(removeContent).toBeChecked();
   await confirm.getByRole('textbox', { name: 'Reason' }).fill('Ban evasion');
   await confirm.getByRole('button', { name: 'Ban', exact: true }).click();
 
