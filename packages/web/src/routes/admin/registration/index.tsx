@@ -3,7 +3,18 @@ import { findLocalPerson, localHandles } from '@peblish/core/identity/handles';
 import { createInviteAs, listInvites, lookupInvite, revokeInviteAs } from '@peblish/core/registration/invites';
 import { registrationOverview } from '@peblish/core/registration/settings';
 import { InviteCreateBody, type InviteRow, type InviteStatus } from '@peblish/schema/invite';
+import { Badge, type BadgeTone } from '@peblish/ui/components/badge';
 import { Button } from '@peblish/ui/components/button';
+import { Card } from '@peblish/ui/components/card';
+import { Disclosure } from '@peblish/ui/components/disclosure';
+import { Input } from '@peblish/ui/components/input';
+import { Link } from '@peblish/ui/components/link';
+import { Meter } from '@peblish/ui/components/meter';
+import { Notice } from '@peblish/ui/components/notice';
+import { Select } from '@peblish/ui/components/select';
+import { Table } from '@peblish/ui/components/table';
+import { Text } from '@peblish/ui/components/text';
+import { TextField } from '@peblish/ui/components/text-field';
 import { createFileRoute, redirect } from '@tanstack/react-router';
 import { createServerFn } from '@tanstack/react-start';
 import { setResponseStatus } from '@tanstack/react-start/server';
@@ -13,13 +24,16 @@ import { useTranslate } from '../../../i18n/use-translate.ts';
 import { forbidden, formSession, pageSession, principalOf, readForm, sameOrigin } from '../../../server/auth.ts';
 import { useRouteHydrated } from '../../../shell/hydration.ts';
 import { adminPaths } from '../../../shell/paths.ts';
-import { asFormError } from '../../auth/-ui/errors.ts';
-import { AuthForm, Field } from '../../auth/-ui/form.tsx';
+import { asFormError, errorKey } from '../../auth/-ui/errors.ts';
+import { SearchText, useDate } from '../../auth/-ui/page.tsx';
 import { Denial } from '../-denial.tsx';
 import { accessOf } from '../settings/-access.ts';
-import { authHead, SearchText, useDate } from '../../auth/-ui/page.tsx';
+import { AdminTitle } from '../settings/-ui.tsx';
 
 const Search = type({ 'error?': SearchText });
+// The Registration tab: the registration line, the create form (a plain POST: 303 back here, or
+// with ?error=<code>), the new invite's code shown once, and the invites table, whose Revoke
+// buttons submit one form outside the table that names the invite by the button's value.
 const Body = InviteCreateBody.and({ intent: "'create'" }).or({ intent: "'revoke'", invite: 'string.uuid' });
 
 /** The flash (identity/flash.ts) that carries a new invite's code from the POST to this page, once. */
@@ -46,7 +60,6 @@ const days = { '7': 7, '30': 30, '90': 90, never: null } as const;
 export const Route = createFileRoute('/admin/registration/')({
   validateSearch: Search,
   loader: () => loadRegistration(),
-  head: authHead,
   component: Registration,
   server: {
     handlers: {
@@ -84,13 +97,16 @@ export const Route = createFileRoute('/admin/registration/')({
   },
 });
 
-const statusClass: Record<InviteStatus, string> = {
-  valid: 'ok-t',
-  expired: 'warn-t',
-  exhausted: 'muted',
-  revoked: 'err-t',
-  unknown: 'muted',
+const statusTone: Record<InviteStatus, BadgeTone> = {
+  valid: 'success',
+  expired: 'warning',
+  exhausted: 'neutral',
+  revoked: 'danger',
+  unknown: 'neutral',
 };
+
+const path = '/admin/registration';
+const revokeForm = 'revoke-invite';
 
 function Registration() {
   const { t } = useTranslate();
@@ -99,8 +115,8 @@ function Registration() {
   useRouteHydrated();
   if (data.access !== 'ok')
     return (
-      <main className="auth-page">
-        <h1>{t('invites', 'admin.title')}</h1>
+      <main className="pb-page adm-page">
+        <AdminTitle>{t('invites', 'admin.title')}</AdminTitle>
         <Denial
           access={data.access}
           copy={{
@@ -111,149 +127,167 @@ function Registration() {
         />
       </main>
     );
+  const { registration } = data;
+  const error = asFormError(search.error);
+  const cap = t('invites', 'admin.cap', { count: registration.accounts, cap: registration.cap });
   return (
-    <main className="auth-page wide">
-      <h1>{t('invites', 'admin.title')}</h1>
-      <div className="regl">
-        <span>
-          <b>{t('invites', 'admin.registration')}</b> {t('invites', data.registration.enabled ? 'admin.inviteOnly' : 'admin.paused')}
-        </span>
-        <span>{t('invites', 'admin.cap', { count: data.registration.accounts, cap: data.registration.cap })}</span>
-        {/* The switch and the cap are changed in the admin settings (lane ADM). */}
-        <a href={adminPaths.settings}>{t('invites', 'admin.settingsLink')}</a>
+    <main className="pb-page adm-page">
+      <AdminTitle>{t('invites', 'admin.title')}</AdminTitle>
+      <div className="adm-summary">
+        <Text variant="label" size="md">
+          {t('invites', 'admin.registration')}
+        </Text>
+        <Badge tone={registration.enabled ? 'success' : 'warning'}>
+          {t('invites', registration.enabled ? 'admin.inviteOnly' : 'admin.paused')}
+        </Badge>
+        {registration.cap > 0 ? (
+          <Meter label={cap} value={registration.accounts} maxValue={registration.cap} className="adm-meter" />
+        ) : (
+          <Text>{cap}</Text>
+        )}
+        {/* The switch and the cap are changed in the admin settings. */}
+        <Link href={adminPaths.settings}>{t('invites', 'admin.settingsLink')}</Link>
       </div>
-      <AuthForm action="/admin/registration" label={t('invites', 'admin.createLabel')} error={asFormError(search.error)}>
-        <div className="invite-create">
-          <input type="hidden" name="intent" value="create" />
-          <Field label={t('invites', 'admin.label')} name="label" placeholder={t('invites', 'admin.labelPlaceholder')} />
-          <Field label={t('invites', 'admin.referrer')} name="referrer" defaultValue={`@${data.me}`} />
-          <Field label={t('invites', 'admin.maxUses')} name="maxUses" type="number" min={1} defaultValue={1} required />
-          <ExpirySelect />
-          <Button type="submit" variant="primary">
-            {t('invites', 'admin.create')}
-          </Button>
-        </div>
-      </AuthForm>
+      {error && (
+        <Notice role="alert" tone="danger">
+          {t('auth', errorKey(error))}
+        </Notice>
+      )}
+      <form method="post" action={path} aria-label={t('invites', 'admin.createLabel')} className="adm-create">
+        <Input.Input type="hidden" name="intent" value="create" />
+        <TextField label={t('invites', 'admin.label')} name="label" placeholder={t('invites', 'admin.labelPlaceholder')} />
+        <TextField label={t('invites', 'admin.referrer')} name="referrer" defaultValue={`@${data.me}`} />
+        <Input.Root defaultValue="1" required>
+          <Input.Label>{t('invites', 'admin.maxUses')}</Input.Label>
+          <Input.Input name="maxUses" type="number" min={1} inputMode="numeric" />
+        </Input.Root>
+        <Select
+          label={t('invites', 'admin.expires')}
+          name="expires"
+          defaultValue="30"
+          items={[
+            { id: '7', label: t('invites', 'admin.in7') },
+            { id: '30', label: t('invites', 'admin.in30') },
+            { id: '90', label: t('invites', 'admin.in90') },
+            { id: 'never', label: t('invites', 'admin.never') },
+          ]}
+        />
+        <Button type="submit" variant="primary">
+          {t('invites', 'admin.create')}
+        </Button>
+      </form>
       {data.created && <CreatedInvite created={data.created} origin={data.origin} />}
       <InvitesTable invites={data.invites} />
     </main>
   );
 }
 
-function ExpirySelect() {
-  const { t } = useTranslate();
-  return (
-    <div className="fld">
-      <label htmlFor="invite-expires">{t('invites', 'admin.expires')}</label>
-      <select id="invite-expires" name="expires" defaultValue="30">
-        <option value="7">{t('invites', 'admin.in7')}</option>
-        <option value="30">{t('invites', 'admin.in30')}</option>
-        <option value="90">{t('invites', 'admin.in90')}</option>
-        <option value="never">{t('invites', 'admin.never')}</option>
-      </select>
-    </div>
-  );
-}
-
+/** The invite just made: its code and link, shown on this one view only, with a copy button. */
 function CreatedInvite({ created, origin }: { created: { code: string; maxUses: number; expiresAt: string | null }; origin: string }) {
   const { t } = useTranslate();
   const date = useDate();
   const [copied, setCopied] = useState(false);
   const link = new URL(`/invite/${created.code}`, origin).href;
   return (
-    <div className="invite-new" role="status">
-      <b className="ok-t">{t('invites', 'admin.created')}</b>{' '}
-      <span className="mono" data-testid="invite-code">
-        {created.code}
-      </span>{' '}
-      · {created.maxUses === 1 ? t('invites', 'admin.usesOne') : t('invites', 'admin.usesMany', { count: created.maxUses })} ·{' '}
-      {created.expiresAt ? t('invites', 'admin.expiresOn', { date: date(created.expiresAt) }) : t('invites', 'admin.noExpiry')} ·{' '}
-      <a href={link}>{link}</a>{' '}
-      <Button variant="ghost" size="sm" onActivate={() => void navigator.clipboard.writeText(link).then(() => setCopied(true))}>
-        {copied ? t('invites', 'admin.copied') : t('invites', 'admin.copyLink')}
-      </Button>
-      <p className="hint">{t('invites', 'admin.createdHint')}</p>
-    </div>
+    <Notice
+      role="status"
+      tone="success"
+      title={t('invites', 'admin.created')}
+      action={
+        <Button variant="neutral" size="sm" onActivate={() => void navigator.clipboard.writeText(link).then(() => setCopied(true))}>
+          {copied ? t('invites', 'admin.copied') : t('invites', 'admin.copyLink')}
+        </Button>
+      }
+    >
+      <p>
+        <Text variant="mono" data-testid="invite-code">
+          {created.code}
+        </Text>{' '}
+        · {created.maxUses === 1 ? t('invites', 'admin.usesOne') : t('invites', 'admin.usesMany', { count: created.maxUses })} ·{' '}
+        {created.expiresAt ? t('invites', 'admin.expiresOn', { date: date(created.expiresAt) }) : t('invites', 'admin.noExpiry')}
+      </p>
+      <p className="adm-break">
+        <Link href={link}>{link}</Link>
+      </p>
+      <p>{t('invites', 'admin.createdHint')}</p>
+    </Notice>
   );
 }
 
 function InvitesTable({ invites }: { invites: InviteRow[] }) {
   const { t } = useTranslate();
   const date = useDate();
-  if (invites.length === 0) return <p className="muted">{t('invites', 'admin.empty')}</p>;
+  if (invites.length === 0)
+    return (
+      <Text as="p" color="muted">
+        {t('invites', 'admin.empty')}
+      </Text>
+    );
+  const actions = t('invites', 'admin.colActions');
   return (
-    <table className="invites">
-      <thead>
-        <tr>
-          <th>{t('invites', 'admin.colInvite')}</th>
-          <th>{t('invites', 'admin.colReferrer')}</th>
-          <th>{t('invites', 'admin.colUses')}</th>
-          <th>{t('invites', 'admin.colExpires')}</th>
-          <th>{t('invites', 'admin.colStatus')}</th>
-          <th>{t('invites', 'admin.colUsedBy')}</th>
-          <th>
-            <span className="sr">{t('invites', 'admin.colActions')}</span>
-          </th>
-        </tr>
-      </thead>
-      <tbody>
-        {invites.map((invite) => (
-          <tr key={invite.id} data-testid="invite-row">
-            <td data-label={t('invites', 'admin.colInvite')}>
-              {invite.label ?? <span className="muted">{t('invites', 'admin.noLabel')}</span>}
-            </td>
-            <td data-label={t('invites', 'admin.colReferrer')}>{invite.referrer ? `@${invite.referrer.handle}` : ''}</td>
-            <td data-label={t('invites', 'admin.colUses')}>
-              {invite.uses} / {invite.maxUses}
-            </td>
-            <td data-label={t('invites', 'admin.colExpires')}>
-              {invite.expiresAt ? date(invite.expiresAt) : t('invites', 'admin.neverShort')}
-            </td>
-            <td data-label={t('invites', 'admin.colStatus')}>
-              <span className={`status ${statusClass[invite.status]}`}>{t('invites', `admin.status.${invite.status}`)}</span>
-            </td>
-            <td data-label={t('invites', 'admin.colUsedBy')}>
-              {invite.usedBy.length === 0 ? (
-                <span className="muted">{t('invites', 'admin.nobody')}</span>
+    <Card.Root variant="outlined" padding="sm" className="adm-table">
+      {/* One form for every Revoke button: each submits it with its invite's id. */}
+      <form id={revokeForm} method="post" action={path} hidden>
+        <Input.Input type="hidden" name="intent" value="revoke" />
+      </form>
+      <Table
+        aria-label={t('invites', 'admin.title')}
+        columns={[
+          { id: 'invite', label: t('invites', 'admin.colInvite'), isRowHeader: true },
+          { id: 'referrer', label: t('invites', 'admin.colReferrer') },
+          { id: 'uses', label: t('invites', 'admin.colUses') },
+          { id: 'expires', label: t('invites', 'admin.colExpires') },
+          { id: 'status', label: t('invites', 'admin.colStatus') },
+          { id: 'usedBy', label: t('invites', 'admin.colUsedBy') },
+          { id: 'actions', label: <span className="pb-sr">{actions}</span>, textValue: actions },
+        ]}
+        rows={invites.map((invite) => ({
+          id: invite.id,
+          values: {
+            invite: invite.label ?? <Text color="muted">{t('invites', 'admin.noLabel')}</Text>,
+            referrer: invite.referrer ? `@${invite.referrer.handle}` : '',
+            uses: `${invite.uses} / ${invite.maxUses}`,
+            expires: invite.expiresAt ? date(invite.expiresAt) : t('invites', 'admin.neverShort'),
+            status: <Badge tone={statusTone[invite.status]}>{t('invites', `admin.status.${invite.status}`)}</Badge>,
+            usedBy:
+              invite.usedBy.length === 0 ? (
+                <Text color="muted">{t('invites', 'admin.nobody')}</Text>
               ) : (
-                <details>
-                  <summary>
-                    {invite.usedBy.length === 1
+                <Disclosure
+                  title={
+                    invite.usedBy.length === 1
                       ? t('invites', 'admin.peopleOne')
-                      : t('invites', 'admin.peopleMany', { count: invite.usedBy.length })}
-                  </summary>
-                  <ul className="used-by">
+                      : t('invites', 'admin.peopleMany', { count: invite.usedBy.length })
+                  }
+                >
+                  <ul className="adm-used-by">
                     {invite.usedBy.map((person) => (
                       <li key={person.handle}>
                         <span>
-                          @{person.handle}
+                          @{person.handle}{' '}
                           {person.deleted ? (
-                            <span className="muted"> {t('invites', 'admin.deleted')}</span>
+                            <Badge tone="neutral">{t('invites', 'admin.deleted')}</Badge>
                           ) : (
-                            !person.emailVerified && <span className="warn-t"> {t('invites', 'admin.unverified')}</span>
+                            !person.emailVerified && <Badge tone="warning">{t('invites', 'admin.unverified')}</Badge>
                           )}
                         </span>
-                        <span className="muted">{date(person.usedAt)}</span>
+                        <Text size="sm" color="muted">
+                          {date(person.usedAt)}
+                        </Text>
                       </li>
                     ))}
                   </ul>
-                </details>
-              )}
-            </td>
-            <td data-label="">
-              {invite.status !== 'revoked' && (
-                <form method="post" action="/admin/registration">
-                  <input type="hidden" name="intent" value="revoke" />
-                  <input type="hidden" name="invite" value={invite.id} />
-                  <Button type="submit" variant="neutral" size="sm">
-                    {t('invites', 'admin.revoke')}
-                  </Button>
-                </form>
-              )}
-            </td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
+                </Disclosure>
+              ),
+            actions:
+              invite.status === 'revoked' ? null : (
+                <Button type="submit" form={revokeForm} name="invite" value={invite.id} variant="neutral" size="sm">
+                  {t('invites', 'admin.revoke')}
+                </Button>
+              ),
+          },
+        }))}
+      />
+    </Card.Root>
   );
 }

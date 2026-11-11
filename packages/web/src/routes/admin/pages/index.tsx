@@ -1,7 +1,14 @@
 import { listPages, type PageRow } from '@peblish/core/pages/read';
 import { seedShippedPages } from '@peblish/core/pages/save';
-import { pageLanguages, pageSlugs, type PageSlug } from '@peblish/core/pages/slugs';
+import { pageSlugs, type PageLanguage, type PageSlug } from '@peblish/core/pages/slugs';
 import { Button } from '@peblish/ui/components/button';
+import { Card } from '@peblish/ui/components/card';
+import { EmptyState } from '@peblish/ui/components/empty-state';
+import { Input } from '@peblish/ui/components/input';
+import { Link } from '@peblish/ui/components/link';
+import { Notice } from '@peblish/ui/components/notice';
+import { Table } from '@peblish/ui/components/table';
+import { Text } from '@peblish/ui/components/text';
 import { createFileRoute, redirect } from '@tanstack/react-router';
 import { createServerFn } from '@tanstack/react-start';
 import { setResponseStatus } from '@tanstack/react-start/server';
@@ -13,7 +20,7 @@ import { useRouteHydrated } from '../../../shell/hydration.ts';
 import { SearchText } from '../../auth/-ui/page.tsx';
 import { accessOf } from '../settings/-access.ts';
 import { StatusCell } from './-status.tsx';
-import { AccessNotice, adminHead } from '../settings/-ui.tsx';
+import { AccessNotice, AdminTitle, adminHead } from '../settings/-ui.tsx';
 import { shippedPages } from './-bundled.ts';
 
 // /admin/pages (R2 pick admin-tabs, its Pages tab): the ten pages in English and German with
@@ -70,93 +77,103 @@ function Pages() {
   const { rows, canSeed } = data;
   const empty = rows.every((row) => row.status === 'missing');
   const added = search.added === undefined ? null : Number(search.added);
+  const seed = canSeed && (
+    <form method="post" action={path}>
+      <Input.Input type="hidden" name="intent" value="seed" />
+      <Button type="submit" variant={empty ? 'primary' : 'neutral'}>
+        {t('admin', 'pages.seed')}
+      </Button>
+    </form>
+  );
   return (
-    <main className="auth-page admin-page">
-      <h1>{t('admin', 'pages.title')}</h1>
+    <main className="pb-page adm-page">
+      <AdminTitle>{t('admin', 'pages.title')}</AdminTitle>
       {added !== null && Number.isInteger(added) && (
-        <p className="ok-t" role="status">
+        <Notice role="status" tone="success">
           {added === 0 ? t('admin', 'pages.seeded.none') : translatePlural(locale, 'admin', 'pages.seeded', added)}
-        </p>
+        </Notice>
       )}
       {search.error && (
-        <p className="auth-error" role="alert">
+        <Notice role="alert" tone="danger">
           {t('admin', 'pages.error.generic')}
-        </p>
+        </Notice>
       )}
-      {empty && (
-        <section aria-labelledby="no-pages">
-          <h2 id="no-pages">{t('admin', 'pages.empty')}</h2>
-          <p className="hint">{t('admin', 'pages.empty.hint')}</p>
-        </section>
+      {empty ? (
+        <EmptyState title={t('admin', 'pages.empty')} action={seed || undefined}>
+          {t('admin', 'pages.empty.hint')}
+        </EmptyState>
+      ) : (
+        <>
+          {seed}
+          <PagesTable rows={rows} />
+        </>
       )}
-      {canSeed && (
-        <form method="post" action={path}>
-          <input type="hidden" name="intent" value="seed" />
-          <Button type="submit" variant={empty ? 'primary' : 'neutral'}>
-            {t('admin', 'pages.seed')}
-          </Button>
-        </form>
-      )}
-      {!empty && <PagesTable rows={rows} />}
     </main>
   );
 }
 
+/** The ten pages, one row each, with each language's status and Edit link, and View for a live page. */
 function PagesTable({ rows }: { rows: PageRow[] }) {
   const { t } = useTranslate();
+  const view = t('admin', 'pages.view');
   return (
-    <table className="pages-table">
-      <thead>
-        <tr>
-          <th>{t('admin', 'pages.colPage')}</th>
-          <th>{t('admin', 'pages.colUrl')}</th>
-          <th>{t('admin', 'pages.colEn')}</th>
-          <th>{t('admin', 'pages.colDe')}</th>
-          <th>
-            <span className="sr">{t('admin', 'pages.view')}</span>
-          </th>
-        </tr>
-      </thead>
-      <tbody>
-        {pageSlugs.map((slug) => (
-          <PageRowView key={slug} slug={slug} rows={rows.filter((row) => row.slug === slug)} />
-        ))}
-      </tbody>
-    </table>
+    <Card.Root variant="outlined" padding="sm" className="adm-table">
+      <Table
+        aria-label={t('admin', 'pages.title')}
+        columns={[
+          { id: 'page', label: t('admin', 'pages.colPage'), isRowHeader: true },
+          { id: 'url', label: t('admin', 'pages.colUrl') },
+          { id: 'en', label: t('admin', 'pages.colEn') },
+          { id: 'de', label: t('admin', 'pages.colDe') },
+          { id: 'view', label: <span className="pb-sr">{view}</span>, textValue: view },
+        ]}
+        rows={pageSlugs.map((slug) =>
+          pageRow(
+            slug,
+            rows.filter((row) => row.slug === slug),
+            t,
+          ),
+        )}
+      />
+    </Card.Root>
   );
 }
 
-function PageRowView({ slug, rows }: { slug: PageSlug; rows: PageRow[] }) {
-  const { t } = useTranslate();
+type Translate = ReturnType<typeof useTranslate>['t'];
+
+function pageRow(slug: PageSlug, rows: PageRow[], t: Translate) {
+  const name = t('admin', `pages.slug.${slug}`);
   const live = rows.some((row) => row.status === 'published' || row.status === 'changed');
-  return (
-    <tr data-testid="page-row" data-slug={slug}>
-      <td data-label={t('admin', 'pages.colPage')}>
-        <b>{t('admin', `pages.slug.${slug}`)}</b>
-      </td>
-      <td data-label={t('admin', 'pages.colUrl')} className="mono">
-        /{slug}
-      </td>
-      {pageLanguages.map((language) => {
-        const row = rows.find((candidate) => candidate.language === language);
-        return (
-          <td key={language} data-label={t('admin', language === 'en' ? 'pages.colEn' : 'pages.colDe')} data-language={language}>
-            {row && <StatusCell row={row} />}
-            <div>
-              <a
-                href={`${path}/${slug}/${language}`}
-                aria-label={t('admin', 'pages.edit.label', {
-                  page: t('admin', `pages.slug.${slug}`),
-                  language: t('admin', `pages.language.${language}`),
-                })}
-              >
-                {t('admin', 'pages.edit')}
-              </a>
-            </div>
-          </td>
-        );
-      })}
-      <td>{live && <a href={`/${slug}`}>{t('admin', 'pages.view')}</a>}</td>
-    </tr>
-  );
+  const language = (language: PageLanguage) => {
+    const row = rows.find((candidate) => candidate.language === language);
+    return (
+      <div className="adm-cell" data-language={language}>
+        {row && <StatusCell row={row} />}
+        <Link
+          href={`${path}/${slug}/${language}`}
+          aria-label={t('admin', 'pages.edit.label', { page: name, language: t('admin', `pages.language.${language}`) })}
+        >
+          {t('admin', 'pages.edit')}
+        </Link>
+      </div>
+    );
+  };
+  return {
+    id: slug,
+    values: {
+      page: (
+        <Text variant="label" size="md">
+          {name}
+        </Text>
+      ),
+      url: (
+        <Text variant="mono" size="sm">
+          /{slug}
+        </Text>
+      ),
+      en: language('en'),
+      de: language('de'),
+      view: live ? <Link href={`/${slug}`}>{t('admin', 'pages.view')}</Link> : null,
+    },
+  };
 }

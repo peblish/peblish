@@ -29,6 +29,17 @@ async function visitor(browser: Browser, locale = 'en-US') {
 
 const rules = '/admin/pages/rules/en';
 
+/** A page's row in the pages table, found by its name in the row header. */
+const pageRow = (on: Page, name: string) => on.getByRole('row').filter({ has: on.getByRole('rowheader', { name, exact: true }) });
+/** One language's cell in a page's row: its status and Edit link. */
+const languageCell = (on: Page, name: string, language: 'en' | 'de') => pageRow(on, name).locator(`[data-language="${language}"]`);
+
+/** The editor's Preview tab, opened: the saved draft as visitors will see it. */
+async function openPreview(on: Page) {
+  await on.getByRole('tab', { name: 'Preview' }).click();
+  return on.getByRole('tabpanel', { name: 'Preview' });
+}
+
 test('a fresh instance has no pages: the list says so and offers the shipped drafts, and nothing is public yet', async ({ browser }) => {
   const console = recordConsole(page);
   await gotoHydrated(page, '/admin/pages');
@@ -46,11 +57,10 @@ test('adding the shipped drafts fills the list: nine English drafts, About not a
   await page.getByRole('button', { name: 'Add the shipped drafts' }).click();
   await page.waitForURL(/added=/);
   await expect(page.getByRole('status')).toHaveText('Added 9 drafts.');
-  await expect(page.getByTestId('page-row')).toHaveCount(10);
-  const row = page.locator('[data-slug="rules"]');
-  await expect(row.locator('[data-language="en"]')).toContainText('Draft');
-  await expect(row.locator('[data-language="de"]')).toContainText('Not added');
-  await expect(page.locator('[data-slug="about"] [data-language="en"]')).toContainText('Not added');
+  await expect(page.getByRole('rowheader')).toHaveCount(10);
+  await expect(languageCell(page, 'Community rules', 'en')).toContainText('Draft');
+  await expect(languageCell(page, 'Community rules', 'de')).toContainText('Not added');
+  await expect(languageCell(page, 'About', 'en')).toContainText('Not added');
   await expect(page.getByRole('link', { name: 'View' })).toHaveCount(0);
   // Every shipped draft is there, so there is nothing left to add.
   await expect(page.getByRole('button', { name: 'Add the shipped drafts' })).toHaveCount(0);
@@ -60,8 +70,10 @@ test('adding the shipped drafts fills the list: nine English drafts, About not a
 test('publishing is refused while the operator details are empty, and the editor lists the placeholders', async () => {
   await gotoHydrated(page, rules);
   await expect(page.getByLabel('Title')).toHaveValue('Community rules');
-  await expect(page.getByRole('heading', { name: 'The saved draft, as visitors will see it' })).toBeVisible();
-  await expect(page.locator('.page-preview')).toContainText('{{CONTACT_EMAIL}}');
+  const preview = await openPreview(page);
+  await expect(preview.getByRole('heading', { name: 'The saved draft, as visitors will see it' })).toBeVisible();
+  await expect(preview).toContainText('{{CONTACT_EMAIL}}');
+  await page.getByRole('tab', { name: 'Edit' }).click();
   await page.getByRole('button', { name: 'Publish' }).click();
   await page.waitForURL(/error=page.unresolved_tokens/);
   const alert = page.getByRole('alert');
@@ -101,9 +113,9 @@ test('with the operator details filled in, rules publishes, and a signed-out vis
   await expect(page.getByRole('status')).toHaveText('Published.');
   await expect(page.getByRole('button', { name: 'Unpublish' })).toBeVisible();
   await gotoHydrated(page, '/admin/pages');
-  await expect(page.locator('[data-slug="rules"] [data-language="en"]')).toContainText('Published');
-  await expect(page.locator('[data-slug="rules"] [data-language="en"]')).toContainText('adm_pages_admin');
-  await expect(page.locator('[data-slug="rules"]').getByRole('link', { name: 'View' })).toHaveAttribute('href', '/rules');
+  await expect(languageCell(page, 'Community rules', 'en')).toContainText('Published');
+  await expect(languageCell(page, 'Community rules', 'en')).toContainText('adm_pages_admin');
+  await expect(pageRow(page, 'Community rules').getByRole('link', { name: 'View' })).toHaveAttribute('href', '/rules');
 
   const { context, page: reader } = await visitor(browser);
   const console = recordConsole(reader);
@@ -129,9 +141,9 @@ test('an edit stays a draft until it is published: the list says so and visitors
   await page.getByRole('button', { name: 'Save draft' }).click();
   await page.waitForURL(/saved=draft/);
   await expect(page.getByRole('status')).toHaveText('Draft saved.');
-  await expect(page.locator('.page-preview h1')).toHaveText('House rules');
+  await expect((await openPreview(page)).getByRole('heading', { level: 1 })).toHaveText('House rules');
   await gotoHydrated(page, '/admin/pages');
-  await expect(page.locator('[data-slug="rules"] [data-language="en"]')).toContainText('Unpublished changes');
+  await expect(languageCell(page, 'Community rules', 'en')).toContainText('Unpublished changes');
   const { context, page: reader } = await visitor(browser);
   await gotoHydrated(reader, '/rules');
   await expect(reader.getByRole('heading', { level: 1 })).toHaveText('Community rules');
@@ -168,7 +180,7 @@ test('the admin pages are German for a German browser too', async ({ browser }) 
   const console = recordConsole(de);
   await gotoHydrated(de, '/admin/pages');
   await expect(de.getByRole('heading', { level: 1, name: 'Seiten' })).toBeVisible();
-  await expect(de.locator('[data-slug="rules"] [data-language="de"]')).toContainText('Veröffentlicht');
+  await expect(languageCell(de, 'Community-Regeln', 'de')).toContainText('Veröffentlicht');
   await expectAccessible(de);
   await gotoHydrated(de, '/admin/pages/rules/de');
   await expect(de.getByRole('button', { name: 'Veröffentlichen' })).toBeVisible();
@@ -189,7 +201,7 @@ test('unpublishing takes the page off the site and keeps the draft', async ({ br
   expect((await reader.goto('/rules'))?.status()).toBe(404);
   await context.close();
   await gotoHydrated(page, '/admin/pages');
-  await expect(page.locator('[data-slug="rules"] [data-language="en"]')).toContainText('Draft');
+  await expect(languageCell(page, 'Community rules', 'en')).toContainText('Draft');
 });
 
 test('with no About page, /about shows the name and description from Settings, in English and German', async ({ browser }) => {
