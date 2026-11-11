@@ -1,7 +1,7 @@
 import { Input } from '@peblish/ui/components/input';
 import { Notice } from '@peblish/ui/components/notice';
 import { type } from 'arktype';
-import { Fragment, useState, type FormEvent, type InputHTMLAttributes, type ReactNode } from 'react';
+import { Fragment, useId, useState, type FormEvent, type FocusEvent, type InputHTMLAttributes, type ReactNode } from 'react';
 import { useTranslate } from '../../../i18n/use-translate.ts';
 import { asFormError, errorKey, type FormError } from './errors.ts';
 
@@ -66,6 +66,11 @@ export function AuthForm({
  * readers) and an optional `aside` beside the label, such as a "Forgot?" link. The other props
  * are the input's own attributes; the value props and the flags go to the field root, which
  * controls the input.
+ *
+ * Once hydrated, React Aria stops the browser's own validation bubble, so a field the browser
+ * finds invalid on submit explains itself here, in the page's language (the browser's message
+ * follows the browser's language, not the page's), until a blur finds it valid. Without
+ * JavaScript the browser validates as it always does.
  */
 export function Field({
   label,
@@ -78,7 +83,20 @@ export function Field({
   readOnly,
   ...input
 }: { label: string; hint?: ReactNode; aside?: ReactNode } & InputHTMLAttributes<HTMLInputElement>) {
+  const { t } = useTranslate();
+  const [problem, setProblem] = useState<string>();
+  // Mux UI rc.6 links a late Input.Error to the input only when the error has its id on mount.
+  const errorId = useId();
   const text = (given: typeof value) => (given === undefined ? undefined : String(given));
+  const explain = (field: HTMLInputElement) => {
+    const { validity } = field;
+    if (validity.valid) return undefined;
+    if (validity.valueMissing) return t('auth', 'field.required');
+    if (validity.typeMismatch && field.type === 'email') return t('auth', 'field.email');
+    if (validity.tooShort) return t('auth', 'field.tooShort', { min: field.minLength });
+    if (validity.tooLong) return t('auth', 'field.tooLong', { max: field.maxLength });
+    return t('auth', 'field.invalid');
+  };
   return (
     <Input.Root
       className="auth-field"
@@ -92,8 +110,23 @@ export function Field({
         <Input.Label>{label}</Input.Label>
         {aside}
       </div>
-      <Input.Input {...input} />
+      <Input.Input
+        {...input}
+        onInvalid={(event: FormEvent<HTMLInputElement>) => {
+          input.onInvalid?.(event);
+          setProblem(explain(event.currentTarget));
+        }}
+        onBlur={(event: FocusEvent<HTMLInputElement>) => {
+          input.onBlur?.(event);
+          if (problem !== undefined) setProblem(explain(event.currentTarget));
+        }}
+      />
       {hint && <Input.Description>{hint}</Input.Description>}
+      {problem !== undefined && (
+        <Input.Error id={errorId} role="alert">
+          {problem}
+        </Input.Error>
+      )}
     </Input.Root>
   );
 }
