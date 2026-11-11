@@ -92,6 +92,7 @@ const replacements: Record<string, string> = {
   progress: 'ProgressBar',
   meter: 'Meter',
   svg: 'an icon from icons.tsx',
+  style: 'a stylesheet file',
 };
 const textTags = new Set('h1 h2 h3 h4 h5 h6 p strong b em i small code pre blockquote label br'.split(' '));
 // Layout and landmark elements: allowed, but not with text or widget behaviour of their own.
@@ -321,6 +322,8 @@ function styleProblems(node: ts.Expression): string[] {
       // A custom property may carry data (a depth, a count); a string it sets must be tokens.
       return literal !== undefined && ts.isStringLiteralLike(value) && literals(literal, anyAlias).length ? [`${name}: ${literal}`] : [];
     }
+    // React writes cssText straight onto the element's style, a whole declaration list in one string.
+    if (name === 'css-text') return [`cssText: ${literal ?? property.initializer.getText()}`];
     if (bannedStyle.test(name)) return [`${name}: ${literal ?? property.initializer.getText()}`];
     if (spacingStyle.test(name)) {
       const ok = literal !== undefined && (Number(literal) === 0 || literal === 'auto' || tokenRef.test(literal));
@@ -358,6 +361,11 @@ function unreadImport(file: string, specifier: string): boolean {
   return true;
 }
 
+/** `x.style` (or `x['style']`): an element's own style declarations. */
+const isStyleObject = (node: ts.Expression) =>
+  (ts.isPropertyAccessExpression(node) && node.name.text === 'style') ||
+  (ts.isElementAccessExpression(node) && ts.isStringLiteralLike(node.argumentExpression) && node.argumentExpression.text === 'style');
+
 /** Scans a script for every script rule. */
 export function scanScript(file: string, text: string): Violation[] {
   const kind = scriptKinds[file.slice(file.lastIndexOf('.') + 1)] ?? ts.ScriptKind.TS;
@@ -381,6 +389,27 @@ export function scanScript(file: string, text: string): Violation[] {
   const inserted = new Set<string>();
 
   const isFactory = reactFactories(source);
+  // Stylesheets imported as text (`import css from './x.css?inline'`), which the guard reads as files: the
+  // only content a <style> element may have.
+  const inlineSheets = new Set(
+    source.statements.flatMap((statement) =>
+      ts.isImportDeclaration(statement) &&
+      ts.isStringLiteral(statement.moduleSpecifier) &&
+      statement.moduleSpecifier.text.endsWith('.css?inline') &&
+      !unreadImport(file, statement.moduleSpecifier.text) &&
+      statement.importClause?.name
+        ? [statement.importClause.name.text]
+        : [],
+    ),
+  );
+  const inlinedSheet = (props: Props, children: readonly ts.Node[]) => {
+    const content = children.filter((child) => !(ts.isJsxText(child) && child.containsOnlyTriviaWhiteSpaces));
+    const only = content.length === 1 ? content[0]! : undefined;
+    const expression = only && ts.isJsxExpression(only) ? only.expression : only && ts.isExpression(only) ? only : undefined;
+    return (
+      !props.has('dangerouslySetInnerHTML') && expression !== undefined && ts.isIdentifier(expression) && inlineSheets.has(expression.text)
+    );
+  };
 
   /**
    * The element rules over one element, written as JSX or made with a React factory. `tag` is undefined for a
@@ -397,7 +426,10 @@ export function scanScript(file: string, text: string): Violation[] {
 
     const rule = tagRule(tag);
     const hidden = tag === 'input' && propText(props.get('type')) === 'hidden';
-    const home = (tag === 'time' && file === timeModule) || (tag === 'svg' && file === iconsModule);
+    const home =
+      (tag === 'time' && file === timeModule) ||
+      (tag === 'svg' && file === iconsModule) ||
+      (tag === 'style' && inlinedSheet(props, children));
     if (rule && !hidden && !home) add(node, rule, `${made ?? `<${tag}>`} (${hint(tag)})`);
 
     const roleText = propText(props.get('role'));
@@ -484,14 +516,27 @@ export function scanScript(file: string, text: string): Violation[] {
       )
         add(node, 'widget-role', `setAttribute('role', '${second.text}')`);
       if (method === 'insertAdjacentHTML') add(node, 'raw-html', 'insertAdjacentHTML');
+      // CSS written in a script, through the CSSOM: rules, whole sheets and an element's own style.
+      if (method === 'insertRule' || method === 'replaceSync') add(node, 'inline-style', `${method}(...)`);
+      if (method === 'setProperty' && ts.isPropertyAccessExpression(callee) && isStyleObject(callee.expression))
+        add(node, 'inline-style', '.style.setProperty(...)');
+      if (method === 'setAttribute' && first && ts.isStringLiteralLike(first) && first.text.toLowerCase() === 'style')
+        add(node, 'inline-style', "setAttribute('style', ...)");
+      if (callee.getText() === 'Object.assign' && first && isStyleObject(first)) add(node, 'inline-style', 'Object.assign(.style, ...)');
     } else if (
       ts.isBinaryExpression(node) &&
-      node.operatorToken.kind === ts.SyntaxKind.EqualsToken &&
-      ts.isPropertyAccessExpression(node.left)
+      node.operatorToken.kind >= ts.SyntaxKind.FirstAssignment &&
+      node.operatorToken.kind <= ts.SyntaxKind.LastAssignment &&
+      (ts.isPropertyAccessExpression(node.left) || ts.isElementAccessExpression(node.left))
     ) {
-      const property = node.left.name.text;
+      const property = ts.isPropertyAccessExpression(node.left) ? node.left.name.text : undefined;
       if (property === 'innerHTML' || property === 'outerHTML') add(node, 'raw-html', `${property} =`);
+      // el.style = ..., el.style.color = ..., el.style[name] = ... (cssText is reported where it is named).
+      else if (property !== 'cssText' && (isStyleObject(node.left) || isStyleObject(node.left.expression)))
+        add(node, 'inline-style', `${node.left.getText().slice(0, 40)} =`);
     }
+    if (ts.isPropertyAccessExpression(node) && (node.name.text === 'cssText' || node.name.text === 'adoptedStyleSheets'))
+      add(node, 'inline-style', node.name.text);
     ts.forEachChild(node, visit);
     if (named) anchor.pop();
   };

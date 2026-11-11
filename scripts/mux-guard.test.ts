@@ -203,6 +203,52 @@ test('React factories, however imported or renamed, get the element rules over t
   ]);
 });
 
+test('CSS written inside a script is reported: <style> elements, CSSOM calls and writes to an element style', () => {
+  const source = lines(
+    "import modCss from './mod.css?inline';", // 1
+    'export const A = () => (', // 2
+    '  <>', // 3
+    "    <style>{'.x { color: #f00; padding: 13px !important; }'}</style>", // 4
+    '    <style>{`.x { color: #f00; }`}</style>', // 5
+    '    <style dangerouslySetInnerHTML={{ __html: modCss }} />', // 6
+    "    <div style={{ cssText: 'color: #f00' }} />", // 7
+    '    <style href="mod-panels" precedence="mod-panels">', // 8: legal, a stylesheet file the guard reads
+    '      {modCss}', // 9
+    '    </style>', // 10
+    '  </>', // 11
+    ');', // 12
+    "createElement('style', null, '.x { color: #f00; }');", // 13
+    "document.head.append(document.createElement('style'));", // 14
+    "sheet.insertRule('.x { color: #f00; }');", // 15
+    "sheet.replaceSync('.x { color: #f00; }');", // 16
+    'document.adoptedStyleSheets = [sheet];', // 17
+    "el.style.cssText = 'color: #f00';", // 18
+    "el.style.setProperty('--muxui-semantic-content-default', '#f00');", // 19
+    "el.style.color = '#f00';", // 20
+    "el['style'] = 'color: #f00';", // 21
+    "el.setAttribute('style', 'color: #f00');", // 22
+    "Object.assign(el.style, { color: '#f00' });", // 23
+    'const width = el.style.width;', // 24: legal, a read
+  );
+  expect(tsx(source)).toEqual([
+    'raw-element:4',
+    'raw-element:5',
+    'raw-element:6',
+    'inline-style:7',
+    'raw-element:13',
+    'raw-element:14',
+    'inline-style:15',
+    'inline-style:16',
+    'inline-style:17',
+    'inline-style:18',
+    'inline-style:19',
+    'inline-style:20',
+    'inline-style:21',
+    'inline-style:22',
+    'inline-style:23',
+  ]);
+});
+
 test('raw-html and createElement report HTML made outside React, but not scripts or detached elements', () => {
   const source = lines(
     'export function A() {', // 1
