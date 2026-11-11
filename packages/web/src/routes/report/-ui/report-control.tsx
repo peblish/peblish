@@ -94,7 +94,7 @@ export function ReportControl({ target, back, label }: { target: Target; back: s
       <Link
         href={href}
         onClickCapture={show}
-        className="rp-open"
+        className="rp-open pb-link-quiet"
         // A static busy look (no animation) from the click until the dialog opens. A data attribute:
         // React Aria's link drops aria-busy, and Mux takes data-pending for its own state attribute.
         data-opening={pending || undefined}

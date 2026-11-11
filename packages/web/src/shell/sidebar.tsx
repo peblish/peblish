@@ -34,7 +34,7 @@ const badgeText = (count: number) => (count >= unreadCap ? `${unreadCap - 1}+` :
  */
 export function Brand({ siteName, className = 'pb-brand' }: { siteName: string; className?: 'pb-brand' | 'pb-bar-brand' }) {
   return (
-    <Link className={className} href="/">
+    <Link className={`${className} pb-link-quiet`} href="/">
       <Text variant="title" size="sm" truncate>
         {siteName}
       </Text>
@@ -154,10 +154,18 @@ export function Navigation({ session, shell, pathname }: { session: SessionView 
         </Sidebar.NavList>
       </nav>
       <nav className="pb-nav__foot" aria-label={t('shell', 'footer.label')}>
-        <Link href={sitePaths.rules}>{t('shell', 'footer.rules')}</Link>
-        <Link href={sitePaths.terms}>{t('shell', 'footer.terms')}</Link>
-        <Link href={sitePaths.privacy}>{t('shell', 'footer.privacy')}</Link>
-        <Link href={sitePaths.about}>{t('shell', 'footer.about')}</Link>
+        <Link className="pb-link-muted" href={sitePaths.rules}>
+          {t('shell', 'footer.rules')}
+        </Link>
+        <Link className="pb-link-muted" href={sitePaths.terms}>
+          {t('shell', 'footer.terms')}
+        </Link>
+        <Link className="pb-link-muted" href={sitePaths.privacy}>
+          {t('shell', 'footer.privacy')}
+        </Link>
+        <Link className="pb-link-muted" href={sitePaths.about}>
+          {t('shell', 'footer.about')}
+        </Link>
       </nav>
     </div>
   );

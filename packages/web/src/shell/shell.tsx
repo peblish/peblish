@@ -79,7 +79,7 @@ export function Shell({ children }: { children: ReactNode }) {
   return (
     <Sidebar.Provider>
       <div className="pb-app">
-        <Link className="pb-skip" href="#pb-main">
+        <Link className="pb-skip pb-link-quiet" href="#pb-main">
           {t('shell', 'skip')}
         </Link>
         <header className="pb-app__bar">

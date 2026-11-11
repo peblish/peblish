@@ -66,7 +66,7 @@ export function Account({ session }: { session: SessionView | null }) {
     return (
       <nav className="pb-account" aria-label={t('shell', 'account.menu')}>
         {/* On the narrowest phone bars the labels give way to the icons (shell.css); the names stay. */}
-        <Link className="pb-sign-in" href="/auth/sign-in">
+        <Link className="pb-sign-in pb-link-quiet" href="/auth/sign-in">
           <LogInIcon />
           <Text className="pb-action__label">{t('shell', 'account.signIn')}</Text>
         </Link>
@@ -100,7 +100,7 @@ export function Account({ session }: { session: SessionView | null }) {
           </Menu.List>
         </Menu.Popup>
       </Menu.Root>
-      <Link className="pb-account__trigger pb-account__no-script" href={`#${accountLinksId}`}>
+      <Link className="pb-account__trigger pb-account__no-script pb-link-quiet" href={`#${accountLinksId}`}>
         <AccountName name={name} label={label} />
       </Link>
     </div>
@@ -117,7 +117,7 @@ export function AccountLinks({ session }: { session: SessionView }) {
   return (
     <nav id={accountLinksId} className="pb-account-links" aria-label={t('shell', 'account.menu')}>
       {accountPages(session, t).map(({ id, href, label }) => (
-        <Link key={id} href={href}>
+        <Link key={id} className="pb-link-quiet" href={href}>
           {label}
         </Link>
       ))}

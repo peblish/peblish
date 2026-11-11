@@ -130,7 +130,9 @@ export function CommunityForm({ handle, initial, uploadsOff, error }: CommunityF
           <ul>
             {sections.map((section) => (
               <li key={section}>
-                <Link href={`#${section}`}>{message(`form.section.${section}`)}</Link>
+                <Link className="pb-link-quiet" href={`#${section}`}>
+                  {message(`form.section.${section}`)}
+                </Link>
               </li>
             ))}
           </ul>

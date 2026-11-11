@@ -54,7 +54,6 @@
   .pb-bar-brand {
     min-inline-size: 0;
     color: var(--muxui-semantic-content-strong);
-    text-decoration: none;
   }
 
   .pb-app__drawer-foot {
@@ -216,7 +215,6 @@
 
     .pb-account__no-script {
       display: inline-flex;
-      text-decoration: none;
     }
 
     .pb-account-links {

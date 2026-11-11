@@ -148,7 +148,9 @@ export function PostCard({
           {post.locked && <Badge kind="locked">{labels.locked}</Badge>}
           {post.sensitive && <Badge kind="nsfw">{labels.nsfw}</Badge>}
           {post.nsfl && <Badge kind="nsfl">{labels.nsfl}</Badge>}
-          <Link href={hrefs.post}>{title}</Link>
+          <Link className="pb-link-quiet" href={hrefs.post}>
+            {title}
+          </Link>
           {domain && !gone && (
             <Text size="xs" color="muted" className="pb-post__domain">
               {/* The domain comes from the post's link: isolated and left to right, like a handle's host. */}
@@ -162,7 +164,7 @@ export function PostCard({
           </Link>{' '}
           <span className="pb-post__by">
             {labels.by}{' '}
-            <Link href={hrefs.author}>
+            <Link className="pb-link-muted" href={hrefs.author}>
               <Handle prefix="@" handle={post.author.handle} />
             </Link>
             {post.authorBadge && <Badge kind={post.authorBadge} labels={labels.badges} />}
@@ -175,7 +177,7 @@ export function PostCard({
           </Text>
         )}
         <Text as="div" size="sm" className="pb-post__actions">
-          <Link className="pb-post__comments" href={hrefs.post}>
+          <Link className="pb-post__comments pb-link-quiet" href={hrefs.post}>
             {labels.comments(post.counts.comments)}
           </Link>
           {sensitive && (

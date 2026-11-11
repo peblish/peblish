@@ -144,7 +144,7 @@ const CommentRow = memo(function CommentRow({ node, level, ctx }: { node: Commen
           </Text>
         ) : (
           <>
-            <Link className="pb-comment__author" href={ctx.authorHref(comment)}>
+            <Link className="pb-comment__author pb-link-quiet" href={ctx.authorHref(comment)}>
               <Handle prefix="@" handle={comment.author.handle} />
             </Link>
             {comment.author.id === ctx.postAuthorId && <Badge kind="op" labels={labels.badges} />}
