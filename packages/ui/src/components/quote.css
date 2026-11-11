@@ -1,0 +1,16 @@
+/* Quote: someone else's words, kept as a blockquote. */
+@layer app {
+  .pb-quote {
+    margin: 0;
+    overflow-wrap: anywhere;
+  }
+
+  .pb-quote[data-edge] {
+    padding-inline-start: var(--muxui-semantic-layout-inset-small);
+    border-inline-start: 3px solid var(--muxui-semantic-border-subtle);
+  }
+
+  .pb-quote__text {
+    margin: 0;
+  }
+}
