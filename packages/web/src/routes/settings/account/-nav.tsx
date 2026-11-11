@@ -4,14 +4,6 @@ import { Text } from '@peblish/ui/components/text';
 import { useLocation } from '@tanstack/react-router';
 import type { ReactNode } from 'react';
 import { useTranslate } from '../../../i18n/use-translate.ts';
-import { authHead } from '../../auth/-ui/page.tsx';
-import settingsCss from '../-ui/settings.css?url';
-
-/**
- * Every settings page's head: the settings layout, and the auth stylesheet the shared form fields
- * (`auth/-ui/form.tsx`) still read until the AUTH lane moves them onto Mux.
- */
-export const settingsHead = () => ({ links: [...authHead().links, { rel: 'stylesheet', href: settingsCss }] });
 
 /**
  * The settings column: Account, Security, Blocks, and Invites for admins, as Mux Sidebar

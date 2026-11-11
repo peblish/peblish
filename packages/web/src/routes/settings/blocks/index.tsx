@@ -1,6 +1,6 @@
 import { createFileRoute } from '@tanstack/react-router';
 import { useRouteHydrated } from '../../../shell/hydration.ts';
-import { settingsHead } from '../account/-nav.tsx';
+import { settingsHead } from '../-head.ts';
 import { loadBlocks } from './-load.ts';
 import { handleBlocksPost } from './-post.ts';
 import { parseBlocksSearch, type BlockTab } from './-tabs.ts';

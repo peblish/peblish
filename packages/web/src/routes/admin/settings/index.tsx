@@ -16,10 +16,11 @@ import { type } from 'arktype';
 import { useTranslate } from '../../../i18n/use-translate.ts';
 import { forbidden, formSession, pageSession, principalOf, readForm, sameOrigin } from '../../../server/auth.ts';
 import { useRouteHydrated } from '../../../shell/hydration.ts';
-import { SearchText } from '../../auth/-ui/page.tsx';
+import { SearchText } from '../../auth/-route.ts';
 import { accessOf } from './-access.ts';
 import { savePatch, switchPatch } from './-form.ts';
-import { AccessNotice, AdminTitle, adminHead, AreaField, SectionTitle } from './-ui.tsx';
+import { adminHead } from './-head.ts';
+import { AccessNotice, AdminTitle, AreaField, SectionTitle } from './-ui.tsx';
 
 // /admin/settings (R2 pick admin-tabs, its Site tab): identity, the operator's details that fill
 // the legal pages, the registration cap and the federation settings in one form, then one kill

@@ -11,7 +11,8 @@ import { useTranslate } from '../../i18n/use-translate.ts';
 import { lookupInviteFor, PRIVATE_NO_STORE } from '../../server/auth.ts';
 import { useRouteHydrated } from '../../shell/hydration.ts';
 import { Hidden } from '../auth/-ui/form.tsx';
-import { AuthCard, authHead, useDate } from '../auth/-ui/page.tsx';
+import { authHead } from '../auth/-route.ts';
+import { AuthCard, useDate } from '../auth/-ui/page.tsx';
 
 const loadInvite = createServerFn({ method: 'GET' })
   .validator(type({ code: 'string' }))

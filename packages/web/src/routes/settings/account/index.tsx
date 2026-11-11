@@ -24,10 +24,12 @@ import {
 import { useRouteHydrated } from '../../../shell/hydration.ts';
 import { asFormError } from '../../auth/-ui/errors.ts';
 import { AuthForm, Field } from '../../auth/-ui/form.tsx';
-import { SearchText, useDate } from '../../auth/-ui/page.tsx';
+import { SearchText } from '../../auth/-route.ts';
+import { useDate } from '../../auth/-ui/page.tsx';
 import { Badge } from '@peblish/ui/components/badge';
 import { FactList } from '@peblish/ui/components/fact-list';
-import { SettingsLayout, SettingsSection, settingsHead } from './-nav.tsx';
+import { settingsHead } from '../-head.ts';
+import { SettingsLayout, SettingsSection } from './-nav.tsx';
 
 const Search = type({ 'error?': SearchText });
 const Body = type({ intent: "'delete'", confirm: 'string', password: 'string' });

@@ -24,9 +24,10 @@ import { useTranslate } from '../../../../i18n/use-translate.ts';
 import { forbidden, formSession, pageSession, principalOf, readForm, sameOrigin } from '../../../../server/auth.ts';
 import { createMarkdownRenderer } from '../../../../server/markdown.ts';
 import { useRouteHydrated } from '../../../../shell/hydration.ts';
-import { SearchText } from '../../../auth/-ui/page.tsx';
+import { SearchText } from '../../../auth/-route.ts';
 import { accessOf } from '../../settings/-access.ts';
-import { AccessNotice, AdminTitle, adminHead, SectionTitle } from '../../settings/-ui.tsx';
+import { adminHead } from '../../settings/-head.ts';
+import { AccessNotice, AdminTitle, SectionTitle } from '../../settings/-ui.tsx';
 import { StatusCell } from '../-status.tsx';
 
 // /admin/pages/<slug>/<language>: the editor. Save draft keeps what visitors see as it is;

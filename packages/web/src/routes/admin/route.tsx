@@ -3,7 +3,7 @@ import { createFileRoute, getRouteApi, Outlet, useRouterState } from '@tanstack/
 import { useTranslate } from '../../i18n/use-translate.ts';
 import { privateResponses } from '../../server/auth.ts';
 import { adminPaths } from '../../shell/paths.ts';
-import { noGroupPage } from '../auth/-ui/page.tsx';
+import { noGroupPage } from '../auth/-route.ts';
 import adminCss from './-admin.css?url';
 
 // Every response under /admin is personal: never from a shared cache (server/auth.ts).

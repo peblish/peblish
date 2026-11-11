@@ -32,7 +32,8 @@ import {
 import { useRouteHydrated } from '../../shell/hydration.ts';
 import { asFormError } from './-ui/errors.ts';
 import { AuthForm, Field, rich } from './-ui/form.tsx';
-import { AuthCard, authHead, SearchText } from './-ui/page.tsx';
+import { authHead, SearchText } from './-route.ts';
+import { AuthCard } from './-ui/page.tsx';
 
 const Search = type({ 'error?': SearchText, 'invite?': SearchText, 'username?': SearchText });
 

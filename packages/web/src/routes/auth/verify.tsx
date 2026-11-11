@@ -14,7 +14,8 @@ import { forbidden, formSession, pageSession, sameOrigin } from '../../server/au
 import { useRouteHydrated } from '../../shell/hydration.ts';
 import { asFormError } from './-ui/errors.ts';
 import { AuthForm, rich } from './-ui/form.tsx';
-import { AuthCard, authHead, SearchText } from './-ui/page.tsx';
+import { authHead, SearchText } from './-route.ts';
+import { AuthCard } from './-ui/page.tsx';
 
 const Search = type({ 'error?': SearchText, 'token?': SearchText, 'sent?': SearchText });
 
