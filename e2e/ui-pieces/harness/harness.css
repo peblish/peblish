@@ -1,0 +1,27 @@
+/* Layout for the harness page only. */
+@layer app {
+  .hx-page {
+    display: grid;
+    gap: var(--muxui-semantic-layout-section-gap);
+    padding: var(--muxui-semantic-layout-inset-small);
+  }
+
+  .hx-column {
+    inline-size: min(100%, 420px);
+  }
+
+  .hx-links {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .hx-form,
+  .hx-buttons,
+  .hx-pair {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--muxui-semantic-layout-content-gap);
+  }
+}

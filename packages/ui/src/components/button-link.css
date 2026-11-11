@@ -1,0 +1,31 @@
+/* ButtonLink: Mux's own Button rules style `.muxui-link.muxui-button`; these put back what other
+   rules take away from a link, so it computes the same as a Mux Button in every state. */
+@layer app {
+  /* The app's base rules (tokens.css: `a { color: inherit }`, `a:hover` underlined) are in this
+     layer, above Mux's. Mux's link rule sets `outline: none` after Button's transparent outline,
+     which forced colours turn visible. */
+  .muxui-button.pb-button-link,
+  .muxui-button.pb-button-link:hover {
+    outline: 1px solid var(--muxui-button-border);
+    outline-offset: -1px;
+    color: var(--muxui-button-foreground);
+    text-decoration: none;
+  }
+
+  /* Mux's link focus rules come after Button's and draw a thinner ring; this is Button's
+     (`.muxui-button:focus-visible`), on the native and on React Aria's focus-visible state. */
+  .muxui-button.pb-button-link:focus-visible,
+  .muxui-button.pb-button-link[data-muxui-state-focus-visible] {
+    box-shadow:
+      0 0 0 2px var(--muxui-semantic-focus-inner),
+      0 0 0 4px var(--muxui-semantic-focus-ring);
+  }
+
+  /* Mux's forced-colours focus outline for Button, which the outline above would otherwise hide. */
+  @media (forced-colors: active) {
+    .muxui-button.pb-button-link:focus-visible {
+      outline: 2px solid Highlight;
+      outline-offset: 2px;
+    }
+  }
+}
