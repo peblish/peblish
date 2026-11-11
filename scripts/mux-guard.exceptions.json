@@ -68,5 +68,11 @@
     "match": "<blockquote>",
     "anchor": "Quote",
     "reason": "Quote keeps the blockquote element for its meaning; Mux Text cannot render one, and the quoted words inside it are a Mux Text."
+  },
+  {
+    "file": "packages/ui/src/components/button-link.css",
+    "rule": "css-shadow",
+    "match": "0 0 0 2px var(--muxui-semantic-focus-inner)",
+    "reason": "ButtonLink repeats Mux Button's own focus ring, built only from Mux's focus tokens, because Mux's later link rule would draw the thinner link ring on it; no single Mux token holds the whole ring."
   }
 ]
