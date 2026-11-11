@@ -36,6 +36,16 @@ export async function signedIn(browser: Browser, baseURL: string, name: string, 
 export const coldContext = async (browser: Browser, baseURL: string, context: BrowserContext) =>
   browser.newContext({ baseURL, storageState: await context.storageState() });
 
-/** The community's row in the picker, on the page or inside the sheet. */
+/** The community's radio in the picker, on the page or inside the sheet. */
 export const community = (within: Pick<Locator, 'getByRole'>, handle: string) =>
   within.getByRole('radio', { name: new RegExp(`^!${handle}`) });
+
+/** The label around a radio. Mux UI draws its own radio and hides the native one, so a click goes to the label, as a person's does. */
+export const radioLabel = (radio: Locator) => radio.locator('xpath=ancestor::label[1]');
+
+/** Chooses the community in the picker by its row. */
+export const choose = (within: Pick<Locator, 'getByRole'>, handle: string) => radioLabel(community(within, handle)).click();
+
+/** Chooses a post type (Text, Link, Image) by its label. */
+export const chooseType = (within: Pick<Locator, 'getByRole'>, name: string) =>
+  radioLabel(within.getByRole('radio', { name, exact: true })).click();

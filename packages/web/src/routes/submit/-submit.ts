@@ -112,6 +112,9 @@ export async function readSubmission(request: Request): Promise<Read> {
       if (typeof value === 'string') fields[name] ??= value;
       else if (name === 'image' && value.size > 0) image = new Uint8Array(await value.arrayBuffer());
     }
+    // The edit form names its post in its address (/submit?edit=<id>) rather than in a hidden field.
+    const edit = new URL(request.url).searchParams.get('edit');
+    if (edit !== null) fields.edit ??= edit;
     return { ok: true, fields, image };
   } catch {
     return { ok: false, error: 'generic' };

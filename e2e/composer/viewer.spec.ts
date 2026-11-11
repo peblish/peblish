@@ -1,7 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
 import { landed, signIn, signOut } from '../auth/support.ts';
 import { gotoHydrated } from '../support/route-marker.ts';
-import { community, seed, type Seed } from './support.ts';
+import { choose, seed, type Seed } from './support.ts';
 
 // A composer left open in one tab while another tab of the same browser changes who is signed in
 // (shell/viewer-sync.ts reloads the tab's data when it is shown again): the words of the first
@@ -73,7 +73,7 @@ test('the composer page shows the new person an empty form, and the saved draft 
   const words = 'Typed by the first person';
   const { other, was, now } = await switchAccountBehind(page, async (tab) => {
     await gotoHydrated(tab, '/submit');
-    await community(tab, world.communities.open.handle).check();
+    await choose(tab, world.communities.open.handle);
     await tab.getByLabel('Title').fill(words);
     await tab.getByRole('textbox', { name: 'Body', exact: true }).fill(`${words}, in the body`);
     await tab.getByRole('button', { name: 'Save draft' }).click();
@@ -99,7 +99,7 @@ test('the sheet reloads for the new person: an empty form, and the first person 
   const { other, was, now } = await switchAccountBehind(page, async (tab) => {
     await tab.getByRole('link', { name: 'Create post' }).click();
     await expect(sheet(tab).getByText(`Posting as @${world.people.poster}@`)).toBeVisible();
-    await community(sheet(tab), world.communities.open.handle).check();
+    await choose(sheet(tab), world.communities.open.handle);
     await sheet(tab).getByLabel('Title').fill(words);
     await sheet(tab).getByRole('textbox', { name: 'Body', exact: true }).fill(`${words}, again`);
   });

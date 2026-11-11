@@ -1,3 +1,5 @@
+import { Link } from '@peblish/ui/components/link';
+import { Text } from '@peblish/ui/components/text';
 import { ComposerSheet } from '@peblish/ui/composer/sheet';
 import '@peblish/ui/composer/composer.css';
 import { useRouter } from '@tanstack/react-router';
@@ -32,15 +34,19 @@ export default function ComposerSheetHost({ community, onClose }: { community?: 
 
   return (
     <ComposerSheet open onOpenChange={(open) => !open && onClose()} title={t('composer', 'title.create')}>
-      {data === 'loading' && <p className="pb-muted">{t('composer', 'loading')}</p>}
+      {data === 'loading' && (
+        <Text as="p" color="muted">
+          {t('composer', 'loading')}
+        </Text>
+      )}
       {data === 'failed' && (
-        <p role="alert">
-          {t('composer', 'loadFailed')} <a href="/submit">{t('composer', 'openPage')}</a>
+        <p role="alert" className="cmp__error">
+          {t('composer', 'loadFailed')} <Link href="/submit">{t('composer', 'openPage')}</Link>
         </p>
       )}
       {typeof data === 'object' && data.status === 'unavailable' && (
-        <p role="alert">
-          {t('composer', `unavailable.${data.reason}`)} <a href="/submit">{t('composer', 'openPage')}</a>
+        <p role="alert" className="cmp__error">
+          {t('composer', `unavailable.${data.reason}`)} <Link href="/submit">{t('composer', 'openPage')}</Link>
         </p>
       )}
       {typeof data === 'object' && data.status === 'ready' && (

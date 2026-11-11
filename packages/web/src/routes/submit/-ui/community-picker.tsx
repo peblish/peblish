@@ -1,6 +1,9 @@
 import { Handle } from '@peblish/ui/components/handle';
+import { RadioField } from '@peblish/ui/components/radio-field';
+import { RadioGroup } from '@peblish/ui/components/radio-group';
+import { Text } from '@peblish/ui/components/text';
 import { TextField } from '@peblish/ui/components/text-field';
-import { useState, type ReactNode } from 'react';
+import { useId, useState, type ReactNode } from 'react';
 import { useTranslate } from '../../../i18n/use-translate.ts';
 import { translatePlural } from '../../../i18n/translate.ts';
 import type { PickerCommunity } from '../-types.ts';
@@ -23,12 +26,25 @@ export function CommunityPicker({
   error?: ReactNode;
 }) {
   const { t, locale } = useTranslate();
+  const label = useId();
   const [filter, setFilter] = useState('');
   const wanted = filter.trim().toLowerCase().replace(/^!/, '');
   const shown = (community: PickerCommunity) => wanted === '' || community.handle.toLowerCase().includes(wanted);
+  const describe = (community: PickerCommunity) =>
+    [
+      community.local ? t('composer', 'community.local') : t('composer', 'community.remote'),
+      community.restricted && t('composer', 'community.modsOnly'),
+      !community.canPost
+        ? t('composer', 'community.disabled')
+        : community.subscribers !== null && translatePlural(locale, 'composer', 'community.members', community.subscribers),
+    ]
+      .filter(Boolean)
+      .join(', ');
   return (
-    <fieldset className="cmp__field cmp__picker">
-      <legend className="cmp__label">{t('composer', 'community.label')}</legend>
+    <div className="cmp__field cmp__picker">
+      <Text as="span" variant="label" size="sm" id={label}>
+        {t('composer', 'community.label')}
+      </Text>
       <TextField
         type="search"
         label={t('composer', 'community.search')}
@@ -37,45 +53,50 @@ export function CommunityPicker({
         value={filter}
         onChange={setFilter}
       />
-      <ul className="cmp__list">
-        {communities.map((community) => (
-          <li key={community.id} hidden={!shown(community)}>
-            <label className="cmp__row" data-off={community.canPost ? undefined : ''}>
-              <input
-                type="radio"
-                name="community"
-                value={community.id}
-                checked={value === community.id}
-                disabled={!community.canPost}
-                onChange={() => onChange(community.id)}
-              />
-              <span>
-                <Handle prefix="!" handle={community.handle} />{' '}
-                <span className="pb-muted">
-                  {community.local ? t('composer', 'community.local') : t('composer', 'community.remote')}
-                  {community.restricted ? `, ${t('composer', 'community.modsOnly')}` : ''}
-                </span>
-              </span>
-              <span className="pb-muted">
-                {!community.canPost
-                  ? t('composer', 'community.disabled')
-                  : community.subscribers === null
-                    ? ''
-                    : translatePlural(locale, 'composer', 'community.members', community.subscribers)}
-              </span>
-            </label>
-          </li>
-        ))}
-      </ul>
-      {communities.length > 0 && communities.every((community) => !shown(community)) && (
-        <p className="pb-muted">{t('composer', 'community.none')}</p>
+      {communities.length > 0 && (
+        <RadioGroup
+          aria-labelledby={label}
+          name="community"
+          value={value ?? ''}
+          onChange={onChange}
+          invalid={error !== undefined}
+          errorMessage={error}
+          className="cmp__list"
+        >
+          {communities.map((community) => (
+            <RadioField.Root
+              key={community.id}
+              value={community.id}
+              disabled={!community.canPost}
+              hidden={!shown(community)}
+              className="cmp__row"
+            >
+              <RadioField.Button>
+                <RadioField.Indicator>
+                  <RadioField.Dot />
+                </RadioField.Indicator>
+                <Handle prefix="!" handle={community.handle} />
+              </RadioField.Button>
+              <RadioField.Description>{describe(community)}</RadioField.Description>
+            </RadioField.Root>
+          ))}
+        </RadioGroup>
       )}
-      {communities.length === 0 && <p className="pb-muted">{t('composer', 'community.empty')}</p>}
-      {error && (
+      {communities.length > 0 && communities.every((community) => !shown(community)) && (
+        <Text as="p" color="muted">
+          {t('composer', 'community.none')}
+        </Text>
+      )}
+      {communities.length === 0 && (
+        <Text as="p" color="muted">
+          {t('composer', 'community.empty')}
+        </Text>
+      )}
+      {communities.length === 0 && error !== undefined && (
         <p className="cmp__error" role="alert">
           {error}
         </p>
       )}
-    </fieldset>
+    </div>
   );
 }

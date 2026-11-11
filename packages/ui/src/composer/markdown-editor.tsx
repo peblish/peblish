@@ -1,7 +1,23 @@
 import { useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
+import { IconButton } from '../components/icon-button.tsx';
 import { Prose } from '../components/prose.tsx';
+import { Text } from '../components/text.tsx';
 import { TextAreaField } from '../components/text-area.tsx';
+import { ToggleButton, ToggleButtonGroup } from '../components/toggle-button-group.tsx';
 import { Toolbar } from '../components/toolbar.tsx';
+import { Tooltip } from '../components/tooltip.tsx';
+import {
+  BoldIcon,
+  BulletListIcon,
+  CodeIcon,
+  HeadingIcon,
+  ItalicIcon,
+  LinkIcon,
+  NumberedListIcon,
+  QuoteIcon,
+  SpoilerIcon,
+  StrikeIcon,
+} from './editor-icons.tsx';
 import { bulletList, code, heading, link, numberedList, quote, wrap, type Insert } from './insert.ts';
 import { useHydrated } from './use-hydrated.ts';
 
@@ -109,17 +125,17 @@ export function MarkdownEditor({
     area.focus();
   }
 
-  const actions: { label: string; glyph?: ReactNode; shortcut?: string; insert: Insert }[] = [
-    { label: labels.bold, glyph: <b>B</b>, shortcut: 'Ctrl+B', insert: wrap('**') },
-    { label: labels.italic, glyph: <i>I</i>, shortcut: 'Ctrl+I', insert: wrap('*') },
-    { label: labels.strikethrough, glyph: <s>S</s>, insert: wrap('~~') },
-    { label: labels.link, shortcut: 'Ctrl+K', insert: link({ text: labels.linkText, url: labels.linkUrl }) },
-    { label: labels.quote, insert: quote },
-    { label: labels.code, insert: code },
-    { label: labels.bulletList, insert: bulletList },
-    { label: labels.numberedList, glyph: '1.', insert: numberedList },
-    { label: labels.heading, glyph: 'H', insert: heading },
-    { label: labels.spoiler, insert: insertSpoiler },
+  const actions: { label: string; icon: ReactNode; shortcut?: string; insert: Insert }[] = [
+    { label: labels.bold, icon: <BoldIcon />, shortcut: 'Ctrl+B', insert: wrap('**') },
+    { label: labels.italic, icon: <ItalicIcon />, shortcut: 'Ctrl+I', insert: wrap('*') },
+    { label: labels.strikethrough, icon: <StrikeIcon />, insert: wrap('~~') },
+    { label: labels.link, icon: <LinkIcon />, shortcut: 'Ctrl+K', insert: link({ text: labels.linkText, url: labels.linkUrl }) },
+    { label: labels.quote, icon: <QuoteIcon />, insert: quote },
+    { label: labels.code, icon: <CodeIcon />, insert: code },
+    { label: labels.bulletList, icon: <BulletListIcon />, insert: bulletList },
+    { label: labels.numberedList, icon: <NumberedListIcon />, insert: numberedList },
+    { label: labels.heading, icon: <HeadingIcon />, insert: heading },
+    { label: labels.spoiler, icon: <SpoilerIcon />, insert: insertSpoiler },
   ];
   const shortcuts: Record<string, Insert | undefined> = { b: actions[0]?.insert, i: actions[1]?.insert, k: actions[3]?.insert };
 
@@ -150,46 +166,40 @@ export function MarkdownEditor({
     }
   }
 
+  const off = !enhanced || disabled;
   return (
     <div className={className ? `pb-md ${className}` : 'pb-md'} ref={root} onKeyDown={onKeyDown}>
-      <div className="pb-md__views" role="group" aria-label={labels.view}>
-        {(['write', 'preview'] as const).map((id) => (
-          <button
-            key={id}
-            type="button"
-            className="pb-md__view"
-            aria-pressed={view === id}
-            disabled={!enhanced || disabled}
-            onClick={() => void show(id)}
-          >
-            {labels[id]}
-          </button>
-        ))}
+      <div className="pb-md__head">
+        <ToggleButtonGroup
+          aria-label={labels.view}
+          selectionMode="single"
+          disallowEmptySelection
+          size="sm"
+          selectedIds={[view]}
+          onSelectionChange={([next]) => (next === 'write' || next === 'preview') && void show(next)}
+          disabled={off}
+        >
+          <ToggleButton id="write">{labels.write}</ToggleButton>
+          <ToggleButton id="preview">{labels.preview}</ToggleButton>
+        </ToggleButtonGroup>
+        {view === 'write' && (
+          <Toolbar aria-label={labels.toolbar} className="pb-md__bar">
+            {actions.map(({ label: name, icon, shortcut, insert }) => (
+              <Tooltip
+                key={name}
+                content={shortcut ? `${name} (${shortcut})` : name}
+                trigger={
+                  <IconButton aria-label={name} size="sm" disabled={off} onActivate={() => apply(insert)}>
+                    {icon}
+                  </IconButton>
+                }
+              />
+            ))}
+          </Toolbar>
+        )}
       </div>
       {/* The write pane stays mounted while previewing, so the form still carries the text. */}
       <div className="pb-md__write" hidden={view === 'preview'}>
-        <Toolbar aria-label={labels.toolbar} className="pb-md__bar">
-          {actions.map(({ label: name, glyph, shortcut, insert }) => (
-            <button
-              key={name}
-              type="button"
-              className="pb-md__btn"
-              title={shortcut ? `${name} (${shortcut})` : name}
-              disabled={!enhanced || disabled}
-              onClick={() => apply(insert)}
-            >
-              {/* A symbol is hidden from assistive technology; the name it stands for is read instead. */}
-              {glyph === undefined ? (
-                name
-              ) : (
-                <>
-                  <span aria-hidden="true">{glyph}</span>
-                  <span className="pb-sr">{name}</span>
-                </>
-              )}
-            </button>
-          ))}
-        </Toolbar>
         <TextAreaField
           label={label}
           hideLabel
@@ -201,13 +211,20 @@ export function MarkdownEditor({
           invalid={invalid}
           errorMessage={errorMessage}
           disabled={disabled}
-          className="pb-md__field"
         />
       </div>
       {view === 'preview' && (
         <div className="pb-md__preview" aria-live="polite" aria-busy={preview.status === 'loading'}>
-          {preview.status === 'loading' && <p className="pb-muted">{labels.previewLoading}</p>}
-          {preview.status === 'idle' && <p className="pb-muted">{labels.previewEmpty}</p>}
+          {preview.status === 'loading' && (
+            <Text as="p" color="muted">
+              {labels.previewLoading}
+            </Text>
+          )}
+          {preview.status === 'idle' && (
+            <Text as="p" color="muted">
+              {labels.previewEmpty}
+            </Text>
+          )}
           {preview.status === 'failed' && <p role="alert">{labels.previewFailed}</p>}
           {preview.status === 'ready' && (
             <>

@@ -1,6 +1,6 @@
 import { expect, test, type BrowserContext, type Page } from '@playwright/test';
 import { gotoHydrated } from '../support/route-marker.ts';
-import { community, seed, signedIn, type Seed } from './support.ts';
+import { choose, seed, type Seed, signedIn } from './support.ts';
 
 // Preview against what is published, byte for byte, for the Markdown corpus. A remote image in
 // the text renders through the proxy only while remote_media.enabled is on, so these cases run
@@ -26,7 +26,7 @@ const post = (page: Page) => page.getByRole('button', { name: 'Post', exact: tru
 /** What the editor's Preview shows, then what the post page shows for the same text once posted. */
 async function previewThenPublish(page: Page, text: string) {
   await body(page).fill(text);
-  await page.getByRole('button', { name: 'Preview' }).click();
+  await page.getByRole('radio', { name: 'Preview' }).click();
   const preview = page.locator('.pb-md__preview .pb-prose');
   await expect(preview).toBeVisible();
   const previewed = await preview.innerHTML();
@@ -66,7 +66,7 @@ for (const [name, text] of Object.entries(corpus)) {
   test(`what Preview shows is what is published: ${name}`, async () => {
     const page = await poster.newPage();
     await gotoHydrated(page, '/submit');
-    await community(page, world.communities.open.handle).check();
+    await choose(page, world.communities.open.handle);
     await page.getByLabel('Title').fill(`Preview ${name}`);
     const { previewed, published } = await previewThenPublish(page, text);
     expect(previewed.length).toBeGreaterThan(40);

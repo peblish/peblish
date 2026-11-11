@@ -1,5 +1,5 @@
-/* The composer after the R1 mock composer-page: structure and states, not final styling. The page
-   and the sheet share it. */
+/* The composer's layout: the form beside the community's rules, on the page and in the sheet.
+   Colours, radii and type come from Mux UI's tokens and components. */
 @layer app {
   .cmp-page {
     max-width: 1020px;
@@ -7,9 +7,8 @@
     padding: 12px 16px 60px;
   }
 
-  .cmp-page h1 {
-    margin-bottom: 10px;
-    font-size: 18px;
+  .cmp-page__title {
+    margin-bottom: var(--muxui-semantic-layout-content-gap);
   }
 
   .cmp {
@@ -20,152 +19,87 @@
   }
 
   .cmp__form {
+    display: grid;
+    gap: var(--muxui-semantic-layout-section-gap);
     min-width: 0;
   }
 
   .cmp__field {
     display: grid;
-    gap: 3px;
+    gap: var(--muxui-semantic-layout-description-gap);
     min-width: 0;
-    margin: 0 0 12px;
-    padding: 0;
-    border: 0;
   }
 
-  .cmp__label,
-  .cmp__field .muxui-input__label {
-    padding: 0;
-    font-weight: 600;
-  }
-
-  .cmp__note {
-    margin: 0 0 8px;
-    color: var(--pb-warn);
-    font-size: 12px;
-  }
-
-  .cmp__editing {
-    margin: 0 0 12px;
+  .cmp__editing,
+  .cmp__status {
+    margin: 0;
   }
 
   .cmp__error {
-    margin: 0 0 8px;
-    color: var(--pb-error);
+    margin: 0;
+    color: var(--muxui-semantic-feedback-invalid);
   }
 
-  /* The post types are radios, so the choice posts without JavaScript; the fields that belong to
-     each type are shown by :has() on the checked radio, so they switch without it too. */
-  .cmp__types {
-    display: flex;
-    margin: 0 0 4px;
-    padding: 0;
-    border: 0;
-    border-bottom: 1px solid var(--pb-line);
-  }
-
-  .cmp__type {
-    margin-bottom: -1px;
-    padding: 5px 12px;
-    border-bottom: 2px solid transparent;
-    color: var(--pb-muted);
-    cursor: pointer;
-  }
-
-  .cmp__type input {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    overflow: hidden;
-    clip-path: inset(50%);
-  }
-
-  .cmp__type:has(input:checked) {
-    border-bottom-color: var(--pb-fg);
-    color: var(--pb-fg);
-    font-weight: 600;
-  }
-
-  .cmp__type:has(input:disabled) {
-    opacity: 0.55;
-    cursor: not-allowed;
-  }
-
-  .cmp__type:has(input:focus-visible) {
-    outline: 2px solid var(--pb-accent);
-    outline-offset: 1px;
-  }
-
+  /* Each post type's fields are shown by the checked radio (or an edit's fixed type), so they
+     switch without JavaScript too. */
   .cmp__only-link,
   .cmp__only-image {
     display: none;
   }
 
   .cmp:has([name='type'][value='link']:checked) .cmp__only-link,
+  .cmp[data-type='link'] .cmp__only-link,
   .cmp:has([name='type'][value='image']:checked) .cmp__only-image {
-    display: block;
+    display: grid;
+    gap: var(--muxui-semantic-layout-section-gap);
   }
 
-  .cmp:has([name='type']:not([value='text']):checked) .cmp__only-text {
+  .cmp:has([name='type']:not([value='text']):checked) .cmp__only-text,
+  .cmp[data-type='link'] .cmp__only-text {
     display: none;
   }
 
   .cmp__picker .cmp__list {
-    max-height: 196px;
-    margin: 0;
-    padding: 0;
+    max-height: 220px;
+    padding: var(--muxui-semantic-layout-inset-small);
     overflow: auto;
-    border: 1px solid var(--pb-line);
-    list-style: none;
+    border: 1px solid var(--muxui-semantic-border-default);
+    border-radius: var(--muxui-semantic-control-radius);
+    background: var(--muxui-semantic-surface-raised);
   }
 
-  .cmp__list li {
-    border-bottom: 1px solid var(--pb-line);
-  }
-
-  .cmp__list li:last-child {
-    border-bottom: 0;
-  }
-
-  .cmp__list li[hidden] {
+  .cmp__row[hidden] {
     display: none;
   }
 
-  .cmp__row {
+  /* Mux UI's drop zone centres one child in a row; here it stacks the file field (full width) and the progress bar. */
+  .cmp__drop {
     display: grid;
-    grid-template-columns: 18px minmax(0, 1fr) auto;
-    gap: 6px;
-    align-items: baseline;
-    padding: 5px 8px;
+    justify-content: stretch;
+    gap: var(--muxui-semantic-layout-control-gap);
+  }
+
+  /* The browser's own file button, in Mux UI's neutral button colours. */
+  .cmp__drop input[type='file']::file-selector-button {
+    margin-inline-end: var(--muxui-semantic-layout-control-gap);
+    padding: 2px 10px;
+    border: 0;
+    border-radius: var(--muxui-semantic-control-radius);
+    background: var(--muxui-semantic-action-neutral-background);
+    color: var(--muxui-semantic-content-default);
+    font: inherit;
     cursor: pointer;
   }
 
-  .cmp__row:hover {
-    background: var(--pb-hover);
-  }
-
-  .cmp__row:has(input:checked) {
-    background: var(--pb-hover);
-    box-shadow: inset 3px 0 var(--pb-fg);
-  }
-
-  .cmp__row[data-off] {
-    color: var(--pb-muted);
-    cursor: not-allowed;
-  }
-
-  .cmp__row input {
-    appearance: auto;
-    block-size: 14px;
-    inline-size: 14px;
-    margin: 0;
+  .cmp__drop input[type='file']::file-selector-button:hover {
+    background: var(--muxui-semantic-action-neutral-background-hover);
   }
 
   .cmp__actions {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 8px;
-    margin-top: 12px;
+    gap: var(--muxui-semantic-layout-action-gap);
   }
 
   .cmp__spacer {
@@ -174,52 +108,22 @@
 
   .cmp__aside {
     min-width: 0;
-    font-size: 13px;
   }
 
-  .cmp__aside h2 {
-    margin-bottom: 4px;
-    font-size: 14px;
+  .cmp__aside-body {
+    display: grid;
+    gap: var(--muxui-semantic-layout-control-gap);
   }
 
-  .cmp__aside h3 {
-    margin: 12px 0 4px;
-    font-size: 14px;
-  }
-
-  .cmp__aside p {
-    margin: 4px 0 10px;
-  }
-
-  .cmp__aside a {
-    color: var(--pb-accent);
+  .cmp__aside-body > * {
+    margin: 0;
   }
 
   .cmp__rules {
+    display: grid;
+    gap: var(--muxui-semantic-layout-dense-gap);
     margin: 0;
-    padding: 0;
-    list-style: none;
-    counter-reset: rule;
-  }
-
-  .cmp__rules li {
-    padding: 3px 0;
-    border-bottom: 1px solid var(--pb-line);
-    counter-increment: rule;
-  }
-
-  .cmp__rules li::before {
-    content: counter(rule) '. ';
-    font-weight: 700;
-  }
-
-  .cmp__rules details {
-    display: inline;
-  }
-
-  .cmp__rules summary {
-    display: inline;
-    cursor: pointer;
+    padding-inline-start: 1.5em;
   }
 
   @media (max-width: 860px) {

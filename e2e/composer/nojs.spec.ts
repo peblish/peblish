@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { seed, type Seed } from './support.ts';
+import { choose, chooseType, seed, type Seed } from './support.ts';
 
 // The composer without JavaScript: a plain form post to /submit. The post types switch their
 // fields by CSS alone, a post lands on its page, and a refusal comes back as a 303 to the form
@@ -24,18 +24,18 @@ test('a text post, a link post and the type switch work without JavaScript', asy
   await signIn(page, world.people.poster);
   await page.goto('/submit');
   // The enhancements wait for JavaScript, which is not coming.
-  await expect(page.getByRole('button', { name: 'Preview' })).toBeDisabled();
+  await expect(page.getByRole('radio', { name: 'Preview' })).toBeDisabled();
   await expect(page.getByRole('button', { name: 'Bold' })).toBeDisabled();
   await expect(page.getByRole('radio', { name: 'Image' })).toBeDisabled();
   // Text: the address field is hidden; Link: the body is.
   await expect(page.getByLabel('URL')).toBeHidden();
-  await page.locator('label.cmp__type', { hasText: 'Link' }).click();
+  await chooseType(page, 'Link');
   await expect(page.getByLabel('URL')).toBeVisible();
   await expect(page.getByRole('textbox', { name: 'Body', exact: true })).toBeHidden();
-  await page.locator('label.cmp__type', { hasText: 'Text' }).click();
+  await chooseType(page, 'Text');
   await expect(page.getByLabel('URL')).toBeHidden();
 
-  await page.locator('label.cmp__row', { hasText: world.communities.open.handle }).click();
+  await choose(page, world.communities.open.handle);
   await page.getByLabel('Title').fill('Posted without JavaScript');
   await page.getByRole('textbox', { name: 'Body', exact: true }).fill('Line one\n\nLine **two**');
   await page.getByRole('button', { name: 'Post', exact: true }).click();
@@ -44,8 +44,8 @@ test('a text post, a link post and the type switch work without JavaScript', asy
   await expect(page.locator('.post-text strong')).toHaveText('two');
 
   await page.goto('/submit');
-  await page.locator('label.cmp__row', { hasText: world.communities.open.handle }).click();
-  await page.locator('label.cmp__type', { hasText: 'Link' }).click();
+  await choose(page, world.communities.open.handle);
+  await chooseType(page, 'Link');
   await page.getByLabel('Title').fill('A link without JavaScript');
   await page.getByLabel('URL').fill('https://example.test/no-js');
   await page.getByRole('button', { name: 'Post', exact: true }).click();
@@ -56,7 +56,7 @@ test('a text post, a link post and the type switch work without JavaScript', asy
 test('a refusal comes back to the form by its reason, with what was typed', async ({ page }) => {
   await signIn(page, world.people.banned);
   await page.goto('/submit');
-  await page.locator('label.cmp__row', { hasText: world.communities.closed.handle }).click();
+  await choose(page, world.communities.closed.handle);
   await page.getByLabel('Title').fill('Turned away');
   await page.getByRole('textbox', { name: 'Body', exact: true }).fill('Still here\n\nafter the refusal');
   await page.getByRole('button', { name: 'Post', exact: true }).click();
@@ -72,7 +72,7 @@ test('a refusal comes back to the form by its reason, with what was typed', asyn
 test('a long body is kept through a refusal, and the words are not in the URL', async ({ page }) => {
   await signIn(page, world.people.banned);
   await page.goto('/submit');
-  await page.locator('label.cmp__row', { hasText: world.communities.closed.handle }).click();
+  await choose(page, world.communities.closed.handle);
   await page.getByLabel('Title').fill('Turned away again');
   // Far more than a URL carries.
   const long = Array.from({ length: 1_500 }, (_, index) => `line ${index} with a few words`).join('\n');
@@ -87,7 +87,7 @@ test('a long body is kept through a refusal, and the words are not in the URL', 
 test('a refused edit comes back with what was typed over the saved post', async ({ page }) => {
   await signIn(page, world.people.poster);
   await page.goto('/submit');
-  await page.locator('label.cmp__row', { hasText: world.communities.open.handle }).click();
+  await choose(page, world.communities.open.handle);
   await page.getByLabel('Title').fill('Saved title');
   await page.getByRole('textbox', { name: 'Body', exact: true }).fill('Saved body');
   await page.getByRole('button', { name: 'Post', exact: true }).click();
@@ -113,7 +113,7 @@ test('a refused edit comes back with what was typed over the saved post', async 
 test('someone else does not get the words from a refusal link', async ({ page, browser, baseURL }) => {
   await signIn(page, world.people.banned);
   await page.goto('/submit');
-  await page.locator('label.cmp__row', { hasText: world.communities.closed.handle }).click();
+  await choose(page, world.communities.closed.handle);
   await page.getByLabel('Title').fill('Private title');
   await page.getByRole('button', { name: 'Post', exact: true }).click();
   await page.waitForURL(/\/submit\?.*error=community\.banned/);
@@ -131,7 +131,7 @@ test('someone else does not get the words from a refusal link', async ({ page, b
 test('a missing title comes back by its code, beside the field', async ({ page }) => {
   await signIn(page, world.people.poster);
   await page.goto('/submit');
-  await page.locator('label.cmp__row', { hasText: world.communities.open.handle }).click();
+  await choose(page, world.communities.open.handle);
   await page.getByRole('button', { name: 'Post', exact: true }).click();
   await page.waitForURL(/\/submit\?.*error=title\.required/);
   await expect(page.getByText('Add a title.')).toBeVisible();
@@ -145,7 +145,7 @@ test('signed out, the composer sends you to sign in and back', async ({ page }) 
 test('a post sent after the session ended goes to sign-in and back to a form with no refusal in it', async ({ page, context }) => {
   await signIn(page, world.people.poster);
   await page.goto('/submit');
-  await page.locator('label.cmp__row', { hasText: world.communities.open.handle }).click();
+  await choose(page, world.communities.open.handle);
   await page.getByLabel('Title').fill('Written while the session ended');
   await context.clearCookies();
   await page.getByRole('button', { name: 'Post', exact: true }).click();

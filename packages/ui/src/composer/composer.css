@@ -1,107 +1,33 @@
-/* The Markdown editor and the bottom sheet the composer opens in. Structure after the R1 mock
-   composer-page; the wireframe styling is not the product's visual design. */
+/* The Markdown editor and the bottom sheet the composer opens in. Layout only: colours, radii
+   and type come from Mux UI's tokens and components. */
 @layer app {
   .pb-md {
-    --md-line: var(--pb-line);
     display: grid;
-    gap: 6px;
+    gap: var(--muxui-semantic-layout-control-gap);
   }
 
-  .pb-md__views {
+  .pb-md__head {
     display: flex;
-    border-bottom: 1px solid var(--md-line);
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--muxui-semantic-layout-group-gap);
   }
 
-  .pb-md__view {
-    margin-bottom: -1px;
-    padding: 5px 12px;
-    border: 0;
-    border-bottom: 2px solid transparent;
-    background: none;
-    color: var(--pb-muted);
-    font: inherit;
-    cursor: pointer;
-  }
-
-  .pb-md__view[aria-pressed='true'] {
-    border-bottom-color: var(--pb-fg);
-    color: var(--pb-fg);
-    font-weight: 600;
-  }
-
-  .pb-md__view:disabled,
-  .pb-md__btn:disabled {
-    opacity: 0.55;
-    cursor: not-allowed;
-  }
-
-  .pb-md__write {
-    border: 1px solid var(--md-line);
-  }
-
-  .pb-md__write:focus-within {
-    border-color: var(--pb-fg);
+  .pb-md__bar {
+    flex-wrap: wrap;
   }
 
   .pb-md__write[hidden] {
     display: none;
   }
 
-  /* Mux UI's toolbar is a rounded pill; here it is the flat row of the mock, joined to the textarea. */
-  .pb-md__bar.muxui-toolbar {
-    flex-wrap: wrap;
-    gap: 0;
-    padding: 0;
-    border: 0;
-    border-bottom: 1px solid var(--md-line);
-    border-radius: 0;
-    background: none;
-  }
-
-  /* At least 24 by 24 px per target (WCAG 2.5.8, axe target-size); the row has no gaps between them. */
-  .pb-md__btn {
-    position: relative;
-    min-width: 30px;
-    min-height: 28px;
-    padding: 3px 9px;
-    border: 0;
-    border-right: 1px solid var(--md-line);
-    background: none;
-    color: var(--pb-muted);
-    font: inherit;
-    cursor: pointer;
-    white-space: nowrap;
-  }
-
-  .pb-md__btn:hover:not(:disabled) {
-    color: var(--pb-fg);
-  }
-
-  /* The write pane's own border is the box; Mux UI's textarea draws its outline inside it otherwise. */
-  .pb-md__field .muxui-text-area__textarea {
-    min-height: 200px;
-    border-radius: 0;
-    outline: 0;
-    box-shadow: none;
-    background: transparent;
-    font-family: var(--pb-mono);
-    font-size: 13px;
-    line-height: 1.5;
-  }
-
-  .pb-md__field .muxui-text-area__description {
-    padding: 0 8px 4px;
-  }
-
   .pb-md__preview {
     min-height: 200px;
-    padding: 8px 10px;
-    border: 1px solid var(--md-line);
-  }
-
-  .pb-md__preview h3 {
-    margin-bottom: 6px;
-    font-size: 17px;
+    padding: 8px 12px;
+    border: 1px solid var(--muxui-semantic-border-default);
+    border-radius: var(--muxui-semantic-control-radius);
+    background: var(--muxui-semantic-surface-raised);
   }
 
   /* The sheet: the dialog panel moved to the bottom edge. The panel's own transform (centred, with
@@ -118,7 +44,7 @@
     padding: 0;
     gap: 0;
     transform: translateX(-50%);
-    border-radius: 12px 12px 0 0;
+    border-radius: var(--muxui-semantic-shape-overlay-radius) var(--muxui-semantic-shape-overlay-radius) 0 0;
     animation: pb-sheet-in 0.22s ease-out;
   }
 
@@ -131,7 +57,6 @@
 
   .pb-sheet .muxui-dialog__title {
     padding: 14px 48px 6px 16px;
-    font-size: 18px;
   }
 
   @keyframes pb-sheet-in {
