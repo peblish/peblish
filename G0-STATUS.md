@@ -912,7 +912,7 @@ Left open: FR-A's section 9. A site-banned local author's post in a remote commu
 
 ## Wave 4 (2026-11-10)
 
-Branch `mvp-w4`, cut from `main` at 1053e53 (the interop PR #6 merged). Wave 4 is the phase 1 tail before the cutover gate: the B06 cutover tooling and rehearsal, private staging, and the B07 security review with its fixes. The briefs are in `/Users/admin/.agents/plans/feddit/briefs/wave-4/` (`plan.md`, `b06.md`, `stage.md`, `b07.md`, `b07-findings.md`, `b07-fixes.md`, `integration.md`, `review-2-findings.md`, `review-2-fixes.md`, `integration-2.md`); the lane notes are in `lane-notes/wave-4/<lane>.md`. Every merge used `git merge --no-ff` and dropped `LANE-NOTES.md` from the tree.
+Branch `mvp-w4`, cut from `main` at 1053e53 (the interop PR #6 merged). Wave 4 is the phase 1 tail before the cutover gate: the B06 cutover tooling and rehearsal, private staging, and the B07 security review with its fixes, and reviews 2 and 3 with theirs. The briefs are in `/Users/admin/.agents/plans/feddit/briefs/wave-4/` (`plan.md`, `b06.md`, `stage.md`, `b07.md`, `b07-findings.md`, `b07-fixes.md`, `integration.md`, `review-2-findings.md`, `review-2-fixes.md`, `integration-2.md`, `review-3-findings.md`, `review-3-fixes.md`); the lane notes are in `lane-notes/wave-4/<lane>.md`. Every merge used `git merge --no-ff` and dropped `LANE-NOTES.md` from the tree.
 
 ### B06 and STAGE (tag `w4-base`, a606db2)
 
@@ -1005,3 +1005,31 @@ Left open (with the reason):
 - The TN3 firewall commands and the TN4 Caddy change are written from documentation and a local Caddy test; the runbook's own checks prove them on the day. The origin certificate (step 7.2) blocks the switch until its rehearsal passes.
 - The composer e2e spec fails on a database with more than 200 local communities (the list cap); CI starts fresh, lanes recreate their database.
 - F3's byte budgets are per process; C1 adds a per-image cost and a 10-minute browser cache window.
+
+### Review 3 and its fixes (tag `w4-ship`)
+
+Codex reviewed `w4-fixes...w4-final` (d268e4c) a third time (`review-3-findings.md`). It confirmed FN1, FN3, the activity `id` bound, AN1 to AN3 and CN1 to CN3 fixed, and TN1, TN4, TN5, TN6 and TN9. It found one federation gap (FN2 partly) and five items in the cutover tooling and runbook (3 P1). Root accepted all six (`review-3-fixes.md`, Z1 to Z6) and set review 3 as the last pass: these fixes ship on their tests and root's checks. Two lanes fixed them from `w4-final` in parallel. They merged in this order with no conflicts; each branch's `LANE-NOTES.md` was dropped. `pnpm gen` and `rm -rf node_modules && pnpm install --frozen-lockfile` changed nothing. No lane changed schema, so migrations still stop at `0012`.
+
+| Lane     | Items                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | Head    | Merge   |
+| -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- | ------- |
+| FZ-FED   | Z1 (the federation switch is read after every database wait on a request's way out, immediately before the fetcher: in `fetchJson` after the signing headers, in the inbound pipeline after the lease renewal, in the key lookup after the held-signer lookup, and in search after the block check; four forced-interleaving tests)                                                                                                                                                                                                                                                                                                                                                                               | abc2ab9 | faa1807 |
+| FZ-TOOLS | Z2 (block, manual addition and manual removal of a hash take the same hash lock before their ledger row, so the ledger replays to the live list; a forced-interleaving test replays it with the drill's `reapplyLedger`), Z3 (runbook: the firewall closure check passes only on curl exit 7, or 28 with no connection, on ports 443 and 80 and IPv6), Z4 (runbook: a new "TLS on the new origin" section before step 6, a DNS-challenge certificate preferred and Origin CA with an isolated Firefox profile as the alternative, not yet rehearsed, go or no-go items 8 and 9), Z5 (the pretest's trust follows the certificate), Z6 (`import` turns the switch off, committed, before it reads the bundle file) | 6b4b3cb | 60f1523 |
+
+Accepted deviations: the search wrapper (`resolve/limit.ts`) gets the same recheck; `ReceiveOptions` has a test-only `heldSigner` option; a failure reading our own origin in `fetchJson` now surfaces as itself, not as the peer unreachable; a manual removal locks the list entry before the hash lock (it cannot deadlock, and the test runs that case).
+
+The only commit after the merges is this section; tag `w4-ship` (local) is at the head.
+
+Verification on lane root (port 18399):
+
+- `pnpm check`: green on the first run, load average about 9; 2,708 tests passed and 10 skipped (244 files passed, 5 skipped), the 2,700 of review 2 plus each lane's 4. No timing test failed, so nothing was rerun.
+- `pnpm db:drift`: none, after recreating `peblish_root` and `peblish_root_test` (0000 to 0012 applied).
+- `pnpm build && pnpm e2e` (`MEDIASCAN_LOCAL_ONLY=1`) on a recreated `peblish_root`: parallel 326 passed and 1 skipped, serial 33 passed, on the first run.
+- Image job: `docker build -t peblish:w4-ship .` and `scripts/image-smoke.sh` against a throwaway `peblish_root_image` (dropped after): passed, web as uid 1000.
+- Lab, `make reset && make check` in `lab/` (870 s), on the internal network only: the fast tier had 85 pass, 0 fail, 4 known, 7 n/a and 0 pending, D1 had 8 pass (6 before, 0 mid, 2 after), and cleanup 74 cleaned with 0 failed, the same as review 2. Peblish's `inbox_raw` held 138 applied and 48 skipped rows, none pending, none paused, none `content.not_public` or `actor.id_mismatch`; every skip reason is one the scenarios provoke. The lab was taken down with its images kept.
+
+Left open (with the reason):
+
+- The TLS rehearsal (go or no-go item 8) must record which path works on this Easypanel, how it takes a custom certificate, and path A's renewal hook. The TLS section and the closure check have not run on the real hosts.
+- A request already in flight when the switch flips completes, and a pause during `safeFetch`'s DNS lookup still lets that one request out (a network wait, not a database one). Accepted.
+- Unchanged from review 2: a replay re-lists and re-removes a hash, quarantining a clean copy uploaded after the removal (fail safe); a restored blocked row's evidence keeps its backup state; TN9's modlog row only when the import changes the switch on a database with its instance actor; a site-banned remote moderator's removal in their own community is in the post-launch backlog.
+- The wave 4 pull request is next; Andrew decides when it opens.
