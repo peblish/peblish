@@ -1,3 +1,5 @@
+import { execFileSync } from 'node:child_process';
+import { join } from 'node:path';
 import { expect, type Browser, type Locator, type Page } from '@playwright/test';
 
 // Helpers for the admin safety specs: the safety controls of the Bans, Peers and Media tabs and
@@ -44,4 +46,18 @@ export async function postFromPage(page: Page, path: string, fields: Record<stri
     },
     { path, fields },
   );
+}
+
+const root = join(import.meta.dirname, '../..');
+const seed = (script: string, ...args: string[]): unknown =>
+  JSON.parse(execFileSync('node', [`packages/core/src/testing/${script}`, ...args], { cwd: root, encoding: 'utf8' }));
+
+/**
+ * Rows for the Hashes, Review and Reports lists, so a spec that reads them does not depend on
+ * others having run: a quarantined upload (its hash goes on the blocklist) and a report filed
+ * by the named local admin.
+ */
+export function seedSafetyRows(adminName: string) {
+  seed('seed-safe.ts', 'quarantined');
+  seed('seed-rep.ts', 'payload', adminName);
 }
