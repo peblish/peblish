@@ -13,12 +13,6 @@
     flex-direction: row;
   }
 
-  /* In a row the arrows centre by flex, not by padding, so a host that sets a smaller minimum
-     height (a comment's actions) gets it; elsewhere Mux's own minimum height still applies. */
-  .pb-vote--row .muxui-toggle-button {
-    padding-block: 0;
-  }
-
   .pb-vote .muxui-toggle-button {
     padding-inline: 0;
     min-inline-size: var(--muxui-semantic-control-size-sm);

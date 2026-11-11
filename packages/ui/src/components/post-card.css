@@ -95,24 +95,16 @@
   .pb-post__domain {
     margin-inline-start: var(--muxui-semantic-layout-tight-gap);
     font-weight: var(--muxui-semantic-typography-text-font-weight);
-    white-space: nowrap;
+    overflow-wrap: anywhere;
   }
 
-  .pb-tag {
+  .pb-post__title .pb-badge {
     margin-inline-end: var(--muxui-semantic-layout-tight-gap);
     vertical-align: middle;
   }
 
-  .pb-tag--pin {
-    color: var(--pb-ok);
-  }
-
-  .pb-tag--lock {
-    color: var(--pb-warn);
-  }
-
-  .pb-tag--nsfw {
-    color: var(--pb-error);
+  .pb-post__by .pb-badge {
+    margin-inline-start: var(--muxui-semantic-layout-tight-gap);
   }
 
   .pb-post__meta .muxui-link {
@@ -124,34 +116,16 @@
     font-weight: var(--muxui-semantic-typography-label-weight);
   }
 
+  /* A handle has no spaces, so a long remote one (name@a-long-host.example) breaks anywhere rather
+     than overflowing a narrow column or being cut off by a Card that clips; the host stays visible. */
   .pb-handle {
-    white-space: nowrap;
+    overflow-wrap: anywhere;
   }
 
   .pb-handle__host {
-    color: var(--muxui-semantic-content-secondary);
+    /* Muted, not secondary: secondary falls under 4.5:1 on the sidebar's raised surface. */
+    color: var(--muxui-semantic-content-muted);
     font-weight: var(--muxui-semantic-typography-text-font-weight);
-  }
-
-  /* The role badge beside a name (Badge in badge.tsx), here until the shared Badge brings its own
-     styles; the comment thread and profiles use it too. */
-  .pb-badge {
-    margin-inline-start: var(--muxui-semantic-layout-tight-gap);
-    font-size: var(--muxui-semantic-typography-badge-size);
-    font-weight: var(--muxui-semantic-typography-label-weight);
-    letter-spacing: 0.03em;
-  }
-
-  .pb-badge--admin {
-    color: var(--pb-admin);
-  }
-
-  .pb-badge--moderator {
-    color: var(--pb-mod);
-  }
-
-  .pb-badge--op {
-    color: var(--pb-op);
   }
 
   .pb-post__excerpt {

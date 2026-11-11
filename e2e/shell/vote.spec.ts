@@ -81,7 +81,7 @@ test(`the first tap on the density control works at 6x CPU throttling (${attempt
     const page = await context.newPage();
     await throttled(page, 6);
     await gotoHydrated(page, '/kit');
-    await page.getByRole('group', { name: 'View' }).getByRole('button', { name: 'Compact' }).click({ timeout: 10_000 });
+    await page.getByRole('radiogroup', { name: 'View' }).getByRole('radio', { name: 'Compact' }).click({ timeout: 10_000 });
     await expect(page.getByTestId('kit-feed').locator('article').first(), `attempt ${attempt + 1}`).toHaveAttribute(
       'data-density',
       'compact',

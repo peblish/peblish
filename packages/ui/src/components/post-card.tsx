@@ -137,10 +137,10 @@ export function PostCard({
       </a>
       <div className="pb-post__body">
         <Text as={`h${headingLevel}`} {...titleType} className="pb-post__title">
-          {post.featured && <Tag tone="pin">{labels.pinned}</Tag>}
-          {post.locked && <Tag tone="lock">{labels.locked}</Tag>}
-          {post.sensitive && <Tag tone="nsfw">{labels.nsfw}</Tag>}
-          {post.nsfl && <Tag tone="nsfw">{labels.nsfl}</Tag>}
+          {post.featured && <Badge kind="pinned">{labels.pinned}</Badge>}
+          {post.locked && <Badge kind="locked">{labels.locked}</Badge>}
+          {post.sensitive && <Badge kind="nsfw">{labels.nsfw}</Badge>}
+          {post.nsfl && <Badge kind="nsfl">{labels.nsfl}</Badge>}
           <Link href={hrefs.post}>{post.removed ? labels.removed : post.deleted ? labels.deleted : post.title}</Link>
           {domain && !gone && (
             <Text size="xs" color="muted" className="pb-post__domain">
@@ -212,14 +212,5 @@ export function PostCard({
         <div className="pb-post__frame">{parts}</div>
       )}
     </article>
-  );
-}
-
-/** A state tag before the title (pinned, locked, NSFW, NSFL). */
-function Tag({ tone, children }: { tone: 'pin' | 'lock' | 'nsfw'; children: string }) {
-  return (
-    <Text variant="label" size="xs" className={`pb-tag pb-tag--${tone}`}>
-      {children}
-    </Text>
   );
 }

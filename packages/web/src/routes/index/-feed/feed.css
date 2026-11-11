@@ -17,70 +17,15 @@
     flex: 1;
   }
 
-  /* The sort and the Top period: links drawn like Mux UI's ToggleButtonGroup (same tokens), since
-     they are links (they work without JavaScript) rather than a selection. A profile's sort links
-     use the same class. */
-  .feed-seg {
-    display: inline-flex;
-    flex: 0 1 auto;
-    flex-wrap: wrap;
+  /* The sort and period tabs wrap inside the bar instead of widening the page. */
+  .feed-toolbar > nav {
     min-inline-size: 0;
-    gap: var(--muxui-semantic-layout-dense-gap);
-    padding: var(--muxui-semantic-layout-dense-gap);
-    border-radius: var(--muxui-semantic-control-radius);
-    background: var(--muxui-semantic-surface-subtle);
-  }
-
-  .feed-seg a {
-    display: inline-flex;
-    align-items: center;
-    min-block-size: var(--muxui-semantic-control-size-sm);
-    padding-inline: var(--muxui-semantic-layout-inset-small);
-    border-radius: var(--muxui-semantic-shape-option-radius);
-    color: var(--muxui-semantic-color-neutral-70);
-    font-size: var(--muxui-semantic-typography-label-s-font-size);
-    font-weight: var(--muxui-semantic-typography-control-weight);
-    line-height: 1;
-    text-decoration: none;
-  }
-
-  .feed-seg a:hover:not([aria-current]) {
-    background: var(--muxui-semantic-surface-hover);
-    color: var(--muxui-semantic-content-default);
-  }
-
-  .feed-seg a[aria-current] {
-    background: var(--muxui-semantic-color-neutral-80);
-    color: var(--muxui-semantic-color-neutral-80-fg);
+    max-inline-size: 100%;
   }
 
   .feed-list {
     margin: 0;
     padding: 0;
     list-style: none;
-  }
-
-  .feed-pages {
-    display: flex;
-    gap: var(--muxui-semantic-layout-group-gap);
-    justify-content: space-between;
-    padding-block-start: var(--muxui-semantic-layout-inset-small);
-  }
-
-  .feed-pages a[rel='next'] {
-    margin-inline-start: auto;
-  }
-
-  .feed-empty {
-    display: flex;
-    flex-direction: column;
-    gap: var(--muxui-semantic-layout-description-gap);
-    padding-block: var(--muxui-semantic-layout-content-gap);
-  }
-
-  .feed-empty h2,
-  .feed-empty p {
-    margin: 0;
-    max-inline-size: 60ch;
   }
 }

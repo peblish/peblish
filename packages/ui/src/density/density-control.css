@@ -2,36 +2,4 @@
   .pb-density {
     flex: none;
   }
-
-  /* A row of pressed buttons. The density switch no longer uses it (it is a Mux ToggleButtonGroup);
-     kept on Mux tokens for the comment sort, which still reads it until its lane moves to Mux. */
-  .pb-segmented {
-    display: inline-flex;
-    flex: none;
-    border: 1px solid var(--muxui-semantic-border-default);
-    border-radius: var(--muxui-semantic-shape-option-radius);
-  }
-
-  .pb-segmented button {
-    padding: var(--muxui-semantic-layout-dense-gap) var(--muxui-semantic-layout-inset-small);
-    border: 0;
-    border-inline-end: 1px solid var(--muxui-semantic-border-default);
-    background: none;
-    color: var(--muxui-semantic-content-default);
-    font: inherit;
-    cursor: pointer;
-  }
-
-  .pb-segmented button:last-child {
-    border-inline-end: 0;
-  }
-
-  .pb-segmented button:hover {
-    background: var(--muxui-semantic-surface-hover);
-  }
-
-  .pb-segmented button[aria-pressed='true'] {
-    background: var(--muxui-semantic-color-neutral-80);
-    color: var(--muxui-semantic-color-neutral-80-fg);
-  }
 }
