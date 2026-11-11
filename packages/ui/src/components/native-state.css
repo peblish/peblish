@@ -97,4 +97,29 @@
     border-radius: inherit;
     outline: 2px solid var(--muxui-semantic-focus-inner);
   }
+
+  /* Forced colours (high contrast) replace every colour that is not a system colour: a background
+     becomes Canvas, the indicator's own background, so the masked tick and Mux's static radio dot
+     vanish. Mux draws its own tick (the icon) and, once hydrated, its motion dot in CanvasText; these
+     do the same. The dot rule covers a dot the server chose too, since Mux's motion dot only exists
+     after hydration, and then Mux hides the static dot, so this changes nothing. The edges need
+     nothing: Mux forces the checkbox's to ButtonText with !important, and a radio's selected or
+     invalid edge is a non-system colour forced the same way in Mux's rules and in these. */
+  @media (forced-colors: active) {
+    .muxui-checkbox-field__button:not([data-muxui-state-selected]):has(input:checked) .muxui-checkbox-field__indicator::after,
+    .muxui-radio-field__dot {
+      background-color: CanvasText;
+      forced-color-adjust: none;
+    }
+
+    /* Mux's forced-colours ring for a focused checkbox, in place of the two outlines above. */
+    .muxui-checkbox-field__button:not([data-muxui-state-focused]):has(input:focus-visible) .muxui-checkbox-field__indicator {
+      outline: 2px solid Highlight;
+      outline-offset: 1px;
+    }
+
+    .muxui-checkbox-field__button:not([data-muxui-state-focused]):has(input:focus-visible) .muxui-checkbox-field__indicator::before {
+      content: none;
+    }
+  }
 }
