@@ -134,6 +134,27 @@ async function keyboardFocus(page: Page, tab: Locator) {
   await settle(page);
 }
 
+/** The contrast of a tab's outline colour against the page's background, both painted in a 1 px canvas. */
+const outlineContrast = (tab: Locator) =>
+  tab.evaluate((element) => {
+    const context = document.createElement('canvas').getContext('2d', { willReadFrequently: true })!;
+    const painted = (colour: string) => {
+      context.fillStyle = 'white';
+      context.fillRect(0, 0, 1, 1);
+      context.fillStyle = colour;
+      context.fillRect(0, 0, 1, 1);
+      return Array.from(context.getImageData(0, 0, 1, 1).data.subarray(0, 3));
+    };
+    const luminance = (rgb: number[]) => {
+      const [r, g, b] = rgb.map((v) => (v / 255 <= 0.04045 ? v / 255 / 12.92 : ((v / 255 + 0.055) / 1.055) ** 2.4));
+      return 0.2126 * r! + 0.7152 * g! + 0.0722 * b!;
+    };
+    const [light, dark] = [painted(getComputedStyle(element).outlineColor), painted(getComputedStyle(document.body).backgroundColor)]
+      .map(luminance)
+      .sort((a, b) => b - a);
+    return Math.round(((light! + 0.05) / (dark! + 0.05)) * 100) / 100;
+  });
+
 // Keyboard focus rings every tab, the current one too, and the ring does not wait for scripts: with
 // scripts on Mux marks a focused link itself, with scripts off (or a router link) only :focus-visible does.
 for (const scheme of ['light', 'dark'] as const) {
@@ -158,5 +179,40 @@ for (const scheme of ['light', 'dark'] as const) {
         expect(rings.off, `${variant}, ${which} tab: the same ring without scripts`).toEqual(rings.on);
       }
     await Promise.all(Object.values(pages).map((page) => page.context().close()));
+  });
+}
+
+// Forced colours drop every shadow, so a ring there must be an outline, in a system colour that stands
+// out from the page: one colour on every tab, the one Mux Tabs outline an unselected tab with.
+for (const javaScriptEnabled of [true, false]) {
+  test(`in forced colours keyboard focus outlines every LinkTab (scripts ${javaScriptEnabled ? 'on' : 'off'})`, async ({
+    browser,
+    baseURL,
+  }) => {
+    const page = await kit(browser, baseURL!, 'light', { javaScriptEnabled, forcedColors: 'active' });
+    const colours = new Set<string>();
+    for (const variant of variants)
+      for (const [which, index] of [
+        ['current', 0],
+        ['unselected', 1],
+      ] as const) {
+        const tab = linksOf(page, variant).nth(index);
+        await keyboardFocus(page, tab);
+        const { outline } = await ringOf(tab);
+        const label = `${variant}, ${which} tab`;
+        expect(outline, `${label}: a solid outline`).toMatch(/^solid 2px /);
+        expect(await outlineContrast(tab), `${label}: the outline stands out from the page`).toBeGreaterThanOrEqual(3);
+        colours.add(await tab.evaluate((element) => getComputedStyle(element).outlineColor));
+        if (javaScriptEnabled && which === 'unselected') {
+          // Mux Tabs outline an unselected focused tab the same way in forced colours.
+          const muxTab = page.getByTestId(`kit-tabs-${variant}`).getByRole('tablist').getByRole('tab').nth(1);
+          await keyboardFocus(page, page.getByTestId(`kit-tabs-${variant}`).getByRole('tablist').getByRole('tab').first());
+          await page.keyboard.press('ArrowRight');
+          await expect(muxTab).toBeFocused();
+          expect(outline, `${label}: as Mux Tabs outline it`).toBe((await ringOf(muxTab)).outline);
+        }
+      }
+    expect([...colours], 'one system colour for every focused tab').toHaveLength(1);
+    await page.context().close();
   });
 }
