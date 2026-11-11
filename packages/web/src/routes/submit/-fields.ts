@@ -7,6 +7,8 @@ import type { ComposerError, PostType } from './-types.ts';
 // Pure and browser-safe. `NewPost` and `PostEdit` (core) remain the judge of what is written.
 
 const linkMaxLength = 2000;
+/** As core's post input allows (`AltText`). */
+export const altTextMaxLength = 1000;
 
 /** An http or https address without credentials, as core's post input accepts. */
 export function httpUrl(value: string): boolean {
@@ -28,6 +30,8 @@ export interface FieldValues {
   title: string;
   url: string;
   body: string;
+  /** An image post's description; an edit has none. */
+  alt?: string;
   hasImage: boolean;
 }
 
@@ -46,5 +50,6 @@ export function firstProblem(values: FieldValues): ComposerError | null {
   }
   if (type === 'text' && values.body.length > markdownMaxLength) return 'body.too_long';
   if (type === 'image' && creating && !values.hasImage) return 'image.required';
+  if (type === 'image' && creating && (values.alt ?? '').length > altTextMaxLength) return 'alt.too_long';
   return null;
 }

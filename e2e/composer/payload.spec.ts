@@ -80,6 +80,18 @@ test('/submit first visit is inside the budget, and loads no editor chunk', asyn
   console.log(
     `payload /submit (signed in): js ${kB(sum(vendor))} of ${kB(budget.js)}, editor ${kB(sum(editor))} of ${kB(budget.editor)}, fonts ${kB(sum(fonts))} of ${kB(budget.fonts)}, Mux UI CSS ${kB(mux?.bytes ?? 0)} of ${kB(budget.css)}`,
   );
+  // What the composer adds to what the home page already loads (the shell's share is not its own),
+  // file by file, largest first, so a change in what the page pulls in shows by name.
+  const home = await coldContext(browser, origin, context);
+  const homePage = await home.newPage();
+  const homeTransfers = recordTransfers(homePage, origin);
+  await gotoHydrated(homePage, '/');
+  await homePage.waitForLoadState('networkidle');
+  const shared = new Set(scripts(await homeTransfers()).map(({ path }) => path));
+  await home.close();
+  const own = vendor.filter(({ path }) => !shared.has(path));
+  console.log(`payload /submit beyond the home page: js ${kB(sum(own))} in ${own.length} vendor files`);
+  for (const { path, bytes } of [...own].sort((a, b) => b.bytes - a.bytes)) console.log(`  ${kB(bytes)} ${path}`);
   expect(mux, 'the Mux UI stylesheet loads').toBeDefined();
   reportOver('/submit: Mux UI CSS', mux!.bytes, budget.css);
   reportOver('/submit: React and Mux UI JS', sum(vendor), budget.js);

@@ -155,6 +155,41 @@ test('a dropped image stays in the form while other fields change, also after on
   await page.close();
 });
 
+test('alt text over 1,000 characters is told beside the field, and the server refuses it by its code', async ({ browser, baseURL }) => {
+  setUploads(true);
+  const message = 'The alt text can have up to 1,000 characters.';
+  const page = await poster.newPage();
+  await gotoHydrated(page, '/submit');
+  await choose(page, world.communities.open.handle);
+  await chooseType(page, 'Image');
+  await page.getByLabel('Title').fill('A long description');
+  await page.getByLabel('Image file').setInputFiles({ name: 'pixel.png', mimeType: 'image/png', buffer: png() });
+  const alt = page.getByLabel('Alt text');
+  await alt.fill('a'.repeat(1_001));
+  // Shown while typing, as the field's description and as an alert; the form does not send.
+  await expect(page.getByText(message)).toBeVisible();
+  await expect(alt).toHaveAccessibleDescription(new RegExp(message.replace('.', '\\.')));
+  await expect(page.getByRole('alert').filter({ hasText: message })).toHaveCount(1);
+  await page.getByRole('button', { name: 'Post', exact: true }).click();
+  await expect(page).toHaveURL(/\/submit$/);
+  await page.close();
+
+  // Without scripts the server says the same, and was cutting the text short before.
+  const plain = await browser.newContext({ baseURL, javaScriptEnabled: false, storageState: await poster.storageState() });
+  const form = await plain.newPage();
+  await form.goto('/submit');
+  await choose(form, world.communities.open.handle);
+  await chooseType(form, 'Image');
+  await form.getByLabel('Title').fill('A long description');
+  await form.getByLabel('Image file').setInputFiles({ name: 'pixel.png', mimeType: 'image/png', buffer: png() });
+  await form.getByLabel('Alt text').fill('a'.repeat(1_001));
+  await form.getByRole('button', { name: 'Post', exact: true }).click();
+  await form.waitForURL(/\/submit\?.*error=alt\.too_long/);
+  await expect(form.getByText(message)).toBeVisible();
+  await expect(form.getByLabel('Alt text')).toHaveValue('a'.repeat(1_001));
+  await plain.close();
+});
+
 test('an image posts with scripts off, as a plain form', async ({ browser, baseURL }) => {
   setUploads(true);
   const context = await browser.newContext({ baseURL, javaScriptEnabled: false });

@@ -1,8 +1,9 @@
-import { useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
+import { useId, useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { IconButton } from '../components/icon-button.tsx';
+import { Notice } from '../components/notice.tsx';
 import { Prose } from '../components/prose.tsx';
 import { Text } from '../components/text.tsx';
-import { TextAreaField } from '../components/text-area.tsx';
+import { TextArea } from '../components/mux-text-area.tsx';
 import { ToggleButton, ToggleButtonGroup } from '../components/toggle-button-group.tsx';
 import { Toolbar } from '../components/toolbar.tsx';
 import { Tooltip } from '../components/tooltip.tsx';
@@ -100,6 +101,7 @@ export function MarkdownEditor({
   const selection = useRef<{ start: number; end: number } | null>(null);
   const requested = useRef(0);
   const enhanced = useHydrated();
+  const errorId = useId();
   const [view, setView] = useState<'write' | 'preview'>('write');
   const [preview, setPreview] = useState<Preview>({ status: 'idle' });
 
@@ -200,18 +202,20 @@ export function MarkdownEditor({
       </div>
       {/* The write pane stays mounted while previewing, so the form still carries the text. */}
       <div className="pb-md__write" hidden={view === 'preview'}>
-        <TextAreaField
-          label={label}
-          hideLabel
-          name={name}
-          rows={rows}
-          value={value}
-          onChange={onChange}
-          description={description}
-          invalid={invalid}
-          errorMessage={errorMessage}
-          disabled={disabled}
-        />
+        {/* Mux UI's TextArea parts rather than the shared TextAreaField, for the error: once hydrated
+            nothing else tells a person what is wrong, so it is an alert, and an error that appears
+            after the first render is linked to the field only by an id it already has (Mux UI rc.6). */}
+        <TextArea.Root value={value} onChange={onChange} invalid={invalid} disabled={disabled}>
+          <TextArea.Label className="pb-sr">{label}</TextArea.Label>
+          <TextArea.TextArea name={name} rows={rows} />
+          {description && <TextArea.Description>{description}</TextArea.Description>}
+          {invalid && errorMessage && (
+            // React Aria's FieldError, under TextArea.Error, drops a role, so the alert is inside it.
+            <TextArea.Error id={errorId}>
+              <span role="alert">{errorMessage}</span>
+            </TextArea.Error>
+          )}
+        </TextArea.Root>
       </div>
       {view === 'preview' && (
         <div className="pb-md__preview" aria-live="polite" aria-busy={preview.status === 'loading'}>
@@ -225,7 +229,11 @@ export function MarkdownEditor({
               {labels.previewEmpty}
             </Text>
           )}
-          {preview.status === 'failed' && <p role="alert">{labels.previewFailed}</p>}
+          {preview.status === 'failed' && (
+            <Notice tone="danger" role="alert">
+              {labels.previewFailed}
+            </Notice>
+          )}
           {preview.status === 'ready' && (
             <>
               {previewLead}

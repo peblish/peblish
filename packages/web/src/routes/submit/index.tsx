@@ -1,4 +1,5 @@
 import { Link } from '@peblish/ui/components/link';
+import { Notice } from '@peblish/ui/components/notice';
 import { Text } from '@peblish/ui/components/text';
 import composerCss from '@peblish/ui/composer/composer.css?url';
 import { createFileRoute, getRouteApi, redirect, useRouter } from '@tanstack/react-router';
@@ -92,9 +93,9 @@ function Submit() {
       </Text>
       {data.status === 'unavailable' ? (
         <>
-          <p role="alert" className="cmp__error">
+          <Notice tone="danger" role="alert">
             {t('composer', `unavailable.${data.reason}`)}
-          </p>
+          </Notice>
           <Text as="p">
             <Link href="/">{t('composer', 'back')}</Link>
           </Text>

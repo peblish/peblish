@@ -1,4 +1,5 @@
 import { Handle } from '@peblish/ui/components/handle';
+import { Notice } from '@peblish/ui/components/notice';
 import { RadioField } from '@peblish/ui/components/radio-field';
 import { RadioGroup } from '@peblish/ui/components/radio-group';
 import { Text } from '@peblish/ui/components/text';
@@ -96,9 +97,9 @@ export function CommunityPicker({
         </Text>
       )}
       {communities.length === 0 && error !== undefined && (
-        <p className="cmp__error" role="alert">
+        <Notice tone="danger" role="alert">
           {error}
-        </p>
+        </Notice>
       )}
     </div>
   );

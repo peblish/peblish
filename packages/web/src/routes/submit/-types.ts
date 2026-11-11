@@ -93,6 +93,7 @@ export const composerErrors = [
   'url.invalid',
   'body.too_long',
   'image.required',
+  'alt.too_long',
   'auth.required',
   'auth.email_unverified',
   'auth.actor_deleted',
@@ -127,7 +128,7 @@ export function asComposerError(code: string | undefined | null): ComposerError 
 }
 
 /** The form control a code is about, so the message sits beside it. Null codes show above the buttons. */
-export function errorField(code: ComposerError): 'community' | 'title' | 'url' | 'body' | 'image' | null {
+export function errorField(code: ComposerError): 'community' | 'title' | 'url' | 'body' | 'image' | 'alt' | null {
   switch (code) {
     case 'community.required':
       return 'community';
@@ -139,6 +140,8 @@ export function errorField(code: ComposerError): 'community' | 'title' | 'url' |
       return 'url';
     case 'body.too_long':
       return 'body';
+    case 'alt.too_long':
+      return 'alt';
     case 'image.required':
     case 'media.unsupported_type':
     case 'media.invalid_image':

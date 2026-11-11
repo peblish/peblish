@@ -12,7 +12,10 @@ const root = join(import.meta.dirname, '../..');
 export type Seed = {
   password: string;
   people: { poster: string; unverified: string; moderator: string; banned: string; young: string };
-  communities: Record<'open' | 'staff' | 'closed' | 'remote' | 'adult' | 'gated' | 'gone' | 'remoteStaff', { id: string; handle: string }>;
+  communities: Record<
+    'open' | 'staff' | 'closed' | 'remote' | 'adult' | 'gated' | 'gone' | 'remoteStaff' | 'long' | 'farAway',
+    { id: string; handle: string }
+  >;
 };
 
 export const seed = (): Seed => JSON.parse(execFileSync('node', ['e2e/composer/seed.ts'], { cwd: root, encoding: 'utf8' })) as Seed;

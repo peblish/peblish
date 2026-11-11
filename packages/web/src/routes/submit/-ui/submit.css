@@ -2,9 +2,10 @@
    Colours, radii and type come from Mux UI's tokens and components. */
 @layer app {
   .cmp-page {
+    /* The page's layout width, not a scale step. */
     max-width: 1020px;
     margin: 0 auto;
-    padding: 12px 16px 60px;
+    padding: var(--muxui-semantic-layout-inset-medium) var(--muxui-semantic-layout-inset-medium) var(--muxui-reference-dimension-space-xl);
   }
 
   .cmp-page__title {
@@ -13,9 +14,10 @@
 
   .cmp {
     display: grid;
+    /* 280px is the rules column's layout width. */
     grid-template-columns: minmax(0, 1fr) 280px;
-    gap: 32px;
-    padding-top: 8px;
+    gap: var(--muxui-semantic-layout-content-gap);
+    padding-top: var(--muxui-semantic-layout-inset-tiny);
   }
 
   .cmp__form {
@@ -33,11 +35,6 @@
   .cmp__editing,
   .cmp__status {
     margin: 0;
-  }
-
-  .cmp__error {
-    margin: 0;
-    color: var(--muxui-semantic-feedback-invalid);
   }
 
   /* Each post type's fields are shown by the checked radio (or an edit's fixed type), so they
@@ -59,7 +56,8 @@
     display: none;
   }
 
-  /* Only the options scroll in the box; the group's error sits below it, in sight. */
+  /* Only the options scroll in the box; the group's error sits below it, in sight. 220px is the
+     box's layout height; Mux UI has no border-width token, so the 1px stays. */
   .cmp__picker .cmp__options {
     max-height: 220px;
     padding: var(--muxui-semantic-layout-inset-small);
@@ -83,7 +81,7 @@
   /* The browser's own file button, in Mux UI's neutral button colours. */
   .cmp__drop input[type='file']::file-selector-button {
     margin-inline-end: var(--muxui-semantic-layout-control-gap);
-    padding: 2px 10px;
+    padding: var(--muxui-semantic-layout-dense-gap) var(--muxui-semantic-layout-inset-small);
     border: 0;
     border-radius: var(--muxui-semantic-control-radius);
     background: var(--muxui-semantic-action-neutral-background);
@@ -111,6 +109,14 @@
     min-width: 0;
   }
 
+  /* A community name or a rule title has no spaces to break at: it wraps anywhere rather than
+     running past the Card, which clips what overflows it. */
+  .cmp__aside .muxui-card__header,
+  .cmp__aside-body {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+
   .cmp__aside-body {
     display: grid;
     gap: var(--muxui-semantic-layout-control-gap);
@@ -124,17 +130,27 @@
     display: grid;
     gap: var(--muxui-semantic-layout-dense-gap);
     margin: 0;
+    /* Room for the list's numbers, in the text's own size: a layout measure, not a scale step. */
     padding-inline-start: 1.5em;
+  }
+
+  .cmp__rule {
+    display: grid;
+    gap: var(--muxui-semantic-layout-description-gap);
+  }
+
+  .cmp__rule > * {
+    margin: 0;
   }
 
   @media (max-width: 860px) {
     .cmp {
       grid-template-columns: minmax(0, 1fr);
-      gap: 20px;
+      gap: var(--muxui-semantic-layout-section-gap);
     }
 
     .cmp-page {
-      padding: 8px 10px 60px;
+      padding: var(--muxui-semantic-layout-inset-tiny) var(--muxui-semantic-layout-inset-small) var(--muxui-reference-dimension-space-xl);
     }
   }
 }
