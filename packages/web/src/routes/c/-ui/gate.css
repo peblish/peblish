@@ -10,8 +10,8 @@
     flex-direction: column;
     gap: var(--muxui-semantic-layout-content-gap);
   }
-  .gate-card h1,
-  .gate-card p {
+  /* Mux Text sets no margin, so Text rendered as a paragraph would keep the browser's (headings are reset in tokens.css). */
+  .gate-card .muxui-text {
     margin: 0;
   }
   .gate-actions {
@@ -29,40 +29,19 @@
     align-items: flex-start;
     gap: var(--muxui-semantic-layout-content-gap);
   }
-  .gate-declare fieldset {
-    margin: 0;
-    padding: 0;
-    border: 0;
+  .gate-birth {
+    display: flex;
+    flex-direction: column;
+    gap: var(--muxui-semantic-layout-tight-gap);
     min-inline-size: 0;
     inline-size: 100%;
   }
-  .gate-declare legend {
-    margin-block-end: var(--muxui-semantic-layout-tight-gap);
-    padding: 0;
-  }
+  /* Top-aligned: a message under one field (shown after a refused post) leaves the three boxes in line. */
   .gate-date {
     display: grid;
     grid-template-columns: 5rem minmax(0, 1fr) 6rem;
     gap: var(--muxui-semantic-layout-control-gap);
-    align-items: end;
-  }
-  /* A link that is a page's main action (the gate's Sign in, the community's New post): a Mux Link
-     drawn with the tokens of Mux's primary Button. This file loads wherever either one shows. */
-  .cm-cta {
-    display: inline-flex;
-    align-items: center;
-    min-block-size: var(--muxui-semantic-control-size-md);
-    padding-inline: var(--muxui-semantic-control-padding-inline);
-    border-radius: var(--muxui-semantic-control-radius);
-    background: var(--muxui-semantic-selection-track);
-    color: var(--muxui-semantic-action-foreground);
-    font-weight: var(--muxui-semantic-typography-control-weight);
-    box-shadow: var(--muxui-semantic-elevation-control);
-    text-decoration: none;
-  }
-  .cm-cta:hover {
-    background: var(--muxui-semantic-action-background-hover);
-    color: var(--muxui-semantic-action-foreground);
+    align-items: start;
   }
   .gate-hide {
     display: inline-block;

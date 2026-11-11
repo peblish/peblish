@@ -6,8 +6,8 @@
     flex-direction: column;
     gap: var(--muxui-semantic-layout-content-gap);
   }
-  .dir p,
-  .dir h1 {
+  /* Mux Text sets no margin, so Text rendered as a paragraph would keep the browser's (headings are reset in tokens.css). */
+  .dir .muxui-text {
     margin: 0;
   }
   .dir-toolbar {
@@ -43,10 +43,11 @@
   .dir-field {
     flex: 1 1 320px;
   }
-  /* The hint under the field would push the button down: line it up with the input instead. */
+  /* The hint under the field would push the button down: line it up with the input instead, one
+     label line (1lh) and the label's gap below the field's top. */
   .dir-buttons {
     align-self: flex-start;
-    padding-block-start: calc(var(--muxui-semantic-layout-tight-gap) + 1lh);
+    padding-block-start: calc(var(--muxui-semantic-layout-tight-gap) + 1lh); /* layout */
   }
   .dir-pending {
     flex-basis: 100%;

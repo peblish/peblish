@@ -8,7 +8,7 @@ import { createServerFn } from '@tanstack/react-start';
 import { getRequestHeader } from '@tanstack/react-start/server';
 import { type } from 'arktype';
 import { negotiateLocale } from '../../i18n/negotiate.ts';
-import { translate, translatePlural, type MessageKey } from '../../i18n/translate.ts';
+import { translate, type MessageKey } from '../../i18n/translate.ts';
 import { pageSession } from '../../server/auth.ts';
 import { createMarkdownRenderer, siteMarkdown } from '../../server/markdown.ts';
 import { communityPath } from '../../shell/paths.ts';
@@ -46,6 +46,7 @@ export const loadCommunityPage = createServerFn({ method: 'GET' })
     const community = { kind: 'actor', id, apId: page.actor.apId } as const;
     const locale = negotiateLocale(getRequestHeader('accept-language'));
     const now = new Date();
+    const count = new Intl.NumberFormat(locale);
     const text = (key: MessageKey<'communities'>, params?: Record<string, string | number>) =>
       translate(locale, 'communities', key, params);
     const { actor } = page;
@@ -69,7 +70,8 @@ export const loadCommunityPage = createServerFn({ method: 'GET' })
       handle: data.handle,
       actor: actor satisfies ActorRef,
       title: actor.displayName ?? actor.name,
-      address: `!${actor.name}@${page.home}`,
+      /** The full handle, name@home, without the `!`. */
+      address: `${actor.name}@${page.home}`,
       nsfw: page.sensitive,
       nsfl: page.nsfl,
       restricted: page.postingRestrictedToMods,
@@ -77,9 +79,9 @@ export const loadCommunityPage = createServerFn({ method: 'GET' })
       banner: renderer.image(page.bannerUrl, community),
       icon: renderer.image(page.iconUrl, community),
       stats: {
-        subscribers: translatePlural(locale, 'communities', remote ? 'page.subscribersHere' : 'page.subscribers', page.subscribers),
-        posts: translatePlural(locale, 'communities', remote ? 'page.postsHeld' : 'page.posts', page.postCount),
-        created: text('page.created', { date: dateText(locale, page.createdAt) }),
+        subscribers: { label: text(remote ? 'page.stat.subscribersHere' : 'page.stat.subscribers'), value: count.format(page.subscribers) },
+        posts: { label: text(remote ? 'page.stat.postsHeld' : 'page.stat.posts'), value: count.format(page.postCount) },
+        created: { label: text('page.stat.created'), value: dateText(locale, page.createdAt) },
       },
       strip: remote
         ? {

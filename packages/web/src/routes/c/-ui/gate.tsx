@@ -1,6 +1,8 @@
 import { Badge } from '@peblish/ui/components/badge';
 import { Button } from '@peblish/ui/components/button';
+import { ButtonLink } from '@peblish/ui/components/button-link';
 import { Card } from '@peblish/ui/components/card';
+import { Group } from '@peblish/ui/components/group';
 import { Link } from '@peblish/ui/components/link';
 import { Notice } from '@peblish/ui/components/notice';
 import { Select } from '@peblish/ui/components/select';
@@ -103,11 +105,12 @@ export function GateNotice({ data, error }: { data: GateData; error?: string | u
         <form method="post" action={action} className="gate-declare">
           <input type="hidden" name="intent" value="declare" />
           <input type="hidden" name="redirect" value={back} />
-          <fieldset>
-            <legend>
-              <Text variant="label">{t('communities', 'gate.declare.legend')}</Text>
-            </legend>
-            <div className="gate-date">
+          {/* A Mux Group named by its label, as sign-up's date of birth. */}
+          <div className="gate-birth">
+            <Text as="span" variant="label" id="gate-birth-label">
+              {t('communities', 'gate.declare.legend')}
+            </Text>
+            <Group aria-labelledby="gate-birth-label" className="gate-date">
               <TextField
                 label={t('communities', 'gate.declare.day')}
                 name="day"
@@ -131,8 +134,8 @@ export function GateNotice({ data, error }: { data: GateData; error?: string | u
                 autoComplete="bday-year"
                 required
               />
-            </div>
-          </fieldset>
+            </Group>
+          </div>
           <Text as="p" size="sm" color="muted">
             {t('communities', 'gate.declare.note')}
           </Text>
@@ -168,9 +171,7 @@ export function GateNotice({ data, error }: { data: GateData; error?: string | u
       <Body>{t('communities', subject === 'community' ? 'gate.community.about' : 'gate.post.about', { handle: shown })}</Body>
       <Body>{t('communities', 'gate.signedOut')}</Body>
       <div className="gate-actions">
-        <Link className="cm-cta" href={`/auth/sign-in?redirect=${encodeURIComponent(back)}`}>
-          {t('communities', 'gate.signIn')}
-        </Link>
+        <ButtonLink href={`/auth/sign-in?redirect=${encodeURIComponent(back)}`}>{t('communities', 'gate.signIn')}</ButtonLink>
         <Link href="/auth/sign-up">{t('communities', 'gate.signUp')}</Link>
         {goBackLink}
       </div>

@@ -38,6 +38,13 @@ test.beforeAll(() => {
 
 const community = (handle: string) => `/c/${handle}`;
 
+/** The value of one fact in the community header's stats (a FactList), by its label. */
+const stat = (page: Page, label: string) =>
+  page
+    .locator('.cm-stats .pb-facts__item')
+    .filter({ has: page.locator('dt', { hasText: new RegExp(`^${label}$`) }) })
+    .locator('dd');
+
 async function signedIn(page: Page, name: string) {
   await gotoHydrated(page, '/auth/sign-in');
   await signIn(page, `@${name}`, seed.password);
@@ -133,6 +140,34 @@ test.describe('the NSFW gate', () => {
     await expectAccessible(page);
   });
 
+  test("before declaring, an empty day or year is explained under its box, in the page's language, and the three boxes stay in line", async ({
+    browser,
+  }) => {
+    const signing = await (await browser.newContext({ locale: 'en-US' })).newPage();
+    await signedIn(signing, seed.people.undeclared);
+    const storageState = await signing.context().storageState();
+    await signing.context().close();
+    for (const [locale, day, month, year, submit, words] of [
+      ['en-US', 'Day', 'Month', 'Year', 'Declare and continue', 'Fill in this field.'],
+      ['de-DE', 'Tag', 'Monat', 'Jahr', 'Erklären und weiter', 'Fülle dieses Feld aus.'],
+    ] as const) {
+      const context = await browser.newContext({ locale, storageState });
+      const page = await context.newPage();
+      await gotoHydrated(page, community(seed.communities.nsfw.handle));
+      const boxes = [
+        page.getByRole('textbox', { name: day }),
+        page.getByRole('combobox', { name: month }),
+        page.getByRole('textbox', { name: year }),
+      ];
+      await boxes[0]!.fill('3');
+      await page.getByRole('button', { name: submit }).click();
+      await expect(boxes[2]!).toHaveAccessibleDescription(words);
+      const tops = await Promise.all(boxes.map(async (box) => (await box.boundingBox())?.y));
+      expect(new Set(tops).size).toBe(1);
+      await context.close();
+    }
+  });
+
   test('declaring 16 or older, a viewer lands on Hide NSFW is on; a false date is refused in place', async ({ page }) => {
     await signedIn(page, seed.people.undeclared);
     await gotoHydrated(page, community(seed.communities.nsfw.handle));
@@ -202,8 +237,8 @@ test.describe('the community page', () => {
     expect(response?.headers()['cache-control']).toBe('private, no-store');
     await page.locator('html[data-hydrated="1"]').waitFor({ state: 'attached' });
     await expect(page.getByRole('heading', { level: 1 })).toHaveText(`Open ${seed.suffix}`);
-    await expect(page.locator('.cm-stats')).toContainText('3 posts');
-    await expect(page.locator('.cm-stats')).toContainText('subscribers');
+    await expect(stat(page, 'Posts')).toHaveText('3');
+    await expect(stat(page, 'Subscribers')).toBeVisible();
     await expect(page.getByRole('link', { name: `Plain post ${seed.suffix}` })).toBeVisible();
     await expect(page.getByRole('region', { name: 'About' }).or(page.locator('#about'))).toContainText('A friendly place');
     await expect(page.locator('.cm-rules > li')).toContainText(['Be civil', 'Stay on topic']);
@@ -222,7 +257,7 @@ test.describe('the community page', () => {
     await expect(page.getByRole('link', { name: 'Be the first to post' })).toHaveAttribute('href', `/submit?community=${handle}`);
     await page.getByRole('button', { name: 'Join', exact: true }).click();
     await expect(page.getByRole('button', { name: 'Joined' })).toBeVisible();
-    await expect(page.locator('.cm-stats')).toContainText('1 subscriber');
+    await expect(stat(page, 'Subscribers')).toHaveText('1');
     await page.reload();
     await expect(page.getByRole('button', { name: 'Joined' })).toBeVisible();
     await page.getByRole('button', { name: 'Joined' }).click();
@@ -265,7 +300,7 @@ test.describe('the community page', () => {
     await expect(mods.nth(0)).toContainText('fresh, synced');
     await expect(mods.nth(1)).toContainText('stale, last seen');
     await expect(mods.nth(2)).toContainText('unknown');
-    await expect(page.locator('.cm-stats')).toContainText('held locally');
+    await expect(stat(page, 'Posts held locally')).toHaveText('1');
     await page.getByRole('button', { name: 'Join', exact: true }).click();
     await expect(page.getByRole('button', { name: 'Pending' })).toBeVisible();
     await page.getByRole('button', { name: 'Pending' }).click();
@@ -492,7 +527,7 @@ test.describe('a German browser', () => {
     const log = recordConsole(page);
     await gotoHydrated(page, community(seed.communities.open.handle));
     await expect(page.getByRole('button', { name: 'Beitreten' })).toBeVisible();
-    await expect(page.locator('.cm-stats')).toContainText('Beiträge');
+    await expect(stat(page, 'Beiträge')).toHaveText('3');
     await page.waitForLoadState('networkidle');
     expect(log.hydrationProblems()).toEqual([]);
     await expectAccessible(page);

@@ -1,12 +1,14 @@
 import { Avatar } from '@peblish/ui/components/avatar';
 import { Badge } from '@peblish/ui/components/badge';
 import { Button } from '@peblish/ui/components/button';
+import { ButtonLink } from '@peblish/ui/components/button-link';
 import { Card } from '@peblish/ui/components/card';
-import { Disclosure } from '@peblish/ui/components/disclosure';
-import { DisclosureGroup } from '@peblish/ui/components/disclosure-group';
 import { EmptyState } from '@peblish/ui/components/empty-state';
+import { FactList } from '@peblish/ui/components/fact-list';
+import { BidiText, Handle } from '@peblish/ui/components/handle';
 import { Image } from '@peblish/ui/components/image';
 import { Link } from '@peblish/ui/components/link';
+import { LinkedDisclosure } from '@peblish/ui/components/linked-disclosure';
 import { Notice } from '@peblish/ui/components/notice';
 import { Prose } from '@peblish/ui/components/prose';
 import { Text } from '@peblish/ui/components/text';
@@ -29,14 +31,13 @@ import { HideNsfwForm } from './gate.tsx';
 // banner, avatar, header and the feed on the left; About, Rules, Moderators and Languages as
 // cards on the right, below the feed on a phone (with a jump link). Counts are local: what this
 // server holds. Join, Leave and Cancel are plain form posts to this page (c/-intents.ts);
-// hydrated, they post by fetch and reload the loader. Mod tools are a Mux Disclosure, which opens
-// in place once the page has hydrated; without script a "Mod tools" link asks for the page with
-// ?tools=1, which the server renders with the Disclosure open (community.css shows the link and
-// hides the closed Disclosure only under `scripting: none`). Rules are content, so their texts are
-// always shown, as the mock's numbered list.
+// hydrated, they post by fetch and reload the loader. Mod tools are a LinkedDisclosure: a Mux
+// Disclosure once the page has hydrated, and without script a link to ?tools=1, where the server
+// renders it open. Rules are content, so their texts are always shown, as the mock's numbered
+// list. Names from other servers (the title, moderators' handles) are isolated and stripped of
+// directional controls.
 
-// The Disclosure's id names it to its group (Mux renders it on no element); the group's id is the link's target.
-const toolsId = 'mod-tools';
+// The LinkedDisclosure's id: the fragment its scripts-off link ends with.
 const toolsAnchor = 'cm-tools';
 
 /** One or two letters for an avatar without a picture. */
@@ -82,12 +83,12 @@ export function CommunityPage({
           <Avatar.Fallback>{initial(data.title)}</Avatar.Fallback>
         </Avatar.Root>
         <div className="cm-title">
-          <Text as="h1" variant="heading" size="md">
-            {data.title}
+          <Text as="h1" variant="heading" size="md" className="cm-name">
+            <BidiText text={data.title} />
           </Text>
           {/* A div: it can hold the Hide NSFW form, which a <p> cannot contain. */}
           <Text as="div" size="sm" color="muted" className="cm-address">
-            {data.address}
+            <Handle prefix="!" handle={data.address} />
             {data.nsfl ? (
               <Badge kind="nsfl">{t('communities', 'page.nsfl')}</Badge>
             ) : (
@@ -96,9 +97,15 @@ export function CommunityPage({
             {data.restricted && <Badge kind="restricted">{t('communities', 'page.restricted')}</Badge>}
             {(data.nsfw || data.nsfl) && data.viewer && <HideNsfwForm handle={data.handle} back={path} />}
           </Text>
-          <Text as="p" size="sm" color="muted" className="cm-stats">
-            {data.stats.subscribers} · {data.stats.posts} · {data.stats.created}
-          </Text>
+          <FactList
+            layout="inline"
+            className="cm-stats"
+            items={[
+              { key: 'subscribers', label: data.stats.subscribers.label, value: data.stats.subscribers.value },
+              { key: 'posts', label: data.stats.posts.label, value: data.stats.posts.value },
+              { key: 'created', label: data.stats.created.label, value: data.stats.created.value },
+            ]}
+          />
         </div>
         <div className="cm-actions">
           <JoinControl data={data} path={path} />
@@ -110,40 +117,35 @@ export function CommunityPage({
             </>
           )}
         </div>
-        {data.canModerate && actions && !tools && (
-          <Link className="cm-tools-open" href={toolsHref}>
-            {t('communities', 'mod.tools')}
-          </Link>
-        )}
         {data.canModerate && actions && (
-          // In a group, Mux draws the Disclosure with its chevron. The moderation slot adds the Modlog link.
-          <DisclosureGroup
+          // The moderation slot adds the Modlog link.
+          <LinkedDisclosure
             id={toolsAnchor}
-            className={tools ? 'cm-tools' : 'cm-tools cm-tools-closed'}
-            defaultExpandedIds={tools ? [toolsId] : []}
+            className="cm-tools"
+            title={t('communities', 'mod.tools')}
+            openHref={toolsHref}
+            defaultExpanded={tools}
           >
-            <Disclosure id={toolsId} title={t('communities', 'mod.tools')}>
-              {/* One row: Reports, Edit community, then the slot's Modlog; a remote copy says why Edit is missing last. */}
-              <div className="cm-tool-row">
-                <ul className="cm-tool-links">
+            {/* One row: Reports, Edit community, then the slot's Modlog; a remote copy says why Edit is missing last. */}
+            <div className="cm-tool-row">
+              <ul className="cm-tool-links">
+                <li>
+                  <Link href={reportQueuePath(data.handle)}>{t('communities', 'mod.reports')}</Link>
+                </li>
+                {data.actor.local && (
                   <li>
-                    <Link href={reportQueuePath(data.handle)}>{t('communities', 'mod.reports')}</Link>
+                    <Link href={editCommunityPath(data.handle)}>{t('communities', 'mod.edit')}</Link>
                   </li>
-                  {data.actor.local && (
-                    <li>
-                      <Link href={editCommunityPath(data.handle)}>{t('communities', 'mod.edit')}</Link>
-                    </li>
-                  )}
-                </ul>
-                <CommunityModerate {...actions} />
-                {!data.actor.local && (
-                  <Text size="sm" color="muted">
-                    {t('communities', 'mod.remote')}
-                  </Text>
                 )}
-              </div>
-            </Disclosure>
-          </DisclosureGroup>
+              </ul>
+              <CommunityModerate {...actions} />
+              {!data.actor.local && (
+                <Text size="sm" color="muted">
+                  {t('communities', 'mod.remote')}
+                </Text>
+              )}
+            </div>
+          </LinkedDisclosure>
         )}
       </header>
       {error && (
@@ -219,7 +221,9 @@ export function CommunityPage({
                       <Avatar.Fallback>{initial(moderator.handle)}</Avatar.Fallback>
                     </Avatar.Root>
                     <Text size="sm">
-                      <Link href={userPath({ handle: moderator.handle })}>@{moderator.handle}</Link>{' '}
+                      <Link href={userPath({ handle: moderator.handle })}>
+                        <Handle prefix="@" handle={moderator.handle} />
+                      </Link>{' '}
                       <Text size="sm" color="muted">
                         {moderator.role}, {moderator.note}
                       </Text>
@@ -303,9 +307,9 @@ function JoinControl({ data, path }: { data: CommunityPageData; path: string }) 
         {label}
       </Button>
       {failure && (
-        <Text size="sm" role="alert" className="cm-error">
+        <Notice tone="danger" role="alert">
           {t('communities', errorKey(failure))}
-        </Text>
+        </Notice>
       )}
     </form>
   );
@@ -328,8 +332,6 @@ function NewPost({ data }: { data: CommunityPageData }) {
       </span>
     );
   return (
-    <Link className="cm-cta" href={`${createPostPath}?community=${encodeURIComponent(data.handle)}`}>
-      {t('communities', 'page.newPost')}
-    </Link>
+    <ButtonLink href={`${createPostPath}?community=${encodeURIComponent(data.handle)}`}>{t('communities', 'page.newPost')}</ButtonLink>
   );
 }

@@ -395,6 +395,20 @@ test.describe('resolve', () => {
     await context.close();
   });
 
+  test("Find with an empty box says so under the field, in the page's language", async ({ browser }) => {
+    for (const [locale, label, find, words] of [
+      ['en-US', 'Handle or link', 'Find', 'Fill in this field.'],
+      ['de-DE', 'Adresse oder Link', 'Finden', 'Fülle dieses Feld aus.'],
+    ] as const) {
+      const { context, page } = await as(browser, viewerState, { locale });
+      await gotoHydrated(page, '/resolve');
+      await page.getByRole('button', { name: find }).click();
+      await expect(page.getByRole('textbox', { name: label })).toHaveAccessibleDescription(new RegExp(words.replace('.', '\\.')));
+      await expect(page).toHaveURL(/\/resolve$/);
+      await context.close();
+    }
+  });
+
   test('a handle we hold goes to its local page: hydrated, and with a plain form post', async ({ browser }) => {
     const handle = `${seed.communities.remote}@${seed.host}`;
     const { context, page } = await as(browser, viewerState);
