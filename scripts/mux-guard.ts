@@ -64,9 +64,9 @@ const iconsModule = 'packages/ui/src/components/icons.tsx';
 
 /**
  * `anchor` names what encloses a violation (components and functions, or CSS preludes), for exceptions; a CSS
- * declaration's violation also carries its `value`, and a type selector's its `selector` list.
+ * declaration's violation also carries its `value`, and a type selector's the expanded `branches` that style an element.
  */
-export type Violation = { file: string; line: number; rule: Rule; detail: string; anchor?: string[]; value?: string; selector?: string };
+export type Violation = { file: string; line: number; rule: Rule; detail: string; anchor?: string[]; value?: string; branches?: string[] };
 export type Counts = Record<string, Partial<Record<Rule, number>>>;
 
 // Elements Mux has a component for, and what to use instead.
@@ -999,41 +999,68 @@ function expandSelector(selector: string): string[] {
 }
 
 /**
- * Type selectors for elements Mux has a component for, outside :not()/:has() and not inside a Mux component's
- * markup: an element counts as inside when its own compound, or a compound it is a descendant or child of,
- * carries a `.muxui-*` class (or a Mux data attribute). A sibling combinator does not put it inside, and each
- * branch of the selector list and of an :is() or :where() must hold on its own.
+ * A selector with strings and attribute selectors blanked (a Mux data attribute becomes a `.muxui-` class) and
+ * :not() and :has() removed, since they test other elements and style none.
  */
-export function elementSelectors(prelude: string): string[] {
-  if (prelude.startsWith('@')) return [];
-  let rest = prelude
+function plainSelector(selector: string): string {
+  let rest = selector
     .replace(/"[^"]*"|'[^']*'/g, '""')
     .replace(/\[[^\]]*\]/g, (attribute) => (attribute.includes('muxui') ? '.muxui-attribute' : '[]'));
-  // :not() and :has() test other elements, so their arguments are not styled.
   for (let match = /:(not|has)\(/i.exec(rest); match; match = /:(not|has)\(/i.exec(rest))
     rest = rest.slice(0, match.index) + rest.slice(closing(rest, match.index + match[0].length));
-  const found = new Set<string>();
-  for (const selector of selectorBranches(rest).flatMap(expandSelector)) {
-    // Other functional pseudo-classes and elements (:nth-child(2n + 1), ::part(x)) hold no element of their own.
-    let plain = selector;
-    for (let match = /:[\w-]+\((?!\))/.exec(plain); match; match = /:[\w-]+\((?!\))/.exec(plain))
-      plain = `${plain.slice(0, match.index + match[0].length)}${plain.slice(closing(plain, match.index + match[0].length) - 1)}`;
-    // Compounds at even indexes, the combinator before each at the odd one (undefined for a descendant).
-    const parts = plain.trim().split(/\s*([>+~])\s*|\s+/);
-    let ancestorMux = false;
-    let previousMux = false;
-    for (let i = 0; i < parts.length; i += 2) {
-      const compound = parts[i] ?? '';
-      if (i > 0 && parts[i - 1] !== '+' && parts[i - 1] !== '~') ancestorMux ||= previousMux;
-      const ownMux = compound.includes('.muxui-');
-      const type = /^[a-z][a-z0-9]*/i.exec(compound)?.[0].toLowerCase();
-      // <svg> and <time> exist only in icons.tsx and time.tsx (the script rules see to that), so styling them by tag is fine.
-      if (!ancestorMux && !ownMux && type && type !== 'svg' && type !== 'time' && (type in replacements || textTags.has(type)))
-        found.add(type);
-      previousMux = ownMux;
-    }
+  return rest;
+}
+
+/** A nested rule's selector with its parent's put in: at each `&`, or as the ancestor of a branch with none. */
+const nest = (parent: string, child: string) =>
+  selectorBranches(child)
+    .map((branch) => (branch.includes('&') ? branch.replaceAll('&', `:is(${parent})`) : `:is(${parent}) ${branch}`))
+    .join(', ');
+
+/** A parent selector's type names as `*`, so a nested rule reports only the elements it names itself. */
+const untyped = (selector: string) => selector.replace(/(^|[\s>+~(,])[a-z][a-z0-9-]*/gi, '$1*');
+
+/** The element types one complex selector styles that Mux has a component for and that are not inside Mux markup. */
+function styledElements(selector: string): string[] {
+  // Other functional pseudo-classes and elements (:nth-child(2n + 1), ::part(x)) hold no element of their own.
+  let plain = selector;
+  for (let match = /:[\w-]+\((?!\))/.exec(plain); match; match = /:[\w-]+\((?!\))/.exec(plain))
+    plain = `${plain.slice(0, match.index + match[0].length)}${plain.slice(closing(plain, match.index + match[0].length) - 1)}`;
+  // Compounds at even indexes, the combinator before each at the odd one (undefined for a descendant).
+  const parts = plain.trim().split(/\s*([>+~])\s*|\s+/);
+  const found: string[] = [];
+  let ancestorMux = false;
+  let previousMux = false;
+  for (let i = 0; i < parts.length; i += 2) {
+    const compound = parts[i] ?? '';
+    if (i > 0 && parts[i - 1] !== '+' && parts[i - 1] !== '~') ancestorMux ||= previousMux;
+    const ownMux = compound.includes('.muxui-');
+    const type = /^[a-z][a-z0-9]*/i.exec(compound)?.[0].toLowerCase();
+    // <svg> and <time> exist only in icons.tsx and time.tsx (the script rules see to that), so styling them by tag is fine.
+    if (!ancestorMux && !ownMux && type && type !== 'svg' && type !== 'time' && (type in replacements || textTags.has(type)))
+      found.push(type);
+    previousMux = ownMux;
   }
-  return [...found];
+  return found;
+}
+
+/**
+ * The branches of a rule's selector that style an element Mux has a component for outside Mux's markup, each with
+ * those elements. The selector is read with its parents' put in (`parents` are the enclosing preludes; at-rules
+ * among them are skipped), then every :is() and :where() (and the like) expanded, so each branch is one complex
+ * selector. An element counts as inside Mux markup when its own compound, or a compound it is a descendant or child
+ * of, carries a `.muxui-*` class (or a Mux data attribute); a sibling combinator does not put it inside.
+ */
+export function elementBranches(prelude: string, parents: readonly string[] = []): { branch: string; elements: string[] }[] {
+  if (prelude.startsWith('@')) return [];
+  let context: string | undefined;
+  for (const parent of parents)
+    if (!parent.startsWith('@')) context = context === undefined ? plainSelector(parent) : nest(context, plainSelector(parent));
+  const selector = context === undefined ? plainSelector(prelude) : nest(untyped(context), plainSelector(prelude));
+  return selectorBranches(selector)
+    .flatMap(expandSelector)
+    .map((branch) => ({ branch: branch.trim(), elements: styledElements(branch) }))
+    .filter(({ elements }) => elements.length);
 }
 
 /** Scans a stylesheet for every CSS rule; `layout` counts the /* layout *\/ comments and those that waived a spacing value. */
@@ -1078,15 +1105,17 @@ export function scanCss(
         `${text} (${made(registration) ? 'not a Mux UI token' : 'registers a Mux UI token again'})`,
         anchor,
       );
-    const elements = elementSelectors(text);
-    if (elements.length)
+    const styled = elementBranches(text, anchor);
+    const elements = [...new Set(styled.flatMap(({ elements }) => elements))];
+    if (elements.length) {
       add(
         line,
         'css-element-selector',
         `${text} (${elements.map((tag) => `${tag}: ${textTags.has(tag) ? 'Text' : replacements[tag]}`).join(', ')})`,
         anchor,
       );
-    if (elements.length) out.at(-1)!.selector = text;
+      out.at(-1)!.branches = styled.map(({ branch }) => branch);
+    }
   }
   for (const { line, property, value, text, anchor, layout, important } of declarations(css)) {
     const where = [...anchor];
@@ -1248,9 +1277,9 @@ export function parseExceptions(json: string): Exception[] {
 const matches = (exception: Exception, v: Violation) =>
   v.file === exception.file &&
   v.rule === exception.rule &&
-  v.detail.includes(exception.match) &&
-  // A selector list's every branch must match on its own, so `.pb-prose a, button` does not pass as `.pb-prose `.
-  (v.selector === undefined || selectorBranches(v.selector).every((branch) => branch.includes(exception.match))) &&
+  // For a type selector, every branch that styles an element must match on its own, :is() and nesting expanded, so
+  // neither `.pb-prose a, button` nor `:is(.pb-prose a, button)` passes as `.pb-prose `; a branch that styles none needs none.
+  (v.branches ? v.branches.every((branch) => branch.includes(exception.match)) : v.detail.includes(exception.match)) &&
   (exception.anchor === undefined || (v.anchor ?? []).includes(exception.anchor)) &&
   (exception.value === undefined || v.value === exception.value) &&
   (exception.condition === undefined || (v.anchor ?? []).includes(exception.condition));

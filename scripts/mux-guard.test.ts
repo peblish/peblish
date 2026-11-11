@@ -747,6 +747,28 @@ test('a selector exception holds for every branch of the list; a declaration exc
   );
 });
 
+test('a selector exception must match every branch that styles an element, after :is(), :where() and nesting are expanded', () => {
+  const file = 'packages/ui/src/a.css';
+  const sheet = lines(
+    '.pb-prose blockquote, .pb-quote { margin: 0; }', // 1: legal, .pb-quote styles no element
+    ':is(.pb-prose a, button) { margin: 0; }', // 2: every button rides on the prose exception
+    '.pb-prose :is(td, th), .pb-quote { margin: 0; }', // 3: legal
+    ':where(.pb-prose, .x) pre { margin: 0; }', // 4: a pre under .x
+    '.pb-prose a {', // 5: legal
+    '  &:hover, .pb-quote & { margin: 0; }', // 6: legal, no element of its own
+    '  & code, > b { margin: 0; }', // 7: legal, inside .pb-prose a
+    '}', // 8
+    '.pb-prose, .x { & button { margin: 0; } }', // 9: a button under .x
+    '.muxui-card { a { margin: 0; } & + a { margin: 0; } }', // 10: the nested a is inside the card, its sibling is not
+  );
+  const exceptions = parseExceptions(
+    JSON.stringify([{ file, rule: 'css-element-selector', match: '.pb-prose ', count: 4, reason: 'prose' }]),
+  );
+  const { kept, problems } = applyExceptions(scanCss(file, sheet, anyDefined).violations, exceptions);
+  expect(found(kept)).toEqual(['css-element-selector:2', 'css-element-selector:4', 'css-element-selector:9', 'css-element-selector:10']);
+  expect(problems).toEqual([]);
+});
+
 test('report mode fails only where a file and rule rose above the baseline', () => {
   const counts = count([
     { file: 'a.css', line: 1, rule: 'css-colour', detail: '' },
