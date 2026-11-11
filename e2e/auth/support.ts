@@ -106,8 +106,8 @@ const settleTimeout = 3_000;
 /**
  * Waits until no animation or transition that will end is running (a paused one, or one at a
  * playback rate of zero or with endless iterations, never ends, so it is measured as it stands), reading
- * the list again after each round so one that starts during the wait is waited for too. Fails, naming
- * each element still animating, after `settleTimeout`.
+ * the list again after a frame so one that starts during the wait is waited for too. Fails after
+ * `settleTimeout`, naming each element on the last list read, also when that frame never comes.
  */
 async function settleAnimations(page: Page): Promise<void> {
   const unsettled = await page.evaluate(async (timeout) => {
@@ -134,19 +134,29 @@ async function settleAnimations(page: Page): Promise<void> {
             : 'script animation';
       return `${element} (${what})`;
     };
-    const deadline = performance.now() + timeout;
-    for (;;) {
-      const running = ending();
-      if (running.length === 0) return [];
-      const left = deadline - performance.now();
-      if (left <= 0) return running.map(describe);
-      await Promise.race([
-        Promise.allSettled(running.map((animation) => animation.finished)),
-        new Promise((resolve) => setTimeout(resolve, left)),
-      ]);
-      // A frame for styles to update, so an animation started by one that just ended is on the list.
-      await new Promise(requestAnimationFrame);
-    }
+    // The last list read. Every wait below, the frame too (a background page may never paint one),
+    // races the one deadline; when it wins, this list is what was still animating.
+    let running: Animation[] = [];
+    let late = false;
+    const rounds = async () => {
+      for (;;) {
+        running = ending();
+        if (running.length === 0 || late) return;
+        await Promise.allSettled(running.map((animation) => animation.finished));
+        // A frame for styles to update, so an animation started by one that just ended is on the list.
+        await new Promise(requestAnimationFrame);
+      }
+    };
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const deadline = new Promise<void>((resolve) => {
+      timer = setTimeout(() => {
+        late = true;
+        resolve();
+      }, timeout);
+    });
+    await Promise.race([rounds(), deadline]);
+    clearTimeout(timer);
+    return late ? running.map(describe) : [];
   }, settleTimeout);
   expect(unsettled, `still animating after ${settleTimeout} ms, so axe would measure a page in motion`).toEqual([]);
 }
