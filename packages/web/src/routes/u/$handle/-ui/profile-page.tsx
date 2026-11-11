@@ -1,4 +1,5 @@
 import { Button } from '@peblish/ui/components/button';
+import { handleHost, neutraliseBidi } from '@peblish/ui/components/handle';
 import { Link } from '@peblish/ui/components/link';
 import { Notice } from '@peblish/ui/components/notice';
 import { useTranslate } from '../../../../i18n/use-translate.ts';
@@ -44,7 +45,7 @@ function BlockedNotice({ data }: { data: ProfileData }) {
   if (data.blocked === 'instance')
     return (
       <Notice role="status" action={<Link href="/settings/blocks?tab=instances">{t('profiles', 'blocked.unblockInstance')}</Link>}>
-        {t('profiles', 'blocked.instance', { host: data.person.handle.split('@')[1] ?? '' })}
+        {t('profiles', 'blocked.instance', { host: neutraliseBidi(handleHost(data.person.handle)) })}
       </Notice>
     );
   return (
