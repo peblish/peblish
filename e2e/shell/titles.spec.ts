@@ -17,6 +17,8 @@ test('signed out: About, the not-found page and the error page name themselves',
     ['/about', 'About'],
     ['/no-such-page', 'Page not found'],
     [failingPage, 'Something went wrong'],
+    // A route that names itself still leaves a failure to the root's title.
+    ['/report?kind=%7B%22a%22%3A1%7D', 'Something went wrong'],
   ] as const) {
     await gotoHydrated(page, path);
     await expect(page).toHaveTitle(`${title} · ${await siteName(page)}`);
@@ -53,7 +55,7 @@ test.describe('signed in as the admin', () => {
     world = seedWorld();
   });
 
-  test('the admin tabs and the report form name themselves', async ({ page }) => {
+  test('the admin tabs and the report form name themselves, and leave a failure to the root', async ({ page }) => {
     await signedInAdmin(page, world);
     for (const [path, title] of [
       ['/admin/bans', 'Banned from this instance'],
@@ -61,6 +63,10 @@ test.describe('signed in as the admin', () => {
       ['/admin/media', 'Media'],
       ['/admin/reports', 'Reports'],
       [`/report?kind=post&id=${world.posts.author}`, 'Report this post'],
+      // A failure or a missing target under a route that names itself takes the root's title.
+      ['/admin/reports?tab=%7B%22a%22%3A1%7D', 'Something went wrong'],
+      ['/admin/media?section=%7B%22a%22%3A1%7D', 'Something went wrong'],
+      ['/report?kind=post&id=00000000-0000-4000-8000-000000000000', 'Page not found'],
     ] as const) {
       await gotoHydrated(page, path);
       await expect(page).toHaveTitle(`${title} · ${await siteName(page)}`);

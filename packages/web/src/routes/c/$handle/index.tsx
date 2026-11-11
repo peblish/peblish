@@ -38,20 +38,20 @@ export const Route = createFileRoute('/c/$handle/')({
     if (data.kind === 'missing') throw notFound({ data });
     return data;
   },
-  head: ({ loaderData, match, matches }) => {
+  head: (context) => {
+    const { loaderData, matches } = context;
     const { site } = rootTitleData(matches.find((match) => (match.routeId as string) === '__root__')?.loaderData, DEFAULT_LOCALE);
     const robots = !loaderData || loaderData.kind !== 'page' || !loaderData.indexable ? [{ name: 'robots', content: 'noindex' }] : [];
-    // Titled as the page shows: the community, its gate, or its own not-found page.
+    // Titled as the page shows: the community, its gate, or its own not-found page (which this
+    // route renders itself, so it names it); a failure is left to the root.
     const title =
       loaderData?.kind === 'page'
-        ? { title: `${loaderData.title} · ${site}` }
+        ? [{ title: `${loaderData.title} · ${site}` }]
         : loaderData?.kind === 'gate'
-          ? headTitle(matches, 'communities', gateTitle(loaderData))
-          : match.status === 'notFound'
-            ? headTitle(matches, 'communities', 'page.notFound.title')
-            : null;
+          ? headTitle(context, 'communities', gateTitle(loaderData))
+          : headTitle(context, 'communities', 'page.notFound.title', { on: 'notFound' });
     return {
-      meta: [...(title ? [title] : []), ...robots],
+      meta: [...title, ...robots],
       links: [
         { rel: 'stylesheet', href: feedCss },
         { rel: 'stylesheet', href: communityCss },

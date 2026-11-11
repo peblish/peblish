@@ -46,7 +46,7 @@ const Search = (raw: Record<string, unknown>): { error?: string; peer?: string }
 export const Route = createFileRoute('/admin/peers/')({
   validateSearch: Search,
   loader: () => loadPeers(),
-  head: ({ matches }) => ({ meta: [headTitle(matches, 'peers', 'title')], links: [{ rel: 'stylesheet', href: peersCss }] }),
+  head: (context) => ({ meta: headTitle(context, 'peers', 'title'), links: [{ rel: 'stylesheet', href: peersCss }] }),
   component: Peers,
   server: {
     middleware: [privateResponses],

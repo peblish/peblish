@@ -67,7 +67,7 @@ export const Route = createFileRoute('/admin/reports/')({
     }
     return data;
   },
-  head: ({ matches }) => ({ meta: [headTitle(matches, 'reports', 'queue.title')], links: [{ rel: 'stylesheet', href: queueCss }] }),
+  head: (context) => ({ meta: headTitle(context, 'reports', 'queue.title'), links: [{ rel: 'stylesheet', href: queueCss }] }),
   component: Queue,
   server: {
     handlers: {

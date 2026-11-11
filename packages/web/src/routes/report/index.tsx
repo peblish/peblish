@@ -69,10 +69,10 @@ export const Route = createFileRoute('/report/')({
     return result.ok ? { form: result, refusal: null, back } : { form: null, refusal: result.reason, back };
   },
   // The title is the page's heading (ReportPage): what is being reported, or Report on a refusal.
-  head: ({ loaderData, matches }) => {
-    const kind = loaderData?.form ? reportedKind(loaderData.form) : null;
+  head: (context) => {
+    const kind = context.loaderData?.form ? reportedKind(context.loaderData.form) : null;
     return {
-      meta: [kind ? headTitle(matches, 'reports', `form.title.${kind}`) : headTitle(matches, 'reports', 'form.open')],
+      meta: headTitle(context, 'reports', kind ? `form.title.${kind}` : 'form.open'),
       links: [{ rel: 'stylesheet', href: reportCss }],
     };
   },

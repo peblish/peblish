@@ -51,18 +51,27 @@ export function titleForRoute(locale: string, site: string, routeId: string | un
   return pageTitle(locale, site, routeId === undefined ? undefined : routeTitles[routeId]);
 }
 
+/** What a route's `head` is given, as headTitle reads it. */
+type HeadContext = { match: { status: string }; matches: readonly HeadMatch[] };
+
 /**
- * A route head's title entry from a message in any area's catalogue, in the locale and with the
- * site name from the root's loader data: `head: ({ matches }) => ({ meta: [headTitle(matches, 'bans', 'title')] })`.
+ * A route head's title from a message in any area's catalogue, in the locale and with the site
+ * name from the root's loader data, to spread into `meta`:
+ * `head: (context) => ({ meta: headTitle(context, 'bans', 'title') })`.
+ *
+ * A failed match still runs its head, so the title is given only while the route's own match is
+ * a success: on an error or a not-found the root's title for that page wins. A route that renders
+ * its own not-found page names it with `{ on: 'notFound' }`.
  */
 export function headTitle<A extends Area>(
-  matches: readonly HeadMatch[],
+  { match, matches }: HeadContext,
   area: A,
   key: MessageKey<A>,
-  params?: Record<string, string | number>,
-): { title: string } {
-  const { locale, site } = rootTitleData(matches.find((match) => match.routeId === '__root__')?.loaderData, DEFAULT_LOCALE);
-  return { title: titled(translate(locale, area, key, params), site) };
+  { params, on = 'success' }: { params?: Record<string, string | number>; on?: 'success' | 'notFound' } = {},
+): { title: string }[] {
+  if (match.status !== on) return [];
+  const { locale, site } = rootTitleData(matches.find((candidate) => candidate.routeId === '__root__')?.loaderData, DEFAULT_LOCALE);
+  return [{ title: titled(translate(locale, area, key, params), site) }];
 }
 
 /** The locale and the site name from the root route's loader data, as a route's `head` sees it in `matches`. */

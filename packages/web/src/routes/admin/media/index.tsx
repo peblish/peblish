@@ -97,7 +97,7 @@ const page = (section: Section, extra: Record<string, string | undefined> = {}) 
 export const Route = createFileRoute('/admin/media/')({
   validateSearch: Search,
   loader: () => loadMedia(),
-  head: ({ matches }) => ({ meta: [headTitle(matches, 'mediascan', 'media.title')], links: [{ rel: 'stylesheet', href: mediaCss }] }),
+  head: (context) => ({ meta: headTitle(context, 'mediascan', 'media.title'), links: [{ rel: 'stylesheet', href: mediaCss }] }),
   component: MediaTab,
   server: {
     handlers: {

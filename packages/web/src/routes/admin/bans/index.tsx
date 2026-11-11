@@ -46,7 +46,7 @@ export const Route = createFileRoute('/admin/bans/')({
   validateSearch: parseSearch,
   loaderDeps: ({ search }) => (search.person === undefined ? {} : { person: search.person }),
   loader: ({ deps }) => loadBans({ data: deps }),
-  head: ({ matches }) => ({ meta: [headTitle(matches, 'bans', 'title')], links: [{ rel: 'stylesheet', href: bansCss }] }),
+  head: (context) => ({ meta: headTitle(context, 'bans', 'title'), links: [{ rel: 'stylesheet', href: bansCss }] }),
   component: Bans,
   server: {
     handlers: {

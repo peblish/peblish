@@ -33,18 +33,21 @@ export const Route = createFileRoute('/post/$id/comments/$commentId')({
     if (!data) throw notFound();
     return data;
   },
-  head: ({ loaderData, matches }) => ({
-    meta:
-      loaderData?.kind === 'gate'
-        ? [headTitle(matches, 'communities', gateTitle(loaderData)), { name: 'robots', content: 'noindex' }]
-        : loaderData?.postTitle
-          ? [{ title: `${loaderData.postTitle} | !${loaderData.communityHandle}` }]
-          : [],
-    links: [
-      { rel: 'stylesheet', href: postCss },
-      { rel: 'stylesheet', href: gateCss },
-    ],
-  }),
+  head: (context) => {
+    const { loaderData } = context;
+    return {
+      meta:
+        loaderData?.kind === 'gate'
+          ? [...headTitle(context, 'communities', gateTitle(loaderData)), { name: 'robots', content: 'noindex' }]
+          : loaderData?.postTitle
+            ? [{ title: `${loaderData.postTitle} | !${loaderData.communityHandle}` }]
+            : [],
+      links: [
+        { rel: 'stylesheet', href: postCss },
+        { rel: 'stylesheet', href: gateCss },
+      ],
+    };
+  },
   component: PermalinkRoute,
 });
 

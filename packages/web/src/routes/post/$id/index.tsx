@@ -27,18 +27,21 @@ export const Route = createFileRoute('/post/$id/')({
     if (!data) throw notFound();
     return data;
   },
-  head: ({ loaderData, matches }) => ({
-    meta:
-      loaderData?.kind === 'gate'
-        ? [headTitle(matches, 'communities', gateTitle(loaderData)), { name: 'robots', content: 'noindex' }]
-        : loaderData?.post.title
-          ? [{ title: `${loaderData.post.title} | !${loaderData.post.community.handle}` }]
-          : [],
-    links: [
-      { rel: 'stylesheet', href: postCss },
-      { rel: 'stylesheet', href: gateCss },
-    ],
-  }),
+  head: (context) => {
+    const { loaderData } = context;
+    return {
+      meta:
+        loaderData?.kind === 'gate'
+          ? [...headTitle(context, 'communities', gateTitle(loaderData)), { name: 'robots', content: 'noindex' }]
+          : loaderData?.post.title
+            ? [{ title: `${loaderData.post.title} | !${loaderData.post.community.handle}` }]
+            : [],
+      links: [
+        { rel: 'stylesheet', href: postCss },
+        { rel: 'stylesheet', href: gateCss },
+      ],
+    };
+  },
   component: PostRoute,
   server: {
     handlers: {
