@@ -13,6 +13,8 @@ interface Seeded {
   admin: { name: string; password: string; totpSecret: string };
   inviteCode: string;
   person: { email: string };
+  /** The handle of the listed community at the head of /communities, with a directional control in its name. */
+  bidiCommunity: string;
 }
 
 export interface Fixtures extends Seeded {

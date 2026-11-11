@@ -1,5 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import { closePools } from '../../packages/core/src/db/pools.ts';
+import { resolveDirectoryQuery } from '../../packages/core/src/directory/input.ts';
+import { listCommunities } from '../../packages/core/src/directory/read.ts';
 import { auth } from '../../packages/core/src/identity/auth.ts';
 import { seedAccount, seedInvite, seedTwoFactor } from '../../packages/core/src/testing/seed-a.ts';
 import { seedBidiCommunityOnTop } from '../../packages/core/src/testing/seed-disc.ts';
@@ -20,11 +22,15 @@ try {
   const person = await seedAccount(`pu_${suffix()}`, { emailVerified: false });
   await (await auth()).api.sendVerificationEmail({ body: { email: person.email } });
   await seedBidiCommunityOnTop();
+  // The head of /communities as a signed-out visitor gets it, by the page's own defaults and query.
+  const [head] = (await listCommunities(resolveDirectoryQuery({}), null)).rows;
+  if (!head) throw new Error('/communities lists no community after seedBidiCommunityOnTop');
   console.log(
     JSON.stringify({
       admin: { name: admin.name, password: admin.password, totpSecret: secret },
       inviteCode: invite.code,
       person: { email: person.email },
+      bidiCommunity: head.actor.handle,
     }),
   );
 } finally {
