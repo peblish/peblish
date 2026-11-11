@@ -48,7 +48,8 @@ async function plainPage(browser: Browser, name: string) {
   return page;
 }
 
-const rows = (page: Page) => page.locator('.pb-notice');
+/** The notices, by the list's name ("Benachrichtigungen" in German). */
+const rows = (page: Page, list = 'Notices') => page.getByRole('list', { name: list }).getByRole('listitem');
 const inboxLink = (page: Page) => page.locator('.pb-side').getByRole('link', { name: /^Inbox/ });
 
 test.describe('signed out', () => {
@@ -252,7 +253,7 @@ test.describe('in German', () => {
     await expect(german.locator('html')).toHaveAttribute('lang', 'de-DE');
     await expect(german.getByRole('heading', { level: 1, name: 'Posteingang' })).toBeVisible();
     await expect(german.getByRole('button', { name: 'Alle als gelesen markieren' })).toBeVisible();
-    await expect(rows(german).first().getByRole('button', { name: 'Als ungelesen markieren' })).toBeVisible();
+    await expect(rows(german, 'Benachrichtigungen').first().getByRole('button', { name: 'Als ungelesen markieren' })).toBeVisible();
     await german.waitForLoadState('networkidle');
     await expectAccessible(german);
     expect(log.hydrationProblems()).toEqual([]);

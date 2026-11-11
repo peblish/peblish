@@ -28,3 +28,17 @@ export function inboxHref({ filter, cursor, error }: InboxSearch = {}): string {
   const query = params.toString();
   return query ? `/notifications?${query}` : '/notifications';
 }
+
+export type InboxIntent = { intent: 'read' | 'unread'; id: string } | { intent: 'read_all' };
+
+/**
+ * Where an inbox form posts: the intent, the notice and the page to come back to ride in the
+ * address, so the form needs only its submit button (-form.ts reads the address and the body).
+ */
+export function inboxAction(what: InboxIntent, { filter, cursor }: InboxSearch = {}): string {
+  const params = new URLSearchParams({ intent: what.intent });
+  if (what.intent !== 'read_all') params.set('id', what.id);
+  if (filter && filter !== 'all') params.set('filter', filter);
+  if (cursor) params.set('cursor', cursor);
+  return `/notifications?${params.toString()}`;
+}

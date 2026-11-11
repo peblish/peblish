@@ -12,7 +12,8 @@ import { inboxHref, type InboxSearch } from './-search.ts';
 // Accept: application/json and reads { ok } or { error }.
 //
 // intent read or unread: id, the notice. intent read_all: no id. `filter` and `cursor` name the
-// page the form came from, where the answer goes back to.
+// page the form came from, where the answer goes back to. The page's forms put every field in the
+// action's query (inboxAction); a field in the body wins over the same one in the query.
 
 const Form = type({ intent: "'read' | 'unread'", id: 'string', 'filter?': 'string', 'cursor?': 'string' }).or({
   intent: "'read_all'",
@@ -41,7 +42,7 @@ export async function handleInboxPost(request: Request): Promise<Response> {
   if (!sameOrigin(request)) return forbidden();
   const { session } = await formSession(request);
   const cookies = session?.setCookies ?? [];
-  const form = Form(await readForm(request));
+  const form = Form({ ...Object.fromEntries(new URL(request.url).searchParams), ...(await readForm(request)) });
   const known = form instanceof type.errors ? undefined : form;
   const back: InboxSearch = {
     filter: inboxFilters.find((filter) => filter === known?.filter),

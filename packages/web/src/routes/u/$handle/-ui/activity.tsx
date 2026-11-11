@@ -1,7 +1,14 @@
+import { Card } from '@peblish/ui/components/card';
+import { EmptyState } from '@peblish/ui/components/empty-state';
+import { Link } from '@peblish/ui/components/link';
+import { LinkTabs } from '@peblish/ui/components/link-tabs';
+import { Pager } from '@peblish/ui/components/pager';
 import { PostCard } from '@peblish/ui/components/post-card';
 import { Prose } from '@peblish/ui/components/prose';
+import { Text } from '@peblish/ui/components/text';
 import { DensityControl } from '@peblish/ui/density/density-control';
 import { profileSorts, profileTabs } from '@peblish/core/profiles/input';
+import type { ReactNode } from 'react';
 import { useTranslate } from '../../../../i18n/use-translate.ts';
 import { useDensityLabels, usePostCardLabels } from '../../../../shell/labels.ts';
 import { communityPath, postPath, commentPath, userPath } from '../../../../shell/paths.ts';
@@ -16,7 +23,18 @@ import { profileHref } from '../-search.ts';
 
 type Comment = Extract<ProfileEntry, { kind: 'comment' }>;
 
-function CommentRow({ entry, data, path }: { entry: Comment; data: ProfileData; path: string }) {
+/** A comment sits in an outlined Mux Card at the Card density, like the posts beside it, and in a plain row otherwise. */
+function Surface({ card, children }: { card: boolean; children: ReactNode }) {
+  return card ? (
+    <Card.Root variant="outlined" padding="sm" className="prof-comment-body">
+      {children}
+    </Card.Root>
+  ) : (
+    <div className="prof-comment-body">{children}</div>
+  );
+}
+
+function CommentRow({ entry, data, path, card }: { entry: Comment; data: ProfileData; path: string; card: boolean }) {
   const { t } = useTranslate();
   const { view, post, community } = entry;
   const time = data.times[view.id];
@@ -36,31 +54,35 @@ function CommentRow({ entry, data, path }: { entry: Comment; data: ProfileData; 
   };
   return (
     <li className="prof-comment" id={`comment-${view.id}`}>
-      <p className="prof-comment-meta">
-        <span className="prof-score">{t('profiles', 'comment.score', { count: view.counts.upvotes - view.counts.downvotes })}</span>{' '}
-        {t('profiles', 'comment.on')} <a href={postPath(post.id)}>{post.title}</a> {t('profiles', 'comment.in')}{' '}
-        <a href={communityPath(community)}>!{community.handle}</a>
-        {time && (
-          <>
-            {' · '}
-            <time dateTime={view.publishedAt} title={time.title}>
-              {time.age}
-            </time>
-          </>
-        )}
-      </p>
-      {view.contentHtml && <Prose html={view.contentHtml} className="prof-comment-text" />}
-      {/* A div: the slots hold forms and menus, which a <p> cannot contain (the parser would close it). */}
-      <div className="prof-comment-actions">
-        <a href={commentPath(post.id, view.id)}>{t('profiles', 'comment.reply')}</a>
-        {slot && (
-          <>
-            <CommentReport {...slot} />
-            <CommentBlock {...slot} />
-            <CommentModerate {...slot} />
-          </>
-        )}
-      </div>
+      <Surface card={card}>
+        <Text as="p" size="sm" color="muted">
+          <Text variant="label" size="sm" color="default">
+            {t('profiles', 'comment.score', { count: view.counts.upvotes - view.counts.downvotes })}
+          </Text>{' '}
+          {t('profiles', 'comment.on')} <Link href={postPath(post.id)}>{post.title}</Link> {t('profiles', 'comment.in')}{' '}
+          <Link href={communityPath(community)}>!{community.handle}</Link>
+          {time && (
+            <>
+              {' · '}
+              <time dateTime={view.publishedAt} title={time.title}>
+                {time.age}
+              </time>
+            </>
+          )}
+        </Text>
+        {view.contentHtml && <Prose html={view.contentHtml} className="prof-comment-text" />}
+        {/* A div: the slots hold forms and menus, which a <p> cannot contain (the parser would close it). */}
+        <div className="prof-comment-actions">
+          <Link href={commentPath(post.id, view.id)}>{t('profiles', 'comment.reply')}</Link>
+          {slot && (
+            <>
+              <CommentReport {...slot} />
+              <CommentBlock {...slot} />
+              <CommentModerate {...slot} />
+            </>
+          )}
+        </div>
+      </Surface>
     </li>
   );
 }
@@ -75,30 +97,40 @@ export function Activity({ data, path }: { data: ProfileData; path: string }) {
   const countOf = { overview: null, posts: data.counts.posts, comments: data.counts.comments } as const;
   return (
     <>
-      <nav className="prof-tabs" aria-label={t('profiles', 'tabs.label')}>
-        {profileTabs.map((tab) => (
-          <a key={tab} href={profileHref(path, { tab, sort: data.sort })} aria-current={tab === data.tab ? 'page' : undefined}>
-            {t('profiles', `tab.${tab}`)}
-            {countOf[tab] !== null && <span className="prof-tabcount"> {new Intl.NumberFormat(locale).format(countOf[tab])}</span>}
-          </a>
-        ))}
-      </nav>
+      <LinkTabs
+        aria-label={t('profiles', 'tabs.label')}
+        items={profileTabs.map((tab) => {
+          const count = countOf[tab];
+          return {
+            to: profileHref(path, { tab, sort: data.sort }),
+            active: tab === data.tab,
+            label: (
+              <>
+                {t('profiles', `tab.${tab}`)}
+                {count !== null && <Text color="muted"> {new Intl.NumberFormat(locale).format(count)}</Text>}
+              </>
+            ),
+          };
+        })}
+      />
       <div className="prof-toolbar">
-        <div className="feed-seg" role="group" aria-label={t('profiles', 'sort.label')}>
-          {profileSorts.map((sort) => (
-            <a key={sort} href={profileHref(path, { tab: data.tab, sort })} aria-current={sort === data.sort ? 'true' : undefined}>
-              {t('profiles', `sort.${sort}`)}
-            </a>
-          ))}
-        </div>
-        <span className="feed-space" />
+        <LinkTabs
+          aria-label={t('profiles', 'sort.label')}
+          variant="segment"
+          size="sm"
+          items={profileSorts.map((sort) => ({
+            to: profileHref(path, { tab: data.tab, sort }),
+            active: sort === data.sort,
+            label: t('profiles', `sort.${sort}`),
+          }))}
+        />
         <DensityControl value={prefs.density} onChange={(density) => setPrefs({ density })} labels={densityLabels} />
       </div>
 
       {data.entries.length === 0 ? (
-        <p className="prof-empty">{t('profiles', `empty.${data.tab}`)}</p>
+        <EmptyState title={t('profiles', `empty.${data.tab}`)} />
       ) : (
-        <ul className="prof-list feed-list" aria-label={t('profiles', 'list.posts')}>
+        <ul className="prof-list" data-density={prefs.density} aria-label={t('profiles', 'list.posts')}>
           {data.entries.map((entry) =>
             entry.kind === 'post' ? (
               <li key={entry.item.post.id}>
@@ -122,22 +154,17 @@ export function Activity({ data, path }: { data: ProfileData; path: string }) {
                 />
               </li>
             ) : (
-              <CommentRow key={entry.view.id} entry={entry} data={data} path={profileHref(path, here)} />
+              <CommentRow key={entry.view.id} entry={entry} data={data} path={profileHref(path, here)} card={prefs.density === 'card'} />
             ),
           )}
         </ul>
       )}
 
-      {(data.next || data.after) && (
-        <nav className="feed-pages" aria-label={t('profiles', 'pages.label')}>
-          {data.after && <a href={profileHref(path, here)}>{t('profiles', 'pages.first')}</a>}
-          {data.next && (
-            <a href={profileHref(path, { ...here, after: data.next })} rel="next">
-              {t('profiles', 'pages.next')}
-            </a>
-          )}
-        </nav>
-      )}
+      <Pager
+        aria-label={t('profiles', 'pages.label')}
+        first={data.after ? { href: profileHref(path, here), label: t('profiles', 'pages.first') } : undefined}
+        next={data.next ? { href: profileHref(path, { ...here, after: data.next }), label: t('profiles', 'pages.next') } : undefined}
+      />
     </>
   );
 }

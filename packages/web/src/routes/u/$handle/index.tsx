@@ -1,6 +1,5 @@
 import { createFileRoute, notFound } from '@tanstack/react-router';
 import { translate } from '../../../i18n/translate.ts';
-import feedCss from '../../index/-feed/feed.css?url';
 import { titleContext } from './-head.ts';
 import { loadProfile } from './-load.ts';
 import { parseProfileSearch, resolveProfileSearch } from './-search.ts';
@@ -35,10 +34,7 @@ export const Route = createFileRoute('/u/$handle/')({
         // A person who opted out of search stays out of it.
         ...(loaderData && (!loaderData.indexable || loaderData.state === 'deleted') ? [{ name: 'robots', content: 'noindex' }] : []),
       ],
-      links: [
-        { rel: 'stylesheet', href: feedCss },
-        { rel: 'stylesheet', href: profileCss },
-      ],
+      links: [{ rel: 'stylesheet', href: profileCss }],
     };
   },
   component: Profile,
