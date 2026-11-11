@@ -13,10 +13,13 @@ test('the local copy line names the real host of a community whose name holds an
     execFileSync('node', ['e2e/directory/hostile-seed.ts'], { cwd: join(import.meta.dirname, '../..'), encoding: 'utf8' }),
   ) as { name: string; host: string; suffix: string };
   await gotoHydrated(page, `/communities?q=hostile_${hostile.suffix}`);
-  const line = page.getByRole('row').filter({ hasText: `hostile_${hostile.suffix}` }).getByText(/local copy/);
+  const line = page
+    .getByRole('row')
+    .filter({ hasText: `hostile_${hostile.suffix}` })
+    .getByText(/local copy/);
   await expect(line).toHaveText(new RegExp(`^${hostile.host.replaceAll('.', '\\.')} · local copy`));
   const drawn = await line.evaluate((element) => ({
-    controls: /[‪-‮⁦-⁩‎‏؜]/.test(element.textContent!),
+    controls: /[\u202a-\u202e\u2066-\u2069\u200e\u200f\u061c]/.test(element.textContent!),
     isolated: element.querySelector('bdi')?.textContent,
   }));
   expect(drawn).toEqual({ controls: false, isolated: hostile.host });

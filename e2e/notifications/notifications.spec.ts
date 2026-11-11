@@ -378,8 +378,8 @@ test.describe('a remote handle and a title with directional controls', () => {
     const button = page.getByRole('button', { name: /^Mark read/ });
     await expect(button).toHaveCount(1);
     const name = (await button.getAttribute('aria-label')) ?? '';
-    expect(name).not.toMatch(/[‪-‮⁦-⁩‎‏؜]/);
-    const shown = (text: string) => text.replace(/[‪-‮⁦-⁩‎‏؜]/g, '‽');
+    expect(name).not.toMatch(/[\u202a-\u202e\u2066-\u2069\u200e\u200f\u061c]/);
+    const shown = (text: string) => text.replace(/[\u202a-\u202e\u2066-\u2069\u200e\u200f\u061c]/g, '\u203D');
     expect(name).toBe(`Mark read: @${shown(hostile.handle)}, ${shown(hostile.title)}`);
   });
 });

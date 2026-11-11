@@ -8,7 +8,7 @@ import { seedActor, seedInstance } from '../../packages/core/src/testing/seed.ts
 try {
   const suffix = Math.random().toString(36).slice(2, 8);
   const far = await seedInstance(`real-${suffix}.test`, false);
-  const community = await seedActor(far, 'Group', `hostile_${suffix}@‮elpmaxe.live`, { fetchedAt: new Date() });
+  const community = await seedActor(far, 'Group', `hostile_${suffix}@\u202eelpmaxe.live`, { fetchedAt: new Date() });
   console.log(JSON.stringify({ name: community.name, host: far.domain, suffix }));
 } finally {
   await closePools();
