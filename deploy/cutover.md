@@ -480,10 +480,16 @@ against the final dump before exporting. Beyond the responder and the stopped se
    the same when needed. No account has an age declaration (NSFW stays hidden until each declares in
    settings). If a reset is refused as throttled, wait out the window (item 4: direct requests share
    one budget).
-6. Host-header pretest against the new origin, from Andrew's machine:
+6. Host-header pretest against the new origin, from Andrew's machine. Its trust follows the
+   certificate: normal trust for path A (the system's roots validate the Let's Encrypt chain), and
+   `--cacert` with Cloudflare's origin root for path B (which cannot validate a Let's Encrypt
+   chain). Never `-k`. Any `000` below is a failed connection or certificate: rerun that line with
+   `-sS` in place of `-s` to see which, and stop.
 
    ```sh
-   R="--resolve feddit.com:443:$O --cacert $S/origin-ca-root.pem"; AP='Accept: application/activity+json'
+   R="--resolve feddit.com:443:$O"                                         # path A
+   R="--resolve feddit.com:443:$O --cacert $S/origin-ca-root.pem"          # path B instead
+   AP='Accept: application/activity+json'
    for p in /actor /u/feddit-admin /u/Andrew /c/announcements /c/microblogs; do curl -s $R -H "$AP" -o /dev/null -w "$p %{http_code}\n" https://feddit.com$p; done
    curl -s $R 'https://feddit.com/.well-known/webfinger?resource=acct:feddit-admin@feddit.com'
    curl -s $R https://feddit.com/nodeinfo/2.1        # usage.users.total 2, localPosts present
