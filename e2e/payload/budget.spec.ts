@@ -4,16 +4,16 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { freshTotp, landed, signIn } from '../auth/support.ts';
 import { gotoHydrated } from '../support/route-marker.ts';
-import { budget, gzipSize, hasThemeRules, loadManifest, misplacedPackages, vendorKind } from './budget.ts';
+import { budget, gzipSize, hasThemeRules, loadManifest, misplacedPackages, scriptLimit, scriptOver, vendorKind } from './budget.ts';
 import { fixtures } from './fixtures.ts';
 import { notPages, routes, unaccounted } from './routes.ts';
 
-// The payload budget as a check: each page's first visit, cold cache, must stay inside the
-// numbers Andrew approved (budget.ts). Run against the production build; see routes.ts to add a page.
-// During the Mux UI restyle the script and CSS sizes are report-only: they are measured and
-// printed (and noted on the test when over), but do not fail. Fonts, the vendor placement, the
-// editor's placement and the themes.css rule still fail. PAYLOAD.md has the figures; the budget
-// is set again when the restyle lands.
+// The payload budget as a check: each page's first visit, cold cache, must stay inside its
+// budget. Run against the production build; see routes.ts to add a page. The React and Mux UI
+// script fails against each page's own budget (routes.ts), and so do fonts, the vendor
+// placement, the editor's placement and the themes.css rule (budget.ts). The CSS size, and the
+// editor chunk on the composer's signed-out page, are report-only: printed, and noted on the
+// test when over. PAYLOAD.md has the figures and how to re-measure.
 //
 // What is measured is compressible bytes: every text file is gzipped here (level 9), as a
 // compressing proxy would send it. Nothing in this repository compresses responses (the Node
@@ -26,10 +26,10 @@ test.setTimeout(90_000);
 
 const kB = (bytes: number) => `${(bytes / 1000).toFixed(1)} kB`;
 
-/** Report-only during the restyle: an overrun is printed and noted on the test, never a failure. */
+/** Report-only (CSS and the signed-out editor figure): an overrun is printed and noted on the test, never a failure. */
 function reportOver(what: string, bytes: number, limit: number) {
   if (bytes <= limit) return;
-  const note = `${what} ${kB(bytes)} is over its budget of ${kB(limit)} (report-only during the Mux UI restyle)`;
+  const note = `${what} ${kB(bytes)} is over its budget of ${kB(limit)} (report-only)`;
   console.log(`payload over: ${note}`);
   test.info().annotations.push({ type: 'payload-over', description: note });
 }
@@ -154,7 +154,6 @@ for (const route of routes) {
     const vendor = scripts.filter(({ path }) => vendorKind(path) === 'react' || vendorKind(path) === 'mux');
     const editor = scripts.filter(({ path }) => vendorKind(path) === 'editor');
     expect(vendor.length, 'the React and Mux chunks load').toBeGreaterThan(1);
-    reportOver(`${route.path}: React and Mux UI JS`, sum(vendor), route.js ?? budget.js);
     if (route.composer) reportOver(`${route.path}: the editor chunk`, sum(editor), budget.editor);
     else
       expect(
@@ -181,16 +180,25 @@ for (const route of routes) {
     ).toEqual([]);
     expect(sum(fonts), `fonts ${kB(sum(fonts))}`).toBeLessThanOrEqual(budget.fonts);
     console.log(
-      `payload ${route.path}: js ${figures(vendor)} of ${kB(route.js ?? budget.js)}, css ${kB(mux!.bytes)} of ${kB(budget.css)}, fonts ${figures(fonts)} of ${kB(budget.fonts)}${editor.length ? `, editor ${figures(editor)}` : ''}`,
+      `payload ${route.path}: js ${figures(vendor)} of ${kB(scriptLimit(route.js))}, css ${kB(mux!.bytes)} of ${kB(budget.css)}, fonts ${figures(fonts)} of ${kB(budget.fonts)}${editor.length ? `, editor ${figures(editor)}` : ''}`,
     );
-    // The home page's whole first-visit script, chunk by chunk (report only): where a shell or vendor change lands.
-    if (route.path === '/') {
-      const byChunk = [...scripts].sort((a, b) => b.bytes - a.bytes).map(({ path, bytes }) => `  ${kB(bytes).padStart(9)} ${path}`);
+    // Chunk by chunk, largest first: where a shell or vendor change lands.
+    const byChunk = (list: Transfer[]) =>
+      [...list]
+        .sort((a, b) => b.bytes - a.bytes)
+        .map(({ path, bytes }) => `  ${kB(bytes).padStart(9)} ${path}`)
+        .join('\n');
+    // The home page's whole first-visit script (report only).
+    if (route.path === '/')
       console.log(
-        `payload / first-visit script: ${figures(scripts)} in ${scripts.length} files (React and Mux ${figures(vendor)})\n${byChunk.join('\n')}`,
+        `payload / first-visit script: ${figures(scripts)} in ${scripts.length} files (React and Mux ${figures(vendor)})\n${byChunk(scripts)}`,
       );
-    }
     if (route.fonts) expect(fonts.length, 'regular, italic and code faces are in use').toBeGreaterThanOrEqual(3);
+    // The script budget is checked last, once the figures are in the log; over it, the log also
+    // lists the page's React and Mux chunks, to compare with a run of main.
+    const limit = scriptLimit(route.js);
+    if (sum(vendor) > limit) console.log(`payload ${route.path} React and Mux chunks:\n${byChunk(vendor)}`);
+    expect(sum(vendor), scriptOver(route.path, sum(vendor), route.js)).toBeLessThanOrEqual(limit);
   });
 }
 

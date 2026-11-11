@@ -8,10 +8,9 @@ import { gzipSync } from 'node:zlib';
 // check's own: nothing in this repository compresses responses, Traefik (Easypanel) or
 // Cloudflare does in production (deploy/README.md), so the figures are the compressible bytes
 // a compressing proxy would send, not what the Node server itself sends.
-// js, css and editor are report-only during the Mux UI restyle (budget.spec.ts, PAYLOAD.md).
+// The script budget is per page, in routes.ts. css, and the editor chunk on the composer's
+// signed-out page, are still report-only as they were during the Mux UI restyle (PAYLOAD.md).
 export const budget = {
-  /** React, React DOM and Mux UI with React Aria pruned to en-US and de-DE. */
-  js: 170_000,
   /** Mux UI's styles.css alone. */
   css: 65_000,
   /** Regular, italic and code faces on a Latin page. */
@@ -19,6 +18,28 @@ export const budget = {
   /** The composer's lazy editor chunk, on top of the above. */
   editor: 200_000,
 } as const;
+
+/**
+ * A page's budget for React, React DOM and Mux UI (with React Aria pruned to en-US and de-DE) on
+ * its first visit, in kB of 1,000 bytes. `budget` is the limit, stored as the number itself; the
+ * rest is the record of where it came from, so a reviewer sees the headroom.
+ */
+export interface ScriptBudget {
+  /** The limit: `measured` plus 5%, rounded up to 0.1 kB, when it was set. */
+  budget: number;
+  /** What the page measured then (the largest of three runs). */
+  measured: number;
+  /** When it was measured, YYYY-MM-DD. */
+  on: string;
+}
+
+/** The limit in bytes; rounded, so 192.6 kB is exactly 192,600 bytes and not a float just under it. */
+export const scriptLimit = ({ budget }: ScriptBudget) => Math.round(budget * 1000);
+
+/** What a page over its script budget fails with: the page, the figures, and what to do next. */
+export const scriptOver = (page: string, bytes: number, js: ScriptBudget) =>
+  `${page}: React and Mux UI JS is ${(bytes / 1000).toFixed(1)} kB, over its budget of ${js.budget.toFixed(1)} kB (measured ${js.measured.toFixed(1)} kB on ${js.on}). ` +
+  `Find what grew; if the growth is intended, re-measure (PAYLOAD.md) and raise this page's js budget in e2e/payload/routes.ts in the same pull request, with the reason.`;
 
 export const gzipSize = (body: Buffer) => gzipSync(body, { level: 9 }).length;
 

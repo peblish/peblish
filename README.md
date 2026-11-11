@@ -113,4 +113,6 @@ pnpm e2e                           # Playwright against the build, on $PORT; BAS
 pnpm dev                           # pnpm gen, then the dev server on $PORT
 ```
 
+The payload budget (`e2e/payload`, part of `pnpm e2e`) fails a page whose React and Mux UI script outgrows its own budget: each page's entry in `e2e/payload/routes.ts` stores it as a number, set on 2026-11-12 at what the page measured (three identical runs on a fresh build and database) plus 5%, rounded up to 0.1 kB. Fonts are enforced too; Mux UI's CSS is report-only. To re-measure, run `pnpm build`, recreate the lane database, then `pnpm e2e e2e/payload e2e/composer/payload.spec.ts 2>&1 | grep '^payload '` three times; raise a page's budget only for intended growth, in the same pull request, with the reason. `PAYLOAD.md` has the exact commands and the table of every page's measured size and budget.
+
 Contributions are accepted under the [Developer Certificate of Origin](DCO): sign off every commit with `git commit -s`. Server and web app are AGPL-3.0-only, `schema` and `ui` are MIT; see `LICENSE`.

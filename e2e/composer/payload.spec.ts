@@ -1,23 +1,25 @@
 import { expect, test, type Browser, type BrowserContext, type Page } from '@playwright/test';
-import { budget, gzipSize, vendorKind } from '../payload/budget.ts';
+import { budget, gzipSize, scriptLimit, scriptOver, vendorKind } from '../payload/budget.ts';
+import { routes } from '../payload/routes.ts';
 import { gotoHydrated } from '../support/route-marker.ts';
 import { coldContext, seed, signedIn } from './support.ts';
 
 // The composer's first visit against the payload budget (e2e/payload): the page signed in, which
 // is what `/submit` is (signed out it is a redirect to sign-in), and the sheet's lazy code, which
 // the budget allows to add up to budget.editor on top of the page it opens over. Measured cold,
-// gzip -9, kB of 1,000 bytes, as budget.spec.ts does. As there, the script and CSS sizes are
-// report-only during the Mux UI restyle: an overrun is printed and noted on the test. Fonts, the
-// sheet's lazy allowance and the rule that the composer loads no rich-text editor still fail.
+// gzip -9, kB of 1,000 bytes, as budget.spec.ts does. As there, the React and Mux UI script fails
+// against the page's own budget (signedInJs of /submit in routes.ts), and so do fonts, the sheet's
+// lazy allowance and the rule that the composer loads no rich-text editor; the CSS size is
+// report-only: an overrun is printed and noted on the test.
 test.skip(Boolean(process.env.BASE_URL), 'needs the lane database for its seed (DATABASE_URL)');
 
 const kB = (bytes: number) => `${(bytes / 1000).toFixed(1)} kB`;
 const fontFile = /\.(woff2?|ttf|otf)(\?|$)/;
 
-/** Report-only during the restyle (budget.spec.ts): an overrun is printed and noted on the test, never a failure. */
+/** Report-only, as in budget.spec.ts: an overrun is printed and noted on the test, never a failure. */
 function reportOver(what: string, bytes: number, limit: number) {
   if (bytes <= limit) return;
-  const note = `${what} ${kB(bytes)} is over its budget of ${kB(limit)} (report-only during the Mux UI restyle)`;
+  const note = `${what} ${kB(bytes)} is over its budget of ${kB(limit)} (report-only)`;
   console.log(`payload over: ${note}`);
   test.info().annotations.push({ type: 'payload-over', description: note });
 }
@@ -51,6 +53,9 @@ function recordTransfers(page: Page, origin: string) {
 const sum = (list: Transfer[]) => list.reduce((total, { bytes }) => total + bytes, 0);
 const scripts = (list: Transfer[]) => list.filter(({ path, type }) => path.endsWith('.js') && /javascript/.test(type));
 
+const js = routes.find(({ composer }) => composer)?.signedInJs;
+if (!js) throw new Error('the composer route in e2e/payload/routes.ts has no signedInJs budget');
+
 let context: BrowserContext;
 let browser: Browser;
 let origin: string;
@@ -78,7 +83,7 @@ test('/submit first visit is inside the budget, and loads no editor chunk', asyn
   const mux = all.find(({ path }) => path === new URL(muxHref!, 'http://x').pathname);
   const fonts = all.filter(({ path }) => fontFile.test(path));
   console.log(
-    `payload /submit (signed in): js ${kB(sum(vendor))} of ${kB(budget.js)}, editor ${kB(sum(editor))} of ${kB(budget.editor)}, fonts ${kB(sum(fonts))} of ${kB(budget.fonts)}, Mux UI CSS ${kB(mux?.bytes ?? 0)} of ${kB(budget.css)}`,
+    `payload /submit (signed in): js ${kB(sum(vendor))} of ${kB(scriptLimit(js))}, editor ${kB(sum(editor))} of ${kB(budget.editor)}, fonts ${kB(sum(fonts))} of ${kB(budget.fonts)}, Mux UI CSS ${kB(mux?.bytes ?? 0)} of ${kB(budget.css)}`,
   );
   // What the composer adds to what the home page already loads (the shell's share is not its own),
   // file by file, largest first, so a change in what the page pulls in shows by name.
@@ -94,7 +99,7 @@ test('/submit first visit is inside the budget, and loads no editor chunk', asyn
   for (const { path, bytes } of [...own].sort((a, b) => b.bytes - a.bytes)) console.log(`  ${kB(bytes)} ${path}`);
   expect(mux, 'the Mux UI stylesheet loads').toBeDefined();
   reportOver('/submit: Mux UI CSS', mux!.bytes, budget.css);
-  reportOver('/submit: React and Mux UI JS', sum(vendor), budget.js);
+  expect(sum(vendor), scriptOver('/submit (signed in)', sum(vendor), js)).toBeLessThanOrEqual(scriptLimit(js));
   expect(sum(editor), 'the composer needs no rich-text editor').toBe(0);
   expect(fonts.filter(({ path }) => path.endsWith('.ttf')).map(({ path }) => path)).toEqual([]);
   expect(sum(fonts), `fonts ${kB(sum(fonts))}`).toBeLessThanOrEqual(budget.fonts);
