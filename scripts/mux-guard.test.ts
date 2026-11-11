@@ -155,6 +155,51 @@ test('an inline style sets a Mux token only to a written var() of a Mux token, w
   expect(tsx(source)).toEqual(['inline-style:4', 'inline-style:5', 'inline-style:6', 'inline-style:7']);
 });
 
+test('a spread of an object literal counts as its props, in order; a spread of a variable stays allowed', () => {
+  const source = lines(
+    'export const A = (rest: Props) => (', // 1
+    '  <>', // 2
+    '    <input type="hidden" {...{ type: \'text\' }} />', // 3
+    "    <div {...{ role: 'button', style: { color: '#f00' } }} />", // 4
+    '    <span {...{ ...{ onClick: go } }} />', // 5
+    '    <input type="hidden" {...rest} />', // 6: rest may set the type
+    '    <input {...{ type: \'text\' }} type="hidden" name="id" />', // 7: legal, the later type wins
+    '    <div {...rest} className="pb-row" />', // 8: legal, rest props pass through
+    '  </>', // 9
+    ');', // 10
+  );
+  expect(tsx(source)).toEqual(['raw-element:3', 'inline-style:4', 'widget-role:4', 'widget-handler:5', 'raw-element:6']);
+});
+
+test('React factories, however imported or renamed, get the element rules over their props', () => {
+  const source = lines(
+    "import { createElement as h } from 'react';", // 1
+    "import * as R from 'react';", // 2
+    "import { jsx } from 'react/jsx-runtime';", // 3
+    "createElement('div', { role: 'button', style: { color: '#f00' } });", // 4
+    "h('button', null, 'go');", // 5
+    "h('a', { href: '/x' });", // 6
+    "R.createElement('span', { onClick: go }, 'text');", // 7
+    "jsx('div', { children: 'words' });", // 8
+    'const make = R.createElement;', // 9
+    "make('table');", // 10
+    "h(Card, { style: { padding: '13px' } });", // 11
+    "h('div', { className: 'pb-row' }, h(Text, null, 'ok'));", // 12: legal
+    "document.createElement('div').setAttribute('data-x', '1');", // 13: legal, not React
+  );
+  expect(tsx(source)).toEqual([
+    'inline-style:4',
+    'widget-role:4',
+    'raw-element:5',
+    'raw-element:6',
+    'widget-handler:7',
+    'bare-text:7',
+    'bare-text:8',
+    'raw-element:10',
+    'inline-style:11',
+  ]);
+});
+
 test('raw-html and createElement report HTML made outside React, but not scripts or detached elements', () => {
   const source = lines(
     'export function A() {', // 1

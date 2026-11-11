@@ -151,16 +151,108 @@ export function isWrapper(source: ts.SourceFile): boolean {
 const unwrap = (node: ts.Expression): ts.Expression =>
   ts.isParenthesizedExpression(node) || ts.isAsExpression(node) || ts.isSatisfiesExpression(node) ? unwrap(node.expression) : node;
 
-/** The string a literal JSX attribute holds: `a="x"` or `a={'x'}`. */
-function attributeText(attribute: ts.JsxAttribute): string | undefined {
-  const init = attribute.initializer;
-  if (!init) return undefined;
-  if (ts.isStringLiteral(init)) return init.text;
-  if (ts.isJsxExpression(init) && init.expression) {
-    const expression = unwrap(init.expression);
-    if (ts.isStringLiteralLike(expression)) return expression.text;
-  }
+/**
+ * An element's props as the rules read them, in order, so a later prop wins: each name's value, or
+ * undefined for a bare attribute (`disabled`) or a method. JSX attributes, spreads of object literals
+ * and createElement's props object all land here.
+ */
+type Props = Map<string, ts.Expression | undefined>;
+
+/** The string a literal prop holds: `a="x"`, `a={'x'}` or `a: 'x'`. */
+function propText(value: ts.Expression | undefined): string | undefined {
+  const expression = value && unwrap(value);
+  return expression && ts.isStringLiteralLike(expression) ? expression.text : undefined;
+}
+
+/** A property's name when it is written out (`a`, `'a'`, `['a']`). */
+function propertyName(name: ts.PropertyName): string | undefined {
+  if (ts.isIdentifier(name) || ts.isStringLiteralLike(name) || ts.isNumericLiteral(name)) return name.text;
+  if (ts.isComputedPropertyName(name) && ts.isStringLiteralLike(unwrap(name.expression)))
+    return (unwrap(name.expression) as ts.StringLiteral).text;
   return undefined;
+}
+
+/**
+ * Adds an object's properties to `props`, as a spread does. An object literal is read property by property;
+ * anything else (rest props, a variable) is opaque, as is a computed name, and may set any prop, so it takes
+ * away a `type` written before it (the hidden-input allowance needs to see the final type).
+ */
+function spreadProps(props: Props, expression: ts.Expression) {
+  const object = unwrap(expression);
+  if (!ts.isObjectLiteralExpression(object)) return void props.delete('type');
+  for (const property of object.properties) {
+    if (ts.isSpreadAssignment(property)) {
+      spreadProps(props, property.expression);
+      continue;
+    }
+    const name = property.name && propertyName(property.name);
+    if (name === undefined) props.delete('type');
+    else if (ts.isPropertyAssignment(property)) props.set(name, property.initializer);
+    else if (ts.isShorthandPropertyAssignment(property)) props.set(name, property.name);
+    else props.set(name, undefined);
+  }
+}
+
+/** A JSX element's props, spreads included. */
+function jsxProps(attributes: ts.JsxAttributes): Props {
+  const props: Props = new Map();
+  for (const attribute of attributes.properties) {
+    if (ts.isJsxSpreadAttribute(attribute)) spreadProps(props, attribute.expression);
+    else {
+      const init = attribute.initializer;
+      props.set(attribute.name.getText(), init && ts.isJsxExpression(init) ? init.expression : init);
+    }
+  }
+  return props;
+}
+
+// React's element factories, and the modules they come from.
+const reactModules = new Set(['react', 'react/jsx-runtime', 'react/jsx-dev-runtime']);
+const factoryNames = new Set(['createElement', 'cloneElement', 'jsx', 'jsxs', 'jsxDEV']);
+
+/**
+ * The local names that are React element factories (`createElement`, `jsx` and the rest, however imported or
+ * renamed) and the names that hold React itself (`React`, `import * as R`), so `R.createElement` is one too.
+ */
+function reactFactories(source: ts.SourceFile) {
+  const factories = new Set(['createElement']);
+  const namespaces = new Set(['React']);
+  const isFactory = (node: ts.Expression): boolean => {
+    const expression = unwrap(node);
+    if (ts.isIdentifier(expression)) return factories.has(expression.text);
+    return (
+      ts.isPropertyAccessExpression(expression) &&
+      factoryNames.has(expression.name.text) &&
+      ts.isIdentifier(expression.expression) &&
+      namespaces.has(expression.expression.text)
+    );
+  };
+  const visit = (node: ts.Node): void => {
+    if (ts.isImportDeclaration(node) && ts.isStringLiteral(node.moduleSpecifier) && reactModules.has(node.moduleSpecifier.text)) {
+      const clause = node.importClause;
+      if (clause?.name) namespaces.add(clause.name.text);
+      const bindings = clause?.namedBindings;
+      if (bindings && ts.isNamespaceImport(bindings)) namespaces.add(bindings.name.text);
+      else if (bindings)
+        for (const element of bindings.elements)
+          if (factoryNames.has((element.propertyName ?? element.name).text)) factories.add(element.name.text);
+    } else if (ts.isVariableDeclaration(node) && node.initializer) {
+      // const h = createElement; const { createElement: h } = React; const R = React.
+      const init = unwrap(node.initializer);
+      if (ts.isIdentifier(node.name)) {
+        if (isFactory(init)) factories.add(node.name.text);
+        else if (ts.isIdentifier(init) && namespaces.has(init.text)) namespaces.add(node.name.text);
+      } else if (ts.isObjectBindingPattern(node.name) && ts.isIdentifier(init) && namespaces.has(init.text)) {
+        for (const element of node.name.elements) {
+          const key = element.propertyName ?? element.name;
+          if (ts.isIdentifier(key) && factoryNames.has(key.text) && ts.isIdentifier(element.name)) factories.add(element.name.text);
+        }
+      }
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(source);
+  return isFactory;
 }
 
 /** An expression that is plainly visible text: a string, a template, a t(...) call, or a choice between them. */
@@ -248,43 +340,63 @@ export function scanScript(file: string, text: string): Violation[] {
   const created = new Map<string, Violation>();
   const inserted = new Set<string>();
 
-  const element = (node: ts.JsxOpeningElement | ts.JsxSelfClosingElement, children: readonly ts.JsxChild[]) => {
-    const tag = node.tagName.getText();
-    const attributes = new Map<string, ts.JsxAttribute>();
-    for (const attribute of node.attributes.properties)
-      if (ts.isJsxAttribute(attribute)) attributes.set(attribute.name.getText(), attribute);
+  const isFactory = reactFactories(source);
+
+  /**
+   * The element rules over one element, written as JSX or made with a React factory. `tag` is undefined for a
+   * component, which gets only the style rule; `made` names the factory call for a raw element's report.
+   */
+  const element = (node: ts.Node, tag: string | undefined, props: Props, children: readonly ts.Node[], made?: string) => {
     // An inline style bypasses the stylesheet rules on components as much as on raw elements.
-    const style = attributes.get('style');
-    if (style?.initializer && ts.isJsxExpression(style.initializer) && style.initializer.expression)
-      for (const problem of styleProblems(style.initializer.expression)) add(node, 'inline-style', `<${tag}> style ${problem}`);
-    if (!ts.isIdentifier(node.tagName) || !/^[a-z]/.test(tag)) return;
+    const name = tag ?? (ts.isJsxOpeningLikeElement(node) ? node.tagName.getText() : 'component');
+    if (props.has('style')) {
+      const style = props.get('style');
+      if (style) for (const problem of styleProblems(style)) add(node, 'inline-style', `<${name}> style ${problem}`);
+    }
+    if (tag === undefined) return;
 
     const rule = tagRule(tag);
-    const hidden = tag === 'input' && attributes.get('type') && attributeText(attributes.get('type')!) === 'hidden';
+    const hidden = tag === 'input' && propText(props.get('type')) === 'hidden';
     const home = (tag === 'time' && file === timeModule) || (tag === 'svg' && file === iconsModule);
-    if (rule && !hidden && !home) add(node, rule, `<${tag}> (${hint(tag)})`);
+    if (rule && !hidden && !home) add(node, rule, `${made ?? `<${tag}>`} (${hint(tag)})`);
 
-    const role = attributes.get('role');
-    const roleText = role && attributeText(role);
+    const roleText = propText(props.get('role'));
     if (roleText && widgetRoles.has(roleText)) add(node, 'widget-role', `<${tag} role="${roleText}">`);
     if (handlerTags.has(tag)) {
       // tabIndex={-1} only makes an element a focus target (the skip link's), not a widget.
-      const handlers = [...attributes].filter(
-        ([name, attribute]) => widgetHandlers.has(name) && !(name === 'tabIndex' && attribute.initializer?.getText() === '{-1}'),
+      const handlers = [...props].filter(
+        ([prop, value]) => widgetHandlers.has(prop) && !(prop === 'tabIndex' && value && unwrap(value).getText() === '-1'),
       );
-      if (handlers.length) add(node, 'widget-handler', `<${tag} ${handlers.map(([name]) => name).join(' ')}>`);
+      if (handlers.length) add(node, 'widget-handler', `<${tag} ${handlers.map(([prop]) => prop).join(' ')}>`);
     }
     if (layoutTags.has(tag)) {
       const textChild = children.find((child) =>
         ts.isJsxText(child)
           ? !child.containsOnlyTriviaWhiteSpaces && child.text.trim() !== ''
-          : ts.isJsxExpression(child) && child.expression !== undefined && plainlyText(child.expression),
+          : ts.isJsxExpression(child)
+            ? child.expression !== undefined && plainlyText(child.expression)
+            : ts.isExpression(child) && plainlyText(child),
       );
       if (textChild)
         add(node, 'bare-text', `<${tag}> text ${JSON.stringify(textChild.getText().trim().replace(/\s+/g, ' ').slice(0, 40))}`);
     }
-    if (attributes.has('dangerouslySetInnerHTML') && tag !== 'script' && tag !== 'style')
+    if (props.has('dangerouslySetInnerHTML') && tag !== 'script' && tag !== 'style')
       add(node, 'raw-html', `<${tag} dangerouslySetInnerHTML>`);
+  };
+  const jsxElement = (node: ts.JsxOpeningElement | ts.JsxSelfClosingElement, children: readonly ts.JsxChild[]) => {
+    const tag = node.tagName.getText();
+    element(node, ts.isIdentifier(node.tagName) && /^[a-z]/.test(tag) ? tag : undefined, jsxProps(node.attributes), children);
+  };
+  /** createElement(type, props, ...children), jsx(type, props) and cloneElement(element, props), however named. */
+  const factoryElement = (node: ts.CallExpression) => {
+    const [type, propsArgument, ...rest] = node.arguments;
+    const props: Props = new Map();
+    if (propsArgument) spreadProps(props, propsArgument);
+    const callee = node.expression.getText();
+    const cloned = /(^|\.)cloneElement$/.test(callee);
+    const tag = !cloned && type && ts.isStringLiteralLike(type) ? type.text : undefined;
+    const children = props.get('children');
+    element(node, tag, props, children ? [children, ...rest] : rest, tag && `${callee}('${tag}')`);
   };
 
   const visit = (node: ts.Node): void => {
@@ -294,19 +406,19 @@ export function scanScript(file: string, text: string): Violation[] {
     else if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name)) named = node.name.text;
     if (named) anchor.push(named);
 
-    if (ts.isJsxElement(node)) element(node.openingElement, node.children);
-    else if (ts.isJsxSelfClosingElement(node)) element(node, []);
+    if (ts.isJsxElement(node)) jsxElement(node.openingElement, node.children);
+    else if (ts.isJsxSelfClosingElement(node)) jsxElement(node, []);
     else if (ts.isCallExpression(node)) {
       const callee = node.expression;
       const method = ts.isPropertyAccessExpression(callee) ? callee.name.text : ts.isIdentifier(callee) ? callee.text : '';
       const [first, second] = node.arguments;
-      if (method === 'createElement' && first && ts.isStringLiteralLike(first) && tagRule(first.text)) {
+      if (isFactory(callee)) factoryElement(node);
+      // document.createElement: the element counts once it is in the page.
+      else if (method === 'createElement' && first && ts.isStringLiteralLike(first) && tagRule(first.text)) {
         const parent = node.parent;
-        const isReact = ts.isIdentifier(callee) || (ts.isPropertyAccessExpression(callee) && callee.expression.getText() === 'React');
         if (
-          isReact ||
-          (ts.isCallExpression(parent) &&
-            insertions.has(ts.isPropertyAccessExpression(parent.expression) ? parent.expression.name.text : ''))
+          ts.isCallExpression(parent) &&
+          insertions.has(ts.isPropertyAccessExpression(parent.expression) ? parent.expression.name.text : '')
         )
           add(node, tagRule(first.text)!, `createElement('${first.text}') (${hint(first.text)})`);
         else if (ts.isVariableDeclaration(parent) && ts.isIdentifier(parent.name)) {
