@@ -1,9 +1,9 @@
 /* peblish's own tokens and base rules, linked in packages/web/src/styles.css beside Mux UI's
-   stylesheet. Every --pb-* colour and font is a Mux UI token, so it follows Mux UI's own light
+   stylesheet. Every --pb-* colour is a Mux UI token, so it follows Mux UI's own light
    and dark schemes (data-muxui-color-scheme) with no scheme block here; there is no third
-   scheme. Mux has no role for the accents (votes, badges, notices), so they borrow TagGroup's
-   hue foregrounds, the only Mux accent colours with a dark branch (catalogue gap G7). The two
-   widths are layout, which Mux has no token for. Mapping: packages/ui/MUX.md. */
+   scheme. Mux has no role for the vote and status accents, so they borrow TagGroup's hue
+   foregrounds, the only Mux accent colours with a dark branch (catalogue gap G7). The page
+   width is layout, which Mux has no token for. Mapping: packages/ui/MUX.md. */
 
 /* The box model Mux UI rc.6 components assume: they take box sizing from the page. In the
    reset layer, below Mux's own rules, so a component that sets its own still wins. */
@@ -17,23 +17,11 @@
 
 @layer app {
   :root {
-    --pb-fg: var(--muxui-semantic-content-default);
-    --pb-bg: var(--muxui-semantic-surface-background);
-    --pb-muted: var(--muxui-semantic-content-muted);
-    --pb-line: var(--muxui-semantic-border-subtle);
-    --pb-hover: var(--muxui-semantic-surface-hover);
-    --pb-accent: var(--muxui-semantic-content-link);
     --pb-up: var(--muxui-component-taggroup-orange-foreground);
     --pb-down: var(--muxui-component-taggroup-indigo-foreground);
-    --pb-mod: var(--muxui-component-taggroup-emerald-foreground);
-    --pb-admin: var(--muxui-component-taggroup-fuchsia-foreground);
-    --pb-op: var(--muxui-component-taggroup-sky-foreground);
     --pb-warn: var(--muxui-component-taggroup-warning-foreground);
     --pb-error: var(--muxui-semantic-feedback-invalid);
     --pb-ok: var(--muxui-component-taggroup-success-foreground);
-    --pb-font: var(--muxui-semantic-typography-text-font-family);
-    --pb-mono: var(--muxui-semantic-typography-mono-font-family);
-    --pb-sidebar-width: 248px;
     --pb-page-width: 940px;
     color-scheme: light;
   }
@@ -72,15 +60,6 @@
     margin: 0;
   }
 
-  .pb-muted {
-    color: var(--pb-muted);
-  }
-
-  .pb-mono {
-    font-family: var(--pb-mono);
-    font-size: var(--muxui-semantic-typography-mono-s-font-size);
-  }
-
   .pb-sr {
     position: absolute;
     width: 1px;
@@ -99,22 +78,6 @@
     max-width: var(--pb-page-width);
     margin: 0 auto;
     padding: var(--muxui-semantic-layout-inset-small) var(--muxui-semantic-layout-inset-large) var(--muxui-reference-dimension-space-l);
-  }
-
-  /* A plain button styled as a text link, for the small actions under a post or comment. */
-  .pb-linkbutton {
-    padding: 0;
-    border: 0;
-    background: none;
-    font: inherit;
-    color: var(--pb-muted);
-    cursor: pointer;
-    white-space: nowrap;
-  }
-
-  .pb-linkbutton:hover {
-    color: var(--pb-fg);
-    text-decoration: underline;
   }
 
   @media (max-width: 600px) {

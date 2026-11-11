@@ -18,8 +18,9 @@
     border-inline-start-color: var(--muxui-semantic-feedback-invalid);
   }
 
+  /* Mux's base rule spaces every paragraph but the last a line apart; a notice's are tight. */
   .pb-alert__title,
-  .pb-alert__body > p {
+  .pb-alert__body > .muxui-text {
     margin: 0;
   }
 

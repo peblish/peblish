@@ -107,11 +107,14 @@
     overflow-wrap: normal;
   }
 
-  /* Mux Table's look: a heavier line under the header, faint lines between rows. */
+  /* Mux Table's look: a heavier line under the header, faint lines between rows. A table wider
+     than the column scrolls inside its own box; contain keeps its width (whole words in every
+     cell) from widening a row or card around it that does not shrink below its content. */
   .pb-prose table {
     display: block;
     max-inline-size: 100%;
     overflow: auto;
+    contain: inline-size;
     border-collapse: collapse;
   }
 
@@ -120,6 +123,10 @@
     padding: var(--muxui-semantic-layout-inset-tiny) var(--muxui-semantic-layout-inset-small);
     border-block-end: 1px solid var(--muxui-semantic-border-faint);
     text-align: start;
+    /* The body's overflow-wrap: anywhere would let a cell shrink to one letter a line (a cell's
+       narrowest width counts every letter as a break); break-word keeps whole words and breaks
+       only a word longer than the cell can grow, so a wide table scrolls instead. */
+    overflow-wrap: break-word;
   }
 
   .pb-prose th {
@@ -172,7 +179,9 @@
     color: inherit;
   }
 
-  /* The reveal control before a compound spoiler: a small target of its own, pressed while the spoiler shows. */
+  /* The reveal control before a compound spoiler: a small target of its own, pressed while the spoiler shows.
+     Mux gap: Prose creates it inside the sanitised HTML, where no Mux Button can render, so it repeats
+     a small neutral Mux control with Mux's tokens. */
   .pb-prose button[data-spoiler-reveal] {
     display: inline-grid;
     place-items: center;
@@ -185,7 +194,7 @@
     background: var(--muxui-semantic-action-neutral-background);
     color: var(--muxui-semantic-content-muted);
     font: inherit;
-    line-height: 1;
+    line-height: var(--muxui-semantic-typography-compact-line-height);
     vertical-align: baseline;
     cursor: pointer;
   }
@@ -250,10 +259,6 @@
 
   /* highlight.js classes, coloured with Mux UI's TagGroup hue foregrounds: the only accent
      colours with a dark branch, each 6.5:1 or better, so one rule holds in both schemes. */
-  .pb-prose .hljs {
-    color: var(--muxui-semantic-content-default);
-  }
-
   /* No italics in code: the italic monospace face is a 41 kB font file the budget has no room for. */
   .pb-prose .hljs-comment,
   .pb-prose .hljs-quote {

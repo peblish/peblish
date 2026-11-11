@@ -31,13 +31,13 @@
     text-decoration: none;
   }
 
-  .pb-post__thumb img {
+  .pb-post__picture {
     display: block;
     inline-size: 100%;
     block-size: 100%;
   }
 
-  [data-hidden] .pb-post__thumb img {
+  [data-hidden] .pb-post__picture {
     filter: blur(14px);
   }
 
@@ -75,14 +75,16 @@
   }
 
   .pb-post__title .muxui-link {
-    /* Inline, so a long title wraps with the tags and domain around it. */
+    /* Inline, so a long title wraps with the tags and domain around it. Mux gap: Link has no
+       inherit tone and no inline mode. */
     display: inline;
     color: inherit;
     font-weight: inherit;
     line-height: inherit;
   }
 
-  /* The links in a post underline on hover only (the global a:hover rule). */
+  /* The links in a post underline on hover only (the global a:hover rule). Mux gap: Link has no
+     underline option. */
   .pb-post__body .muxui-link:not(:hover) {
     text-decoration: none;
   }
@@ -100,13 +102,13 @@
 
   .pb-post__title .pb-badge {
     margin-inline-end: var(--muxui-semantic-layout-tight-gap);
-    vertical-align: middle;
   }
 
   .pb-post__by .pb-badge {
     margin-inline-start: var(--muxui-semantic-layout-tight-gap);
   }
 
+  /* Mux gap: Link is an inline-flex box with its own line height, which breaks a wrapping meta line. */
   .pb-post__meta .muxui-link {
     display: inline;
     line-height: inherit;
