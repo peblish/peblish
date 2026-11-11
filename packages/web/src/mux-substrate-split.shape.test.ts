@@ -11,7 +11,7 @@ const rewrite = (code: string) => () => rewriteSubstrateImports('/mux/generated/
 describe('splitSubstrate', () => {
   test('names that only look like a wrapper pass: property names, object keys and strings', () => {
     const { wrappers, names } = split(
-      "const label = { AriaButton: 'AriaButton' }.AriaButton;\nexport const AriaMenu = withMuxState(RAC.AriaButton, label);\n",
+      "const label = { AriaButton: 'AriaButton' }.AriaButton;\nexport const AriaMenu = /*#__PURE__*/ withMuxState(RAC.AriaButton, label);\n",
     )();
     expect([...wrappers.keys()]).toEqual(['AriaButton', 'AriaMenu']);
     expect(names).toBe('withMuxState, label');
@@ -25,12 +25,19 @@ describe('splitSubstrate', () => {
     ],
     [
       'a wrapper reading another inside a function',
-      'export const AriaLink = withMuxState(() => AriaButton, "a");\n',
+      'export const AriaLink = /*#__PURE__*/ withMuxState(() => AriaButton, "a");\n',
       'AriaLink reading the exported wrapper AriaButton',
     ],
     ['a helper reading a wrapper', 'const tags = { [AriaButton]: "button" };\n', 'a helper reading the exported wrapper AriaButton'],
     ['a class helper', 'class Helper {}\n', 'a top-level ClassDeclaration'],
     ['a side-effect statement', 'RAC.setup();\n', 'a top-level ExpressionStatement'],
+    // Left out of the client when no route imports it, an unmarked call would run on the server only.
+    [
+      'a wrapper made by an unmarked call',
+      "export const AriaLink = withMuxState(RAC.Link, 'a');\n",
+      'a top-level value that may have effects',
+    ],
+    ['a helper made by a call', 'const registry = RAC.register();\n', 'a top-level value that may have effects'],
   ])('rejects %s', (_, body, error) => expect(split(body)).toThrow(error));
 });
 
