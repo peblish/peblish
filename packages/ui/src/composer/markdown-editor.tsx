@@ -1,6 +1,6 @@
 import { useId, useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { Card } from '../components/card.tsx';
-import { FieldAlert } from '../components/field-problem.tsx';
+import { FieldAlert, useErrorPartId } from '../components/field-problem.tsx';
 import { IconButton } from '../components/icon-button.tsx';
 import { Notice } from '../components/notice.tsx';
 import { Prose } from '../components/prose.tsx';
@@ -104,6 +104,9 @@ export function MarkdownEditor({
   const requested = useRef(0);
   const enhanced = useHydrated();
   const errorId = useId();
+  const shownError = Boolean(invalid && errorMessage);
+  // An error the server rendered keeps React Aria's own id, which the text area names in that markup.
+  const partId = useErrorPartId(shownError, errorId);
   const [view, setView] = useState<'write' | 'preview'>('write');
   const [preview, setPreview] = useState<Preview>({ status: 'idle' });
 
@@ -205,16 +208,17 @@ export function MarkdownEditor({
       {/* The write pane stays mounted while previewing, so the form still carries the text. */}
       <div className="pb-md__write" hidden={view === 'preview'}>
         {/* Mux UI's TextArea parts rather than the shared TextAreaField, for the error: once hydrated
-            nothing else tells a person what is wrong, so it is an alert, and an error that appears
-            after the first render is linked to the field only by an id it already has (Mux UI rc.6). */}
+            nothing else tells a person what is wrong, so it is an alert. Its id comes from
+            useErrorPartId, as in the field wrappers: an error that appears after the first render is
+            linked to the field only by an id it already has (Mux UI rc.6). */}
         <TextArea.Root value={value} onChange={onChange} invalid={invalid} disabled={disabled}>
           <TextArea.Label className="pb-sr">{label}</TextArea.Label>
           <TextArea.TextArea ref={textArea} name={name} rows={rows} onKeyDown={onKeyDown} />
           {description && <TextArea.Description>{description}</TextArea.Description>}
-          {invalid && errorMessage && (
+          {shownError && (
             // React Aria's FieldError, under TextArea.Error, drops a role, so the alert is inside it
             // (a Text would recolour the message).
-            <TextArea.Error id={errorId}>
+            <TextArea.Error id={partId}>
               <FieldAlert>{errorMessage}</FieldAlert>
             </TextArea.Error>
           )}
