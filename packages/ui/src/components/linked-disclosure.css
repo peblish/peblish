@@ -1,0 +1,63 @@
+/* LinkedDisclosure: a Mux Disclosure, and the link that stands in for it without script. */
+@layer app {
+  .pb-linked-disclosure {
+    min-inline-size: 0;
+    max-inline-size: 100%;
+  }
+
+  /* A long title ("Ban from !community@a-very-long-host.example") wraps instead of running past
+     its column: Mux keeps an ungrouped trigger on one line, and a button may not inherit the
+     body's overflow-wrap. */
+  .pb-linked-disclosure .muxui-disclosure__trigger,
+  .pb-linked-disclosure__open,
+  .pb-linked-disclosure__label {
+    min-inline-size: 0;
+    max-inline-size: 100%;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .pb-linked-disclosure__open,
+  .pb-linked-disclosure__label {
+    display: none;
+  }
+
+  /* `scripting` is supported from Chrome and Edge 120, Firefox 113 and Safari 17. A browser
+     without it does not match this block, so it keeps the scripts-on presentation above: the
+     Mux Disclosure, as it was before this piece existed. */
+  @media (scripting: none) {
+    /* Closed: its trigger needs script, so a link to the address that renders it open replaces it. */
+    .pb-linked-disclosure__open {
+      display: inline-flex;
+    }
+
+    .pb-linked-disclosure__open ~ .muxui-disclosure-group {
+      display: none;
+    }
+
+    /* Rendered open: the trigger could not close it, so a plain label replaces it as the top of
+       the same box, in the trigger's type and spacing (Mux's DisclosureGroup recipe). Child
+       combinators keep a disclosure nested in the panel out of reach. */
+    .pb-linked-disclosure__label {
+      display: block;
+      padding: calc(var(--muxui-semantic-control-padding-block) * 1.5) calc(var(--muxui-semantic-control-padding-inline) * 1.25);
+      border-start-start-radius: var(--muxui-component-disclosuregroup-radius);
+      border-start-end-radius: var(--muxui-component-disclosuregroup-radius);
+      background-color: var(--muxui-component-disclosuregroup-background);
+      color: var(--muxui-semantic-content-strong);
+      font-family: var(--muxui-semantic-typography-label-font-family);
+      font-size: var(--muxui-semantic-typography-label-m-font-size);
+      font-weight: var(--muxui-semantic-typography-label-font-weight);
+      line-height: var(--muxui-semantic-typography-text-line-height);
+    }
+
+    .pb-linked-disclosure__label ~ .muxui-disclosure-group > .muxui-disclosure {
+      border-start-start-radius: 0;
+      border-start-end-radius: 0;
+    }
+
+    .pb-linked-disclosure__label ~ .muxui-disclosure-group > .muxui-disclosure > .muxui-disclosure__header {
+      display: none;
+    }
+  }
+}
