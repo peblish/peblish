@@ -28,6 +28,8 @@ export function usePostCardLabels(): PostCardLabels {
   const { locale, t } = useTranslate();
   return {
     vote: useVoteLabels(),
+    // The catalogue's name for a card's vote group: "Vote on {title}".
+    voteOn: (title) => t('posts', 'vote.on', { title }),
     badges: useBadgeLabels(),
     pinned: t('ui', 'post.pinned'),
     locked: t('ui', 'post.locked'),

@@ -8,15 +8,15 @@ export interface EmptyStateProps extends Omit<ComponentPropsWithoutRef<'div'>, '
   children?: ReactNode;
   /** One facade `Button` or `Link`, or a few side by side. */
   action?: ReactNode;
-  /** The heading level in the page outline; it does not change the look. */
-  level?: 2 | 3;
+  /** The heading level in the page outline (1 when the state is the whole page); it does not change the look. */
+  level?: 1 | 2 | 3;
 }
 
 /** Nothing to show yet: a Mux title, a muted line and an optional action, centred in the column. */
 export function EmptyState({ title, children, action, level = 2, className, ...rest }: EmptyStateProps) {
   return (
     <div {...rest} className={['pb-empty-state', className].filter(Boolean).join(' ')}>
-      <Text as={level === 3 ? 'h3' : 'h2'} variant="title" size="sm">
+      <Text as={`h${level}`} variant="title" size="sm">
         {title}
       </Text>
       {children != null && (

@@ -124,3 +124,43 @@ test('on a long page the sidebar stays in view, and its column runs the page hei
   const background = (selector: string) => page.locator(selector).evaluate((element) => getComputedStyle(element).backgroundColor);
   expect(await background('.pb-app__side')).toBe(await background('.pb-side'));
 });
+
+test('a long community handle in the sidebar ends in an ellipsis, keeps its whole name and never widens the column', async ({ page }) => {
+  test.skip(Boolean(process.env.BASE_URL), 'needs the lane database for its seed (DATABASE_URL)');
+  // At least one local community for the signed-out sidebar to list (the payload budget's seed).
+  execFileSync('node', ['packages/core/src/testing/seed-b1.ts', 'e2e'], { cwd: join(import.meta.dirname, '../..'), encoding: 'utf8' });
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await gotoHydrated(page, '/');
+  const communities = page.getByRole('complementary', { name: 'Sidebar' }).getByRole('navigation', { name: 'Communities' });
+  const row = communities.getByRole('link', { name: /^!/ }).first();
+  // A handle as long as a remote one can be: the name and host the data could carry, in place.
+  const long = '!a_community_with_a_very_long_name_indeed@lemmy.a-very-long-host-name.example.org';
+  await row.locator('.pb-handle__name').evaluate((name, text) => (name.textContent = text.slice(0, text.indexOf('@'))), long);
+  await row.locator('.pb-handle').evaluate(
+    (handle, host) => {
+      const part = document.createElement('bdi');
+      part.className = 'pb-handle__host';
+      part.textContent = host;
+      handle.append(part);
+    },
+    long.slice(long.indexOf('@')),
+  );
+  await expect(row).toHaveAccessibleName(new RegExp(`${long.replace(/[.]/g, '\\.')}$`));
+  const measured = await row.evaluate((link) => {
+    const handle = link.querySelector<HTMLElement>('.pb-handle')!;
+    const column = document.querySelector('.pb-app__side')!.getBoundingClientRect();
+    return {
+      column: column.width,
+      columnRight: column.right,
+      linkRight: link.getBoundingClientRect().right,
+      cut: handle.scrollWidth > handle.clientWidth,
+      ellipsis: getComputedStyle(handle).textOverflow,
+      page: document.documentElement.scrollWidth,
+    };
+  });
+  expect(measured.column, 'the column keeps its 16rem').toBeCloseTo(256, 0);
+  expect(measured.linkRight, 'the row stays inside the column').toBeLessThanOrEqual(measured.columnRight);
+  expect(measured.cut, 'the handle is cut').toBe(true);
+  expect(measured.ellipsis).toBe('ellipsis');
+  expect(measured.page).toBe(1280);
+});

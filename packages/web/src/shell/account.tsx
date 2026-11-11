@@ -1,6 +1,7 @@
 import type { SessionView } from '@peblish/schema/session';
 import { Avatar } from '@peblish/ui/components/avatar';
 import { Button } from '@peblish/ui/components/button';
+import { ButtonLink } from '@peblish/ui/components/button-link';
 import { LogInIcon, UserPlusIcon } from '@peblish/ui/components/icons';
 import { Link } from '@peblish/ui/components/link';
 import { Menu } from '@peblish/ui/components/menu';
@@ -65,10 +66,10 @@ export function Account({ session }: { session: SessionView | null }) {
           <LogInIcon />
           <span className="pb-action__label">{t('shell', 'account.signIn')}</span>
         </Link>
-        <Link className="pb-cta" href="/auth/sign-up">
+        <ButtonLink className="pb-cta" href="/auth/sign-up" size="sm">
           <UserPlusIcon />
           <span className="pb-action__label">{t('shell', 'account.signUp')}</span>
-        </Link>
+        </ButtonLink>
       </nav>
     );
   }

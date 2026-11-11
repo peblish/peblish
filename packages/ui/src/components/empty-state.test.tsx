@@ -26,3 +26,9 @@ test('native attributes reach the root div', () => {
   );
   expect(html).toMatch(/^<div id="e" data-testid="empty" aria-describedby="note" class="pb-empty-state extra">/);
 });
+
+test('a whole page in an empty state heads it at level 1', () => {
+  expect(renderToStaticMarkup(<EmptyState title="Page not found" level={1} />)).toContain(
+    '<h1 class="muxui-text muxui-text--title-sm">Page not found</h1>',
+  );
+});
