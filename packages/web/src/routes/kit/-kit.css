@@ -4,30 +4,34 @@
     margin-bottom: var(--muxui-semantic-layout-section-gap);
   }
 
-  .kit h2 {
+  .kit .kit-heading {
     padding: var(--muxui-semantic-layout-inset-tight) 0;
     border-bottom: 1px solid var(--muxui-semantic-border-default);
   }
 
-  .kit section > h3,
-  .kit section > div > h3 {
+  .kit .kit-subheading {
     margin: var(--muxui-semantic-layout-group-gap) 0 var(--muxui-semantic-layout-tight-gap);
   }
 
-  .kit section > div > h3 {
+  /* Sample names (card, outlined) are the code's lowercase values. */
+  .kit .kit-name {
     text-transform: capitalize;
+  }
+
+  .kit .kit-italic {
+    font-style: italic;
   }
 
   .kit-row {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 12px;
+    gap: var(--muxui-semantic-layout-action-gap);
   }
 
   .kit-stack {
     display: grid;
-    gap: 14px;
+    gap: var(--muxui-semantic-layout-action-gap);
     max-width: 420px;
     justify-items: start;
   }
@@ -39,12 +43,11 @@
     margin-block-end: var(--muxui-semantic-layout-group-gap);
   }
 
-  .kit-cards h3 {
+  .kit-cards .kit-name {
     margin: 0;
-    text-transform: capitalize;
   }
 
   .kit-toolbar {
-    padding: 8px 0;
+    padding-block: var(--muxui-semantic-layout-inset-tiny);
   }
 }

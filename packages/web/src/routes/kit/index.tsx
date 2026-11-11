@@ -7,6 +7,7 @@ import { Link } from '@peblish/ui/components/link';
 import { Menu } from '@peblish/ui/components/menu';
 import { PostCard, type Density } from '@peblish/ui/components/post-card';
 import { Prose } from '@peblish/ui/components/prose';
+import { Quote } from '@peblish/ui/components/quote';
 import { ReplyBar } from '@peblish/ui/components/reply-bar';
 import { Select } from '@peblish/ui/components/select';
 import { Separator } from '@peblish/ui/components/separator';
@@ -88,26 +89,33 @@ function KitPage() {
       </Text>
 
       <section aria-labelledby="kit-type">
-        <Text as="h2" variant="heading" size="sm" id="kit-type">
+        <Text as="h2" variant="heading" size="sm" className="kit-heading" id="kit-type">
           Type and locale
         </Text>
-        <p>{t('shell', 'tagline')}</p>
-        <p>
-          <em>Italic text</em> and <code className="pb-mono">monospace text</code>.
-        </p>
-        <p>
+        <Text as="p">{t('shell', 'tagline')}</Text>
+        <Text as="p">
+          <Text as="span" className="kit-italic">
+            Italic text
+          </Text>{' '}
+          and{' '}
+          <Text as="span" variant="mono" size="sm">
+            monospace text
+          </Text>
+          .
+        </Text>
+        <Text as="p">
           {t('shell', 'sample')}: <span data-testid="locale-sample">{new Intl.NumberFormat(locale).format(1234.5)}</span>
-        </p>
+        </Text>
         <div>
           <Button onActivate={() => setCount((value) => value + 1)}>{t('shell', 'press')}</Button>
         </div>
-        <p data-testid="press-count" aria-live="polite">
+        <Text as="p" data-testid="press-count" aria-live="polite">
           {t('shell', 'pressed', { count })}
-        </p>
+        </Text>
       </section>
 
       <section aria-labelledby="kit-feed">
-        <Text as="h2" variant="heading" size="sm" id="kit-feed">
+        <Text as="h2" variant="heading" size="sm" className="kit-heading" id="kit-feed">
           Feed
         </Text>
         <div className="kit-toolbar">
@@ -132,12 +140,12 @@ function KitPage() {
       </section>
 
       <section aria-labelledby="kit-densities">
-        <Text as="h2" variant="heading" size="sm" id="kit-densities">
+        <Text as="h2" variant="heading" size="sm" className="kit-heading" id="kit-densities">
           Post card densities
         </Text>
         {densities.map((density) => (
           <div key={density} data-testid={`kit-density-${density}`}>
-            <Text as="h3" variant="title" size="sm">
+            <Text as="h3" variant="title" size="sm" className="kit-subheading kit-name">
               {density}
             </Text>
             <PostCard
@@ -165,7 +173,7 @@ function KitPage() {
       </section>
 
       <section aria-labelledby="kit-withheld">
-        <Text as="h2" variant="heading" size="sm" id="kit-withheld">
+        <Text as="h2" variant="heading" size="sm" className="kit-heading" id="kit-withheld">
           Thumbnail not loaded
         </Text>
         <div data-testid="kit-withheld">
@@ -183,7 +191,7 @@ function KitPage() {
       </section>
 
       <section aria-labelledby="kit-vote">
-        <Text as="h2" variant="heading" size="sm" id="kit-vote">
+        <Text as="h2" variant="heading" size="sm" className="kit-heading" id="kit-vote">
           Vote control
         </Text>
         <div className="kit-row">
@@ -209,7 +217,7 @@ function KitPage() {
       </section>
 
       <section aria-labelledby="kit-thread">
-        <Text as="h2" variant="heading" size="sm" id="kit-thread">
+        <Text as="h2" variant="heading" size="sm" className="kit-heading" id="kit-thread">
           Comment thread
         </Text>
         <div data-testid="kit-thread">
@@ -227,7 +235,7 @@ function KitPage() {
             now={now}
           />
         </div>
-        <Text as="h3" variant="title" size="sm">
+        <Text as="h3" variant="title" size="sm" className="kit-subheading">
           Fifty levels deep
         </Text>
         <div data-testid="kit-deep-thread">
@@ -244,7 +252,7 @@ function KitPage() {
       </section>
 
       <section aria-labelledby="kit-prose">
-        <Text as="h2" variant="heading" size="sm" id="kit-prose">
+        <Text as="h2" variant="heading" size="sm" className="kit-heading" id="kit-prose">
           Rendered content
         </Text>
         <div data-testid="kit-prose">
@@ -253,8 +261,21 @@ function KitPage() {
         </div>
       </section>
 
+      <section aria-labelledby="kit-quote">
+        <Text as="h2" variant="heading" size="sm" className="kit-heading" id="kit-quote">
+          Quote
+        </Text>
+        <div className="kit-stack" data-testid="kit-quote-samples">
+          <Quote>Plain: someone else's words, kept as a blockquote.</Quote>
+          <Quote edge>With edge: a line down the start edge, as a reply quotes its parent.</Quote>
+          <Quote edge size="sm">
+            Small, with edge.
+          </Quote>
+        </div>
+      </section>
+
       <section aria-labelledby="kit-facade">
-        <Text as="h2" variant="heading" size="sm" id="kit-facade">
+        <Text as="h2" variant="heading" size="sm" className="kit-heading" id="kit-facade">
           Facade
         </Text>
         <div className="kit-stack">
@@ -273,7 +294,7 @@ function KitPage() {
             description="Dialogs trap focus until closed."
             actions={<Button onActivate={() => setDialogOpen(false)}>Close</Button>}
           >
-            <p>Body text.</p>
+            <Text as="p">Body text.</Text>
           </Dialog>
           <TextField label="Text field" name="text" description="With a description." />
           <TextField label="Invalid field" name="invalid" invalid errorMessage="This is not valid." />
@@ -304,14 +325,14 @@ function KitPage() {
       </section>
 
       <section aria-labelledby="kit-surfaces">
-        <Text as="h2" variant="heading" size="sm" id="kit-surfaces">
+        <Text as="h2" variant="heading" size="sm" className="kit-heading" id="kit-surfaces">
           Surfaces and text
         </Text>
         <div className="kit-cards">
           {(['outlined', 'filled', 'elevated'] as const).map((variant) => (
             <Card.Root key={variant} variant={variant} padding="sm">
               <Card.Header>
-                <Text as="h3" variant="title" size="sm">
+                <Text as="h3" variant="title" size="sm" className="kit-name">
                   {variant}
                 </Text>
               </Card.Header>
@@ -334,7 +355,7 @@ function KitPage() {
         </div>
       </section>
 
-      <Text as="h2" variant="heading" size="sm">
+      <Text as="h2" variant="heading" size="sm" className="kit-heading">
         Reply bar
       </Text>
       <ReplyBar
