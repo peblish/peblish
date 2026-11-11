@@ -27,7 +27,9 @@
     "moderating.signIn.title": "Sign in to see your moderating feed",
     "moderating.signIn.body": "This feed holds the posts of the communities you moderate.",
     "moderating.signIn.link": "Sign in",
-    "moderating.empty.body": "You do not moderate any community yet, or they have no posts."
+    "moderating.empty.body": "You do not moderate any community yet, or they have no posts.",
+    "vote.failed.title": "Vote not saved",
+    "vote.failed.body": "Your vote was not saved. Try again in a moment."
   },
   "de": {
     "sort.group": "Sortierung",
@@ -57,6 +59,8 @@
     "moderating.signIn.title": "Melde dich an, um deinen Moderations-Feed zu sehen",
     "moderating.signIn.body": "Dieser Feed zeigt die Beiträge der Gemeinschaften, die du moderierst.",
     "moderating.signIn.link": "Anmelden",
-    "moderating.empty.body": "Du moderierst noch keine Gemeinschaft, oder sie haben keine Beiträge."
+    "moderating.empty.body": "Du moderierst noch keine Gemeinschaft, oder sie haben keine Beiträge.",
+    "vote.failed.title": "Stimme nicht gespeichert",
+    "vote.failed.body": "Deine Stimme wurde nicht gespeichert. Versuche es gleich noch einmal."
   }
 }

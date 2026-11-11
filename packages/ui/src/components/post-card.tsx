@@ -1,9 +1,9 @@
 import type { PostView } from '@peblish/schema/views';
-import { useState } from 'react';
+import { useId, useState } from 'react';
 import { Badge, type BadgeLabels } from './badge.tsx';
 import { Button } from './button.tsx';
 import { Card } from './card.tsx';
-import { Handle } from './handle.tsx';
+import { Handle, neutraliseBidi } from './handle.tsx';
 import { ImageIcon, LinkIcon, TextIcon } from './icons.tsx';
 import { Image } from './image.tsx';
 import { Link } from './link.tsx';
@@ -15,6 +15,11 @@ export type Density = 'card' | 'classic' | 'compact';
 
 export interface PostCardLabels {
   vote: VoteControlLabels;
+  /**
+   * The vote group's name for one post, from its title as the card shows it: "Vote on <title>".
+   * Without it the group is named "<vote.group>: <title>".
+   */
+  voteOn?: (title: string) => string;
   badges: BadgeLabels;
   /** Tags before the title. */
   pinned: string;
@@ -113,6 +118,8 @@ export function PostCard({
   const Mark = markIcons[kind];
   const card = density === 'card';
   const picture = gone ? null : thumbnailSrc;
+  const title = post.removed ? labels.removed : post.deleted ? labels.deleted : post.title;
+  const titleId = useId();
   // Dense rows take Mux's label role for the title, so a row stays one scan line (the RM mock's rows).
   const titleType = card
     ? ({ variant: 'title', size: 'md' } as const)
@@ -136,15 +143,16 @@ export function PostCard({
         )}
       </a>
       <div className="pb-post__body">
-        <Text as={`h${headingLevel}`} {...titleType} className="pb-post__title">
+        <Text as={`h${headingLevel}`} id={titleId} {...titleType} className="pb-post__title">
           {post.featured && <Badge kind="pinned">{labels.pinned}</Badge>}
           {post.locked && <Badge kind="locked">{labels.locked}</Badge>}
           {post.sensitive && <Badge kind="nsfw">{labels.nsfw}</Badge>}
           {post.nsfl && <Badge kind="nsfl">{labels.nsfl}</Badge>}
-          <Link href={hrefs.post}>{post.removed ? labels.removed : post.deleted ? labels.deleted : post.title}</Link>
+          <Link href={hrefs.post}>{title}</Link>
           {domain && !gone && (
             <Text size="xs" color="muted" className="pb-post__domain">
-              ({domain})
+              {/* The domain comes from the post's link: isolated and left to right, like a handle's host. */}
+              <bdi dir="ltr">({neutraliseBidi(domain)})</bdi>
             </Text>
           )}
         </Text>
@@ -187,6 +195,7 @@ export function PostCard({
 
   return (
     <article
+      aria-labelledby={titleId}
       className="pb-post"
       data-density={density}
       data-kind={kind}
@@ -202,6 +211,7 @@ export function PostCard({
         onVote={onVote}
         disabled={voteDisabled}
         labels={labels.vote}
+        label={labels.voteOn ? labels.voteOn(title) : `${labels.vote.group}: ${title}`}
         locale={locale}
       />
       {card ? (

@@ -237,11 +237,33 @@
     row-gap: 0;
   }
 
+  /* One line: the title text truncates, never the link's domain, which is how a reader judges
+     where the link goes. The domain keeps its width up to the row less 6em, so some of the title
+     always shows; only a domain longer than that wraps, inside itself. */
   .pb-post[data-density='compact'] .pb-post__title {
     grid-column: 1 / -1;
+    display: flex;
+    align-items: baseline;
+    column-gap: var(--muxui-semantic-layout-tight-gap);
+    min-inline-size: 0;
+    white-space: nowrap;
+  }
+
+  .pb-post[data-density='compact'] .pb-post__title > * {
+    flex: none;
+    margin: 0;
+  }
+
+  .pb-post[data-density='compact'] .pb-post__title .muxui-link {
+    flex: 0 1 auto;
+    min-inline-size: 0;
     overflow: hidden;
     text-overflow: ellipsis;
-    white-space: nowrap;
+  }
+
+  .pb-post[data-density='compact'] .pb-post__domain {
+    max-inline-size: calc(100% - 6em);
+    white-space: normal;
   }
 
   @media (max-width: 600px) {

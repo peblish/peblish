@@ -38,7 +38,8 @@
     "error.community.removed": "This community has been removed.",
     "error.community.deleted": "This community has been deleted.",
     "error.generic": "Something went wrong. Try again.",
-    "error.network": "The request did not get through. Check your connection and try again."
+    "error.network": "The request did not get through. Check your connection and try again.",
+    "vote.on": "Vote on {title}"
   },
   "de": {
     "page.fallbackTitle": "Beitrag",
@@ -79,6 +80,7 @@
     "error.community.removed": "Diese Community wurde entfernt.",
     "error.community.deleted": "Diese Community wurde gelöscht.",
     "error.generic": "Etwas ist schiefgelaufen. Versuche es erneut.",
-    "error.network": "Die Anfrage ist nicht durchgekommen. Prüfe deine Verbindung und versuche es erneut."
+    "error.network": "Die Anfrage ist nicht durchgekommen. Prüfe deine Verbindung und versuche es erneut.",
+    "vote.on": "Über „{title}“ abstimmen"
   }
 }
