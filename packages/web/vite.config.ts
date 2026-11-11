@@ -166,6 +166,121 @@ export function splitMuxSubstrate(): Plugin {
   };
 }
 
+const declarationQuery = '?mux-declaration=';
+
+function declarationDrift(file: string, what: string): never {
+  throw new Error(
+    `peblish:split-mux-declarations: ${what} in ${file}. This Mux UI module changed shape; update splitMuxDeclarations in vite.config.ts.`,
+  );
+}
+
+/**
+ * Mux UI modules that hold several families, split one module per top-level declaration in the client build.
+ *
+ * overlays.js holds Dialog, DropZone, FileTrigger, Popover, PreviewTrigger, Toast and Tooltip. Tree shaking is
+ * global, so every export some route uses stays in that one module, and every page loads it because the Sidebar
+ * needs its Tooltip: the drop zone's drag and drop, the dialog and the preview trigger came with the Sidebar to every
+ * page. Split by declaration, each route loads only the declarations it reaches (5.4 kB gzip less on the home page,
+ * 5.7 kB on sign-in, measured 2026-11-11).
+ */
+const splitByDeclaration = /[\\/]@muxui[\\/]react[\\/]generated[\\/]overlays\.js$/;
+
+/**
+ * A module in parts: its imports, and each top-level declaration by its first name with the names it declares and the
+ * other declarations it reads. A statement that sets a property on a declaration (`Tooltip.displayName = ...`) goes
+ * with it. Fails closed on anything else but imports, function and variable declarations and their named exports, so
+ * a Mux update that changes the shape breaks the build instead of the page.
+ */
+export function splitDeclarations(file: string, code = readFileSync(file, 'utf8')) {
+  const program = parseProgram(file, code);
+  const imports: string[] = [];
+  const declarations = new Map<string, { names: string[]; exported: boolean; text: string; ranges: { start: number; end: number }[] }>();
+  const owner = new Map<string, string>();
+  for (const node of program.body) {
+    const text = code.slice(node.start, node.end);
+    if (node.type === 'ImportDeclaration') {
+      if (node.specifiers.length === 0) declarationDrift(file, 'a side-effect-only import');
+      imports.push(text);
+      continue;
+    }
+    if (node.type === 'ExpressionStatement') {
+      const { expression } = node;
+      const target =
+        expression.type === 'AssignmentExpression' &&
+        expression.left.type === 'MemberExpression' &&
+        expression.left.object.type === 'Identifier'
+          ? declarations.get(owner.get(expression.left.object.name) ?? '')
+          : undefined;
+      if (!target) declarationDrift(file, 'a top-level expression other than a property set on a declaration');
+      target.text += `\n${text}`;
+      target.ranges.push({ start: node.start, end: node.end });
+      continue;
+    }
+    const exported = node.type === 'ExportNamedDeclaration';
+    const declaration = exported ? node.declaration : node;
+    if (exported && (!declaration || node.source)) declarationDrift(file, 'an export list or re-export');
+    if (!declaration) declarationDrift(file, `a top-level ${node.type}`);
+    let names: string[];
+    if (declaration.type === 'FunctionDeclaration' && declaration.id) names = [declaration.id.name];
+    else if (declaration.type === 'VariableDeclaration')
+      names = declaration.declarations.map(({ id }) =>
+        id.type === 'Identifier' ? id.name : declarationDrift(file, 'a destructured declaration'),
+      );
+    else declarationDrift(file, `a top-level ${declaration.type}`);
+    for (const name of names) owner.set(name, names[0]!);
+    declarations.set(names[0]!, { names, exported, text, ranges: [{ start: node.start, end: node.end }] });
+  }
+  const reads = new Map<string, Set<string>>([...declarations.keys()].map((key) => [key, new Set()]));
+  for (const { name, at } of identifierReads(program)) {
+    const target = owner.get(name);
+    if (!target) continue;
+    const [reader] = [...declarations].find(([, { ranges }]) => ranges.some(({ start, end }) => start <= at && at < end)) ?? [];
+    if (reader && reader !== target) reads.get(reader)!.add(target);
+  }
+  return { imports: imports.join('\n'), declarations, reads };
+}
+
+/**
+ * Splits each module matched by `splitByDeclaration` into one virtual module per top-level declaration, client build
+ * only. The module itself becomes re-exports of its exported declarations; each part carries the module's imports
+ * (unused ones are shaken out) and imports the declarations it reads from their parts. All are side-effect free.
+ */
+export function splitMuxDeclarations(): Plugin {
+  const parts = new Map<string, ReturnType<typeof splitDeclarations>>();
+  const partsOf = (file: string) => parts.get(file) ?? parts.set(file, splitDeclarations(file)).get(file)!;
+  const partId = (file: string, key: string) => JSON.stringify(file + declarationQuery + key);
+  return {
+    name: 'peblish:split-mux-declarations',
+    apply: 'build',
+    applyToEnvironment: (environment) => environment.name === 'client',
+    resolveId: { filter: { id: /\?mux-declaration=/ }, handler: (source) => source },
+    load: {
+      filter: { id: /\?mux-declaration=/ },
+      handler(id) {
+        const at = id.indexOf(declarationQuery);
+        const [file, key] = [id.slice(0, at), id.slice(at + declarationQuery.length)];
+        const { imports, declarations, reads } = partsOf(file);
+        const part = declarations.get(key) ?? declarationDrift(file, `no declaration named ${key}`);
+        const own = [...reads.get(key)!].map((dependency) => {
+          const names = declarations.get(dependency)!.names.join(', ');
+          return `import { ${names} } from ${partId(file, dependency)};`;
+        });
+        const code = [imports, ...own, part.text, part.exported ? '' : `export { ${part.names.join(', ')} };`].join('\n');
+        // The parts keep the module's substrate imports, which the substrate split points at single wrappers.
+        return { code: rewriteSubstrateImports(file, code)?.code ?? code, moduleSideEffects: false };
+      },
+    },
+    transform: {
+      filter: { id: splitByDeclaration },
+      handler(_code, id) {
+        const exports = [...partsOf(id).declarations].filter(([, { exported }]) => exported);
+        const code = exports.map(([key, { names }]) => `export { ${names.join(', ')} } from ${partId(id, key)};`).join('\n');
+        return { code, map: null, moduleSideEffects: false };
+      },
+    },
+  };
+}
+
 /** Which chunk each package landed in, written next to the build for the budget check (e2e/payload). */
 function payloadChunks(): Plugin {
   const packageOf = (id: string) => /[\\/]node_modules[\\/]((?:@[^\\/]+[\\/])?[^\\/]+)[\\/](?!.*[\\/]node_modules[\\/])/.exec(id)?.[1];
@@ -224,6 +339,7 @@ export default defineConfig({
     nitro({ preset: 'node-server', exportConditions: ['!unwasm'], plugins: ['./src/server/shutdown.ts'] }),
     viteReact(),
     splitMuxSubstrate(),
+    splitMuxDeclarations(),
     payloadChunks(),
   ],
 });
