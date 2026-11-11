@@ -4,8 +4,12 @@ import { Button } from '@peblish/ui/components/button';
 import { ButtonGroup } from '@peblish/ui/components/button-group';
 import { CommentThread } from '@peblish/ui/components/comment-thread';
 import type { Vote } from '@peblish/ui/components/vote-control';
-import { Disclosure } from '@peblish/ui/components/disclosure';
+import { EmptyState } from '@peblish/ui/components/empty-state';
+import { Handle, neutraliseBidi } from '@peblish/ui/components/handle';
 import { Link } from '@peblish/ui/components/link';
+import { LinkedDisclosure } from '@peblish/ui/components/linked-disclosure';
+import { Notice } from '@peblish/ui/components/notice';
+import { Pager } from '@peblish/ui/components/pager';
 import { ReplyBar } from '@peblish/ui/components/reply-bar';
 import { Text } from '@peblish/ui/components/text';
 import type { CommentView } from '@peblish/schema/views';
@@ -30,10 +34,12 @@ import { asCommentError, errorKey, type CommentError } from './errors.ts';
 // sort or a page (?after=) other than the one the page was loaded with is fetched once the page
 // has hydrated; before that (and without JavaScript) the sort choice is a plain GET form, the
 // pages are plain links, and the server renders the sort and page the document asks for. A
-// reply is a plain form post too, to /post/<id>/comments.
+// reply is a plain form post too, to /post/<id>/comments. "Removed by moderators" is a
+// LinkedDisclosure: without JavaScript it is a link to this page with ?removed=1, which the
+// server renders open.
 
 const Answer = type({ 'ok?': 'boolean', 'error?': 'string' });
-const Search = type({ 'sort?': 'unknown', 'after?': 'unknown', 'commentError?': 'unknown' });
+const Search = type({ 'sort?': 'unknown', 'after?': 'unknown', 'commentError?': 'unknown', 'removed?': 'unknown' });
 
 /** Plain text for the reply bar from a comment's rendered HTML; only displayed, and React escapes it. */
 function excerptOf(html: string | null): string {
@@ -61,6 +67,8 @@ export function ThreadSection({ data: loaded }: { data: ThreadData }) {
   const wanted = parseSort(search instanceof type.errors ? undefined : search.sort);
   const wantedAfter = search instanceof type.errors || typeof search.after !== 'string' ? null : search.after;
   const urlError = asCommentError(search instanceof type.errors ? undefined : search.commentError);
+  // The router reads ?removed=1 as the number 1.
+  const removedOpen = !(search instanceof type.errors) && (search.removed === 1 || search.removed === '1');
 
   // The sort and page the page was loaded with are the data; any other is fetched, and shown until then as before.
   // `loaded` is a dependency: a reply invalidates the router, and the fresh load must fetch the other view again.
@@ -87,10 +95,13 @@ export function ThreadSection({ data: loaded }: { data: ThreadData }) {
   // A fetch is drawn only for the view it was made for, so one left from another view (back on the loaded one, or on a third) never shows.
   const fetchedHere = fetched?.sort === wanted && fetched.after === wantedAfter ? fetched : null;
   const data = current ? loaded : (fetchedHere ?? loaded);
-  const times = useMemo(() => new Map(Object.entries(data.times)), [data.times]);
+  const now = useMemo(() => new Date(data.now), [data.now]);
   // The address of a page of this thread: the post's or the permalink's, in this sort.
+  const here = data.focus ? commentPath(data.postId, data.focus.id) : postPath(data.postId);
   const pageHref = (cursor: string | null) =>
-    `${data.focus ? commentPath(data.postId, data.focus.id) : postPath(data.postId)}?${new URLSearchParams({ sort: data.sort, ...(cursor && { after: cursor }) })}#comments`;
+    `${here}?${new URLSearchParams({ sort: data.sort, ...(cursor && { after: cursor }) })}#comments`;
+  // This page with the removed comments listed open (for a browser without JavaScript).
+  const removedHref = `${here}?${new URLSearchParams({ sort: data.sort, ...(data.after ? { after: data.after } : {}), removed: '1' })}#th-removed`;
 
   const freshLabels = useCommentThreadLabels();
   // The thread's rows are memoised, and the labels are a fresh object each render but depend on
@@ -182,7 +193,7 @@ export function ThreadSection({ data: loaded }: { data: ThreadData }) {
       {/* Without precedence, React leaves the link where it is. A precedence link would hold this part of the page back until a script reveals it. */}
       <link rel="stylesheet" href={commentsCss} />
       <div className="th-head">
-        <Text as="h2" variant="title" size="sm" id="comments-heading">
+        <Text as="h2" variant="title" size="sm" id="comments-heading" className="th-heading">
           {t('comments', 'heading')}
         </Text>
         <form method="get" action="#comments" onSubmit={chooseSort}>
@@ -203,21 +214,14 @@ export function ThreadSection({ data: loaded }: { data: ThreadData }) {
           </ButtonGroup>
         </form>
       </div>
-      {data.after && (
-        <Text as="p" className="th-more">
-          <Link href={pageHref(null)}>{t('comments', data.focus ? 'first.replies' : 'first.comments')}</Link>
-        </Text>
-      )}
       {data.comments.length === 0 ? (
-        <Text as="p" color="muted" className="th-empty">
-          {t('comments', 'empty')}
-        </Text>
+        <EmptyState level={3} title={t('comments', 'empty')} />
       ) : (
         <CommentThread
           comments={data.comments}
           postAuthorId={data.postAuthorId}
           continueHref={continueHref}
-          times={times}
+          now={now}
           authorHref={authorHref}
           labels={labels}
           locale={locale}
@@ -229,32 +233,40 @@ export function ThreadSection({ data: loaded }: { data: ThreadData }) {
         />
       )}
       {urlError && (
-        <Text as="p" role="alert" className="th-error">
+        <Notice tone="danger" role="alert" className="th-error">
           {t('comments', errorKey(urlError))}
-        </Text>
+        </Notice>
       )}
-      {data.next && (
-        <Text as="p" className="th-more">
-          <Link href={pageHref(data.next)}>{t('comments', data.focus ? 'more.replies' : 'more.comments')}</Link>
-        </Text>
-      )}
+      <Pager
+        aria-label={t('comments', data.focus ? 'pager.replies' : 'pager.comments')}
+        {...(data.after ? { first: { href: pageHref(null), label: t('comments', data.focus ? 'first.replies' : 'first.comments') } } : {})}
+        {...(data.next ? { next: { href: pageHref(data.next), label: t('comments', data.focus ? 'more.replies' : 'more.comments') } } : {})}
+      />
       {data.removals.length > 0 && (
-        <Disclosure className="th-removed" title={t('comments', 'removed.heading', { count: data.removals.length })}>
+        <LinkedDisclosure
+          id="th-removed"
+          className="th-removed"
+          title={t('comments', 'removed.heading', { count: data.removals.length })}
+          openHref={removedHref}
+          defaultExpanded={removedOpen}
+        >
           <ul className="th-removed__list">
             {data.removals.map((removal) => (
               <li key={removal.id}>
                 <Text size="sm">
-                  <Link href={commentPath(data.postId, removal.id)}>@{removal.handle}</Link>:{' '}
-                  {removal.reason ?? t('comments', 'removed.noReason')}
+                  <Link href={commentPath(data.postId, removal.id)}>
+                    <Handle prefix="@" handle={removal.handle} />
+                  </Link>
+                  : {removal.reason ?? t('comments', 'removed.noReason')}
                 </Text>
               </li>
             ))}
           </ul>
-        </Disclosure>
+        </LinkedDisclosure>
       )}
       {data.reply === 'yes' ? (
         <ReplyBar
-          target={target && { handle: `@${target.author.handle}`, excerpt: excerptOf(target.contentHtml) }}
+          target={target && { handle: `@${neutraliseBidi(target.author.handle)}`, excerpt: excerptOf(target.contentHtml) }}
           labels={replyLabels}
           action={`/post/${data.postId}/comments`}
           fields={{ intent: 'reply', parent: target?.id ?? '', ...(data.focus && { focus: data.focus.id }) }}

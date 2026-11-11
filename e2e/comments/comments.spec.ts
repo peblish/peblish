@@ -642,13 +642,32 @@ test.describe('a moderator', () => {
   test('sees why a comment was removed; nobody else does', async ({ page, browser }) => {
     await signedIn(page, seed.moderator.name);
     await gotoHydrated(page, postUrl(seed.posts.tombstones));
-    // A Mux Disclosure: its trigger is a button, and the reasons open below it.
+    // A LinkedDisclosure: hydrated, its trigger is a button, and the reasons open below it.
     const removed = page.getByRole('button', { name: 'Removed by moderators (1)' });
     await expect(removed).toHaveAttribute('aria-expanded', 'false');
     await removed.click();
     await expect(removed).toHaveAttribute('aria-expanded', 'true');
     await expect(page.getByRole('region', { name: 'Removed by moderators (1)' })).toContainText('Rule 3: no ads');
     await expectAccessible(page);
+    // ?removed=1 renders it open, hydrated without a warning.
+    const log = recordConsole(page);
+    await gotoHydrated(page, `${postUrl(seed.posts.tombstones)}?removed=1`);
+    await expect(removed).toHaveAttribute('aria-expanded', 'true');
+    await expect(page.getByRole('region', { name: 'Removed by moderators (1)' })).toContainText('Rule 3: no ads');
+    expect(log.hydrationProblems()).toEqual([]);
+
+    // Without JavaScript the trigger is a link to that address.
+    const plain = await (await browser.newContext({ javaScriptEnabled: false })).newPage();
+    await plain.goto('/auth/sign-in');
+    await signIn(plain, `@${seed.moderator.name}`, seed.password);
+    await plain.waitForURL('/');
+    await plain.goto(postUrl(seed.posts.tombstones));
+    await expect(plain.getByRole('button', { name: 'Removed by moderators (1)' })).toHaveCount(0);
+    await plain.getByRole('link', { name: 'Removed by moderators (1)' }).click();
+    await expect(plain).toHaveURL(/[?&]removed=1#th-removed$/);
+    await expect(plain.locator('#th-removed')).toContainText('Rule 3: no ads');
+    await expect(plain.locator('#th-removed').getByRole('link', { name: /^@/ })).toBeVisible();
+    await plain.close();
     await gotoHydrated(page, postUrl(seed.posts.removed));
     await expect(page.getByText(`Under a removed post ${seed.suffix}`)).toBeVisible();
 

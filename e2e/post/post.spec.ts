@@ -169,15 +169,20 @@ test.describe('anyone', () => {
 test.describe('a German browser', () => {
   test.use({ locale: 'de-DE' });
 
-  test('the post page speaks German to a German browser, hydrates keeping the server’s date, with no axe violations', async ({ page }) => {
+  test('the post page speaks German to a German browser, hydrates keeping the server’s age and date, with no axe violations', async ({
+    page,
+  }) => {
     const log = recordConsole(page);
     const response = await page.goto(url(seed.posts.plain), { waitUntil: 'commit' });
-    const server = /<time[^>]*>([^<]*)<\/time>/.exec((await response?.text()) ?? '')?.[1];
+    const [, title, server] = /<time[^>]*title="([^"]*)"[^>]*>([^<]*)<\/time>/.exec((await response?.text()) ?? '') ?? [];
     await page.locator('html[data-hydrated="1"]').waitFor({ state: 'attached' });
     await expect(page.getByRole('group', { name: 'Für diesen Beitrag abstimmen' })).toBeVisible();
-    // The date is German and was formatted once, on the server: hydration printed the same text.
-    expect(server).toMatch(/^\d{1,2}\. \p{L}+\.? \d{4}, \d{2}:\d{2} UTC$/u);
-    await expect(page.locator('time')).toHaveText(server ?? '');
+    // The age and the full date in its title are German, counted from the server's clock: hydration printed the same.
+    expect(server).toMatch(/^\d+\s?\p{L}+\.?$/u);
+    expect(title).toMatch(/^\d{1,2}\. \p{L}+\.? \d{4}, \d{2}:\d{2} UTC$/u);
+    const time = page.locator('.post-meta time');
+    await expect(time).toHaveText(server ?? '');
+    await expect(time).toHaveAttribute('title', title ?? '');
     await page.waitForLoadState('networkidle');
     expect(log.hydrationProblems()).toEqual([]);
     await expectAccessible(page);

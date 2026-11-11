@@ -13,17 +13,15 @@
     gap: var(--muxui-semantic-layout-control-gap) var(--muxui-semantic-layout-action-gap);
     margin-block-end: var(--muxui-semantic-layout-control-gap);
   }
-  .th-head h2 {
+  .th-heading {
     margin: 0;
   }
   .th-title {
     margin: 0 0 var(--muxui-semantic-layout-control-gap);
     overflow-wrap: anywhere;
   }
-  .th-empty,
   .th-notice,
-  .th-trail,
-  .th-more {
+  .th-trail {
     margin-block: var(--muxui-semantic-layout-group-gap);
   }
   .th-notice {
@@ -32,7 +30,6 @@
   }
   .th-error {
     margin-block: var(--muxui-semantic-layout-group-gap) 0;
-    color: var(--muxui-semantic-feedback-invalid);
   }
   .th-removed {
     margin-block-start: var(--muxui-semantic-layout-section-gap);
@@ -59,7 +56,7 @@
   .th-own__edit form > * {
     justify-self: stretch;
   }
-  .th-own__edit form > button {
+  .th-own__edit form > .th-own__save {
     justify-self: start;
   }
 }

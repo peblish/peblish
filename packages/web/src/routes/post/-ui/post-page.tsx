@@ -1,11 +1,14 @@
-import type { ReactNode } from 'react';
+import { useMemo, type ReactNode } from 'react';
 import { Badge } from '@peblish/ui/components/badge';
 import { Card } from '@peblish/ui/components/card';
 import { Group } from '@peblish/ui/components/group';
+import { Handle } from '@peblish/ui/components/handle';
 import { Image } from '@peblish/ui/components/image';
 import { Link } from '@peblish/ui/components/link';
+import { Notice } from '@peblish/ui/components/notice';
 import { Prose } from '@peblish/ui/components/prose';
 import { Text } from '@peblish/ui/components/text';
+import { Time } from '@peblish/ui/components/time';
 import { VoteControl } from '@peblish/ui/components/vote-control';
 import { useTranslate } from '../../../i18n/use-translate.ts';
 import { useRouteHydrated } from '../../../shell/hydration.ts';
@@ -42,6 +45,7 @@ function PostContent({ data, error }: { data: Extract<PostPageData, { kind: 'pos
   const count = post.counts.comments;
   const shownError = asPostError(error);
   const voteLabels = useVoteLabels();
+  const now = useMemo(() => new Date(data.now), [data.now]);
   const badgeLabels = { admin: t('posts', 'badge.admin'), moderator: t('posts', 'badge.moderator'), op: '' };
   // The slots get the post for a signed-in viewer; a removed or deleted post still has them (a moderator restores it).
   const actions: ContentActionProps | null = viewerId
@@ -61,10 +65,10 @@ function PostContent({ data, error }: { data: Extract<PostPageData, { kind: 'pos
     const state = post.deleted ? 'deleted' : 'removed';
     body = (
       <Card.Root variant="filled" padding="md" className="post-notice" data-state={state}>
-        <Text as="h1" variant="title" size="md">
+        <Text as="h1" variant="title" size="md" className="post-notice__title">
           {t('posts', `${state}.title`)}
         </Text>
-        <Text as="p" color="muted">
+        <Text as="p" color="muted" className="post-notice__body">
           {t('posts', `${state}.body`)}
         </Text>
       </Card.Root>
@@ -90,19 +94,21 @@ function PostContent({ data, error }: { data: Extract<PostPageData, { kind: 'pos
         {data.image ? (
           post.url ? (
             <Link className="post-image" href={post.url} rel="noopener noreferrer nofollow ugc">
-              <Image src={data.image} alt={post.title} loading="lazy" radius="md" fit="contain" />
+              <Image src={data.image} alt={post.title} loading="lazy" radius="md" fit="contain" className="post-image__img" />
             </Link>
           ) : (
             <div className="post-image">
-              <Image src={data.image} alt={post.title} loading="lazy" radius="md" fit="contain" />
+              <Image src={data.image} alt={post.title} loading="lazy" radius="md" fit="contain" className="post-image__img" />
             </div>
           )
         ) : (
           post.url && (
             <Card.Root variant="outlined" padding="sm" className="post-link-card">
               <Link className="post-link" href={post.url} rel="noopener noreferrer nofollow ugc">
-                {data.thumbnail && <Image src={data.thumbnail} alt="" loading="lazy" width={64} height={64} radius="sm" />}
-                <span>{data.domain ?? t('posts', 'link.open')}</span>
+                {data.thumbnail && (
+                  <Image src={data.thumbnail} alt="" loading="lazy" width={64} height={64} radius="sm" className="post-link__thumb" />
+                )}
+                <Text as="span">{data.domain ?? t('posts', 'link.open')}</Text>
               </Link>
             </Card.Root>
           )
@@ -133,22 +139,32 @@ function PostContent({ data, error }: { data: Extract<PostPageData, { kind: 'pos
           />
           <div className="post-main">
             <Text as="p" size="sm" color="muted" className="post-meta">
-              <Link href={`/c/${post.community.handle}`}>!{post.community.handle}</Link> {t('posts', 'meta.by')}{' '}
-              <Link href={`/u/${post.author.handle}`}>@{post.author.handle}</Link>
+              <Link href={`/c/${post.community.handle}`}>
+                <Handle prefix="!" handle={post.community.handle} />
+              </Link>{' '}
+              {t('posts', 'meta.by')}{' '}
+              <Link href={`/u/${post.author.handle}`}>
+                <Handle prefix="@" handle={post.author.handle} />
+              </Link>
               {post.authorBadge && (
                 <>
                   {' '}
                   <Badge kind={post.authorBadge} labels={badgeLabels} />
                 </>
               )}{' '}
-              · <time dateTime={post.publishedAt}>{data.published}</time>
+              · <Time iso={post.publishedAt} locale={locale} now={now} />
               {data.edited && <> · {t('posts', 'meta.edited', { date: data.edited })}</>}
             </Text>
             {body}
             {shownError && (
-              <Text as="p" role="alert" className="post-error">
+              <Notice tone="danger" role="alert" className="post-error">
                 {t('posts', errorKey(shownError))}
-              </Text>
+              </Notice>
+            )}
+            {moderator && post.removed && !post.deleted && (
+              <Notice tone="warning" className="post-hint">
+                {t('posts', 'removed.banner')}
+              </Notice>
             )}
             <div className="post-actions">
               <Link href="#comments">{count === 1 ? t('posts', 'comments.one') : t('posts', 'comments.other', { count })}</Link>
@@ -161,11 +177,6 @@ function PostContent({ data, error }: { data: Extract<PostPageData, { kind: 'pos
                     <ActionForm action={back} intent="delete" label={t('posts', 'action.delete')} />
                   )}
                 </Group>
-              )}
-              {moderator && post.removed && !post.deleted && (
-                <Text as="p" size="sm" color="muted" className="post-hint">
-                  {t('posts', 'removed.banner')}
-                </Text>
               )}
               {actions && (
                 <>

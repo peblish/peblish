@@ -12,8 +12,7 @@
     gap: var(--muxui-semantic-layout-action-gap);
   }
   .post-meta,
-  .post-flags,
-  .post-hint {
+  .post-flags {
     margin: 0 0 var(--muxui-semantic-layout-tight-gap);
   }
   .post-flags {
@@ -26,10 +25,10 @@
     margin: 0 0 var(--muxui-semantic-layout-control-gap);
     overflow-wrap: anywhere;
   }
-  .post-notice > h1 {
+  .post-notice__title {
     margin: 0 0 var(--muxui-semantic-layout-tight-gap);
   }
-  .post-notice > p {
+  .post-notice__body {
     margin: 0;
   }
   .post-image,
@@ -38,7 +37,7 @@
     margin: 0 0 var(--muxui-semantic-layout-group-gap);
     max-inline-size: 100%;
   }
-  .post-image img {
+  .post-image__img {
     max-inline-size: 100%;
     block-size: auto;
   }
@@ -52,7 +51,7 @@
     max-inline-size: 100%;
     overflow-wrap: anywhere;
   }
-  .post-link img {
+  .post-link__thumb {
     flex: none;
     inline-size: 64px;
     block-size: 64px;
@@ -79,9 +78,9 @@
     align-items: center;
     gap: var(--muxui-semantic-layout-control-gap);
   }
-  .post-error {
+  .post-error,
+  .post-hint {
     margin: var(--muxui-semantic-layout-control-gap) 0 0;
-    color: var(--muxui-semantic-feedback-invalid);
   }
   .post-thread {
     margin-block-start: var(--muxui-semantic-layout-content-gap);

@@ -14,7 +14,8 @@ import gateCss from '../../c/-ui/gate.css?url';
 // The author's actions are plain form posts to this URL: 303 back to the page, or JSON once
 // hydrated. Moderation is MODF's slot (-ui/actions/moderate.tsx), which posts elsewhere.
 
-const Search = type({ 'error?': 'string' });
+// ?removed=1 opens "Removed by moderators" (for a browser without JavaScript; the thread section reads it).
+const Search = type({ 'error?': 'string', 'removed?': 'unknown' });
 const Body = type({ intent: "'delete' | 'restore'" });
 
 export const Route = createFileRoute('/post/$id/')({

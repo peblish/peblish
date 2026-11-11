@@ -4,9 +4,7 @@ import type { PostPage, Viewer } from '@peblish/core/posts/read';
 import type { Uuid } from '@peblish/schema/ids';
 import type { SessionView } from '@peblish/schema/session';
 import type { ActorRef, CommentView } from '@peblish/schema/views';
-import { absoluteTime, compactAge } from '@peblish/ui/components/time';
-import { getRequest, getRequestHeader } from '@tanstack/react-start/server';
-import { negotiateLocale } from '../../../../i18n/negotiate.ts';
+import { getRequest } from '@tanstack/react-start/server';
 import type { MarkdownRenderer } from '../../../../server/markdown.ts';
 import type { SlotViewer } from '../../../-actions/props.ts';
 
@@ -24,8 +22,8 @@ export type ThreadData = {
   after: string | null;
   /** In display order. contentHtml is the rendered text, null for a tombstone. */
   comments: CommentView[];
-  /** Each comment's time as text in the request's locale, so hydration formats nothing (the post page's rule). */
-  times: Record<string, { age: string; title: string }>;
+  /** The server's clock when this was loaded: the thread counts ages from it, so hydration prints what the server did. */
+  now: string;
   /** The comment a permalink page starts from. */
   focus: { id: Uuid; parentId: Uuid | null } | null;
   /** The cursor for the next page of the siblings this page lists (the top-level comments, or the replies to the focus), or null on the last. */
@@ -91,8 +89,6 @@ export async function loadThread(options: {
   const viewer: Viewer = session ? { actorId: session.view.actorId, siteRole: session.view.siteRole } : null;
   const thread = await readThread(page.view.id, viewer, { sort, after, rootId: rootId ?? null });
   if (!thread) return null;
-  const locale = negotiateLocale(getRequestHeader('accept-language'));
-  const now = new Date();
   const focused = thread.focus ? thread.comments.find(({ view }) => view.id === thread.focus?.id) : undefined;
   const mine = focused && viewer?.actorId === focused.view.author.id && !focused.view.deleted && !focused.view.removed;
   return {
@@ -101,12 +97,7 @@ export async function loadThread(options: {
     sort: thread.sort,
     after,
     comments: thread.comments.map((comment) => render(renderer, comment)),
-    times: Object.fromEntries(
-      thread.comments.map(({ view }) => [
-        view.id,
-        { age: compactAge(view.publishedAt, now, locale), title: absoluteTime(view.publishedAt, locale) },
-      ]),
-    ),
+    now: new Date().toISOString(),
     focus: thread.focus,
     next: thread.next,
     reply: replyState(page, session),

@@ -1,11 +1,11 @@
 import { Breadcrumbs } from '@peblish/ui/components/breadcrumbs';
 import { Button } from '@peblish/ui/components/button';
-import { Disclosure } from '@peblish/ui/components/disclosure';
 import { Group } from '@peblish/ui/components/group';
+import { neutraliseBidi } from '@peblish/ui/components/handle';
 import { Link } from '@peblish/ui/components/link';
+import { LinkedDisclosure } from '@peblish/ui/components/linked-disclosure';
 import { Text } from '@peblish/ui/components/text';
 import { TextAreaField } from '@peblish/ui/components/text-area';
-import { useHydrated } from '@peblish/ui/composer/use-hydrated.ts';
 import { GateNotice } from '../../../../c/-ui/gate.tsx';
 import { useTranslate } from '../../../../../i18n/use-translate.ts';
 import { useRouteHydrated } from '../../../../../shell/hydration.ts';
@@ -17,8 +17,8 @@ import { ThreadSection } from './thread-section.tsx';
 // with the way back to the post and to the comment above, and, for the comment's author, the
 // edit and delete forms (plain posts to /post/<id>/comments, as the reply bar's: the comment
 // and the page go in the form's address, the intent on its submit button). The edit form is a
-// Mux Disclosure, whose trigger needs JavaScript; until the page has hydrated (and so without
-// JavaScript) it is an "Edit" link to this page with ?edit=1, which the server renders open.
+// LinkedDisclosure: without JavaScript its "Edit" is a link to this page with ?edit=1, which the
+// server renders open.
 
 export type PermalinkData = NonNullable<Awaited<ReturnType<typeof loadPermalinkFn>>>;
 
@@ -38,7 +38,6 @@ export function PermalinkPage({
 }) {
   const { t } = useTranslate();
   useRouteHydrated();
-  const hydrated = useHydrated();
   if (data.kind === 'gate') return <GateNotice data={data} error={error} />;
   const { thread } = data;
   const formAction = (id: string) => `/post/${postId}/comments?${new URLSearchParams({ comment: id, focus: id })}`;
@@ -48,7 +47,7 @@ export function PermalinkPage({
         aria-label={t('comments', 'permalink.trail')}
         className="th-trail"
         items={[
-          { id: 'community', label: `!${data.communityHandle}`, href: communityPath({ handle: data.communityHandle }) },
+          { id: 'community', label: `!${neutraliseBidi(data.communityHandle)}`, href: communityPath({ handle: data.communityHandle }) },
           { id: 'post', label: data.postTitle, href: postPath(postId) },
           { id: 'comment', label: t('comments', 'permalink.crumb') },
         ]}
@@ -67,20 +66,19 @@ export function PermalinkPage({
       </Text>
       {thread.own && (
         <Group className="th-own" aria-label={t('comments', 'own.group')}>
-          {editing || hydrated ? (
-            <Disclosure className="th-own__edit" title={t('comments', 'own.edit')} defaultExpanded={editing}>
-              <form method="post" action={formAction(thread.own.id)}>
-                <TextAreaField label={t('comments', 'own.editLabel')} name="body" rows={4} defaultValue={thread.own.bodyMd} required />
-                <Button type="submit" name="intent" value="edit">
-                  {t('comments', 'own.save')}
-                </Button>
-              </form>
-            </Disclosure>
-          ) : (
-            <Link className="th-own__open" href={`${commentPath(postId, commentId)}?edit=1`}>
-              {t('comments', 'own.edit')}
-            </Link>
-          )}
+          <LinkedDisclosure
+            className="th-own__edit"
+            title={t('comments', 'own.edit')}
+            openHref={`${commentPath(postId, commentId)}?edit=1`}
+            defaultExpanded={editing}
+          >
+            <form method="post" action={formAction(thread.own.id)}>
+              <TextAreaField label={t('comments', 'own.editLabel')} name="body" rows={4} defaultValue={thread.own.bodyMd} required />
+              <Button type="submit" name="intent" value="edit" className="th-own__save">
+                {t('comments', 'own.save')}
+              </Button>
+            </form>
+          </LinkedDisclosure>
           <form method="post" action={formAction(thread.own.id)}>
             <Button type="submit" name="intent" value="delete" variant="danger-neutral">
               {t('comments', 'own.delete')}

@@ -1,7 +1,7 @@
 import { useRouter } from '@tanstack/react-router';
 import { type } from 'arktype';
 import { Button } from '@peblish/ui/components/button';
-import { Text } from '@peblish/ui/components/text';
+import { Notice } from '@peblish/ui/components/notice';
 import { useState, type FormEvent } from 'react';
 import { useTranslate } from '../../../i18n/use-translate.ts';
 import { asPostError, errorKey, type PostError } from './errors.ts';
@@ -63,9 +63,9 @@ export function ActionForm({
         {label}
       </Button>
       {error && (
-        <Text as="p" role="alert" className="post-error">
+        <Notice tone="danger" role="alert" className="post-error">
           {t('posts', errorKey(error))}
-        </Text>
+        </Notice>
       )}
     </form>
   );
