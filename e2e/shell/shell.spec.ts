@@ -124,3 +124,18 @@ test('the appearance popover closes on Escape and when a press lands outside it'
   await page.mouse.click(600, 500);
   await expect(choices).toBeHidden();
 });
+
+test('with System chosen, an open appearance popover follows an OS scheme change', async ({ page }) => {
+  await page.emulateMedia({ colorScheme: 'light' });
+  await gotoHydrated(page, '/');
+  await page.getByRole('banner').getByRole('button', { name: 'Appearance' }).click();
+  const choices = page.getByRole('radiogroup', { name: 'Appearance' });
+  await expect(choices.getByRole('radio', { name: 'System' })).toHaveAttribute('aria-checked', 'true');
+  // The popover is an inverse surface: its contents take the scheme opposite the page's.
+  const scope = choices.locator('xpath=ancestor::*[@data-muxui-color-scheme][1]');
+  await expect(scope).toHaveAttribute('data-muxui-color-scheme', 'dark');
+  await page.emulateMedia({ colorScheme: 'dark' });
+  await expect(page.locator('html')).toHaveAttribute('data-muxui-color-scheme', 'dark');
+  await expect(choices).toBeVisible();
+  await expect(scope).toHaveAttribute('data-muxui-color-scheme', 'light');
+});

@@ -1,10 +1,21 @@
 import { Button } from '@peblish/ui/components/button';
 import { Link } from '@peblish/ui/components/link';
 import { Text } from '@peblish/ui/components/text';
-import { CatchBoundary, isNotFound, useRouterState, type ErrorComponentProps } from '@tanstack/react-router';
-import type { ReactNode } from 'react';
-import { useTranslate } from '../i18n/use-translate.ts';
+import { useHydrated } from '@peblish/ui/composer/use-hydrated.ts';
+import { rootRouteId, useMatch, useRouter } from '@tanstack/react-router';
+import { useState, type ReactNode } from 'react';
+import { DEFAULT_LOCALE } from '../i18n/negotiate.ts';
+import { translate, type MessageKey } from '../i18n/translate.ts';
 import { useRouteHydrated } from './hydration.ts';
+
+/**
+ * The shell's strings in the request locale. Unlike useTranslate this never throws: when the
+ * root loader itself failed there is no locale, and the error page speaks English.
+ */
+function useShellText() {
+  const locale = useMatch({ from: rootRouteId, shouldThrow: false, select: (match) => match.loaderData?.locale }) ?? DEFAULT_LOCALE;
+  return (key: MessageKey<'shell'>) => translate(locale, 'shell', key);
+}
 
 /** A page that says what went wrong, with a way on: the not-found and error pages. */
 function Problem({ title, body, children }: { title: string; body: string; children: ReactNode }) {
@@ -24,43 +35,43 @@ function Problem({ title, body, children }: { title: string; body: string; child
 
 /** Any address no route answers, inside the shell. */
 export function PageNotFound() {
-  const { t } = useTranslate();
+  const t = useShellText();
   return (
-    <Problem title={t('shell', 'notFound.title')} body={t('shell', 'notFound.body')}>
-      <Link href="/">{t('shell', 'notFound.home')}</Link>
-    </Problem>
-  );
-}
-
-/** A page whose loader or component failed, inside the shell: try again, or go home. */
-export function PageError({ reset }: ErrorComponentProps) {
-  const { t } = useTranslate();
-  return (
-    <Problem title={t('shell', 'error.title')} body={t('shell', 'error.body')}>
-      {/* The server render has no reset; the button then reloads the page. */}
-      <Button variant="neutral" size="sm" onActivate={() => (reset ? reset() : window.location.reload())}>
-        {t('shell', 'error.retry')}
-      </Button>
-      <Link href="/">{t('shell', 'notFound.home')}</Link>
+    <Problem title={t('notFound.title')} body={t('notFound.body')}>
+      <Link href="/">{t('notFound.home')}</Link>
     </Problem>
   );
 }
 
 /**
- * Catches a page's error below the shell, so the sidebar and the bar stay. Not-found errors go on
- * to the router's own boundary; a navigation clears the error.
+ * A page whose loader or component failed: try again, or go home. The router renders it for
+ * every route (`defaultErrorComponent`, router.tsx), on the server and in the browser alike, so
+ * the server's error page hydrates as itself. A page's error leaves the shell around it; a
+ * failure of the root loader renders it alone, in English. It never shows the error itself.
+ *
+ * Try again reruns the failed loaders once (router.invalidate on the matches in error; the
+ * shell's data stays); the boundary then resets by itself, on success or with the new error. It
+ * needs scripts, so it is disabled until hydration.
  */
-export function PageBoundary({ children }: { children: ReactNode }) {
-  const pathname = useRouterState({ select: (state) => state.location.pathname });
+export function PageError() {
+  const t = useShellText();
+  const router = useRouter();
+  const hydrated = useHydrated();
+  const [trying, setTrying] = useState(false);
+  const retry = async () => {
+    setTrying(true);
+    try {
+      await router.invalidate({ filter: (match) => match.status === 'error' });
+    } finally {
+      setTrying(false);
+    }
+  };
   return (
-    <CatchBoundary
-      getResetKey={() => pathname}
-      errorComponent={PageError}
-      onCatch={(error) => {
-        if (isNotFound(error)) throw error;
-      }}
-    >
-      {children}
-    </CatchBoundary>
+    <Problem title={t('error.title')} body={t('error.body')}>
+      <Button variant="neutral" size="sm" disabled={!hydrated || trying} onActivate={() => void retry()}>
+        {t('error.retry')}
+      </Button>
+      <Link href="/">{t('notFound.home')}</Link>
+    </Problem>
   );
 }
