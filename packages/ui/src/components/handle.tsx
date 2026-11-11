@@ -6,12 +6,19 @@ import type { ReactNode } from 'react';
 const bidiControls = /[‪-‮⁦-⁩‎‏؜]/g;
 
 /**
- * `text` with every directional control character replaced, for display only: by U+FFFD by
- * default, so a handle that carries one looks different from the account it imitates. Links and
- * lookups keep the exact value.
+ * `text` with every directional control character replaced, for display only: by an interrobang
+ * (U+203D) by default, so a handle that carries one looks different from the account it imitates.
+ * Not U+FFFD: the Inter Latin slice the pages load has no glyph for it, so drawing one fetched the
+ * whole font file. Links and lookups keep the exact value.
  */
-export function neutraliseBidi(text: string, replacement = '�'): string {
+export function neutraliseBidi(text: string, replacement = '\u203D'): string {
   return text.replace(bidiControls, replacement);
+}
+
+/** The host of a handle, what follows its last `@` (`lemmy.world` for `news@lemmy.world`), or '' for a local handle. */
+export function handleHost(handle: string): string {
+  const at = handle.lastIndexOf('@');
+  return at < 0 ? '' : handle.slice(at + 1);
 }
 
 /** Text from another server (a display name) in its own isolated run, its directional controls removed. */
