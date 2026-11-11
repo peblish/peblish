@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 import { expectAccessible } from '../auth/support.ts';
 import { freshPage, seedWorld, signedIn, signedInAdmin, type World } from '../modlog/support.ts';
 import { gotoHydrated, recordConsole } from '../support/route-marker.ts';
@@ -9,6 +9,9 @@ test.skip(Boolean(process.env.BASE_URL), 'needs the lane database for its seed (
 test.describe.configure({ mode: 'serial' });
 
 let world: World;
+
+/** A ban's row in the table, by the banned handle (the rows hold a link to the person). */
+const banRow = (page: Page, name: string) => page.getByRole('row').filter({ hasText: name });
 test.beforeAll(() => {
   world = seedWorld();
 });
@@ -37,7 +40,7 @@ test('the admin bans a peer’s person by handle, sees it listed and in the publ
   await confirm.getByRole('textbox', { name: 'Reason' }).fill('Ban evasion');
   await confirm.getByRole('button', { name: 'Ban', exact: true }).click();
 
-  const row = page.getByTestId('ban-row').filter({ hasText: world.peer.person });
+  const row = banRow(page, world.peer.person);
   await expect(row).toContainText(world.peer.domain);
   await expect(row).toContainText('Ban evasion');
   await expect(row).toContainText('permanent');
@@ -53,9 +56,10 @@ test('the admin bans a peer’s person by handle, sees it listed and in the publ
   await expect(entry).toContainText('Ban evasion');
   await visitor.close();
 
-  await row.getByText('Lift', { exact: true }).click();
-  await row.getByRole('button', { name: 'Lift ban' }).click();
-  await expect(page.getByTestId('ban-row').filter({ hasText: world.peer.person })).toHaveCount(0);
+  // Lift opens its panel below the table.
+  await row.getByRole('link', { name: `Lift the ban on @${world.peer.person}` }).click();
+  await page.getByTestId('ban-lift').getByRole('button', { name: 'Lift ban' }).click();
+  await expect(banRow(page, world.peer.person)).toHaveCount(0);
   expect(console.hydrationProblems()).toEqual([]);
 });
 
@@ -69,11 +73,11 @@ test('the admin bans a local bot (a Service actor) by handle, and lifts it', asy
   await confirm.getByLabel('Length').selectOption('permanent');
   await confirm.getByRole('textbox', { name: 'Reason' }).fill('Spam bot');
   await confirm.getByRole('button', { name: 'Ban', exact: true }).click();
-  const row = page.getByTestId('ban-row').filter({ hasText: world.bot.name });
+  const row = banRow(page, world.bot.name);
   await expect(row).toContainText('Spam bot');
-  await row.getByText('Lift', { exact: true }).click();
-  await row.getByRole('button', { name: 'Lift ban' }).click();
-  await expect(page.getByTestId('ban-row').filter({ hasText: world.bot.name })).toHaveCount(0);
+  await row.getByRole('link', { name: `Lift the ban on @${world.bot.name}` }).click();
+  await page.getByTestId('ban-lift').getByRole('button', { name: 'Lift ban' }).click();
+  await expect(banRow(page, world.bot.name)).toHaveCount(0);
 });
 
 test('a banned local person keeps reading and is refused every write', async ({ page, browser }) => {
@@ -84,7 +88,7 @@ test('a banned local person keeps reading and is refused every write', async ({ 
   await admin.getByRole('button', { name: 'Check' }).click();
   await admin.getByTestId('ban-confirm').getByRole('textbox', { name: 'Reason' }).fill('Spam');
   await admin.getByTestId('ban-confirm').getByRole('button', { name: 'Ban', exact: true }).click();
-  await expect(admin.getByTestId('ban-row').filter({ hasText: world.spammer.name })).toBeVisible();
+  await expect(banRow(admin, world.spammer.name)).toBeVisible();
   await admin.close();
 
   await signedIn(page, world, world.spammer.name);

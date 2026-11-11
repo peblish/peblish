@@ -1,0 +1,57 @@
+/* The Peers tab: the block form, the peers table in an outlined card, the chosen peer's controls. Layout only; the look is Mux UI's. */
+@layer app {
+  .peers-page {
+    max-width: 1180px;
+    display: flex;
+    flex-direction: column;
+    gap: var(--muxui-semantic-layout-content-gap);
+  }
+  .peers-page > h1,
+  .peers-page > p {
+    margin: 0;
+  }
+  .peers-add {
+    display: grid;
+    grid-template-columns: minmax(0, 2fr) minmax(0, 3fr) auto;
+    gap: var(--muxui-semantic-layout-control-gap);
+    align-items: end;
+  }
+  .peers-add .peers-error {
+    grid-column: 1 / -1;
+  }
+  /* Mux Table has no breakpoint: on a narrow screen the table scrolls inside its card. */
+  .peers-table {
+    overflow-x: auto;
+  }
+  .peers-table .muxui-table {
+    inline-size: 100%;
+    min-inline-size: 48rem;
+  }
+  .peers-state {
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--muxui-semantic-layout-tight-gap);
+  }
+  .peers-controls .muxui-card__body {
+    display: flex;
+    flex-direction: column;
+    gap: var(--muxui-semantic-layout-control-gap);
+  }
+  .peers-form {
+    display: flex;
+    flex-direction: column;
+    gap: var(--muxui-semantic-layout-control-gap);
+    max-width: 40rem;
+  }
+  .peers-buttons {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--muxui-semantic-layout-tight-gap);
+  }
+  @media (max-width: 720px) {
+    .peers-add {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
+}

@@ -27,7 +27,9 @@
     "byPeer": "their instance, {host}",
     "permanent": "permanent",
     "lift": "Lift",
-    "liftSubmit": "Lift ban"
+    "liftSubmit": "Lift ban",
+    "liftFor": "Lift the ban on {handle}",
+    "liftTitle": "Lift the ban on {handle}?"
   },
   "de": {
     "title": "Von dieser Instanz gesperrt",
@@ -57,6 +59,8 @@
     "byPeer": "ihre Instanz, {host}",
     "permanent": "dauerhaft",
     "lift": "Aufheben",
-    "liftSubmit": "Sperre aufheben"
+    "liftSubmit": "Sperre aufheben",
+    "liftFor": "Sperre von {handle} aufheben",
+    "liftTitle": "Sperre von {handle} aufheben?"
   }
 }

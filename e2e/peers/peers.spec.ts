@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 import { expectAccessible } from '../auth/support.ts';
 import { freshPage, seedWorld, signedIn, signedInAdmin, type World } from '../modlog/support.ts';
 import { gotoHydrated, recordConsole } from '../support/route-marker.ts';
@@ -9,6 +9,10 @@ test.skip(Boolean(process.env.BASE_URL), 'needs the lane database for its seed (
 test.describe.configure({ mode: 'serial' });
 
 let world: World;
+
+/** A peer's row in the table, found by its host (the row header). */
+const peerRow = (page: Page, host: string) =>
+  page.getByRole('row').filter({ has: page.getByRole('rowheader', { name: host, exact: true }) });
 test.beforeAll(() => {
   world = seedWorld();
 });
@@ -23,19 +27,24 @@ test('the admin works through a peer’s controls', async ({ page, browser }) =>
   );
   await expectAccessible(page);
 
-  const row = page.locator(`[data-testid="peer-row"][data-domain="${world.peer.domain}"]`);
+  // The table reads; the peer's controls open below it from the row's Controls link.
+  const row = peerRow(page, world.peer.domain);
   await expect(row.getByTestId('peer-media')).toHaveText('media quarantined');
-  await row.getByRole('button', { name: 'Approve media' }).click();
+  await row.getByRole('link', { name: `Controls for ${world.peer.domain}` }).click();
+  const controls = page.getByTestId('peer-controls');
+  await expect(controls.getByRole('heading', { name: `Controls for ${world.peer.domain}` })).toBeVisible();
+  await expectAccessible(page);
+  await controls.getByRole('button', { name: 'Approve media' }).click();
   await expect(row.getByTestId('peer-media')).toHaveText('media approved');
-  await row.getByRole('button', { name: 'Purge media' }).click();
+  await controls.getByRole('button', { name: 'Purge media' }).click();
   await expect(row.getByTestId('peer-media')).toHaveText('media purged');
-  await expect(row.getByRole('button', { name: 'Purge media' })).toBeDisabled();
-  await row.getByRole('button', { name: 'Pause inbox' }).click();
+  await expect(controls.getByRole('button', { name: 'Purge media' })).toBeDisabled();
+  await controls.getByRole('button', { name: 'Pause inbox' }).click();
   await expect(row).toContainText('inbox paused');
-  await row.getByRole('button', { name: 'Resume inbox' }).click();
+  await controls.getByRole('button', { name: 'Resume inbox' }).click();
   await expect(row).not.toContainText('inbox paused');
-  await row.getByRole('textbox').fill('Spam waves');
-  await row.getByRole('button', { name: 'Block', exact: true }).click();
+  await controls.getByRole('textbox', { name: 'Reason (optional)' }).fill('Spam waves');
+  await controls.getByRole('button', { name: 'Block', exact: true }).click();
   await expect(row).toContainText('blocked');
   await expect(row).toContainText('Spam waves');
 
@@ -46,7 +55,7 @@ test('the admin works through a peer’s controls', async ({ page, browser }) =>
   expect((await visitor.request.get(`/post/${world.posts.remote}`)).status()).toBe(200);
   await visitor.close();
 
-  await row.getByRole('button', { name: 'Unblock' }).click();
+  await controls.getByRole('button', { name: 'Unblock' }).click();
   await expect(row).not.toContainText('blocked');
 
   // The changes are in the modlog for the admin and never in the public log.
@@ -68,7 +77,7 @@ test('a host can be blocked before it is ever seen, and a bad host is refused', 
   await expect(page.getByRole('alert')).toHaveText('That is not a valid host name.');
   await page.getByLabel('Block a host').fill(`https://${host}/somewhere`);
   await page.getByRole('button', { name: 'Block', exact: true }).first().click();
-  const row = page.locator(`[data-testid="peer-row"][data-domain="${host}"]`);
+  const row = peerRow(page, host);
   await expect(row).toContainText('blocked');
   await expect(row).toContainText('media quarantined');
 });
