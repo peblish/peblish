@@ -18,16 +18,11 @@
   "packages/ui/src/components/prose.css": {
     "css-line-height": 1
   },
-  "packages/ui/src/composer/composer.css": {
-    "css-spacing": 3,
-    "css-motion": 1
-  },
   "packages/ui/src/composer/editor-icons.tsx": {
     "raw-element": 1
   },
   "packages/ui/src/composer/markdown-editor.tsx": {
     "widget-handler": 1,
-    "text-element": 1,
     "widget-role": 1
   },
   "packages/ui/src/tokens/tokens.css": {
@@ -154,24 +149,11 @@
     "text-element": 1
   },
   "packages/web/src/routes/submit/-ui/community-picker.tsx": {
-    "widget-role": 2,
-    "text-element": 1
-  },
-  "packages/web/src/routes/submit/-ui/composer-sheet.tsx": {
-    "text-element": 2,
-    "widget-role": 2
-  },
-  "packages/web/src/routes/submit/-ui/composer.tsx": {
-    "text-element": 2,
-    "widget-role": 2
+    "widget-role": 1
   },
   "packages/web/src/routes/submit/-ui/submit.css": {
-    "css-spacing": 7,
-    "css-element-selector": 2
-  },
-  "packages/web/src/routes/submit/index.tsx": {
-    "text-element": 1,
-    "widget-role": 1
+    "css-element-selector": 2,
+    "css-spacing": 1
   },
   "packages/web/src/routes/u/$handle/-ui/activity.tsx": {
     "raw-element": 1
@@ -183,14 +165,11 @@
     "css-element-selector": 3
   },
   "packages/web/src/shell/account.tsx": {
-    "bare-text": 1
+    "bare-text": 3
   },
   "packages/web/src/shell/create-post.tsx": {
     "raw-element": 1,
     "bare-text": 1
-  },
-  "packages/web/src/shell/shell.css": {
-    "css-element-selector": 2
   },
   "packages/web/src/shell/shell.tsx": {
     "raw-element": 1
