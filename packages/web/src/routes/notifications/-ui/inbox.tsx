@@ -159,6 +159,7 @@ function NoticeRow({
 
   const account = item.kind === 'ban' || item.kind === 'unban';
   const handle = item.community ? `!${item.community.handle}` : '';
+  const actor = item.actor ? `@${item.actor.handle}` : t('notifications', 'actor.unknown');
   const sentence = (() => {
     switch (item.kind) {
       case 'reply':
@@ -175,6 +176,8 @@ function NoticeRow({
         return item.community ? t('notifications', 'verb.unban.community', { community: handle }) : t('notifications', 'verb.unban.site');
     }
   })();
+
+  const toggle = t('notifications', item.read ? 'markUnread' : 'markRead');
 
   return (
     <li className="pb-notice" data-read={item.read ? '' : undefined} data-kind={item.kind}>
@@ -234,8 +237,18 @@ function NoticeRow({
         )}
       </div>
       <form method="post" action={inboxAction({ intent: item.read ? 'unread' : 'read', id: item.id }, page)} onSubmit={submit}>
-        <Button type="submit" variant="ghost" size="sm">
-          {t('notifications', item.read ? 'markUnread' : 'markRead')}
+        {/* Every row has one: the name says whose notice about what ("Mark read: @ada, Her post"); the visible text stays short. */}
+        <Button
+          type="submit"
+          variant="ghost"
+          size="sm"
+          aria-label={t('notifications', 'markFor', {
+            action: toggle,
+            actor,
+            subject: item.postTitle ?? (handle || t('notifications', `type.${item.kind}`)),
+          })}
+        >
+          {toggle}
         </Button>
       </form>
     </li>

@@ -1,7 +1,8 @@
 import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
-import { expect, test, type Browser, type Page } from '@playwright/test';
-import { expectAccessible, landed, signIn } from '../auth/support.ts';
+import { expect, test, type Browser, type Locator, type Page } from '@playwright/test';
+import { signInAdmin } from '../admin/support.ts';
+import { expectAccessible, landed, signIn, type Admin } from '../auth/support.ts';
 import { gotoHydrated, recordConsole } from '../support/route-marker.ts';
 
 // Lane E1 end to end, on the built server and the lane database: a profile in each state (local,
@@ -254,5 +255,165 @@ test.describe('signed in', () => {
     await expect(german.getByRole('heading', { level: 2, name: 'Profil bearbeiten' })).toBeVisible();
     await expectAccessible(german);
     await german.context().close();
+  });
+});
+
+// The review cases (lane e2, after the Mux restyle), on their own cast (e2e/profiles/seed.ts).
+type Review = {
+  suffix: string;
+  password: string;
+  long: { handle: string; name: string; host: string; displayName: string };
+  prolific: { name: string; posts: string[] };
+  visitor: { name: string };
+  moderator: { name: string };
+  admin: Admin;
+  community: { name: string };
+};
+
+let review: Review;
+const reviewSeed = () => {
+  review ??= JSON.parse(
+    execFileSync('node', ['e2e/profiles/seed.ts'], { cwd: join(import.meta.dirname, '../..'), encoding: 'utf8' }),
+  ) as Review;
+  return review;
+};
+
+/**
+ * Nothing in `box` is cut off: no element that hides overflow holds wider content, every handle
+ * (its host included) and heading lies inside the box, and the page does not scroll sideways.
+ */
+async function expectUnclipped(box: Locator) {
+  const problems = await box.evaluate((root) => {
+    const out: string[] = [];
+    const page = document.documentElement;
+    if (page.scrollWidth > page.clientWidth) out.push(`the page scrolls sideways (${page.scrollWidth} > ${page.clientWidth})`);
+    const edge = root.getBoundingClientRect();
+    for (const element of [root, ...root.querySelectorAll<HTMLElement>('*')]) {
+      // A visually hidden text (1px, clipped) is meant to hide.
+      const hides = ['hidden', 'clip', 'auto', 'scroll'].includes(getComputedStyle(element).overflowX) && element.clientWidth > 1;
+      if (hides && element.scrollWidth > element.clientWidth + 1)
+        out.push(`${element.className || element.tagName} hides ${element.scrollWidth - element.clientWidth}px`);
+    }
+    for (const element of root.querySelectorAll('.pb-handle, .pb-handle__host, h1, dd'))
+      for (const rect of element.getClientRects())
+        if (rect.left < edge.left - 0.5 || rect.right > edge.right + 0.5)
+          out.push(`${element.className || element.tagName} "${element.textContent}" runs past the box`);
+    return out;
+  });
+  expect(problems).toEqual([]);
+}
+
+test.describe('review cases', () => {
+  test.beforeAll(() => {
+    reviewSeed();
+  });
+
+  for (const width of [320, 400]) {
+    test(`at ${width} px a long name, handle and host wrap inside the card`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 800 });
+      await gotoHydrated(page, profile(review.long.handle));
+      const card = page.getByRole('complementary', { name: 'Profile' });
+      await expect(card.getByRole('heading', { level: 1, name: review.long.displayName })).toBeVisible();
+      await expect(card).toContainText(`@${review.long.handle}`);
+      await expect(card.locator('.pb-handle__host')).toHaveText(`@${review.long.host}`);
+      await expect(card.getByText(new RegExp(`^${review.long.host.replaceAll('.', '\\.')}, copy refreshed`))).toBeVisible();
+      await expectUnclipped(card);
+    });
+  }
+
+  test('a person with no activity shows the empty state on every tab, with no page links', async ({ page }) => {
+    for (const [tab, text] of [
+      ['', 'No activity yet.'],
+      ['?tab=posts', 'No posts yet.'],
+      ['?tab=comments', 'No comments yet.'],
+    ] as const) {
+      await gotoHydrated(page, `${profile(review.long.handle)}${tab}`);
+      await expect(page.getByText(text, { exact: true })).toBeVisible();
+      await expect(page.getByRole('list', { name: 'Posts and comments' })).toHaveCount(0);
+      await expect(page.getByRole('link', { name: /^(Next|First) page$/ })).toHaveCount(0);
+    }
+  });
+
+  test('the page links keep the tab and the sort', async ({ page }) => {
+    const items = () => page.getByRole('list', { name: 'Posts and comments' }).locator(':scope > li');
+    await gotoHydrated(page, `${profile(review.prolific.name)}?tab=posts&sort=top`);
+    await expect(items()).toHaveCount(20);
+    await expect(page.getByRole('link', { name: 'First page' })).toHaveCount(0);
+    await page.getByRole('link', { name: 'Next page' }).click();
+    await expect(page).toHaveURL(/\?tab=posts&sort=top&after=[^&]+$/);
+    await expect(items()).toHaveCount(3);
+    await expect(page.getByRole('navigation', { name: 'Activity' }).getByRole('link', { name: /^Posts/ })).toHaveAttribute(
+      'aria-current',
+      'page',
+    );
+    await expect(page.getByRole('navigation', { name: 'Sort' }).getByRole('link', { name: 'Top' })).toHaveAttribute('aria-current', 'page');
+    await expect(page.getByRole('link', { name: 'Next page' })).toHaveCount(0);
+    await page.getByRole('link', { name: 'First page' }).click();
+    await expect(page).toHaveURL(new RegExp(`${profile(review.prolific.name)}\\?tab=posts&sort=top$`));
+    await expect(items()).toHaveCount(20);
+  });
+
+  test('the edit form marks a display name and a bio past their limits, and Save waits for both', async ({ page }) => {
+    await signedIn(page, review.prolific.name);
+    await gotoHydrated(page, `${profile(review.prolific.name)}/edit`);
+    const name = page.getByLabel('Display name');
+    const bio = page.getByRole('textbox', { name: 'Bio' });
+    const save = page.getByRole('button', { name: 'Save changes' });
+    const counter = (text: string) => page.locator('.prof-count', { hasText: text });
+
+    await name.fill('x'.repeat(100));
+    await expect(counter('100 / 100')).not.toHaveAttribute('data-over');
+    await expect(name).not.toHaveAttribute('aria-invalid', 'true');
+    await expect(save).toBeEnabled();
+    await name.fill('x'.repeat(101));
+    await expect(counter('101 / 100')).toHaveAttribute('data-over');
+    await expect(name).toHaveAttribute('aria-invalid', 'true');
+    await expect(save).toBeDisabled();
+
+    await bio.fill('y'.repeat(2_001));
+    await expect(counter('2,001 / 2,000')).toHaveAttribute('data-over');
+    await expect(bio).toHaveAttribute('aria-invalid', 'true');
+    // Both over: bringing the name back is not enough.
+    await name.fill('Prolific');
+    await expect(counter('8 / 100')).not.toHaveAttribute('data-over');
+    await expect(save).toBeDisabled();
+    await bio.fill('y'.repeat(2_000));
+    await expect(counter('2,000 / 2,000')).not.toHaveAttribute('data-over');
+    await expect(bio).not.toHaveAttribute('aria-invalid', 'true');
+    await expect(save).toBeEnabled();
+    // Past the limit the counter takes the danger token.
+    await bio.fill('y'.repeat(2_001));
+    const colours = await counter('2,001 / 2,000').evaluate((over) => {
+      const probe = document.createElement('span');
+      probe.style.color = 'var(--muxui-semantic-feedback-invalid)';
+      over.parentElement!.append(probe);
+      const wanted = getComputedStyle(probe).color;
+      probe.remove();
+      return [getComputedStyle(over).color, wanted];
+    });
+    expect(colours[0]).toBe(colours[1]);
+  });
+
+  test('a moderator sees the community ban, an admin the instance ban, and a visitor neither', async ({ page, browser }) => {
+    const moderateOf = (on: Page) => on.getByRole('complementary', { name: 'Profile' }).getByTestId('profile-moderate');
+
+    await signedIn(page, review.visitor.name);
+    await gotoHydrated(page, profile(review.prolific.name));
+    await expect(page.getByRole('complementary', { name: 'Profile' }).getByRole('button', { name: 'Block' })).toBeVisible();
+    await expect(moderateOf(page)).toHaveCount(0);
+
+    const moderator = await (await browser.newContext()).newPage();
+    await signedIn(moderator, review.moderator.name);
+    await gotoHydrated(moderator, profile(review.prolific.name));
+    await expect(moderateOf(moderator).getByText(`Ban from !${review.community.name}`, { exact: true })).toBeVisible();
+    await expect(moderateOf(moderator).getByText('Ban from this instance', { exact: true })).toHaveCount(0);
+    await moderator.context().close();
+
+    const admin = await (await browser.newContext()).newPage();
+    await signInAdmin(admin, review.admin);
+    await gotoHydrated(admin, profile(review.prolific.name));
+    await expect(moderateOf(admin).getByText('Ban from this instance', { exact: true })).toBeVisible();
+    await expect(moderateOf(admin).getByText(/^Ban from !/)).toHaveCount(0);
+    await admin.context().close();
   });
 });
