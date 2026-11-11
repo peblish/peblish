@@ -155,6 +155,45 @@ const outlineContrast = (tab: Locator) =>
     return Math.round(((light! + 0.05) / (dark! + 0.05)) * 100) / 100;
   });
 
+/**
+ * Colours as the browser paints them, composited in a 1 px canvas: the page's backgrounds from the
+ * root down to the tab (with `under`, a layer Mux paints beneath the tab, just before it), the tab's
+ * own background image when it is a plain colour gradient, and the tab's text over all of it.
+ * Returns the background and text pixels and their contrast.
+ */
+const paintOf = async (tab: Locator, under?: Locator) =>
+  tab.evaluate(
+    (element, beneath) => {
+      const canvas = document.createElement('canvas');
+      canvas.width = canvas.height = 1;
+      const context = canvas.getContext('2d', { willReadFrequently: true })!;
+      const pixel = () => Array.from(context.getImageData(0, 0, 1, 1).data.subarray(0, 3));
+      const paint = (colour: string) => {
+        context.fillStyle = colour;
+        context.fillRect(0, 0, 1, 1);
+      };
+      const chain: Element[] = [];
+      for (let node: Element | null = element.parentElement; node; node = node.parentElement) chain.unshift(node);
+      paint('white');
+      for (const node of chain) paint(getComputedStyle(node).backgroundColor);
+      if (beneath) paint(getComputedStyle(beneath).backgroundColor);
+      const style = getComputedStyle(element);
+      paint(style.backgroundColor);
+      const layer = /^linear-gradient\(((?:rgba?|color)\([^()]*\))/.exec(style.backgroundImage)?.[1];
+      if (layer) paint(layer);
+      const back = pixel();
+      paint(style.color);
+      const fore = pixel();
+      const luminance = (rgb: number[]) => {
+        const [r, g, b] = rgb.map((v) => (v / 255 <= 0.04045 ? v / 255 / 12.92 : ((v / 255 + 0.055) / 1.055) ** 2.4));
+        return 0.2126 * r! + 0.7152 * g! + 0.0722 * b!;
+      };
+      const [light, dark] = [luminance(fore), luminance(back)].sort((a, b) => b - a);
+      return { back, fore, contrast: Math.round(((light! + 0.05) / (dark! + 0.05)) * 100) / 100 };
+    },
+    under ? await under.elementHandle() : null,
+  );
+
 // Keyboard focus rings every tab, the current one too, and the ring does not wait for scripts: with
 // scripts on Mux marks a focused link itself, with scripts off (or a router link) only :focus-visible does.
 for (const scheme of ['light', 'dark'] as const) {
@@ -216,3 +255,58 @@ for (const javaScriptEnabled of [true, false]) {
     await page.context().close();
   });
 }
+
+// The current segment tab keeps its solid selected fill under the pointer, pressed and focused: Mux's
+// hover and pressed fills are translucent, drawn over the selection layer a hydrated Mux Tabs bar has
+// and a link does not. Hovered, it paints what that Mux Tabs bar paints.
+for (const scheme of ['light', 'dark'] as const)
+  for (const javaScriptEnabled of [true, false]) {
+    test(`the current segment LinkTab keeps its fill and its contrast when hovered, pressed or focused (${scheme}, scripts ${javaScriptEnabled ? 'on' : 'off'})`, async ({
+      browser,
+      baseURL,
+    }) => {
+      const page = await kit(browser, baseURL!, scheme, { javaScriptEnabled });
+      const current = linksOf(page, 'segment').first();
+      await page.mouse.move(0, 0);
+      await settle(page);
+      const fill = await current.evaluate((element) => getComputedStyle(element).backgroundColor);
+      const states: Record<string, () => Promise<void>> = {
+        hovered: async () => {
+          await current.hover();
+          await settle(page);
+        },
+        pressed: async () => {
+          await current.hover();
+          await page.mouse.down();
+          await settle(page);
+        },
+        focused: async () => keyboardFocus(page, current),
+      };
+      for (const [state, enter] of Object.entries(states)) {
+        // A fresh page for each state: releasing the press clicks the tab, which opens the kit again.
+        if (javaScriptEnabled) await gotoHydrated(page, '/kit');
+        else await page.goto('/kit');
+        await page.mouse.move(0, 0);
+        await enter();
+        expect(await current.evaluate((element) => getComputedStyle(element).backgroundColor), `${state}: the selected fill stays`).toBe(
+          fill,
+        );
+        const { contrast } = await paintOf(current);
+        expect(contrast, `${state}: the text keeps 4.5:1 on it`).toBeGreaterThanOrEqual(4.5);
+        await page.mouse.up();
+        // The release clicked the tab: let that navigation land before the next one starts.
+        if (state === 'pressed') await page.waitForURL(/\/kit\?tab=/);
+      }
+      if (javaScriptEnabled) {
+        const row = page.getByTestId('kit-tabs-segment');
+        const muxTab = row.getByRole('tablist').getByRole('tab').first();
+        await muxTab.hover();
+        await settle(page);
+        const mux = await paintOf(muxTab, row.locator('.muxui-tabs__motion-underline').first());
+        await current.hover();
+        await settle(page);
+        expect((await paintOf(current)).back, 'hovered: painted as the hovered current Mux tab').toEqual(mux.back);
+      }
+      await page.context().close();
+    });
+  }

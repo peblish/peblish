@@ -58,6 +58,30 @@
     flex: 0 1 auto;
   }
 
+  /* Mux's hover and pressed fills are translucent: on a hydrated Mux Tabs bar they lie over a separate
+     selection layer, which a link does not have, so the current segment tab lost its fill (in dark,
+     dark text on the dark rail). It keeps its fill in every state, and Mux's hover wash or pressed fill
+     lies over it as a background image, as on that bar. Forced colours keep Mux's Highlight fill. */
+  @media (forced-colors: none) {
+    .pb-link-tabs [data-muxui-tabs-variant='segment'] .muxui-tabs__tab[data-muxui-state-selected] {
+      background-color: var(--muxui-component-tabs-selected-background);
+    }
+
+    .pb-link-tabs [data-muxui-tabs-variant='segment'] .muxui-tabs__tab[data-muxui-state-selected]:is(:hover, [data-muxui-state-hovered]) {
+      background-image: linear-gradient(
+        color-mix(in srgb, var(--muxui-component-tabs-selected-foreground) 4%, transparent),
+        color-mix(in srgb, var(--muxui-component-tabs-selected-foreground) 4%, transparent)
+      );
+    }
+
+    .pb-link-tabs [data-muxui-tabs-variant='segment'] .muxui-tabs__tab[data-muxui-state-selected]:is(:active, [data-muxui-state-pressed]) {
+      background-image: linear-gradient(
+        var(--muxui-semantic-action-neutral-background-pressed),
+        var(--muxui-semantic-action-neutral-background-pressed)
+      );
+    }
+  }
+
   /* Forced colours replace every colour and background, and the underline variant's mark lies on
      the list's own border, so the current tab also gets an underline under its label. */
   @media (forced-colors: active) {
