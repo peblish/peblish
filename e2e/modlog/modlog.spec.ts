@@ -135,8 +135,9 @@ test('with JavaScript off an open panel is a plain form: the post answers 303 an
   // The comment is removed: the address of an earlier refusal shows its Restore panel open, and it posts plainly.
   await page.goto(panelFor('generic'));
   const comment = page.locator(`#comment-${world.comments.spam}`);
-  // Enter, not a click: the panel opens at the foot of the page, where the docked reply bar covers it.
-  await comment.getByRole('button', { name: 'Restore', exact: true }).press('Enter');
+  // A pointer: Playwright clicks only a button nothing covers, so this fails if the docked reply bar
+  // covers the open panel's submit button.
+  await comment.getByRole('button', { name: 'Restore', exact: true }).click();
   await expect(page).not.toHaveURL(/modFor=/);
   await expect(comment.getByRole('button', { name: 'Remove comment', exact: true })).toBeVisible();
   // This page holds the Remove form open while another moderator session removes the comment: the
@@ -152,6 +153,7 @@ test('with JavaScript off an open panel is a plain form: the post answers 303 an
   await there.getByRole('button', { name: 'Remove', exact: true }).click();
   await expect(there.getByText('Restore comment', { exact: true })).toBeVisible();
   await second.close();
+  // The keyboard: focus the submit button and press Enter.
   await comment.getByRole('button', { name: 'Remove', exact: true }).press('Enter');
   await page.waitForURL(new RegExp(`modError=target\\.removed`));
   await expect(page.locator(`#comment-${world.comments.spam}`).getByRole('alert')).toHaveText('That is already removed.');

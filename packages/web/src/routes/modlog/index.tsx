@@ -1,6 +1,7 @@
 import { isActionGroup, type ActionGroup } from '@peblish/core/modlog/groups';
 import { Handle } from '@peblish/ui/components/handle';
 import { Link } from '@peblish/ui/components/link';
+import { Pager } from '@peblish/ui/components/pager';
 import { Text } from '@peblish/ui/components/text';
 import { createFileRoute, notFound } from '@tanstack/react-router';
 import { DEFAULT_LOCALE } from '../../i18n/negotiate.ts';
@@ -14,7 +15,7 @@ import { actionKey, banLength } from './-ui/labels.ts';
 import modlogCss from './-ui/modlog.css?url';
 
 // /modlog: the moderation log as a stream (R2 pick modlog-feed). Entries grouped by day, two lines
-// each, with a facet rail of counts. Built from Mux Text and Link; every filter and page is a link,
+// each, with a facet rail of counts. Built from Mux Text and Link and the shared Pager; every filter and page is a link,
 // so the log reads and filters without JavaScript. Public rows for everyone; staff also see private rows.
 // A community's moderators and the admins reach more of it (core/modlog/filters.ts ModlogViewer).
 
@@ -109,21 +110,19 @@ function ModlogPage() {
             ))
           )}
           {data.lines.length > 0 && (
-            <nav className="modlog-pages" aria-label={t('modlog', 'older')}>
-              <Note data-testid="modlog-range">
+            <Pager
+              aria-label={t('modlog', 'older')}
+              first={chosen.cursor ? { href: href(keep), label: t('modlog', 'newest') } : undefined}
+              next={data.next ? { href: href({ ...keep, cursor: data.next }), label: t('modlog', 'older') } : undefined}
+            >
+              <span data-testid="modlog-range">
                 {t('modlog', 'range', {
                   from: number.format(data.from),
                   to: number.format(data.from + data.lines.length - 1),
                   total: number.format(data.total),
                 })}
-              </Note>
-              {chosen.cursor && <Link href={href(keep)}>{t('modlog', 'newest')}</Link>}
-              {data.next && (
-                <Link href={href({ ...keep, cursor: data.next })} rel="next">
-                  {t('modlog', 'older')}
-                </Link>
-              )}
-            </nav>
+              </span>
+            </Pager>
           )}
           <Text as="p" size="sm" color="muted" className="modlog-legend">
             <span>
@@ -337,8 +336,8 @@ function Target({ line }: { line: LineView }) {
 }
 
 /** Secondary text: times, counts, hints. */
-const Note = ({ children, ...rest }: { children: React.ReactNode; 'data-testid'?: string }) => (
-  <Text size="sm" color="muted" {...rest}>
+const Note = ({ children }: { children: React.ReactNode }) => (
+  <Text size="sm" color="muted">
     {children}
   </Text>
 );

@@ -64,12 +64,6 @@
     margin-inline-start: 46px;
     overflow-wrap: anywhere;
   }
-  .modlog-pages {
-    display: flex;
-    gap: var(--muxui-semantic-layout-action-gap);
-    align-items: baseline;
-    margin-block: var(--muxui-semantic-layout-section-gap) var(--muxui-semantic-layout-tight-gap);
-  }
   .modlog .modlog-legend {
     display: flex;
     flex-wrap: wrap;
