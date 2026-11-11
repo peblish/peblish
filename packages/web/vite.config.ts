@@ -33,10 +33,143 @@ function substrateDrift(file: string, what: string): never {
   );
 }
 
-function parseProgram(file: string, code: string) {
-  const { program, errors } = parseSync(file, code);
+function parseModule(file: string, code: string) {
+  const { program, comments, errors } = parseSync(file, code);
   if (errors.length > 0) substrateDrift(file, 'a parse error');
-  return program;
+  return { program, comments };
+}
+
+const parseProgram = (file: string, code: string) => parseModule(file, code).program;
+
+type Program = ReturnType<typeof parseProgram>;
+type Expression = Extract<Program['body'][number], { type: 'ExpressionStatement' }>['expression'];
+
+// Calls whose only work is to build a value, beyond those Mux marks /*#__PURE__*/: React's
+// component and context factories, Object.freeze, and the built-in collections.
+const pureReactCalls = new Set(['forwardRef', 'memo', 'createContext']);
+const pureGlobals = new Set(['Set', 'Map', 'WeakSet', 'WeakMap']);
+
+/**
+ * Where an expression in a split module may do something when it runs, or undefined when it cannot. A split
+ * module's client parts keep only what an import reaches, while the server runs the whole module, so an
+ * initialiser with effects (`const registration = registerOverlay(Tooltip)` that nothing reads) would run on
+ * the server and vanish from the client. Allowed: literals, untagged templates, identifiers (imports and the
+ * module's other declarations), function, arrow and class expressions (a class with no static block and pure
+ * keys, heritage and static values), object and array literals without spread, unary operators but delete,
+ * binary, logical and conditional expressions, member reads, and calls or `new` with pure arguments when the
+ * call is marked /*#__PURE__*\/, is React's forwardRef, memo or createContext, Object.freeze, or a new Set,
+ * Map, WeakSet or WeakMap. Anything else (any other call or `new`, tagged templates, assignments, updates,
+ * await, yield, sequences) is drift.
+ */
+function effectIn(node: Expression | null | undefined, pureCalls: ReadonlySet<number>, react: ReadonlySet<string>): Expression | undefined {
+  const check = (child: Expression | null | undefined): Expression | undefined => effectIn(child, pureCalls, react);
+  const first = (children: (Expression | null | undefined)[]) => children.map(check).find(Boolean);
+  if (!node) return undefined;
+  switch (node.type) {
+    case 'Literal':
+    case 'Identifier':
+    case 'FunctionExpression':
+    case 'ArrowFunctionExpression':
+      return undefined;
+    case 'TemplateLiteral':
+      return first(node.expressions);
+    case 'ParenthesizedExpression':
+      return check(node.expression);
+    case 'UnaryExpression':
+      return node.operator === 'delete' ? node : check(node.argument);
+    case 'BinaryExpression':
+    case 'LogicalExpression':
+      return node.left.type === 'PrivateIdentifier' ? node : first([node.left, node.right]);
+    case 'ConditionalExpression':
+      return first([node.test, node.consequent, node.alternate]);
+    case 'MemberExpression':
+      return node.object.type === 'Super' ? node : first([node.object, node.computed ? node.property : undefined]);
+    case 'ArrayExpression':
+      return node.elements.some((element) => element?.type === 'SpreadElement') ? node : first(node.elements as Expression[]);
+    case 'ObjectExpression':
+      for (const property of node.properties) {
+        if (property.type === 'SpreadElement') return node;
+        const found = first([property.computed ? (property.key as Expression) : undefined, property.value as Expression]);
+        if (found) return found;
+      }
+      return undefined;
+    case 'ClassExpression': {
+      const found = check(node.superClass);
+      if (found) return found;
+      for (const element of node.body.body) {
+        if (element.type === 'StaticBlock' || element.type === 'TSIndexSignature') return node;
+        const key = element.computed ? check(element.key as Expression) : undefined;
+        if (key) return key;
+        if ((element.type === 'PropertyDefinition' || element.type === 'AccessorProperty') && element.static) {
+          const value = check(element.value);
+          if (value) return value;
+        }
+      }
+      return undefined;
+    }
+    case 'CallExpression':
+    case 'NewExpression': {
+      if (node.arguments.some((argument) => argument.type === 'SpreadElement')) return node;
+      const { callee } = node;
+      const member =
+        callee.type === 'MemberExpression' &&
+        !callee.computed &&
+        callee.object.type === 'Identifier' &&
+        callee.property.type === 'Identifier'
+          ? { object: callee.object.name, property: callee.property.name }
+          : undefined;
+      const known =
+        pureCalls.has(node.start) ||
+        (node.type === 'CallExpression' &&
+          member !== undefined &&
+          ((react.has(member.object) && pureReactCalls.has(member.property)) ||
+            (member.object === 'Object' && member.property === 'freeze'))) ||
+        (node.type === 'NewExpression' && callee.type === 'Identifier' && pureGlobals.has(callee.name));
+      return known ? first([callee as Expression, ...(node.arguments as Expression[])]) : node;
+    }
+    default:
+      return node;
+  }
+}
+
+/**
+ * Fails the build on the first top-level initialiser or property-set value in `code` that may have effects
+ * (see effectIn). Function declarations and imports have none.
+ */
+function assertPureTopLevel(file: string, code: string) {
+  const { program, comments } = parseModule(file, code);
+  // A call is marked pure when a /*#__PURE__*/ or /* @__PURE__ */ comment is all that comes before it.
+  const pureCalls = new Set(
+    comments
+      .filter(({ value }) => /^\s*[#@]__PURE__\s*$/.test(value))
+      .map(({ end }) => end + (/^\s*/.exec(code.slice(end))?.[0].length ?? 0)),
+  );
+  // The local names `react` is imported as (namespace or default), whose factories are pure.
+  const react = new Set(
+    program.body.flatMap((node) =>
+      node.type === 'ImportDeclaration' && node.source.value === 'react'
+        ? node.specifiers.filter(({ type }) => type !== 'ImportSpecifier').map(({ local }) => local.name)
+        : [],
+    ),
+  );
+  for (const node of program.body) {
+    const declaration = node.type === 'ExportNamedDeclaration' ? node.declaration : node;
+    const values =
+      declaration?.type === 'VariableDeclaration'
+        ? declaration.declarations.map(({ init }) => init)
+        : declaration?.type === 'ExpressionStatement' && declaration.expression.type === 'AssignmentExpression'
+          ? [declaration.expression.right]
+          : [];
+    for (const value of values) {
+      const effect = effectIn(value, pureCalls, react);
+      if (!effect) continue;
+      const line = code.slice(0, effect.start).split('\n').length;
+      declarationDrift(
+        file,
+        `a top-level value that may have effects (line ${line}: ${code.slice(effect.start, effect.end).slice(0, 80)})`,
+      );
+    }
+  }
 }
 
 /**
@@ -189,10 +322,13 @@ const splitByDeclaration = /[\\/]@muxui[\\/]react[\\/]generated[\\/]overlays\.js
  * A module in parts: its imports, and each top-level declaration by its first name with the names it declares and the
  * other declarations it reads. A statement that sets a property on a declaration (`Tooltip.displayName = ...`) goes
  * with it. Fails closed on anything else but imports, function and variable declarations and their named exports, so
- * a Mux update that changes the shape breaks the build instead of the page.
+ * a Mux update that changes the shape breaks the build instead of the page. Every initialiser and property-set value
+ * must also be free of effects (effectIn): a part runs only when an import reaches it, so an effect would run on the
+ * server, which loads the whole module, and silently not in the client.
  */
 export function splitDeclarations(file: string, code = readFileSync(file, 'utf8')) {
   const program = parseProgram(file, code);
+  assertPureTopLevel(file, code);
   const imports: string[] = [];
   const declarations = new Map<string, { names: string[]; exported: boolean; text: string; ranges: { start: number; end: number }[] }>();
   const owner = new Map<string, string>();
@@ -243,7 +379,10 @@ export function splitDeclarations(file: string, code = readFileSync(file, 'utf8'
 /**
  * Splits each module matched by `splitByDeclaration` into one virtual module per top-level declaration, client build
  * only. The module itself becomes re-exports of its exported declarations; each part carries the module's imports
- * (unused ones are shaken out) and imports the declarations it reads from their parts. All are side-effect free.
+ * (unused ones are shaken out) and imports the declarations it reads from their parts. All are side-effect free,
+ * which holds because splitDeclarations fails the build on any top-level value that may have effects (any call or
+ * `new` but those marked pure and a short list of known factories, tagged templates, assignments; see effectIn)
+ * rather than let such work run on the server and vanish from the client.
  */
 export function splitMuxDeclarations(): Plugin {
   const parts = new Map<string, ReturnType<typeof splitDeclarations>>();

@@ -19,10 +19,13 @@ test.afterEach(async () => {
   await Promise.all(contexts.splice(0).map((context) => context.close()));
 });
 
-type Open = { scripts: boolean; as?: string; scheme?: 'light' | 'dark' };
+type Open = { scripts: boolean; as?: string; scheme?: 'light' | 'dark'; forced?: boolean };
 
-/** A page with or without JavaScript, signed in as `as`, in the scheme the display cookie names. Motion is reduced. */
-async function open(browser: Browser, baseURL: string, path: string, { scripts, as, scheme = 'light' }: Open): Promise<Page> {
+/**
+ * A page with or without JavaScript, signed in as `as`, in the scheme the display cookie names, in
+ * forced colours when `forced` is set. Motion is reduced.
+ */
+async function open(browser: Browser, baseURL: string, path: string, { scripts, as, scheme = 'light', forced }: Open): Promise<Page> {
   if (as && !sessions.has(as)) {
     const context = await signedIn(browser, baseURL, as, world.password);
     sessions.set(as, await context.storageState());
@@ -33,6 +36,7 @@ async function open(browser: Browser, baseURL: string, path: string, { scripts, 
     storageState: as ? sessions.get(as) : undefined,
     javaScriptEnabled: scripts,
     reducedMotion: 'reduce',
+    forcedColors: forced ? 'active' : 'none',
   });
   contexts.push(context);
   await context.addCookies([{ name: 'peblish_prefs', value: `density=card&scheme=${scheme}`, url: baseURL }]);
@@ -204,3 +208,44 @@ for (const scheme of ['light', 'dark'] as const) {
     expect(await ringColours(radioIndicator(postType(plain, 'Text')))).toEqual(hydratedRing);
   });
 }
+
+// Forced colours (Windows high contrast) replace every author colour that is not a system colour:
+// the stylesheet's tick, a masked background, and Mux's static radio dot (the only one before
+// hydration) would become Canvas on the indicator's Canvas.
+test('in forced colours, a box and a radio chosen without JavaScript are drawn as a hydrated page draws them', async ({
+  browser,
+  baseURL,
+}) => {
+  const as = world.people.poster;
+  const pages = [
+    await open(browser, baseURL!, '/submit', { scripts: true, as, forced: true }),
+    await open(browser, baseURL!, '/submit', { scripts: false, as, forced: true }),
+  ];
+  const [hydrated, plain] = pages as [Page, Page];
+  const nsfw = (page: Page) => page.getByRole('checkbox', { name: 'NSFW' });
+  const empty = await shot(boxIndicator(nsfw(plain)));
+  const unselected = await shot(radioIndicator(postType(plain, 'Link')));
+  const selected = await shot(radioIndicator(postType(plain, 'Text')));
+  for (const page of pages) {
+    await radioLabel(postType(page, 'Link')).click();
+    await expect(postType(page, 'Link')).toBeChecked();
+    await boxIndicator(nsfw(page)).scrollIntoViewIfNeeded();
+    await tick(nsfw(page));
+    await expect(nsfw(page)).toBeChecked();
+    await page.mouse.move(0, 0);
+  }
+  await hydrated.addStyleTag({ content: '*, ::before, ::after { transition: none !important; }' });
+  const ticked = await shot(boxIndicator(nsfw(plain)));
+  // The tick shows (a thin line on Canvas, so fewer pixels than the filled box of the usual colours),
+  // the radio the visitor chose shows its dot, and both pages draw each control the same.
+  expect(await pixelDiff(browser, ticked, empty)).toBeGreaterThan(0.03);
+  await looksLike(browser, await shot(radioIndicator(postType(plain, 'Link'))), selected, unselected);
+  for (const part of [
+    (page: Page) => boxIndicator(nsfw(page)),
+    (page: Page) => radioIndicator(postType(page, 'Link')),
+    (page: Page) => radioIndicator(postType(page, 'Text')),
+  ]) {
+    // A 2px margin: the two pages scroll differently, and 5px takes in a neighbour's edge on one of them.
+    expect(await pixelDiff(browser, await shot(part(plain), 2), await shot(part(hydrated), 2))).toBe(0);
+  }
+});

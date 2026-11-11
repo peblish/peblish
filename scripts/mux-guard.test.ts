@@ -19,7 +19,7 @@ import {
 const found = (violations: { rule: string; line: number }[]) => violations.map(({ rule, line }) => `${rule}:${line}`);
 const lines = (...source: string[]) => source.join('\n');
 const tsx = (source: string, file = 'packages/web/src/routes/a.tsx') => found(scanScript(file, source));
-const none: CssContext = { aliases: new Set(), defined: new Set() };
+const none: CssContext = { aliases: new Set(), defined: new Set(), mux: new Set() };
 const css = (source: string, context: CssContext = none, file = 'packages/web/src/a.css') =>
   found(scanCss(file, source, context).violations);
 
@@ -118,8 +118,11 @@ test('inline-style reports colour, type and motion values and spacing that is no
     "    <div style={{ '--tint': '#f00' }} />", // 10
     '    <div style={styles} />', // 11
     "    <div style={inline ? { display: 'inline', margin: 0 } : undefined} />", // 12
-    '  </>', // 13
-    ');', // 14
+    "    <div style={{ '--muxui-my-gap': 'var(--muxui-semantic-layout-group-gap)' }} />", // 13
+    "    <div style={{ padding: 'var(--muxui-my-gap)' }} />", // 14
+    "    <div style={{ '--muxui-semantic-layout-group-gap': 'var(--muxui-semantic-layout-tight-gap)' }} />", // 15
+    '  </>', // 16
+    ');', // 17
   );
   expect(tsx(source)).toEqual([
     'inline-style:5',
@@ -128,6 +131,8 @@ test('inline-style reports colour, type and motion values and spacing that is no
     'inline-style:8',
     'inline-style:10',
     'inline-style:11',
+    'inline-style:13',
+    'inline-style:14',
   ]);
 });
 
@@ -185,7 +190,7 @@ test('css-colour reports hex, colour functions and named colours, not tokens or 
     '}',
   );
   const defined = new Set(['--muxui-primitive-red-500']);
-  expect(css(sheet, { aliases: new Set(), defined })).toEqual([
+  expect(css(sheet, { aliases: new Set(), defined, mux: defined })).toEqual([
     'css-colour:2',
     'css-colour:3',
     'css-colour:4',
@@ -215,7 +220,9 @@ test('radius, shadow and font values must come from Mux tokens or a pure alias',
     '  font: 600 var(--muxui-font-size-sm) monospace;', // 17
     '}',
   );
-  expect(css(sheet, { aliases: new Set(['--pb-font']), defined: { has: () => true } })).toEqual([
+  expect(
+    css(sheet, { aliases: new Set(['--pb-font']), defined: { has: () => true }, mux: { has: (name) => name.startsWith('--muxui-') } }),
+  ).toEqual([
     'css-radius:3',
     'css-radius:4',
     'css-shadow:7',
@@ -227,7 +234,8 @@ test('radius, shadow and font values must come from Mux tokens or a pure alias',
   ]);
 });
 
-const anyDefined: CssContext = { aliases: new Set(), defined: { has: () => true } };
+const anyMux = { has: (name: string) => name.startsWith('--muxui-') };
+const anyDefined: CssContext = { aliases: new Set(), defined: { has: () => true }, mux: anyMux };
 
 test('spacing, weight, line height and letter spacing must be tokens, zero or a neutral keyword', () => {
   const sheet = lines(
@@ -298,13 +306,58 @@ test('css-unknown-token reports a var() that Mux, tokens.css and the file itself
     '  color: var(--pb-gone);', // 6
     '}',
   );
-  const context = { aliases: new Set(['--pb-fg']), defined: new Set(['--muxui-semantic-layout-inset-small', '--pb-fg']) };
+  const context = {
+    aliases: new Set(['--pb-fg']),
+    defined: new Set(['--muxui-semantic-layout-inset-small', '--pb-fg']),
+    mux: new Set(['--muxui-semantic-layout-inset-small']),
+  };
   expect(css(sheet, context)).toEqual(['css-unknown-token:4', 'css-unknown-token:6']);
 });
 
 test('a local custom property counts as a token only when it is built from tokens', () => {
   const sheet = lines('.a {', '  --rail: var(--muxui-x);', '  --wide: 13px;', '  padding: var(--rail);', '  padding: var(--wide);', '}');
   expect(css(sheet, anyDefined)).toEqual(['css-spacing:5']);
+});
+
+// Mux's real tokens, apart from tokens.css's aliases: what a stylesheet may set and to what.
+const themed: CssContext = {
+  aliases: new Set(['--pb-gap', '--pb-inset']),
+  defined: new Set([
+    '--muxui-semantic-layout-group-gap',
+    '--muxui-semantic-layout-tight-gap',
+    '--muxui-component-button-radius',
+    '--pb-gap',
+    '--pb-inset',
+  ]),
+  mux: new Set(['--muxui-semantic-layout-group-gap', '--muxui-semantic-layout-tight-gap', '--muxui-component-button-radius']),
+};
+
+test('a --muxui-* name Mux UI does not define is unknown where it is set and where it is read, even in one file', () => {
+  const sheet = lines(
+    '.x {', // 1
+    '  --muxui-my-gap: 13px;', // 2
+    '  gap: var(--muxui-my-gap);', // 3
+    '  --muxui-my-rail: var(--muxui-semantic-layout-group-gap);', // 4
+    '  padding: var(--muxui-my-rail);', // 5
+    '}',
+  );
+  expect(css(sheet, themed)).toEqual(['css-unknown-token:2', 'css-unknown-token:3', 'css-unknown-token:4', 'css-unknown-token:5']);
+});
+
+test('a real Mux token or tokens.css alias may be set to tokens (theming) but not to a literal value', () => {
+  const sheet = lines(
+    '.x {', // 1
+    '  --muxui-semantic-layout-group-gap: var(--muxui-semantic-layout-tight-gap);', // 2: theming, legal
+    '  --muxui-component-button-radius: 0;', // 3: zero, legal
+    '  --muxui-semantic-layout-tight-gap: calc(2 * var(--pb-inset));', // 4: maths over tokens, legal
+    '  --muxui-semantic-layout-group-gap: 13px;', // 5
+    '  --muxui-component-button-radius: 600;', // 6
+    '  --muxui-semantic-layout-tight-gap: calc(var(--muxui-semantic-layout-group-gap) + 3px);', // 7
+    '  --pb-gap: 1rem;', // 8
+    '  gap: var(--pb-gap);', // 9: no longer an alias in this file, so 1rem is hand-written
+    '}',
+  );
+  expect(css(sheet, themed)).toEqual(['css-token-value:5', 'css-token-value:6', 'css-token-value:7', 'css-token-value:8', 'css-spacing:9']);
 });
 
 test('css-blur reports blurs; css-element-selector reports styling by tag, not by class, inside Mux parts or in :has()', () => {
