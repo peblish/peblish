@@ -65,7 +65,7 @@ export function CommunityPicker({
           onChange={onChange}
           invalid={error !== undefined}
           // The group's own error part is linked to it but is React Aria's FieldError, which drops a
-          // role (Mux UI rc.6), so the alert is the span inside it: a Text would recolour the message.
+          // role (Mux UI rc.7 still), so the alert is the span inside it: a Text would recolour the message.
           errorMessage={error === undefined ? undefined : <FieldAlert>{error}</FieldAlert>}
           className="cmp__list"
         >

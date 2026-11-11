@@ -1,7 +1,7 @@
 import { Input } from '@peblish/ui/components/input';
 import { Notice } from '@peblish/ui/components/notice';
 import { type } from 'arktype';
-import { Fragment, useId, useState, type FormEvent, type FocusEvent, type InputHTMLAttributes, type ReactNode } from 'react';
+import { Fragment, useState, type FormEvent, type FocusEvent, type InputHTMLAttributes, type ReactNode } from 'react';
 import { useTranslate } from '../../../i18n/use-translate.ts';
 import { asFormError, errorKey, type FormError } from './errors.ts';
 
@@ -85,8 +85,6 @@ export function Field({
 }: { label: string; hint?: ReactNode; aside?: ReactNode } & InputHTMLAttributes<HTMLInputElement>) {
   const { t } = useTranslate();
   const [problem, setProblem] = useState<string>();
-  // Mux UI rc.6 links a late Input.Error to the input only when the error has its id on mount.
-  const errorId = useId();
   const text = (given: typeof value) => (given === undefined ? undefined : String(given));
   const explain = (field: HTMLInputElement) => {
     const { validity } = field;
@@ -122,11 +120,7 @@ export function Field({
         }}
       />
       {hint && <Input.Description>{hint}</Input.Description>}
-      {problem !== undefined && (
-        <Input.Error id={errorId} role="alert">
-          {problem}
-        </Input.Error>
-      )}
+      {problem !== undefined && <Input.Error role="alert">{problem}</Input.Error>}
     </Input.Root>
   );
 }

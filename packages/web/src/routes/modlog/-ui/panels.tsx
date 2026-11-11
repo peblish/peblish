@@ -1,6 +1,6 @@
 import { Button } from '@peblish/ui/components/button';
 import { Checkbox } from '@peblish/ui/components/checkbox';
-import { FieldAlert, useErrorPartId, useFieldProblem } from '@peblish/ui/components/field-problem';
+import { useFieldProblem } from '@peblish/ui/components/field-problem';
 import { Input } from '@peblish/ui/components/input';
 import { LinkedDisclosure } from '@peblish/ui/components/linked-disclosure';
 import { Notice } from '@peblish/ui/components/notice';
@@ -274,22 +274,17 @@ export function BanFields({
  */
 function UntilField({ required }: { required: boolean }) {
   const { t } = useTranslate();
-  const { ref, problem, errorId, recheck } = useFieldProblem<HTMLDivElement>();
+  const { ref, problem, recheck } = useFieldProblem<HTMLDivElement>();
   const [judgedRequired, setJudgedRequired] = useState(required);
   if (judgedRequired !== required) {
     setJudgedRequired(required);
     if (problem) recheck();
   }
-  const partId = useErrorPartId(Boolean(problem), errorId);
   return (
     <Input.Root ref={ref} required={required} invalid={problem !== undefined}>
       <Input.Label>{t('modlog', 'panel.until')}</Input.Label>
       <Input.Input type="date" name="until" />
-      {problem ? (
-        <Input.Error id={partId}>
-          <FieldAlert>{problem}</FieldAlert>
-        </Input.Error>
-      ) : null}
+      {problem ? <Input.Error role="alert">{problem}</Input.Error> : null}
     </Input.Root>
   );
 }

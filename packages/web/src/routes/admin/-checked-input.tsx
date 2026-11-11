@@ -1,4 +1,4 @@
-import { FieldAlert, useErrorPartId, useFieldProblem } from '@peblish/ui/components/field-problem';
+import { useFieldProblem } from '@peblish/ui/components/field-problem';
 import { Input } from '@peblish/ui/components/input';
 import type { ComponentProps } from 'react';
 
@@ -20,17 +20,12 @@ export function CheckedInput({
   required,
   ...input
 }: InputAttributes & { label: string; value?: string; defaultValue?: string; onChange?: (value: string) => void; required?: boolean }) {
-  const { ref, problem, errorId } = useFieldProblem<HTMLDivElement>();
-  const partId = useErrorPartId(problem !== undefined, errorId);
+  const { ref, problem } = useFieldProblem<HTMLDivElement>();
   return (
     <Input.Root ref={ref} value={value} defaultValue={defaultValue} onChange={onChange} required={required} invalid={problem !== undefined}>
       <Input.Label>{label}</Input.Label>
       <Input.Input {...input} />
-      {problem !== undefined && (
-        <Input.Error id={partId}>
-          <FieldAlert>{problem}</FieldAlert>
-        </Input.Error>
-      )}
+      {problem !== undefined && <Input.Error role="alert">{problem}</Input.Error>}
     </Input.Root>
   );
 }

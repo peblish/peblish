@@ -80,7 +80,7 @@
     "rule": "widget-role",
     "match": "<span role=\"alert\">",
     "anchor": "FieldAlert",
-    "reason": "A field's error must be announced when it appears, and Mux's error parts drop a role prop, so the alert role sits on one inner span that every field wrapper shares."
+    "reason": "A field's error must be announced when it appears, and in Mux UI rc.7 SelectNative's and RadioGroup's error parts still drop a role prop, so for those two the alert role sits on one inner span; every other Mux error part takes role=\"alert\" itself."
   },
   {
     "file": "packages/web/src/routes/auth/-ui/qr.tsx",

@@ -40,7 +40,7 @@ export function Select({ label, description, errorMessage, items, onChange, plac
   // The native select is not React Aria's, so the hook also stops the browser's bubble and moves focus.
   const { ref, problem } = useFieldProblem<HTMLSelectElement>({ native: true });
   // The caller's message wins; otherwise the browser's verdict. SelectNative links the message
-  // itself and gives its part no role, so the alert is a span inside it.
+  // itself but takes no role for its part (Mux UI rc.7 still), so the alert is a span inside it.
   const message = invalid && errorMessage ? errorMessage : problem;
   return (
     <SelectNative
