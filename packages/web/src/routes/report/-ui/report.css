@@ -16,6 +16,11 @@
     flex-direction: column;
     gap: var(--muxui-semantic-layout-section-gap);
   }
+  /* Mux sizes a radio group's field to its widest option (width: max-content), so the category
+     descriptions never wrapped and a phone scrolled sideways. In the form it takes the column's width. */
+  .rp-form .muxui-radio-group__field {
+    inline-size: auto;
+  }
   /* The Report link from the click until its dialog's code has loaded: a static busy look. */
   .rp-open[data-opening] {
     cursor: progress;
