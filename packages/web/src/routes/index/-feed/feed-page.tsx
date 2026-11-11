@@ -1,5 +1,5 @@
 import type { FeedName, Period, Sort } from '@peblish/core/feeds/input';
-import type { ReactNode } from 'react';
+import { useRef, type ReactNode } from 'react';
 import { periods, sorts } from '@peblish/core/feeds/input';
 import { EmptyState } from '@peblish/ui/components/empty-state';
 import { Link } from '@peblish/ui/components/link';
@@ -7,6 +7,7 @@ import { LinkTabs } from '@peblish/ui/components/link-tabs';
 import { Pager } from '@peblish/ui/components/pager';
 import { PostCard } from '@peblish/ui/components/post-card';
 import { Text } from '@peblish/ui/components/text';
+import { useToast } from '@peblish/ui/components/toast';
 import { DensityControl } from '@peblish/ui/density/density-control';
 import { useTranslate } from '../../../i18n/use-translate.ts';
 import { useRouteHydrated } from '../../../shell/hydration.ts';
@@ -108,7 +109,8 @@ export function FeedCards({
   const search = resolveFeedSearch(address);
   const { t, locale } = useTranslate();
   const { prefs } = usePrefs();
-  const postLabels = usePostCardLabels();
+  const postLabels = { ...usePostCardLabels(), voteOn: (title: string) => t('posts', 'vote.on', { title }) };
+  const voteFailed = useVoteFailedToast();
   return (
     <>
       {data.signIn ? (
@@ -130,10 +132,15 @@ export function FeedCards({
                 hrefs={{ post: postPath(post.id), community: communityPath(post.community), author: userPath(post.author) }}
                 labels={postLabels}
                 locale={locale}
-                // A refusal throws, which puts the arrows and the score back.
+                // A refusal (or a failed request) says so, then throws, which puts the arrows and the score back.
                 onVote={async (value) => {
-                  const result = await castVoteFn({ data: { target: { kind: 'post', id: post.id }, value } });
-                  if (!result.ok) throw new Error(result.reason);
+                  try {
+                    const result = await castVoteFn({ data: { target: { kind: 'post', id: post.id }, value } });
+                    if (!result.ok) throw new Error(result.reason);
+                  } catch (error) {
+                    voteFailed();
+                    throw error;
+                  }
                 }}
                 voteDisabled={!data.signedIn || post.deleted}
                 now={new Date(data.now)}
@@ -153,6 +160,28 @@ export function FeedCards({
       )}
     </>
   );
+}
+
+/**
+ * Says that a vote was not saved, in a Mux toast (the root's ToastProvider; announced, since a
+ * toast is an alert). A burst of failures (several queued votes, or votes on several posts with an
+ * expired session) gives one toast: no other is added while it shows.
+ */
+function useVoteFailedToast() {
+  const toast = useToast();
+  const { t } = useTranslate();
+  const showing = useRef(false);
+  return () => {
+    if (showing.current) return;
+    showing.current = true;
+    toast.add(t('feeds', 'vote.failed.body'), {
+      title: t('feeds', 'vote.failed.title'),
+      variant: 'danger',
+      onDismiss: () => {
+        showing.current = false;
+      },
+    });
+  };
 }
 
 /** Nothing to show: an empty home feed says how to fill it, the others say that it is quiet. */

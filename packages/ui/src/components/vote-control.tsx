@@ -29,6 +29,8 @@ export interface VoteControlProps {
   disabled?: boolean;
   orientation?: 'vertical' | 'horizontal';
   labels: VoteControlLabels;
+  /** The group's name when it should say what the vote is on ("Vote on <title>"); `labels.group` otherwise. */
+  label?: string;
   locale: string;
   className?: string;
 }
@@ -39,7 +41,17 @@ export interface VoteControlProps {
  * is a radio group, and a vote must be removable. Optimistic: the viewer's choice shows before
  * `onVote` settles. The voted arrow and score take the --pb-up and --pb-down accents.
  */
-export function VoteControl({ score, myVote, onVote, disabled, orientation = 'vertical', labels, locale, className }: VoteControlProps) {
+export function VoteControl({
+  score,
+  myVote,
+  onVote,
+  disabled,
+  orientation = 'vertical',
+  labels,
+  label,
+  locale,
+  className,
+}: VoteControlProps) {
   const [state, setState] = useState({ base: myVote, vote: myVote });
   // A new value from the server replaces the optimistic one (derived state, set while rendering).
   if (state.base !== myVote) setState({ base: myVote, vote: myVote });
@@ -51,7 +63,11 @@ export function VoteControl({ score, myVote, onVote, disabled, orientation = 've
   const shown = score - myVote + state.vote;
   const classes = ['pb-vote', orientation === 'horizontal' && 'pb-vote--row', className].filter(Boolean).join(' ');
   return (
-    <Group className={classes} aria-label={labels.group} data-vote={state.vote === 1 ? 'up' : state.vote === -1 ? 'down' : undefined}>
+    <Group
+      className={classes}
+      aria-label={label ?? labels.group}
+      data-vote={state.vote === 1 ? 'up' : state.vote === -1 ? 'down' : undefined}
+    >
       <ToggleButton
         size="sm"
         className="pb-vote__up"

@@ -4,7 +4,7 @@ import { gotoHydrated } from '../support/route-marker.ts';
 
 // The first tap right after the hydration marker, with the CPU slowed 6x (Chrome DevTools
 // Protocol), must not be lost: the mux-start spike lost 33 of 288 first clicks on Tabs and
-// Table rows. The vote arrows and the density control are plain buttons for that reason.
+// Table rows. The vote arrows and the density control are Mux ToggleButtons, checked here.
 test.beforeEach(({ request }) => skipWithoutKit(request));
 test.setTimeout(120_000);
 
@@ -27,6 +27,36 @@ test(`the first tap on a vote arrow works at 6x CPU throttling (${attempts} cold
     await expect(vote).toContainText('843');
     await context.close();
   }
+});
+
+test('a press on a vote arrow while the page is still hydrating makes exactly one vote', async ({ page }) => {
+  // The CPU slowed 20x holds hydration open: the shell marker (React is running and listening)
+  // comes about a second before the route marker (the route content is interactive). The press
+  // lands in between, on server-rendered arrows, and React must replay it once.
+  await throttled(page, 20);
+  await page.addInitScript(() => {
+    document.addEventListener(
+      'pointerdown',
+      () => {
+        const html = document.documentElement;
+        Object.assign(window, { pressedDuringHydration: html.dataset.shellHydrated === '1' && html.dataset.hydrated !== '1' });
+      },
+      { capture: true, once: true },
+    );
+  });
+  await page.goto('/kit', { waitUntil: 'commit' });
+  await page.locator('html[data-shell-hydrated="1"]').waitFor({ state: 'attached' });
+  const slow = page.getByTestId('kit-vote-slow');
+  const up = slow.getByRole('button', { name: 'Upvote' });
+  await up.click({ timeout: 10_000 });
+  expect(await page.evaluate(() => (window as { pressedDuringHydration?: boolean }).pressedDuringHydration)).toBe(true);
+  await page.locator('html[data-hydrated="1"]').waitFor({ state: 'attached' });
+  await expect(up).toHaveAttribute('aria-pressed', 'true', { timeout: 15_000 });
+  await expect(slow.getByRole('group')).toContainText('6');
+  // The saver saw one vote, and no second one follows.
+  await expect(page.getByTestId('kit-vote-slow-log')).toHaveText('1', { timeout: 15_000 });
+  await page.waitForTimeout(1_000);
+  await expect(page.getByTestId('kit-vote-slow-log')).toHaveText('1');
 });
 
 test('a vote can be taken back, and a refused vote goes back to what it was', async ({ page }) => {
