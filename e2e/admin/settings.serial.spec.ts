@@ -1,11 +1,11 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Browser, type BrowserContextOptions, type Page } from '@playwright/test';
 import type { Admin } from '../auth/support.ts';
 import { expectAccessible, landed, signIn } from '../auth/support.ts';
 import { gotoHydrated, recordConsole } from '../support/route-marker.ts';
 import { seedAdm, signInAdmin } from './support.ts';
 
-// The admin Settings tab on the built server and the lane database: saving, the brand, the kill
-// switches, and who may see the page. The steps share one signed-in admin, so they run in order.
+// The admin Settings and Registration tabs on the built server and the lane database: saving, the brand, the kill
+// switches, invites, and who may see the pages. The steps share one signed-in admin, so they run in order.
 // It saves site settings every page reads, so it is a serial spec (e2e/playwright.config.ts).
 test.skip(Boolean(process.env.BASE_URL), 'needs the lane database for its seed (DATABASE_URL)');
 test.describe.configure({ mode: 'serial' });
@@ -119,4 +119,106 @@ test('the settings page is German for a German browser, and passes the same chec
   await expectAccessible(de);
   expect(console.hydrationProblems()).toEqual([]);
   await german.close();
+});
+
+/** A context signed in as this spec's admin: scripts off, another language or a phone screen. */
+const asAdmin = async (browser: Browser, options: BrowserContextOptions = {}) =>
+  browser.newContext({ ...options, storageState: await page.context().storageState() });
+const switchKeys = [
+  'registration.enabled',
+  'posting.enabled',
+  'uploads.enabled',
+  'remote_media.enabled',
+  'inbox.enabled',
+  'delivery.enabled',
+];
+/** Each switch row's badge and button, in page order. */
+const switchStates = (on: Page) =>
+  on.locator('[data-switch]').evaluateAll((rows) => rows.map((row) => row.textContent?.replace(/\s+/g, ' ').trim() ?? ''));
+
+test('Enter in a settings field saves the form and never flips a kill switch', async () => {
+  for (const label of ['Site name', 'Account cap']) {
+    await gotoHydrated(page, '/admin/settings');
+    const before = await switchStates(page);
+    await page.getByLabel(label, { exact: true }).press('Enter');
+    await page.waitForURL(/saved=/);
+    expect(await switchStates(page)).toEqual(before);
+  }
+});
+
+test('a refused switch post changes nothing, and every row keeps showing its stored state', async () => {
+  for (const key of switchKeys) {
+    await gotoHydrated(page, '/admin/settings');
+    const row = page.locator(`[data-switch="${key}"]`);
+    const before = await switchStates(page);
+    // A state the server refuses (a hand-made or stale post).
+    await row.locator('input[name="state"]').evaluate((input: HTMLInputElement) => (input.value = 'maybe'));
+    await row.getByRole('button').click();
+    await page.waitForURL(/error=/);
+    await expect(page.getByRole('alert').filter({ hasText: 'Nothing was saved.' })).toBeVisible();
+    expect(await switchStates(page)).toEqual(before);
+    await expect(
+      page.locator(`[data-switch="${key}"]`).getByText(key === 'uploads.enabled' ? 'Paused' : 'On', { exact: true }),
+    ).toBeVisible();
+  }
+});
+
+test('with scripts off the settings form posts plainly and saves', async ({ browser }) => {
+  const context = await asAdmin(browser, { javaScriptEnabled: false });
+  const plain = await context.newPage();
+  await plain.goto('/admin/settings');
+  await plain.getByLabel('Description').fill('Saved without scripts.');
+  await plain.getByRole('button', { name: 'Save changes' }).click();
+  await plain.waitForURL(/saved=/);
+  await expect(plain.getByRole('status').filter({ hasText: 'Saved.' })).toBeVisible();
+  await expect(plain.getByLabel('Description')).toHaveValue('Saved without scripts.');
+  await context.close();
+});
+
+test('the registration meter reads the same on the server and in the browser, in English and German', async ({ browser }) => {
+  for (const [locale, name] of [
+    ['en-US', /^Beta cap \d+ \/ [\d,]+ accounts$/],
+    ['de-DE', /^Beta-Grenze \d+ \/ [\d.]+ Konten$/],
+  ] as const) {
+    const context = await asAdmin(browser, { locale });
+    const reader = await context.newPage();
+    const console = recordConsole(reader);
+    await gotoHydrated(reader, '/admin/registration');
+    // The default cap is positive, so the meter shows.
+    await expect(reader.getByRole('meter')).toHaveAccessibleName(name);
+    await expectAccessible(reader);
+    expect(console.hydrationProblems()).toEqual([]);
+    await context.close();
+  }
+});
+
+test('with scripts off an invite is created and revoked by plain posts', async ({ browser }) => {
+  const context = await asAdmin(browser, { javaScriptEnabled: false });
+  const plain = await context.newPage();
+  await plain.goto('/admin/registration');
+  const label = `plain ${Date.now()}`;
+  await plain.getByLabel('Label').fill(label);
+  await plain.getByRole('button', { name: 'Create' }).click();
+  await expect(plain.getByTestId('invite-code')).toBeVisible();
+  const row = () => plain.getByRole('row').filter({ hasText: label });
+  await expect(row()).toContainText('Active');
+  await row().getByRole('button', { name: 'Revoke' }).click();
+  await expect(plain.getByTestId('invite-code')).toHaveCount(0);
+  await expect(row()).toContainText('Revoked');
+  await expect(row().getByRole('button', { name: 'Revoke' })).toHaveCount(0);
+  await context.close();
+});
+
+test('a long invite label at phone width scrolls inside the table, never the page', async ({ browser }) => {
+  const context = await asAdmin(browser, { viewport: { width: 375, height: 800 } });
+  const phone = await context.newPage();
+  await gotoHydrated(phone, '/admin/registration');
+  const label = `Invite-for-the-organisers-of-the-very-long-named-regional-community-group-${Date.now()}`;
+  await phone.getByLabel('Label').fill(label);
+  await phone.getByRole('button', { name: 'Create' }).click();
+  await expect(phone.getByTestId('invite-code')).toBeVisible();
+  await expect(phone.getByRole('row').filter({ hasText: label })).toBeAttached();
+  const overflow = await phone.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+  expect(overflow).toBe(0);
+  await context.close();
 });

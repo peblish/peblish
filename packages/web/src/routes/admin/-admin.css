@@ -85,8 +85,10 @@
     gap: var(--muxui-semantic-layout-tight-gap);
   }
 
-  /* Tables scroll sideways on a phone instead of squeezing their columns. */
+  /* Tables scroll sideways on a phone instead of squeezing their columns. Positioned, so the
+     visually hidden column names (absolutely placed) scroll with it instead of widening the page. */
   .adm-table {
+    position: relative;
     overflow-x: auto;
   }
 
@@ -121,6 +123,11 @@
   .adm-meter {
     flex: 1 1 220px;
     max-width: 360px;
+  }
+
+  /* The label already says "15 / 25 accounts": the Meter's own reading (plain digits) only repeats it. */
+  .adm-meter .muxui-value-output {
+    display: none;
   }
 
   .adm-create {

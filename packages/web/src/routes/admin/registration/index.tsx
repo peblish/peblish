@@ -106,6 +106,13 @@ const statusTone: Record<InviteStatus, BadgeTone> = {
 };
 
 const path = '/admin/registration';
+/**
+ * Mux's Meter formats its reading in the runtime's default locale, not the page's, so a German
+ * browser and an English server would print "20 %" and "20%" and the page would not hydrate
+ * cleanly. Plain digits read the same everywhere; the label carries the localised count and cap,
+ * and the stylesheet hides the duplicate reading.
+ */
+const meterReading = { useGrouping: false, numberingSystem: 'latn', maximumFractionDigits: 0 } satisfies Intl.NumberFormatOptions;
 const revokeForm = 'revoke-invite';
 
 function Registration() {
@@ -141,7 +148,7 @@ function Registration() {
           {t('invites', registration.enabled ? 'admin.inviteOnly' : 'admin.paused')}
         </Badge>
         {registration.cap > 0 ? (
-          <Meter label={cap} value={registration.accounts} maxValue={registration.cap} className="adm-meter" />
+          <Meter label={cap} value={registration.accounts} maxValue={registration.cap} formatOptions={meterReading} className="adm-meter" />
         ) : (
           <Text>{cap}</Text>
         )}
