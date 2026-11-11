@@ -43,12 +43,20 @@
   .auth-dob {
     display: grid;
     gap: var(--muxui-semantic-layout-tight-gap);
+    container-type: inline-size;
   }
+  /* Day and Year hold two and four digits; Month takes the rest. Where the rest is too narrow
+     for the longest month name (September, with the select's arrow), the three stack. */
   .auth-dob__parts {
     display: grid;
-    grid-template-columns: minmax(0, 5rem) minmax(0, 1fr) minmax(0, 6rem);
+    grid-template-columns: minmax(0, 4rem) minmax(0, 1fr) minmax(0, 5rem);
     gap: var(--muxui-semantic-layout-tight-gap);
     align-items: end;
+  }
+  @container (max-width: 20rem) {
+    .auth-dob__parts {
+      grid-template-columns: minmax(0, 1fr);
+    }
   }
   .auth-code {
     max-inline-size: 10rem;

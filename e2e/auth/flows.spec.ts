@@ -88,8 +88,11 @@ test('the admin signs in with a TOTP code and creates an invite', async ({ page 
     .getByRole('banner')
     .getByRole('button', { name: /^Account:/ })
     .click();
-  await expect(page.getByRole('menu', { name: 'Account' }).getByRole('menuitem', { name: 'Admin' })).toBeVisible();
-  await page.keyboard.press('Escape');
+  const adminItem = page.getByRole('menu', { name: 'Account' }).getByRole('menuitem', { name: 'Admin' });
+  await expect(adminItem).toBeVisible();
+  await adminItem.click();
+  await landed(page, '/admin/settings');
+  await gotoHydrated(page, '/admin/registration');
   await page.getByLabel('Label').fill(`e2e ${person.name}`);
   await page.getByLabel('Max uses').fill('2');
   await page.getByRole('button', { name: 'Create' }).click();
@@ -267,6 +270,39 @@ test('an under-16 date of birth blocks sign-up from this browser for 24 hours', 
 
 test.describe('without JavaScript', () => {
   test.use({ javaScriptEnabled: false });
+
+  test('sign-up through the invite, then a new verification link, by plain form posts', async ({ page }) => {
+    // The invite's second and last use (the first was the person above; the under-16 attempt used none).
+    const name = unique('nojs');
+    await page.goto(`/invite/${inviteCode}`);
+    await page.getByRole('button', { name: 'Continue to sign up' }).click();
+    await page.waitForURL(/\/auth\/sign-up\?invite=/);
+    await expect(page.getByLabel('Invite code')).toHaveValue(inviteCode);
+    await page.getByLabel('Username').fill(name);
+    await page.getByLabel('Email').fill(`${name}@example.test`);
+    await page.getByLabel('Password', { exact: true }).fill('a long enough passphrase');
+    await page.getByLabel('Day').fill('2');
+    await page.getByLabel('Month').selectOption({ label: 'June' });
+    await page.getByLabel('Year').fill('1990');
+    await checkTerms(page);
+    await page.getByRole('button', { name: 'Create account' }).click();
+    await page.waitForURL('/auth/verify');
+    await expect(page.getByRole('heading', { name: 'Check your email' })).toBeVisible();
+    // The link sent at sign-up arrives first, so the second mail is the resent one.
+    await expect.poll(() => mailCount(`${name}@example.test`)).toBe(1);
+    await page.getByRole('button', { name: 'Send the link again' }).click();
+    await page.waitForURL('/auth/verify?sent=yes');
+    await expect(page.getByRole('status')).toHaveText('We sent a new link.');
+    await expect.poll(() => mailCount(`${name}@example.test`)).toBe(2);
+  });
+
+  test('a password reset request by plain form post', async ({ page }) => {
+    await page.goto('/auth/reset');
+    await page.getByLabel('Email').fill(`${unique('nobody')}@example.test`);
+    await page.getByRole('button', { name: 'Send the link' }).click();
+    await page.waitForURL('/auth/reset?sent=yes');
+    await expect(page.getByText(/If an account uses that address/)).toBeVisible();
+  });
 
   test('sign-in still works by plain form posts, errors included', async ({ page }) => {
     await page.goto('/auth/sign-in');
