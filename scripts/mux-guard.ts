@@ -64,9 +64,9 @@ const iconsModule = 'packages/ui/src/components/icons.tsx';
 
 /**
  * `anchor` names what encloses a violation (components and functions, or CSS preludes), for exceptions; a CSS
- * declaration's violation also carries its `value`, and a type selector's its `selector` list.
+ * declaration's violation also carries its `value`, and a type selector's the expanded `branches` that style an element.
  */
-export type Violation = { file: string; line: number; rule: Rule; detail: string; anchor?: string[]; value?: string; selector?: string };
+export type Violation = { file: string; line: number; rule: Rule; detail: string; anchor?: string[]; value?: string; branches?: string[] };
 export type Counts = Record<string, Partial<Record<Rule, number>>>;
 
 // Elements Mux has a component for, and what to use instead.
@@ -185,22 +185,31 @@ function propertyName(name: ts.PropertyName): string | undefined {
   return undefined;
 }
 
+// The key under which `props` records an opaque spread or computed name, which may have set any prop.
+const opaque = '...';
+
 /**
  * Adds an object's properties to `props`, as a spread does. An object literal is read property by property;
  * anything else (rest props, a variable) is opaque, as is a computed name, and may set any prop, so it takes
- * away a `type` written before it (the hidden-input allowance needs to see the final type).
+ * away a `type` written before it (the hidden-input allowance needs to see the final type) and is recorded
+ * under `opaque`.
  */
 function spreadProps(props: Props, expression: ts.Expression) {
   const object = unwrap(expression);
-  if (!ts.isObjectLiteralExpression(object)) return void props.delete('type');
+  if (!ts.isObjectLiteralExpression(object)) {
+    props.delete('type');
+    return void props.set(opaque, object);
+  }
   for (const property of object.properties) {
     if (ts.isSpreadAssignment(property)) {
       spreadProps(props, property.expression);
       continue;
     }
     const name = property.name && propertyName(property.name);
-    if (name === undefined) props.delete('type');
-    else if (ts.isPropertyAssignment(property)) props.set(name, property.initializer);
+    if (name === undefined) {
+      props.delete('type');
+      props.set(opaque, undefined);
+    } else if (ts.isPropertyAssignment(property)) props.set(name, property.initializer);
     else if (ts.isShorthandPropertyAssignment(property)) props.set(name, property.name);
     else props.set(name, undefined);
   }
@@ -366,6 +375,58 @@ function unreadImport(file: string, specifier: string): boolean {
   return true;
 }
 
+/** The names a binding declares: `a`, or every name in a destructuring pattern. */
+function boundNames(name: ts.BindingName): string[] {
+  if (ts.isIdentifier(name)) return [name.text];
+  return name.elements.flatMap((element) => (ts.isBindingElement(element) ? boundNames(element.name) : []));
+}
+
+/** The `var` names declared anywhere in a function body, not counting nested functions (a var belongs to its function). */
+function varNames(node: ts.Node): string[] {
+  if (ts.isFunctionLike(node)) return [];
+  const own =
+    ts.isVariableDeclarationList(node) && !(node.flags & ts.NodeFlags.BlockScoped)
+      ? node.declarations.flatMap((declaration) => boundNames(declaration.name))
+      : [];
+  return [...own, ...node.getChildren().flatMap(varNames)];
+}
+
+/** The names a block or the module declares directly (let, const, var, function, class, enum, import =). */
+function blockNames(statements: readonly ts.Statement[]): string[] {
+  return statements.flatMap((statement) => {
+    if (ts.isVariableStatement(statement))
+      return statement.declarationList.declarations.flatMap((declaration) => boundNames(declaration.name));
+    if ((ts.isFunctionDeclaration(statement) || ts.isClassDeclaration(statement) || ts.isEnumDeclaration(statement)) && statement.name)
+      return [statement.name.text];
+    return ts.isImportEqualsDeclaration(statement) ? [statement.name.text] : [];
+  });
+}
+
+/**
+ * Whether `use`, an identifier, names something other than the module-level binding of that name: a parameter
+ * (destructured props included), a local, a function's or class's own name, a catch or loop variable in a scope
+ * around it.
+ */
+function shadowed(use: ts.Identifier): boolean {
+  const name = use.text;
+  for (let node: ts.Node = use.parent; !ts.isSourceFile(node); node = node.parent) {
+    const names: string[] = [];
+    if (ts.isFunctionLike(node)) {
+      names.push(...node.parameters.flatMap((parameter) => boundNames(parameter.name)));
+      if ('body' in node && node.body) names.push(...varNames(node.body));
+    }
+    if ((ts.isFunctionExpression(node) || ts.isClassLike(node)) && node.name) names.push(node.name.text);
+    if (ts.isBlock(node) || ts.isModuleBlock(node)) names.push(...blockNames(node.statements));
+    if (ts.isCaseBlock(node)) names.push(...blockNames(node.clauses.flatMap((clause) => clause.statements)));
+    if ((ts.isForStatement(node) || ts.isForInStatement(node) || ts.isForOfStatement(node)) && node.initializer)
+      if (ts.isVariableDeclarationList(node.initializer))
+        names.push(...node.initializer.declarations.flatMap((declaration) => boundNames(declaration.name)));
+    if (ts.isCatchClause(node) && node.variableDeclaration) names.push(...boundNames(node.variableDeclaration.name));
+    if (names.includes(name)) return true;
+  }
+  return blockNames(use.getSourceFile().statements).includes(name);
+}
+
 /** `x.style` (or `x['style']`): an element's own style declarations. */
 const isStyleObject = (node: ts.Expression) =>
   (ts.isPropertyAccessExpression(node) && node.name.text === 'style') ||
@@ -412,7 +473,7 @@ export function scanScript(file: string, text: string): Violation[] {
   };
   collectTags(source);
   // Stylesheets imported as text (`import css from './x.css?inline'`), which the guard reads as files: the
-  // only content a <style> element may have.
+  // only content a <style> element may have, named by that import binding and not a parameter or local of its name.
   const inlineSheets = new Set(
     source.statements.flatMap((statement) =>
       ts.isImportDeclaration(statement) &&
@@ -424,12 +485,25 @@ export function scanScript(file: string, text: string): Violation[] {
         : [],
     ),
   );
+  /**
+   * Whether a <style> renders only such a stylesheet. Its content is the JSX children (or a factory's child
+   * arguments) when there are any besides whitespace and comments, otherwise its `children` prop; a spread that
+   * may have set any prop leaves the content unknown.
+   */
   const inlinedSheet = (props: Props, children: readonly ts.Node[]) => {
-    const content = children.filter((child) => !(ts.isJsxText(child) && child.containsOnlyTriviaWhiteSpaces));
-    const only = content.length === 1 ? content[0]! : undefined;
+    const written = children.filter(
+      (child) => !(ts.isJsxText(child) && child.text.trim() === '') && !(ts.isJsxExpression(child) && child.expression === undefined),
+    );
+    const content = written.length ? written : props.has('children') ? [props.get('children')] : [];
+    const only = content.length === 1 ? content[0] : undefined;
     const expression = only && ts.isJsxExpression(only) ? only.expression : only && ts.isExpression(only) ? only : undefined;
     return (
-      !props.has('dangerouslySetInnerHTML') && expression !== undefined && ts.isIdentifier(expression) && inlineSheets.has(expression.text)
+      !props.has('dangerouslySetInnerHTML') &&
+      !props.has(opaque) &&
+      expression !== undefined &&
+      ts.isIdentifier(expression) &&
+      inlineSheets.has(expression.text) &&
+      !shadowed(expression)
     );
   };
 
@@ -504,7 +578,8 @@ export function scanScript(file: string, text: string): Violation[] {
     const cloned = /(^|\.)cloneElement$/.test(callee);
     const tag = !cloned && type && ts.isStringLiteralLike(type) ? type.text : undefined;
     const children = props.get('children');
-    element(node, tag, props, children ? [children, ...rest] : rest, tag && `${callee}('${tag}')`);
+    // As in React, child arguments replace a `children` prop.
+    element(node, tag, props, rest.length || !children ? rest : [children], tag && `${callee}('${tag}')`);
   };
 
   const visit = (node: ts.Node): void => {
@@ -759,15 +834,44 @@ function topLevelParts(value: string): string[] {
   return parts;
 }
 
-/** What a `font` shorthand writes by hand for weight (a number or weight keyword before the size) and line height (after `/`). */
+/**
+ * Every value a declaration can resolve to: each var() with a fallback either stands (as a var() without one)
+ * or gives way to its fallback, whose own var()s branch in turn.
+ */
+function fallbackBranches(value: string): string[] {
+  const start = value.search(/(?<![\w-])var\(/i);
+  if (start === -1) return [value];
+  let depth = 1;
+  let end = start + 4;
+  for (; end < value.length && depth; end++) depth += value[end] === '(' ? 1 : value[end] === ')' ? -1 : 0;
+  const inner = value.slice(start + 4, depth ? end : end - 1);
+  const comma = inner.indexOf(',');
+  const options = [
+    `var(${(comma === -1 ? inner : inner.slice(0, comma)).trim()})`,
+    ...(comma === -1 ? [] : fallbackBranches(inner.slice(comma + 1).trim())),
+  ];
+  const rests = fallbackBranches(value.slice(end));
+  return options.flatMap((option) => rests.map((rest) => `${value.slice(0, start)}${option}${rest}`));
+}
+
+/**
+ * What a `font` shorthand writes by hand for weight (a number or weight keyword before the size) and line height
+ * (after `/`), on each branch of its var() fallbacks, so a whole shorthand in a fallback is read as one.
+ */
 function fontShorthand(value: string, aliases: Names) {
-  const parts = topLevelParts(value);
-  const slash = parts.indexOf('/');
-  const weight = parts
-    .slice(0, slash === -1 ? undefined : slash)
-    .map((part) => replaceTokens(part, aliases).trim())
-    .filter((part) => /^(bold|bolder|lighter|[+-]?(\d+\.?\d*|\.\d+))$/i.test(part));
-  const lineHeight = slash === -1 ? [] : literals(parts[slash + 1] ?? '', aliases);
+  const weight: string[] = [];
+  const lineHeight: string[] = [];
+  for (const branch of fallbackBranches(value)) {
+    const parts = topLevelParts(branch);
+    const slash = parts.indexOf('/');
+    weight.push(
+      ...parts
+        .slice(0, slash === -1 ? undefined : slash)
+        .map((part) => replaceTokens(part, aliases).trim())
+        .filter((part) => /^(bold|bolder|lighter|[+-]?(\d+\.?\d*|\.\d+))$/i.test(part)),
+    );
+    if (slash !== -1) lineHeight.push(...literals(parts[slash + 1] ?? '', aliases));
+  }
   return { weight, lineHeight };
 }
 
@@ -999,41 +1103,68 @@ function expandSelector(selector: string): string[] {
 }
 
 /**
- * Type selectors for elements Mux has a component for, outside :not()/:has() and not inside a Mux component's
- * markup: an element counts as inside when its own compound, or a compound it is a descendant or child of,
- * carries a `.muxui-*` class (or a Mux data attribute). A sibling combinator does not put it inside, and each
- * branch of the selector list and of an :is() or :where() must hold on its own.
+ * A selector with strings and attribute selectors blanked (a Mux data attribute becomes a `.muxui-` class) and
+ * :not() and :has() removed, since they test other elements and style none.
  */
-export function elementSelectors(prelude: string): string[] {
-  if (prelude.startsWith('@')) return [];
-  let rest = prelude
+function plainSelector(selector: string): string {
+  let rest = selector
     .replace(/"[^"]*"|'[^']*'/g, '""')
     .replace(/\[[^\]]*\]/g, (attribute) => (attribute.includes('muxui') ? '.muxui-attribute' : '[]'));
-  // :not() and :has() test other elements, so their arguments are not styled.
   for (let match = /:(not|has)\(/i.exec(rest); match; match = /:(not|has)\(/i.exec(rest))
     rest = rest.slice(0, match.index) + rest.slice(closing(rest, match.index + match[0].length));
-  const found = new Set<string>();
-  for (const selector of selectorBranches(rest).flatMap(expandSelector)) {
-    // Other functional pseudo-classes and elements (:nth-child(2n + 1), ::part(x)) hold no element of their own.
-    let plain = selector;
-    for (let match = /:[\w-]+\((?!\))/.exec(plain); match; match = /:[\w-]+\((?!\))/.exec(plain))
-      plain = `${plain.slice(0, match.index + match[0].length)}${plain.slice(closing(plain, match.index + match[0].length) - 1)}`;
-    // Compounds at even indexes, the combinator before each at the odd one (undefined for a descendant).
-    const parts = plain.trim().split(/\s*([>+~])\s*|\s+/);
-    let ancestorMux = false;
-    let previousMux = false;
-    for (let i = 0; i < parts.length; i += 2) {
-      const compound = parts[i] ?? '';
-      if (i > 0 && parts[i - 1] !== '+' && parts[i - 1] !== '~') ancestorMux ||= previousMux;
-      const ownMux = compound.includes('.muxui-');
-      const type = /^[a-z][a-z0-9]*/i.exec(compound)?.[0].toLowerCase();
-      // <svg> and <time> exist only in icons.tsx and time.tsx (the script rules see to that), so styling them by tag is fine.
-      if (!ancestorMux && !ownMux && type && type !== 'svg' && type !== 'time' && (type in replacements || textTags.has(type)))
-        found.add(type);
-      previousMux = ownMux;
-    }
+  return rest;
+}
+
+/** A nested rule's selector with its parent's put in: at each `&`, or as the ancestor of a branch with none. */
+const nest = (parent: string, child: string) =>
+  selectorBranches(child)
+    .map((branch) => (branch.includes('&') ? branch.replaceAll('&', `:is(${parent})`) : `:is(${parent}) ${branch}`))
+    .join(', ');
+
+/** A parent selector's type names as `*`, so a nested rule reports only the elements it names itself. */
+const untyped = (selector: string) => selector.replace(/(^|[\s>+~(,])[a-z][a-z0-9-]*/gi, '$1*');
+
+/** The element types one complex selector styles that Mux has a component for and that are not inside Mux markup. */
+function styledElements(selector: string): string[] {
+  // Other functional pseudo-classes and elements (:nth-child(2n + 1), ::part(x)) hold no element of their own.
+  let plain = selector;
+  for (let match = /:[\w-]+\((?!\))/.exec(plain); match; match = /:[\w-]+\((?!\))/.exec(plain))
+    plain = `${plain.slice(0, match.index + match[0].length)}${plain.slice(closing(plain, match.index + match[0].length) - 1)}`;
+  // Compounds at even indexes, the combinator before each at the odd one (undefined for a descendant).
+  const parts = plain.trim().split(/\s*([>+~])\s*|\s+/);
+  const found: string[] = [];
+  let ancestorMux = false;
+  let previousMux = false;
+  for (let i = 0; i < parts.length; i += 2) {
+    const compound = parts[i] ?? '';
+    if (i > 0 && parts[i - 1] !== '+' && parts[i - 1] !== '~') ancestorMux ||= previousMux;
+    const ownMux = compound.includes('.muxui-');
+    const type = /^[a-z][a-z0-9]*/i.exec(compound)?.[0].toLowerCase();
+    // <svg> and <time> exist only in icons.tsx and time.tsx (the script rules see to that), so styling them by tag is fine.
+    if (!ancestorMux && !ownMux && type && type !== 'svg' && type !== 'time' && (type in replacements || textTags.has(type)))
+      found.push(type);
+    previousMux = ownMux;
   }
-  return [...found];
+  return found;
+}
+
+/**
+ * The branches of a rule's selector that style an element Mux has a component for outside Mux's markup, each with
+ * those elements. The selector is read with its parents' put in (`parents` are the enclosing preludes; at-rules
+ * among them are skipped), then every :is() and :where() (and the like) expanded, so each branch is one complex
+ * selector. An element counts as inside Mux markup when its own compound, or a compound it is a descendant or child
+ * of, carries a `.muxui-*` class (or a Mux data attribute); a sibling combinator does not put it inside.
+ */
+export function elementBranches(prelude: string, parents: readonly string[] = []): { branch: string; elements: string[] }[] {
+  if (prelude.startsWith('@')) return [];
+  let context: string | undefined;
+  for (const parent of parents)
+    if (!parent.startsWith('@')) context = context === undefined ? plainSelector(parent) : nest(context, plainSelector(parent));
+  const selector = context === undefined ? plainSelector(prelude) : nest(untyped(context), plainSelector(prelude));
+  return selectorBranches(selector)
+    .flatMap(expandSelector)
+    .map((branch) => ({ branch: branch.trim(), elements: styledElements(branch) }))
+    .filter(({ elements }) => elements.length);
 }
 
 /** Scans a stylesheet for every CSS rule; `layout` counts the /* layout *\/ comments and those that waived a spacing value. */
@@ -1078,15 +1209,17 @@ export function scanCss(
         `${text} (${made(registration) ? 'not a Mux UI token' : 'registers a Mux UI token again'})`,
         anchor,
       );
-    const elements = elementSelectors(text);
-    if (elements.length)
+    const styled = elementBranches(text, anchor);
+    const elements = [...new Set(styled.flatMap(({ elements }) => elements))];
+    if (elements.length) {
       add(
         line,
         'css-element-selector',
         `${text} (${elements.map((tag) => `${tag}: ${textTags.has(tag) ? 'Text' : replacements[tag]}`).join(', ')})`,
         anchor,
       );
-    if (elements.length) out.at(-1)!.selector = text;
+      out.at(-1)!.branches = styled.map(({ branch }) => branch);
+    }
   }
   for (const { line, property, value, text, anchor, layout, important } of declarations(css)) {
     const where = [...anchor];
@@ -1248,9 +1381,9 @@ export function parseExceptions(json: string): Exception[] {
 const matches = (exception: Exception, v: Violation) =>
   v.file === exception.file &&
   v.rule === exception.rule &&
-  v.detail.includes(exception.match) &&
-  // A selector list's every branch must match on its own, so `.pb-prose a, button` does not pass as `.pb-prose `.
-  (v.selector === undefined || selectorBranches(v.selector).every((branch) => branch.includes(exception.match))) &&
+  // For a type selector, every branch that styles an element must match on its own, :is() and nesting expanded, so
+  // neither `.pb-prose a, button` nor `:is(.pb-prose a, button)` passes as `.pb-prose `; a branch that styles none needs none.
+  (v.branches ? v.branches.every((branch) => branch.includes(exception.match)) : v.detail.includes(exception.match)) &&
   (exception.anchor === undefined || (v.anchor ?? []).includes(exception.anchor)) &&
   (exception.value === undefined || v.value === exception.value) &&
   (exception.condition === undefined || (v.anchor ?? []).includes(exception.condition));
