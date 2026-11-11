@@ -408,14 +408,24 @@ against the final dump before exporting. Beyond the responder and the stopped se
 
 7. **Close the operator path** before the switch: on the host `ipset del origin-allow <ME>`, and
    remove the hosts file line on Andrew's machine. Then check, from Andrew's machine, that a
-   direct request is refused and the set holds Cloudflare's ranges only:
+   direct connection to ports 443 and 80 cannot be made and the set holds Cloudflare's ranges
+   only. The check is on the connection, not on an answer: `-k` keeps a certificate from deciding
+   it, and `%{exitcode}` (curl 7.75 or later) is curl's own result. With `O6` the origin's IPv6
+   address, if it has one, run the two `curl` lines again with `[$O6]` in place of `$O`:
 
    ```sh
-   curl -s --connect-timeout 5 --resolve feddit.com:443:$O -o /dev/null -w '%{http_code}\n' https://feddit.com/nodeinfo/2.1   # 000: no connection
+   W='exit %{exitcode}, http %{http_code}, connected %{time_connect}\n'
+   curl -sk --connect-timeout 5 --max-time 15 --resolve feddit.com:443:$O -o /dev/null -w "443: $W" https://feddit.com/nodeinfo/2.1
+   curl -s  --connect-timeout 5 --max-time 15 --resolve feddit.com:80:$O  -o /dev/null -w "80: $W" http://feddit.com/nodeinfo/2.1
    ipset test origin-allow <ME>             # on the host: "is NOT in set origin-allow"
    ```
 
-   Any answer other than `000` is a no-go: the origin is reachable around Cloudflare.
+   Each `curl` line passes only with `exit 7` (the connection was refused) or `exit 28` with
+   `connected 0.000000` (no connection within 5 s, which is what the `DROP` rules give). Anything
+   else is a no-go, because a TCP connection was made and the origin is reachable around
+   Cloudflare: `exit 0` with any HTTP code, a TLS or certificate error (`exit 35`, `exit 60` or
+   another), `exit 52` or `exit 56` (connected, then cut off), or `exit 28` with a non-zero
+   `connected` time (connected, then slow). Look at the firewall rules (item 3) before going on.
 
 8. Switch the Cloudflare origin of feddit.com to the new origin in one step (the proxied DNS
    record). No cache rules on `/u`, `/c`, `/post`; the WAF must not block `POST /inbox`. From here
@@ -437,9 +447,11 @@ against the final dump before exporting. Beyond the responder and the stopped se
 
 ## Step 9: open (production)
 
-Before the first admin or invitee, repeat the step 7.7 check from an address outside Cloudflare (a
-direct request gets no connection) and read `ipset list origin-allow` back: Cloudflare's ranges
-only, no operator address. Then admins first, then invitees (cap about 25 for 30 days).
+Before the first admin or invitee, repeat the step 7.7 `curl` lines from an address outside
+Cloudflare and outside the set, with the same rule: each passes only on `exit 7`, or `exit 28`
+with `connected 0.000000`; any HTTP code and any TLS or certificate error is a no-go. Read
+`ipset list origin-allow` back: Cloudflare's ranges only, no operator address. Then admins first,
+then invitees (cap about 25 for 30 days).
 
 ## Step 10: soak and retirement (production)
 
