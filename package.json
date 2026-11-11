@@ -18,7 +18,7 @@
     "typecheck": "pnpm gen && pnpm -r typecheck && tsc -p tsconfig.json",
     "lint": "pnpm gen && pnpm lint:boundaries && pnpm lint:mux && oxlint --deny-warnings && prettier --check .",
     "lint:boundaries": "depcruise packages tools --config .dependency-cruiser.cjs",
-    "lint:mux": "node scripts/mux-guard.ts",
+    "lint:mux": "node scripts/mux-guard.ts --enforce",
     "test": "pnpm gen && vitest run",
     "build": "pnpm gen && pnpm -r build",
     "check": "pnpm build && pnpm typecheck && pnpm lint && pnpm test",
