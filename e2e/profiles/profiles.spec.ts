@@ -365,7 +365,7 @@ test.describe('review cases', () => {
     await expect(items()).toHaveCount(20);
   });
 
-  test('the edit form marks a display name and a bio past their limits, and Save waits for both', async ({ page }) => {
+  test('the edit form marks a display name and a bio past their limits, says why, and Save waits for both', async ({ page, browser }) => {
     await signedIn(page, review.prolific.name);
     await gotoHydrated(page, `${profile(review.prolific.name)}/edit`);
     const name = page.getByLabel('Display name');
@@ -381,12 +381,21 @@ test.describe('review cases', () => {
     await expect(counter('101 / 100')).toHaveAttribute('data-over');
     await expect(name).toHaveAttribute('aria-invalid', 'true');
     await expect(save).toBeDisabled();
+    // The field says why, under itself and in its description; Enter does not post it.
+    const nameMessage = 'Display names are at most 100 characters.';
+    await expect(page.getByText(nameMessage)).toBeVisible();
+    await expect(name).toHaveAccessibleDescription(new RegExp(nameMessage.replace('.', '\\.')));
+    await name.press('Enter');
+    await expect(page).toHaveURL(new RegExp(`${profile(review.prolific.name)}/edit$`));
+    await expect(page.getByText(nameMessage)).toBeVisible();
 
     await bio.fill('y'.repeat(2_001));
     await expect(counter('2,001 / 2,000')).toHaveAttribute('data-over');
     await expect(bio).toHaveAttribute('aria-invalid', 'true');
+    await expect(bio).toHaveAccessibleDescription(/The bio is at most 2,000 characters\./);
     // Both over: bringing the name back is not enough.
     await name.fill('Prolific');
+    await expect(page.getByText(nameMessage)).toHaveCount(0);
     await expect(counter('8 / 100')).not.toHaveAttribute('data-over');
     await expect(save).toBeDisabled();
     await bio.fill('y'.repeat(2_000));
@@ -404,6 +413,15 @@ test.describe('review cases', () => {
       return [getComputedStyle(over).color, wanted];
     });
     expect(colours[0]).toBe(colours[1]);
+
+    // The messages follow the page's language.
+    const german = await sameSession(browser, page, { locale: 'de-DE' });
+    await gotoHydrated(german, `${profile(review.prolific.name)}/edit`);
+    await german.getByLabel('Anzeigename').fill('x'.repeat(101));
+    await expect(german.getByText('Der Anzeigename darf höchstens 100 Zeichen lang sein.')).toBeVisible();
+    await german.getByRole('textbox', { name: 'Über mich' }).fill('y'.repeat(2_001));
+    await expect(german.getByText('Die Beschreibung darf höchstens 2.000 Zeichen lang sein.')).toBeVisible();
+    await german.context().close();
   });
 
   test('a moderator sees the community ban, an admin the instance ban, and a visitor neither', async ({ page, browser }) => {
