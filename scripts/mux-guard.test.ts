@@ -396,7 +396,9 @@ test('radius, shadow and font values must come from Mux tokens or a pure alias',
     'css-font-family:11',
     'css-font-size:14',
     'css-font-size:16',
+    'css-line-height:16',
     'css-font-family:17',
+    'css-font-weight:17',
   ]);
 });
 
@@ -429,6 +431,31 @@ test('spacing, weight, line height and letter spacing must be tokens, zero or a 
     'css-font-weight:10',
     'css-line-height:11',
     'css-letter-spacing:13',
+  ]);
+});
+
+test('a var() fallback is checked as the value it stands in for; a font shorthand writes no weight or line height', () => {
+  const sheet = lines(
+    '.a {', // 1
+    '  gap: var(--muxui-semantic-layout-group-gap, 13px);', // 2
+    '  padding: var(--muxui-a, var(--muxui-b, 4px)) 0;', // 3
+    '  margin: var(--muxui-a, calc(2px + 1px));', // 4
+    '  transition: opacity var(--muxui-d, 200ms);', // 5
+    '  font: 700 var(--muxui-size)/1.7 var(--muxui-family);', // 6
+    '  font: var(--muxui-weight, bold) var(--muxui-size) var(--muxui-family);', // 7
+    '  font: italic var(--muxui-weight) var(--muxui-size)/var(--muxui-leading) var(--muxui-family);', // 8: legal
+    '  gap: var(--muxui-a, var(--muxui-b));', // 9: legal
+    '  font: calc(var(--muxui-size) * 1.2) / normal var(--muxui-family);', // 10: legal
+    '}',
+  );
+  expect(css(sheet, anyDefined)).toEqual([
+    'css-spacing:2',
+    'css-spacing:3',
+    'css-spacing:4',
+    'css-motion:5',
+    'css-font-weight:6',
+    'css-line-height:6',
+    'css-font-weight:7',
   ]);
 });
 

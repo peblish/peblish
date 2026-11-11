@@ -636,17 +636,58 @@ const keywords = new Set(['none', 'inset', 'normal', 'bold', 'bolder', 'lighter'
 // Any --pb-* or local name: used where a value only has to be a reference (inline style custom properties).
 const anyAlias: Names = { has: (name) => name.startsWith('--') };
 
-/** Replaces each var() with a space when it is a Mux token or an allowed alias, else with `untokened--name`. */
-function replaceTokens(value: string, aliases: Names): string {
+/**
+ * Replaces each var() with its fallback, so a fallback is checked as part of the value it stands in for,
+ * or with `mark` when it has none; a var() of a name that is no Mux token or allowed alias also leaves
+ * `untokened--name`.
+ */
+function replaceTokens(value: string, aliases: Names, mark = ' '): string {
   let rest = value;
-  // Innermost var() first, so a fallback that is itself a var() resolves before its parent.
-  const innermost = /var\(\s*(--[\w-]+)\s*(?:,[^()]*)?\)/;
-  for (let match = innermost.exec(rest); match; match = innermost.exec(rest)) {
-    const name = match[1]!;
-    const token = name.startsWith('--muxui-') || aliases.has(name);
-    rest = rest.slice(0, match.index) + (token ? ' ' : ` untokened${name} `) + rest.slice(match.index + match[0].length);
+  // The last var( holds no other, so the innermost resolve first and a fallback's own var()s before it.
+  for (let start = lastVar(rest); start !== -1; start = lastVar(rest)) {
+    let depth = 1;
+    let end = start + 4;
+    for (; end < rest.length && depth; end++) depth += rest[end] === '(' ? 1 : rest[end] === ')' ? -1 : 0;
+    const inner = rest.slice(start + 4, depth ? end : end - 1);
+    const comma = inner.indexOf(',');
+    const name = (comma === -1 ? inner : inner.slice(0, comma)).trim();
+    const fallback = comma === -1 ? '' : inner.slice(comma + 1).trim();
+    const token = /^--[\w-]+$/.test(name) && (name.startsWith('--muxui-') || aliases.has(name));
+    rest = `${rest.slice(0, start)}${token ? '' : ` untokened${name}`} ${fallback || mark} ${rest.slice(end)}`;
   }
   return rest;
+}
+
+const lastVar = (text: string) => [...text.matchAll(/(?<![\w-])var\(/gi)].at(-1)?.index ?? -1;
+
+/** A value's parts at the top level: split at spaces and slashes (kept as `/`), never inside parentheses. */
+function topLevelParts(value: string): string[] {
+  const parts: string[] = [];
+  let depth = 0;
+  let part = '';
+  for (const char of value) {
+    if (char === '(') depth++;
+    if (char === ')') depth--;
+    if (depth === 0 && (/\s/.test(char) || char === '/')) {
+      if (part) parts.push(part);
+      if (char === '/') parts.push('/');
+      part = '';
+    } else part += char;
+  }
+  if (part) parts.push(part);
+  return parts;
+}
+
+/** What a `font` shorthand writes by hand for weight (a number or weight keyword before the size) and line height (after `/`). */
+function fontShorthand(value: string, aliases: Names) {
+  const parts = topLevelParts(value);
+  const slash = parts.indexOf('/');
+  const weight = parts
+    .slice(0, slash === -1 ? undefined : slash)
+    .map((part) => replaceTokens(part, aliases).trim())
+    .filter((part) => /^(bold|bolder|lighter|[+-]?(\d+\.?\d*|\.\d+))$/i.test(part));
+  const lineHeight = slash === -1 ? [] : literals(parts[slash + 1] ?? '', aliases);
+  return { weight, lineHeight };
 }
 
 /** The parts of a value that are not Mux tokens, allowed aliases, zero, unitless numbers or neutral keywords. */
@@ -919,6 +960,9 @@ export function scanCss(
       const parts = handWritten(value, local);
       if (parts.some((part) => sized.test(part))) add(line, 'css-font-size', text, where);
       if (parts.some((part) => !sized.test(part))) add(line, 'css-font-family', text, where);
+      const written = fontShorthand(value, local);
+      if (written.weight.length) add(line, 'css-font-weight', text, where);
+      if (written.lineHeight.length) add(line, 'css-line-height', text, where);
     }
     if (property === 'font-weight' && literals(value, local).length) add(line, 'css-font-weight', text, where);
     if (property === 'line-height' && literals(value, local).length) add(line, 'css-line-height', text, where);
