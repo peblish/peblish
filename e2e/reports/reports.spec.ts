@@ -127,6 +127,18 @@ test.describe('the report form', () => {
     await gotoHydrated(page, formUrl(seed.posts.form[3]!));
     await expectAccessible(page);
   });
+
+  test('the form page does not scroll sideways on a phone', async ({ page }) => {
+    await gotoHydrated(page, '/auth/sign-in');
+    await signIn(page, `@${seed.reporter.name}`, seed.password);
+    await landed(page, '/');
+    for (const width of [390, 320]) {
+      await page.setViewportSize({ width, height: 800 });
+      await gotoHydrated(page, formUrl(seed.posts.form[3]!));
+      await expect(page.getByRole('radiogroup')).toBeVisible();
+      expect(await page.evaluate(() => document.documentElement.scrollWidth), `at ${width}px`).toBe(width);
+    }
+  });
 });
 
 /** Who sees what in the queue, and what its actions leave behind. */
