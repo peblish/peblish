@@ -18,9 +18,6 @@
   .mod-form p {
     margin: 0;
   }
-  .mod-error {
-    color: var(--muxui-semantic-feedback-invalid);
-  }
   .mod-actions {
     display: flex;
     gap: var(--muxui-semantic-layout-action-gap);

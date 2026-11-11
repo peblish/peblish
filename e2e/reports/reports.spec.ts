@@ -1,8 +1,8 @@
 import { execFileSync } from 'node:child_process';
-import { join } from 'node:path';
-import { expect, test, type Browser, type Locator, type Page } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 import { expectAccessible, freshTotp, landed, signIn } from '../auth/support.ts';
 import { gotoHydrated, recordConsole } from '../support/route-marker.ts';
+import { formUrl, plain, root, seedReports, signedIn as signedInAs, tick, type Seed } from './support.ts';
 
 // Lane REP end to end, on the built server and the lane database: the report form with and
 // without JavaScript, its dialog on the post page, and the sent page. The queue has its own
@@ -10,56 +10,12 @@ import { gotoHydrated, recordConsole } from '../support/route-marker.ts';
 test.skip(Boolean(process.env.BASE_URL), 'needs the lane database for its seed (DATABASE_URL)');
 test.describe.configure({ mode: 'serial' });
 
-type Seed = {
-  password: string;
-  suffix: string;
-  reporter: { name: string };
-  second: { name: string };
-  author: { name: string };
-  moderator: { name: string };
-  outsider: { name: string };
-  admin: { name: string; totpSecret: string };
-  community: { handle: string };
-  other: { handle: string };
-  farHost: string;
-  posts: {
-    form: string[];
-    hate: string;
-    sensitive: string;
-    other: string;
-    adminOnly: string;
-    remove: string;
-    escalate: string;
-    dismiss: string;
-    forwarded: string;
-  };
-  titles: Record<'hate' | 'sensitive' | 'other' | 'adminOnly' | 'remove' | 'escalate' | 'dismiss', string>;
-};
-
-const root = join(import.meta.dirname, '../..');
 let seed: Seed;
 test.beforeAll(() => {
-  seed = JSON.parse(execFileSync('node', ['packages/core/src/testing/seed-rep.ts', 'e2e'], { cwd: root, encoding: 'utf8' })) as Seed;
+  seed = seedReports();
 });
 
-/** Signs in on a page that may have no JavaScript: a plain form post, then the home page. */
-async function signedIn(page: Page, name: string) {
-  await page.goto('/auth/sign-in');
-  await signIn(page, `@${name}`, seed.password);
-  await page.waitForURL('/');
-}
-
-/**
- * Chooses a Mux radio or checkbox as a person does, by its label: Mux draws the control over a
- * visually hidden native input, which Playwright will not click. Returns once the input agrees.
- */
-async function tick(control: Locator, checked = true) {
-  await control.locator('xpath=ancestor::label[1]').click();
-  await (checked ? expect(control).toBeChecked() : expect(control).not.toBeChecked());
-}
-
-const plain = async (browser: Browser) => (await browser.newContext({ javaScriptEnabled: false })).newPage();
-const formUrl = (id: string, back = '/') => `/report?kind=post&id=${id}&back=${encodeURIComponent(back)}`;
+const signedIn = (page: Page, name: string) => signedInAs(page, seed, name);
 
 test.describe('the report form', () => {
   test('without JavaScript: other needs details, then the report is sent and the receipt names the author', async ({ browser }) => {

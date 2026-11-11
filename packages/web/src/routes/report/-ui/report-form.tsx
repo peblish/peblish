@@ -4,6 +4,7 @@ import { Card } from '@peblish/ui/components/card';
 import { Checkbox } from '@peblish/ui/components/checkbox';
 import { Input } from '@peblish/ui/components/input';
 import { Link } from '@peblish/ui/components/link';
+import { Notice } from '@peblish/ui/components/notice';
 import { RadioField } from '@peblish/ui/components/radio-field';
 import { RadioGroup } from '@peblish/ui/components/radio-group';
 import { Text } from '@peblish/ui/components/text';
@@ -49,6 +50,9 @@ export function ReportFormView({
     event.preventDefault();
     const body = new URLSearchParams();
     for (const [name, value] of new FormData(event.currentTarget)) if (typeof value === 'string') body.append(name, value);
+    // The forward checkbox is only shown (in CSS) for a category that can be forwarded; one ticked
+    // and then hidden by another choice is not sent. Without JavaScript the server drops it instead.
+    if (!form.categories.some((option) => option.key === body.get('category') && option.forwardable)) body.delete('forward');
     setBusy(true);
     try {
       const response = await fetch('/report', { method: 'POST', body, headers: { accept: 'application/json' } });
@@ -82,9 +86,9 @@ export function ReportFormView({
         </Card.Root>
       )}
       {error && (
-        <Text as="p" className="rp-error" role="alert">
+        <Notice tone="danger" role="alert">
           {t('reports', errorKey(error))}
-        </Text>
+        </Notice>
       )}
       <Input.Input type="hidden" name="kind" value={form.target.kind} />
       <Input.Input type="hidden" name="id" value={form.target.id} />

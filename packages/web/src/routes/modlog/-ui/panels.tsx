@@ -2,8 +2,8 @@ import { Button } from '@peblish/ui/components/button';
 import { Checkbox } from '@peblish/ui/components/checkbox';
 import { Disclosure } from '@peblish/ui/components/disclosure';
 import { Input } from '@peblish/ui/components/input';
+import { Notice } from '@peblish/ui/components/notice';
 import { Select } from '@peblish/ui/components/select';
-import { Text } from '@peblish/ui/components/text';
 import { TextAreaField } from '@peblish/ui/components/text-area';
 import { useRouter, useRouterState } from '@tanstack/react-router';
 import { type } from 'arktype';
@@ -129,9 +129,9 @@ export function Panel({
           <HiddenFields fields={{ intent, back, ...fields }} />
           {children}
           {error && (
-            <Text as="p" size="sm" className="mod-error" role="alert">
+            <Notice tone="danger" role="alert">
               {t('modlog', errorKey(error))}
-            </Text>
+            </Notice>
           )}
           <div className="mod-actions">
             <Button

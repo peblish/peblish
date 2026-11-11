@@ -22,8 +22,10 @@
     margin: 0;
     overflow-wrap: anywhere;
   }
-  .rp-error {
-    color: var(--muxui-semantic-feedback-invalid);
+  /* The Report link from the click until its dialog's code has loaded: a static busy look. */
+  .rp-open[data-opening] {
+    cursor: progress;
+    color: var(--muxui-semantic-content-muted);
   }
   /* Without JavaScript Mux's radio shows no dot (it follows React state): mirror its selected look from the native radio. */
   .rp-cat:has(input:checked) .muxui-radio-field__indicator {

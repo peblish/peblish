@@ -3,6 +3,7 @@ import { createReportAs } from '@peblish/core/reports/actions';
 import { ReportCategory, mayFederate } from '@peblish/core/reports/categories';
 import { Uuid } from '@peblish/schema/ids';
 import { Link } from '@peblish/ui/components/link';
+import { Notice } from '@peblish/ui/components/notice';
 import { Text } from '@peblish/ui/components/text';
 import { createFileRoute, notFound, redirect } from '@tanstack/react-router';
 import { type } from 'arktype';
@@ -127,9 +128,9 @@ function ReportPage() {
           <Text as="h1" variant="display" size="sm">
             {t('reports', 'form.open')}
           </Text>
-          <Text as="p" role="alert">
+          <Notice tone="warning" role="alert">
             {t('reports', errorKey(asReportError(refusal) ?? 'generic'))}
-          </Text>
+          </Notice>
           <Link href={back}>{t('reports', 'sent.done')}</Link>
         </>
       )}
