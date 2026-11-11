@@ -2,7 +2,7 @@ import type { ReactNode } from 'react';
 import { Badge } from '@peblish/ui/components/badge';
 import { Card } from '@peblish/ui/components/card';
 import { Group } from '@peblish/ui/components/group';
-import { Handle } from '@peblish/ui/components/handle';
+import { Handle, neutraliseBidi } from '@peblish/ui/components/handle';
 import { Image } from '@peblish/ui/components/image';
 import { Link } from '@peblish/ui/components/link';
 import { Notice } from '@peblish/ui/components/notice';
@@ -93,11 +93,11 @@ function PostContent({ data, error }: { data: Extract<PostPageData, { kind: 'pos
         {data.image ? (
           post.url ? (
             <Link className="post-image" href={post.url} rel="noopener noreferrer nofollow ugc">
-              <Image src={data.image} alt={post.title} loading="lazy" radius="md" fit="contain" className="post-image__img" />
+              <Image src={data.image} alt={neutraliseBidi(post.title)} loading="lazy" radius="md" fit="contain" className="post-image__img" />
             </Link>
           ) : (
             <div className="post-image">
-              <Image src={data.image} alt={post.title} loading="lazy" radius="md" fit="contain" className="post-image__img" />
+              <Image src={data.image} alt={neutraliseBidi(post.title)} loading="lazy" radius="md" fit="contain" className="post-image__img" />
             </div>
           )
         ) : (

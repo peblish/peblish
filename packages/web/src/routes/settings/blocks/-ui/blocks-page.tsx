@@ -1,6 +1,6 @@
 import { Button } from '@peblish/ui/components/button';
 import { Card } from '@peblish/ui/components/card';
-import { Handle } from '@peblish/ui/components/handle';
+import { Handle, neutraliseBidi } from '@peblish/ui/components/handle';
 import { Table } from '@peblish/ui/components/table';
 import { Text } from '@peblish/ui/components/text';
 import { TextField } from '@peblish/ui/components/text-field';
@@ -104,7 +104,7 @@ export function BlocksPage({ data, search }: { data: BlocksData; search: BlocksS
                 id: row.id,
                 textValue: row.handle,
                 values: {
-                  name: kind === 'instance' ? row.handle : <Handle prefix={prefixOf[kind]} handle={row.handle} />,
+                  name: kind === 'instance' ? neutraliseBidi(row.handle) : <Handle prefix={prefixOf[kind]} handle={row.handle} />,
                   details: (
                     <Text size="sm" color="muted">
                       {t('blocks', 'row.blocked', { date: date(row.blockedAt) })}
@@ -121,7 +121,7 @@ export function BlocksPage({ data, search }: { data: BlocksData; search: BlocksS
                         type="submit"
                         variant="neutral"
                         size="sm"
-                        aria-label={`${t('blocks', 'remove')} ${prefixOf[kind]}${row.handle}`}
+                        aria-label={`${t('blocks', 'remove')} ${prefixOf[kind]}${neutraliseBidi(row.handle)}`}
                       >
                         {t('blocks', 'remove')}
                       </Button>

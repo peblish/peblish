@@ -160,7 +160,8 @@ function NoticeRow({
   const account = item.kind === 'ban' || item.kind === 'unban';
   // The ban sentences print the community's handle as plain text: drop any directional controls a remote one carries.
   const handle = item.community ? `!${neutraliseBidi(item.community.handle)}` : '';
-  const actor = item.actor ? `@${item.actor.handle}` : t('notifications', 'actor.unknown');
+  // The button's name below is plain text too: the handle and the title lose their directional controls, as Handle shows them.
+  const actor = item.actor ? `@${neutraliseBidi(item.actor.handle)}` : t('notifications', 'actor.unknown');
   const sentence = (() => {
     switch (item.kind) {
       case 'reply':
@@ -184,7 +185,7 @@ function NoticeRow({
     <li className="pb-notice" data-read={item.read ? '' : undefined} data-kind={item.kind}>
       {/* Decorative: the handle beside it names the person. */}
       <Avatar.Root size="sm" aria-hidden="true" className="pb-notice__avatar">
-        <Avatar.Fallback>{(item.actor?.handle ?? '?').slice(0, 1).toUpperCase()}</Avatar.Fallback>
+        <Avatar.Fallback>{(neutraliseBidi(item.actor?.handle ?? '', '') || '?').slice(0, 1).toUpperCase()}</Avatar.Fallback>
       </Avatar.Root>
       <div className="pb-notice__body">
         <div className="pb-notice__meta">
@@ -250,7 +251,7 @@ function NoticeRow({
           aria-label={t('notifications', 'markFor', {
             action: toggle,
             actor,
-            subject: item.postTitle ?? (handle || t('notifications', `type.${item.kind}`)),
+            subject: item.postTitle ? neutraliseBidi(item.postTitle) : handle || t('notifications', `type.${item.kind}`),
           })}
         >
           {toggle}
