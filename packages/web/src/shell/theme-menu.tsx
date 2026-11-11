@@ -57,7 +57,7 @@ function Choices({ label }: { label: string }) {
 /**
  * Light, dark or the system's choice, stored in the display cookie. Mux UI's ColorModeToggle
  * does not fit (two schemes, local storage), so this is a ToggleButtonGroup in a Popover. Both
- * need scripts; without them the stored scheme still renders, it just cannot be changed here.
+ * need scripts; without them the stored scheme still renders and the button is hidden (shell.css).
  */
 export function ThemeMenu() {
   const { t } = useTranslate();
@@ -67,7 +67,7 @@ export function ThemeMenu() {
       aria-label={label}
       placement="bottom-end"
       trigger={
-        <Button variant="ghost" size="sm">
+        <Button variant="ghost" size="sm" className="pb-theme">
           {label}
         </Button>
       }

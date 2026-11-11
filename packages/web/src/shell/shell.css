@@ -100,7 +100,7 @@
 
   /* A community row: a small Mux Avatar with the initial (nested rows have no icon slot), then the handle. */
   .pb-nav__community {
-    display: inline-flex;
+    display: flex;
     align-items: center;
     gap: var(--muxui-semantic-layout-control-gap);
     min-inline-size: 0;
@@ -117,10 +117,14 @@
     padding: 0;
   }
 
-  .pb-nav__community > :last-child {
+  /* Mux's label is nowrap; a long handle (a remote host) ends in an ellipsis here, inside the
+     column, and the link's name keeps the whole handle. */
+  .pb-nav__community > .pb-handle {
+    display: block;
     min-inline-size: 0;
     overflow: hidden;
     text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .pb-nav__filter {
@@ -168,29 +172,7 @@
     white-space: nowrap;
   }
 
-  /* Links that act as the bar's primary action (Create post, Sign up): Mux's primary Button look. */
-  .pb-create,
-  .pb-cta {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--muxui-semantic-layout-control-gap);
-    block-size: var(--muxui-semantic-control-size-sm);
-    padding-inline: var(--muxui-semantic-layout-inset-small);
-    border-radius: var(--muxui-semantic-control-radius);
-    background: var(--muxui-semantic-selection-track);
-    color: var(--muxui-semantic-action-foreground);
-    font-family: var(--muxui-semantic-typography-label-font-family);
-    font-size: var(--muxui-semantic-typography-body-size);
-    font-weight: var(--muxui-semantic-typography-control-weight);
-    text-decoration: none;
-  }
-
-  .pb-create:hover,
-  .pb-cta:hover {
-    background: var(--muxui-semantic-action-background-hover);
-    color: var(--muxui-semantic-action-foreground);
-  }
-
+  /* Create post and Sign up are ButtonLinks (Mux's primary Button look); only the icon's size is the app's. */
   .pb-create svg {
     inline-size: 1em;
     block-size: 1em;
@@ -228,18 +210,37 @@
     background: var(--muxui-semantic-surface-hover);
   }
 
-  .pb-problem {
-    display: flex;
-    flex-direction: column;
-    gap: var(--muxui-semantic-layout-inset-small);
-    padding-block: var(--muxui-semantic-layout-section-gap);
+  /* Without scripts (account.tsx): the account menu's button gives way to a link of the same look
+     to the account list under the page. Both are hidden unless the browser says scripting is
+     off, so a browser that does not know the media feature keeps the menu. */
+  .pb-account__no-script,
+  .pb-account-links {
+    display: none;
   }
 
-  .pb-problem__actions {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: var(--muxui-semantic-layout-control-gap) var(--muxui-semantic-layout-inset-medium);
+  @media (scripting: none) {
+    /* The community filter only filters with scripts. */
+    .pb-account__trigger:not(.pb-account__no-script),
+    .pb-theme,
+    .pb-nav__filter {
+      display: none;
+    }
+
+    .pb-account__no-script {
+      display: inline-flex;
+      text-decoration: none;
+    }
+
+    .pb-account-links {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: var(--muxui-semantic-layout-inset-tight) var(--muxui-semantic-layout-inset-medium);
+      padding: var(--muxui-semantic-layout-inset-medium) var(--muxui-semantic-layout-inset-large);
+      border-block-start: 1px solid var(--muxui-semantic-border-subtle);
+      /* The Account link jumps here: clear of the sticky bar above it. */
+      scroll-margin-block-start: 5rem;
+    }
   }
 
   /* Below 860 px the column and the HeaderNav bar give way to the phone bar and its drawer. */
@@ -326,6 +327,39 @@
       overflow: hidden;
       clip-path: inset(50%);
       white-space: nowrap;
+    }
+  }
+
+  /* Phones without scripts: the drawer cannot open, so its button goes and the Sidebar column
+     itself is laid out under the page (and under the account list), every link in reach. */
+  @media (scripting: none) and (max-width: 859.98px) {
+    .pb-app {
+      grid-template-rows: auto minmax(0, 1fr) auto;
+    }
+
+    .pb-app__body {
+      grid-row: 2;
+    }
+
+    .pb-app__side {
+      display: block;
+      grid-row: 3;
+      border-inline-end: 0;
+      border-block-start: 1px solid var(--muxui-semantic-color-neutral-20);
+    }
+
+    .pb-app__side > .pb-side {
+      position: static;
+      inline-size: auto;
+      block-size: auto;
+    }
+
+    .pb-app__bar .muxui-sidebar__mobile-trigger {
+      display: none;
+    }
+
+    .pb-app__bar-start {
+      margin-inline-end: var(--muxui-semantic-layout-inset-large);
     }
   }
 }

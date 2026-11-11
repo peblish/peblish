@@ -64,9 +64,9 @@ test.describe('on a phone', () => {
     try {
       const page = await context.newPage();
       await page.goto('/');
-      await expect(page.getByRole('complementary', { name: 'Sidebar' })).toBeHidden();
-      // The drawer needs scripts; its button is there for when they run.
-      await expect(page.getByRole('button', { name: 'Open navigation' })).toBeVisible();
+      // The drawer needs scripts: its button gives way to the Sidebar laid out under the page (no-script.spec.ts).
+      await expect(page.getByRole('button', { name: 'Open navigation' })).toBeHidden();
+      await expect(page.getByRole('complementary', { name: 'Sidebar' })).toBeVisible();
       await expect(page.getByRole('banner').getByRole('link', { name: 'Sign in' })).toHaveAttribute('href', '/auth/sign-in');
       await expect(page.getByRole('main')).toBeVisible();
     } finally {

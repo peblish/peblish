@@ -176,6 +176,13 @@ for (const route of routes) {
     console.log(
       `payload ${route.path}: js ${figures(vendor)} of ${kB(route.js ?? budget.js)}, css ${kB(mux!.bytes)} of ${kB(budget.css)}, fonts ${figures(fonts)} of ${kB(budget.fonts)}${editor.length ? `, editor ${figures(editor)}` : ''}`,
     );
+    // The home page's whole first-visit script, chunk by chunk (report only): where a shell or vendor change lands.
+    if (route.path === '/') {
+      const byChunk = [...scripts].sort((a, b) => b.bytes - a.bytes).map(({ path, bytes }) => `  ${kB(bytes).padStart(9)} ${path}`);
+      console.log(
+        `payload / first-visit script: ${figures(scripts)} in ${scripts.length} files (React and Mux ${figures(vendor)})\n${byChunk.join('\n')}`,
+      );
+    }
     if (route.fonts) expect(fonts.length, 'regular, italic and code faces are in use').toBeGreaterThanOrEqual(3);
   });
 }

@@ -1,6 +1,6 @@
 import { Button } from '@peblish/ui/components/button';
+import { EmptyState } from '@peblish/ui/components/empty-state';
 import { Link } from '@peblish/ui/components/link';
-import { Text } from '@peblish/ui/components/text';
 import { useHydrated } from '@peblish/ui/composer/use-hydrated.ts';
 import { rootRouteId, useMatch, useRouter } from '@tanstack/react-router';
 import { useState, type ReactNode } from 'react';
@@ -17,18 +17,14 @@ function useShellText() {
   return (key: MessageKey<'shell'>) => translate(locale, 'shell', key);
 }
 
-/** A page that says what went wrong, with a way on: the not-found and error pages. */
+/** A page that says what went wrong, with a way on: the not-found and error pages, as the shared empty state. */
 function Problem({ title, body, children }: { title: string; body: string; children: ReactNode }) {
   useRouteHydrated();
   return (
-    <main className="pb-page pb-problem">
-      <Text as="h1" variant="title" size="md">
-        {title}
-      </Text>
-      <Text as="p" color="muted">
+    <main className="pb-page">
+      <EmptyState level={1} title={title} action={children}>
         {body}
-      </Text>
-      <div className="pb-problem__actions">{children}</div>
+      </EmptyState>
     </main>
   );
 }

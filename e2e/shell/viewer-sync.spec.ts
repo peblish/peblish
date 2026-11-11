@@ -59,7 +59,7 @@ test('a tab shown again after another tab signed in, changed account or signed o
     // The stale tab still shows the signed-out viewer until it is shown again.
     await expect(banner.getByRole('link', { name: 'Sign in' })).toBeVisible();
     await showAgain(stale);
-    await expect(banner.getByText(people[0])).toBeAttached();
+    await expect(banner.getByRole('button', { name: `Account: ${people[0]}` })).toBeAttached();
     await expect(banner.getByRole('link', { name: 'Sign in' })).toHaveCount(0);
     expect(await stale.evaluate(() => 'sameDocument' in window)).toBe(true);
 
@@ -70,7 +70,7 @@ test('a tab shown again after another tab signed in, changed account or signed o
     await landed(other, '/');
     await recorded(other, (value) => !!value && value !== first);
     await showAgain(stale);
-    await expect(banner.getByText(people[1])).toBeAttached();
+    await expect(banner.getByRole('button', { name: `Account: ${people[1]}` })).toBeAttached();
     await expect(banner.getByText(people[0])).toHaveCount(0);
 
     // And signs out: the stale tab goes back to the signed-out viewer.

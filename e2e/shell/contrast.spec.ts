@@ -101,7 +101,8 @@ for (const scheme of ['Light', 'Dark'] as const) {
     const bar = signedIn.locator('.pb-top');
     await measure(signedIn, `${scheme} signed in`, {
       'top bar Create post': bar.getByRole('link', { name: 'Create post' }),
-      'top bar account name': bar.locator('.pb-account__name'),
+      // The menu's button; the no-script link beside it is not displayed with scripts on.
+      'top bar account name': bar.locator('button.pb-account__trigger .pb-account__name'),
     });
     await signedIn.context().close();
   });

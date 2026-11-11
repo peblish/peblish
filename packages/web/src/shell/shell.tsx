@@ -3,7 +3,7 @@ import { Sidebar } from '@peblish/ui/components/sidebar';
 import { getRouteApi, useRouterState } from '@tanstack/react-router';
 import { useEffect, useRef, type ReactNode } from 'react';
 import { useTranslate } from '../i18n/use-translate.ts';
-import { Account } from './account.tsx';
+import { Account, AccountLinks } from './account.tsx';
 import { CreatePost } from './create-post.tsx';
 import { Brand, Navigation } from './sidebar.tsx';
 import { ThemeMenu } from './theme-menu.tsx';
@@ -55,6 +55,12 @@ function useFocusLostToPage(pathname: string | undefined) {
  *
  * The phone bar and the desktop bar each render the actions; CSS shows one of them, so
  * assistive technology and role queries only ever meet one.
+ *
+ * With scripts off (`@media (scripting: none)`, shell.css) the menu, the popover and the drawer
+ * cannot open: the account's button becomes a link to the account list under the page
+ * (AccountLinks), Appearance is hidden, and on phones the drawer's button gives way to the
+ * Sidebar column itself, laid out under the page. A browser that does not know the media feature
+ * gets the scripted layout.
  *
  * On the phone bar the brand and the actions sit beside Sidebar.MobileTrigger, laid over its
  * bar by CSS, not in its `logo` slot: that slot is inside React Aria's DialogTrigger, whose press
@@ -112,6 +118,7 @@ export function Shell({ children }: { children: ReactNode }) {
           <div id="pb-main" className="pb-app__content" tabIndex={-1}>
             {children}
           </div>
+          {session && <AccountLinks session={session} />}
         </div>
       </div>
     </Sidebar.Provider>

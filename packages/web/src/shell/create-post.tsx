@@ -1,6 +1,7 @@
+import { ButtonLink } from '@peblish/ui/components/button-link';
 import { PlusIcon } from '@peblish/ui/components/icons';
 import { getRouteApi, useRouterState } from '@tanstack/react-router';
-import { lazy, Suspense, useState } from 'react';
+import { lazy, Suspense, useState, type MouseEvent } from 'react';
 import { useTranslate } from '../i18n/use-translate.ts';
 import { createPostPath } from './paths.ts';
 
@@ -19,7 +20,8 @@ const communityOf = (pathname: string) => {
 };
 
 /**
- * The "Create post" entry in the top bar. A link to the composer page, which is what it is
+ * The "Create post" entry in the top bar: a Mux link with the primary Button's look (ButtonLink).
+ * A link to the composer page, which is what it is
  * without JavaScript or with a modified click (a new tab); otherwise it opens the composer as a
  * bottom sheet over the page, which stays mounted underneath (composer-page).
  */
@@ -33,12 +35,14 @@ export function CreatePost() {
   const open = openAt === pathname;
   return (
     <>
-      <a
+      <ButtonLink
         className="pb-create"
         href={createPostPath}
+        size="sm"
         onPointerEnter={() => void loadSheet()}
         onFocus={() => void loadSheet()}
-        onClick={(event) => {
+        // A capture handler, so its preventDefault also stops the router navigation the Link would start.
+        onClickCapture={(event: MouseEvent<HTMLElement>) => {
           const modified = event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey;
           // On the composer's own page there is nothing to open over.
           if (modified || event.defaultPrevented || pathname.startsWith(createPostPath)) return;
@@ -48,7 +52,7 @@ export function CreatePost() {
       >
         <PlusIcon />
         <span className="pb-action__label">{t('shell', 'create')}</span>
-      </a>
+      </ButtonLink>
       {open && (
         <Suspense fallback={null}>
           {/* Another viewer is another sheet: it loads that person's communities and never carries the words over. */}
