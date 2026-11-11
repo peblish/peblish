@@ -59,6 +59,11 @@
       grid-template-columns: minmax(0, 1fr);
     }
   }
+  /* Mux marks a required native select's label with an asterisk and its other fields with
+     nothing; no other required field on the form shows a mark, so Month does not either. */
+  .auth-dob__parts .muxui-select-native__label::after {
+    content: none;
+  }
   /* A code field is as wide as the code. Mux has no letter-spacing token for spaced digits, so
      the code keeps the face's own spacing. */
   .auth-code {
