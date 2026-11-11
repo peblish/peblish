@@ -553,6 +553,19 @@ test('a real Mux token or tokens.css alias may be set to tokens (theming) but no
   expect(css(sheet, themed)).toEqual(['css-token-value:5', 'css-token-value:6', 'css-token-value:7', 'css-token-value:8', 'css-spacing:9']);
 });
 
+test("@property may not register a --muxui-* name; another registration's initial-value is checked as its definition", () => {
+  const sheet = lines(
+    "@property --muxui-semantic-layout-group-gap { syntax: '<length>'; inherits: true; initial-value: 13px; }", // 1
+    "@property --muxui-my-gap { syntax: '*'; inherits: false; }", // 2
+    "@property --pb-gap { syntax: '<length>'; inherits: true; initial-value: 1rem; }", // 3
+    "@property --wide { syntax: '<length>'; inherits: false; initial-value: 13px; }", // 4
+    '.x { padding: var(--wide); }', // 5
+    "@property --angle { syntax: '<angle>'; inherits: false; initial-value: 0deg; }", // 6: legal
+    '.y { rotate: var(--angle); }', // 7: legal
+  );
+  expect(css(sheet, themed)).toEqual(['css-token-value:1', 'css-unknown-token:2', 'css-token-value:3', 'css-spacing:5']);
+});
+
 test('css-blur reports blurs; css-element-selector reports styling by tag, not by class, inside Mux parts or in :has()', () => {
   const sheet = lines(
     '.a img { filter: blur(14px); }', // 1

@@ -616,12 +616,21 @@ function cssItems(css: string): { items: CssItem[]; layoutComments: number } {
   return { items, layoutComments };
 }
 
+/** The custom property an `@property` prelude registers. */
+const registered = (prelude: string | undefined) => (prelude && /^@property\s+(--[\w-]+)$/i.exec(prelude)?.[1]) || undefined;
+
+/**
+ * Every declaration. Inside `@property --x`, `initial-value` is read as a definition of `--x` (so it is checked
+ * as one) and the other descriptors are left out; a `--muxui-*` registration is reported whole instead.
+ */
 function declarations(css: string) {
   return cssItems(css).items.flatMap(({ kind, line, text, anchor, layout }) => {
     const colon = text.indexOf(':');
     if (kind !== 'statement' || text.startsWith('@') || colon === -1) return [];
     const name = text.slice(0, colon).trim();
-    const property = name.startsWith('--') ? name : name.toLowerCase();
+    const registration = registered(anchor.at(-1));
+    if (registration && (registration.startsWith('--muxui-') || name.toLowerCase() !== 'initial-value')) return [];
+    const property = registration ?? (name.startsWith('--') ? name : name.toLowerCase());
     const raw = text.slice(colon + 1);
     const important = /!\s*important\s*$/i.test(raw);
     return [{ line, property, value: raw.replace(/!\s*important\s*$/i, '').trim(), text, anchor, layout, important }];
@@ -939,6 +948,14 @@ export function scanCss(
   const made = (name: string) => name.startsWith('--muxui-') && !context.mux.has(name);
   for (const { kind, line, text, anchor } of items) {
     if (kind !== 'prelude') continue;
+    const registration = registered(text);
+    if (registration?.startsWith('--muxui-'))
+      add(
+        line,
+        made(registration) ? 'css-unknown-token' : 'css-token-value',
+        `${text} (${made(registration) ? 'not a Mux UI token' : 'registers a Mux UI token again'})`,
+        anchor,
+      );
     const elements = elementSelectors(text);
     if (elements.length)
       add(
