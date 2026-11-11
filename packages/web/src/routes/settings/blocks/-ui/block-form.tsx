@@ -43,6 +43,8 @@ export function BlockForm({
     for (const [name, value] of new FormData(event.currentTarget, submitter)) if (typeof value === 'string') body.append(name, value);
     const query = body.get('handle') ?? '';
     const fail = (code: string) => setError({ code, query });
+    const here = () => window.location.pathname + window.location.search;
+    const from = here();
     setBusy(true);
     try {
       const response = await fetch(action, { method: 'POST', body, headers: { accept: 'application/json' } });
@@ -52,9 +54,10 @@ export function BlockForm({
       setError(undefined);
       // Go to the address the server names, then load its data again: a new address can keep the
       // same loader inputs (/settings/blocks becomes ?tab=people), and the router would keep the
-      // list from before the change.
-      const here = window.location.pathname + window.location.search;
-      if (answer.redirect && answer.redirect.split('#')[0] !== here) await router.navigate({ href: answer.redirect });
+      // list from before the change. A visitor who moved on while the block was on its way stays
+      // where they went; only that page's data reloads, so it reflects the block.
+      const moved = here() !== from;
+      if (!moved && answer.redirect && answer.redirect.split('#')[0] !== from) await router.navigate({ href: answer.redirect });
       await router.invalidate();
     } catch {
       fail('network');
