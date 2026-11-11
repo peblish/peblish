@@ -78,13 +78,30 @@
   .cm-tools {
     flex: 1 0 100%;
   }
+  .cm-tool-row,
   .cm-tool-links {
     display: flex;
     flex-wrap: wrap;
+    align-items: baseline;
     gap: var(--muxui-semantic-layout-content-gap);
-    margin: 0 0 var(--muxui-semantic-layout-content-gap);
+  }
+  .cm-tool-links {
+    margin: 0;
     padding: 0;
     list-style: none;
+  }
+  /* Mod tools without script: a link to ?tools=1 stands in for the closed Disclosure, whose button needs script. */
+  .cm-tools-open {
+    display: none;
+  }
+  @media (scripting: none) {
+    .cm-tools-open {
+      display: inline;
+      flex: 1 0 100%;
+    }
+    .cm-tools-closed {
+      display: none;
+    }
   }
   .cm-notice {
     margin-block-end: var(--muxui-semantic-layout-content-gap);
@@ -121,6 +138,9 @@
     gap: var(--muxui-semantic-layout-tight-gap);
     margin: 0;
     padding-inline-start: 1.25em;
+  }
+  .cm-rule-body {
+    color: var(--muxui-semantic-content-muted);
   }
   .cm-mods {
     display: flex;

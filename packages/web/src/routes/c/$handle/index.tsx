@@ -20,9 +20,12 @@ import gateCss from '../-ui/gate.css?url';
 // the tools depend on who looks), so the loader's server function sets cache-control: no-store.
 // POST takes the form intents of c/-intents.ts (join, leave, declare, show and hide NSFW).
 
-const Search = (raw: Parameters<typeof parseFeedSearch>[0] & { error?: unknown }) => ({
+// ?tools=1 renders Mod tools open, for a browser without script (community-page.tsx). The router
+// reads the 1 as a number.
+const Search = (raw: Parameters<typeof parseFeedSearch>[0] & { error?: unknown; tools?: unknown }) => ({
   ...parseFeedSearch(raw),
   error: typeof raw.error === 'string' ? raw.error : undefined,
+  tools: raw.tools === 1 || raw.tools === '1' ? (1 as const) : undefined,
 });
 
 export const Route = createFileRoute('/c/$handle/')({
@@ -54,9 +57,9 @@ export const Route = createFileRoute('/c/$handle/')({
 
 function CommunityRoute() {
   const data = Route.useLoaderData();
-  const { error, ...feed } = Route.useSearch();
+  const { error, tools, ...feed } = Route.useSearch();
   if (data.kind === 'gate') return <GateNotice data={data} error={error} />;
-  return <CommunityPage data={data} search={feed} error={error} />;
+  return <CommunityPage data={data} search={feed} error={error} tools={tools === 1} />;
 }
 
 /** Unknown, deleted or removed. An unknown remote handle may just not be held here yet: /resolve can fetch it. */

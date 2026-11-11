@@ -17,7 +17,7 @@ import { useRouteHydrated } from '../../../shell/hydration.ts';
 import { communityPath, createPostPath, editCommunityPath, modlogPath, reportQueuePath, userPath } from '../../../shell/paths.ts';
 import type { CommunityActionProps } from '../../-actions/props.ts';
 import { FeedCards, FeedToolbar } from '../../index/-feed/feed-page.tsx';
-import type { FeedSearch } from '../../index/-feed/search.ts';
+import { feedHref, resolveFeedSearch, type FeedSearch } from '../../index/-feed/search.ts';
 import { errorKey } from '../-errors.ts';
 import type { CommunityPageData } from '../-load.ts';
 import { CommunityBlock } from './actions/block.tsx';
@@ -29,16 +29,36 @@ import { HideNsfwForm } from './gate.tsx';
 // banner, avatar, header and the feed on the left; About, Rules, Moderators and Languages as
 // cards on the right, below the feed on a phone (with a jump link). Counts are local: what this
 // server holds. Join, Leave and Cancel are plain form posts to this page (c/-intents.ts);
-// hydrated, they post by fetch and reload the loader. Mod tools are a Mux Disclosure, so they
-// open once the page has hydrated.
+// hydrated, they post by fetch and reload the loader. Mod tools are a Mux Disclosure, which opens
+// in place once the page has hydrated; without script a "Mod tools" link asks for the page with
+// ?tools=1, which the server renders with the Disclosure open (community.css shows the link and
+// hides the closed Disclosure only under `scripting: none`). Rules are content, so their texts are
+// always shown, as the mock's numbered list.
+
+// The Disclosure's id names it to its group (Mux renders it on no element); the group's id is the link's target.
+const toolsId = 'mod-tools';
+const toolsAnchor = 'cm-tools';
 
 /** One or two letters for an avatar without a picture. */
 const initial = (text: string) => (text.trim()[0] ?? '?').toUpperCase();
 
-export function CommunityPage({ data, search, error }: { data: CommunityPageData; search: FeedSearch; error?: string | undefined }) {
+export function CommunityPage({
+  data,
+  search,
+  error,
+  tools = false,
+}: {
+  data: CommunityPageData;
+  search: FeedSearch;
+  error?: string | undefined;
+  /** Render Mod tools open (?tools=1), for a browser without script. */
+  tools?: boolean;
+}) {
   const { t } = useTranslate();
   useRouteHydrated();
   const path = communityPath({ handle: data.handle });
+  const here = feedHref(path, resolveFeedSearch(search));
+  const toolsHref = `${here}${here.includes('?') ? '&' : '?'}tools=1#${toolsAnchor}`;
   const actions: CommunityActionProps | null = data.viewer ? { community: data.actor, viewer: data.viewer, back: path } : null;
   const empty = (
     <EmptyState
@@ -90,28 +110,38 @@ export function CommunityPage({ data, search, error }: { data: CommunityPageData
             </>
           )}
         </div>
+        {data.canModerate && actions && !tools && (
+          <Link className="cm-tools-open" href={toolsHref}>
+            {t('communities', 'mod.tools')}
+          </Link>
+        )}
         {data.canModerate && actions && (
-          // In a group, Mux draws the Disclosure with its chevron.
-          <DisclosureGroup className="cm-tools">
-            <Disclosure title={t('communities', 'mod.tools')}>
-              <ul className="cm-tool-links">
-                <li>
-                  <Link href={reportQueuePath(data.handle)}>{t('communities', 'mod.reports')}</Link>
-                </li>
-                <li>
-                  <Link href={modlogPath(data.handle)}>{t('communities', 'mod.modlog')}</Link>
-                </li>
-                <li>
-                  {data.actor.local ? (
-                    <Link href={editCommunityPath(data.handle)}>{t('communities', 'mod.edit')}</Link>
-                  ) : (
-                    <Text size="sm" color="muted">
-                      {t('communities', 'mod.remote')}
-                    </Text>
+          // In a group, Mux draws the Disclosure with its chevron. The moderation slot adds the Modlog link.
+          <DisclosureGroup
+            id={toolsAnchor}
+            className={tools ? 'cm-tools' : 'cm-tools cm-tools-closed'}
+            defaultExpandedIds={tools ? [toolsId] : []}
+          >
+            <Disclosure id={toolsId} title={t('communities', 'mod.tools')}>
+              {/* One row: Reports, Edit community, then the slot's Modlog; a remote copy says why Edit is missing last. */}
+              <div className="cm-tool-row">
+                <ul className="cm-tool-links">
+                  <li>
+                    <Link href={reportQueuePath(data.handle)}>{t('communities', 'mod.reports')}</Link>
+                  </li>
+                  {data.actor.local && (
+                    <li>
+                      <Link href={editCommunityPath(data.handle)}>{t('communities', 'mod.edit')}</Link>
+                    </li>
                   )}
-                </li>
-              </ul>
-              <CommunityModerate {...actions} />
+                </ul>
+                <CommunityModerate {...actions} />
+                {!data.actor.local && (
+                  <Text size="sm" color="muted">
+                    {t('communities', 'mod.remote')}
+                  </Text>
+                )}
+              </div>
             </Disclosure>
           </DisclosureGroup>
         )}
@@ -158,21 +188,22 @@ export function CommunityPage({ data, search, error }: { data: CommunityPageData
                 {t('communities', 'page.noRules')}
               </Text>
             ) : (
-              <DisclosureGroup>
-                <ol className="cm-rules">
-                  {data.rules.map((rule, index) => (
-                    <li key={index}>
-                      {rule.html ? (
-                        <Disclosure title={rule.title}>
-                          <Prose html={rule.html} />
-                        </Disclosure>
-                      ) : (
-                        <Text>{rule.title}</Text>
-                      )}
-                    </li>
-                  ))}
-                </ol>
-              </DisclosureGroup>
+              <ol className="cm-rules">
+                {data.rules.map((rule, index) => (
+                  <li key={index}>
+                    {rule.html ? (
+                      <>
+                        <Text as="p" variant="label">
+                          {rule.title}
+                        </Text>
+                        <Prose className="cm-rule-body" html={rule.html} />
+                      </>
+                    ) : (
+                      <Text as="p">{rule.title}</Text>
+                    )}
+                  </li>
+                ))}
+              </ol>
             )}
           </SideCard>
           <SideCard title={t('communities', 'page.moderators')}>
