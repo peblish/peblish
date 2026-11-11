@@ -609,6 +609,26 @@ test('css-blur reports blurs; css-element-selector reports styling by tag, not b
   ]);
 });
 
+test('an element is inside Mux markup only as a descendant or child of a .muxui-* compound, on every branch', () => {
+  const sheet = lines(
+    '.muxui-link + a { margin: 0; }', // 1
+    '.muxui-link ~ p { margin: 0; }', // 2
+    ':is(.plain, .muxui-link) a { margin: 0; }', // 3
+    ':where(.muxui-card, .plain) > button { margin: 0; }', // 4
+    '.muxui-card :is(.plain, .x + a) { margin: 0; }', // 5: legal, both branches are inside the card
+    '.muxui-card > :where(a, .x) { margin: 0; }', // 6: legal
+    '.muxui-list li + li a { margin: 0; }', // 7: legal, the siblings are inside the list
+    '.muxui-tabs a:nth-child(2n + 1) { margin: 0; }', // 8: legal
+    'a.muxui-link { margin: 0; }', // 9: legal, Mux renders this anchor itself
+  );
+  expect(css(sheet, anyDefined)).toEqual([
+    'css-element-selector:1',
+    'css-element-selector:2',
+    'css-element-selector:3',
+    'css-element-selector:4',
+  ]);
+});
+
 test('an alias counts as a token only when every definition is purely Mux tokens, one level deep', () => {
   const tokens = lines(
     ':root {',

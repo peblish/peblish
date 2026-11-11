@@ -918,30 +918,80 @@ const sized = /^[+-]?(\d+\.?\d*|\.\d+)[a-z%]+$/i;
 const spacingProperty = /^(padding|margin)(-[a-z]+)*$|^(gap|row-gap|column-gap)$/;
 const motionProperty = /^(transition|animation)(-(duration|timing-function|delay))?$/;
 
-/** Type selectors for elements Mux has a component for, outside :not()/:has() and not inside a Mux component's markup. */
+/** The index just past the `)` that closes the parenthesis opened before `from`. */
+function closing(text: string, from: number): number {
+  let depth = 1;
+  let end = from;
+  for (; end < text.length && depth; end++) depth += text[end] === '(' ? 1 : text[end] === ')' ? -1 : 0;
+  return end;
+}
+
+/** A selector list's branches: split at its top-level commas. */
+export function selectorBranches(list: string): string[] {
+  const branches: string[] = [];
+  let depth = 0;
+  let branch = '';
+  for (const char of list) {
+    if (char === '(') depth++;
+    if (char === ')') depth--;
+    if (char === ',' && depth === 0) {
+      branches.push(branch.trim());
+      branch = '';
+    } else branch += char;
+  }
+  return [...branches, branch.trim()];
+}
+
+// Functional pseudo-classes that take a selector list and match an element that matches any branch.
+const anyOf = /:(is|where|matches|any|-webkit-any|-moz-any)\(/i;
+
+/** The complex selectors a selector means, each :is() and :where() (and the like) expanded into its branches. */
+function expandSelector(selector: string): string[] {
+  const match = anyOf.exec(selector);
+  if (!match) return [selector];
+  const open = match.index + match[0].length;
+  const end = closing(selector, open);
+  return selectorBranches(selector.slice(open, end - 1)).flatMap((branch) =>
+    expandSelector(selector.slice(0, match.index) + branch + selector.slice(end)),
+  );
+}
+
+/**
+ * Type selectors for elements Mux has a component for, outside :not()/:has() and not inside a Mux component's
+ * markup: an element counts as inside when its own compound, or a compound it is a descendant or child of,
+ * carries a `.muxui-*` class (or a Mux data attribute). A sibling combinator does not put it inside, and each
+ * branch of the selector list and of an :is() or :where() must hold on its own.
+ */
 export function elementSelectors(prelude: string): string[] {
   if (prelude.startsWith('@')) return [];
   let rest = prelude
     .replace(/"[^"]*"|'[^']*'/g, '""')
     .replace(/\[[^\]]*\]/g, (attribute) => (attribute.includes('muxui') ? '.muxui-attribute' : '[]'));
   // :not() and :has() test other elements, so their arguments are not styled.
-  for (let match = /:(not|has)\(/i.exec(rest); match; match = /:(not|has)\(/i.exec(rest)) {
-    let depth = 1;
-    let end = match.index + match[0].length;
-    for (; end < rest.length && depth; end++) depth += rest[end] === '(' ? 1 : rest[end] === ')' ? -1 : 0;
-    rest = rest.slice(0, match.index) + rest.slice(end);
-  }
-  const found: string[] = [];
-  for (const selector of rest.split(',')) {
-    let insideMux = false;
-    for (const compound of selector.split(/[\s>+~()]+/)) {
-      if (compound.includes('.muxui-')) insideMux = true;
+  for (let match = /:(not|has)\(/i.exec(rest); match; match = /:(not|has)\(/i.exec(rest))
+    rest = rest.slice(0, match.index) + rest.slice(closing(rest, match.index + match[0].length));
+  const found = new Set<string>();
+  for (const selector of selectorBranches(rest).flatMap(expandSelector)) {
+    // Other functional pseudo-classes and elements (:nth-child(2n + 1), ::part(x)) hold no element of their own.
+    let plain = selector;
+    for (let match = /:[\w-]+\((?!\))/.exec(plain); match; match = /:[\w-]+\((?!\))/.exec(plain))
+      plain = `${plain.slice(0, match.index + match[0].length)}${plain.slice(closing(plain, match.index + match[0].length) - 1)}`;
+    // Compounds at even indexes, the combinator before each at the odd one (undefined for a descendant).
+    const parts = plain.trim().split(/\s*([>+~])\s*|\s+/);
+    let ancestorMux = false;
+    let previousMux = false;
+    for (let i = 0; i < parts.length; i += 2) {
+      const compound = parts[i] ?? '';
+      if (i > 0 && parts[i - 1] !== '+' && parts[i - 1] !== '~') ancestorMux ||= previousMux;
+      const ownMux = compound.includes('.muxui-');
       const type = /^[a-z][a-z0-9]*/i.exec(compound)?.[0].toLowerCase();
       // <svg> and <time> exist only in icons.tsx and time.tsx (the script rules see to that), so styling them by tag is fine.
-      if (!insideMux && type && type !== 'svg' && type !== 'time' && (type in replacements || textTags.has(type))) found.push(type);
+      if (!ancestorMux && !ownMux && type && type !== 'svg' && type !== 'time' && (type in replacements || textTags.has(type)))
+        found.add(type);
+      previousMux = ownMux;
     }
   }
-  return [...new Set(found)];
+  return [...found];
 }
 
 /** Scans a stylesheet for every CSS rule; `layout` counts the /* layout *\/ comments and those that waived a spacing value. */
