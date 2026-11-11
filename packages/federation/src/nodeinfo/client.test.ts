@@ -93,5 +93,6 @@ describe('refreshing an instance’s software', () => {
       );
     }
     expect(nodeInfoFailureCount()).toBeLessThanOrEqual(5_000);
-  });
+    // 5,100 failing refreshes, each logged, outlast the 5 s default on a slow CI runner (PR #10); the bound is the assertion above.
+  }, 60_000);
 });

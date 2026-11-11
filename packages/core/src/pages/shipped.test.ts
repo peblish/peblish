@@ -16,6 +16,8 @@ const text = (file: string) => readFileSync(join(folder, file), 'utf8');
 
 /** The tokens publishing fills from the operator's settings and the date. */
 const filled = ['{{OPERATOR_NAME}}', '{{POSTAL_ADDRESS}}', '{{JURISDICTION}}', '{{CONTACT_EMAIL}}', '{{EFFECTIVE_DATE}}'];
+/** The one fact unknown until cutover day, which the operator writes into the privacy policy then. */
+const kept = '{{PIEFED_ARCHIVE_DELETE_DATE}}';
 
 describe('every shipped file follows the README step 3', () => {
   test('there is one English text for each page the drafts cover, named for its slug', () => {
@@ -39,6 +41,8 @@ describe('every shipped file follows the README step 3', () => {
       expect(body).not.toMatch(/REPORT_FORM_URL|INTIMATE_IMAGE_FORM_URL/);
       expect(body).not.toMatch(/\]\([^)]*\.md[)#]/);
       expect(body).not.toContain('—');
+      // No source labels ([L], [R], [I], [I; L]): the citation links stand on their own.
+      expect(body).not.toMatch(/\[[LRI](?:[;:][^\]]*)?\]/);
       // A link to another page of the instance names a page it has.
       for (const [, target] of body.matchAll(/\]\(\/([^)#]*)\)/g)) expect(pageSlugs, `${file} links to /${target}`).toContain(target);
     });
@@ -49,15 +53,10 @@ describe('every shipped file follows the README step 3', () => {
       for (const token of tokensIn(text(`${slug}.en.md`))) expect(filled, `${slug}.en.md`).toContain(token);
   });
 
-  test('the texts that name an agent, a representative or a processor keep those tokens, so they cannot publish before the operator writes them in', () => {
-    for (const [file, token] of [
-      ['dmca.en.md', '{{DMCA_AGENT_NAME}}'],
-      ['illegal-content.en.md', '{{DSA_REPRESENTATIVE_DETAILS}}'],
-      ['illegal-content.en.md', '{{TCO_CONTACT_AND_REPRESENTATIVE_DETAILS}}'],
-      ['terms.en.md', '{{DSA_REPRESENTATIVE_DETAILS}}'],
-      ['privacy.en.md', '{{SAFETY_PROCESSORS_AND_DATA}}'],
-    ] as const)
-      expect(text(file), file).toContain(token);
+  test('beyond those five, the only token is the archive deletion date in the privacy policy, so it cannot publish before cutover day', () => {
+    for (const file of files)
+      for (const token of tokensIn(text(file))) expect([...filled, ...(file === 'privacy.en.md' ? [kept] : [])], file).toContain(token);
+    expect(text('privacy.en.md')).toContain(kept);
   });
 });
 
