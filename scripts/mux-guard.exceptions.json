@@ -45,7 +45,7 @@
     "file": "packages/ui/src/components/post-card.css",
     "rule": "css-blur",
     "match": "blur(",
-    "anchor": "[data-hidden] .pb-post__thumb img",
+    "anchor": "[data-hidden] .pb-post__picture",
     "reason": "A static blur hides a hidden or NSFW thumbnail; it is not animated, so it does not repaint."
   },
   {

@@ -1,5 +1,6 @@
-/* LinkTabs: Mux Tabs' look on links. Mux draws its underline and segment pill with motion after
-   hydration; these rules draw the current tab statically and undo Mux Link's own link colour. */
+/* LinkTabs: Mux Tabs' look on links. Mux gap: rc.6 Tabs are buttons, and Mux draws its underline and
+   segment pill with motion after hydration; these rules draw the current tab statically from
+   aria-current and undo Mux Link's own link colour. */
 @layer app {
   /* The bar never grows past its column: tabs wrap to new lines, and so do long labels. */
   .pb-link-tabs {
@@ -36,7 +37,8 @@
   }
 
   .pb-link-tabs [data-muxui-tabs-variant='underline'] .muxui-tabs__tab[aria-current='page'] {
-    margin-block-end: -2px;
+    /* The underline sits on the list's own 2px line, as Mux's moving indicator does, so the bar keeps its height. */
+    margin-block-end: -2px; /* layout */
     border-block-end: 2px solid var(--muxui-semantic-selection-track);
   }
 

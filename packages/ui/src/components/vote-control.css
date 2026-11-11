@@ -13,15 +13,18 @@
     flex-direction: row;
   }
 
+  /* Mux gap: ToggleButton has no icon-only (square) size. */
   .pb-vote .muxui-toggle-button {
     padding-inline: 0;
     min-inline-size: var(--muxui-semantic-control-size-sm);
   }
 
+  /* Mux gap: a disabled ToggleButton looks the same as an enabled one. */
   .pb-vote .muxui-toggle-button[data-muxui-state-disabled] {
     color: var(--muxui-semantic-content-faint);
   }
 
+  /* Mux gap: ToggleButton has no tone for its selected state. */
   .pb-vote .pb-vote__up[data-muxui-state-selected],
   .pb-vote .pb-vote__up[data-muxui-state-selected]:hover {
     background-color: var(--muxui-component-taggroup-orange-tint-weak);

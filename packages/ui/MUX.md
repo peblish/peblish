@@ -11,6 +11,16 @@ One page for the lanes that move the app onto Mux UI. How each component is mean
 - Icons are Lucide (`lucide-react`, the set Mux UI draws its own with, pinned to the version Mux depends on), and like `@muxui/react` only `packages/ui` imports it (`mux-only-in-ui` in `.dependency-cruiser.cjs`). Everyone else imports from `@peblish/ui/components/icons`, which wraps each glyph by name: 1em square, `currentColor`, `aria-hidden` unless named. Need another glyph? Add one line there. Every `Sidebar.NavItem` takes one through `icon`: without it Mux draws the label's first letter, which becomes part of the link's text.
 - Shared composed pieces (built from Mux components and tokens by the GW2 lane, in the same folder): `badge`, `notice`, `link-tabs`, `pager`, `fact-list`, `empty-state`. Use them rather than composing your own; their CSS is linked from `packages/web/src/styles.css`.
 
+### Pieces added since
+
+| Import                                                             | Use it for                                                                                                                                                                                                                                                                                                                                                                                    |
+| ------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Quote` from `@peblish/ui/components/quote`                        | Someone else's words: a `blockquote` with the words in Mux `Text` (`edge` draws a line down its start edge, `size`, any `blockquote` attribute).                                                                                                                                                                                                                                              |
+| `LinkedDisclosure` from `@peblish/ui/components/linked-disclosure` | A Mux `Disclosure` whose content must stay reachable with scripts off: the server renders it open at `openHref` (`title`, `openHref`, `defaultExpanded`, optional `link`). Never hand-build another fallback.                                                                                                                                                                                 |
+| `ButtonLink` from `@peblish/ui/components/button-link`             | A link that looks like a Mux `Button` (`href`, `variant`, `size`, optional router `link`). It stays a link and works without scripts; use `Button` for actions.                                                                                                                                                                                                                               |
+| The field messages from `@peblish/ui/components/field-problem`     | The wrappers `text-field`, `text-area`, `checkbox` and `select` already explain a value the browser refuses (required, length, email, range) in the page's language, linked to the field; pass `errorMessage` with `invalid` only for your own refusals. `FieldAlert` is the announced span inside a field's error part, for a field wrapper only; `__root.tsx` mounts `FieldLabelsProvider`. |
+| `BidiText` from `@peblish/ui/components/handle`                    | A display name from another server (a person or community): isolated, with its directional controls removed. Handles use `Handle`.                                                                                                                                                                                                                                                            |
+
 ## Wrappers
 
 Every component Mux UI rc.6 exports has a module in `packages/ui/src/components/`. Parts are reached through the component (`Card.Root`, `Card.Header`, `Sidebar.NavItem`).
@@ -94,32 +104,20 @@ Weight differs a lot (gzip, one wrapper alone, React excluded): `separator` 30 k
 
 ## Tokens
 
-Style only with Mux tokens (`var(--muxui-...)`), or the `--pb-*` aliases below, which are themselves only Mux tokens. No hex, rgb or hsl, no hand-written radius, shadow, font family or font size. Layout (grid, flex, widths, gaps) is fine. The app uses Mux UI's own light and dark schemes (`data-muxui-color-scheme` on `<html>`); there is no true black. Appearance is System, Light, Dark; a stored `scheme=black` still renders as dark (`theme/root.tsx` maps it) until the shell lane drops the choice.
+Style only with Mux tokens (`var(--muxui-...)`), or the few `--pb-*` aliases below (every other job uses the Mux token itself, listed under the table; role badges are `Badge`), which are themselves only Mux tokens. No hex, rgb or hsl, no hand-written radius, shadow, font family or font size. Layout (grid, flex, widths, gaps) is fine. The app uses Mux UI's own light and dark schemes (`data-muxui-color-scheme` on `<html>`); there is no true black. Appearance is System, Light, Dark; a stored `scheme=black` still renders as dark (`theme/root.tsx` maps it) until the shell lane drops the choice.
 
-| Token                                   | Role                                   | Mux token                                                           |
-| --------------------------------------- | -------------------------------------- | ------------------------------------------------------------------- |
-| `--pb-fg`                               | text                                   | `--muxui-semantic-content-default`                                  |
-| `--pb-bg`                               | page                                   | `--muxui-semantic-surface-background`                               |
-| `--pb-muted`                            | muted text (meta lines, counts, times) | `--muxui-semantic-content-muted`                                    |
-| `--pb-line`                             | separators and thread lines            | `--muxui-semantic-border-subtle`                                    |
-| `--pb-hover`                            | hover fill                             | `--muxui-semantic-surface-hover`                                    |
-| `--pb-accent`                           | accent, links                          | `--muxui-semantic-content-link`                                     |
-| `--pb-up`                               | up vote                                | `--muxui-component-taggroup-orange-foreground`                      |
-| `--pb-down`                             | down vote                              | `--muxui-component-taggroup-indigo-foreground`                      |
-| `--pb-mod`                              | moderator                              | `--muxui-component-taggroup-emerald-foreground`                     |
-| `--pb-admin`                            | admin                                  | `--muxui-component-taggroup-fuchsia-foreground`                     |
-| `--pb-op`                               | original poster                        | `--muxui-component-taggroup-sky-foreground`                         |
-| `--pb-warn`                             | warning                                | `--muxui-component-taggroup-warning-foreground`                     |
-| `--pb-error`                            | danger and error                       | `--muxui-semantic-feedback-invalid`                                 |
-| `--pb-ok`                               | success                                | `--muxui-component-taggroup-success-foreground`                     |
-| `--pb-font`, `--pb-mono`                | body and code faces                    | `--muxui-semantic-typography-text-font-family`, `-mono-font-family` |
-| `--pb-sidebar-width`, `--pb-page-width` | layout widths (248px, 940px)           | none: Mux has no width tokens                                       |
+| Token             | Role                            | Mux token                                       |
+| ----------------- | ------------------------------- | ----------------------------------------------- |
+| `--pb-up`         | up vote                         | `--muxui-component-taggroup-orange-foreground`  |
+| `--pb-down`       | down vote                       | `--muxui-component-taggroup-indigo-foreground`  |
+| `--pb-warn`       | warning                         | `--muxui-component-taggroup-warning-foreground` |
+| `--pb-error`      | danger and error                | `--muxui-semantic-feedback-invalid`             |
+| `--pb-ok`         | success                         | `--muxui-component-taggroup-success-foreground` |
+| `--pb-page-width` | the page column's width (940px) | none: Mux has no width tokens                   |
 
 The accents use TagGroup's hue foregrounds because they are the only Mux accent colours with a dark branch (catalogue gap G7); each is 6.5:1 or better on the page in both schemes. For a tinted fill behind one, use the same hue's `-tint-weak` (`--muxui-component-taggroup-success-tint-weak`). `--muxui-semantic-status-success` and `-status-warning` fail contrast as text: use them for stripes only. Do not use `--muxui-semantic-action-danger-foreground` for text (no dark branch).
 
-The other jobs, straight from Mux (prefix `--muxui-`): raised surface (cards, menus, the docked bar) `semantic-surface-raised`; quiet fill (notice, code, stub) `semantic-surface-subtle`; link hover `semantic-content-link-hover`; borders on controls and collections `semantic-border-default`; dense row lines `semantic-border-faint`; selected item `semantic-selection-background`; focus ring `outline: 2px solid var(--muxui-semantic-focus-ring)` (Mux's own `:focus-visible` rule already draws it, so the app no longer sets one). Anything else: the catalogue's "Which token for which job" table.
-
-`--muxui-semantic-content-danger` does not exist in rc.6: a fallback after it is what renders, so in dark mode it shows the light value. Replace it with `--muxui-semantic-feedback-invalid` (or `--pb-error`). Known uses: `packages/web/src/routes/c/-ui/community.css` and `packages/web/src/routes/c/-ui/gate.css`.
+The other jobs, straight from Mux (prefix `--muxui-`): text `semantic-content-default`; muted text (meta lines, counts, times) `semantic-content-muted`; links `semantic-content-link`; separators and thread lines `semantic-border-subtle`; hover fill `semantic-surface-hover`; page `semantic-surface-background`; raised surface (cards, menus, the docked bar) `semantic-surface-raised`; quiet fill (notice, code, stub) `semantic-surface-subtle`; link hover `semantic-content-link-hover`; borders on controls and collections `semantic-border-default`; dense row lines `semantic-border-faint`; selected item `semantic-selection-background`; focus ring `outline: 2px solid var(--muxui-semantic-focus-ring)` (Mux's own `:focus-visible` rule already draws it, so the app no longer sets one). Anything else: the catalogue's "Which token for which job" table.
 
 ### Base rules (changed for Mux)
 
@@ -128,7 +126,7 @@ rc.6 components take box sizing and font from the page (catalogue G12), so the b
 - `*, *::before, *::after { box-sizing: border-box }`, in the `reset` layer (below Mux, so a Mux rule that sets its own wins). Before, the page used the browser's `content-box`. A layout of yours that added padding to a fixed width now includes it.
 - `body` takes Mux's text face (`--muxui-semantic-typography-text-font-family`), size (`--muxui-semantic-typography-text-m-font-size`, fluid 14 to 16px, was a fixed 14px), line height (`--muxui-semantic-typography-text-line-height`, 1.5, was 1.45) and colour (`--muxui-semantic-content-default`).
 - The app's own `:focus-visible` rule is gone; Mux's applies.
-- `.pb-mono` takes `--muxui-semantic-typography-mono-s-font-size`; `.pb-page` padding takes Mux layout tokens.
+- `.pb-page` padding takes Mux layout tokens.
 
 New `--pb-*` tokens go in `packages/ui/src/tokens/tokens.css` (the groundwork lane's file; ask root) and are only Mux tokens. Prefer using the Mux token directly.
 

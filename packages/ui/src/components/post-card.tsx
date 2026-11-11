@@ -132,7 +132,7 @@ export function PostCard({
           tabIndex and aria-hidden. */}
       <a className="pb-post__thumb" href={hrefs.post} tabIndex={-1} aria-hidden="true">
         {picture ? (
-          <Image src={picture} alt="" loading="lazy" decoding="async" fit="cover" />
+          <Image src={picture} alt="" loading="lazy" decoding="async" fit="cover" className="pb-post__picture" />
         ) : (
           <span className="pb-post__mark">
             <Mark />
