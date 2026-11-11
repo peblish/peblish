@@ -24,7 +24,9 @@
 
   /* The preview is a Mux UI outlined Card; this is only its height. */
   .pb-md__preview {
-    /* A layout size, not a scale step: about the height of the textarea it stands in for. */
+    /* A layout size, not a scale step: about the height of the textarea it stands in for, padding
+       and border included (Mux UI rc.7 gives its own parts the browser's content-box). */
+    box-sizing: border-box;
     min-height: 200px;
   }
 

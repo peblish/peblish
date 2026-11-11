@@ -57,8 +57,10 @@
   }
 
   /* The options are a Mux UI outlined Card that scrolls; the group's error sits below it, in
-     sight. 220px is the box's layout height. */
+     sight. 220px is the box's layout height, padding and border included (border-box: Mux UI
+     rc.7 gives its own parts the browser's content-box). */
   .cmp__picker .cmp__options {
+    box-sizing: border-box;
     max-height: 220px;
     overflow: auto;
   }
