@@ -1,5 +1,5 @@
 import type { Prefs } from '@peblish/core/prefs/cookie';
-import { applyScheme } from '@peblish/ui/theme/root';
+import { applyScheme, toScheme } from '@peblish/ui/theme/root';
 import { createContext, use, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { latestSaver } from './latest-saver.ts';
 import { storePrefs } from './prefs-fn.ts';
@@ -18,8 +18,10 @@ const Context = createContext<PrefsContext | null>(null);
  * the scheme, and stored through a server function (a failed save only means the choice
  * does not outlive the page). Saves go out one at a time, each with the complete preferences,
  * so two quick changes (density, then scheme) cannot overwrite each other in the cookie.
+ * A stored true black (no longer offered) is read as dark, and stored as dark on the next change.
  */
-export function PrefsProvider({ initial, children }: { initial: Prefs; children: ReactNode }) {
+export function PrefsProvider({ initial: stored, children }: { initial: Prefs; children: ReactNode }) {
+  const [initial] = useState<Prefs>(() => ({ ...stored, scheme: toScheme(stored.scheme) }));
   const [prefs, setState] = useState(initial);
   const latest = useRef(initial);
   const [save] = useState(() => latestSaver((all: Prefs) => storePrefs({ data: all })));
@@ -35,7 +37,7 @@ export function PrefsProvider({ initial, children }: { initial: Prefs; children:
 
   // Keeps <html> in step with the choice; 'system' also follows the operating system live.
   useEffect(() => {
-    applyScheme(prefs.scheme);
+    applyScheme(toScheme(prefs.scheme));
     if (prefs.scheme !== 'system') return;
     const query = matchMedia('(prefers-color-scheme: dark)');
     const follow = () => applyScheme('system');

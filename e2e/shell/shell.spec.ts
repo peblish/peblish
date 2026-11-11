@@ -3,7 +3,8 @@ import { gotoHydrated } from '../support/route-marker.ts';
 import { siteName } from '../support/site-name.ts';
 
 // The application frame (shell-sidebar): the sidebar, the top bar, the centred body and the
-// drawer on a phone. Signed in, the account menu is covered by lane A's end-to-end flows.
+// drawer on a phone. Signed in, the account menu is covered by lane A's end-to-end flows and
+// e2e/shell/account.spec.ts.
 test('the sidebar holds the feeds, the directory links and the site pages, and the body is centred in what is left', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await gotoHydrated(page, '/');
@@ -72,30 +73,31 @@ test.describe('in German', () => {
   });
 });
 
-test('on a phone the sidebar is a drawer behind the menu link', async ({ page }) => {
+test("on a phone the sidebar is Mux UI's drawer behind the menu button, with Appearance at its foot", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 800 });
   await gotoHydrated(page, '/');
-  const side = page.getByRole('complementary', { name: 'Sidebar' });
-  await expect(side).toBeHidden();
-  const open = page.getByRole('link', { name: 'Open menu' });
-  await open.click();
-  await expect(side).toBeVisible();
-  await expect(open).toHaveAttribute('aria-expanded', 'true');
-  // The page behind is inert while the drawer is open, and focus moved into the drawer.
-  await expect(page.locator('.pb-app__body')).toHaveAttribute('inert', '');
-  await expect(page.getByRole('link', { name: 'Close menu' })).toBeFocused();
-
-  await page.keyboard.press('Escape');
-  await expect(side).toBeHidden();
-  await expect(open).toBeFocused();
-  // Once hydrated the drawer is state, not the URL: opening it leaves no hash or history entry behind.
-  expect(page.url()).not.toContain('#');
-
-  // A link in the drawer navigates and closes it.
-  await open.click();
-  await side.getByRole('link', { name: 'Find by handle' }).click();
-  await page.waitForURL('**/resolve');
   await expect(page.getByRole('complementary', { name: 'Sidebar' })).toBeHidden();
+  // Mux UI names the button and the drawer in English in every locale (rc.6).
+  const open = page.getByRole('button', { name: 'Open navigation' });
+  const drawer = page.getByRole('dialog', { name: 'Navigation' });
+  await open.click();
+  await expect(drawer.getByRole('navigation', { name: 'Feeds' }).getByRole('link', { name: 'Local', exact: true })).toBeVisible();
+  await expect(open).toHaveAttribute('aria-expanded', 'true');
+  await expect(drawer.getByRole('button', { name: 'Appearance' })).toBeVisible();
+  // Focus moved into the drawer; Escape closes it and gives focus back to the button.
+  await expect.poll(() => page.evaluate(() => !!document.activeElement?.closest('[role="dialog"]'))).toBe(true);
+  await page.keyboard.press('Escape');
+  await expect(drawer).toBeHidden();
+  await expect(open).toBeFocused();
+
+  // A link in the drawer navigates and closes it; Back does not bring it back.
+  await open.click();
+  await drawer.getByRole('link', { name: 'Find by handle' }).click();
+  await page.waitForURL('**/resolve');
+  await expect(drawer).toBeHidden();
+  await page.goBack();
+  await page.waitForURL((url) => url.pathname === '/');
+  await expect(drawer).toBeHidden();
 });
 
 test('the skip link moves focus to the page content', async ({ page }) => {
@@ -107,14 +109,18 @@ test('the skip link moves focus to the page content', async ({ page }) => {
   await expect(page.locator('#pb-main')).toBeFocused();
 });
 
-test('the appearance menu closes on Escape and when a press lands outside it', async ({ page }) => {
+test('the appearance popover closes on Escape and when a press lands outside it', async ({ page }) => {
   await gotoHydrated(page, '/');
-  const menu = page.locator('details.pb-theme');
-  await menu.locator('summary').click();
-  await expect(menu).toHaveJSProperty('open', true);
+  const trigger = page.getByRole('banner').getByRole('button', { name: 'Appearance' });
+  const choices = page.getByRole('radiogroup', { name: 'Appearance' });
+  await trigger.click();
+  await expect(choices.getByRole('radio', { name: 'System' })).toHaveAttribute('aria-checked', 'true');
   await page.keyboard.press('Escape');
-  await expect(menu).toHaveJSProperty('open', false);
-  await menu.locator('summary').click();
-  await page.getByRole('main').click({ position: { x: 5, y: 5 } });
-  await expect(menu).toHaveJSProperty('open', false);
+  await expect(choices).toBeHidden();
+  await expect(trigger).toBeFocused();
+  await trigger.click();
+  await expect(choices).toBeVisible();
+  // The popover is modal: a press anywhere outside it lands on its underlay and closes it.
+  await page.mouse.click(600, 500);
+  await expect(choices).toBeHidden();
 });

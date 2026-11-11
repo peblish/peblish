@@ -10,7 +10,7 @@ export async function skipWithoutKit(request: APIRequestContext): Promise<void> 
 }
 
 /** The display cookie the server reads (packages/core/src/prefs/cookie.ts). */
-export const prefsCookie = (density: 'card' | 'classic' | 'compact', scheme: 'system' | 'light' | 'dark' | 'black') => ({
+export const prefsCookie = (density: 'card' | 'classic' | 'compact', scheme: 'system' | 'light' | 'dark') => ({
   name: 'peblish_prefs',
   value: `density=${density}&scheme=${scheme}`,
 });
