@@ -53,8 +53,6 @@ export const loadPost = createServerFn({ method: 'GET' })
       viewerAdmin: session?.view.siteRole === 'admin',
       thumbnail,
       image,
-      /** The server's clock: the post's age is counted from it, so hydration prints what the server did. */
-      now: new Date().toISOString(),
       /** The edit time as text in the request's locale, so hydration formats nothing (postTime). */
       edited: view.editedAt && postTime(locale, view.editedAt),
       domain: view.url ? (URL.parse(view.url)?.hostname.replace(/^www\./, '') ?? null) : null,
