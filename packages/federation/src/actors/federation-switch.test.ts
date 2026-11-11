@@ -1,6 +1,7 @@
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { beforeEach, describe, expect, test } from 'vitest';
 import { db } from '@peblish/core/db/read';
+import { writer } from '@peblish/core/db/write';
 import { backfills } from '@peblish/core/remote/tables';
 import { inboxRaw } from '@peblish/core/db/tables/federation';
 import { queueBackfill } from '@peblish/core/remote/backfill';
@@ -8,6 +9,7 @@ import { forgetDeferredMirrors } from '@peblish/core/remote/moderators';
 import { tx } from '@peblish/core/tx/tx';
 import { truncateAll } from '@peblish/core/testing/db';
 import { seedSetting } from '@peblish/core/testing/seed-a';
+import { gate, someoneWaitsOnALock } from '@peblish/core/testing/seed-az';
 import { rsaKeys, stubFetch } from '@peblish/core/testing/seed-fed-a';
 import { deliverRow, seedInboundWorld } from '@peblish/core/testing/seed-fed-b';
 import { seedDelivery } from '@peblish/core/testing/seed-rem';
@@ -27,7 +29,7 @@ import { recheckObjects } from '../remote-fetch/recheck.ts';
 import { resolveLookup } from '../resolve/web.ts';
 import { forgetKeyRefreshes } from '../signing/inbound.ts';
 import { signDelivery } from '../signing/sign.ts';
-import { fetchJson, type Fetcher } from './document.ts';
+import { fetchActivity, fetchJson, type Fetcher } from './document.ts';
 import { FederationPaused } from './federation-switch.ts';
 import { resolveRemoteActor } from './resolve.ts';
 
@@ -227,5 +229,107 @@ describe('a switch turned off while work is under way', () => {
     expect((await one).json).toEqual({ id: first });
     await expect(two).rejects.toBeInstanceOf(FederationPaused);
     expect(stub.requests.map((request) => request.url)).toEqual([first]);
+  });
+});
+
+// Z1 (review 3): a request whose way out passed a database wait (the signing key, the inbound
+// pipeline's lease renewal, the held-signer lookup, a search's block check) still went out when
+// the switch was turned off during that wait. Each test holds the wait open (a lock another
+// connection holds, or the lookup itself), turns the switch off inside it, and checks that
+// nothing is sent.
+describe('a switch turned off during a database wait on the way out', () => {
+  /** Holds `statement` in another transaction until the returned release is called. */
+  async function holdLock(statement: ReturnType<typeof sql>) {
+    const held = gate();
+    const release = gate();
+    const holder = writer().transaction(async (t) => {
+      await t.execute(statement);
+      held.open();
+      await release.opened;
+    });
+    await held.opened;
+    return async () => {
+      release.open();
+      await holder;
+    };
+  }
+
+  test('a signed document read whose signing key read ends after the pause is not sent', async () => {
+    const release = await holdLock(sql`lock table actor_keys in access exclusive mode`);
+    const read = fetchActivity(stranger, peer.fetch);
+    try {
+      await expect.poll(someoneWaitsOnALock).toBe(true); // the switch was on, and the key read waits
+      await pause();
+    } finally {
+      await release();
+    }
+    await expect(read).rejects.toBeInstanceOf(FederationPaused);
+    expect(peer.requests).toEqual([]);
+  });
+
+  test('an inbox row whose lease renewal ends after the pause sends nothing more, and waits pending with its attempt given back', async () => {
+    const moved = 'https://new.test/users/someone';
+    const stub = stubFetch({ [stranger]: { status: 301, location: moved }, [moved]: { body: { id: moved, type: 'Person' } } });
+    const firstAnswered = gate();
+    let release = async () => {};
+    const like = {
+      id: activityId('https://new.test', 'like'),
+      type: 'Like',
+      actor: stranger,
+      object: hosts.t1,
+      ...addressedToCommunity(hosts.spike),
+    };
+    const delivered = deliverRow(like, (leased) => {
+      const fetch: Fetcher = async (url, init) => {
+        const answer = await stub.fetch(url, init);
+        if (String(url) === stranger) {
+          // The redirect hop's lease renewal will wait for this row lock.
+          release = await holdLock(sql`select 1 from inbox_raw where id = ${leased.id} for no key update`);
+          firstAnswered.open();
+        }
+        return answer;
+      };
+      return processRow(leased, { fetch });
+    });
+    await firstAnswered.opened;
+    try {
+      await expect.poll(someoneWaitsOnALock).toBe(true);
+      await pause();
+    } finally {
+      await release();
+    }
+    const { row, settled } = await delivered;
+    expect(stub.requests.map((request) => request.url)).toEqual([stranger]);
+    expect(settled).toEqual({ state: 'pending', error: 'federation is paused here; this delivery waits until it is on again' });
+    const [after] = await db().select({ state: inboxRaw.state, attempts: inboxRaw.attempts }).from(inboxRaw).where(eq(inboxRaw.id, row.id));
+    expect(after).toEqual({ state: 'pending', attempts: 0 });
+  });
+
+  test('an inbox POST whose held-signer lookup ends after the pause fetches no key, is answered 503, and stores nothing', async () => {
+    const inbox = 'https://fed-b.test/inbox';
+    const body = JSON.stringify({ id: 'https://new.test/activities/like/1', type: 'Like', actor: stranger, object: hosts.t1 });
+    const keys = { keyId: `${stranger}#main-key`, privateKeyPem: rsaKeys().privateKeyPem };
+    const request = new Request(inbox, { method: 'POST', headers: await signDelivery(keys, inbox, body), body });
+    const heldSigner = async () => {
+      await pause(); // while the lookup waits on the database
+      return false;
+    };
+    const response = await receiveInbound(request, { fetch: peer.fetch, heldSigner });
+    expect([response.status, response.headers.get('retry-after')]).toEqual([503, '300']);
+    expect(peer.requests).toEqual([]);
+    expect(await db().select().from(inboxRaw)).toEqual([]);
+  });
+
+  test('a search whose block check ends after the pause sends nothing, and answers resolve.paused', async () => {
+    const release = await holdLock(sql`lock table peer_controls in access exclusive mode`);
+    const search = resolveLookup({ kind: 'url', url: stranger }, { fetch: peer.fetch });
+    try {
+      await expect.poll(someoneWaitsOnALock).toBe(true); // the switch was on, and the block check waits
+      await pause();
+    } finally {
+      await release();
+    }
+    expect(await search).toEqual({ ok: false, error: 'resolve.paused' });
+    expect(peer.requests).toEqual([]);
   });
 });

@@ -7,6 +7,7 @@ import { readSetting } from '@peblish/core/settings/read';
 import { tx } from '@peblish/core/tx/tx';
 import { and, eq, gt, sql } from 'drizzle-orm';
 import type { Fetcher } from '../actors/document.ts';
+import { assertFederationOn } from '../actors/federation-switch.ts';
 import { safeFetch } from '../actors/safe-fetch.ts';
 import { FetchRefused, verifyInboundSignature } from '../signing/inbound.ts';
 import { parseSignature } from '../signing/verify.ts';
@@ -159,6 +160,8 @@ export type ReceiveOptions = {
   fetch?: Fetcher;
   /** The address of the connection's peer, when the caller knows it better than the request does (`request.ip`). */
   peer?: string;
+  /** For tests: the held-signer lookup (namesHeldSigner), so a test can pause federation while it waits. */
+  heldSigner?: (request: Request, body: Uint8Array) => Promise<boolean>;
 };
 
 /** Most fetches the lookup of one request's signing key may make: the key document, the actor, its NodeInfo, a hop or two. */
@@ -210,12 +213,15 @@ export async function receiveInbound(request: Request, options: ReceiveOptions =
     let throttled = false;
     let fetches = 0;
     const base = options.fetch ?? safeFetch;
+    const heldSigner = options.heldSigner ?? namesHeldSigner;
     const address = clientAddress(request.headers, options.peer ?? peerOf(request));
     // Finding a signer's key is a few fetches (the key document, the actor, its NodeInfo), but one
     // lookup: it is charged once, at the first, to the client and to the host the key id names.
     const limited: Fetcher = async (url, init) => {
       if (fetches === 0) {
-        const kind = (await namesHeldSigner(request, body)) ? 'refresh' : 'discovery';
+        const kind = (await heldSigner(request, body)) ? 'refresh' : 'discovery';
+        // The lookup is a database wait: a pause during it stops the request (the signature answers `paused`), and spends no lookup.
+        await assertFederationOn();
         if (!takeKeyLookup(kind, { address, host: new URL(String(url)).host })) {
           throttled = true;
           throw new FetchRefused('too many lookups of signing keys');

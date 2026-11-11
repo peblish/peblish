@@ -61,8 +61,8 @@ export const fetchActivity = (url: string, fetch: Fetcher, { maxRedirects = 0 }:
  * `signed` the first request carries the instance's HTTP signature, for peers that only answer
  * authenticated fetches; a redirected hop goes out unsigned, as the signature vouches for one
  * request. The whole read has one deadline. WebFinger and NodeInfo keep three redirects. The
- * federation switch is read before each request, redirect hops included: while it is off this
- * throws FederationPaused and sends nothing more (federation-switch.ts).
+ * federation switch is read before each request, redirect hops included, once its headers are
+ * ready: while it is off this throws FederationPaused and sends nothing more (federation-switch.ts).
  */
 export async function fetchJson(
   url: string,
@@ -75,16 +75,18 @@ export async function fetchJson(
   let hops = 0;
   let response: SafeResponse;
   for (;;) {
-    // Before every request, each redirect hop included, and outside the try below, which would make it a peer's failure.
+    const headers = new Headers({ accept, 'user-agent': await userAgent() });
+    if (signed && hops === 0) {
+      for (const [name, value] of await signatures(target)) headers.set(name, value);
+    }
+    // Read last, after the waits above (the signing key is a database read), before every request,
+    // each redirect hop included, and outside the try below, which would make it a peer's failure.
     await assertFederationOn();
     try {
-      const headers = new Headers({ accept, 'user-agent': await userAgent() });
-      if (signed && hops === 0) {
-        for (const [name, value] of await signatures(target)) headers.set(name, value);
-      }
       response = await fetch(target, { ...documentLimits, maxRedirects: 0, timeoutMs: Math.max(1, deadline - Date.now()), headers });
     } catch (error) {
-      // A politeness queue checks the switch again when a request leaves it (remote-fetch/polite.ts).
+      // A fetcher with a wait of its own checks the switch again after it (remote-fetch/polite.ts,
+      // the inbound pipeline's lease renewal, the held-signer lookup, a search's block check).
       if (error instanceof FederationPaused) throw error;
       if (error instanceof BlockedDestinationError) throw new FetchFailure('blocked', error.message);
       throw new FetchFailure('unreachable', error instanceof Error ? error.message : String(error));

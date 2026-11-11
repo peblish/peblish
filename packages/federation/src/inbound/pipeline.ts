@@ -8,7 +8,7 @@ import { tx } from '@peblish/core/tx/tx';
 import { and, eq, isNull } from 'drizzle-orm';
 import { ActorResolveError, resolveRemoteActor, type ResolvedActor, type ResolveOptions } from '../actors/resolve.ts';
 import type { Fetcher } from '../actors/document.ts';
-import { FederationPaused } from '../actors/federation-switch.ts';
+import { assertFederationOn, FederationPaused } from '../actors/federation-switch.ts';
 import { safeFetch } from '../actors/safe-fetch.ts';
 import { localOrigin } from '../federation.ts';
 import { activityFromWire } from '../mapping/activity.ts';
@@ -127,6 +127,8 @@ function fetchBudget(base: Fetcher, row: InboxRow): FetchBudget {
       }
       left -= 1;
       await renewLease(row);
+      // The renewal is a database wait: a pause during it stops this request (FederationPaused, a FetchYield below).
+      await assertFederationOn();
       return base(url, init);
     },
   };
