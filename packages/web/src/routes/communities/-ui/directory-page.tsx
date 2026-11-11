@@ -3,7 +3,7 @@ import type { DirectoryRow } from '@peblish/core/directory/read';
 import { Badge } from '@peblish/ui/components/badge';
 import { Button } from '@peblish/ui/components/button';
 import { EmptyState } from '@peblish/ui/components/empty-state';
-import { BidiText, Handle } from '@peblish/ui/components/handle';
+import { BidiText, Handle, handleHost } from '@peblish/ui/components/handle';
 import { Link } from '@peblish/ui/components/link';
 import { LinkTabs } from '@peblish/ui/components/link-tabs';
 import { Notice } from '@peblish/ui/components/notice';
@@ -202,7 +202,8 @@ function Counted({ children }: { children: ReactNode }) {
 function CommunityCell({ row, handleId, now }: { row: DirectoryRow; handleId: string; now: Date }) {
   const { t, locale } = useTranslate();
   const { actor } = row;
-  const host = actor.handle.includes('@') ? actor.handle.slice(actor.handle.indexOf('@') + 1) : '';
+  // The server after the handle's last @, isolated and without directional controls: a username can hold an @ too.
+  const host = <BidiText text={handleHost(actor.handle)} />;
   return (
     <div className="dir-community">
       <Text as="div" className="dir-name">
@@ -226,10 +227,11 @@ function CommunityCell({ row, handleId, now }: { row: DirectoryRow; handleId: st
         {actor.local
           ? t('directory', 'directory.row.local')
           : row.refreshedAt
-            ? rich(t('directory', 'directory.row.remote', { host, time: '{time}' }), {
+            ? rich(t('directory', 'directory.row.remote', { host: '{host}', time: '{time}' }), {
+                host,
                 time: <Time iso={row.refreshedAt} locale={locale} now={now} />,
               })
-            : t('directory', 'directory.row.remoteCopy', { host })}
+            : rich(t('directory', 'directory.row.remoteCopy', { host: '{host}' }), { host })}
       </Text>
     </div>
   );
