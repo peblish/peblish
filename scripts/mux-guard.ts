@@ -366,6 +366,58 @@ function unreadImport(file: string, specifier: string): boolean {
   return true;
 }
 
+/** The names a binding declares: `a`, or every name in a destructuring pattern. */
+function boundNames(name: ts.BindingName): string[] {
+  if (ts.isIdentifier(name)) return [name.text];
+  return name.elements.flatMap((element) => (ts.isBindingElement(element) ? boundNames(element.name) : []));
+}
+
+/** The `var` names declared anywhere in a function body, not counting nested functions (a var belongs to its function). */
+function varNames(node: ts.Node): string[] {
+  if (ts.isFunctionLike(node)) return [];
+  const own =
+    ts.isVariableDeclarationList(node) && !(node.flags & ts.NodeFlags.BlockScoped)
+      ? node.declarations.flatMap((declaration) => boundNames(declaration.name))
+      : [];
+  return [...own, ...node.getChildren().flatMap(varNames)];
+}
+
+/** The names a block or the module declares directly (let, const, var, function, class, enum, import =). */
+function blockNames(statements: readonly ts.Statement[]): string[] {
+  return statements.flatMap((statement) => {
+    if (ts.isVariableStatement(statement))
+      return statement.declarationList.declarations.flatMap((declaration) => boundNames(declaration.name));
+    if ((ts.isFunctionDeclaration(statement) || ts.isClassDeclaration(statement) || ts.isEnumDeclaration(statement)) && statement.name)
+      return [statement.name.text];
+    return ts.isImportEqualsDeclaration(statement) ? [statement.name.text] : [];
+  });
+}
+
+/**
+ * Whether `use`, an identifier, names something other than the module-level binding of that name: a parameter
+ * (destructured props included), a local, a function's or class's own name, a catch or loop variable in a scope
+ * around it.
+ */
+function shadowed(use: ts.Identifier): boolean {
+  const name = use.text;
+  for (let node: ts.Node = use.parent; !ts.isSourceFile(node); node = node.parent) {
+    const names: string[] = [];
+    if (ts.isFunctionLike(node)) {
+      names.push(...node.parameters.flatMap((parameter) => boundNames(parameter.name)));
+      if ('body' in node && node.body) names.push(...varNames(node.body));
+    }
+    if ((ts.isFunctionExpression(node) || ts.isClassLike(node)) && node.name) names.push(node.name.text);
+    if (ts.isBlock(node) || ts.isModuleBlock(node)) names.push(...blockNames(node.statements));
+    if (ts.isCaseBlock(node)) names.push(...blockNames(node.clauses.flatMap((clause) => clause.statements)));
+    if ((ts.isForStatement(node) || ts.isForInStatement(node) || ts.isForOfStatement(node)) && node.initializer)
+      if (ts.isVariableDeclarationList(node.initializer))
+        names.push(...node.initializer.declarations.flatMap((declaration) => boundNames(declaration.name)));
+    if (ts.isCatchClause(node) && node.variableDeclaration) names.push(...boundNames(node.variableDeclaration.name));
+    if (names.includes(name)) return true;
+  }
+  return blockNames(use.getSourceFile().statements).includes(name);
+}
+
 /** `x.style` (or `x['style']`): an element's own style declarations. */
 const isStyleObject = (node: ts.Expression) =>
   (ts.isPropertyAccessExpression(node) && node.name.text === 'style') ||
@@ -412,7 +464,7 @@ export function scanScript(file: string, text: string): Violation[] {
   };
   collectTags(source);
   // Stylesheets imported as text (`import css from './x.css?inline'`), which the guard reads as files: the
-  // only content a <style> element may have.
+  // only content a <style> element may have, named by that import binding and not a parameter or local of its name.
   const inlineSheets = new Set(
     source.statements.flatMap((statement) =>
       ts.isImportDeclaration(statement) &&
@@ -429,7 +481,11 @@ export function scanScript(file: string, text: string): Violation[] {
     const only = content.length === 1 ? content[0]! : undefined;
     const expression = only && ts.isJsxExpression(only) ? only.expression : only && ts.isExpression(only) ? only : undefined;
     return (
-      !props.has('dangerouslySetInnerHTML') && expression !== undefined && ts.isIdentifier(expression) && inlineSheets.has(expression.text)
+      !props.has('dangerouslySetInnerHTML') &&
+      expression !== undefined &&
+      ts.isIdentifier(expression) &&
+      inlineSheets.has(expression.text) &&
+      !shadowed(expression)
     );
   };
 

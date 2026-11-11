@@ -249,6 +249,33 @@ test('CSS written inside a script is reported: <style> elements, CSSOM calls and
   ]);
 });
 
+test("a <style> may hold the ?inline stylesheet only through its import, not a parameter, local or prop of that name", () => {
+  const source = lines(
+    "import modCss from './mod.css?inline';", // 1
+    'export function ModStyles({ modCss = defaultCss }) {', // 2
+    '  return <style>{modCss}</style>;', // 3: a caller supplies the CSS
+    '}', // 4
+    'export const B = ({ css: modCss }) => <style>{modCss}</style>;', // 5
+    'export function C(modCss) { return <style>{modCss}</style>; }', // 6
+    "export const D = () => { const modCss = '.x { color: #f00; }'; return <style>{modCss}</style>; };", // 7
+    'export function E() { try { go(); } catch (modCss) { return <style>{modCss}</style>; } }', // 8
+    "export const F = function modCss() { return createElement('style', null, modCss); };", // 9
+    'export const G = () => <style>{modCss}</style>;', // 10: legal, the import
+    'export function H({ css }) { const other = css; return <style href="h" precedence="h">{modCss}</style>; }', // 11: legal
+    "export const I = () => { { const modCss = 'x'; } return <style>{modCss}</style>; };", // 12: legal, that modCss ends with its block
+    'export const J = () => { if (go) { var modCss = hand; } return <style>{modCss}</style>; };', // 13: a var is the function's
+  );
+  expect(tsx(source)).toEqual([
+    'raw-element:3',
+    'raw-element:5',
+    'raw-element:6',
+    'raw-element:7',
+    'raw-element:8',
+    'raw-element:9',
+    'raw-element:13',
+  ]);
+});
+
 test('the forms beside those holes: string and spread styles, tag variables, as props, typed OM and stylesheet links', () => {
   const source = lines(
     "const Tag = level ? 'h2' : 'button';", // 1
