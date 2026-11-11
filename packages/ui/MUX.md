@@ -127,6 +127,7 @@ Mux UI rc.7 components bring their own font and box model: they no longer take f
 
 - `*, *::before, *::after { box-sizing: border-box }`, in the `reset` layer, for the app's own elements. Mux reverts its own elements to the browser's box model (content-box for most), so an app rule that gives a Mux part a width including its padding (`inline-size: 100%` on a `Card`) also sets `box-sizing: border-box` on it, as `auth.css` does for the auth card.
 - `.muxui-avatar__fallback { box-sizing: border-box }`: a Mux UI rc.7 bug, the fallback is 100% wide plus its padding, so without this the initial sits off centre.
+- `components/sidebar.css` and `components/header-nav.css`: `.muxui-sidebar__nav-link`, `.muxui-sidebar__mobile-header` and `.muxui-header-nav` size as `border-box`. Under rc.7's content-box a navigation row is 50px (its 36px minimum plus padding) and the two bars gain their 1px border; the picked layout has 36px rows, a 64px top bar and a 56px phone bar. Delete them when Mux sizes these parts as border-box itself.
 - `body`: no margin, the page surface (`--muxui-semantic-surface-background`) and `overflow-wrap: anywhere`.
 - The app has no `:focus-visible` rule of its own; Mux's applies.
 - `.pb-page` padding takes Mux layout tokens.

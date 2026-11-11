@@ -1,0 +1,12 @@
+/* Mux Sidebar sizes. Mux UI rc.7 gives its parts the browser's box model (content-box), and a
+   navigation link is min-block-size: control-size-md plus its block padding, so a row is 50px
+   where every other medium control is 36px; the phone header's 1px bottom border adds to its 56px
+   the same way. The layout the owner picked (the RM mock, direction A) has 36px rows and a 56px
+   bar. Layout only: delete these when Mux sizes them as border-box itself. Every Sidebar (the
+   shell's column and phone drawer, the settings section nav) gets them. */
+@layer app {
+  .muxui-sidebar__nav-link,
+  .muxui-sidebar__mobile-header {
+    box-sizing: border-box;
+  }
+}
