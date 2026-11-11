@@ -53,9 +53,7 @@
   .dir-pending {
     flex-basis: 100%;
   }
-  /* Positioned, so the visually hidden column label stays inside the scroller instead of widening the page. */
   .dir-scroll {
-    position: relative;
     overflow-x: auto;
   }
   .dir-table {

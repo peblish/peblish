@@ -20,9 +20,7 @@
     grid-column: 1 / -1;
   }
   /* Mux Table has no breakpoint: on a narrow screen the table scrolls inside its card. */
-  /* Positioned, so Mux Table's absolutely placed hidden labels stay inside the scrolling card. */
   .peers-table {
-    position: relative;
     overflow-x: auto;
   }
   .peers-table .muxui-table {

@@ -16,9 +16,7 @@
     inline-size: min(28rem, 100%);
   }
   /* Mux Table has no breakpoint: on a narrow screen the table scrolls inside its card. */
-  /* Positioned, so Mux Table's absolutely placed hidden labels stay inside the scrolling card. */
   .bans-table {
-    position: relative;
     overflow-x: auto;
   }
   .bans-table .muxui-table {
