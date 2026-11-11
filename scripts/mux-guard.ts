@@ -289,6 +289,8 @@ function plainlyText(node: ts.Expression): boolean {
 }
 
 const kebab = (name: string) => name.replace(/[A-Z]/g, (char) => `-${char.toLowerCase()}`);
+/** A property without its vendor prefix, so `-webkit-box-shadow` is checked as `box-shadow`. */
+const unprefixed = (name: string) => name.replace(/^-(webkit|moz|ms|o)-/, '');
 const bannedStyle =
   /^(color|background|border|outline|opacity|box-shadow|text-shadow|font|line-height|letter-spacing|transition|animation|fill|stroke|caret-color|accent-color|text-decoration-color|column-rule)|-radius$|-color$/;
 const spacingStyle = /^(padding|margin|gap|row-gap|column-gap|inset)/;
@@ -304,7 +306,7 @@ function styleProblems(node: ts.Expression): string[] {
   return expression.properties.flatMap((property) => {
     if (!ts.isPropertyAssignment(property) || !(ts.isIdentifier(property.name) || ts.isStringLiteral(property.name)))
       return [`unreadable property ${property.getText().slice(0, 30)}`];
-    const name = property.name.text.startsWith('--') ? property.name.text : kebab(property.name.text);
+    const name = property.name.text.startsWith('--') ? property.name.text : unprefixed(kebab(property.name.text));
     const value = unwrap(property.initializer);
     const literal = ts.isStringLiteralLike(value) ? value.text.trim() : ts.isNumericLiteral(value) ? value.text : undefined;
     // The written text of the value, a template's literal parts included, for the token names it reads.
@@ -392,6 +394,23 @@ export function scanScript(file: string, text: string): Violation[] {
   const inserted = new Set<string>();
 
   const isFactory = reactFactories(source);
+  // Local names bound to a tag name or a choice of them: const Tag = level ? 'h2' : 'h3'.
+  const tagNames = new Map<string, string[]>();
+  const literalTags = (node: ts.Expression): string[] | undefined => {
+    const expression = unwrap(node);
+    if (ts.isStringLiteralLike(expression)) return /^[a-z][a-z0-9-]*$/.test(expression.text) ? [expression.text] : undefined;
+    if (!ts.isConditionalExpression(expression)) return undefined;
+    const [yes, no] = [literalTags(expression.whenTrue), literalTags(expression.whenFalse)];
+    return yes && no ? [...yes, ...no] : undefined;
+  };
+  const collectTags = (node: ts.Node): void => {
+    if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && /^[A-Z]/.test(node.name.text) && node.initializer) {
+      const tags = literalTags(node.initializer);
+      if (tags) tagNames.set(node.name.text, tags);
+    }
+    ts.forEachChild(node, collectTags);
+  };
+  collectTags(source);
   // Stylesheets imported as text (`import css from './x.css?inline'`), which the guard reads as files: the
   // only content a <style> element may have.
   const inlineSheets = new Set(
@@ -425,7 +444,11 @@ export function scanScript(file: string, text: string): Violation[] {
       const style = props.get('style');
       if (style) for (const problem of styleProblems(style)) add(node, 'inline-style', `<${name}> style ${problem}`);
     }
+    // A polymorphic `as` renders the element it names: <Text as="button"> is a raw button.
+    const as = propText(props.get('as'));
+    if (as && as in replacements) add(node, 'raw-element', `<${name} as="${as}"> (${replacements[as]})`);
     if (tag === undefined) return;
+    if (ts.isJsxOpeningLikeElement(node) && tag === 'link') stylesheetLink(node, props);
 
     const rule = tagRule(tag);
     const hidden = tag === 'input' && propText(props.get('type')) === 'hidden';
@@ -460,7 +483,17 @@ export function scanScript(file: string, text: string): Violation[] {
   };
   const jsxElement = (node: ts.JsxOpeningElement | ts.JsxSelfClosingElement, children: readonly ts.JsxChild[]) => {
     const tag = node.tagName.getText();
-    element(node, ts.isIdentifier(node.tagName) && /^[a-z]/.test(tag) ? tag : undefined, jsxProps(node.attributes), children);
+    const props = jsxProps(node.attributes);
+    // <Tag> where `const Tag = 'a'` (or a choice of tags) renders those raw elements.
+    const tags = ts.isIdentifier(node.tagName) && /^[a-z]/.test(tag) ? [tag] : tagNames.get(tag);
+    if (tags) for (const each of tags) element(node, each, props, children);
+    else element(node, undefined, props, children);
+  };
+  /** A stylesheet link whose address is written out loads a stylesheet the guard does not read. */
+  const stylesheetLink = (node: ts.Node, props: Props) => {
+    const href = props.get('href');
+    if (propText(props.get('rel'))?.toLowerCase().split(/\s+/).includes('stylesheet') && href && ts.isStringLiteralLike(unwrap(href)))
+      add(node, 'css-import', `stylesheet link to ${propText(href)} the guard does not read`);
   };
   /** createElement(type, props, ...children), jsx(type, props) and cloneElement(element, props), however named. */
   const factoryElement = (node: ts.CallExpression) => {
@@ -538,7 +571,13 @@ export function scanScript(file: string, text: string): Violation[] {
       else if (property !== 'cssText' && (isStyleObject(node.left) || isStyleObject(node.left.expression)))
         add(node, 'inline-style', `${node.left.getText().slice(0, 40)} =`);
     }
-    if (ts.isPropertyAccessExpression(node) && (node.name.text === 'cssText' || node.name.text === 'adoptedStyleSheets'))
+    // A head() link ({ rel: 'stylesheet', href }) as much as a <link> element.
+    if (ts.isObjectLiteralExpression(node)) {
+      const props: Props = new Map();
+      spreadProps(props, node);
+      stylesheetLink(node, props);
+    }
+    if (ts.isPropertyAccessExpression(node) && ['cssText', 'adoptedStyleSheets', 'attributeStyleMap'].includes(node.name.text))
       add(node, 'inline-style', node.name.text);
     ts.forEachChild(node, visit);
     if (named) anchor.pop();
@@ -663,7 +702,7 @@ function declarations(css: string) {
     const name = text.slice(0, colon).trim();
     const registration = registered(anchor.at(-1));
     if (registration && (registration.startsWith('--muxui-') || name.toLowerCase() !== 'initial-value')) return [];
-    const property = registration ?? (name.startsWith('--') ? name : name.toLowerCase());
+    const property = registration ?? (name.startsWith('--') ? name : unprefixed(name.toLowerCase()));
     const raw = text.slice(colon + 1);
     const important = /!\s*important\s*$/i.test(raw);
     return [{ line, property, value: raw.replace(/!\s*important\s*$/i, '').trim(), text, anchor, layout, important }];

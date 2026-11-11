@@ -249,6 +249,40 @@ test('CSS written inside a script is reported: <style> elements, CSSOM calls and
   ]);
 });
 
+test('the forms beside those holes: string and spread styles, tag variables, as props, typed OM and stylesheet links', () => {
+  const source = lines(
+    "const Tag = level ? 'h2' : 'button';", // 1
+    'export const A = () => (', // 2
+    '  <>', // 3
+    '    <div style="color: #f00" />', // 4
+    "    <div style={{ ...{ color: '#f00' } }} />", // 5
+    "    <div style={{ WebkitBoxShadow: '0 1px 2px #000' }} />", // 6
+    '    <Tag onClick={go} />', // 7
+    '    <Text as="button" onClick={go}>go</Text>', // 8
+    '    <link rel="stylesheet" href="https://example.com/theme.css" />', // 9
+    '    <Text as="h2" className={`pb-title ${size}`}>ok</Text>', // 10: legal
+    '    <link rel="stylesheet" href={appCss} />', // 11: legal, an imported file
+    '  </>', // 12
+    ');', // 13
+    "el.attributeStyleMap.set('color', '#f00');", // 14
+    "export const head = () => ({ links: [{ rel: 'stylesheet', href: '/theme.css' }, { rel: 'stylesheet', href: appCss }] });", // 15
+  );
+  expect(tsx(source)).toEqual([
+    'inline-style:4',
+    'inline-style:5',
+    'inline-style:6',
+    'text-element:7',
+    'raw-element:7',
+    'raw-element:8',
+    'css-import:9',
+    'inline-style:14',
+    'css-import:15',
+  ]);
+  expect(
+    css('.a { -webkit-box-shadow: 0 1px 2px var(--muxui-x); -webkit-border-radius: 4px; -webkit-line-clamp: 2; }', anyDefined),
+  ).toEqual(['css-shadow:1', 'css-radius:1']);
+});
+
 test('raw-html and createElement report HTML made outside React, but not scripts or detached elements', () => {
   const source = lines(
     'export function A() {', // 1
