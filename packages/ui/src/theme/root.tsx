@@ -1,17 +1,24 @@
 // Attributes for <html>. Mux UI reads its scheme from data-muxui-color-scheme (light or dark);
-// peblish adds a third, true black (#000), as data-scheme="black" on top of the dark scheme.
-// themes.css (the preset themes) is not offered, so there is no data-muxui-theme.
+// data-scheme says what the person chose, including 'system'. themes.css (the preset themes) is
+// not offered, so there is no data-muxui-theme.
 
-export const schemes = ['system', 'light', 'dark', 'black'] as const;
+export const schemes = ['system', 'light', 'dark'] as const;
 /** What the person chose; 'system' follows the operating system. */
 export type Scheme = (typeof schemes)[number];
 
+/** A choice as the display cookie may hold it: 'black' (true black, no longer offered) is still accepted. */
+export type StoredScheme = Scheme | 'black';
+
+/** The choice a stored value stands for: a stored true black is Mux UI's dark scheme. */
+export const toScheme = (stored: StoredScheme): Scheme => (stored === 'black' ? 'dark' : stored);
+
 /** The Mux scheme a choice renders with; 'system' is light until the inline script or an effect applies the OS setting. */
 export function muxScheme(scheme: Scheme): 'light' | 'dark' {
-  return scheme === 'dark' || scheme === 'black' ? 'dark' : 'light';
+  return scheme === 'dark' ? 'dark' : 'light';
 }
 
-export function rootThemeAttributes(scheme: Scheme) {
+export function rootThemeAttributes(stored: StoredScheme) {
+  const scheme = toScheme(stored);
   return { 'data-muxui-color-scheme': muxScheme(scheme), 'data-scheme': scheme } as const;
 }
 

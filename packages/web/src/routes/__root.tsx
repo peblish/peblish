@@ -1,13 +1,13 @@
 import { ProseLabelsProvider } from '@peblish/ui/components/prose';
+import { ToastProvider } from '@peblish/ui/components/toast';
 import { LocaleProvider } from '@peblish/ui/locale';
 import { rootThemeAttributes, systemSchemeScript } from '@peblish/ui/theme/root';
 import muxCss from '@peblish/ui/styles.css?url';
-import { HeadContent, Link, Outlet, Scripts, createRootRoute, useRouter } from '@tanstack/react-router';
+import { HeadContent, Outlet, Scripts, createRootRoute, useRouter } from '@tanstack/react-router';
 import { useCallback, useEffect } from 'react';
 import { DEFAULT_LOCALE } from '../i18n/negotiate.ts';
-import { translate } from '../i18n/translate.ts';
 import { openInRouter, useClientLinks } from '../shell/client-links.ts';
-import { useRouteHydrated } from '../shell/hydration.ts';
+import { PageBoundary, PageNotFound } from '../shell/error-page.tsx';
 import { useProseLabels } from '../shell/labels.ts';
 import { PrefsProvider } from '../shell/prefs.tsx';
 import { getRootData } from '../shell/root-data.ts';
@@ -40,7 +40,7 @@ export const Route = createRootRoute({
     ],
   }),
   component: RootComponent,
-  notFoundComponent: NotFound,
+  notFoundComponent: PageNotFound,
 });
 
 /** Mux UI's `useHref`: the URL the browser shows for an internal href, as the router's own links print it. */
@@ -73,28 +73,18 @@ function RootComponent() {
         <LocaleProvider locale={locale} navigate={navigate} useHref={useRouterHref}>
           <PrefsProvider initial={prefs}>
             <ProseLabelsProvider value={proseLabels}>
-              <Shell>
-                <Outlet />
-              </Shell>
+              <ToastProvider>
+                <Shell>
+                  <PageBoundary>
+                    <Outlet />
+                  </PageBoundary>
+                </Shell>
+              </ToastProvider>
             </ProseLabelsProvider>
           </PrefsProvider>
         </LocaleProvider>
         <Scripts />
       </body>
     </html>
-  );
-}
-
-function NotFound() {
-  const { locale } = Route.useLoaderData();
-  useRouteHydrated();
-  return (
-    <main className="pb-page">
-      <h1>{translate(locale, 'shell', 'notFound.title')}</h1>
-      <p>{translate(locale, 'shell', 'notFound.body')}</p>
-      <p>
-        <Link to="/">{translate(locale, 'shell', 'notFound.home')}</Link>
-      </p>
-    </main>
   );
 }

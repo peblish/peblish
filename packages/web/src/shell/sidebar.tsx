@@ -1,186 +1,130 @@
+import { unreadCap } from '@peblish/core/notifications/view';
 import type { SessionView } from '@peblish/schema/session';
 import type { ActorRef } from '@peblish/schema/views';
 import { Handle } from '@peblish/ui/components/handle';
-import { CloseIcon } from '@peblish/ui/components/icons';
-import { useState, type ReactNode } from 'react';
+import { Link } from '@peblish/ui/components/link';
+import { Sidebar } from '@peblish/ui/components/sidebar';
+import { Text } from '@peblish/ui/components/text';
+import { useState } from 'react';
 import { useTranslate } from '../i18n/use-translate.ts';
 import type { ShellData } from './data.ts';
-import { unreadCap } from '@peblish/core/notifications/view';
 import { communityPath, directoryPaths, feedPaths, inboxPath, reportQueuePath, sitePaths } from './paths.ts';
-
-function NavLink({ href, pathname, children }: { href: string; pathname: string; children: ReactNode }) {
-  return (
-    <a href={href} aria-current={pathname === href ? 'page' : undefined}>
-      {children}
-    </a>
-  );
-}
 
 /** A count as the badges print it: "99+" from the cap on. */
 const badgeText = (count: number) => (count >= unreadCap ? `${unreadCap - 1}+` : String(count));
 
-function CommunityGroup({ title, communities, pathname }: { title: string; communities: readonly ActorRef[]; pathname: string }) {
-  if (communities.length === 0) return null;
+/**
+ * The site's name, linking home: the column's header (`pb-brand`, which e2e/support/site-name.ts
+ * reads, so only the column has it) and the phone bar (`pb-bar-brand`).
+ */
+export function Brand({ siteName, className = 'pb-brand' }: { siteName: string; className?: 'pb-brand' | 'pb-bar-brand' }) {
   return (
-    <details open className="pb-side__group">
-      <summary>{title}</summary>
-      <ul>
-        {communities.map((community) => (
-          <li key={community.id}>
-            <NavLink href={communityPath(community)} pathname={pathname}>
-              <Handle prefix="!" handle={community.handle} />
-            </NavLink>
-          </li>
-        ))}
-      </ul>
-    </details>
+    <Link className={className} href="/">
+      <Text variant="title" size="sm">
+        {siteName}
+      </Text>
+    </Link>
   );
 }
 
 /**
- * The persistent left column (shell-sidebar): the feeds, the viewer's communities with a
- * filter, links to the directory and the resolver, and the site's pages. On a phone it is a
- * drawer the shell opens (see Shell for how it works before hydration); `onClose` is its
- * close link.
+ * The sidebar's navigation (shell-sidebar): the feeds, the viewer's inbox and queue, the
+ * viewer's communities with a filter, links to the directory and the resolver, and the site's
+ * pages. The shell renders it twice, in the Mux Sidebar column and in its phone drawer, so each
+ * marks the current page itself.
  */
-export function Sidebar({
-  session,
-  shell,
-  pathname,
-  open,
-  onClose,
-}: {
-  session: SessionView | null;
-  shell: ShellData;
-  pathname: string;
-  open: boolean;
-  onClose: () => void;
-}) {
+export function Navigation({ session, shell, pathname }: { session: SessionView | null; shell: ShellData; pathname: string }) {
   const { t } = useTranslate();
   const [filter, setFilter] = useState('');
-  const matching = (communities: readonly ActorRef[]) => {
-    const query = filter.trim().toLowerCase();
-    return query === '' ? communities : communities.filter(({ handle }) => handle.toLowerCase().includes(query));
-  };
+  const query = filter.trim().toLowerCase();
+  const matching = (communities: readonly ActorRef[]) =>
+    query === '' ? communities : communities.filter(({ handle }) => handle.toLowerCase().includes(query));
+  const item = (href: string, label: string) => (
+    <Sidebar.NavItem href={href} current={pathname === href}>
+      {label}
+    </Sidebar.NavItem>
+  );
+  // The count's word is hidden text, so the link's name starts with what it shows (axe label-content-name-mismatch).
+  const count = (value: number, word: string) =>
+    value > 0 ? (
+      <>
+        {badgeText(value)}
+        <span className="pb-sr"> {word}</span>
+      </>
+    ) : undefined;
+  const group = (id: string, label: string, communities: readonly ActorRef[]) =>
+    communities.length > 0 && (
+      <Sidebar.NavItem
+        key={id}
+        defaultExpanded
+        items={communities.map((community) => {
+          const href = communityPath(community);
+          return { id: community.id, href, current: pathname === href, label: <Handle prefix="!" handle={community.handle} /> };
+        })}
+      >
+        {label}
+      </Sidebar.NavItem>
+    );
   const local = matching(shell.local);
   const remote = matching(shell.remote);
-  const hasCommunities = shell.local.length + shell.remote.length > 0;
 
   return (
-    <aside className="pb-side" id="pb-side" aria-label={t('shell', 'sidebar.label')} data-open={open || undefined}>
-      <a
-        className="pb-side__close"
-        href="#pb-main"
-        aria-label={t('shell', 'menu.close')}
-        onClick={(event) => {
-          event.preventDefault();
-          onClose();
-        }}
-      >
-        <CloseIcon />
-      </a>
-      <a className="pb-brand" href="/">
-        <b>{shell.siteName}</b>
-      </a>
+    <div className="pb-nav">
       <nav aria-label={t('shell', 'nav.feeds')}>
-        <p className="pb-side__title">{t('shell', 'nav.feeds')}</p>
-        <ul className="pb-side__links">
-          {session && (
-            <li>
-              <NavLink href={feedPaths.subscribed} pathname={pathname}>
-                {t('shell', 'feed.subscribed')}
-              </NavLink>
-            </li>
-          )}
-          <li>
-            <NavLink href={feedPaths.local} pathname={pathname}>
-              {t('shell', 'feed.local')}
-            </NavLink>
-          </li>
-          <li>
-            <NavLink href={feedPaths.all} pathname={pathname}>
-              {t('shell', 'feed.all')}
-            </NavLink>
-          </li>
-          <li>
-            <NavLink href={feedPaths.popular} pathname={pathname}>
-              {t('shell', 'feed.popular')}
-            </NavLink>
-          </li>
-          {session && shell.moderating > 0 && (
-            <li>
-              <NavLink href={feedPaths.moderating} pathname={pathname}>
-                {t('shell', 'feed.moderating')}
-              </NavLink>
-            </li>
-          )}
-        </ul>
+        <Sidebar.NavList>
+          {session && item(feedPaths.subscribed, t('shell', 'feed.subscribed'))}
+          {item(feedPaths.local, t('shell', 'feed.local'))}
+          {item(feedPaths.all, t('shell', 'feed.all'))}
+          {item(feedPaths.popular, t('shell', 'feed.popular'))}
+          {session && shell.moderating > 0 && item(feedPaths.moderating, t('shell', 'feed.moderating'))}
+        </Sidebar.NavList>
       </nav>
       {session && (
         <nav aria-label={t('shell', 'nav.you')}>
-          <p className="pb-side__title">{t('shell', 'nav.you')}</p>
-          <ul className="pb-side__links">
-            <li>
-              <a href={inboxPath} aria-current={pathname === inboxPath ? 'page' : undefined}>
-                {t('shell', 'you.inbox')}{' '}
-                {/* The count's word is hidden text, so the link's name starts with what it shows (axe label-content-name-mismatch). */}
-                {shell.unread > 0 && (
-                  <b className="pb-count">
-                    {badgeText(shell.unread)}
-                    <span className="pb-sr"> {t('shell', 'you.unread')}</span>
-                  </b>
-                )}
-              </a>
-            </li>
-            {shell.reportCount !== null && (
-              <li>
-                <a href={reportQueuePath()} aria-current={pathname === reportQueuePath() ? 'page' : undefined}>
-                  {t('shell', 'you.queue')}{' '}
-                  {shell.reportCount > 0 && (
-                    <b className="pb-count">
-                      {badgeText(shell.reportCount)}
-                      <span className="pb-sr"> {t('shell', 'you.open')}</span>
-                    </b>
-                  )}
-                </a>
-              </li>
-            )}
-          </ul>
+          <Sidebar.NavList>
+            <Sidebar.Section label={t('shell', 'nav.you')}>
+              <Sidebar.NavItem href={inboxPath} current={pathname === inboxPath} badge={count(shell.unread, t('shell', 'you.unread'))}>
+                {t('shell', 'you.inbox')}
+              </Sidebar.NavItem>
+              {shell.reportCount !== null && (
+                <Sidebar.NavItem
+                  href={reportQueuePath()}
+                  current={pathname === reportQueuePath()}
+                  badge={count(shell.reportCount, t('shell', 'you.open'))}
+                >
+                  {t('shell', 'you.queue')}
+                </Sidebar.NavItem>
+              )}
+            </Sidebar.Section>
+          </Sidebar.NavList>
         </nav>
       )}
       <nav aria-label={t('shell', 'nav.communities')}>
-        <p className="pb-side__title">{t('shell', 'nav.communities')}</p>
-        {hasCommunities && (
-          <input
-            type="search"
-            className="pb-side__filter"
-            aria-label={t('shell', 'communities.filter')}
-            placeholder={t('shell', 'communities.filter')}
-            value={filter}
-            onChange={(event) => setFilter(event.target.value)}
-          />
-        )}
-        <CommunityGroup title={t('shell', 'communities.local', { count: local.length })} communities={local} pathname={pathname} />
-        <CommunityGroup title={t('shell', 'communities.remote', { count: remote.length })} communities={remote} pathname={pathname} />
-        <ul className="pb-side__links">
-          <li>
-            <NavLink href={directoryPaths.browse} pathname={pathname}>
-              {t('shell', 'communities.browse')}
-            </NavLink>
-          </li>
-          <li>
-            <NavLink href={directoryPaths.find} pathname={pathname}>
-              {t('shell', 'communities.find')}
-            </NavLink>
-          </li>
-        </ul>
+        <Sidebar.NavList>
+          <Sidebar.Section label={t('shell', 'nav.communities')}>
+            {shell.local.length + shell.remote.length > 0 && (
+              <li className="pb-nav__filter">
+                {/* Search's change type also carries its wrapper's div events, hence the narrowing. */}
+                <Sidebar.Search
+                  placeholder={t('shell', 'communities.filter')}
+                  value={filter}
+                  onChange={({ target }) => target instanceof HTMLInputElement && setFilter(target.value)}
+                />
+              </li>
+            )}
+            {group('local', t('shell', 'communities.local', { count: local.length }), local)}
+            {group('remote', t('shell', 'communities.remote', { count: remote.length }), remote)}
+            {item(directoryPaths.browse, t('shell', 'communities.browse'))}
+            {item(directoryPaths.find, t('shell', 'communities.find'))}
+          </Sidebar.Section>
+        </Sidebar.NavList>
       </nav>
-      <nav className="pb-side__foot" aria-label={t('shell', 'footer.label')}>
-        <a href={sitePaths.rules}>{t('shell', 'footer.rules')}</a>
-        <a href={sitePaths.terms}>{t('shell', 'footer.terms')}</a>
-        <a href={sitePaths.privacy}>{t('shell', 'footer.privacy')}</a>
-        <a href={sitePaths.about}>{t('shell', 'footer.about')}</a>
+      <nav className="pb-nav__foot" aria-label={t('shell', 'footer.label')}>
+        <Link href={sitePaths.rules}>{t('shell', 'footer.rules')}</Link>
+        <Link href={sitePaths.terms}>{t('shell', 'footer.terms')}</Link>
+        <Link href={sitePaths.privacy}>{t('shell', 'footer.privacy')}</Link>
+        <Link href={sitePaths.about}>{t('shell', 'footer.about')}</Link>
       </nav>
-    </aside>
+    </div>
   );
 }

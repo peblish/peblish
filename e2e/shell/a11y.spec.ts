@@ -3,9 +3,9 @@ import { expect, test } from '@playwright/test';
 import { skipWithoutKit, prefsCookie } from '../support/kit.ts';
 import { gotoHydrated } from '../support/route-marker.ts';
 
-// axe on the shell (the home page) and on the component gallery, after hydration, in the three
+// axe on the shell (the home page) and on the component gallery, after hydration, in the two
 // colour schemes and both locales: WCAG 2.2 A and AA plus axe best practices.
-const schemes = ['light', 'dark', 'black'] as const;
+const schemes = ['light', 'dark'] as const;
 
 for (const locale of ['en-US', 'de-DE'] as const) {
   test.describe(locale, () => {

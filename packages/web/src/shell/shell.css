@@ -1,187 +1,104 @@
-/* The application frame (shell-sidebar). Structure and states after the R1 mock; the
-   wireframe's styling is not the product's visual design. */
+/* The application frame (shell-sidebar, mock direction A): layout around Mux UI's Sidebar and
+   HeaderNav. Colours, radii and type come from Mux tokens; sizes and grids are the app's. */
 @layer app {
   .pb-app {
     display: grid;
-    grid-template-columns: var(--pb-sidebar-width) minmax(0, 1fr);
-    min-height: 100vh;
+    grid-template-columns: 16rem minmax(0, 1fr);
+    min-block-size: 100dvh;
   }
 
   .pb-skip {
     position: absolute;
-    top: -48px;
-    left: 8px;
+    inset-block-start: -100px;
+    inset-inline-start: var(--muxui-semantic-layout-inset-small);
     z-index: 100;
-    padding: 6px 12px;
-    background: var(--pb-bg);
-    border: 2px solid var(--pb-fg);
+    padding: var(--muxui-semantic-layout-inset-tight) var(--muxui-semantic-layout-inset-small);
+    border: 2px solid var(--muxui-semantic-focus-ring);
+    border-radius: var(--muxui-semantic-control-radius);
+    background: var(--muxui-semantic-surface-background);
+    color: var(--muxui-semantic-content-default);
   }
 
   .pb-skip:focus {
-    top: 8px;
+    inset-block-start: var(--muxui-semantic-layout-inset-small);
   }
 
-  .pb-side {
+  /* The phone bar: Mux's Sidebar.MobileTrigger, shown below 860 px. */
+  .pb-app__bar {
+    display: none;
+  }
+
+  /* The column stays in view while the page scrolls; its navigation scrolls on its own. */
+  .pb-app__side {
     position: sticky;
-    top: 0;
+    inset-block-start: 0;
     align-self: start;
-    height: 100vh;
-    overflow: auto;
-    padding-bottom: 16px;
-    border-right: 1px solid var(--pb-line);
-    background: var(--pb-bg);
+    block-size: 100dvh;
   }
 
-  .pb-side a {
+  .pb-side .pb-nav {
+    flex: 1;
+    min-block-size: 0;
+    overflow-y: auto;
+  }
+
+  .pb-brand,
+  .pb-bar-brand {
+    min-inline-size: 0;
+    overflow: hidden;
+    color: var(--muxui-semantic-content-strong);
     text-decoration: none;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
-  .pb-brand {
-    display: block;
-    padding: 12px 14px;
-    font-size: 18px;
+  .pb-app__drawer-foot {
+    padding: var(--muxui-semantic-layout-inset-medium) var(--muxui-semantic-layout-inset-large);
   }
 
-  .pb-side__title {
-    margin: 0;
-    padding: 12px 14px 4px;
-    font-size: 12px;
-    font-weight: 700;
-  }
-
-  .pb-side ul {
-    margin: 0;
-    padding: 0;
-    list-style: none;
-  }
-
-  .pb-side li a {
+  /* The four navigation lists read as one column: Mux's list padding once, at the outer edges. */
+  .pb-nav {
     display: flex;
-    align-items: center;
-    min-height: 28px;
-    padding: 4px 14px;
+    flex-direction: column;
+    padding-block: var(--muxui-semantic-layout-inset-medium);
   }
 
-  .pb-side li a:hover {
-    background: var(--pb-hover);
+  .pb-nav .muxui-sidebar__nav-list {
+    flex: none;
+    padding-block: 0;
+    overflow: visible;
   }
 
-  /* The admin pages' tab bar (admin-tabs): plain links, the current one underlined. */
-  .admin-tabs {
+  .pb-nav > nav + nav {
+    margin-block-start: var(--muxui-semantic-layout-group-gap);
+  }
+
+  .pb-nav__filter {
+    list-style: none;
+    padding-block-end: var(--muxui-semantic-layout-inset-tight);
+  }
+
+  .pb-nav__foot {
     display: flex;
     flex-wrap: wrap;
-    gap: 4px 16px;
-    max-width: 960px;
-    margin: 16px auto 0;
-    padding: 0 16px;
-    border-bottom: 1px solid var(--pb-line);
-  }
-
-  .admin-tabs a {
-    padding: 6px 0;
-  }
-
-  .admin-tabs a[aria-current='page'] {
-    box-shadow: inset 0 -2px var(--pb-fg);
-    font-weight: 700;
-  }
-
-  /* A count beside a link (Inbox, Moderation queue); the link's aria-label says it in words. */
-  .pb-count {
-    margin-left: auto;
-    padding: 0 6px;
-    border-radius: 9px;
-    background: var(--pb-fg);
-    color: var(--pb-bg);
-    font-size: 11px;
-    line-height: 18px;
-  }
-
-  .pb-side li a[aria-current='page'] {
-    background: var(--pb-hover);
-    box-shadow: inset 3px 0 var(--pb-fg);
-    font-weight: 700;
-  }
-
-  .pb-side__filter {
-    box-sizing: border-box;
-    width: calc(100% - 28px);
-    margin: 4px 14px 6px;
-    padding: 5px 7px;
-    border: 1px solid var(--pb-line);
-    border-radius: 2px;
-    background: var(--pb-bg);
-    color: var(--pb-fg);
-    font: inherit;
-  }
-
-  .pb-side__group > summary {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    padding: 4px 14px;
-    font-weight: 600;
-    cursor: pointer;
-    list-style: none;
-  }
-
-  .pb-side__group > summary::-webkit-details-marker {
-    display: none;
-  }
-
-  /* The open and closed marker, drawn in CSS (a text arrow would pull in a second font file). */
-  .pb-side__group > summary::before {
-    content: '';
-    border: solid transparent;
-    border-width: 4px 0 4px 6px;
-    border-left-color: var(--pb-muted);
-    transition: none;
-  }
-
-  .pb-side__group[open] > summary::before {
-    border-width: 6px 4px 0;
-    border-color: var(--pb-muted) transparent transparent;
-  }
-
-  .pb-side__foot {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0 12px;
-    padding: 6px 14px;
-    font-size: 12px;
-    color: var(--pb-muted);
-  }
-
-  /* Each footer link is a 24 px target on its own, so wrapped rows (German labels
-     wrap on narrow fonts) keep WCAG 2.2 target size without relying on spacing. */
-  .pb-side__foot a {
-    display: inline-block;
-    min-block-size: 24px;
-    line-height: 24px;
-  }
-
-  .pb-side__close,
-  .pb-top__menu {
-    display: none;
+    gap: var(--muxui-semantic-layout-inset-tight) var(--muxui-semantic-layout-inset-small);
+    padding-inline: var(--muxui-semantic-layout-inset-large);
+    font-size: var(--muxui-semantic-typography-text-s-font-size);
   }
 
   .pb-app__body {
-    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    min-inline-size: 0;
   }
 
   .pb-top {
     position: sticky;
-    top: 0;
-    z-index: 30;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 8px 16px;
-    border-bottom: 1px solid var(--pb-line);
-    background: var(--pb-bg);
+    inset-block-start: 0;
+    z-index: 2;
   }
 
-  .pb-top__space {
+  .pb-app__content {
     flex: 1;
   }
 
@@ -189,188 +106,146 @@
     outline: none;
   }
 
-  .pb-create {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    padding: 4px 10px;
-    border: 1px solid var(--pb-fg);
-    border-radius: 2px;
-    background: var(--pb-fg);
-    color: var(--pb-bg);
-    font-weight: 600;
-    text-decoration: none;
-    white-space: nowrap;
-  }
-
-  .pb-create:hover {
-    opacity: 0.85;
-    text-decoration: none;
-  }
-
+  /* The actions: Create post, Appearance, the account. */
+  .pb-app__actions,
   .pb-account {
     display: flex;
+    flex: none;
     align-items: center;
-    gap: 12px;
-  }
-
-  .pb-menu {
-    position: relative;
-  }
-
-  .pb-menu > summary {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    padding: 4px 8px;
-    border: 1px solid transparent;
-    cursor: pointer;
-    list-style: none;
+    gap: var(--muxui-semantic-layout-control-gap);
     white-space: nowrap;
   }
 
-  .pb-menu > summary::-webkit-details-marker {
-    display: none;
-  }
-
-  .pb-menu > summary:hover,
-  .pb-menu[open] > summary {
-    border-color: var(--pb-line);
-  }
-
-  .pb-menu__panel {
-    position: absolute;
-    top: calc(100% + 4px);
-    right: 0;
-    z-index: 40;
-    min-width: 200px;
-    border: 1px solid var(--pb-fg);
-    background: var(--pb-bg);
-  }
-
-  .pb-menu__panel a,
-  .pb-menu__panel button {
-    display: block;
-    box-sizing: border-box;
-    width: 100%;
-    padding: 6px 12px;
-    border: 0;
-    border-bottom: 1px solid var(--pb-line);
-    background: none;
-    color: inherit;
-    font: inherit;
-    text-align: left;
+  /* Links that act as the bar's primary action (Create post, Sign up): Mux's primary Button look. */
+  .pb-create,
+  .pb-cta {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--muxui-semantic-layout-control-gap);
+    block-size: var(--muxui-semantic-control-size-sm);
+    padding-inline: var(--muxui-semantic-layout-inset-small);
+    border-radius: var(--muxui-semantic-control-radius);
+    background: var(--muxui-semantic-selection-track);
+    color: var(--muxui-semantic-action-foreground);
+    font-family: var(--muxui-semantic-typography-label-font-family);
+    font-size: var(--muxui-semantic-typography-body-size);
+    font-weight: var(--muxui-semantic-typography-control-weight);
     text-decoration: none;
+  }
+
+  .pb-create:hover,
+  .pb-cta:hover {
+    background: var(--muxui-semantic-action-background-hover);
+    color: var(--muxui-semantic-action-foreground);
+  }
+
+  .pb-create svg {
+    inline-size: 1em;
+    block-size: 1em;
+  }
+
+  /* The account menu's trigger: Mux's Menu.Trigger is an unstyled button. */
+  .pb-account__trigger {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--muxui-semantic-layout-control-gap);
+    block-size: var(--muxui-semantic-control-size-sm);
+    padding-inline: var(--muxui-semantic-layout-inset-tight);
+    border: 0;
+    border-radius: var(--muxui-semantic-control-radius);
+    background: transparent;
+    color: var(--muxui-semantic-content-default);
+    font-family: var(--muxui-semantic-typography-label-font-family);
+    font-size: var(--muxui-semantic-typography-body-size);
+    font-weight: var(--muxui-semantic-typography-control-weight);
     cursor: pointer;
   }
 
-  .pb-menu__panel a:hover,
-  .pb-menu__panel button:hover {
-    background: var(--pb-hover);
+  .pb-account__trigger:hover {
+    background: var(--muxui-semantic-surface-hover);
   }
 
-  .pb-menu__panel form {
-    margin: 0;
+  .pb-problem {
+    display: flex;
+    flex-direction: column;
+    gap: var(--muxui-semantic-layout-inset-small);
+    padding-block: var(--muxui-semantic-layout-section-gap);
   }
 
-  .pb-menu__panel button[aria-pressed='true'] {
-    font-weight: 700;
-    box-shadow: inset 3px 0 var(--pb-fg);
+  .pb-problem__actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--muxui-semantic-layout-control-gap) var(--muxui-semantic-layout-inset-medium);
   }
 
-  .pb-avatar {
-    display: inline-grid;
-    place-items: center;
-    width: 24px;
-    height: 24px;
-    border: 1px solid var(--pb-fg);
-    font-size: 12px;
-    font-weight: 700;
-  }
-
-  /* Under the sticky top bar, so a jump to #pb-main (the drawer's close link) lands below it. */
-  .pb-app__content {
-    scroll-margin-top: 4rem;
-  }
-
-  /* Shown only while the drawer is open (see the phone rules below). */
-  .pb-scrim {
-    position: fixed;
-    inset: 0;
-    z-index: 70;
-    display: none;
-    background: rgb(0 0 0 / 0.5);
-  }
-
-  @media (max-width: 860px) {
+  /* Below 860 px the column and the HeaderNav bar give way to the phone bar and its drawer. */
+  @media (max-width: 859.98px) {
     .pb-app {
       grid-template-columns: minmax(0, 1fr);
     }
 
-    .pb-side {
-      position: fixed;
-      inset: 0 auto 0 0;
-      /* The desktop rule's align-self: start would size the drawer to its content, taller than
-         the screen with many communities and not scrollable; stretch pins it to the top and bottom. */
-      align-self: stretch;
-      z-index: 80;
-      display: none;
-      width: min(86vw, 300px);
-      height: auto;
-      border-right: 1px solid var(--pb-fg);
-    }
-
-    /* The drawer is open through :target (the menu link to #pb-side, before hydration and
-       without scripts) or through the shell's state once hydrated. */
-    .pb-side:target,
-    .pb-app[data-drawer] .pb-side {
-      display: block;
-    }
-
-    .pb-side:target ~ .pb-scrim,
-    .pb-app[data-drawer] .pb-scrim {
-      display: block;
-    }
-
-    /* Once the shell runs the drawer (data-managed) its state alone decides: a :target left
-       from before hydration, which dropping the hash does not clear, must not hold it open. */
-    .pb-app[data-managed]:not([data-drawer]) .pb-side,
-    .pb-app[data-managed]:not([data-drawer]) .pb-scrim {
-      display: none;
-    }
-
-    .pb-side__close,
-    .pb-top__menu {
-      display: inline-grid;
-      place-items: center;
-      min-width: 36px;
-      min-height: 36px;
-      padding: 0;
-      border: 1px solid var(--pb-line);
-      border-radius: 2px;
-      background: none;
-      color: inherit;
-      font-size: 18px;
-      text-decoration: none;
-      cursor: pointer;
-    }
-
-    .pb-side__close {
-      margin: 10px 14px 0;
-    }
-
+    .pb-app__side,
     .pb-top {
-      padding: 8px 10px;
+      display: none;
+    }
+
+    .pb-app__bar {
+      display: block;
+      position: sticky;
+      inset-block-start: 0;
+      z-index: 2;
+    }
+
+    .pb-app__bar .muxui-sidebar__mobile-logo {
+      flex: 1;
+      min-inline-size: 0;
+      gap: var(--muxui-semantic-layout-control-gap);
+    }
+
+    .pb-app__bar .pb-app__actions {
+      margin-inline-start: auto;
     }
 
     /* The name stays for assistive technology; only the avatar shows. */
     .pb-account__name {
       position: absolute;
-      width: 1px;
-      height: 1px;
+      inline-size: 1px;
+      block-size: 1px;
       overflow: hidden;
       clip-path: inset(50%);
       white-space: nowrap;
     }
+  }
+
+  /* Read by other areas until they move to Mux pieces (the admin layout's tab bar, the inbox
+     filter counts); kept here on Mux tokens until integration removes them. */
+  .admin-tabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--muxui-semantic-layout-inset-tight) var(--muxui-semantic-layout-inset-medium);
+    max-inline-size: 960px;
+    margin: var(--muxui-semantic-layout-inset-medium) auto 0;
+    padding: 0 var(--muxui-semantic-layout-inset-medium);
+    border-block-end: 1px solid var(--muxui-semantic-border-default);
+  }
+
+  .admin-tabs a {
+    padding-block: var(--muxui-semantic-layout-inset-tight);
+    border-block-end: 2px solid transparent;
+  }
+
+  .admin-tabs a[aria-current='page'] {
+    border-block-end-color: var(--muxui-semantic-selection-indicator);
+    font-weight: var(--muxui-semantic-typography-label-weight);
+  }
+
+  .pb-count {
+    margin-inline-start: auto;
+    padding: 0 var(--muxui-semantic-layout-inset-tight);
+    border-radius: var(--muxui-semantic-shape-pill-radius);
+    background: var(--muxui-semantic-content-default);
+    color: var(--muxui-semantic-surface-background);
+    font-size: var(--muxui-semantic-typography-badge-size);
   }
 }

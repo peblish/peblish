@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { prefsCookie, skipWithoutKit } from '../support/kit.ts';
+import { skipWithoutKit } from '../support/kit.ts';
 import { gotoHydrated } from '../support/route-marker.ts';
 
 // PostCard in three densities, the always-visible density control, and the display cookie:
@@ -62,9 +62,10 @@ test('the density control switches the feed and the choice survives a reload', a
   await expect(page.getByRole('group', { name: 'View' }).getByRole('button', { name: 'Compact' })).toHaveAttribute('aria-pressed', 'true');
 
   // The server rendered it: the HTML itself carries the density, so there is no flash before hydration.
+  // A stored true black (no longer offered) renders as Mux UI's dark scheme.
   const html = await (await request.get('/kit', { headers: { cookie: 'peblish_prefs=density=card&scheme=black' } })).text();
   expect(/data-testid="kit-feed"[^]*?<article[^>]*data-density="(\w+)"/.exec(html)?.[1]).toBe('card');
-  expect(html).toMatch(/<html[^>]*data-scheme="black"/);
+  expect(html).toMatch(/<html[^>]*data-scheme="dark"/);
   expect(html).toMatch(/<html[^>]*data-muxui-color-scheme="dark"/);
 });
 
@@ -77,24 +78,25 @@ test('two quick changes both reach the cookie, on a slow connection', async ({ p
   await session.send('Network.enable');
   await session.send('Network.emulateNetworkConditions', { offline: false, latency: 400, downloadThroughput: -1, uploadThroughput: -1 });
 
-  await page.getByText('Appearance', { exact: true }).click();
-  await page.getByRole('button', { name: 'True black' }).click();
+  await page.getByRole('banner').getByRole('button', { name: 'Appearance' }).click();
+  await page.getByRole('radio', { name: 'Dark' }).click();
+  await page.keyboard.press('Escape');
   await page.getByRole('group', { name: 'View' }).getByRole('button', { name: 'Compact' }).click();
   const stored = async () => (await context.cookies()).find(({ name }) => name === 'peblish_prefs')?.value;
-  await expect.poll(stored, { timeout: 10_000 }).toBe('density=compact&scheme=black');
+  await expect.poll(stored, { timeout: 10_000 }).toBe('density=compact&scheme=dark');
   // The last answer has landed: the cookie does not drift back.
   await page.waitForTimeout(1_500);
-  expect(await stored()).toBe('density=compact&scheme=black');
+  expect(await stored()).toBe('density=compact&scheme=dark');
 
   await session.send('Network.emulateNetworkConditions', { offline: false, latency: 0, downloadThroughput: -1, uploadThroughput: -1 });
   await page.reload();
-  await expect(page.locator('html')).toHaveAttribute('data-scheme', 'black');
+  await expect(page.locator('html')).toHaveAttribute('data-scheme', 'dark');
   await expect(page.getByTestId('kit-feed').locator('article').first()).toHaveAttribute('data-density', 'compact');
 });
 
 test('a page with scripts off still shows the stored density and scheme', async ({ browser, baseURL }) => {
   const context = await browser.newContext({ javaScriptEnabled: false });
-  await context.addCookies([{ ...prefsCookie('compact', 'black'), url: baseURL! }]);
+  await context.addCookies([{ name: 'peblish_prefs', value: 'density=compact&scheme=black', url: baseURL! }]);
   const page = await context.newPage();
   await page.goto('/kit');
   await expect(page.getByTestId('kit-feed').locator('article').first()).toHaveAttribute('data-density', 'compact');
@@ -104,17 +106,18 @@ test('a page with scripts off still shows the stored density and scheme', async 
   await context.close();
 });
 
-test('the appearance menu changes the scheme: true black is Mux UI dark, and it is stored', async ({ page, context }) => {
+test('the appearance popover changes the scheme, and it is stored', async ({ page, context }) => {
   await gotoHydrated(page, '/kit');
-  await page.getByText('Appearance', { exact: true }).click();
-  await page.getByRole('button', { name: 'True black' }).click();
-  await expect(page.locator('html')).toHaveAttribute('data-scheme', 'black');
+  await page.getByRole('banner').getByRole('button', { name: 'Appearance' }).click();
+  await page.getByRole('radio', { name: 'Dark' }).click();
+  await expect(page.locator('html')).toHaveAttribute('data-scheme', 'dark');
   await expect(page.locator('html')).toHaveAttribute('data-muxui-color-scheme', 'dark');
-  // The app has no third scheme: the body takes Mux UI's dark surface, not #000.
+  // Mux UI's own dark surface, not #000.
   expect(await page.evaluate(() => getComputedStyle(document.body).backgroundColor)).not.toBe('rgb(0, 0, 0)');
-  await expect.poll(async () => (await context.cookies()).find(({ name }) => name === 'peblish_prefs')?.value).toContain('scheme=black');
+  await expect.poll(async () => (await context.cookies()).find(({ name }) => name === 'peblish_prefs')?.value).toContain('scheme=dark');
+  await expect(page.getByRole('radio', { name: 'Dark' })).toHaveAttribute('aria-checked', 'true');
 
-  await page.getByRole('button', { name: 'Light' }).click();
+  await page.getByRole('radio', { name: 'Light' }).click();
   await expect(page.locator('html')).toHaveAttribute('data-muxui-color-scheme', 'light');
 });
 
