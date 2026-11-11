@@ -8,7 +8,7 @@ import { seedFollow } from '../../packages/core/src/testing/seed-c1.ts';
 // JSON; every run uses fresh names, so the lane database can keep earlier runs. With `admin`, it
 // also prints a fresh admin with two-factor on (`admin.name`, `admin.totpSecret`), the spec's own,
 // so no other spec resets its secret mid-run. With `remote`, the first person also follows a
-// remote community, not listed in the directory, whose name starts with a right-to-left override
+// remote community whose name starts with a right-to-left override
 // (`remote`, its name). Escapes only: this file holds no control character.
 try {
   const suffix = Math.random().toString(36).slice(2, 8);
@@ -22,11 +22,7 @@ try {
   let remote: string | undefined;
   if (process.argv[2] === 'remote') {
     const far = await seedInstance(`bidi-${suffix}.example`, false);
-    const community = await seedActor(far, 'Group', `\u202Eshell_${suffix}`, {
-      displayName: `\u202E\u2066Shell ${suffix}`,
-      // Off the directory: its page would draw U+FFFD, a glyph outside the font subset (payload budget).
-      discoverable: false,
-    });
+    const community = await seedActor(far, 'Group', `\u202Eshell_${suffix}`, { displayName: `\u202E\u2066Shell ${suffix}` });
     await seedFollow({ id: first.actorId }, community);
     remote = community.name;
   }

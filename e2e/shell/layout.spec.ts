@@ -180,7 +180,7 @@ test('a remote community whose name starts with a directional control shows a le
   const communities = page.getByRole('complementary', { name: 'Sidebar' }).getByRole('navigation', { name: 'Communities' });
   const row = communities.getByRole('link', { name: new RegExp(remote.slice(1)) });
   await expect(row).toBeVisible();
-  // The avatar's initial is the first letter after the control; the handle shows the control as U+FFFD.
+  // The avatar's initial is the first letter after the control; the handle shows the control as the replacement mark (U+203D).
   await expect(row.locator('.muxui-avatar')).toHaveText('S');
-  await expect(row.locator('.pb-handle__name')).toHaveText(`!\uFFFD${remote.slice(1)}`);
+  await expect(row.locator('.pb-handle__name')).toHaveText(`!\u203D${remote.slice(1)}`);
 });

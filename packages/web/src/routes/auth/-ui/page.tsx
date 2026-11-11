@@ -1,18 +1,6 @@
 import { Card } from '@peblish/ui/components/card';
-import { notFound } from '@tanstack/react-router';
-import { type } from 'arktype';
 import type { ReactNode } from 'react';
 import { useTranslate } from '../../../i18n/use-translate.ts';
-import authCss from './auth.css?url';
-
-/** The stylesheet every lane A page links (route head). */
-export const authHead = () => ({ links: [{ rel: 'stylesheet', href: authCss }] });
-
-/**
- * A search value as a string: TanStack Router parses ?a=1 into a number, so values that can
- * look numeric (tokens, flags) are taken either way.
- */
-export const SearchText = type('string | number').pipe((value) => String(value));
 
 /**
  * One task on its own page (sign in, sign up, two-factor, reset, verify, an invite): an outlined
@@ -34,13 +22,3 @@ export function useDate() {
   const format = new Intl.DateTimeFormat(locale, { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
   return (iso: string) => format.format(new Date(iso));
 }
-
-/**
- * A route group's beforeLoad (routes/{auth,invite,settings,admin}/route.tsx): the group's own
- * path has no page, so /settings answers 404 like any unknown path, not an empty layout.
- */
-export const noGroupPage =
-  (group: string) =>
-  ({ location }: { location: { pathname: string } }) => {
-    if (location.pathname.replace(/\/+$/, '') === group) throw notFound();
-  };

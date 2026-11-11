@@ -17,10 +17,11 @@ import { translatePlural } from '../../../i18n/translate.ts';
 import { useTranslate } from '../../../i18n/use-translate.ts';
 import { forbidden, formSession, pageSession, principalOf, readForm, sameOrigin } from '../../../server/auth.ts';
 import { useRouteHydrated } from '../../../shell/hydration.ts';
-import { SearchText } from '../../auth/-ui/page.tsx';
+import { SearchText } from '../../auth/-route.ts';
 import { accessOf } from '../settings/-access.ts';
 import { StatusCell } from './-status.tsx';
-import { AccessNotice, AdminTitle, adminHead } from '../settings/-ui.tsx';
+import { adminHead } from '../settings/-head.ts';
+import { AccessNotice, AdminTitle } from '../settings/-ui.tsx';
 import { shippedPages } from './-bundled.ts';
 
 // /admin/pages (R2 pick admin-tabs, its Pages tab): the ten pages in English and German with

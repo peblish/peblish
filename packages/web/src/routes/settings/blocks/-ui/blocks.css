@@ -13,4 +13,10 @@
   .blk-add [role='alert'] {
     flex-basis: 100%;
   }
+  /* The page's overflow-wrap: anywhere lets a table column shrink to one letter a line ("Blocke d"
+     at 320px). The headings and the details keep whole words; a long name still breaks anywhere. */
+  .blk-list .muxui-table__column,
+  .blk-list .blk-details {
+    overflow-wrap: break-word;
+  }
 }

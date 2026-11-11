@@ -102,6 +102,8 @@ function ResolveForm({ q, initial }: { q: string; initial: ResolveError | undefi
         defaultValue={q}
         maxLength={maxLookupLength}
         autoComplete="off"
+        autoCapitalize="none"
+        spellCheck={false}
         description={t('directory', 'resolve.hint')}
         required
       />

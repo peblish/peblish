@@ -366,3 +366,20 @@ test.describe('review cases', () => {
     await expectAccessible(page);
   });
 });
+
+test.describe('a remote handle and a title with directional controls', () => {
+  test('the Mark read button is named without them, each shown as the replacement mark', async ({ page }) => {
+    test.setTimeout(120_000);
+    const { hostile } = JSON.parse(
+      execFileSync('node', ['e2e/notifications/seed.ts', 'hostile'], { cwd: join(import.meta.dirname, '../..'), encoding: 'utf8' }),
+    ) as { hostile: { reader: string; handle: string; title: string } };
+    await signedIn(page, hostile.reader);
+    await gotoHydrated(page, '/notifications');
+    const button = page.getByRole('button', { name: /^Mark read/ });
+    await expect(button).toHaveCount(1);
+    const name = (await button.getAttribute('aria-label')) ?? '';
+    expect(name).not.toMatch(/[\u202a-\u202e\u2066-\u2069\u200e\u200f\u061c]/);
+    const shown = (text: string) => text.replace(/[\u202a-\u202e\u2066-\u2069\u200e\u200f\u061c]/g, '\u203D');
+    expect(name).toBe(`Mark read: @${shown(hostile.handle)}, ${shown(hostile.title)}`);
+  });
+});

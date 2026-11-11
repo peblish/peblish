@@ -1,13 +1,14 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { expect, test } from 'vitest';
-import { BidiText, Handle, neutraliseBidi } from './handle.tsx';
+import { BidiText, Handle, handleHost, neutraliseBidi } from './handle.tsx';
 
 // Remote names and hosts come from other servers. A directional override (U+202E) or isolate
 // (U+2066) in one could reorder what follows it, so `evil@evil.example` could be drawn to read
 // as another account on another server. Escapes only: this file holds no control character.
 const controls = '‪‫‬‭‮⁦⁧⁨⁩‎‏؜';
 const anyControl = /[‪-‮⁦-⁩‎‏؜]/;
-const mark = '�';
+// The replacement mark: U+203D, which the Inter Latin slice draws (U+FFFD would load the whole font).
+const mark = '\u203D';
 
 test('every directional control character is neutralised, and nothing else changes', () => {
   expect(neutraliseBidi(`a${controls}b`, '')).toBe('ab');
@@ -45,4 +46,10 @@ test('the host is what follows the last @, so an @ inside a remote username cann
 
 test('a display name is an isolated run with its controls removed', () => {
   expect(renderToStaticMarkup(<BidiText text={'Ana‮⁧ (admin)‏'} />)).toBe('<bdi>Ana (admin)</bdi>');
+});
+
+test('the host of a handle is what follows its last @, and a local handle has none', () => {
+  expect(handleHost('news@lemmy.world')).toBe('lemmy.world');
+  expect(handleHost('alice@good.example@evil.example')).toBe('evil.example');
+  expect(handleHost('news')).toBe('');
 });

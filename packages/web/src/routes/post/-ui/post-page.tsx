@@ -1,8 +1,8 @@
-import { useMemo, type ReactNode } from 'react';
+import type { ReactNode } from 'react';
 import { Badge } from '@peblish/ui/components/badge';
 import { Card } from '@peblish/ui/components/card';
 import { Group } from '@peblish/ui/components/group';
-import { Handle } from '@peblish/ui/components/handle';
+import { Handle, neutraliseBidi } from '@peblish/ui/components/handle';
 import { Image } from '@peblish/ui/components/image';
 import { Link } from '@peblish/ui/components/link';
 import { Notice } from '@peblish/ui/components/notice';
@@ -45,7 +45,6 @@ function PostContent({ data, error }: { data: Extract<PostPageData, { kind: 'pos
   const count = post.counts.comments;
   const shownError = asPostError(error);
   const voteLabels = useVoteLabels();
-  const now = useMemo(() => new Date(data.now), [data.now]);
   const badgeLabels = { admin: t('posts', 'badge.admin'), moderator: t('posts', 'badge.moderator'), op: '' };
   // The slots get the post for a signed-in viewer; a removed or deleted post still has them (a moderator restores it).
   const actions: ContentActionProps | null = viewerId
@@ -94,11 +93,25 @@ function PostContent({ data, error }: { data: Extract<PostPageData, { kind: 'pos
         {data.image ? (
           post.url ? (
             <Link className="post-image" href={post.url} rel="noopener noreferrer nofollow ugc">
-              <Image src={data.image} alt={post.title} loading="lazy" radius="md" fit="contain" className="post-image__img" />
+              <Image
+                src={data.image}
+                alt={neutraliseBidi(post.title)}
+                loading="lazy"
+                radius="md"
+                fit="contain"
+                className="post-image__img"
+              />
             </Link>
           ) : (
             <div className="post-image">
-              <Image src={data.image} alt={post.title} loading="lazy" radius="md" fit="contain" className="post-image__img" />
+              <Image
+                src={data.image}
+                alt={neutraliseBidi(post.title)}
+                loading="lazy"
+                radius="md"
+                fit="contain"
+                className="post-image__img"
+              />
             </div>
           )
         ) : (
@@ -152,7 +165,7 @@ function PostContent({ data, error }: { data: Extract<PostPageData, { kind: 'pos
                   <Badge kind={post.authorBadge} labels={badgeLabels} />
                 </>
               )}{' '}
-              · <Time iso={post.publishedAt} locale={locale} now={now} />
+              · <Time iso={post.publishedAt} locale={locale} format="date" />
               {data.edited && <> · {t('posts', 'meta.edited', { date: data.edited })}</>}
             </Text>
             {body}

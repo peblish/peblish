@@ -27,7 +27,8 @@ import { forbidden, formSession, pageSession, principalOf, readForm, sameOrigin 
 import { useRouteHydrated } from '../../../shell/hydration.ts';
 import { adminPaths } from '../../../shell/paths.ts';
 import { asFormError, errorKey } from '../../auth/-ui/errors.ts';
-import { SearchText, useDate } from '../../auth/-ui/page.tsx';
+import { SearchText } from '../../auth/-route.ts';
+import { useDate } from '../../auth/-ui/page.tsx';
 import { Denial } from '../-denial.tsx';
 import { accessOf } from '../settings/-access.ts';
 import { AdminTitle } from '../settings/-ui.tsx';

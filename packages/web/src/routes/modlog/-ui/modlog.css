@@ -52,7 +52,7 @@
     align-items: baseline;
     gap: var(--muxui-semantic-layout-dense-gap) var(--muxui-semantic-layout-group-gap);
   }
-  .modlog-l1 time {
+  .modlog-l1 .modlog-time {
     font-variant-numeric: tabular-nums;
   }
   .modlog-l2 {

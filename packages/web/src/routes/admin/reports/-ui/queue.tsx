@@ -12,6 +12,7 @@ import { Table } from '@peblish/ui/components/table';
 import { Text } from '@peblish/ui/components/text';
 import { TextAreaField } from '@peblish/ui/components/text-area';
 import { TextField } from '@peblish/ui/components/text-field';
+import { Time } from '@peblish/ui/components/time';
 import { useRouter } from '@tanstack/react-router';
 import { type } from 'arktype';
 import { useEffect, useState, type FormEvent, type MouseEvent, type ReactNode } from 'react';
@@ -20,35 +21,9 @@ import { rich } from '../../../auth/-ui/form.tsx';
 import { useDate } from '../../../auth/-ui/page.tsx';
 import { communityPath, commentPath, postPath, userPath } from '../../../../shell/paths.ts';
 import { asReportError, errorKey, type ReportError } from '../../../report/-ui/errors.ts';
+import { queueHref, type QueueView } from '../-href.ts';
 
 const Answer = type({ 'redirect?': 'string', 'error?': 'string' });
-
-/** The queue's own address with the tab, community and sort the viewer chose, for links and for where a form returns. */
-export type QueueView = {
-  tab: QueueTab;
-  community: string | null;
-  sort: string;
-  cursor?: string | null;
-  /** The group whose quote is shown. */
-  show?: string | null;
-  /** The group whose reporters and details are shown. */
-  details?: string | null;
-  /** The group whose Remove form the server renders open, for its link without scripts. */
-  remove?: string | null;
-};
-
-export const queueHref = (view: QueueView, change: Partial<QueueView> = {}) => {
-  const next = { ...view, ...change };
-  const params = new URLSearchParams();
-  if (next.tab !== 'open') params.set('tab', next.tab);
-  if (next.community) params.set('community', next.community);
-  params.set('sort', next.sort);
-  if (next.cursor) params.set('cursor', next.cursor);
-  if (next.show) params.set('show', next.show);
-  if (next.details) params.set('details', next.details);
-  if (next.remove) params.set('remove', next.remove);
-  return `/admin/reports?${params}`;
-};
 
 const subjectKind = (subject: QueueSubject) =>
   subject.kind === 'actor' ? (subject.person.kind === 'Group' ? 'community' : 'person') : subject.kind === 'gone' ? 'post' : subject.kind;
@@ -91,27 +66,6 @@ function Toggle({ shown, href, onToggle, children }: { shown: boolean; href: str
     >
       {children}
     </Link>
-  );
-}
-
-/**
- * Age as the biggest whole unit, counted from when the page's data was read. A raw `time` until
- * the shared Time can print a date as well as an age: it waits for Time's `format` (root swaps it).
- */
-function Age({ iso, now }: { iso: string; now: number }) {
-  const { t } = useTranslate();
-  const date = useDate();
-  const minutes = Math.max(0, Math.floor((now - new Date(iso).getTime()) / 60_000));
-  const text =
-    minutes < 60
-      ? t('reports', 'queue.age.minutes', { count: minutes })
-      : minutes < 1440
-        ? t('reports', 'queue.age.hours', { count: Math.floor(minutes / 60) })
-        : t('reports', 'queue.age.days', { count: Math.floor(minutes / 1440) });
-  return (
-    <time dateTime={iso} title={date(iso)}>
-      {text}
-    </time>
   );
 }
 
@@ -421,7 +375,7 @@ export function QueueTable({
   view: QueueView;
   now: number;
 }) {
-  const { t } = useTranslate();
+  const { t, locale } = useTranslate();
   useFieldKeys();
   return (
     <Card.Root variant="outlined" padding="sm" className="rq-table">
@@ -438,7 +392,7 @@ export function QueueTable({
           values: {
             content: <Content group={group} view={view} />,
             reports: <Reports group={group} view={view} />,
-            age: <Age iso={group.oldestAt} now={now} />,
+            age: <Time iso={group.oldestAt} locale={locale} now={new Date(now)} />,
             actions: <Actions group={group} tab={tab} admin={admin} view={view} />,
           },
         }))}

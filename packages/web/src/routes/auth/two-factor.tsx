@@ -11,7 +11,8 @@ import { forbidden, forwardedHeaders, readForm, respond, safeRedirect, sameOrigi
 import { useRouteHydrated } from '../../shell/hydration.ts';
 import { asFormError } from './-ui/errors.ts';
 import { AuthForm, Field, Hidden } from './-ui/form.tsx';
-import { AuthCard, authHead, SearchText } from './-ui/page.tsx';
+import { authHead, SearchText } from './-route.ts';
+import { AuthCard } from './-ui/page.tsx';
 
 const Search = type({ 'error?': SearchText, 'redirect?': SearchText, 'recovery?': SearchText });
 const Body = type({ code: 'string', method: "'totp' | 'recovery'", 'redirect?': 'string' });

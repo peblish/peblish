@@ -21,7 +21,7 @@ export function LegalPage({ data }: { data: LegalPageData }) {
           <Text as="h1" variant="heading" size="md" className="legal-title">
             {page.title}
           </Text>
-          <Prose html={page.html} className="legal-body" />
+          <Prose html={page.html} />
         </article>
       ) : (
         about && (

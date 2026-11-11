@@ -1,26 +1,12 @@
 import { TextArea } from '@peblish/ui/components/mux-text-area';
 import { Text } from '@peblish/ui/components/text';
 import type { ReactNode, TextareaHTMLAttributes } from 'react';
-import { DEFAULT_LOCALE } from '../../../i18n/negotiate.ts';
-import { translate, type MessageKey } from '../../../i18n/translate.ts';
 import { useTranslate } from '../../../i18n/use-translate.ts';
-import { rootTitleData } from '../../../shell/title.ts';
 import { Denial } from '../-denial.tsx';
 import type { Access } from './-access.ts';
 
 // Pieces the admin Settings and Pages routes share. The admin stylesheet is linked by the
 // admin layout route (admin/route.tsx), so every admin page has it.
-
-/**
- * An admin route's head: the title "<page> · <site>" (the shell's table has no entry for these
- * routes, so each names its own).
- */
-export const adminHead =
-  (title: MessageKey<'admin'>) =>
-  ({ matches }: { matches: readonly { routeId: string; loaderData?: unknown }[] }) => {
-    const { locale, site } = rootTitleData(matches.find((match) => match.routeId === '__root__')?.loaderData, DEFAULT_LOCALE);
-    return { meta: [{ title: `${translate(locale, 'admin', title)} · ${site}` }] };
-  };
 
 /** An admin page's heading: Mux heading text on an h1. */
 export function AdminTitle({ children }: { children: ReactNode }) {

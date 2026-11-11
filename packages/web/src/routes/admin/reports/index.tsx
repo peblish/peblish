@@ -13,11 +13,12 @@ import { type } from 'arktype';
 import { useTranslate } from '../../../i18n/use-translate.ts';
 import { forbidden, formSession, principalOf, readForm, sameOrigin } from '../../../server/auth.ts';
 import { useRouteHydrated } from '../../../shell/hydration.ts';
-import { SearchText } from '../../auth/-ui/page.tsx';
+import { SearchText } from '../../auth/-route.ts';
 import { answer } from '../../report/-form.ts';
 import { asReportError, errorKey } from '../../report/-ui/errors.ts';
 import { loadQueue } from './-load.ts';
-import { queueHref, QueueTable, type QueueView } from './-ui/queue.tsx';
+import { queueHref, type QueueView } from './-href.ts';
+import { QueueTable } from './-ui/queue.tsx';
 import queueCss from './-ui/queue.css?url';
 
 // /admin/reports: the report queue, open to moderators (their communities' groups, and their

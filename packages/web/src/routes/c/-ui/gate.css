@@ -43,6 +43,11 @@
     gap: var(--muxui-semantic-layout-control-gap);
     align-items: start;
   }
+  /* Mux marks a required native select's label with an asterisk and its other fields with
+     nothing; Day and Year (and every other field here) carry no mark, so Month does not either. */
+  .gate-date .muxui-select-native__label::after {
+    content: none;
+  }
   .gate-hide {
     display: inline-block;
     margin: 0 0 0 var(--muxui-semantic-layout-tight-gap);

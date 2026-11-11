@@ -27,3 +27,12 @@ test('a message without the invalid flag is not shown, and the native limits rea
   // HTML attribute names ignore case; React writes this one as minLength.
   for (const attribute of [/ min="1"/, / max="50"/, / minlength="2"/i, / pattern="\[0-9\]\+"/]) expect(input).toMatch(attribute);
 });
+
+test('autoCapitalize and spellCheck reach the input, and are left off when not given', () => {
+  const input = controlTag(renderToString(<TextField label="Handle" name="q" autoCapitalize="none" spellCheck={false} />), 'input');
+  expect(input).toMatch(/ autocapitalize="none"/i);
+  // HTML attribute names ignore case; React writes these as autoCapitalize and spellCheck.
+  expect(input).toMatch(/ spellcheck="false"/i);
+  const plain = controlTag(renderToString(<TextField label="Name" name="name" />), 'input');
+  expect(plain).not.toMatch(/autocapitalize|spellcheck/i);
+});

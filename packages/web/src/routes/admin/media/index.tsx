@@ -13,7 +13,7 @@ import { useTranslate } from '../../../i18n/use-translate.ts';
 import { forbidden, formSession, pageSession, principalOf, readForm, sameOrigin } from '../../../server/auth.ts';
 import { useRouteHydrated } from '../../../shell/hydration.ts';
 import { adminPaths } from '../../../shell/paths.ts';
-import { SearchText } from '../../auth/-ui/page.tsx';
+import { SearchText } from '../../auth/-route.ts';
 import { Denial } from '../-denial.tsx';
 import { accessOf } from '../settings/-access.ts';
 import { Evidence, Failed, Hashes, Review, sections, Status, StatusStrip, SubNav, Warning, type Section } from './-ui/sections.tsx';
