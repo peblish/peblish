@@ -20,6 +20,10 @@ export interface TextFieldProps {
   placeholder?: string;
   autoComplete?: HTMLInputAutoCompleteAttribute;
   inputMode?: 'text' | 'numeric' | 'email' | 'tel' | 'url' | 'search' | 'decimal' | 'none';
+  /** `none` for a value that is not prose (a handle, a link), so a phone keyboard does not capitalise it. */
+  autoCapitalize?: 'none' | 'sentences' | 'words' | 'characters';
+  /** `false` for a value the spelling checker would only mark wrong. */
+  spellCheck?: boolean;
   maxLength?: number;
   minLength?: number;
   pattern?: string;
@@ -53,6 +57,8 @@ export function TextField({
   placeholder,
   autoComplete,
   inputMode,
+  autoCapitalize,
+  spellCheck,
   maxLength,
   minLength,
   pattern,
@@ -90,6 +96,8 @@ export function TextField({
         placeholder={placeholder}
         autoComplete={autoComplete}
         inputMode={inputMode}
+        autoCapitalize={autoCapitalize}
+        spellCheck={spellCheck}
         maxLength={maxLength}
         minLength={minLength}
         pattern={pattern}
