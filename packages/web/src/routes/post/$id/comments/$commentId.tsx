@@ -10,9 +10,16 @@ import { PermalinkPage } from './-ui/permalink-page.tsx';
 // under it. The page is personal like the post's (the gate, tombstones and the author's forms
 // depend on who looks), so the server function sets cache-control: no-store through pageSession.
 // ?sort= picks the order of the replies and ?after= (a cursor the page handed out) the page of
-// them; ?edit= opens the author's edit form (for a browser without JavaScript); ?commentError= carries a refusal of a form without JavaScript, ?error= one of the NSFW gate's.
+// them; ?edit= opens the author's edit form and ?removed= the list of removed comments (for a browser without JavaScript); ?commentError= carries a refusal of a form without JavaScript, ?error= one of the NSFW gate's.
 
-const Search = type({ 'sort?': 'unknown', 'after?': 'unknown', 'edit?': 'unknown', 'commentError?': 'unknown', 'error?': 'unknown' });
+const Search = type({
+  'sort?': 'unknown',
+  'after?': 'unknown',
+  'edit?': 'unknown',
+  'removed?': 'unknown',
+  'commentError?': 'unknown',
+  'error?': 'unknown',
+});
 
 export const Route = createFileRoute('/post/$id/comments/$commentId')({
   validateSearch: Search,

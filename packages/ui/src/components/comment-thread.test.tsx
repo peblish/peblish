@@ -112,7 +112,7 @@ describe('a comment that is both deleted and removed', () => {
   });
 });
 
-test('times from the server are printed as given', () => {
+test('ages are counted from the clock the page passes, so the server and the browser print the same', () => {
   const html = renderToStaticMarkup(
     <CommentThread
       comments={[comment('a', null, 0)]}
@@ -121,10 +121,10 @@ test('times from the server are printed as given', () => {
       authorHref={() => '/u/jun'}
       labels={labels}
       locale="en-US"
-      times={new Map([['a', { age: '3h', title: 'Nov 9, 2026, 9:00 AM UTC' }]])}
+      now={new Date('2026-11-09T12:00:00Z')}
     />,
   );
-  expect(html).toContain('<time dateTime="2026-11-09T09:00:00Z" title="Nov 9, 2026, 9:00 AM UTC">3h</time>');
+  expect(html).toMatch(/<time dateTime="2026-11-09T09:00:00Z" title="Nov 9, 2026, 09:00 (AM )?UTC">3h<\/time>/);
 });
 
 describe('a comment by someone the viewer blocks', () => {
@@ -171,6 +171,7 @@ test('each comment folds with a named Mux IconButton that says whether it is ope
   expect(html.match(/class="muxui-icon-button[^"]*"/g)).toHaveLength(2);
   expect(html.match(/aria-expanded="true"/g)).toHaveLength(2);
   expect(html).toContain('aria-label="Collapse"');
-  // The thread line is a mouse target only.
-  expect(html).toContain('<span class="pb-comment__line" aria-hidden="true">');
+  // The thread line is the fold button's target (comment-thread.css), not an element of its own.
+  expect(html).toContain('data-lined="true"');
+  expect(html).not.toContain('<span class="pb-comment__line"');
 });

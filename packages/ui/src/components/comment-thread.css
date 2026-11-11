@@ -14,6 +14,7 @@
   }
 
   .pb-comment {
+    position: relative;
     padding-block-start: var(--muxui-semantic-layout-tight-gap);
   }
 
@@ -27,6 +28,22 @@
 
   .pb-comment__fold {
     color: var(--muxui-semantic-content-muted);
+  }
+
+  /* A wide target on the thread line for a mouse: the fold button's own box stays where it is, and
+     its ::after runs down the line beside the replies, so a click there is a click on the button.
+     The button is static so the ::after is placed against the comment (Mux's relative position
+     only places a pending spinner, which a fold button never shows). */
+  .pb-comment[data-lined] > .pb-comment__head > .pb-comment__fold {
+    position: static;
+  }
+
+  .pb-comment[data-lined] > .pb-comment__head > .pb-comment__fold::after {
+    content: '';
+    position: absolute;
+    inset-block: calc(var(--muxui-semantic-layout-tight-gap) + var(--pb-comment-rail)) 0;
+    inset-inline-start: calc(var(--pb-comment-rail) / 2 - var(--muxui-semantic-layout-tight-gap));
+    inline-size: calc(var(--muxui-semantic-layout-tight-gap) * 2);
   }
 
   .pb-comment__author {
@@ -63,23 +80,16 @@
 
   /* The levels under a comment sit in a column with a line down its start edge, under the fold button. */
   .pb-comment__kids {
-    position: relative;
     margin-block-start: var(--muxui-semantic-layout-tight-gap);
     margin-inline-start: calc(var(--pb-comment-rail) / 2);
     padding-inline-start: var(--muxui-semantic-layout-tight-gap);
     border-inline-start: 1px solid var(--muxui-semantic-border-subtle);
   }
 
-  .pb-comment__kids:has(> .pb-comment__line:hover) {
+  .pb-comment[data-lined]:has(> .pb-comment__head > .pb-comment__fold:hover)
+    > .pb-comment__main
+    > .pb-comment__kids:not(.pb-comment__more) {
     border-inline-start-color: var(--muxui-semantic-border-strong);
-  }
-
-  .pb-comment__line {
-    position: absolute;
-    inset-block: 0;
-    inset-inline-start: calc(var(--muxui-semantic-layout-tight-gap) * -1);
-    inline-size: calc(var(--muxui-semantic-layout-tight-gap) * 2);
-    cursor: pointer;
   }
 
   .pb-comment__more {

@@ -47,8 +47,6 @@ export interface CommentThreadProps {
   authorHref: (comment: CommentView) => string;
   labels: CommentThreadLabels;
   locale: string;
-  /** Each comment's age and full date as text, formatted by the server so hydration formats nothing; a comment without one prints its age from the clock. */
-  times?: ReadonlyMap<string, { age: string; title: string }>;
   onVote?: (comment: CommentView, value: Vote) => void | Promise<void>;
   /** The viewer cannot vote (signed out). */
   voteDisabled?: boolean;
@@ -84,7 +82,6 @@ interface RowContext {
   authorHref: CommentThreadProps['authorHref'];
   labels: CommentThreadLabels;
   locale: string;
-  times: CommentThreadProps['times'];
   voteDisabled: boolean | undefined;
   renderActions: CommentThreadProps['renderActions'];
   maxDepth: number;
@@ -125,10 +122,11 @@ const CommentRow = memo(function CommentRow({ node, level, ctx }: { node: Commen
   const capped = level >= ctx.maxDepth - 1;
   const more = capped ? replies + missingBelow(node) : unloadedReplies(node);
   const href = more > 0 ? ctx.continueHref(comment) : null;
-  const stamp = ctx.times?.get(comment.id);
+  // Replies drawn under this comment: the thread line beside them is the fold button's target too.
+  const lined = !isFolded && !capped && node.children.length > 0;
 
   return (
-    <li className="pb-comment" id={`comment-${comment.id}`} data-folded={isFolded || undefined}>
+    <li className="pb-comment" id={`comment-${comment.id}`} data-folded={isFolded || undefined} data-lined={lined || undefined}>
       <div className="pb-comment__head">
         <IconButton
           size="sm"
@@ -154,14 +152,7 @@ const CommentRow = memo(function CommentRow({ node, level, ctx }: { node: Commen
           </>
         )}
         <Text size="sm" color="muted">
-          ·{' '}
-          {stamp ? (
-            <time dateTime={comment.publishedAt} title={stamp.title}>
-              {stamp.age}
-            </time>
-          ) : (
-            <Time iso={comment.publishedAt} locale={ctx.locale} now={ctx.now} />
-          )}
+          · <Time iso={comment.publishedAt} locale={ctx.locale} now={ctx.now} />
           {comment.editedAt && ` · ${labels.edited}`}
         </Text>
       </div>
@@ -208,10 +199,8 @@ const CommentRow = memo(function CommentRow({ node, level, ctx }: { node: Commen
             )}
             {ctx.renderActions?.(comment)}
           </div>
-          {!capped && node.children.length > 0 && (
+          {lined && (
             <div className="pb-comment__kids">
-              {/* A wide target on the thread line for a mouse; the fold button above is the control for everyone else. */}
-              <span className="pb-comment__line" aria-hidden="true" onClick={toggle} />
               <ul className="pb-comment__list">
                 {node.children.map((child) => (
                   <CommentRow key={child.comment.id} node={child} level={level + 1} ctx={ctx} />
@@ -237,14 +226,16 @@ const CommentRow = memo(function CommentRow({ node, level, ctx }: { node: Commen
 });
 
 /**
- * The comment tree (thread-nested), from Mux UI parts: indented levels with a clickable
- * thread line drawn in Mux border tokens, a fold IconButton per comment, low-score comments folded, removed and deleted comments as a note (one
+ * The comment tree (thread-nested), from Mux UI parts: indented levels with a thread line drawn
+ * in Mux border tokens, a fold IconButton per comment (whose target runs down that line, so a
+ * click on the line folds: comment-thread.css), low-score comments folded, removed and deleted comments as a note (one
  * label for a comment that is both: removed), a comment by someone the viewer blocks as a note
  * under its author line (its replies stay), and a "Continue this thread" link wherever the
  * list leaves replies out, because the depth cap cuts the branch or the server cut a branch it
  * only partly sent. It fetches nothing: the page passes the list and the callbacks.
  *
- * Each comment is a memoised row. The event callbacks (onVote, onReply, onShare) may change
+ * Pass `now` (the server's clock, sent with the data) so the server and the browser print the
+ * same ages. Each comment is a memoised row. The event callbacks (onVote, onReply, onShare) may change
  * identity freely; the functions called while rendering (continueHref, authorHref,
  * renderActions, the labels) re-render every row when their identity changes, so a page keeps them stable.
  */
@@ -255,7 +246,6 @@ export const CommentThread = memo(function CommentThread({
   authorHref,
   labels,
   locale,
-  times,
   onVote,
   voteDisabled,
   onReply,
@@ -279,7 +269,6 @@ export const CommentThread = memo(function CommentThread({
       authorHref,
       labels,
       locale,
-      times,
       voteDisabled,
       renderActions,
       maxDepth,
@@ -297,7 +286,6 @@ export const CommentThread = memo(function CommentThread({
       authorHref,
       labels,
       locale,
-      times,
       voteDisabled,
       renderActions,
       maxDepth,
