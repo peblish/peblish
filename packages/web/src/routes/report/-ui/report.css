@@ -8,9 +8,7 @@
     flex-direction: column;
     gap: var(--muxui-semantic-layout-section-gap);
   }
-  .rp-page h1,
-  .rp-page p,
-  .rp-form p {
+  .rp-text {
     margin: 0;
   }
   .rp-form {
@@ -18,22 +16,10 @@
     flex-direction: column;
     gap: var(--muxui-semantic-layout-section-gap);
   }
-  .rp-quote blockquote {
-    margin: 0;
-    overflow-wrap: anywhere;
-  }
   /* The Report link from the click until its dialog's code has loaded: a static busy look. */
   .rp-open[data-opening] {
     cursor: progress;
     color: var(--muxui-semantic-content-muted);
-  }
-  /* Without JavaScript Mux's radio shows no dot (it follows React state): mirror its selected look from the native radio. */
-  .rp-cat:has(input:checked) .muxui-radio-field__indicator {
-    border-color: var(--muxui-semantic-color-color-60);
-  }
-  .rp-cat:has(input:checked) .muxui-radio-field__dot {
-    transform: scale(1);
-    opacity: 1;
   }
   /* The forward checkbox and the routing line follow the chosen category, with or without JavaScript. */
   .rp-forward {

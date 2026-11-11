@@ -5,11 +5,6 @@
     margin-inline: auto;
     padding: var(--muxui-semantic-layout-inset-large) var(--muxui-semantic-layout-inset-medium);
   }
-  .modlog h1,
-  .modlog h2,
-  .modlog p {
-    margin: 0;
-  }
   .modlog-head {
     display: flex;
     flex-wrap: wrap;
@@ -22,7 +17,7 @@
     grid-template-columns: 220px minmax(0, 1fr);
     gap: var(--muxui-semantic-layout-content-gap);
   }
-  .modlog-rail h2 {
+  .modlog-rail-heading {
     margin-block-end: var(--muxui-semantic-layout-tight-gap);
   }
   .modlog-rail ul {
@@ -30,13 +25,13 @@
     margin: 0 0 var(--muxui-semantic-layout-section-gap);
     padding: 0;
   }
-  .modlog-rail a {
+  .modlog-rail-link {
     display: flex;
     justify-content: space-between;
     gap: var(--muxui-semantic-layout-group-gap);
     padding-block: var(--muxui-semantic-layout-description-gap);
   }
-  .modlog-rail a[aria-current] {
+  .modlog-rail-link[aria-current] .modlog-rail-label {
     font-weight: var(--muxui-semantic-typography-label-weight);
   }
   .modlog .modlog-day {
@@ -61,17 +56,15 @@
     font-variant-numeric: tabular-nums;
   }
   .modlog-l2 {
-    margin-inline-start: 46px;
+    margin-inline-start: var(--muxui-semantic-layout-content-indent);
     overflow-wrap: anywhere;
   }
   .modlog .modlog-legend {
+    margin: 0;
     display: flex;
     flex-wrap: wrap;
     gap: var(--muxui-semantic-layout-tight-gap) var(--muxui-semantic-layout-section-gap);
     margin-block-start: var(--muxui-semantic-layout-section-gap);
-  }
-  .modlog .modlog-empty {
-    margin-block: var(--muxui-semantic-layout-content-gap);
   }
   @media (max-width: 760px) {
     .modlog-layout {

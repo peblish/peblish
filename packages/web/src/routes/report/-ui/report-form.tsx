@@ -2,9 +2,12 @@ import type { ReportForm } from '@peblish/core/reports/form';
 import { Button } from '@peblish/ui/components/button';
 import { Card } from '@peblish/ui/components/card';
 import { Checkbox } from '@peblish/ui/components/checkbox';
+import { FieldAlert } from '@peblish/ui/components/field-problem';
 import { Input } from '@peblish/ui/components/input';
 import { Link } from '@peblish/ui/components/link';
+import { BidiText } from '@peblish/ui/components/handle';
 import { Notice } from '@peblish/ui/components/notice';
+import { Quote } from '@peblish/ui/components/quote';
 import { RadioField } from '@peblish/ui/components/radio-field';
 import { RadioGroup } from '@peblish/ui/components/radio-group';
 import { Text } from '@peblish/ui/components/text';
@@ -13,6 +16,7 @@ import { type } from 'arktype';
 import { useState, type FormEvent } from 'react';
 import { useTranslate } from '../../../i18n/use-translate.ts';
 import { asReportError, errorKey, type ReportError } from './errors.ts';
+import { placeholders, withNames } from '../../modlog/-ui/rich.tsx';
 import { hostList } from './hosts.ts';
 
 const Answer = type({ 'redirect?': 'string', 'error?': 'string' });
@@ -45,6 +49,11 @@ export function ReportFormView({
   const [error, setError] = useState(initialError);
   const [busy, setBusy] = useState(false);
   const canForward = form.hosts.length > 0 && form.categories.some((option) => option.forwardable);
+  // The handles may be from other servers: each is isolated in the sentence.
+  const names: Record<string, string> = form.about.community
+    ? { handle: `@${form.about.handle}`, community: `!${form.about.community}` }
+    : { handle: `${form.about.kind === 'community' ? '!' : '@'}${form.about.handle}` };
+  const about = withNames(t('reports', form.about.community ? 'form.aboutBy' : 'form.aboutPerson', placeholders(names)), names);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -69,20 +78,17 @@ export function ReportFormView({
 
   return (
     <form method="post" action="/report" className="rp-form" aria-busy={busy} onSubmit={submit}>
-      <Text as="p">
-        <Text variant="label">{t('reports', `queue.type.${kindOf(form)}`)}</Text>{' '}
-        {form.about.community
-          ? t('reports', 'form.aboutBy', { handle: `@${form.about.handle}`, community: `!${form.about.community}` })
-          : t('reports', 'form.aboutPerson', {
-              handle: form.about.kind === 'community' ? `!${form.about.handle}` : `@${form.about.handle}`,
-            })}
+      <Text as="p" className="rp-text">
+        <Text variant="label">{t('reports', `queue.type.${kindOf(form)}`)}</Text> {about}
       </Text>
       {form.quote && (
-        <Card.Root variant="filled" padding="sm" className="rp-quote">
+        <Card.Root variant="filled" padding="sm">
           <Text as="div" variant="label" size="sm" color="muted">
             {t('reports', 'form.quote')}
           </Text>
-          <blockquote>{form.quote}</blockquote>
+          <Quote>
+            <BidiText text={form.quote} />
+          </Quote>
         </Card.Root>
       )}
       {error && (
@@ -93,7 +99,14 @@ export function ReportFormView({
       <Input.Input type="hidden" name="kind" value={form.target.kind} />
       <Input.Input type="hidden" name="id" value={form.target.id} />
       <Input.Input type="hidden" name="back" value={back} />
-      <RadioGroup label={t('reports', 'form.category')} name="category" required defaultValue={initialCategory}>
+      <RadioGroup
+        label={t('reports', 'form.category')}
+        name="category"
+        required
+        defaultValue={initialCategory}
+        // Shown (and announced) only while the group is invalid; the only check on it is that one is chosen.
+        errorMessage={<FieldAlert>{t('ui', 'field.requiredChoice')}</FieldAlert>}
+      >
         {form.categories.map((option) => (
           // The data attributes let the CSS below show the routing line and the forward checkbox.
           <RadioField.Root
@@ -130,16 +143,16 @@ export function ReportFormView({
         </div>
       )}
       <div className="rp-routes" aria-live="polite">
-        <Text as="p" className="rp-route" data-for="none">
+        <Text as="p" className="rp-text rp-route" data-for="none">
           {t('reports', 'route.none')}
         </Text>
-        <Text as="p" className="rp-route" data-for="moderators">
+        <Text as="p" className="rp-text rp-route" data-for="moderators">
           {t('reports', 'route.moderators')}
         </Text>
-        <Text as="p" className="rp-route" data-for="admins">
+        <Text as="p" className="rp-text rp-route" data-for="admins">
           {t('reports', 'route.admins')}
         </Text>
-        <Text as="p" variant="label" className="rp-route" data-for="admins">
+        <Text as="p" variant="label" className="rp-text rp-route" data-for="admins">
           {t('reports', 'route.warning')}
         </Text>
       </div>

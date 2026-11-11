@@ -1,4 +1,4 @@
-/* The moderator panels (lane MODF): a Mux Disclosure holding a form of Mux fields. Layout only, colours from Mux tokens. */
+/* The moderator panels (lane MODF): a LinkedDisclosure holding a form of Mux fields. Layout only, colours from Mux tokens. */
 @layer app {
   .mod-panel {
     margin-block: var(--muxui-semantic-layout-tight-gap);
@@ -15,7 +15,7 @@
     flex-wrap: wrap;
     gap: var(--muxui-semantic-layout-group-gap);
   }
-  .mod-form p {
+  .mod-note {
     margin: 0;
   }
   .mod-actions {

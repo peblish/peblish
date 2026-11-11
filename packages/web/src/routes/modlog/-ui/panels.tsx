@@ -1,23 +1,25 @@
 import { Button } from '@peblish/ui/components/button';
 import { Checkbox } from '@peblish/ui/components/checkbox';
-import { Disclosure } from '@peblish/ui/components/disclosure';
+import { FieldAlert, useErrorPartId, useFieldProblem } from '@peblish/ui/components/field-problem';
 import { Input } from '@peblish/ui/components/input';
+import { LinkedDisclosure } from '@peblish/ui/components/linked-disclosure';
 import { Notice } from '@peblish/ui/components/notice';
 import { Select } from '@peblish/ui/components/select';
 import { TextAreaField } from '@peblish/ui/components/text-area';
 import { useRouter, useRouterState } from '@tanstack/react-router';
 import { type } from 'arktype';
-import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
+import { createContext, use, useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import { useTranslate } from '../../../i18n/use-translate.ts';
 import type { MessageKey } from '../../../i18n/translate.ts';
 import { loadBanCounts } from '../-counts.ts';
 import modCss from './mod.css?inline';
 
-// The moderator panels (R2 pick modlog-feed): a Mux Disclosure that opens under the post, comment
-// or profile, holding a plain form posting to /modlog/act. Opening one needs JavaScript; a panel
-// the server renders open (a refusal's ?modError=...&modFor=..., or `defaultOpen`) is a plain
-// form that posts and answers 303 without it. Once hydrated the form posts by fetch, shows a
-// refusal in place and, on success, reloads the page's data instead of navigating.
+// The moderator panels (R2 pick modlog-feed): a LinkedDisclosure that opens under the post, comment
+// or profile, holding a plain form posting to /modlog/act. The server renders a panel open when the
+// address names it (?modFor=<panel>, which a refusal also sets with its ?modError=<code>) or with
+// `defaultOpen`; without scripts the closed panel is a link to that address, and the open one is a
+// plain form that posts and answers 303. Once hydrated the form posts by fetch, shows a refusal in
+// place and, on success, reloads the page's data instead of navigating.
 
 const Answer = type({ 'ok?': 'boolean', 'error?': 'string' });
 
@@ -64,15 +66,28 @@ export const ModStyles = () => (
   </style>
 );
 
-/** The refusal in the address, if it is for this panel. */
-function useUrlError(panel: string): string | undefined {
-  const search = useRouterState({ select: (state) => state.location.searchStr });
-  const params = new URLSearchParams(search);
-  return params.get('modFor') === panel ? (params.get('modError') ?? undefined) : undefined;
+/** Whether the address names this panel (?modFor=<panel>), the refusal it carries if any, and the address itself. */
+function useUrlPanel(panel: string) {
+  const { pathname, searchStr } = useRouterState({ select: (state) => state.location });
+  const params = new URLSearchParams(searchStr);
+  const named = params.get('modFor') === panel;
+  return { named, error: named ? (params.get('modError') ?? undefined) : undefined, pathname, params };
 }
+
+/** This page with the panel named in its query, at the panel: where the server renders it open. */
+function openAddress(pathname: string, current: URLSearchParams, panel: string, id: string): string {
+  const params = new URLSearchParams(current);
+  params.delete('modError');
+  params.set('modFor', panel);
+  return `${pathname}?${params}#${id}`;
+}
+
+/** The panel's refusal, read by the field it is about (a missing reason goes to the reason box). */
+const PanelError = createContext<string | undefined>(undefined);
 
 export function Panel({
   panel,
+  id = `mod-${panel.replace(':', '-')}`,
   summary,
   intent,
   fields,
@@ -81,9 +96,11 @@ export function Panel({
   defaultOpen = false,
   children,
 }: {
-  /** Identifies the panel in the address after a refusal: `content:<id>` for remove and restore, `<intent>:<person id>` otherwise. */
+  /** Identifies the panel in the address: `content:<id>` for remove and restore, `<intent>:<person id>` otherwise. */
   panel: string;
-  summary: string;
+  /** The panel's element id, the fragment of its address; give one when a page shows two panels of the same key. */
+  id?: string;
+  summary: ReactNode;
   intent: 'remove' | 'restore' | 'ban' | 'unban' | 'site_ban' | 'site_unban';
   /** The target, as hidden fields. */
   fields: Record<string, string>;
@@ -95,10 +112,11 @@ export function Panel({
 }) {
   const { t } = useTranslate();
   const router = useRouter();
-  const urlError = useUrlError(panel);
-  const [error, setError] = useState<string | undefined>(urlError);
+  const url = useUrlPanel(panel);
+  const [error, setError] = useState<string | undefined>(url.error);
   const [busy, setBusy] = useState(false);
-  const [open, setOpen] = useState(defaultOpen || urlError !== undefined);
+  // Each success closes the panel by mounting a fresh one (the disclosure keeps its own state).
+  const [done, setDone] = useState(0);
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -111,7 +129,7 @@ export function Panel({
       if (answer instanceof type.errors) return setError('generic');
       if (answer.ok) {
         setError(undefined);
-        setOpen(false);
+        setDone((count) => count + 1);
         await router.invalidate();
       } else setError(answer.error ?? 'generic');
     } catch {
@@ -122,30 +140,36 @@ export function Panel({
   }
 
   return (
-    <div className="mod-panel" data-testid={`mod-panel-${intent}`}>
+    <LinkedDisclosure
+      key={done}
+      id={id}
+      className="mod-panel"
+      data-testid={`mod-panel-${intent}`}
+      title={summary}
+      openHref={openAddress(url.pathname, url.params, panel, id)}
+      defaultExpanded={done === 0 && (defaultOpen || url.named)}
+    >
       <ModStyles />
-      <Disclosure title={summary} expanded={open} onExpandedChange={setOpen}>
-        <form method="post" action="/modlog/act" className="mod-form" aria-busy={busy} onSubmit={onSubmit}>
-          <HiddenFields fields={{ intent, back, ...fields }} />
-          {children}
-          {error && (
-            <Notice tone="danger" role="alert">
-              {t('modlog', errorKey(error))}
-            </Notice>
-          )}
-          <div className="mod-actions">
-            <Button
-              type="submit"
-              variant={intent.endsWith('unban') || intent === 'restore' ? 'neutral' : 'primary'}
-              size="sm"
-              disabled={busy}
-            >
-              {submit}
-            </Button>
-          </div>
-        </form>
-      </Disclosure>
-    </div>
+      <form method="post" action="/modlog/act" className="mod-form" aria-busy={busy} onSubmit={onSubmit}>
+        <HiddenFields fields={{ intent, back, ...fields }} />
+        <PanelError value={error}>{children}</PanelError>
+        {error && error !== 'reason.required' && (
+          <Notice tone="danger" role="alert">
+            {t('modlog', errorKey(error))}
+          </Notice>
+        )}
+        <div className="mod-actions">
+          <Button
+            type="submit"
+            variant={intent.endsWith('unban') || intent === 'restore' ? 'neutral' : 'primary'}
+            size="sm"
+            disabled={busy}
+          >
+            {submit}
+          </Button>
+        </div>
+      </form>
+    </LinkedDisclosure>
   );
 }
 
@@ -162,6 +186,7 @@ export function ReasonFields({
   /** Unused since Mux ties labels to fields; kept for callers. */ id: string;
 }) {
   const { t } = useTranslate();
+  const missing = use(PanelError) === 'reason.required';
   return (
     <>
       <TextAreaField
@@ -171,6 +196,8 @@ export function ReasonFields({
         rows={3}
         maxLength={10000}
         required={required}
+        invalid={missing}
+        errorMessage={missing ? t('modlog', errorKey('reason.required')) : undefined}
       />
       <Checkbox name="public" value="on" defaultChecked description={t('modlog', 'panel.publicHint')}>
         {t('modlog', 'panel.public')}
@@ -217,16 +244,33 @@ export function BanFields({
             { id: 'custom', label: t('modlog', 'panel.custom') },
           ]}
         />
-        {/* Mux Input parts, not the facade TextField, which has no date type. */}
-        <Input.Root required={custom}>
-          <Input.Label>{t('modlog', 'panel.until')}</Input.Label>
-          <Input.Input type="date" name="until" />
-        </Input.Root>
+        <UntilField required={custom} />
       </div>
       <Checkbox name="removeContent" value="on">
         {t('modlog', 'panel.removeContent')}
         {counts && <> {t('modlog', 'panel.counts', { posts: counts.posts, comments: counts.comments })}</>}
       </Checkbox>
     </>
+  );
+}
+
+/**
+ * The last day of a custom ban. Mux Input parts, since the facade TextField has no date type, with
+ * the shared field hook, so a missing day is explained under the field in the page's language.
+ */
+function UntilField({ required }: { required: boolean }) {
+  const { t } = useTranslate();
+  const { ref, problem, errorId } = useFieldProblem<HTMLDivElement>();
+  const partId = useErrorPartId(Boolean(problem), errorId);
+  return (
+    <Input.Root ref={ref} required={required} invalid={problem !== undefined}>
+      <Input.Label>{t('modlog', 'panel.until')}</Input.Label>
+      <Input.Input type="date" name="until" />
+      {problem ? (
+        <Input.Error id={partId}>
+          <FieldAlert>{problem}</FieldAlert>
+        </Input.Error>
+      ) : null}
+    </Input.Root>
   );
 }
