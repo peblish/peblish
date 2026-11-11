@@ -544,6 +544,28 @@ test('a var() fallback is checked as the value it stands in for; a font shorthan
   ]);
 });
 
+test('a font shorthand in a var() fallback is checked as a font shorthand, on each branch of its fallbacks', () => {
+  const size = 'var(--muxui-semantic-typography-text-s-font-size)';
+  const family = 'var(--muxui-semantic-typography-text-font-family)';
+  const sheet = lines(
+    '.a {', // 1
+    `  --body-font: ${size} ${family};`, // 2
+    `  font: var(--body-font, 700 ${size} / 1.7 ${family});`, // 3
+    `  font: var(--body-font, var(--muxui-weight, bold) ${size} ${family});`, // 4
+    `  font: var(--muxui-a, ${size} / 1.7) var(--muxui-b, 700) ${family};`, // 5: 700 is a weight when --muxui-a is set
+    `  font: var(--body-font, var(--muxui-weight) ${size} / var(--muxui-leading) ${family});`, // 6: legal
+    `  font: var(--body-font, italic ${size} / normal ${family});`, // 7: legal
+    '}', // 8
+  );
+  expect(css(sheet, anyDefined)).toEqual([
+    'css-font-weight:3',
+    'css-line-height:3',
+    'css-font-weight:4',
+    'css-font-weight:5',
+    'css-line-height:5',
+  ]);
+});
+
 test('a /* layout */ comment waives a spacing value on its declaration and is counted', () => {
   const sheet = lines(
     '.a {', // 1

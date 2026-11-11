@@ -834,15 +834,44 @@ function topLevelParts(value: string): string[] {
   return parts;
 }
 
-/** What a `font` shorthand writes by hand for weight (a number or weight keyword before the size) and line height (after `/`). */
+/**
+ * Every value a declaration can resolve to: each var() with a fallback either stands (as a var() without one)
+ * or gives way to its fallback, whose own var()s branch in turn.
+ */
+function fallbackBranches(value: string): string[] {
+  const start = value.search(/(?<![\w-])var\(/i);
+  if (start === -1) return [value];
+  let depth = 1;
+  let end = start + 4;
+  for (; end < value.length && depth; end++) depth += value[end] === '(' ? 1 : value[end] === ')' ? -1 : 0;
+  const inner = value.slice(start + 4, depth ? end : end - 1);
+  const comma = inner.indexOf(',');
+  const options = [
+    `var(${(comma === -1 ? inner : inner.slice(0, comma)).trim()})`,
+    ...(comma === -1 ? [] : fallbackBranches(inner.slice(comma + 1).trim())),
+  ];
+  const rests = fallbackBranches(value.slice(end));
+  return options.flatMap((option) => rests.map((rest) => `${value.slice(0, start)}${option}${rest}`));
+}
+
+/**
+ * What a `font` shorthand writes by hand for weight (a number or weight keyword before the size) and line height
+ * (after `/`), on each branch of its var() fallbacks, so a whole shorthand in a fallback is read as one.
+ */
 function fontShorthand(value: string, aliases: Names) {
-  const parts = topLevelParts(value);
-  const slash = parts.indexOf('/');
-  const weight = parts
-    .slice(0, slash === -1 ? undefined : slash)
-    .map((part) => replaceTokens(part, aliases).trim())
-    .filter((part) => /^(bold|bolder|lighter|[+-]?(\d+\.?\d*|\.\d+))$/i.test(part));
-  const lineHeight = slash === -1 ? [] : literals(parts[slash + 1] ?? '', aliases);
+  const weight: string[] = [];
+  const lineHeight: string[] = [];
+  for (const branch of fallbackBranches(value)) {
+    const parts = topLevelParts(branch);
+    const slash = parts.indexOf('/');
+    weight.push(
+      ...parts
+        .slice(0, slash === -1 ? undefined : slash)
+        .map((part) => replaceTokens(part, aliases).trim())
+        .filter((part) => /^(bold|bolder|lighter|[+-]?(\d+\.?\d*|\.\d+))$/i.test(part)),
+    );
+    if (slash !== -1) lineHeight.push(...literals(parts[slash + 1] ?? '', aliases));
+  }
   return { weight, lineHeight };
 }
 
