@@ -76,6 +76,25 @@ test.describe('the log boundary', () => {
     }
   });
 
+  test("each server function's failure is labelled by its registered name; an id the build does not know gets a fixed label", async () => {
+    const server = await boot(laneDatabase());
+    try {
+      const notJson = `?payload=${encodeURIComponent(marker)}`;
+      const ask = (id: string) => fetch(`${server.origin}/_serverFn/${id}${notJson}`, { headers: { 'sec-fetch-site': 'same-origin' } });
+      await ask(serverFunctionId('getRootData'));
+      await ask(serverFunctionId('loadDirectory'));
+      await ask(`${'0'.repeat(64)}${marker}`);
+      await expect.poll(() => logLines(server).length).toBe(3);
+      expectCleanLog(server);
+      const [first, second, third] = logLines(server);
+      expect(first).toMatch(/^\[GET server function getRootData\] /);
+      expect(second).toMatch(/^\[GET server function loadDirectory\] /);
+      expect(third).toMatch(/^\[GET server function \(unregistered\)\] /);
+    } finally {
+      await stop(server);
+    }
+  });
+
   test('a signed-in post whose title the database refuses: the error that escapes to Start is one line without the title', async () => {
     const server = await boot(laneDatabase());
     const world = JSON.parse(execFileSync('node', ['e2e/composer/seed.ts'], { cwd: root, encoding: 'utf8' })) as {

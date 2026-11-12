@@ -4,15 +4,22 @@ import { requestScope } from '@peblish/core/log-scope';
 /** The route that serves a path, as the router names it (a template such as "/u/$handle/"), or null when none does. */
 export type RouteOf = (pathname: string) => string | null;
 
+/** A server function's name in the build's own registry, for an id registered exactly; null for any other id. */
+export type FunctionOf = (id: string) => Promise<string | null>;
+
 /**
- * The endpoint a request is for, safe to log: its method and route template, "server function"
- * for TanStack Start's /_serverFn/<id> calls (the id is whatever the caller sent), or "(no route)".
- * Never the path itself: its parameters are what a visitor typed.
+ * The endpoint a request is for, safe to log: its method and route template; for TanStack
+ * Start's /_serverFn/<id> calls "server function <name>" when the id is one the build registered
+ * (its name is the build's, never the caller's), else "server function (unregistered)"; or
+ * "(no route)". Never the path itself: its parameters are what a visitor typed.
  */
-export function endpointOf(request: Request, routeOf: RouteOf): string {
+export async function endpointOf(request: Request, routeOf: RouteOf, functionOf: FunctionOf): Promise<string> {
   const method = methodOf(request);
   const { pathname } = new URL(request.url);
-  if (pathname.startsWith('/_serverFn/')) return `${method} server function`;
+  if (pathname.startsWith('/_serverFn/')) {
+    const name = await functionOf(pathname.slice('/_serverFn/'.length)).catch(() => null);
+    return `${method} server function ${name !== null && /^[\w$]{1,80}$/.test(name) ? name : '(unregistered)'}`;
+  }
   return `${method} ${routeOf(pathname) ?? '(no route)'}`;
 }
 
@@ -40,6 +47,9 @@ export function withUnmatchedEndpoint(next: (request: Request) => Response | Pro
 }
 
 /** Runs each request with its endpoint known to the log boundary (server/log-boundary.ts) and to core's onRequestPath. */
-export function withRequestEndpoint<O>(next: Fetch<O>, routeOf: RouteOf) {
-  return (request: Request, opts?: O) => requestScope.run(endpointOf(request, routeOf), () => next(request, opts));
+export function withRequestEndpoint<O>(next: Fetch<O>, routeOf: RouteOf, functionOf: FunctionOf) {
+  return async (request: Request, opts?: O) => {
+    const endpoint = await endpointOf(request, routeOf, functionOf);
+    return requestScope.run(endpoint, () => next(request, opts));
+  };
 }

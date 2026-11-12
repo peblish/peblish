@@ -155,10 +155,10 @@ module.exports = {
     },
     {
       name: 'not-to-unresolvable',
-      comment: 'Every import resolves (Vite ?url imports excepted).',
+      comment: "Every import resolves (Vite ?url imports and TanStack Start's virtual server-function registry excepted).",
       severity: 'error',
       from: {},
-      to: { couldNotResolve: true, pathNot: '\\?(url|raw)$' },
+      to: { couldNotResolve: true, pathNot: ['\\?(url|raw)$', '^#tanstack-start-server-fn-resolver$'] },
     },
   ],
   options: {
