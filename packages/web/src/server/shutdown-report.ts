@@ -19,8 +19,9 @@ export function lineWritesUntilServerBuilt(stream: NodeJS.WriteStream = process.
   });
 }
 
-/** A terminal write as one whole line: no carriage return, no escape sequence, ending in a newline. */
+/** A terminal write as one whole line: no carriage return, no escape sequence (ESC [ ... letter), ending in a newline. */
 export function asLine(chunk: string | Uint8Array): string {
-  const text = (typeof chunk === 'string' ? chunk : Buffer.from(chunk).toString()).replace(/\u001b\[[0-9;]*[A-Za-z]|\r/g, '');
+  const [first = '', ...escaped] = (typeof chunk === 'string' ? chunk : Buffer.from(chunk).toString()).split('\u001b');
+  const text = [first, ...escaped.map((part) => part.replace(/^\[[0-9;]*[A-Za-z]/, ''))].join('').replaceAll('\r', '');
   return text.endsWith('\n') ? text : `${text}\n`;
 }

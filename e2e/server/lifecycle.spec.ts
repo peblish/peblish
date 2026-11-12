@@ -153,7 +153,8 @@ test.describe('server lifecycle', () => {
   /** Everything the server wrote is whole lines: each ends with a newline, none is rewritten in place or coloured. */
   function expectWholeLines(output: string) {
     expect(output.endsWith('\n')).toBe(true);
-    expect(output).not.toMatch(/[\r\u001b]/);
+    expect(output).not.toContain('\r');
+    expect(output).not.toContain('\u001b');
   }
 
   /**
