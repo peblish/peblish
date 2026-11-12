@@ -1,10 +1,10 @@
 import { execFileSync } from 'node:child_process';
 import { once } from 'node:events';
 import { readdirSync, readFileSync } from 'node:fs';
-import { createServer, type Server } from 'node:net';
+import { connect, createServer, type Server } from 'node:net';
 import { join } from 'node:path';
 import { expect, request, test } from '@playwright/test';
-import { boot, freePort, laneDatabase, logLines, stop, type Booted } from './boot.ts';
+import { boot, bootCold, freePort, laneDatabase, logLines, stop, type Booted } from './boot.ts';
 
 // The web process's log boundary (packages/web/src/server/log-boundary.ts): whatever logs an error
 // while serving a visitor (TanStack Start's own reporters, Better Auth, the database library),
@@ -148,6 +148,27 @@ test.describe('the log boundary', () => {
       await expect.poll(() => logLines(server).join('\n')).toContain('federation:');
       expectCleanLog(server);
       expect(logLines(server).join('\n')).toContain('federation: GET document /u/ failed:');
+    } finally {
+      await stop(server);
+    }
+  });
+
+  test('a fresh process whose first request has an address the URL parser refuses: one line, labelled, without the address', async () => {
+    const server = await bootCold(laneDatabase());
+    try {
+      // The start-up line prints as it always has.
+      expect(logLines(server)).toEqual([]);
+      expect(server.output()).toMatch(/^➜ Listening on: http:\/\/127\.0\.0\.1:\d+\/\n$/);
+      const { hostname, port } = new URL(server.origin);
+      const socket = connect(Number(port), hostname);
+      await once(socket, 'connect');
+      // A five-digit port in Host: the native URL constructor refuses it, and its error carries the whole URL.
+      socket.end(`GET /?q='${marker} HTTP/1.1\r\nHost: localhost:99999\r\nConnection: close\r\n\r\n`);
+      socket.on('data', () => {});
+      await once(socket, 'close');
+      await expect.poll(() => logLines(server).length).toBeGreaterThan(0);
+      expectCleanLog(server);
+      expect(logLines(server)).toEqual([expect.stringMatching(/^\[GET \(unmatched\)\] /)]);
     } finally {
       await stop(server);
     }

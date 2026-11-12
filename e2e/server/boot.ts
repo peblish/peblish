@@ -26,7 +26,8 @@ export async function freePort(): Promise<number> {
 
 export type Booted = { origin: string; child: ChildProcess; output: () => string };
 
-export async function boot(databaseUrl: string | undefined, extra: Record<string, string> = {}): Promise<Booted> {
+/** Starts the built server on a free port and collects everything it writes; nothing is asked of it yet. */
+async function start(databaseUrl: string | undefined, extra: Record<string, string>): Promise<Booted> {
   const port = await freePort();
   // CI and TEST turn off srvx's graceful shutdown, which the image runs with.
   const { CI: _ci, TEST: _test, DATABASE_URL: _url, ...env } = process.env;
@@ -37,18 +38,33 @@ export async function boot(databaseUrl: string | undefined, extra: Record<string
   let output = '';
   child.stdout?.on('data', (chunk) => (output += chunk));
   child.stderr?.on('data', (chunk) => (output += chunk));
-  const origin = `http://127.0.0.1:${port}`;
+  return { origin: `http://127.0.0.1:${port}`, child, output: () => output };
+}
+
+/** The built server, ready: /healthz answered, which also loads its SSR bundle. */
+export async function boot(databaseUrl: string | undefined, extra: Record<string, string> = {}): Promise<Booted> {
+  const server = await start(databaseUrl, extra);
   await expect
     .poll(
       () =>
-        fetch(`${origin}/healthz`).then(
+        fetch(`${server.origin}/healthz`).then(
           (response) => response.status,
           () => 0,
         ),
       { timeout: 15_000 },
     )
     .toBe(200);
-  return { origin, child, output: () => output };
+  return server;
+}
+
+/**
+ * The built server as a fresh process meets its first request: it is listening (its start-up line
+ * is out), and nothing has been asked of it, so Nitro has not loaded the SSR bundle yet.
+ */
+export async function bootCold(databaseUrl: string | undefined, extra: Record<string, string> = {}): Promise<Booted> {
+  const server = await start(databaseUrl, extra);
+  await expect.poll(() => server.output(), { timeout: 15_000 }).toContain('Listening on:');
+  return server;
 }
 
 export async function stop({ child }: Booted): Promise<number | null> {

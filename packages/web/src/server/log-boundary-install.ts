@@ -1,7 +1,7 @@
 import { installLogBoundary } from './log-boundary.ts';
 
-// Imported first by the server entry (src/server.ts), so the boundary is in place before any
-// other module can log. The built server only: under the Vite dev server a developer sees raw
+// Imported by the first Nitro plugin (server/log-boundary-plugin.ts), which runs before the server
+// listens, and again first by the SSR entry (src/server.ts), which is a second copy in the build. The built server only: under the Vite dev server a developer sees raw
 // errors. The build carries two copies of a module both the Nitro entry and the SSR bundle
 // import, so the flag lives on globalThis and the console is wrapped once.
 const installed = globalThis as { __peblishLogBoundary?: boolean };
