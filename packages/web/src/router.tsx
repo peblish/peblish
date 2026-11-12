@@ -33,10 +33,15 @@ export function getRouter() {
   // scrolled: the page jumped back, and a press made while it hydrated was released over
   // whatever had moved under the pointer, so it was lost. The server asks too (whether to print
   // the script), and gets true.
+  //
+  // The router saves a position only for what it saw scroll since its last render, and it has just
+  // forgotten that list when it asks: one scroll event on the document puts the window back on it,
+  // so the position kept here is the one Back returns to, even if the reader does not scroll again.
   let hydrating = typeof document !== 'undefined';
   const scrollRestoration = () => {
     if (!hydrating) return true;
     hydrating = false;
+    document.dispatchEvent(new Event('scroll'));
     return false;
   };
   const router = createRouter({ routeTree, scrollRestoration, defaultErrorComponent: PageError });

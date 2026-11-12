@@ -57,8 +57,10 @@ async function wheel(page: Page, by: number): Promise<number> {
  */
 const onAnchor = (page: Page, id: string) =>
   page.evaluate((anchor) => {
+    const target = document.getElementById(anchor);
+    if (!target) return false;
     const here = Math.round(window.scrollY);
-    document.getElementById(anchor)?.scrollIntoView();
+    target.scrollIntoView();
     const there = Math.round(window.scrollY);
     window.scrollTo(0, here);
     return here > 0 && here === there;
@@ -112,6 +114,35 @@ test('a link opens its page at the top, and back and forward return to where eac
   await page.goForward();
   await expect(page).toHaveURL(href);
   await expect.poll(() => scrollY(page)).toBe(post);
+});
+
+test('a position kept at hydration is where Back returns to, with no scroll after it', async ({ page }) => {
+  // The post page, whose height is final as it renders. (Back to a deep place on the feed or the
+  // directory lands short whenever the reader scrolled, on main as well: in the lane notes.)
+  const post = `/post/${world.posts.author}`;
+  const scripts = await holdScripts(page);
+  await page.goto(post, { waitUntil: 'commit' });
+  await page.locator('main').waitFor();
+  const scrolled = await wheel(page, 150);
+  scripts();
+  await hydrated(page);
+  await page.waitForTimeout(300);
+  expect(await scrollY(page)).toBe(scrolled);
+  // A link already on screen, so following it scrolls nothing first.
+  const href = await page.evaluate((here) => {
+    const link = [...document.querySelectorAll<HTMLAnchorElement>('main a[href^="/"]')].find((candidate) => {
+      const box = candidate.getBoundingClientRect();
+      return !candidate.getAttribute('href')!.startsWith(here) && box.height > 0 && box.top >= 0 && box.bottom <= window.innerHeight;
+    });
+    link?.setAttribute('data-pick', '');
+    return link?.getAttribute('href') ?? null;
+  }, post);
+  expect(href).not.toBeNull();
+  await page.locator('[data-pick]').click();
+  await expect(page).not.toHaveURL(post);
+  await page.goBack();
+  await expect(page).toHaveURL(post);
+  await expect.poll(() => scrollY(page)).toBe(scrolled);
 });
 
 test('a link to an anchor lands on it, on the same page, on another address, and on a fresh load', async ({ page }) => {
