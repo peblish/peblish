@@ -1,6 +1,13 @@
 import { logLine } from '@peblish/core/log-line';
 import { requestScope } from '@peblish/core/log-scope';
 
+/**
+ * Whether this process gets the log boundary: every built server does, whatever NODE_ENV was when
+ * it was built or is now; only the Vite dev server shows a developer raw errors. Anything that runs
+ * this module without Vite's define (it never should) gets the boundary too.
+ */
+export const boundaryWanted = (devServer: boolean | undefined) => devServer !== true;
+
 /** The console methods the boundary covers; trace and dir print the one line too, with no stack or tree. */
 const methods = ['error', 'warn', 'log', 'info', 'debug', 'trace', 'dir'] as const;
 

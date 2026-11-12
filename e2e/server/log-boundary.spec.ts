@@ -173,4 +173,11 @@ test.describe('the log boundary', () => {
       await stop(server);
     }
   });
+
+  test('the built server installs the boundary in both of its bundles, whatever NODE_ENV the build ran with', () => {
+    // The Nitro plugin's copy (index.mjs, runs before the server listens) and the SSR entry's.
+    for (const file of ['index.mjs', '_ssr/ssr.mjs']) {
+      expect(readFileSync(join(root, 'packages/web/.output/server', file), 'utf8'), file).toContain('__peblishLogBoundary = true');
+    }
+  });
 });
