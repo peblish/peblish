@@ -145,14 +145,19 @@ export function Composer({ data, error: initialError, onDone, onDiscard, keepOnC
     latest.current = form;
   });
 
+  // Whether anything was typed: text typed before the page hydrated reaches change() as the fields
+  // mount, before the effect below runs, while that effect still sees the first, empty form.
+  const typed = useRef(false);
+
   // Starting on a community that has a saved draft (a new post, nothing typed yet) restores it.
+  // Typed words win: the form is judged as it is when the draft is laid over it.
   useEffect(() => {
     removeUnscopedDrafts();
     if (edit || kept || !pristine(form)) return;
     const draft = readDraft({ actorId, community: form.community });
     if (draft) {
-      setForm((current) => ({ ...current, ...draft }));
-      setNote('restored');
+      setForm((current) => (pristine(current) ? { ...current, ...draft } : current));
+      if (!typed.current) setNote('restored');
     }
     // Once, on arrival: the community chosen later restores its draft in choose().
     // oxlint-disable-next-line react/exhaustive-deps
@@ -189,6 +194,7 @@ export function Composer({ data, error: initialError, onDone, onDiscard, keepOnC
   }
 
   function change(patch: Partial<Form>) {
+    typed.current = true;
     setError(undefined);
     setNote(null);
     setForm((current) => ({ ...current, ...patch }));

@@ -164,3 +164,24 @@ test('a post edit (a text area that holds saved text, controlled by the composer
   await expect(page.locator('main')).toContainText(`${saved} Added early.`);
   await page.context().close();
 });
+
+test('a new post title typed before the page hydrates wins over the draft saved for its community', async ({ browser }) => {
+  const page = await pageAs(browser, world.author.name);
+  const address = `/submit?community=${world.community.handle}`;
+  await gotoHydrated(page, address);
+  await page.getByLabel('Title').fill('The saved draft');
+  await page.getByRole('textbox', { name: 'Body', exact: true }).fill('Saved words');
+  await page.getByRole('button', { name: 'Save draft' }).click();
+  await expect(page.getByRole('status')).toHaveText('Draft saved in this browser.');
+  const scripts = await hold(page, '**/assets/**/*.js');
+  await page.goto(address, { waitUntil: 'commit' });
+  const title = page.getByLabel('Title');
+  await title.pressSequentially('Typed early');
+  await notHydrated(page);
+  scripts();
+  await hydrated(page);
+  await page.waitForTimeout(300);
+  await expect(title).toHaveValue('Typed early');
+  await expect(page.getByRole('status')).not.toHaveText('Your saved draft for this community is back.');
+  await page.context().close();
+});
