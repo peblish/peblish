@@ -1,4 +1,14 @@
-import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type ReactNode,
+  type RefObject,
+} from 'react';
 
 /**
  * What a field says when the browser finds its value invalid and the caller gave no message of
@@ -128,10 +138,13 @@ const controlOf = (root: HTMLElement | null) =>
  * fields say nothing here. Nothing runs before hydration or without JavaScript: the browser
  * validates as it always does.
  *
- * `settle` is for the field's `onChange` on each keystroke. It runs inside React's handling of the
- * input event, so the field re-renders with its new value: a native listener here would re-render
- * it first, and React would write the old value of a controlled field back. A native select needs
- * none, since its `change` comes with the choice.
+ * `settle` is for the field's `onChange` on each keystroke. It only asks for a check, which runs
+ * once React has committed the value it keeps, before the next paint: a caller may change what was
+ * typed (trim it), and a space the DOM held for a moment must not clear the message of a field
+ * that is still empty. The ask comes from inside React's handling of the input event, so the
+ * field re-renders with its new value; a native listener here would re-render it first, and React
+ * would write the old value of a controlled field back. A native select needs none, since its
+ * `change` comes with the choice.
  *
  * `recheck` commits a change that fires no native `change` event: Mux UI's checkbox toggles on a
  * React Aria press, so its wrapper calls it from `onChange`, and the verdict is read once React
@@ -150,6 +163,7 @@ export function useFieldProblem<E extends HTMLElement>(
   const [problem, setProblem] = useState<string>();
   const native = options.native === true;
   const [asked, setAsked] = useState(0);
+  const [typed, setTyped] = useState(0);
 
   /** The verdict on `control` now, or none in a form that checks its own values. */
   const verdictOf = useCallback((control: Control) => (control.form?.noValidate ? undefined : explainValidity(control, labels)), [labels]);
@@ -165,6 +179,18 @@ export function useFieldProblem<E extends HTMLElement>(
     if (asked === 0) return;
     commit(controlOf(ref.current));
   }, [asked, commit]);
+
+  // A keystroke (nextProblem's `input`) only clears, and only a value that is valid once committed.
+  const clearIfValid = useCallback(
+    (control: EventTarget | null) => {
+      if (isControl(control) && verdictOf(control) === undefined) setProblem(undefined);
+    },
+    [verdictOf],
+  );
+  useLayoutEffect(() => {
+    if (typed === 0) return;
+    clearIfValid(controlOf(ref.current));
+  }, [typed, clearIfValid]);
 
   useEffect(() => {
     const root = ref.current;
@@ -191,11 +217,9 @@ export function useFieldProblem<E extends HTMLElement>(
     };
   }, [native, commit]);
 
-  // The browser has the typed value already, so its validity can be read at once.
   const settle = useCallback(() => {
-    const control = controlOf(ref.current);
-    if (problem !== undefined && isControl(control)) setProblem(nextProblem('input', problem, verdictOf(control)));
-  }, [problem, verdictOf]);
+    if (problem !== undefined) setTyped((count) => count + 1);
+  }, [problem]);
   const recheck = useCallback(() => setAsked((count) => count + 1), []);
   return { ref, problem, settle, recheck };
 }

@@ -31,6 +31,7 @@ import { commentPath, communityPath, postPath, userPath } from '../../shell/path
 import { usePrefs } from '../../shell/prefs.tsx';
 import { kitEnabled } from './-enabled.ts';
 import { SlowVotes } from './-slow-votes.tsx';
+import { TrimmedFields } from './-trimmed-fields.tsx';
 import { loadKitContent } from './-render.ts';
 import { feed, now, posts, thumbnailSrc } from './-samples.ts';
 import kitCss from './-kit.css?url';
@@ -325,6 +326,13 @@ function KitPage() {
             </Menu.Popup>
           </Menu.Root>
         </div>
+      </section>
+
+      <section aria-labelledby="kit-trimmed-heading">
+        <Text as="h2" variant="heading" size="sm" className="kit-heading" id="kit-trimmed-heading">
+          Fields with a normalising caller
+        </Text>
+        <TrimmedFields />
       </section>
 
       <section aria-labelledby="kit-tabs">
