@@ -144,7 +144,9 @@ const controlOf = (root: HTMLElement | null) =>
  * that is still empty. The ask comes from inside React's handling of the input event, so the
  * field re-renders with its new value; a native listener here would re-render it first, and React
  * would write the old value of a controlled field back. A native select needs none, since its
- * `change` comes with the choice.
+ * `change` comes with the choice. The caller must update its value in the same event: one that
+ * defers the update (a transition) is checked before the new value is committed, so its message
+ * stays until the field's next commit, as it did before `settle` existed.
  *
  * `recheck` commits a change that fires no native `change` event: Mux UI's checkbox toggles on a
  * React Aria press, so its wrapper calls it from `onChange`, and the verdict is read once React
