@@ -13,7 +13,9 @@ const ssr = join(import.meta.dirname, '../../packages/web/.output/server/_ssr');
 
 /** The id the build gave loadKitContent (packages/web/src/routes/kit/-render.ts), as the server bundle spells it. */
 function kitFunctionId(): string {
-  for (const file of readdirSync(ssr).filter((name) => /^router-.*\.mjs$/.test(name))) {
+  // Every chunk: the router's code sits in its own chunk or, since the server entry imports the
+  // router itself (src/server.ts), in ssr.mjs.
+  for (const file of readdirSync(ssr).filter((name) => name.endsWith('.mjs'))) {
     const id = /loadKitContent = createServerFn\(\{ method: "GET" \}\)\.handler\(createSsrRpc\("([a-f0-9]+)"/.exec(
       readFileSync(join(ssr, file), 'utf8'),
     )?.[1];
