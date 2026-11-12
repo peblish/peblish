@@ -1,4 +1,14 @@
-import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type ReactNode,
+  type RefObject,
+} from 'react';
 
 /**
  * What a field says when the browser finds its value invalid and the caller gave no message of
@@ -96,14 +106,47 @@ export function explainValidity(control: JudgedControl, labels: FieldLabels): st
   return undefined;
 }
 
+/** What happens to a field: a blocked submit, a committed edit, a keystroke, a form reset. */
+export type FieldEvent = 'invalid' | 'change' | 'input' | 'reset';
+
 /**
- * The browser's verdict on the control inside `ref`, in the page's language. It follows React Aria's native validation: a blocked submit (the
- * `invalid` event) or a committed edit (`change`) shows the current verdict, a fixed value clears
- * it at the next commit, and a form reset clears it. React Aria focuses the first invalid control
- * and stops the browser's bubble for its own fields; a control it does not manage (`native`, the
- * native select) gets both done here, so a select in a form behaves like the fields around it.
- * A form with `noValidate` checks its own values, so its fields say nothing here. Nothing runs
- * before hydration or without JavaScript: the browser validates as it always does.
+ * The message a field shows after `event`, given the one it shows now and the browser's verdict
+ * on its value now. A blocked submit or a committed edit shows the verdict (React Aria's timing).
+ * A keystroke only ever takes a message away, once the value is valid: a field nobody has found
+ * wrong yet says nothing while it is typed in, and a correction clears its message while the
+ * person is still typing. Were it cleared at the commit, which for text is leaving the field, the
+ * press on the submit button below would commit it: the button would move up by the message's
+ * height between the press and the release, and the release would miss it, losing the click.
+ */
+export function nextProblem(event: FieldEvent, shown: string | undefined, verdict: string | undefined): string | undefined {
+  if (event === 'reset') return undefined;
+  if (event === 'input') return verdict === undefined ? undefined : shown;
+  return verdict;
+}
+
+/** The control a field root holds (or the root itself, for the native select). */
+const controlOf = (root: HTMLElement | null) =>
+  isControl(root) ? root : (root?.querySelector('input:not([type="hidden"]), textarea, select') ?? null);
+
+/**
+ * The browser's verdict on the control inside `ref`, in the page's language, shown at the moments
+ * `nextProblem` names: a blocked submit (the `invalid` event) or a committed edit (`change`) shows
+ * it, a keystroke that makes the value valid clears it (`settle`), and a form reset clears it.
+ * React Aria focuses the first invalid control and stops the browser's bubble for its own fields;
+ * a control it does not manage (`native`, the native select) gets both done here, so a select in a
+ * form behaves like the fields around it. A form with `noValidate` checks its own values, so its
+ * fields say nothing here. Nothing runs before hydration or without JavaScript: the browser
+ * validates as it always does.
+ *
+ * `settle` is for the field's `onChange` on each keystroke. It only asks for a check, which runs
+ * once React has committed the value it keeps, before the next paint: a caller may change what was
+ * typed (trim it), and a space the DOM held for a moment must not clear the message of a field
+ * that is still empty. The ask comes from inside React's handling of the input event, so the
+ * field re-renders with its new value; a native listener here would re-render it first, and React
+ * would write the old value of a controlled field back. A native select needs none, since its
+ * `change` comes with the choice. The caller must update its value in the same event: one that
+ * defers the update (a transition) is checked before the new value is committed, so its message
+ * stays until the field's next commit, as it did before `settle` existed.
  *
  * `recheck` commits a change that fires no native `change` event: Mux UI's checkbox toggles on a
  * React Aria press, so its wrapper calls it from `onChange`, and the verdict is read once React
@@ -114,6 +157,7 @@ export function useFieldProblem<E extends HTMLElement>(
 ): {
   ref: RefObject<E | null>;
   problem: string | undefined;
+  settle: () => void;
   recheck: () => void;
 } {
   const labels = useContext(FieldLabelsContext);
@@ -121,26 +165,41 @@ export function useFieldProblem<E extends HTMLElement>(
   const [problem, setProblem] = useState<string>();
   const native = options.native === true;
   const [asked, setAsked] = useState(0);
+  const [typed, setTyped] = useState(0);
 
+  /** The verdict on `control` now, or none in a form that checks its own values. */
+  const verdictOf = useCallback((control: Control) => (control.form?.noValidate ? undefined : explainValidity(control, labels)), [labels]);
+  // A blocked submit or a committed edit (nextProblem's `invalid` and `change`) shows the verdict.
   const commit = useCallback(
     (control: EventTarget | null) => {
-      if (isControl(control)) setProblem(control.form?.noValidate ? undefined : explainValidity(control, labels));
+      if (isControl(control)) setProblem(verdictOf(control));
     },
-    [labels],
+    [verdictOf],
   );
 
   useEffect(() => {
     if (asked === 0) return;
-    const root = ref.current;
-    commit(isControl(root) ? root : (root?.querySelector('input:not([type="hidden"]), textarea, select') ?? null));
+    commit(controlOf(ref.current));
   }, [asked, commit]);
+
+  // A keystroke (nextProblem's `input`) only clears, and only a value that is valid once committed.
+  const clearIfValid = useCallback(
+    (control: EventTarget | null) => {
+      if (isControl(control) && verdictOf(control) === undefined) setProblem(undefined);
+    },
+    [verdictOf],
+  );
+  useLayoutEffect(() => {
+    if (typed === 0) return;
+    clearIfValid(controlOf(ref.current));
+  }, [typed, clearIfValid]);
 
   useEffect(() => {
     const root = ref.current;
     if (!root) return;
     const judge = (event: Event) => commit(event.target);
     const blocked = (event: Event) => {
-      judge(event);
+      commit(event.target);
       const control = event.target;
       if (!native || !isControl(control)) return;
       const first = control.form && Array.from(control.form.elements).find((element) => isControl(element) && !element.validity.valid);
@@ -160,8 +219,11 @@ export function useFieldProblem<E extends HTMLElement>(
     };
   }, [native, commit]);
 
+  const settle = useCallback(() => {
+    if (problem !== undefined) setTyped((count) => count + 1);
+  }, [problem]);
   const recheck = useCallback(() => setAsked((count) => count + 1), []);
-  return { ref, problem, recheck };
+  return { ref, problem, settle, recheck };
 }
 
 /**

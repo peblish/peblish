@@ -9,7 +9,8 @@ export interface TextFieldProps {
   description?: ReactNode;
   /**
    * Shown while `invalid` is set. Without one, a value the browser refuses (required, email, link,
-   * length, pattern, range) is explained in the page's language once a post is tried or the edit is committed.
+   * length, pattern, range) is explained in the page's language once a post is tried or the edit is committed, and goes as
+   * soon as a keystroke makes the value valid.
    */
   errorMessage?: ReactNode;
   value?: string;
@@ -72,7 +73,7 @@ export function TextField({
   autoFocus,
   className,
 }: TextFieldProps) {
-  const { ref, problem } = useFieldProblem<HTMLDivElement>();
+  const { ref, problem, settle } = useFieldProblem<HTMLDivElement>();
   // The caller's message wins; otherwise the browser's verdict, which also marks the field invalid.
   const message = invalid && errorMessage ? errorMessage : problem;
   return (
@@ -80,7 +81,10 @@ export function TextField({
       ref={ref}
       value={value}
       defaultValue={defaultValue}
-      onChange={onChange}
+      onChange={(next: string) => {
+        onChange?.(next);
+        settle();
+      }}
       required={required}
       invalid={problem !== undefined || invalid === true}
       disabled={disabled}

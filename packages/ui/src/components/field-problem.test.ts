@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest';
-import { englishFieldLabels, explainValidity, type JudgedControl } from './field-problem.tsx';
+import { englishFieldLabels, explainValidity, nextProblem, type JudgedControl } from './field-problem.tsx';
 
 const valid: JudgedControl['validity'] = {
   valueMissing: false,
@@ -39,4 +39,22 @@ test('each validity state has its own message, with the limit where there is one
 test('a missing value is named before any other problem, and limits follow the locale', () => {
   expect(judge('email', { valueMissing: true, typeMismatch: true })).toBe('Fill in this field.');
   expect(judge('textarea', { tooLong: true }, { maxLength: 10000 }, 'de-DE')).toBe('Use at most 10.000 characters.');
+});
+
+test('a blocked submit or a committed edit shows the verdict; a keystroke only clears a message, once the value is valid', () => {
+  const required = 'Fill in this field.';
+  const email = 'Enter an email address, like name@example.com.';
+  // A field nobody has found wrong says nothing while it is typed in, even with an invalid value.
+  expect(nextProblem('input', undefined, email)).toBeUndefined();
+  // Found wrong by a blocked submit, or by leaving the field after an edit.
+  expect(nextProblem('invalid', undefined, required)).toBe(required);
+  expect(nextProblem('change', undefined, email)).toBe(email);
+  // Typing a value that is still wrong keeps the message as it is, until the next commit re-judges it.
+  expect(nextProblem('input', required, email)).toBe(required);
+  expect(nextProblem('change', required, email)).toBe(email);
+  // The keystroke that makes it valid takes the message away, before the field is left: the press
+  // on the submit button that leaves it then moves nothing, so its click is not lost.
+  expect(nextProblem('input', required, undefined)).toBeUndefined();
+  expect(nextProblem('change', undefined, undefined)).toBeUndefined();
+  expect(nextProblem('reset', required, required)).toBeUndefined();
 });

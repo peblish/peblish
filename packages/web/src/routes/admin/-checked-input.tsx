@@ -20,9 +20,19 @@ export function CheckedInput({
   required,
   ...input
 }: InputAttributes & { label: string; value?: string; defaultValue?: string; onChange?: (value: string) => void; required?: boolean }) {
-  const { ref, problem } = useFieldProblem<HTMLDivElement>();
+  const { ref, problem, settle } = useFieldProblem<HTMLDivElement>();
   return (
-    <Input.Root ref={ref} value={value} defaultValue={defaultValue} onChange={onChange} required={required} invalid={problem !== undefined}>
+    <Input.Root
+      ref={ref}
+      value={value}
+      defaultValue={defaultValue}
+      onChange={(next: string) => {
+        onChange?.(next);
+        settle();
+      }}
+      required={required}
+      invalid={problem !== undefined}
+    >
       <Input.Label>{label}</Input.Label>
       <Input.Input {...input} />
       {problem !== undefined && <Input.Error role="alert">{problem}</Input.Error>}

@@ -69,8 +69,11 @@ export function AuthForm({
  *
  * Once hydrated, React Aria stops the browser's own validation bubble, so a field the browser
  * finds invalid on submit explains itself here, in the page's language (the browser's message
- * follows the browser's language, not the page's), until a blur finds it valid. Without
- * JavaScript the browser validates as it always does.
+ * follows the browser's language, not the page's), and is marked invalid while it says so. The
+ * message and the flag go as soon as a keystroke makes the value valid, not at the blur: the press
+ * on the submit button below is what blurs the field, and a message going then moves the button
+ * between the press and the release, losing the click (the shared fields do the same,
+ * `nextProblem` in @peblish/ui field-problem). A blur re-judges a message still showing. Without JavaScript the browser validates as it always does.
  */
 export function Field({
   label,
@@ -86,14 +89,16 @@ export function Field({
   const { t } = useTranslate();
   const [problem, setProblem] = useState<string>();
   const text = (given: typeof value) => (given === undefined ? undefined : String(given));
+  // The message for the input's own constraints. A custom error is left out: React Aria sets one
+  // itself while the field is marked invalid (below), so it would keep a corrected field wrong.
   const explain = (field: HTMLInputElement) => {
     const { validity } = field;
-    if (validity.valid) return undefined;
     if (validity.valueMissing) return t('auth', 'field.required');
     if (validity.typeMismatch && field.type === 'email') return t('auth', 'field.email');
     if (validity.tooShort) return t('auth', 'field.tooShort', { min: field.minLength });
     if (validity.tooLong) return t('auth', 'field.tooLong', { max: field.maxLength });
-    return t('auth', 'field.invalid');
+    const other = validity.typeMismatch || validity.patternMismatch || validity.rangeUnderflow || validity.rangeOverflow;
+    return other || validity.badInput || validity.stepMismatch ? t('auth', 'field.invalid') : undefined;
   };
   return (
     <Input.Root
@@ -101,6 +106,8 @@ export function Field({
       value={text(value)}
       defaultValue={text(defaultValue)}
       required={required}
+      // The message and the invalid flag come from the same state, so they go together.
+      invalid={problem !== undefined}
       disabled={disabled}
       readOnly={readOnly}
     >
@@ -113,6 +120,10 @@ export function Field({
         onInvalid={(event: FormEvent<HTMLInputElement>) => {
           input.onInvalid?.(event);
           setProblem(explain(event.currentTarget));
+        }}
+        onInput={(event) => {
+          input.onInput?.(event);
+          if (problem !== undefined && explain(event.currentTarget) === undefined) setProblem(undefined);
         }}
         onBlur={(event: FocusEvent<HTMLInputElement>) => {
           input.onBlur?.(event);

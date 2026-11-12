@@ -274,14 +274,14 @@ export function BanFields({
  */
 function UntilField({ required }: { required: boolean }) {
   const { t } = useTranslate();
-  const { ref, problem, recheck } = useFieldProblem<HTMLDivElement>();
+  const { ref, problem, settle, recheck } = useFieldProblem<HTMLDivElement>();
   const [judgedRequired, setJudgedRequired] = useState(required);
   if (judgedRequired !== required) {
     setJudgedRequired(required);
     if (problem) recheck();
   }
   return (
-    <Input.Root ref={ref} required={required} invalid={problem !== undefined}>
+    <Input.Root ref={ref} required={required} invalid={problem !== undefined} onChange={settle}>
       <Input.Label>{t('modlog', 'panel.until')}</Input.Label>
       <Input.Input type="date" name="until" />
       {problem ? <Input.Error role="alert">{problem}</Input.Error> : null}
