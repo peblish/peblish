@@ -5,6 +5,7 @@ import { loadProfile } from './-load.ts';
 import { parseProfileSearch, resolveProfileSearch } from './-search.ts';
 import { ProfilePage } from './-ui/profile-page.tsx';
 import profileCss from './-ui/profile.css?url';
+import { ownTitle } from '../../../shell/title.ts';
 
 // /u/<handle> (profile-side): a person's card beside their posts and comments. The same address
 // is the person's ActivityPub id, which federation answers first (README, web rules). Public;
@@ -20,17 +21,16 @@ export const Route = createFileRoute('/u/$handle/')({
     if (!data) throw notFound();
     return data;
   },
-  head: ({ loaderData, matches }) => {
+  head: (context) => {
+    const { loaderData, matches } = context;
     const { locale, site } = titleContext(matches);
     return {
       meta: [
-        ...(loaderData
-          ? [
-              {
-                title: `${translate(locale, 'profiles', 'title', { name: loaderData.person.displayName || loaderData.person.name, handle: `@${loaderData.person.handle}` })} · ${site}`,
-              },
-            ]
-          : []),
+        ...ownTitle(
+          context,
+          loaderData &&
+            `${translate(locale, 'profiles', 'title', { name: loaderData.person.displayName || loaderData.person.name, handle: `@${loaderData.person.handle}` })} · ${site}`,
+        ),
         // A person who opted out of search stays out of it.
         ...(loaderData && (!loaderData.indexable || loaderData.state === 'deleted') ? [{ name: 'robots', content: 'noindex' }] : []),
       ],

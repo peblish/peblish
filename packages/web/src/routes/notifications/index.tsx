@@ -1,7 +1,7 @@
 import { unreadCap } from '@peblish/core/notifications/view';
 import { createFileRoute } from '@tanstack/react-router';
 import { DEFAULT_LOCALE } from '../../i18n/negotiate.ts';
-import { pageTitle, rootTitleData } from '../../shell/title.ts';
+import { ownTitle, pageTitle, rootTitleData } from '../../shell/title.ts';
 import { privateResponses } from '../../server/auth.ts';
 import { handleInboxPost } from './-form.ts';
 import { loadInbox } from './-load.ts';
@@ -16,14 +16,15 @@ export const Route = createFileRoute('/notifications/')({
   validateSearch: parseInboxSearch,
   loaderDeps: ({ search }) => ({ filter: search.filter ?? ('all' as const), cursor: search.cursor }),
   loader: ({ deps }) => loadInbox({ data: { filter: deps.filter, ...(deps.cursor ? { cursor: deps.cursor } : {}) } }),
-  head: ({ matches, loaderData }) => {
+  head: (context) => {
+    const { matches, loaderData } = context;
     const all: readonly { routeId: string; loaderData?: unknown }[] = matches;
     const { locale, site } = rootTitleData(all.find((match) => match.routeId === '__root__')?.loaderData, DEFAULT_LOCALE);
     // "(3) Inbox · feddit.com": the unread count leads, as the badge does.
     const unread = loaderData?.signedIn ? loaderData.unread : 0;
     const count = unread >= unreadCap ? `${unreadCap - 1}+` : String(unread);
     return {
-      meta: [{ title: `${unread > 0 ? `(${count}) ` : ''}${pageTitle(locale, site, 'you.inbox')}` }],
+      meta: ownTitle(context, `${unread > 0 ? `(${count}) ` : ''}${pageTitle(locale, site, 'you.inbox')}`),
       links: [{ rel: 'stylesheet', href: inboxCss }],
     };
   },

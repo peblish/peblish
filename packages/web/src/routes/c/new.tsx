@@ -9,6 +9,7 @@ import { loadNewCommunity } from './-form-load.ts';
 import { postCommunityForm } from './-form-post.ts';
 import { FormPage } from './-ui/form-page.tsx';
 import communityCss from './-ui/community.css?url';
+import { ownTitle } from '../../shell/title.ts';
 
 // /c/new: the community form for a site admin with two-factor on. Personal, so never cached.
 
@@ -22,8 +23,8 @@ export const Route = createFileRoute('/c/new')({
     const locale = root.loaderData?.locale ?? DEFAULT_LOCALE;
     return { data, title: `${translate(locale, 'communities', 'form.title.create')} · ${root.loaderData?.shell.siteName ?? ''}` };
   },
-  head: ({ loaderData }) => ({
-    meta: [...(loaderData ? [{ title: loaderData.title }] : []), { name: 'robots', content: 'noindex' }],
+  head: (context) => ({
+    meta: [...ownTitle(context, context.loaderData?.title), { name: 'robots', content: 'noindex' }],
     links: [composerCss, communityCss].map((href) => ({ rel: 'stylesheet', href })),
   }),
   component: NewCommunity,

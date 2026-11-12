@@ -5,6 +5,7 @@ import { translate } from '../../i18n/translate.ts';
 import { loadDirectory } from './-load.ts';
 import { DirectoryPage } from './-ui/directory-page.tsx';
 import directoryCss from './-ui/directory.css?url';
+import { ownTitle } from '../../shell/title.ts';
 
 // /communities: every community this server knows, local and remote, as a table (directory-table).
 // Plain links and one GET search form, so it works before the page hydrates and without script.
@@ -22,8 +23,8 @@ export const Route = createFileRoute('/communities/')({
     const locale = root.loaderData?.locale ?? DEFAULT_LOCALE;
     return { ...data, title: `${translate(locale, 'directory', 'directory.title')} · ${root.loaderData?.shell.siteName ?? ''}` };
   },
-  head: ({ loaderData }) => ({
-    meta: loaderData ? [{ title: loaderData.title }] : [],
+  head: (context) => ({
+    meta: ownTitle(context, context.loaderData?.title),
     links: [{ rel: 'stylesheet', href: directoryCss }],
   }),
   component: DirectoryRoute,

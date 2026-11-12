@@ -10,6 +10,7 @@ import { handleEditPost } from './-edit.ts';
 import { titleContext } from './-head.ts';
 import { loadEdit } from './-load.ts';
 import { parseProfileSearch } from './-search.ts';
+import { ownTitle } from '../../../shell/title.ts';
 
 // /u/<handle>/edit (profile-edit-inline, R2b): the profile card stays on the left and the form
 // replaces the activity. Display name and bio only; avatar, banner and the Bot switch come with
@@ -23,10 +24,10 @@ export const Route = createFileRoute('/u/$handle/edit')({
     if (!data) throw notFound();
     return data;
   },
-  head: ({ matches }) => {
-    const { locale, site } = titleContext(matches);
+  head: (context) => {
+    const { locale, site } = titleContext(context.matches);
     return {
-      meta: [{ title: `${translate(locale, 'profiles', 'edit.title')} · ${site}` }, { name: 'robots', content: 'noindex' }],
+      meta: [...ownTitle(context, `${translate(locale, 'profiles', 'edit.title')} · ${site}`), { name: 'robots', content: 'noindex' }],
       // The Markdown editor's own styles (its toolbar's 28 px targets among them), as the composer loads them.
       links: [composerCss, profileCss].map((href) => ({ rel: 'stylesheet', href })),
     };

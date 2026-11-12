@@ -6,7 +6,7 @@ import postCss from '../../-ui/post.css?url';
 import { loadPermalinkFn } from './-thread-fn.ts';
 import { PermalinkPage } from './-ui/permalink-page.tsx';
 import { gateTitle } from '../../../c/-ui/gate.tsx';
-import { headTitle } from '../../../../shell/title.ts';
+import { headTitle, ownTitle } from '../../../../shell/title.ts';
 
 // /post/<id>/comments/<commentId>: the "Continue this thread" page, one comment and what is
 // under it. The page is personal like the post's (the gate, tombstones and the author's forms
@@ -39,9 +39,7 @@ export const Route = createFileRoute('/post/$id/comments/$commentId')({
       meta:
         loaderData?.kind === 'gate'
           ? [...headTitle(context, 'communities', gateTitle(loaderData)), { name: 'robots', content: 'noindex' }]
-          : loaderData?.postTitle
-            ? [{ title: `${loaderData.postTitle} | !${loaderData.communityHandle}` }]
-            : [],
+          : ownTitle(context, loaderData?.postTitle && `${loaderData.postTitle} | !${loaderData.communityHandle}`),
       links: [
         { rel: 'stylesheet', href: postCss },
         { rel: 'stylesheet', href: gateCss },

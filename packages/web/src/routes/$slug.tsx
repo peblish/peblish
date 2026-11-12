@@ -1,6 +1,6 @@
 import { createFileRoute, notFound } from '@tanstack/react-router';
 import { DEFAULT_LOCALE } from '../i18n/negotiate.ts';
-import { headTitle, rootTitleData } from '../shell/title.ts';
+import { headTitle, ownTitle, rootTitleData } from '../shell/title.ts';
 import { LegalPage } from './-legal/legal-page.tsx';
 import legalCss from './-legal/legal.css?url';
 import { loadLegalPage } from './-legal/load.ts';
@@ -21,7 +21,7 @@ export const Route = createFileRoute('/$slug')({
     // A published page by its own title; /about with none published is the instance's details,
     // titled as the sidebar link that leads there (its heading, "About <site>", already names the site).
     const title = loaderData?.page
-      ? [{ title: `${loaderData.page.title} · ${site}` }]
+      ? ownTitle(context, `${loaderData.page.title} · ${site}`)
       : loaderData?.about
         ? headTitle(context, 'shell', 'footer.about')
         : [];

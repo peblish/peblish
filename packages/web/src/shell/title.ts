@@ -74,6 +74,16 @@ export function headTitle<A extends Area>(
   return [{ title: titled(translate(locale, area, key, params), site) }];
 }
 
+/**
+ * A route's own title, already composed (a post's, a community's, one built in its loader), under
+ * the same rule as headTitle: only while the route's own match is a success. After a client-side
+ * navigation to a failing or missing page the router keeps the match's earlier loader data, so a
+ * title read from it would otherwise stay over the error or not-found page.
+ */
+export function ownTitle({ match }: Pick<HeadContext, 'match'>, title: string | null | undefined): { title: string }[] {
+  return match.status === 'success' && title ? [{ title }] : [];
+}
+
 /** The locale and the site name from the root route's loader data, as a route's `head` sees it in `matches`. */
 export function rootTitleData(root: unknown, fallbackLocale: string): { locale: string; site: string } {
   const record = typeof root === 'object' && root !== null ? (root as Record<string, unknown>) : {};

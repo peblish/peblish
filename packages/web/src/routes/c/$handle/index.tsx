@@ -4,7 +4,7 @@ import { createFileRoute, notFound } from '@tanstack/react-router';
 import { DEFAULT_LOCALE } from '../../../i18n/negotiate.ts';
 import { useTranslate } from '../../../i18n/use-translate.ts';
 import { useRouteHydrated } from '../../../shell/hydration.ts';
-import { headTitle, rootTitleData } from '../../../shell/title.ts';
+import { headTitle, ownTitle, rootTitleData } from '../../../shell/title.ts';
 import { directoryPaths } from '../../../shell/paths.ts';
 import { parseFeedSearch, resolveFeedSearch } from '../../index/-feed/search.ts';
 import feedCss from '../../index/-feed/feed.css?url';
@@ -46,7 +46,7 @@ export const Route = createFileRoute('/c/$handle/')({
     // route renders itself, so it names it); a failure is left to the root.
     const title =
       loaderData?.kind === 'page'
-        ? [{ title: `${loaderData.title} · ${site}` }]
+        ? ownTitle(context, `${loaderData.title} · ${site}`)
         : loaderData?.kind === 'gate'
           ? headTitle(context, 'communities', gateTitle(loaderData))
           : headTitle(context, 'communities', 'page.notFound.title', { on: 'notFound' });

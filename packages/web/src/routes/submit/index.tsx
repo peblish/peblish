@@ -15,6 +15,7 @@ import { answer, parseSubmission, readSubmission, submit } from './-submit.ts';
 import { asComposerError } from './-types.ts';
 import { Composer } from './-ui/composer.tsx';
 import submitCss from './-ui/submit.css?url';
+import { ownTitle } from '../../shell/title.ts';
 
 // /submit: the composer as a page (composer-page), and with ?edit=<postId> the author's edit
 // form. The shell's "Create post" opens the same form as a sheet over the page instead
@@ -43,8 +44,8 @@ export const Route = createFileRoute('/submit/')({
     const name = translate(locale, 'composer', deps.edit === undefined ? 'title.create' : 'title.edit');
     return { ...data, title: `${name} \u00b7 ${root.loaderData?.shell.siteName ?? ''}` };
   },
-  head: ({ loaderData }) => ({
-    meta: loaderData ? [{ title: loaderData.title }] : [],
+  head: (context) => ({
+    meta: ownTitle(context, context.loaderData?.title),
     links: [composerCss, submitCss].map((href) => ({ rel: 'stylesheet', href })),
   }),
   component: Submit,

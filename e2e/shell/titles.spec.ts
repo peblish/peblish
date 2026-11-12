@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 import { seedWorld, signedInAdmin, type World } from '../modlog/support.ts';
 import { gotoHydrated } from '../support/route-marker.ts';
 import { siteName } from '../support/site-name.ts';
@@ -80,5 +80,45 @@ test.describe('in German', () => {
   test('About is titled in the request locale', async ({ page }) => {
     await gotoHydrated(page, '/about');
     await expect(page).toHaveTitle(`Über uns · ${await siteName(page)}`);
+  });
+});
+
+/** Follows a link inside the page, as a reader clicking one does: the router navigates in the client and keeps its loader data. */
+async function clientNavigate(page: Page, href: string) {
+  await page.evaluate((target) => {
+    const link = document.createElement('a');
+    link.href = target;
+    link.id = 'pb-test-link';
+    link.textContent = 'go';
+    document.querySelector('main')?.append(link);
+  }, href);
+  await page.locator('#pb-test-link').click();
+  await page.waitForURL((url) => `${url.pathname}${url.search}` === new URL(href, 'http://x').pathname + new URL(href, 'http://x').search);
+}
+
+test.describe('after a client-side navigation', () => {
+  test.skip(Boolean(process.env.BASE_URL), 'needs the lane database for its seed (DATABASE_URL)');
+  let world: World;
+  test.beforeAll(() => {
+    world = seedWorld();
+  });
+
+  test("a page's own title from its loader data gives way to the error and not-found titles", async ({ page }) => {
+    const post = `/post/${world.posts.author}`;
+    const missingPost = '/post/00000000-0000-4000-8000-000000000000';
+    const permalink = `${post}/comments/${world.comments.spam}`;
+    for (const [start, next, title] of [
+      [post, `${post}?error=%7B%22a%22%3A1%7D`, 'Something went wrong'],
+      [post, missingPost, 'Page not found'],
+      [permalink, `${post}/comments/00000000-0000-4000-8000-000000000000`, 'Page not found'],
+      [`/c/${world.community.handle}`, '/c/no_such_community_here', 'Community not found'],
+      ['/about', '/privacy', 'Page not found'],
+    ] as const) {
+      await gotoHydrated(page, start);
+      const site = await siteName(page);
+      await expect(page).not.toHaveTitle(`${title} · ${site}`);
+      await clientNavigate(page, next);
+      await expect(page, `${start} then ${next}`).toHaveTitle(`${title} · ${site}`);
+    }
   });
 });
