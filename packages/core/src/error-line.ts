@@ -3,22 +3,31 @@
  * often quotes its input: ArkType's "(was ...)", drizzle's `params:` list, Postgres's quoted value,
  * an SMTP refusal's recipient, a message the app built ("no such community: <name>"). So no
  * message is read, only fields whose shape cannot hold input: the class name, a short code
- * (a Postgres SQLSTATE, a Node or SMTP error code), the first frame in this repository's code as
- * `file:line`, and the same for up to three causes, by name and code.
+ * (a Postgres SQLSTATE, a Node or SMTP error code), an HTTP status or SMTP reply number, an SMTP
+ * command from a fixed list, the first real frame in this repository's code as `file:line`, and
+ * the same fields (no location) for up to three causes. At most 400 characters, one line.
  *
  * What a reader can tell from it: which kind of failure (class, code), where it was thrown, and
  * what it was caused by. What they cannot: the values involved; reproduce from the route and time.
  */
 export function errorLine(error: unknown): string {
   if (!(error instanceof Error)) return `a thrown ${typeof error}`;
-  const where = appFrame(error.stack);
-  const parts = [`${nameOf(error)}${codeOf(error)}${where ? ` at ${where}` : ''}`];
+  const where = appFrame(error);
+  const parts = [`${describe(error)}${where ? ` at ${where}` : ''}`];
   let cause = error.cause;
   while (cause instanceof Error && parts.length < 4) {
-    parts.push(`caused by ${nameOf(cause)}${codeOf(cause)}`);
+    parts.push(`caused by ${describe(cause)}`);
     cause = cause.cause;
   }
-  return parts.join('; ');
+  const line = parts.join('; ');
+  return line.length > maxLine ? `${line.slice(0, maxLine - 1)}…` : line;
+}
+
+const maxLine = 400;
+
+/** Name, code, and the HTTP or SMTP reply number and SMTP command when they are provably not text. */
+function describe(error: Error): string {
+  return [nameOf(error), codeOf(error), statusOf(error), commandOf(error)].filter(Boolean).join(' ');
 }
 
 /** Validation issues (Standard Schema, ArkType) as "<path>: <code>" for each, never their messages or values. */
@@ -44,8 +53,54 @@ function nameOf(error: Error): string {
 
 function codeOf(error: Error): string {
   const code = 'code' in error ? error.code : undefined;
-  const shown = typeof code === 'string' ? safe(code, 40) : '';
-  return shown ? ` ${shown}` : '';
+  return typeof code === 'string' ? safe(code, 40) : '';
+}
+
+/** An HTTP status or SMTP reply code (nodemailer's responseCode): an integer from 100 to 599. */
+function statusOf(error: Error): string {
+  for (const field of ['status', 'statusCode', 'responseCode']) {
+    const value: unknown = (error as unknown as Record<string, unknown>)[field];
+    if (typeof value === 'number' && Number.isInteger(value) && value >= 100 && value <= 599) return String(value);
+  }
+  return '';
+}
+
+/** The SMTP step a mail error happened at (nodemailer's `command`), only from this list. */
+const smtpCommands: ReadonlySet<string> = new Set([
+  'CONN',
+  'EHLO',
+  'HELO',
+  'LHLO',
+  'STARTTLS',
+  'AUTH PLAIN',
+  'AUTH LOGIN',
+  'AUTH CRAM-MD5',
+  'AUTH XOAUTH2',
+  'MAIL FROM',
+  'RCPT TO',
+  'DATA',
+  'RSET',
+  'QUIT',
+  'API',
+]);
+
+function commandOf(error: Error): string {
+  const command = 'command' in error ? error.command : undefined;
+  return typeof command === 'string' && smtpCommands.has(command) ? command : '';
+}
+
+/**
+ * The stack's frames, only once its first line is exactly the error's name and message: the
+ * message comes first in a stack and can hold anything, a line shaped like a frame included. A
+ * stack whose start does not match (a message changed after the stack was taken) gives none.
+ */
+function framesOf(error: Error): string[] {
+  const stack = typeof error.stack === 'string' ? error.stack : '';
+  const name = /^[\w$.]{1,60}/.exec(stack)?.[0];
+  if (!name) return [];
+  const header = error.message ? `${name}: ${error.message}` : name;
+  if (!stack.startsWith(`${header}\n`)) return [];
+  return stack.slice(header.length + 1).split('\n');
 }
 
 /**
@@ -53,8 +108,8 @@ function codeOf(error: Error): string {
  * and the dev server) or from the build's `server/` folder (`_ssr/<chunk>.mjs`, the deployed
  * build, which has no source maps). Library and Node frames are skipped; no such frame, nothing.
  */
-function appFrame(stack: string | undefined): string {
-  for (const line of (stack ?? '').split('\n')) {
+function appFrame(error: Error): string {
+  for (const line of framesOf(error)) {
     const match = /^\s+at (?:.*\()?(?:file:\/\/)?([^\s()]+):(\d+):\d+\)?$/.exec(line);
     if (!match) continue;
     const [, path = '', row = ''] = match;

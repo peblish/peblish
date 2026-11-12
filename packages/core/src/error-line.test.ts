@@ -52,3 +52,61 @@ test('validation issues: each path with its code, never a value', () => {
     'handle: maxLength, a.0: domain, (all): invalid',
   );
 });
+
+test("a forged frame in a real database error's message gives no location from it", async () => {
+  // What a decoded query-string value can hold: a NUL that Postgres refuses, and a line shaped like a frame.
+  const forged = `x\0\n    at /app/packages/${marker}.ts:1:1\nx`;
+  const { db } = await import('./db/read.ts');
+  const { sql } = await import('drizzle-orm');
+  const failure = await db()
+    .execute(sql`select ${forged}::text as value`)
+    .then(
+      () => undefined,
+      (error: unknown) => error,
+    );
+  expect(failure).toBeInstanceOf(Error);
+  // The driver's message does carry the value, so the stack does too.
+  expect(String((failure as Error).stack)).toContain(marker);
+  const line = errorLine(failure);
+  expect(line).not.toContain(marker);
+  expect(line).not.toMatch(/[\r\n\0]/);
+});
+
+test('a stack whose first line is not exactly the name and message gives no location at all', () => {
+  const error = new Error('short');
+  error.stack = `Error: something else\n    at /app/packages/core/src/${marker}.ts:1:1`;
+  expect(errorLine(error)).toBe('Error');
+  const renamed = new Error('');
+  renamed.stack = `Error\n    at f (/app/packages/core/src/posts/read.ts:9:1)`;
+  expect(errorLine(renamed)).toBe('Error at core/src/posts/read.ts:9');
+});
+
+test('a mail refusal keeps its numeric reply and SMTP command, never the reply text', () => {
+  // As nodemailer's _formatError builds it: the reply is appended to the message after the stack was taken.
+  const refusal = (reply: string) => {
+    const error = Object.assign(new Error("Can't send mail - all recipients were rejected"), {
+      code: 'EENVELOPE',
+      response: reply,
+      responseCode: Number(reply.slice(0, 3)),
+      command: 'RCPT TO',
+    });
+    error.message += `: ${reply}`;
+    return error;
+  };
+  const later = errorLine(refusal(`450 4.2.1 <${marker}>: Mailbox busy, try again`));
+  const never = errorLine(refusal(`550 5.1.1 <${marker}>: Recipient address rejected`));
+  expect(later).toMatch(/^Error EENVELOPE 450 RCPT TO( at \S+)?$/);
+  expect(never).toMatch(/^Error EENVELOPE 550 RCPT TO( at \S+)?$/);
+  expect(`${later} ${never}`).not.toContain(marker);
+  // A status out of range, a fractional one, or a command not on the list is left out.
+  expect(errorLine(Object.assign(new Error('x'), { statusCode: 99, command: `RCPT TO ${marker}` }))).toMatch(/^Error at \S+$/);
+  expect(errorLine(Object.assign(new Error('x'), { status: 404.5 }))).toMatch(/^Error at \S+$/);
+  expect(errorLine(Object.assign(new Error('x'), { status: 503 }))).toMatch(/^Error 503 at \S+$/);
+});
+
+test('the line is bounded', () => {
+  let error: Error = new Error('x');
+  for (let depth = 0; depth < 10; depth++)
+    error = Object.assign(new Error('x', { cause: error }), { name: 'A'.repeat(60), code: 'C'.repeat(40) });
+  expect(errorLine(error).length).toBeLessThanOrEqual(400);
+});
