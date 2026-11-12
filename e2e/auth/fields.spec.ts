@@ -196,6 +196,64 @@ test('a link in the terms label navigates without ticking the box', async ({ pag
   expect(await page.evaluate(() => (window as unknown as { termsAfterClick?: boolean }).termsAfterClick)).toBe(false);
 });
 
+/**
+ * A corrected control, with focus still in it: no longer invalid, its accessible description no
+ * longer carries the message, and every id it is described by names an element on the page.
+ */
+async function expectCorrected(control: ReturnType<typeof field>, message: string): Promise<void> {
+  await expect(control).toBeFocused();
+  await expect(control).not.toHaveAttribute('aria-invalid', 'true');
+  await expect(control).not.toHaveAccessibleDescription(new RegExp(message.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  const missing = await control.evaluate((element) =>
+    (element.getAttribute('aria-describedby') ?? '').split(/\s+/).filter((id) => id !== '' && !document.getElementById(id)),
+  );
+  expect(missing).toEqual([]);
+}
+
+test('sign-in: a corrected field stops being invalid while it still has focus', async ({ page }) => {
+  const { required } = messages['en-US'];
+  await gotoHydrated(page, '/auth/sign-in');
+  await page.getByRole('button', { name: 'Sign in' }).click();
+  await expect(page.getByRole('alert').filter({ hasText: required })).toHaveCount(2);
+  const identifier = field(page, 'identifier');
+  await expect(identifier).toBeFocused();
+  await identifier.pressSequentially('@someone');
+  await expectCorrected(identifier, required);
+  // The password has no hint, so its error part was the only thing describing it.
+  const password = field(page, 'password');
+  await password.focus();
+  await expect(password).toHaveAttribute('aria-invalid', 'true');
+  await password.pressSequentially('a passphrase');
+  await expectCorrected(password, required);
+  await expect(page.getByRole('alert')).toHaveCount(0);
+});
+
+test('sign-up: the year, the month and the terms box each stop being invalid when corrected, with focus still on them', async ({
+  page,
+}) => {
+  const { required } = messages['en-US'];
+  await gotoHydrated(page, '/auth/sign-up');
+  await page.locator('form button[type="submit"]').click();
+  const year = field(page, 'year');
+  await year.focus();
+  await expect(year).toHaveAttribute('aria-invalid', 'true');
+  await year.pressSequentially('1994');
+  await expectCorrected(year, required);
+
+  const month = page.locator('form select[name="month"]');
+  await month.focus();
+  await expect(month).toHaveAttribute('aria-invalid', 'true');
+  await month.selectOption('3');
+  await expectCorrected(month, 'Choose an option.');
+
+  const terms = page.locator('form input[name="terms"]');
+  await terms.focus();
+  await expect(terms).toHaveAttribute('aria-invalid', 'true');
+  await page.keyboard.press('Space');
+  await expect(terms).toBeChecked();
+  await expectCorrected(terms, 'Tick this box to continue.');
+});
+
 test.describe('without JavaScript', () => {
   test.use({ javaScriptEnabled: false });
 
