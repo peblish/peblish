@@ -29,6 +29,7 @@ import { accessOf } from '../../settings/-access.ts';
 import { adminHead } from '../../settings/-head.ts';
 import { AccessNotice, AdminTitle, SectionTitle } from '../../settings/-ui.tsx';
 import { StatusCell } from '../-status.tsx';
+import { input } from '../../../../server/input.ts';
 
 // /admin/pages/<slug>/<language>: the editor. Save draft keeps what visitors see as it is;
 // Publish saves the form and then publishes it (refused while a {{TOKEN}} has no value, with
@@ -40,7 +41,7 @@ const Params = type({ slug: 'string', language: 'string' });
 const hereOf = (slug: string, language: string) => `/admin/pages/${slug}/${language}`;
 
 const loadEditor = createServerFn({ method: 'GET' })
-  .validator(Params)
+  .validator(input(Params))
   .handler(async ({ data }) => {
     const { slug, language } = data;
     if (!isPageSlug(slug) || !isPageLanguage(language)) return null;
@@ -69,7 +70,7 @@ const loadEditor = createServerFn({ method: 'GET' })
  * admin may ask; a cross-site, signed-out or refused call answers null.
  */
 const previewPage = createServerFn({ method: 'POST' })
-  .validator(type({ body: 'string <= 50000' }))
+  .validator(input(type({ body: 'string <= 50000' })))
   .handler(async ({ data }): Promise<{ html: string } | null> => {
     const session = sameOrigin(getRequest()) ? await pageSession() : null;
     if (!session || accessOf(session) !== 'ok') return null;

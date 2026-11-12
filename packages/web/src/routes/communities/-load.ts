@@ -4,6 +4,7 @@ import { parseLookup } from '@peblish/core/resolve/parse';
 import { createServerFn } from '@tanstack/react-start';
 import { type } from 'arktype';
 import { pageSession } from '../../server/auth.ts';
+import { input } from '../../server/input.ts';
 
 /**
  * The directory page's data for the route loader (a server function: it runs on the server for
@@ -12,13 +13,15 @@ import { pageSession } from '../../server/auth.ts';
  */
 export const loadDirectory = createServerFn({ method: 'GET' })
   .validator(
-    type({
-      scope: Scope,
-      sort: DirectorySort,
-      nsfw: NsfwMode,
-      q: 'string <= 100',
-      page: type('number.integer').atLeast(1).atMost(maxPage),
-    }),
+    input(
+      type({
+        scope: Scope,
+        sort: DirectorySort,
+        nsfw: NsfwMode,
+        q: 'string <= 100',
+        page: type('number.integer').atLeast(1).atMost(maxPage),
+      }),
+    ),
   )
   .handler(async ({ data }) => {
     const session = await pageSession();

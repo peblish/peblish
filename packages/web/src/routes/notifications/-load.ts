@@ -3,6 +3,7 @@ import { inboxFilters, type Inbox } from '@peblish/core/notifications/view';
 import { createServerFn } from '@tanstack/react-start';
 import { type } from 'arktype';
 import { pageSession } from '../../server/auth.ts';
+import { input } from '../../server/input.ts';
 
 /**
  * The inbox page for the route loader (a server function: it runs on the server for a document
@@ -11,7 +12,7 @@ import { pageSession } from '../../server/auth.ts';
  * server's text and the browser's hydrate the same.
  */
 export const loadInbox = createServerFn({ method: 'GET' })
-  .validator(type({ filter: type.enumerated(...inboxFilters), 'cursor?': 'string.uuid' }))
+  .validator(input(type({ filter: type.enumerated(...inboxFilters), 'cursor?': 'string.uuid' })))
   .handler(async ({ data }) => {
     const session = await pageSession();
     const now = new Date().toISOString();

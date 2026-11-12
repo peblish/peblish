@@ -16,6 +16,7 @@ import type { SlotViewer } from '../-actions/props.ts';
 import { feedItem } from '../index/-feed/items.ts';
 import { agoText, dateText, languageName } from './-format.ts';
 import { gateData, requestNsfw } from './-gate.ts';
+import { input } from '../../server/input.ts';
 
 /** No such community (unknown, deleted or removed): the route throws notFound with the handle for its own not-found page. */
 const missing = (handle: string) => ({ kind: 'missing' as const, handle });
@@ -29,7 +30,7 @@ const missing = (handle: string) => ({ kind: 'missing' as const, handle });
  * here, in the request's locale, so hydration formats nothing. `kind: 'missing'`: no such community (404).
  */
 export const loadCommunityPage = createServerFn({ method: 'GET' })
-  .validator(type({ handle: 'string', sort: Sort, period: Period, 'cursor?': 'string <= 400' }))
+  .validator(input(type({ handle: 'string', sort: Sort, period: Period, 'cursor?': 'string <= 400' })))
   .handler(async ({ data }) => {
     const session = await pageSession();
     const viewer: Viewer = session ? { actorId: session.view.actorId, siteRole: session.view.siteRole } : null;

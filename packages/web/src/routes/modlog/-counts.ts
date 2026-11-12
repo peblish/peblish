@@ -2,6 +2,7 @@ import { contentCounts, moderatedCommunities } from '@peblish/core/bans/read';
 import { createServerFn } from '@tanstack/react-start';
 import { type } from 'arktype';
 import { pageSession } from '../../server/auth.ts';
+import { input } from '../../server/input.ts';
 
 /**
  * How much a ban with "Also remove their content" would remove, for the open ban panel: a
@@ -9,7 +10,7 @@ import { pageSession } from '../../server/auth.ts';
  * signed-out reader, gets nothing back.
  */
 export const loadBanCounts = createServerFn({ method: 'GET' })
-  .validator(type({ person: 'string.uuid', 'community?': 'string.uuid' }))
+  .validator(input(type({ person: 'string.uuid', 'community?': 'string.uuid' })))
   .handler(async ({ data }) => {
     const session = await pageSession();
     if (!session) return null;

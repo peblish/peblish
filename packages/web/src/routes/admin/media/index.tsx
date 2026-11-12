@@ -18,6 +18,7 @@ import { Denial } from '../-denial.tsx';
 import { accessOf } from '../settings/-access.ts';
 import { Evidence, Failed, Hashes, Review, sections, Status, StatusStrip, SubNav, Warning, type Section } from './-ui/sections.tsx';
 import mediaCss from './-ui/media.css?url';
+import { headTitle } from '../../../shell/title.ts';
 
 // The admin Media tab (R2b pick media-split): scanner status, the quarantine review with one
 // shared decision control, the blocked-image list, failed scans, evidence manifests. Admins only
@@ -96,7 +97,7 @@ const page = (section: Section, extra: Record<string, string | undefined> = {}) 
 export const Route = createFileRoute('/admin/media/')({
   validateSearch: Search,
   loader: () => loadMedia(),
-  head: () => ({ links: [{ rel: 'stylesheet', href: mediaCss }] }),
+  head: (context) => ({ meta: headTitle(context, 'mediascan', 'media.title'), links: [{ rel: 'stylesheet', href: mediaCss }] }),
   component: MediaTab,
   server: {
     handlers: {

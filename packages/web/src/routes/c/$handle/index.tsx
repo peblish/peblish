@@ -4,7 +4,7 @@ import { createFileRoute, notFound } from '@tanstack/react-router';
 import { DEFAULT_LOCALE } from '../../../i18n/negotiate.ts';
 import { useTranslate } from '../../../i18n/use-translate.ts';
 import { useRouteHydrated } from '../../../shell/hydration.ts';
-import { rootTitleData } from '../../../shell/title.ts';
+import { headTitle, ownTitle, rootTitleData } from '../../../shell/title.ts';
 import { directoryPaths } from '../../../shell/paths.ts';
 import { parseFeedSearch, resolveFeedSearch } from '../../index/-feed/search.ts';
 import feedCss from '../../index/-feed/feed.css?url';
@@ -12,7 +12,7 @@ import { loadCommunityPage } from '../-load.ts';
 import { communityPost } from '../-intents.ts';
 import { CommunityPage } from '../-ui/community-page.tsx';
 import communityCss from '../-ui/community.css?url';
-import { GateNotice } from '../-ui/gate.tsx';
+import { GateNotice, gateTitle } from '../-ui/gate.tsx';
 import gateCss from '../-ui/gate.css?url';
 
 // /c/<handle>: the community page, or the NSFW gate in its place. `name` is a local community,
@@ -38,11 +38,23 @@ export const Route = createFileRoute('/c/$handle/')({
     if (data.kind === 'missing') throw notFound({ data });
     return data;
   },
-  head: ({ loaderData, matches }) => {
+  head: (context) => {
+    const { loaderData, matches } = context;
     const { site } = rootTitleData(matches.find((match) => (match.routeId as string) === '__root__')?.loaderData, DEFAULT_LOCALE);
-    const robots = !loaderData || loaderData.kind !== 'page' || !loaderData.indexable ? [{ name: 'robots', content: 'noindex' }] : [];
+    // The match's status first: on a not-found the router keeps the loader data of the page shown
+    // before (a client navigation, or this same page loaded again after the community was removed).
+    const shown = context.match.status === 'notFound' ? undefined : loaderData;
+    const robots = !shown || shown.kind !== 'page' || !shown.indexable ? [{ name: 'robots', content: 'noindex' }] : [];
+    // Titled as the page shows: the community, its gate, or its own not-found page (which this
+    // route renders itself, so it names it); a failure is left to the root.
+    const title =
+      shown?.kind === 'page'
+        ? ownTitle(context, `${shown.title} · ${site}`)
+        : shown?.kind === 'gate'
+          ? headTitle(context, 'communities', gateTitle(shown))
+          : headTitle(context, 'communities', 'page.notFound.title', { on: 'notFound' });
     return {
-      meta: [...(loaderData?.kind === 'page' ? [{ title: `${loaderData.title} · ${site}` }] : []), ...robots],
+      meta: [...title, ...robots],
       links: [
         { rel: 'stylesheet', href: feedCss },
         { rel: 'stylesheet', href: communityCss },

@@ -74,8 +74,11 @@ test('a failed or refused author upvote still returns the post, with a warning n
     expect(warn).toHaveBeenCalledTimes(2);
     expect(warn.mock.calls[0]?.[0]).toContain(refused.id);
     expect(warn.mock.calls[0]?.[0]).toContain('community.banned');
+    // One line naming the post and the error's class, never its message (core error-line.ts).
+    expect(warn.mock.calls[1]).toHaveLength(1);
     expect(warn.mock.calls[1]?.[0]).toContain(failed.id);
-    expect(warn.mock.calls[1]?.[1]).toEqual(new Error('connection lost'));
+    expect(warn.mock.calls[1]?.[0]).toMatch(/failed: Error( at \S+)?$/);
+    expect(warn.mock.calls[1]?.[0]).not.toContain('connection lost');
   } finally {
     warn.mockRestore();
   }

@@ -7,6 +7,7 @@ import { getRequestHeader, setResponseHeader } from '@tanstack/react-start/serve
 import { type } from 'arktype';
 import { negotiateLocale } from '../../i18n/negotiate.ts';
 import { createMarkdownRenderer } from '../../server/markdown.ts';
+import { input } from '../../server/input.ts';
 
 /** One entry of the "Legal and safety" list: where a live page is, and what it is called in the reader's language. */
 export type LegalLink = { slug: PageSlug; title: string };
@@ -27,7 +28,7 @@ export type LegalPageData = {
  * name and description. The response varies by language, so it says so.
  */
 export const loadLegalPage = createServerFn({ method: 'GET' })
-  .validator(type({ slug: 'string' }))
+  .validator(input(type({ slug: 'string' })))
   .handler(async ({ data }): Promise<LegalPageData | null> => {
     const { slug } = data;
     if (!isPageSlug(slug)) return null;

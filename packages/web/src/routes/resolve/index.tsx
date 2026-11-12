@@ -9,6 +9,7 @@ import { answer } from './-answer.ts';
 import { loadResolve } from './-load.ts';
 import { readLookupText, resolveForm } from './-resolve.ts';
 import { ResolvePage } from './-ui/resolve-page.tsx';
+import { ownTitle } from '../../shell/title.ts';
 
 // /resolve: find a community, person, post or comment on another server by handle or link. The
 // page is public and its form is for signed-in accounts; a GET never fetches anything.
@@ -24,8 +25,8 @@ export const Route = createFileRoute('/resolve/')({
     const locale = root.loaderData?.locale ?? DEFAULT_LOCALE;
     return { ...data, title: `${translate(locale, 'directory', 'resolve.title')} · ${root.loaderData?.shell.siteName ?? ''}` };
   },
-  head: ({ loaderData }) => ({
-    meta: loaderData ? [{ title: loaderData.title }] : [],
+  head: (context) => ({
+    meta: ownTitle(context, context.loaderData?.title),
     links: [{ rel: 'stylesheet', href: directoryCss }],
   }),
   component: ResolveRoute,

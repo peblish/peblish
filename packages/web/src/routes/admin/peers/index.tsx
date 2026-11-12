@@ -26,6 +26,7 @@ import { NoEnterSubmit } from '../-no-enter-submit.tsx';
 import { changes, hostFrom, Body } from './-act.ts';
 import { loadPeers } from './-load.ts';
 import peersCss from './-ui/peers.css?url';
+import { headTitle } from '../../../shell/title.ts';
 
 // /admin/peers: the Peers tab (R2 pick admin-tabs). Every instance we know of, with what this
 // server does about it: its media (quarantined until approved, approved, purged), its inbox
@@ -45,7 +46,7 @@ const Search = (raw: Record<string, unknown>): { error?: string; peer?: string }
 export const Route = createFileRoute('/admin/peers/')({
   validateSearch: Search,
   loader: () => loadPeers(),
-  head: () => ({ links: [{ rel: 'stylesheet', href: peersCss }] }),
+  head: (context) => ({ meta: headTitle(context, 'peers', 'title'), links: [{ rel: 'stylesheet', href: peersCss }] }),
   component: Peers,
   server: {
     middleware: [privateResponses],

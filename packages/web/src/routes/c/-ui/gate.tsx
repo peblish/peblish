@@ -9,6 +9,7 @@ import { Select } from '@peblish/ui/components/select';
 import { Text } from '@peblish/ui/components/text';
 import { TextField } from '@peblish/ui/components/text-field';
 import type { MouseEvent, ReactNode } from 'react';
+import type { MessageKey } from '../../../i18n/translate.ts';
 import { useTranslate } from '../../../i18n/use-translate.ts';
 import { useRouteHydrated } from '../../../shell/hydration.ts';
 import { communityPath } from '../../../shell/paths.ts';
@@ -28,6 +29,14 @@ export type GateData = {
   /** The page the viewer came for, a path on this site; every form sends them back to it. */
   back: string;
 };
+
+/** The gate's heading, which is also the page's title (the routes' heads): where the gate stands, never what it hides. */
+export function gateTitle({ state, subject }: Pick<GateData, 'state' | 'subject'>): MessageKey<'communities'> {
+  if (state === 'under-16') return 'gate.under16.title';
+  if (state === 'age') return 'gate.declare.title';
+  if (state === 'hidden') return 'gate.hidden.title';
+  return subject === 'community' ? 'gate.community.title' : 'gate.post.title';
+}
 
 const months = Array.from({ length: 12 }, (_, index) => index + 1);
 
@@ -86,7 +95,7 @@ export function GateNotice({ data, error }: { data: GateData; error?: string | u
   if (state === 'under-16')
     return (
       <Panel state={state} subject={subject}>
-        <Heading>{t('communities', 'gate.under16.title')}</Heading>
+        <Heading>{t('communities', gateTitle(data))}</Heading>
         <Body>{t('communities', 'gate.under16.body')}</Body>
         <div className="gate-actions">{goBackLink}</div>
       </Panel>
@@ -95,7 +104,7 @@ export function GateNotice({ data, error }: { data: GateData; error?: string | u
   if (state === 'age')
     return (
       <Panel state={state} subject={subject}>
-        <Heading>{t('communities', 'gate.declare.title')}</Heading>
+        <Heading>{t('communities', gateTitle(data))}</Heading>
         <Body>{t('communities', 'gate.declare.body')}</Body>
         {message && (
           <Notice tone="danger" role="alert">
@@ -151,7 +160,7 @@ export function GateNotice({ data, error }: { data: GateData; error?: string | u
     return (
       <Panel state={state} subject={subject}>
         <div>{flag}</div>
-        <Heading>{t('communities', 'gate.hidden.title')}</Heading>
+        <Heading>{t('communities', gateTitle(data))}</Heading>
         <Body>{t('communities', subject === 'community' ? 'gate.hidden.community' : 'gate.hidden.post', { handle: shown })}</Body>
         <div className="gate-actions">
           {intentForm('nsfw-once', t('communities', 'gate.once'), true)}
@@ -167,7 +176,7 @@ export function GateNotice({ data, error }: { data: GateData; error?: string | u
   return (
     <Panel state={state} subject={subject}>
       <div>{flag}</div>
-      <Heading>{t('communities', subject === 'community' ? 'gate.community.title' : 'gate.post.title')}</Heading>
+      <Heading>{t('communities', gateTitle(data))}</Heading>
       <Body>{t('communities', subject === 'community' ? 'gate.community.about' : 'gate.post.about', { handle: shown })}</Body>
       <Body>{t('communities', 'gate.signedOut')}</Body>
       <div className="gate-actions">

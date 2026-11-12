@@ -1,6 +1,7 @@
 import { attempt } from '@peblish/core/identity/throttle';
 import { createReportAs } from '@peblish/core/reports/actions';
 import { ReportCategory, mayFederate } from '@peblish/core/reports/categories';
+import type { ReportForm } from '@peblish/core/reports/form';
 import { Uuid } from '@peblish/schema/ids';
 import { Link } from '@peblish/ui/components/link';
 import { Notice } from '@peblish/ui/components/notice';
@@ -16,6 +17,7 @@ import { loadReportForm } from './-load.ts';
 import { asReportError, errorKey } from './-ui/errors.ts';
 import { ReportFormView } from './-ui/report-form.tsx';
 import reportCss from './-ui/report.css?url';
+import { headTitle } from '../../shell/title.ts';
 
 // /report?kind=post|comment|actor&id=<uuid>&back=<path>: the report form as a page. It is the
 // same form the Report control opens in a dialog once hydrated. Signed out, GET answers 303 to
@@ -66,7 +68,14 @@ export const Route = createFileRoute('/report/')({
     if (!result.ok && notFoundReasons.has(result.reason)) throw notFound();
     return result.ok ? { form: result, refusal: null, back } : { form: null, refusal: result.reason, back };
   },
-  head: () => ({ links: [{ rel: 'stylesheet', href: reportCss }] }),
+  // The title is the page's heading (ReportPage): what is being reported, or Report on a refusal.
+  head: (context) => {
+    const kind = context.loaderData?.form ? reportedKind(context.loaderData.form) : null;
+    return {
+      meta: headTitle(context, 'reports', kind ? `form.title.${kind}` : 'form.open'),
+      links: [{ rel: 'stylesheet', href: reportCss }],
+    };
+  },
   component: ReportPage,
   server: {
     middleware: [privateResponses],
@@ -108,12 +117,15 @@ export const Route = createFileRoute('/report/')({
   },
 });
 
+/** What the form reports, as its heading's message names it: a post, a comment, a person or a community. */
+const reportedKind = (form: Pick<ReportForm, 'target' | 'about'>) => (form.target.kind === 'actor' ? form.about.kind : form.target.kind);
+
 function ReportPage() {
   const { t } = useTranslate();
   useRouteHydrated();
   const { form, refusal, back } = Route.useLoaderData();
   const search = Route.useSearch();
-  const kind = form ? (form.target.kind === 'actor' ? form.about.kind : form.target.kind) : null;
+  const kind = form ? reportedKind(form) : null;
   return (
     <main className="rp-page">
       {form && kind ? (

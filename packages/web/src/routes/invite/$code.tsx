@@ -13,9 +13,10 @@ import { useRouteHydrated } from '../../shell/hydration.ts';
 import { Hidden } from '../auth/-ui/form.tsx';
 import { authHead } from '../auth/-route.ts';
 import { AuthCard, useDate } from '../auth/-ui/page.tsx';
+import { input } from '../../server/input.ts';
 
 const loadInvite = createServerFn({ method: 'GET' })
-  .validator(type({ code: 'string' }))
+  .validator(input(type({ code: 'string' })))
   .handler(async ({ data }) => {
     // The code is a bearer secret: keep the server function's reply (a client-side navigation)
     // out of caches too, and the page out of search engines.

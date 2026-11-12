@@ -15,6 +15,7 @@ import { createMarkdownRenderer, type MarkdownRenderer } from '../../server/mark
 import { communityPath } from '../../shell/paths.ts';
 import { readFlash } from './-flash.ts';
 import type { CommunityPanel, ComposerData, EditTarget, PickerCommunity } from './-types.ts';
+import { input } from '../../server/input.ts';
 
 // What the composer page and the sheet load: the communities the person may pick, the panel of
 // the chosen one, and the post being edited. Server functions, so the page's loader runs them on
@@ -126,7 +127,7 @@ async function editTarget(
  * community.
  */
 export const loadComposer = createServerFn({ method: 'GET' })
-  .validator(type({ 'edit?': 'string | undefined', 'community?': 'string | undefined', 'flash?': 'string | undefined' }))
+  .validator(input(type({ 'edit?': 'string | undefined', 'community?': 'string | undefined', 'flash?': 'string | undefined' })))
   .handler(async ({ data }): Promise<ComposerData> => {
     const session = await pageSession();
     if (!session) return { status: 'unavailable', reason: 'signed-out' };
@@ -168,7 +169,7 @@ export const loadComposer = createServerFn({ method: 'GET' })
  * because a server function that returns a bare null is answered with a 500.
  */
 export const loadCommunityPanel = createServerFn({ method: 'GET' })
-  .validator(type({ id: 'string' }))
+  .validator(input(type({ id: 'string' })))
   .handler(async ({ data }): Promise<{ panel: CommunityPanel | null }> => {
     const session = await pageSession();
     return { panel: session ? await panelFor(data.id, session.view, await createMarkdownRenderer()) : null };
@@ -180,7 +181,7 @@ export const loadCommunityPanel = createServerFn({ method: 'GET' })
  * id the published page gives them; a new post has none yet. A signed-out or cross-site call answers null.
  */
 export const previewBody = createServerFn({ method: 'POST' })
-  .validator(type({ source: `string <= ${markdownMaxLength}`, 'postId?': Uuid }))
+  .validator(input(type({ source: `string <= ${markdownMaxLength}`, 'postId?': Uuid })))
   .handler(async ({ data }): Promise<{ html: string } | null> => {
     const session = sameOrigin(getRequest()) ? await pageSession() : null;
     if (!session) return null;

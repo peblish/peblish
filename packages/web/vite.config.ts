@@ -716,7 +716,11 @@ function payloadChunks(): Plugin {
 
 // Plugin order follows the TanStack Start hosting guide: Start, then Nitro, then React.
 // Dev and preview use the lane's port (G0 18300; scripts/lane.sh prints each lane's).
-export default defineConfig({
+export default defineConfig(({ command }) => ({
+  // Whether Vite is serving (the dev server) rather than building: the web server's log boundary
+  // (src/server/log-boundary-install.ts) is off only there. Not NODE_ENV or import.meta.env.DEV,
+  // which follow NODE_ENV at build time, so a build made with NODE_ENV=development would drop it.
+  define: { __PEBLISH_DEV_SERVER__: JSON.stringify(command === 'serve') },
   server: {
     host: '127.0.0.1',
     port: Number(process.env.PORT ?? 18300),
@@ -739,10 +743,14 @@ export default defineConfig({
     tanstackStart(),
     // Without '!unwasm', shiki/wasm (pulled in by @muxui/react through @peblish/ui) resolves to
     // onig.wasm, which the SSR environment's bundler cannot link. The JS loader works the same.
-    nitro({ preset: 'node-server', exportConditions: ['!unwasm'], plugins: ['./src/server/shutdown.ts'] }),
+    nitro({
+      preset: 'node-server',
+      exportConditions: ['!unwasm'],
+      plugins: ['./src/server/log-boundary-plugin.ts', './src/server/shutdown.ts'],
+    }),
     viteReact(),
     splitMuxSubstrate(),
     splitMuxDeclarations(),
     payloadChunks(),
   ],
-});
+}));

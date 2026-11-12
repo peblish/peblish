@@ -7,6 +7,7 @@ import { createPost } from './create.ts';
 import { deletePost, restorePost } from './delete.ts';
 import { updatePost } from './edit.ts';
 import type { NewPost, PostEdit } from './input.ts';
+import { errorLine } from '../error-line.ts';
 
 // The post actions as web calls them: authorize, run the mutation, and answer with a result,
 // a refusal from the precheck or from the recheck inside the transaction alike (the page maps
@@ -27,7 +28,7 @@ export async function createPostAs(principal: Principal, communityId: Uuid, inpu
       const voted = await voteAs(principal, { kind: 'post', id: created.id }, 1);
       if (!voted.ok) console.warn(`createPostAs: the author's upvote on post ${created.id} was refused: ${voted.reason}`);
     } catch (error) {
-      console.warn(`createPostAs: the author's upvote on post ${created.id} failed`, error);
+      console.warn(`createPostAs: the author's upvote on post ${created.id} failed: ${errorLine(error)}`);
     }
   }
   return created;

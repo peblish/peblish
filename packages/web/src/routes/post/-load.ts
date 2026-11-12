@@ -10,6 +10,7 @@ import { postPath } from '../../shell/paths.ts';
 import { gateData, requestNsfw } from '../c/-gate.ts';
 import { loadThread } from './$id/comments/-thread.ts';
 import { postMedia, postTime, threadVisible } from './-page-data.ts';
+import { input } from '../../server/input.ts';
 
 /**
  * The post page's data, for the route loader (a server function: it runs on the server for a
@@ -18,7 +19,7 @@ import { postMedia, postTime, threadVisible } from './-page-data.ts';
  * a tombstone, a removed post) is decided in core's readPost; this renders what it hands over.
  */
 export const loadPost = createServerFn({ method: 'GET' })
-  .validator(type({ id: 'string' }))
+  .validator(input(type({ id: 'string' })))
   .handler(async ({ data }) => {
     const session = await pageSession();
     const viewer: Viewer = session ? { actorId: session.view.actorId, siteRole: session.view.siteRole } : null;

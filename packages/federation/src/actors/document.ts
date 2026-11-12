@@ -3,6 +3,8 @@ import { instanceSigningKey } from '../signing/instance.ts';
 import { signFetch } from '../signing/sign.ts';
 import { assertFederationOn, FederationPaused } from './federation-switch.ts';
 import { BlockedDestinationError, safeFetch, type SafeResponse } from './safe-fetch.ts';
+import { errorLine } from '@peblish/core/error-line';
+import { onRequestPath } from '@peblish/core/log-scope';
 
 // The one way federation reads a document from a peer: an actor, a WebFinger answer, a
 // NodeInfo document. It stands where Fedify's document loader would, built on safeFetch so the
@@ -35,7 +37,9 @@ async function signatures(url: string): Promise<Headers> {
     return key ? signFetch(key, url) : new Headers();
   } catch (error) {
     // A fetch that works unsigned is better than none; the delivery side reports a broken key loudly.
-    console.warn(`could not sign a fetch of ${url}: ${error instanceof Error ? error.message : String(error)}`);
+    // Under a request the URL is whatever the caller typed (the resolve form): only the errorLine.
+    if (onRequestPath()) console.warn(`could not sign a fetch: ${errorLine(error)}`);
+    else console.warn(`could not sign a fetch of ${url}: ${error instanceof Error ? error.message : String(error)}`);
     return new Headers();
   }
 }
