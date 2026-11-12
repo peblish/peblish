@@ -300,3 +300,32 @@ describe('the request allowance', () => {
     expect(requests).toHaveLength(maxRequests);
   });
 });
+
+describe('under a visitor’s request', () => {
+  test('a peer whose NodeInfo answers 404 is logged without the host the visitor typed; the worker still names it', async () => {
+    const { requestScope } = await import('@peblish/core/log-scope');
+    const { vi } = await import('vitest');
+    const missing = { 'https://lemmy.test/.well-known/nodeinfo': { status: 404 } };
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const result = await requestScope.run('GET /resolve/', () =>
+        resolveLookup(lookup('!lab@lemmy.test'), { fetch: peer(missing).fetch }),
+      );
+      expect(result).toMatchObject({ ok: true });
+      const logged = warn.mock.calls.flat().map(String);
+      expect(logged.length).toBeGreaterThan(0);
+      for (const line of logged) {
+        expect(line).not.toContain('lemmy.test');
+        expect(line).not.toMatch(/[\r\n]/);
+      }
+      warn.mockClear();
+      forgetNodeInfoFailures();
+      await truncateAll();
+      await seedLocalInstance('disc.test');
+      await resolveLookup(lookup('!lab@lemmy.test'), { fetch: peer(missing).fetch });
+      expect(warn.mock.calls.flat().map(String).join('\n')).toContain('https://lemmy.test');
+    } finally {
+      warn.mockRestore();
+    }
+  });
+});

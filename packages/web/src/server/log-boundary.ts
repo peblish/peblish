@@ -1,14 +1,5 @@
-import { AsyncLocalStorage } from 'node:async_hooks';
 import { logLine } from '@peblish/core/log-line';
-
-/**
- * The endpoint a request is serving, as its method and route template ("POST /submit/",
- * "GET /u/$handle/"), never its path: every line logged while serving it starts with it, so an
- * operator can tell which page failed without the path parameters a visitor typed. On globalThis:
- * the build carries two copies of a module both the Nitro entry and the SSR bundle import.
- */
-const holder = globalThis as { __peblishRequestEndpoint?: AsyncLocalStorage<string> };
-export const requestEndpoint = (holder.__peblishRequestEndpoint ??= new AsyncLocalStorage<string>());
+import { requestScope } from '@peblish/core/log-scope';
 
 /** The console methods the boundary covers; trace and dir print the one line too, with no stack or tree. */
 const methods = ['error', 'warn', 'log', 'info', 'debug', 'trace', 'dir'] as const;
@@ -35,7 +26,8 @@ export function installLogBoundary(target: Pick<Console, (typeof methods)[number
   for (const method of methods) {
     const out = sink[method];
     target[method] = (...args: unknown[]) => {
-      const endpoint = requestEndpoint.getStore();
+      // The endpoint being served (server/endpoint.ts): the page, never its path.
+      const endpoint = requestScope.getStore();
       out(endpoint ? `[${endpoint}] ${logLine(args)}` : logLine(args));
     };
   }

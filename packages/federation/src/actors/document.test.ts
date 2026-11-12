@@ -65,3 +65,42 @@ describe('fetchActivity', () => {
     expect(requests[1]?.headers.get('date')).toBeNull();
   });
 });
+
+describe('a fetch the instance key cannot sign', () => {
+  test('goes out unsigned, and under a request the warning names no URL; the worker still names it', async () => {
+    const { requestScope } = await import('@peblish/core/log-scope');
+    const { vi } = await import('vitest');
+    const { actorKeys } = await import('@peblish/core/db/tables/actors');
+    const { writer } = await import('@peblish/core/db/write');
+    const { and } = await import('drizzle-orm');
+    const [instance] = await db()
+      .select()
+      .from(actors)
+      .where(and(eq(actors.local, true), eq(actors.kind, 'Application')));
+    if (!instance) throw new Error('no instance actor');
+    await writer()
+      .insert(actorKeys)
+      .values({
+        actorId: instance.id,
+        keyId: `${instance.apId}#main-key`,
+        algorithm: 'rsa',
+        publicKeyPem: 'broken',
+        privateKeyPem: 'broken',
+      });
+    const typed = 'https://typed-MARKER.test/a';
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const { fetch } = stubFetch({ [typed]: { body: doc } });
+      await requestScope.run('GET /resolve/', () => fetchActivity(typed, fetch));
+      const underRequest = warn.mock.calls.flat().map(String);
+      expect(underRequest.length).toBe(1);
+      expect(underRequest[0]).not.toContain('MARKER');
+      expect(underRequest[0]).toMatch(/^could not sign a fetch: \S/);
+      warn.mockClear();
+      await fetchActivity(typed, fetch);
+      expect(String(warn.mock.calls[0]?.[0])).toContain(typed);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+});

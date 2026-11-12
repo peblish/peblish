@@ -1,5 +1,5 @@
 import type { Fetch } from './fetch.ts';
-import { requestEndpoint } from './log-boundary.ts';
+import { requestScope } from '@peblish/core/log-scope';
 
 /** The route that serves a path, as the router names it (a template such as "/u/$handle/"), or null when none does. */
 export type RouteOf = (pathname: string) => string | null;
@@ -16,7 +16,7 @@ export function endpointOf(request: Request, routeOf: RouteOf): string {
   return `${method} ${routeOf(pathname) ?? '(no route)'}`;
 }
 
-/** Runs each request with its endpoint known to the log boundary (server/log-boundary.ts). */
+/** Runs each request with its endpoint known to the log boundary (server/log-boundary.ts) and to core's onRequestPath. */
 export function withRequestEndpoint<O>(next: Fetch<O>, routeOf: RouteOf) {
-  return (request: Request, opts?: O) => requestEndpoint.run(endpointOf(request, routeOf), () => next(request, opts));
+  return (request: Request, opts?: O) => requestScope.run(endpointOf(request, routeOf), () => next(request, opts));
 }

@@ -6,6 +6,8 @@ import { eq } from 'drizzle-orm';
 import { fetchJson, type Fetcher } from '../actors/document.ts';
 import { FederationPaused } from '../actors/federation-switch.ts';
 import { importGrant } from '../actors/grants.ts';
+import { errorLine } from '@peblish/core/error-line';
+import { onRequestPath } from '@peblish/core/log-scope';
 
 // What software a peer runs, from its NodeInfo. The delivery code picks the Announce shape
 // from it, so it is fetched when we first meet an instance (its actor is stored) and again
@@ -112,7 +114,10 @@ async function refresh(origin: string, fetch: Fetcher, now: number): Promise<voi
     // Nothing was asked, so the peer did not fail: the next check after the pause asks it.
     if (error instanceof FederationPaused) return;
     recordFailure(origin, now);
-    console.warn(`nodeinfo: ${origin}: ${error instanceof Error ? error.message : String(error)}`);
+    // Under a request (the resolve form, an inbox's key lookup) the peer is whatever the caller
+    // named: only the failure's errorLine. The worker names the peer, as it always has.
+    if (onRequestPath()) console.warn(`nodeinfo: a peer's check failed: ${errorLine(error)}`);
+    else console.warn(`nodeinfo: ${origin}: ${error instanceof Error ? error.message : String(error)}`);
   }
 }
 

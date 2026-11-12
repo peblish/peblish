@@ -4,7 +4,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { createServer, type Server } from 'node:net';
 import { join } from 'node:path';
 import { expect, request, test } from '@playwright/test';
-import { boot, laneDatabase, logLines, stop, type Booted } from './boot.ts';
+import { boot, freePort, laneDatabase, logLines, stop, type Booted } from './boot.ts';
 
 // The web process's log boundary (packages/web/src/server/log-boundary.ts): whatever logs an error
 // while serving a visitor (TanStack Start's own reporters, Better Auth, the database library),
@@ -136,6 +136,20 @@ test.describe('the log boundary', () => {
       await client.dispose();
       await stop(server);
       smtp.server.close();
+    }
+  });
+
+  test("an ActivityPub request for a person while the database is down: federation's 503 is logged by its endpoint, never the handle asked for", async () => {
+    // Nothing listens on this port: every query fails at once, as in an outage.
+    const server = await boot(`postgres://peblish:peblish@127.0.0.1:${await freePort()}/peblish`);
+    try {
+      const response = await fetch(`${server.origin}/u/${marker}`, { headers: { accept: 'application/activity+json' } });
+      expect(response.status).toBe(503);
+      await expect.poll(() => logLines(server).join('\n')).toContain('federation:');
+      expectCleanLog(server);
+      expect(logLines(server).join('\n')).toContain('federation: GET document /u/ failed:');
+    } finally {
+      await stop(server);
     }
   });
 });

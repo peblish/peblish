@@ -125,6 +125,15 @@ async function answer(request: Request, context: FederationContext): Promise<Res
  * 503 with Retry-After, the one error answer peers retry; it is never a 500, which peers read
  * as a broken server, and never a 410, which they read as a deleted actor.
  */
+/** A federation path's endpoint as a fixed name, safe to log ("inbox", "webfinger", "document /u/"). */
+export function federationEndpoint(pathname: string): string {
+  if (inboxPaths.some((path) => path.test(pathname))) return 'inbox';
+  if (pathname === '/.well-known/webfinger') return 'webfinger';
+  if (pathname === '/.well-known/nodeinfo' || pathname.startsWith('/nodeinfo/')) return 'nodeinfo';
+  const kind = /^\/(u|c|post|comment|ap|actor|activities)(?:\/|$)/.exec(pathname)?.[1];
+  return kind ? `document /${kind}/` : 'document';
+}
+
 export async function handleFederationRequest(request: Request, context: FederationContext = {}): Promise<Response | null> {
   try {
     const response = await answer(request, context);
@@ -132,7 +141,8 @@ export async function handleFederationRequest(request: Request, context: Federat
     if (response && request.method === 'HEAD') return new Response(null, { status: response.status, headers: response.headers });
     return response;
   } catch (error) {
-    console.error(`federation: ${request.method} ${new URL(request.url).pathname} failed: ${errorLine(error)}`);
+    // The endpoint by its kind, never its path: /u/<name> is whatever the caller asked for.
+    console.error(`federation: ${request.method} ${federationEndpoint(new URL(request.url).pathname)} failed: ${errorLine(error)}`);
     return new Response('try again later', { status: 503, headers: { 'Retry-After': String(retryAfterSeconds) } });
   }
 }
