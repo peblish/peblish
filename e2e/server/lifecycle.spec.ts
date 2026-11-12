@@ -1,75 +1,13 @@
-import { spawn, type ChildProcess } from 'node:child_process';
 import { once } from 'node:events';
-import { connect, createServer, type Server } from 'node:net';
-import { join } from 'node:path';
+import { connect } from 'node:net';
 import { expect, test } from '@playwright/test';
+import { boot, laneDatabase, logLines, silentDatabase, stop } from './boot.ts';
 
 // The built web server's probes, shutdown and log, each against its own server process: /healthz
 // never touches the database, /readyz answers 503 with Retry-After within its timeout when
 // the database is unusable, SIGTERM after a database-backed request exits cleanly, and a client
 // that leaves mid-request writes nothing to the log while a real failure still does, and a
 // failed page's log line names no value from its address.
-
-const entry = join(import.meta.dirname, '../../packages/web/.output/server/index.mjs');
-
-function portOf(server: Server): number {
-  const address = server.address();
-  if (!address || typeof address === 'string') throw new Error('expected a TCP address');
-  return address.port;
-}
-
-async function freePort(): Promise<number> {
-  const server = createServer().listen(0, '127.0.0.1');
-  await once(server, 'listening');
-  const port = portOf(server);
-  server.close();
-  await once(server, 'close');
-  return port;
-}
-
-type Booted = { origin: string; child: ChildProcess; output: () => string };
-
-async function boot(databaseUrl: string | undefined): Promise<Booted> {
-  const port = await freePort();
-  // CI and TEST turn off srvx's graceful shutdown, which the image runs with.
-  const { CI: _ci, TEST: _test, DATABASE_URL: _url, ...env } = process.env;
-  const child = spawn(process.execPath, [entry], {
-    env: { ...env, HOST: '127.0.0.1', PORT: String(port), ...(databaseUrl === undefined ? {} : { DATABASE_URL: databaseUrl }) },
-    stdio: ['ignore', 'pipe', 'pipe'],
-  });
-  let output = '';
-  child.stdout?.on('data', (chunk) => (output += chunk));
-  child.stderr?.on('data', (chunk) => (output += chunk));
-  const origin = `http://127.0.0.1:${port}`;
-  await expect
-    .poll(
-      () =>
-        fetch(`${origin}/healthz`).then(
-          (response) => response.status,
-          () => 0,
-        ),
-      { timeout: 15_000 },
-    )
-    .toBe(200);
-  return { origin, child, output: () => output };
-}
-
-async function stop({ child }: Booted): Promise<number | null> {
-  if (child.exitCode !== null) return child.exitCode;
-  const exited = once(child, 'exit');
-  child.kill('SIGTERM');
-  const timeout = new Promise<'timeout'>((resolve) => setTimeout(resolve, 10_000, 'timeout'));
-  const result = await Promise.race([exited.then(() => child.exitCode), timeout]);
-  if (result === 'timeout') child.kill('SIGKILL');
-  return result === 'timeout' ? null : result;
-}
-
-/** A TCP server that accepts connections and never answers: a database that hangs. */
-async function silentDatabase(): Promise<{ url: string; server: Server }> {
-  const server = createServer(() => {}).listen(0, '127.0.0.1');
-  await once(server, 'listening');
-  return { url: `postgres://peblish:peblish@127.0.0.1:${portOf(server)}/peblish`, server };
-}
 
 async function probe(origin: string, path: string) {
   const started = Date.now();
@@ -86,20 +24,6 @@ async function leaveEarly(origin: string, path: string, ms: number): Promise<voi
   await new Promise((resolve) => setTimeout(resolve, ms));
   socket.destroy();
 }
-
-/** The lane's database, which the specs that need real data boot their servers with. */
-function laneDatabase(): string {
-  const url = process.env.DATABASE_URL;
-  if (!url) throw new Error('DATABASE_URL is unset: run lane_env=$(sh scripts/lane.sh <lane>) && eval "$lane_env" first');
-  return url;
-}
-
-/** What the server logged, without its start-up line. */
-const logLines = (server: Booted) =>
-  server
-    .output()
-    .split('\n')
-    .filter((line) => line && !line.startsWith('➜ Listening on:'));
 
 test.describe('server lifecycle', () => {
   // These start their own servers from the local build; against BASE_URL there is no build to start.
@@ -174,7 +98,7 @@ test.describe('server lifecycle', () => {
         .output()
         .split('\n')
         .filter((line) => line && !line.startsWith('➜'));
-      expect(logged).toEqual(['route /post/$id/ failed: SearchParamError (error: domain)']);
+      expect(logged).toEqual(['[GET /post/$id/] route /post/$id/ failed: SearchParamError (error: domain)']);
     } finally {
       await stop(server);
     }
@@ -189,7 +113,7 @@ test.describe('server lifecycle', () => {
       expect(response.status).toBe(500);
       await expect.poll(() => server.output()).toContain('failed');
       expect(server.output()).not.toContain('MARKER');
-      expect(logLines(server)).toEqual(['route /u/$handle/ failed: InputError (handle: maxLength)']);
+      expect(logLines(server)).toEqual(['[GET /u/$handle/] route /u/$handle/ failed: InputError (handle: maxLength)']);
     } finally {
       await stop(server);
     }
@@ -216,7 +140,7 @@ test.describe('server lifecycle', () => {
       // Give the last request's log line time to arrive.
       await new Promise((resolve) => setTimeout(resolve, 500));
       expect(server.output()).not.toContain('MARKER');
-      for (const line of logLines(server)) expect(line).toMatch(/^route \S+ failed: \S+/);
+      for (const line of logLines(server)) expect(line).toMatch(/^\[GET \S+\] route \S+ failed: \S+/);
     } finally {
       await stop(server);
     }

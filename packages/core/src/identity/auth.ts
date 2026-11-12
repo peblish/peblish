@@ -8,6 +8,7 @@ import { localInstance } from '../db/local-instance.ts';
 import { db } from '../db/read.ts';
 import { authAccount, authSession, authTwoFactor, authUser, authVerification } from '../db/tables/auth.ts';
 import { writer } from '../db/write.ts';
+import { logLine } from '../log-line.ts';
 import { sendMail } from './mail.ts';
 import { sessionTwoFactorMarker } from './session-two-factor.ts';
 import { totpReplayGuard } from './totp-replay.ts';
@@ -109,10 +110,23 @@ function createAuth(origin: string) {
       totpReplayGuard(),
       sessionTwoFactorMarker(),
     ],
+    // Through our own line (log-line.ts): an error argument as its errorLine, nothing on more
+    // than one line. Two of its messages that can run here quote a URL or an Origin header it
+    // refused ("Invalid origin: <x>", "Invalid callbackURL: <x>"): they are cut at the colon.
+    logger: { level: 'warn', log: betterAuthLog },
     // Direct auth.api calls skip better-auth's limiter anyway (it runs in its HTTP router).
     rateLimit: { enabled: false },
     telemetry: { enabled: false },
   });
+}
+
+/** Better Auth's log calls (its `logger.log` option), as one line each, in its own format. */
+export function betterAuthLog(level: 'debug' | 'info' | 'warn' | 'error', message: string, ...args: unknown[]): void {
+  const fixed = /^(Invalid [\w ]{1,40}): /.exec(message)?.[1] ?? message;
+  const line = logLine([`${new Date().toISOString()} ${level.toUpperCase()} [Better Auth]: ${fixed}`, ...args]);
+  if (level === 'error') console.error(line);
+  else if (level === 'warn') console.warn(line);
+  else console.log(line);
 }
 
 export type Auth = ReturnType<typeof createAuth>;
