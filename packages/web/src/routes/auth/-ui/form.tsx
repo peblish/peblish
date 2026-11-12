@@ -69,8 +69,11 @@ export function AuthForm({
  *
  * Once hydrated, React Aria stops the browser's own validation bubble, so a field the browser
  * finds invalid on submit explains itself here, in the page's language (the browser's message
- * follows the browser's language, not the page's), until a blur finds it valid. Without
- * JavaScript the browser validates as it always does.
+ * follows the browser's language, not the page's). The message goes as soon as a keystroke makes
+ * the value valid, not at the blur: the press on the submit button below is what blurs the field,
+ * and a message going then moves the button between the press and the release, losing the click
+ * (the shared fields do the same, `nextProblem` in @peblish/ui field-problem). A blur re-judges
+ * a message still showing. Without JavaScript the browser validates as it always does.
  */
 export function Field({
   label,
@@ -113,6 +116,10 @@ export function Field({
         onInvalid={(event: FormEvent<HTMLInputElement>) => {
           input.onInvalid?.(event);
           setProblem(explain(event.currentTarget));
+        }}
+        onInput={(event) => {
+          input.onInput?.(event);
+          if (problem !== undefined && explain(event.currentTarget) === undefined) setProblem(undefined);
         }}
         onBlur={(event: FocusEvent<HTMLInputElement>) => {
           input.onBlur?.(event);
