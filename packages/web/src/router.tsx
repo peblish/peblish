@@ -27,7 +27,19 @@ function hideServerErrors(routes: readonly AnyRoute[]): void {
 }
 
 export function getRouter() {
-  const router = createRouter({ routeTree, scrollRestoration: true, defaultErrorComponent: PageError });
+  // Scroll restoration, except at hydration. The server's page carries the router's inline
+  // script, which puts the page where it was (or at the top, or at the #fragment) before the first
+  // paint; the router would do it again on its first render, and by then a person may have
+  // scrolled: the page jumped back, and a press made while it hydrated was released over
+  // whatever had moved under the pointer, so it was lost. The server asks too (whether to print
+  // the script), and gets true.
+  let hydrating = typeof document !== 'undefined';
+  const scrollRestoration = () => {
+    if (!hydrating) return true;
+    hydrating = false;
+    return false;
+  };
+  const router = createRouter({ routeTree, scrollRestoration, defaultErrorComponent: PageError });
   if (router.isServer) hideServerErrors(Object.values(router.routesById));
   return router;
 }
