@@ -42,7 +42,8 @@ async function pageAs(browser: Browser, who?: 'admin' | string): Promise<Page> {
 test('the ban reason (text area) typed before the page hydrates, and while the counts arrive, is posted whole', async ({ browser }) => {
   const page = await pageAs(browser, 'admin');
   await gotoHydrated(page, '/admin/bans');
-  await page.getByLabel('Ban someone').fill(`@${world.spammer.name}`);
+  // The bot: the spammer is the author of the comment the edit tests below change.
+  await page.getByLabel('Ban someone').fill(`@${world.bot.name}`);
   // The confirmation is a page of its own: its scripts, then the counts it asks for, come late.
   const scripts = await hold(page, '**/assets/**/*.js');
   const counts = await hold(page, '**/_serverFn/**');
@@ -63,7 +64,7 @@ test('the ban reason (text area) typed before the page hydrates, and while the c
   const posted = page.waitForRequest((request) => request.method() === 'POST' && request.url().endsWith('/modlog/act'));
   await confirm.getByRole('button', { name: 'Ban', exact: true }).click();
   expect(new URLSearchParams((await posted).postData() ?? '').get('reason')).toBe('Spam links');
-  await expect(page.getByRole('row').filter({ hasText: world.spammer.name })).toContainText('Spam links');
+  await expect(page.getByRole('row').filter({ hasText: world.bot.name })).toContainText('Spam links');
   await page.context().close();
 });
 
@@ -99,5 +100,67 @@ test('a reply (a field its caller controls) typed before the page hydrates is po
   await bar.getByRole('button', { name: 'Reply', exact: true }).click();
   await expect(page.locator('article, li').filter({ hasText: 'Typed early, kept' }).first()).toBeVisible();
   await expect(text).toHaveValue('');
+  await page.context().close();
+});
+
+/** The author's own comment on its permalink page, with its edit form open (?edit=1). */
+const commentEdit = () => `/post/${world.posts.author}/comments/${world.comments.spam}?edit=1`;
+
+test('a comment edit (a text area that holds saved text, uncontrolled) typed before the page hydrates is saved', async ({ browser }) => {
+  const page = await pageAs(browser, world.spammer.name);
+  const scripts = await hold(page, '**/assets/**/*.js');
+  await page.goto(commentEdit(), { waitUntil: 'commit' });
+  const own = page.getByRole('group', { name: 'Your comment' });
+  const box = own.getByRole('textbox', { name: 'Edit your comment' });
+  const saved = await box.inputValue();
+  expect(saved).not.toBe('');
+  await box.press('End');
+  await box.pressSequentially(' (edited early)');
+  await notHydrated(page);
+  scripts();
+  await hydrated(page);
+  await expect(box).toHaveValue(`${saved} (edited early)`);
+  await own.getByRole('button', { name: 'Save' }).click();
+  await expect(page.locator(`#comment-${world.comments.spam}`)).toContainText(`${saved} (edited early)`);
+  await page.context().close();
+});
+
+test('the same edit form with nothing typed keeps its saved text and changes nothing', async ({ browser }) => {
+  const page = await pageAs(browser, world.spammer.name);
+  await gotoHydrated(page, commentEdit());
+  const saved = await page.getByRole('textbox', { name: 'Edit your comment' }).inputValue();
+  const scripts = await hold(page, '**/assets/**/*.js');
+  await page.goto(commentEdit(), { waitUntil: 'commit' });
+  const box = page.getByRole('group', { name: 'Your comment' }).getByRole('textbox', { name: 'Edit your comment' });
+  await box.waitFor();
+  await box.focus();
+  await notHydrated(page);
+  scripts();
+  await hydrated(page);
+  await page.waitForTimeout(300);
+  await expect(box).toHaveValue(saved);
+  await expect(box).not.toHaveAttribute('aria-invalid', 'true');
+  await expect(page.getByRole('alert')).toHaveCount(0);
+  await page.context().close();
+});
+
+test('a post edit (a text area that holds saved text, controlled by the composer) typed before the page hydrates is saved', async ({
+  browser,
+}) => {
+  const page = await pageAs(browser, world.author.name);
+  const scripts = await hold(page, '**/assets/**/*.js');
+  await page.goto(`/submit?edit=${world.posts.author}`, { waitUntil: 'commit' });
+  const body = page.getByRole('textbox', { name: 'Body', exact: true });
+  const saved = await body.inputValue();
+  expect(saved).not.toBe('');
+  await body.press('End');
+  await body.pressSequentially(' Added early.');
+  await notHydrated(page);
+  scripts();
+  await hydrated(page);
+  await expect(body).toHaveValue(`${saved} Added early.`);
+  await page.getByRole('button', { name: 'Save changes' }).click();
+  await page.waitForURL(/\/post\/[0-9a-f-]{36}$/);
+  await expect(page.locator('main')).toContainText(`${saved} Added early.`);
   await page.context().close();
 });
