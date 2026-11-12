@@ -20,7 +20,7 @@ export const typedTextScript = `document.addEventListener('input',function(e){va
 
 type Control = (HTMLInputElement | HTMLTextAreaElement) & { [K in typeof typedKey]?: string | null };
 
-/** The value props of a Mux text field root (Input.Root, TextArea.Root). */
+/** The value props of a Mux text field root (Input.Root, TextArea.Root, SearchField). */
 export interface ValueProps {
   value?: string;
   defaultValue?: string;

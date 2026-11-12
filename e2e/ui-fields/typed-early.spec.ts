@@ -185,3 +185,19 @@ test('a new post title typed before the page hydrates wins over the draft saved 
   await expect(page.getByRole('status')).not.toHaveText('Your saved draft for this community is back.');
   await page.context().close();
 });
+
+test('the directory search (a search field) typed before the page hydrates is searched for', async ({ browser }) => {
+  const page = await pageAs(browser);
+  const scripts = await hold(page, '**/assets/**/*.js');
+  await page.goto('/communities', { waitUntil: 'commit' });
+  const search = page.getByRole('searchbox', { name: 'Search communities' });
+  await search.pressSequentially(world.community.handle);
+  await notHydrated(page);
+  scripts();
+  await hydrated(page);
+  await page.waitForTimeout(300);
+  await expect(search).toHaveValue(world.community.handle);
+  await page.getByRole('button', { name: 'Search', exact: true }).click();
+  await expect(page).toHaveURL(new RegExp(`[?&]q=${world.community.handle}`));
+  await page.context().close();
+});
