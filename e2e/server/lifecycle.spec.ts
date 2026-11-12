@@ -146,6 +146,71 @@ test.describe('server lifecycle', () => {
     }
   });
 
+  /** srvx's shutdown report: a countdown each second, then how it ended. */
+  const shutdownLine =
+    /^(Stopping server gracefully \(\ds\)\.\.\. Press Ctrl\+C again to force close\.|Server closed successfully\.|Graceful shutdown timed out\.|Forcibly closing connections\.\.\.)$/;
+
+  /** Everything the server wrote is whole lines: each ends with a newline, none is rewritten in place or coloured. */
+  function expectWholeLines(output: string) {
+    expect(output.endsWith('\n')).toBe(true);
+    expect(output).not.toMatch(/[\r\u001b]/);
+  }
+
+  /**
+   * A sign-in form whose body is only partly sent: the request is in flight until `rest()` sends
+   * the remainder. `reply` resolves with the status line once the server closes the connection.
+   */
+  async function slowSignIn(origin: string) {
+    const { hostname, port } = new URL(origin);
+    const socket = connect(Number(port), hostname);
+    await once(socket, 'connect');
+    socket.on('error', () => {});
+    let reply = '';
+    socket.on('data', (chunk) => (reply += chunk));
+    const body = 'identifier=%40nobody&password=not-a-password';
+    socket.write(
+      `POST /auth/sign-in HTTP/1.1\r\nHost: ${hostname}:${port}\r\nOrigin: ${origin}\r\nContent-Type: application/x-www-form-urlencoded\r\n` +
+        `Content-Length: ${body.length}\r\nConnection: close\r\n\r\n${body.slice(0, 10)}`,
+    );
+    return { rest: () => socket.write(body.slice(10)), reply: once(socket, 'close').then(() => reply.split('\r\n')[0]) };
+  }
+
+  test('SIGTERM during a request: the request is still answered, and the shutdown is reported in whole lines', async () => {
+    const server = await boot(laneDatabase());
+    try {
+      const request = await slowSignIn(server.origin);
+      const exited = stop(server);
+      // The rest of the body comes well after SIGTERM: draining still waits for it and answers.
+      await new Promise((resolve) => setTimeout(resolve, 1_500));
+      request.rest();
+      expect(await request.reply).toBe('HTTP/1.1 303 ');
+      expect(await exited).toBe(0);
+      expectWholeLines(server.output());
+      const lines = logLines(server);
+      for (const line of lines) expect(line).toMatch(shutdownLine);
+      expect(lines.at(0)).toMatch(/^Stopping server gracefully/);
+      expect(lines.at(-1)).toBe('Server closed successfully.');
+    } finally {
+      await stop(server);
+    }
+  });
+
+  test('SIGTERM during a request that outlasts the grace period: the shutdown is forced, and reported in whole lines', async () => {
+    // srvx's own setting for the grace period, in seconds; the body's remainder never comes.
+    const server = await boot(laneDatabase(), { SERVER_SHUTDOWN_TIMEOUT: '1' });
+    try {
+      const request = await slowSignIn(server.origin);
+      expect(await stop(server)).toBe(0);
+      expect(await request.reply).toBe('');
+      expectWholeLines(server.output());
+      const lines = logLines(server);
+      for (const line of lines) expect(line).toMatch(shutdownLine);
+      expect(lines.slice(-2)).toEqual(['Graceful shutdown timed out.', 'Forcibly closing connections...']);
+    } finally {
+      await stop(server);
+    }
+  });
+
   test('a healthy database: /readyz is 200, and SIGTERM afterwards exits cleanly', async () => {
     const databaseUrl = process.env.DATABASE_URL;
     if (!databaseUrl) throw new Error('DATABASE_URL is unset: run lane_env=$(sh scripts/lane.sh <lane>) && eval "$lane_env" first');
