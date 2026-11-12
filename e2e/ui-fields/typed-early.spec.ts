@@ -1,4 +1,4 @@
-import { expect, test, type Browser, type Page, type Route } from '@playwright/test';
+import { expect, test, type Browser, type Locator, type Page, type Route } from '@playwright/test';
 import { landed } from '../auth/support.ts';
 import { seedWorld, signedIn, signedInAdmin, type World } from '../modlog/support.ts';
 import { gotoHydrated } from '../support/route-marker.ts';
@@ -199,5 +199,72 @@ test('the directory search (a search field) typed before the page hydrates is se
   await expect(search).toHaveValue(world.community.handle);
   await page.getByRole('button', { name: 'Search', exact: true }).click();
   await expect(page).toHaveURL(new RegExp(`[?&]q=${world.community.handle}`));
+  await page.context().close();
+});
+
+/**
+ * Puts the caret after the first `at` characters of a text area that holds saved text, types one
+ * character before the page hydrates and another after it, without moving the caret.
+ */
+async function typeAcrossHydration(page: Page, box: Locator, at: number): Promise<string> {
+  const saved = await box.inputValue();
+  expect(saved.length).toBeGreaterThan(at);
+  await box.focus();
+  await box.evaluate((area: HTMLTextAreaElement, offset) => area.setSelectionRange(offset, offset), at);
+  await box.press('X');
+  return saved;
+}
+
+test('a caret placed inside saved text before the page hydrates stays where the person is typing (uncontrolled)', async ({ browser }) => {
+  const page = await pageAs(browser, world.spammer.name);
+  const scripts = await hold(page, '**/assets/**/*.js');
+  await page.goto(commentEdit(), { waitUntil: 'commit' });
+  const box = page.getByRole('group', { name: 'Your comment' }).getByRole('textbox', { name: 'Edit your comment' });
+  await box.waitFor();
+  const saved = await typeAcrossHydration(page, box, 3);
+  await notHydrated(page);
+  scripts();
+  await hydrated(page);
+  await page.keyboard.press('Y');
+  await expect(box).toHaveValue(`${saved.slice(0, 3)}XY${saved.slice(3)}`);
+  await page.context().close();
+});
+
+test('a caret placed inside saved text before the page hydrates stays where the person is typing (controlled)', async ({ browser }) => {
+  const page = await pageAs(browser, world.author.name);
+  const scripts = await hold(page, '**/assets/**/*.js');
+  await page.goto(`/submit?edit=${world.posts.author}`, { waitUntil: 'commit' });
+  const body = page.getByRole('textbox', { name: 'Body', exact: true });
+  await body.waitFor();
+  const saved = await typeAcrossHydration(page, body, 2);
+  await notHydrated(page);
+  scripts();
+  await hydrated(page);
+  await page.keyboard.press('Y');
+  await expect(body).toHaveValue(`${saved.slice(0, 2)}XY${saved.slice(2)}`);
+  await page.context().close();
+});
+
+test('fields that hold saved text and are not typed into make no change as the page hydrates', async ({ browser }) => {
+  const page = await pageAs(browser);
+  const scripts = await hold(page, '**/assets/**/*.js');
+  await page.goto('/kit', { waitUntil: 'commit' });
+  const form = page.getByTestId('kit-saved');
+  const changes = form.getByTestId('kit-saved-changes');
+  await form.waitFor();
+  await notHydrated(page);
+  scripts();
+  await hydrated(page);
+  await page.waitForTimeout(300);
+  // Each field's onChange counts here, controlled and uncontrolled alike.
+  await expect(changes).toHaveText('0');
+  await expect(form.getByLabel('Saved text field', { exact: true })).toHaveValue('Saved line');
+  await expect(form.getByLabel('Saved text area', { exact: true })).toHaveValue('Saved words');
+  await expect(form.getByLabel('Controlled saved text field')).toHaveValue('Saved line');
+  await expect(form.getByLabel('Controlled saved text area')).toHaveValue('Saved words');
+  // The count does move for a real keystroke.
+  await form.getByLabel('Saved text area', { exact: true }).press('End');
+  await form.getByLabel('Saved text area', { exact: true }).press('!');
+  await expect(changes).toHaveText('1');
   await page.context().close();
 });

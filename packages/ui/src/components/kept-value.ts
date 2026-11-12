@@ -1,9 +1,9 @@
 import { useImperativeHandle, useLayoutEffect, useRef, useState, type Ref, type RefObject } from 'react';
 
 /**
- * The property on a text area that holds what was typed into it before its field mounted (the
- * script below writes it), or null once the field has taken it over. Never an attribute, so
- * hydration sees no difference, and never stored or sent anywhere.
+ * The property on a text area that holds what was typed into it before its field mounted, with
+ * the selection at that moment (the script below writes it), or null once the field has taken it
+ * over. Never an attribute, so hydration sees no difference, and never stored or sent anywhere.
  */
 export const typedKey = '__pbTyped';
 
@@ -12,13 +12,17 @@ export const typedKey = '__pbTyped';
  * text back while it hydrates (when that text is not empty), so what a person typed into a text
  * area that already held text is gone before any component can read it. This records the text as
  * it is typed, on the element, for `useKeptValue` to adopt. Only text areas: an input keeps its
- * typed value through hydration, so a password never sits in a record. A text area whose field
+ * typed value (and its caret) through hydration, so a password never sits in a record. The caret
+ * is recorded too: putting the text back moves a text area's caret to the end. A text area whose field
  * has mounted (hydrated, or rendered on the client) has the record set to null and is skipped, so
  * a part of the page that hydrates later is still covered and a mounted one is never recorded.
  */
-export const typedTextScript = `document.addEventListener('input',function(e){var t=e.target;if(t instanceof HTMLTextAreaElement&&t.${typedKey}!==null)t.${typedKey}=t.value},true)`;
+export const typedTextScript = `document.addEventListener('input',function(e){var t=e.target;if(t instanceof HTMLTextAreaElement&&t.${typedKey}!==null)t.${typedKey}=[t.value,t.selectionStart,t.selectionEnd,t.selectionDirection]},true)`;
 
-type Control = (HTMLInputElement | HTMLTextAreaElement) & { [K in typeof typedKey]?: string | null };
+/** What the script records: the text, and the selection's start, end and direction. */
+type Recorded = [text: string, start: number, end: number, direction: 'forward' | 'backward' | 'none'];
+
+type Control = (HTMLInputElement | HTMLTextAreaElement) & { [K in typeof typedKey]?: Recorded | null };
 
 /** The value props of a Mux text field root (Input.Root, TextArea.Root, SearchField). */
 export interface ValueProps {
@@ -61,15 +65,31 @@ export function useKeptValue<E extends HTMLElement>(
   const root = useRef<E | null>(null);
   // What the first commit rendered and how to change it, for the mount-only check below.
   const first = useRef({ shown, change });
+  // The selection recorded with text it adopted, until the text is in the control (below).
+  const caret = useRef<Recorded | null>(null);
   useLayoutEffect(() => {
     const control: Control | null | undefined = root.current?.querySelector<HTMLInputElement | HTMLTextAreaElement>(
       'input:not([type="hidden"]), textarea',
     );
     if (!control || control[typedKey] === null) return;
-    const text = control[typedKey] ?? control.value;
+    const recorded = control[typedKey];
+    const text = recorded?.[0] ?? control.value;
     control[typedKey] = null;
-    if (text !== first.current.shown) first.current.change(text);
+    if (text === first.current.shown) return;
+    caret.current = recorded ?? null;
+    first.current.change(text);
   }, []);
+  // The render after that one writes the adopted text into the text area, which moves its caret to
+  // the end: put the recorded selection back, if the person is still in that field and it holds
+  // what they typed. Once the text has changed from what was first rendered, it is settled either way.
+  useLayoutEffect(() => {
+    const recorded = caret.current;
+    const control = root.current?.querySelector('textarea');
+    if (!recorded || !control || shown === first.current.shown) return;
+    caret.current = null;
+    if (control.value === recorded[0] && control.ownerDocument.activeElement === control)
+      control.setSelectionRange(recorded[1], recorded[2], recorded[3]);
+  }, [shown]);
   useImperativeHandle<E | null, E | null>(callerRef, () => root.current, []);
   return { value: shown, defaultValue, onChange: change, ref: root };
 }
