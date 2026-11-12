@@ -1,6 +1,9 @@
+import { eq } from 'drizzle-orm';
 import { closePools } from '../db/pools.ts';
 import { db } from '../db/read.ts';
 import { localInstance } from '../db/local-instance.ts';
+import { actors } from '../db/tables/actors.ts';
+import { writer } from '../db/write.ts';
 import { seedComment, seedModerator, seedPost } from './seed-az.ts';
 import { seedActor, seedInstance } from './seed.ts';
 
@@ -71,11 +74,17 @@ async function e2e() {
   };
 }
 
+/** Marks a community deleted, as its removal elsewhere would while a browser has its page open. */
+async function removeCommunity(id: string) {
+  await writer().update(actors).set({ deletedAt: new Date() }).where(eq(actors.id, id));
+}
+
 if (import.meta.main) {
   try {
-    const [command] = process.argv.slice(2);
+    const [command, id] = process.argv.slice(2);
     if (command === 'e2e') console.log(JSON.stringify(await e2e()));
-    else throw new Error('usage: node packages/core/src/testing/seed-modf.ts e2e');
+    else if (command === 'remove-community' && id) await removeCommunity(id);
+    else throw new Error('usage: node packages/core/src/testing/seed-modf.ts e2e | remove-community <actor id>');
   } finally {
     await closePools();
   }

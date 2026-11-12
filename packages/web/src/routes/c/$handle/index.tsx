@@ -41,14 +41,17 @@ export const Route = createFileRoute('/c/$handle/')({
   head: (context) => {
     const { loaderData, matches } = context;
     const { site } = rootTitleData(matches.find((match) => (match.routeId as string) === '__root__')?.loaderData, DEFAULT_LOCALE);
-    const robots = !loaderData || loaderData.kind !== 'page' || !loaderData.indexable ? [{ name: 'robots', content: 'noindex' }] : [];
+    // The match's status first: on a not-found the router keeps the loader data of the page shown
+    // before (a client navigation, or this same page loaded again after the community was removed).
+    const shown = context.match.status === 'notFound' ? undefined : loaderData;
+    const robots = !shown || shown.kind !== 'page' || !shown.indexable ? [{ name: 'robots', content: 'noindex' }] : [];
     // Titled as the page shows: the community, its gate, or its own not-found page (which this
     // route renders itself, so it names it); a failure is left to the root.
     const title =
-      loaderData?.kind === 'page'
-        ? ownTitle(context, `${loaderData.title} · ${site}`)
-        : loaderData?.kind === 'gate'
-          ? headTitle(context, 'communities', gateTitle(loaderData))
+      shown?.kind === 'page'
+        ? ownTitle(context, `${shown.title} · ${site}`)
+        : shown?.kind === 'gate'
+          ? headTitle(context, 'communities', gateTitle(shown))
           : headTitle(context, 'communities', 'page.notFound.title', { on: 'notFound' });
     return {
       meta: [...title, ...robots],

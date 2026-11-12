@@ -1,7 +1,7 @@
 import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
-import { seedWorld, signedInAdmin, type World } from '../modlog/support.ts';
+import { seedWorld, signedIn, signedInAdmin, type World } from '../modlog/support.ts';
 import { gotoHydrated } from '../support/route-marker.ts';
 import { siteName } from '../support/site-name.ts';
 
@@ -120,5 +120,24 @@ test.describe('after a client-side navigation', () => {
       await clientNavigate(page, next);
       await expect(page, `${start} then ${next}`).toHaveTitle(`${title} · ${site}`);
     }
+  });
+});
+
+test.describe('a community removed while its page is open', () => {
+  test.skip(Boolean(process.env.BASE_URL), 'needs the lane database for its seed (DATABASE_URL)');
+
+  test('reloading the same page, as its join form does, gives the community not-found page its own title', async ({ page }) => {
+    const world = seedWorld();
+    await signedIn(page, world, world.author.name);
+    await gotoHydrated(page, `/c/${world.community.handle}`);
+    const site = await siteName(page);
+    await expect(page).not.toHaveTitle(`Community not found · ${site}`);
+    execFileSync('node', ['packages/core/src/testing/seed-modf.ts', 'remove-community', world.community.id], {
+      cwd: join(import.meta.dirname, '../..'),
+    });
+    // The form posts by fetch and invalidates the router: the same match loads again, now not found.
+    await page.getByRole('button', { name: 'Join', exact: true }).click();
+    await expect(page.getByRole('heading', { name: 'Community not found' })).toBeVisible();
+    await expect(page).toHaveTitle(`Community not found · ${site}`);
   });
 });
