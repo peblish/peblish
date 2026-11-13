@@ -26,12 +26,13 @@ export const Route = createFileRoute('/media/proxy/$signature/$target')({
           const viewer: Viewer = session ? { actorId: session.view.actorId, siteRole: session.view.siteRole } : null;
           return contentShown(content, viewer);
         };
+        const config = edgeConfig();
         return proxyResponse(params.signature, params.target, {
           key: await mediaProxyKey(),
           enabled: await readSetting('remote_media.enabled'),
           contentShown: shown,
           signal: request.signal,
-          edge: request.method === 'GET' && edgeConfig() ? { publicTags: (check) => publicAnswerTags(check) } : null,
+          edge: request.method === 'GET' && config ? { publicTags: (check) => publicAnswerTags(check, config.zoneId) } : null,
         });
       },
     },

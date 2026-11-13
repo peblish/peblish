@@ -12,7 +12,9 @@ import { seedActor, seedInstance } from '../testing/seed.ts';
 import { mediaBlocklist } from '../mediascan/tables.ts';
 import { peerControls } from '../peers/tables.ts';
 import { remoteMedia } from '../testing/seed-safe.ts';
-import { publicAnswerTags, publicTags } from './public.ts';
+import { ensureCursors } from '../outbox/worker.ts';
+import { consumer } from './consumer.ts';
+import { publicAnswerTags, publicTags, type PublicCheck } from './public.ts';
 import { edgeStatus } from './tables.ts';
 import { hashTag, hostTag } from './tags.ts';
 
@@ -100,8 +102,15 @@ test('an unknown id is not public', async () => {
 
 const sha256 = 'ab'.repeat(32);
 
-/** The purge path proven just now (send.ts writes this after a successful request). */
-const proven = () => writer().insert(edgeStatus).values({ name: 'cloudflare', verifiedAt: new Date() });
+const zone = '0123456789abcdef0123456789abcdef';
+
+/** The purge path proven just now for `zone` (send.ts writes this after a successful request), and the consumer's cursor in place. */
+async function proven() {
+  await ensureCursors([consumer]);
+  await writer().insert(edgeStatus).values({ name: 'cloudflare', zoneId: zone, verifiedAt: new Date() });
+}
+const decide = async (check: PublicCheck, options?: Parameters<typeof publicAnswerTags>[2]) =>
+  (await publicAnswerTags(check, zone, options))?.tags ?? null;
 
 test('a public answer needs every fact true in one read after the fetch: ready, switch on, supplier, every host, hash, content (item 1)', async () => {
   const w = await world();
@@ -113,9 +122,9 @@ test('a public answer needs every fact true in one read after the fetch: ready, 
     sha256,
   };
   // Not ready: no record of a working purge path.
-  expect(await publicAnswerTags(check)).toBeNull();
+  expect(await decide(check)).toBeNull();
   await proven();
-  const tags = await publicAnswerTags(check);
+  const tags = await decide(check);
   expect(tags).toEqual(
     expect.arrayContaining([
       'pbm',
@@ -131,24 +140,24 @@ test('a public answer needs every fact true in one read after the fetch: ready, 
 
   // A redirect host that is quarantined (a known peer without approval).
   await seedInstance('other.test', false);
-  expect(await publicAnswerTags({ ...check, hosts: [...check.hosts, 'img.other.test'] })).toBeNull();
+  expect(await decide({ ...check, hosts: [...check.hosts, 'img.other.test'] })).toBeNull();
   // The supplier no longer approved.
   await writer().update(peerControls).set({ media: 'quarantined' }).where(eq(peerControls.instanceId, peer.id));
-  expect(await publicAnswerTags(check)).toBeNull();
+  expect(await decide(check)).toBeNull();
   await writer().update(peerControls).set({ media: 'approved' }).where(eq(peerControls.instanceId, peer.id));
   // The hash on the blocked-image list.
   await writer().insert(mediaBlocklist).values({ kind: 'sha256', value: sha256, category: 'other' });
-  expect(await publicAnswerTags(check)).toBeNull();
+  expect(await decide(check)).toBeNull();
   await writer().delete(mediaBlocklist);
   // The kill switch off.
   await remoteMedia(false);
-  expect(await publicAnswerTags(check)).toBeNull();
+  expect(await decide(check)).toBeNull();
   await remoteMedia(true);
   // The content no longer public.
   await writer().update(posts).set({ sensitive: true }).where(eq(posts.id, w.post.id));
-  expect(await publicAnswerTags(check)).toBeNull();
+  expect(await decide(check)).toBeNull();
   await writer().update(posts).set({ sensitive: false }).where(eq(posts.id, w.post.id));
-  expect(await publicAnswerTags(check)).not.toBeNull();
+  expect(await decide(check)).not.toBeNull();
 });
 
 test('a read that took longer than the deadline gives a private answer, however it came out (item 1)', async () => {
@@ -158,6 +167,23 @@ test('a read that took longer than the deadline gives a private answer, however 
   let at = 0;
   const clock = () => (at += 1_000);
   // Two readings 1 s apart: within a 2 s deadline, not within a 0.5 s one.
-  expect(await publicAnswerTags(check, { clock, deadlineMs: 2_000 })).not.toBeNull();
-  expect(await publicAnswerTags(check, { clock, deadlineMs: 500 })).toBeNull();
+  expect(await decide(check, { clock, readMs: 2_000 })).not.toBeNull();
+  expect(await decide(check, { clock, readMs: 500 })).toBeNull();
+  // The answer says when its deadline started, so the body can be cut off from there (stream.ts).
+  expect((await publicAnswerTags(check, zone, { clock: () => 42 }))?.startedAt).toBe(42);
+});
+
+test('an answer whose tags would be too many or too long for Cloudflare is private (round 3, item 7)', async () => {
+  const w = await world();
+  await proven();
+  const label = 'a'.repeat(60);
+  const long = (n: number) => `${label}.${label}.${label}.h${n}.example`;
+  const check = { content: { kind: 'post' as const, id: w.post.id, supplier: null }, hosts: ['img.example'], sha256 };
+  expect(await decide(check)).not.toBeNull();
+  // Four long host names of a few labels each still fit.
+  expect(await decide({ ...check, hosts: [long(1), long(2), long(3), long(4)] })).not.toBeNull();
+  // The reviewer's case: four 251-character names of one-letter labels, a tag for every parent
+  // domain (489 tags, 19 KB, over Cloudflare's 16 KB): private rather than an oversized header.
+  const deep = (n: number) => `${'a.'.repeat(121)}h${n}.example`.slice(-251);
+  expect(await decide({ ...check, hosts: [deep(1), deep(2), deep(3), deep(4)] })).toBeNull();
 });

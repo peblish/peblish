@@ -1,5 +1,6 @@
 import { proxyUrlBuilder } from '@peblish/core/media/proxy-url';
 import { EDGE_MAX_AGE_SECONDS } from '@peblish/core/edge/config';
+import { PUBLIC_BODY_MS } from '@peblish/core/edge/timing';
 import { imageSha256 } from '@peblish/core/media/blocked';
 import { describe, expect, test, vi } from 'vitest';
 // The peer gate reads the database; these tests are about the handler, so every peer is approved unless a test says otherwise.
@@ -223,10 +224,11 @@ describe('edge caching', () => {
   const post = { kind: 'post', id: '0195f0a0-0000-7000-8000-000000000010', supplier: 'lemmy.test' } as const;
   const [bound, boundTarget] = proxyUrlBuilder(key)(remoteUrl, post).split('/').slice(3) as [string, string];
   const tags = ['pbm', `pbm-p-${post.id}`];
+  const decided = () => ({ tags, startedAt: performance.now() });
   const base = { key, enabled: true, mediaAllowed: async () => true, supplierAllowed: async () => true };
 
   test('a public answer is decided once the bytes are here, from the content, every host and the hash, and is tagged for purging', async () => {
-    const publicTags = vi.fn(async () => tags);
+    const publicTags = vi.fn(async () => decided());
     const response = await proxyResponse(bound, boundTarget, { ...base, contentShown, fetchImage: image(), edge: { publicTags } });
     expect(response.status).toBe(200);
     expect(Object.fromEntries(response.headers)).toEqual({
@@ -242,6 +244,25 @@ describe('edge caching', () => {
     expect(PROXY_MAX_AGE_SECONDS).toBe(600);
   });
 
+  test('a public body is handed over in time, all of it; one decided too long ago is cut off (round 3, item 2)', async () => {
+    const response = await proxyResponse(bound, boundTarget, {
+      ...base,
+      contentShown,
+      fetchImage: image(),
+      edge: { publicTags: async () => decided() },
+    });
+    expect(Buffer.from(await response.arrayBuffer())).toEqual(png);
+    const stale = await proxyResponse(bound, boundTarget, {
+      ...base,
+      contentShown,
+      fetchImage: image(),
+      edge: { publicTags: async () => ({ tags, startedAt: performance.now() - PUBLIC_BODY_MS - 1 }) },
+    });
+    // The headers promise the whole length; the body errors, so the server cuts the socket.
+    expect(stale.headers.get('content-length')).toBe(String(png.length));
+    await expect(stale.arrayBuffer()).rejects.toThrow();
+  });
+
   test('every host a redirect passed through is part of the decision', async () => {
     const hop = (status: number, location?: string) => ({
       status,
@@ -250,7 +271,7 @@ describe('edge caching', () => {
       url: '',
     });
     const fetch = async (url: string) => (url === remoteUrl ? hop(302, 'https://cdn.example/a.png') : hop(200));
-    const publicTags = vi.fn(async () => tags);
+    const publicTags = vi.fn(async () => decided());
     await proxyResponse(bound, boundTarget, { ...base, contentShown, fetch, edge: { publicTags } });
     expect(publicTags).toHaveBeenCalledWith(expect.objectContaining({ hosts: ['img.example', 'cdn.example'] }));
   });
@@ -272,13 +293,13 @@ describe('edge caching', () => {
       ...base,
       contentShown: async () => false,
       fetchImage: image(),
-      edge: { publicTags: async () => tags },
+      edge: { publicTags: async () => decided() },
     });
     expect([hidden.status, hidden.headers.get('cache-control')]).toEqual([404, 'no-store']);
   });
 
   test('a URL bound to no content stays private and asks nothing about the public', async () => {
-    const publicTags = vi.fn(async () => tags);
+    const publicTags = vi.fn(async () => decided());
     const response = await proxyResponse(signature, target, { ...base, contentShown, fetchImage: image(), edge: { publicTags } });
     expect(response.headers.get('cache-control')).toBe(`private, max-age=${PROXY_MAX_AGE_SECONDS}`);
     expect(publicTags).not.toHaveBeenCalled();
@@ -298,7 +319,7 @@ describe('edge caching', () => {
       asked.push(sha256);
       return true;
     };
-    const publicTags = vi.fn(async () => tags);
+    const publicTags = vi.fn(async () => decided());
     for (const edge of [{ publicTags }, null]) {
       const response = await proxyResponse(bound, boundTarget, { ...base, contentShown, fetchImage: image(), hashListed, edge });
       expect([response.status, response.headers.get('cache-control')]).toEqual([404, 'no-store']);
@@ -310,7 +331,7 @@ describe('edge caching', () => {
   });
 
   test('refusals and errors stay uncached, and a denied supplier or host is never asked about', async () => {
-    const publicTags = vi.fn(async () => tags);
+    const publicTags = vi.fn(async () => decided());
     const edge = { publicTags };
     for (const status of [403, 413, 415, 502, 503, 504] as const) {
       const response = await proxyResponse(bound, boundTarget, {

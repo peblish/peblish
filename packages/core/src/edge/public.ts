@@ -8,7 +8,7 @@ import { mediaAllowed, supplierMediaAllowed } from '../peers/gate.ts';
 import { readSetting } from '../settings/read.ts';
 import { purgePathReady } from './ready.ts';
 import { ALL_TAG, actorTag, commentTag, hashTag, hostTags, postTag } from './tags.ts';
-import { PUBLIC_DEADLINE_MS } from './timing.ts';
+import { MAX_TAG_BYTES, MAX_TAGS, PUBLIC_READ_MS } from './timing.ts';
 
 // Whether a proxy answer may be held by a shared cache, decided from the content, the hosts and
 // the bytes, never from who asks: only when the content is shown to a signed-out visitor with
@@ -49,23 +49,27 @@ export async function publicTags(content: Pick<MediaContent, 'kind' | 'id'>, q: 
 /** What the proxy knows once it holds the image: the content it was signed for, every host it was fetched through, and its hash. */
 export type PublicCheck = { content: MediaContent; hosts: readonly string[]; sha256: string };
 
+/** A public answer's tags, and when its deadline clock started (performance.now() milliseconds): the body must be handed over by `startedAt + PUBLIC_BODY_MS` (stream.ts). */
+export type PublicAnswer = { tags: string[]; startedAt: number };
+
 /**
  * The Cache-Tag values for a public answer, or null for a private one. One read-only
  * repeatable-read transaction, so every fact comes from one snapshot: the purge path is ready
- * (ready.ts), the kill switch is on, the supplier and every host passed are allowed, the hash is
- * not listed, and a signed-out visitor is shown the content. Null too when that read took longer
- * than PUBLIC_DEADLINE_MS from its start (timing.ts), so a public answer always leaves within
- * the deadline of its snapshot. Called after the image is fetched; the caller sends the answer
- * at once. `clock` is for tests.
+ * for `zoneId` (ready.ts), the kill switch is on, the supplier and every host passed are
+ * allowed, the hash is not listed, and a signed-out visitor is shown the content. Null too when
+ * that read took longer than PUBLIC_READ_MS from the deadline start, taken before the read
+ * begins, or when the tags would exceed MAX_TAGS or MAX_TAG_BYTES (Cloudflare reads at most 16 KB
+ * of them; long host names would overrun it). `clock` is for tests.
  */
 export async function publicAnswerTags(
   check: PublicCheck,
-  { clock = () => performance.now(), deadlineMs = PUBLIC_DEADLINE_MS }: { clock?: () => number; deadlineMs?: number } = {},
-): Promise<string[] | null> {
-  const started = clock();
+  zoneId: string,
+  { clock = () => performance.now(), readMs = PUBLIC_READ_MS }: { clock?: () => number; readMs?: number } = {},
+): Promise<PublicAnswer | null> {
+  const startedAt = clock();
   const tags = await db().transaction(
     async (q) => {
-      if (!(await purgePathReady(q))) return null;
+      if (!(await purgePathReady(q, zoneId))) return null;
       if (!(await readSetting('remote_media.enabled', q))) return null;
       const { supplier } = check.content;
       if (supplier && !(await supplierMediaAllowed(supplier, q))) return null;
@@ -78,5 +82,7 @@ export async function publicAnswerTags(
     },
     { isolationLevel: 'repeatable read', accessMode: 'read only' },
   );
-  return tags && clock() - started <= deadlineMs ? tags : null;
+  if (!tags || clock() - startedAt > readMs) return null;
+  if (tags.length > MAX_TAGS || tags.join(',').length > MAX_TAG_BYTES) return null;
+  return { tags, startedAt };
 }

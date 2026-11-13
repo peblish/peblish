@@ -3,7 +3,9 @@ import { unwrapProxyUrl, verifyProxyPath, type MediaContent } from '@peblish/cor
 import { safeFetch, type SafeFetchInit, type SafeResponse } from '@peblish/core/net/fetch';
 import { mediaAllowed, supplierMediaAllowed } from '@peblish/core/peers/gate';
 import { EDGE_MAX_AGE_SECONDS } from '@peblish/core/edge/config';
-import type { PublicCheck } from '@peblish/core/edge/public';
+import type { PublicAnswer, PublicCheck } from '@peblish/core/edge/public';
+import { deadlineBody } from '@peblish/core/edge/stream';
+import { PUBLIC_BODY_MS } from '@peblish/core/edge/timing';
 import { hashListed, imageSha256 } from '@peblish/core/media/blocked';
 
 // The remote-media proxy's answer (decision 5): the image bytes of one signed URL, held in memory
@@ -84,10 +86,11 @@ export type ProxyDeps = {
   /**
    * Edge caching, given only for a GET when its purge path is configured (core edge/config.ts).
    * `publicTags` (core edge/public.ts publicAnswerTags) is the one consistent read, after the
-   * fetch, that says whether the answer may be public and with which Cache-Tag values; null keeps
-   * it private. It depends on the content, the hosts and the bytes, never on who asks.
+   * fetch, that says whether the answer may be public, with which Cache-Tag values and when its
+   * deadline started; null keeps it private. It depends on the content, the hosts and the bytes,
+   * never on who asks.
    */
-  edge?: { publicTags: (check: PublicCheck) => Promise<string[] | null> } | null;
+  edge?: { publicTags: (check: PublicCheck) => Promise<PublicAnswer | null> } | null;
 };
 
 const imageHeaders = (type: string, length: number, cacheControl: string, extra: Record<string, string> = {}) => ({
@@ -136,10 +139,13 @@ export async function proxyResponse(signature: string, target: string, deps: Pro
   if (await (deps.hashListed ?? hashListed)(sha256)) return plain(404, 'not found');
   // Public only by the one consistent read taken now the bytes are here, and sent at once; the
   // viewer was judged above for the private answer and plays no part in this one.
-  const tags = deps.edge && content ? await deps.edge.publicTags({ content, hosts: [...new Set(hosts)], sha256 }) : null;
-  if (tags) {
+  const answer = deps.edge && content ? await deps.edge.publicTags({ content, hosts: [...new Set(hosts)], sha256 }) : null;
+  if (answer) {
     const cacheControl = `public, max-age=${PROXY_MAX_AGE_SECONDS}, s-maxage=${EDGE_MAX_AGE_SECONDS}`;
-    return new Response(body, { headers: imageHeaders(result.type, body.byteLength, cacheControl, { 'cache-tag': tags.join(',') }) });
+    // A body the server must hand over before the deadline, or the socket is cut (core edge/stream.ts).
+    return new Response(deadlineBody(body, answer.startedAt + PUBLIC_BODY_MS), {
+      headers: imageHeaders(result.type, body.byteLength, cacheControl, { 'cache-tag': answer.tags.join(',') }),
+    });
   }
   return new Response(body, { headers: imageHeaders(result.type, body.byteLength, `private, max-age=${PROXY_MAX_AGE_SECONDS}`) });
 }
