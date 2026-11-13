@@ -6,7 +6,15 @@ import { mediaEvidence } from '../evidence/tables.ts';
 import { findBlocked, listVerdict } from './blocklist.ts';
 import { lockHash } from './hash-lock.ts';
 import type { BlockCategory } from './list.ts';
-import { quarantine, type QuarantineTx } from './quarantine.ts';
+import type { OutboxEvent } from '@peblish/schema/events';
+import type { WriteTx } from '../db/write.ts';
+import { quarantine } from './quarantine.ts';
+
+/** What listing a hash needs of its transaction: it quarantines copies and announces the listing. */
+export type ListTx = {
+  readonly db: WriteTx;
+  emit(event: Extract<OutboxEvent, { type: 'media.quarantined' | 'media.hash_listed' }>): Promise<void>;
+};
 import { assertMove } from './state.ts';
 import { mediaBlocklist } from './tables.ts';
 
@@ -36,7 +44,7 @@ export const categoryOf = (evidence: Pick<Evidence, 'source' | 'classification'>
  * orders this block and a list change by hand on the same hash (list.ts) as the list saw them.
  */
 export async function blockMedia(
-  t: QuarantineTx,
+  t: ListTx,
   input: { action: string; mediaId: Uuid; sha256: string | null; from: 'quarantined'; evidence: Evidence; by: Uuid | null; now: Date },
 ): Promise<{ quarantinedCopies: number }> {
   assertMove(input.action, input.from, 'blocked', 'media.not_quarantined');
@@ -64,13 +72,13 @@ export async function blockMedia(
 /**
  * The hash half of a block, in the caller's transaction: `sha256` joins the list (so a re-upload
  * is quarantined with no provider call) unless it is there already, and every clean, undeleted
- * copy with that hash is quarantined under the entry. Used by blockMedia, by adding a hash by
+ * copy with that hash is quarantined under the entry, and media.hash_listed is emitted. Used by blockMedia, by adding a hash by
  * hand (list.ts, which refuses a listed hash first) and by the restore drill when it re-applies a
  * media.blocked or media.hash_added ledger row. Takes the hash lock; the caller holds no clean
  * copy's row lock (hash-lock.ts).
  */
 export async function listBlockedHash(
-  t: QuarantineTx,
+  t: ListTx,
   input: { action: string; sha256: string; category: BlockCategory; reason?: string | null; by: Uuid | null; now: Date },
 ): Promise<{ entryId: Uuid; quarantinedCopies: number }> {
   await lockHash(t.db, input.sha256);
@@ -81,6 +89,9 @@ export async function listBlockedHash(
     .onConflictDoNothing();
   const entry = await findBlocked(t.db, input.sha256);
   if (!entry) throw new Error('list entry not written');
+  // Every way a hash is listed comes through here, so this one event reaches the edge purge
+  // (edge/takedowns.ts), which forgets any proxied copy cached under the hash.
+  await t.emit({ type: 'media.hash_listed', v: 1, entryId: entry.id });
   const copies = await t.db
     .select({ id: media.id })
     .from(media)

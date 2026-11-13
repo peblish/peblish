@@ -39,7 +39,7 @@ async function lockedEvidence(t: { db: WriteTx }, action: string, mediaId: Uuid)
 /** Admin confirms the match: the image is blocked, its hash listed (clean copies are quarantined), the purge recorded. */
 export const confirmMatch = defineMutation({
   action: 'media.review',
-  emits: ['media.reviewed', 'media.quarantined'],
+  emits: ['media.reviewed', 'media.quarantined', 'media.hash_listed'],
   recheck: true,
   async run(t, grant, input: { note?: string | null; now: Date }) {
     const { mediaId } = grant.subject;

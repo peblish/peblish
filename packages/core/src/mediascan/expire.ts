@@ -17,7 +17,7 @@ import { holdKeepsBytes } from './purge.ts';
  */
 export const expireUndecided = defineMutation({
   action: 'media.scan',
-  emits: ['media.scanned', 'media.quarantined'],
+  emits: ['media.scanned', 'media.quarantined', 'media.hash_listed'],
   recheck: true,
   async run(t, grant, input: { now: Date; days: number }) {
     const { mediaId } = grant.subject;

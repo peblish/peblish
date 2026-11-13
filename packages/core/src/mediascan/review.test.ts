@@ -118,7 +118,9 @@ test('confirm blocks the image, lists its hash, writes the ledger and log, remov
     ['media.review', false],
     ['mod.remove', false],
   ]);
+  // Listing the hash is announced, so the edge cache forgets any proxied copy (edge/takedowns.ts).
   expect((await outboxEvents()).slice(before).map((e) => (e as { type: string }).type)).toEqual([
+    'media.hash_listed',
     'media.reviewed',
     'media.purged',
     'mod.remove',
@@ -344,7 +346,12 @@ test('an undecided quarantine ends after the window with no admin named, and not
   expect(await evidenceOf(row.id)).toMatchObject({ status: 'confirmed', decidedBy: null });
   expect(await logOf((await evidenceOf(row.id)).id)).toEqual(['quarantined', 'expired', 'purge_started']);
   expect((await db().select().from(deletionLedger)).map((l) => [l.subjectId, l.requestedBy])).toEqual([[row.id, null]]);
-  expect((await outboxEvents()).map((e) => (e as { type: string }).type)).toEqual(['media.quarantined', 'media.scanned', 'media.purged']);
+  expect((await outboxEvents()).map((e) => (e as { type: string }).type)).toEqual([
+    'media.quarantined',
+    'media.hash_listed',
+    'media.scanned',
+    'media.purged',
+  ]);
 });
 
 test('manifests are deleted after their retention, a hold postpones that, and the log keeps a line', async () => {

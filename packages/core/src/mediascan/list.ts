@@ -26,7 +26,7 @@ export const blockCategories = ['csam', 'intimate_image', 'violent', 'spam', 'ot
  */
 export const addBlockedHash = defineMutation({
   action: 'media.blocklist',
-  emits: ['media.blocklist_changed', 'media.quarantined'],
+  emits: ['media.blocklist_changed', 'media.quarantined', 'media.hash_listed'],
   recheck: true,
   async run(t, grant, input: { value: string; category: BlockCategory; reason?: string | null; now: Date }) {
     const value = input.value.trim().toLowerCase();
