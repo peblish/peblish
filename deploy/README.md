@@ -60,6 +60,7 @@ the refused form).
 | `MEDIASCAN_LOCAL_ONLY`                                   | web, worker                    | `1`: scan against the local hash list only and call no provider (development and tests). Leave it unset in production, so scanning fails closed without a provider                                                                                                                                                                                                                                                                                                                                                                                                                                             |
 | `MEDIASCAN_TIMEOUT_MS`                                   | web, worker                    | Optional; default `8000`: one deadline for the whole inline scan of an upload                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
 | `MEDIASCAN_UNDECIDED_PURGE_DAYS`                         | web, worker                    | Optional; default `7`: days a quarantined image waits for an admin's decision before it is blocked and its bytes purged (a hold in force stops it)                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| `CLOUDFLARE_ZONE_ID`, `CLOUDFLARE_PURGE_TOKEN`           | web, worker                    | Optional, both or neither: Cloudflare's edge cache for public remote images ([edge-cache.md](edge-cache.md)): the zone id (32 hexadecimal characters) and an API token with only Zone, Cache Purge, Purge on that zone. Leave both unset until the real-edge checklist in its section 3 has passed. Without both on web, every `/media/proxy/*` answer is `private`. Answers also turn `private` when the purge path is not ready: at once for a refused token or a zone mismatch, within 30 s once a takedown waits for a stopped worker, otherwise within 5 minutes. Never logged                            |
 | `BACKUP_S3_ENDPOINT`, `BACKUP_S3_REGION`                 | backup                         | The backup bucket's S3 API as a bare https origin and its region (R2: `https://<account>.r2.cloudflarestorage.com`, `auto`). No path, query or credentials ([backups.md](backups.md))                                                                                                                                                                                                                                                                                                                                                                                                                          |
 | `BACKUP_S3_BUCKET`                                       | backup                         | The backup bucket: never the media bucket. The backup refuses to run when it equals `S3_BUCKET`, so set `S3_BUCKET` (and `S3_ACCESS_KEY_ID`, to refuse the media key too) on the backup service as well                                                                                                                                                                                                                                                                                                                                                                                                        |
 | `BACKUP_S3_ACCESS_KEY_ID`, `BACKUP_S3_SECRET_ACCESS_KEY` | backup                         | A key limited to the backup bucket (object read and write; no delete where the store allows it)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
@@ -152,16 +153,23 @@ The private staging project `peblish-staging` (`https://staging.peblish.com`, st
 - `/readyz` is readiness: 200 when the database answers, else 503 with `Retry-After`.
 - Federation endpoints (lane FED-A) must never answer 410, 418 or other 5xx on inbox,
   actor, WebFinger or NodeInfo URLs; maintenance answers 503 with `Retry-After`.
-- Cloudflare in front: no cache rules on `/u`, `/c`, `/post`; the WAF must not block
-  `POST /inbox`; forward real client IPs.
+- Cloudflare in front: no cache rules on `/u`, `/c`, `/post` or any page; the one cache rule is
+  `/media/proxy/*` ([edge-cache.md](edge-cache.md)), added only once the two edge variables are
+  set on web and worker and the real-edge checklist in its section 3 has passed. The WAF must not
+  block `POST /inbox`; forward real client IPs.
 - Compression: the Node server sends responses as they are and nothing in this repository
   compresses them. Traefik (Easypanel) and Cloudflare compress text in production, so turn it
   on at whichever of them faces the browser. The payload budget (`e2e/payload`, run by
   `pnpm e2e`) gzips every text file itself and measures those compressible bytes (woff2 fonts
   as sent); it does not measure what the Node server alone transfers.
-- Remote images reach viewers through `/media/proxy/*`, which answers `Cache-Control: private,
-max-age=600`. Cloudflare does not cache a `private` answer, so no cache rule is needed (or
-  wanted) for it during the beta; every viewer's browser keeps an image for ten minutes.
+- Remote images reach viewers through `/media/proxy/*`. Every viewer's browser keeps an image
+  for ten minutes (`max-age=600`). With `CLOUDFLARE_ZONE_ID` and `CLOUDFLARE_PURGE_TOKEN` set on
+  web and worker and the cache rule in [edge-cache.md](edge-cache.md), Cloudflare also holds
+  images that were public when fetched for up to an hour (`s-maxage=3600`), purged by tag on
+  takedown and again about two minutes later; every other image answer is `private`. Without
+  them, every image answer is `private` and no cache rule is needed. Edge caching stays off
+  (neither variable set, no cache rule) until the real-edge checklist in edge-cache.md section 3
+  has passed on a test hostname.
 
 ## Transactions and the outbox
 
