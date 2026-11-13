@@ -2,9 +2,7 @@ import { db, type Queryable } from '@peblish/core/db/read';
 import { deleteComment } from '@peblish/core/comments/delete';
 import { storeRemoteComment, updateRemoteComment } from '@peblish/core/comments/remote';
 import { deletePost } from '@peblish/core/posts/delete';
-import { olderThanHeld, storeRemotePost, updateRemotePost } from '@peblish/core/posts/remote';
-import { comments, posts } from '@peblish/core/db/tables/content';
-import { eq } from 'drizzle-orm';
+import { storeRemotePost, updateRemotePost } from '@peblish/core/posts/remote';
 import { recordDeletion } from '@peblish/core/remote/ledger';
 import { readSetting } from '@peblish/core/settings/read';
 import type { ResolvedActor } from '../../actors/resolve.ts';
@@ -60,32 +58,22 @@ async function sensitiveRefusal(q: Queryable, post: Pick<PostRecord, 'apId' | 's
 /** Why an Update would be refused as a new Create for its addressing (classify.ts let it through because we hold its object). */
 const withdrawal = (ctx: InboundContext, verb: 'Create' | 'Update'): Skipped | null => (verb === 'Update' ? notPublic(ctx.raw) : null);
 
-/** The held row's edit time and deletion, locked for the rest of the transaction. */
-async function lockHeld(t: Tx, held: Stored): Promise<{ editedAt: Date | null; deletedAt: Date | null } | undefined> {
-  const table = held.kind === 'post' ? posts : comments;
-  const [row] = await t.db
-    .select({ editedAt: table.editedAt, deletedAt: table.deletedAt })
-    .from(table)
-    .where(eq(table.id, held.id))
-    .for('update');
-  return row;
-}
-
 /**
  * Removes the copy we hold of what an Update `refused`, as its author's Delete would; a copy
  * already deleted keeps the refusal as the outcome. An Update older than the revision we hold
- * (`editedAt` is its `updated`) arrived out of order and changes nothing, by the edit path's own
- * rule (`olderThanHeld`), judged on the row locked for the deletion, so a concurrent newer edit
- * is either seen here or waits for this one. Without `updated`, or with one equal to ours, it
- * removes the copy, as such an edit would apply.
+ * (`revision` is its `updated`) arrived out of order and changes nothing: the delete mutation
+ * judges it by the edit path's own rule (olderThanHeld) on the rows its recheck locked, in the
+ * one lock order every write keeps, so a concurrent edit either commits first and is seen, or
+ * waits for this transaction. Without `updated`, or with one equal to ours, it removes the copy,
+ * as such an edit would apply.
  */
-async function withdrawHeld(ctx: InboundContext, t: Tx, held: Stored, refused: Skipped, editedAt: Date | null): Promise<Applied> {
-  const row = await lockHeld(t, held);
-  if (held.deleted || !row || row.deletedAt !== null) throw refused;
-  if (olderThanHeld(editedAt, row.editedAt)) return { communityId: held.communityId, objectApId: held.apId };
-  if (held.kind === 'comment') await deleteComment.within(t, await grantFor(ctx, t, 'comment.delete', { commentId: held.id }));
-  else await deletePost.within(t, await grantFor(ctx, t, 'post.delete', { postId: held.id }));
-  await recordDeletion(t, { kind: held.kind, id: held.id, cause: 'Delete', actorId: ctx.sender.id });
+async function withdrawHeld(ctx: InboundContext, t: Tx, held: Stored, refused: Skipped, revision: Date | null): Promise<Applied> {
+  if (held.deleted) throw refused;
+  const deleted =
+    held.kind === 'comment'
+      ? await deleteComment.within(t, await grantFor(ctx, t, 'comment.delete', { commentId: held.id }), { revision })
+      : await deletePost.within(t, await grantFor(ctx, t, 'post.delete', { postId: held.id }), { revision });
+  if (deleted) await recordDeletion(t, { kind: held.kind, id: held.id, cause: 'Delete', actorId: ctx.sender.id });
   return { communityId: held.communityId, objectApId: held.apId };
 }
 

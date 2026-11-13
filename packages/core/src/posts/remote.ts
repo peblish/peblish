@@ -5,6 +5,7 @@ import { actors } from '../db/tables/actors.ts';
 import { posts } from '../db/tables/content.ts';
 import { sameMentions } from '../mentions/scan.ts';
 import { defineMutation } from '../tx/mutation.ts';
+import { olderThanHeld } from '../remote/revision.ts';
 import { Refused } from '../tx/refused.ts';
 import { remoteBody } from './body.ts';
 import { peerAltText, peerLanguage, peerLink, peerMediaType } from './input.ts';
@@ -122,14 +123,6 @@ export const storeRemotePost = defineMutation({
     return { id, created: true };
   },
 });
-
-/**
- * Whether a peer's revision dated `incoming` (its `updated`) arrived out of order: before the
- * edit time we hold. No `updated`, or no edit time held, is never out of order; an equal time is
- * not either. The one rule for every Update of remote content that would change what we hold: an
- * edit (below) and a withdrawal that removes our copy (federation's inbound content handler).
- */
-export const olderThanHeld = (incoming: Date | null, held: Date | null): boolean => incoming !== null && held !== null && incoming < held;
 
 /**
  * A peer's Update by the author: replaces the editable fields, keeps `published`, the counts and

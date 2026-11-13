@@ -1,9 +1,12 @@
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { beforeEach, describe, expect, test } from 'vitest';
 import { db } from '@peblish/core/db/read';
 import { comments, posts } from '@peblish/core/db/tables/content';
+import { outbox } from '@peblish/core/db/tables/outbox';
 import { deletionLedger } from '@peblish/core/db/tables/site';
+import { deliveries } from '@peblish/core/delivery/tables';
 import { truncateAll } from '@peblish/core/testing/db';
+import { owedAfterDrain, startDrain } from '@peblish/core/testing/edge-drain';
 import { seedComment } from '@peblish/core/testing/seed-az';
 import { stubFetch } from '@peblish/core/testing/seed-fed-a';
 import { deliverRow, seedInboundWorld } from '@peblish/core/testing/seed-fed-b';
@@ -140,4 +143,39 @@ test('a withdrawal without `updated`, or with the time we hold, removes our copy
   const { updated: _updated, ...undated } = page(t1, spike, 'No time', held, 'followers-only');
   expect((await send(undated, [spike, followers])).stored?.state).toBe('applied');
   expect((await post())?.deletedAt).not.toBeNull();
+});
+
+test('a stale withdrawal leaves no content event, no edge purge debt and no relay delivery', async () => {
+  const comment = await seedComment(world.instances.lemmy, world.t1, world.peers.lemmyuser, { apId: `${lemmy}/comment/92`, local: false });
+  const note = (text: string, updated: string) => ({
+    id: comment.apId,
+    type: 'Note',
+    attributedTo: lemmyuser,
+    inReplyTo: t1,
+    content: `<p>${text}</p>`,
+    updated,
+    audience: spike,
+  });
+  const followersOnly = [spike, followers];
+  expect((await deliver(update(page(t1, spike, 'Held', held, 'public'), spike, [spike, PUBLIC], false))).stored?.state).toBe('applied');
+  expect((await deliver(update(note('held', held), spike, [spike, PUBLIC], false))).stored?.state).toBe('applied');
+  await startDrain();
+  const [{ last } = { last: 0 }] = await db()
+    .select({ last: sql<number>`coalesce(max(${outbox.id}), 0)::int` })
+    .from(outbox);
+  const relayed = (await db().select().from(deliveries)).length;
+
+  expect((await deliver(update(page(t1, spike, 'Old', older, 'followers-only'), spike, followersOnly, false))).stored?.state).toBe(
+    'applied',
+  );
+  expect((await deliver(update(note('old', older), spike, followersOnly, false))).stored?.state).toBe('applied');
+
+  const events = await db()
+    .select({ type: outbox.type })
+    .from(outbox)
+    .where(sql`${outbox.id} > ${last}`);
+  expect(events.filter(({ type }) => type.startsWith('post.') || type.startsWith('comment.'))).toEqual([]);
+  expect(await owedAfterDrain()).toEqual([]);
+  expect((await db().select().from(deliveries)).length).toBe(relayed);
+  expect(await ledgerRows()).toBe(0);
 });
