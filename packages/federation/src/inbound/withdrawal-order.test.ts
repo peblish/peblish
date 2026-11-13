@@ -179,3 +179,76 @@ test('a stale withdrawal leaves no content event, no edge purge debt and no rela
   expect((await db().select().from(deliveries)).length).toBe(relayed);
   expect(await ledgerRows()).toBe(0);
 });
+
+describe('an ordinary edit keeps the revision monotonic (round 5)', () => {
+  const comment = () => seedComment(world.instances.lemmy, world.t1, world.peers.lemmyuser, { apId: `${lemmy}/comment/93`, local: false });
+  const note = (apId: string, text: string, updated: string | null) => ({
+    id: apId,
+    type: 'Note',
+    attributedTo: lemmyuser,
+    inReplyTo: t1,
+    content: `<p>${text}</p>`,
+    ...(updated && { updated }),
+    audience: spike,
+  });
+  const sendNote = (apId: string, text: string, updated: string | null, form: 'public' | 'followers-only' = 'public') =>
+    deliver(update(note(apId, text, updated), spike, addressing(spike, form), false));
+  const commentRow = async (id: string) => (await db().select().from(comments).where(eq(comments.id, id)))[0];
+  const postRow = async () => (await db().select().from(posts).where(eq(posts.apId, t1)))[0];
+  const sendPage = (title: string, updated: string | null, form: Form | 'public' = 'public') => {
+    const { updated: _updated, ...undated } = page(t1, spike, title, updated ?? held, form);
+    return deliver(update(updated ? { ...undated, updated } : undated, spike, addressing(spike, form), false));
+  };
+  const commentEvents = async () =>
+    (await db().select({ type: outbox.type }).from(outbox)).filter(({ type }) => type === 'comment.updated').length;
+
+  test('a stale public comment edit is not applied, so an older withdrawal after it is still stale (sequence a)', async () => {
+    const { id, apId } = await comment();
+    expect((await sendNote(apId, 'revision 12:00', '2026-11-12T12:00:00Z')).stored?.state).toBe('applied');
+    const events = await commentEvents();
+    expect((await sendNote(apId, 'revision 10:00', '2026-11-12T10:00:00Z')).stored?.state).toBe('applied');
+    expect(await commentRow(id)).toMatchObject({ editedAt: new Date('2026-11-12T12:00:00Z') });
+    expect((await commentRow(id))?.contentHtml).toContain('revision 12:00');
+    expect(await commentEvents()).toBe(events);
+    expect((await sendNote(apId, 'private 11:00', '2026-11-12T11:00:00Z', 'followers-only')).stored?.state).toBe('applied');
+    const kept = await commentRow(id);
+    expect(kept?.deletedAt).toBeNull();
+    expect(kept?.contentHtml).toContain('revision 12:00');
+    expect(await ledgerRows()).toBe(0);
+  });
+
+  test('a newer comment Update that changes only its time stores the time, so a withdrawal between the two is stale (sequence b)', async () => {
+    const { id, apId } = await comment();
+    expect((await sendNote(apId, 'revision 12:00', '2026-11-12T12:00:00Z')).stored?.state).toBe('applied');
+    expect((await sendNote(apId, 'revision 12:00', '2026-11-12T13:00:00Z')).stored?.state).toBe('applied');
+    expect((await commentRow(id))?.editedAt).toEqual(new Date('2026-11-12T13:00:00Z'));
+    expect((await sendNote(apId, 'private 12:30', '2026-11-12T12:30:00Z', 'followers-only')).stored?.state).toBe('applied');
+    const kept = await commentRow(id);
+    expect(kept?.deletedAt).toBeNull();
+    expect(kept?.contentHtml).toContain('revision 12:00');
+    expect(await ledgerRows()).toBe(0);
+  });
+
+  test('the post equivalents: a stale edit is not applied, and a newer time-only Update is stored', async () => {
+    expect((await sendPage('Revision 12:00', '2026-11-12T12:00:00Z')).stored?.state).toBe('applied');
+    expect((await sendPage('Revision 10:00', '2026-11-12T10:00:00Z')).stored?.state).toBe('applied');
+    expect(await postRow()).toMatchObject({ title: 'Revision 12:00', editedAt: new Date('2026-11-12T12:00:00Z') });
+    expect((await sendPage('Revision 12:00', '2026-11-12T13:00:00Z')).stored?.state).toBe('applied');
+    expect((await postRow())?.editedAt).toEqual(new Date('2026-11-12T13:00:00Z'));
+    expect((await sendPage('Private 12:30', '2026-11-12T12:30:00Z', 'followers-only')).stored?.state).toBe('applied');
+    expect(await postRow()).toMatchObject({ title: 'Revision 12:00', deletedAt: null });
+  });
+
+  test('an undated edit never moves the stored time back, for a comment and a post', async () => {
+    const future = new Date('2030-01-01T00:00:00Z');
+    const { id, apId } = await comment();
+    expect((await sendNote(apId, 'future-dated', future.toISOString())).stored?.state).toBe('applied');
+    expect((await sendNote(apId, 'undated change', null)).stored?.state).toBe('applied');
+    expect(await commentRow(id)).toMatchObject({ editedAt: future });
+    expect((await commentRow(id))?.contentHtml).toContain('undated change');
+
+    expect((await sendPage('Future-dated', future.toISOString())).stored?.state).toBe('applied');
+    expect((await sendPage('Undated change', null)).stored?.state).toBe('applied');
+    expect(await postRow()).toMatchObject({ title: 'Undated change', editedAt: future });
+  });
+});

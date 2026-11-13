@@ -6,3 +6,13 @@
  * delete mutations' `revision`, judged on the rows their recheck locked).
  */
 export const olderThanHeld = (incoming: Date | null, held: Date | null): boolean => incoming !== null && held !== null && incoming < held;
+
+/**
+ * The edit time to store for a revision that is applied: the peer's `updated`, or the receive
+ * time when it sent none, but never earlier than the edit time held, so the stored time never
+ * moves backwards (an undated edit after a future-dated one keeps the future time).
+ */
+export const nextEditedAt = (incoming: Date | null, held: Date | null): Date => {
+  const next = incoming ?? new Date();
+  return held !== null && next < held ? held : next;
+};

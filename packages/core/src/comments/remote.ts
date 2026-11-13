@@ -7,6 +7,7 @@ import { actors } from '../db/tables/actors.ts';
 import { comments, posts } from '../db/tables/content.ts';
 import { sameMentions } from '../mentions/scan.ts';
 import { remoteBody } from '../posts/body.ts';
+import { nextEditedAt, olderThanHeld } from '../remote/revision.ts';
 import { defineMutation } from '../tx/mutation.ts';
 import { Refused } from '../tx/refused.ts';
 import { insertComment } from './insert.ts';
@@ -100,7 +101,14 @@ export const storeRemoteComment = defineMutation({
   },
 });
 
-/** A peer's Update by the author: replaces the body, keeps `published`, the counts and the flags a moderator sets. */
+/**
+ * A peer's Update by the author: replaces the body, keeps `published`, the counts and the flags a
+ * moderator sets. The revision rule is the post edit's (remote/revision.ts): an Update whose
+ * `updated` is before the stored edit time arrived out of order and is ignored (`changed: false`,
+ * nothing written, no event); an applied one stores its `updated`, or the receive time, never
+ * earlier than the time held. An Update that changes nothing but a newer `updated` stores that
+ * time (and its raw document) without an event, since nothing a reader sees changed.
+ */
 export const updateRemoteComment = defineMutation({
   action: 'comment.update',
   emits: ['comment.updated'],
@@ -110,6 +118,8 @@ export const updateRemoteComment = defineMutation({
     const [current] = await t.db.select().from(comments).where(eq(comments.id, commentId));
     if (!current) throw new Refused('comment.update', 'target.not_found');
     if (current.apId !== record.apId) throw new TypeError('updateRemoteComment: the record is not this comment');
+    // An Update delivered late must not roll the comment back.
+    if (olderThanHeld(record.editedAt, current.editedAt)) return { id: commentId, changed: false };
     const { origin } = await localInstance(t.db);
     const body = remoteBody(record, origin, commentId, current.apId);
     // A peer's edit that only adds or drops a mention (the Mention tags in `raw`) changes who is notified: it is an edit too.
@@ -118,10 +128,17 @@ export const updateRemoteComment = defineMutation({
       body.contentHtml === current.contentHtml &&
       record.language === current.language &&
       sameMentions(current.raw, record.raw);
-    if (same) return { id: commentId, changed: false };
+    const editedAt = nextEditedAt(record.editedAt, current.editedAt);
+    if (same) {
+      // A newer time alone still moves the revision on, so a withdrawal dated before it is stale.
+      if (record.editedAt !== null && editedAt.getTime() !== current.editedAt?.getTime()) {
+        await t.db.update(comments).set({ raw: record.raw, editedAt }).where(eq(comments.id, commentId));
+      }
+      return { id: commentId, changed: false };
+    }
     await t.db
       .update(comments)
-      .set({ raw: record.raw, ...body, language: record.language, editedAt: record.editedAt ?? new Date() })
+      .set({ raw: record.raw, ...body, language: record.language, editedAt })
       .where(eq(comments.id, commentId));
     await t.emit({
       type: 'comment.updated',
