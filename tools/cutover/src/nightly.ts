@@ -1,6 +1,7 @@
-import { lstatSync, mkdirSync, mkdtempSync, readdirSync, rmSync, statSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, realpathSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join, resolve, sep } from 'node:path';
 import { type } from 'arktype';
 import postgres from 'postgres';
 import type { Alerter } from './alerts.ts';
@@ -107,6 +108,12 @@ export type Lock = { lost: AbortSignal; held(): Promise<boolean>; release(): Pro
 
 /** Where a run's data comes from: the lock and the file. The database in production; fakes in tests. */
 export type Source = {
+  /**
+   * Names what the lock covers (one database), for the run's temporary folders: a run removes
+   * leftovers of its own kind and scope only, so two services backing up different databases
+   * through one temporary root never touch each other's folders.
+   */
+  scope(): string;
   lock(kind: Kind, signal: AbortSignal): Promise<Lock | null>;
   produce(kind: Kind, file: string, signal: AbortSignal): Promise<{ rows?: number }>;
 };
@@ -121,6 +128,15 @@ const LOCK_WAIT_MS = 60_000;
 /** The database `url` names. Nothing here parses or connects until a run asks, inside its guarded path. */
 export function postgresSource(url: string): Source {
   return {
+    // A digest of host, port and database name: no user, password or address on disk or in a log.
+    scope() {
+      const parsed = new URL(url);
+      const host = parsed.searchParams.get('host') ?? decodeURIComponent(parsed.hostname);
+      const port = parsed.port || parsed.searchParams.get('port') || '5432';
+      // Without a database name Postgres uses the user's name, so that names the database then.
+      const database = decodeURIComponent(parsed.pathname.slice(1)) || decodeURIComponent(parsed.username);
+      return createHash('sha256').update(`${host}\n${port}\n${database}`).digest('hex').slice(0, 12);
+    },
     async lock(kind, signal) {
       const lost = new AbortController();
       let released = false;
@@ -223,8 +239,10 @@ const FUTURE = 'is dated in the future';
  * The tool's own temporary root, `<TMPDIR>/peblish-backup`: created mode 700, and refused unless
  * it is a real folder (not a link) of this user with mode 700, since dumps are written there.
  */
+const tempRoot = () => join(tmpdir(), 'peblish-backup');
+
 function privateRoot(): string {
-  const root = join(tmpdir(), 'peblish-backup');
+  const root = tempRoot();
   mkdirSync(root, { recursive: true, mode: 0o700 });
   const found = lstatSync(root);
   const mine = process.getuid ? found.uid === process.getuid() : true;
@@ -276,15 +294,17 @@ export async function runOnce(kind: Kind, source: Source, config: BucketConfig, 
     });
     if (!lock) return { outcome: 'skipped', line: `${kind} skipped: another ${kind} run holds the lock` };
     const held = lock;
+    // First of all, holding the lock: no other run of this kind on this database is using these
+    // folders, so they were left by a killed process. Before any bucket read, which may fail.
+    const root = privateRoot();
+    const prefix = `${kind}-${source.scope()}-`;
+    for (const name of readdirSync(root)) if (name.startsWith(prefix)) rmSync(join(root, name), { recursive: true, force: true });
     const live = AbortSignal.any([held.lost, ...(stop ? [stop] : [])]);
     // A record from a clock ahead is never replaced, so there is no point in a dump or an upload.
     if ((await readStatus(bucket, kind, now(), live)).invalid === FUTURE) return superseded(future);
-    const root = privateRoot();
-    // Holding the lock, no other run of this kind is using these: they were left by a killed process.
-    for (const name of readdirSync(root)) if (name.startsWith(`${kind}-`)) rmSync(join(root, name), { recursive: true, force: true });
     const run = AbortSignal.any([held.lost, deadline.signal, ...(stop ? [stop] : [])]);
     timer = setTimeout(() => deadline.abort(new CutoverError('timed out')), options.produceDeadlineMs ?? PRODUCE_DEADLINE_MS[kind]);
-    dir = mkdtempSync(join(root, `${kind}-`));
+    dir = mkdtempSync(join(root, prefix));
     const file = join(dir, kind === 'backup' ? 'backup.dump' : 'ledger.json');
     const { rows } = await source.produce(kind, file, run);
     if (run.aborted) throw run.reason;
@@ -542,6 +562,23 @@ async function chooseObject(
   return record.status;
 }
 
+/** The real path of `path`, or of its nearest existing parent with the rest appended. */
+function realish(path: string): string {
+  const full = resolve(path);
+  if (existsSync(full)) return realpathSync(full);
+  const parent = dirname(full);
+  return parent === full ? full : join(realish(parent), full.slice(parent.length));
+}
+
+/** Whether `dir` is the temporary root or inside it, by its path as given or through links. */
+function insideTempRoot(dir: string): boolean {
+  const pairs: [string, string][] = [
+    [resolve(dir), resolve(tempRoot())],
+    [realish(dir), realish(tempRoot())],
+  ];
+  return pairs.some(([target, root]) => target === root || target.startsWith(root + sep));
+}
+
 /**
  * For a restore: downloads a backup and a ledger export into `dir` (created mode 700; files mode
  * 600, each checked while it downloads). Each is the one named (`object`, `ledgerObject`), which
@@ -555,6 +592,8 @@ export async function fetchForRestore(
   dir: string,
   options: { object?: string; ledgerObject?: string; signal?: AbortSignal } = {},
 ): Promise<{ chosenBy: string; backupObject: string; backup: string; ledgerObject: string; ledger: string }> {
+  // Backup runs clear their leftovers in their temporary root, so a restore there could vanish.
+  if (insideTempRoot(dir)) throw new CutoverError(`${dir} is inside ${tempRoot()}, which backup runs clear; fetch into another folder`);
   const bucket = backupBucket(config);
   const now = new Date();
   const named = { backup: options.object, ledger: options.ledgerObject };

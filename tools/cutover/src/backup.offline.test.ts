@@ -2,7 +2,8 @@ import { spawn } from 'node:child_process';
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { MailMessage } from '@peblish/core/identity/mail';
+import { SMTP_TIMEOUTS, smtpTransport, type MailMessage } from '@peblish/core/identity/mail';
+import { testSmtpServer } from '@peblish/core/identity/smtp-test-server';
 import { afterAll, afterEach, beforeAll, describe, expect, test } from 'vitest';
 import { alertConfig, mailAlerter, type Alerter } from './alerts.ts';
 import { backupBucket, bucketConfigFromEnv, fileSha256, UnverifiedObject, type BucketConfig } from './bucket.ts';
@@ -259,9 +260,10 @@ describe('downloads', () => {
 });
 
 /** A source that writes a small file; `change` swaps the lock or the dump. */
-function fakeSource(change: { lock?: (kind: Kind) => Promise<Lock | null>; produce?: Source['produce'] } = {}): Source {
+function fakeSource(change: { lock?: (kind: Kind) => Promise<Lock | null>; produce?: Source['produce']; scope?: string } = {}): Source {
   const lock = async (): Promise<Lock> => ({ lost: new AbortController().signal, held: async () => true, release: async () => undefined });
   return {
+    scope: () => change.scope ?? 'db1',
     lock: change.lock ?? lock,
     produce:
       change.produce ??
@@ -363,19 +365,50 @@ describe('runs', () => {
     expect(left()).toEqual([]);
   });
 
-  test('leftover folders of earlier runs of its kind are removed while it holds the lock; other kinds and other names stay', async () => {
+  test('leftover folders of earlier runs of its kind and database are removed while it holds the lock; others stay', async () => {
     const root = join(work, 'peblish-backup');
     mkdirSync(root, { recursive: true, mode: 0o700 });
-    for (const name of ['backup-old1', 'backup-old2', 'ledger-old1', 'unrelated']) {
+    // db2 is another database: its own lock covers its folders, so this run's lock does not.
+    for (const name of ['backup-db1-old1', 'backup-db1-old2', 'backup-db2-live', 'ledger-db1-old1', 'unrelated']) {
       mkdirSync(join(root, name), { recursive: true, mode: 0o700 });
       writeFileSync(join(root, name, 'backup.dump'), 'plaintext from a killed process', { mode: 0o600 });
     }
     expect((await runOnce('backup', fakeSource(), config, options)).outcome).toBe('ok');
-    expect(left().toSorted()).toEqual(['ledger-old1', 'unrelated']);
+    expect(left().toSorted()).toEqual(['backup-db2-live', 'ledger-db1-old1', 'unrelated']);
     expect((await runOnce('backup', fakeSource({ lock: async () => null }), config, options)).outcome).toBe('skipped');
     expect((await runOnce('ledger', fakeSource({ lock: async () => null }), config, options)).outcome).toBe('skipped');
-    expect(left().toSorted()).toEqual(['ledger-old1', 'unrelated']); // not without the lock
+    expect(left().toSorted()).toEqual(['backup-db2-live', 'ledger-db1-old1', 'unrelated']); // not without the lock
     rmSync(root, { recursive: true, force: true });
+  });
+
+  test('leftovers are removed even when the run then cannot read its record, or finds it dated in the future', async () => {
+    const root = join(work, 'peblish-backup');
+    const plant = () => {
+      mkdirSync(join(root, 'ledger-db1-killed'), { recursive: true, mode: 0o700 });
+      writeFileSync(join(root, 'ledger-db1-killed', 'ledger.json'), 'plaintext from a killed process', { mode: 0o600 });
+    };
+    plant();
+    s3.faults.deny = true;
+    expect((await runOnce('ledger', fakeSource(), config, options)).outcome).toBe('failed');
+    s3.faults.deny = false;
+    expect(left()).toEqual([]);
+    plant();
+    const ahead = new Date(Date.now() + 3600_000).toISOString();
+    s3.seed(
+      statusKey('ledger'),
+      JSON.stringify({ object: 'ledger/20261113T160500.000Z.json', size: 1, sha256: 'a'.repeat(64), startedAt: ahead, finishedAt: ahead }),
+    );
+    expect((await runOnce('ledger', fakeSource(), config, options)).outcome).toBe('superseded');
+    expect(left()).toEqual([]);
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  test("a database's folder scope comes from its host, port and name, never its user or password", () => {
+    const scope = (url: string) => postgresSource(url).scope();
+    expect(scope('postgres://u:hunter2@db.internal:5432/peblish')).toMatch(/^[0-9a-f]{12}$/);
+    expect(scope('postgres://other:pw@db.internal/peblish')).toBe(scope('postgres://u:hunter2@db.internal:5432/peblish'));
+    expect(scope('postgres://u:hunter2@db.internal:5432/peblish_b')).not.toBe(scope('postgres://u:hunter2@db.internal:5432/peblish'));
+    expect(scope('postgres://u:hunter2@db2.internal:5432/peblish')).not.toBe(scope('postgres://u:hunter2@db.internal:5432/peblish'));
   });
 
   test('a temporary root that is not a private folder of this user is refused', async () => {
@@ -697,6 +730,29 @@ describe('the overdue rule', () => {
     expect(lines.join('\n')).not.toContain('hunter2');
   });
 
+  test('a real SMTP send that a server holds open with empty lines is cut off, and a later overdue mail still goes out', async () => {
+    const smtp = await testSmtpServer(100);
+    try {
+      smtp.withhold = true;
+      // Never 300 ms of silence: only the send's elapsed limit (1 s here) can end it.
+      const transport = smtpTransport(smtp.url, { ...SMTP_TIMEOUTS, socketTimeout: 300 }, 1_000);
+      const a = alerter((m) => transport.send({ ...m, from: 'backups@example.test' }));
+      const t0 = t;
+      const s = await start(skipped, a);
+      const started = Date.now();
+      await tickAt(s, t0 + 2 * HOUR + 60_000, a);
+      expect(Date.now() - started).toBeLessThan(2_500);
+      expect(lines.filter((l) => l.startsWith('ledger overdue mail not sent (tried again in 15 min): '))).toHaveLength(1);
+      expect(smtp.open).toBe(0);
+      smtp.withhold = false;
+      await tickAt(s, t0 + 2 * HOUR + 17 * 60_000, a);
+      expect(lines).toContain('ledger overdue mail sent');
+      expect(smtp.received).toHaveLength(2);
+    } finally {
+      await smtp.close();
+    }
+  });
+
   test('never two sends at once, ticks never wait for one, and shutdown is not held by it', async () => {
     const calls: MailMessage[] = [];
     const a = alerter((m) => {
@@ -801,6 +857,17 @@ describe('backup-status and the fetch for a restore', () => {
     s3.objects.get(ledger.object)!.body = Buffer.from('changed');
     await expect(fetchForRestore(config, folder)).rejects.toThrow();
     expect(readdirSync(folder)).toEqual(['mine.txt']);
+  });
+
+  test('a restore destination inside the service temporary root is refused before anything is read', async () => {
+    const before = s3.requests.length;
+    const inside = join(tmpdir(), 'peblish-backup', 'restore');
+    await expect(fetchForRestore(config, inside)).rejects.toThrow(
+      `${inside} is inside ${join(tmpdir(), 'peblish-backup')}, which backup runs clear; fetch into another folder`,
+    );
+    await expect(fetchForRestore(config, join(tmpdir(), 'peblish-backup'))).rejects.toThrow(/which backup runs clear/);
+    expect(s3.requests.length).toBe(before);
+    expect(existsSync(inside)).toBe(false);
   });
 
   test('--object and --ledger-object work without a valid status record for their kind, and still check what they fetch', async () => {
