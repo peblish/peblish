@@ -2,15 +2,16 @@ import { fetchProxiedImage, type ProxyResult } from '@peblish/core/media/proxy';
 import { unwrapProxyUrl, verifyProxyPath, type MediaContent } from '@peblish/core/media/proxy-url';
 import { safeFetch, type SafeFetchInit, type SafeResponse } from '@peblish/core/net/fetch';
 import { mediaAllowed, supplierMediaAllowed } from '@peblish/core/peers/gate';
+import { EDGE_MAX_AGE_SECONDS } from '@peblish/core/edge/config';
 
 // The remote-media proxy's answer (decision 5): the image bytes of one signed URL, held in memory
 // for this response and stored nowhere. Viewers never contact remote hosts; remote hosts see
 // this server and nothing of the viewer (fetchProxiedImage sends no viewer header).
 
 /**
- * Minutes, not days: a takedown or the kill switch reaches viewers within this time. The answer is
- * `private`, so only the viewer's browser keeps it: no edge cache holds remote media for the beta
- * (revisit when lane SAFE's scanning is live).
+ * Minutes, not days: a takedown or the kill switch reaches viewers within this time, as a browser
+ * keeps an image this long. Shared caches hold only public answers (`edge` below), and for at
+ * most EDGE_MAX_AGE_SECONDS, purged on takedown.
  */
 export const PROXY_MAX_AGE_SECONDS = 600;
 
@@ -76,7 +77,25 @@ export type ProxyDeps = {
   fetch?: Fetcher;
   /** The time an unbound URL's expiry is judged at (milliseconds); tests set it. */
   now?: number;
+  /**
+   * Edge caching, given only when its purge path is configured (core edge/config.ts). `publicTags`
+   * (core edge/public.ts) answers whether the content is shown to a signed-out visitor, with the
+   * Cache-Tag values a purge reaches it by; null keeps the answer per viewer.
+   */
+  edge?: { publicTags: (content: MediaContent) => Promise<string[] | null> } | null;
 };
+
+const imageHeaders = (type: string, length: number, cacheControl: string, extra: Record<string, string> = {}) => ({
+  // The type sniffed from the bytes, never the remote host's claim.
+  'content-type': type,
+  'content-length': String(length),
+  'cache-control': cacheControl,
+  ...extra,
+  'x-content-type-options': 'nosniff',
+  // If someone opens the URL itself, the response can run nothing and load nothing.
+  'content-security-policy': "default-src 'none'; sandbox",
+  'referrer-policy': 'no-referrer',
+});
 
 export async function proxyResponse(signature: string, target: string, deps: ProxyDeps): Promise<Response> {
   // An unsigned, altered, foreign or expired URL, and the kill switch, look the same from outside: nothing here.
@@ -89,7 +108,11 @@ export async function proxyResponse(signature: string, target: string, deps: Pro
   // is hosted, and one whose content was removed, deleted or is gated for this viewer.
   const { content } = verified;
   if (content?.supplier && !(await (deps.supplierAllowed ?? supplierMediaAllowed)(content.supplier))) return plain(404, 'not found');
-  if (content && !(await deps.contentShown(content))) return plain(404, 'not found');
+  // Content a signed-out visitor is shown gets the same answer whoever asks, so it is public and
+  // the viewer is never read; anything else is judged for this viewer, as without an edge cache.
+  const { edge } = deps;
+  const shared = edge && content ? await edge.publicTags(content) : null;
+  if (content && !shared && !(await deps.contentShown(content))) return plain(404, 'not found');
   const { url } = verified;
   // A quarantined, purged or blocked peer's media looks like any other missing image, here or after a redirect.
   const allowed = deps.mediaAllowed ?? mediaAllowed;
@@ -101,16 +124,16 @@ export async function proxyResponse(signature: string, target: string, deps: Pro
   if (denied) return plain(404, 'not found');
   if (!result.ok) return plain(result.status, `the image could not be proxied (${result.why})`);
   // A copy: the fetched buffer's type is wider than a Response body accepts.
-  return new Response(new Uint8Array(result.body), {
-    headers: {
-      // The type sniffed from the bytes, never the remote host's claim.
-      'content-type': result.type,
-      'content-length': String(result.body.byteLength),
-      'cache-control': `private, max-age=${PROXY_MAX_AGE_SECONDS}`,
-      'x-content-type-options': 'nosniff',
-      // If someone opens the URL itself, the response can run nothing and load nothing.
-      'content-security-policy': "default-src 'none'; sandbox",
-      'referrer-policy': 'no-referrer',
-    },
-  });
+  const body = new Uint8Array(result.body);
+  if (edge && content && shared) {
+    // Asked again now the image is here: a takedown during the fetch may have been purged
+    // already, and this answer must not reach the edge after that purge.
+    const tags = await edge.publicTags(content);
+    if (tags) {
+      const cacheControl = `public, max-age=${PROXY_MAX_AGE_SECONDS}, s-maxage=${EDGE_MAX_AGE_SECONDS}`;
+      return new Response(body, { headers: imageHeaders(result.type, body.byteLength, cacheControl, { 'cache-tag': tags.join(',') }) });
+    }
+    if (!(await deps.contentShown(content))) return plain(404, 'not found');
+  }
+  return new Response(body, { headers: imageHeaders(result.type, body.byteLength, `private, max-age=${PROXY_MAX_AGE_SECONDS}`) });
 }
