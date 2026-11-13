@@ -33,18 +33,24 @@ test('a reader that keeps up gets every byte, and the stream closes only after t
 });
 
 test('a stalled reader is cut off at the deadline: the next read rejects, so the server destroys the socket (round 3, item 2)', async () => {
-  const reader = deadlineBody(bytes, 10_000, { clock, chunk: 64 * 1024 }).getReader();
+  const onLate = vi.fn();
+  const reader = deadlineBody(bytes, 10_000, { clock, chunk: 64 * 1024, onLate }).getReader();
   const first = await reader.read();
   expect(first.value?.byteLength).toBe(64 * 1024);
   // The edge stops draining; the deadline passes.
   later(10_001);
   await expect(reader.read()).rejects.toBeInstanceOf(PublicBodyLate);
+  expect(onLate).toHaveBeenCalledOnce();
 });
 
 test('a reader that took the last chunk but resumes after the deadline is cut off too: closing needs one more pull in time', async () => {
-  const reader = deadlineBody(bytes, 10_000, { clock, chunk: 256 * 1024 }).getReader();
+  const onLate = vi.fn();
+  const reader = deadlineBody(bytes, 10_000, { clock, chunk: 256 * 1024, onLate }).getReader();
   expect((await reader.read()).value?.byteLength).toBe(bytes.byteLength);
   // A paused process: no timer ran, but the clock moved on.
   at += 20_000;
   await expect(reader.read()).rejects.toBeInstanceOf(PublicBodyLate);
+  // The timer, firing late, does not report it a second time.
+  vi.advanceTimersByTime(20_000);
+  expect(onLate).toHaveBeenCalledOnce();
 });

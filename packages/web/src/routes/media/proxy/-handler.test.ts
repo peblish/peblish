@@ -258,9 +258,14 @@ describe('edge caching', () => {
       fetchImage: image(),
       edge: { publicTags: async () => ({ tags, startedAt: performance.now() - PUBLIC_BODY_MS - 1 }) },
     });
-    // The headers promise the whole length; the body errors, so the server cuts the socket.
+    // The headers promise the whole length; the body errors, so the server cuts the socket, and says so.
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
     expect(stale.headers.get('content-length')).toBe(String(png.length));
     await expect(stale.arrayBuffer()).rejects.toThrow();
+    expect(logged).toHaveBeenCalledExactlyOnceWith(
+      `edge cache: a public proxy answer was cut off at the ${PUBLIC_BODY_MS} ms body deadline (image ${imageSha256(png)})`,
+    );
+    logged.mockRestore();
   });
 
   test('every host a redirect passed through is part of the decision', async () => {
