@@ -1,10 +1,13 @@
 import { createHash, randomUUID } from 'node:crypto';
+import { gzipSync } from 'node:zlib';
 import http from 'node:http';
 import type { AddressInfo } from 'node:net';
 
 // A small path-style S3 for the backup tests, with no network beyond loopback: multipart
 // uploads (checking each part's Content-MD5 as S3 does), whole PUTs, HEAD, GET, ListObjectsV2
 // and a refused DELETE (the backup key has no delete permission). It does not check signatures.
+// Like R2 (measured 2026-11-14, deploy/backups.md), it gzips a GET or HEAD of a JSON object of
+// R2_GZIP_BYTES or more when the request accepts gzip: no content-length, a weak ETag.
 // `faults` changes its behaviour mid-test to reproduce what a real store can do.
 
 type Stored = { body: Buffer; contentType: string; meta: Record<string, string>; etag: string };
@@ -39,7 +42,14 @@ export type Faults = {
   ignoreIfMatch?: boolean;
   /** GET and HEAD answer without an ETag header. */
   noEtagOnGet?: boolean;
+  /** JSON answers are gzipped as R2 does even when the request asks for identity. */
+  compressAlways?: boolean;
+  /** GET and HEAD answer a weak ETag (W/"...") on an uncompressed answer, as a proxy might. */
+  weakEtag?: boolean;
 };
+
+/** The smallest JSON body R2 was seen to gzip (40 bytes was not; 63 was). */
+export const R2_GZIP_BYTES = 63;
 
 export type FakeS3 = {
   endpoint: string;
@@ -47,6 +57,8 @@ export type FakeS3 = {
   faults: Faults;
   /** Each request as `METHOD path?query`, oldest first. */
   requests: string[];
+  /** Each request's accept-encoding header (undefined when none was sent), in the same order. */
+  acceptEncodings: (string | undefined)[];
   /** Puts an object as the tool would have (with its sha256 metadata). */
   seed(key: string, body: Buffer | string, meta?: Record<string, string>): void;
   close(): Promise<void>;
@@ -60,6 +72,7 @@ export async function fakeS3(bucket: string): Promise<FakeS3> {
   const uploads = new Map<string, { key: string; contentType: string; meta: Record<string, string>; parts: Map<number, Buffer> }>();
   const faults: Faults = {};
   const requests: string[] = [];
+  const acceptEncodings: (string | undefined)[] = [];
 
   const server = http.createServer((req, res) => {
     const chunks: Buffer[] = [];
@@ -69,6 +82,7 @@ export async function fakeS3(bucket: string): Promise<FakeS3> {
       const body = Buffer.concat(chunks);
       const url = new URL(req.url ?? '/', 'http://fake');
       requests.push(`${req.method} ${url.pathname}${url.search}`);
+      acceptEncodings.push(req.headers['accept-encoding']);
       const send = (status: number, text = '', headers: Record<string, string> = {}) => {
         res.writeHead(status, headers);
         res.end(text);
@@ -166,10 +180,26 @@ export async function fakeS3(bucket: string): Promise<FakeS3> {
       const found = objects.get(key);
       if (req.method === 'HEAD' || req.method === 'GET') {
         if (!found) return send(404, req.method === 'GET' ? xmlError('NoSuchKey') : '');
+        const gzip =
+          found.contentType === 'application/json' &&
+          found.body.length >= R2_GZIP_BYTES &&
+          (faults.compressAlways || /\bgzip\b/.test(req.headers['accept-encoding'] ?? ''));
+        if (gzip) {
+          const headers = {
+            'content-type': found.contentType,
+            'content-encoding': 'gzip',
+            ...(!faults.noEtagOnGet && { etag: `W/"${faults.etag ?? found.etag}"` }),
+            ...found.meta,
+          };
+          if (req.method === 'HEAD') return send(200, '', headers);
+          res.writeHead(200, headers);
+          return res.end(gzipSync(found.body));
+        }
+        const etag = `${faults.weakEtag ? 'W/' : ''}"${faults.etag ?? found.etag}"`;
         const headers = {
           'content-length': String(found.body.length),
           'content-type': found.contentType,
-          ...(!faults.noEtagOnGet && { etag: `"${faults.etag ?? found.etag}"` }),
+          ...(!faults.noEtagOnGet && { etag }),
           ...found.meta,
         };
         if (req.method === 'HEAD') return send(200, '', headers);
@@ -201,6 +231,7 @@ export async function fakeS3(bucket: string): Promise<FakeS3> {
     objects,
     faults,
     requests,
+    acceptEncodings,
     seed(key, body, meta = {}) {
       const bytes = Buffer.from(body);
       objects.set(key, { body: bytes, contentType: 'application/octet-stream', meta, etag: md5(bytes).toString('hex') });
