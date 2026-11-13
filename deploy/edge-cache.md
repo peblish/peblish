@@ -154,9 +154,9 @@ is a worker that pauses for more than the lease between being let out and sendin
 just after another; at 5 a minute that is still inside the bucket of 25.
 
 The queue is bounded: more than 100 owed first sends become one purge of everything (`pbm`), and
-so do more than 100 owed repeats. With at most one batch in flight (up to 101 rows, or all rows
-due when it purges everything), `edge_purges` holds at most about 300 rows, plus the rows of
-transactions committing at the same instant before one of them collapses them. A repeat never
+so do more than 100 owed repeats. At most one batch is in flight: up to 100 rows, or, when it
+purges everything, every row that was due (at most 200). So `edge_purges` holds at most 400 rows,
+plus one row for each transaction owing a purge at the same instant (a new peer's first sight, say). A repeat never
 counts toward the collapse of first sends, so echoes cannot make a purge wider than the sends that
 caused them.
 

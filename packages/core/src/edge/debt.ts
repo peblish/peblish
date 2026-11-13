@@ -8,12 +8,16 @@ import { MAX_OWED } from './timing.ts';
 // moves its cursor, the transaction that makes a host denied, or a restore), so a takedown and
 // the debt it leaves commit together and any worker may pay it (send.ts).
 //
-// Bounds, by construction: unclaimed first sends are at most MAX_OWED (past it they collapse
-// into one wide purge), and so are unclaimed second sends (send.ts collapses echoes the same
-// way, and echoes never count toward a collapse of first sends); a claimed batch is at most
-// MAX_OWED + 1 rows or every due row when it is wide, and only one batch is in flight. So the
-// table holds at most about 3 x (MAX_OWED + 1) rows, plus the rows of transactions that commit
-// at the same moment before one of them collapses (no lock is taken for that).
+// Bounds, by construction (each class counts its own rows, so echoes never widen first sends):
+// - unclaimed first sends: at most MAX_OWED once an owing transaction commits (past it they
+//   collapse into one `pbm`), plus one row per transaction owing at the same instant (the
+//   consumer is one at a time; a new peer's ensureInstance and a restore are the others);
+// - unclaimed second sends: at most MAX_OWED exactly (written only by a settle, under the status
+//   row's lock, which collapses them in the same transaction);
+// - claimed rows: one batch at a time (the status row's claim; expired claims are given back
+//   before the next claim), at most MAX_OWED rows when narrow, or every due row when wide, so at
+//   most 2 x MAX_OWED plus that slack.
+// So the table holds at most 4 x MAX_OWED rows (400), plus the slack of concurrent owers.
 
 const unclaimed = (send: 1 | 2) => and(isNull(edgePurges.claimToken), eq(edgePurges.send, send));
 
