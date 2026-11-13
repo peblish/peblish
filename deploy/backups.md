@@ -1,57 +1,68 @@
 # Backups: nightly dump and hourly ledger export to a bucket
 
 A `backup` service in the Easypanel project takes a database dump every night and exports the
-deletion ledger every hour, uploads each to a bucket of its own, checks it from the bucket and
-records it as the last good one. Nobody has to be there. A restore fetches a backup and the newest
-ledger export from the bucket and runs the existing `restore` or `drill`, which re-applies the
-ledger (`deploy/cutover.md`, "Backups and the deletion ledger").
+deletion ledger every hour, uploads each to a bucket of its own, reads it back from the bucket and
+records it as the last good one. Nobody has to be there; a failure or a stale backup mails the
+operator. A restore fetches the last good backup and ledger export from the bucket and runs the
+existing `restore` or `drill`, which re-applies the ledger (`deploy/cutover.md`, "Backups and the
+deletion ledger").
 
-Andrew's decision (2026-11-11): production backups go to a Cloudflare R2 bucket with a 30-day
-delete rule and a key limited to it. R2 is not on yet; the mechanism runs on staging against
-MinIO (`/Users/admin/.agents/plans/feddit/staging.md`).
+Andrew's decisions: production backups go to a Cloudflare R2 bucket with a 30-day delete rule, a
+30-day bucket lock on `backups/` and `ledger/`, and a key limited to it (2026-11-11 and
+2026-11-13). R2 is not on yet; the mechanism runs on staging against MinIO
+(`/Users/admin/.agents/plans/feddit/staging.md`).
 
 ## What runs
 
-The tool is `tools/cutover` (`tools/cutover/src/nightly.ts` and `bucket.ts`); the dump and the
-ledger export are its existing `backup` and `ledger-export`.
+The tool is `tools/cutover` (`tools/cutover/src/nightly.ts`, `bucket.ts`, `alerts.ts`); the dump and
+the ledger export are its existing `backup` and `ledger-export`.
 
-| When (UTC)          | Object                                     | What                                                          |
-| ------------------- | ------------------------------------------ | ------------------------------------------------------------- |
-| daily at 03:00      | `backups/<time>.dump`                      | `pg_dump -Fc` of `DATABASE_URL`                               |
-| hourly at :05       | `ledger/<time>.json`                       | every `deletion_ledger` row (`peblish.ledger/1`)              |
-| after each good run | `status/backup.json`, `status/ledger.json` | the last good run: object, size, SHA-256, start and end times |
+| When (UTC)          | Object                                                 | What                                                                 |
+| ------------------- | ------------------------------------------------------ | -------------------------------------------------------------------- |
+| daily at 16:00      | `backups/<time>.dump`                                  | `pg_dump -Fc` of `DATABASE_URL` (16:00 UTC is about 03:00 in Sydney) |
+| hourly at :05       | `ledger/<time>.json`                                   | every `deletion_ledger` row (`peblish.ledger/1`), streamed           |
+| after each good run | `status/backup.json`, `status/ledger.json`             | the last good run: object, size, SHA-256, ETag, start and end times  |
+| on an alert         | `status/backup.alert.json`, `status/ledger.alert.json` | whether a failure was mailed, and since when                         |
 
-`<time>` is UTC to the second, such as `20261113T030000Z`, so names sort by time.
+`<time>` is UTC to the millisecond in ISO 8601's basic form, such as `20261113T160000.123Z`, so
+names sort by time and two runs never share one.
 
 Each run:
 
-1. Takes a Postgres advisory lock for its kind on the source database (`peblish.backup.backup` or
-   `peblish.backup.ledger`). If another run of that kind holds it (a second container during a
-   redeploy, or a console run beside the schedule), the run is skipped and touches nothing.
+1. Takes a Postgres advisory lock for its kind on the source database, on a session reserved for
+   the run with no lifetime limit. If another run of that kind holds it (a second container during
+   a redeploy, or a console run beside the schedule), the run is skipped and touches nothing. If
+   the session ends during the run, the run stops and fails; it checks that it still holds the lock
+   just before writing its status record, so a run that lost it never records itself.
 2. Writes the dump or export into a new folder under `TMPDIR` (default `/tmp`), mode 700, the file
-   mode 600.
-3. Uploads it multipart, 16 MiB at a time: each part signed with its SHA-256 and sent with its MD5,
-   so the bucket refuses a damaged part, and the whole file's SHA-256 stored as the object's
-   `sha256` metadata. Until the upload completes no object exists; a failed upload is aborted.
-4. Checks the object from the bucket: its size must equal the file's, and its ETag must equal the
-   multipart ETag computed from the parts (R2 and MinIO give S3's form; a store that answers
-   another form is checked by size only).
-5. Only then writes the status record. The temporary folder is removed whatever the outcome.
+   mode 600. A table lock held for more than a minute fails the dump (`--lock-wait-timeout`) or the
+   export (`lock_timeout`); the dump has 3 hours and the export 10 minutes in all.
+3. Refuses a name that already exists, then uploads multipart, 16 MiB at a time: each part signed
+   with its SHA-256 and sent with its MD5, so the bucket refuses a damaged part, and the whole
+   file's SHA-256 stored as the object's `sha256` metadata. Until the upload completes no object
+   exists; a failed upload is aborted.
+4. Checks the object: its size, S3's multipart ETag where the store gives that form, and its bytes,
+   read back from the bucket, against the file's SHA-256. A run is never recorded good on its size
+   alone.
+5. Only then writes the status record. The temporary folder is removed whatever the outcome,
+   including a stop by SIGTERM or SIGINT.
 
-A failed check after the upload completed tries to delete the object; a key without delete
-permission leaves it, the log line says so, and the status record never names it, so a fetch
-never takes it for the last good backup (and its `sha256` would not match).
+The service never deletes and never overwrites anything under `backups/` or `ledger/` (the R2
+bucket lock would refuse it anyway). An upload that fails its check stays in the bucket under its
+time name until the lifecycle rule removes it, but no status record names it, so neither a
+restore nor `backup-status` takes it for good. Only `status/` is ever rewritten.
 
 Each run logs one line: outcome, object name, size, and duration, plus the row count for a
 ledger export. Errors go through the tool's error rules (`tools/cutover/src/errors.ts`): the
-bucket call, HTTP status and S3 error code, or a database error's code, never a credential, the
-endpoint or a row.
+bucket call, HTTP status and S3 error code, a database error's code, or a fixed phrase (`timed
+out`, `stopped`, `lost its database lock`); never a credential, the endpoint, a connection string
+or a row. Anything that escapes is caught at the process level and printed the same way.
 
 ```text
-backup schedule started (UTC): dump daily at 03:00, ledger hourly at :05; last good backup backups/20261113T013501Z.dump at 2026-11-13T01:35:02.058Z, last good ledger ...
-ledger ok: ledger/20261113T020500Z.json, 93 bytes, 0 rows, 0.1 s
-backup ok: backups/20261114T030000Z.dump, 280697 bytes, 0.3 s
-backup FAILED: backups/20261114T030000Z.dump after 0.4 s: start upload backups/20261114T030000Z.dump: 403 SignatureDoesNotMatch
+backup schedule started (UTC): dump daily at 16:00, ledger hourly at :05; last good backup backups/20261113T160000.123Z.dump at 2026-11-13T16:00:01.002Z, last good ledger ...
+ledger ok: ledger/20261113T170500.004Z.json, 93 bytes, 0 rows, 0.1 s
+backup ok: backups/20261114T160000.031Z.dump, 280697 bytes, 0.4 s
+ledger FAILED: ledger/20261113T180500.002Z.json after 0.1 s: head ledger/20261113T180500.002Z.json: 403
 ```
 
 ## Why a service of its own and not the panel's scheduling
@@ -66,17 +77,19 @@ uploading to a storage provider (`createS3Provider`). That does not fit:
 - It does only the dump: no ledger export, no check of the object from the bucket, no last good
   record.
 - Its retention deletes old backups itself by count, where the decision is the bucket's 30-day
-  rule.
+  rule and lock.
 
 So the schedule lives in a small long-running process from the cutover image. It survives a
 redeploy and a restart because it keeps no state of its own: at start, and again just before a
 run, it reads the last good run from the bucket. A run is due when no good run started at or after
-its last slot (03:00 for the dump, :05 for the ledger), so a service that was down for three days
+its last slot (16:00 for the dump, :05 for the ledger), so a service that was down for three days
 runs once when it comes back, not three times, and a redeploy that lands just after a run does not
-repeat it. Kinds run independently, so a long dump does not hold the hourly export. A failed run
-is retried 15 minutes later and each failure logs a line; a run never overlaps another of its
-kind (the advisory lock). SIGTERM stops the schedule and any run in flight (the dump is killed,
-the upload aborted, the files removed).
+repeat it. A status record that does not hold up (not JSON, the wrong shape, an object name of the
+wrong kind, times that are not times, out of order or more than five minutes in the future) counts
+as no record: the kind runs now, and the log says why. Kinds run independently, so a long dump does
+not hold the hourly export. A failed run is retried 15 minutes later; a run never overlaps another
+of its kind (the advisory lock). SIGTERM stops the schedule and any run in flight (the dump is
+killed, the export's query cancelled, the upload aborted, the files removed) within 8 seconds.
 
 ## Setting it up on Easypanel
 
@@ -89,22 +102,41 @@ In the project, beside `web` and `worker`:
    no domain, no port. Set the environment below.
 2. Upload the same source archive as `web` (staging) or point it at the same Git source. The
    upload deploys it.
-3. The log shows `backup schedule started ...` and, on a bucket with no status records yet, a
-   ledger export and a dump straight away.
+3. The log shows `alert mail on, to ...` (or why it is off) and `backup schedule started ...` and,
+   on a bucket with no status records yet, a ledger export and a dump straight away.
 
-| Variable                                                 | Value                                                                                   |
-| -------------------------------------------------------- | --------------------------------------------------------------------------------------- |
-| `DATABASE_URL`                                           | the same as `web`'s                                                                     |
-| `BACKUP_S3_ENDPOINT`                                     | the bucket's S3 API: `https://<account id>.r2.cloudflarestorage.com` for R2             |
-| `BACKUP_S3_BUCKET`                                       | the backup bucket, never the media bucket                                               |
-| `BACKUP_S3_REGION`                                       | `auto` for R2, `us-east-1` for MinIO                                                    |
-| `BACKUP_S3_ACCESS_KEY_ID`, `BACKUP_S3_SECRET_ACCESS_KEY` | the key limited to the backup bucket                                                    |
-| `S3_BUCKET`                                              | the media bucket's name, required: the run refuses a backup bucket equal to it          |
-| `S3_ACCESS_KEY_ID`                                       | optional, the media key's id: the run then also refuses the media key as the backup key |
+| Variable                                                 | Value                                                                                                                              |
+| -------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `DATABASE_URL`                                           | the same as `web`'s                                                                                                                |
+| `BACKUP_S3_ENDPOINT`                                     | the bucket's S3 API as a bare origin, https: `https://<account id>.r2.cloudflarestorage.com` for R2. No path, query or credentials |
+| `BACKUP_S3_BUCKET`                                       | the backup bucket, never the media bucket                                                                                          |
+| `BACKUP_S3_REGION`                                       | `auto` for R2, `us-east-1` for MinIO                                                                                               |
+| `BACKUP_S3_ACCESS_KEY_ID`, `BACKUP_S3_SECRET_ACCESS_KEY` | the key limited to the backup bucket                                                                                               |
+| `S3_BUCKET`                                              | the media bucket's name, required: the run refuses a backup bucket equal to it                                                     |
+| `S3_ACCESS_KEY_ID`                                       | optional, the media key's id: the run then also refuses the media key as the backup key                                            |
+| `BACKUP_S3_ALLOW_PLAIN_HTTP`                             | **never in production.** `1` lets the endpoint be `http://`, for a store inside the project network only (staging's MinIO)         |
+| `SMTP_URL`, `MAIL_FROM`                                  | as `web`'s: the alerts go through the same mail code (`packages/core/src/identity/mail.ts`)                                        |
+| `BACKUP_ALERT_TO`                                        | the one address the alerts go to                                                                                                   |
 
 Give the service at least 768 MB of memory and free disk in the container for one dump (below).
 The database user needs to read every table; staging uses `web`'s. A read-only role would do for
 the dump and the export; the drill needs one that may create a database.
+
+## Alerts
+
+The schedule mails `BACKUP_ALERT_TO` once when a kind starts failing (its first failed run, or a
+status record it cannot read) or goes stale (no good run for 26 hours for the dump, 2 hours for the
+ledger), not again for each retry, and once when it works again. The mail names the kind, since
+when, its last good run and where to look (the service log, `backup-status`, this file); never an
+error's text, a URL or a credential. Whether a mail went out is kept in
+`status/<kind>.alert.json`, so a restart neither repeats a mail nor loses the recovery. A mail
+that cannot be sent is logged and tried again at the next failure or recovery.
+
+The recipient is a variable, not the site's `contact.email` setting, for two reasons: the alert
+must work when the database does not answer, which is one of the failures it reports, and
+`contact.email` is the published contact for the legal pages, which may be a shared or public
+address, or empty. If `SMTP_URL`, `MAIL_FROM` or `BACKUP_ALERT_TO` is not set, the service says
+`alert mail is off: ... not set` once at start and runs without alerts.
 
 ## Knowing it ran
 
@@ -112,31 +144,28 @@ The signal is the status records in the bucket, which only a good, checked run w
 `backup` console:
 
 ```sh
-node tools/cutover/src/cli.ts backup-status   # exit 0 when both are fresh, 1 when one is stale or missing
+node tools/cutover/src/cli.ts backup-status   # exit 0 when both are good and fresh, 1 otherwise
 ```
 
 ```text
-backup: backups/20261113T013501Z.dump, 280697 bytes, finished 2026-11-13T01:35:02.058Z (0 min ago)
-ledger: ledger/20261113T013504Z.json, 93 bytes, finished 2026-11-13T01:35:05.032Z (0 min ago)
+backup: backups/20261113T160000.123Z.dump, 280697 bytes, finished 2026-11-13T16:00:01.002Z (5 min ago)
+ledger: ledger/20261113T160500.004Z.json, 93 bytes, finished 2026-11-13T16:05:00.120Z (0 min ago)
 ```
 
-What goes stale when it stops: the backup record after 26 hours, the ledger record after 2 hours
-(one interval and some slack). A stopped or crashing service, a database it cannot reach, a
-bucket that refuses it and a check that fails all leave the records as they were, so the age
-grows; the service log has a `FAILED` line per attempt. With `--json` the same report is
-machine-readable. The records are the last good run, not proof the service is up: a service that
-is up and failing shows only in its log and in the age.
+It checks each record against the bucket: the object it names must exist with the recorded size,
+`sha256` metadata and ETag. A missing or mismatched object, a record that does not hold up, no
+record, or a run older than 26 hours (dump) or 2 hours (ledger) is reported on that kind's line
+and makes it exit 1. `--json` gives the same report machine-readable. The alerts above are the
+push form of the same signal.
 
-Proposal, not built: an outside check that pages someone. The smallest is a dead man's switch (a
-service such as Healthchecks, pinged after each good run, alerting when pings stop); it needs an
-account and a URL, Andrew's decision. Until then, check `backup-status` with the weekly checks.
-
-## Retention: the bucket's lifecycle rule
+## Retention: the bucket's lifecycle rule and lock
 
 The tool never deletes old backups. The bucket does: every object expires 30 days after it was
-written. The status records are rewritten on every good run, so they never expire while backups
-run; once the service has been failing for 30 days, the bucket is empty and `backup-status` says
-none. That is the price of an age rule, and the reason to watch the age.
+written, and in production a bucket lock keeps everything under `backups/` and `ledger/` from being
+deleted or overwritten for those 30 days, by anyone holding the key. The status records live under
+`status/`, outside the lock, because they are rewritten on every good run; they never expire while
+backups run. Once the service has been failing for 30 days the bucket holds nothing under
+`backups/`, which `backup-status` and the alerts say long before.
 
 ### R2 (production; waits on Andrew, R2 is not on)
 
@@ -149,15 +178,18 @@ R2 on:
 2. The bucket, Settings, Object lifecycle rules, Add rule: name `expire-30-days`, applies to all
    objects, "Delete uploaded objects" after 30 days, and "Abort incomplete multipart uploads"
    after 1 day (a run killed mid-upload leaves parts that are not objects).
-3. R2, Manage R2 API Tokens, Create API token: name `peblish-backup`, permission "Object Read &
+3. The bucket, Settings, Bucket lock rules, Add rule twice: `lock-backups` with prefix `backups/`
+   and `lock-ledger` with prefix `ledger/`, each "Retention period" 30 days. Not `status/`, and
+   not the whole bucket: the service rewrites its status records. The lock and the lifecycle rule
+   agree: an object can be deleted once it is 30 days old, and the lifecycle rule then deletes it.
+4. R2, Manage R2 API Tokens, Create API token: name `peblish-backup`, permission "Object Read &
    Write", "Apply to specific buckets only" with `peblish-backups` only, TTL forever (or a date to
-   rotate). Copy the access key id and secret into the production env file, never into a chat.
-   R2's token permissions are per bucket and cannot leave out delete; a stolen key can delete
-   backups. An R2 bucket lock rule (the bucket's Settings, Bucket lock rules) on the prefixes
-   `backups/` and `ledger/` for 30 days would stop that; open decision below.
-4. The endpoint is `https://<account id>.r2.cloudflarestorage.com`, region `auto`. Set the
-   variables on the production `backup` service and deploy it.
-5. Check: in its console `node tools/cutover/src/cli.ts backup-run ledger` (exit 0, an `ok` line),
+   rotate). R2 tokens cannot leave out delete; the bucket lock is what protects the backups from a
+   stolen key. Copy the access key id and secret into the production env file, never into a chat.
+5. The endpoint is `https://<account id>.r2.cloudflarestorage.com`, region `auto`. Set the
+   variables on the production `backup` service (without `BACKUP_S3_ALLOW_PLAIN_HTTP`) and deploy
+   it.
+6. Check: in its console `node tools/cutover/src/cli.ts backup-run ledger` (exit 0, an `ok` line),
    then `backup-status`, then the restore drill below once.
 
 ### MinIO (staging)
@@ -172,8 +204,11 @@ mc admin policy attach local peblish-staging-backup-rw --user <key id>
 mc ilm rule add --expire-days 30 local/peblish-staging-backups
 ```
 
-MinIO's lifecycle rules have no abort of incomplete uploads; MinIO itself removes uploads older
-than `stale_uploads_expiry` (24 hours, read from `mc admin config get local api`).
+Staging has no bucket lock (MinIO's object lock needs a bucket created with it); its key's lack of
+delete permission stands in for it. MinIO's lifecycle rules have no abort of incomplete uploads;
+MinIO itself removes uploads older than `stale_uploads_expiry` (24 hours, read from
+`mc admin config get local api`). Staging's endpoint is `http://peblish-staging-minio:9000`,
+inside the project network, so it sets `BACKUP_S3_ALLOW_PLAIN_HTTP=1`; production never does.
 
 ## Restore from the bucket
 
@@ -184,9 +219,12 @@ cd /app
 node tools/cutover/src/cli.ts backup-fetch --dir /tmp/cutover/fetch [--object backups/<time>.dump]
 ```
 
-It downloads the backup named, or the last good one from `status/backup.json`, and the newest
-ledger export, into a mode 700 folder as mode 600 files, checks each against its size and `sha256`
-record (a file that does not match is removed), and prints the two paths. Then either:
+It downloads the backup and the ledger export that `status/backup.json` and `status/ledger.json`
+name as last good, or the backup named with `--object` (which must still match its own `sha256`
+metadata), into a mode 700 folder as mode 600 files, checks each against its record while it
+downloads, and prints the two paths and how it chose them. Newer objects that no record names (an
+upload that failed its check) are passed over. A download that fails, does not match or is stopped
+leaves nothing behind. Then either:
 
 ```sh
 # The drill on the fetched files: restore into a new drill_<time>_<random>, re-apply, compare counts, drop it.
@@ -197,23 +235,36 @@ rm -rf /tmp/cutover/fetch /tmp/cutover/drill
 ```
 
 The drill's counts differ where the database changed since that backup; on a quiet database they
-match. If the damaged database still answers, run `backup-run ledger` first so the newest ledger
-export is current.
+match. If the damaged database still answers, run `backup-run ledger` first so the last good
+ledger export is current.
 
-## Size
+## Size and time limits
 
 The upload holds one 16 MiB part in memory at a time. S3, R2 and MinIO allow 10,000 parts, so the
 largest object is 156.25 GiB; every part but the last is the same size, as R2 requires. Multipart
 rather than one PUT because a single PUT tops out at 5 GiB on S3 and R2 and could not be checked
 part by part.
 
+Each request (a part, a HEAD, a status record) has 2 minutes. A streamed read (the check after an
+upload, a fetch for a restore) is abandoned when nothing arrives for 60 seconds, and a whole
+transfer may take 10 minutes plus one second per MiB (a 5 GiB dump: about 95 minutes, so 1 MiB/s
+is the slowest sustained rate allowed).
+
+The ledger export is written as it is read (a cursor of 500 rows), so its size does not touch
+memory. A ledger row is a few hundred bytes and the ledger grows with every remote deletion
+federation records, so it can reach millions of rows over years. A restore still reads the export
+whole (`readLedgerExport`); at a million rows that is a few hundred MB, in a console run, not the
+service.
+
 Tested (2026-11-13, a MacBook, the dev MinIO):
 
-- In the test suite: an 11 MiB file with 5 MiB parts (3 parts), checked by size and multipart
-  ETag and fetched back with a matching SHA-256.
-- By hand, random files with the default 16 MiB parts: 256 MiB (16 parts) and 2 GiB (128 parts).
-  2 GiB uploaded in 14 to 15 s and fetched back in 10 s, SHA-256 matching. Peak memory was 480 to
-  520 MB for both sizes (130 MB at start): it does not grow with the file.
+- In the test suite: an 11 MiB file with 5 MiB parts (3 parts), checked by size, multipart ETag and
+  read-back, and fetched back with a matching SHA-256; on a fake store, a failing part, same-size
+  corruption, an unfamiliar ETag form, a stalled and a slow download.
+- By hand, round 1: random files with the default 16 MiB parts, 256 MiB (16 parts) and 2 GiB (128
+  parts). 2 GiB uploaded in 14 to 15 s and fetched back in 10 s, SHA-256 matching. Peak memory was
+  480 to 520 MB for both sizes (130 MB at start): it does not grow with the file. The read-back
+  check added in round 2 streams, so it adds time (about the fetch time) but no memory.
 - On staging: the real dump, 280,697 bytes, one part.
 
 Disk: a run needs room for one dump (or export) in `TMPDIR` until it is uploaded; a fetch for a
@@ -227,12 +278,13 @@ A dump holds password hashes, email addresses, two-factor secrets (encrypted wit
 - The bucket is private (no public access, no `r2.dev` URL) and only the backup key and the
   account can read it.
 - The key is limited to that one bucket, held only by the `backup` service and the env file.
-- R2 encrypts every object at rest (AES-256) and serves the S3 API over TLS only.
+- R2 encrypts every object at rest (AES-256), and the service refuses anything but https to it.
 
 What that does not cover: anyone with the backup key, the Cloudflare account, or a fetched copy
-reads everything. Client-side encryption would close that: `pg_dump | age -r <public key>` before
-the upload, with the private key kept offline by Andrew (password manager and paper) and used
-only for a restore. `age` is in Debian bookworm, so it is a few lines in the image and the run.
-It is not built: the cost is key custody, since losing that private key loses every backup, and
-the restore would need it on the server. Recommendation: add it before outside users' data is in
-production, with a restore drill that uses the offline key once. Open decision for Andrew.
+reads everything.
+
+**Before outside users' data is in production:** add client-side encryption. Encrypt each dump
+with `age` to a public key (`pg_dump | age -r <public key>`, `age` is in Debian bookworm) before
+the upload, keep the private key offline (Andrew: password manager and paper), and run one restore
+drill with it. The cost is key custody: losing that private key loses every backup, and a restore
+needs it on the server for the length of the restore. It is not part of the first pull request.
