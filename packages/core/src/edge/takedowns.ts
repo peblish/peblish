@@ -1,11 +1,14 @@
 import type { OutboxEvent } from '@peblish/schema/events';
+import { eq } from 'drizzle-orm';
 import type { Queryable } from '../db/read.ts';
+import { mediaBlocklist } from '../mediascan/tables.ts';
 import { publicTags } from './public.ts';
-import { actorTag, commentTag, postTag, type Purge } from './tags.ts';
+import { actorTag, commentTag, hashTag, hostTag, postTag, type Purge } from './tags.ts';
 
 // Which outbox events can stop a signed-out visitor seeing an image the edge may hold, and what
-// each purges (tags.ts). Content that can be named is purged by its tag; what cannot be listed
-// (a peer's media, a blocked hash, the kill switch) purges every public proxy answer.
+// each purges (tags.ts). Content, a peer domain and an image hash are purged by their tags; only
+// the kill switch purges every public proxy answer. A host that becomes denied by being
+// discovered (remote/instances.ts ensureInstance) owes its purge where its row is written.
 
 /** The event types the edge purge consumer reads. */
 export const takedownEvents = [
@@ -17,7 +20,7 @@ export const takedownEvents = [
   'actor.deleted',
   'actor.updated',
   'peer.updated',
-  'media.blocklist_changed',
+  'media.hash_listed',
   'settings.updated',
 ] as const satisfies readonly OutboxEvent['type'][];
 
@@ -48,11 +51,15 @@ export async function purgeFor(event: TakedownEvent, q: Queryable): Promise<Purg
     case 'actor.updated':
       return (await publicTags({ kind: 'actor', id: event.actorId }, q)) ? null : [actorTag(event.actorId)];
     case 'peer.updated':
-      // Only an approved peer that is not blocked has its media proxied; anything else purges, as
-      // its images may sit on any host and in any content it supplied.
-      return event.media === 'approved' && !event.blocked ? null : 'all';
-    case 'media.blocklist_changed':
-      return event.change === 'added' ? 'all' : null;
+      // Only an approved peer that is not blocked has its media proxied. Every public answer carries
+      // the tags of its supplier's and its hosts' domains at every level, so this one tag reaches
+      // every image hosted at or under the domain and every image of content it supplied.
+      return event.media === 'approved' && !event.blocked ? null : [hostTag(event.domain)];
+    case 'media.hash_listed': {
+      const [entry] = await q.select({ value: mediaBlocklist.value }).from(mediaBlocklist).where(eq(mediaBlocklist.id, event.entryId));
+      // An entry removed since it was listed: whatever it held may still be cached, so purge wide.
+      return entry ? [hashTag(entry.value)] : 'all';
+    }
     case 'settings.updated':
       return event.keys.includes('remote_media.enabled') ? 'all' : null;
   }

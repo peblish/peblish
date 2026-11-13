@@ -1,149 +1,70 @@
-import type { OutboxEvent } from '@peblish/schema/events';
-import { eq, sql } from 'drizzle-orm';
-import { uuidv7 } from 'uuidv7';
-import { afterEach, beforeEach, expect, test, vi } from 'vitest';
+import { sql } from 'drizzle-orm';
+import { beforeEach, expect, test, vi } from 'vitest';
+import { authorize } from '../authz/authorize.ts';
+import { systemPrincipal } from '../authz/system.ts';
+import { siteBanAs, banAs, removeAs } from '../bans/service.ts';
+import { deleteCommentAs } from '../comments/actions.ts';
+import { updateCommunityAs } from '../communities/update.ts';
+import { localInstance } from '../db/local-instance.ts';
 import { db } from '../db/read.ts';
-import { actors } from '../db/tables/actors.ts';
-import { posts } from '../db/tables/content.ts';
 import { writer } from '../db/write.ts';
+import { purgePass } from '../evidence/purge.ts';
+import { deleteAccountAs } from '../identity/delete.ts';
+import { scanConfig } from '../mediascan/config.ts';
+import { addToBlocklist, removeFromBlocklist } from '../mediascan/list.ts';
+import { confirmQuarantined } from '../mediascan/review.ts';
+import { scanUpload } from '../mediascan/scan.ts';
+import { mediaBlocklist } from '../mediascan/tables.ts';
 import { ensureCursors, processBatch } from '../outbox/worker.ts';
+import { updatePeerAs } from '../peers/service.ts';
+import { peerControls } from '../peers/tables.ts';
+import { deletePostAs, updatePostAs } from '../posts/actions.ts';
+import { deleteRemoteActor } from '../remote/actors.ts';
+import { ensureInstance } from '../remote/instances.ts';
+import { updateSettingsAs } from '../settings/write.ts';
+import { memoryStore } from '../storage/memory.ts';
 import { truncateAll } from '../testing/db.ts';
-import { seedComment, seedPost } from '../testing/seed-az.ts';
+import { seedLocalInstance } from '../testing/seed-a.ts';
+import { admin, seedAdmin, seedComment, seedPost } from '../testing/seed-az.ts';
 import { seedAccount } from '../testing/seed-b1.ts';
-import { seedActor, seedInstance } from '../testing/seed.ts';
+import { seedMedia } from '../testing/seed-safe.ts';
+import { localUser, seedActor, seedInstance } from '../testing/seed.ts';
 import { tx } from '../tx/tx.ts';
 import { consumer } from './consumer.ts';
-import { job } from './job.ts';
-import { createPurgeQueue, purgeQueue, setPurgeQueue } from './queue.ts';
-import { purgeFor, takedownEvents, type TakedownEvent } from './takedowns.ts';
+import { owedRows } from './debt.ts';
+import { edgePurges } from './tables.ts';
+import { actorTag, commentTag, hashTag, hostTag, postTag } from './tags.ts';
+
+// Each takedown in the brief, made by the code that really makes it (not a hand-built event),
+// then the edge.purge consumer run through the real outbox worker: the debt it leaves is the
+// proof the takedown reaches the purge.
 
 // The horizon is the oldest transaction anywhere on the shared server, so a busy machine can hold a batch back.
 vi.setConfig({ testTimeout: 60_000 });
 
-const zone = '0123456789abcdef0123456789abcdef';
-const token = 'tok_' + 'S3cr3t'.repeat(6);
+const store = memoryStore();
 
 beforeEach(async () => {
   await truncateAll();
-  setPurgeQueue(createPurgeQueue({ wide: false }));
-});
-afterEach(() => {
-  vi.unstubAllEnvs();
-  vi.unstubAllGlobals();
-  vi.restoreAllMocks();
+  await seedLocalInstance();
 });
 
 async function world() {
-  const local = await seedInstance('feddit.test');
+  const row = await localInstance(db());
+  const local = { ...row, domain: new URL(row.origin).host, local: true };
+  const moderator = await seedAdmin(local, 'admin');
   const author = await seedAccount(local, 'author');
   const community = await seedActor(local, 'Group', 'pics');
   const post = await seedPost(local, community, author);
   const comment = await seedComment(local, post, author);
-  return { local, author, community, post, comment };
+  await ensureCursors([consumer]);
+  // Start from no debt: seeding wrote instance rows of its own.
+  await writer().delete(edgePurges);
+  return { local, admin: admin(moderator.id), author, community, post, comment };
 }
 
-const modBase = { v: 1, moderatorId: null, modlogId: uuidv7(), local: true } as const;
-const purge = (event: TakedownEvent) => purgeFor(event, db());
-
-test('each takedown purges what it can name, and the rest purges every public proxy answer', async () => {
-  const w = await world();
-  const postRef = { postId: w.post.id, communityId: w.community.id, authorId: w.author.id };
-  const commentRef = { commentId: w.comment.id, postId: w.post.id, authorId: w.author.id };
-  // A post or comment deleted, locally or by a remote Delete.
-  for (const local of [true, false]) {
-    expect(await purge({ type: 'post.deleted', v: 1, ...postRef, local })).toEqual([`pbm-p-${w.post.id}`]);
-    expect(await purge({ type: 'comment.deleted', v: 1, ...commentRef, local })).toEqual([`pbm-c-${w.comment.id}`]);
-  }
-  // A post or comment removed by a moderator.
-  const removal = { type: 'mod.remove', ...modBase, communityId: w.community.id, targetApId: 'x', reason: null, removed: true } as const;
-  expect(await purge({ ...removal, target: { kind: 'post', id: w.post.id } })).toEqual([`pbm-p-${w.post.id}`]);
-  expect(await purge({ ...removal, target: { kind: 'comment', id: w.comment.id } })).toEqual([`pbm-c-${w.comment.id}`]);
-  // A ban that removes content, site-wide or in a community.
-  const ban = {
-    type: 'mod.ban',
-    ...modBase,
-    targetActorId: w.author.id,
-    targetApId: 'x',
-    banned: true,
-    removeContent: true,
-    expiresAt: null,
-    reason: null,
-  } as const;
-  for (const communityId of [null, w.community.id]) expect(await purge({ ...ban, communityId })).toEqual([`pbm-a-${w.author.id}`]);
-  // A person or community deleted.
-  for (const actorId of [w.author.id, w.community.id]) {
-    expect(await purge({ type: 'actor.deleted', v: 1, actorId, kind: 'Person', local: false })).toEqual([`pbm-a-${actorId}`]);
-  }
-  // A peer's media quarantined, purged or denied, or the peer blocked (a supplier blocked).
-  const peer = { type: 'peer.updated', v: 1, instanceId: uuidv7(), domain: 'lemmy.test', inboxPaused: false, modlogId: uuidv7() } as const;
-  for (const change of [
-    { media: 'quarantined', blocked: false, purged: false },
-    { media: 'denied', blocked: false, purged: true },
-    { media: 'approved', blocked: true, purged: false },
-  ] as const) {
-    expect(await purge({ ...peer, ...change }), change.media).toBe('all');
-  }
-  // An image hash blocked.
-  const listed = { type: 'media.blocklist_changed', v: 1, entryId: uuidv7(), adminId: w.author.id, quarantined: 0 } as const;
-  expect(await purge({ ...listed, change: 'added' })).toBe('all');
-  // The remote-media kill switch changed.
-  const settings = { type: 'settings.updated', v: 1, actorId: w.author.id, modlogId: uuidv7() } as const;
-  expect(await purge({ ...settings, keys: ['site.name', 'remote_media.enabled'] })).toBe('all');
-});
-
-test('an edit purges once the content stops being public, and a restore, an unban or a loosening purges nothing', async () => {
-  const w = await world();
-  const postUpdated = {
-    type: 'post.updated',
-    v: 1,
-    postId: w.post.id,
-    communityId: w.community.id,
-    authorId: w.author.id,
-    local: true,
-  } as const;
-  const communityUpdated = { type: 'actor.updated', v: 1, actorId: w.community.id, kind: 'Group', local: true } as const;
-  const personUpdated = { type: 'actor.updated', v: 1, actorId: w.author.id, kind: 'Person', local: true } as const;
-  expect(await purge(postUpdated)).toBeNull();
-  expect(await purge(communityUpdated)).toBeNull();
-  expect(await purge(personUpdated)).toBeNull();
-  // An NSFW flag set, on the post or on its community.
-  await writer().update(posts).set({ sensitive: true }).where(eq(posts.id, w.post.id));
-  expect(await purge(postUpdated)).toEqual([`pbm-p-${w.post.id}`]);
-  await writer().update(posts).set({ sensitive: false }).where(eq(posts.id, w.post.id));
-  await writer().update(actors).set({ sensitive: true }).where(eq(actors.id, w.community.id));
-  expect(await purge(communityUpdated)).toEqual([`pbm-a-${w.community.id}`]);
-
-  const removal = {
-    type: 'mod.remove',
-    ...modBase,
-    communityId: w.community.id,
-    targetApId: 'x',
-    reason: null,
-    removed: false,
-    target: { kind: 'post', id: w.post.id },
-  } as const;
-  expect(await purge(removal)).toBeNull();
-  const ban = {
-    type: 'mod.ban',
-    ...modBase,
-    targetActorId: w.author.id,
-    targetApId: 'x',
-    communityId: null,
-    expiresAt: null,
-    reason: null,
-  } as const;
-  expect(await purge({ ...ban, banned: true, removeContent: false })).toBeNull();
-  expect(await purge({ ...ban, banned: false, removeContent: true })).toBeNull();
-  const peer = { type: 'peer.updated', v: 1, instanceId: uuidv7(), domain: 'lemmy.test', inboxPaused: true, modlogId: uuidv7() } as const;
-  expect(await purge({ ...peer, media: 'approved', blocked: false, purged: false })).toBeNull();
-  const listed = { type: 'media.blocklist_changed', v: 1, entryId: uuidv7(), adminId: w.author.id, quarantined: 0 } as const;
-  expect(await purge({ ...listed, change: 'removed' })).toBeNull();
-  expect(await purge({ type: 'settings.updated', v: 1, actorId: w.author.id, modlogId: uuidv7(), keys: ['site.name'] })).toBeNull();
-});
-
-/** Runs the consumer through the real outbox worker until its cursor has passed every event. */
-async function drain() {
-  await ensureCursors([consumer]);
+/** Runs the consumer until its cursor has passed every event, then the tags owed. */
+async function owedAfterDrain(): Promise<string[]> {
   const deadline = Date.now() + 50_000;
   while (Date.now() < deadline) {
     await processBatch(consumer);
@@ -151,64 +72,127 @@ async function drain() {
       sql`select count(*)::int as n from outbox o, outbox_cursors c
         where c.consumer = ${consumer.name} and (o.tx_id, o.id) > (c.tx_id, c.event_id)`,
     );
-    if (waiting?.n === 0) return;
+    if (waiting?.n === 0) return (await owedRows(db())).map((row) => row.tag);
     await new Promise((resolve) => setTimeout(resolve, 50));
   }
   throw new Error('the edge purge consumer did not catch up');
 }
 
-test('the consumer reads every takedown type, and owes their purges only when edge caching is configured', async () => {
-  expect([...consumer.events].toSorted()).toEqual([...takedownEvents].toSorted());
-  expect(consumer.startAt).toBe('now');
+async function expectOwed(tags: string[]) {
+  expect((await owedAfterDrain()).toSorted()).toEqual(tags.toSorted());
+  await writer().delete(edgePurges);
+}
+
+test('a local author deleting a post or comment', async () => {
   const w = await world();
-  await ensureCursors([consumer]);
-  const deleted: OutboxEvent = {
-    type: 'post.deleted',
-    v: 1,
-    postId: w.post.id,
-    communityId: w.community.id,
-    authorId: w.author.id,
-    local: true,
-  };
-
-  // Unconfigured: development, tests and staging owe nothing.
-  await tx((t) => t.emit(deleted));
-  await drain();
-  expect(purgeQueue().owed()).toEqual([]);
-
-  vi.stubEnv('CLOUDFLARE_ZONE_ID', zone);
-  vi.stubEnv('CLOUDFLARE_PURGE_TOKEN', token);
-  await tx(async (t) => {
-    await t.emit(deleted);
-    await t.emit({ type: 'comment.deleted', v: 1, commentId: w.comment.id, postId: w.post.id, authorId: w.author.id, local: false });
-    // Not a takedown: nothing owed for it.
-    await t.emit({ type: 'post.restored', v: 1, postId: w.post.id, communityId: w.community.id, authorId: w.author.id, local: true });
-  });
-  await drain();
-  expect(purgeQueue().owed()).toEqual([`pbm-p-${w.post.id}`, `pbm-c-${w.comment.id}`]);
+  expect(await deleteCommentAs(localUser(w.author.id), w.comment.id)).toMatchObject({ ok: true });
+  await expectOwed([commentTag(w.comment.id)]);
+  expect(await deletePostAs(localUser(w.author.id), w.post.id)).toMatchObject({ ok: true });
+  await expectOwed([postTag(w.post.id)]);
 });
 
-test('the job sends what is owed to Cloudflare, retries it after a failure, and does nothing unconfigured', async () => {
-  const lines: string[] = [];
-  vi.spyOn(console, 'error').mockImplementation((...args: unknown[]) => lines.push(args.map(String).join(' ')));
-  vi.spyOn(console, 'log').mockImplementation((...args: unknown[]) => lines.push(args.map(String).join(' ')));
-  const answers = [500, 200];
-  const fetch = vi.fn(async () => new Response(JSON.stringify({ success: answers[0] === 200 }), { status: answers.shift() }));
-  vi.stubGlobal('fetch', fetch);
-  purgeQueue().add(['pbm-p-1']);
-  const signal = new AbortController().signal;
-  await job.run(signal);
-  expect(fetch).not.toHaveBeenCalled();
+test('a moderator removing a post or comment, and a restore owing nothing', async () => {
+  const w = await world();
+  expect(await removeAs(w.admin, { kind: 'comment', id: w.comment.id }, { reason: 'spam' })).toMatchObject({ ok: true });
+  await expectOwed([commentTag(w.comment.id)]);
+  expect(await removeAs(w.admin, { kind: 'post', id: w.post.id }, { reason: 'spam' })).toMatchObject({ ok: true });
+  await expectOwed([postTag(w.post.id)]);
+});
 
-  vi.stubEnv('CLOUDFLARE_ZONE_ID', zone);
-  vi.stubEnv('CLOUDFLARE_PURGE_TOKEN', token);
-  await job.run(signal);
-  expect(fetch).toHaveBeenCalledTimes(1);
-  expect(purgeQueue().owed()).toEqual(['pbm-p-1']);
-  // The retry waits out its backoff; past it the same purge goes again and settles.
-  vi.spyOn(Date, 'now').mockReturnValue(Date.now() + 21_000);
-  await job.run(signal);
-  expect(fetch).toHaveBeenCalledTimes(2);
-  expect(purgeQueue().owed()).toEqual([]);
-  expect(lines.join('\n')).not.toContain(token);
+test('an NSFW flag set on a post by its author, or on a community; an edit that keeps it public owes nothing', async () => {
+  const w = await world();
+  expect(await updatePostAs(localUser(w.author.id), w.post.id, { title: 'still public' })).toMatchObject({ ok: true });
+  await expectOwed([]);
+  expect(await updatePostAs(localUser(w.author.id), w.post.id, { sensitive: true })).toMatchObject({ ok: true });
+  await expectOwed([postTag(w.post.id)]);
+  expect(await updateCommunityAs(w.admin, w.community.id, { sensitive: true })).toMatchObject({ ok: true });
+  await expectOwed([actorTag(w.community.id)]);
+});
+
+test('a ban that removes content, in a community or site-wide; one that keeps it owes nothing', async () => {
+  const w = await world();
+  expect(await banAs(w.admin, { communityId: w.community.id, targetActorId: w.author.id }, { removeContent: false })).toMatchObject({
+    ok: true,
+  });
+  await expectOwed([]);
+  expect(await siteBanAs(w.admin, w.author.id, { removeContent: true })).toMatchObject({ ok: true });
+  // The removal of each post and comment is its own event too.
+  expect(await owedAfterDrain()).toContain(actorTag(w.author.id));
+});
+
+test('a local account deleted, and a remote one deleted with its content', async () => {
+  const w = await world();
+  expect(await deleteAccountAs(localUser(w.author.id), w.author.id, 'leaving')).toMatchObject({ ok: true });
+  expect(await owedAfterDrain()).toContain(actorTag(w.author.id));
+  await writer().delete(edgePurges);
+
+  const peer = await seedInstance('lemmy.test', false);
+  await writer().delete(edgePurges);
+  const remote = await seedActor(peer, 'Person', 'far');
+  const theirs = await seedPost(peer, w.community, remote);
+  const grant = await authorize('remote.actor_delete', await systemPrincipal(db(), 'import'), { apId: remote.apId });
+  if (!grant.ok) throw new Error(grant.reason);
+  await deleteRemoteActor(grant.grant, { removeContent: true, cause: 'Delete' });
+  const tags = await owedAfterDrain();
+  expect(tags).toEqual(expect.arrayContaining([actorTag(remote.id), postTag(theirs.id)]));
+});
+
+test("a peer's media quarantined, purged or the peer blocked owes its domain's tag; approving owes nothing", async () => {
+  const w = await world();
+  const peer = await seedInstance('lemmy.test', false);
+  await writer().insert(peerControls).values({ instanceId: peer.id, media: 'approved' });
+  await writer().delete(edgePurges);
+  expect(await updatePeerAs(w.admin, 'lemmy.test', { media: 'quarantined' })).toMatchObject({ ok: true });
+  await expectOwed([hostTag('lemmy.test')]);
+  expect(await updatePeerAs(w.admin, 'lemmy.test', { media: 'approved' })).toMatchObject({ ok: true });
+  await expectOwed([]);
+  expect(await updatePeerAs(w.admin, 'lemmy.test', { blocked: true })).toMatchObject({ ok: true });
+  await expectOwed([hostTag('lemmy.test')]);
+  expect(await updatePeerAs(w.admin, 'lemmy.test', { blocked: false, purge: true })).toMatchObject({ ok: true });
+  await expectOwed([hostTag('lemmy.test')]);
+});
+
+test('a host first seen as a new peer owes its tag in the transaction that writes its row; a known one owes nothing (item 7)', async () => {
+  await world();
+  await tx((t) => ensureInstance(t.db, 'https://pics.example/u/x'));
+  expect((await owedRows(db())).map((row) => row.tag)).toEqual([hostTag('pics.example')]);
+  await writer().delete(edgePurges);
+  await tx((t) => ensureInstance(t.db, 'https://pics.example/u/y'));
+  expect(await owedRows(db())).toEqual([]);
+});
+
+test('an image hash listed by hand, by a confirmed quarantine and by the end of its undecided window (item 3)', async () => {
+  const w = await world();
+  const config = scanConfig({ MEDIASCAN_LOCAL_ONLY: '1' });
+  const quarantined = async () => {
+    const row = await seedMedia(store, { ownerId: w.author.id });
+    await writer().insert(mediaBlocklist).values({ kind: 'sha256', value: row.sha256!, category: 'other' });
+    expect(await scanUpload(row.id, { config, store })).toBe('quarantined');
+    // Off the list again, so the confirmation or the expiry is what lists it.
+    const [entry] = await db().select().from(mediaBlocklist);
+    expect(await removeFromBlocklist(w.admin, entry!.id)).toMatchObject({ ok: true });
+    await owedAfterDrain();
+    await writer().delete(edgePurges);
+    return row;
+  };
+
+  const byHand = 'cd'.repeat(32);
+  expect(await addToBlocklist(w.admin, { value: byHand, category: 'other' })).toMatchObject({ ok: true });
+  await expectOwed([hashTag(byHand)]);
+
+  const confirmed = await quarantined();
+  expect(await confirmQuarantined(w.admin, { mediaId: confirmed.id, removePosts: false }, { store })).toMatchObject({ ok: true });
+  await expectOwed([hashTag(confirmed.sha256!)]);
+
+  const undecided = await quarantined();
+  await purgePass({ store, now: new Date(Date.now() + 30 * 86_400_000), days: 7 });
+  await expectOwed([hashTag(undecided.sha256!)]);
+});
+
+test('the remote-media kill switch changed owes the wide purge; another setting owes nothing', async () => {
+  const w = await world();
+  expect(await updateSettingsAs(w.admin, { 'site.name': 'Elsewhere' })).toMatchObject({ ok: true });
+  await expectOwed([]);
+  expect(await updateSettingsAs(w.admin, { 'remote_media.enabled': false })).toMatchObject({ ok: true });
+  await expectOwed(['pbm']);
 });
