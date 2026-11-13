@@ -324,13 +324,14 @@ Set-up as it stands:
 2. Lifecycle rule `expire-30-days` (set 2026-11-14): all objects, "Delete uploaded objects" after
    30 days, and "Abort incomplete multipart uploads" after 1 day (a run killed mid-upload leaves
    parts that are not objects).
-3. Required: two bucket lock rules, `lock-backups` with prefix `backups/` and `lock-ledger` with
-   prefix `ledger/`, each "Retention period" 30 days. Not `status/`, and not the whole bucket: the
-   service rewrites its status records (and its probe, `status/conditional-probe.json`). The lock
-   and the lifecycle rule agree: an object can be deleted once it is 30 days old, and the lifecycle
-   rule deletes it some time after that. They are added right after the 2026-11-14 proof, once its
-   test objects were deleted (a lock would have kept them); root confirms both rules in the
-   bucket's settings before the `backup` service is deployed.
+3. Bucket lock rules (added and tested 2026-11-14, once the proof's test objects were deleted):
+   `lock-backups` with prefix `backups/` and `lock-ledger` with prefix `ledger/`, each "Retention
+   period" 30 days. Not `status/`, and not the whole bucket: the service rewrites its status
+   records (and its probe, `status/conditional-probe.json`). The lock and the lifecycle rule agree:
+   an object can be deleted once it is 30 days old, and the lifecycle rule deletes it some time
+   after that. An account admin can lift the rules (they were lifted for about a minute on
+   2026-11-14 to delete three test objects, then put back), so the lock protects the backups
+   against a stolen backup key, not against the account's owner.
 4. The key: an R2 API token with "Object Read & Write" on `feddit` only. R2 tokens cannot leave out
    delete; the bucket lock is what protects the backups from a stolen key. Its access key id and
    secret go into the production env file, never into a chat.
@@ -387,6 +388,24 @@ files in a mode 700 folder; and the drill on the fetched files restored, re-appl
 rows (all absent, the subjects being synthetic), found no count differences and dropped its
 database. `backup-schedule` started without the conditional-write warning and, both records being
 fresh, ran nothing.
+
+The lock, tested 2026-11-14 with the bucket-limited key once both rules were on:
+
+- Under `backups/` and `ledger/` alike: writing a new object is allowed; overwriting it answers
+  409 `ObjectLockedByBucketPolicy`, and so does overwriting with `If-None-Match: *` (not the 412 an
+  unlocked bucket gives); deleting it answers 409 `ObjectLockedByBucketPolicy`; a GET still
+  returned the first write.
+- A multipart upload to a new name under `backups/` completed (200) with `If-None-Match: *` on the
+  completion, and the completed object could not be deleted (409).
+- Under `status/`: writing, overwriting and deleting all succeeded (200, 200, 204).
+
+The tool takes that 409 as a refusal too: an existing name is refused by its HEAD before any
+upload, and a completion answering 409 fails the upload
+(`complete upload <object>: 409 ObjectLockedByBucketPolicy`), which is aborted, and the run fails
+with nothing recorded.
+
+Not yet proven: a real run of the tool with the lock on, and the lifecycle rule actually expiring
+objects.
 
 ### MinIO (staging)
 
