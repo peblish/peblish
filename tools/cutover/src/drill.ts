@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process';
 import { randomBytes, randomUUID } from 'node:crypto';
-import { closeSync, mkdirSync } from 'node:fs';
+import { closeSync, mkdirSync, rmSync, writeSync } from 'node:fs';
 import { join } from 'node:path';
 import { actors } from '@peblish/core/db/tables/actors';
 import { media } from '@peblish/core/db/tables/media';
@@ -17,7 +17,7 @@ import { type } from 'arktype';
 import { asc, eq, sql, type SQL } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
-import { openPrivate, writePrivate } from './bundle.ts';
+import { openPrivate } from './bundle.ts';
 import { CutoverError, readJsonFile } from './errors.ts';
 
 // The backup and restore drill (T&S baseline: a restore drill that re-applies the deletion
@@ -77,22 +77,32 @@ function errorKind(stderr: string): string {
   return kind ? ` (${kind}; the rest of its error output is withheld)` : ' (its error output is withheld)';
 }
 
-function run(binary: string, args: string[], env: NodeJS.ProcessEnv, stdout: 'ignore' | number = 'ignore'): Promise<void> {
+function run(
+  binary: string,
+  args: string[],
+  env: NodeJS.ProcessEnv,
+  stdout: 'ignore' | number = 'ignore',
+  signal?: AbortSignal,
+): Promise<void> {
   return new Promise((resolve, reject) => {
-    const child = spawn(binary, args, { stdio: ['ignore', stdout, 'pipe'], env });
+    const child = spawn(binary, args, { stdio: ['ignore', stdout, 'pipe'], env, ...(signal && { signal }) });
     let err = '';
     child.stderr?.on('data', (chunk: Buffer) => (err += chunk.toString()));
-    child.on('error', reject);
+    child.on('error', (error) => reject(signal?.aborted ? new CutoverError(`${binary} stopped`) : error));
     child.on('close', (code) => (code === 0 ? resolve() : reject(new CutoverError(`${binary} exited ${code}${errorKind(err)}`))));
   });
 }
 
-/** `pg_dump -Fc` of the database `url` names into `file` (mode 600, refused if it exists). */
-export async function backup(url: string, file: string): Promise<void> {
+/**
+ * `pg_dump -Fc` of the database `url` names into `file` (mode 600, refused if it exists). `signal`
+ * kills it; `lockWaitMs` makes it fail rather than wait longer for a table lock.
+ */
+export async function backup(url: string, file: string, options: { signal?: AbortSignal; lockWaitMs?: number } = {}): Promise<void> {
   const fd = openPrivate(file);
   try {
     const { arg, env } = connection(url);
-    await run(pgDump(), ['--format=custom', '--no-owner', '--no-privileges', arg], env, fd);
+    const wait = options.lockWaitMs ? [`--lock-wait-timeout=${Math.trunc(options.lockWaitMs)}`] : [];
+    await run(pgDump(), ['--format=custom', '--no-owner', '--no-privileges', ...wait, arg], env, fd, options.signal);
   } finally {
     closeSync(fd);
   }
@@ -203,15 +213,79 @@ async function readLedger(q: WriteTx): Promise<LedgerRow[]> {
   }));
 }
 
-/** Every deletion_ledger row of the database `url` names, as a mode 600 JSON file. */
-export async function exportLedger(url: string, file: string): Promise<number> {
-  const { db, end } = connect(url);
+/**
+ * Every deletion_ledger row of the database `url` names, as a mode 600 JSON file, streamed: rows
+ * are read through a cursor in one read-only snapshot and written as they come, so the ledger
+ * never has to fit in memory. `lockTimeoutMs` makes a held table lock fail the export instead of
+ * waiting; `signal` ends the connection, which stops the query. A failed export leaves no file.
+ */
+export async function exportLedger(
+  url: string,
+  file: string,
+  options: { signal?: AbortSignal; lockTimeoutMs?: number } = {},
+): Promise<number> {
+  const client = postgres(url, { max: 1, onnotice: () => undefined });
+  const fd = openPrivate(file);
+  let open = true;
+  let rows = 0;
+  let complete = false;
+  let running: { cancel(): unknown } | null = null;
+  // A stop cancels the query on the server (a lock wait included) and gives up at once; the
+  // driver's own teardown would wait for the transaction to end.
+  let onAbort: () => void = () => undefined;
+  const aborted = new Promise<never>((_, reject) => {
+    onAbort = () => {
+      running?.cancel();
+      reject(new CutoverError('ledger export stopped'));
+    };
+  });
+  aborted.catch(() => undefined);
+  options.signal?.addEventListener('abort', onAbort, { once: true });
+  if (options.signal?.aborted) onAbort();
+  const write = (text: string) => {
+    // After a stop the descriptor may already be closed and its number reused by another file.
+    if (!open) throw new CutoverError('ledger export stopped');
+    const bytes = Buffer.from(text);
+    for (let at = 0; at < bytes.length;) at += writeSync(fd, bytes, at);
+  };
+  const work = (async () => {
+    write(`{"format":"peblish.ledger/1","exportedAt":${JSON.stringify(new Date().toISOString())},"rows":[`);
+    await client.begin('isolation level repeatable read read only', async (tx) => {
+      if (options.lockTimeoutMs) await tx.unsafe(`set local lock_timeout = ${Math.trunc(options.lockTimeoutMs)}`);
+      const query = tx`
+        select id, subject_kind, subject_id, subject_ap_id, reason, requested_by, details, created_at
+        from deletion_ledger order by id`;
+      running = query;
+      await query.cursor(500, (batch) => {
+        for (const row of batch) {
+          const value: LedgerRow = {
+            id: Number(row.id),
+            subjectKind: row.subject_kind,
+            subjectId: row.subject_id,
+            subjectApId: row.subject_ap_id,
+            reason: row.reason,
+            requestedBy: row.requested_by,
+            details: row.details as Record<string, unknown>,
+            createdAt: new Date(row.created_at as string | Date).toISOString(),
+          };
+          write(`${rows === 0 ? '\n' : ',\n'}${JSON.stringify(value)}`);
+          rows += 1;
+        }
+      });
+    });
+    write('\n]}\n');
+  })();
+  work.catch(() => undefined);
   try {
-    const rows = await db.transaction(readLedger);
-    writePrivate(file, `${JSON.stringify({ format: 'peblish.ledger/1', exportedAt: new Date().toISOString(), rows }, null, 2)}\n`);
-    return rows.length;
+    await Promise.race([work, aborted]);
+    complete = true;
+    return rows;
   } finally {
-    await end();
+    open = false;
+    closeSync(fd);
+    options.signal?.removeEventListener('abort', onAbort);
+    if (!complete) rmSync(file, { force: true });
+    await client.end({ timeout: complete ? 5 : 0.01 }).catch(() => undefined);
   }
 }
 
@@ -428,17 +502,25 @@ export type DrillReport = {
  * The drill: back up the database `url` names into `dir`, export its ledger, restore into a new
  * database `drill_<time>_<random>` on the same server (created here, refused if it exists),
  * re-apply the ledger and compare row counts. The new database is dropped afterwards unless
- * `keep`; nothing else on the server is dropped or disconnected.
+ * `keep`; nothing else on the server is dropped or disconnected. Given `files` (a backup and a
+ * ledger export fetched from the backup bucket), it restores those instead of taking new ones;
+ * the counts then differ where the database changed since that backup.
  */
-export async function runDrill(url: string, dir: string, options: { keep?: boolean } = {}): Promise<DrillReport> {
+export async function runDrill(
+  url: string,
+  dir: string,
+  options: { keep?: boolean; files?: { backup: string; ledger: string } } = {},
+): Promise<DrillReport> {
   mkdirSync(dir, { recursive: true, mode: 0o700 });
   const stamp = new Date().toISOString().replace(/[-:.]/g, '').slice(0, 15).toLowerCase();
-  const backupFile = join(dir, `backup-${stamp}.dump`);
-  const ledger = join(dir, `ledger-${stamp}.json`);
+  const backupFile = options.files?.backup ?? join(dir, `backup-${stamp}.dump`);
+  const ledger = options.files?.ledger ?? join(dir, `ledger-${stamp}.json`);
   const target = new URL(url);
   target.pathname = `/drill_${stamp}_${randomBytes(3).toString('hex')}`;
-  await backup(url, backupFile);
-  await exportLedger(url, ledger);
+  if (!options.files) {
+    await backup(url, backupFile);
+    await exportLedger(url, ledger);
+  }
   const own = await restore(backupFile, target.href);
   try {
     const reapplied = await reapplyLedger(own.url, readLedgerExport(ledger));

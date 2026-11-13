@@ -196,6 +196,10 @@ Deletes and Tombstones, account deletions, blocked media, hashes an admin adds t
 the blocked-image list). A restore loses every row written after its backup, ledger rows
 included, so the ledger is also exported on its own, more often.
 
+On Easypanel this runs by itself: the `backup` service uploads a dump every night and a ledger
+export every hour to a bucket of its own, and a restore fetches them from there
+([backups.md](backups.md)). The commands below are the same steps by hand.
+
 ```sh
 node tools/cutover/src/cli.ts backup --db $DATABASE_URL --out $S/backup-$(date -u +%Y%m%dT%H%M).dump      # nightly
 node tools/cutover/src/cli.ts ledger-export --db $DATABASE_URL --out $S/ledger-$(date -u +%Y%m%dT%H%M).json  # hourly
@@ -241,7 +245,9 @@ All must hold, else stay on PieFed:
 3. The final archive (step 6) inventories the same as above, or the differences are understood.
 4. `verify --bundle` on production exits 0: 5 keys, every one matching the bundle; 131 follows accepted.
 5. The host-header pretest below passes against the new origin.
-6. A drill on the production database passed, and the nightly backup and hourly ledger export run.
+6. A drill on the production database passed, and the nightly backup and hourly ledger export run:
+   the production `backup` service is up on R2 ([backups.md](backups.md)), `backup-status` in its
+   console exits 0, and one drill ran on a backup and ledger export fetched from the bucket.
 7. `Andrew` has signed in through a password reset, turned on two-factor in that session and set
    `site.name` to "Feddit", the operator settings and the published pages.
 8. The TLS rehearsal (below) recorded which certificate path works on this Easypanel, path A (a
