@@ -2,7 +2,7 @@
 
 A `backup` service in the Easypanel project takes a database dump every night and exports the
 deletion ledger every hour, uploads each to a bucket of its own, reads it back from the bucket and
-records it as the last good one. Nobody has to be there; a failure or a stale backup mails the
+records it as the last good one. Nobody has to be there; a backup that is overdue mails the
 operator. A restore fetches the last good backup and ledger export from the bucket and runs the
 existing `restore` or `drill`, which re-applies the ledger (`deploy/cutover.md`, "Backups and the
 deletion ledger").
@@ -17,17 +17,18 @@ Andrew's decisions: production backups go to a Cloudflare R2 bucket with a 30-da
 The tool is `tools/cutover` (`tools/cutover/src/nightly.ts`, `bucket.ts`, `alerts.ts`); the dump and
 the ledger export are its existing `backup` and `ledger-export`.
 
-| When (UTC)          | Object                                                 | What                                                                 |
-| ------------------- | ------------------------------------------------------ | -------------------------------------------------------------------- |
-| daily at 16:00      | `backups/<time>.dump`                                  | `pg_dump -Fc` of `DATABASE_URL` (16:00 UTC is about 03:00 in Sydney) |
-| hourly at :05       | `ledger/<time>.json`                                   | every `deletion_ledger` row (`peblish.ledger/1`), streamed           |
-| after each good run | `status/backup.json`, `status/ledger.json`             | the last good run: object, size, SHA-256, ETag, start and end times  |
-| on an alert         | `status/backup.alert.json`, `status/ledger.alert.json` | whether a failure was mailed, and since when                         |
+| When (UTC)          | Object                                     | What                                                                 |
+| ------------------- | ------------------------------------------ | -------------------------------------------------------------------- |
+| daily at 16:00      | `backups/<time>.dump`                      | `pg_dump -Fc` of `DATABASE_URL` (16:00 UTC is about 03:00 in Sydney) |
+| hourly at :05       | `ledger/<time>.json`                       | every `deletion_ledger` row (`peblish.ledger/1`), streamed           |
+| after each good run | `status/backup.json`, `status/ledger.json` | the last good run: object, size, SHA-256, ETag, start and end times  |
 
 `<time>` is UTC to the millisecond in ISO 8601's basic form, such as `20261113T160000.123Z`, so
 names sort by time. Two runs of a kind cannot overlap (the lock below), so they do not share a
 name; if a name exists anyway, the upload is refused, early by a HEAD and finally by the store
-itself (the completion carries `If-None-Match: *`), never overwritten.
+itself (the completion carries `If-None-Match: *`), never overwritten. On a store that ignores
+conditions (below) only the HEAD check stands, which a writer between the HEAD and the completion
+would get past.
 
 Each run:
 
@@ -35,8 +36,14 @@ Each run:
    the run with no lifetime limit (getting it has 60 seconds). If another run of that kind holds
    it (a second container during a redeploy, or a console run beside the schedule), the run is
    skipped and touches nothing. If the session ends during the run, the run stops and fails.
-2. Writes the dump or export into a new folder under `TMPDIR` (default `/tmp`), mode 700, the file
-   mode 600. A table lock held for more than a minute fails the dump (`--lock-wait-timeout`) or the
+   Holding it, the run reads the current status record: one dated in the future ends the run as
+   `superseded` straight away (below), with no dump.
+2. Writes the dump or export into a new folder in the tool's own temporary root,
+   `<TMPDIR>/peblish-backup` (default `/tmp/peblish-backup`), the file mode 600. The root is made
+   mode 700, and the run refuses to write when it is not a folder of this user with mode 700 (a
+   link, or someone else's). Still holding the lock, the run first removes that root's folders of
+   its own kind (`backup-*` or `ledger-*`): no other run of the kind can be using them, so they are
+   what a killed process left. A table lock held for more than a minute fails the dump (`--lock-wait-timeout`) or the
    export (`lock_timeout`); the dump has 3 hours and the export 10 minutes in all.
 3. Hashes the file, then uploads it multipart, 16 MiB at a time: each part signed with its SHA-256
    and sent with its MD5, so the bucket refuses a damaged part, and the whole file's SHA-256 stored
@@ -47,8 +54,11 @@ Each run:
    read back from the bucket, against the file's SHA-256. A run is never recorded good on its size
    alone.
 5. Publishes the status record, fenced (below). The temporary folder is removed whatever the
-   outcome, including a stop by SIGTERM or SIGINT, and the lock is let go (at most 10 seconds;
-   ending the session releases it).
+   outcome, including a stop by SIGTERM or SIGINT (a stop ends the lock waits at once, so the
+   removal comes before the process exits), and the lock is let go (at most 10 seconds; ending the
+   session releases it). A process killed outright (SIGKILL, out of memory, a crash) cannot remove
+   it: the plaintext dump stays in the container until the next run of that kind removes it, or
+   the container is replaced.
 
 Every wait in a run is bounded, so a run always ends, as `ok`, `FAILED`, `skipped` or
 `superseded`: the lock (60 s to get, 30 s for the final check, 10 s to let go), the dump (3 hours)
@@ -64,9 +74,27 @@ It then reads the current record and its ETag. If that record is of a run that s
 this one, this run is `superseded`. Otherwise it writes its record conditionally: `If-Match` on the
 ETag it read, or `If-None-Match: *` when there was none. If the store refuses (another writer
 changed the record in between, for example a run that took the lock after this run's session
-died), this run is `superseded` too. Superseded is neither a failure nor a success: no alert, no
-recovery, and its uploaded object stays unrecorded until the lifecycle rule removes it. A one-shot
-`backup-run` exits 75 for it.
+died), this run is `superseded` too. Superseded is neither a failure nor a success: it mails
+nothing, and its uploaded object stays unrecorded until the lifecycle rule removes it. A one-shot
+`backup-run` exits 0 for `ok`, 1 for `FAILED`, and 75 both for `skipped` (another run holds the
+lock) and for `superseded`.
+
+Two more cases fail closed:
+
+- A record that comes back without an ETag cannot be replaced with `If-Match`, and `If-None-Match:
+*` would be refused for ever, so the run fails with `the bucket returned status/<kind>.json
+without an ETag, so it cannot be replaced safely`. No S3 store tested does this; it would be a
+  proxy in between dropping the header.
+- A run whose finish is before its start (the clock went back during it) fails with `the clock went
+back during the run; nothing is recorded`.
+
+A record dated more than five minutes in the future (a clock that was ahead when it was written)
+is never written over: every run of that kind ends `superseded: ... the recorded run is dated in
+the future; repair the record by hand (deploy/backups.md)`, and the kind goes overdue. To repair it,
+check the service's clock (`date -u` in the console), then delete that one record: in the R2
+dashboard, the bucket's `status/<kind>.json`; on staging, `mc rm <alias>/<bucket>/status/<kind>.json`
+in the `minio` console. The key cannot delete, by design. The next run (within 15 minutes, or a
+`backup-run` in the console) finds no record and writes a fresh one.
 
 Conditional writes, checked 2026-11-13:
 
@@ -79,11 +107,12 @@ Conditional writes, checked 2026-11-13:
   a missing key answers 404 (the tool treats it as refused); a completion with `If-None-Match: *`
   over an existing key answers 412 and keeps the old object.
 
-At start the schedule writes `status/conditional-probe.json` twice with `If-None-Match: *` and
-expects the second to be refused. On a store that ignores the condition it logs `the backup bucket
-ignores conditional writes ...`; there the fence is only the lock check and the newer-start check,
-which does not stop a run whose session died just after its check from overwriting a newer
-record with its own, older one.
+At start the schedule probes `status/conditional-probe.json`: it writes it twice with
+`If-None-Match: *` and expects the second to be refused, then writes it with `If-Match` on a wrong
+ETag (refused) and on the current one (taken). On a store that fails any of these it logs `the
+backup bucket ignores conditional writes ...`; there the fence is only the lock check and the
+newer-start check, which does not stop a run whose session died just after its check from
+overwriting a newer record with its own, older one.
 
 The service never deletes and never overwrites anything under `backups/` or `ledger/` (the R2
 bucket lock would refuse it anyway). An upload that fails its check, or a superseded run's, stays
@@ -126,8 +155,11 @@ its last slot (16:00 for the dump, :05 for the ledger), so a service that was do
 runs once when it comes back, not three times, and a redeploy that lands just after a run does not
 repeat it. A status record that does not hold up (not JSON, the wrong shape, an object name of the
 wrong kind, times that are not times, out of order or more than five minutes in the future) counts
-as no record: the kind runs now, and the log says why. Kinds run independently, so a long dump does
-not hold the hourly export, and a tick never waits for a run or a mail. A failed run is retried 15
+as no record: the kind runs now (except a record dated in the future, which is never written over;
+above), and the log says why, in one line per tick at most: `status records: ledger not JSON;
+counted as none`. Each minute's tick reads both records again, so a run from the console counts
+too. Kinds run independently, so a long dump does not hold the hourly export, and a tick never
+waits for a run or a mail. A failed run is retried 15
 minutes later; a run never overlaps another of its kind (the advisory lock). SIGTERM stops the
 schedule and signals any run in flight to stop (the dump is killed, the export's query cancelled,
 the upload aborted, the files removed). The schedule waits at most 8 seconds for them, then lets
@@ -167,26 +199,36 @@ the dump and the export; the drill needs one that may create a database.
 
 ## Alerts
 
-The schedule mails `BACKUP_ALERT_TO` once when a kind starts failing (its first failed run, or a
-status record it cannot read) or goes stale (no good run for 26 hours for the dump, 2 hours for the
-ledger), not again for each retry, and once when it works again, only if the problem mail went
-out. The mail names the kind, since when, its last good run and where to look (the service log,
-`backup-status`, this file); never an error's text, a URL or a credential.
+One rule, worked out on every tick (each minute) for each kind, whether or not a run of it is
+going, with nothing stored:
 
-Alerting never holds a run or a tick: the schedule hands it the event and goes on. Mails go one at
-a time from a queue of their own, and each has 60 seconds; past that it counts as not sent. The
-kind's state is claimed when the event arrives, before the mail is sent, so overlapping ticks do not
-send it twice. A mail that is not sent releases its claim, so the next failure or stale check
-tries again; it is logged without the server's text.
+- The kind's age is counted from the finish of the last good run in its status record, whoever
+  wrote it. With no readable good record it is counted from this process's start.
+- The kind is overdue when that age is over 26 hours for the dump or 2 hours for the ledger (one
+  interval and two hours of slack). Each dump starts at 16:00, so one that runs more than about two
+  hours longer than the one before goes overdue while it runs, and mails; today's dump takes under
+  a second, and the longest a dump may run (its bounds above) is about 8 hours.
+- An overdue kind is mailed to `BACKUP_ALERT_TO` when this process has not sent an overdue mail for
+  it in the last 24 hours. Only a mail that went out counts; the mark is in memory, so a restart, or
+  a second container during a redeploy, may send one more.
 
-What was mailed is saved in `status/<kind>.alert.json`. A save that fails is logged and retried
-every minute until it lands. If the process restarts before it lands, the stored state is the
-older one; at start the schedule reconciles it with the last good runs: a stored problem older
-than the last good run means the kind recovered, so the recovery is mailed (perhaps a second time)
-and saved, and a later failure is mailed as usual. A stored state that cannot be read (the bucket
-refuses, or it is not one this tool wrote) is not taken for "nothing mailed" silently: it sends one
-mail saying the alert state cannot be read, and then alerts go on as if nothing had been mailed
-(new problems are mailed; a recovery for a problem mailed before the restart may be missing).
+A failed run mails nothing by itself: a failure that lasts shows as overdue, and a skipped or
+superseded run is the same. The mail names the kind, the last good run's finish (or `none
+recorded`) and the age, this process's last failure for the kind if it saw one (the fixed words of
+its log line, such as `get status/ledger.json: 403 AccessDenied` or `timed out`), and where to look
+(the service log, `backup-status`, this file); never a credential, a URL or a row.
+
+Mail never holds a run, a tick or the shutdown: the tick starts the send and goes on, one send at a
+time in the process (an overdue kind that finds one in flight is tried on a later tick), and on
+SIGTERM a send in flight is not waited for. The send goes through core's mail code with finite SMTP
+limits (nodemailer 10.3.1): 10 s for the DNS lookup, connecting and the greeting together, then 20 s
+of silence on the socket for each later reply. A server that never answers ends the send in about
+10 s; one that answers each of the conversation's nine or so steps just inside 20 s, in about 3
+minutes. A send that fails or times out is logged without the server's text and tried again on a
+tick no sooner than 15 minutes after it ended.
+
+A service that is not running cannot mail. The operator's check of a service that may have stopped
+is `backup-status` (below), which needs no running schedule.
 
 The recipient is a variable, not the site's `contact.email` setting, for two reasons: the alert
 must work when the database does not answer, which is one of the failures it reports, and
@@ -211,8 +253,8 @@ ledger: ledger/20261113T160500.004Z.json, 93 bytes, finished 2026-11-13T16:05:00
 It checks each record against the bucket: the object it names must exist with the recorded size,
 `sha256` metadata and ETag. A missing or mismatched object, a record that does not hold up, no
 record, or a run older than 26 hours (dump) or 2 hours (ledger) is reported on that kind's line
-and makes it exit 1. `--json` gives the same report machine-readable. The alerts above are the
-push form of the same signal.
+and makes it exit 1. `--json` gives the same report machine-readable. The overdue mail above is
+the push form of the same signal, from a running service only.
 
 ## Retention: the bucket's lifecycle rule and lock
 
@@ -223,7 +265,7 @@ background, on R2 and MinIO alike, so an object is removed some time after it ex
 within a day), not at the 30-day mark exactly. The status records live under
 `status/`, outside the lock, because they are rewritten on every good run; they never expire while
 backups run. Once the service has been failing for 30 days the bucket holds nothing under
-`backups/`, which `backup-status` and the alerts say long before.
+`backups/`, which `backup-status` and the overdue mail say long before.
 
 ### R2 (production; waits on Andrew, R2 is not on)
 
@@ -324,8 +366,8 @@ Tested (2026-11-13, a MacBook, the dev MinIO):
 - In the test suite: an 11 MiB file with 5 MiB parts (3 parts), checked by size, multipart ETag and
   read-back, and fetched back with a matching SHA-256; on a fake store, a failing part, same-size
   corruption, an unfamiliar ETag form, a stalled and a slow download, a completion another writer
-  beat, and slow uploads with a separate read-back budget. A ledger export of 1,201 rows (three
-  full cursor batches and a part one).
+  beat, and slow uploads with a separate read-back budget. A ledger export of 1,201 rows (two full
+  500-row cursor batches plus 201).
 - By hand, round 1: random files with the default 16 MiB parts, 256 MiB (16 parts) and 2 GiB (128
   parts). 2 GiB uploaded in 14 to 15 s and fetched back in 10 s, SHA-256 matching. Peak memory was
   480 to 520 MB for both sizes (130 MB at start): it does not grow with the file. The read-back
