@@ -143,7 +143,10 @@ export async function proxyResponse(signature: string, target: string, deps: Pro
   if (answer) {
     const cacheControl = `public, max-age=${PROXY_MAX_AGE_SECONDS}, s-maxage=${EDGE_MAX_AGE_SECONDS}`;
     // A body the server must hand over before the deadline, or the socket is cut (core edge/stream.ts).
-    return new Response(deadlineBody(body, answer.startedAt + PUBLIC_BODY_MS), {
+    // The log names the image by its hash: the proxy path carries the remote URL.
+    const onLate = () =>
+      console.error(`edge cache: a public proxy answer was cut off at the ${PUBLIC_BODY_MS} ms body deadline (image ${sha256})`);
+    return new Response(deadlineBody(body, answer.startedAt + PUBLIC_BODY_MS, { onLate }), {
       headers: imageHeaders(result.type, body.byteLength, cacheControl, { 'cache-tag': answer.tags.join(',') }),
     });
   }

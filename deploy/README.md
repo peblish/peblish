@@ -166,7 +166,7 @@ The private staging project `peblish-staging` (`https://staging.peblish.com`, st
   for ten minutes (`max-age=600`). With `CLOUDFLARE_ZONE_ID` and `CLOUDFLARE_PURGE_TOKEN` set on
   web and worker and the cache rule in [edge-cache.md](edge-cache.md), Cloudflare also holds
   images that were public when fetched for up to an hour (`s-maxage=3600`), purged by tag on
-  takedown and again about two minutes later; every other image answer is `private`. Without
+  takedown and again 150 s later; every other image answer is `private`. Without
   them, every image answer is `private` and no cache rule is needed. Edge caching stays off
   (neither variable set, no cache rule) until the real-edge checklist in edge-cache.md section 3
   has passed on a test hostname.

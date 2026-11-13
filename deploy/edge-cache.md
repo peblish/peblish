@@ -74,6 +74,25 @@ agree.
 
 ## 2. The cache rule
 
+Before adding it, read feddit.com's own cache settings in the dashboard and record each one. A
+purge-only token cannot read them, and the real-edge proof (section 3) ran on another zone, so
+nothing has checked them on feddit.com:
+
+- Always Online (Caching, Configuration): **off**. It can answer from a saved copy while the
+  origin is down, past the hour.
+- Cache Reserve (Caching): **off**. The proof did not cover a persistent cache tier.
+- Serve stale content, in this rule and in any other rule or Page Rule that matches
+  `/media/proxy/`: **none**.
+- Edge TTL overrides: **none** but this rule's. No Page Rule (Cache Level, Edge Cache TTL) or other
+  cache rule may match `/media/proxy/`.
+- Tiered Cache (Caching, Tiered Cache): on or off; record which. A purge reaches every tier, and
+  each tier keeps an answer only for its `s-maxage`.
+- HTTP/2 to origin (Speed or Network): on or off; record which. It changes only the hop from
+  Cloudflare to Traefik; the body deadline was proven on HTTP/1.1 between Traefik and web.
+
+Any of the first four that is not as listed can keep a taken-down image, or one whose purge
+failed, past its hour: fix it before the rule goes on.
+
 Caching, Cache Rules, Create rule. One rule, matching the proxy path only:
 
 - Rule name: `Public remote images (media proxy)`
@@ -112,7 +131,16 @@ Run these on a proxied test hostname whose requests take the same chain as produ
 (Cloudflare, then Traefik, then web), with this build, the cache rule of section 2 extended to the
 test host, and both variables set on web and worker. Nothing here touches production. Keep a log:
 for every step, the time, the command, the `cf-ray` (its suffix is the Cloudflare location) and
-the `cf-cache-status` of each answer. Throughout:
+the `cf-cache-status` of each answer.
+
+This checklist ran on 2026-11-13 on a Cloudflare free plan, on a test hostname of another zone
+than feddit.com, through the same server's Traefik. It established that the free plan honours
+`Cache-Tag` and purge by tag, that purges took effect within about 1 s at both locations tested,
+and that an image expired at its hour with the origin failing and was not served stale. What it
+measured is in steps (b), (g) 5 and (i) and in section 5; feddit.com's own settings still need
+reading (section 2).
+
+Throughout:
 
 ```sh
 host='https://<test host>'
@@ -132,7 +160,7 @@ settings for the test router and service: response buffering (the `buffering` mi
 `maxResponseBodyBytes`, `memResponseBodyBytes`), compression (the `compress` middleware and its
 minimum size and types), retries (the `retry` middleware), and the entry point's and transport's
 timeouts (`respondingTimeouts`, `forwardingTimeouts`, idle timeouts). From Cloudflare, record the
-plan's origin read timeout (100 s below Enterprise unless changed) and whether HTTP/2 to origin is
+plan's origin read timeout (125 s, adjustable only on Enterprise) and whether HTTP/2 to origin is
 on. Every later result is read against these.
 
 **(b) A delay between the proxy and the edge (the accepted residual, made visible).** Use a small
@@ -141,26 +169,30 @@ takes it whole. Then hold the connection between Traefik and Cloudflare while Cl
 
 1. Complete silence: start `curl "$url"` on a cold key, and within a second stop Traefik's
    egress to Cloudflare (pause the test Traefik process, or drop its outbound packets with a
-   firewall rule on the test host). Purge the image's content tag at once, purge it again 120 s
-   later, then release the hold. GET the URL repeatedly for ten minutes.
+   firewall rule on the test host). Purge the image's content tag at once, purge it again 150 s
+   later (as the worker's repeat does), then release the hold. GET the URL repeatedly for ten
+   minutes.
 2. A trickle: the same, but limit the test Traefik's egress to a few hundred bytes a second
    (`tc qdisc ... tbf` or `netem rate`) instead of stopping it, so the delivery never falls silent
-   for 100 s; release it only after the second purge.
+   for 125 s (Cloudflare's read timeout); release it only after the second purge.
 
 Record for each: whether Cloudflare answered the first client at all (a 524 or a complete image),
 how long the delivery took, and whether any later GET is `HIT`. A `HIT` after both purges is the
 accepted residual (a fill completing after the second send, served until its hour is up): record
-it with its timings and the settings from (a). It does not block the rollout.
+it with its timings and the settings from (a). It does not block the rollout. On 2026-11-13 the
+silent delivery ended about 125 s after the decision, at Cloudflare's read timeout, with nothing
+stored, and the trickled one was stored and served after both purges (section 5).
 
 **(c) The body deadline on this build.** Use a public image large enough to fill the socket
 buffers (several megabytes, under the proxy's 10 MiB limit), so the application meets
 backpressure. Start a GET on a cold key and, within a second, stop the chain from draining (pause
 the test Traefik, or hold its socket to web). Check on web's host that within 10 s of the request
-the application has destroyed its socket to Traefik (`ss -tn` shows it gone; the request is logged
-as cut off). Release, then GET repeatedly for ten minutes: never `HIT` for that key. Repeat with
-each framing and compression mode the chain has enabled: HTTP/1.1 with `Content-Length`, chunked
-if Traefik re-frames, HTTP/2 to origin if on, Traefik's `compress` on and off, and Cloudflare's
-own compression. Record any mode in which a later GET is `HIT`.
+the application has destroyed its socket to Traefik (`ss -tn` shows it gone) and web has logged
+`edge cache: a public proxy answer was cut off at the 10000 ms body deadline (image <sha256>)`.
+Release, then GET repeatedly for ten minutes: never `HIT` for that key. Repeat with each framing
+and compression mode the chain has enabled: HTTP/1.1 with `Content-Length`, chunked if Traefik
+re-frames, HTTP/2 to origin if on, Traefik's `compress` on and off, and Cloudflare's own
+compression. Record any mode in which a later GET is `HIT`.
 
 **(d) Private and `no-store` answers are never stored.** On fresh keys, GET each twice, once
 with no cookie and once with a browser's session cookie (`-H 'cookie: ...'`): a signed-in
@@ -178,8 +210,8 @@ and note any location that still answers `HIT`.
 
 **(f) A real takedown, end to end.** Warm a public post's image to `HIT`, then remove the post as
 a moderator. In the test database, check in order: the `mod.remove` row in `outbox`; an
-`edge_purges` row for `pbm-p-<post id>` with `send` 1, then gone and replaced by `send` 2 due two
-minutes later; then nothing. From outside: not `HIT` within about 20 seconds, and still not `HIT`
+`edge_purges` row for `pbm-p-<post id>` with `send` 1, then gone and replaced by `send` 2 due 150 s
+later; then nothing. From outside: not `HIT` within about 20 seconds, and still not `HIT`
 after the second send. The worker logs nothing for a purge that works.
 
 **(g) Readiness.** Each step from a ready state; after each, check that a fresh public URL answers
@@ -191,7 +223,10 @@ after the second send. The worker logs nothing for a purge that works.
 3. Worker's variables removed: `private` within five minutes.
 4. Zone mismatch: web given another zone's id: `private` at once.
 5. A stopped consumer with a pending event: stop the worker, take a post down: `private` within
-   30 seconds; start the worker: `public` after its purges are sent.
+   30 seconds. Start the worker: `public` again as soon as its consumer has passed the event,
+   which can be a few seconds before that event's purge is sent, since debt due less than two
+   minutes ago is allowed (`DEBT_LATE_MS`, rule 2 in section 1). The taken-down post's own images
+   answer 404 meanwhile. Then check that the purge is sent (`select * from edge_purges`).
 6. A skipped event: on the test database, make the edge consumer skip its next event (set its
    `outbox_cursors` row's `failing_event_id` to that event, `failures` to 10 and
    `first_failure_at` to 31 minutes ago). After the skip: a `pbm` row due at the epoch, `private`
@@ -215,7 +250,8 @@ overrides the edge TTL, since each can keep an image past its hour.
 purges of an unused tag in a quick loop until one is refused. Record the request count, the
 status (429), the body and `Retry-After`. Then owe a purge (take a post down) and start the
 worker: the debt survives the refusal (`select * from edge_purges`), the worker waits at least
-`Retry-After`, and it is sent once the bucket refills.
+`Retry-After`, or 60 s when Cloudflare names none (the free plan's 429 named none on 2026-11-13),
+and it is sent once the bucket refills.
 
 **(j) Propagation per location.** For several purges, note the time the API answered success and
 poll the URL from each location every second until it is not `HIT`. Record the delay per
@@ -234,7 +270,8 @@ The first failure of each run of failures is also an `edge.purge_failed` row in 
 one row, not one every few seconds. For a quick look at the state: `select * from edge_status;`
 (`verified_at` is the last proof and `zone_id` the zone it proved; web is public only while it is
 under 5 minutes old and the zone matches) and `select tag, send, due_at, claim_token from
-edge_purges order by due_at;` (what is owed; `send` 2 is the repeat two minutes after the first).
+edge_purges order by due_at;` (what is owed; `send` 2 is the repeat, due 150 s after the first
+succeeded).
 
 Never delete or move the `edge.purge` row of `outbox_cursors` by hand: every takedown event it
 skips that way is never turned into a purge, and readiness cannot see it. If it has to be done
@@ -263,15 +300,22 @@ plus one row for each transaction owing a purge at the same instant (a new peer'
 counts toward the collapse of first sends, so echoes cannot make a purge wider than the sends that
 caused them.
 
-Each takedown's purge goes out normally within about 20 seconds and again about two minutes later.
-The second send covers an answer decided just before the takedown whose fill completed at
-Cloudflare within two minutes of that decision. A fill that completes later, such as a small
-answer Traefik took whole and delivered to Cloudflare slowly for more than two minutes, is not
-covered and can be served until its hour is up. No fixed delay closes that; it needs an
-end-to-end completion bound the application does not control, and the owner accepted it as a
-residual risk. The two minutes exceed the 10 s body deadline plus the 100 s Cloudflare waits on a
-silent origin, so a delivery that falls completely silent ends before the repeat either way;
-whether Cloudflare then stores nothing is checked in section 3 (b).
+Each takedown's purge goes out normally within about 20 seconds and again 150 s after that send
+succeeded. The second send covers an answer decided just before the takedown whose fill completed
+at Cloudflare within 150 s of that decision. A fill that completes later, such as a small answer
+Traefik took whole and delivered to Cloudflare slowly for longer than that, is not covered and
+can be served until its hour is up. No fixed delay closes that; it needs an end-to-end completion
+bound the application does not control, and the owner accepted it as a residual risk. On
+2026-11-13 section 3 (b) 2 showed it: a delivery trickled at about 8 B/s completed after both
+purges and was then served from the cache (`HIT`) until a later purge removed it.
+
+The 150 s exceed the 10 s body deadline plus the 125 s Cloudflare documents as its read timeout
+(adjustable only on Enterprise), so a delivery that falls completely silent ends before the
+repeat. The repeat used to be 120 s, on this repository's earlier assumption of 100 s for that
+timeout. On 2026-11-13 (free plan, through Traefik, one run) the silent connection of section 3
+(b) 1 ended about 125 s after the decision, in line with the documented figure and after the
+120 s repeat of that build, which is why the repeat is now 150 s. Cloudflare stored nothing from
+it. That it stores nothing from an abandoned delivery was seen once, not guaranteed.
 
 If purging stays broken, a taken-down image can be served from Cloudflare for up to an hour
 after it was cached (`s-maxage=3600`), and no new image is cached once the path is not ready.

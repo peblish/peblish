@@ -18,7 +18,7 @@ import { purgePathReady } from './ready.ts';
 import { claimPurges, flushPurges, startPurge } from './send.ts';
 import { edgePurges, edgeStatus } from './tables.ts';
 import type { Purge } from './tags.ts';
-import { CLOUDFLARE_READ_TIMEOUT_MS, ECHO_MS, LEASE_MS, MAX_OWED, PUBLIC_BODY_MS, SEND_GAP_MS } from './timing.ts';
+import { CHECK_AFTER_MS, CLOUDFLARE_READ_TIMEOUT_MS, ECHO_MS, LEASE_MS, MAX_OWED, PUBLIC_BODY_MS, SEND_GAP_MS } from './timing.ts';
 
 // Every time the purge path stores or compares is the database's, so these tests move time by
 // shifting what is stored back (rewind) rather than by giving the code a clock.
@@ -74,8 +74,8 @@ async function grants() {
 }
 
 test('every purge is sent twice: as soon as the rate allows, and again ECHO_MS after its first send succeeded', async () => {
-  // Two minutes: a body cut off at PUBLIC_BODY_MS, on a link stalled until Cloudflare gives up, is settled before the second send.
-  expect(ECHO_MS).toBe(120_000);
+  // 150 s: a body cut off at PUBLIC_BODY_MS, on a link silent until Cloudflare gives up, is settled before the second send.
+  expect(ECHO_MS).toBe(150_000);
   expect(ECHO_MS - PUBLIC_BODY_MS).toBeGreaterThan(CLOUDFLARE_READ_TIMEOUT_MS);
   const fetch = vi.fn<HttpFetch>(async () => ok());
   await owe(['pbm-p-1', 'pbm-c-2']);
@@ -84,14 +84,15 @@ test('every purge is sent twice: as soon as the rate allows, and again ECHO_MS a
     ['pbm-c-2', 2],
     ['pbm-p-1', 2],
   ]);
-  await rewind(ECHO_MS - 5_000);
+  // The echo waits longer than CHECK_AFTER_MS, so the idle check goes out while it is owed.
+  expect(ECHO_MS).toBeGreaterThan(CHECK_AFTER_MS + SEND_GAP_MS);
+  await rewind(ECHO_MS - SEND_GAP_MS - 5_000);
+  expect(await flush(fetch)).toBe('sent');
+  await rewind(SEND_GAP_MS);
   expect(await flush(fetch)).toBe('idle');
   await rewind(5_000);
   expect(await flush(fetch)).toBe('sent');
-  expect(sentTags(fetch).map((tags) => tags.toSorted())).toEqual([
-    ['pbm-c-2', 'pbm-p-1'],
-    ['pbm-c-2', 'pbm-p-1'],
-  ]);
+  expect(sentTags(fetch).map((tags) => tags.toSorted())).toEqual([['pbm-c-2', 'pbm-p-1'], ['pbm-check'], ['pbm-c-2', 'pbm-p-1']]);
   // The echo itself is not echoed.
   expect(await owed()).toEqual([]);
 });
