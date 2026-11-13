@@ -9,7 +9,12 @@ import { truncateAll } from '../testing/db.ts';
 import { seedCommunityRemoval, seedComment, seedPost } from '../testing/seed-az.ts';
 import { declareAge, seedAccount } from '../testing/seed-b1.ts';
 import { seedActor, seedInstance } from '../testing/seed.ts';
-import { publicTags } from './public.ts';
+import { mediaBlocklist } from '../mediascan/tables.ts';
+import { peerControls } from '../peers/tables.ts';
+import { remoteMedia } from '../testing/seed-safe.ts';
+import { publicAnswerTags, publicTags } from './public.ts';
+import { edgeStatus } from './tables.ts';
+import { hashTag, hostTag } from './tags.ts';
 
 beforeEach(truncateAll);
 
@@ -91,4 +96,68 @@ test('an unknown id is not public', async () => {
   await world();
   const missing = '0195f0a0-0000-7000-8000-000000000000';
   for (const kind of ['post', 'comment', 'actor'] as const) expect(await publicTags({ kind, id: missing }), kind).toBeNull();
+});
+
+const sha256 = 'ab'.repeat(32);
+
+/** The purge path proven just now (send.ts writes this after a successful request). */
+const proven = () => writer().insert(edgeStatus).values({ name: 'cloudflare', verifiedAt: new Date() });
+
+test('a public answer needs every fact true in one read after the fetch: ready, switch on, supplier, every host, hash, content (item 1)', async () => {
+  const w = await world();
+  const peer = await seedInstance('lemmy.test', false);
+  await writer().insert(peerControls).values({ instanceId: peer.id, media: 'approved' });
+  const check = {
+    content: { kind: 'post' as const, id: w.post.id, supplier: 'lemmy.test' },
+    hosts: ['img.example', 'cdn.lemmy.test'],
+    sha256,
+  };
+  // Not ready: no record of a working purge path.
+  expect(await publicAnswerTags(check)).toBeNull();
+  await proven();
+  const tags = await publicAnswerTags(check);
+  expect(tags).toEqual(
+    expect.arrayContaining([
+      'pbm',
+      `pbm-p-${w.post.id}`,
+      hostTag('lemmy.test'),
+      hostTag('test'),
+      hostTag('img.example'),
+      hostTag('cdn.lemmy.test'),
+      hashTag(sha256),
+    ]),
+  );
+  expect(new Set(tags).size).toBe(tags?.length);
+
+  // A redirect host that is quarantined (a known peer without approval).
+  await seedInstance('other.test', false);
+  expect(await publicAnswerTags({ ...check, hosts: [...check.hosts, 'img.other.test'] })).toBeNull();
+  // The supplier no longer approved.
+  await writer().update(peerControls).set({ media: 'quarantined' }).where(eq(peerControls.instanceId, peer.id));
+  expect(await publicAnswerTags(check)).toBeNull();
+  await writer().update(peerControls).set({ media: 'approved' }).where(eq(peerControls.instanceId, peer.id));
+  // The hash on the blocked-image list.
+  await writer().insert(mediaBlocklist).values({ kind: 'sha256', value: sha256, category: 'other' });
+  expect(await publicAnswerTags(check)).toBeNull();
+  await writer().delete(mediaBlocklist);
+  // The kill switch off.
+  await remoteMedia(false);
+  expect(await publicAnswerTags(check)).toBeNull();
+  await remoteMedia(true);
+  // The content no longer public.
+  await writer().update(posts).set({ sensitive: true }).where(eq(posts.id, w.post.id));
+  expect(await publicAnswerTags(check)).toBeNull();
+  await writer().update(posts).set({ sensitive: false }).where(eq(posts.id, w.post.id));
+  expect(await publicAnswerTags(check)).not.toBeNull();
+});
+
+test('a read that took longer than the deadline gives a private answer, however it came out (item 1)', async () => {
+  const w = await world();
+  await proven();
+  const check = { content: { kind: 'post' as const, id: w.post.id, supplier: null }, hosts: ['img.example'], sha256 };
+  let at = 0;
+  const clock = () => (at += 1_000);
+  // Two readings 1 s apart: within a 2 s deadline, not within a 0.5 s one.
+  expect(await publicAnswerTags(check, { clock, deadlineMs: 2_000 })).not.toBeNull();
+  expect(await publicAnswerTags(check, { clock, deadlineMs: 500 })).toBeNull();
 });

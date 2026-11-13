@@ -3,6 +3,8 @@ import { unwrapProxyUrl, verifyProxyPath, type MediaContent } from '@peblish/cor
 import { safeFetch, type SafeFetchInit, type SafeResponse } from '@peblish/core/net/fetch';
 import { mediaAllowed, supplierMediaAllowed } from '@peblish/core/peers/gate';
 import { EDGE_MAX_AGE_SECONDS } from '@peblish/core/edge/config';
+import type { PublicCheck } from '@peblish/core/edge/public';
+import { hashListed, imageSha256 } from '@peblish/core/media/blocked';
 
 // The remote-media proxy's answer (decision 5): the image bytes of one signed URL, held in memory
 // for this response and stored nowhere. Viewers never contact remote hosts; remote hosts see
@@ -77,12 +79,15 @@ export type ProxyDeps = {
   fetch?: Fetcher;
   /** The time an unbound URL's expiry is judged at (milliseconds); tests set it. */
   now?: number;
+  /** Whether the blocked-image list holds a hash (core media/blocked.ts); a listed image is never served. */
+  hashListed?: (sha256: string) => Promise<boolean>;
   /**
-   * Edge caching, given only when its purge path is configured (core edge/config.ts). `publicTags`
-   * (core edge/public.ts) answers whether the content is shown to a signed-out visitor, with the
-   * Cache-Tag values a purge reaches it by; null keeps the answer per viewer.
+   * Edge caching, given only for a GET when its purge path is configured (core edge/config.ts).
+   * `publicTags` (core edge/public.ts publicAnswerTags) is the one consistent read, after the
+   * fetch, that says whether the answer may be public and with which Cache-Tag values; null keeps
+   * it private. It depends on the content, the hosts and the bytes, never on who asks.
    */
-  edge?: { publicTags: (content: MediaContent) => Promise<string[] | null> } | null;
+  edge?: { publicTags: (check: PublicCheck) => Promise<string[] | null> } | null;
 };
 
 const imageHeaders = (type: string, length: number, cacheControl: string, extra: Record<string, string> = {}) => ({
@@ -108,32 +113,33 @@ export async function proxyResponse(signature: string, target: string, deps: Pro
   // is hosted, and one whose content was removed, deleted or is gated for this viewer.
   const { content } = verified;
   if (content?.supplier && !(await (deps.supplierAllowed ?? supplierMediaAllowed)(content.supplier))) return plain(404, 'not found');
-  // Content a signed-out visitor is shown gets the same answer whoever asks, so it is public and
-  // the viewer is never read; anything else is judged for this viewer, as without an edge cache.
-  const { edge } = deps;
-  const shared = edge && content ? await edge.publicTags(content) : null;
-  if (content && !shared && !(await deps.contentShown(content))) return plain(404, 'not found');
+  if (content && !(await deps.contentShown(content))) return plain(404, 'not found');
   const { url } = verified;
   // A quarantined, purged or blocked peer's media looks like any other missing image, here or after a redirect.
   const allowed = deps.mediaAllowed ?? mediaAllowed;
-  if (!(await allowed(new URL(url).host))) return plain(404, 'not found');
+  const hosts = [new URL(url).host];
+  if (!(await allowed(hosts[0]!))) return plain(404, 'not found');
   let denied = false;
-  const fetch = gatedFetch(deps.fetch ?? safeFetch, allowed, () => (denied = true));
+  const visit = async (host: string) => {
+    hosts.push(host);
+    return allowed(host);
+  };
+  const fetch = gatedFetch(deps.fetch ?? safeFetch, visit, () => (denied = true));
   const fetchImage = deps.fetchImage ?? ((target: string, signal?: AbortSignal) => fetchProxiedImage(target, { signal, fetch }));
   const result = await fetchImage(url, deps.signal);
   if (denied) return plain(404, 'not found');
   if (!result.ok) return plain(result.status, `the image could not be proxied (${result.why})`);
   // A copy: the fetched buffer's type is wider than a Response body accepts.
   const body = new Uint8Array(result.body);
-  if (edge && content && shared) {
-    // Asked again now the image is here: a takedown during the fetch may have been purged
-    // already, and this answer must not reach the edge after that purge.
-    const tags = await edge.publicTags(content);
-    if (tags) {
-      const cacheControl = `public, max-age=${PROXY_MAX_AGE_SECONDS}, s-maxage=${EDGE_MAX_AGE_SECONDS}`;
-      return new Response(body, { headers: imageHeaders(result.type, body.byteLength, cacheControl, { 'cache-tag': tags.join(',') }) });
-    }
-    if (!(await deps.contentShown(content))) return plain(404, 'not found');
+  // An image whose exact bytes are on the blocked-image list is refused like any missing image.
+  const sha256 = imageSha256(body);
+  if (await (deps.hashListed ?? hashListed)(sha256)) return plain(404, 'not found');
+  // Public only by the one consistent read taken now the bytes are here, and sent at once; the
+  // viewer was judged above for the private answer and plays no part in this one.
+  const tags = deps.edge && content ? await deps.edge.publicTags({ content, hosts: [...new Set(hosts)], sha256 }) : null;
+  if (tags) {
+    const cacheControl = `public, max-age=${PROXY_MAX_AGE_SECONDS}, s-maxage=${EDGE_MAX_AGE_SECONDS}`;
+    return new Response(body, { headers: imageHeaders(result.type, body.byteLength, cacheControl, { 'cache-tag': tags.join(',') }) });
   }
   return new Response(body, { headers: imageHeaders(result.type, body.byteLength, `private, max-age=${PROXY_MAX_AGE_SECONDS}`) });
 }
