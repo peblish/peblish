@@ -1,4 +1,4 @@
-import { Input } from '@muxui/react';
+import { Input } from './input.tsx';
 import { useFieldProblem } from './field-problem.tsx';
 import type { HTMLInputAutoCompleteAttribute, HTMLInputTypeAttribute, ReactNode } from 'react';
 

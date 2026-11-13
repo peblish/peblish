@@ -1,4 +1,4 @@
-import { TextArea } from '@muxui/react';
+import { TextArea } from './mux-text-area.tsx';
 import { useFieldProblem } from './field-problem.tsx';
 import type { ReactNode } from 'react';
 

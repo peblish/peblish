@@ -31,6 +31,7 @@ import { commentPath, communityPath, postPath, userPath } from '../../shell/path
 import { usePrefs } from '../../shell/prefs.tsx';
 import { kitEnabled } from './-enabled.ts';
 import { SlowVotes } from './-slow-votes.tsx';
+import { SavedFields } from './-saved-fields.tsx';
 import { TrimmedFields } from './-trimmed-fields.tsx';
 import { loadKitContent } from './-render.ts';
 import { feed, now, posts, thumbnailSrc } from './-samples.ts';
@@ -333,6 +334,13 @@ function KitPage() {
           Fields with a normalising caller
         </Text>
         <TrimmedFields />
+      </section>
+
+      <section aria-labelledby="kit-saved-heading">
+        <Text as="h2" variant="heading" size="sm" className="kit-heading" id="kit-saved-heading">
+          Fields with saved text
+        </Text>
+        <SavedFields />
       </section>
 
       <section aria-labelledby="kit-tabs">

@@ -2,6 +2,7 @@ import { FieldLabelsProvider } from '@peblish/ui/components/field-problem';
 import { ProseLabelsProvider } from '@peblish/ui/components/prose';
 import { ToastProvider } from '@peblish/ui/components/toast';
 import { LocaleProvider } from '@peblish/ui/locale';
+import { typedTextScript } from '@peblish/ui/components/kept-value.ts';
 import { rootThemeAttributes, systemSchemeScript } from '@peblish/ui/theme/root';
 import muxCss from '@peblish/ui/styles.css?url';
 import { HeadContent, Outlet, Scripts, createRootRoute, useRouter } from '@tanstack/react-router';
@@ -61,6 +62,8 @@ function RootDocument({ children }: { children: ReactNode }) {
     <html lang={data?.locale ?? DEFAULT_LOCALE} {...rootThemeAttributes(scheme)} suppressHydrationWarning>
       <head>
         {scheme === 'system' && <script dangerouslySetInnerHTML={{ __html: systemSchemeScript }} />}
+        {/* What is typed into a text area before the page hydrates (kept-value.ts). */}
+        <script dangerouslySetInnerHTML={{ __html: typedTextScript }} />
         <HeadContent />
       </head>
       <body>
