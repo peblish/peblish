@@ -1,30 +1,35 @@
-// The figures the edge cache's safety rests on (lane notes, "Round 3", for the argument in full).
+// The figures the edge cache rests on, and what each one bounds (lane notes, "Round 4").
 //
-// A public answer is decided by one consistent read taken after the image bytes are in hand
-// (public.ts). The deadline clock starts before that read begins. The read must finish within
-// PUBLIC_READ_MS, and the whole body must be handed to the socket within PUBLIC_BODY_MS of the
-// same start, or the body stream is errored and the server destroys the socket, so the edge gets
-// a truncated answer (shorter than its content-length) that it cannot store (stream.ts).
+// What the application bounds. A public answer is decided by one consistent read taken after
+// the image bytes are in hand (public.ts); its deadline clock B (web's monotonic clock) starts
+// before that read. The read must end by B + PUBLIC_READ_MS or the answer is private. The
+// application's own body stream must be handed to its server's socket by B + PUBLIC_BODY_MS, or
+// the stream errors and the server destroys that socket (stream.ts). That is all the deadline
+// bounds: a proxy in front of the application (Traefik) can take a small body whole at once and
+// pass it on to Cloudflare later, at any pace.
 //
-// A takedown that commits at C after the read's snapshot is not seen by it. That answer's last
-// byte was handed to the socket before C + PUBLIC_BODY_MS. Every purge is sent twice; the
-// second send is let out ECHO_MS after the first succeeded, and the first is after C, so the
-// second send leaves after C + ECHO_MS = C + PUBLIC_BODY_MS + 110 s. The 110 s margin covers the
-// last bytes crossing to Cloudflare and Cloudflare finishing the fill, which is then visible to
-// the second purge. It is longer than CLOUDFLARE_READ_TIMEOUT_MS, so a link that stalls with the
-// last bytes in the socket buffer either delivers them before the second send or is cut off by
-// Cloudflare (which then stores nothing) before it.
+// What the second send covers. A takedown committing at C after the read's snapshot is not seen
+// by it, so B < C. Its first purge is let out after C, and its second ECHO_MS after the first
+// succeeded, so after B + ECHO_MS. A fill of that answer that has completed at Cloudflare before
+// the second send is removed by it (assumed: a purge removes a fill completed before it). So the
+// second send covers fills that complete within ECHO_MS of the decision; it does not cover a
+// fill still arriving then.
 //
-// Assumed of Cloudflare, to be proven on a real edge: it does not store an answer whose body ends
-// before its content-length; a purge sent after a fill has completed removes that fill; and it
-// gives up on an origin that sends nothing for CLOUDFLARE_READ_TIMEOUT_MS. Every time below is
-// the database's, so web and every worker share one clock.
+// What bounds everything else: the edge time, s-maxage = 3600 s. A fill that completes after
+// the second send (a delivery trickled through a proxy for more than two minutes, say) can be
+// served until its hour is up. No fixed delay closes that: it needs an end-to-end completion
+// bound the application does not control. The owner accepted it as a residual risk.
+//
+// ECHO_MS is longer than PUBLIC_BODY_MS plus CLOUDFLARE_READ_TIMEOUT_MS, so a delivery that goes
+// completely silent until Cloudflare's read timeout ends before the second send. That helps only
+// if Cloudflare abandons such a fill without storing it, which is unproven (notes checklist).
+// Every time the purge path stores or compares in SQL is the database's.
 
 /** Longest the public decision's read may take, from the deadline start to its answer, before the answer is private instead. */
 export const PUBLIC_READ_MS = 2_000;
 /** Longest from the deadline start until the last byte of a public answer is handed to the socket; past it the body is cut off. */
 export const PUBLIC_BODY_MS = 10_000;
-/** Each purge is sent again this long after its first send succeeded: past the body deadline by more than Cloudflare's read timeout. */
+/** Each purge is sent again this long after its first send succeeded; it covers fills that complete within this long of the decision. */
 export const ECHO_MS = 120_000;
 /** Cloudflare's proxy read timeout (a 524 when the origin sends nothing for this long; not adjustable below Enterprise). */
 export const CLOUDFLARE_READ_TIMEOUT_MS = 100_000;

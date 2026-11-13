@@ -3,9 +3,10 @@ import { PUBLIC_BODY_MS } from './timing.ts';
 // The body of a public proxy answer, under a deadline (timing.ts). The server pulls a chunk only
 // after the previous one was written to the socket (srvx waits for write() or 'drain'), and the
 // stream closes only on the pull after the last chunk, so "closed" means every byte was handed
-// to the socket. If that has not happened by `deadline`, the stream errors: the server destroys
-// the socket and the edge receives fewer bytes than the answer's content-length, an answer it
-// cannot store. Private answers are plain bodies and never cut off.
+// to the socket. If that has not happened by `deadline`, the stream errors and the server
+// destroys the socket, so the answer ends short of its content-length on that connection. This
+// bounds the application's own stream only: what a proxy in front has already taken, it may still
+// deliver later (timing.ts). Private answers are plain bodies and never cut off.
 
 const CHUNK = 64 * 1024;
 

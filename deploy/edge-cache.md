@@ -21,9 +21,10 @@ reached through a very long chain of hosts, say), so Cloudflare never truncates 
 purges by.
 
 A public answer also carries `Cache-Tag` (Cloudflare strips it before the browser sees it), a
-`Content-Length`, and no `Set-Cookie`. Its body must be handed to the connection within 10 s of
-the start of that read: if the connection is not taking it by then, the origin destroys the
-connection, so Cloudflare holds a body shorter than its `Content-Length` and does not store it.
+`Content-Length`, and no `Set-Cookie`. The application must hand its body to its own connection
+within 10 s of the start of that read: if that connection is not taking it by then, the
+application destroys it. This bounds the application's own stream only. Traefik, or any proxy in
+front, may already hold a small body whole and pass it to Cloudflare later.
 Without both variables below, or while the purge path is not ready, every image answer is
 `private`, as before.
 
@@ -161,11 +162,14 @@ counts toward the collapse of first sends, so echoes cannot make a purge wider t
 caused them.
 
 Each takedown's purge goes out normally within about 20 seconds and again about two minutes later.
-The second send is what covers an answer that was decided just before the takedown but was still
-being handed to Cloudflare: its body ended within 10 s of its decision, so it was complete well
-before the repeat, which is sent at least 2 minutes after the first succeeded. That leaves 110 s for
-the last bytes to reach Cloudflare, more than the 100 s Cloudflare waits on a silent origin before
-giving up (and storing nothing), so even a link stalled until then is settled before the repeat.
+The second send covers an answer decided just before the takedown whose fill completed at
+Cloudflare within two minutes of that decision. A fill that completes later, such as a small
+answer Traefik took whole and delivered to Cloudflare slowly for more than two minutes, is not
+covered and can be served until its hour is up. No fixed delay closes that; it needs an
+end-to-end completion bound the application does not control, and the owner accepted it as a
+residual risk. The two minutes exceed the 10 s body deadline plus the 100 s Cloudflare waits on a
+silent origin, so a delivery that falls completely silent ends before the repeat either way;
+whether Cloudflare then stores nothing is one of the checks below.
 
 If purging stays broken, a taken-down image can be served from Cloudflare for up to an hour
 after it was cached (`s-maxage=3600`), and no new image is cached once the path is not ready.
