@@ -1,20 +1,20 @@
 /* Quiet links. A Mux Link as it comes is a text link: link colour, underlined, the link hover and
    pressed colours. Titles, meta lines, the site name, the sidebar's footer and links that are
-   navigation or controls take the look of the RM mock's direction A instead: the colour around
+   navigation take the look of the RM mock's direction A instead: the colour around
    them and no underline until hovered. Mux gap (rc.7): Link has no tone or underline prop, so a
    link opts in with one of these classes. They sit in the app layer, above Mux's, so they win over
    every Mux link state, and are linked before the areas' stylesheets, so an area that gives its
    link a colour of its own (the site name) still wins. Mux's focus ring stays. */
 @layer app {
-  /* The colour of the text around it: a post's title, its action row, a comment's author, the site
-     name, the skip link, the account links and navigation rows. */
+  /* The colour of the text around it: a post's title, the feed card's comment count, the site
+     name, the skip link, the account links and navigation rows and lists. */
   .pb-link-quiet,
   .pb-link-muted {
     color: inherit;
     text-decoration: none;
   }
 
-  /* Muted, where the mock mutes them: a post's author in its meta line, a log entry's moderator, the sidebar's footer. */
+  /* Muted, where the mock mutes them: a post's author in its meta line, a comment's author, a log entry's moderator, the sidebar's footer. */
   .pb-link-muted {
     color: var(--muxui-semantic-content-muted);
   }

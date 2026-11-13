@@ -13,7 +13,7 @@ const tools = (expanded: boolean) =>
 test('closed: a Mux link to openHref with the title stands in before a grouped Mux Disclosure', () => {
   const html = tools(false);
   expect(html).toMatch(
-    /^<div id="mod-tools" class="pb-linked-disclosure"><a class="muxui-link pb-linked-disclosure__open pb-link-quiet"[^>]* href="\/c\/rust\?tools=1#mod-tools"[^>]*>Mod tools<\/a><div class="muxui-disclosure-group"/,
+    /^<div id="mod-tools" class="pb-linked-disclosure"><a class="muxui-link pb-linked-disclosure__open"[^>]* href="\/c\/rust\?tools=1#mod-tools"[^>]*>Mod tools<\/a><div class="muxui-disclosure-group"/,
   );
   // The group is what draws the chevron, and the panel stays closed and inert.
   expect(html).toContain('class="muxui-disclosure__header"><button');
@@ -44,7 +44,7 @@ test('a custom link component gets to, the stand-in class and the title', () => 
       form
     </LinkedDisclosure>,
   );
-  expect(html).toContain('<a data-router="" href="/post/1/comments/2?edit=1" class="pb-linked-disclosure__open pb-link-quiet">Edit</a>');
+  expect(html).toContain('<a data-router="" href="/post/1/comments/2?edit=1" class="pb-linked-disclosure__open">Edit</a>');
 });
 
 test('native attributes and the class reach the root', () => {

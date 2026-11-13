@@ -1,6 +1,6 @@
 import type { ReportForm } from '@peblish/core/reports/form';
 import type { RefusalReason } from '@peblish/schema/refusal';
-import { Link } from '@peblish/ui/components/link';
+import { ButtonLink } from '@peblish/ui/components/button-link';
 import { lazy, Suspense, useEffect, useId, useState, useSyncExternalStore, type MouseEvent } from 'react';
 import { useTranslate } from '../../../i18n/use-translate.ts';
 import { loadReportForm } from '../-load.ts';
@@ -30,12 +30,25 @@ function subscribe(listener: () => void) {
 }
 
 /**
- * The Report control of every slot: a Mux Link to /report that works without JavaScript. Once
- * hydrated, a plain click opens the same form in a Mux Dialog instead, and the link shows it is
- * busy until the dialog's code has loaded. The form's data is fetched on the first click, not
- * with the page. If either fails to load, the click goes to /report after all.
+ * The Report control of every slot: a link to /report that looks like a Mux Button and works
+ * without JavaScript. Once hydrated, a plain click opens the same form in a Mux Dialog instead,
+ * and the link shows it is busy until the dialog's code has loaded. The form's data is fetched on
+ * the first click, not with the page. If either fails to load, the click goes to /report after all.
+ * `look` matches the Block button beside it (BlockAction's looks): `row` is a ghost small button,
+ * as in a post's or a comment's action row; `card` a neutral one, as on a profile card or a
+ * community header.
  */
-export function ReportControl({ target, back, label }: { target: Target; back: string; label?: string }) {
+export function ReportControl({
+  target,
+  back,
+  label,
+  look = 'row',
+}: {
+  target: Target;
+  back: string;
+  label?: string;
+  look?: 'row' | 'card';
+}) {
   const { t } = useTranslate();
   const key = useId();
   const mine = useSyncExternalStore(
@@ -91,16 +104,18 @@ export function ReportControl({ target, back, label }: { target: Target; back: s
   const pending = mine && !ready;
   return (
     <>
-      <Link
+      <ButtonLink
         href={href}
         onClick={show}
-        className="rp-open pb-link-quiet"
+        variant={look === 'row' ? 'ghost' : 'neutral'}
+        size={look === 'row' ? 'sm' : 'md'}
+        className="rp-open"
         // A static busy look (no animation) from the click until the dialog opens. A data attribute
         // of the app's own: Mux takes data-pending for its own state attribute.
         data-opening={pending || undefined}
       >
         {label ?? t('reports', 'form.open')}
-      </Link>
+      </ButtonLink>
       {mine && ready && (
         <Suspense fallback={null}>
           <ReportDialog loaded={loaded} back={back} onClose={close} />

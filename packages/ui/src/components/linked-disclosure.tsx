@@ -52,7 +52,7 @@ export function LinkedDisclosure({
   className,
   ...rest
 }: LinkedDisclosureProps) {
-  const open = 'pb-linked-disclosure__open pb-link-quiet';
+  const open = 'pb-linked-disclosure__open';
   return (
     <div {...rest} className={['pb-linked-disclosure', className].filter(Boolean).join(' ')}>
       {defaultExpanded ? (
