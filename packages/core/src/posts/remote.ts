@@ -124,6 +124,14 @@ export const storeRemotePost = defineMutation({
 });
 
 /**
+ * Whether a peer's revision dated `incoming` (its `updated`) arrived out of order: before the
+ * edit time we hold. No `updated`, or no edit time held, is never out of order; an equal time is
+ * not either. The one rule for every Update of remote content that would change what we hold: an
+ * edit (below) and a withdrawal that removes our copy (federation's inbound content handler).
+ */
+export const olderThanHeld = (incoming: Date | null, held: Date | null): boolean => incoming !== null && held !== null && incoming < held;
+
+/**
  * A peer's Update by the author: replaces the editable fields, keeps `published`, the counts and
  * the flags a moderator sets. An Update that changes nothing (a redelivery, the direct copy after
  * the announced one) writes nothing and emits nothing, and does not move the edit time. A real
@@ -143,7 +151,7 @@ export const updateRemotePost = defineMutation({
     // The caller matched the object to this post by id; a record under another id is a bad delivery, not a bug.
     if (current.apId !== post.apId) throw new Refused('post.update', 'post.id_conflict');
     // An Update delivered late (the peer's `updated` is before the edit already applied) must not roll the post back.
-    if (post.editedAt && current.editedAt && post.editedAt < current.editedAt) return { id: postId };
+    if (olderThanHeld(post.editedAt, current.editedAt)) return { id: postId };
     const [community] = await t.db
       .select({ sensitive: actors.sensitive, nsfl: actors.nsfl })
       .from(actors)

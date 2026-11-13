@@ -2,7 +2,9 @@ import { db, type Queryable } from '@peblish/core/db/read';
 import { deleteComment } from '@peblish/core/comments/delete';
 import { storeRemoteComment, updateRemoteComment } from '@peblish/core/comments/remote';
 import { deletePost } from '@peblish/core/posts/delete';
-import { storeRemotePost, updateRemotePost } from '@peblish/core/posts/remote';
+import { olderThanHeld, storeRemotePost, updateRemotePost } from '@peblish/core/posts/remote';
+import { comments, posts } from '@peblish/core/db/tables/content';
+import { eq } from 'drizzle-orm';
 import { recordDeletion } from '@peblish/core/remote/ledger';
 import { readSetting } from '@peblish/core/settings/read';
 import type { ResolvedActor } from '../../actors/resolve.ts';
@@ -58,12 +60,29 @@ async function sensitiveRefusal(q: Queryable, post: Pick<PostRecord, 'apId' | 's
 /** Why an Update would be refused as a new Create for its addressing (classify.ts let it through because we hold its object). */
 const withdrawal = (ctx: InboundContext, verb: 'Create' | 'Update'): Skipped | null => (verb === 'Update' ? notPublic(ctx.raw) : null);
 
+/** The held row's edit time and deletion, locked for the rest of the transaction. */
+async function lockHeld(t: Tx, held: Stored): Promise<{ editedAt: Date | null; deletedAt: Date | null } | undefined> {
+  const table = held.kind === 'post' ? posts : comments;
+  const [row] = await t.db
+    .select({ editedAt: table.editedAt, deletedAt: table.deletedAt })
+    .from(table)
+    .where(eq(table.id, held.id))
+    .for('update');
+  return row;
+}
+
 /**
  * Removes the copy we hold of what an Update `refused`, as its author's Delete would; a copy
- * already deleted keeps the refusal as the outcome.
+ * already deleted keeps the refusal as the outcome. An Update older than the revision we hold
+ * (`editedAt` is its `updated`) arrived out of order and changes nothing, by the edit path's own
+ * rule (`olderThanHeld`), judged on the row locked for the deletion, so a concurrent newer edit
+ * is either seen here or waits for this one. Without `updated`, or with one equal to ours, it
+ * removes the copy, as such an edit would apply.
  */
-async function withdrawHeld(ctx: InboundContext, t: Tx, held: Stored, refused: Skipped): Promise<Applied> {
-  if (held.deleted) throw refused;
+async function withdrawHeld(ctx: InboundContext, t: Tx, held: Stored, refused: Skipped, editedAt: Date | null): Promise<Applied> {
+  const row = await lockHeld(t, held);
+  if (held.deleted || !row || row.deletedAt !== null) throw refused;
+  if (olderThanHeld(editedAt, row.editedAt)) return { communityId: held.communityId, objectApId: held.apId };
   if (held.kind === 'comment') await deleteComment.within(t, await grantFor(ctx, t, 'comment.delete', { commentId: held.id }));
   else await deletePost.within(t, await grantFor(ctx, t, 'post.delete', { postId: held.id }));
   await recordDeletion(t, { kind: held.kind, id: held.id, cause: 'Delete', actorId: ctx.sender.id });
@@ -93,7 +112,7 @@ async function preparePage(ctx: InboundContext, post: PostRecord, verb: 'Create'
     if (existing) {
       if ((await heldPostCommunity(t.db, existing, post)).id !== community.id) throw skip('community.mismatch', post.communityApId);
       const refused = hidden ?? (await sensitiveRefusal(t.db, post));
-      if (refused) return withdrawHeld(ctx, t, existing, refused);
+      if (refused) return withdrawHeld(ctx, t, existing, refused, post.editedAt);
       const grant = await grantFor(ctx, t, 'post.update', { postId: existing.id });
       await updateRemotePost.within(t, grant, post);
       return { communityId: existing.communityId, objectApId: post.apId, relay: true };
@@ -136,7 +155,7 @@ async function prepareNote(ctx: InboundContext, comment: CommentRecord, verb: 'C
     const existing = await storedContent(t.db, comment.apId);
     if (existing && verb === 'Update') {
       checkSameReply(existing, await storedContent(t.db, comment.inReplyToApId), comment.inReplyToApId);
-      if (hidden) return withdrawHeld(ctx, t, existing, hidden);
+      if (hidden) return withdrawHeld(ctx, t, existing, hidden, comment.editedAt);
       const grant = await grantFor(ctx, t, 'comment.update', { commentId: existing.id });
       await updateRemoteComment.within(t, grant, comment);
       return { communityId: existing.communityId, objectApId: comment.apId, relay: true };

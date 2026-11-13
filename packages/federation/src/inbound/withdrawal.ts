@@ -11,8 +11,8 @@ import { addressedToPublic } from './visibility.ts';
 // community, a Page made into a poll or a type we do not read. So it is judged by the copy we
 // hold, not by its new shape: classify.ts (direct and announced Updates) and the Announce
 // handler (the origin's copy of one) give it the held object's kind and community before it is
-// mapped. Only its id, author and addressing are kept, which is all the removal reads; nothing
-// of it is stored.
+// mapped. Only its id, author, addressing and `updated` are kept, which is all the removal reads
+// (`updated` decides whether it is older than the revision we hold); nothing of it is stored.
 
 /** What the reshaping needs of the copy we hold. */
 export type Held = { kind: 'post' | 'comment'; communityApId: string; inReplyToApId: string | null };
@@ -55,6 +55,7 @@ export function asWithdrawal(activity: JsonObject, held: Held): JsonObject {
     audience: held.communityApId,
     to: object.to ?? [],
     cc: object.cc ?? [],
+    ...(typeof object.updated === 'string' && { updated: object.updated }),
   };
   const shaped =
     held.kind === 'post' ? { ...kept, type: 'Page', name: 'withdrawn' } : { ...kept, type: 'Note', inReplyTo: held.inReplyToApId };
