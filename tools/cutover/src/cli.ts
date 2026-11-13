@@ -3,8 +3,10 @@ import { closePools } from '@peblish/core/db/pools';
 import { crossCheckKeyFiles, exportBundle, inventory } from './archive.ts';
 import { readBundle, rehostBundle, writeBundle } from './bundle.ts';
 import { backup, exportLedger, reapplyLedger, readLedgerExport, restore, runDrill } from './drill.ts';
+import { bucketConfigFromEnv } from './bucket.ts';
 import { CutoverError, describe } from './errors.ts';
 import { importBundleFile } from './import.ts';
+import { fetchForRestore, kinds, runOnce, schedule, statusReport, type Kind } from './nightly.ts';
 import { verifyImport } from './verify.ts';
 
 // The cutover tool (deploy/cutover.md has the runbook):
@@ -16,7 +18,14 @@ import { verifyImport } from './verify.ts';
 //   node tools/cutover/src/cli.ts backup --db <url> --out <file>
 //   node tools/cutover/src/cli.ts ledger-export --db <url> --out <file>
 //   node tools/cutover/src/cli.ts restore --backup <file> --db <new database url> [--ledger <file>]   (refuses an existing database)
-//   node tools/cutover/src/cli.ts drill --db <url> --dir <scratch folder> [--keep]                  (restores into a new drill_<time>_<random>)
+//   node tools/cutover/src/cli.ts drill --db <url> --dir <scratch folder> [--keep] [--backup <file> --ledger <file>]  (restores into a new drill_<time>_<random>)
+//
+// The backup bucket (deploy/backups.md; DATABASE_URL or --db, BACKUP_S3_*, S3_BUCKET):
+//
+//   node tools/cutover/src/cli.ts backup-run backup|ledger        one run now: exit 0 ok, 1 failed, 75 another run holds the lock
+//   node tools/cutover/src/cli.ts backup-schedule                 the nightly dump and hourly ledger export, until SIGTERM
+//   node tools/cutover/src/cli.ts backup-status [--json]          the last good run of each; exit 1 when one is stale or missing
+//   node tools/cutover/src/cli.ts backup-fetch --dir <folder> [--object backups/<time>.dump]   that backup (default the last good one) and the newest ledger export
 //
 // The bundle, backups and ledger exports are written with mode 600 and never inside the
 // repository. Nothing prints key material, email addresses or password hashes.
@@ -37,6 +46,7 @@ const { positionals, values } = parseArgs({
     ledger: { type: 'string' },
     dir: { type: 'string' },
     keep: { type: 'boolean' },
+    object: { type: 'string' },
   },
 });
 
@@ -49,6 +59,7 @@ function need(name: keyof typeof values | 'DATABASE_URL' | 'PUBLIC_ORIGIN'): str
 
 class Usage extends CutoverError {}
 
+const sourceDb = () => values.db ?? need('DATABASE_URL');
 const archiveDb = () => values['archive-db'] ?? process.env.CUTOVER_ARCHIVE_DB_URL ?? need('archive-db');
 const print = (value: unknown) => console.log(JSON.stringify(value, null, 2));
 
@@ -154,10 +165,46 @@ async function main(): Promise<number> {
       return 0;
     }
     case 'drill': {
-      const report = await runDrill(need('db'), need('dir'), { keep: values.keep === true });
+      if ((values.backup === undefined) !== (values.ledger === undefined)) throw new Usage('--backup and --ledger go together');
+      const report = await runDrill(need('db'), need('dir'), {
+        keep: values.keep === true,
+        ...(values.backup && values.ledger && { files: { backup: values.backup, ledger: values.ledger } }),
+      });
       print(report);
       return report.differences.length === 0 ? 0 : 1;
     }
+    case 'backup-run': {
+      const kind = positionals[1];
+      if (!kinds.includes(kind as Kind)) throw new Usage(`backup-run takes ${kinds.join(' or ')}`);
+      const result = await runOnce(kind as Kind, sourceDb(), bucketConfigFromEnv());
+      if (result.outcome === 'failed') console.error(result.line);
+      else console.log(result.line);
+      return { ok: 0, failed: 1, skipped: 75 }[result.outcome];
+    }
+    case 'backup-schedule': {
+      const url = sourceDb();
+      const config = bucketConfigFromEnv();
+      await schedule(url, config);
+      return 0;
+    }
+    case 'backup-status': {
+      const report = await statusReport(bucketConfigFromEnv());
+      if (values.json) print(report);
+      else {
+        for (const kind of kinds) {
+          const { last, ageMinutes, stale } = report[kind];
+          console.log(
+            last
+              ? `${kind}: ${last.object}, ${last.size} bytes, finished ${last.finishedAt} (${ageMinutes} min ago)${stale ? ', STALE' : ''}`
+              : `${kind}: none recorded, STALE`,
+          );
+        }
+      }
+      return kinds.some((kind) => report[kind].stale) ? 1 : 0;
+    }
+    case 'backup-fetch':
+      print(await fetchForRestore(bucketConfigFromEnv(), need('dir'), values.object));
+      return 0;
     default:
       throw new Usage(`unknown command ${command ?? '(none)'}; see the comment at the top of tools/cutover/src/cli.ts`);
   }

@@ -77,22 +77,28 @@ function errorKind(stderr: string): string {
   return kind ? ` (${kind}; the rest of its error output is withheld)` : ' (its error output is withheld)';
 }
 
-function run(binary: string, args: string[], env: NodeJS.ProcessEnv, stdout: 'ignore' | number = 'ignore'): Promise<void> {
+function run(
+  binary: string,
+  args: string[],
+  env: NodeJS.ProcessEnv,
+  stdout: 'ignore' | number = 'ignore',
+  signal?: AbortSignal,
+): Promise<void> {
   return new Promise((resolve, reject) => {
-    const child = spawn(binary, args, { stdio: ['ignore', stdout, 'pipe'], env });
+    const child = spawn(binary, args, { stdio: ['ignore', stdout, 'pipe'], env, ...(signal && { signal }) });
     let err = '';
     child.stderr?.on('data', (chunk: Buffer) => (err += chunk.toString()));
-    child.on('error', reject);
+    child.on('error', (error) => reject(signal?.aborted ? new CutoverError(`${binary} stopped`) : error));
     child.on('close', (code) => (code === 0 ? resolve() : reject(new CutoverError(`${binary} exited ${code}${errorKind(err)}`))));
   });
 }
 
-/** `pg_dump -Fc` of the database `url` names into `file` (mode 600, refused if it exists). */
-export async function backup(url: string, file: string): Promise<void> {
+/** `pg_dump -Fc` of the database `url` names into `file` (mode 600, refused if it exists). `signal` stops it. */
+export async function backup(url: string, file: string, signal?: AbortSignal): Promise<void> {
   const fd = openPrivate(file);
   try {
     const { arg, env } = connection(url);
-    await run(pgDump(), ['--format=custom', '--no-owner', '--no-privileges', arg], env, fd);
+    await run(pgDump(), ['--format=custom', '--no-owner', '--no-privileges', arg], env, fd, signal);
   } finally {
     closeSync(fd);
   }
@@ -428,17 +434,25 @@ export type DrillReport = {
  * The drill: back up the database `url` names into `dir`, export its ledger, restore into a new
  * database `drill_<time>_<random>` on the same server (created here, refused if it exists),
  * re-apply the ledger and compare row counts. The new database is dropped afterwards unless
- * `keep`; nothing else on the server is dropped or disconnected.
+ * `keep`; nothing else on the server is dropped or disconnected. Given `files` (a backup and a
+ * ledger export fetched from the backup bucket), it restores those instead of taking new ones;
+ * the counts then differ where the database changed since that backup.
  */
-export async function runDrill(url: string, dir: string, options: { keep?: boolean } = {}): Promise<DrillReport> {
+export async function runDrill(
+  url: string,
+  dir: string,
+  options: { keep?: boolean; files?: { backup: string; ledger: string } } = {},
+): Promise<DrillReport> {
   mkdirSync(dir, { recursive: true, mode: 0o700 });
   const stamp = new Date().toISOString().replace(/[-:.]/g, '').slice(0, 15).toLowerCase();
-  const backupFile = join(dir, `backup-${stamp}.dump`);
-  const ledger = join(dir, `ledger-${stamp}.json`);
+  const backupFile = options.files?.backup ?? join(dir, `backup-${stamp}.dump`);
+  const ledger = options.files?.ledger ?? join(dir, `ledger-${stamp}.json`);
   const target = new URL(url);
   target.pathname = `/drill_${stamp}_${randomBytes(3).toString('hex')}`;
-  await backup(url, backupFile);
-  await exportLedger(url, ledger);
+  if (!options.files) {
+    await backup(url, backupFile);
+    await exportLedger(url, ledger);
+  }
   const own = await restore(backupFile, target.href);
   try {
     const reapplied = await reapplyLedger(own.url, readLedgerExport(ledger));

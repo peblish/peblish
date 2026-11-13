@@ -4,7 +4,8 @@
 # no tunnel is opened. Build context is the repository root (the same uploaded archive as web
 # and worker), with this file as the Dockerfile. It runs nothing by itself: the operator runs
 # the commands in its console, and the service is destroyed when the run is done. No bundle,
-# key or secret is ever part of the image.
+# key or secret is ever part of the image. The same image is the long-running `backup` service
+# (deploy/backups.md), whose command is `node tools/cutover/src/cli.ts backup-schedule`.
 FROM node:24.21.0-bookworm-slim@sha256:d6aa754f16b3197301076f047b5def2f02ea1dbbc2ca920407d46d7ec7f87b20 AS base
 ENV COREPACK_ENABLE_DOWNLOAD_PROMPT=0 CI=true
 RUN corepack enable
