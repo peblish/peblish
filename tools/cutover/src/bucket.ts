@@ -9,12 +9,13 @@ import { CutoverError, formatProblems } from './errors.ts';
 // bucket, with a key limited to it. Cloudflare R2 in production, MinIO on staging and in tests.
 // Uploads are multipart from a file on disk, one part in memory at a time, each part signed with
 // its SHA-256 and sent with its MD5 so the bucket refuses a damaged part. The object only exists
-// once the upload completes, and a run then checks it from the bucket (size, and the multipart
-// ETag where the bucket uses S3's form) before calling it good. Errors name the call, the HTTP
-// status and S3's error code, never the endpoint, a key or a response body.
+// once the upload completes; the run then reads it back from the bucket and compares its SHA-256
+// with the file's before calling it good. This client never deletes or overwrites an object (the
+// production bucket locks backups/ and ledger/): a name that exists is refused. Errors name the
+// call, the HTTP status and S3's error code, never the endpoint, a key or a response body.
 
 const Config = type({
-  BACKUP_S3_ENDPOINT: 'string.url',
+  BACKUP_S3_ENDPOINT: 'string > 0',
   BACKUP_S3_BUCKET: 'string > 0',
   BACKUP_S3_REGION: 'string > 0',
   BACKUP_S3_ACCESS_KEY_ID: 'string > 0',
@@ -22,27 +23,51 @@ const Config = type({
   /** The media bucket, required so the run can refuse to write backups into it. */
   S3_BUCKET: 'string > 0',
   'S3_ACCESS_KEY_ID?': 'string',
+  /** `1` lets the endpoint be plain http: an internal development or staging store only, never production. */
+  'BACKUP_S3_ALLOW_PLAIN_HTTP?': 'string',
 });
 export type BucketConfig = typeof Config.infer;
 
+/** S3's bucket name rules: 3 to 63 lowercase letters, digits, dots and dashes, not like an IP address. */
+const isBucketName = (name: string) =>
+  /^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$/.test(name) && !name.includes('..') && !/^\d+\.\d+\.\d+\.\d+$/.test(name);
+
 /**
- * The BACKUP_S3_* variables, checked: refused when the backup bucket is the media bucket, when it
- * would use the media key, or when the endpoint carries credentials (it would be logged nowhere,
- * but a URL with a password in it should not exist at all).
+ * The BACKUP_S3_* variables, checked. Refused: a backup bucket that is the media bucket, the media
+ * key as the backup key, a bucket name S3 would not accept, and an endpoint that is not a bare
+ * origin (a path would put path-style requests under another bucket; credentials, a query or a
+ * fragment have no place there) or not https, unless BACKUP_S3_ALLOW_PLAIN_HTTP is `1`.
  */
 export function bucketConfigFromEnv(env: NodeJS.ProcessEnv = process.env): BucketConfig {
   const checked = Config(env);
   if (checked instanceof type.errors) throw new CutoverError(`invalid backup bucket environment: ${formatProblems(checked)}`);
+  for (const name of ['BACKUP_S3_BUCKET', 'S3_BUCKET'] as const) {
+    if (!isBucketName(checked[name])) throw new CutoverError(`${name} is not a valid bucket name`);
+  }
   if (checked.BACKUP_S3_BUCKET === checked.S3_BUCKET) {
     throw new CutoverError('BACKUP_S3_BUCKET is the media bucket (S3_BUCKET); backups need a bucket of their own');
   }
   if (checked.S3_ACCESS_KEY_ID && checked.BACKUP_S3_ACCESS_KEY_ID === checked.S3_ACCESS_KEY_ID) {
     throw new CutoverError('BACKUP_S3_ACCESS_KEY_ID is the media key (S3_ACCESS_KEY_ID); backups need a key limited to their bucket');
   }
-  const endpoint = new URL(checked.BACKUP_S3_ENDPOINT);
+  let endpoint: URL;
+  try {
+    endpoint = new URL(checked.BACKUP_S3_ENDPOINT);
+  } catch {
+    throw new CutoverError('BACKUP_S3_ENDPOINT is not a URL');
+  }
   if (endpoint.username || endpoint.password) throw new CutoverError('BACKUP_S3_ENDPOINT must not carry credentials');
-  if (endpoint.search || endpoint.hash) throw new CutoverError('BACKUP_S3_ENDPOINT must not have a query or fragment');
-  return checked;
+  if (endpoint.search || endpoint.hash || !/^\/?$/.test(endpoint.pathname) || /[?#]/.test(checked.BACKUP_S3_ENDPOINT)) {
+    throw new CutoverError('BACKUP_S3_ENDPOINT must be an origin only (scheme, host, port): no path, query or fragment');
+  }
+  const plain = checked.BACKUP_S3_ALLOW_PLAIN_HTTP;
+  if (plain !== undefined && plain !== '' && plain !== '1') throw new CutoverError('BACKUP_S3_ALLOW_PLAIN_HTTP must be 1 or unset');
+  if (endpoint.protocol !== 'https:' && !(endpoint.protocol === 'http:' && plain === '1')) {
+    throw new CutoverError(
+      'BACKUP_S3_ENDPOINT must be https (BACKUP_S3_ALLOW_PLAIN_HTTP=1 allows http for an internal store, never production)',
+    );
+  }
+  return { ...checked, BACKUP_S3_ENDPOINT: endpoint.origin };
 }
 
 /**
@@ -53,8 +78,19 @@ export function bucketConfigFromEnv(env: NodeJS.ProcessEnv = process.env): Bucke
 export const PART_BYTES = 16 * 1024 * 1024;
 export const MAX_PARTS = 10_000;
 
-/** A call still running after this long is abandoned, so a stalled bucket cannot hold a run open. */
-const CALL_TIMEOUT_MS = 120_000;
+export type Timeouts = {
+  /** One request and its answer (a part, a HEAD, a small object). */
+  callMs: number;
+  /** A streamed download that receives nothing for this long is abandoned. */
+  idleMs: number;
+  /** The whole transfer of an object of `size` bytes: a fixed allowance plus 1 MiB/s. */
+  transferMs(size: number): number;
+};
+export const TIMEOUTS: Timeouts = {
+  callMs: 120_000,
+  idleMs: 60_000,
+  transferMs: (size) => 10 * 60_000 + Math.ceil(size / (1024 * 1024)) * 1000,
+};
 
 const hex = (algorithm: string, body: Uint8Array) => createHash(algorithm).update(body).digest('hex');
 const EMPTY_SHA256 = hex('sha256', new Uint8Array());
@@ -64,6 +100,7 @@ export class UnverifiedObject extends CutoverError {}
 
 export type ObjectHead = { size: number; etag: string | null; sha256: string | null };
 export type ListedObject = { key: string; size: number };
+export type Checked = { size: number; etag: string | null; sha256: string };
 
 /** S3 answers keys and tokens XML-escaped. */
 const unescapeXml = (text: string) =>
@@ -84,9 +121,13 @@ export function multipartEtag(partMd5s: readonly Buffer[]): string {
   return `${createHash('md5').update(Buffer.concat(partMd5s)).digest('hex')}-${partMd5s.length}`;
 }
 
+const anySignal = (...signals: (AbortSignal | undefined)[]) => AbortSignal.any(signals.filter((s) => s !== undefined));
+
 export type Bucket = ReturnType<typeof backupBucket>;
 
-export function backupBucket(config: BucketConfig, { partBytes = PART_BYTES }: { partBytes?: number } = {}) {
+export function backupBucket(config: BucketConfig, options: { partBytes?: number; timeouts?: Partial<Timeouts> } = {}) {
+  const partBytes = options.partBytes ?? PART_BYTES;
+  const timeouts = { ...TIMEOUTS, ...options.timeouts };
   const client = new AwsClient({
     accessKeyId: config.BACKUP_S3_ACCESS_KEY_ID,
     secretAccessKey: config.BACKUP_S3_SECRET_ACCESS_KEY,
@@ -94,33 +135,31 @@ export function backupBucket(config: BucketConfig, { partBytes = PART_BYTES }: {
     service: 's3',
     retries: 2,
   });
-  const base = `${config.BACKUP_S3_ENDPOINT.replace(/\/+$/, '')}/${encodeURIComponent(config.BACKUP_S3_BUCKET)}`;
+  const base = `${config.BACKUP_S3_ENDPOINT}/${encodeURIComponent(config.BACKUP_S3_BUCKET)}`;
 
-  /** One signed call. A network failure or timeout becomes a CutoverError naming only `what`. */
+  /**
+   * One signed call, abandoned after `callMs` unless `streaming` (the caller bounds the body then).
+   * A network failure, timeout or stop becomes a CutoverError naming only `what`.
+   */
   async function call(
     what: string,
     method: string,
     path: string,
-    init: { body?: Buffer<ArrayBuffer>; headers?: Record<string, string>; signal?: AbortSignal } = {},
+    init: { body?: Buffer<ArrayBuffer>; headers?: Record<string, string>; signal?: AbortSignal | undefined; streaming?: boolean } = {},
   ) {
-    const signals = [AbortSignal.timeout(CALL_TIMEOUT_MS), ...(init.signal ? [init.signal] : [])];
+    const signal = init.streaming ? init.signal : anySignal(AbortSignal.timeout(timeouts.callMs), init.signal);
     try {
       return await client.fetch(`${base}${path}`, {
         method,
-        signal: AbortSignal.any(signals),
+        ...(signal && { signal }),
         ...(init.body && { body: init.body }),
         headers: { 'x-amz-content-sha256': init.body ? hex('sha256', init.body) : EMPTY_SHA256, ...init.headers },
       });
     } catch (error) {
-      if (init.signal?.aborted) throw new CutoverError(`${what}: stopped`);
-      const cause = error instanceof Error && error.cause instanceof Error ? error.cause : error;
-      const code = cause instanceof Error && 'code' in cause && typeof cause.code === 'string' ? cause.code : undefined;
-      const name = cause instanceof Error ? cause.name : 'unknown';
-      throw new CutoverError(`${what}: the bucket did not answer (${code ?? name})`);
+      throw failure(what, error, init.signal);
     }
   }
 
-  /** The call's failure: status and S3's error code (a fixed vocabulary), never the body's message. */
   async function refuse(what: string, response: Response): Promise<CutoverError> {
     const code = tag(await response.text().catch(() => ''), 'Code');
     return new CutoverError(`${what}: ${response.status}${code && /^[A-Za-z]+$/.test(code) ? ` ${code}` : ''}`);
@@ -134,8 +173,8 @@ export function backupBucket(config: BucketConfig, { partBytes = PART_BYTES }: {
     return text;
   }
 
-  async function head(key: string): Promise<ObjectHead | null> {
-    const response = await call(`head ${assertName(key)}`, 'HEAD', `/${key}`);
+  async function head(key: string, signal?: AbortSignal): Promise<ObjectHead | null> {
+    const response = await call(`head ${assertName(key)}`, 'HEAD', `/${key}`, { signal });
     await response.arrayBuffer();
     if (response.status === 404) return null;
     if (!response.ok) throw new CutoverError(`head ${key}: ${response.status}`);
@@ -146,37 +185,74 @@ export function backupBucket(config: BucketConfig, { partBytes = PART_BYTES }: {
     };
   }
 
+  /**
+   * Streams `key`'s body to `sink`, chunk by chunk: abandoned when nothing arrives for `idleMs` or
+   * the whole transfer outlasts `transferMs(size)`. Returns the SHA-256 and size it received.
+   */
+  async function stream(key: string, size: number, sink: (chunk: Uint8Array) => void, signal?: AbortSignal) {
+    const what = `read ${key}`;
+    const idle = new AbortController();
+    const bound = anySignal(idle.signal, AbortSignal.timeout(timeouts.transferMs(size)), signal);
+    const quiet = () => idle.abort(new CutoverError(`nothing received for ${Math.round(timeouts.idleMs / 1000)} s`));
+    let timer = setTimeout(quiet, timeouts.idleMs);
+    try {
+      const response = await call(what, 'GET', `/${key}`, { signal: bound, streaming: true });
+      if (!response.ok || !response.body) throw await refuse(what, response);
+      const hash = createHash('sha256');
+      let received = 0;
+      try {
+        for await (const chunk of response.body) {
+          clearTimeout(timer);
+          timer = setTimeout(quiet, timeouts.idleMs);
+          hash.update(chunk);
+          received += chunk.byteLength;
+          sink(chunk);
+        }
+      } catch (error) {
+        throw failure(what, error, bound);
+      }
+      return { sha256: hash.digest('hex'), size: received };
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
   return {
     head,
 
     /**
-     * Uploads `file` as `key`: multipart, `partBytes` at a time, the whole file's SHA-256 stored as
-     * the object's metadata (from a first read of the file) for a fetch to check. An upload that
-     * fails is aborted, so no object appears. Then checks the object from the bucket; a mismatch
-     * fails the run (deploy/backups.md says what is left behind). Returns the checked head.
+     * Uploads `file` as `key`: refused if `key` exists (nothing is ever overwritten), multipart,
+     * `partBytes` at a time, the whole file's SHA-256 stored as the object's metadata. A failed
+     * upload is aborted, so no object appears. Then checks the object: size, S3's multipart ETag
+     * where the store gives that form, and its SHA-256 read back from the bucket. A mismatch
+     * throws UnverifiedObject and leaves the object (it cannot be deleted); the caller never
+     * records it as good.
      */
-    async uploadFile(key: string, file: string, contentType: string, signal?: AbortSignal): Promise<ObjectHead & { sha256: string }> {
+    async uploadFile(key: string, file: string, contentType: string, signal?: AbortSignal): Promise<Checked> {
       assertName(key);
       const fd = openSync(file, 'r');
       try {
         const size = fstatSync(fd).size;
         const parts = Math.max(1, Math.ceil(size / partBytes));
         if (parts > MAX_PARTS) throw new CutoverError(`${key}: ${size} bytes needs more than ${MAX_PARTS} parts of ${partBytes} bytes`);
+        const bound = anySignal(AbortSignal.timeout(timeouts.transferMs(size)), signal);
+        if (await head(key, bound)) throw new CutoverError(`upload ${key}: an object of that name exists; it is never overwritten`);
         const sha256 = await fileSha256(file);
         const created = await ok(
           `start upload ${key}`,
           await call(`start upload ${key}`, 'POST', `/${key}?uploads=`, {
             headers: { 'content-type': contentType, 'x-amz-meta-sha256': sha256 },
-            ...(signal && { signal }),
+            signal: bound,
           }),
         );
         const uploadId = tag(created, 'UploadId');
         if (!uploadId) throw new CutoverError(`start upload ${key}: no upload id in the answer`);
         const query = (extra = '') => `?${extra}uploadId=${encodeURIComponent(uploadId)}`;
+        const md5s: Buffer[] = [];
         try {
-          const done: { etag: string; md5: Buffer }[] = [];
+          const done: string[] = [];
           for (let n = 1; n <= parts; n++) {
-            if (signal?.aborted) throw new CutoverError(`upload ${key}: stopped`);
+            if (bound.aborted) throw failure(`upload ${key}`, bound.reason, bound);
             const body = Buffer.alloc(Math.min(partBytes, size - (n - 1) * partBytes));
             if (readSync(fd, body, 0, body.length, (n - 1) * partBytes) !== body.length)
               throw new CutoverError(`upload ${key}: the file shrank`);
@@ -185,55 +261,58 @@ export function backupBucket(config: BucketConfig, { partBytes = PART_BYTES }: {
             const response = await call(what, 'PUT', `/${key}${query(`partNumber=${n}&`)}`, {
               body,
               headers: { 'content-md5': md5.toString('base64') },
-              ...(signal && { signal }),
+              signal: bound,
             });
             await ok(what, response);
             const etag = response.headers.get('etag');
             if (!etag) throw new CutoverError(`${what}: no ETag in the answer`);
-            done.push({ etag, md5 });
+            done.push(etag);
+            md5s.push(md5);
           }
           const manifest = `<CompleteMultipartUpload>${done
-            .map((part, i) => `<Part><PartNumber>${i + 1}</PartNumber><ETag>${part.etag}</ETag></Part>`)
+            .map((etag, i) => `<Part><PartNumber>${i + 1}</PartNumber><ETag>${etag}</ETag></Part>`)
             .join('')}</CompleteMultipartUpload>`;
           await ok(
             `complete upload ${key}`,
             await call(`complete upload ${key}`, 'POST', `/${key}${query()}`, {
               body: Buffer.from(manifest),
               headers: { 'content-type': 'application/xml' },
-              ...(signal && { signal }),
+              signal: bound,
             }),
           );
-          const found = await head(key);
-          if (!found) throw new UnverifiedObject(`check ${key}: the bucket has no such object after the upload`);
-          if (found.size !== size) throw new UnverifiedObject(`check ${key}: the bucket holds ${found.size} bytes, the file has ${size}`);
-          const expected = multipartEtag(done.map((part) => part.md5));
-          // R2 and MinIO give S3's multipart ETag; a bucket that answers another form is checked by size only.
-          if (found.etag && /^[0-9a-f]{32}-\d+$/.test(found.etag) && found.etag !== expected) {
-            throw new UnverifiedObject(`check ${key}: the bucket's checksum differs from the file's`);
-          }
-          return { ...found, sha256 };
         } catch (error) {
-          // Best effort: an upload that never completes holds no object; the lifecycle rule clears its parts too.
+          // Best effort: parts of an upload that never completes are no object (the lifecycle rule clears them too).
           await call(`abort upload ${key}`, 'DELETE', `/${key}${query()}`)
             .then((r) => r.arrayBuffer())
             .catch(() => undefined);
           throw error;
         }
+        const found = await head(key, bound);
+        if (!found) throw new UnverifiedObject(`check ${key}: the bucket has no such object after the upload`);
+        if (found.size !== size) throw new UnverifiedObject(`check ${key}: the bucket holds ${found.size} bytes, the file has ${size}`);
+        if (found.etag && /^[0-9a-f]{32}-\d+$/.test(found.etag) && found.etag !== multipartEtag(md5s)) {
+          throw new UnverifiedObject(`check ${key}: the bucket's ETag differs from the file's parts`);
+        }
+        const back = await stream(key, size, () => undefined, bound);
+        if (back.size !== size || back.sha256 !== sha256)
+          throw new UnverifiedObject(`check ${key}: the bytes read back differ from the file`);
+        return { size, etag: found.etag, sha256 };
       } finally {
         closeSync(fd);
       }
     },
 
-    /** A small object written whole (the status records). */
-    async putSmall(key: string, text: string, contentType: string): Promise<void> {
+    /** A small object written whole: only the status records, under status/, which are rewritten. */
+    async putSmall(key: string, text: string, contentType: string, signal?: AbortSignal): Promise<void> {
+      if (!assertName(key).startsWith('status/')) throw new CutoverError(`${key}: only status records are written whole`);
       await ok(
-        `put ${assertName(key)}`,
-        await call(`put ${key}`, 'PUT', `/${key}`, { body: Buffer.from(text), headers: { 'content-type': contentType } }),
+        `put ${key}`,
+        await call(`put ${key}`, 'PUT', `/${key}`, { body: Buffer.from(text), headers: { 'content-type': contentType }, signal }),
       );
     },
 
-    async getSmall(key: string): Promise<string | null> {
-      const response = await call(`get ${assertName(key)}`, 'GET', `/${key}`);
+    async getSmall(key: string, signal?: AbortSignal): Promise<string | null> {
+      const response = await call(`get ${assertName(key)}`, 'GET', `/${key}`, { signal });
       if (response.status === 404) {
         await response.arrayBuffer();
         return null;
@@ -242,12 +321,12 @@ export function backupBucket(config: BucketConfig, { partBytes = PART_BYTES }: {
     },
 
     /** Every object under `prefix`, in name order (the names are UTC times, so oldest first). */
-    async list(prefix: string): Promise<ListedObject[]> {
+    async list(prefix: string, signal?: AbortSignal): Promise<ListedObject[]> {
       const found: ListedObject[] = [];
       let token: string | undefined;
       do {
         const query = `?list-type=2&prefix=${encodeURIComponent(prefix)}${token ? `&continuation-token=${encodeURIComponent(token)}` : ''}`;
-        const xml = await ok(`list ${prefix}`, await call(`list ${prefix}`, 'GET', `/${query}`));
+        const xml = await ok(`list ${prefix}`, await call(`list ${prefix}`, 'GET', `/${query}`, { signal }));
         for (const [, entry = ''] of xml.matchAll(/<Contents>([\s\S]*?)<\/Contents>/g)) {
           const key = tag(entry, 'Key');
           if (key) found.push({ key, size: Number(tag(entry, 'Size')) });
@@ -258,43 +337,52 @@ export function backupBucket(config: BucketConfig, { partBytes = PART_BYTES }: {
     },
 
     /**
-     * Downloads `key` to `file` (mode 600, refused if it exists), streaming, and checks its size and
-     * SHA-256 against the object's metadata. A file that does not match is removed. Returns its size.
+     * Downloads `key` to `file` (mode 600, refused if it exists) and checks its size and SHA-256
+     * against `expected` (the status record) and the object's own metadata. A file that does not
+     * match, or a download that fails or stops, is removed. Returns its size.
      */
-    async fetchFile(key: string, file: string): Promise<number> {
-      const found = await head(key);
+    async fetchFile(key: string, file: string, expected: { size: number; sha256: string }, signal?: AbortSignal): Promise<number> {
+      const found = await head(key, signal);
       if (!found) throw new CutoverError(`fetch ${key}: no such object`);
-      if (!found.sha256) throw new CutoverError(`fetch ${key}: the object has no sha256 record, so it is not one this tool wrote`);
+      if (found.size !== expected.size || found.sha256 !== expected.sha256) {
+        throw new CutoverError(`fetch ${key}: the object does not match its status record`);
+      }
       const fd = openPrivate(file);
       let complete = false;
       try {
-        const response = await call(`fetch ${key}`, 'GET', `/${key}`);
-        if (!response.ok || !response.body) throw await refuse(`fetch ${key}`, response);
-        const hash = createHash('sha256');
-        let size = 0;
-        for await (const chunk of response.body) {
-          hash.update(chunk);
-          size += chunk.byteLength;
-          for (let at = 0; at < chunk.byteLength;) at += writeSync(fd, chunk, at);
-        }
-        if (size !== found.size || hash.digest('hex') !== found.sha256) {
-          throw new CutoverError(`fetch ${key}: the download does not match the object's size and sha256 record; it was removed`);
+        const got = await stream(
+          key,
+          found.size,
+          (chunk) => {
+            for (let at = 0; at < chunk.byteLength;) at += writeSync(fd, chunk, at);
+          },
+          signal,
+        );
+        if (got.size !== expected.size || got.sha256 !== expected.sha256) {
+          throw new CutoverError(`fetch ${key}: the download does not match its status record; it was removed`);
         }
         complete = true;
-        return size;
+        return got.size;
       } finally {
         closeSync(fd);
         if (!complete) rmSync(file, { force: true });
       }
     },
-
-    /** Best effort, for an object a run made and could not verify; the key may lack delete permission. */
-    async remove(key: string): Promise<boolean> {
-      const response = await call(`delete ${assertName(key)}`, 'DELETE', `/${key}`).catch(() => null);
-      await response?.arrayBuffer();
-      return response?.ok === true;
-    },
   };
+}
+
+/** A call's failure as a CutoverError: stopped, timed out, or the network's code, never its text. */
+function failure(what: string, error: unknown, signal?: AbortSignal): CutoverError {
+  if (error instanceof CutoverError) return error;
+  if (signal?.aborted) {
+    const reason: unknown = signal.reason;
+    if (reason instanceof CutoverError) return new CutoverError(`${what}: ${reason.message}`);
+    return new CutoverError(`${what}: ${reason instanceof Error && reason.name === 'TimeoutError' ? 'timed out' : 'stopped'}`);
+  }
+  const cause = error instanceof Error && error.cause instanceof Error ? error.cause : error;
+  if (cause instanceof Error && cause.name === 'TimeoutError') return new CutoverError(`${what}: timed out`);
+  const code = cause instanceof Error && 'code' in cause && typeof cause.code === 'string' ? cause.code : undefined;
+  return new CutoverError(`${what}: the bucket did not answer (${code ?? (cause instanceof Error ? cause.name : 'unknown')})`);
 }
 
 /** The SHA-256 of a file, read as a stream. */

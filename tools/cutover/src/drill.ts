@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process';
 import { randomBytes, randomUUID } from 'node:crypto';
-import { closeSync, mkdirSync } from 'node:fs';
+import { closeSync, mkdirSync, rmSync, writeSync } from 'node:fs';
 import { join } from 'node:path';
 import { actors } from '@peblish/core/db/tables/actors';
 import { media } from '@peblish/core/db/tables/media';
@@ -17,7 +17,7 @@ import { type } from 'arktype';
 import { asc, eq, sql, type SQL } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
-import { openPrivate, writePrivate } from './bundle.ts';
+import { openPrivate } from './bundle.ts';
 import { CutoverError, readJsonFile } from './errors.ts';
 
 // The backup and restore drill (T&S baseline: a restore drill that re-applies the deletion
@@ -93,12 +93,16 @@ function run(
   });
 }
 
-/** `pg_dump -Fc` of the database `url` names into `file` (mode 600, refused if it exists). `signal` stops it. */
-export async function backup(url: string, file: string, signal?: AbortSignal): Promise<void> {
+/**
+ * `pg_dump -Fc` of the database `url` names into `file` (mode 600, refused if it exists). `signal`
+ * kills it; `lockWaitMs` makes it fail rather than wait longer for a table lock.
+ */
+export async function backup(url: string, file: string, options: { signal?: AbortSignal; lockWaitMs?: number } = {}): Promise<void> {
   const fd = openPrivate(file);
   try {
     const { arg, env } = connection(url);
-    await run(pgDump(), ['--format=custom', '--no-owner', '--no-privileges', arg], env, fd, signal);
+    const wait = options.lockWaitMs ? [`--lock-wait-timeout=${Math.trunc(options.lockWaitMs)}`] : [];
+    await run(pgDump(), ['--format=custom', '--no-owner', '--no-privileges', ...wait, arg], env, fd, options.signal);
   } finally {
     closeSync(fd);
   }
@@ -209,15 +213,79 @@ async function readLedger(q: WriteTx): Promise<LedgerRow[]> {
   }));
 }
 
-/** Every deletion_ledger row of the database `url` names, as a mode 600 JSON file. */
-export async function exportLedger(url: string, file: string): Promise<number> {
-  const { db, end } = connect(url);
+/**
+ * Every deletion_ledger row of the database `url` names, as a mode 600 JSON file, streamed: rows
+ * are read through a cursor in one read-only snapshot and written as they come, so the ledger
+ * never has to fit in memory. `lockTimeoutMs` makes a held table lock fail the export instead of
+ * waiting; `signal` ends the connection, which stops the query. A failed export leaves no file.
+ */
+export async function exportLedger(
+  url: string,
+  file: string,
+  options: { signal?: AbortSignal; lockTimeoutMs?: number } = {},
+): Promise<number> {
+  const client = postgres(url, { max: 1, onnotice: () => undefined });
+  const fd = openPrivate(file);
+  let open = true;
+  let rows = 0;
+  let complete = false;
+  let running: { cancel(): unknown } | null = null;
+  // A stop cancels the query on the server (a lock wait included) and gives up at once; the
+  // driver's own teardown would wait for the transaction to end.
+  let onAbort = () => undefined as void;
+  const aborted = new Promise<never>((_, reject) => {
+    onAbort = () => {
+      running?.cancel();
+      reject(new CutoverError('ledger export stopped'));
+    };
+  });
+  aborted.catch(() => undefined);
+  options.signal?.addEventListener('abort', onAbort, { once: true });
+  if (options.signal?.aborted) onAbort();
+  const write = (text: string) => {
+    // After a stop the descriptor may already be closed and its number reused by another file.
+    if (!open) throw new CutoverError('ledger export stopped');
+    const bytes = Buffer.from(text);
+    for (let at = 0; at < bytes.length;) at += writeSync(fd, bytes, at);
+  };
+  const work = (async () => {
+    write(`{"format":"peblish.ledger/1","exportedAt":${JSON.stringify(new Date().toISOString())},"rows":[`);
+    await client.begin('isolation level repeatable read read only', async (tx) => {
+      if (options.lockTimeoutMs) await tx.unsafe(`set local lock_timeout = ${Math.trunc(options.lockTimeoutMs)}`);
+      const query = tx`
+        select id, subject_kind, subject_id, subject_ap_id, reason, requested_by, details, created_at
+        from deletion_ledger order by id`;
+      running = query;
+      await query.cursor(500, (batch) => {
+        for (const row of batch) {
+          const value: LedgerRow = {
+            id: Number(row.id),
+            subjectKind: row.subject_kind,
+            subjectId: row.subject_id,
+            subjectApId: row.subject_ap_id,
+            reason: row.reason,
+            requestedBy: row.requested_by,
+            details: row.details as Record<string, unknown>,
+            createdAt: new Date(row.created_at as string | Date).toISOString(),
+          };
+          write(`${rows === 0 ? '\n' : ',\n'}${JSON.stringify(value)}`);
+          rows += 1;
+        }
+      });
+    });
+    write('\n]}\n');
+  })();
+  work.catch(() => undefined);
   try {
-    const rows = await db.transaction(readLedger);
-    writePrivate(file, `${JSON.stringify({ format: 'peblish.ledger/1', exportedAt: new Date().toISOString(), rows }, null, 2)}\n`);
-    return rows.length;
+    await Promise.race([work, aborted]);
+    complete = true;
+    return rows;
   } finally {
-    await end();
+    open = false;
+    closeSync(fd);
+    options.signal?.removeEventListener('abort', onAbort);
+    if (!complete) rmSync(file, { force: true });
+    await client.end({ timeout: complete ? 5 : 0.01 }).catch(() => undefined);
   }
 }
 

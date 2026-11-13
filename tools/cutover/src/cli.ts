@@ -3,10 +3,11 @@ import { closePools } from '@peblish/core/db/pools';
 import { crossCheckKeyFiles, exportBundle, inventory } from './archive.ts';
 import { readBundle, rehostBundle, writeBundle } from './bundle.ts';
 import { backup, exportLedger, reapplyLedger, readLedgerExport, restore, runDrill } from './drill.ts';
-import { bucketConfigFromEnv } from './bucket.ts';
+import { alertConfig, mailAlerter } from './alerts.ts';
+import { backupBucket, bucketConfigFromEnv } from './bucket.ts';
 import { CutoverError, describe } from './errors.ts';
 import { importBundleFile } from './import.ts';
-import { fetchForRestore, kinds, runOnce, schedule, statusReport, type Kind } from './nightly.ts';
+import { fetchForRestore, kinds, postgresSource, runOnce, schedule, statusReport, type Kind } from './nightly.ts';
 import { verifyImport } from './verify.ts';
 
 // The cutover tool (deploy/cutover.md has the runbook):
@@ -20,12 +21,12 @@ import { verifyImport } from './verify.ts';
 //   node tools/cutover/src/cli.ts restore --backup <file> --db <new database url> [--ledger <file>]   (refuses an existing database)
 //   node tools/cutover/src/cli.ts drill --db <url> --dir <scratch folder> [--keep] [--backup <file> --ledger <file>]  (restores into a new drill_<time>_<random>)
 //
-// The backup bucket (deploy/backups.md; DATABASE_URL or --db, BACKUP_S3_*, S3_BUCKET):
+// The backup bucket (deploy/backups.md; DATABASE_URL or --db, BACKUP_S3_*, S3_BUCKET; alerts SMTP_URL, MAIL_FROM, BACKUP_ALERT_TO):
 //
 //   node tools/cutover/src/cli.ts backup-run backup|ledger        one run now: exit 0 ok, 1 failed, 75 another run holds the lock
 //   node tools/cutover/src/cli.ts backup-schedule                 the nightly dump and hourly ledger export, until SIGTERM
-//   node tools/cutover/src/cli.ts backup-status [--json]          the last good run of each; exit 1 when one is stale or missing
-//   node tools/cutover/src/cli.ts backup-fetch --dir <folder> [--object backups/<time>.dump]   that backup (default the last good one) and the newest ledger export
+//   node tools/cutover/src/cli.ts backup-status [--json]          the last good run of each, checked in the bucket; exit 1 when one is stale, missing or does not match
+//   node tools/cutover/src/cli.ts backup-fetch --dir <folder> [--object backups/<time>.dump]   that backup (default the last good one) and the last good ledger export
 //
 // The bundle, backups and ledger exports are written with mode 600 and never inside the
 // repository. Nothing prints key material, email addresses or password hashes.
@@ -59,7 +60,25 @@ function need(name: keyof typeof values | 'DATABASE_URL' | 'PUBLIC_ORIGIN'): str
 
 class Usage extends CutoverError {}
 
-const sourceDb = () => values.db ?? need('DATABASE_URL');
+/** The database to back up, checked as a postgres URL without ever quoting it (it holds a password). */
+function sourceDb(): string {
+  const url = values.db ?? need('DATABASE_URL');
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    throw new Usage('DATABASE_URL (or --db) is not a valid URL');
+  }
+  if (parsed.protocol !== 'postgres:' && parsed.protocol !== 'postgresql:') throw new Usage('DATABASE_URL (or --db) is not a postgres URL');
+  return url;
+}
+
+/** SIGTERM or SIGINT aborts the returned signal, so a run stops and removes its files before exiting. */
+function stopOnSignal(): AbortSignal {
+  const stop = new AbortController();
+  for (const name of ['SIGTERM', 'SIGINT'] as const) process.once(name, () => stop.abort());
+  return stop.signal;
+}
 const archiveDb = () => values['archive-db'] ?? process.env.CUTOVER_ARCHIVE_DB_URL ?? need('archive-db');
 const print = (value: unknown) => console.log(JSON.stringify(value, null, 2));
 
@@ -176,7 +195,9 @@ async function main(): Promise<number> {
     case 'backup-run': {
       const kind = positionals[1];
       if (!kinds.includes(kind as Kind)) throw new Usage(`backup-run takes ${kinds.join(' or ')}`);
-      const result = await runOnce(kind as Kind, sourceDb(), bucketConfigFromEnv());
+      const url = sourceDb();
+      const config = bucketConfigFromEnv();
+      const result = await runOnce(kind as Kind, postgresSource(url), config, { signal: stopOnSignal() });
       if (result.outcome === 'failed') console.error(result.line);
       else console.log(result.line);
       return { ok: 0, failed: 1, skipped: 75 }[result.outcome];
@@ -184,7 +205,14 @@ async function main(): Promise<number> {
     case 'backup-schedule': {
       const url = sourceDb();
       const config = bucketConfigFromEnv();
-      await schedule(url, config);
+      const log = (line: string) => console.log(line);
+      if (config.BACKUP_S3_ALLOW_PLAIN_HTTP === '1')
+        log('backup bucket over plain http (BACKUP_S3_ALLOW_PLAIN_HTTP=1): an internal store only, never production');
+      const mail = alertConfig();
+      if ('off' in mail) log(mail.off);
+      else log(`alert mail on, to ${mail.to}`);
+      const alerter = 'to' in mail ? mailAlerter(mail.to, backupBucket(config), config.BACKUP_S3_BUCKET, log) : null;
+      await schedule(postgresSource(url), config, { log, alerter });
       return 0;
     }
     case 'backup-status': {
@@ -192,22 +220,37 @@ async function main(): Promise<number> {
       if (values.json) print(report);
       else {
         for (const kind of kinds) {
-          const { last, ageMinutes, stale } = report[kind];
+          const { last, ageMinutes, stale, problem } = report[kind];
+          const flags = [...(stale ? ['STALE'] : []), ...(problem ? [problem] : [])].join(', ');
           console.log(
             last
-              ? `${kind}: ${last.object}, ${last.size} bytes, finished ${last.finishedAt} (${ageMinutes} min ago)${stale ? ', STALE' : ''}`
-              : `${kind}: none recorded, STALE`,
+              ? `${kind}: ${last.object}, ${last.size} bytes, finished ${last.finishedAt} (${ageMinutes} min ago)${flags ? `, ${flags}` : ''}`
+              : `${kind}: ${flags}`,
           );
         }
       }
-      return kinds.some((kind) => report[kind].stale) ? 1 : 0;
+      return kinds.some((kind) => report[kind].stale || report[kind].problem) ? 1 : 0;
     }
     case 'backup-fetch':
-      print(await fetchForRestore(bucketConfigFromEnv(), need('dir'), values.object));
+      print(
+        await fetchForRestore(bucketConfigFromEnv(), need('dir'), {
+          ...(values.object && { object: values.object }),
+          signal: stopOnSignal(),
+        }),
+      );
       return 0;
     default:
       throw new Usage(`unknown command ${command ?? '(none)'}; see the comment at the top of tools/cutover/src/cli.ts`);
   }
+}
+
+// The last line of defence: whatever escapes main(), print only what describe() allows (never a
+// connection string or a driver's own message) and exit.
+for (const event of ['uncaughtException', 'unhandledRejection'] as const) {
+  process.on(event, (error: unknown) => {
+    console.error(`cutover: fatal: ${describe(error)}`);
+    process.exit(70);
+  });
 }
 
 try {
