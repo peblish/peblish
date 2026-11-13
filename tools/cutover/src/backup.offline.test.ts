@@ -1,10 +1,10 @@
 import { spawn } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { MailMessage } from '@peblish/core/identity/mail';
 import { afterAll, afterEach, beforeAll, describe, expect, test } from 'vitest';
-import { alertConfig, mailAlerter } from './alerts.ts';
+import { alertConfig, mailAlerter, type Alerter } from './alerts.ts';
 import { backupBucket, bucketConfigFromEnv, fileSha256, UnverifiedObject, type BucketConfig } from './bucket.ts';
 import { fakeS3, type FakeS3 } from './fake-s3.ts';
 import {
@@ -19,6 +19,7 @@ import {
   statusReport,
   type Kind,
   type Lock,
+  type Scheduler,
   type Source,
   type Status,
 } from './nightly.ts';
@@ -283,13 +284,15 @@ describe('runs', () => {
     rmSync(work, { recursive: true, force: true });
   });
   const options = { timeouts: fast };
+  /** What runs left in the tool's own temporary root under TMPDIR. */
+  const left = () => (existsSync(join(work, 'peblish-backup')) ? readdirSync(join(work, 'peblish-backup')) : []);
 
   test('a good run uploads, reads back and records itself with a valid record', async () => {
     const result = await runOnce('ledger', fakeSource(), config, options);
     expect(result.outcome, result.line).toBe('ok');
     const text = s3.objects.get(statusKey('ledger'))!.body.toString();
     expect(parseStatus('ledger', text, new Date()).invalid).toBeNull();
-    expect(readdirSync(work)).toEqual([]);
+    expect(left()).toEqual([]);
   });
 
   test('a malformed DATABASE_URL fails the run inside its guarded path, without the password', async () => {
@@ -312,7 +315,7 @@ describe('runs', () => {
     const result = await runOnce('backup', source, config, options);
     expect(result.line).toMatch(/FAILED: .* lost its database lock \(the session ended\)$/);
     expect(s3.objects.has(statusKey('backup'))).toBe(false);
-    expect(readdirSync(work)).toEqual([]);
+    expect(left()).toEqual([]);
   });
 
   test('a run that no longer holds its lock when it would record uploads but records nothing', async () => {
@@ -336,7 +339,7 @@ describe('runs', () => {
     const result = await runOnce('ledger', fakeSource({ produce: hang }), config, { ...options, produceDeadlineMs: 100 });
     expect(result.line).toMatch(/FAILED: .*: timed out$/);
     expect(Date.now() - started).toBeLessThan(2_000);
-    expect(readdirSync(work)).toEqual([]);
+    expect(left()).toEqual([]);
   });
 
   test('a stop signal stops the run and removes its files', async () => {
@@ -357,7 +360,66 @@ describe('runs', () => {
     const started = Date.now();
     expect((await result).line).toMatch(/: stopped$/);
     expect(Date.now() - started).toBeLessThan(1_000);
-    expect(readdirSync(work)).toEqual([]);
+    expect(left()).toEqual([]);
+  });
+
+  test('leftover folders of earlier runs of its kind are removed while it holds the lock; other kinds and other names stay', async () => {
+    const root = join(work, 'peblish-backup');
+    mkdirSync(root, { recursive: true, mode: 0o700 });
+    for (const name of ['backup-old1', 'backup-old2', 'ledger-old1', 'unrelated']) {
+      mkdirSync(join(root, name), { recursive: true, mode: 0o700 });
+      writeFileSync(join(root, name, 'backup.dump'), 'plaintext from a killed process', { mode: 0o600 });
+    }
+    expect((await runOnce('backup', fakeSource(), config, options)).outcome).toBe('ok');
+    expect(left().toSorted()).toEqual(['ledger-old1', 'unrelated']);
+    expect((await runOnce('backup', fakeSource({ lock: async () => null }), config, options)).outcome).toBe('skipped');
+    expect((await runOnce('ledger', fakeSource({ lock: async () => null }), config, options)).outcome).toBe('skipped');
+    expect(left().toSorted()).toEqual(['ledger-old1', 'unrelated']); // not without the lock
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  test('a temporary root that is not a private folder of this user is refused', async () => {
+    const root = join(work, 'peblish-backup');
+    mkdirSync(root, { recursive: true, mode: 0o755 });
+    chmodSync(root, 0o755);
+    const result = await runOnce('ledger', fakeSource(), config, options);
+    expect(result.line).toMatch(/FAILED: .*peblish-backup is not a private folder \(mode 700, this user\); refusing to write there$/);
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  test('the final lock check stops on the shutdown signal, and the files go before the process could be forced out', async () => {
+    const stop = new AbortController();
+    const source = fakeSource({
+      lock: async () => ({
+        lost: new AbortController().signal,
+        held: () => {
+          setTimeout(() => stop.abort(), 20);
+          return new Promise<boolean>(() => undefined); // a session that stops answering
+        },
+        release: async () => undefined,
+      }),
+    });
+    const started = Date.now();
+    const result = await runOnce('backup', source, config, { ...options, signal: stop.signal });
+    expect(result.line).toMatch(/: stopped$/);
+    expect(Date.now() - started).toBeLessThan(1_000);
+    expect(left()).toEqual([]);
+  });
+
+  test('a clock that goes back during the run fails it, and nothing is recorded', async () => {
+    const times = [Date.parse('2026-11-13T17:05:00.000Z')];
+    const now = () => new Date(times.length > 1 ? times.shift()! : times[0]! - 10 * 60_000);
+    times.push(times[0]!);
+    const result = await runOnce('ledger', fakeSource(), config, { ...options, now });
+    expect(result.line).toMatch(/FAILED: .*the clock went back during the run; nothing is recorded$/);
+    expect(s3.objects.has(statusKey('ledger'))).toBe(false);
+  });
+
+  test('a store that returns an existing record without an ETag fails the run with a clear line', async () => {
+    expect((await runOnce('ledger', fakeSource(), config, options)).outcome).toBe('ok');
+    s3.faults.noEtagOnGet = true;
+    const result = await runOnce('ledger', fakeSource(), config, options);
+    expect(result.line).toMatch(/FAILED: .*the bucket returned status\/ledger\.json without an ETag, so it cannot be replaced safely$/);
   });
 
   test('a run while another holds the lock is skipped', async () => {
@@ -439,10 +501,13 @@ describe('fenced runs', () => {
     expect(puts).toHaveLength(2);
   });
 
-  test('a store that ignores conditional writes is detected', async () => {
+  test('a store that ignores conditional writes is detected, If-None-Match and If-Match alike', async () => {
     const bucket = backupBucket(config, { timeouts: fast });
     expect(await bucket.honoursConditions()).toBe(true);
     s3.faults.ignoreConditions = true;
+    expect(await bucket.honoursConditions()).toBe(false);
+    delete s3.faults.ignoreConditions;
+    s3.faults.ignoreIfMatch = true;
     expect(await bucket.honoursConditions()).toBe(false);
   });
 });
@@ -472,7 +537,7 @@ describe('the scheduler', () => {
     const s = await scheduler(fakeSource(), config, { log, run: { timeouts: fast } });
     await s.tick();
     await s.idle();
-    expect(lines).toContain('ledger status record does not match its format: treated as none, so the ledger runs now');
+    expect(lines).toContain('status records: ledger does not match its format; counted as none');
     expect(lines.some((l) => l.startsWith('ledger ok: '))).toBe(true);
   });
 
@@ -499,48 +564,36 @@ describe('the scheduler', () => {
     expect(Date.now() - started).toBeLessThan(2_000);
     expect(lines.some((l) => l.endsWith(': stopped'))).toBe(true);
   });
-
-  test('a mail that never finishes holds neither a tick nor a run, and overlapping ticks send it once', async () => {
-    const sent: MailMessage[] = [];
-    const alerter = mailAlerter(
-      'ops@example.test',
-      backupBucket(config, { timeouts: fast }),
-      'backups',
-      log,
-      (m) => {
-        sent.push(m);
-        return new Promise(() => undefined);
-      },
-      { mailDeadlineMs: 300 },
-    );
-    const old = new Date(Date.now() - 30 * 3600_000).toISOString();
-    s3.seed(
-      statusKey('backup'),
-      JSON.stringify({ object: 'backups/20261101T160000.000Z.dump', size: 1, sha256: 'a'.repeat(64), startedAt: old, finishedAt: old }),
-    );
-    const s = await scheduler(fakeSource(), config, { log, alerter, run: { timeouts: fast } });
-    const started = Date.now();
-    await Promise.all([s.tick(), s.tick(), s.tick()]);
-    expect(Date.now() - started).toBeLessThan(200);
-    await s.idle();
-    expect(lines.some((l) => l.startsWith('backup ok: '))).toBe(true);
-    await alerter.idle();
-    expect(sent.map((m) => m.subject)).toEqual(['peblish backups: the nightly database backup has not succeeded in time']);
-    expect(lines).toContain('backup alert mail not sent: the mail timed out');
-  });
 });
 
-describe('alerts', () => {
-  const sent: MailMessage[] = [];
+describe('the overdue rule', () => {
   const lines: string[] = [];
+  const sent: MailMessage[] = [];
+  const HOUR = 3600_000;
+  // One fake clock for the scheduler, its runs and the alerter.
+  let t = Date.parse('2026-11-13T17:00:00.000Z');
+  const now = () => new Date(t);
+  const clock = () => t;
+  const log = (line: string) => lines.push(line);
+  const record = (kind: Kind, finishedAt: number, change: Partial<Status> = {}) => {
+    const at = new Date(finishedAt).toISOString();
+    const object = kind === 'backup' ? 'backups/20261113T160000.000Z.dump' : 'ledger/20261113T160500.000Z.json';
+    s3.seed(statusKey(kind), JSON.stringify({ object, size: 1, sha256: 'a'.repeat(64), startedAt: at, finishedAt: at, ...change }));
+  };
   const alerter = (send: (m: MailMessage) => Promise<void> = async (m) => void sent.push(m)) =>
-    mailAlerter('ops@example.test', backupBucket(config, { timeouts: fast }), 'backups', (l) => lines.push(l), send, {
-      mailDeadlineMs: 300,
-    });
-  const none = { backup: null, ledger: null };
+    mailAlerter('ops@example.test', 'backups', log, send, clock);
+  const start = (source: Source, a = alerter()) => scheduler(source, config, { log, alerter: a, now, run: { timeouts: fast } });
+  const tickAt = async (s: Scheduler, at: number, a?: Alerter) => {
+    t = at;
+    await s.tick();
+    await a?.idle();
+  };
+  /** A source whose lock is always taken by someone else: every run is skipped. */
+  const skipped = fakeSource({ lock: async () => null });
   afterEach(() => {
-    sent.length = 0;
     lines.length = 0;
+    sent.length = 0;
+    t = Date.parse('2026-11-13T17:00:00.000Z');
   });
 
   test('mail is off, said once, without SMTP_URL, MAIL_FROM or BACKUP_ALERT_TO', () => {
@@ -553,104 +606,126 @@ describe('alerts', () => {
     });
   });
 
-  test('one mail when a kind starts failing, none for its retries, one on recovery, and a restart remembers', async () => {
+  test('with no readable record the age counts from this process start; a kind skipped every time mails once it is overdue, then once a day', async () => {
+    const t0 = t;
     const a = alerter();
-    await a.load(none);
-    const since = new Date('2026-11-13T16:00:00Z');
-    a.problem('backup', 'failing', since, 'backups/20261112T160000Z.dump');
-    a.problem('backup', 'failing', since, 'backups/20261112T160000Z.dump');
-    a.problem('backup', 'stale', since, null);
-    await a.idle();
-    expect(sent.map((m) => m.subject)).toEqual(['peblish backups: the nightly database backup is failing']);
-    expect(sent[0]!.text).toContain('since 2026-11-13T16:00:00.000Z');
-    expect(sent[0]!.text).toContain('backup-status');
-
-    // A new process (a restart) reads the state from the bucket: no second failure mail, and the recovery still comes.
-    const b = alerter();
-    await b.load(none);
-    b.problem('backup', 'failing', since, null);
-    b.recovered('backup', 'backups/20261113T161500Z.dump', new Date('2026-11-13T16:15:00Z'));
-    b.recovered('backup', 'backups/20261114T160000Z.dump', new Date('2026-11-14T16:00:00Z'));
-    await b.idle();
-    expect(sent.map((m) => m.subject)).toEqual([
-      'peblish backups: the nightly database backup is failing',
-      'peblish backups: the nightly database backup works again',
+    const s = await start(skipped, a);
+    await tickAt(s, t0 + HOUR, a);
+    expect(sent).toEqual([]);
+    await tickAt(s, t0 + 2 * HOUR + 60_000, a);
+    expect(sent.map((m) => m.subject)).toEqual(['peblish backups: the hourly ledger export is overdue']);
+    expect(sent[0]!.text).toContain('Last good run: none recorded');
+    await tickAt(s, t0 + 3 * HOUR, a);
+    expect(sent).toHaveLength(1);
+    // The dump's 26 hours pass; the ledger's 24-hour mark has passed too. One send at a time, so one per tick.
+    await tickAt(s, t0 + 26 * HOUR + 120_000, a);
+    await tickAt(s, t0 + 26 * HOUR + 180_000, a);
+    expect(sent.map((m) => m.subject).toSorted()).toEqual([
+      'peblish backups: the hourly ledger export is overdue',
+      'peblish backups: the hourly ledger export is overdue',
+      'peblish backups: the nightly database backup is overdue',
     ]);
-    expect(sent[1]!.text).toContain('It had been failing since 2026-11-13T16:00:00.000Z');
+    expect(lines.filter((l) => / (ok|FAILED)/.test(l))).toEqual([]);
   });
 
-  test('on one instance: a failed send is logged and released, the retry mails, a failed save is retried until it lands', async () => {
-    let failing = true;
+  test('a ledger run still going past its threshold mails, while it runs', async () => {
+    record('ledger', t - 60 * 60_000);
+    record('backup', t - HOUR);
+    const hang: Source['produce'] = (_k, path, signal) =>
+      new Promise((_, reject) => {
+        writeFileSync(path, 'partial', { mode: 0o600 });
+        signal.addEventListener('abort', () => reject(new Error('stopped')));
+      });
+    const a = alerter();
+    const s = await start(fakeSource({ produce: hang }), a);
+    await tickAt(s, t + 6 * 60_000, a); // past :05: the ledger run starts and hangs
+    expect(sent).toEqual([]);
+    await tickAt(s, t + 2 * HOUR, a); // its last good is now over two hours old
+    expect(sent.map((m) => m.subject)).toEqual(['peblish backups: the hourly ledger export is overdue']);
+    expect(sent[0]!.text).toMatch(/Last good run: 2026-11-13T16:00:00\.000Z, 3 h \d+ min ago\./);
+    await s.stop();
+  });
+
+  test('a kind superseded every time, by a record dated in the future, is not written over and mails once overdue', async () => {
+    record('ledger', t + 3 * HOUR);
+    const before = s3.objects.get(statusKey('ledger'))!.body.toString();
+    const a = alerter();
+    const s = await start(fakeSource(), a);
+    await tickAt(s, t + 6 * 60_000, a);
+    await s.idle();
+    expect(lines.some((l) => /^ledger superseded: .*the recorded run is dated in the future; repair the record by hand/.test(l))).toBe(
+      true,
+    );
+    expect(s3.objects.get(statusKey('ledger'))!.body.toString()).toBe(before);
+    await tickAt(s, t + 2 * HOUR + 60_000, a);
+    expect(sent.map((m) => m.subject)).toContain('peblish backups: the hourly ledger export is overdue');
+  });
+
+  test('a failed run mails nothing by itself; the overdue mail later carries its filtered failure word', async () => {
+    record('ledger', t - 30 * 60_000);
+    record('backup', t - HOUR);
+    const failing = fakeSource({ lock: async () => Promise.reject(new Error('connect postgres://u:hunter2@db refused')) });
+    const a = alerter();
+    const s = await start(failing, a);
+    await tickAt(s, t + 6 * 60_000, a);
+    await s.idle();
+    expect(lines.some((l) => l.startsWith('ledger FAILED: '))).toBe(true);
+    expect(sent).toEqual([]);
+    await tickAt(s, t + 2 * HOUR, a);
+    expect(sent).toHaveLength(1);
+    expect(sent[0]!.text).toContain('Last failure seen by this service: Error; its message is withheld (it can quote values).');
+    expect(sent.map((m) => `${m.subject}\n${m.text}`).join('\n')).not.toMatch(/hunter2|postgres:\/\//);
+  });
+
+  test('a failed send is retried no sooner than 15 minutes after it ended, and only a sent mail starts the 24 hours', async () => {
+    let fail = true;
     const a = alerter(async (m) => {
-      if (failing) throw new Error('smtp://user:hunter2@mail refused');
+      if (fail) throw new Error('smtp://user:hunter2@mail refused');
       sent.push(m);
     });
-    await a.load(none);
-    a.recovered('ledger', 'ledger/20261113T160500.000Z.json', new Date());
-    a.problem('ledger', 'failing', new Date('2026-11-13T17:05:00Z'), null);
-    await a.idle();
+    const t0 = t;
+    const s = await start(skipped, a);
+    await tickAt(s, t0 + 2 * HOUR + 60_000, a);
+    expect(lines).toContain('ledger overdue mail not sent (tried again in 15 min): Error; its message is withheld (it can quote values)');
+    fail = false;
+    await tickAt(s, t0 + 2 * HOUR + 10 * 60_000, a);
     expect(sent).toEqual([]);
-    expect(lines).toEqual(['ledger alert mail not sent: Error; its message is withheld (it can quote values)']);
-
-    failing = false;
-    a.problem('ledger', 'failing', new Date('2026-11-13T17:05:00Z'), null);
-    await a.idle();
-    expect(sent.map((m) => m.subject)).toEqual(['peblish backups: the hourly ledger export is failing']);
-
-    // The recovery mail goes, its state does not save; the next ticks retry until it does.
-    s3.faults.denyPut = true;
-    a.recovered('ledger', 'ledger/20261113T172000.000Z.json', new Date('2026-11-13T17:20:00Z'));
-    await a.idle();
-    expect(sent).toHaveLength(2);
-    expect(lines.at(-1)).toMatch(
-      /^ledger alert state not saved \(tried again on the next tick\): put status\/ledger\.alert\.json: 403 AccessDenied$/,
-    );
-    a.flush();
-    await a.idle();
-    expect(JSON.parse(s3.objects.get('status/ledger.alert.json')!.body.toString()).state).toBe('failing');
-    delete s3.faults.denyPut;
-    a.flush();
-    await a.idle();
-    expect(JSON.parse(s3.objects.get('status/ledger.alert.json')!.body.toString()).state).toBe('ok');
+    await tickAt(s, t0 + 2 * HOUR + 17 * 60_000, a);
+    expect(sent).toHaveLength(1);
+    await tickAt(s, t0 + 5 * HOUR, a);
+    expect(sent).toHaveLength(1);
+    expect(lines.join('\n')).not.toContain('hunter2');
   });
 
-  test('a recovery whose saved state was lost before a restart is mailed again, so the next failure is not silenced', async () => {
-    s3.seed(
-      'status/ledger.alert.json',
-      JSON.stringify({ state: 'failing', since: '2026-11-13T17:05:00.000Z', mailedAt: '2026-11-13T17:05:01.000Z' }),
-    );
-    const b = alerter();
-    await b.load({ backup: null, ledger: { object: 'ledger/20261113T172000.000Z.json', finishedAt: '2026-11-13T17:20:00.500Z' } });
-    await b.idle();
-    expect(sent.map((m) => m.subject)).toEqual(['peblish backups: the hourly ledger export works again']);
-    b.problem('ledger', 'failing', new Date('2026-11-13T18:05:00Z'), null);
-    await b.idle();
-    expect(sent.map((m) => m.subject).at(-1)).toBe('peblish backups: the hourly ledger export is failing');
+  test('never two sends at once, ticks never wait for one, and shutdown is not held by it', async () => {
+    const calls: MailMessage[] = [];
+    const a = alerter((m) => {
+      calls.push(m);
+      return new Promise(() => undefined); // a mail server that never answers
+    });
+    const t0 = t;
+    const s = await start(skipped, a);
+    const started = Date.now();
+    for (const minutes of [27 * 60, 27 * 60 + 1, 27 * 60 + 2]) await tickAt(s, t0 + minutes * 60_000);
+    expect(Date.now() - started).toBeLessThan(500);
+    expect(calls).toHaveLength(1); // both kinds are overdue; one send in flight
+    const stopping = Date.now();
+    await s.stop();
+    expect(Date.now() - stopping).toBeLessThan(500);
   });
 
-  test('an unreadable state is one mail of its own and silences nothing; a missing one is no mail', async () => {
-    await alerter().load(none);
-    expect(sent).toEqual([]);
-    s3.seed('status/backup.alert.json', '{ not json');
-    s3.seed('status/ledger.alert.json', JSON.stringify({ state: 'failing', since: 'not-a-date' }));
-    const a = alerter();
-    await a.load(none);
-    a.problem('backup', 'failing', new Date(), null);
-    await a.idle();
-    expect(sent.map((m) => m.subject)).toEqual([
-      'peblish backups: the alert state cannot be read',
-      'peblish backups: the nightly database backup is failing',
+  test('records that cannot be read count as none and are logged in one line per tick', async () => {
+    s3.seed(statusKey('backup'), '{ not json');
+    s3.seed(statusKey('ledger'), '{ not json');
+    const s = await start(skipped);
+    lines.length = 0;
+    await tickAt(s, t + 60_000);
+    await tickAt(s, t + 120_000);
+    const about = lines.filter((l) => l.includes('status record'));
+    expect(about).toEqual([
+      'status records: backup not JSON, ledger not JSON; counted as none',
+      'status records: backup not JSON, ledger not JSON; counted as none',
     ]);
-    expect(sent[0]!.text).toContain('nightly database backup and hourly ledger export');
-  });
-
-  test('a bucket that refuses the state read is unreadable, not missing', async () => {
-    s3.faults.deny = true;
-    const a = alerter();
-    await a.load(none);
-    delete s3.faults.deny;
-    await a.idle();
-    expect(sent.map((m) => m.subject)).toEqual(['peblish backups: the alert state cannot be read']);
   });
 });
 

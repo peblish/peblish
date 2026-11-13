@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process';
 import { createHash, randomBytes } from 'node:crypto';
-import { chmodSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { db } from '@peblish/core/db/read';
@@ -54,6 +54,11 @@ describe.skipIf(!process.env.S3_ENDPOINT || tools < Number(server?.major))('runs
   const dir = mkdtempSync(join(tmpdir(), 'cutover-nightly-'));
   const work = join(dir, 'tmp');
   const savedTmp = process.env.TMPDIR;
+  /** What runs left in the tool's temporary root under `tmp` (none before the first run). */
+  const left = (tmp = work) => {
+    const root = join(tmp, 'peblish-backup');
+    return existsSync(root) ? readdirSync(root) : [];
+  };
   const fakeDump = (seconds: number) => {
     const bin = mkdtempSync(join(dir, 'fake-pg-dump-'));
     const path = join(bin, 'pg_dump');
@@ -167,7 +172,7 @@ describe.skipIf(!process.env.S3_ENDPOINT || tools < Number(server?.major))('runs
         expect(line).not.toContain(S3_SECRET_ACCESS_KEY);
         expect(line).not.toContain('127.0.0.1');
       }
-      expect(readdirSync(work)).toEqual([]);
+      expect(left()).toEqual([]);
       const recorded = (await readStatus(bucket, 'backup')).status!;
       expect((await bucket.head(recorded.object))?.size).toBe(recorded.size);
       expect((await readStatus(bucket, 'ledger')).status?.rows).toBe(1);
@@ -191,12 +196,13 @@ describe.skipIf(!process.env.S3_ENDPOINT || tools < Number(server?.major))('runs
     const objects = await bucket.list('backups/');
     const result = await runOnce('backup', source, { ...config, BACKUP_S3_SECRET_ACCESS_KEY: 'wrong-secret-value' });
     expect(result.outcome).toBe('failed');
-    expect(result.line).toMatch(/^backup FAILED: backups\/\S+\.dump after \d+\.\d s: head backups\/\S+: 403$/);
+    // The run reads its record before dumping, so a wrong key fails there, before any dump.
+    expect(result.line).toMatch(/^backup FAILED: backups\/\S+\.dump after \d+\.\d s: get status\/backup\.json: 403 SignatureDoesNotMatch$/);
     expect(result.line).not.toContain('wrong-secret-value');
     expect(result.line).not.toContain('127.0.0.1');
     expect(await bucket.list('backups/')).toEqual(objects);
     expect(await readStatus(bucket, 'backup')).toEqual(before);
-    expect(readdirSync(work)).toEqual([]);
+    expect(left()).toEqual([]);
   });
 
   test('a run while another of its kind holds the lock is skipped and touches nothing', { timeout: 30_000 }, async () => {
@@ -229,7 +235,7 @@ describe.skipIf(!process.env.S3_ENDPOINT || tools < Number(server?.major))('runs
       const result = await run;
       expect(result.line).toMatch(/^backup FAILED: .*: lost its database lock \(the session ended\)$/);
       expect(await readStatus(bucket, 'backup')).toEqual(before);
-      expect(readdirSync(work)).toEqual([]);
+      expect(left()).toEqual([]);
     } finally {
       process.env.PG_DUMP = saved;
       if (saved === undefined) delete process.env.PG_DUMP;
@@ -248,7 +254,7 @@ describe.skipIf(!process.env.S3_ENDPOINT || tools < Number(server?.major))('runs
       const result = await runOnce('ledger', source, config, { produceDeadlineMs: 2_000 });
       expect(result.line).toMatch(/^ledger FAILED: .*: timed out$/);
       expect(Date.now() - started).toBeLessThan(10_000);
-      expect(readdirSync(work)).toEqual([]);
+      expect(left()).toEqual([]);
     } finally {
       await reserved`rollback`;
       reserved.release();
@@ -266,12 +272,12 @@ describe.skipIf(!process.env.S3_ENDPOINT || tools < Number(server?.major))('runs
       let out = '';
       child.stderr.on('data', (d: Buffer) => (out += d.toString()));
       const closed = new Promise<number | null>((resolve) => child.on('close', resolve));
-      for (let i = 0; i < 100 && readdirSync(own).length === 0; i++) await new Promise((resolve) => setTimeout(resolve, 100));
-      expect(readdirSync(own), out).toHaveLength(1); // the run's folder, with the dump being written
+      for (let i = 0; i < 100 && left(own).length === 0; i++) await new Promise((resolve) => setTimeout(resolve, 100));
+      expect(left(own), out).toHaveLength(1); // the run's folder, with the dump being written
       child.kill('SIGTERM');
       expect(await closed).toBe(1);
       expect(out).toMatch(/^backup FAILED: .*: stopped$/m);
-      expect(readdirSync(own)).toEqual([]);
+      expect(left(own)).toEqual([]);
     } finally {
       dump.remove();
       rmSync(own, { recursive: true, force: true });

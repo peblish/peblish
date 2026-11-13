@@ -376,15 +376,22 @@ export function backupBucket(config: BucketConfig, options: { partBytes?: number
     },
 
     /**
-     * Whether the store honours If-None-Match: * on a PUT, tested on status/conditional-probe.json:
-     * the second of two such writes must be refused. R2 and MinIO do; a store that does not
-     * weakens the status records' fencing (deploy/backups.md).
+     * Whether the store honours conditional PUTs, tested on status/conditional-probe.json: a second
+     * If-None-Match: * write must be refused, an If-Match with a wrong ETag refused, and one with
+     * the current ETag taken. R2 and MinIO do; a store that does not weakens the status records'
+     * fencing (deploy/backups.md).
      */
     async honoursConditions(signal?: AbortSignal): Promise<boolean> {
       const key = 'status/conditional-probe.json';
-      const text = `${JSON.stringify({ probe: 'If-None-Match', at: new Date().toISOString() })}\n`;
+      const text = `${JSON.stringify({ probe: 'conditional writes', at: new Date().toISOString() })}\n`;
       await this.putSmall(key, text, 'application/json', { signal, replacing: null });
-      return !(await this.putSmall(key, text, 'application/json', { signal, replacing: null }));
+      // If-None-Match: * over an existing object must be refused...
+      if (await this.putSmall(key, text, 'application/json', { signal, replacing: null })) return false;
+      // ...and If-Match must take the current ETag and refuse any other.
+      const etag = (await this.getSmall(key, signal))?.etag;
+      if (!etag) return false;
+      if (await this.putSmall(key, text, 'application/json', { signal, replacing: '0'.repeat(32) })) return false;
+      return this.putSmall(key, text, 'application/json', { signal, replacing: etag });
     },
 
     /** Every object under `prefix`, in name order (the names are UTC times, so oldest first). */

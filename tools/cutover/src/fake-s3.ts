@@ -35,6 +35,10 @@ export type Faults = {
   completeError?: string;
   /** The store ignores If-Match and If-None-Match, as one without conditional writes would. */
   ignoreConditions?: boolean;
+  /** The store ignores If-Match only (honours If-None-Match). */
+  ignoreIfMatch?: boolean;
+  /** GET and HEAD answer without an ETag header. */
+  noEtagOnGet?: boolean;
 };
 
 export type FakeS3 = {
@@ -88,6 +92,7 @@ export async function fakeS3(bucket: string): Promise<FakeS3> {
         const match = req.headers['if-match'];
         const fail = (status: number, code: string) => (send(status, xmlError(code)), true);
         if (none === '*' && current) return fail(412, 'PreconditionFailed');
+        if (faults.ignoreIfMatch) return false;
         if (match !== undefined && !current) return fail(404, 'NoSuchKey');
         if (match !== undefined && current && match.replaceAll('"', '') !== current.etag) return fail(412, 'PreconditionFailed');
         return false;
@@ -164,7 +169,7 @@ export async function fakeS3(bucket: string): Promise<FakeS3> {
         const headers = {
           'content-length': String(found.body.length),
           'content-type': found.contentType,
-          etag: `"${faults.etag ?? found.etag}"`,
+          ...(!faults.noEtagOnGet && { etag: `"${faults.etag ?? found.etag}"` }),
           ...found.meta,
         };
         if (req.method === 'HEAD') return send(200, '', headers);

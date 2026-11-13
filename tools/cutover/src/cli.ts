@@ -4,7 +4,7 @@ import { crossCheckKeyFiles, exportBundle, inventory } from './archive.ts';
 import { readBundle, rehostBundle, writeBundle } from './bundle.ts';
 import { backup, exportLedger, reapplyLedger, readLedgerExport, restore, runDrill } from './drill.ts';
 import { alertConfig, mailAlerter } from './alerts.ts';
-import { backupBucket, bucketConfigFromEnv } from './bucket.ts';
+import { bucketConfigFromEnv } from './bucket.ts';
 import { CutoverError, describe } from './errors.ts';
 import { importBundleFile } from './import.ts';
 import { fetchForRestore, kinds, postgresSource, runOnce, schedule, statusReport, type Kind } from './nightly.ts';
@@ -212,7 +212,7 @@ async function main(): Promise<number> {
       const mail = alertConfig();
       if ('off' in mail) log(mail.off);
       else log(`alert mail on, to ${mail.to}`);
-      const alerter = 'to' in mail ? mailAlerter(mail.to, backupBucket(config), config.BACKUP_S3_BUCKET, log) : null;
+      const alerter = 'to' in mail ? mailAlerter(mail.to, config.BACKUP_S3_BUCKET, log) : null;
       await schedule(postgresSource(url), config, { log, alerter });
       // Shutdown is bounded: whatever a stuck run or mail still holds open (a database session, a
       // socket), the process exits a second after the schedule has let go.
