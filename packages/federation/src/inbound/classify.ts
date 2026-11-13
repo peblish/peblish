@@ -38,6 +38,8 @@ export interface ClassifyEnv {
   isLocalCommunity(apId: string): Promise<boolean>;
   /** The ap_id of the local follower whose Follow has this id, or null. */
   followerOf(followApId: string): Promise<string | null>;
+  /** Whether a post or comment with this ap_id is stored here. */
+  holds(apId: string): Promise<boolean>;
 }
 
 /**
@@ -51,6 +53,18 @@ const isObject = (value: unknown): value is JsonObject => typeof value === 'obje
 const idOf = (value: unknown): string | null =>
   typeof value === 'string' ? value : isObject(value) && typeof value.id === 'string' ? value.id : null;
 
+/**
+ * Whether `activity` is an Update that takes Public away from a post or comment we hold (the
+ * object or the Update itself no longer addresses it). It goes on to its handler, which removes
+ * our copy (handlers/_content.ts); refusing it here would leave the public copy as it was. An
+ * Update of content we do not hold is refused here as before.
+ */
+async function withdrawsHeld(activity: JsonObject, env: ClassifyEnv): Promise<boolean> {
+  if (activity.type !== 'Update' || notPublic(activity) === null) return false;
+  const id = idOf(activity.object);
+  return id !== null && (await env.holds(id));
+}
+
 /** The object of a Create or Update, rewritten or refused when it is not a plain Page or comment. */
 async function contentObject(json: JsonObject, env: ClassifyEnv): Promise<Item> {
   const object = json.object;
@@ -62,7 +76,7 @@ async function contentObject(json: JsonObject, env: ClassifyEnv): Promise<Item> 
   if (!contentTypes.has(type)) return { skipped: skip('object.unsupported', type) };
   // Before a Note is made a post: what is not public is not ours to store (visibility.ts).
   const hidden = notPublic(json);
-  if (hidden) return { skipped: hidden };
+  if (hidden && !(await withdrawsHeld(json, env))) return { skipped: hidden };
   if (type !== 'Note' || (object.inReplyTo !== undefined && object.inReplyTo !== null)) return { json };
   // A microblog post: only a community here makes it a post.
   for (const address of addressesOf(object)) {
@@ -108,7 +122,7 @@ async function classifyOne(json: unknown, env: ClassifyEnv, depth: number): Prom
         if (!('json' in inner)) return inner;
         // The Announce is one more layer that carries the content, and must be public too.
         const hidden = notPublic(inner.json, json);
-        if (hidden) return { skipped: hidden };
+        if (hidden && !(await withdrawsHeld(inner.json, env))) return { skipped: hidden };
         return { json: { ...json, object: inner.json }, ...(inner.rewritten && { rewritten: true as const }) };
       }
       // A bare Page or Note (the copy Lemmy sends Mastodon-like followers) is stored like its Create.

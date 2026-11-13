@@ -16,7 +16,7 @@ import { MappingError, type JsonObject } from '../mapping/json.ts';
 import type { Activity } from '../mapping/records.ts';
 import { relayToFollowers } from '../relay/announce.ts';
 import { inboundHandlers } from '../registry/inbound-handlers.gen.ts';
-import { checkActivityOrigin, checkNotEcho } from './authorize.ts';
+import { checkActivityOrigin, checkNotEcho, storedContent } from './authorize.ts';
 import { classify, type ClassifyEnv, type Item } from './classify.ts';
 import type { AnnounceInfo, InboundContext, InboundHandler, Prepared } from './handler.ts';
 import { holdClaim, renewLease, requeueWaiting, settle, settleAlone, yieldLater, type InboxRow, type Settled } from './queue.ts';
@@ -175,6 +175,7 @@ async function makeEnv(options: PipelineOptions, row: InboxRow): Promise<Env> {
             .from(actors)
             .where(and(eq(actors.apId, apId), eq(actors.local, true), eq(actors.kind, 'Group'), isNull(actors.deletedAt)))
         ).length > 0,
+      holds: async (apId) => (await storedContent(db(), apId)) !== null,
       followerOf: async (followApId) => {
         const [row] = await db()
           .select({ apId: actors.apId })

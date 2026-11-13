@@ -1,6 +1,9 @@
 import { db, type Queryable } from '@peblish/core/db/read';
+import { deleteComment } from '@peblish/core/comments/delete';
 import { storeRemoteComment, updateRemoteComment } from '@peblish/core/comments/remote';
+import { deletePost } from '@peblish/core/posts/delete';
 import { storeRemotePost, updateRemotePost } from '@peblish/core/posts/remote';
+import { recordDeletion } from '@peblish/core/remote/ledger';
 import { readSetting } from '@peblish/core/settings/read';
 import type { ResolvedActor } from '../../actors/resolve.ts';
 import type { CommentRecord, ContentObject, PostRecord } from '../../mapping/records.ts';
@@ -14,8 +17,10 @@ import {
   storedContent,
   type Stored,
 } from '../authorize.ts';
-import { prepared, type InboundContext, type Prepared } from '../handler.ts';
-import { skip } from '../reasons.ts';
+import type { Tx } from '@peblish/core/tx/tx';
+import { prepared, type Applied, type InboundContext, type Prepared } from '../handler.ts';
+import { skip, type Skipped } from '../reasons.ts';
+import { notPublic } from '../visibility.ts';
 
 // Create and Update of a Page (a post) or a Note (a comment), which differ only in the verb:
 // an Update for an object we never saw is stored like a Create, as Lemmy does.
@@ -25,6 +30,12 @@ import { skip } from '../reasons.ts';
 // replies to what the stored comment replies to. Authorization and the relay both read the
 // stored community, never the claimed one, so an author cannot have a community announce a post
 // that lives in another.
+//
+// An Update to content we hold that we would refuse as a new Create (a post made NSFW while
+// remote NSFW is not accepted, made NSFL, or a post or comment no longer addressed to Public)
+// removes our copy, exactly as the author's own Delete does (handlers/delete.ts): the same
+// mutation and event, so pages, the media proxy and the edge purge all follow, and the same
+// deletion ledger row. It is not relayed. Content we do not hold is refused as before.
 
 const isObject = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
 
@@ -40,8 +51,23 @@ const audienceOf = (ctx: InboundContext): string | null => {
  * while the site setting `remote_nsfw.accepted` is off, its default. Read in the transaction
  * that stores the post.
  */
-async function checkSensitiveAccepted(q: Queryable, post: Pick<PostRecord, 'apId' | 'sensitive' | 'nsfl'>): Promise<void> {
-  if (post.nsfl || (post.sensitive && !(await readSetting('remote_nsfw.accepted', q)))) throw skip('content.nsfw_rejected', post.apId);
+async function sensitiveRefusal(q: Queryable, post: Pick<PostRecord, 'apId' | 'sensitive' | 'nsfl'>): Promise<Skipped | null> {
+  return post.nsfl || (post.sensitive && !(await readSetting('remote_nsfw.accepted', q))) ? skip('content.nsfw_rejected', post.apId) : null;
+}
+
+/** Why an Update would be refused as a new Create for its addressing (classify.ts let it through because we hold its object). */
+const withdrawal = (ctx: InboundContext, verb: 'Create' | 'Update'): Skipped | null => (verb === 'Update' ? notPublic(ctx.raw) : null);
+
+/**
+ * Removes the copy we hold of what an Update `refused`, as its author's Delete would; a copy
+ * already deleted keeps the refusal as the outcome.
+ */
+async function withdrawHeld(ctx: InboundContext, t: Tx, held: Stored, refused: Skipped): Promise<Applied> {
+  if (held.deleted) throw refused;
+  if (held.kind === 'comment') await deleteComment.within(t, await grantFor(ctx, t, 'comment.delete', { commentId: held.id }));
+  else await deletePost.within(t, await grantFor(ctx, t, 'post.delete', { postId: held.id }));
+  await recordDeletion(t, { kind: held.kind, id: held.id, cause: 'Delete', actorId: ctx.sender.id });
+  return { communityId: held.communityId, objectApId: held.apId };
 }
 
 /** The post a Page updates, when we hold it: a post, and the Page must name its community. */
@@ -53,9 +79,11 @@ async function heldPostCommunity(q: Queryable, held: Stored, post: PostRecord): 
 }
 
 async function preparePage(ctx: InboundContext, post: PostRecord, verb: 'Create' | 'Update'): Promise<Prepared> {
+  const hidden = withdrawal(ctx, verb);
+  const held = verb === 'Update' ? await storedContent(db(), post.apId) : null;
+  if (hidden && !held) throw hidden;
   checkAuthorIsPerson(ctx);
   checkObject(ctx.activity.actorApId, post);
-  const held = verb === 'Update' ? await storedContent(db(), post.apId) : null;
   const community = held ? await heldPostCommunity(db(), held, post) : await claimedCommunity(ctx, post.communityApId);
   if (community.kind !== 'Group') throw skip('community.mismatch', post.communityApId);
   await checkContentCommunity(ctx, community, null);
@@ -64,13 +92,15 @@ async function preparePage(ctx: InboundContext, post: PostRecord, verb: 'Create'
     const existing = verb === 'Update' ? await storedContent(t.db, post.apId) : null;
     if (existing) {
       if ((await heldPostCommunity(t.db, existing, post)).id !== community.id) throw skip('community.mismatch', post.communityApId);
+      const refused = hidden ?? (await sensitiveRefusal(t.db, post));
+      if (refused) return withdrawHeld(ctx, t, existing, refused);
       const grant = await grantFor(ctx, t, 'post.update', { postId: existing.id });
-      await checkSensitiveAccepted(t.db, post);
       await updateRemotePost.within(t, grant, post);
       return { communityId: existing.communityId, objectApId: post.apId, relay: true };
     }
     const grant = await grantFor(ctx, t, 'post.create', { communityId: community.id });
-    await checkSensitiveAccepted(t.db, post);
+    const refused = hidden ?? (await sensitiveRefusal(t.db, post));
+    if (refused) throw refused;
     const stored = await storeRemotePost.within(t, grant, post);
     if (!stored.created) throw skip('object.exists', post.apId);
     return {
@@ -92,9 +122,11 @@ function checkSameReply(held: Stored, parent: Stored | null, inReplyToApId: stri
 }
 
 async function prepareNote(ctx: InboundContext, comment: CommentRecord, verb: 'Create' | 'Update'): Promise<Prepared> {
+  const hidden = withdrawal(ctx, verb);
+  const held = verb === 'Update' ? await storedContent(db(), comment.apId) : null;
+  if (hidden && !held) throw hidden;
   checkAuthorIsPerson(ctx);
   checkObject(ctx.activity.actorApId, comment);
-  const held = verb === 'Update' ? await storedContent(db(), comment.apId) : null;
   const parent = await storedContent(db(), comment.inReplyToApId);
   if (held) checkSameReply(held, parent, comment.inReplyToApId);
   if (!parent) throw skip('target.missing', comment.inReplyToApId);
@@ -104,11 +136,13 @@ async function prepareNote(ctx: InboundContext, comment: CommentRecord, verb: 'C
     const existing = await storedContent(t.db, comment.apId);
     if (existing && verb === 'Update') {
       checkSameReply(existing, await storedContent(t.db, comment.inReplyToApId), comment.inReplyToApId);
+      if (hidden) return withdrawHeld(ctx, t, existing, hidden);
       const grant = await grantFor(ctx, t, 'comment.update', { commentId: existing.id });
       await updateRemoteComment.within(t, grant, comment);
       return { communityId: existing.communityId, objectApId: comment.apId, relay: true };
     }
     if (existing) throw skip('object.exists', comment.apId);
+    if (hidden) throw hidden;
     const grant = await grantFor(ctx, t, 'comment.create', {
       postId: parent.postId,
       parentId: parent.kind === 'comment' ? parent.id : null,

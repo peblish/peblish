@@ -2,7 +2,10 @@ import { eq } from 'drizzle-orm';
 import { beforeEach, describe, expect, test } from 'vitest';
 import { db } from '@peblish/core/db/read';
 import { comments, posts } from '@peblish/core/db/tables/content';
+import { outbox } from '@peblish/core/db/tables/outbox';
+import { deletionLedger } from '@peblish/core/db/tables/site';
 import { deliveries } from '@peblish/core/delivery/tables';
+import { seedComment } from '@peblish/core/testing/seed-az';
 import { truncateAll } from '@peblish/core/testing/db';
 import { stubFetch } from '@peblish/core/testing/seed-fed-a';
 import { deliverRow, seedInboundWorld } from '@peblish/core/testing/seed-fed-b';
@@ -30,6 +33,8 @@ const deliver = (json: Record<string, unknown>, routes: Parameters<typeof stubFe
   deliverRow(json, (row) => processRow(row, { fetch: stubFetch(routes).fetch }));
 const postAt = async (apId: string) => (await db().select().from(posts).where(eq(posts.apId, apId)))[0];
 const nothingRelayed = async () => expect(await db().select().from(deliveries)).toEqual([]);
+const outboxTypes = async () => (await db().select({ type: outbox.type }).from(outbox)).map((row) => row.type);
+const ledgerReasons = async () => (await db().select({ reason: deletionLedger.reason }).from(deletionLedger)).map((row) => row.reason);
 
 /** A Mastodon status by the spike's follower on mastodon.test, as its Create carries it, with the addressing given. */
 function status(n: number, addressing: { to: string[]; cc: string[] }, extra: Record<string, unknown> = {}) {
@@ -91,7 +96,7 @@ describe('a post or comment that is not addressed to Public', () => {
     expect(await postAt(id)).toBeUndefined();
   });
 
-  test('an Update that makes a post followers-only is refused, and the post keeps what it said', async () => {
+  test('an Update that makes a post we hold followers-only removes our copy, as the author deleting it would (item 6)', async () => {
     const before = await postAt(t1);
     const object = {
       id: t1,
@@ -110,8 +115,45 @@ describe('a post or comment that is not addressed to Public', () => {
       to: [spike],
       audience: spike,
     };
-    expect((await deliver(update)).stored).toEqual({ state: 'skipped', error: `content.not_public ${t1}` });
-    expect((await postAt(t1))?.title).toBe(before?.title);
+    expect((await deliver(update)).stored).toEqual({ state: 'applied', error: null });
+    const after = await postAt(t1);
+    // Not edited into a private post: deleted, the way the author's own Delete leaves it.
+    expect(after?.title).toBe(before?.title);
+    expect(after?.deletedAt).not.toBeNull();
+    expect(await outboxTypes()).toContain('post.deleted');
+    expect(await ledgerReasons()).toEqual(['remote.object_deleted']);
+    await nothingRelayed();
+  });
+
+  test('an Update that makes a comment we hold followers-only removes our copy (item 6)', async () => {
+    const [comment] = await db().select().from(comments).where(eq(comments.postId, world.t1.id));
+    const held = comment ?? (await seedComment(world.instances.lemmy, world.t1, world.peers.lemmyuser));
+    const update = {
+      id: activityId('https://lemmy.test', 'update'),
+      type: 'Update',
+      actor: lemmyuser,
+      object: { id: held.apId, type: 'Note', attributedTo: lemmyuser, inReplyTo: t1, content: '<p>x</p>', audience: spike, to: [spike] },
+      to: [spike],
+      audience: spike,
+    };
+    expect((await deliver(update)).stored).toEqual({ state: 'applied', error: null });
+    const [after] = await db().select().from(comments).where(eq(comments.id, held.id));
+    expect(after?.deletedAt).not.toBeNull();
+    await nothingRelayed();
+  });
+
+  test('an Update that withdraws Public from content we do not hold is refused as before, with nothing fetched', async () => {
+    const id = 'https://lemmy.test/post/77';
+    const update = {
+      id: activityId('https://lemmy.test', 'update'),
+      type: 'Update',
+      actor: lemmyuser,
+      object: { id, type: 'Page', attributedTo: lemmyuser, name: 'x', content: '<p>x</p>', audience: spike, to: [spike] },
+      to: [spike],
+      audience: spike,
+    };
+    expect((await deliver(update)).stored).toEqual({ state: 'skipped', error: `content.not_public ${id}` });
+    expect(await postAt(id)).toBeUndefined();
   });
 
   test('a bare Page a followed community announces is refused when the Page is not addressed to Public', async () => {

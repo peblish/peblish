@@ -96,13 +96,20 @@ describe('an Update of a post we hold', () => {
     expect(await title()).toBe(originalTitle());
   });
 
-  test('that makes the post sensitive is refused like a Create would be', async () => {
-    for (const flags of [{ sensitive: true }, { nsfl: true }]) {
+  test.each([{ sensitive: true }, { nsfl: true }])(
+    'that makes the post %o, which a Create would be refused for, removes our copy as its author deleting it would (item 6)',
+    async (flags) => {
       const edited = await deliver(updatePage(spike, flags));
-      expect(edited.stored?.error).toMatch(/^content\.nsfw_rejected/);
-    }
-    expect(await title()).toBe(originalTitle());
-  });
+      expect(edited.stored).toEqual({ state: 'applied', error: null });
+      const [held] = await db().select().from(posts).where(eq(posts.apId, t1));
+      // Not stored as the sensitive edit: the copy we held is deleted, and nothing is relayed.
+      expect([held?.title, held?.sensitive, held?.deletedAt !== null]).toEqual([originalTitle(), false, true]);
+      expect(await db().select().from(deliveries)).toEqual([]);
+      // A second such Update finds the copy gone and is refused as before.
+      const again = await deliver({ ...updatePage(spike, flags), id: activityId(lemmy, 'update-again') });
+      expect(again.stored?.error).toMatch(/^content\.nsfw_rejected/);
+    },
+  );
 });
 
 describe('an Update of a comment we hold', () => {
