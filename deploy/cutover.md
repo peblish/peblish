@@ -626,8 +626,9 @@ against the final dump before exporting. Beyond the responder and the stopped se
 8. Switch the Cloudflare origin of feddit.com to the new origin in one step (the proxied DNS
    record). No cache rules on `/u`, `/c`, `/post` or any page; the one cache rule is
    `/media/proxy/*` ([edge-cache.md](edge-cache.md)), added only once the two edge variables are
-   set on web and worker and the real-edge checklist in its section 3 has passed (until then, no
-   cache rule at all). The WAF must not block `POST /inbox`. From here the box's responder
+   set on web and worker, the real-edge checklist in its section 3 has passed, and feddit.com's
+   cache settings listed in its section 2 have been read and recorded (until then, no cache rule
+   at all). The WAF must not block `POST /inbox`. From here the box's responder
    (step 6) gets no traffic.
 
 ## Step 8: verify peers (production)
