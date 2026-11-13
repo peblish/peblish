@@ -68,14 +68,18 @@ export async function collapseEchoes(db: WriteTx): Promise<void> {
 }
 
 /**
- * After a backup is restored, takedowns made since the backup are applied again without their
- * events (tools/cutover drill.ts), and the edge may hold any image they hid: owe a wide purge
- * due at the start of time, so it is late at once and web answers private until it is sent
- * (ready.ts).
+ * Owes a wide purge due at the start of time, so it is late at once and web answers private
+ * until it is sent (ready.ts): for a takedown whose own purge is unknown and may never be owed.
  */
-export async function owePurgeAfterRestore(db: WriteTx): Promise<void> {
+export async function owePurgeOfEverything(db: WriteTx): Promise<void> {
   await upsertWide(db, 1, sql`'epoch'::timestamptz`);
 }
+
+/**
+ * After a backup is restored, takedowns made since the backup are applied again without their
+ * events (tools/cutover drill.ts), and the edge may hold any image they hid.
+ */
+export const owePurgeAfterRestore = owePurgeOfEverything;
 
 /** The rows owed and unclaimed, oldest due first (tests and operators). */
 export const owedRows = (db: Pick<WriteTx, 'select'>) =>

@@ -3,11 +3,13 @@ import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { authorize } from '../authz/authorize.ts';
 import { systemPrincipal } from '../authz/system.ts';
 import { db } from '../db/read.ts';
-import { outbox } from '../db/tables/outbox.ts';
+import { outbox, outboxCursors } from '../db/tables/outbox.ts';
 import { writer } from '../db/write.ts';
+import { outboxSkipped } from '../outbox/tables.ts';
 import { ensureCursors, processBatch } from '../outbox/worker.ts';
 import { truncateAll } from '../testing/db.ts';
 import { seedLocalInstance } from '../testing/seed-a.ts';
+import { Refused } from '../tx/refused.ts';
 import { tx } from '../tx/tx.ts';
 import type { HttpFetch } from './cloudflare.ts';
 import { consumer } from './consumer.ts';
@@ -275,6 +277,55 @@ test('a restore owes a purge of everything that keeps web private until it is se
   expect(await flush(fetch)).toBe('sent');
   expect(sentTags(fetch)).toEqual([['pbm']]);
   expect(await purgePathReady(db(), zone)).toBe(true);
+});
+
+/** A takedown event that, consumed, would owe nothing: whatever the skip owes is the skip's own. */
+const emitHarmless = () =>
+  tx((t) =>
+    t.emit({
+      type: 'settings.updated',
+      v: 1,
+      keys: ['site.name'],
+      actorId: '0195f0a0-0000-7000-8000-000000000001',
+      modlogId: '0195f0a0-0000-7000-8000-000000000002',
+    }),
+  );
+
+/** After a skip: a purge of everything is owed, web is private until it is sent, and ready again after. */
+async function expectWidePurgeUntilSent() {
+  expect(await owed()).toEqual([['pbm', 1]]);
+  expect(await purgePathReady(db(), zone)).toBe(false);
+  const fetch = vi.fn<HttpFetch>(async () => ok());
+  await rewind(SEND_GAP_MS);
+  expect(await flush(fetch)).toBe('sent');
+  expect(sentTags(fetch)).toEqual([['pbm']]);
+  expect(await purgePathReady(db(), zone)).toBe(true);
+}
+
+test('a takedown event the worker skips after it kept failing owes a purge of everything in the same transaction (round 4, item 2)', async () => {
+  await ensureCursors([consumer]);
+  await prove();
+  await emitHarmless();
+  const failing = { ...consumer, handle: async () => Promise.reject(new Error('edge handler down')) };
+  // Fails once (the event must first be below the outbox horizon), then counts as poison.
+  await vi.waitFor(() => expect(processBatch(failing)).rejects.toThrow('edge handler down'), { timeout: 30_000 });
+  await writer()
+    .update(outboxCursors)
+    .set({ failures: 10, firstFailureAt: sql`now() - interval '31 minutes'`, retryAt: null })
+    .where(eq(outboxCursors.consumer, consumer.name));
+  expect(await processBatch(consumer)).toBeGreaterThan(0);
+  expect(await db().select({ type: outboxSkipped.type }).from(outboxSkipped)).toEqual([{ type: 'settings.updated' }]);
+  await expectWidePurgeUntilSent();
+});
+
+test('a takedown event a mutation refused (its effects rolled back) owes a purge of everything too (round 4, item 2)', async () => {
+  await ensureCursors([consumer]);
+  await prove();
+  await emitHarmless();
+  const refusing = { ...consumer, handle: async () => Promise.reject(new Refused('post.update', 'target.not_found')) };
+  vi.spyOn(console, 'error').mockImplementation(() => undefined);
+  await vi.waitFor(async () => expect(await processBatch(refusing)).toBeGreaterThan(0), { timeout: 30_000 });
+  await expectWidePurgeUntilSent();
 });
 
 test('a refused token is not ready at once and is logged at once, every time, never with the token', async () => {

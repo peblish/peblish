@@ -25,6 +25,13 @@ export type ConsumerTx = OpenTx;
 export type ConsumerStart = 'beginning' | 'now';
 
 /**
+ * An event of the consumer's types that the worker moved its cursor past without the handler's
+ * effects: `poison` after it kept failing (processBatch), `refused` when a mutation refused it
+ * (its savepoint rolled back). Only the id and the type: a poison event may not even parse.
+ */
+export type SkippedEvent = { id: number; type: string; why: 'poison' | 'refused' };
+
+/**
  * An outbox consumer, registered by glob: any file named consumer.ts under
  * packages/core/src or packages/federation/src that exports `consumer`. Handlers run inside
  * the batch transaction, so database effects and the cursor commit together (effectively
@@ -42,6 +49,12 @@ export interface Consumer {
   readonly emits: readonly EventType[];
   readonly startAt: ConsumerStart;
   handle(event: OutboxEvent, t: ConsumerTx): Promise<void>;
+  /**
+   * Optional: runs in the batch transaction that moves the cursor past `event` without the
+   * handler's effects, for a consumer that must make up for what it did not do. If it throws, the
+   * batch rolls back and the event is not skipped.
+   */
+  skipped?(event: SkippedEvent, t: ConsumerTx): Promise<void>;
 }
 
 function isOneOf<E extends EventType>(event: OutboxEvent, types: readonly E[]): event is Extract<OutboxEvent, { type: E }> {
@@ -55,12 +68,14 @@ export function defineConsumer<E extends EventType>(spec: {
   emits?: readonly EventType[];
   startAt: ConsumerStart;
   handle(event: Extract<OutboxEvent, { type: E }>, t: ConsumerTx): Promise<void>;
+  skipped?(event: SkippedEvent, t: ConsumerTx): Promise<void>;
 }): Consumer {
   return {
     name: spec.name,
     events: spec.events,
     emits: spec.emits ?? [],
     startAt: spec.startAt,
+    ...(spec.skipped && { skipped: spec.skipped }),
     handle: async (event, t) => {
       if (isOneOf(event, spec.events)) await spec.handle(event, t);
     },
