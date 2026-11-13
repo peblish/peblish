@@ -1,4 +1,3 @@
-import { sql } from 'drizzle-orm';
 import { beforeEach, expect, test, vi } from 'vitest';
 import { authorize } from '../authz/authorize.ts';
 import { systemPrincipal } from '../authz/system.ts';
@@ -15,7 +14,6 @@ import { addToBlocklist, removeFromBlocklist } from '../mediascan/list.ts';
 import { confirmQuarantined } from '../mediascan/review.ts';
 import { scanUpload } from '../mediascan/scan.ts';
 import { mediaBlocklist } from '../mediascan/tables.ts';
-import { ensureCursors, processBatch } from '../outbox/worker.ts';
 import { updatePeerAs } from '../peers/service.ts';
 import { peerControls } from '../peers/tables.ts';
 import { deletePostAs, updatePostAs } from '../posts/actions.ts';
@@ -30,10 +28,10 @@ import { seedAccount } from '../testing/seed-b1.ts';
 import { seedMedia } from '../testing/seed-safe.ts';
 import { localUser, seedActor, seedInstance } from '../testing/seed.ts';
 import { tx } from '../tx/tx.ts';
-import { consumer } from './consumer.ts';
-import { owedRows } from './debt.ts';
 import { edgePurges } from './tables.ts';
 import { actorTag, commentTag, hashTag, hostTag, postTag } from './tags.ts';
+import { owedRows } from './debt.ts';
+import { owedAfterDrain, startDrain } from '../testing/edge-drain.ts';
 
 // Each takedown in the brief, made by the code that really makes it (not a hand-built event),
 // then the edge.purge consumer run through the real outbox worker: the debt it leaves is the
@@ -57,25 +55,9 @@ async function world() {
   const community = await seedActor(local, 'Group', 'pics');
   const post = await seedPost(local, community, author);
   const comment = await seedComment(local, post, author);
-  await ensureCursors([consumer]);
   // Start from no debt: seeding wrote instance rows of its own.
-  await writer().delete(edgePurges);
+  await startDrain();
   return { local, admin: admin(moderator.id), author, community, post, comment };
-}
-
-/** Runs the consumer until its cursor has passed every event, then the tags owed. */
-async function owedAfterDrain(): Promise<string[]> {
-  const deadline = Date.now() + 50_000;
-  while (Date.now() < deadline) {
-    await processBatch(consumer);
-    const [waiting] = await db().execute<{ n: number }>(
-      sql`select count(*)::int as n from outbox o, outbox_cursors c
-        where c.consumer = ${consumer.name} and (o.tx_id, o.id) > (c.tx_id, c.event_id)`,
-    );
-    if (waiting?.n === 0) return (await owedRows(db())).map((row) => row.tag);
-    await new Promise((resolve) => setTimeout(resolve, 50));
-  }
-  throw new Error('the edge purge consumer did not catch up');
 }
 
 async function expectOwed(tags: string[]) {
@@ -99,12 +81,16 @@ test('a moderator removing a post or comment, and a restore owing nothing', asyn
   await expectOwed([postTag(w.post.id)]);
 });
 
-test('an NSFW flag set on a post by its author, or on a community; an edit that keeps it public owes nothing', async () => {
+test('an NSFW or NSFL flag set on a post by its author, or on a community; an edit that keeps it public owes nothing', async () => {
   const w = await world();
   expect(await updatePostAs(localUser(w.author.id), w.post.id, { title: 'still public' })).toMatchObject({ ok: true });
   await expectOwed([]);
   expect(await updatePostAs(localUser(w.author.id), w.post.id, { sensitive: true })).toMatchObject({ ok: true });
   await expectOwed([postTag(w.post.id)]);
+  const other = await seedPost(w.local, w.community, w.author);
+  await expectOwed([]);
+  expect(await updatePostAs(localUser(w.author.id), other.id, { nsfl: true })).toMatchObject({ ok: true });
+  await expectOwed([postTag(other.id)]);
   expect(await updateCommunityAs(w.admin, w.community.id, { sensitive: true })).toMatchObject({ ok: true });
   await expectOwed([actorTag(w.community.id)]);
 });
@@ -115,6 +101,12 @@ test('a ban that removes content, in a community or site-wide; one that keeps it
     ok: true,
   });
   await expectOwed([]);
+  const other = await seedAccount(w.local, 'other');
+  expect(await banAs(w.admin, { communityId: w.community.id, targetActorId: other.id }, { removeContent: true })).toMatchObject({
+    ok: true,
+  });
+  expect(await owedAfterDrain()).toContain(actorTag(other.id));
+  await writer().delete(edgePurges);
   expect(await siteBanAs(w.admin, w.author.id, { removeContent: true })).toMatchObject({ ok: true });
   // The removal of each post and comment is its own event too.
   expect(await owedAfterDrain()).toContain(actorTag(w.author.id));
