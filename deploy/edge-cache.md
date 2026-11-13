@@ -7,19 +7,25 @@ The application side is `packages/core/src/edge/` and `packages/core/src/media/R
 
 What the origin sends:
 
-| Answer                                                                                                       | `Cache-Control`                      | Held by Cloudflare          |
-| ------------------------------------------------------------------------------------------------------------ | ------------------------------------ | --------------------------- |
-| A GET for an image public when fetched (below), while the worker's purge path is proven working              | `public, max-age=600, s-maxage=3600` | up to 1 hour, purged by tag |
-| Any other image (sensitive, removed or moderator-only content, a draft preview, a HEAD, purge path unproven) | `private, max-age=600`               | never                       |
-| A refusal or an error (404, 403, 413, 415, 502, 503, 504), and any image whose hash is on the blocked list   | `no-store`                           | never                       |
+| Answer                                                                                                        | `Cache-Control`                      | Held by Cloudflare          |
+| ------------------------------------------------------------------------------------------------------------- | ------------------------------------ | --------------------------- |
+| A GET for an image public when fetched (below), while the purge path is ready (section 1)                     | `public, max-age=600, s-maxage=3600` | up to 1 hour, purged by tag |
+| Any other image (sensitive, removed or moderator-only content, a draft preview, a HEAD, purge path not ready) | `private, max-age=600`               | never                       |
+| A refusal or an error (404, 403, 413, 415, 502, 503, 504), and any image whose hash is on the blocked list    | `no-store`                           | never                       |
 
 "Public when fetched": once the bytes are in hand, one consistent database read finds the content
 shown to a signed-out visitor, its community live, its supplier and every host it came through
 allowed, the hash not listed and the remote-media switch on, and that read finished within 2 s.
+An answer whose tags would be more than 64, or longer than 4 KB in all, is `private` (an image
+reached through a very long chain of hosts, say), so Cloudflare never truncates the list it
+purges by.
 
-A public answer also carries `Cache-Tag` (Cloudflare strips it before the browser sees it) and
-no `Set-Cookie`. Without both variables below, or until the worker has proven the token, every
-image answer is `private`, as before.
+A public answer also carries `Cache-Tag` (Cloudflare strips it before the browser sees it), a
+`Content-Length`, and no `Set-Cookie`. Its body must be handed to the connection within 10 s of
+the start of that read: if the connection is not taking it by then, the origin destroys the
+connection, so Cloudflare holds a body shorter than its `Content-Length` and does not store it.
+Without both variables below, or while the purge path is not ready, every image answer is
+`private`, as before.
 
 ## 1. The purge token
 
@@ -47,11 +53,23 @@ Set both variables on **web and worker**:
 A half-set or malformed pair keeps edge caching off and logs `edge cache: <names> missing or
 malformed; edge caching stays off` once per process (names only, never values).
 
-Web answers public only while the database holds a fresh record, written by the worker, of a
-Cloudflare request that succeeded with this token (a purge, or with nothing to purge a purge of the
-unused tag `pbm-check` at most every 2 minutes), and no purge has been owed for more than 2
-minutes. A worker that is stopped, lacks the variables or holds a refused token therefore turns
-public answers private within 5 minutes, and a refused token at once.
+The purge path is ready, and web answers public, only while all of these hold, read in the same
+database snapshot as the decision itself and by the database's clock:
+
+1. The database holds a record, under 5 minutes old and for the zone web is configured with, of a
+   Cloudflare request that succeeded with the worker's token (a purge or, with nothing to purge,
+   a purge of the unused tag `pbm-check` at most every 2 minutes).
+2. No purge has been owed for more than 2 minutes. After a restore (deploy/cutover.md, the
+   drill's ledger replay) a purge of everything is owed as late from the start, so web stays
+   private until the worker has sent it.
+3. The takedown consumer keeps up: its cursor exists and no outbox event older than 30 s lies
+   beyond it. A consumer that fails on an event, a worker that is stopped, or an old open
+   transaction holding the outbox back turns answers private within about 30 s.
+
+A worker that is stopped, lacks the variables or holds a refused token therefore turns public
+answers private within 5 minutes (30 s once a takedown waits for it), and a refused token at
+once. A zone id changed on web but not yet on the worker, or the other way, is private until both
+agree.
 
 ## 2. The cache rule
 
@@ -99,8 +117,14 @@ curl -s -o /dev/null -D - "$url" | grep -i '^cf-cache-status:'
 ```
 
 The first answer shows `cache-control: public, max-age=600, s-maxage=3600`, `cf-cache-status:
-MISS` and no `set-cookie`; the second `HIT`. A sensitive post's image (while signed out it is a 404) and a removed post's image answer `no-store` with `DYNAMIC` or `BYPASS`, never `HIT`. A
-`curl -I` (HEAD) always answers `private`.
+MISS` and no `set-cookie`; the second `HIT`. A sensitive post's image (while signed out it is a 404) and a removed post's image answer `no-store` with `DYNAMIC` or `BYPASS`, never `HIT`.
+
+Use GET for these checks, not `curl -I`. The origin answers a HEAD `private`, but a HEAD through
+Cloudflare may never reach it: Cloudflare answers a HEAD from a cached GET (a `HIT` with the
+public headers), and on a miss it may fetch the image from the origin with a GET, cache that and
+answer the HEAD from it. That is harmless, so no rule is added for it: such a fill is an ordinary
+public GET answer, decided, tagged and purged like any other, and a HEAD only ever sees the
+headers of what a GET would get.
 
 Then remove that post as a moderator. Within about 20 seconds the URL answers `404` with
 `no-store`, and Cloudflare's status is `MISS`, `EXPIRED` (Tiered Cache), `BYPASS` or `DYNAMIC`,
@@ -112,22 +136,37 @@ What the worker logs when it does not:
 - `edge cache: purge request failed <n> times in a row (<why>); the debt stays owed`: at 1, 2, 4, 8 ... failures in a row.
 - `edge cache: purge path works again after <n> failed requests`: once it recovers.
 
-Each failure is also an `edge.purge_failed` row in the outbox (`failures`, `refused`, `why`). For a
-quick look at the state: `select * from edge_status;` (`verified_at` is the last proof; web is
-public only while it is under 5 minutes old) and `select tag, send, due_at, claim_token from
+The first failure of each run of failures is also an `edge.purge_failed` row in the outbox
+(`failures`, `refused`, `why`); later ones only count up in `edge_status`, so a long outage adds
+one row, not one every few seconds. For a quick look at the state: `select * from edge_status;`
+(`verified_at` is the last proof and `zone_id` the zone it proved; web is public only while it is
+under 5 minutes old and the zone matches) and `select tag, send, due_at, claim_token from
 edge_purges order by due_at;` (what is owed; `send` 2 is the repeat a minute after the first).
 
 ## 4. Limits
 
 The free plan allows tag purges at 5 requests a minute per account (bursts of 25), 100 tags each
-(Cloudflare's "Purge cache" documentation, checked 2026-11-13). The worker sends at most one
-request every 15 seconds across all workers (the claim takes a row lock in the database), and
-more than 100 owed tags become one purge of everything (`pbm`). Any number of worker replicas
-is safe: each owed purge is claimed by one of them under a 30 s lease and given to another if
-that worker dies.
+(Cloudflare's "Purge cache" documentation, checked 2026-11-13). The worker lets at most one
+request out every 15 seconds across all workers: one batch at a time holds the status row's claim
+under a 30 s lease, and the request is let out only if, by the database's clock, that claim is
+still held and 15 s have passed since the last one was let out. The one case this does not cover
+is a worker that pauses for more than the lease between being let out and sending, and so sends
+just after another; at 5 a minute that is still inside the bucket of 25.
+
+The queue is bounded: more than 100 owed first sends become one purge of everything (`pbm`), and
+so do more than 100 owed repeats. With at most one batch in flight (up to 101 rows, or all rows
+due when it purges everything), `edge_purges` holds at most about 300 rows, plus the rows of
+transactions committing at the same instant before one of them collapses them. A repeat never
+counts toward the collapse of first sends, so echoes cannot make a purge wider than the sends that
+caused them.
+
+Each takedown's purge goes out normally within about 20 seconds and again about a minute later.
+The second send is what covers an answer that was decided just before the takedown but was still
+being handed to Cloudflare: its body ended within 10 s of its decision, so it was complete well
+before the repeat, which is sent at least 60 s after the first succeeded.
 
 If purging stays broken, a taken-down image can be served from Cloudflare for up to an hour
-after it was cached (`s-maxage=3600`), and no new image is cached once the record goes stale.
+after it was cached (`s-maxage=3600`), and no new image is cached once the path is not ready.
 Visitors' browsers keep any image for up to ten minutes (`max-age=600`) whatever Cloudflare does.
 
 ## 5. Turning it off
