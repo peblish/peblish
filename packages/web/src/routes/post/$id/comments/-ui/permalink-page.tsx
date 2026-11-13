@@ -1,5 +1,6 @@
 import { Breadcrumbs } from '@peblish/ui/components/breadcrumbs';
 import { Button } from '@peblish/ui/components/button';
+import { DangerTextButton } from '@peblish/ui/components/danger-text-button';
 import { Group } from '@peblish/ui/components/group';
 import { neutraliseBidi } from '@peblish/ui/components/handle';
 import { Link } from '@peblish/ui/components/link';
@@ -80,9 +81,9 @@ export function PermalinkPage({
             </form>
           </LinkedDisclosure>
           <form method="post" action={formAction(thread.own.id)}>
-            <Button type="submit" name="intent" value="delete" variant="danger-neutral">
+            <DangerTextButton type="submit" name="intent" value="delete">
               {t('comments', 'own.delete')}
-            </Button>
+            </DangerTextButton>
           </form>
         </Group>
       )}

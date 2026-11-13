@@ -180,16 +180,10 @@ function PostContent({ data, error }: { data: Extract<PostPageData, { kind: 'pos
               </Notice>
             )}
             <div className="post-actions">
-              <Link className="pb-link-quiet" href="#comments">
-                {count === 1 ? t('posts', 'comments.one') : t('posts', 'comments.other', { count })}
-              </Link>
+              <Link href="#comments">{count === 1 ? t('posts', 'comments.one') : t('posts', 'comments.other', { count })}</Link>
               {isAuthor && !post.removed && (
                 <Group className="post-own" aria-label={t('posts', 'action.you')}>
-                  {!post.deleted && (
-                    <Link className="pb-link-quiet" href={`/submit?edit=${post.id}`}>
-                      {t('posts', 'action.edit')}
-                    </Link>
-                  )}
+                  {!post.deleted && <Link href={`/submit?edit=${post.id}`}>{t('posts', 'action.edit')}</Link>}
                   {post.deleted ? (
                     <ActionForm action={back} intent="restore" label={t('posts', 'action.restore')} />
                   ) : (

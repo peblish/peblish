@@ -1,4 +1,5 @@
 import { Button } from '@peblish/ui/components/button';
+import { ButtonLink } from '@peblish/ui/components/button-link';
 import { handleHost, neutraliseBidi } from '@peblish/ui/components/handle';
 import { Link } from '@peblish/ui/components/link';
 import { Notice } from '@peblish/ui/components/notice';
@@ -20,8 +21,13 @@ function Actions({ data, path }: { data: ProfileData & { viewer: NonNullable<Pro
   if (data.badges.you)
     return (
       <>
-        <Link href={`${path}/edit`}>{t('profiles', 'actions.edit')}</Link>
-        <Link href="/settings/account">{t('profiles', 'actions.settings')}</Link>
+        {/* Neutral buttons, as Block and Report on another person's card. */}
+        <ButtonLink href={`${path}/edit`} variant="neutral">
+          {t('profiles', 'actions.edit')}
+        </ButtonLink>
+        <ButtonLink href="/settings/account" variant="neutral">
+          {t('profiles', 'actions.settings')}
+        </ButtonLink>
       </>
     );
   const props: ProfileActionProps = {

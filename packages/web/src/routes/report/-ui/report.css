@@ -21,7 +21,7 @@
   .rp-form .muxui-radio-group__field {
     inline-size: auto;
   }
-  /* The Report link from the click until its dialog's code has loaded: a static busy look. */
+  /* The Report button (a link) from the click until its dialog's code has loaded: a static busy look. */
   .rp-open[data-opening] {
     cursor: progress;
     color: var(--muxui-semantic-content-muted);

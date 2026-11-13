@@ -11,10 +11,10 @@ export function ContentReport({ target, author, removed, deleted, viewer, back }
 
 export function PersonReport({ person, viewer, back }: ProfileActionProps) {
   if (viewer.actorId === person.id) return null;
-  return <ReportControl target={{ kind: 'actor', id: person.id }} back={back} />;
+  return <ReportControl target={{ kind: 'actor', id: person.id }} back={back} look="card" />;
 }
 
 export function GroupReport({ community, viewer, back }: CommunityActionProps) {
   if (viewer.actorId === community.id) return null;
-  return <ReportControl target={{ kind: 'actor', id: community.id }} back={back} />;
+  return <ReportControl target={{ kind: 'actor', id: community.id }} back={back} look="card" />;
 }
