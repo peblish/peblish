@@ -142,6 +142,58 @@ describe('a post or comment that is not addressed to Public', () => {
     await nothingRelayed();
   });
 
+  test('an Update that makes a microblog post we hold followers-only and drops the community removes our copy (round 3)', async () => {
+    // Judged by the copy we hold (a post in spike), not by the Note's new addressing, which names no community here.
+    const create = status(10, { to: [PUBLIC], cc: [followers, spike] });
+    expect((await deliver(create)).stored).toEqual({ state: 'applied', error: null });
+    expect(await postAt(create.object.id)).toBeDefined();
+    const object = { ...create.object, to: [followers], cc: [], tag: [], content: '<p>only for followers now</p>' };
+    const update = { ...create, id: `${create.object.id}/update`, type: 'Update', to: [followers], cc: [], object };
+    expect((await deliver(update)).stored).toEqual({ state: 'applied', error: null });
+    expect((await postAt(create.object.id))?.deletedAt).not.toBeNull();
+  });
+
+  test('an Update that makes a post we hold a followers-only poll, or a type we do not read, removes our copy (round 3)', async () => {
+    // Withdrawing visibility is read before the type: refusing the poll as a poll would leave the public copy.
+    for (const type of ['Question', 'Event']) {
+      await truncateAll();
+      world = await seedInboundWorld();
+      const update = {
+        id: activityId('https://lemmy.test', 'update'),
+        type: 'Update',
+        actor: lemmyuser,
+        object: { id: t1, type, attributedTo: lemmyuser, name: 'Now a poll', content: '<p>x</p>', audience: spike, to: [spike], oneOf: [] },
+        to: [spike],
+        audience: spike,
+      };
+      expect((await deliver(update)).stored).toEqual({ state: 'applied', error: null });
+      expect((await postAt(t1))?.deletedAt).not.toBeNull();
+      await nothingRelayed();
+    }
+  });
+
+  test('a public Update to a post we hold that turns it into a poll is still skipped as a poll, and keeps our copy', async () => {
+    const update = {
+      id: activityId('https://lemmy.test', 'update'),
+      type: 'Update',
+      actor: lemmyuser,
+      object: {
+        id: t1,
+        type: 'Question',
+        attributedTo: lemmyuser,
+        name: 'Poll',
+        content: '<p>x</p>',
+        audience: spike,
+        to: [spike, PUBLIC],
+        oneOf: [],
+      },
+      to: [spike, PUBLIC],
+      audience: spike,
+    };
+    expect((await deliver(update)).stored).toEqual({ state: 'skipped', error: `type.question ${t1}` });
+    expect((await postAt(t1))?.deletedAt).toBeNull();
+  });
+
   test('an Update that withdraws Public from content we do not hold is refused as before, with nothing fetched', async () => {
     const id = 'https://lemmy.test/post/77';
     const update = {
@@ -193,6 +245,70 @@ describe('a post or comment that is not addressed to Public', () => {
       object: create([lab, PUBLIC]),
     };
     const { stored } = await deliver(announce, { [createId]: { body: create([lab, 'https://piefed.test/u/pfuser/followers']) } });
+    expect(stored).toEqual({ state: 'skipped', error: `content.not_public ${id}` });
+    expect(await postAt(id)).toBeUndefined();
+  });
+
+  test('an announced Update from another origin whose origin copy withdraws Public removes our copy, as a direct one does (round 3)', async () => {
+    // piefed.test's post in lab, stored from an announced Create its origin served as public.
+    const id = 'https://piefed.test/post/43';
+    const pageOf = (to: string[]) => ({ id, type: 'Page', attributedTo: hosts.pfuser, name: 'P', content: '<p>x</p>', audience: lab, to });
+    const activity = (type: 'Create' | 'Update', activityId: string, to: string[]) => ({
+      id: activityId,
+      type,
+      actor: hosts.pfuser,
+      object: pageOf(to),
+      to,
+      cc: [lab],
+      audience: lab,
+    });
+    const announce = (object: Record<string, unknown>) => ({
+      id: activityId('https://lemmy.test', 'announce'),
+      type: 'Announce',
+      actor: lab,
+      to: [PUBLIC],
+      cc: [`${lab}/followers`],
+      object,
+    });
+    const createId = 'https://piefed.test/activities/create/43';
+    const created = await deliver(announce(activity('Create', createId, [lab, PUBLIC])), {
+      [createId]: { body: activity('Create', createId, [lab, PUBLIC]) },
+    });
+    expect(created.stored).toEqual({ state: 'applied', error: null });
+    expect((await postAt(id))?.deletedAt).toBeNull();
+    // The community's embedded copy still says Public; the origin, which the Update is from, serves it followers-only.
+    const updateId = 'https://piefed.test/activities/update/43';
+    const followersOnly = [lab, 'https://piefed.test/u/pfuser/followers'];
+    const { stored } = await deliver(announce(activity('Update', updateId, [lab, PUBLIC])), {
+      [updateId]: { body: activity('Update', updateId, followersOnly) },
+    });
+    expect(stored).toEqual({ state: 'applied', error: null });
+    expect((await postAt(id))?.deletedAt).not.toBeNull();
+    expect(await ledgerReasons()).toEqual(['remote.object_deleted']);
+    await nothingRelayed();
+  });
+
+  test('an announced Update whose origin copy withdraws Public from content we do not hold is still refused', async () => {
+    const id = 'https://piefed.test/post/44';
+    const updateId = 'https://piefed.test/activities/update/44';
+    const update = (to: string[]) => ({
+      id: updateId,
+      type: 'Update',
+      actor: hosts.pfuser,
+      object: { id, type: 'Page', attributedTo: hosts.pfuser, name: 'P', content: '<p>x</p>', audience: lab, to },
+      to,
+      cc: [lab],
+      audience: lab,
+    });
+    const announce = {
+      id: activityId('https://lemmy.test', 'announce'),
+      type: 'Announce',
+      actor: lab,
+      to: [PUBLIC],
+      cc: [`${lab}/followers`],
+      object: update([lab, PUBLIC]),
+    };
+    const { stored } = await deliver(announce, { [updateId]: { body: update([lab, 'https://piefed.test/u/pfuser/followers']) } });
     expect(stored).toEqual({ state: 'skipped', error: `content.not_public ${id}` });
     expect(await postAt(id)).toBeUndefined();
   });

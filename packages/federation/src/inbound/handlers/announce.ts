@@ -11,6 +11,7 @@ import { checkActivityOrigin, checkNotEcho } from '../authorize.ts';
 import type { InboundContext, InboundHandler } from '../handler.ts';
 import { skip } from '../reasons.ts';
 import { notPublic } from '../visibility.ts';
+import { asWithdrawal, heldContent, withdrawnId } from '../withdrawal.ts';
 
 // The community's Announce (FEP-1b12): a remote community wraps what happened in it and sends
 // it to its followers. It carries no change of its own; this handler vets the announcement and
@@ -29,7 +30,8 @@ import { notPublic } from '../visibility.ts';
 const isObject = (value: unknown): value is JsonObject => typeof value === 'object' && value !== null && !Array.isArray(value);
 const originOf = (url: string) => new URL(url).origin;
 
-type Announced = { activity: Activity; raw: JsonObject; content: ContentObject | null };
+/** `withdrawn`: the origin's copy is an Update that takes Public away from content we hold (withdrawal.ts). */
+type Announced = { activity: Activity; raw: JsonObject; content: ContentObject | null; withdrawn?: true };
 
 /** What an Announce carries as an activity: a bare Page or Note is the Create of itself. */
 function announced(object: Activity | ContentObject, raw: JsonObject): Announced {
@@ -44,9 +46,11 @@ function announced(object: Activity | ContentObject, raw: JsonObject): Announced
 /** The announced thing as its own origin serves it, or a skip when it does not serve it. */
 async function readFromOrigin(ctx: InboundContext, expected: Announced): Promise<Announced> {
   const read = await readOriginCopy(ctx, expected);
-  // The origin's copy replaces the embedded one, so it is held to the same rule (classify.ts held the embedded one).
+  // The origin's copy replaces the embedded one, so it is held to the same rule (classify.ts held
+  // the embedded one): what is not public is refused, except an Update that withdraws a copy we
+  // hold, which goes on to the removal a direct one reaches.
   const hidden = notPublic(read.raw);
-  if (hidden) throw hidden;
+  if (hidden && !read.withdrawn) throw hidden;
   return read;
 }
 
@@ -63,9 +67,13 @@ async function readOriginCopy(ctx: InboundContext, expected: Announced): Promise
     throw error;
   }
   if (!isObject(json) || json.id !== id) throw skip('embedded.unverifiable', id);
+  // Judged by the copy we hold, as classify.ts judges an embedded one; the id and actor checks below still apply.
+  const withdrawn = expected.content ? null : withdrawnId(json);
+  const held = withdrawn === null ? null : await heldContent(withdrawn);
+  const doc = held ? asWithdrawal(json, held) : json;
   try {
     if (expected.content) {
-      const mapped = fromWire(json);
+      const mapped = fromWire(doc);
       const content: ContentObject | null =
         mapped.kind === 'post'
           ? { type: 'Page', post: mapped.post }
@@ -73,13 +81,13 @@ async function readOriginCopy(ctx: InboundContext, expected: Announced): Promise
             ? { type: 'Note', comment: mapped.comment }
             : null;
       if (!content) throw skip('embedded.unverifiable', id);
-      const read = announced(content, json);
+      const read = announced(content, doc);
       if (read.activity.actorApId !== actorApId) throw skip('embedded.unverifiable', id);
       return read;
     }
-    const activity = activityFromWire(json);
+    const activity = activityFromWire(doc);
     if (activity.type !== expected.activity.type || activity.actorApId !== actorApId) throw skip('embedded.unverifiable', id);
-    return { activity, raw: json, content: null };
+    return { activity, raw: doc, content: null, ...(held && { withdrawn: true as const }) };
   } catch (error) {
     if (error instanceof MappingError) throw skip('embedded.unverifiable', id);
     throw error;
