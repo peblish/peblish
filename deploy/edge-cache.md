@@ -128,7 +128,7 @@ headers of what a GET would get.
 
 Then remove that post as a moderator. Within about 20 seconds the URL answers `404` with
 `no-store`, and Cloudflare's status is `MISS`, `EXPIRED` (Tiered Cache), `BYPASS` or `DYNAMIC`,
-never `HIT`. The same purge is sent again a minute later. A purge that works logs nothing.
+never `HIT`. The same purge is sent again two minutes later. A purge that works logs nothing.
 
 What the worker logs when it does not:
 
@@ -141,7 +141,7 @@ The first failure of each run of failures is also an `edge.purge_failed` row in 
 one row, not one every few seconds. For a quick look at the state: `select * from edge_status;`
 (`verified_at` is the last proof and `zone_id` the zone it proved; web is public only while it is
 under 5 minutes old and the zone matches) and `select tag, send, due_at, claim_token from
-edge_purges order by due_at;` (what is owed; `send` 2 is the repeat a minute after the first).
+edge_purges order by due_at;` (what is owed; `send` 2 is the repeat two minutes after the first).
 
 ## 4. Limits
 
@@ -160,10 +160,12 @@ plus one row for each transaction owing a purge at the same instant (a new peer'
 counts toward the collapse of first sends, so echoes cannot make a purge wider than the sends that
 caused them.
 
-Each takedown's purge goes out normally within about 20 seconds and again about a minute later.
+Each takedown's purge goes out normally within about 20 seconds and again about two minutes later.
 The second send is what covers an answer that was decided just before the takedown but was still
 being handed to Cloudflare: its body ended within 10 s of its decision, so it was complete well
-before the repeat, which is sent at least 60 s after the first succeeded.
+before the repeat, which is sent at least 2 minutes after the first succeeded. That leaves 110 s for
+the last bytes to reach Cloudflare, more than the 100 s Cloudflare waits on a silent origin before
+giving up (and storing nothing), so even a link stalled until then is settled before the repeat.
 
 If purging stays broken, a taken-down image can be served from Cloudflare for up to an hour
 after it was cached (`s-maxage=3600`), and no new image is cached once the path is not ready.

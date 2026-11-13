@@ -16,7 +16,7 @@ import { purgePathReady } from './ready.ts';
 import { claimPurges, flushPurges, startPurge } from './send.ts';
 import { edgePurges, edgeStatus } from './tables.ts';
 import type { Purge } from './tags.ts';
-import { ECHO_MS, LEASE_MS, MAX_OWED, SEND_GAP_MS } from './timing.ts';
+import { CLOUDFLARE_READ_TIMEOUT_MS, ECHO_MS, LEASE_MS, MAX_OWED, PUBLIC_BODY_MS, SEND_GAP_MS } from './timing.ts';
 
 // Every time the purge path stores or compares is the database's, so these tests move time by
 // shifting what is stored back (rewind) rather than by giving the code a clock.
@@ -72,6 +72,9 @@ async function grants() {
 }
 
 test('every purge is sent twice: as soon as the rate allows, and again ECHO_MS after its first send succeeded', async () => {
+  // Two minutes: a body cut off at PUBLIC_BODY_MS, on a link stalled until Cloudflare gives up, is settled before the second send.
+  expect(ECHO_MS).toBe(120_000);
+  expect(ECHO_MS - PUBLIC_BODY_MS).toBeGreaterThan(CLOUDFLARE_READ_TIMEOUT_MS);
   const fetch = vi.fn<HttpFetch>(async () => ok());
   await owe(['pbm-p-1', 'pbm-c-2']);
   expect(await flush(fetch)).toBe('sent');
