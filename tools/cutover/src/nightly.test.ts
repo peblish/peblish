@@ -14,7 +14,7 @@ import { AwsClient } from 'aws4fetch';
 import { eq, sql } from 'drizzle-orm';
 import postgres from 'postgres';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
-import { backupBucket, bucketConfigFromEnv, fileSha256, multipartEtag, type BucketConfig } from './bucket.ts';
+import { backupBucket, bucketConfigFromEnv, fileSha256, multipartEtag, type Bucket, type BucketConfig } from './bucket.ts';
 import { clientMajor, exportLedger, readLedgerExport, runDrill } from './drill.ts';
 import { fetchForRestore, LOCK_NAMESPACE, lockKey, postgresSource, readStatus, runOnce } from './nightly.ts';
 
@@ -24,7 +24,10 @@ import { fetchForRestore, LOCK_NAMESPACE, lockKey, postgresSource, readStatus, r
 // server's major version, as the drill's tests are. The failure paths without either are in
 // backup-offline.test.ts.
 
-const [server] = await db().execute<{ major: string }>(sql`select current_setting('server_version_num')::int / 10000 as major`);
+// Postgres is asked for its version only when there is a bucket to run against.
+const server = process.env.S3_ENDPOINT
+  ? (await db().execute<{ major: string }>(sql`select current_setting('server_version_num')::int / 10000 as major`))[0]
+  : undefined;
 const tools = Math.min(
   (await clientMajor(process.env.PG_DUMP ?? 'pg_dump')) ?? 0,
   (await clientMajor(process.env.PG_RESTORE ?? 'pg_restore')) ?? 0,
@@ -45,8 +48,9 @@ describe.skipIf(!process.env.S3_ENDPOINT || tools < Number(server?.major))('runs
     BACKUP_S3_ALLOW_PLAIN_HTTP: '1',
     S3_BUCKET: process.env.S3_BUCKET ?? 'media',
   };
-  const config: BucketConfig = bucketConfigFromEnv(env);
-  const bucket = backupBucket(config);
+  // Built in beforeAll: a skipped suite is still collected, and without a bucket there is no config.
+  let config: BucketConfig;
+  let bucket: Bucket;
   const dir = mkdtempSync(join(tmpdir(), 'cutover-nightly-'));
   const work = join(dir, 'tmp');
   const savedTmp = process.env.TMPDIR;
@@ -59,6 +63,8 @@ describe.skipIf(!process.env.S3_ENDPOINT || tools < Number(server?.major))('runs
   };
 
   beforeAll(async () => {
+    config = bucketConfigFromEnv(env);
+    bucket = backupBucket(config);
     await s3Store({ S3_ENDPOINT, S3_BUCKET: bucketName, S3_REGION, S3_ACCESS_KEY_ID, S3_SECRET_ACCESS_KEY }).ensureBucket();
     // Runs make their temporary folders under os.tmpdir(): a folder of the test's, to check they go.
     mkdirSync(work, { mode: 0o700 });
@@ -106,25 +112,37 @@ describe.skipIf(!process.env.S3_ENDPOINT || tools < Number(server?.major))('runs
     },
   );
 
-  test('the ledger export streams every row and reads back as the same rows', { timeout: 60_000 }, async () => {
-    await truncateAll();
-    const { set } = await loadFixtureSet('lab-live');
-    for (const comment of set.comments.slice(0, 3)) {
-      await writer().transaction((t) =>
-        recordDeletion({ db: t }, { kind: 'comment', id: comment.id, cause: 'Delete', actorId: comment.authorId }),
-      );
-    }
-    const file = join(dir, 'ledger-stream.json');
-    expect(await exportLedger(url, file)).toBe(3);
-    const rows = readLedgerExport(file);
-    expect(rows.map((r) => r.subjectId)).toEqual(set.comments.slice(0, 3).map((c) => c.id));
-    expect(rows[0]).toMatchObject({
-      subjectKind: 'comment',
-      reason: expect.any(String),
-      details: expect.objectContaining({ remote: true }),
-    });
-    expect(statSync(file).mode & 0o777).toBe(0o600);
-  });
+  test(
+    'the ledger export streams every row, across several cursor batches, and reads back as the same rows',
+    { timeout: 60_000 },
+    async () => {
+      await truncateAll();
+      const { set } = await loadFixtureSet('lab-live');
+      for (const comment of set.comments.slice(0, 3)) {
+        await writer().transaction((t) =>
+          recordDeletion({ db: t }, { kind: 'comment', id: comment.id, cause: 'Delete', actorId: comment.authorId }),
+        );
+      }
+      // 1,198 more rows: 1,201 in all, three batches of 500 and a part one.
+      await writer().execute(sql`
+      insert into deletion_ledger (subject_kind, subject_id, reason, details)
+      select 'post', gen_random_uuid(), 'remote.object_gone', jsonb_build_object('remote', true, 'n', n) from generate_series(1, 1198) as n`);
+      const file = join(dir, 'ledger-stream.json');
+      expect(await exportLedger(url, file)).toBe(1201);
+      const rows = readLedgerExport(file);
+      expect(rows).toHaveLength(1201);
+      const ids = rows.map((r) => r.id);
+      expect(ids).toEqual(ids.toSorted((a, b) => a - b));
+      expect(rows.slice(0, 3).map((r) => r.subjectId)).toEqual(set.comments.slice(0, 3).map((c) => c.id));
+      expect(rows[0]).toMatchObject({
+        subjectKind: 'comment',
+        reason: expect.any(String),
+        details: expect.objectContaining({ remote: true }),
+      });
+      expect(rows.at(-1)).toMatchObject({ subjectKind: 'post', details: { remote: true, n: 1198 } });
+      expect(statSync(file).mode & 0o777).toBe(0o600);
+    },
+  );
 
   test(
     'a nightly and an hourly run upload under UTC names, record the last good one, leave no files, and restore',

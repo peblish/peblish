@@ -92,6 +92,9 @@ export const TIMEOUTS: Timeouts = {
   transferMs: (size) => 10 * 60_000 + Math.ceil(size / (1024 * 1024)) * 1000,
 };
 
+/** Aborting an unfinished upload is best effort and must fit inside the process's shutdown. */
+const ABORT_TIMEOUT_MS = 5_000;
+
 const hex = (algorithm: string, body: Uint8Array) => createHash(algorithm).update(body).digest('hex');
 const EMPTY_SHA256 = hex('sha256', new Uint8Array());
 
@@ -145,9 +148,15 @@ export function backupBucket(config: BucketConfig, options: { partBytes?: number
     what: string,
     method: string,
     path: string,
-    init: { body?: Buffer<ArrayBuffer>; headers?: Record<string, string>; signal?: AbortSignal | undefined; streaming?: boolean } = {},
+    init: {
+      body?: Buffer<ArrayBuffer>;
+      headers?: Record<string, string>;
+      signal?: AbortSignal | undefined;
+      streaming?: boolean;
+      timeoutMs?: number;
+    } = {},
   ) {
-    const signal = init.streaming ? init.signal : anySignal(AbortSignal.timeout(timeouts.callMs), init.signal);
+    const signal = init.streaming ? init.signal : anySignal(AbortSignal.timeout(init.timeoutMs ?? timeouts.callMs), init.signal);
     try {
       return await client.fetch(`${base}${path}`, {
         method,
@@ -160,18 +169,27 @@ export function backupBucket(config: BucketConfig, options: { partBytes?: number
     }
   }
 
+  /** S3's error code from a body, kept only when it is one word of letters (S3's own vocabulary). */
+  const codeOf = (text: string) => {
+    const code = tag(text, 'Code');
+    return code && /^[A-Za-z]+$/.test(code) ? code : undefined;
+  };
+
   async function refuse(what: string, response: Response): Promise<CutoverError> {
-    const code = tag(await response.text().catch(() => ''), 'Code');
-    return new CutoverError(`${what}: ${response.status}${code && /^[A-Za-z]+$/.test(code) ? ` ${code}` : ''}`);
+    const code = codeOf(await response.text().catch(() => ''));
+    return new CutoverError(`${what}: ${response.status}${code ? ` ${code}` : ''}`);
   }
 
   async function ok(what: string, response: Response): Promise<string> {
     if (!response.ok) throw await refuse(what, response);
     const text = await response.text();
     // CompleteMultipartUpload can answer 200 and report its failure in the body.
-    if (/<Error>/.test(text)) throw new CutoverError(`${what}: ${response.status} ${tag(text, 'Code') ?? 'Error'}`);
+    if (/<Error>/.test(text)) throw new CutoverError(`${what}: ${response.status} ${codeOf(text) ?? 'Error'}`);
     return text;
   }
+
+  /** A conditional write the store refused: 412, or 404 for If-Match on a key that is gone. */
+  const preconditionFailed = (response: Response) => response.status === 412 || response.status === 404;
 
   async function head(key: string, signal?: AbortSignal): Promise<ObjectHead | null> {
     const response = await call(`head ${assertName(key)}`, 'HEAD', `/${key}`, { signal });
@@ -235,9 +253,15 @@ export function backupBucket(config: BucketConfig, options: { partBytes?: number
         const size = fstatSync(fd).size;
         const parts = Math.max(1, Math.ceil(size / partBytes));
         if (parts > MAX_PARTS) throw new CutoverError(`${key}: ${size} bytes needs more than ${MAX_PARTS} parts of ${partBytes} bytes`);
-        const bound = anySignal(AbortSignal.timeout(timeouts.transferMs(size)), signal);
-        if (await head(key, bound)) throw new CutoverError(`upload ${key}: an object of that name exists; it is never overwritten`);
-        const sha256 = await fileSha256(file);
+        // Hashing, uploading and reading back each get the whole size-scaled budget of their own.
+        const budget = () => anySignal(AbortSignal.timeout(timeouts.transferMs(size)), signal);
+        // An early refusal only: the completion's If-None-Match is what stops an overwrite.
+        if (await head(key, signal)) throw new CutoverError(`upload ${key}: an object of that name exists; it is never overwritten`);
+        let bound = budget();
+        const sha256 = await fileSha256(file, bound).catch((error: unknown) => {
+          throw failure(`hash ${key}`, error, bound);
+        });
+        bound = budget();
         const created = await ok(
           `start upload ${key}`,
           await call(`start upload ${key}`, 'POST', `/${key}?uploads=`, {
@@ -272,21 +296,26 @@ export function backupBucket(config: BucketConfig, options: { partBytes?: number
           const manifest = `<CompleteMultipartUpload>${done
             .map((etag, i) => `<Part><PartNumber>${i + 1}</PartNumber><ETag>${etag}</ETag></Part>`)
             .join('')}</CompleteMultipartUpload>`;
-          await ok(
-            `complete upload ${key}`,
-            await call(`complete upload ${key}`, 'POST', `/${key}${query()}`, {
-              body: Buffer.from(manifest),
-              headers: { 'content-type': 'application/xml' },
-              signal: bound,
-            }),
-          );
+          // If-None-Match: * makes the store refuse the completion when another writer made the name first.
+          const completed = await call(`complete upload ${key}`, 'POST', `/${key}${query()}`, {
+            body: Buffer.from(manifest),
+            headers: { 'content-type': 'application/xml', 'if-none-match': '*' },
+            signal: bound,
+          });
+          if (completed.status === 412) {
+            await completed.arrayBuffer();
+            throw new CutoverError(`upload ${key}: an object of that name exists; it is never overwritten`);
+          }
+          await ok(`complete upload ${key}`, completed);
         } catch (error) {
-          // Best effort: parts of an upload that never completes are no object (the lifecycle rule clears them too).
-          await call(`abort upload ${key}`, 'DELETE', `/${key}${query()}`)
+          // Best effort and short (it also runs while the process stops): parts of an upload that
+          // never completes are no object, and the lifecycle rule clears them.
+          await call(`abort upload ${key}`, 'DELETE', `/${key}${query()}`, { timeoutMs: ABORT_TIMEOUT_MS })
             .then((r) => r.arrayBuffer())
             .catch(() => undefined);
           throw error;
         }
+        bound = budget();
         const found = await head(key, bound);
         if (!found) throw new UnverifiedObject(`check ${key}: the bucket has no such object after the upload`);
         if (found.size !== size) throw new UnverifiedObject(`check ${key}: the bucket holds ${found.size} bytes, the file has ${size}`);
@@ -303,21 +332,59 @@ export function backupBucket(config: BucketConfig, options: { partBytes?: number
     },
 
     /** A small object written whole: only the status records, under status/, which are rewritten. */
-    async putSmall(key: string, text: string, contentType: string, signal?: AbortSignal): Promise<void> {
+    /**
+     * A small object written whole: only the status records, under status/, which are rewritten.
+     * `replacing` makes the write conditional: an ETag means "only if the record is still that
+     * one" (If-Match), null "only if there is none" (If-None-Match: *). Returns false when the
+     * store refused it because another writer changed the record first.
+     */
+    async putSmall(
+      key: string,
+      text: string,
+      contentType: string,
+      options: { signal?: AbortSignal | undefined; replacing?: string | null } = {},
+    ): Promise<boolean> {
       if (!assertName(key).startsWith('status/')) throw new CutoverError(`${key}: only status records are written whole`);
-      await ok(
-        `put ${key}`,
-        await call(`put ${key}`, 'PUT', `/${key}`, { body: Buffer.from(text), headers: { 'content-type': contentType }, signal }),
-      );
+      const condition: Record<string, string> =
+        options.replacing === undefined
+          ? {}
+          : options.replacing === null
+            ? { 'if-none-match': '*' }
+            : { 'if-match': `"${options.replacing}"` };
+      const response = await call(`put ${key}`, 'PUT', `/${key}`, {
+        body: Buffer.from(text),
+        headers: { 'content-type': contentType, ...condition },
+        signal: options.signal,
+      });
+      if (options.replacing !== undefined && preconditionFailed(response)) {
+        await response.arrayBuffer();
+        return false;
+      }
+      await ok(`put ${key}`, response);
+      return true;
     },
 
-    async getSmall(key: string, signal?: AbortSignal): Promise<string | null> {
+    /** A small object and its ETag (for a conditional rewrite), or null when there is none; any other failure throws. */
+    async getSmall(key: string, signal?: AbortSignal): Promise<{ text: string; etag: string | null } | null> {
       const response = await call(`get ${assertName(key)}`, 'GET', `/${key}`, { signal });
       if (response.status === 404) {
         await response.arrayBuffer();
         return null;
       }
-      return ok(`get ${key}`, response);
+      const etag = response.headers.get('etag')?.replaceAll('"', '') ?? null;
+      return { text: await ok(`get ${key}`, response), etag };
+    },
+
+    /**
+     * Whether the store honours If-None-Match: * on a PUT, tested on status/conditional-probe.json:
+     * the second of two such writes must be refused. R2 and MinIO do; a store that does not
+     * weakens the status records' fencing (deploy/backups.md).
+     */
+    async honoursConditions(signal?: AbortSignal): Promise<boolean> {
+      const key = 'status/conditional-probe.json';
+      const text = `${JSON.stringify({ probe: 'If-None-Match', at: new Date().toISOString() })}\n`;
+      await this.putSmall(key, text, 'application/json', { signal, replacing: null });
+      return !(await this.putSmall(key, text, 'application/json', { signal, replacing: null }));
     },
 
     /** Every object under `prefix`, in name order (the names are UTC times, so oldest first). */
@@ -385,9 +452,9 @@ function failure(what: string, error: unknown, signal?: AbortSignal): CutoverErr
   return new CutoverError(`${what}: the bucket did not answer (${code ?? (cause instanceof Error ? cause.name : 'unknown')})`);
 }
 
-/** The SHA-256 of a file, read as a stream. */
-export async function fileSha256(file: string): Promise<string> {
+/** The SHA-256 of a file, read as a stream; `signal` stops it. */
+export async function fileSha256(file: string, signal?: AbortSignal): Promise<string> {
   const hash = createHash('sha256');
-  for await (const chunk of createReadStream(file)) hash.update(chunk as Buffer);
+  for await (const chunk of createReadStream(file, signal ? { signal } : {})) hash.update(chunk as Buffer);
   return hash.digest('hex');
 }

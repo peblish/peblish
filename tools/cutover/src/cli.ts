@@ -23,10 +23,10 @@ import { verifyImport } from './verify.ts';
 //
 // The backup bucket (deploy/backups.md; DATABASE_URL or --db, BACKUP_S3_*, S3_BUCKET; alerts SMTP_URL, MAIL_FROM, BACKUP_ALERT_TO):
 //
-//   node tools/cutover/src/cli.ts backup-run backup|ledger        one run now: exit 0 ok, 1 failed, 75 another run holds the lock
+//   node tools/cutover/src/cli.ts backup-run backup|ledger        one run now: exit 0 ok, 1 failed, 75 another run holds the lock or recorded a newer one
 //   node tools/cutover/src/cli.ts backup-schedule                 the nightly dump and hourly ledger export, until SIGTERM
 //   node tools/cutover/src/cli.ts backup-status [--json]          the last good run of each, checked in the bucket; exit 1 when one is stale, missing or does not match
-//   node tools/cutover/src/cli.ts backup-fetch --dir <folder> [--object backups/<time>.dump]   that backup (default the last good one) and the last good ledger export
+//   node tools/cutover/src/cli.ts backup-fetch --dir <folder> [--object backups/<time>.dump] [--ledger-object ledger/<time>.json]   those (default: the last good ones), into an empty folder
 //
 // The bundle, backups and ledger exports are written with mode 600 and never inside the
 // repository. Nothing prints key material, email addresses or password hashes.
@@ -48,6 +48,7 @@ const { positionals, values } = parseArgs({
     dir: { type: 'string' },
     keep: { type: 'boolean' },
     object: { type: 'string' },
+    'ledger-object': { type: 'string' },
   },
 });
 
@@ -200,7 +201,7 @@ async function main(): Promise<number> {
       const result = await runOnce(kind as Kind, postgresSource(url), config, { signal: stopOnSignal() });
       if (result.outcome === 'failed') console.error(result.line);
       else console.log(result.line);
-      return { ok: 0, failed: 1, skipped: 75 }[result.outcome];
+      return { ok: 0, failed: 1, skipped: 75, superseded: 75 }[result.outcome];
     }
     case 'backup-schedule': {
       const url = sourceDb();
@@ -213,6 +214,9 @@ async function main(): Promise<number> {
       else log(`alert mail on, to ${mail.to}`);
       const alerter = 'to' in mail ? mailAlerter(mail.to, backupBucket(config), config.BACKUP_S3_BUCKET, log) : null;
       await schedule(postgresSource(url), config, { log, alerter });
+      // Shutdown is bounded: whatever a stuck run or mail still holds open (a database session, a
+      // socket), the process exits a second after the schedule has let go.
+      setTimeout(() => process.exit(process.exitCode ?? 0), 1_000).unref();
       return 0;
     }
     case 'backup-status': {
@@ -235,6 +239,7 @@ async function main(): Promise<number> {
       print(
         await fetchForRestore(bucketConfigFromEnv(), need('dir'), {
           ...(values.object && { object: values.object }),
+          ...(values['ledger-object'] && { ledgerObject: values['ledger-object'] }),
           signal: stopOnSignal(),
         }),
       );

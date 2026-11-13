@@ -232,7 +232,7 @@ export async function exportLedger(
   let running: { cancel(): unknown } | null = null;
   // A stop cancels the query on the server (a lock wait included) and gives up at once; the
   // driver's own teardown would wait for the transaction to end.
-  let onAbort = () => undefined as void;
+  let onAbort: () => void = () => undefined;
   const aborted = new Promise<never>((_, reject) => {
     onAbort = () => {
       running?.cancel();

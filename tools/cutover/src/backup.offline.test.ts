@@ -1,11 +1,11 @@
 import { spawn } from 'node:child_process';
-import { existsSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { MailMessage } from '@peblish/core/identity/mail';
 import { afterAll, afterEach, beforeAll, describe, expect, test } from 'vitest';
 import { alertConfig, mailAlerter } from './alerts.ts';
-import { backupBucket, bucketConfigFromEnv, UnverifiedObject, type BucketConfig } from './bucket.ts';
+import { backupBucket, bucketConfigFromEnv, fileSha256, UnverifiedObject, type BucketConfig } from './bucket.ts';
 import { fakeS3, type FakeS3 } from './fake-s3.ts';
 import {
   fetchForRestore,
@@ -115,6 +115,11 @@ describe('the schedule and the status record', () => {
     expect(parseStatus('backup', JSON.stringify(record(change)), now)).toEqual({ status: null, invalid: why });
   });
 
+  test('an impossible calendar date is not a time', () => {
+    const feb30 = record({ startedAt: '2026-02-30T00:00:00.000Z', finishedAt: '2026-03-02T00:00:00.000Z' });
+    expect(parseStatus('backup', JSON.stringify(feb30), now)).toEqual({ status: null, invalid: 'has a time that is not a time' });
+  });
+
   test('a good record holds, and not JSON is invalid', () => {
     expect(parseStatus('backup', JSON.stringify(record()), now).status).toEqual(record());
     expect(parseStatus('ledger', '{', now)).toEqual({ status: null, invalid: 'not JSON' });
@@ -183,6 +188,39 @@ describe('uploads', () => {
     );
     expect(s3.objects.get('backups/20261113T160002Z.dump')?.body.toString()).toBe('older');
     expect(s3.requests.some((r) => r.startsWith('POST') || r.startsWith('PUT'))).toBe(false);
+  });
+
+  test('a writer that completes the same name first is not overwritten: the completion is conditional', async () => {
+    s3.faults.beforeComplete = () => s3.seed('backups/20261113T160004.000Z.dump', 'the other writer');
+    await expect(
+      bucket().uploadFile('backups/20261113T160004.000Z.dump', file('seven', 'mine'), 'application/octet-stream'),
+    ).rejects.toThrow(/exists; it is never overwritten/);
+    expect(s3.objects.get('backups/20261113T160004.000Z.dump')?.body.toString()).toBe('the other writer');
+    expect(s3.requests.some((r) => r.startsWith('DELETE /backups/backups/20261113T160004.000Z.dump?uploadId='))).toBe(true);
+  });
+
+  test('hashing, uploading and reading back each have their own budget', async () => {
+    s3.faults.slowPutMs = 600;
+    s3.faults.slowChunk = 4;
+    s3.faults.slowMs = 100; // 12 bytes: about 300 ms to read back
+    const each800 = backupBucket(config, { timeouts: { callMs: 2_000, idleMs: 1_000, transferMs: () => 800 } });
+    expect(
+      await each800.uploadFile('backups/20261113T160005.000Z.dump', file('eight', 'twelve bytes'), 'application/octet-stream'),
+    ).toMatchObject({
+      size: 12,
+    });
+  });
+
+  test('a 200 answer carrying an error code that is not one plain word does not reach the message', async () => {
+    s3.faults.completeError = 'Bad code: see http://x';
+    const attempt = bucket().uploadFile('backups/20261113T160006.000Z.dump', file('nine', 'nine'), 'application/octet-stream');
+    await expect(attempt).rejects.toThrow(/^complete upload backups\/20261113T160006\.000Z\.dump: 200 Error$/);
+  });
+
+  test('hashing stops on its signal', async () => {
+    const stop = new AbortController();
+    stop.abort();
+    await expect(fileSha256(file('hash', 'abc'), stop.signal)).rejects.toThrow();
   });
 
   test('only status records are written whole', async () => {
@@ -316,7 +354,9 @@ describe('runs', () => {
       config,
       { ...options, signal: stop.signal },
     );
+    const started = Date.now();
     expect((await result).line).toMatch(/: stopped$/);
+    expect(Date.now() - started).toBeLessThan(1_000);
     expect(readdirSync(work)).toEqual([]);
   });
 
@@ -325,6 +365,85 @@ describe('runs', () => {
       outcome: 'skipped',
       line: 'ledger skipped: another ledger run holds the lock',
     });
+  });
+});
+
+describe('fenced runs', () => {
+  const lock = (held: () => Promise<boolean> = async () => true): Lock => ({
+    lost: new AbortController().signal,
+    held,
+    release: async () => undefined,
+  });
+
+  test('a final lock check that never answers ends the run as failed within its bound, recording nothing', async () => {
+    const started = Date.now();
+    const result = await runOnce('ledger', fakeSource({ lock: async () => lock(() => new Promise(() => undefined)) }), config, {
+      timeouts: fast,
+      lockMs: { check: 200 },
+    });
+    expect(Date.now() - started).toBeLessThan(2_000);
+    expect(result.line).toMatch(/lost its database lock before recording; ledger\/\S+ is not recorded as good$/);
+    expect(s3.objects.has(statusKey('ledger'))).toBe(false);
+  });
+
+  test('getting a lock that never answers ends the run as failed within its bound', async () => {
+    const started = Date.now();
+    const result = await runOnce('backup', fakeSource({ lock: () => new Promise(() => undefined) }), config, {
+      timeouts: fast,
+      lockMs: { get: 200 },
+    });
+    expect(Date.now() - started).toBeLessThan(2_000);
+    expect(result.line).toMatch(/: getting the lock timed out$/);
+  });
+
+  const newer = {
+    object: 'ledger/20991231T000000.000Z.json',
+    size: 1,
+    sha256: 'b'.repeat(64),
+    startedAt: '2099-12-31T00:00:00.000Z',
+    finishedAt: '2099-12-31T00:00:01.000Z',
+  };
+
+  test('a newer run that published while this one wrote wins: the conditional write is refused, and this run is superseded', async () => {
+    // Between this run reading the record and writing it, another writer publishes a newer one.
+    s3.faults.beforePut = (key) => {
+      if (key === statusKey('ledger')) s3.seed(statusKey('ledger'), JSON.stringify(newer));
+    };
+    const result = await runOnce('ledger', fakeSource(), config, { timeouts: fast });
+    expect(result.outcome).toBe('superseded');
+    expect(result.line).toMatch(
+      /^ledger superseded: ledger\/\S+ after \d+\.\d s: another run changed the record first; it is not recorded$/,
+    );
+    expect(JSON.parse(s3.objects.get(statusKey('ledger'))!.body.toString()).object).toBe(newer.object);
+  });
+
+  test('a record of a run that started later is never replaced, even by a write the store would take', async () => {
+    s3.seed(
+      statusKey('ledger'),
+      // Started a minute from now (a clock a little ahead) and finished a second later: a valid record of a later run.
+      JSON.stringify({
+        ...newer,
+        startedAt: new Date(Date.now() + 60_000).toISOString(),
+        finishedAt: new Date(Date.now() + 61_000).toISOString(),
+      }),
+    );
+    s3.faults.ignoreConditions = true;
+    const result = await runOnce('ledger', fakeSource(), config, { timeouts: fast });
+    expect(result.line).toMatch(/superseded: .*a run that started later is recorded/);
+  });
+
+  test('the first record is written only if there is none (If-None-Match), later ones only over the one read (If-Match)', async () => {
+    expect((await runOnce('backup', fakeSource(), config, { timeouts: fast })).outcome).toBe('ok');
+    expect((await runOnce('backup', fakeSource(), config, { timeouts: fast })).outcome).toBe('ok');
+    const puts = s3.requests.filter((r) => r === `PUT /backups/${statusKey('backup')}`);
+    expect(puts).toHaveLength(2);
+  });
+
+  test('a store that ignores conditional writes is detected', async () => {
+    const bucket = backupBucket(config, { timeouts: fast });
+    expect(await bucket.honoursConditions()).toBe(true);
+    s3.faults.ignoreConditions = true;
+    expect(await bucket.honoursConditions()).toBe(false);
   });
 });
 
@@ -380,19 +499,45 @@ describe('the scheduler', () => {
     expect(Date.now() - started).toBeLessThan(2_000);
     expect(lines.some((l) => l.endsWith(': stopped'))).toBe(true);
   });
+
+  test('a mail that never finishes holds neither a tick nor a run, and overlapping ticks send it once', async () => {
+    const sent: MailMessage[] = [];
+    const alerter = mailAlerter(
+      'ops@example.test',
+      backupBucket(config, { timeouts: fast }),
+      'backups',
+      log,
+      (m) => {
+        sent.push(m);
+        return new Promise(() => undefined);
+      },
+      { mailDeadlineMs: 300 },
+    );
+    const old = new Date(Date.now() - 30 * 3600_000).toISOString();
+    s3.seed(
+      statusKey('backup'),
+      JSON.stringify({ object: 'backups/20261101T160000.000Z.dump', size: 1, sha256: 'a'.repeat(64), startedAt: old, finishedAt: old }),
+    );
+    const s = await scheduler(fakeSource(), config, { log, alerter, run: { timeouts: fast } });
+    const started = Date.now();
+    await Promise.all([s.tick(), s.tick(), s.tick()]);
+    expect(Date.now() - started).toBeLessThan(200);
+    await s.idle();
+    expect(lines.some((l) => l.startsWith('backup ok: '))).toBe(true);
+    await alerter.idle();
+    expect(sent.map((m) => m.subject)).toEqual(['peblish backups: the nightly database backup has not succeeded in time']);
+    expect(lines).toContain('backup alert mail not sent: the mail timed out');
+  });
 });
 
 describe('alerts', () => {
   const sent: MailMessage[] = [];
   const lines: string[] = [];
-  const alerter = () =>
-    mailAlerter(
-      'ops@example.test',
-      backupBucket(config, { timeouts: fast }),
-      'backups',
-      (l) => lines.push(l),
-      async (m) => void sent.push(m),
-    );
+  const alerter = (send: (m: MailMessage) => Promise<void> = async (m) => void sent.push(m)) =>
+    mailAlerter('ops@example.test', backupBucket(config, { timeouts: fast }), 'backups', (l) => lines.push(l), send, {
+      mailDeadlineMs: 300,
+    });
+  const none = { backup: null, ledger: null };
   afterEach(() => {
     sent.length = 0;
     lines.length = 0;
@@ -410,19 +555,23 @@ describe('alerts', () => {
 
   test('one mail when a kind starts failing, none for its retries, one on recovery, and a restart remembers', async () => {
     const a = alerter();
+    await a.load(none);
     const since = new Date('2026-11-13T16:00:00Z');
-    await a.problem('backup', 'failing', since, 'backups/20261112T160000Z.dump');
-    await a.problem('backup', 'failing', since, 'backups/20261112T160000Z.dump');
-    await a.problem('backup', 'stale', since, null);
+    a.problem('backup', 'failing', since, 'backups/20261112T160000Z.dump');
+    a.problem('backup', 'failing', since, 'backups/20261112T160000Z.dump');
+    a.problem('backup', 'stale', since, null);
+    await a.idle();
     expect(sent.map((m) => m.subject)).toEqual(['peblish backups: the nightly database backup is failing']);
     expect(sent[0]!.text).toContain('since 2026-11-13T16:00:00.000Z');
     expect(sent[0]!.text).toContain('backup-status');
 
     // A new process (a restart) reads the state from the bucket: no second failure mail, and the recovery still comes.
     const b = alerter();
-    await b.problem('backup', 'failing', since, null);
-    await b.recovered('backup', 'backups/20261113T161500Z.dump', new Date('2026-11-13T16:15:00Z'));
-    await b.recovered('backup', 'backups/20261114T160000Z.dump', new Date('2026-11-14T16:00:00Z'));
+    await b.load(none);
+    b.problem('backup', 'failing', since, null);
+    b.recovered('backup', 'backups/20261113T161500Z.dump', new Date('2026-11-13T16:15:00Z'));
+    b.recovered('backup', 'backups/20261114T160000Z.dump', new Date('2026-11-14T16:00:00Z'));
+    await b.idle();
     expect(sent.map((m) => m.subject)).toEqual([
       'peblish backups: the nightly database backup is failing',
       'peblish backups: the nightly database backup works again',
@@ -430,22 +579,78 @@ describe('alerts', () => {
     expect(sent[1]!.text).toContain('It had been failing since 2026-11-13T16:00:00.000Z');
   });
 
-  test('a recovery without a mailed problem sends nothing; a mail that fails is logged and tried again', async () => {
-    await alerter().recovered('ledger', 'ledger/20261113T160500Z.json', new Date());
+  test('on one instance: a failed send is logged and released, the retry mails, a failed save is retried until it lands', async () => {
+    let failing = true;
+    const a = alerter(async (m) => {
+      if (failing) throw new Error('smtp://user:hunter2@mail refused');
+      sent.push(m);
+    });
+    await a.load(none);
+    a.recovered('ledger', 'ledger/20261113T160500.000Z.json', new Date());
+    a.problem('ledger', 'failing', new Date('2026-11-13T17:05:00Z'), null);
+    await a.idle();
     expect(sent).toEqual([]);
-    const flaky = mailAlerter(
-      'ops@example.test',
-      backupBucket(config, { timeouts: fast }),
-      'backups',
-      (l) => lines.push(l),
-      async () => {
-        throw new Error('smtp://user:hunter2@mail refused');
-      },
-    );
-    await flaky.problem('ledger', 'failing', new Date(), null);
     expect(lines).toEqual(['ledger alert mail not sent: Error; its message is withheld (it can quote values)']);
-    await alerter().problem('ledger', 'failing', new Date(), null);
-    expect(sent).toHaveLength(1);
+
+    failing = false;
+    a.problem('ledger', 'failing', new Date('2026-11-13T17:05:00Z'), null);
+    await a.idle();
+    expect(sent.map((m) => m.subject)).toEqual(['peblish backups: the hourly ledger export is failing']);
+
+    // The recovery mail goes, its state does not save; the next ticks retry until it does.
+    s3.faults.denyPut = true;
+    a.recovered('ledger', 'ledger/20261113T172000.000Z.json', new Date('2026-11-13T17:20:00Z'));
+    await a.idle();
+    expect(sent).toHaveLength(2);
+    expect(lines.at(-1)).toMatch(
+      /^ledger alert state not saved \(tried again on the next tick\): put status\/ledger\.alert\.json: 403 AccessDenied$/,
+    );
+    a.flush();
+    await a.idle();
+    expect(JSON.parse(s3.objects.get('status/ledger.alert.json')!.body.toString()).state).toBe('failing');
+    delete s3.faults.denyPut;
+    a.flush();
+    await a.idle();
+    expect(JSON.parse(s3.objects.get('status/ledger.alert.json')!.body.toString()).state).toBe('ok');
+  });
+
+  test('a recovery whose saved state was lost before a restart is mailed again, so the next failure is not silenced', async () => {
+    s3.seed(
+      'status/ledger.alert.json',
+      JSON.stringify({ state: 'failing', since: '2026-11-13T17:05:00.000Z', mailedAt: '2026-11-13T17:05:01.000Z' }),
+    );
+    const b = alerter();
+    await b.load({ backup: null, ledger: { object: 'ledger/20261113T172000.000Z.json', finishedAt: '2026-11-13T17:20:00.500Z' } });
+    await b.idle();
+    expect(sent.map((m) => m.subject)).toEqual(['peblish backups: the hourly ledger export works again']);
+    b.problem('ledger', 'failing', new Date('2026-11-13T18:05:00Z'), null);
+    await b.idle();
+    expect(sent.map((m) => m.subject).at(-1)).toBe('peblish backups: the hourly ledger export is failing');
+  });
+
+  test('an unreadable state is one mail of its own and silences nothing; a missing one is no mail', async () => {
+    await alerter().load(none);
+    expect(sent).toEqual([]);
+    s3.seed('status/backup.alert.json', '{ not json');
+    s3.seed('status/ledger.alert.json', JSON.stringify({ state: 'failing', since: 'not-a-date' }));
+    const a = alerter();
+    await a.load(none);
+    a.problem('backup', 'failing', new Date(), null);
+    await a.idle();
+    expect(sent.map((m) => m.subject)).toEqual([
+      'peblish backups: the alert state cannot be read',
+      'peblish backups: the nightly database backup is failing',
+    ]);
+    expect(sent[0]!.text).toContain('nightly database backup and hourly ledger export');
+  });
+
+  test('a bucket that refuses the state read is unreadable, not missing', async () => {
+    s3.faults.deny = true;
+    const a = alerter();
+    await a.load(none);
+    delete s3.faults.deny;
+    await a.idle();
+    expect(sent.map((m) => m.subject)).toEqual(['peblish backups: the alert state cannot be read']);
   });
 });
 
@@ -487,7 +692,7 @@ describe('backup-status and the fetch for a restore', () => {
     s3.seed('backups/20991231T000000Z.dump', 'a newer upload that failed its check');
     s3.seed('ledger/20991231T000000Z.json', 'not good');
     const fetched = await fetchForRestore(config, join(dir, 'restore'));
-    expect(fetched.chosenBy).toBe('status/backup.json and status/ledger.json (last good)');
+    expect(fetched.chosenBy).toBe('backup from status/backup.json (last good); ledger from status/ledger.json (last good)');
     expect(fetched.backupObject).not.toBe('backups/20991231T000000Z.dump');
     expect(fetched.ledgerObject).not.toBe('ledger/20991231T000000Z.json');
     expect(readdirSync(join(dir, 'restore')).sort()).toHaveLength(2);
@@ -497,6 +702,51 @@ describe('backup-status and the fetch for a restore', () => {
     ledgerObject.body = Buffer.from(ledgerObject.body.toString().toUpperCase());
     await expect(fetchForRestore(config, join(dir, 'restore-2'))).rejects.toThrow(/does not match its status record/);
     expect(existsSync(join(dir, 'restore-2'))).toBe(false);
+  });
+
+  test('a second fetch into the same folder is refused before fetching, and the first files stay', async () => {
+    await runOnce('backup', fakeSource(), config, { timeouts: fast });
+    await runOnce('ledger', fakeSource(), config, { timeouts: fast });
+    const first = await fetchForRestore(config, join(dir, 'twice'));
+    const before = s3.requests.length;
+    await expect(fetchForRestore(config, join(dir, 'twice'))).rejects.toThrow(/exists; fetch into an empty folder$/);
+    expect(s3.requests.slice(before).some((r) => r.startsWith('GET /backups/backups/') || r.startsWith('GET /backups/ledger/'))).toBe(
+      false,
+    );
+    expect([existsSync(first.backup), existsSync(first.ledger)]).toEqual([true, true]);
+  });
+
+  test('a failure in an existing folder removes only what this fetch made', async () => {
+    await runOnce('backup', fakeSource(), config, { timeouts: fast });
+    await runOnce('ledger', fakeSource(), config, { timeouts: fast });
+    const folder = join(dir, 'kept');
+    mkdirSync(folder, { mode: 0o700 });
+    writeFileSync(join(folder, 'mine.txt'), 'not the fetch');
+    const ledger = JSON.parse(s3.objects.get(statusKey('ledger'))!.body.toString()) as Status;
+    s3.objects.get(ledger.object)!.body = Buffer.from('changed');
+    await expect(fetchForRestore(config, folder)).rejects.toThrow();
+    expect(readdirSync(folder)).toEqual(['mine.txt']);
+  });
+
+  test('--object and --ledger-object work without a valid status record for their kind, and still check what they fetch', async () => {
+    await runOnce('backup', fakeSource(), config, { timeouts: fast });
+    await runOnce('ledger', fakeSource(), config, { timeouts: fast });
+    const backup = (JSON.parse(s3.objects.get(statusKey('backup'))!.body.toString()) as Status).object;
+    const ledger = (JSON.parse(s3.objects.get(statusKey('ledger'))!.body.toString()) as Status).object;
+    s3.seed(statusKey('backup'), '{ not json');
+    await expect(fetchForRestore(config, join(dir, 'no-object'))).rejects.toThrow(
+      'status/backup.json not JSON; name the backup with --object',
+    );
+    const fetched = await fetchForRestore(config, join(dir, 'named'), { object: backup });
+    expect(fetched.chosenBy).toBe('backup named, checked against its own sha256 record; ledger from status/ledger.json (last good)');
+    s3.seed(statusKey('ledger'), '{ not json');
+    await expect(fetchForRestore(config, join(dir, 'no-ledger'), { object: backup })).rejects.toThrow(
+      /name the ledger with --ledger-object$/,
+    );
+    expect((await fetchForRestore(config, join(dir, 'both'), { object: backup, ledgerObject: ledger })).ledgerObject).toBe(ledger);
+    await expect(fetchForRestore(config, join(dir, 'bad'), { object: 'backups/20991231T000000.000Z.dump' })).rejects.toThrow(
+      /not in the bucket or has no sha256 record/,
+    );
   });
 });
 

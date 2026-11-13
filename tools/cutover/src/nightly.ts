@@ -3,9 +3,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { type } from 'arktype';
 import postgres from 'postgres';
-import type { Alerter } from './alerts.ts';
+import type { Alerter, LastGood } from './alerts.ts';
 import { backupBucket, type Bucket, type BucketConfig, type Timeouts } from './bucket.ts';
 import { backup, exportLedger } from './drill.ts';
+import { withDeadline } from './deadline.ts';
 import { CutoverError, describe } from './errors.ts';
 
 // The nightly database backup and the hourly ledger export, uploaded to the backup bucket
@@ -37,11 +38,17 @@ export type Status = typeof StatusShape.infer;
 /** A clock may be a little ahead of the one that wrote a record; more than this is not plausible. */
 const CLOCK_SKEW_MS = 5 * 60_000;
 
-/** A status record as read: none, a good one, or one that does not hold up (and why, in fixed words). */
-export type StatusRead = { status: Status | null; invalid: string | null };
+/** A status record as read: none, a good one, or one that does not hold up (and why, in fixed words), with the stored record's ETag. */
+export type StatusRead = { status: Status | null; invalid: string | null; etag: string | null };
 
-/** Checks a status record strictly: its shape, its object's name for `kind`, and that its times are in order and not in the future. */
-export function parseStatus(kind: Kind, text: string, now: Date): StatusRead {
+/** A time as this tool writes it: `toISOString()` of a real instant (30 February does not come back as itself). */
+const isExactTime = (text: string) => {
+  const at = Date.parse(text);
+  return Number.isFinite(at) && new Date(at).toISOString() === text;
+};
+
+/** Checks a status record strictly: its shape, its object's name for `kind`, and that its times are real, in order and not in the future. */
+export function parseStatus(kind: Kind, text: string, now: Date): Omit<StatusRead, 'etag'> {
   let value: unknown;
   try {
     value = JSON.parse(text);
@@ -51,17 +58,16 @@ export function parseStatus(kind: Kind, text: string, now: Date): StatusRead {
   const checked = StatusShape(value);
   if (checked instanceof type.errors) return { status: null, invalid: 'does not match its format' };
   if (!objectPattern[kind].test(checked.object)) return { status: null, invalid: `names no ${kind} object` };
-  const started = Date.parse(checked.startedAt);
-  const finished = Date.parse(checked.finishedAt);
-  if (!Number.isFinite(started) || !Number.isFinite(finished)) return { status: null, invalid: 'has a time that is not a time' };
-  if (started > finished) return { status: null, invalid: 'finished before it started' };
-  if (finished > now.getTime() + CLOCK_SKEW_MS) return { status: null, invalid: 'is dated in the future' };
+  if (!isExactTime(checked.startedAt) || !isExactTime(checked.finishedAt))
+    return { status: null, invalid: 'has a time that is not a time' };
+  if (Date.parse(checked.startedAt) > Date.parse(checked.finishedAt)) return { status: null, invalid: 'finished before it started' };
+  if (Date.parse(checked.finishedAt) > now.getTime() + CLOCK_SKEW_MS) return { status: null, invalid: 'is dated in the future' };
   return { status: checked, invalid: null };
 }
 
 export const statusKey = (kind: Kind) => `status/${kind}.json`;
 
-/** `20261113T160000.123Z`: UTC to the millisecond (ISO 8601 basic form), sortable as text; two runs never share a name. */
+/** `20261113T160000.123Z`: UTC to the millisecond (ISO 8601 basic form), sortable as text. Two runs of a kind cannot share one while each holds the lock, and a name that exists is refused. */
 export const stamp = (at: Date) => `${at.toISOString().slice(0, 23).replace(/[-:]/g, '')}Z`;
 
 export const objectName = (kind: Kind, at: Date) => (kind === 'backup' ? `backups/${stamp(at)}.dump` : `ledger/${stamp(at)}.json`);
@@ -91,8 +97,8 @@ export const STALE_AFTER_MS = { backup: 26 * 3600_000, ledger: 2 * 3600_000 } as
 const isStale = (kind: Kind, last: Status | null, now: Date) => !last || now.getTime() - Date.parse(last.finishedAt) > STALE_AFTER_MS[kind];
 
 export async function readStatus(bucket: Bucket, kind: Kind, now = new Date(), signal?: AbortSignal): Promise<StatusRead> {
-  const text = await bucket.getSmall(statusKey(kind), signal);
-  return text === null ? { status: null, invalid: null } : parseStatus(kind, text, now);
+  const found = await bucket.getSmall(statusKey(kind), signal);
+  return found === null ? { status: null, invalid: null, etag: null } : { ...parseStatus(kind, found.text, now), etag: found.etag };
 }
 
 /** The lock a run holds for its kind. `lost` aborts if its session ends; `held()` asks the server. */
@@ -180,9 +186,15 @@ export function postgresSource(url: string): Source {
 
 /** The dump or export itself must finish within this; the upload and its check have their own bounds, by size. */
 export const PRODUCE_DEADLINE_MS = { backup: 3 * 3600_000, ledger: 10 * 60_000 } as const;
+/** Getting the lock, asking whether it is still held, and letting it go: each bounded. */
+export const LOCK_MS = { get: 60_000, check: 30_000, release: 10_000 } as const;
 
 export type RunResult =
-  { outcome: 'ok'; status: Status; line: string } | { outcome: 'failed'; line: string } | { outcome: 'skipped'; line: string };
+  | { outcome: 'ok'; status: Status; line: string }
+  | { outcome: 'failed'; line: string }
+  | { outcome: 'skipped'; line: string }
+  /** Another run recorded a newer good run first: this one's object stays, unrecorded. Neither a failure nor a success. */
+  | { outcome: 'superseded'; line: string };
 
 export type RunOptions = {
   now?: () => Date;
@@ -190,6 +202,7 @@ export type RunOptions = {
   partBytes?: number;
   timeouts?: Partial<Timeouts>;
   produceDeadlineMs?: number;
+  lockMs?: Partial<Record<keyof typeof LOCK_MS, number>>;
 };
 
 const seconds = (ms: number) => `${(ms / 1000).toFixed(1)} s`;
@@ -202,14 +215,24 @@ function stopped(error: unknown, signals: { stop?: AbortSignal | undefined; lost
   return describe(error);
 }
 
-/** One run of `kind`. Never throws: everything, the source's setup included, is inside its guarded path. */
+/**
+ * One run of `kind`. Never throws: everything, the source's setup included, is inside its guarded
+ * path, and every wait in it is bounded (the lock, the dump or export, each transfer, the final
+ * lock check, the record, the release), so a run always ends. Publication is fenced: the record
+ * is written only by the holder of the lock, only over the record it read (If-Match, or
+ * If-None-Match: * when there was none), and never over a run that started later; a write the
+ * store refuses means another run won, and this one is "superseded".
+ */
 export async function runOnce(kind: Kind, source: Source, config: BucketConfig, options: RunOptions = {}): Promise<RunResult> {
   const now = options.now ?? (() => new Date());
+  const lockMs = { ...LOCK_MS, ...options.lockMs };
   const started = now();
   const object = objectName(kind, started);
-  const failed = (why: string): RunResult => ({
-    outcome: 'failed',
-    line: `${kind} FAILED: ${object} after ${seconds(now().getTime() - started.getTime())}: ${why}`,
+  const after = () => seconds(now().getTime() - started.getTime());
+  const failed = (why: string): RunResult => ({ outcome: 'failed', line: `${kind} FAILED: ${object} after ${after()}: ${why}` });
+  const superseded = (why: string): RunResult => ({
+    outcome: 'superseded',
+    line: `${kind} superseded: ${object} after ${after()}: ${why}; it is not recorded`,
   });
   const stop = options.signal;
   const deadline = new AbortController();
@@ -221,24 +244,31 @@ export async function runOnce(kind: Kind, source: Source, config: BucketConfig, 
       ...(options.partBytes && { partBytes: options.partBytes }),
       ...(options.timeouts && { timeouts: options.timeouts }),
     });
-    const setup = AbortSignal.any([AbortSignal.timeout(60_000), ...(stop ? [stop] : [])]);
-    lock = await source.lock(kind, setup);
+    const setup = AbortSignal.any([AbortSignal.timeout(lockMs.get), ...(stop ? [stop] : [])]);
+    const getting = source.lock(kind, setup);
+    // A lock that arrives after its deadline is let go at once.
+    lock = await withDeadline(getting, lockMs.get, 'getting the lock').catch(async (error: unknown) => {
+      void getting.then((late) => late?.release()).catch(() => undefined);
+      throw error;
+    });
     if (!lock) return { outcome: 'skipped', line: `${kind} skipped: another ${kind} run holds the lock` };
-    const run = AbortSignal.any([lock.lost, deadline.signal, ...(stop ? [stop] : [])]);
+    const held = lock;
+    const run = AbortSignal.any([held.lost, deadline.signal, ...(stop ? [stop] : [])]);
     timer = setTimeout(() => deadline.abort(new CutoverError('timed out')), options.produceDeadlineMs ?? PRODUCE_DEADLINE_MS[kind]);
     dir = mkdtempSync(join(tmpdir(), `peblish-${kind}-`));
     const file = join(dir, kind === 'backup' ? 'backup.dump' : 'ledger.json');
     const { rows } = await source.produce(kind, file, run);
     if (run.aborted) throw run.reason;
     clearTimeout(timer);
-    const checked = await bucket.uploadFile(
-      object,
-      file,
-      kind === 'backup' ? 'application/octet-stream' : 'application/json',
-      AbortSignal.any([lock.lost, ...(stop ? [stop] : [])]),
-    );
-    // Only the holder of the lock may record a run: a run that lost it may be older than another's.
-    if (!(await lock.held())) return failed(`lost its database lock before recording; ${object} is not recorded as good`);
+    const live = AbortSignal.any([held.lost, ...(stop ? [stop] : [])]);
+    const contentType = kind === 'backup' ? 'application/octet-stream' : 'application/json';
+    const checked = await bucket.uploadFile(object, file, contentType, live);
+    // Only the holder of the lock may record a run; a check that does not answer counts as lost.
+    const stillHeld = await withDeadline(held.held(), lockMs.check, 'the lock check').catch(() => false);
+    if (!stillHeld || live.aborted) return failed(`lost its database lock before recording; ${object} is not recorded as good`);
+    const before = await readStatus(bucket, kind, now(), live);
+    if (before.status && Date.parse(before.status.startedAt) >= started.getTime())
+      return superseded('a run that started later is recorded');
     const status: Status = {
       object,
       size: checked.size,
@@ -248,25 +278,25 @@ export async function runOnce(kind: Kind, source: Source, config: BucketConfig, 
       finishedAt: now().toISOString(),
       ...(rows !== undefined && { rows }),
     };
-    await bucket.putSmall(statusKey(kind), `${JSON.stringify(status, null, 2)}\n`, 'application/json', stop);
+    const written = await bucket.putSmall(statusKey(kind), `${JSON.stringify(status, null, 2)}\n`, 'application/json', {
+      signal: live,
+      replacing: before.etag,
+    });
+    if (!written) return superseded('another run changed the record first');
     const counted = rows === undefined ? '' : `, ${rows} rows`;
-    return {
-      outcome: 'ok',
-      status,
-      line: `${kind} ok: ${object}, ${checked.size} bytes${counted}, ${seconds(now().getTime() - started.getTime())}`,
-    };
+    return { outcome: 'ok', status, line: `${kind} ok: ${object}, ${checked.size} bytes${counted}, ${after()}` };
   } catch (error) {
     return failed(stopped(error, { stop, deadline: deadline.signal, ...(lock && { lost: lock.lost }) }));
   } finally {
     clearTimeout(timer);
     if (dir) rmSync(dir, { recursive: true, force: true });
-    await lock?.release().catch(() => undefined);
+    if (lock) await withDeadline(lock.release(), lockMs.release, 'letting the lock go').catch(() => undefined);
   }
 }
 
 /** After a failed run (or an unreadable status record), the next try waits this long. */
 export const RETRY_AFTER_MS = 15 * 60_000;
-/** On SIGTERM, runs in flight get this long to stop and clean up before the process exits anyway. */
+/** On SIGTERM, runs in flight get this long to stop and clean up; then the process exits anyway (cli.ts). */
 export const SHUTDOWN_MS = 8_000;
 
 export type Scheduler = { tick(): Promise<void>; stop(): Promise<void>; idle(): Promise<void> };
@@ -276,7 +306,8 @@ export type Scheduler = { tick(): Promise<void>; stop(): Promise<void>; idle(): 
  * drive by hand). Each kind runs on its own, so a long dump does not hold the hourly export. The
  * last good run is read from the bucket at start and again before a run, so a restart or a
  * redeploy catches a missed run up instead of losing it, and a run another process finished is
- * not repeated. Every promise it starts is caught: a failure is a log line, never a crash.
+ * not repeated. A tick never waits for a run or a mail: runs are bounded (runOnce) and alerts go
+ * to their own queue (alerts.ts). Every promise it starts is caught: a failure is a log line.
  */
 export async function scheduler(
   source: Source,
@@ -284,6 +315,7 @@ export async function scheduler(
   options: { log: (line: string) => void; alerter?: Alerter | null; now?: () => Date; run?: RunOptions } = { log: console.log },
 ): Promise<Scheduler> {
   const { log } = options;
+  const alerter = options.alerter ?? null;
   const now = options.now ?? (() => new Date());
   const bucket = backupBucket(config, options.run?.timeouts ? { timeouts: options.run.timeouts } : {});
   const stopping = new AbortController();
@@ -293,9 +325,6 @@ export async function scheduler(
       { last: null as Status | null, retryAt: 0, running: null as Promise<void> | null, failingSince: null as Date | null },
     ]),
   ) as Record<Kind, { last: Status | null; retryAt: number; running: Promise<void> | null; failingSince: Date | null }>;
-  const alert = async (f: (a: Alerter) => Promise<void>) => {
-    if (options.alerter) await f(options.alerter).catch((error: unknown) => log(`alert failed: ${describe(error)}`));
-  };
 
   const read = async (kind: Kind): Promise<Status | null> => {
     const found = await readStatus(bucket, kind, now(), stopping.signal);
@@ -310,19 +339,31 @@ export async function scheduler(
       log(`${kind} status unreadable: ${describe(error)}`);
     }
   }
+  try {
+    if (!(await bucket.honoursConditions(stopping.signal))) {
+      log('the backup bucket ignores conditional writes: status records are fenced by the lock alone (deploy/backups.md)');
+    }
+  } catch (error) {
+    log(`conditional write check failed: ${describe(error)}`);
+  }
+  const lastGood = Object.fromEntries(
+    kinds.map((kind) => [kind, state[kind].last && { object: state[kind].last.object, finishedAt: state[kind].last.finishedAt }]),
+  ) as LastGood;
+  await alerter?.load(lastGood).catch((error: unknown) => log(`alert state not loaded: ${describe(error)}`));
   const describeLast = (kind: Kind) => {
     const last = state[kind].last;
     return last ? `${last.object} at ${last.finishedAt}` : 'none';
   };
+  const hhmm = `${String(SCHEDULE.backup.hour).padStart(2, '0')}:${String(SCHEDULE.backup.minute).padStart(2, '0')}`;
   log(
-    `backup schedule started (UTC): dump daily at ${String(SCHEDULE.backup.hour).padStart(2, '0')}:${String(SCHEDULE.backup.minute).padStart(2, '0')}, ledger hourly at :${String(SCHEDULE.ledger.minute).padStart(2, '0')}; last good backup ${describeLast('backup')}, last good ledger ${describeLast('ledger')}`,
+    `backup schedule started (UTC): dump daily at ${hhmm}, ledger hourly at :${String(SCHEDULE.ledger.minute).padStart(2, '0')}; last good backup ${describeLast('backup')}, last good ledger ${describeLast('ledger')}`,
   );
 
-  const fail = async (kind: Kind, at: Date) => {
+  const fail = (kind: Kind, at: Date) => {
     const s = state[kind];
     s.retryAt = Date.now() + RETRY_AFTER_MS;
     s.failingSince ??= at;
-    await alert((a) => a.problem(kind, 'failing', s.failingSince!, s.last?.object ?? null));
+    alerter?.problem(kind, 'failing', s.failingSince, s.last?.object ?? null);
   };
 
   const attempt = async (kind: Kind) => {
@@ -341,18 +382,19 @@ export async function scheduler(
     if (result.outcome === 'ok') {
       s.last = result.status;
       s.failingSince = null;
-      await alert((a) => a.recovered(kind, result.status.object, new Date(result.status.finishedAt)));
-    } else if (result.outcome === 'failed' && !stopping.signal.aborted) await fail(kind, at);
+      alerter?.recovered(kind, result.status.object, new Date(result.status.finishedAt));
+    } else if (result.outcome === 'failed' && !stopping.signal.aborted) fail(kind, at);
   };
 
   return {
     async tick() {
       const at = now();
+      alerter?.flush();
       for (const kind of kinds) {
         const s = state[kind];
         if (s.running || stopping.signal.aborted) continue;
-        if (isStale(kind, s.last, at) && s.last) {
-          await alert((a) => a.problem(kind, 'stale', new Date(Date.parse(s.last!.finishedAt) + STALE_AFTER_MS[kind]), s.last!.object));
+        if (s.last && isStale(kind, s.last, at)) {
+          alerter?.problem(kind, 'stale', new Date(Date.parse(s.last.finishedAt) + STALE_AFTER_MS[kind]), s.last.object);
         }
         if (Date.now() < s.retryAt || !isDue(kind, s.last, at)) continue;
         s.running = attempt(kind)
@@ -370,14 +412,18 @@ export async function scheduler(
       const running = kinds.map((kind) => state[kind].running).filter((p) => p !== null);
       log(`backup schedule stopping${running.length > 0 ? `, ending ${running.length} run(s) in flight` : ''}`);
       const bounded = new Promise<void>((resolve) => setTimeout(resolve, SHUTDOWN_MS).unref());
-      await Promise.race([Promise.all(running), bounded]);
+      await Promise.race([Promise.all([...running, alerter?.idle()]), bounded]);
     },
   };
 }
 
 const TICK_MS = 60_000;
 
-/** The schedule as a long-running process (`backup-schedule`): a tick a minute until SIGTERM or SIGINT. */
+/**
+ * The schedule as a long-running process (`backup-schedule`): a tick a minute until SIGTERM or
+ * SIGINT. It resolves once runs in flight have stopped or SHUTDOWN_MS has passed; the CLI then
+ * exits the process, which also ends any database session a stuck run still holds.
+ */
 export async function schedule(
   source: Source,
   config: BucketConfig,
@@ -426,59 +472,82 @@ export async function statusReport(config: BucketConfig, now = new Date()): Prom
   return Object.fromEntries(entries) as StatusReport;
 }
 
+/** The object to fetch for `kind`: the one named (checked against its own sha256 metadata), or the one the status record names. */
+async function chooseObject(
+  bucket: Bucket,
+  kind: Kind,
+  named: string | undefined,
+  record: StatusRead,
+  signal?: AbortSignal,
+): Promise<{ object: string; size: number; sha256: string }> {
+  const flag = kind === 'backup' ? '--object' : '--ledger-object';
+  if (named) {
+    if (!objectPattern[kind].test(named)) {
+      throw new CutoverError(`${named} is not a ${kind} object name (${kind === 'backup' ? 'backups/<time>.dump' : 'ledger/<time>.json'})`);
+    }
+    const head = await bucket.head(named, signal);
+    if (!head?.sha256) throw new CutoverError(`${named} is not in the bucket or has no sha256 record`);
+    return { object: named, size: head.size, sha256: head.sha256 };
+  }
+  if (record.invalid) throw new CutoverError(`${statusKey(kind)} ${record.invalid}; name the ${kind} with ${flag}`);
+  if (!record.status) throw new CutoverError(`no ${kind} is recorded as good in ${statusKey(kind)}; name one with ${flag}`);
+  return record.status;
+}
+
 /**
- * For a restore: downloads the backup and the ledger export the status records name as last good
- * (or the backup named, which must still match its own sha256 record) into `dir` (created mode
- * 700; files mode 600, each checked). Newer objects the records do not name, such as an upload
- * that failed its check, are passed over. On any failure or stop it removes what it fetched.
+ * For a restore: downloads a backup and a ledger export into `dir` (created mode 700; files mode
+ * 600, each checked while it downloads). Each is the one named (`object`, `ledgerObject`), which
+ * must match its own sha256 metadata, or else the one its status record names as last good; a
+ * named object needs no valid record for its kind. Newer objects no record names (an upload that
+ * failed its check) are passed over. A destination that exists is refused before anything is
+ * fetched; on any failure or stop it removes only the files and folder this call created.
  */
 export async function fetchForRestore(
   config: BucketConfig,
   dir: string,
-  options: { object?: string; signal?: AbortSignal } = {},
+  options: { object?: string; ledgerObject?: string; signal?: AbortSignal } = {},
 ): Promise<{ chosenBy: string; backupObject: string; backup: string; ledgerObject: string; ledger: string }> {
   const bucket = backupBucket(config);
   const now = new Date();
+  const named = { backup: options.object, ledger: options.ledgerObject };
   const records = Object.fromEntries(
-    await Promise.all(kinds.map(async (kind) => [kind, await readStatus(bucket, kind, now, options.signal)] as const)),
-  ) as Record<Kind, StatusRead>;
-  for (const kind of kinds) {
-    if (records[kind].invalid)
-      throw new CutoverError(`${statusKey(kind)} ${records[kind].invalid}; name the backup with --object and check the bucket by hand`);
+    await Promise.all(kinds.map(async (kind) => [kind, named[kind] ? null : await readStatus(bucket, kind, now, options.signal)] as const)),
+  ) as Record<Kind, StatusRead | null>;
+  const none: StatusRead = { status: null, invalid: null, etag: null };
+  const chosen = {
+    backup: await chooseObject(bucket, 'backup', named.backup, records.backup ?? none, options.signal),
+    ledger: await chooseObject(bucket, 'ledger', named.ledger, records.ledger ?? none, options.signal),
+  };
+  const files = {
+    backup: join(dir, chosen.backup.object.slice('backups/'.length)),
+    ledger: join(dir, `ledger-${chosen.ledger.object.slice('ledger/'.length)}`),
+  };
+  for (const file of Object.values(files)) {
+    if (exists(file)) throw new CutoverError(`${file} exists; fetch into an empty folder`);
   }
-  const ledgerStatus = records.ledger.status;
-  if (!ledgerStatus) throw new CutoverError('no ledger export is recorded as good in status/ledger.json');
-  let backupObject = records.backup.status?.object;
-  let expected = records.backup.status ? { size: records.backup.status.size, sha256: records.backup.status.sha256 } : null;
-  if (options.object) {
-    if (!objectPattern.backup.test(options.object))
-      throw new CutoverError(`${options.object} is not a backup object name (backups/<time>.dump)`);
-    const head = await bucket.head(options.object, options.signal);
-    if (!head?.sha256) throw new CutoverError(`${options.object} is not in the bucket or has no sha256 record`);
-    backupObject = options.object;
-    expected = { size: head.size, sha256: head.sha256 };
-  }
-  if (!backupObject || !expected) throw new CutoverError('no backup is recorded as good in status/backup.json; name one with --object');
-  const created = !exists(dir);
+  const createdDir = !exists(dir);
   mkdirSync(dir, { recursive: true, mode: 0o700 });
-  if ((statSync(dir).mode & 0o077) !== 0) throw new CutoverError(`${dir} is readable by others; use a mode 700 folder`);
-  const backupFile = join(dir, backupObject.slice('backups/'.length));
-  const ledgerFile = join(dir, `ledger-${ledgerStatus.object.slice('ledger/'.length)}`);
+  const created: string[] = [];
   try {
-    await bucket.fetchFile(backupObject, backupFile, expected, options.signal);
-    await bucket.fetchFile(ledgerStatus.object, ledgerFile, ledgerStatus, options.signal);
+    if ((statSync(dir).mode & 0o077) !== 0) throw new CutoverError(`${dir} is readable by others; use a mode 700 folder`);
+    for (const kind of kinds) {
+      // fetchFile creates the file exclusively and removes it itself when it fails part way.
+      await bucket.fetchFile(chosen[kind].object, files[kind], chosen[kind], options.signal);
+      created.push(files[kind]);
+    }
   } catch (error) {
-    rmSync(backupFile, { force: true });
-    rmSync(ledgerFile, { force: true });
-    if (created) rmSync(dir, { recursive: true, force: true });
+    for (const file of created) rmSync(file, { force: true });
+    if (createdDir) rmSync(dir, { recursive: true, force: true });
     throw error;
   }
+  const how = (kind: Kind) =>
+    named[kind] ? `${kind} named, checked against its own sha256 record` : `${kind} from ${statusKey(kind)} (last good)`;
   return {
-    chosenBy: options.object ? 'named, checked against its own sha256 record' : 'status/backup.json and status/ledger.json (last good)',
-    backupObject,
-    backup: backupFile,
-    ledgerObject: ledgerStatus.object,
-    ledger: ledgerFile,
+    chosenBy: `${how('backup')}; ${how('ledger')}`,
+    backupObject: chosen.backup.object,
+    backup: files.backup,
+    ledgerObject: chosen.ledger.object,
+    ledger: files.ledger,
   };
 }
 

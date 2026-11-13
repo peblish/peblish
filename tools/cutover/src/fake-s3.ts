@@ -23,6 +23,18 @@ export type Faults = {
   slowMs?: number;
   /** Every request answers 403 AccessDenied. */
   deny?: boolean;
+  /** Only PUTs of whole objects answer 403 AccessDenied (reads still work). */
+  denyPut?: boolean;
+  /** Each part and whole PUT waits this long before answering. */
+  slowPutMs?: number;
+  /** Runs just before a completion is applied, as if another writer got there first. */
+  beforeComplete?: () => void;
+  /** Runs just before a whole PUT is applied (once), as if another writer got there first. */
+  beforePut?: (key: string) => void;
+  /** Completion answers 200 with this error code in its body. */
+  completeError?: string;
+  /** The store ignores If-Match and If-None-Match, as one without conditional writes would. */
+  ignoreConditions?: boolean;
 };
 
 export type FakeS3 = {
@@ -48,7 +60,8 @@ export async function fakeS3(bucket: string): Promise<FakeS3> {
   const server = http.createServer((req, res) => {
     const chunks: Buffer[] = [];
     req.on('data', (chunk: Buffer) => chunks.push(chunk));
-    req.on('end', () => {
+    req.on('end', () => (req.method === 'PUT' && faults.slowPutMs ? setTimeout(handle, faults.slowPutMs) : handle()));
+    const handle = () => {
       const body = Buffer.concat(chunks);
       const url = new URL(req.url ?? '/', 'http://fake');
       requests.push(`${req.method} ${url.pathname}${url.search}`);
@@ -66,6 +79,19 @@ export async function fakeS3(bucket: string): Promise<FakeS3> {
           .filter(([h]) => h.startsWith('x-amz-meta-'))
           .map(([h, v]) => [h, String(v)]),
       );
+
+      // S3's conditional writes: If-None-Match: * needs no object, If-Match its current ETag.
+      const refused = (): boolean => {
+        if (faults.ignoreConditions) return false;
+        const current = objects.get(key);
+        const none = req.headers['if-none-match'];
+        const match = req.headers['if-match'];
+        const fail = (status: number, code: string) => (send(status, xmlError(code)), true);
+        if (none === '*' && current) return fail(412, 'PreconditionFailed');
+        if (match !== undefined && !current) return fail(404, 'NoSuchKey');
+        if (match !== undefined && current && match.replaceAll('"', '') !== current.etag) return fail(412, 'PreconditionFailed');
+        return false;
+      };
 
       if (req.method === 'GET' && key === '' && q.get('list-type') === '2') {
         const prefix = q.get('prefix') ?? '';
@@ -97,8 +123,18 @@ export async function fakeS3(bucket: string): Promise<FakeS3> {
         const id = q.get('uploadId')!;
         const upload = uploads.get(id);
         if (!upload) return send(404, xmlError('NoSuchUpload'));
-        const numbers = [...upload.parts.keys()].sort((a, b) => a - b);
-        const parts = numbers.map((n) => upload.parts.get(n)!);
+        if (faults.completeError) return send(200, xmlError(faults.completeError));
+        faults.beforeComplete?.();
+        if (refused()) return;
+        // The manifest decides the object: its parts, in its order, each with the ETag it was given.
+        const listed = [...body.toString().matchAll(/<PartNumber>(\d+)<\/PartNumber><ETag>"?([0-9a-f]+)"?<\/ETag>/g)];
+        if (listed.length === 0) return send(400, xmlError('MalformedXML'));
+        const parts: Buffer[] = [];
+        for (const [, n, tagged] of listed) {
+          const part = upload.parts.get(Number(n));
+          if (!part || md5(part).toString('hex') !== tagged) return send(400, xmlError('InvalidPart'));
+          parts.push(part);
+        }
         const whole = Buffer.concat(parts);
         if (faults.corrupt && whole.length > 0) whole[whole.length - 1] = whole[whole.length - 1]! ^ 0xff;
         const etag = `${createHash('md5')
@@ -114,6 +150,11 @@ export async function fakeS3(bucket: string): Promise<FakeS3> {
       }
       if (req.method === 'DELETE') return send(403, xmlError('AccessDenied'));
       if (req.method === 'PUT') {
+        if (faults.denyPut) return send(403, xmlError('AccessDenied'));
+        const before = faults.beforePut;
+        delete faults.beforePut;
+        before?.(key);
+        if (refused()) return;
         objects.set(key, { body, contentType: req.headers['content-type'] ?? '', meta, etag: md5(body).toString('hex') });
         return send(200, '', { etag: `"${md5(body).toString('hex')}"` });
       }
@@ -146,7 +187,7 @@ export async function fakeS3(bucket: string): Promise<FakeS3> {
         return res.end(found.body);
       }
       send(400, xmlError('NotImplemented'));
-    });
+    };
   });
   await new Promise<void>((done) => server.listen(0, '127.0.0.1', done));
   const { port } = server.address() as AddressInfo;
