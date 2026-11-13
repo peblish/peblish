@@ -5,6 +5,7 @@ import { actors } from '../db/tables/actors.ts';
 import { posts } from '../db/tables/content.ts';
 import { sameMentions } from '../mentions/scan.ts';
 import { defineMutation } from '../tx/mutation.ts';
+import { nextEditedAt, olderThanHeld } from '../remote/revision.ts';
 import { Refused } from '../tx/refused.ts';
 import { remoteBody } from './body.ts';
 import { peerAltText, peerLanguage, peerLink, peerMediaType } from './input.ts';
@@ -127,7 +128,8 @@ export const storeRemotePost = defineMutation({
  * A peer's Update by the author: replaces the editable fields, keeps `published`, the counts and
  * the flags a moderator sets. An Update that changes nothing (a redelivery, the direct copy after
  * the announced one) writes nothing and emits nothing, and does not move the edit time. A real
- * change takes the peer's `updated`, or the receive time when it sent none. An Update whose
+ * change takes the peer's `updated`, or the receive time when it sent none, never earlier than
+ * the edit time held (remote/revision.ts nextEditedAt). An Update whose
  * `updated` is older than the stored edit time arrived out of order and is ignored (a stored
  * receive time from an earlier Update without `updated` counts as that edit time). A record
  * under another ap_id than the post's is refused post.id_conflict.
@@ -143,7 +145,7 @@ export const updateRemotePost = defineMutation({
     // The caller matched the object to this post by id; a record under another id is a bad delivery, not a bug.
     if (current.apId !== post.apId) throw new Refused('post.update', 'post.id_conflict');
     // An Update delivered late (the peer's `updated` is before the edit already applied) must not roll the post back.
-    if (post.editedAt && current.editedAt && post.editedAt < current.editedAt) return { id: postId };
+    if (olderThanHeld(post.editedAt, current.editedAt)) return { id: postId };
     const [community] = await t.db
       .select({ sensitive: actors.sensitive, nsfl: actors.nsfl })
       .from(actors)
@@ -156,7 +158,7 @@ export const updateRemotePost = defineMutation({
     if (same && (post.editedAt === null || post.editedAt.getTime() === current.editedAt?.getTime())) return { id: postId };
     await t.db
       .update(posts)
-      .set({ raw: post.raw, ...fields, editedAt: post.editedAt ?? new Date() })
+      .set({ raw: post.raw, ...fields, editedAt: nextEditedAt(post.editedAt, current.editedAt) })
       .where(eq(posts.id, postId));
     await t.emit({ type: 'post.updated', v: 1, postId, communityId: current.communityId, authorId: current.authorId, local: false });
     return { id: postId };

@@ -46,7 +46,8 @@ export async function ensureCursors(consumers: readonly Consumer[]): Promise<voi
  * A failure in a handler also records that event on the cursor row: its id, how many times in a
  * row it failed and when it first did. Once the same event has failed `poisonFailures` times
  * over at least `poisonWindow`, the next batch skips it: it is logged, written to
- * outbox_skipped, counted in `refused`, and the cursor moves past it. Recording a failure is a
+ * outbox_skipped, counted in `refused`, and the cursor moves past it. Either way (poison or
+ * Refused) the consumer's `skipped` hook, when it has one, runs in the same transaction. Recording a failure is a
  * write, so an outage of the database itself never reaches the threshold: when the write fails,
  * nothing is counted.
  * Returns how many rows the cursor moved past, matching or not.
@@ -114,6 +115,7 @@ export async function processBatch(consumer: Consumer, limit = 100): Promise<num
                 lastFailureAt: cursor.lastFailureAt,
               })
               .onConflictDoNothing();
+            await consumer.skipped?.({ id: row.id, type: row.type, why: 'poison' }, { db, emit });
             scanned = index + 1;
             break;
           }
@@ -128,6 +130,7 @@ export async function processBatch(consumer: Consumer, limit = 100): Promise<num
             console.error(
               `outbox consumer ${consumer.name} skipped outbox event ${row.id} (${row.type}): ${error.action} refused with ${error.reason}`,
             );
+            await consumer.skipped?.({ id: row.id, type: row.type, why: 'refused' }, { db, emit });
           }
           failing = undefined;
         }

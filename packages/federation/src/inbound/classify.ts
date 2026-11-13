@@ -2,6 +2,7 @@ import { MappingError, type JsonObject } from '../mapping/json.ts';
 import { addressesOf, noteAsPage } from './microblog.ts';
 import { skip, type Skipped } from './reasons.ts';
 import { notPublic } from './visibility.ts';
+import { asWithdrawal, withdrawnId, type Held } from './withdrawal.ts';
 
 // What an inbox document is, before the mapping reads it. The mapping is strict about the
 // shapes it knows and throws MappingError for the rest; that error is permanent (the row
@@ -38,6 +39,8 @@ export interface ClassifyEnv {
   isLocalCommunity(apId: string): Promise<boolean>;
   /** The ap_id of the local follower whose Follow has this id, or null. */
   followerOf(followApId: string): Promise<string | null>;
+  /** The post or comment with this ap_id that is stored here, as a withdrawal is judged by it (withdrawal.ts); null when none is. */
+  held(apId: string): Promise<Held | null>;
 }
 
 /**
@@ -51,14 +54,29 @@ const isObject = (value: unknown): value is JsonObject => typeof value === 'obje
 const idOf = (value: unknown): string | null =>
   typeof value === 'string' ? value : isObject(value) && typeof value.id === 'string' ? value.id : null;
 
+/**
+ * `activity` reshaped as the held copy (withdrawal.ts) when it is an Update that takes Public away
+ * from a post or comment we hold, whatever its new type or addressing; null otherwise. It goes on
+ * to its handler, which removes our copy (handlers/_content.ts); refusing it here would leave the
+ * public copy as it was. An Update of content we do not hold is refused here as before.
+ */
+async function withdrawal(activity: JsonObject, env: ClassifyEnv): Promise<JsonObject | null> {
+  const id = withdrawnId(activity);
+  const held = id === null ? null : await env.held(id);
+  return held ? asWithdrawal(activity, held) : null;
+}
+
 /** The object of a Create or Update, rewritten or refused when it is not a plain Page or comment. */
 async function contentObject(json: JsonObject, env: ClassifyEnv): Promise<Item> {
   const object = json.object;
   if (!isObject(object)) return { json };
   const type = object.type;
+  if (json.type === 'Update' && typeof type === 'string' && actorTypes.has(type)) return { json };
+  // Before the type is read: a poll or a type we do not read that withdraws our copy still withdraws it.
+  const withdrawn = await withdrawal(json, env);
+  if (withdrawn) return { json: withdrawn, rewritten: true };
   if (type === 'Question') return { skipped: skip('type.question', idOf(object) ?? undefined) };
   if (typeof type !== 'string') return { json };
-  if (json.type === 'Update' && actorTypes.has(type)) return { json };
   if (!contentTypes.has(type)) return { skipped: skip('object.unsupported', type) };
   // Before a Note is made a post: what is not public is not ours to store (visibility.ts).
   const hidden = notPublic(json);
@@ -106,9 +124,10 @@ async function classifyOne(json: unknown, env: ClassifyEnv, depth: number): Prom
       if (typeof object.type === 'string' && handledTypes.has(object.type)) {
         const inner = await classifyOne(object, env, depth + 1);
         if (!('json' in inner)) return inner;
-        // The Announce is one more layer that carries the content, and must be public too.
+        // The Announce is one more layer that carries the content, and must be public too; only
+        // a withdrawal of a held copy (reshaped above, so its own addressing still says so) goes on.
         const hidden = notPublic(inner.json, json);
-        if (hidden) return { skipped: hidden };
+        if (hidden && withdrawnId(inner.json) === null) return { skipped: hidden };
         return { json: { ...json, object: inner.json }, ...(inner.rewritten && { rewritten: true as const }) };
       }
       // A bare Page or Note (the copy Lemmy sends Mastodon-like followers) is stored like its Create.

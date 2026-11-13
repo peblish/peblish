@@ -2,15 +2,20 @@ import { fetchProxiedImage, type ProxyResult } from '@peblish/core/media/proxy';
 import { unwrapProxyUrl, verifyProxyPath, type MediaContent } from '@peblish/core/media/proxy-url';
 import { safeFetch, type SafeFetchInit, type SafeResponse } from '@peblish/core/net/fetch';
 import { mediaAllowed, supplierMediaAllowed } from '@peblish/core/peers/gate';
+import { EDGE_MAX_AGE_SECONDS } from '@peblish/core/edge/config';
+import type { PublicAnswer, PublicCheck } from '@peblish/core/edge/public';
+import { deadlineBody } from '@peblish/core/edge/stream';
+import { PUBLIC_BODY_MS } from '@peblish/core/edge/timing';
+import { hashListed, imageSha256 } from '@peblish/core/media/blocked';
 
 // The remote-media proxy's answer (decision 5): the image bytes of one signed URL, held in memory
 // for this response and stored nowhere. Viewers never contact remote hosts; remote hosts see
 // this server and nothing of the viewer (fetchProxiedImage sends no viewer header).
 
 /**
- * Minutes, not days: a takedown or the kill switch reaches viewers within this time. The answer is
- * `private`, so only the viewer's browser keeps it: no edge cache holds remote media for the beta
- * (revisit when lane SAFE's scanning is live).
+ * Minutes, not days: a takedown or the kill switch reaches viewers within this time, as a browser
+ * keeps an image this long. Shared caches hold only public answers (`edge` below), and for at
+ * most EDGE_MAX_AGE_SECONDS, purged on takedown.
  */
 export const PROXY_MAX_AGE_SECONDS = 600;
 
@@ -76,7 +81,29 @@ export type ProxyDeps = {
   fetch?: Fetcher;
   /** The time an unbound URL's expiry is judged at (milliseconds); tests set it. */
   now?: number;
+  /** Whether the blocked-image list holds a hash (core media/blocked.ts); a listed image is never served. */
+  hashListed?: (sha256: string) => Promise<boolean>;
+  /**
+   * Edge caching, given only for a GET when its purge path is configured (core edge/config.ts).
+   * `publicTags` (core edge/public.ts publicAnswerTags) is the one consistent read, after the
+   * fetch, that says whether the answer may be public, with which Cache-Tag values and when its
+   * deadline started; null keeps it private. It depends on the content, the hosts and the bytes,
+   * never on who asks.
+   */
+  edge?: { publicTags: (check: PublicCheck) => Promise<PublicAnswer | null> } | null;
 };
+
+const imageHeaders = (type: string, length: number, cacheControl: string, extra: Record<string, string> = {}) => ({
+  // The type sniffed from the bytes, never the remote host's claim.
+  'content-type': type,
+  'content-length': String(length),
+  'cache-control': cacheControl,
+  ...extra,
+  'x-content-type-options': 'nosniff',
+  // If someone opens the URL itself, the response can run nothing and load nothing.
+  'content-security-policy': "default-src 'none'; sandbox",
+  'referrer-policy': 'no-referrer',
+});
 
 export async function proxyResponse(signature: string, target: string, deps: ProxyDeps): Promise<Response> {
   // An unsigned, altered, foreign or expired URL, and the kill switch, look the same from outside: nothing here.
@@ -93,24 +120,32 @@ export async function proxyResponse(signature: string, target: string, deps: Pro
   const { url } = verified;
   // A quarantined, purged or blocked peer's media looks like any other missing image, here or after a redirect.
   const allowed = deps.mediaAllowed ?? mediaAllowed;
-  if (!(await allowed(new URL(url).host))) return plain(404, 'not found');
+  const hosts = [new URL(url).host];
+  if (!(await allowed(hosts[0]!))) return plain(404, 'not found');
   let denied = false;
-  const fetch = gatedFetch(deps.fetch ?? safeFetch, allowed, () => (denied = true));
+  const visit = async (host: string) => {
+    hosts.push(host);
+    return allowed(host);
+  };
+  const fetch = gatedFetch(deps.fetch ?? safeFetch, visit, () => (denied = true));
   const fetchImage = deps.fetchImage ?? ((target: string, signal?: AbortSignal) => fetchProxiedImage(target, { signal, fetch }));
   const result = await fetchImage(url, deps.signal);
   if (denied) return plain(404, 'not found');
   if (!result.ok) return plain(result.status, `the image could not be proxied (${result.why})`);
   // A copy: the fetched buffer's type is wider than a Response body accepts.
-  return new Response(new Uint8Array(result.body), {
-    headers: {
-      // The type sniffed from the bytes, never the remote host's claim.
-      'content-type': result.type,
-      'content-length': String(result.body.byteLength),
-      'cache-control': `private, max-age=${PROXY_MAX_AGE_SECONDS}`,
-      'x-content-type-options': 'nosniff',
-      // If someone opens the URL itself, the response can run nothing and load nothing.
-      'content-security-policy': "default-src 'none'; sandbox",
-      'referrer-policy': 'no-referrer',
-    },
-  });
+  const body = new Uint8Array(result.body);
+  // An image whose exact bytes are on the blocked-image list is refused like any missing image.
+  const sha256 = imageSha256(body);
+  if (await (deps.hashListed ?? hashListed)(sha256)) return plain(404, 'not found');
+  // Public only by the one consistent read taken now the bytes are here, and sent at once; the
+  // viewer was judged above for the private answer and plays no part in this one.
+  const answer = deps.edge && content ? await deps.edge.publicTags({ content, hosts: [...new Set(hosts)], sha256 }) : null;
+  if (answer) {
+    const cacheControl = `public, max-age=${PROXY_MAX_AGE_SECONDS}, s-maxage=${EDGE_MAX_AGE_SECONDS}`;
+    // A body the server must hand over before the deadline, or the socket is cut (core edge/stream.ts).
+    return new Response(deadlineBody(body, answer.startedAt + PUBLIC_BODY_MS), {
+      headers: imageHeaders(result.type, body.byteLength, cacheControl, { 'cache-tag': answer.tags.join(',') }),
+    });
+  }
+  return new Response(body, { headers: imageHeaders(result.type, body.byteLength, `private, max-age=${PROXY_MAX_AGE_SECONDS}`) });
 }

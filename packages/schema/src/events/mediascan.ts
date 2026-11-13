@@ -29,6 +29,12 @@ export const events = {
     adminId: Uuid,
     decision: "'confirmed' | 'released' | 'held'",
   }),
+  /**
+   * A hash joined the blocked-image list, or was listed again: by hand, by a confirmed quarantine,
+   * at the end of an undecided window, or by a restore's replay. One event from the one place a
+   * hash is listed (mediascan/block.ts listBlockedHash), so the edge purge follows every path.
+   */
+  'media.hash_listed': type({ type: "'media.hash_listed'", v: '1', entryId: Uuid }),
   /** A hash was added to or removed from the blocked-image list. `quarantined` counts the clean copies an addition caught. */
   'media.blocklist_changed': type({
     type: "'media.blocklist_changed'",

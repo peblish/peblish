@@ -3,6 +3,8 @@ import { eq } from 'drizzle-orm';
 import { canonicalOrigin } from '../config.ts';
 import { instances } from '../db/tables/instances.ts';
 import type { WriteTx } from '../db/write.ts';
+import { owePurges } from '../edge/debt.ts';
+import { hostTag } from '../edge/tags.ts';
 import { defineMutation } from '../tx/mutation.ts';
 
 // Owned by lane FED-A, inherited by REM. The peers this server knows: one row per host,
@@ -12,11 +14,16 @@ import { defineMutation } from '../tx/mutation.ts';
  * The instance row for the origin of `url`, created when it is new. Two writers racing for a
  * new host both end up with the one row. The host must not be this server's own: an actor
  * document claiming one of our ids is refused here, before anything is stored under it.
+ *
+ * A new peer starts quarantined, so its host (and every host under it, which it is now the
+ * closest known peer for) stops being proxied: the edge cache owes a purge of that domain's tag
+ * in this transaction (edge/debt.ts), for images it held while the host was unknown and allowed.
  */
 export async function ensureInstance(db: WriteTx, url: string): Promise<{ id: Uuid; domain: string; origin: string }> {
   const origin = canonicalOrigin(new URL(url).origin);
   const domain = new URL(origin).host;
-  await db.insert(instances).values({ domain, origin, local: false }).onConflictDoNothing();
+  const created = await db.insert(instances).values({ domain, origin, local: false }).onConflictDoNothing().returning({ id: instances.id });
+  if (created.length > 0) await owePurges(db, [hostTag(domain)]);
   const [row] = await db
     .select({ id: instances.id, domain: instances.domain, origin: instances.origin, local: instances.local })
     .from(instances)

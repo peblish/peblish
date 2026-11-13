@@ -22,6 +22,7 @@ import type { AnnounceInfo, InboundContext, InboundHandler, Prepared } from './h
 import { holdClaim, renewLease, requeueWaiting, settle, settleAlone, yieldLater, type InboxRow, type Settled } from './queue.ts';
 import { Skipped, missingTargets, skip } from './reasons.ts';
 import { takePipelineFetch } from './throttle.ts';
+import { heldContent } from './withdrawal.ts';
 
 // One inbox_raw row from receipt to its end state. The signature was verified when the row was
 // stored (receive.ts), so the key's owner is the activity's actor. From there:
@@ -175,6 +176,7 @@ async function makeEnv(options: PipelineOptions, row: InboxRow): Promise<Env> {
             .from(actors)
             .where(and(eq(actors.apId, apId), eq(actors.local, true), eq(actors.kind, 'Group'), isNull(actors.deletedAt)))
         ).length > 0,
+      held: (apId) => heldContent(apId),
       followerOf: async (followApId) => {
         const [row] = await db()
           .select({ apId: actors.apId })

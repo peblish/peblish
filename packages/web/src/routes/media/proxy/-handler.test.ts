@@ -1,7 +1,12 @@
 import { proxyUrlBuilder } from '@peblish/core/media/proxy-url';
-import { expect, test, vi } from 'vitest';
+import { EDGE_MAX_AGE_SECONDS } from '@peblish/core/edge/config';
+import { PUBLIC_BODY_MS } from '@peblish/core/edge/timing';
+import { imageSha256 } from '@peblish/core/media/blocked';
+import { describe, expect, test, vi } from 'vitest';
 // The peer gate reads the database; these tests are about the handler, so every peer is approved unless a test says otherwise.
 vi.mock('@peblish/core/peers/gate', () => ({ mediaAllowed: async () => true, supplierMediaAllowed: async () => true }));
+// No hash is on the blocked-image list unless a test passes its own check.
+vi.mock('@peblish/core/media/blocked', async (actual) => ({ ...(await actual<object>()), hashListed: async () => false }));
 
 import { PROXY_MAX_AGE_SECONDS, PROXY_RETRY_AFTER_SECONDS, proxyResponse } from './-handler.ts';
 
@@ -213,4 +218,152 @@ test('a URL whose target is itself one of our proxy paths is a 404 and fetches n
   const theirs = `https://other.example${proxyUrlBuilder(Buffer.from('o'.repeat(32)))(remoteUrl)}`;
   const [other, otherTarget] = proxyUrlBuilder(key)(theirs).split('/').slice(3) as [string, string];
   expect((await proxyResponse(other, otherTarget, { key, enabled: true, contentShown, fetchImage })).status).toBe(200);
+});
+
+describe('edge caching', () => {
+  const post = { kind: 'post', id: '0195f0a0-0000-7000-8000-000000000010', supplier: 'lemmy.test' } as const;
+  const [bound, boundTarget] = proxyUrlBuilder(key)(remoteUrl, post).split('/').slice(3) as [string, string];
+  const tags = ['pbm', `pbm-p-${post.id}`];
+  const decided = () => ({ tags, startedAt: performance.now() });
+  const base = { key, enabled: true, mediaAllowed: async () => true, supplierAllowed: async () => true };
+
+  test('a public answer is decided once the bytes are here, from the content, every host and the hash, and is tagged for purging', async () => {
+    const publicTags = vi.fn(async () => decided());
+    const response = await proxyResponse(bound, boundTarget, { ...base, contentShown, fetchImage: image(), edge: { publicTags } });
+    expect(response.status).toBe(200);
+    expect(Object.fromEntries(response.headers)).toEqual({
+      'content-type': 'image/png',
+      'content-length': String(png.length),
+      'cache-control': `public, max-age=${PROXY_MAX_AGE_SECONDS}, s-maxage=${EDGE_MAX_AGE_SECONDS}`,
+      'cache-tag': tags.join(','),
+      'x-content-type-options': 'nosniff',
+      'content-security-policy': "default-src 'none'; sandbox",
+      'referrer-policy': 'no-referrer',
+    });
+    expect(publicTags).toHaveBeenCalledExactlyOnceWith({ content: post, hosts: ['img.example'], sha256: imageSha256(png) });
+    expect(PROXY_MAX_AGE_SECONDS).toBe(600);
+  });
+
+  test('a public body is handed over in time, all of it; one decided too long ago is cut off (round 3, item 2)', async () => {
+    const response = await proxyResponse(bound, boundTarget, {
+      ...base,
+      contentShown,
+      fetchImage: image(),
+      edge: { publicTags: async () => decided() },
+    });
+    expect(Buffer.from(await response.arrayBuffer())).toEqual(png);
+    const stale = await proxyResponse(bound, boundTarget, {
+      ...base,
+      contentShown,
+      fetchImage: image(),
+      edge: { publicTags: async () => ({ tags, startedAt: performance.now() - PUBLIC_BODY_MS - 1 }) },
+    });
+    // The headers promise the whole length; the body errors, so the server cuts the socket.
+    expect(stale.headers.get('content-length')).toBe(String(png.length));
+    await expect(stale.arrayBuffer()).rejects.toThrow();
+  });
+
+  test('every host a redirect passed through is part of the decision', async () => {
+    const hop = (status: number, location?: string) => ({
+      status,
+      headers: new Headers(location ? { location } : {}),
+      body: status === 200 ? new Uint8Array(png) : new Uint8Array(),
+      url: '',
+    });
+    const fetch = async (url: string) => (url === remoteUrl ? hop(302, 'https://cdn.example/a.png') : hop(200));
+    const publicTags = vi.fn(async () => decided());
+    await proxyResponse(bound, boundTarget, { ...base, contentShown, fetch, edge: { publicTags } });
+    expect(publicTags).toHaveBeenCalledWith(expect.objectContaining({ hosts: ['img.example', 'cdn.example'] }));
+  });
+
+  test('anything the decision does not make public is answered exactly as without an edge cache', async () => {
+    const shownTo = vi.fn(async () => true);
+    const response = await proxyResponse(bound, boundTarget, {
+      ...base,
+      contentShown: shownTo,
+      fetchImage: image(),
+      edge: { publicTags: async () => null },
+    });
+    expect([response.headers.get('cache-control'), response.headers.get('cache-tag')]).toEqual([
+      `private, max-age=${PROXY_MAX_AGE_SECONDS}`,
+      null,
+    ]);
+    expect(shownTo).toHaveBeenCalledWith(post);
+    const hidden = await proxyResponse(bound, boundTarget, {
+      ...base,
+      contentShown: async () => false,
+      fetchImage: image(),
+      edge: { publicTags: async () => decided() },
+    });
+    expect([hidden.status, hidden.headers.get('cache-control')]).toEqual([404, 'no-store']);
+  });
+
+  test('a URL bound to no content stays private and asks nothing about the public', async () => {
+    const publicTags = vi.fn(async () => decided());
+    const response = await proxyResponse(signature, target, { ...base, contentShown, fetchImage: image(), edge: { publicTags } });
+    expect(response.headers.get('cache-control')).toBe(`private, max-age=${PROXY_MAX_AGE_SECONDS}`);
+    expect(publicTags).not.toHaveBeenCalled();
+  });
+
+  test('without the purge configuration (or for a HEAD, which the route gives no edge) the same content is private', async () => {
+    const response = await proxyResponse(bound, boundTarget, { ...base, contentShown, fetchImage: image(), edge: null });
+    expect([response.headers.get('cache-control'), response.headers.get('cache-tag')]).toEqual([
+      `private, max-age=${PROXY_MAX_AGE_SECONDS}`,
+      null,
+    ]);
+  });
+
+  test('an image whose exact bytes are on the blocked-image list is never served, public or private (item 2)', async () => {
+    const asked: string[] = [];
+    const hashListed = async (sha256: string) => {
+      asked.push(sha256);
+      return true;
+    };
+    const publicTags = vi.fn(async () => decided());
+    for (const edge of [{ publicTags }, null]) {
+      const response = await proxyResponse(bound, boundTarget, { ...base, contentShown, fetchImage: image(), hashListed, edge });
+      expect([response.status, response.headers.get('cache-control')]).toEqual([404, 'no-store']);
+    }
+    const unbound = await proxyResponse(signature, target, { ...base, contentShown, fetchImage: image(), hashListed });
+    expect(unbound.status).toBe(404);
+    expect(asked).toEqual([imageSha256(png), imageSha256(png), imageSha256(png)]);
+    expect(publicTags).not.toHaveBeenCalled();
+  });
+
+  test('refusals and errors stay uncached, and a denied supplier or host is never asked about', async () => {
+    const publicTags = vi.fn(async () => decided());
+    const edge = { publicTags };
+    for (const status of [403, 413, 415, 502, 503, 504] as const) {
+      const response = await proxyResponse(bound, boundTarget, {
+        ...base,
+        contentShown,
+        edge,
+        fetchImage: async () => ({ ok: false, status, why: 'upstream' }),
+      });
+      expect([response.status, response.headers.get('cache-control'), response.headers.get('cache-tag')]).toEqual([
+        status,
+        'no-store',
+        null,
+      ]);
+    }
+    const supplier = await proxyResponse(bound, boundTarget, {
+      ...base,
+      contentShown,
+      edge,
+      fetchImage: image(),
+      supplierAllowed: async () => false,
+    });
+    expect([supplier.status, supplier.headers.get('cache-control')]).toEqual([404, 'no-store']);
+    const host = await proxyResponse(bound, boundTarget, {
+      ...base,
+      contentShown,
+      edge,
+      fetchImage: image(),
+      mediaAllowed: async () => false,
+    });
+    expect([host.status, host.headers.get('cache-control')]).toEqual([404, 'no-store']);
+    const off = await proxyResponse(bound, boundTarget, { ...base, enabled: false, contentShown, edge, fetchImage: image() });
+    expect([off.status, off.headers.get('cache-control')]).toEqual([404, 'no-store']);
+    expect(publicTags).not.toHaveBeenCalled();
+  });
 });

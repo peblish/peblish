@@ -1,0 +1,90 @@
+import { and, eq, isNull, ne, sql, type SQL } from 'drizzle-orm';
+import type { WriteTx } from '../db/write.ts';
+import { edgePurges } from './tables.ts';
+import { ALL_TAG, type Purge } from './tags.ts';
+import { MAX_OWED } from './timing.ts';
+
+// Owing purges: written in the caller's transaction (the outbox consumer's batch, which also
+// moves its cursor, the transaction that makes a host denied, or a restore), so a takedown and
+// the debt it leaves commit together and any worker may pay it (send.ts).
+//
+// Bounds, by construction (each class counts its own rows, so echoes never widen first sends):
+// - unclaimed first sends: at most MAX_OWED once an owing transaction commits (past it they
+//   collapse into one `pbm`), plus one row per transaction owing at the same instant (the
+//   consumer is one at a time; a new peer's ensureInstance and a restore are the others);
+// - unclaimed second sends: at most MAX_OWED exactly (written only by a settle, under the status
+//   row's lock, which collapses them in the same transaction);
+// - claimed rows: one batch at a time (the status row's claim; expired claims are given back
+//   before the next claim), at most MAX_OWED rows when narrow, or every due row when wide, so at
+//   most 2 x MAX_OWED plus that slack.
+// So the table holds at most 4 x MAX_OWED rows (400), plus the slack of concurrent owers.
+
+const unclaimed = (send: 1 | 2) => and(isNull(edgePurges.claimToken), eq(edgePurges.send, send));
+
+const upsertWide = (db: WriteTx, send: 1 | 2, dueAt: SQL) =>
+  db
+    .insert(edgePurges)
+    .values({ tag: ALL_TAG, send, dueAt })
+    .onConflictDoUpdate({
+      target: [edgePurges.tag, edgePurges.send],
+      targetWhere: sql`${edgePurges.claimToken} is null`,
+      set: { dueAt: send === 1 ? sql`least(${edgePurges.dueAt}, excluded.due_at)` : sql`greatest(${edgePurges.dueAt}, excluded.due_at)` },
+    });
+
+/**
+ * Owes `purge` (send 1, due now). A tag already owed and not yet claimed is one row; a tag
+ * claimed by a sender in flight gets a row of its own, so it stays owed whatever that send's
+ * result. Past MAX_OWED unclaimed first sends, they all become one wide purge.
+ */
+export async function owePurges(db: WriteTx, purge: Purge): Promise<void> {
+  const tags = purge === 'all' ? [ALL_TAG] : [...new Set(purge)];
+  if (tags.length === 0) return;
+  await db
+    .insert(edgePurges)
+    .values(tags.map((tag) => ({ tag })))
+    .onConflictDoUpdate({
+      target: [edgePurges.tag, edgePurges.send],
+      targetWhere: sql`${edgePurges.claimToken} is null`,
+      set: { dueAt: sql`least(${edgePurges.dueAt}, excluded.due_at)` },
+    });
+  const [count] = await db
+    .select({ n: sql<number>`count(*)::int` })
+    .from(edgePurges)
+    .where(unclaimed(1));
+  if ((count?.n ?? 0) <= MAX_OWED) return;
+  await db.delete(edgePurges).where(and(unclaimed(1), ne(edgePurges.tag, ALL_TAG)));
+  await upsertWide(db, 1, sql`now()`);
+}
+
+/** The same bound for second sends (send.ts, after a settle): one wide echo, due when the latest of them was. */
+export async function collapseEchoes(db: WriteTx): Promise<void> {
+  const [count] = await db
+    .select({ n: sql<number>`count(*)::int`, latest: sql<string>`max(${edgePurges.dueAt})::text` })
+    .from(edgePurges)
+    .where(unclaimed(2));
+  if (!count || count.n <= MAX_OWED) return;
+  await db.delete(edgePurges).where(unclaimed(2));
+  await upsertWide(db, 2, sql`${count.latest}::timestamptz`);
+}
+
+/**
+ * Owes a wide purge due at the start of time, so it is late at once and web answers private
+ * until it is sent (ready.ts): for a takedown whose own purge is unknown and may never be owed.
+ */
+export async function owePurgeOfEverything(db: WriteTx): Promise<void> {
+  await upsertWide(db, 1, sql`'epoch'::timestamptz`);
+}
+
+/**
+ * After a backup is restored, takedowns made since the backup are applied again without their
+ * events (tools/cutover drill.ts), and the edge may hold any image they hid.
+ */
+export const owePurgeAfterRestore = owePurgeOfEverything;
+
+/** The rows owed and unclaimed, oldest due first (tests and operators). */
+export const owedRows = (db: Pick<WriteTx, 'select'>) =>
+  db
+    .select({ tag: edgePurges.tag, send: edgePurges.send, dueAt: edgePurges.dueAt })
+    .from(edgePurges)
+    .where(isNull(edgePurges.claimToken))
+    .orderBy(edgePurges.dueAt, edgePurges.tag);

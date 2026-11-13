@@ -19,7 +19,11 @@ import { seedLocalInstance } from '@peblish/core/testing/seed-a';
 import { admin, seedAdmin } from '@peblish/core/testing/seed-az';
 import { seedMedia } from '@peblish/core/testing/seed-safe';
 import { seedActor } from '@peblish/core/testing/seed';
+import { purgePathReady } from '@peblish/core/edge/ready';
+import { hashTag } from '@peblish/core/edge/tags';
+import { purgeFor } from '@peblish/core/edge/takedowns';
 import { eq, sql } from 'drizzle-orm';
+import { drizzle } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 import {
@@ -116,6 +120,13 @@ describe.skipIf(tools < major)('backup and restore drill', () => {
       });
       expect((await restored`select deleted_at from posts where id = ${post.id}`)[0]?.deleted_at).not.toBeNull();
       expect((await restored`select deleted_at from comments where id = ${comment.id}`)[0]?.deleted_at).toBeNull();
+      // A purge of the whole edge cache is owed, late from the start, so web answers private even
+      // with a fresh proof of the purge path until it is sent (edge/ready.ts).
+      expect(await restored`select tag, send, due_at < now() - interval '1 day' as late from edge_purges`).toEqual([
+        { tag: 'pbm', send: 1, late: true },
+      ]);
+      await restored`insert into edge_status (name, zone_id, verified_at) values ('cloudflare', 'zone', now())`;
+      expect(await purgePathReady(drizzle({ client: restored }), 'zone')).toBe(false);
       const [actor] = await restored`select deleted_at, display_name from actors where id = ${gone.id}`;
       expect(actor).toMatchObject({ display_name: null });
       expect(actor?.deleted_at).not.toBeNull();
@@ -322,6 +333,15 @@ describe.skipIf(tools < major)('backup and restore drill', () => {
         const [incident] = await restored<{ status: string; source: string; classification: string }[]>`
           select status, source, classification from media_evidence where media_id = ${added.id}`;
         expect(incident).toEqual({ status: 'open', source: 'list', classification: 'violent' });
+        // The replayed listing tells the edge purge consumer, which owes the hash's tag, and the
+        // restore itself owes a purge of everything, late at once (core edge/takedowns.ts, debt.ts).
+        const events = await restored<{ payload: { entryId: string } }[]>`
+          select payload from outbox where type = 'media.hash_listed' order by id desc limit 1`;
+        const entryId = events[0]!.payload.entryId;
+        expect(await purgeFor({ type: 'media.hash_listed', v: 1, entryId }, drizzle({ client: restored }))).toEqual([
+          hashTag(added.sha256!),
+        ]);
+        expect(await restored`select tag from edge_purges`).toEqual([{ tag: 'pbm' }]);
 
         // Applied again, the same list and nothing more caught.
         expect(await reapplyLedger(list.url, readLedgerExport(ledger))).toMatchObject({ appended: 0, quarantinedCopies: 0 });
