@@ -106,32 +106,118 @@ Cache Control is always on below Enterprise, so `private` and `no-store` are nev
 
 No other path gets a cache rule: not `/u`, `/c`, `/post` or any page.
 
-## 3. Check a hit and a purge from outside
+## 3. Prove it on a test hostname
 
-Wait until the worker has run for a minute (it proves the token first). Take a public post's image
-URL from the page source (`/media/proxy/<signature>/<target>`):
+Run these on a proxied test hostname whose requests take the same chain as production
+(Cloudflare, then Traefik, then web), with this build, the cache rule of section 2 extended to the
+test host, and both variables set on web and worker. Nothing here touches production. Keep a log:
+for every step, the time, the command, the `cf-ray` (its suffix is the Cloudflare location) and
+the `cf-cache-status` of each answer. Throughout:
 
 ```sh
-url='https://feddit.com/media/proxy/<signature>/<target>'
-curl -s -o /dev/null -D - "$url" | grep -i -E '^(cf-cache-status|cache-control|set-cookie):'
-curl -s -o /dev/null -D - "$url" | grep -i '^cf-cache-status:'
+host='https://<test host>'
+url="$host/media/proxy/<signature>/<target>"   # a public post's image, from the page source
+status() { curl -s -o /dev/null -D - "$1" | grep -i -E '^(cf-cache-status|cf-ray|cache-control|age|set-cookie|content-length):'; }
+purge() { curl -s -X POST "https://api.cloudflare.com/client/v4/zones/$CLOUDFLARE_ZONE_ID/purge_cache" \
+  -H "Authorization: Bearer $CLOUDFLARE_PURGE_TOKEN" -H 'content-type: application/json' \
+  -d "{\"tags\":[\"$1\"]}" | jq -c '{success, errors}'; }
 ```
 
-The first answer shows `cache-control: public, max-age=600, s-maxage=3600`, `cf-cache-status:
-MISS` and no `set-cookie`; the second `HIT`. A sensitive post's image (while signed out it is a 404) and a removed post's image answer `no-store` with `DYNAMIC` or `BYPASS`, never `HIT`.
+Use GET for every check, not `curl -I`: the origin answers a HEAD `private`, but Cloudflare may
+answer a HEAD from a cached GET, or fill a miss with a GET and answer the HEAD from it. That is an
+ordinary public GET answer, decided, tagged and purged like any other, so no rule is added for it.
 
-Use GET for these checks, not `curl -I`. The origin answers a HEAD `private`, but a HEAD through
-Cloudflare may never reach it: Cloudflare answers a HEAD from a cached GET (a `HIT` with the
-public headers), and on a miss it may fetch the image from the origin with a GET, cache that and
-answer the HEAD from it. That is harmless, so no rule is added for it: such a fill is an ordinary
-public GET answer, decided, tagged and purged like any other, and a HEAD only ever sees the
-headers of what a GET would get.
+**(a) Record the chain's settings.** Before anything else, write down Traefik's effective
+settings for the test router and service: response buffering (the `buffering` middleware and its
+`maxResponseBodyBytes`, `memResponseBodyBytes`), compression (the `compress` middleware and its
+minimum size and types), retries (the `retry` middleware), and the entry point's and transport's
+timeouts (`respondingTimeouts`, `forwardingTimeouts`, idle timeouts). From Cloudflare, record the
+plan's origin read timeout (100 s below Enterprise unless changed) and whether HTTP/2 to origin is
+on. Every later result is read against these.
 
-Then remove that post as a moderator. Within about 20 seconds the URL answers `404` with
-`no-store`, and Cloudflare's status is `MISS`, `EXPIRED` (Tiered Cache), `BYPASS` or `DYNAMIC`,
-never `HIT`. The same purge is sent again two minutes later. A purge that works logs nothing.
+**(b) A delay between the proxy and the edge (the accepted residual, made visible).** Use a small
+tagged response that the origin completes at once: a public image of a few kilobytes, so Traefik
+takes it whole. Then hold the connection between Traefik and Cloudflare while Cloudflare fills:
 
-What the worker logs when it does not:
+1. Complete silence: start `curl "$url"` on a cold key, and within a second stop Traefik's
+   egress to Cloudflare (pause the test Traefik process, or drop its outbound packets with a
+   firewall rule on the test host). Purge the image's content tag at once, purge it again 120 s
+   later, then release the hold. GET the URL repeatedly for ten minutes.
+2. A trickle: the same, but limit the test Traefik's egress to a few hundred bytes a second
+   (`tc qdisc ... tbf` or `netem rate`) instead of stopping it, so the delivery never falls silent
+   for 100 s; release it only after the second purge.
+
+Record for each: whether Cloudflare answered the first client at all (a 524 or a complete image),
+how long the delivery took, and whether any later GET is `HIT`. A `HIT` after both purges is the
+accepted residual (a fill completing after the second send, served until its hour is up): record
+it with its timings and the settings from (a). It does not block the rollout.
+
+**(c) The body deadline on this build.** Use a public image large enough to fill the socket
+buffers (several megabytes, under the proxy's 10 MiB limit), so the application meets
+backpressure. Start a GET on a cold key and, within a second, stop the chain from draining (pause
+the test Traefik, or hold its socket to web). Check on web's host that within 10 s of the request
+the application has destroyed its socket to Traefik (`ss -tn` shows it gone; the request is logged
+as cut off). Release, then GET repeatedly for ten minutes: never `HIT` for that key. Repeat with
+each framing and compression mode the chain has enabled: HTTP/1.1 with `Content-Length`, chunked
+if Traefik re-frames, HTTP/2 to origin if on, Traefik's `compress` on and off, and Cloudflare's
+own compression. Record any mode in which a later GET is `HIT`.
+
+**(d) Private and `no-store` answers are never stored.** On fresh keys, GET each twice, once
+with no cookie and once with a browser's session cookie (`-H 'cookie: ...'`): a signed-in
+viewer's sensitive image (`private`), an unbound private image (a draft preview's proxy URL), a
+signed-out request for a sensitive post's image (404), a URL with a bad or altered signature
+(404), an image whose hash is on the blocked list (404), and an image whose upstream fails (502 or
+504). Every answer: `cf-cache-status` `BYPASS`, `DYNAMIC` or `MISS`, never `HIT`, and no public
+`cache-control`.
+
+**(e) Narrow against wide invalidation.** Warm four tagged URLs until each is `HIT`: two images of
+post A, one of post B, one of a community avatar. `purge pbm-p-<A's post id>`: A's two go (not
+`HIT`), B's and the avatar stay `HIT`. Warm A again, then `purge pbm`: all four go. Check from at
+least two locations (two machines in different regions; the `cf-ray` suffix shows the location),
+and note any location that still answers `HIT`.
+
+**(f) A real takedown, end to end.** Warm a public post's image to `HIT`, then remove the post as
+a moderator. In the test database, check in order: the `mod.remove` row in `outbox`; an
+`edge_purges` row for `pbm-p-<post id>` with `send` 1, then gone and replaced by `send` 2 due two
+minutes later; then nothing. From outside: not `HIT` within about 20 seconds, and still not `HIT`
+after the second send. The worker logs nothing for a purge that works.
+
+**(g) Readiness.** Each step from a ready state; after each, check that a fresh public URL answers
+`private` (not `public`) and that it returns to `public` once restored.
+
+1. Idle for more than five minutes with nothing taken down: answers stay `public` (the worker's
+   idle check of `pbm-check` every two minutes keeps `edge_status.verified_at` fresh).
+2. Web's variables removed: `private` at once.
+3. Worker's variables removed: `private` within five minutes.
+4. Zone mismatch: web given another zone's id: `private` at once.
+5. A stopped consumer with a pending event: stop the worker, take a post down: `private` within
+   30 seconds; start the worker: `public` after its purges are sent.
+6. A skipped event: on the test database, make the edge consumer skip its next event (set its
+   `outbox_cursors` row's `failing_event_id` to that event, `failures` to 10 and
+   `first_failure_at` to 31 minutes ago). After the skip: a `pbm` row due at the epoch, `private`
+   until it is sent, then `public`.
+7. A refused token: swap in a token without Cache Purge: `private` at once and the refusal
+   logged; restore the token: `public` once the next request succeeds, with "works again" logged.
+
+**(h) Expiry without purging.** With a refused token (so nothing is purged), warm an image, then
+stop web so the origin is down. GET it until an hour after it was cached and for ten minutes
+more: after the hour it must not be served (a 52x error, not a stale image). Record the zone's
+Tiered Cache, Cache Reserve, Always Online and "serve stale content" settings, and any rule that
+overrides the edge TTL, since each can keep an image past its hour.
+
+**(i) The rate limit.** With the worker stopped and nothing else purging on the account, send tag
+purges of an unused tag in a quick loop until one is refused. Record the request count, the
+status (429), the body and `Retry-After`. Then owe a purge (take a post down) and start the
+worker: the debt survives the refusal (`select * from edge_purges`), the worker waits at least
+`Retry-After`, and it is sent once the bucket refills.
+
+**(j) Propagation per location.** For several purges, note the time the API answered success and
+poll the URL from each location every second until it is not `HIT`. Record the delay per
+location, the worst case, and any location over 20 seconds.
+
+## 4. What the worker logs, and the state
+
+A purge that works logs nothing. When one does not, the worker logs:
 
 - `edge cache: Cloudflare refused the purge request (http 403 (cloudflare 10000)); proxy images are answered private until it works`: at once and on every attempt (20 s, doubling to 5 minutes). Fix the token's permissions or zone.
 - `edge cache: purge request failed <n> times in a row (<why>); the debt stays owed`: at 1, 2, 4, 8 ... failures in a row.
@@ -144,7 +230,7 @@ one row, not one every few seconds. For a quick look at the state: `select * fro
 under 5 minutes old and the zone matches) and `select tag, send, due_at, claim_token from
 edge_purges order by due_at;` (what is owed; `send` 2 is the repeat two minutes after the first).
 
-## 4. Limits
+## 5. Limits
 
 The free plan allows tag purges at 5 requests a minute per account (bursts of 25), 100 tags each
 (Cloudflare's "Purge cache" documentation, checked 2026-11-13). The worker lets at most one
@@ -169,13 +255,13 @@ covered and can be served until its hour is up. No fixed delay closes that; it n
 end-to-end completion bound the application does not control, and the owner accepted it as a
 residual risk. The two minutes exceed the 10 s body deadline plus the 100 s Cloudflare waits on a
 silent origin, so a delivery that falls completely silent ends before the repeat either way;
-whether Cloudflare then stores nothing is one of the checks below.
+whether Cloudflare then stores nothing is checked in section 3 (b).
 
 If purging stays broken, a taken-down image can be served from Cloudflare for up to an hour
 after it was cached (`s-maxage=3600`), and no new image is cached once the path is not ready.
 Visitors' browsers keep any image for up to ten minutes (`max-age=600`) whatever Cloudflare does.
 
-## 5. Turning it off
+## 6. Turning it off
 
 1. Disable or delete the cache rule (step 2). From then on nothing new is cached.
 2. Purge what is held: Caching, Configuration, Custom Purge, Tag, `pbm`.
