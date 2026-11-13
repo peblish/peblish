@@ -15,7 +15,11 @@ export const PURGE_TIMEOUT_MS = 10_000;
 const MAX_RETRY_AFTER_MS = 5 * 60_000;
 const DEFAULT_RETRY_AFTER_MS = 60_000;
 
-export type PurgeResult = { ok: true } | { ok: false; why: string; retryAfterMs: number | null };
+/**
+ * `refused` is Cloudflare turning the token or the request down (400, 401, 403): the purge path
+ * does not work until someone fixes the configuration, so it is reported at once.
+ */
+export type PurgeResult = { ok: true } | { ok: false; why: string; retryAfterMs: number | null; refused: boolean };
 
 export type HttpFetch = (url: string, init: RequestInit) => Promise<Response>;
 
@@ -49,7 +53,7 @@ export async function purgeTags(
     });
   } catch (error) {
     // The name only (TimeoutError, TypeError): a message could quote the request.
-    return { ok: false, why: error instanceof Error ? error.name : 'error', retryAfterMs: null };
+    return { ok: false, why: error instanceof Error ? error.name : 'error', retryAfterMs: null, refused: false };
   }
   let answer: typeof Answer.infer | null = null;
   try {
@@ -64,5 +68,6 @@ export async function purgeTags(
     ok: false,
     why: `http ${response.status}${codes ? ` (cloudflare ${codes})` : ''}`,
     retryAfterMs: response.status === 429 ? retryAfter(response.headers.get('retry-after')) : null,
+    refused: response.status === 400 || response.status === 401 || response.status === 403,
   };
 }

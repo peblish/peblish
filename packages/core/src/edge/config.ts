@@ -1,4 +1,5 @@
 import { type } from 'arktype';
+import { logLine } from '../log-line.ts';
 
 // Cloudflare's edge cache for public remote images (step one of "Remote images and storage").
 // Edge caching is on only when the purge path is configured: without both variables every proxy
@@ -39,7 +40,7 @@ export function edgeConfig(env: Record<string, string | undefined> = process.env
       reported = true;
       // Names only: an ArkType summary would quote the value it refused.
       const wrong = variables.filter((name) => !Config.get(name).allows(env[name]));
-      console.error(`edge cache: ${wrong.join(' and ')} missing or malformed; edge caching stays off`);
+      console.error(logLine([`edge cache: ${wrong.join(' and ')} missing or malformed; edge caching stays off`]));
     }
     return null;
   }

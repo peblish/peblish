@@ -1,16 +1,16 @@
 import { defineJob } from '../outbox/jobs.ts';
 import { edgeConfig } from './config.ts';
-import { purgeQueue } from './queue.ts';
+import { flushPurges } from './send.ts';
 
-// Sends the purges the edge.purge consumer owes, one request a run at most. Every 20 s keeps a
-// worker at 3 requests a minute, under the free plan's 5 a minute for tag purges (shared by the
-// account, burst 25), and leaves a taken-down image at the edge for about 20 s after its event.
-// The first run of a new worker sends the wide purge its queue starts with (queue.ts).
+// Pays the edge purge debt (send.ts). Every worker runs it every 5 s; the claim spaces requests
+// SEND_GAP_MS apart across all of them, so any number of workers stays at 4 requests a minute,
+// under the free plan's 5 (account-wide, burst 25). Without the purge configuration it does
+// nothing, and web answers private because no readiness record is fresh.
 export const job = defineJob({
   name: 'edge.purge_flush',
-  everyMs: 20_000,
+  everyMs: 5_000,
   run: async () => {
     const config = edgeConfig();
-    if (config) await purgeQueue().flush(config);
+    if (config) await flushPurges(config);
   },
 });
