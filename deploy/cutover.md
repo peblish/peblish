@@ -255,8 +255,9 @@ All must hold, else stay on PieFed:
 4. `verify --bundle` on production exits 0: 5 keys, every one matching the bundle; 131 follows accepted.
 5. The host-header pretest below passes against the new origin.
 6. A drill on the production database passed, and the nightly backup and hourly ledger export run:
-   the production `backup` service is up on R2 ([backups.md](backups.md)), `backup-status` in its
-   console exits 0, and one drill ran on a backup and ledger export fetched from the bucket.
+   the production `backup` service is up on the R2 bucket `feddit` ([backups.md](backups.md)),
+   `backup-status` in its console exits 0, and one drill ran on a backup and ledger export fetched
+   from the bucket.
 7. `Andrew` has signed in through a password reset, turned on two-factor in that session and set
    `site.name` to "Feddit", the operator settings and the published pages.
 8. The TLS rehearsal (below) recorded which certificate path works on this Easypanel, path A (a

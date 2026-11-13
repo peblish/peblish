@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process';
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { SMTP_TIMEOUTS, smtpTransport, type MailMessage } from '@peblish/core/identity/mail';
@@ -140,6 +140,7 @@ afterEach(() => {
   for (const key of Object.keys(s3.faults)) delete s3.faults[key as keyof typeof s3.faults];
   s3.objects.clear();
   s3.requests.length = 0;
+  s3.acceptEncodings.length = 0;
 });
 afterAll(async () => {
   await s3.close();
@@ -889,6 +890,85 @@ describe('backup-status and the fetch for a restore', () => {
     await expect(fetchForRestore(config, join(dir, 'bad'), { object: 'backups/20991231T000000.000Z.dump' })).rejects.toThrow(
       /not in the bucket or has no sha256 record/,
     );
+  });
+});
+
+describe('an R2-shaped store: JSON answers gzipped unless the request asks for identity', () => {
+  // A ledger export large enough for the store to compress (the status records already are).
+  const ledgerSource = fakeSource({
+    produce: async (kind, path) => {
+      const body = kind === 'ledger' ? `${JSON.stringify({ format: 'peblish.ledger/1', rows: [], pad: 'x'.repeat(200) })}\n` : 'dump';
+      writeFileSync(path, body, { mode: 0o600 });
+      return kind === 'ledger' ? { rows: 0 } : {};
+    },
+  });
+  const run = (kind: Kind) => runOnce(kind, ledgerSource, config, { timeouts: fast });
+
+  test('the fake compresses as R2 did for a client that accepts gzip (fetch by default)', async () => {
+    expect((await run('ledger')).outcome).toBe('ok');
+    const answer = await fetch(`${s3.endpoint}/backups/${statusKey('ledger')}`, { method: 'HEAD' });
+    expect([answer.headers.get('content-encoding'), answer.headers.get('content-length'), answer.headers.get('etag')?.slice(0, 3)]).toEqual(
+      ['gzip', null, 'W/"'],
+    );
+  });
+
+  test('every request asks for identity, so runs, the If-Match round trip, the probe, backup-status and the fetch hold', async () => {
+    for (const kind of ['ledger', 'ledger', 'backup', 'backup'] as const) {
+      const result = await run(kind);
+      expect(result.outcome, result.line).toBe('ok');
+    }
+    // Each second run replaced the record it read, by If-Match on its strong ETag.
+    expect(s3.requests.filter((r) => r === `PUT /backups/${statusKey('ledger')}`)).toHaveLength(2);
+    expect(await backupBucket(config, { timeouts: fast }).honoursConditions()).toBe(true);
+    const report = await statusReport(config);
+    expect([report.backup.problem, report.ledger.problem]).toEqual([null, null]);
+    const fetched = await fetchForRestore(config, join(dir, 'r2-shaped'));
+    expect(readFileSync(fetched.ledger, 'utf8')).toContain('peblish.ledger/1');
+    expect(new Set(s3.acceptEncodings)).toEqual(new Set(['identity']));
+  });
+
+  test('a store that compresses despite identity fails the call and the run, naming the call only', async () => {
+    s3.faults.compressAlways = true;
+    const first = await run('ledger');
+    expect(first.line).toMatch(
+      /^ledger FAILED: (ledger\/\S+) after [\d.]+ s: head \1: the bucket answered compressed \(gzip\) although asked not to; its answer is not trusted$/,
+    );
+    expect(s3.objects.has(statusKey('ledger'))).toBe(false);
+    delete s3.faults.compressAlways;
+    expect((await run('ledger')).outcome).toBe('ok');
+    s3.faults.compressAlways = true;
+    expect((await run('ledger')).line).toMatch(/: get status\/ledger\.json: the bucket answered compressed \(gzip\)/);
+    await expect(statusReport(config)).rejects.toThrow(/^get status\/ledger\.json: the bucket answered compressed/);
+    await expect(backupBucket(config, { timeouts: fast }).honoursConditions()).rejects.toThrow(/answered compressed/);
+    await expect(fetchForRestore(config, join(dir, 'compressed'))).rejects.toThrow(/answered compressed/);
+    expect(existsSync(join(dir, 'compressed'))).toBe(false);
+  });
+
+  test('a weak ETag is never compared or sent back: the record is not replaced and the upload check fails', async () => {
+    expect((await run('ledger')).outcome).toBe('ok');
+    s3.faults.weakEtag = true;
+    expect((await run('ledger')).line).toMatch(
+      /: get status\/ledger\.json: the bucket answered with a weak ETag, which cannot be compared or sent back$/,
+    );
+    expect(s3.requests.filter((r) => r === `PUT /backups/${statusKey('ledger')}`)).toHaveLength(1);
+    await expect(
+      backupBucket(config, { timeouts: fast }).uploadFile(
+        'backups/20261113T170000.000Z.dump',
+        file('weak', 'dump'),
+        'application/octet-stream',
+      ),
+    ).rejects.toThrow(/^head backups\/20261113T170000\.000Z\.dump: the bucket answered with a weak ETag/);
+  });
+
+  test('refusing a weak ETag cancels a stalled body at once instead of holding it to the time limit', async () => {
+    s3.seed(statusKey('ledger'), 'a status record whose body stalls');
+    s3.faults.weakEtag = true;
+    s3.faults.stallAfter = 4;
+    const closed = new Promise<number>((resolve) => (s3.faults.stalledClosed = () => resolve(Date.now())));
+    const started = Date.now();
+    const slow = backupBucket(config, { timeouts: { ...fast, callMs: 10_000 } });
+    await expect(slow.getSmall(statusKey('ledger'))).rejects.toThrow(/^get status\/ledger\.json: the bucket answered with a weak ETag/);
+    expect((await closed) - started).toBeLessThan(1_000);
   });
 });
 

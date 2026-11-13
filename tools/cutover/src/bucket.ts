@@ -11,8 +11,12 @@ import { CutoverError, formatProblems } from './errors.ts';
 // its SHA-256 and sent with its MD5 so the bucket refuses a damaged part. The object only exists
 // once the upload completes; the run then reads it back from the bucket and compares its SHA-256
 // with the file's before calling it good. This client never deletes or overwrites an object (the
-// production bucket locks backups/ and ledger/): a name that exists is refused. Errors name the
-// call, the HTTP status and S3's error code, never the endpoint, a key or a response body.
+// production bucket locks backups/ and ledger/): a name that exists is refused. Every request asks
+// for uncompressed answers (accept-encoding: identity): R2 otherwise gzips JSON answers of about
+// 63 bytes or more, dropping their content-length and weakening their ETag (W/"..."), and Node's
+// fetch asks for gzip by default. An answer that comes back encoded anyway, or a weak ETag the
+// tool would compare or send back, fails the call. Errors name the call, the HTTP status and S3's
+// error code, never the endpoint, a key or a response body.
 
 const Config = type({
   BACKUP_S3_ENDPOINT: 'string > 0',
@@ -157,16 +161,45 @@ export function backupBucket(config: BucketConfig, options: { partBytes?: number
     } = {},
   ) {
     const signal = init.streaming ? init.signal : anySignal(AbortSignal.timeout(init.timeoutMs ?? timeouts.callMs), init.signal);
+    let response: Response;
     try {
-      return await client.fetch(`${base}${path}`, {
+      response = await client.fetch(`${base}${path}`, {
         method,
         ...(signal && { signal }),
         ...(init.body && { body: init.body }),
-        headers: { 'x-amz-content-sha256': init.body ? hex('sha256', init.body) : EMPTY_SHA256, ...init.headers },
+        // Signed with the rest; fetch sends a caller's accept-encoding as it is instead of its own.
+        headers: {
+          'x-amz-content-sha256': init.body ? hex('sha256', init.body) : EMPTY_SHA256,
+          ...init.headers,
+          'accept-encoding': 'identity',
+        },
       });
     } catch (error) {
       throw failure(what, error, init.signal);
     }
+    // fetch would decode the body silently, but the length, ETag and checks would not be the object's.
+    const encoding = response.headers.get('content-encoding');
+    if (encoding && encoding.toLowerCase() !== 'identity') {
+      await response.body?.cancel().catch(() => undefined);
+      const named = /^[A-Za-z0-9-]{1,20}$/.test(encoding) ? ` (${encoding})` : '';
+      throw new CutoverError(`${what}: the bucket answered compressed${named} although asked not to; its answer is not trusted`);
+    }
+    return response;
+  }
+
+  /**
+   * An answer's ETag without quotes, or null when it has none; a weak one (W/"...") is never
+   * compared or sent back. Refusing one cancels a body not yet read, so a stalled body does not
+   * hold the connection until the call's time limit.
+   */
+  function etagOf(what: string, response: Response): string | null {
+    const etag = response.headers.get('etag');
+    if (etag === null) return null;
+    if (/^W\//i.test(etag)) {
+      if (!response.bodyUsed) void response.body?.cancel().catch(() => undefined);
+      throw new CutoverError(`${what}: the bucket answered with a weak ETag, which cannot be compared or sent back`);
+    }
+    return etag.replaceAll('"', '');
   }
 
   /** S3's error code from a body, kept only when it is one word of letters (S3's own vocabulary). */
@@ -196,11 +229,9 @@ export function backupBucket(config: BucketConfig, options: { partBytes?: number
     await response.arrayBuffer();
     if (response.status === 404) return null;
     if (!response.ok) throw new CutoverError(`head ${key}: ${response.status}`);
-    return {
-      size: Number(response.headers.get('content-length')),
-      etag: response.headers.get('etag')?.replaceAll('"', '') ?? null,
-      sha256: response.headers.get('x-amz-meta-sha256'),
-    };
+    const length = response.headers.get('content-length');
+    if (length === null || !/^\d+$/.test(length)) throw new CutoverError(`head ${key}: the answer has no content-length`);
+    return { size: Number(length), etag: etagOf(`head ${key}`, response), sha256: response.headers.get('x-amz-meta-sha256') };
   }
 
   /**
@@ -288,9 +319,9 @@ export function backupBucket(config: BucketConfig, options: { partBytes?: number
               signal: bound,
             });
             await ok(what, response);
-            const etag = response.headers.get('etag');
+            const etag = etagOf(what, response);
             if (!etag) throw new CutoverError(`${what}: no ETag in the answer`);
-            done.push(etag);
+            done.push(`"${etag}"`);
             md5s.push(md5);
           }
           const manifest = `<CompleteMultipartUpload>${done
@@ -371,15 +402,17 @@ export function backupBucket(config: BucketConfig, options: { partBytes?: number
         await response.arrayBuffer();
         return null;
       }
-      const etag = response.headers.get('etag')?.replaceAll('"', '') ?? null;
+      if (!response.ok) throw await refuse(`get ${key}`, response);
+      const etag = etagOf(`get ${key}`, response);
       return { text: await ok(`get ${key}`, response), etag };
     },
 
     /**
      * Whether the store honours conditional PUTs, tested on status/conditional-probe.json: a second
      * If-None-Match: * write must be refused, an If-Match with a wrong ETag refused, and one with
-     * the current ETag taken. R2 and MinIO do; a store that does not weakens the status records'
-     * fencing (deploy/backups.md).
+     * the current ETag taken. R2 and MinIO do (R2 tested 2026-11-14, with the uncompressed answers
+     * every call asks for); a store that does not weakens the status records' fencing
+     * (deploy/backups.md).
      */
     async honoursConditions(signal?: AbortSignal): Promise<boolean> {
       const key = 'status/conditional-probe.json';

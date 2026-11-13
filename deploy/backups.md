@@ -9,8 +9,9 @@ deletion ledger").
 
 Andrew's decisions: production backups go to a Cloudflare R2 bucket with a 30-day delete rule, a
 30-day bucket lock on `backups/` and `ledger/`, and a key limited to it (2026-11-11 and
-2026-11-13). R2 is not on yet; the mechanism runs on staging against MinIO
-(`/Users/admin/.agents/plans/feddit/staging.md`).
+2026-11-13). The bucket is Andrew's existing R2 bucket `feddit` (2026-11-14; "R2 (production)"
+below), where the tool was proved from a Mac on 2026-11-14 ("Proved on R2" below). The mechanism
+runs on staging against MinIO (`/Users/admin/.agents/plans/feddit/staging.md`).
 
 ## What runs
 
@@ -88,8 +89,9 @@ Two more cases fail closed:
 
 - A record that comes back without an ETag cannot be replaced with `If-Match`, and `If-None-Match:
 *` would be refused for ever, so the run fails with `the bucket returned status/<kind>.json
-without an ETag, so it cannot be replaced safely`. No S3 store tested does this; it would be a
-  proxy in between dropping the header.
+without an ETag, so it cannot be replaced safely`. No S3 store tested drops the header; it would
+  be a proxy in between. A weak ETag (`W/"..."`) fails the read instead ("Uncompressed answers"
+  below).
 - A run whose finish is before its start (the clock went back during it) fails with `the clock went
 back during the run; nothing is recorded`.
 
@@ -104,12 +106,15 @@ holder of that key can delete or rewrite anything under `status/`, which is outs
 lock, but not under `backups/` or `ledger/`. The next run (within 15 minutes, or a
 `backup-run` in the console) finds no record and writes a fresh one.
 
-Conditional writes, checked 2026-11-13:
+Conditional writes, checked 2026-11-13 and, on R2, tested 2026-11-14:
 
 - R2: its S3 API table (developers.cloudflare.com/r2/api/s3/api/, updated 2026-11-10) lists
   `If-Match` and `If-None-Match` on PutObject and on CompleteMultipartUpload, evaluated atomically
   against the committed bucket state; on CreateMultipartUpload they are not kept for the
-  completion, so the tool puts them on the completion. Not tested against R2 (it is off).
+  completion, so the tool puts them on the completion. Tested on the bucket `feddit` 2026-11-14
+  (the table under "Proved on R2" below): R2 refuses each one MinIO refuses, answering 412
+  `PreconditionFailed`, also for `If-Match` on a missing key, and a refused completion keeps the
+  old object.
 - MinIO RELEASE.2026-08-04 (the dev and staging MinIO), tested: PUT with `If-None-Match: *` over an
   existing key answers 412, with a stale `If-Match` 412 and with the current one 200; `If-Match` on
   a missing key answers 404 (the tool treats it as refused); a completion with `If-None-Match: *`
@@ -120,7 +125,7 @@ At start the schedule probes `status/conditional-probe.json`: it writes it twice
 ETag (refused) and on the current one (taken). On a store that fails any of these it logs `the
 backup bucket ignores conditional writes ...`; there the fence is only the lock check and the
 newer-start check, which does not stop a run whose session died just after its check from
-overwriting a newer record with its own, older one.
+overwriting a newer record with its own, older one. On R2 the probe passes (2026-11-14).
 
 The service never deletes and never overwrites anything under `backups/` or `ledger/` (the R2
 bucket lock would refuse it anyway). An upload that fails its check, or a superseded run's, stays
@@ -141,6 +146,28 @@ ledger ok: ledger/20261113T170500.004Z.json, 93 bytes, 0 rows, 0.1 s
 backup ok: backups/20261114T160000.031Z.dump, 280697 bytes, 0.4 s
 ledger FAILED: ledger/20261113T180500.002Z.json after 0.1 s: head ledger/20261113T180500.002Z.json: 403
 ```
+
+### Uncompressed answers
+
+Every request to the bucket asks for an uncompressed answer (`accept-encoding: identity`, signed
+with the rest of the request). R2 otherwise gzips a JSON answer of about 63 bytes or more for a
+client that accepts gzip, which Node's fetch does by default, and such an answer has no
+`content-length` and a weak ETag (`W/"..."`) that R2's own `If-Match` never matches ("Proved on R2"
+below). The status records, the probe record and the ledger export are all JSON, so the size
+check, the ETag check and the fenced status write depend on plain answers.
+
+A store that compresses anyway fails the call, and with it the run, `backup-status` or the fetch;
+nothing is read from such an answer:
+
+- Any answer with a `content-encoding` other than identity:
+  `<call>: the bucket answered compressed (gzip) although asked not to; its answer is not trusted`.
+- A weak ETag where the tool compares it or sends it back (a HEAD, a status record's GET, an
+  uploaded part):
+  `<call>: the bucket answered with a weak ETag, which cannot be compared or sent back`.
+- A HEAD with no length: `head <object>: the answer has no content-length`.
+
+MinIO answered plain before and does now; the tests against it pass unchanged. The fake store in
+the tests (`tools/cutover/src/fake-s3.ts`) compresses as R2 does unless asked for identity.
 
 ## Why a service of its own and not the panel's scheduling
 
@@ -280,31 +307,105 @@ within a day), not at the 30-day mark exactly. The status records live under
 backups run. Once the service has been failing for 30 days the bucket holds nothing under
 `backups/`, which `backup-status` and the overdue mail say long before.
 
-### R2 (production; waits on Andrew, R2 is not on)
+### R2 (production): the bucket `feddit`
 
-R2 is off on the account: the Cloudflare token answers 403 for R2 (staging.md). When Andrew turns
-R2 on:
+The production backup bucket is Andrew's existing R2 bucket `feddit` (created 2025-06-20, location
+WNAM, storage class Standard), chosen 2026-11-14 in place of the planned `peblish-backups`. It once
+held an old copy of PieFed's media, which Andrew emptied. It has nothing to do with the old PieFed
+media bucket of the same name at the other storage provider (not Cloudflare), and the media bucket
+peblish uses (`S3_BUCKET`) is a different bucket at that provider. The tool's own check refuses a
+backup bucket whose name equals `S3_BUCKET` (it compares names only), so `S3_BUCKET` on the
+`backup` service must be the real media bucket's name, as on `web`.
 
-1. Cloudflare dashboard, R2, Create bucket: name `peblish-backups`, location automatic (or the
-   hint nearest the server), default storage class Standard. Public access stays off (no
-   `r2.dev` URL, no custom domain).
-2. The bucket, Settings, Object lifecycle rules, Add rule: name `expire-30-days`, applies to all
-   objects, "Delete uploaded objects" after 30 days, and "Abort incomplete multipart uploads"
-   after 1 day (a run killed mid-upload leaves parts that are not objects).
-3. The bucket, Settings, Bucket lock rules, Add rule twice: `lock-backups` with prefix `backups/`
-   and `lock-ledger` with prefix `ledger/`, each "Retention period" 30 days. Not `status/`, and
-   not the whole bucket: the service rewrites its status records (and its probe,
-   `status/conditional-probe.json`). The lock and the lifecycle rule agree: an object can be
-   deleted once it is 30 days old, and the lifecycle rule deletes it some time after that.
-4. R2, Manage R2 API Tokens, Create API token: name `peblish-backup`, permission "Object Read &
-   Write", "Apply to specific buckets only" with `peblish-backups` only, TTL forever (or a date to
-   rotate). R2 tokens cannot leave out delete; the bucket lock is what protects the backups from a
-   stolen key. Copy the access key id and secret into the production env file, never into a chat.
-5. The endpoint is `https://<account id>.r2.cloudflarestorage.com`, region `auto`. Set the
-   variables on the production `backup` service (without `BACKUP_S3_ALLOW_PLAIN_HTTP`) and deploy
-   it.
+Set-up as it stands:
+
+1. Public access off: no custom domain and the `r2.dev` address disabled. The bucket had the custom
+   domain `media.feddit.com`, removed 2026-11-14.
+2. Lifecycle rule `expire-30-days` (set 2026-11-14): all objects, "Delete uploaded objects" after
+   30 days, and "Abort incomplete multipart uploads" after 1 day (a run killed mid-upload leaves
+   parts that are not objects).
+3. Bucket lock rules (added and tested 2026-11-14, once the proof's test objects were deleted):
+   `lock-backups` with prefix `backups/` and `lock-ledger` with prefix `ledger/`, each "Retention
+   period" 30 days. Not `status/`, and not the whole bucket: the service rewrites its status
+   records (and its probe, `status/conditional-probe.json`). The lock and the lifecycle rule agree:
+   an object can be deleted once it is 30 days old, and the lifecycle rule deletes it some time
+   after that. An account admin can lift the rules (they were lifted for about a minute on
+   2026-11-14 to delete three test objects, then put back), so the lock protects the backups
+   against a stolen backup key, not against the account's owner.
+4. The key: an R2 API token with "Object Read & Write" on `feddit` only. R2 tokens cannot leave out
+   delete; the bucket lock is what protects the backups from a stolen key. Its access key id and
+   secret go into the production env file, never into a chat.
+5. The endpoint is `https://<account id>.r2.cloudflarestorage.com`, region `auto`, bucket `feddit`.
+   Set the variables on the production `backup` service (without `BACKUP_S3_ALLOW_PLAIN_HTTP`) and
+   deploy it.
 6. Check: in its console `node tools/cutover/src/cli.ts backup-run ledger` (exit 0, an `ok` line),
    then `backup-status`, then the restore drill below once.
+
+#### Proved on R2 (2026-11-14)
+
+From a Mac, with the bucket's own key and a synthetic database on the dev Postgres (1,201 ledger
+rows and 40 MB of random padding, so the dump spans 3 parts of 16 MiB). Every object the proof made
+was deleted afterwards and the bucket left empty (no objects, no unfinished uploads).
+
+Conditional writes, raw requests signed as the tool signs them, beside MinIO's (above):
+
+| Request                                              | R2                                                            | MinIO                |
+| ---------------------------------------------------- | ------------------------------------------------------------- | -------------------- |
+| PUT `If-None-Match: *` over an existing key          | 412 `PreconditionFailed`, object kept                         | 412                  |
+| PUT with a stale `If-Match`                          | 412 `PreconditionFailed`                                      | 412                  |
+| PUT with the current `If-Match`                      | 200, the new ETag                                             | 200                  |
+| PUT `If-Match` on a missing key                      | 412 `PreconditionFailed`, nothing created                     | 404                  |
+| PUT `If-None-Match: *` on a new key                  | 200                                                           |                      |
+| Completion `If-None-Match: *` over an existing key   | 412 `PreconditionFailed` (an `<Error>` body), old object kept | 412, old object kept |
+| Completion `If-None-Match: *` on a new key (3 parts) | 200, no `<Error>` in the body                                 |                      |
+
+The tool treats 412 and 404 alike, so R2's 412 on a missing key needs nothing. After a refused
+completion R2 has already dropped the upload (ListParts answers 404 `NoSuchUpload`); the tool's
+abort still answers 204.
+
+ETags: PUT, UploadPart, GET and HEAD answers carry one; each part's is its MD5, and a multipart
+object's is S3's form (the MD5 of the parts' MD5s, a dash, the part count), which the tool's check
+matches. CreateMultipartUpload, CompleteMultipartUpload (its ETag is in the XML body), abort and
+list answers carry no ETag header; the tool reads none there.
+
+Compressed answers: R2 gzips an answer when the client accepts gzip, the object's content type
+is compressible (`application/json` here) and the body is large enough (63 bytes and more in this
+test; 40 bytes and less not). Such a GET or HEAD answers `content-encoding: gzip`, no
+`content-length`, and a weak ETag `W/"<md5>"`. The dump (`application/octet-stream`) is never
+compressed. With `accept-encoding: identity` the same answers are plain, with the length and a
+strong ETag. The tool did not ask for that at first, and on R2 the ledger export then never
+recorded (its HEAD had no length), the dump recorded once and was `superseded` ever after (R2
+refused the weak ETag sent back in `If-Match`), the probe logged `the backup bucket ignores
+conditional writes`, and `backup-fetch` refused the ledger. Since then every request asks for
+identity ("Uncompressed answers" above).
+
+With the tool as it now is, the same day, no other change: the probe passed twice, on the empty
+bucket and over its own 63-byte record (the case that had failed); `backup-run ledger` ok twice
+(1,201 rows, 317,425 bytes, 3.9 and 4.7 s); `backup-run backup` ok twice in a row (48,022,876
+bytes, 3 parts, 15.4 and 14.1 s), the second under a new time name and recorded over the first by
+`If-Match`, nothing overwritten; `backup-status` exit 0; `backup-fetch` of both in 3 s, mode 600
+files in a mode 700 folder; and the drill on the fetched files restored, re-applied 1,201 ledger
+rows (all absent, the subjects being synthetic), found no count differences and dropped its
+database. `backup-schedule` started without the conditional-write warning and, both records being
+fresh, ran nothing.
+
+The lock, tested 2026-11-14 with the bucket-limited key once both rules were on:
+
+- Under `backups/` and `ledger/` alike: writing a new object is allowed; overwriting it answers
+  409 `ObjectLockedByBucketPolicy`, and so does overwriting with `If-None-Match: *` (not the 412 an
+  unlocked bucket gives); deleting it answers 409 `ObjectLockedByBucketPolicy`; a GET still
+  returned the first write.
+- A multipart upload to a new name under `backups/` completed (200) with `If-None-Match: *` on the
+  completion, and the completed object could not be deleted (409).
+- Under `status/`: writing, overwriting and deleting all succeeded (200, 200, 204).
+
+The tool takes that 409 as a refusal too: an existing name is refused by its HEAD before any
+upload, and a completion answering 409 fails the upload
+(`complete upload <object>: 409 ObjectLockedByBucketPolicy`), which is aborted, and the run fails
+with nothing recorded.
+
+Not yet proven: a real run of the tool with the lock on, and the lifecycle rule actually expiring
+objects.
 
 ### MinIO (staging)
 
@@ -375,18 +476,21 @@ federation records, so it can reach millions of rows over years. A restore still
 whole (`readLedgerExport`); at a million rows that is a few hundred MB, in a console run, not the
 service.
 
-Tested (2026-11-13, a MacBook, the dev MinIO):
+Tested (2026-11-13, a MacBook, the dev MinIO; on R2 2026-11-14):
 
 - In the test suite: an 11 MiB file with 5 MiB parts (3 parts), checked by size, multipart ETag and
   read-back, and fetched back with a matching SHA-256; on a fake store, a failing part, same-size
   corruption, an unfamiliar ETag form, a stalled and a slow download, a completion another writer
-  beat, and slow uploads with a separate read-back budget. A ledger export of 1,201 rows (two full
-  500-row cursor batches plus 201).
+  beat, and slow uploads with a separate read-back budget; JSON answers gzipped as R2 does unless
+  asked for identity, and a store that compresses anyway or sends a weak ETag. A ledger export of
+  1,201 rows (two full 500-row cursor batches plus 201).
 - By hand, round 1: random files with the default 16 MiB parts, 256 MiB (16 parts) and 2 GiB (128
   parts). 2 GiB uploaded in 14 to 15 s and fetched back in 10 s, SHA-256 matching. Peak memory was
   480 to 520 MB for both sizes (130 MB at start): it does not grow with the file. The read-back
   check added in round 2 streams, so it adds time (about the fetch time) but no memory.
 - On staging: the real dump, 280,697 bytes, one part.
+- On R2 from the Mac, 2026-11-14: a 48 MB dump in 3 parts of 16 MiB, uploaded, read back and
+  fetched with matching SHA-256, 14 to 15 s a run ("Proved on R2" above).
 
 Disk: a run needs room for one dump (or export) in `TMPDIR` until it is uploaded; a fetch for a
 restore needs room for the backup and the export.
@@ -396,8 +500,8 @@ restore needs room for the backup and the export.
 A dump holds password hashes, email addresses, two-factor secrets (encrypted with
 `BETTER_AUTH_SECRET`) and the actors' private keys. As designed, what protects it in R2:
 
-- The bucket is private (no public access, no `r2.dev` URL) and only the backup key and the
-  account can read it.
+- The bucket is private (no public access: no custom domain, no `r2.dev` URL) and only the backup
+  key and the account can read it.
 - The key is limited to that one bucket, held only by the `backup` service and the env file.
 - R2 encrypts every object at rest (AES-256), and the service refuses anything but https to it.
 
