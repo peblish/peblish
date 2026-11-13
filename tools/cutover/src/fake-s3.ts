@@ -21,6 +21,8 @@ export type Faults = {
   corrupt?: boolean;
   /** GET sends this many bytes, then nothing more (a stalled download). */
   stallAfter?: number;
+  /** Runs when the client closes the connection of a stalled GET. */
+  stalledClosed?: () => void;
   /** GET sends its body in chunks of this size, one every `slowMs` milliseconds. */
   slowChunk?: number;
   slowMs?: number;
@@ -206,6 +208,8 @@ export async function fakeS3(bucket: string): Promise<FakeS3> {
         res.writeHead(200, headers);
         if (faults.stallAfter !== undefined) {
           res.write(found.body.subarray(0, faults.stallAfter));
+          const closed = faults.stalledClosed;
+          if (closed) res.on('close', closed);
           return; // never ends
         }
         if (faults.slowChunk) {

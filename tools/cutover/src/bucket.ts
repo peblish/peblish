@@ -187,11 +187,18 @@ export function backupBucket(config: BucketConfig, options: { partBytes?: number
     return response;
   }
 
-  /** An answer's ETag without quotes, or null when it has none; a weak one (W/"...") is never compared or sent back. */
+  /**
+   * An answer's ETag without quotes, or null when it has none; a weak one (W/"...") is never
+   * compared or sent back. Refusing one cancels a body not yet read, so a stalled body does not
+   * hold the connection until the call's time limit.
+   */
   function etagOf(what: string, response: Response): string | null {
     const etag = response.headers.get('etag');
     if (etag === null) return null;
-    if (/^W\//i.test(etag)) throw new CutoverError(`${what}: the bucket answered with a weak ETag, which cannot be compared or sent back`);
+    if (/^W\//i.test(etag)) {
+      if (!response.bodyUsed) void response.body?.cancel().catch(() => undefined);
+      throw new CutoverError(`${what}: the bucket answered with a weak ETag, which cannot be compared or sent back`);
+    }
     return etag.replaceAll('"', '');
   }
 

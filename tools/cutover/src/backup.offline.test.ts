@@ -959,6 +959,17 @@ describe('an R2-shaped store: JSON answers gzipped unless the request asks for i
       ),
     ).rejects.toThrow(/^head backups\/20261113T170000\.000Z\.dump: the bucket answered with a weak ETag/);
   });
+
+  test('refusing a weak ETag cancels a stalled body at once instead of holding it to the time limit', async () => {
+    s3.seed(statusKey('ledger'), 'a status record whose body stalls');
+    s3.faults.weakEtag = true;
+    s3.faults.stallAfter = 4;
+    const closed = new Promise<number>((resolve) => (s3.faults.stalledClosed = () => resolve(Date.now())));
+    const started = Date.now();
+    const slow = backupBucket(config, { timeouts: { ...fast, callMs: 10_000 } });
+    await expect(slow.getSmall(statusKey('ledger'))).rejects.toThrow(/^get status\/ledger\.json: the bucket answered with a weak ETag/);
+    expect((await closed) - started).toBeLessThan(1_000);
+  });
 });
 
 describe('the CLI', () => {
