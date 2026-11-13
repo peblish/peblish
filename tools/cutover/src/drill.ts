@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { actors } from '@peblish/core/db/tables/actors';
 import { media } from '@peblish/core/db/tables/media';
 import { deletionLedger } from '@peblish/core/db/tables/site';
+import { owePurgeAfterRestore } from '@peblish/core/edge/debt';
 import type { WriteTx } from '@peblish/core/db/write';
 import { mediaEvidence } from '@peblish/core/evidence/tables';
 import { categoryOf, listBlockedHash } from '@peblish/core/mediascan/block';
@@ -350,7 +351,8 @@ export type ReapplyReport = { restoredRows: number; appended: number; applied: n
  * restored ledger are applied again too (each rule is idempotent), so the end state follows the
  * whole ledger whichever copy held a row. A subject the backup never had is counted as absent;
  * its row is kept, so the ledger stays whole. Events the replay emits (media.quarantined for the
- * copies a block catches) go to the restored database's outbox.
+ * copies a block catches) go to the restored database's outbox, and a purge of the whole edge
+ * cache is owed.
  */
 export async function reapplyLedger(url: string, exported: readonly LedgerRow[]): Promise<ReapplyReport> {
   const { db, end } = connect(url);
@@ -384,6 +386,9 @@ export async function reapplyLedger(url: string, exported: readonly LedgerRow[])
         if (await apply(t, row, tally)) applied += 1;
         else absent += 1;
       }
+      // The edge may still hold images the replayed takedowns hid, and their events are gone:
+      // web answers private until a purge of everything is sent (core edge/debt.ts).
+      await owePurgeAfterRestore(q);
       await outbox.notify();
       return { restoredRows: restored.length, appended: missing.length, applied, absent, ...tally };
     });
