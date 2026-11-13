@@ -297,7 +297,14 @@ test.describe('the author', () => {
     await signIn(page, `@${seed.author.name}`, seed.password);
     await page.waitForURL('/');
     await page.goto(url(seed.posts.deletable));
-    await page.getByRole('button', { name: 'Delete' }).click();
+    // It reads as danger text (DangerTextButton) but is still the form's submit button carrying the intent.
+    const remove = page.getByRole('button', { name: 'Delete' });
+    await expect(remove).toHaveClass(/\bpb-link-danger\b/);
+    await expect(remove).toHaveAttribute('type', 'submit');
+    await expect(remove).toHaveAttribute('name', 'intent');
+    await expect(remove).toHaveAttribute('value', 'delete');
+    await expect(page.locator('form', { has: remove })).toHaveAttribute('method', 'post');
+    await remove.click();
     await expect(page.getByRole('heading', { level: 1 })).toHaveText('This post was deleted');
     expect(new URL(page.url()).search).toBe('');
     await page.getByRole('button', { name: 'Restore' }).click();

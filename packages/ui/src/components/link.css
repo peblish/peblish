@@ -19,6 +19,27 @@
     color: var(--muxui-semantic-content-muted);
   }
 
+  /* Danger text: a Mux Button (DangerTextButton, variant danger-ghost) that reads as a link, the
+     Delete in an action row. Its colour is the danger-ghost Button's own foreground; this drops the
+     button's box and size and draws Mux Link's underline. The label keeps its colour on hover and
+     press, as Mux's Button labels do; Mux's Button focus ring stays (box-shadow is not touched). */
+  .pb-link-danger.muxui-button {
+    background-color: transparent;
+    padding: 0;
+    min-block-size: 0;
+    font: inherit;
+    text-decoration: underline;
+    text-underline-offset: 0.2em;
+  }
+
+  .pb-link-danger.muxui-button:is(:hover, :active, [data-muxui-state-hovered], [data-muxui-state-pressed]) {
+    background-color: transparent;
+  }
+
+  .pb-link-danger.muxui-button:focus-visible {
+    text-decoration: none;
+  }
+
   .pb-link-quiet:is(:hover, [data-muxui-state-hovered]),
   .pb-link-muted:is(:hover, [data-muxui-state-hovered]) {
     text-decoration: underline;

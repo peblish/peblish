@@ -1,6 +1,7 @@
 import { useRouter } from '@tanstack/react-router';
 import { type } from 'arktype';
 import { Button } from '@peblish/ui/components/button';
+import { DangerTextButton } from '@peblish/ui/components/danger-text-button';
 import { Notice } from '@peblish/ui/components/notice';
 import { useState, type FormEvent } from 'react';
 import { useTranslate } from '../../../i18n/use-translate.ts';
@@ -52,16 +53,16 @@ export function ActionForm({
 
   return (
     <form method="post" action={action} aria-busy={busy} className={className} onSubmit={submit}>
-      <Button
-        type="submit"
-        name="intent"
-        value={intent}
-        variant={intent === 'delete' ? 'danger-neutral' : 'neutral'}
-        size="sm"
-        pending={busy}
-      >
-        {label}
-      </Button>
+      {/* Delete reads as danger text beside the row's links; Restore, alone in its place, stays a button. */}
+      {intent === 'delete' ? (
+        <DangerTextButton type="submit" name="intent" value={intent} pending={busy}>
+          {label}
+        </DangerTextButton>
+      ) : (
+        <Button type="submit" name="intent" value={intent} variant="neutral" size="sm" pending={busy}>
+          {label}
+        </Button>
+      )}
       {error && (
         <Notice tone="danger" role="alert" className="post-error">
           {t('posts', errorKey(error))}
