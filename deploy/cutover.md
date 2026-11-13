@@ -126,6 +126,9 @@ Order on a fresh project, each step read back before the next:
      on conflict (key) do update set value = excluded.value, updated_at = now()"
    ```
 
+   The migrate applies every migration, `0013_edge_cache_purges` included: two new tables for the
+   edge cache's purges (`edge_purges`, `edge_status`) and no change to existing ones.
+
 3. Copy the bundle in, then `import` (twice: the second is all `present`) and `verify`, as above.
    `import` turns the federation switch off itself, in a transaction of its own before it reads
    the bundle, so it stays off even when the import is refused; its report says so
@@ -221,6 +224,12 @@ removed is removed again (by value, after any earlier row that listed it; images
 as they are, as on removal). Each ledger row names the hash for this. A row with no rule stops
 the restore and changes nothing; add the rule before going live. Point the services at the
 restored database only after it reports.
+
+The ledger replay also owes a purge of the whole edge cache (`pbm`), late from the start, so
+proxy images are answered `private` until the worker has sent it, normally within 20 seconds of
+the worker starting on the restored database ([edge-cache.md](edge-cache.md) section 1). If the
+services now name a different Cloudflare zone from the one in the restored `edge_status.zone_id`,
+answers stay `private` until the worker's first request for the new zone succeeds.
 
 `restore` and `drill` only ever create a database: they refuse one that exists and a name longer
 than 63 bytes (Postgres would cut it to another name). The drill restores into
@@ -615,8 +624,11 @@ against the final dump before exporting. Beyond the responder and the stopped se
    `exit 28, http 000, connected 0.000000` after 5.0 s.
 
 8. Switch the Cloudflare origin of feddit.com to the new origin in one step (the proxied DNS
-   record). No cache rules on `/u`, `/c`, `/post`; the WAF must not block `POST /inbox`. From here
-   the box's responder (step 6) gets no traffic.
+   record). No cache rules on `/u`, `/c`, `/post` or any page; the one cache rule is
+   `/media/proxy/*` ([edge-cache.md](edge-cache.md)), added only once the two edge variables are
+   set on web and worker and the real-edge checklist in its section 3 has passed (until then, no
+   cache rule at all). The WAF must not block `POST /inbox`. From here the box's responder
+   (step 6) gets no traffic.
 
 ## Step 8: verify peers (production)
 
