@@ -30,14 +30,19 @@ export const edgePurges = pgTable(
 
 /**
  * Whether the worker's purge path works, as web reads it before answering public (edge/ready.ts).
- * One row, `cloudflare`. `verified_at` is the last authenticated Cloudflare call that succeeded
- * (a purge, or the idle check); `sent_at` the last request of any outcome, which spaces requests
- * across every worker; `retry_at` holds requests back after a failure.
+ * One row, `cloudflare`, every time in it the database's. `verified_at` is the last authenticated
+ * Cloudflare call that succeeded (a purge, or the idle check), for the zone in `zone_id`;
+ * `sent_at` is when the last request was let out, which spaces requests across every worker;
+ * `claim_token` and `lease_until` name the one batch in flight; `retry_at` holds requests back
+ * after a failure.
  */
 export const edgeStatus = pgTable('edge_status', {
   name: text('name').primaryKey(),
+  zoneId: text('zone_id'),
   verifiedAt: at('verified_at'),
   sentAt: at('sent_at'),
+  claimToken: uuid('claim_token'),
+  leaseUntil: at('lease_until'),
   retryAt: at('retry_at'),
   failures: integer('failures').notNull().default(0),
   lastError: text('last_error'),

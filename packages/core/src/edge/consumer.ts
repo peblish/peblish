@@ -1,5 +1,6 @@
 import { defineConsumer } from '../outbox/consumers.ts';
 import { owePurges } from './debt.ts';
+import { CONSUMER_NAME } from './ready.ts';
 import { purgeFor, takedownEvents } from './takedowns.ts';
 
 // Finds the takedowns the edge must forget (takedowns.ts) and owes their purges in the batch
@@ -8,7 +9,7 @@ import { purgeFor, takedownEvents } from './takedowns.ts';
 // edge.purge_flush job pays the debt (send.ts). It owes even without the purge configuration
 // (the debt is bounded, debt.ts), so configuring it later forgets nothing taken down meanwhile.
 export const consumer = defineConsumer({
-  name: 'edge.purge',
+  name: CONSUMER_NAME,
   events: takedownEvents,
   startAt: 'now',
   handle: async (event, t) => {

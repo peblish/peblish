@@ -10,8 +10,11 @@ CREATE TABLE "edge_purges" (
 --> statement-breakpoint
 CREATE TABLE "edge_status" (
 	"name" text PRIMARY KEY NOT NULL,
+	"zone_id" text,
 	"verified_at" timestamp with time zone,
 	"sent_at" timestamp with time zone,
+	"claim_token" uuid,
+	"lease_until" timestamp with time zone,
 	"retry_at" timestamp with time zone,
 	"failures" integer DEFAULT 0 NOT NULL,
 	"last_error" text,
