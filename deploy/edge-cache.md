@@ -196,12 +196,18 @@ after the second send. The worker logs nothing for a purge that works.
    `outbox_cursors` row's `failing_event_id` to that event, `failures` to 10 and
    `first_failure_at` to 31 minutes ago). After the skip: a `pbm` row due at the epoch, `private`
    until it is sent, then `public`.
-7. A refused token: swap in a token without Cache Purge: `private` at once and the refusal
-   logged; restore the token: `public` once the next request succeeds, with "works again" logged.
+7. A refused token: swap in a token without Cache Purge on the worker. An idle worker tests the
+   token on its own schedule (its idle check, up to about two minutes after the swap, or its next
+   purge), so wait for the refusal in the worker's log: from that line on, fresh URLs answer
+   `private`. Restore the token: `public` once the next request succeeds, with "works again"
+   logged.
 
-**(h) Expiry without purging.** With a refused token (so nothing is purged), warm an image, then
-stop web so the origin is down. GET it until an hour after it was cached and for ten minutes
-more: after the hour it must not be served (a 52x error, not a stale image). Record the zone's
+**(h) Expiry without purging.** While the path is ready, warm a fresh image and confirm it is
+`HIT`; note the time it was cached (its first `MISS`). Then make purging unavailable: swap in a
+token without Cache Purge on the worker and wait for the refusal in its log (a fresh image would
+now answer `private`, which is why the image is warmed first). Then stop web so the origin is
+down. GET the warmed image until an hour after it was cached and for ten minutes more: after the
+hour it must not be served (a 52x error, not a stale image). Record the zone's
 Tiered Cache, Cache Reserve, Always Online and "serve stale content" settings, and any rule that
 overrides the edge TTL, since each can keep an image past its hour.
 
@@ -229,6 +235,16 @@ one row, not one every few seconds. For a quick look at the state: `select * fro
 (`verified_at` is the last proof and `zone_id` the zone it proved; web is public only while it is
 under 5 minutes old and the zone matches) and `select tag, send, due_at, claim_token from
 edge_purges order by due_at;` (what is owed; `send` 2 is the repeat two minutes after the first).
+
+Never delete or move the `edge.purge` row of `outbox_cursors` by hand: every takedown event it
+skips that way is never turned into a purge, and readiness cannot see it. If it has to be done
+(a restore of that table, say), owe a purge of everything in the same transaction, due at once and
+already late, so web answers `private` until the worker has sent it:
+
+```sql
+insert into edge_purges (tag, send, due_at) values ('pbm', 1, 'epoch')
+on conflict (tag, send) where claim_token is null do update set due_at = 'epoch';
+```
 
 ## 5. Limits
 
