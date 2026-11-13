@@ -36,15 +36,20 @@ Each run:
    the run with no lifetime limit (getting it has 60 seconds). If another run of that kind holds
    it (a second container during a redeploy, or a console run beside the schedule), the run is
    skipped and touches nothing. If the session ends during the run, the run stops and fails.
-   Holding it, the run reads the current status record: one dated in the future ends the run as
-   `superseded` straight away (below), with no dump.
+   The first thing it does holding the lock, before any bucket read that might fail, is remove
+   what killed runs left (step 2). Then it reads the current status record: one dated in the
+   future ends the run as `superseded` straight away (below), with no dump.
 2. Writes the dump or export into a new folder in the tool's own temporary root,
    `<TMPDIR>/peblish-backup` (default `/tmp/peblish-backup`), the file mode 600. The root is made
    mode 700, and the run refuses to write when it is not a folder of this user with mode 700 (a
-   link, or someone else's). Still holding the lock, the run first removes that root's folders of
-   its own kind (`backup-*` or `ledger-*`): no other run of the kind can be using them, so they are
-   what a killed process left. A table lock held for more than a minute fails the dump (`--lock-wait-timeout`) or the
-   export (`lock_timeout`); the dump has 3 hours and the export 10 minutes in all.
+   link, or someone else's). Folders are named `<kind>-<scope>-<random>`, where the scope is the
+   first 12 hex digits of a SHA-256 of the database's host, port and name (never the password; the
+   user only when the URL names no database, as Postgres then takes the user's name for it),
+   because the advisory lock is per database. The cleanup removes only folders of its own kind and
+   scope: the lock means no other run of those can be using them, so they are what a killed process
+   left, while a service backing up another database through the same root keeps its folders. A
+   table lock held for more than a minute fails the dump (`--lock-wait-timeout`) or the export
+   (`lock_timeout`); the dump has 3 hours and the export 10 minutes in all.
 3. Hashes the file, then uploads it multipart, 16 MiB at a time: each part signed with its SHA-256
    and sent with its MD5, so the bucket refuses a damaged part, and the whole file's SHA-256 stored
    as the object's `sha256` metadata. Until the upload completes no object exists; a failed upload
@@ -93,7 +98,10 @@ is never written over: every run of that kind ends `superseded: ... the recorded
 the future; repair the record by hand (deploy/backups.md)`, and the kind goes overdue. To repair it,
 check the service's clock (`date -u` in the console), then delete that one record: in the R2
 dashboard, the bucket's `status/<kind>.json`; on staging, `mc rm <alias>/<bucket>/status/<kind>.json`
-in the `minio` console. The key cannot delete, by design. The next run (within 15 minutes, or a
+in the `minio` console. The service itself never deletes. On staging its MinIO key cannot (the
+policy grants no delete); in production the R2 token can (R2 tokens cannot leave delete out), so a
+holder of that key can delete or rewrite anything under `status/`, which is outside the bucket
+lock, but not under `backups/` or `ledger/`. The next run (within 15 minutes, or a
 `backup-run` in the console) finds no record and writes a fresh one.
 
 Conditional writes, checked 2026-11-13:
@@ -204,10 +212,13 @@ going, with nothing stored:
 
 - The kind's age is counted from the finish of the last good run in its status record, whoever
   wrote it. With no readable good record it is counted from this process's start.
-- The kind is overdue when that age is over 26 hours for the dump or 2 hours for the ledger (one
-  interval and two hours of slack). Each dump starts at 16:00, so one that runs more than about two
-  hours longer than the one before goes overdue while it runs, and mails; today's dump takes under
-  a second, and the longest a dump may run (its bounds above) is about 8 hours.
+- The kind is overdue when that age is over 26 hours for the dump (one day and two hours of slack)
+  or 2 hours for the ledger (one hour and one hour of slack). Each dump starts at 16:00, so one that
+  runs more than about two hours longer than the one before goes overdue while it runs, and mails.
+  Today's dump takes under a second. How long a dump may run grows with its size (the transfer
+  budgets under "Size and time limits"): about 8 hours for 5 GiB, while at the largest supported
+  object, 156.25 GiB, the three transfer budgets alone come to about 5.6 days. A dump that large
+  would be overdue every day and its daily slot skipped while the run holds the lock.
 - An overdue kind is mailed to `BACKUP_ALERT_TO` when this process has not sent an overdue mail for
   it in the last 24 hours. Only a mail that went out counts; the mark is in memory, so a restart, or
   a second container during a redeploy, may send one more.
@@ -222,9 +233,11 @@ Mail never holds a run, a tick or the shutdown: the tick starts the send and goe
 time in the process (an overdue kind that finds one in flight is tried on a later tick), and on
 SIGTERM a send in flight is not waited for. The send goes through core's mail code with finite SMTP
 limits (nodemailer 10.3.1): 10 s for the DNS lookup, connecting and the greeting together, then 20 s
-of silence on the socket for each later reply. A server that never answers ends the send in about
-10 s; one that answers each of the conversation's nine or so steps just inside 20 s, in about 3
-minutes. A send that fails or times out is logged without the server's text and tried again on a
+of silence on the socket for each later reply, and 2 minutes for the whole send
+(`SMTP_SEND_LIMIT_MS`, for `web` and `worker` too). The silence limits alone would not end a
+server that keeps sending empty lines without answering; the 2 minutes do: each send has a socket
+of its own, which is destroyed then, and nodemailer fails the send. So a server that never answers
+ends the send in about 10 s, and no send takes longer than about 2 minutes. A send that fails or times out is logged without the server's text and tried again on a
 tick no sooner than 15 minutes after it ended.
 
 A service that is not running cannot mail. The operator's check of a service that may have stopped
@@ -326,7 +339,8 @@ its own `sha256` metadata; a named one needs no valid record for its kind, so `-
 `status/backup.json` is damaged), into a mode 700 folder as mode 600 files, checks each while it
 downloads, and prints the two paths and how it chose each. Newer objects that no record names (an
 upload that failed its check, a superseded run's) are passed over. If either destination file
-exists, it refuses before fetching anything; a download that fails, does not match or is stopped
+exists, it refuses before fetching anything, and it refuses any folder at or inside the service's
+temporary root (`/tmp/peblish-backup`), which backup runs clear, before reading anything; a download that fails, does not match or is stopped
 removes only what this fetch made (the folder too, if it made it). Then either:
 
 ```sh
