@@ -26,10 +26,15 @@ export function deadlineBody(
 ): ReadableStream<Uint8Array> {
   let offset = 0;
   let timer: ReturnType<typeof setTimeout> | undefined;
-  // A late pull clears the timer, and an errored stream is not pulled again, so this runs at most once.
+  // A late pull clears the timer, and an errored stream is not pulled again, so this runs at most
+  // once. A throwing `onLate` neither escapes the timer nor changes the cut-off.
   const cutOff = (controller: ReadableStreamDefaultController<Uint8Array>) => {
     controller.error(new PublicBodyLate(`the public answer was not handed over within ${PUBLIC_BODY_MS} ms of its decision`));
-    onLate?.();
+    try {
+      onLate?.();
+    } catch {
+      // Reporting the cut-off is best effort.
+    }
   };
   return new ReadableStream<Uint8Array>(
     {

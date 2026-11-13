@@ -33,7 +33,10 @@ test('a reader that keeps up gets every byte, and the stream closes only after t
 });
 
 test('a stalled reader is cut off at the deadline: the next read rejects, so the server destroys the socket (round 3, item 2)', async () => {
-  const onLate = vi.fn();
+  // A callback that throws still cuts the body off, and the throw goes no further.
+  const onLate = vi.fn(() => {
+    throw new Error('the log failed');
+  });
   const reader = deadlineBody(bytes, 10_000, { clock, chunk: 64 * 1024, onLate }).getReader();
   const first = await reader.read();
   expect(first.value?.byteLength).toBe(64 * 1024);

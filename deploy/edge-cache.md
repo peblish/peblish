@@ -160,7 +160,7 @@ settings for the test router and service: response buffering (the `buffering` mi
 `maxResponseBodyBytes`, `memResponseBodyBytes`), compression (the `compress` middleware and its
 minimum size and types), retries (the `retry` middleware), and the entry point's and transport's
 timeouts (`respondingTimeouts`, `forwardingTimeouts`, idle timeouts). From Cloudflare, record the
-plan's origin read timeout (100 s below Enterprise unless changed) and whether HTTP/2 to origin is
+plan's origin read timeout (125 s, adjustable only on Enterprise) and whether HTTP/2 to origin is
 on. Every later result is read against these.
 
 **(b) A delay between the proxy and the edge (the accepted residual, made visible).** Use a small
@@ -174,14 +174,14 @@ takes it whole. Then hold the connection between Traefik and Cloudflare while Cl
    minutes.
 2. A trickle: the same, but limit the test Traefik's egress to a few hundred bytes a second
    (`tc qdisc ... tbf` or `netem rate`) instead of stopping it, so the delivery never falls silent
-   long enough for Cloudflare to give up (section 5); release it only after the second purge.
+   for 125 s (Cloudflare's read timeout); release it only after the second purge.
 
 Record for each: whether Cloudflare answered the first client at all (a 524 or a complete image),
 how long the delivery took, and whether any later GET is `HIT`. A `HIT` after both purges is the
 accepted residual (a fill completing after the second send, served until its hour is up): record
 it with its timings and the settings from (a). It does not block the rollout. On 2026-11-13 the
-silent delivery ended about 125 s after the decision with nothing stored, and the trickled one
-was stored and served after both purges (section 5).
+silent delivery ended about 125 s after the decision, at Cloudflare's read timeout, with nothing
+stored, and the trickled one was stored and served after both purges (section 5).
 
 **(c) The body deadline on this build.** Use a public image large enough to fill the socket
 buffers (several megabytes, under the proxy's 10 MiB limit), so the application meets
@@ -309,12 +309,13 @@ bound the application does not control, and the owner accepted it as a residual 
 2026-11-13 section 3 (b) 2 showed it: a delivery trickled at about 8 B/s completed after both
 purges and was then served from the cache (`HIT`) until a later purge removed it.
 
-The 150 s exceed the 10 s body deadline plus the longest Cloudflare was seen to wait on a
-completely silent delivery, so such a delivery ends before the repeat. Cloudflare documents a
-100 s read timeout; on 2026-11-13 (free plan, through Traefik, one run) the silent connection of
-section 3 (b) 1 ended about 125 s after the decision, after the 120 s repeat of that build, which
-is why the repeat is now 150 s. Cloudflare stored nothing from it. That it stores nothing from an
-abandoned delivery was seen once, not guaranteed.
+The 150 s exceed the 10 s body deadline plus the 125 s Cloudflare documents as its read timeout
+(adjustable only on Enterprise), so a delivery that falls completely silent ends before the
+repeat. The repeat used to be 120 s, on this repository's earlier assumption of 100 s for that
+timeout. On 2026-11-13 (free plan, through Traefik, one run) the silent connection of section 3
+(b) 1 ended about 125 s after the decision, in line with the documented figure and after the
+120 s repeat of that build, which is why the repeat is now 150 s. Cloudflare stored nothing from
+it. That it stores nothing from an abandoned delivery was seen once, not guaranteed.
 
 If purging stays broken, a taken-down image can be served from Cloudflare for up to an hour
 after it was cached (`s-maxage=3600`), and no new image is cached once the path is not ready.

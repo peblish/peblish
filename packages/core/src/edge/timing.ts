@@ -21,12 +21,12 @@
 // bound the application does not control. The owner accepted it as a residual risk; the real-edge
 // proof of 2026-11-13 saw such a fill stored and served after both purges.
 //
-// ECHO_MS is longer than PUBLIC_BODY_MS plus the longest Cloudflare was seen to hold a completely
-// silent fill, so a delivery that goes silent ends before the second send. Cloudflare documents a
-// 100 s read timeout (CLOUDFLARE_READ_TIMEOUT_MS); measured on 2026-11-13 (free plan, through
-// Traefik, one run, which side closed not identified), the silent fill ended about 125 s after
-// the decision (CLOUDFLARE_SILENT_FILL_MS). That helps only if Cloudflare abandons such a fill
-// without storing it: seen once in that run, not guaranteed.
+// ECHO_MS is longer than PUBLIC_BODY_MS plus CLOUDFLARE_READ_TIMEOUT_MS (10 s + 125 s = 135 s),
+// so a delivery that goes completely silent until Cloudflare's read timeout ends before the second
+// send. The repeat used to be 120 s, on an older figure of 100 s for that timeout; on 2026-11-13
+// (free plan, through Traefik, one run) a silent fill ended about 125 s after the decision, after
+// that repeat, so the repeat is now 150 s. That helps only if Cloudflare abandons such a fill
+// without storing it: it stored nothing in that run, seen once, not guaranteed.
 // Every time the purge path stores or compares in SQL is the database's.
 
 /** Longest the public decision's read may take, from the deadline start to its answer, before the answer is private instead. */
@@ -35,10 +35,8 @@ export const PUBLIC_READ_MS = 2_000;
 export const PUBLIC_BODY_MS = 10_000;
 /** Each purge is sent again this long after its first send succeeded; it covers fills that complete within this long of the decision. */
 export const ECHO_MS = 150_000;
-/** Cloudflare's documented proxy read timeout (a 524 when the origin sends nothing for this long; not adjustable below Enterprise). */
-export const CLOUDFLARE_READ_TIMEOUT_MS = 100_000;
-/** How long after the decision a completely silent fill was seen to end on a real edge (2026-11-13, through Traefik, one run): longer than the documented timeout. */
-export const CLOUDFLARE_SILENT_FILL_MS = 125_000;
+/** Cloudflare's documented proxy read timeout (a 524 when the origin sends nothing for this long; not adjustable below Enterprise). The 2026-11-13 run saw a silent fill end at about 125 s, in line with it. */
+export const CLOUDFLARE_READ_TIMEOUT_MS = 125_000;
 /** Shortest gap between two Cloudflare requests across every worker: 4 a minute, under the free plan's 5. */
 export const SEND_GAP_MS = 15_000;
 /** How long a sender holds the batch it claimed; past it another worker may claim the rows. */
