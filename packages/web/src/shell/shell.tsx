@@ -48,10 +48,10 @@ function useFocusLostToPage(pathname: string | undefined) {
 
 /**
  * The application frame (shell-sidebar, mock direction A): the Mux Sidebar column on the left,
- * a HeaderNav bar with the actions over the page, and the page centred in the width that is
- * left. Below 860 px the column and the bar give way to the Sidebar's phone bar, whose menu
- * button opens the same navigation in Mux's drawer (with Appearance at its foot), and the
- * other actions sit beside the brand. The drawer needs scripts. Each route renders its own
+ * the actions at the top right in a sticky HeaderNav on the page's own surface (no band, no
+ * edge), and the page centred in the width that is left. Below 860 px the column and the bar
+ * give way to the Sidebar's phone bar, whose menu button opens the same navigation in Mux's
+ * drawer (with Appearance at its foot), and the other actions sit beside the brand. The drawer needs scripts. Each route renders its own
  * <main>; the frame only supplies the landmarks around it.
  *
  * The phone bar and the desktop bar each render the actions; CSS shows one of them, so
@@ -107,9 +107,9 @@ export function Shell({ children }: { children: ReactNode }) {
           </Sidebar.Root>
         </div>
         <div className="pb-app__body">
-          {/* HeaderNav is an inverse bar; its controls take the dark scheme so they read on it in both schemes. */}
-          <div className="pb-top" data-muxui-color-scheme="dark">
-            <HeaderNav.Root>
+          {/* The background HeaderNav: the page's own surface, no edge, its controls in the page's scheme. */}
+          <div className="pb-top">
+            <HeaderNav.Root variant="background">
               <HeaderNav.Actions>
                 <Actions appearance />
               </HeaderNav.Actions>

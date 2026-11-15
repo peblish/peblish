@@ -123,6 +123,8 @@
     min-inline-size: 0;
   }
 
+  /* HeaderNav's background variant is opaque, so content scrolling under the sticky bar is hidden
+     behind the page colour; at rest the bar cannot be seen. */
   .pb-top {
     position: sticky;
     inset-block-start: 0;
