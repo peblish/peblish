@@ -103,9 +103,10 @@ function createAuth(origin: string) {
     session: { expiresIn: 30 * 24 * 60 * 60, updateAge: 24 * 60 * 60 },
     // Before the plugin's verifiers run: the setup guard (only the session that started a setup
     // may confirm it), then the replay guard (one code, one session). The marker records the
-    // sessions that passed two-factor, which admin authority needs.
+    // sessions that passed two-factor, which admin authority needs. Recovery codes are sealed
+    // like the TOTP secret (better-auth's default, stated so an upgrade cannot quietly change it).
     plugins: [
-      twoFactor({ issuer: host, backupCodeOptions: { amount: 10, length: 10 } }),
+      twoFactor({ issuer: host, backupCodeOptions: { amount: 10, length: 10, storeBackupCodes: 'encrypted' } }),
       totpSetupGuard(),
       totpReplayGuard(),
       sessionTwoFactorMarker(),
