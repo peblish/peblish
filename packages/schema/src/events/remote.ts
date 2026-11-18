@@ -36,11 +36,11 @@ export const events = {
   }),
   /** A batch of held remote posts and comments was taken to be asked after at their servers (a gone one is post.deleted or comment.deleted). */
   'remote.rechecked': type({ type: "'remote.rechecked'", v: '1', objects: 'number.integer' }),
-  /** Old rows of a queue or bookkeeping table were deleted (the retention windows are in core/remote/prune.ts). */
+  /** Old rows of a queue or bookkeeping table, or old outbox events, were deleted (the retention windows are in core/remote/prune.ts). */
   'remote.pruned': type({
     type: "'remote.pruned'",
     v: '1',
-    table: "'inbox_raw' | 'deliveries' | 'inbox_dedupe' | 'throttles'",
+    table: "'inbox_raw' | 'deliveries' | 'inbox_dedupe' | 'throttles' | 'outbox'",
     rows: 'number.integer',
   }),
 };

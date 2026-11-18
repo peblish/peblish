@@ -1,14 +1,17 @@
 import { sql } from 'drizzle-orm';
 import { posts } from '../db/tables/content.ts';
 import { activities, inboxDedupe, inboxRaw } from '../db/tables/federation.ts';
+import { outbox, outboxCursors } from '../db/tables/outbox.ts';
 import { deliveries } from '../delivery/tables.ts';
 import { throttles } from '../identity/tables.ts';
+import { outboxSkipped } from '../outbox/tables.ts';
 import { defineMutation } from '../tx/mutation.ts';
 
 // Owned by lane REM. Retention for the tables that otherwise grow for ever: the inbox (every
 // activity as received, bodies up to 512 KiB; a row rejected or skipped for good keeps only the
 // first KiB once it settles, federation inbound/queue.ts), the delivery queue (every send), the
-// dedupe markers of applied activities and the expired windows of the rate limiter.
+// dedupe markers of applied activities, the expired windows of the rate limiter and the outbox
+// events every consumer has handled.
 
 /** How long a row is kept, and how a prune run is cut into transactions. */
 export const retention = {
@@ -23,12 +26,18 @@ export const retention = {
   inboxDedupeMs: 90 * 24 * 60 * 60 * 1000,
   /** A rate limiter window that ended. The longest window a scope uses is an hour (identity/throttle.ts); an ended one counts as no row. */
   throttlesMs: 24 * 60 * 60 * 1000,
+  /**
+   * An outbox event every registered consumer's cursor has passed, unless a consumer skipped it
+   * (outbox_skipped: its payload is what an operator replays). A consumer that starts at
+   * 'beginning' sees only the events this window leaves.
+   */
+  outboxMs: 14 * 24 * 60 * 60 * 1000,
   /** Rows deleted per transaction, and transactions per run (a larger backlog finishes on the next run). */
   batch: 2000,
   maxBatches: 25,
 } as const;
 
-export type PrunedTable = 'inbox_raw' | 'deliveries' | 'inbox_dedupe' | 'throttles';
+export type PrunedTable = 'inbox_raw' | 'deliveries' | 'inbox_dedupe' | 'throttles' | 'outbox';
 
 const keepMs = (table: PrunedTable): number =>
   ({
@@ -36,6 +45,7 @@ const keepMs = (table: PrunedTable): number =>
     deliveries: retention.deliveriesMs,
     inbox_dedupe: retention.inboxDedupeMs,
     throttles: retention.throttlesMs,
+    outbox: retention.outboxMs,
   })[table];
 
 /**
@@ -51,6 +61,27 @@ const openBoost = sql`(
       and not exists (select 1 from ${activities} u where u.local and u.type = 'Undo' and u.object_ap_id = a.ap_id)))`;
 
 /**
+ * The oldest of the registered consumers' cursors, as a (tx_id, event_id) row, or no row when one
+ * of them has no cursor yet (the worker creates them at start; until then nothing is pruned). A
+ * cursor row of a name no longer registered (a renamed consumer) does not count. The rows at or
+ * before it are final: a cursor only reaches rows whose tx_id is below the oldest running
+ * transaction (pg_snapshot_xmin, outbox/worker.ts), every transaction below that has ended, and
+ * any later one gets a larger id, so no event can still commit at or before a cursor.
+ */
+const slowestCursor = (consumers: readonly string[]) => {
+  const names = sql.join(
+    consumers.map((name) => sql`${name}`),
+    sql`, `,
+  );
+  return sql`(
+    select ${outboxCursors.txId}, ${outboxCursors.eventId} from ${outboxCursors}
+    where ${outboxCursors.consumer} in (${names})
+      and (select count(*) from ${outboxCursors} where ${outboxCursors.consumer} in (${names})) = ${consumers.length}
+    order by ${outboxCursors.txId}, ${outboxCursors.eventId}
+    limit 1)`;
+};
+
+/**
  * Deletes up to one batch of rows older than the grant's table keeps; returns how many went. The
  * candidates are claimed with FOR UPDATE SKIP LOCKED, so a row another transaction is changing
  * (the inbox job putting a skipped row back to pending) is left, and the DELETE states the
@@ -61,7 +92,8 @@ const openBoost = sql`(
 export const pruneBatch = defineMutation({
   action: 'remote.prune',
   emits: ['remote.pruned'],
-  async run(t, grant, input: { now: Date }) {
+  /** `consumers`: the names of every registered outbox consumer (prune-run.ts); with none, the outbox keeps every row. */
+  async run(t, grant, input: { now: Date; consumers?: readonly string[] }) {
     const { table } = grant.subject;
     const cutoff = new Date(input.now.getTime() - keepMs(table)).toISOString();
     const limit = retention.batch;
@@ -99,6 +131,24 @@ export const pruneBatch = defineMutation({
               limit ${limit} for update skip locked)
               and window_start < ${cutoff}::timestamptz
             returning key as id`);
+        case 'outbox': {
+          const consumers = [...new Set(input.consumers ?? [])];
+          if (consumers.length === 0) return [];
+          // The oldest batch of handled events (the outbox_order index, from its start), then only
+          // those older than the window: a run ends at the first short batch, so it never walks the
+          // retained events looking for old ones (created_at has no index). `= any(array(...))`
+          // keeps the DELETE on the primary key; `in (...)` planned a scan of the whole table.
+          return t.db.execute<{ id: string }>(sql`
+            delete from ${outbox}
+            where id = any(array(
+              select id from ${outbox} o
+              where (o.tx_id, o.id) <= ${slowestCursor(consumers)}
+                and not exists (select 1 from ${outboxSkipped} s where s.event_id = o.id)
+              order by o.tx_id, o.id
+              limit ${limit} for update skip locked))
+              and created_at < ${cutoff}::timestamptz
+            returning id`);
+        }
       }
     })();
     if (gone.length > 0) await t.emit({ type: 'remote.pruned', v: 1, table, rows: gone.length });

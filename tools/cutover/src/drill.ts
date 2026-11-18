@@ -471,7 +471,11 @@ export async function reapplyLedger(url: string, exported: readonly LedgerRow[])
   }
 }
 
-/** Row counts of the tables a restore must bring back, for comparing a source and its restore. */
+/**
+ * Row counts of the tables a restore must bring back, for comparing a source and its restore. The
+ * worker's hourly prune deletes old outbox events, so a prune between the backup and the count
+ * differs in `outbox` as a live write does.
+ */
 export async function tableCounts(url: string): Promise<Record<string, number>> {
   const sql = postgres(url, { max: 1, onnotice: () => undefined });
   try {

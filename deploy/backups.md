@@ -453,7 +453,7 @@ rm -rf /tmp/cutover/fetch /tmp/cutover/drill
 ```
 
 The drill's counts differ where the database changed since that backup; on a quiet database they
-match. If the damaged database still answers, run `backup-run ledger` first so the last good
+match, except `outbox` when the hourly prune deleted old events in between. If the damaged database still answers, run `backup-run ledger` first so the last good
 ledger export is current.
 
 ## Size and time limits

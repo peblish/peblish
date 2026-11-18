@@ -197,7 +197,7 @@ export const settlePurges = defineMutation({
         ...(result.refused && { verifiedAt: null }),
       })
       .where(status);
-    // One record per run of failures (the outbox is not pruned); edge_status keeps the count and the last error.
+    // One record per run of failures (outbox events are kept 14 days); edge_status keeps the count and the last error.
     if (failures === 1) {
       await t.emit({
         type: 'edge.purge_failed',

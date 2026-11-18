@@ -98,8 +98,9 @@ once uploads are on.
 The worker's `remote.prune` job (hourly) deletes what federation no longer needs, 2,000 rows
 a transaction and 25 transactions a run: settled `inbox_raw` rows after 14 days, settled
 `deliveries` after 30, `inbox_dedupe` after 90 days and ended `throttles` windows after one
-day. A pending row is never deleted. The inbox's request limits and the fetch politeness gaps
-are counted in memory per process.
+day. A pending row is never deleted. `outbox` events go after 14 days once every outbox
+consumer has handled them, except the ones a consumer skipped (`outbox_skipped`). The inbox's
+request limits and the fetch politeness gaps are counted in memory per process.
 
 ## The first admin
 
