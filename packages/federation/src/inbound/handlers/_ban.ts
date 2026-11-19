@@ -39,6 +39,6 @@ export async function prepareBan(ctx: InboundContext, block: BlockFields, bannin
     } else {
       await unbanFromCommunity.within(t, await grantFor(ctx, t, 'mod.unban', subject), { reason, activityApId });
     }
-    return { communityId: community.id, objectApId: banned.apId, relay: true };
+    return { communityId: community.id, relay: true };
   });
 }

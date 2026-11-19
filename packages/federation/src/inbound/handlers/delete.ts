@@ -54,7 +54,7 @@ async function prepareActorDelete(ctx: InboundContext): Promise<Prepared> {
   const { actorChanged, contentRemoved } = await deleteRemoteActor(grant, { removeContent, cause: 'Delete' });
   // An actor that was gone already may still have had its content removed by this Delete.
   if (!actorChanged && contentRemoved === 0) throw skip('target.deleted', ctx.sender.apId);
-  return prepared(ctx, async () => ({ objectApId: ctx.sender.apId }));
+  return prepared(ctx, async () => ({}));
 }
 
 /** Undo(Delete) of the account's own Delete: the actor is alive again (content its deletion removed stays removed). */
@@ -62,7 +62,7 @@ async function prepareActorUndelete(ctx: InboundContext): Promise<Prepared> {
   const grant = await importGrant('remote.actor_undelete', { apId: ctx.sender.apId });
   return prepared(ctx, async (t) => {
     await undeleteRemoteActor.within(t, grant);
-    return { objectApId: ctx.sender.apId };
+    return {};
   });
 }
 
@@ -76,7 +76,7 @@ export const handler: InboundHandler = {
     const community = await communityById(db(), target.communityId);
     await checkContentCommunity(ctx, community, claimFor(ctx, community));
     const reason = reasonOf(activity.reason);
-    const relayed = { communityId: community.id, objectApId: target.apId, relay: true };
+    const relayed = { communityId: community.id, relay: true };
     return prepared(ctx, async (t) => {
       if (isAuthorsOwn(ctx.sender, target, reason)) {
         if (target.kind === 'comment') await deleteComment.within(t, await grantFor(ctx, t, 'comment.delete', { commentId: target.id }));
@@ -107,7 +107,7 @@ export const handler: InboundHandler = {
         else await restoreComment.within(t, await grantFor(ctx, t, 'comment.restore', { commentId: target.id }));
         await recordRestoration(t, { kind: target.kind, id: target.id, actorId: ctx.sender.id });
       }
-      return { communityId: community.id, objectApId: target.apId, relay: true };
+      return { communityId: community.id, relay: true };
     });
   },
 };

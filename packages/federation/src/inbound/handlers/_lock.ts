@@ -19,6 +19,6 @@ export async function prepareLock(ctx: InboundContext, objectApId: string, locki
     const input = { activityApId: ctx.activity.id };
     if (locking) await lockPost.within(t, await grantFor(ctx, t, 'mod.lock', { postId: target.id }), input);
     else await unlockPost.within(t, await grantFor(ctx, t, 'mod.unlock', { postId: target.id }), input);
-    return { communityId: community.id, objectApId, relay: true };
+    return { communityId: community.id, relay: true };
   });
 }

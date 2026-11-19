@@ -44,7 +44,7 @@ export const handler: InboundHandler = {
           forward: false,
         });
         await createReport.within(t, grant, { details, apId: activity.id, raw: ctx.raw });
-        return { communityId: community.id, objectApId: stored.apId };
+        return { communityId: community.id };
       });
     }
     const person = await storedActor(db(), targetApId);
@@ -56,7 +56,7 @@ export const handler: InboundHandler = {
         forward: false,
       });
       await createReport.within(t, grant, { details, apId: activity.id, raw: ctx.raw });
-      return { objectApId: person.apId };
+      return {};
     });
   },
 };

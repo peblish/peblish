@@ -59,7 +59,7 @@ async function moderatorsOwner(ctx: InboundContext, claim: string | null, target
   return communityById(db(), row.id);
 }
 
-async function prepareModerators(ctx: InboundContext, objectApId: string, targetApId: string): Promise<Prepared> {
+async function prepareModerators(ctx: InboundContext, targetApId: string): Promise<Prepared> {
   const community = await moderatorsOwner(ctx, ctx.activity.communityApId, targetApId);
   if (community.kind !== 'Group' || targetApId !== (await collectionUrls(community.id)).moderators) {
     throw skip('collection.unknown', targetApId);
@@ -70,7 +70,7 @@ async function prepareModerators(ctx: InboundContext, objectApId: string, target
   const grant = await importGrant('remote.moderators_mirror', { communityId: community.id });
   return prepared(ctx, async (t) => {
     await mirrorModerators.within(t, grant, fetched);
-    return { objectApId };
+    return {};
   });
 }
 
@@ -79,5 +79,5 @@ export async function prepareCollection(ctx: InboundContext, adding: boolean): P
   if (activity.type !== 'Add' && activity.type !== 'Remove') throw new TypeError('prepareCollection needs an Add or a Remove');
   const content = await storedContent(db(), activity.objectApId);
   if (content?.kind === 'post') return prepareFeatured(ctx, content.id, content.communityId, activity.targetApId, adding);
-  return prepareModerators(ctx, activity.objectApId, activity.targetApId);
+  return prepareModerators(ctx, activity.targetApId);
 }
