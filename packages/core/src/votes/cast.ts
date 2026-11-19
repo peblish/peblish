@@ -11,7 +11,7 @@ import { Refused } from '../tx/refused.ts';
 /**
  * value 1 is an upvote, -1 a downvote and 0 takes the voter's vote back. `apId` is for a
  * remote voter only: the Like or Dislike activity's id. A local vote's id is minted here, so a
- * local caller cannot choose it. No copy of the activity is kept (votes.raw stays null).
+ * local caller cannot choose it. No copy of the activity is kept.
  */
 export const VoteInput = type({ value: '-1 | 0 | 1', 'apId?': 'string.url' });
 export type VoteInput = typeof VoteInput.infer;

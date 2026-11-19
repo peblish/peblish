@@ -5,10 +5,8 @@ import { votes } from './tables/content.ts';
 import { activities } from './tables/federation.ts';
 import { writer } from './write.ts';
 
-// Migration 0015 takes votes.raw and activities.inbox_raw_id off the definitions without
-// changing the database: inserts from this release name neither, so the later migration that
-// drops them cannot break a process still running this one. That later release flips the
-// second test.
+// Migration 0015 took votes.raw and activities.inbox_raw_id off the definitions, so inserts
+// stopped naming them; 0016 then dropped them from the database, with the FK and the index.
 
 const uuid = '00000000-0000-7000-8000-000000000000';
 
@@ -35,18 +33,15 @@ test('vote and activity inserts name neither votes.raw nor activities.inbox_raw_
   expect(activity).not.toContain('inbox_raw_id');
 });
 
-test('the migrated database still has both columns, the FK and the index', async () => {
+test('the migrated database has neither column, nor the FK or the index', async () => {
   const columns = await db().execute<{ table_name: string; column_name: string }>(sql`
     select table_name, column_name from information_schema.columns
-    where (table_name, column_name) in (('votes', 'raw'), ('activities', 'inbox_raw_id')) order by table_name`);
-  expect([...columns]).toEqual([
-    { table_name: 'activities', column_name: 'inbox_raw_id' },
-    { table_name: 'votes', column_name: 'raw' },
-  ]);
+    where (table_name, column_name) in (('votes', 'raw'), ('activities', 'inbox_raw_id'))`);
+  expect([...columns]).toEqual([]);
   const fk = await db().execute<{ conname: string }>(
-    sql`select conname from pg_constraint where conname = 'activities_inbox_raw_id_inbox_raw_id_fk' and confdeltype = 'n'`,
+    sql`select conname from pg_constraint where conname = 'activities_inbox_raw_id_inbox_raw_id_fk'`,
   );
-  expect(fk).toHaveLength(1);
+  expect(fk).toHaveLength(0);
   const index = await db().execute<{ indexname: string }>(sql`select indexname from pg_indexes where indexname = 'activities_inbox_raw'`);
-  expect(index).toHaveLength(1);
+  expect(index).toHaveLength(0);
 });

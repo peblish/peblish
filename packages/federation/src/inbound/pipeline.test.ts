@@ -1,4 +1,4 @@
-import { eq, sql } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import { beforeEach, describe, expect, test } from 'vitest';
 import { db } from '@peblish/core/db/read';
 import { actorKeys, actors } from '@peblish/core/db/tables/actors';
@@ -736,9 +736,7 @@ describe('what is kept of a remote activity', () => {
     expect((await deliver(like)).stored).toEqual({ state: 'applied', error: null });
     const dislike = { ...like, id: activityId(lemmy, 'dislike'), type: 'Dislike' };
     expect((await deliver(dislike)).stored).toEqual({ state: 'applied', error: null });
-    // votes.raw is off the definitions but still in the database until a later release drops it.
-    const stored = await db().execute<{ ap_id: string; value: number; raw: unknown }>(sql`select ap_id, value, raw from votes`);
-    expect([...stored]).toEqual([{ ap_id: dislike.id, value: -1, raw: null }]);
+    expect(await db().select({ apId: votes.apId, value: votes.value }).from(votes)).toEqual([{ apId: dislike.id, value: -1 }]);
     const undo = { id: activityId(lemmy, 'undo'), type: 'Undo', actor: lemmyuser, object: dislike, ...addressedToCommunity(spike) };
     expect((await deliver(undo)).stored).toEqual({ state: 'applied', error: null });
     expect(await db().select().from(votes)).toEqual([]);

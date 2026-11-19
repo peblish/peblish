@@ -24,22 +24,17 @@ const days = (ms: number) => ms / (24 * 60 * 60 * 1000);
 beforeEach(truncateAll);
 
 describe('retention', () => {
-  test('deletes settled inbox rows and deliveries past their window, never a pending one, and keeps the activity an inbox row produced', async () => {
+  test('deletes settled inbox rows and deliveries past their window, never a pending one', async () => {
     const { instanceActor } = await seedLocalInstance('rem.test');
     const lemmy = await seedInstance('lemmy.test', false);
     const bob = await seedActor(lemmy, 'Person', 'bob', { apId: 'https://lemmy.test/u/bob' });
 
     const old = days(retention.inboxRawMs) + 1;
-    const stale = await seedInbound(bob, daysAgo(old, now), { state: 'applied' });
+    await seedInbound(bob, daysAgo(old, now), { state: 'applied' });
     await seedInbound(bob, daysAgo(old, now), { state: 'skipped' });
     await seedInbound(bob, daysAgo(old, now), { state: 'failed' });
     await seedInbound(bob, daysAgo(old, now), { state: 'pending' });
     await seedInbound(bob, daysAgo(days(retention.inboxRawMs) - 1, now), { state: 'applied' });
-    // A remote activity stored before the pipeline stopped keeping them, linked to its bytes.
-    // The definitions no longer name inbox_raw_id, but the column and its FK are still there.
-    const remoteActivity = 'https://lemmy.test/activities/1';
-    await writer().insert(activities).values({ apId: remoteActivity, type: 'Like', actorApId: bob.apId, local: false, raw: {} });
-    await writer().execute(sql`update activities set inbox_raw_id = ${stale.id} where ap_id = ${remoteActivity}`);
 
     const oldDelivery = days(retention.deliveriesMs) + 1;
     await seedDelivery(lemmy, instanceActor, { state: 'delivered', createdAt: daysAgo(oldDelivery, now) });
@@ -52,10 +47,6 @@ describe('retention', () => {
 
     expect((await db().select().from(inboxRaw)).map((row) => row.state).sort()).toEqual(['applied', 'pending']);
     expect((await db().select().from(deliveries)).map((row) => row.state).sort()).toEqual(['delivered', 'pending']);
-    const kept = await db().execute<{ inbox_raw_id: string | null }>(
-      sql`select inbox_raw_id from activities where ap_id = ${remoteActivity}`,
-    );
-    expect([...kept]).toEqual([{ inbox_raw_id: null }]);
     const pruned = (await outboxEvents()).filter((event) => (event as { type: string }).type === 'remote.pruned');
     expect(pruned).toMatchObject([
       { table: 'inbox_raw', rows: 3 },
