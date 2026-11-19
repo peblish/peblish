@@ -102,6 +102,23 @@ day. A pending row is never deleted. `outbox` events go after 14 days once every
 consumer has handled them, except the ones a consumer skipped (`outbox_skipped`). The inbox's
 request limits and the fetch politeness gaps are counted in memory per process.
 
+The outbox prune keeps every event the slowest row of `outbox_cursors` has not passed, whether
+or not the running worker has that consumer, so an older and a newer worker side by side during
+a deploy are both safe. A renamed or removed consumer leaves its row behind, and that row holds
+retention back for good: once it has not moved for 7 days, each prune run logs `outbox prune:
+cursor <name> has not moved in 7 days and no consumer of this worker has that name`. When every
+worker runs the new version, delete that row:
+
+```sql
+delete from outbox_cursors where consumer = '<old name>';
+```
+
+Never delete the row of a consumer that still runs (it would start again at its `startAt`, and
+`edge.purge` keeps takedowns: deploy/edge-cache.md). A prune run that logs `outbox prune: held,
+cursor <name> is ahead of this database's transaction ids` deletes no outbox event: the cursors
+came from another Postgres cluster (a restore), and the consumers do not read new events until
+that is put right.
+
 ## The first admin
 
 After the first migrate, create the instance's site admin with the bundled script

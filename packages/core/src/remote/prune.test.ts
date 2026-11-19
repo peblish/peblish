@@ -1,13 +1,16 @@
 import { asc, eq, sql } from 'drizzle-orm';
-import { beforeEach, describe, expect, test } from 'vitest';
+import { beforeEach, describe, expect, onTestFinished, test, vi } from 'vitest';
 import { db } from '../db/read.ts';
 import { activities, inboxDedupe, inboxRaw } from '../db/tables/federation.ts';
 import { outbox, outboxCursors } from '../db/tables/outbox.ts';
 import { writer } from '../db/write.ts';
 import { deliveries } from '../delivery/tables.ts';
 import { throttles } from '../identity/tables.ts';
+import { defineConsumer } from '../outbox/consumers.ts';
 import { outboxSkipped } from '../outbox/tables.ts';
+import { ensureCursors, runOutboxWorker } from '../outbox/worker.ts';
 import { truncateAll } from '../testing/db.ts';
+import { tx } from '../tx/tx.ts';
 import { seedActor, seedInstance } from '../testing/seed.ts';
 import { outboxEvents, seedPost } from '../testing/seed-az.ts';
 import { seedLocalInstance } from '../testing/seed-fed-a.ts';
@@ -177,7 +180,7 @@ describe('retention of the outbox', () => {
   const prunedEvents = async () =>
     (await outboxEvents()).filter((event) => (event as { type: string; table?: string }).type === 'remote.pruned');
 
-  test('deletes old events every registered consumer has passed; keeps newer ones, ones a consumer lags behind and skipped ones', async () => {
+  test('deletes old events every cursor has passed; keeps newer ones, ones a consumer lags behind and skipped ones', async () => {
     await seedLocalInstance('rem.test');
     const first = await seedEvent(old);
     const skipped = await seedEvent(old);
@@ -186,8 +189,6 @@ describe('retention of the outbox', () => {
     const ahead = await seedEvent(old);
     await cursorAt('fast', ahead);
     await cursorAt('slow', passed);
-    // A renamed consumer's cursor, left at the start: it is not registered, so it holds nothing back.
-    await cursorAt('retired', { id: 0, txId: '0' });
     await writer()
       .insert(outboxSkipped)
       .values({ consumer: 'fast', eventId: skipped.id, type: 'test.event', failures: 10, firstFailureAt: old, lastFailureAt: old });
@@ -243,5 +244,91 @@ describe('retention of the outbox', () => {
       { table: 'outbox', rows: retention.batch },
       { table: 'outbox', rows: 1 },
     ]);
+  });
+  /** Warnings the prune logs during `run`. */
+  const warned = () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    onTestFinished(() => warn.mockRestore());
+    return () => warn.mock.calls.map(([line]) => String(line));
+  };
+
+  test('a cursor no consumer here has holds the boundary back, and is warned about once it has not moved for 7 days', async () => {
+    await seedLocalInstance('rem.test');
+    const event = await seedEvent(old);
+    await cursorAt('fast', event);
+    // A renamed consumer's cursor, left at the start.
+    await cursorAt('retired', { id: 0, txId: '0' });
+    const lines = warned();
+
+    expect(await pruneOld({ now, consumers: ['fast'] })).toMatchObject({ outbox: 0 });
+    expect(lines()).toEqual([]);
+
+    await writer()
+      .update(outboxCursors)
+      .set({ updatedAt: daysAgo(8) })
+      .where(eq(outboxCursors.consumer, 'retired'));
+    expect(await pruneOld({ now, consumers: ['fast'] })).toMatchObject({ outbox: 0 });
+    expect(lines()).toEqual([expect.stringMatching(/^outbox prune: cursor retired has not moved in 7 days/)]);
+    expect(await left()).toEqual([event.id]);
+
+    // The operator deletes the row (deploy/README.md): the event goes.
+    await writer().delete(outboxCursors).where(eq(outboxCursors.consumer, 'retired'));
+    expect(await pruneOld({ now, consumers: ['fast'] })).toMatchObject({ outbox: 1 });
+  });
+
+  test('deletes nothing while a cursor is ahead of this cluster (a restore onto another one), and says so', async () => {
+    await seedLocalInstance('rem.test');
+    const event = await seedEvent(old);
+    await cursorAt('fast', event);
+    const [current] = await db().execute<{ id: string }>(sql`select pg_current_xact_id()::text as id`);
+    await cursorAt('restored', { id: event.id, txId: String(BigInt(current!.id) + 1_000_000n) });
+    const lines = warned();
+
+    expect(await pruneOld({ now, consumers: ['fast', 'restored'] })).toMatchObject({ outbox: 0 });
+    expect(lines()).toEqual([expect.stringMatching(/^outbox prune: held, cursor restored is ahead of this database's transaction ids/)]);
+    expect(await left()).toEqual([event.id]);
+  });
+
+  test('with real workers: an older worker never deletes what a newer one’s consumer has not read', { timeout: 30_000 }, async () => {
+    await seedLocalInstance('rem.test');
+    const consumer = (name: string) =>
+      defineConsumer({ name, events: ['post.created'], emits: [], startAt: 'beginning', handle: async () => {} });
+    const [a, b] = [consumer('test.a'), consumer('test.b')];
+    const uuid = (n: number) => `0192f5a0-0000-7000-8000-${String(n).padStart(12, '0')}`;
+    await tx(async (t) => {
+      for (const n of [1, 2, 3])
+        await t.emit({ type: 'post.created', v: 1, postId: uuid(n), communityId: uuid(0), authorId: uuid(0), local: true });
+    });
+    // Every event is past the window as of `later`.
+    const later = new Date(Date.now() + retention.outboxMs + 24 * 60 * 60 * 1000);
+    const posts = async () => (await db().select({ id: outbox.id }).from(outbox).where(eq(outbox.type, 'post.created'))).length;
+    const passedAll = async (name: string) => {
+      const [row] = await db().execute<{ done: boolean }>(sql`
+        select (c.tx_id, c.event_id) >= (select tx_id, id from ${outbox} where type = 'post.created' order by tx_id desc, id desc limit 1) as done
+        from ${outboxCursors} c where c.consumer = ${name}`);
+      return row?.done === true;
+    };
+    const run = async (consumers: ReturnType<typeof consumer>[]) => {
+      const controller = new AbortController();
+      const running = runOutboxWorker({ signal: controller.signal, consumers, pollMs: 50 });
+      try {
+        for (const { name } of consumers) await expect.poll(() => passedAll(name), { timeout: 20_000 }).toBe(true);
+      } finally {
+        controller.abort();
+        await running;
+      }
+    };
+
+    // The older version runs only `test.a`, which reads everything.
+    await run([a]);
+    // The newer version starts beside it and creates `test.b`'s cursor at the beginning.
+    await ensureCursors([a, b]);
+    expect(await pruneOld({ now: later, consumers: ['test.a'] })).toMatchObject({ outbox: 0 });
+    expect(await posts()).toBe(3);
+
+    // Once `test.b` has read them too, they go.
+    await run([a, b]);
+    expect((await pruneOld({ now: later, consumers: ['test.a', 'test.b'] })).outbox).toBeGreaterThanOrEqual(3);
+    expect(await posts()).toBe(0);
   });
 });
