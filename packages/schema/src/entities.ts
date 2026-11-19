@@ -5,7 +5,8 @@ import { ActorKind, ApId, Uuid } from './ids.ts';
 // core asserts at compile time that the Drizzle row type satisfies it (entities.test-d.ts
 // in core), so a table may grow columns without touching this file.
 // Every federated entity carries the identity spine: uuidv7 id, immutable apId, local flag,
-// instanceId and the raw JSON it was received as (null for content authored here).
+// instanceId and the raw JSON it was received as (null for content authored here). Votes keep
+// no raw JSON.
 
 const spine = {
   id: Uuid,
@@ -82,7 +83,10 @@ export type Comment = typeof Comment.infer;
 
 /** One row per voter and target. Changing direction replaces the row (its apId is immutable). */
 export const Vote = type({
-  ...spine,
+  id: spine.id,
+  apId: spine.apId,
+  local: spine.local,
+  instanceId: spine.instanceId,
   voterId: Uuid,
   postId: Uuid.or('null'),
   commentId: Uuid.or('null'),

@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm';
-import { boolean, index, integer, jsonb, pgTable, text, uuid } from 'drizzle-orm/pg-core';
+import { boolean, index, integer, jsonb, pgTable, text } from 'drizzle-orm/pg-core';
 import { at, bytea, createdAt, enumCheck, id } from '../columns.ts';
 
 const stateValues = ['pending', 'applied', 'skipped', 'failed'] as const;
@@ -55,8 +55,9 @@ export const inboxDedupe = pgTable(
 /**
  * The activities we sent, served at their ids, with their JSON in `raw`. Remote activities
  * are no longer stored here (the inbound pipeline keeps no copy; the bytes stay in inbox_raw
- * until it is pruned). Rows with `local = false` and `inbox_raw_id` are from before that and
- * nothing reads them; a later release deletes them and drops the column.
+ * until it is pruned). Rows with `local = false` are from before that and nothing reads them;
+ * a later release deletes them and drops their `inbox_raw_id` column (with its FK to inbox_raw,
+ * ON DELETE SET NULL, and its index), which the database still has but this definition omits.
  */
 export const activities = pgTable(
   'activities',
@@ -68,14 +69,7 @@ export const activities = pgTable(
     objectApId: text('object_ap_id'),
     local: boolean('local').notNull(),
     raw: jsonb('raw').notNull(),
-    /** Set only on the old remote rows, never written now: the inbox_raw row the activity arrived in. */
-    inboxRawId: uuid('inbox_raw_id').references(() => inboxRaw.id, { onDelete: 'set null' }),
     createdAt: createdAt(),
   },
-  (t) => [
-    index('activities_object').on(t.objectApId),
-    // Each inbox_raw row the prune deletes nulls its link here (ON DELETE SET NULL); without
-    // this index every deleted row scans the whole table.
-    index('activities_inbox_raw').on(t.inboxRawId),
-  ],
+  (t) => [index('activities_object').on(t.objectApId)],
 );
