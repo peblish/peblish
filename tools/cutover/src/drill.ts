@@ -19,7 +19,7 @@ import { drizzle } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
 import { openPrivate } from './bundle.ts';
 import { CutoverError, readJsonFile } from './errors.ts';
-import { alignOutbox, outboxProbe, type OutboxAlignment } from './outbox-order.ts';
+import { alignOutbox, outboxProbe, type AlignOptions, type OutboxAlignment } from './outbox-order.ts';
 
 // The backup and restore drill (T&S baseline: a restore drill that re-applies the deletion
 // ledger). A backup is `pg_dump -Fc`; the ledger is also exported on its own, more often than
@@ -181,12 +181,12 @@ export async function dropOwnDatabase(own: OwnDatabase): Promise<void> {
  * (outbox-order.ts), so the consumers read new events. A restore that fails drops the
  * half-restored database it created. Returns it, for the drill to drop.
  */
-export async function restore(file: string, url: string): Promise<OwnDatabase & { outbox: OutboxAlignment }> {
+export async function restore(file: string, url: string, outbox: AlignOptions = {}): Promise<OwnDatabase & { outbox: OutboxAlignment }> {
   const own = await createOwnDatabase(url);
   try {
     const { arg, env } = connection(url);
     await run(pgRestore(), ['--no-owner', '--no-privileges', '--exit-on-error', arg, file], env);
-    return { ...own, outbox: await alignOutbox(url) };
+    return { ...own, outbox: await alignOutbox(url, outbox) };
   } catch (error) {
     await dropOwnDatabase(own);
     throw error;

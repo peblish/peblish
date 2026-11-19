@@ -8,13 +8,14 @@ import { CutoverError } from './errors.ts';
 // same cluster they are already in the past, but a new cluster's counter starts low, so every new
 // event would sort before the restored cursors and every consumer would skip it until the counter
 // caught up. `alignOutbox` renumbers in that case only:
-// - the events at or before the slowest cursor, which every consumer has passed (and outbox
-//   retention deletes), all get tx_id 0 and keep their ids;
-// - every other tx_id, of the events after it and of the cursors, gets its rank among those
-//   values (1, 2, ...), so each cursor keeps exactly the same events after it, ties included;
-// - if the top rank still reaches the cluster's next transaction id, the counter is advanced
-//   first with empty transactions (about a million a second and 40 bytes of WAL each, measured
-//   on Postgres 17), refused past `maxAdvance`.
+// - every distinct tx_id, of the events and the cursors together, gets its rank among them
+//   (1, 2, ...): the events keep their whole (tx_id, id) order, so a consumer added later at
+//   'beginning' reads them as before, and each cursor keeps exactly the same events after it,
+//   ties included;
+// - if the top rank reaches the cluster's next transaction id, the counter is advanced first
+//   with empty transactions (about a million a second and 40 bytes of WAL each, measured on
+//   Postgres 17), refused past `maxAdvance`. The ranks are one per transaction that wrote a
+//   retained event, so the advance grows with the outbox.
 
 /** A connection or a transaction on one. */
 type Sql = postgres.Sql | postgres.TransactionSql;
@@ -22,13 +23,20 @@ type Sql = postgres.Sql | postgres.TransactionSql;
 /** Well under autovacuum_freeze_max_age (200 million by default): about 10 s and 400 MB of WAL. */
 export const defaultMaxAdvance = 10_000_000;
 
+export type AlignOptions = {
+  maxAdvance?: number;
+  /**
+   * Ranks start after this (default 0). A test sets it at the counter, so that the advance runs
+   * on a cluster whose counter is far above any outbox it can seed.
+   */
+  rankFrom?: bigint;
+};
+
 export type OutboxAlignment =
   | { renumbered: false }
   | {
       renumbered: true;
-      /** Events every cursor had passed, now at tx_id 0. */
-      passed: number;
-      /** Distinct tx_ids of the cursors and the events after the slowest, now 1 to this. */
+      /** Distinct tx_ids of the events and the cursors, now numbered from `rankFrom` + 1 to `rankFrom` + this. */
       ranked: number;
       /** Empty transactions run first so the counter is above the top rank. */
       advanced: number;
@@ -57,32 +65,31 @@ export async function advanceXids(q: Sql, count: number): Promise<void> {
   await q.unsafe(`do $$ begin for i in 1..${Math.trunc(count)} loop perform pg_current_xact_id(); commit; end loop; end $$`);
 }
 
-/** The slowest cursor as (tx_id, event_id), or null when there is none. */
-const slowest = (q: Sql) =>
-  q<{ tx_id: string; event_id: string }[]>`
-    select tx_id::text, event_id::text from outbox_cursors order by tx_id, event_id limit 1`.then((rows) => rows[0] ?? null);
-
-/** Whether an outbox row is at or before the slowest cursor; false with no cursor. */
-const passedBy = (q: Sql, cursor: { tx_id: string; event_id: string } | null) =>
-  cursor ? q`(o.tx_id, o.id) <= (${cursor.tx_id}::xid8, ${cursor.event_id}::bigint)` : q`false`;
-
-/** How many distinct tx_ids the cursors and the events after the slowest one hold. */
+/** How many distinct tx_ids the events and the cursors hold. */
 async function rankedValues(q: Sql): Promise<number> {
-  const cursor = await slowest(q);
   const [row] = await q<{ n: number }[]>`
-    select count(*)::int as n from (
-      select tx_id from outbox_cursors
-      union select o.tx_id from outbox o where not ${passedBy(q, cursor)}
-    ) v`;
+    select count(*)::int as n from (select tx_id from outbox union select tx_id from outbox_cursors) v`;
   return row?.n ?? 0;
 }
 
+/** Each consumer's unread events (the worker's order, without its horizon). */
+const unread = (q: Sql) => q`select c.consumer, o.id from outbox_cursors c join outbox o on (o.tx_id, o.id) > (c.tx_id, c.event_id)`;
+
+/** Every event's place in (tx_id, id) order, the order a consumer starting at 'beginning' reads. */
+const places = (q: Sql) => q`select id, row_number() over (order by tx_id, id) as place from outbox`;
+
+/** Rows of `a` not in `b` plus rows of `b` not in `a`. */
+const differing = (q: Sql, a: string, b: postgres.PendingQuery<postgres.Row[]>) =>
+  q`select count(*)::int from ((select * from ${q(a)} except ${b}) union all (${b} except select * from ${q(a)})) d`;
+
 /**
  * Renumbers the outbox of the database `url` names when any event or cursor tx_id is at or above
- * the cluster's next transaction id, in one transaction that checks each cursor still has the
- * same events after it; a second run finds nothing to do. Run it before anything writes there.
+ * the cluster's next transaction id, in one transaction that checks the events keep their order
+ * and each cursor the same events after it; a second run finds nothing to do. Run it before
+ * anything writes there.
  */
-export async function alignOutbox(url: string, options: { maxAdvance?: number } = {}): Promise<OutboxAlignment> {
+export async function alignOutbox(url: string, options: AlignOptions = {}): Promise<OutboxAlignment> {
+  const from = options.rankFrom ?? 0n;
   const q = postgres(url, { max: 1, onnotice: () => undefined });
   try {
     const ahead = async () => {
@@ -94,49 +101,39 @@ export async function alignOutbox(url: string, options: { maxAdvance?: number } 
     if (!(await ahead())) return { renumbered: false };
 
     const ranked = await rankedValues(q);
-    const advanced = advanceNeeded(await nextXid(q), BigInt(ranked), options.maxAdvance ?? defaultMaxAdvance);
+    const advanced = advanceNeeded(await nextXid(q), from + BigInt(ranked), options.maxAdvance ?? defaultMaxAdvance);
     await advanceXids(q, advanced);
 
     return await q.begin(async (t) => {
       await t`lock table outbox, outbox_cursors in exclusive mode`;
       const [own] = await t<{ xid: string }[]>`select pg_current_xact_id()::text as xid`;
-      const cursor = await slowest(t);
-      const passed = passedBy(t, cursor);
-      // Each consumer's unread events, to compare afterwards (the worker's order, without its horizon).
-      await t`
-        create temp table unread_before on commit drop as
-        select c.consumer, o.id from outbox_cursors c join outbox o on (o.tx_id, o.id) > (c.tx_id, c.event_id)`;
+      // What must not change, to compare afterwards.
+      await t`create temp table unread_before on commit drop as ${unread(t)}`;
+      await t`create temp table places_before on commit drop as ${places(t)}`;
       await t`create temp table tx_rank (old xid8 primary key, new xid8 not null) on commit drop`;
       await t`
         insert into tx_rank
-        select tx_id, (dense_rank() over (order by tx_id))::text::xid8
-        from (select tx_id from outbox_cursors union select o.tx_id from outbox o where not ${passed}) v`;
+        select tx_id, (${from.toString()}::numeric + dense_rank() over (order by tx_id))::text::xid8
+        from (select tx_id from outbox union select tx_id from outbox_cursors) v`;
       const [top] = await t<{ n: number }[]>`select count(*)::int as n from tx_rank`;
-      if (BigInt(top?.n ?? 0) >= BigInt(own!.xid)) {
-        throw new CutoverError(`the restored outbox's top rank ${top?.n} is not below transaction ${own!.xid}; nothing was changed`);
+      const ranked = top?.n ?? 0;
+      if (from + BigInt(ranked) >= BigInt(own!.xid)) {
+        throw new CutoverError(`the restored outbox's top rank is not below transaction ${own!.xid}; nothing was changed`);
       }
-      await t`
-        update outbox o set tx_id = case when ${passed} then '0'::xid8 else (select r.new from tx_rank r where r.old = o.tx_id) end`;
+      await t`update outbox o set tx_id = r.new from tx_rank r where r.old = o.tx_id`;
       await t`update outbox_cursors c set tx_id = r.new from tx_rank r where r.old = c.tx_id`;
-      const [check] = await t<{ changed: number; high: number }[]>`
+      const [check] = await t<{ unread: number; reordered: number; high: number }[]>`
         select
-          (select count(*)::int from (
-            (select * from unread_before except
-              select c.consumer, o.id from outbox_cursors c join outbox o on (o.tx_id, o.id) > (c.tx_id, c.event_id))
-            union all
-            (select c.consumer, o.id from outbox_cursors c join outbox o on (o.tx_id, o.id) > (c.tx_id, c.event_id)
-              except select * from unread_before)
-          ) d) as changed,
-          (select count(*)::int from (
-            select tx_id from outbox union all select tx_id from outbox_cursors
-          ) v where tx_id >= ${own!.xid}::xid8) as high`;
-      if (check?.changed !== 0 || check.high !== 0) {
+          (${differing(t, 'unread_before', unread(t))}) as unread,
+          (${differing(t, 'places_before', places(t))}) as reordered,
+          (select count(*)::int from (select tx_id from outbox union all select tx_id from outbox_cursors) v
+            where tx_id >= ${own!.xid}::xid8) as high`;
+      if (check?.unread !== 0 || check.reordered !== 0 || check.high !== 0) {
         throw new CutoverError(
-          `renumbering the restored outbox changed ${check?.changed} unread events of its consumers or left ${check?.high} tx_ids ahead; nothing was changed`,
+          `renumbering the restored outbox changed ${check?.unread} unread events of its consumers and ${check?.reordered} places in its order, or left ${check?.high} tx_ids ahead; nothing was changed`,
         );
       }
-      const [count] = await t<{ n: number }[]>`select count(*)::int as n from outbox where tx_id = '0'::xid8`;
-      return { renumbered: true as const, passed: count?.n ?? 0, ranked: top?.n ?? 0, advanced };
+      return { renumbered: true as const, ranked, advanced };
     });
   } finally {
     await q.end({ timeout: 5 });
