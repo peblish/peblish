@@ -93,8 +93,10 @@ function without(headers: Record<string, string>, ...names: string[]): Record<st
 function before<T>(signal: AbortSignal, promise: Promise<T>): Promise<T> {
   return new Promise<T>((resolve, reject) => {
     if (signal.aborted) return reject(signal.reason);
-    signal.addEventListener('abort', () => reject(signal.reason), { once: true });
-    promise.then(resolve, reject);
+    const abort = () => reject(signal.reason);
+    signal.addEventListener('abort', abort, { once: true });
+    // The signal lasts the whole call, so each hop takes its listener off again.
+    promise.then(resolve, reject).finally(() => signal.removeEventListener('abort', abort));
   });
 }
 
@@ -131,15 +133,24 @@ function requestOnce(
   signal: AbortSignal,
 ): Promise<Hop> {
   const pinned = addresses.map((address) => ({ address, family: isIP(address) }));
-  // Node asks for one address, or for all of them when it tries IPv6 and IPv4 in turn.
-  const lookup: LookupFunction = (_host, options, callback) => {
-    if (options.all) callback(null, pinned);
-    else callback(null, pinned[0]!.address, pinned[0]!.family);
-  };
+  // Node asks for one address, or for all of them when it tries IPv6 and IPv4 in turn
+  // (autoSelectFamily). The answer comes on a later turn, as dns.lookup's always does: answered
+  // at once, the connection is tried while https.request is still creating the socket, and an
+  // address that fails at once (no route to its family) destroys it there. tls.connect then
+  // throws, the socket never reaches the request, and its 'error' event, with no listener,
+  // ends the process.
+  const lookup: LookupFunction = (_host, options, callback) =>
+    setImmediate(() => {
+      if (options.all) callback(null, pinned);
+      else callback(null, pinned[0]!.address, pinned[0]!.family);
+    });
   const send = url.protocol === 'https:' ? https.request : http.request;
   return new Promise<Hop>((resolve, reject) => {
     const headers = request.body ? { ...request.headers, 'content-length': String(request.body.length) } : request.headers;
-    const req = send(url, { method: request.method, headers, agent: false, lookup, signal }, (res) => {
+    // autoSelectFamily whatever the process default: a host with both families is reached over
+    // the other one when the first fails, so IPv4 still works where IPv6 has no route.
+    const options = { method: request.method, headers, agent: false, lookup, autoSelectFamily: true, signal };
+    const req = send(url, options, (res) => {
       const chunks: Buffer[] = [];
       let size = 0;
       let finished = false;
@@ -208,6 +219,10 @@ export function createSafeFetch(deps: FetchDeps) {
       }
     } catch (error) {
       if (signal.aborted) throw new FetchTimeoutError(`no complete answer within ${init.timeoutMs} ms`);
+      // When every address fails Node rejects with an AggregateError that has no message of its own.
+      if (error instanceof AggregateError && !error.message) {
+        error.message = error.errors.map((each) => (each instanceof Error ? each.message : String(each))).join('; ');
+      }
       throw error;
     }
   };

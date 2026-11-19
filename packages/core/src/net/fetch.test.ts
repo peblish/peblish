@@ -1,9 +1,11 @@
+import { spawnSync } from 'node:child_process';
 import { globSync, readFileSync } from 'node:fs';
 import http from 'node:http';
 import { join } from 'node:path';
 import type { AddressInfo } from 'node:net';
 import { afterEach, expect, test } from 'vitest';
 import { BlockedDestinationError, createSafeFetch, FetchTimeoutError, safeFetch, type SafeFetchInit } from './fetch.ts';
+import { isPublicAddress } from './public-address.ts';
 
 // Stub servers live on loopback, which the real predicate refuses, so these tests build their
 // own fetcher: "public" is ::1 and "private" is 127.0.0.1. Two servers share one port, one per
@@ -201,6 +203,76 @@ test('a server that never answers, or stalls inside the body, times out', async 
   await expect(slow('/silent')).rejects.toBeInstanceOf(FetchTimeoutError);
   await expect(slow('/stalls')).rejects.toBeInstanceOf(FetchTimeoutError);
   expect(Date.now() - started).toBeLessThan(1_500);
+});
+
+// 100::1 is in the discard prefix (RFC 6666), routed nowhere. Without an IPv6 route the connect
+// fails at once (the case that used to end the process); with one it fails or times out later.
+const UNREACHABLE = '100::1';
+
+/** Runs one request in a child process: an unhandled socket 'error' would end it before it prints. */
+function inChild(address: string, url: string) {
+  const script = `
+    import { createSafeFetch } from ${JSON.stringify(new URL('./fetch.ts', import.meta.url).href)};
+    const fetcher = createSafeFetch({ resolve: async () => [${JSON.stringify(address)}], isPublic: () => true });
+    await fetcher(${JSON.stringify(url)}, { schemes: ['https:', 'http:'], maxRedirects: 0, maxBytes: 100, timeoutMs: 1_000 })
+      .then(() => console.log('resolved'), (error) => console.log('rejected', error.name));
+    await new Promise((done) => setTimeout(done, 100));
+    console.log('alive');`;
+  const { NODE_OPTIONS: _, ...env } = process.env;
+  const child = spawnSync(process.execPath, ['--input-type=module', '-e', script], { encoding: 'utf8', timeout: 10_000, env });
+  return { status: child.status, out: child.stdout.trim().split('\n'), err: child.stderr };
+}
+
+test('an address that cannot be reached rejects the request, and the process lives on', () => {
+  for (const scheme of ['https', 'http']) {
+    const child = inChild(UNREACHABLE, `${scheme}://v6-only.test/`);
+    expect(child, scheme).toMatchObject({ status: 0, out: [expect.stringMatching(/^rejected /), 'alive'] });
+  }
+});
+
+test('a refused port, a TLS failure and a reset inside the body each reject the request', async () => {
+  const { port } = await pair((req, res) => {
+    res.writeHead(200, { 'content-length': '100' });
+    res.write('start');
+    setTimeout(() => req.socket.destroy(), 20);
+  });
+  const closed = await listen(PUBLIC, 0, () => {});
+  const closedPort = (closed.server.address() as AddressInfo).port;
+  await new Promise((done) => closed.server.close(done));
+
+  await expect(fetcher(`http://open.test:${closedPort}/`, init())).rejects.toMatchObject({ code: 'ECONNREFUSED' });
+  // Both families refused: the error still says what happened.
+  const both = createSafeFetch({ resolve: async () => [PUBLIC, PRIVATE], isPublic: () => true });
+  await expect(both(`http://both.test:${closedPort}/`, init())).rejects.toThrow(/ECONNREFUSED ::1.*; .*ECONNREFUSED 127\.0\.0\.1/);
+  // TLS spoken to a plain HTTP server.
+  await expect(fetcher(`https://open.test:${port}/`, init({ schemes: ['https:'] }))).rejects.toThrow();
+  const reset = fetcher(`http://open.test:${port}/`, init());
+  await expect(reset).rejects.toThrow();
+  await expect(reset).rejects.not.toBeInstanceOf(FetchTimeoutError);
+});
+
+test('a host with an unreachable IPv6 address and a working IPv4 one is reached over IPv4', async () => {
+  const { secret, port } = await pair(
+    (_req, res) => res.end('v6'),
+    (_req, res) => res.end('v4'),
+  );
+  const dual = createSafeFetch({ resolve: async () => [UNREACHABLE, PRIVATE], isPublic: () => true });
+  const response = await dual(`http://dual.test:${port}/`, init());
+  expect(text(response.body)).toBe('v4');
+  expect(secret.hits).toHaveLength(1);
+});
+
+test('with both families, one private address of either family refuses the host before a connection', async () => {
+  const answers: Record<string, string[]> = {
+    'v6-private.test': ['93.184.215.14', 'fd00::1'],
+    'v4-private.test': ['2606:2800:21f:cb07:6820:80da:af6b:8b2c', '10.0.0.1'],
+    'mapped-private.test': ['93.184.215.14', '::ffff:192.168.1.1'],
+    'nat64-private.test': ['2606:2800:21f:cb07:6820:80da:af6b:8b2c', '64:ff9b::7f00:1'],
+  };
+  const real = createSafeFetch({ resolve: async (host) => answers[host] ?? [], isPublic: isPublicAddress });
+  for (const host of Object.keys(answers)) {
+    await expect(real(`http://${host}/`, init()), host).rejects.toBeInstanceOf(BlockedDestinationError);
+  }
 });
 
 test('no client headers, cookies, Referer or forwarding addresses go upstream', async () => {
