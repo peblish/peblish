@@ -109,7 +109,6 @@ export const comments = pgTable(
 export const votes = pgTable(
   'votes',
   {
-    // The database still has votes.raw (always null now) until a later release drops it.
     ...identity(),
     voterId: uuid('voter_id')
       .notNull()

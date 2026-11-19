@@ -54,10 +54,8 @@ export const inboxDedupe = pgTable(
 
 /**
  * The activities we sent, served at their ids, with their JSON in `raw`. Remote activities
- * are no longer stored here (the inbound pipeline keeps no copy; the bytes stay in inbox_raw
- * until it is pruned). Rows with `local = false` are from before that and nothing reads them;
- * a later release deletes them and drops their `inbox_raw_id` column (with its FK to inbox_raw,
- * ON DELETE SET NULL, and its index), which the database still has but this definition omits.
+ * are not stored here (the inbound pipeline keeps no copy; the bytes stay in inbox_raw until it
+ * is pruned); migration 0016 deleted the ones stored before that.
  */
 export const activities = pgTable(
   'activities',

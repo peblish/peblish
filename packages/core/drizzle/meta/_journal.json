@@ -113,6 +113,13 @@
       "when": 1795082265958,
       "tag": "0015_stop_remote_copies_definitions",
       "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1795083825818,
+      "tag": "0016_drop_remote_copies",
+      "breakpoints": true
     }
   ]
 }
