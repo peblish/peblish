@@ -2,6 +2,7 @@ import { shutdown } from '@peblish/core/lifecycle';
 import { assertRunnable } from '@peblish/core/outbox/consumers';
 import { assertJobsRunnable, runJobs } from '@peblish/core/outbox/jobs';
 import { runOutboxWorker } from '@peblish/core/outbox/worker';
+import { setOutboxConsumers } from '@peblish/core/remote/prune-run';
 import { consumers } from '@peblish/core/registry/consumers.gen';
 import { jobs } from '@peblish/core/registry/jobs.gen';
 import { federationConsumers } from '@peblish/federation/registry/consumers.gen';
@@ -26,6 +27,8 @@ try {
   // Before either loop starts, so a name clash refuses the start with nothing written.
   assertRunnable(allConsumers);
   assertJobsRunnable(allJobs, allConsumers);
+  // The outbox prune keeps every event one of these has not handled yet.
+  setOutboxConsumers(allConsumers.map(({ name }) => name));
   const results = await Promise.allSettled([
     runOutboxWorker({
       signal: controller.signal,

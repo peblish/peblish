@@ -24,7 +24,7 @@ What we remember about peers beyond the document they sent, and how we get the r
 
 ## Retention
 
-`core/src/remote/prune.ts`: settled inbox rows go after 14 days, settled deliveries after 30, `inbox_dedupe` markers after 90, ended `throttles` windows after one (job `remote.prune`, hourly). Candidates are claimed with `FOR UPDATE SKIP LOCKED` and the DELETE repeats the state and cutoff conditions, so a skipped row the inbox job puts back to pending is never deleted.
+`core/src/remote/prune.ts`: settled inbox rows go after 14 days, settled deliveries after 30, `inbox_dedupe` markers after 90, ended `throttles` windows after one, and `outbox` events every row of `outbox_cursors` has passed after 14, unless one is named in `outbox_skipped` (job `remote.prune`, hourly). Candidates are claimed with `FOR UPDATE SKIP LOCKED` and the DELETE repeats the state and cutoff conditions, so a skipped row the inbox job puts back to pending is never deleted.
 
 ## Remote deletion
 

@@ -98,8 +98,37 @@ once uploads are on.
 The worker's `remote.prune` job (hourly) deletes what federation no longer needs, 2,000 rows
 a transaction and 25 transactions a run: settled `inbox_raw` rows after 14 days, settled
 `deliveries` after 30, `inbox_dedupe` after 90 days and ended `throttles` windows after one
-day. A pending row is never deleted. The inbox's request limits and the fetch politeness gaps
-are counted in memory per process.
+day. A pending row is never deleted. `outbox` events go after 14 days once every outbox
+consumer has handled them, except the ones a consumer skipped (`outbox_skipped`). The inbox's
+request limits and the fetch politeness gaps are counted in memory per process.
+
+The outbox prune keeps every event the slowest row of `outbox_cursors` has not passed, whether
+or not the running worker has that consumer, so an older and a newer worker side by side during
+a deploy are both safe. A renamed or removed consumer leaves its row behind, and that row holds
+retention back for good: once it has not moved for 7 days, each prune run logs `outbox prune:
+cursor <name> has not moved in 7 days and no consumer of this worker has that name`. When every
+worker runs the new version, delete that row:
+
+```sql
+delete from outbox_cursors where consumer = '<old name>';
+```
+
+Never delete the row of a consumer that still runs (it would start again at its `startAt`, and
+`edge.purge` keeps takedowns: deploy/edge-cache.md).
+
+The outbox prune's hold: when the prune finds a cursor at or past the database's current
+transaction id, the cursors came from another Postgres cluster (a restore that kept the saved
+transaction ids). New events then sort before every cursor, so no consumer reads them, and the
+prune would count them as handled. It records a hold, the `remote.prune.hold` row of
+`outbox_cursors`, and from then on deletes no outbox event and logs on every run
+`outbox prune: held since <time>: <why>`. The hold stays when the cluster's ids later pass the
+restored cursors, since the events written in that gap are still unread. Clear it only after the
+restore has been repaired (the restore renumbering the outbox, `fix/restore-outbox-order`) or
+you have confirmed every consumer has read past the gap:
+
+```sql
+delete from outbox_cursors where consumer = 'remote.prune.hold';
+```
 
 ## The first admin
 

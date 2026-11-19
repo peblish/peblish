@@ -131,7 +131,7 @@ Verification, on this tree:
 
 - `c/storage` S3 adapter: built in wave 2 (lane B2, `packages/core/src/storage/`; the `S3_*` variables are in deploy/README.md). Uploads stay off (`uploads.enabled`) until image scanning is live
 - Staging deploy on a peblish.com subdomain (described only, per the brief)
-- Outbox pruning and a poison-event skip (a failing event stalls only its consumer; visible in outbox_cursors)
+- Outbox pruning and a poison-event skip (a failing event stalls only its consumer; visible in outbox_cursors). The skip was built in wave 3 (`outbox_skipped`); pruning since 2026-11: events every outbox cursor has passed go after 14 days (`packages/core/src/remote/prune.ts`)
 - Renovate config not run through renovate-config-validator (JSON parses; rules reviewed by hand)
 
 ## Wave 1 integrated (2026-11-09)

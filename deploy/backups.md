@@ -453,7 +453,9 @@ rm -rf /tmp/cutover/fetch /tmp/cutover/drill
 ```
 
 The drill's counts differ where the database changed since that backup; on a quiet database they
-match. If the damaged database still answers, run `backup-run ledger` first so the last good
+match, except `outbox` when the hourly prune deleted old events in between. A restore onto another
+Postgres cluster stops the outbox prune for good until an operator clears its hold
+(deploy/README.md, "the outbox prune's hold"). If the damaged database still answers, run `backup-run ledger` first so the last good
 ledger export is current.
 
 ## Size and time limits
