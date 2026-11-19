@@ -167,6 +167,9 @@ describe.skipIf(tools < major)('backup and restore drill', () => {
       const report = await runDrill(url, join(dir, 'drill'));
       expect(report.database).toMatch(/^drill_\d{8}t\d{6}_[0-9a-f]{6}$/);
       expect(report.differences).toEqual([]);
+      // On the same cluster the outbox is already behind the counter, and a new event reaches every consumer.
+      expect(report.outbox).toEqual({ renumbered: false });
+      expect(report.probe).toEqual({ cursorsAhead: 0, idsAhead: 0 });
       expect(await exists(report.database)).toBe(false);
       // The database with the old drill name is still there, and its session was not ended.
       expect((await occupied<{ n: number }[]>`select n from served`).map((row) => row.n)).toEqual([1]);

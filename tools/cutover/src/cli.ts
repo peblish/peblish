@@ -180,8 +180,8 @@ async function main(): Promise<number> {
     case 'restore': {
       const url = need('db');
       const ledger = values.ledger ? readLedgerExport(values.ledger) : [];
-      await restore(need('backup'), url);
-      print(await reapplyLedger(url, ledger));
+      const { outbox } = await restore(need('backup'), url);
+      print({ outbox, ...(await reapplyLedger(url, ledger)) });
       return 0;
     }
     case 'drill': {
