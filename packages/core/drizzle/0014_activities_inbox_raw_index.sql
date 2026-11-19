@@ -1,0 +1,1 @@
+CREATE INDEX "activities_inbox_raw" ON "activities" USING btree ("inbox_raw_id");

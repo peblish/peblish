@@ -73,5 +73,10 @@ export const activities = pgTable(
     inboxRawId: uuid('inbox_raw_id').references(() => inboxRaw.id, { onDelete: 'set null' }),
     createdAt: createdAt(),
   },
-  (t) => [index('activities_object').on(t.objectApId)],
+  (t) => [
+    index('activities_object').on(t.objectApId),
+    // Each inbox_raw row the prune deletes nulls its link here (ON DELETE SET NULL); without
+    // this index every deleted row scans the whole table.
+    index('activities_inbox_raw').on(t.inboxRawId),
+  ],
 );
