@@ -178,9 +178,9 @@ async function pruneOutbox(q: OpenTx['db'], consumers: readonly string[], cutoff
  * Deletes up to one batch of rows older than the grant's table keeps; returns how many went. The
  * candidates are claimed with FOR UPDATE SKIP LOCKED, so a row another transaction is changing
  * (the inbox job putting a skipped row back to pending) is left, and the DELETE states the
- * conditions again, so a row that stopped qualifying between the two steps is kept. An applied
- * activity's `activities` row stays and loses its link to the deleted bytes (ON DELETE SET NULL),
- * so the relay falls back to the parsed copy.
+ * conditions again, so a row that stopped qualifying between the two steps is kept. A remote
+ * `activities` row stored before the pipeline stopped keeping them loses its link to the deleted
+ * bytes (ON DELETE SET NULL); nothing reads it.
  */
 export const pruneBatch = defineMutation({
   action: 'remote.prune',

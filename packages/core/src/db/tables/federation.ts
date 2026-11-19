@@ -12,7 +12,7 @@ export const inboxRaw = pgTable(
     activityId: text('activity_id'),
     activityType: text('activity_type'),
     actorApId: text('actor_ap_id'),
-    /** The request body's exact bytes, for signature digests and the byte-for-byte relay (activities.inboxRawId). */
+    /** The request body's exact bytes, for signature digests and the byte-for-byte relay (sent while the row is applied). */
     body: bytea('body').notNull(),
     /** The request headers signature verification needs. */
     headers: jsonb('headers'),
@@ -53,11 +53,10 @@ export const inboxDedupe = pgTable(
 );
 
 /**
- * Activity documents served at their ids. `raw` is a parsed jsonb copy and does not keep
- * bytes: the byte-for-byte relay (an Announce of the raw JSON) reads the exact bytes from
- * inbox_raw.body through inboxRawId, the row the activity arrived in. Local activities have
- * no inbox row; their JSON is serialized here. A pruned inbox row nulls the link, and the
- * relay then falls back to `raw`.
+ * The activities we sent, served at their ids, with their JSON in `raw`. Remote activities
+ * are no longer stored here (the inbound pipeline keeps no copy; the bytes stay in inbox_raw
+ * until it is pruned). Rows with `local = false` and `inbox_raw_id` are from before that and
+ * nothing reads them; a later release deletes them and drops the column.
  */
 export const activities = pgTable(
   'activities',
@@ -69,7 +68,7 @@ export const activities = pgTable(
     objectApId: text('object_ap_id'),
     local: boolean('local').notNull(),
     raw: jsonb('raw').notNull(),
-    /** The inbox_raw row a remote activity arrived in: its exact bytes, for the relay. */
+    /** Set only on the old remote rows, never written now: the inbox_raw row the activity arrived in. */
     inboxRawId: uuid('inbox_raw_id').references(() => inboxRaw.id, { onDelete: 'set null' }),
     createdAt: createdAt(),
   },

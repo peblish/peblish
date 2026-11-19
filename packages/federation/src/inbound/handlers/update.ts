@@ -36,7 +36,7 @@ async function prepareActor(ctx: InboundContext, record: ActorRecord): Promise<P
       ? await storeRemoteActor.within(t, grant, record)
       : await storeRemoteActor.within(t, grant, { ...record, keys: false });
     if (stored.deleted) throw skip('target.deleted', record.apId);
-    return { objectApId: record.apId };
+    return {};
   });
 }
 

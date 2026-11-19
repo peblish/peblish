@@ -360,10 +360,10 @@ An inbox POST goes through two steps, so the sender gets its answer fast and not
    handler's `prepare` does all network work (resolving actors, fetching an announced
    activity from its own origin) and returns an `apply` step. One transaction then writes the
    dedupe marker (the inner activity's id inside an Announce, so a direct and an announced
-   copy apply once), runs `apply` through core mutations, records the `activities` row linked
-   to `inbox_raw`, queues the relay's deliveries, puts rows that waited for what was just stored
-   back to pending, and settles the row. No network runs inside the transaction. A skip rolls
-   all of it back.
+   copy apply once), runs `apply` through core mutations, queues the relay's deliveries, puts
+   rows that waited for what was just stored back to pending, and settles the row. No copy of
+   the remote activity is kept (`activities` holds only ours; the bytes stay in `inbox_raw`
+   until it is pruned). No network runs inside the transaction. A skip rolls all of it back.
 
 Every row ends `applied`, `skipped` with a reason in `inbox_raw.error`, or `failed` (a document
 the mapping cannot read, never retried). A transient failure (a peer down, a database error,

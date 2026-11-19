@@ -16,7 +16,7 @@ export const handler: InboundHandler = {
     return prepared(ctx, async (t) => {
       const grant = await grantFor(ctx, t, 'follow.receive', { communityId: community.id, followApId: follow.apId });
       await receiveFollow.within(t, grant);
-      return { objectApId: community.apId };
+      return {};
     });
   },
 
@@ -27,7 +27,7 @@ export const handler: InboundHandler = {
     return prepared(ctx, async (t) => {
       const subject = { followerId: ctx.sender.id, followeeId: community.id, apId: null };
       await removeFollow.within(t, await grantFor(ctx, t, 'follow.remove', subject));
-      return { objectApId: community.apId };
+      return {};
     });
   },
 };

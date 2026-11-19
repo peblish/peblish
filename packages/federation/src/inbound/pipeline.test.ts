@@ -16,6 +16,7 @@ import { seedAccount } from '@peblish/core/testing/seed-b1';
 import { deliverRow, inboxState, seedFollow, seedInboundWorld, seedInboxRow } from '@peblish/core/testing/seed-fed-b';
 import { actorDocument, nodeInfoRoutes, rsaKeys, stubFetch } from '@peblish/core/testing/seed-fed-a';
 import { importGrant } from '../actors/grants.ts';
+import { localDocument } from '../actors/serve.ts';
 import { actorFromWire } from '../mapping/actor.ts';
 import { processPending } from './job.ts';
 import { fetchesPerRow, memberReserve, processRow, type PipelineOptions } from './pipeline.ts';
@@ -721,5 +722,70 @@ describe('a Delete or an Undo from an actor whose server says it is gone', () =>
     expect((await deliver(undo, { fetch: gone.fetch })).stored).toEqual({ state: 'applied', error: null });
     expect((await db().select().from(actors).where(eq(actors.apId, lemmyuser)))[0]?.deletedAt).toBeNull();
     expect(gone.requests).toEqual([]);
+  });
+});
+
+describe('what is kept of a remote activity', () => {
+  test('Create, Update, votes, an Undo and a Delete apply as before, but no copy of them and no vote JSON is stored; our relay Announce is', async () => {
+    const outboxFrom = (await db().select({ id: outbox.id }).from(outbox)).length;
+    const create = createPage('300', spike);
+    expect((await deliver(create)).stored).toEqual({ state: 'applied', error: null });
+    const update = { ...createPage('300', spike, { name: 'Post 300, edited' }), id: activityId(lemmy, 'update'), type: 'Update' };
+    expect((await deliver(update)).stored).toEqual({ state: 'applied', error: null });
+    const like = { id: activityId(lemmy, 'like'), type: 'Like', actor: lemmyuser, object: t1, ...addressedToCommunity(spike) };
+    expect((await deliver(like)).stored).toEqual({ state: 'applied', error: null });
+    const dislike = { ...like, id: activityId(lemmy, 'dislike'), type: 'Dislike' };
+    expect((await deliver(dislike)).stored).toEqual({ state: 'applied', error: null });
+    const stored = await db().select({ apId: votes.apId, value: votes.value, raw: votes.raw }).from(votes);
+    expect(stored).toEqual([{ apId: dislike.id, value: -1, raw: null }]);
+    const undo = { id: activityId(lemmy, 'undo'), type: 'Undo', actor: lemmyuser, object: dislike, ...addressedToCommunity(spike) };
+    expect((await deliver(undo)).stored).toEqual({ state: 'applied', error: null });
+    expect(await db().select().from(votes)).toEqual([]);
+    const del = {
+      id: activityId(lemmy, 'delete'),
+      type: 'Delete',
+      actor: lemmyuser,
+      object: `${lemmy}/post/300`,
+      ...addressedToCommunity(spike),
+    };
+    expect((await deliver(del)).stored).toEqual({ state: 'applied', error: null });
+    // Announced by a remote community: applied, not relayed.
+    expect((await deliver(announceBy(lab, createPage('301', lab)))).stored).toEqual({ state: 'applied', error: null });
+
+    const [edited] = await db()
+      .select()
+      .from(posts)
+      .where(eq(posts.apId, `${lemmy}/post/300`));
+    expect(edited).toMatchObject({ title: 'Post 300, edited', deletedAt: expect.any(Date) });
+    const [voted] = await db().select().from(posts).where(eq(posts.id, world.t1.id));
+    expect(voted).toMatchObject({ upvotes: 0, downvotes: 0 });
+    expect(
+      await db()
+        .select()
+        .from(posts)
+        .where(eq(posts.apId, `${lemmy}/post/301`)),
+    ).toHaveLength(1);
+    const events = (await db().select({ id: outbox.id, type: outbox.type }).from(outbox).orderBy(outbox.txId, outbox.id)).slice(outboxFrom);
+    expect(events.map((event) => event.type)).toEqual([
+      'post.created',
+      'post.updated',
+      'vote.cast',
+      'vote.cast',
+      'vote.cast',
+      'post.deleted',
+      'post.created',
+    ]);
+
+    // Every row in `activities` is ours: the Announces !spike relayed to its Mastodon follower.
+    const kept = await db()
+      .select({ apId: activities.apId, type: activities.type, local: activities.local, raw: activities.raw })
+      .from(activities);
+    expect(kept.map((row) => [row.type, row.local])).toEqual(Array(6).fill(['Announce', true]));
+    // Served at its id (the one of the Like: what the others carried is deleted or taken back).
+    const relayed = new URL(kept.find((row) => (row.raw as { object: { id: string } }).object.id === like.id)!.apId);
+    expect(await localDocument(db(), relayed.origin, relayed.pathname)).toMatchObject({
+      status: 200,
+      json: { type: 'Announce', object: { id: like.id } },
+    });
   });
 });

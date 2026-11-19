@@ -19,7 +19,7 @@ export const handler: InboundHandler = {
     return prepared(ctx, async (t) => {
       const { accepted } = await acceptFollow.within(t, await grantFor(ctx, t, 'follow.accept', subject));
       if (!accepted) throw skip('duplicate', followApId);
-      return { objectApId: followApId };
+      return {};
     });
   },
 };

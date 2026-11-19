@@ -23,8 +23,6 @@ export type AnnounceInfo = { apId: string; community: ResolvedActor };
 export type Applied = {
   /** The community the change happened in; a local one relays what arrived directly. */
   communityId?: string;
-  /** The ap_id of what the activity is about, for activities.object_ap_id. */
-  objectApId?: string;
   /** Posts or comments this activity stored: skipped rows waiting on these ap_ids go back to pending. */
   stored?: readonly string[];
   /** A newly stored post, so Mastodon-like followers get the Announce(Page) copy. */
@@ -60,8 +58,8 @@ export interface InboundContext {
 
 /**
  * A prepared activity: the step to run in the transaction, and the activity it applies (the
- * dedupe key and the `activities` row). `announced` is whether it arrived inside an Announce,
- * which decides the relay: a local community announces only what reached it directly.
+ * dedupe key) with the JSON the relay sends on. `announced` is whether it arrived inside an
+ * Announce, which decides the relay: a local community announces only what reached it directly.
  */
 export type Prepared = { apply: Apply; activity: Activity; raw: JsonObject; announced: boolean };
 

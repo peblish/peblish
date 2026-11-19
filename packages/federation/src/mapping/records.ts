@@ -87,7 +87,7 @@ export type CommentRecord = Pick<Comment, 'apId' | 'bodyMd' | 'contentHtml' | 'e
 };
 
 /** A Like (+1) or Dislike (-1). The ap_id is the activity's id. */
-export type VoteRecord = Pick<Vote, 'apId' | 'value' | 'raw'> & {
+export type VoteRecord = Pick<Vote, 'apId' | 'value'> & {
   voterApId: string;
   /** A post or a comment; the store resolves which. */
   targetApId: string;

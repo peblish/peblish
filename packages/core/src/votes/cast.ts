@@ -9,11 +9,11 @@ import { defineMutation } from '../tx/mutation.ts';
 import { Refused } from '../tx/refused.ts';
 
 /**
- * value 1 is an upvote, -1 a downvote and 0 takes the voter's vote back. `apId` and `raw` are
- * for a remote voter only: the Like or Dislike activity's id and body. A local vote's id is
- * minted here, so a local caller cannot choose it.
+ * value 1 is an upvote, -1 a downvote and 0 takes the voter's vote back. `apId` is for a
+ * remote voter only: the Like or Dislike activity's id. A local vote's id is minted here, so a
+ * local caller cannot choose it. No copy of the activity is kept (votes.raw stays null).
  */
-export const VoteInput = type({ value: '-1 | 0 | 1', 'apId?': 'string.url', 'raw?': 'unknown' });
+export const VoteInput = type({ value: '-1 | 0 | 1', 'apId?': 'string.url' });
 export type VoteInput = typeof VoteInput.infer;
 
 /**
@@ -38,7 +38,7 @@ export const castVote = defineMutation({
     const input = VoteInput.assert(raw);
     const remote = grant.principal.kind === 'remote';
     if (remote && input.value !== 0 && !input.apId) throw new TypeError('a remote vote needs the activity id (apId)');
-    if (!remote && (input.apId !== undefined || input.raw !== undefined)) throw new TypeError('a local vote mints its own id');
+    if (!remote && input.apId !== undefined) throw new TypeError('a local vote mints its own id');
     const { target } = grant.subject;
     const [existing] = await t.db
       .select({ id: votes.id, apId: votes.apId, value: votes.value })
@@ -59,7 +59,6 @@ export const castVote = defineMutation({
         apId,
         local: !remote,
         instanceId: voter?.instanceId ?? instance.id,
-        raw: input.raw,
         voterId: grant.actorId,
         postId: target.kind === 'post' ? target.id : null,
         commentId: target.kind === 'comment' ? target.id : null,

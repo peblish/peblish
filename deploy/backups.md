@@ -447,7 +447,7 @@ removes only what this fetch made (the folder too, if it made it). Then either:
 ```sh
 # The drill on the fetched files: restore into a new drill_<time>_<random>, re-apply, compare counts, drop it.
 node tools/cutover/src/cli.ts drill --db "$DATABASE_URL" --dir /tmp/cutover/drill --backup <backup file> --ledger <ledger file>
-# A real restore into a NEW database, then point the services at it (deploy/cutover.md).
+# A real restore into a NEW database (its outbox fitted to this server), then point the services at it (deploy/cutover.md).
 node tools/cutover/src/cli.ts restore --backup <backup file> --db <new database url> --ledger <ledger file>
 rm -rf /tmp/cutover/fetch /tmp/cutover/drill
 ```
