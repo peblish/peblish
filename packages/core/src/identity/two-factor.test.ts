@@ -1,10 +1,13 @@
+import { symmetricDecrypt } from 'better-auth/crypto';
 import { eq } from 'drizzle-orm';
 import { beforeEach, expect, test } from 'vitest';
 import { db } from '../db/read.ts';
-import { authSession } from '../db/tables/auth.ts';
+import { authSession, authTwoFactor } from '../db/tables/auth.ts';
 import { truncateAll } from '../testing/db.ts';
 import { seedAccount, seedLocalInstance, seedTwoFactor, totpCode } from '../testing/seed-a.ts';
 import { auth, authErrorCode } from './auth.ts';
+import { currentSession } from './session.ts';
+import { confirmTotpSetup, startTotpSetup } from './two-factor.ts';
 
 beforeEach(async () => {
   await truncateAll();
@@ -60,4 +63,31 @@ test('a recovery code works once', async () => {
   await api.verifyBackupCode({ body: { code }, headers: await challenge(mira.email, mira.password) });
   const again = api.verifyBackupCode({ body: { code }, headers: await challenge(mira.email, mira.password) });
   expect(await refusal(again)).toBe('INVALID_BACKUP_CODE');
+});
+
+/** The account's two-factor row as stored: secret and recovery codes, each opened with the auth secret. */
+async function storedTwoFactor(userId: string) {
+  const [row] = await db().select().from(authTwoFactor).where(eq(authTwoFactor.userId, userId));
+  const key = (await (await auth()).$context).secretConfig;
+  const open = (sealed: string) => symmetricDecrypt({ key, data: sealed });
+  return { raw: row!.backupCodes, secret: await open(row!.secret), codes: JSON.parse(await open(row!.backupCodes)) as string[] };
+}
+
+test('recovery codes are stored sealed with the auth secret, at setup and after one is used', async () => {
+  const mira = await seedAccount('mira');
+  const cookies = await challenge(mira.email, mira.password);
+  const sessionId = (await currentSession(cookies))!.sessionId;
+  await startTotpSetup(sessionId, mira.userId, cookies, mira.password);
+
+  // Sealed as better-auth seals the TOTP secret: hex of XChaCha20-Poly1305 output, never JSON.
+  const setup = await storedTwoFactor(mira.userId);
+  expect(setup.raw).toMatch(/^[0-9a-f]+$/);
+  expect(setup.codes).toHaveLength(10);
+  await confirmTotpSetup(mira.userId, sessionId, cookies, totpCode(setup.secret));
+
+  const [used, ...rest] = setup.codes;
+  await (await auth()).api.verifyBackupCode({ body: { code: used! }, headers: await challenge(mira.email, mira.password) });
+  const after = await storedTwoFactor(mira.userId);
+  expect(after.raw).toMatch(/^[0-9a-f]+$/);
+  expect(after.codes).toEqual(rest);
 });
