@@ -18,21 +18,33 @@ export const poisonFailures = 10;
 export const poisonWindow = sql`interval '30 minutes'`;
 
 /**
+ * Taken by the transaction that creates cursor rows (ensureCursors) and by each batch of the
+ * outbox prune (remote/prune.ts), until they commit. So a new cursor is either committed before
+ * the prune's statements read the cursors, or created after the batch has deleted: the prune
+ * never deletes an event that a cursor created meanwhile at 'beginning' has not read. Advancing a
+ * cursor does not take it.
+ */
+export const cursorCreationLock = sql`select pg_advisory_xact_lock(hashtext('peblish.outbox_cursors'))`;
+
+/**
  * Creates missing cursor rows, each at its consumer's startAt (see ConsumerStart), after
  * assertRunnable (unique names, no consumer feeding itself). Existing cursors are kept.
  */
 export async function ensureCursors(consumers: readonly Consumer[]): Promise<void> {
   assertRunnable(consumers);
   if (consumers.length === 0) return;
-  await writer()
-    .insert(outboxCursors)
-    .values(
-      consumers.map(({ name, startAt }) => ({
-        consumer: name,
-        txId: startAt === 'beginning' ? sql`'0'::xid8` : sql`pg_snapshot_xmin(pg_current_snapshot())`,
-      })),
-    )
-    .onConflictDoNothing();
+  await writer().transaction(async (t) => {
+    await t.execute(cursorCreationLock);
+    await t
+      .insert(outboxCursors)
+      .values(
+        consumers.map(({ name, startAt }) => ({
+          consumer: name,
+          txId: startAt === 'beginning' ? sql`'0'::xid8` : sql`pg_snapshot_xmin(pg_current_snapshot())`,
+        })),
+      )
+      .onConflictDoNothing();
+  });
 }
 
 /**

@@ -114,10 +114,21 @@ delete from outbox_cursors where consumer = '<old name>';
 ```
 
 Never delete the row of a consumer that still runs (it would start again at its `startAt`, and
-`edge.purge` keeps takedowns: deploy/edge-cache.md). A prune run that logs `outbox prune: held,
-cursor <name> is ahead of this database's transaction ids` deletes no outbox event: the cursors
-came from another Postgres cluster (a restore), and the consumers do not read new events until
-that is put right.
+`edge.purge` keeps takedowns: deploy/edge-cache.md).
+
+The outbox prune's hold: when the prune finds a cursor at or past the database's current
+transaction id, the cursors came from another Postgres cluster (a restore that kept the saved
+transaction ids). New events then sort before every cursor, so no consumer reads them, and the
+prune would count them as handled. It records a hold, the `remote.prune.hold` row of
+`outbox_cursors`, and from then on deletes no outbox event and logs on every run
+`outbox prune: held since <time>: <why>`. The hold stays when the cluster's ids later pass the
+restored cursors, since the events written in that gap are still unread. Clear it only after the
+restore has been repaired (the restore renumbering the outbox, `fix/restore-outbox-order`) or
+you have confirmed every consumer has read past the gap:
+
+```sql
+delete from outbox_cursors where consumer = 'remote.prune.hold';
+```
 
 ## The first admin
 

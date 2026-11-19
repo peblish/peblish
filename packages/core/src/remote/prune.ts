@@ -5,6 +5,7 @@ import { outbox, outboxCursors } from '../db/tables/outbox.ts';
 import { deliveries } from '../delivery/tables.ts';
 import { throttles } from '../identity/tables.ts';
 import { outboxSkipped } from '../outbox/tables.ts';
+import { cursorCreationLock } from '../outbox/worker.ts';
 import { defineMutation } from '../tx/mutation.ts';
 import type { OpenTx } from '../tx/tx.ts';
 
@@ -97,32 +98,56 @@ const slowestCursor = sql`(
 const staleCursor = sql`interval '7 days'`;
 
 /**
- * Deletes up to one batch of handled outbox events older than `cutoff`. Nothing while a consumer of
- * this process has no cursor yet (the worker creates them at start) or a cursor is ahead of this
- * cluster (warned). A cursor this process does not run that has not moved in 7 days holds the
- * boundary back for good (a renamed or removed consumer's row), so it is warned about each run.
+ * The outbox_cursors row that holds the outbox prune once it has seen a cursor ahead of this
+ * cluster. It stays when the cluster's ids later pass the restored cursors: the events written in
+ * that gap sort before every cursor, so no consumer has read them, and nothing would show it. Its
+ * cursor is the beginning, so it also holds the boundary by itself. Only an operator deletes it,
+ * once the restore is repaired or every consumer has read past the gap (deploy/README.md). No
+ * consumer may have this name.
+ */
+export const pruneHold = 'remote.prune.hold';
+
+/**
+ * Deletes up to one batch of handled outbox events older than `cutoff`, under the cursor creation
+ * lock (outbox/worker.ts). Nothing while a consumer of this process has no cursor yet (the worker
+ * creates them at start) or the hold is set (warned each run; set here the first time a cursor is
+ * ahead of this cluster). A cursor this process does not run that has not moved in 7 days holds
+ * the boundary back for good (a renamed or removed consumer's row), so it is warned about each run.
  */
 async function pruneOutbox(q: OpenTx['db'], consumers: readonly string[], cutoff: string, limit: number, warnings: string[]) {
   if (consumers.length === 0) return [];
+  await q.execute(cursorCreationLock);
   const names = nameList(consumers);
-  const [state] = await q.execute<{ ahead: string[]; missing: string[]; stale: string[] }>(sql`
+  const [state] = await q.execute<{ ahead: string[]; missing: string[]; stale: string[]; hold: { since: string; why: string } | null }>(sql`
     select
       array(select consumer from ${outboxCursors} where ${aheadOfCluster} order by consumer) as ahead,
       array(select n from unnest(${names}) n where not exists (select 1 from ${outboxCursors} c where c.consumer = n) order by n) as missing,
       array(
         select consumer from ${outboxCursors}
-        where consumer <> all(${names}) and updated_at < now() - ${staleCursor} order by consumer) as stale`);
+        where consumer <> all(${names}) and consumer <> ${pruneHold} and updated_at < now() - ${staleCursor}
+        order by consumer) as stale,
+      (select json_build_object('since', updated_at, 'why', last_error) from ${outboxCursors} where consumer = ${pruneHold}) as hold`);
   if (!state) return [];
+  let hold = state.hold;
+  if (!hold && state.ahead.length > 0) {
+    const why = `cursor ${state.ahead.join(', ')} was ahead of this database's transaction ids (restored onto another cluster?)`;
+    const [set] = await q
+      .insert(outboxCursors)
+      .values({ consumer: pruneHold, txId: '0', eventId: 0, lastError: why })
+      .onConflictDoNothing()
+      .returning({ since: outboxCursors.updatedAt });
+    hold = { since: (set?.since ?? new Date()).toISOString(), why };
+  }
+  if (hold) {
+    warnings.push(
+      `outbox prune: held since ${hold.since}: ${hold.why}; no outbox event is deleted until an operator deletes the ${pruneHold} row of outbox_cursors (deploy/README.md)`,
+    );
+    return [];
+  }
   if (state.stale.length > 0) {
     warnings.push(
       `outbox prune: cursor ${state.stale.join(', ')} has not moved in 7 days and no consumer of this worker has that name; it holds outbox retention back (if the consumer was renamed or removed, delete its outbox_cursors row: deploy/README.md)`,
     );
-  }
-  if (state.ahead.length > 0) {
-    warnings.push(
-      `outbox prune: held, cursor ${state.ahead.join(', ')} is ahead of this database's transaction ids (restored onto another cluster?); no outbox event is deleted while it is`,
-    );
-    return [];
   }
   if (state.missing.length > 0) return [];
   // The oldest batch of handled events (the outbox_order index, from its start), then only those
@@ -131,7 +156,11 @@ async function pruneOutbox(q: OpenTx['db'], consumers: readonly string[], cutoff
   // so an event of a transaction that ran long before it wrote sits behind newer events in this
   // order and goes only once the batch before it has expired too: late, never early.
   // `= any(array(...))` keeps the DELETE on the primary key; `in (...)` planned a scan of the
-  // whole table.
+  // whole table. The count of registered cursors is uncorrelated, so it runs once (an InitPlan).
+  // outbox_skipped is looked up by event_id, the second column of its key: a scan of that index
+  // per candidate, and a batch walks past every skipped event at the start of the order. Fine
+  // while it is near empty (no row in production on 2026-11-18); if poison skips pile up into the
+  // thousands, an index on outbox_skipped (event_id) is the fix.
   return q.execute<{ id: string }>(sql`
     delete from ${outbox}
     where id = any(array(

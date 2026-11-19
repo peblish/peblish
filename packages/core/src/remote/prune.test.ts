@@ -3,19 +3,19 @@ import { beforeEach, describe, expect, onTestFinished, test, vi } from 'vitest';
 import { db } from '../db/read.ts';
 import { activities, inboxDedupe, inboxRaw } from '../db/tables/federation.ts';
 import { outbox, outboxCursors } from '../db/tables/outbox.ts';
-import { writer } from '../db/write.ts';
+import { writer, type WriteTx } from '../db/write.ts';
 import { deliveries } from '../delivery/tables.ts';
 import { throttles } from '../identity/tables.ts';
 import { defineConsumer } from '../outbox/consumers.ts';
 import { outboxSkipped } from '../outbox/tables.ts';
-import { ensureCursors, runOutboxWorker } from '../outbox/worker.ts';
+import { cursorCreationLock, ensureCursors, runOutboxWorker } from '../outbox/worker.ts';
 import { truncateAll } from '../testing/db.ts';
 import { tx } from '../tx/tx.ts';
 import { seedActor, seedInstance } from '../testing/seed.ts';
 import { outboxEvents, seedPost } from '../testing/seed-az.ts';
 import { seedLocalInstance } from '../testing/seed-fed-a.ts';
 import { daysAgo, seedDelivery, seedInbound } from '../testing/seed-rem.ts';
-import { retention } from './prune.ts';
+import { pruneHold, retention } from './prune.ts';
 import { pruneOld, setOutboxConsumers } from './prune-run.ts';
 
 const now = new Date('2026-11-09T12:00:00Z');
@@ -276,17 +276,99 @@ describe('retention of the outbox', () => {
     expect(await pruneOld({ now, consumers: ['fast'] })).toMatchObject({ outbox: 1 });
   });
 
-  test('deletes nothing while a cursor is ahead of this cluster (a restore onto another one), and says so', async () => {
+  test('a cursor ahead of this cluster (a restore onto another one) sets a hold that outlasts it, until an operator clears it', async () => {
     await seedLocalInstance('rem.test');
     const event = await seedEvent(old);
     await cursorAt('fast', event);
     const [current] = await db().execute<{ id: string }>(sql`select pg_current_xact_id()::text as id`);
     await cursorAt('restored', { id: event.id, txId: String(BigInt(current!.id) + 1_000_000n) });
     const lines = warned();
+    const held =
+      /^outbox prune: held since .+: cursor restored was ahead of this database's transaction ids .+ deletes the remote\.prune\.hold row of outbox_cursors/;
 
     expect(await pruneOld({ now, consumers: ['fast', 'restored'] })).toMatchObject({ outbox: 0 });
-    expect(lines()).toEqual([expect.stringMatching(/^outbox prune: held, cursor restored is ahead of this database's transaction ids/)]);
+    expect(lines()).toEqual([expect.stringMatching(held)]);
+    expect((await db().select().from(outboxCursors).where(eq(outboxCursors.consumer, pruneHold)))[0]).toMatchObject({
+      txId: '0',
+      eventId: 0,
+    });
+
+    // The cluster's ids pass the restored cursor: the hold stays, and is logged on every run.
+    await cursorAt('restored', event);
+    expect(await pruneOld({ now, consumers: ['fast', 'restored'] })).toMatchObject({ outbox: 0 });
+    expect(await pruneOld({ now, consumers: ['fast', 'restored'] })).toMatchObject({ outbox: 0 });
+    expect(lines()).toEqual([expect.stringMatching(held), expect.stringMatching(held), expect.stringMatching(held)]);
     expect(await left()).toEqual([event.id]);
+
+    // The operator clears it (deploy/README.md): pruning resumes.
+    await writer().execute(sql`delete from outbox_cursors where consumer = 'remote.prune.hold'`);
+    expect(await pruneOld({ now, consumers: ['fast', 'restored'] })).toMatchObject({ outbox: 1 });
+    expect(lines()).toHaveLength(3);
+  });
+
+  /** A transaction that takes the cursor creation lock, runs `inside`, and commits when `commit()` is called. */
+  const holdingLock = async (inside: (t: WriteTx) => Promise<unknown> = async () => {}) => {
+    let locked!: () => void;
+    const taken = new Promise<void>((resolve) => (locked = resolve));
+    let release!: () => void;
+    const released = new Promise<void>((resolve) => (release = resolve));
+    const done = writer().transaction(async (t) => {
+      await t.execute(cursorCreationLock);
+      await inside(t);
+      locked();
+      await released;
+    });
+    onTestFinished(async () => {
+      release();
+      await done.catch(() => {});
+    });
+    await taken;
+    return async () => {
+      release();
+      await done;
+    };
+  };
+  const settled = <T>(promise: Promise<T>) => {
+    const state = { done: false };
+    void promise.finally(() => (state.done = true)).catch(() => {});
+    return state;
+  };
+
+  test('a cursor created while a batch would run: the prune waits for it, and keeps what it has not read', async () => {
+    await seedLocalInstance('rem.test');
+    const event = await seedEvent(old);
+    await cursorAt('fast', event);
+    // A newer worker creating its consumer's cursor at the beginning, not committed yet.
+    const commit = await holdingLock((t) => t.insert(outboxCursors).values({ consumer: 'test.new', txId: '0', eventId: 0 }));
+
+    const pruning = pruneOld({ now, consumers: ['fast'] });
+    const state = settled(pruning);
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    expect(state.done).toBe(false);
+    await commit();
+    expect(await pruning).toMatchObject({ outbox: 0 });
+    expect(await left()).toEqual([event.id]);
+  });
+
+  test('a cursor created while a batch runs waits for the batch to commit', async () => {
+    const consumer = defineConsumer({
+      name: 'test.new',
+      events: ['post.created'],
+      emits: [],
+      startAt: 'beginning',
+      handle: async () => {},
+    });
+    // The lock as a prune batch holds it.
+    const commit = await holdingLock();
+
+    const creating = ensureCursors([consumer]);
+    const state = settled(creating);
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    expect(state.done).toBe(false);
+    expect(await db().select().from(outboxCursors)).toEqual([]);
+    await commit();
+    await creating;
+    expect((await db().select().from(outboxCursors)).map((row) => row.consumer)).toEqual(['test.new']);
   });
 
   test('with real workers: an older worker never deletes what a newer one’s consumer has not read', { timeout: 30_000 }, async () => {
