@@ -41,6 +41,6 @@ export async function prepareSiteBan(ctx: InboundContext, block: BlockFields, ba
     } else {
       await unbanFromSite.within(t, await grantFor(ctx, t, 'mod.site_unban', subject), { reason, activityApId });
     }
-    return { objectApId: person.apId };
+    return {};
   });
 }

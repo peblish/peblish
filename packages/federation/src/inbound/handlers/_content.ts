@@ -74,7 +74,7 @@ async function withdrawHeld(ctx: InboundContext, t: Tx, held: Stored, refused: S
       ? await deleteComment.within(t, await grantFor(ctx, t, 'comment.delete', { commentId: held.id }), { revision })
       : await deletePost.within(t, await grantFor(ctx, t, 'post.delete', { postId: held.id }), { revision });
   if (deleted) await recordDeletion(t, { kind: held.kind, id: held.id, cause: 'Delete', actorId: ctx.sender.id });
-  return { communityId: held.communityId, objectApId: held.apId };
+  return { communityId: held.communityId };
 }
 
 /** The post a Page updates, when we hold it: a post, and the Page must name its community. */
@@ -103,7 +103,7 @@ async function preparePage(ctx: InboundContext, post: PostRecord, verb: 'Create'
       if (refused) return withdrawHeld(ctx, t, existing, refused, post.editedAt);
       const grant = await grantFor(ctx, t, 'post.update', { postId: existing.id });
       await updateRemotePost.within(t, grant, post);
-      return { communityId: existing.communityId, objectApId: post.apId, relay: true };
+      return { communityId: existing.communityId, relay: true };
     }
     const grant = await grantFor(ctx, t, 'post.create', { communityId: community.id });
     const refused = hidden ?? (await sensitiveRefusal(t.db, post));
@@ -112,7 +112,6 @@ async function preparePage(ctx: InboundContext, post: PostRecord, verb: 'Create'
     if (!stored.created) throw skip('object.exists', post.apId);
     return {
       communityId: community.id,
-      objectApId: post.apId,
       stored: [post.apId],
       page: verb === 'Create' ? post : undefined,
       relay: true,
@@ -146,7 +145,7 @@ async function prepareNote(ctx: InboundContext, comment: CommentRecord, verb: 'C
       if (hidden) return withdrawHeld(ctx, t, existing, hidden, comment.editedAt);
       const grant = await grantFor(ctx, t, 'comment.update', { commentId: existing.id });
       await updateRemoteComment.within(t, grant, comment);
-      return { communityId: existing.communityId, objectApId: comment.apId, relay: true };
+      return { communityId: existing.communityId, relay: true };
     }
     if (existing) throw skip('object.exists', comment.apId);
     if (hidden) throw hidden;
@@ -156,7 +155,7 @@ async function prepareNote(ctx: InboundContext, comment: CommentRecord, verb: 'C
     });
     const stored = await storeRemoteComment.within(t, grant, comment);
     if (!stored.created) throw skip('object.exists', comment.apId);
-    return { communityId: community.id, objectApId: comment.apId, stored: [comment.apId], relay: true };
+    return { communityId: community.id, stored: [comment.apId], relay: true };
   });
 }
 

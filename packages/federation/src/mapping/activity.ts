@@ -62,7 +62,6 @@ export function activityFromWire(json: unknown, depth = 0): Activity {
           voterApId: actorApId,
           targetApId: objectId(object, activity.type),
           value: activity.type === 'Like' ? 1 : -1,
-          raw: json,
         },
       };
     case 'Follow':

@@ -1,6 +1,6 @@
 import { db } from '@peblish/core/db/read';
 import { actors } from '@peblish/core/db/tables/actors';
-import { activities, inboxDedupe } from '@peblish/core/db/tables/federation';
+import { inboxDedupe } from '@peblish/core/db/tables/federation';
 import { follows } from '@peblish/core/db/tables/follows';
 import { instanceBlocked } from '@peblish/core/peers/gate';
 import { Refused } from '@peblish/core/tx/refused';
@@ -34,9 +34,10 @@ import { heldContent } from './withdrawal.ts';
 //    names are resolved, a missing object is found missing. All network work is here.
 // 4. one transaction: the dedupe marker for the applied activity (the inner one inside an
 //    Announce, so a direct and an announced copy apply once), the handler's mutations, the
-//    `activities` row linked to the inbox row, the relay's deliveries, the rows that waited
-//    for what was just stored, and the end state. A skip (a policy's refusal, a missing
-//    target) rolls all of it back and the row is recorded as skipped with the reason.
+//    relay's deliveries, the rows that waited for what was just stored, and the end state. A
+//    skip (a policy's refusal, a missing target) rolls all of it back and the row is recorded
+//    as skipped with the reason. No copy of a remote activity is kept: `activities` holds only
+//    our own, and the exact bytes stay in inbox_raw until it is pruned.
 //
 // Anything else that throws is transient (a peer down, the database): the row is tried again
 // later (queue.ts retryLater) and, past maxAttempts, fails with the last error.
@@ -212,25 +213,13 @@ async function contextFor(env: Env, activity: Activity, raw: JsonObject, announc
   };
 }
 
-/** Dedupe, apply, record, relay and settle: the one transaction. */
+/** Dedupe, apply, relay and settle: the one transaction. */
 async function applyOnce(row: InboxRow, prepared: Prepared, env: Env, settleHere: boolean, rewritten: boolean): Promise<void> {
   const { activity, raw, apply, announced } = prepared;
   await tx(async (t) => {
     if (!(await t.dedupe(activity.id))) throw skip('duplicate');
     const applied = await apply(t);
     await env.afterApply?.();
-    await t.db
-      .insert(activities)
-      .values({
-        apId: activity.id,
-        type: activity.type,
-        actorApId: activity.actorApId,
-        objectApId: applied.objectApId ?? null,
-        local: false,
-        raw,
-        inboxRawId: row.id,
-      })
-      .onConflictDoNothing();
     // A local community announces what reached it directly; what came inside an Announce is a remote community's business.
     if (applied.relay && applied.communityId && !announced) {
       await relayToFollowers(t, {

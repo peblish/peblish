@@ -9,7 +9,7 @@ import { skip } from '../reasons.ts';
 // Undo(Like) embeds a freshly minted Like, and a change of direction replaces the vote under
 // the peer's new id.
 
-export type Cast = { value: 1 | -1; apId: string; raw: unknown } | { value: 0 };
+export type Cast = { value: 1 | -1; apId: string } | { value: 0 };
 
 export async function prepareVote(ctx: InboundContext, targetApId: string, cast: Cast): Promise<Prepared> {
   checkAuthorIsPerson(ctx);
@@ -20,6 +20,6 @@ export async function prepareVote(ctx: InboundContext, targetApId: string, cast:
     const grant = await grantFor(ctx, t, 'vote.cast', { target: { kind: target.kind, id: target.id } });
     // The vote already held, or none to take back, changes nothing.
     if (!(await castVote.within(t, grant, cast)).changed) throw skip('vote.unchanged', target.apId);
-    return { communityId: community.id, objectApId: target.apId, relay: true };
+    return { communityId: community.id, relay: true };
   });
 }

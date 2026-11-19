@@ -92,13 +92,14 @@ describe('castVote', () => {
   test("a remote Undo(Like) carries a new Like id and still retracts that voter's vote", async () => {
     const { world, target, remote } = await setup();
     const voterId = world.people.remoteAuthor.id;
-    await cast(remote, target, { value: 1, apId: 'https://lemmy.test/activities/like/1', raw: { type: 'Like' } });
+    await cast(remote, target, { value: 1, apId: 'https://lemmy.test/activities/like/1' });
     const [row] = await voteRows(voterId);
     expect(row).toMatchObject({
       apId: 'https://lemmy.test/activities/like/1',
       local: false,
       value: 1,
       instanceId: world.instances.lemmy.id,
+      raw: null,
     });
     expect(await tally(target)).toEqual({ upvotes: 1, downvotes: 0 });
 

@@ -22,7 +22,7 @@ export const handler: InboundHandler = {
     return prepared(ctx, async (t) => {
       const subject = { followerId: row.followerId, followeeId: row.followeeId, apId: followApId };
       await removeFollow.within(t, await grantFor(ctx, t, 'follow.remove', subject));
-      return { objectApId: followApId };
+      return {};
     });
   },
 };

@@ -32,7 +32,7 @@ export function vote(base: Base, value: 1 | -1, targetApId: string): Activity {
   return {
     ...envelope(base),
     type: value === 1 ? 'Like' : 'Dislike',
-    vote: { apId: base.id, voterApId: base.actorApId, targetApId, value, raw: null },
+    vote: { apId: base.id, voterApId: base.actorApId, targetApId, value },
   };
 }
 
