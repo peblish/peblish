@@ -19,6 +19,7 @@ import { drizzle } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
 import { openPrivate } from './bundle.ts';
 import { CutoverError, readJsonFile } from './errors.ts';
+import { alignOutbox, outboxProbe, type AlignOptions, type OutboxAlignment } from './outbox-order.ts';
 
 // The backup and restore drill (T&S baseline: a restore drill that re-applies the deletion
 // ledger). A backup is `pg_dump -Fc`; the ledger is also exported on its own, more often than
@@ -175,15 +176,17 @@ export async function dropOwnDatabase(own: OwnDatabase): Promise<void> {
 }
 
 /**
- * Creates the database `url` names, refusing one that exists, and restores `file` into it. A
- * restore that fails drops the half-restored database it created. Returns it, for the drill to drop.
+ * Creates the database `url` names, refusing one that exists, and restores `file` into it, then
+ * renumbers the outbox when the backup came from a cluster further on than this one
+ * (outbox-order.ts), so the consumers read new events. A restore that fails drops the
+ * half-restored database it created. Returns it, for the drill to drop.
  */
-export async function restore(file: string, url: string): Promise<OwnDatabase> {
+export async function restore(file: string, url: string, outbox: AlignOptions = {}): Promise<OwnDatabase & { outbox: OutboxAlignment }> {
   const own = await createOwnDatabase(url);
   try {
     const { arg, env } = connection(url);
     await run(pgRestore(), ['--no-owner', '--no-privileges', '--exit-on-error', arg, file], env);
-    return own;
+    return { ...own, outbox: await alignOutbox(url, outbox) };
   } catch (error) {
     await dropOwnDatabase(own);
     throw error;
@@ -492,6 +495,9 @@ export type DrillReport = {
   ledger: string;
   database: string;
   kept: boolean;
+  outbox: OutboxAlignment;
+  /** From a new event written and rolled back: cursors not before it, restored tx_ids not below it. Both 0. */
+  probe: { cursorsAhead: number; idsAhead: number };
   reapplied: ReapplyReport;
   source: Record<string, number>;
   restored: Record<string, number>;
@@ -501,7 +507,8 @@ export type DrillReport = {
 /**
  * The drill: back up the database `url` names into `dir`, export its ledger, restore into a new
  * database `drill_<time>_<random>` on the same server (created here, refused if it exists),
- * re-apply the ledger and compare row counts. The new database is dropped afterwards unless
+ * re-apply the ledger, check that a new event would reach every consumer (outboxProbe) and
+ * compare row counts. The new database is dropped afterwards unless
  * `keep`; nothing else on the server is dropped or disconnected. Given `files` (a backup and a
  * ledger export fetched from the backup bucket), it restores those instead of taking new ones;
  * the counts then differ where the database changed since that backup.
@@ -524,9 +531,23 @@ export async function runDrill(
   const own = await restore(backupFile, target.href);
   try {
     const reapplied = await reapplyLedger(own.url, readLedgerExport(ledger));
+    const probe = await outboxProbe(own.url);
     const [source, restored] = [await tableCounts(url), await tableCounts(own.url)];
     const differences = Object.keys(source).filter((table) => source[table] !== restored[table]);
-    return { backup: backupFile, ledger, database: own.name, kept: options.keep === true, reapplied, source, restored, differences };
+    if (probe.cursorsAhead !== 0 || probe.idsAhead !== 0) differences.push('outbox order');
+    const { outbox } = own;
+    return {
+      backup: backupFile,
+      ledger,
+      database: own.name,
+      kept: options.keep === true,
+      outbox,
+      probe,
+      reapplied,
+      source,
+      restored,
+      differences,
+    };
   } finally {
     if (!options.keep) await dropOwnDatabase(own);
   }

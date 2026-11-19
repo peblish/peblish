@@ -225,6 +225,22 @@ as they are, as on removal). Each ledger row names the hash for this. A row with
 the restore and changes nothing; add the rule before going live. Point the services at the
 restored database only after it reports.
 
+Before the ledger replay, `restore` fits the outbox to the Postgres it restored into. Events and
+cursors carry transaction ids of the server the backup came from; consumers read events after
+their cursor in transaction id order, so on a new server, whose counter starts low, every new
+event would sort before the restored cursors and every consumer (federation delivery,
+notifications, edge purges) would skip it. When any restored id is at or above the server's next
+one, `restore` renumbers in one transaction (`tools/cutover/src/outbox-order.ts`): every distinct
+id, of the events and the cursors together, gets its rank, so the events keep their order (a
+consumer added later at `beginning` reads them as before) and each consumer keeps exactly the same
+unread events. When the top rank (one per transaction that wrote a kept event) reaches the
+counter, it first runs empty transactions until the counter is past it, and refuses rather than
+run more than 10 million (about 10 s and 400 MB of WAL); the report's `outbox` says what it did
+(`renumbered: false` on the same server). Measured on a new Postgres 17 server: 1 million events,
+each from its own transaction, took about 6 s, the counter advance included. The drill writes one
+event in a transaction it rolls back and fails (`outbox order`) unless it sorts after every cursor
+and above every restored id.
+
 The ledger replay also owes a purge of the whole edge cache (`pbm`), late from the start, so
 proxy images are answered `private` until the worker has sent it, normally within 20 seconds of
 the worker starting on the restored database ([edge-cache.md](edge-cache.md) section 1). If the
