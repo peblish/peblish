@@ -292,7 +292,6 @@ export function buildLabLive(candidates: Candidate[]): { set: FixtureSetJson; dr
         id: fixtureUuid(vote.apId, at),
         instanceId: instanceOf(vote.apId),
         apId: vote.apId,
-        raw: null,
         voterId: idOf(vote.voterApId),
         postId: post?.id ?? null,
         commentId: comment?.id ?? null,

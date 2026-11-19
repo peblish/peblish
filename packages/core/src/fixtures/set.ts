@@ -101,8 +101,11 @@ export const FixtureComment = type({
   removedAt: optionalDate,
 });
 
+// Votes keep no raw JSON.
 export const FixtureVote = type({
-  ...content,
+  id: Uuid,
+  instanceId: Uuid,
+  apId: 'string.url',
   voterId: Uuid,
   postId: Uuid.or('null'),
   commentId: Uuid.or('null'),

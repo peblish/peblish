@@ -49,7 +49,7 @@ export async function loadFixtureSet(name: FixtureSetName, options: { localDomai
     if (set.communityLanguages.length) await t.insert(communityLanguages).values(set.communityLanguages);
     if (set.posts.length) await t.insert(posts).values(set.posts.map(spine));
     if (set.comments.length) await t.insert(comments).values(set.comments.map(spine));
-    if (set.votes.length) await t.insert(votes).values(set.votes.map(spine));
+    if (set.votes.length) await t.insert(votes).values(set.votes.map((vote) => ({ ...vote, local: localIds.has(vote.instanceId) })));
     if (set.follows.length) await t.insert(follows).values(set.follows);
   });
   const ids = new Map<string, string>([

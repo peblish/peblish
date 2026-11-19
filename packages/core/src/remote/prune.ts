@@ -180,7 +180,8 @@ async function pruneOutbox(q: OpenTx['db'], consumers: readonly string[], cutoff
  * (the inbox job putting a skipped row back to pending) is left, and the DELETE states the
  * conditions again, so a row that stopped qualifying between the two steps is kept. A remote
  * `activities` row stored before the pipeline stopped keeping them loses its link to the deleted
- * bytes (ON DELETE SET NULL); nothing reads it.
+ * bytes (the database's ON DELETE SET NULL on inbox_raw_id, a column the definitions no longer
+ * name); nothing reads it.
  */
 export const pruneBatch = defineMutation({
   action: 'remote.prune',

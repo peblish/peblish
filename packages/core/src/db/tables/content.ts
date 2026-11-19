@@ -4,18 +4,20 @@ import { at, createdAt, id, ltree, raw } from '../columns.ts';
 import { actors } from './actors.ts';
 import { instances } from './instances.ts';
 
-// Posts, comments and votes carry the identity spine: uuidv7 id, immutable ap_id, local,
-// instance_id and raw. Counts are kept in the same transaction as the vote or comment.
+// Posts, comments and votes carry the identity spine: uuidv7 id, immutable ap_id, local and
+// instance_id; posts and comments also keep the remote object's JSON in raw (votes keep none).
+// Counts are kept in the same transaction as the vote or comment.
 
-const spine = () => ({
+const identity = () => ({
   id: id(),
   apId: text('ap_id').notNull().unique(),
   local: boolean('local').notNull(),
   instanceId: uuid('instance_id')
     .notNull()
     .references(() => instances.id),
-  raw: raw(),
 });
+
+const spine = () => ({ ...identity(), raw: raw() });
 
 export const posts = pgTable(
   'posts',
@@ -107,7 +109,8 @@ export const comments = pgTable(
 export const votes = pgTable(
   'votes',
   {
-    ...spine(),
+    // The database still has votes.raw (always null now) until a later release drops it.
+    ...identity(),
     voterId: uuid('voter_id')
       .notNull()
       .references(() => actors.id),

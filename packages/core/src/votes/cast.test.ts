@@ -99,7 +99,6 @@ describe('castVote', () => {
       local: false,
       value: 1,
       instanceId: world.instances.lemmy.id,
-      raw: null,
     });
     expect(await tally(target)).toEqual({ upvotes: 1, downvotes: 0 });
 
