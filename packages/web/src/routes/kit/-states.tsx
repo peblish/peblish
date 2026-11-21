@@ -10,6 +10,7 @@ import { VoteControl, type Vote } from '@peblish/ui/components/vote-control';
 import { useState, type ComponentType } from 'react';
 import { useTranslate } from '../../i18n/use-translate.ts';
 import { useVoteLabels } from '../../shell/labels.ts';
+import { sharedPieces } from './-shared-pieces.tsx';
 
 /**
  * The states a state page shows as samples, in the state matrix's order ('selected' stands for current, checked
@@ -109,4 +110,5 @@ export const compositions: Readonly<Record<string, Composition>> = {
     name: 'Edge toggle',
     states: { rest: () => <Fold folded />, selected: () => <Fold folded={false} /> },
   },
+  ...sharedPieces,
 };

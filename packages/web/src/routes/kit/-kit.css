@@ -59,3 +59,19 @@
     padding-block: var(--muxui-semantic-layout-inset-tiny);
   }
 }
+
+/* The shared pieces' state pages (-shared-pieces.tsx): rows and covers take the column, a panel the rail's width. */
+@layer app {
+  .kit-row > :is(.pb-post, .kit-cover, .kit-skeletons) {
+    flex: 1 1 100%;
+  }
+
+  .kit-rail {
+    flex: 0 1 20rem;
+  }
+
+  .kit-skeletons {
+    display: grid;
+    gap: var(--muxui-semantic-layout-section-gap);
+  }
+}
