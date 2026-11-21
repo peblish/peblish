@@ -2,26 +2,27 @@ import type { SessionView } from '@peblish/schema/session';
 import { Avatar } from '@peblish/ui/components/avatar';
 import { Button } from '@peblish/ui/components/button';
 import { ButtonLink } from '@peblish/ui/components/button-link';
-import { BidiText } from '@peblish/ui/components/handle';
-import { LogInIcon, UserPlusIcon } from '@peblish/ui/components/icons';
+import { CheckIcon, LogInIcon, UserPlusIcon } from '@peblish/ui/components/icons';
 import { Link } from '@peblish/ui/components/link';
 import { Menu } from '@peblish/ui/components/menu';
 import { Text } from '@peblish/ui/components/text';
+import { schemes, toScheme } from '@peblish/ui/theme/root';
 import { useRouter } from '@tanstack/react-router';
 import { useTranslate } from '../i18n/use-translate.ts';
 import { openInRouter } from './client-links.ts';
 import { adminPaths, userPath } from './paths.ts';
+import { usePrefs } from './prefs.tsx';
 
 const signOutAction = '/auth/sign-out';
 /** The account list at the foot of every page (AccountLinks), which the no-script Account link points at. */
 const accountLinksId = 'pb-account-links';
-/** The one sign-out form: in AccountLinks, submitted by its own button or by the menu's Sign out. */
-const signOutFormId = 'pb-sign-out';
+/** The one sign-out form: in AccountLinks, submitted by its own button, the menu's Sign out or the phone drawer's. */
+export const signOutFormId = 'pb-sign-out';
 
 type Translate = ReturnType<typeof useTranslate>['t'];
 
 /** The account's pages, in the menu's order: Invites and Admin for admins only. */
-function accountPages(session: SessionView, t: Translate) {
+export function accountPages(session: SessionView, t: Translate) {
   return [
     { id: 'profile', href: userPath({ handle: session.name }), label: t('shell', 'account.profile') },
     { id: 'settings', href: '/settings/account', label: t('shell', 'account.settings') },
@@ -35,48 +36,50 @@ function accountPages(session: SessionView, t: Translate) {
   ];
 }
 
-/** The avatar and the name, as the menu's button and the no-script link both show them. */
+/** The avatar, named "Account: <name>" for assistive technology, as the menu's button and the no-script link show it. */
 function AccountName({ name, label }: { name: string; label: string }) {
   return (
     <>
       <Avatar.Root size="sm" aria-hidden="true">
         <Avatar.Fallback>{name.slice(0, 1).toUpperCase()}</Avatar.Fallback>
       </Avatar.Root>
-      <Text className="pb-sr">{label}: </Text>
-      <Text variant="label" className="pb-account__name">
-        <BidiText text={name} />
+      <Text className="pb-sr">
+        {label}: {name}
       </Text>
     </>
   );
 }
 
+/** Sign in and Sign up, for a visitor: in the desktop header. */
+export function SignedOutActions() {
+  const { t } = useTranslate();
+  return (
+    <nav className="pb-account" aria-label={t('shell', 'account.menu')}>
+      <Link className="pb-sign-in pb-link-quiet" href="/auth/sign-in">
+        <LogInIcon />
+        <Text className="pb-action__label">{t('shell', 'account.signIn')}</Text>
+      </Link>
+      <ButtonLink className="pb-cta" href="/auth/sign-up" size="sm">
+        <UserPlusIcon />
+        <Text className="pb-action__label">{t('shell', 'account.signUp')}</Text>
+      </ButtonLink>
+    </nav>
+  );
+}
+
 /**
- * The account area of the top bar: sign-in and sign-up links when signed out; when signed in,
- * a Mux menu with the profile, settings, security, invites and the admin pages (admins) and
- * sign-out. Menu items are not links in Mux UI, so each one navigates through the router, and
- * sign-out submits the real form in AccountLinks (posting to /auth/sign-out, which answers with
- * a redirect). The menu needs scripts: with none (`scripting: none`, shell.css) its button gives
+ * The account menu of the desktop header (Commons): the viewer's avatar opens a Mux menu with their
+ * pages, Appearance (System, Light, Dark; the current one ticked and called so, as Mux's Menu has no
+ * checked items yet) and Sign out. Menu items are not links in Mux UI, so each page opens through the
+ * router, and Sign out submits the real form in AccountLinks (posting to /auth/sign-out, which answers
+ * with a redirect). The menu needs scripts: with none (`scripting: none`, shell.css) its button gives
  * way to a plain link, with the same look and name, to the account list at the foot of the page.
- * A browser that does not know the media feature keeps the menu.
  */
-export function Account({ session }: { session: SessionView | null }) {
+export function Account({ session }: { session: SessionView }) {
   const { t } = useTranslate();
   const router = useRouter();
-  if (!session) {
-    return (
-      <nav className="pb-account" aria-label={t('shell', 'account.menu')}>
-        {/* On the narrowest phone bars the labels give way to the icons (shell.css); the names stay. */}
-        <Link className="pb-sign-in pb-link-quiet" href="/auth/sign-in">
-          <LogInIcon />
-          <Text className="pb-action__label">{t('shell', 'account.signIn')}</Text>
-        </Link>
-        <ButtonLink className="pb-cta" href="/auth/sign-up" size="sm">
-          <UserPlusIcon />
-          <Text className="pb-action__label">{t('shell', 'account.signUp')}</Text>
-        </ButtonLink>
-      </nav>
-    );
-  }
+  const { prefs, setPrefs } = usePrefs();
+  const scheme = toScheme(prefs.scheme);
   const name = session.displayName ?? session.name;
   const label = t('shell', 'account.menu');
   const signOut = () => document.querySelector<HTMLFormElement>(`#${signOutFormId}`)?.requestSubmit();
@@ -94,6 +97,27 @@ export function Account({ session }: { session: SessionView | null }) {
               </Menu.Item>
             ))}
             <Menu.Separator />
+            <Menu.Section title={t('shell', 'theme.menu')}>
+              {schemes.map((choice) => (
+                <Menu.Item
+                  key={choice}
+                  id={`scheme-${choice}`}
+                  textValue={t('shell', `theme.${choice}`)}
+                  onAction={() => setPrefs({ scheme: choice })}
+                >
+                  <span className="pb-account__choice">
+                    <Text className="pb-account__choice-label">{t('shell', `theme.${choice}`)}</Text>
+                    {choice === scheme && (
+                      <>
+                        <Text className="pb-sr">, {t('shell', 'theme.current')}</Text>
+                        <CheckIcon className="pb-account__check" />
+                      </>
+                    )}
+                  </span>
+                </Menu.Item>
+              ))}
+            </Menu.Section>
+            <Menu.Separator />
             <Menu.Item id="sign-out" onAction={signOut}>
               {t('shell', 'account.signOut')}
             </Menu.Item>
@@ -109,8 +133,8 @@ export function Account({ session }: { session: SessionView | null }) {
 
 /**
  * The account's pages and sign-out as plain links and a form, at the foot of every page for a
- * signed-in viewer. Shown only with scripts off (shell.css), where the account menu cannot open;
- * otherwise it is not displayed, and its form is the one the menu's Sign out submits.
+ * signed-in viewer. Shown only with scripts off (shell.css), where the account menu and the phone
+ * drawer cannot open; otherwise it is not displayed, and its form is the one their Sign out submits.
  */
 export function AccountLinks({ session }: { session: SessionView }) {
   const { t } = useTranslate();

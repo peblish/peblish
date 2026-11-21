@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest';
-import { headTitle, ownTitle } from './title.ts';
+import { headTitle, ownTitle, pageName } from './title.ts';
 
 const matches = [{ routeId: '__root__', loaderData: { locale: 'en-US', shell: { siteName: 'Test Feddit' } } }];
 const at = (status: string) => ({ match: { status }, matches });
@@ -16,4 +16,11 @@ test("a route's title is given only while its own match is a success: an error o
     { title: 'Community not found · Test Feddit' },
   ]);
   expect(ownTitle(at('success'), undefined)).toEqual([]);
+});
+
+test("the view header's name is the page's part of its title; the site's name alone gives none", () => {
+  expect(pageName('Inbox · Test Feddit', 'Test Feddit')).toBe('Inbox');
+  expect(pageName('Test Feddit', 'Test Feddit')).toBe('');
+  expect(pageName('A post | !lab', 'Test Feddit')).toBe('A post | !lab');
+  expect(pageName('Inbox', '')).toBe('Inbox');
 });

@@ -35,7 +35,7 @@ function Choices({ label }: { label: string }) {
   const osDark = useOsDark();
   const dark = scheme === 'system' ? osDark : scheme === 'dark';
   return (
-    <div data-muxui-color-scheme={dark ? 'light' : 'dark'}>
+    <div className="pb-theme__choices" data-muxui-color-scheme={dark ? 'light' : 'dark'}>
       <ToggleButtonGroup
         aria-label={label}
         selectionMode="single"
