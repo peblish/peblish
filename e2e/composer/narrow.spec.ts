@@ -38,7 +38,8 @@ test('a long community name or handle wraps in the picker and in the rules aside
   }
   await choose(page, world.communities.long.handle);
   const aside = page.getByRole('complementary', { name: 'Community rules' });
-  const card = aside.locator('.muxui-card').first();
+  // On a phone the rules sit under the picker, in Create post's rail panel (RailPanel).
+  const card = aside.locator('.pb-panel').first();
   const heading = aside.getByRole('heading', { level: 2 });
   await expect(heading).toContainText(world.communities.long.handle);
   await inside(heading, card);

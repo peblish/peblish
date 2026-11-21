@@ -11,7 +11,7 @@ import { Text } from '@peblish/ui/components/text';
 import { MarkdownEditor } from '@peblish/ui/composer/markdown-editor';
 import { useHydrated } from '@peblish/ui/composer/use-hydrated.ts';
 import { type } from 'arktype';
-import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { useTranslate } from '../../../i18n/use-translate.ts';
 import { altTextMaxLength, firstProblem } from '../-fields.ts';
 import { loadCommunityPanel, previewBody } from '../-load.ts';
@@ -24,7 +24,7 @@ import {
   type CommunityPanel,
   type PostType,
 } from '../-types.ts';
-import { CommunityAside } from './community-aside.tsx';
+import { CommunityAside, CommunityRules } from './community-aside.tsx';
 import { CommunityPicker } from './community-picker.tsx';
 import { clearDraft, readDraft, removeUnscopedDrafts, writeDraft } from './drafts.ts';
 import { ErrorText } from './error-text.tsx';
@@ -74,6 +74,13 @@ export interface ComposerProps {
   onDiscard: () => void;
   /** The sheet is dismissable: what was written and not sent is kept as a draft when it unmounts. */
   keepOnClose?: boolean;
+  /**
+   * Create post's page (Commons): lays out the form and the community's rules itself, the rules in the
+   * frame's rail. Where the rail gives way, the form shows `rules` under the community picker, in an
+   * aside named as the rail is (`cmp-page__rules`, shown only there). Left out (the sheet), the rules
+   * are an outlined Card beside the form.
+   */
+  page?: (parts: { form: ReactNode; rules: ReactNode }) => ReactNode;
 }
 
 interface Form {
@@ -125,7 +132,7 @@ function startingForm({ data }: Pick<ComposerProps, 'data'>): Form {
  * posts by fetch, keeps what was typed through a refusal, and offers the toolbar, Preview and
  * drafts. The page and the sheet both render this.
  */
-export function Composer({ data, error: initialError, onDone, onDiscard, keepOnClose }: ComposerProps) {
+export function Composer({ data, error: initialError, onDone, onDiscard, keepOnClose, page }: ComposerProps) {
   const { t, locale } = useTranslate();
   const editorLabels = useEditorLabels();
   const { edit, actorId, kept } = data;
@@ -269,9 +276,16 @@ export function Composer({ data, error: initialError, onDone, onDiscard, keepOnC
   const imageOff = !data.uploads;
   // An edit names its post in the address the form posts to (-submit.ts reads it there).
   const action = edit ? `/submit?${new URLSearchParams({ edit: edit.id })}` : '/submit';
-  return (
+  const loadingPanel = form.community !== null && panel === null;
+  const rules = page && <CommunityRules panel={panel} loading={loadingPanel} />;
+  const inlineRules = rules && (
+    <aside className="cmp-page__rules" aria-label={t('composer', 'panel.label')} aria-busy={loadingPanel}>
+      {rules}
+    </aside>
+  );
+  const composer = (
     // An edit's type is fixed and has no radios: the attribute shows its fields instead.
-    <div className="cmp" data-type={edit ? form.type : undefined}>
+    <div className={page ? 'cmp cmp--page' : 'cmp'} data-type={edit ? form.type : undefined}>
       <form
         ref={formElement}
         className="cmp__form"
@@ -283,12 +297,16 @@ export function Composer({ data, error: initialError, onDone, onDiscard, keepOnC
         onSubmit={submit}
       >
         {edit ? (
-          <Text as="p" className="cmp__editing">
-            {t('composer', 'edit.in', { community: panel ? `!${panel.handle}` : '' })}
-          </Text>
+          <>
+            <Text as="p" className="cmp__editing">
+              {t('composer', 'edit.in', { community: panel ? `!${panel.handle}` : '' })}
+            </Text>
+            {inlineRules}
+          </>
         ) : (
           <>
             <CommunityPicker communities={data.communities} value={form.community} onChange={choose} error={fieldError('community')} />
+            {inlineRules}
             {/* Real radios: the choice posts without JavaScript, and the CSS shows each type's fields by the checked one. */}
             <RadioGroup
               aria-label={t('composer', 'type.label')}
@@ -435,7 +453,8 @@ export function Composer({ data, error: initialError, onDone, onDiscard, keepOnC
           {note && t('composer', `draft.${note}`)}
         </Text>
       </form>
-      <CommunityAside panel={panel} loading={form.community !== null && panel === null} />
+      {!page && <CommunityAside panel={panel} loading={loadingPanel} />}
     </div>
   );
+  return page ? page({ form: composer, rules }) : composer;
 }
