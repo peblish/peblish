@@ -1,6 +1,5 @@
-import { useState, type FormEvent, type KeyboardEvent } from 'react';
+import { useState, type FormEvent, type KeyboardEvent, type ReactNode } from 'react';
 import { Button } from './button.tsx';
-import { Card } from './card.tsx';
 import { Text } from './text.tsx';
 import { TextAreaField } from './text-area.tsx';
 
@@ -31,7 +30,7 @@ export interface ReplyBarProps {
   onPostInstead?: () => void;
   /** Closes the bar. */
   onCancel?: () => void;
-  /** Disables the field and button while a reply is being sent. */
+  /** A reply is being sent: the field keeps its text and focus but takes no typing, and Reply shows it is busy. */
   pending?: boolean;
   /** Error text for the field, such as a refusal's message. */
   error?: string;
@@ -47,9 +46,12 @@ function withFields(action: string | undefined, fields: Readonly<Record<string, 
 }
 
 /**
- * The reply bar docked to the bottom of the thread (thread-docked): a raised Mux Card with who
- * you are answering, "post instead", cancel, and a text field. A plain form, so it posts
- * without JavaScript when given an `action`; once hydrated it calls `onSubmit` instead.
+ * The thread's docked reply (Commons): the last thing in the comments, sticky to the bottom of the window
+ * on the page's own opaque surface under a hairline, so it stays in view while the comments run on below
+ * and comes to rest under the last one. It says who is being answered, with "post instead" and cancel, and
+ * holds the Markdown text field and Reply. A plain form, so it posts without JavaScript when given an
+ * `action`; once hydrated it calls `onSubmit` instead. Its height stays within the scroll padding the frame
+ * keeps for a docked bar (web/src/shell/shell.css), so a focused element is never left under it.
  */
 export function ReplyBar({
   target,
@@ -68,7 +70,7 @@ export function ReplyBar({
   async function submit(event: FormEvent<HTMLFormElement>) {
     if (!onSubmit) return;
     event.preventDefault();
-    if (body.trim() === '') return;
+    if (pending || body.trim() === '') return;
     try {
       await onSubmit(body);
       setBody('');
@@ -90,55 +92,68 @@ export function ReplyBar({
       method="post"
       action={withFields(action, fields)}
       aria-label={labels.region}
+      aria-busy={pending || undefined}
       onSubmit={submit}
       onKeyDown={shortcut}
     >
-      <Card.Root variant={docked ? 'elevated' : 'outlined'} padding="sm" className="pb-reply__box">
-        {target && (
-          <div className="pb-reply__to">
-            <Text size="sm" truncate className="pb-reply__who">
-              <Text size="sm" color="muted">
-                {labels.replyingTo}
-              </Text>{' '}
-              <Text size="sm" variant="label">
-                {target.handle}
-              </Text>{' '}
-              <Text size="sm" color="muted">
-                {target.excerpt}
-              </Text>
+      {target && (
+        <div className="pb-reply__to">
+          <Text size="sm" truncate className="pb-reply__who">
+            <Text size="sm" color="muted">
+              {labels.replyingTo}
+            </Text>{' '}
+            <Text size="sm" variant="label">
+              {target.handle}
+            </Text>{' '}
+            <Text size="sm" color="muted">
+              {target.excerpt}
             </Text>
-            {onPostInstead && (
-              <Button variant="ghost" size="sm" onActivate={onPostInstead}>
-                {labels.postInstead}
-              </Button>
-            )}
-            {onCancel && (
-              <Button variant="ghost" size="sm" onActivate={onCancel}>
-                {labels.cancel}
-              </Button>
-            )}
-          </div>
-        )}
-        <div className="pb-reply__input">
-          <TextAreaField
-            label={labels.field}
-            hideLabel
-            className="pb-reply__field"
-            name="body"
-            rows={2}
-            placeholder={labels.placeholder}
-            value={body}
-            onChange={setBody}
-            disabled={pending}
-            required
-            invalid={error !== undefined}
-            errorMessage={error}
-          />
-          <Button type="submit" variant="primary" disabled={pending}>
-            {labels.submit}
-          </Button>
+          </Text>
+          {onPostInstead && (
+            <Button variant="ghost" size="sm" className="pb-reply__action" onActivate={onPostInstead}>
+              {labels.postInstead}
+            </Button>
+          )}
+          {onCancel && (
+            <Button variant="ghost" size="sm" className="pb-reply__action" onActivate={onCancel}>
+              {labels.cancel}
+            </Button>
+          )}
         </div>
-      </Card.Root>
+      )}
+      <div className="pb-reply__input">
+        <TextAreaField
+          label={labels.field}
+          hideLabel
+          className="pb-reply__field"
+          name="body"
+          rows={2}
+          placeholder={labels.placeholder}
+          value={body}
+          onChange={setBody}
+          // Not disabled while sending: a disabled field would drop the focus it holds.
+          readOnly={pending}
+          required
+          invalid={error !== undefined}
+          errorMessage={error}
+        />
+        <Button type="submit" variant="primary" className="pb-reply__send" pending={pending} showTextWhileLoading>
+          {labels.submit}
+        </Button>
+      </div>
     </form>
+  );
+}
+
+/**
+ * Says, where the docked reply would be, why there is none: the post is locked or closed, the reader must
+ * sign in or verify their address first. `icon` goes before the words (a lock); `children` may hold a link.
+ */
+export function ReplyNotice({ icon, children, className }: { icon?: ReactNode; children: ReactNode; className?: string }) {
+  return (
+    <Text as="p" size="sm" color="muted" role="status" className={['pb-reply-notice', className].filter(Boolean).join(' ')}>
+      {icon}
+      <span>{children}</span>
+    </Text>
   );
 }
