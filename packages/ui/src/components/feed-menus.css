@@ -98,7 +98,13 @@
     }
   }
 
-  /* Phone: 44px targets, and the sort shows its glyph alone, as the view does. */
+  @media (prefers-reduced-motion: reduce) {
+    .pb-feed-menu {
+      transition: none;
+    }
+  }
+
+  /* Phone: 44px targets, each the glyph alone, so the bar keeps room for the brand and the feed's name. */
   @media (max-width: 859.98px) {
     .pb-feed-menu {
       min-block-size: calc(var(--muxui-semantic-control-size-lg) + 2 * var(--muxui-semantic-layout-dense-gap));
@@ -106,7 +112,8 @@
       justify-content: center;
     }
 
-    .pb-feed-menu .pb-feed-menu__label {
+    .pb-feed-menu .pb-feed-menu__label,
+    .pb-feed-menu .pb-feed-menu__chevron {
       display: none;
     }
   }

@@ -66,11 +66,22 @@ export function FeedEnd({ state, density, labels, onRetry, sentinelRef, endRef, 
 /**
  * Skip past the posts: endless posts would keep the keyboard from what follows them (the rail, the
  * phone's tab bar), so the list starts with this, out of sight until focused, like a skip link. It
- * needs scripts, so it is disabled (and so never focused) until the page has hydrated.
+ * needs scripts: a list renders it only once it loads by itself, after hydration.
  */
-export function FeedSkip({ label, onSkip, disabled }: { label: string; onSkip: () => void; disabled?: boolean }) {
+export function FeedSkip({
+  label,
+  onSkip,
+  disabled,
+  shown = false,
+}: {
+  label: string;
+  onSkip: () => void;
+  disabled?: boolean;
+  /** Drawn as when it has focus, whatever has it (the component gallery). */
+  shown?: boolean;
+}) {
   return (
-    <div className="pb-feed-skip">
+    <div className="pb-feed-skip" data-shown={shown || undefined}>
       <Button size="sm" variant="neutral" onActivate={onSkip} disabled={disabled}>
         {label}
       </Button>

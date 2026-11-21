@@ -1,7 +1,13 @@
 /* The end of a list that loads by itself (feed-end.tsx), and Skip past the posts. */
 @layer app {
+  /* A focus target, not a control: Retry parks focus here, and Skip lands here when nothing follows. */
   .pb-feed-end:focus {
     outline: none;
+  }
+
+  .pb-feed-end:focus-visible {
+    outline: 2px solid var(--muxui-semantic-focus-ring);
+    outline-offset: -2px;
   }
 
   /* The observer's mark: no height of its own, so it never shifts what is above it. */
@@ -32,28 +38,36 @@
     gap: var(--muxui-semantic-layout-group-gap);
   }
 
-  /* Out of sight until it has focus, then at the list's top, over the first row. */
+  /* Out of sight until it has focus, then at the list's top, over the first row. The gallery shows it
+     in place (`data-shown`). */
   .pb-feed-skip {
     position: relative;
     z-index: 1;
     block-size: 0;
   }
 
-  .pb-feed-skip:not(:focus-within) {
+  .pb-feed-skip:not(:focus-within, [data-shown]) {
     overflow: hidden;
     clip-path: inset(50%);
   }
 
-  .pb-feed-skip .muxui-button {
+  .pb-feed-skip:not([data-shown]) .muxui-button {
     position: absolute;
     inset-block-start: var(--muxui-semantic-layout-inset-tight);
     inset-inline-start: var(--muxui-semantic-layout-inset-large);
   }
 
+  .pb-feed-skip[data-shown] {
+    block-size: auto;
+  }
+
+  /* A phone: 44px targets. Mux's Button takes its height from these. */
   @media (max-width: 859.98px) {
-    .pb-feed-end .muxui-button,
-    .pb-feed-skip .muxui-button {
-      min-block-size: calc(var(--muxui-semantic-control-size-lg) + 2 * var(--muxui-semantic-layout-dense-gap));
+    .pb-feed-end,
+    .pb-feed-skip {
+      --muxui-control-size-sm: calc(var(--muxui-semantic-control-size-lg) + 2 * var(--muxui-semantic-layout-dense-gap));
+      --muxui-control-size-md: calc(var(--muxui-semantic-control-size-lg) + 2 * var(--muxui-semantic-layout-dense-gap));
+      --muxui-component-button-min-height: calc(var(--muxui-semantic-control-size-lg) + 2 * var(--muxui-semantic-layout-dense-gap));
     }
   }
 }
