@@ -2,7 +2,7 @@ import { proxyUrlBuilder } from '@peblish/core/media/proxy-url';
 import type { PostPage } from '@peblish/core/posts/read';
 import { describe, expect, test } from 'vitest';
 import { createMarkdownRenderer } from '../../server/markdown.ts';
-import { postMedia, postTime, threadVisible } from './-page-data.ts';
+import { hasSpoiler, postMedia, postTime, threadVisible } from './-page-data.ts';
 
 const site = { origin: 'https://feddit.example', remoteMedia: true, proxy: proxyUrlBuilder(Buffer.alloc(32, 7)) };
 const proxied = /^\/media\/proxy\/[\w-]+\/[\w-]+$/;
@@ -102,5 +102,18 @@ describe('the post time', () => {
     expect(postTime('en-US', iso)).toMatch(/^Nov 9, 2026, 2:39\sAM UTC$/);
     expect(postTime('de-DE', iso)).toBe('9. Nov. 2026, 02:39 UTC');
     expect(postTime('de-DE', '2026-11-09T23:59:00Z')).toBe('9. Nov. 2026, 23:59 UTC');
+  });
+});
+
+describe('the Spoiler badge', () => {
+  test('comes from a spoiler the renderer drew, block or inline, and from nothing else', async () => {
+    const renderer = await createMarkdownRenderer(site);
+    const html = (source: string) => renderer.render(source, { idPrefix: 'p' }).html;
+    expect(hasSpoiler(html('::: spoiler Ending\nThe butler did it.\n:::'))).toBe(true);
+    expect(
+      hasSpoiler(renderer.sanitize('<p>A <span class="spoiler">secret</span>.</p>', { baseUrl: 'https://piefed.example/post/1' }).html),
+    ).toBe(true);
+    expect(hasSpoiler(html('No secrets, only *emphasis* and a [link](https://example.com/spoiler).'))).toBe(false);
+    expect(hasSpoiler(null)).toBe(false);
   });
 });

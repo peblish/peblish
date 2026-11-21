@@ -9,7 +9,7 @@ import { createMarkdownRenderer } from '../../server/markdown.ts';
 import { postPath } from '../../shell/paths.ts';
 import { gateData, requestNsfw } from '../c/-gate.ts';
 import { loadThread } from './$id/comments/-thread.ts';
-import { postMedia, postTime, threadVisible } from './-page-data.ts';
+import { hasSpoiler, postMedia, postTime, threadVisible } from './-page-data.ts';
 import { input } from '../../server/input.ts';
 
 /**
@@ -57,6 +57,8 @@ export const loadPost = createServerFn({ method: 'GET' })
       /** The edit time as text in the request's locale, so hydration formats nothing (postTime). */
       edited: view.editedAt && postTime(locale, view.editedAt),
       domain: view.url ? (URL.parse(view.url)?.hostname.replace(/^www\./, '') ?? null) : null,
+      /** The body holds a spoiler: the post's Spoiler badge, derived from the text it already has. */
+      spoiler: hasSpoiler(contentHtml),
     };
   });
 

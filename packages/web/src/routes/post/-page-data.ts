@@ -71,3 +71,11 @@ export function postTime(locale: string, iso: string): string {
   }
   return format.format(new Date(iso));
 }
+
+/**
+ * Whether a body the renderer or the sanitiser produced holds a spoiler: a block one (`::: spoiler`, a
+ * <details>) or an inline one (a span the UI blacks out). The post's Spoiler badge is derived from it, so
+ * it needs no field of its own.
+ */
+export const hasSpoiler = (html: string | null): boolean =>
+  html !== null && /<details[\s>]|<span class="(?:[^"]*\s)?spoiler(?:\s[^"]*)?"/.test(html);

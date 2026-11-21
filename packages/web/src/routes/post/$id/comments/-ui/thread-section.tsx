@@ -2,20 +2,22 @@ import { threadDisplayDepth } from '@peblish/core/comments/limits';
 import { parseSort, threadSorts } from '@peblish/core/comments/sort';
 import { Button } from '@peblish/ui/components/button';
 import { ButtonGroup } from '@peblish/ui/components/button-group';
-import { CommentThread } from '@peblish/ui/components/comment-thread';
+import { CommentThread, type CommentTreeLabels } from '@peblish/ui/components/comment-thread';
 import type { Vote } from '@peblish/ui/components/vote-control';
 import { EmptyState } from '@peblish/ui/components/empty-state';
 import { Handle, neutraliseBidi } from '@peblish/ui/components/handle';
+import { LockIcon } from '@peblish/ui/components/icons';
 import { Link } from '@peblish/ui/components/link';
 import { LinkedDisclosure } from '@peblish/ui/components/linked-disclosure';
 import { Notice } from '@peblish/ui/components/notice';
 import { Pager } from '@peblish/ui/components/pager';
-import { ReplyBar } from '@peblish/ui/components/reply-bar';
+import { ReplyBar, ReplyNotice } from '@peblish/ui/components/reply-bar';
+import { absoluteUrl } from '@peblish/ui/components/share-link.ts';
 import { Text } from '@peblish/ui/components/text';
 import type { CommentView } from '@peblish/schema/views';
 import { useRouter, useRouterState } from '@tanstack/react-router';
 import { type } from 'arktype';
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { useTranslate } from '../../../../../i18n/use-translate.ts';
 import { useCommentThreadLabels, useReplyBarLabels } from '../../../../../shell/labels.ts';
 import { commentPath, postPath, userPath } from '../../../../../shell/paths.ts';
@@ -29,8 +31,9 @@ import type { ThreadData } from '../-thread.ts';
 import commentsCss from './comments.css?url';
 import { asCommentError, errorKey, type CommentError } from './errors.ts';
 
-// The thread under a post, and the whole of a permalink page: the sort choice, the comment
-// tree (lane UI's CommentThread), and the docked reply bar. It draws the data it was given. A
+// The thread under a post, and the whole of a permalink page (Commons' Comments.tsx): the heading
+// with the sort choice, the comment tree (CommentThread, with Copy link and Share in its menu), and
+// the docked reply bar, or where it would be, why there is none. It draws the data it was given. A
 // sort or a page (?after=) other than the one the page was loaded with is fetched once the page
 // has hydrated; before that (and without JavaScript) the sort choice is a plain GET form, the
 // pages are plain links, and the server renders the sort and page the document asks for. A
@@ -53,13 +56,37 @@ function excerptOf(html: string | null): string {
 
 const authorHref = (comment: CommentView) => userPath(comment.author);
 
+/** The tree's labels: the ui catalogue's, with the Commons tree's own words from this area's. */
+export function useTreeLabels(): CommentTreeLabels {
+  const { t, locale } = useTranslate();
+  const fresh: CommentTreeLabels = {
+    ...useCommentThreadLabels(),
+    reply: t('comments', 'action.reply'),
+    share: t('comments', 'share.share'),
+    more: t('comments', 'action.more'),
+    menu: t('comments', 'action.menu'),
+    copyLink: t('comments', 'share.copy'),
+    linkCopied: t('comments', 'share.copied'),
+    copyFailed: t('comments', 'share.failed'),
+    inReplyTo: t('comments', 'inReplyTo'),
+  };
+  // The rows are memoised and the labels a fresh object each render, but they depend on the locale
+  // alone, so one object per locale lets a row skip re-rendering when the section does.
+  // oxlint-disable-next-line react/exhaustive-deps
+  return useMemo(() => fresh, [locale]);
+}
+
 async function vote(comment: CommentView, value: Vote) {
   const result = await castVoteFn({ data: { target: { kind: 'comment', id: comment.id }, value } });
   // A refusal throws, which puts the arrows and the score back.
   if (!result.ok) throw new Error(result.reason);
 }
 
-export function ThreadSection({ data: loaded }: { data: ThreadData }) {
+/**
+ * `heading` names the thread ("11 comments" on the post page); the permalink page keeps the catalogue's
+ * "Comments".
+ */
+export function ThreadSection({ data: loaded, heading }: { data: ThreadData; heading?: string }) {
   const { t, locale } = useTranslate();
   const router = useRouter();
   const raw = useRouterState({ select: (state) => state.location.search });
@@ -103,17 +130,17 @@ export function ThreadSection({ data: loaded }: { data: ThreadData }) {
   // This page with the removed comments listed open (for a browser without JavaScript).
   const removedHref = `${here}?${new URLSearchParams({ sort: data.sort, ...(data.after ? { after: data.after } : {}), removed: '1' })}#th-removed`;
 
-  const freshLabels = useCommentThreadLabels();
-  // The thread's rows are memoised, and the labels are a fresh object each render but depend on
-  // the locale alone, so one object per locale lets a row skip re-rendering when this section does.
-  // oxlint-disable-next-line react/exhaustive-deps
-  const labels = useMemo(() => freshLabels, [locale]);
+  const labels = useTreeLabels();
   const replyLabels = useReplyBarLabels();
   // The comment being answered: on a permalink page the one it starts from, else the post.
   const [targetId, setTargetId] = useState<string | null>(loaded.focus?.id ?? null);
   const target = data.comments.find((comment) => comment.id === targetId) ?? null;
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<CommentError>();
+  // "Reply posted.", read out politely once a reply is in: the field stays focused, and the comment lands in the tree.
+  const [posted, setPosted] = useState('');
+  const postedTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  useEffect(() => () => clearTimeout(postedTimer.current), []);
 
   async function reply(body: string) {
     setPending(true);
@@ -133,6 +160,9 @@ export function ThreadSection({ data: loaded }: { data: ThreadData }) {
       }
       setTargetId(loaded.focus?.id ?? null);
       await router.invalidate();
+      clearTimeout(postedTimer.current);
+      setPosted(t('comments', 'reply.posted'));
+      postedTimer.current = setTimeout(() => setPosted(''), 4000);
     } catch (failure) {
       // The reply bar keeps what was typed when this rejects.
       setError((current) => current ?? 'network');
@@ -153,11 +183,13 @@ export function ThreadSection({ data: loaded }: { data: ThreadData }) {
   // What the thread calls while it renders keeps its identity until the data changes, so the rows' memo holds.
   const { actions, postId } = data;
   const focusId = data.focus?.id ?? null;
-  // The action slots of one comment row; forms posted from them come back to this comment.
+  // The action slots of one comment row; forms posted from them come back to this comment. A tombstone
+  // shows nothing of its author, so it has them only for those who moderate here (who can restore it).
   const renderActions = useMemo(
     () =>
       actions &&
       ((comment: CommentView) => {
+        if ((comment.removed || comment.deleted) && !actions.viewer.moderator && !actions.viewer.admin) return null;
         const props: ContentActionProps = {
           target: { kind: 'comment', id: comment.id },
           author: comment.author,
@@ -183,9 +215,15 @@ export function ThreadSection({ data: loaded }: { data: ThreadData }) {
     [focusId, postId],
   );
 
+  // A comment's own address, for Copy link and Share, built when one is pressed (the page's origin).
+  const linkOf = useCallback((comment: CommentView) => absoluteUrl(commentPath(postId, comment.id)), [postId]);
+
+  // Reply on a comment points the docked bar at it and puts the caret there without scrolling: the bar is
+  // in view, and a stuck bar scrolled into view would carry the page to the thread's end, away from the
+  // comment being answered.
   const startReply = useCallback((comment: CommentView) => {
     setTargetId(comment.id);
-    document.querySelector<HTMLTextAreaElement>('.pb-reply textarea')?.focus();
+    document.querySelector<HTMLTextAreaElement>('.pb-reply textarea')?.focus({ preventScroll: true });
   }, []);
 
   return (
@@ -194,7 +232,7 @@ export function ThreadSection({ data: loaded }: { data: ThreadData }) {
       <link rel="stylesheet" href={commentsCss} />
       <div className="th-head">
         <Text as="h2" variant="title" size="sm" id="comments-heading" className="th-heading">
-          {t('comments', 'heading')}
+          {heading ?? t('comments', 'heading')}
         </Text>
         <form method="get" action="#comments" onSubmit={chooseSort}>
           <ButtonGroup role="group" aria-label={t('comments', 'sort.group')} attached>
@@ -206,6 +244,7 @@ export function ThreadSection({ data: loaded }: { data: ThreadData }) {
                 value={sort}
                 size="sm"
                 variant={sort === wanted ? 'primary' : 'neutral'}
+                className="th-sort"
                 aria-pressed={sort === wanted}
               >
                 {t('comments', `sort.${sort}`)}
@@ -228,6 +267,8 @@ export function ThreadSection({ data: loaded }: { data: ThreadData }) {
           maxDepth={threadDisplayDepth}
           voteDisabled={data.viewerId === null}
           onVote={vote}
+          linkOf={linkOf}
+          focusId={focusId}
           {...(data.reply === 'yes' && { onReply: startReply })}
           {...(renderActions && { renderActions })}
         />
@@ -277,7 +318,7 @@ export function ThreadSection({ data: loaded }: { data: ThreadData }) {
           {...(error && { error: t('comments', errorKey(error)) })}
         />
       ) : (
-        <Text as="p" color="muted" role="status" className="th-notice">
+        <ReplyNotice className="th-notice" icon={data.reply === 'locked' && <LockIcon />}>
           {data.reply === 'sign-in' ? (
             <>
               {t('comments', 'reply.signIn')}{' '}
@@ -290,6 +331,11 @@ export function ThreadSection({ data: loaded }: { data: ThreadData }) {
           ) : (
             t('comments', `reply.${data.reply}`)
           )}
+        </ReplyNotice>
+      )}
+      {data.reply === 'yes' && (
+        <Text role="status" className="pb-sr">
+          {posted}
         </Text>
       )}
     </section>

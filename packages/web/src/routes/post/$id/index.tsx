@@ -41,6 +41,8 @@ export const Route = createFileRoute('/post/$id/')({
       ],
     };
   },
+  // Every state the page renders (the post, a tombstone, the NSFW gate) has its own view header (post-header.tsx).
+  staticData: { viewHeader: 'own' },
   component: PostRoute,
   pendingComponent: PostPending,
   server: {

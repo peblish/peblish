@@ -46,6 +46,8 @@ export const Route = createFileRoute('/post/$id/comments/$commentId')({
       ],
     };
   },
+  // Every state the page renders (the thread, the NSFW gate) has its own view header (post-header.tsx).
+  staticData: { viewHeader: 'own' },
   component: PermalinkRoute,
 });
 

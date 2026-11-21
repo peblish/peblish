@@ -47,7 +47,16 @@
     "error.invalid": "Write something, up to 10,000 characters.",
     "error.rate.limited": "You are commenting too fast. Wait a few minutes and try again.",
     "error.generic": "Something went wrong. Try again.",
-    "error.network": "The request did not get through. Check your connection and try again."
+    "error.network": "The request did not get through. Check your connection and try again.",
+    "action.reply": "Reply",
+    "action.more": "More actions",
+    "action.menu": "Comment actions",
+    "share.share": "Share",
+    "share.copy": "Copy link",
+    "share.copied": "Link copied.",
+    "share.failed": "Copy this link:",
+    "inReplyTo": "in reply to",
+    "reply.posted": "Reply posted."
   },
   "de": {
     "heading": "Kommentare",
@@ -97,6 +106,15 @@
     "error.invalid": "Schreibe etwas, bis zu 10.000 Zeichen.",
     "error.rate.limited": "Du kommentierst zu schnell. Warte ein paar Minuten und versuche es erneut.",
     "error.generic": "Etwas ist schiefgelaufen. Versuche es erneut.",
-    "error.network": "Die Anfrage ist nicht durchgekommen. Prüfe deine Verbindung und versuche es erneut."
+    "error.network": "Die Anfrage ist nicht durchgekommen. Prüfe deine Verbindung und versuche es erneut.",
+    "action.reply": "Antworten",
+    "action.more": "Weitere Aktionen",
+    "action.menu": "Aktionen für den Kommentar",
+    "share.share": "Teilen",
+    "share.copy": "Link kopieren",
+    "share.copied": "Link kopiert.",
+    "share.failed": "Kopiere diesen Link:",
+    "inReplyTo": "Antwort an",
+    "reply.posted": "Antwort veröffentlicht."
   }
 }

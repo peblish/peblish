@@ -175,9 +175,10 @@ test.describe('a German browser', () => {
     const [, title, server] = /<time[^>]*title="([^"]*)"[^>]*>([^<]*)<\/time>/.exec((await response?.text()) ?? '') ?? [];
     await page.locator('html[data-hydrated="1"]').waitFor({ state: 'attached' });
     await expect(page.getByRole('group', { name: 'Für diesen Beitrag abstimmen' })).toBeVisible();
-    // The date is German and was formatted once, on the server: hydration printed the same text. Its title adds the time.
-    expect(server).toMatch(/^\d{1,2}\. \p{L}+\.? \d{4}$/u);
-    expect(title).toMatch(/^\d{1,2}\. \p{L}+\.? \d{4}, \d{2}:\d{2} UTC$/u);
+    // The date and time are German and were formatted once, on the server: hydration printed the same text. The
+    // meta line shows them in full, as its title does.
+    expect(server).toMatch(/^\d{1,2}\. \p{L}+\.? \d{4}, \d{2}:\d{2} UTC$/u);
+    expect(title).toBe(server);
     const time = page.locator('.post-meta time');
     await expect(time).toHaveText(server ?? '');
     await expect(time).toHaveAttribute('title', title ?? '');
