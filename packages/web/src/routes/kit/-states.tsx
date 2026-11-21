@@ -32,6 +32,7 @@ import { threadPieces } from './-thread.tsx';
 import { inboxPieces } from './-inbox.tsx';
 import { peoplePieces } from './-people.tsx';
 import { staffPieces } from './-staff-pieces.tsx';
+import { accountPieces } from './-account-pieces.tsx';
 
 /**
  * The states a state page shows as samples, in the state matrix's order ('selected' stands for current, checked
@@ -196,4 +197,5 @@ export const compositions: Readonly<Record<string, Composition>> = {
   ...inboxPieces,
   ...peoplePieces,
   ...staffPieces,
+  ...accountPieces,
 };
