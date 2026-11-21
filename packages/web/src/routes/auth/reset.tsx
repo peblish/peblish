@@ -4,7 +4,6 @@ import { PASSWORD_MAX, PASSWORD_MIN } from '@peblish/schema/identity';
 import { Button } from '@peblish/ui/components/button';
 import { Link } from '@peblish/ui/components/link';
 import { Notice } from '@peblish/ui/components/notice';
-import { Separator } from '@peblish/ui/components/separator';
 import { Text } from '@peblish/ui/components/text';
 import { createFileRoute } from '@tanstack/react-router';
 import { type } from 'arktype';
@@ -14,7 +13,7 @@ import { useRouteHydrated } from '../../shell/hydration.ts';
 import { asFormError } from './-ui/errors.ts';
 import { AuthForm, Field, Hidden } from './-ui/form.tsx';
 import { authHead, SearchText } from './-route.ts';
-import { AuthCard } from './-ui/page.tsx';
+import { AuthPage, FormActions } from './-ui/page.tsx';
 
 const Search = type({ 'error?': SearchText, 'token?': SearchText, 'sent?': SearchText });
 const Body = type({ intent: "'request'", email: 'string' }).or({ intent: "'reset'", token: 'string', password: 'string' });
@@ -22,6 +21,7 @@ const Body = type({ intent: "'request'", email: 'string' }).or({ intent: "'reset
 export const Route = createFileRoute('/auth/reset')({
   validateSearch: Search,
   head: authHead,
+  staticData: { viewHeader: 'own' },
   component: Reset,
   server: {
     handlers: {
@@ -62,11 +62,8 @@ function Reset() {
   useRouteHydrated();
   if (search.token)
     return (
-      <AuthCard>
+      <AuthPage title={t('auth', 'reset.newTitle')}>
         <AuthForm action="/auth/reset" label={t('auth', 'reset.newTitle')} error={asFormError(search.error)} className="auth-form">
-          <Text as="h1" variant="heading" size="sm">
-            {t('auth', 'reset.newTitle')}
-          </Text>
           <Hidden name="intent" value="reset" />
           <Hidden name="token" value={search.token} />
           <Field
@@ -78,29 +75,32 @@ function Reset() {
             autoComplete="new-password"
             hint={t('auth', 'reset.newHint')}
           />
-          <Button type="submit" variant="primary" className="auth-submit">
-            {t('auth', 'reset.save')}
-          </Button>
+          <FormActions>
+            <Button type="submit" variant="primary">
+              {t('auth', 'reset.save')}
+            </Button>
+          </FormActions>
         </AuthForm>
-      </AuthCard>
+      </AuthPage>
     );
   return (
-    <AuthCard>
+    <AuthPage title={t('auth', 'reset.title')}>
       <AuthForm action="/auth/reset" label={t('auth', 'reset.title')} error={asFormError(search.error)} className="auth-form">
-        <Text as="h1" variant="heading" size="sm">
-          {t('auth', 'reset.title')}
-        </Text>
         {search.sent ? <Notice tone="success">{t('auth', 'reset.sent')}</Notice> : <Text as="p">{t('auth', 'reset.intro')}</Text>}
         <Hidden name="intent" value="request" />
         <Field label={t('auth', 'reset.email')} name="email" type="email" required autoComplete="email" />
-        <Button type="submit" variant="primary" className="auth-submit">
-          {t('auth', 'reset.submit')}
-        </Button>
-        <Separator />
-        <Text as="p" size="sm">
-          <Link href="/auth/sign-in">{t('auth', 'reset.back')}</Link>
-        </Text>
+        <FormActions
+          aside={
+            <Text as="p" size="sm">
+              <Link href="/auth/sign-in">{t('auth', 'reset.back')}</Link>
+            </Text>
+          }
+        >
+          <Button type="submit" variant="primary">
+            {t('auth', 'reset.submit')}
+          </Button>
+        </FormActions>
       </AuthForm>
-    </AuthCard>
+    </AuthPage>
   );
 }

@@ -1,18 +1,44 @@
-import { Card } from '@peblish/ui/components/card';
+import { Text } from '@peblish/ui/components/text';
 import type { ReactNode } from 'react';
 import { useTranslate } from '../../../i18n/use-translate.ts';
+import { ViewHeader } from '../../../shell/view-header.tsx';
 
 /**
- * One task on its own page (sign in, sign up, two-factor, reset, verify, an invite): an outlined
- * Mux Card centred in the page, its parts stacked with Mux's group gap.
+ * The page's name as its h1, in the route's own view header (Commons puts a plain page's name in the
+ * bar, as the mock's Create post and Feddit's pages do). The route says `staticData: { viewHeader: 'own' }`.
  */
-export function AuthCard({ children, state }: { children: ReactNode; state?: string }) {
+export function PageTitle({ children }: { children: ReactNode }) {
   return (
-    <main className="auth-center" data-state={state}>
-      <Card.Root variant="outlined" padding="lg" className="auth-card">
-        {children}
-      </Card.Root>
+    <Text as="h1" variant="label" truncate className="pb-frame-vh__title">
+      {children}
+    </Text>
+  );
+}
+
+/**
+ * One task on its own page (sign in, sign up, two-factor, reset, verify, an invite), in the Commons
+ * frame's centre column: the view header with the page's name, then the form, flat on the page (the
+ * mock's form layout, `auth.css`). `state` names which of a page's outcomes is shown.
+ */
+export function AuthPage({ title, state, children }: { title: string; state?: string; children: ReactNode }) {
+  return (
+    <main className="auth-page" data-state={state}>
+      <ViewHeader title={<PageTitle>{title}</PageTitle>} />
+      <div className="pb-page auth-body">{children}</div>
     </main>
+  );
+}
+
+/**
+ * The end of a form: its other ways out at the start ("No account? Sign up"), its submit at the end, over
+ * a rule (the mock's `.a-form__actions`). On a phone the two wrap onto their own rows.
+ */
+export function FormActions({ aside, children }: { aside?: ReactNode; children?: ReactNode }) {
+  return (
+    <div className="auth-actions">
+      {aside && <div className="auth-actions__aside">{aside}</div>}
+      {children && <div className="auth-actions__main">{children}</div>}
+    </div>
   );
 }
 

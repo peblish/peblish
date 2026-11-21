@@ -1,7 +1,6 @@
 import { localHandles } from '@peblish/core/identity/handles';
 import { Button } from '@peblish/ui/components/button';
 import { Link } from '@peblish/ui/components/link';
-import { Separator } from '@peblish/ui/components/separator';
 import { Text } from '@peblish/ui/components/text';
 import { createFileRoute } from '@tanstack/react-router';
 import { createServerFn } from '@tanstack/react-start';
@@ -12,7 +11,7 @@ import { lookupInviteFor, PRIVATE_NO_STORE } from '../../server/auth.ts';
 import { useRouteHydrated } from '../../shell/hydration.ts';
 import { Hidden } from '../auth/-ui/form.tsx';
 import { authHead } from '../auth/-route.ts';
-import { AuthCard, useDate } from '../auth/-ui/page.tsx';
+import { AuthPage, FormActions, useDate } from '../auth/-ui/page.tsx';
 import { input } from '../../server/input.ts';
 
 const loadInvite = createServerFn({ method: 'GET' })
@@ -30,6 +29,7 @@ const loadInvite = createServerFn({ method: 'GET' })
 export const Route = createFileRoute('/invite/$code')({
   loader: ({ params }) => loadInvite({ data: { code: params.code } }),
   head: authHead,
+  staticData: { viewHeader: 'own' },
   component: InviteLanding,
 });
 
@@ -38,83 +38,84 @@ function InviteLanding() {
   const { host, code, invite } = Route.useLoaderData();
   const date = useDate();
   useRouteHydrated();
-  const title = (text: string) => (
-    <Text as="h1" variant="heading" size="sm">
-      {text}
-    </Text>
-  );
   if (!invite)
     return (
-      <AuthCard state="limited">
+      <AuthPage title={t('invites', 'landing.limitedTitle')} state="limited">
         <div className="auth-form">
-          {title(t('invites', 'landing.limitedTitle'))}
           <Text as="p">{t('invites', 'landing.limitedBody')}</Text>
         </div>
-      </AuthCard>
+      </AuthPage>
     );
   const inviter = invite.inviter ? `@${invite.inviter.handle}` : t('invites', 'landing.someone');
+  const titles = {
+    valid: t('invites', 'landing.validTitle', { host }),
+    expired: t('invites', 'landing.expiredTitle'),
+    exhausted: t('invites', 'landing.exhaustedTitle'),
+    revoked: t('invites', 'landing.revokedTitle'),
+    unknown: t('invites', 'landing.unknownTitle'),
+  };
   const elsewhere = (
-    <>
-      <Separator />
-      <div className="auth-links">
-        <Link href="/auth/sign-up">{t('invites', 'landing.otherCode')}</Link>
-        <Link href="/auth/sign-in">{t('invites', 'landing.signIn')}</Link>
-      </div>
-    </>
+    <FormActions
+      aside={
+        <>
+          <Link href="/auth/sign-up">{t('invites', 'landing.otherCode')}</Link>
+          <Link href="/auth/sign-in">{t('invites', 'landing.signIn')}</Link>
+        </>
+      }
+    />
   );
   return (
-    <AuthCard state={invite.status}>
+    <AuthPage title={titles[invite.status]} state={invite.status}>
       <div className="auth-form">
         {invite.status === 'valid' && (
           <>
-            {title(t('invites', 'landing.validTitle', { host }))}
             <Text as="p">
               {invite.usesLeft === 1
                 ? t('invites', 'landing.validByOne', { inviter, code })
                 : t('invites', 'landing.validBy', { inviter, code, left: invite.usesLeft })}
             </Text>
             <Text as="p">{t('invites', 'landing.validAbout', { host })}</Text>
-            <form method="get" action="/auth/sign-up" className="auth-form">
-              <Hidden name="invite" value={code} />
-              <Button type="submit" variant="primary" className="auth-submit">
-                {t('invites', 'landing.continue')}
-              </Button>
-            </form>
-            <Separator />
-            <Text as="p" size="sm">
-              <Link href="/auth/sign-in">{t('invites', 'landing.haveAccount')}</Link>
-            </Text>
+            <FormActions
+              aside={
+                <Text as="p" size="sm">
+                  <Link href="/auth/sign-in">{t('invites', 'landing.haveAccount')}</Link>
+                </Text>
+              }
+            >
+              <form method="get" action="/auth/sign-up">
+                <Hidden name="invite" value={code} />
+                <Button type="submit" variant="primary">
+                  {t('invites', 'landing.continue')}
+                </Button>
+              </form>
+            </FormActions>
           </>
         )}
         {invite.status === 'expired' && (
           <>
-            {title(t('invites', 'landing.expiredTitle'))}
             <Text as="p">{t('invites', 'landing.expiredBody', { date: invite.expiresAt ? date(invite.expiresAt) : '', inviter })}</Text>
             {elsewhere}
           </>
         )}
         {invite.status === 'exhausted' && (
           <>
-            {title(t('invites', 'landing.exhaustedTitle'))}
             <Text as="p">{t('invites', 'landing.exhaustedBody', { inviter })}</Text>
             {elsewhere}
           </>
         )}
         {invite.status === 'revoked' && (
           <>
-            {title(t('invites', 'landing.revokedTitle'))}
             <Text as="p">{t('invites', 'landing.revokedBody')}</Text>
             {elsewhere}
           </>
         )}
         {invite.status === 'unknown' && (
           <>
-            {title(t('invites', 'landing.unknownTitle'))}
             <Text as="p">{t('invites', 'landing.unknownBody')}</Text>
             {elsewhere}
           </>
         )}
       </div>
-    </AuthCard>
+    </AuthPage>
   );
 }

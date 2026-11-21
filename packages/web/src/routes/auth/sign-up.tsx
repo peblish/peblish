@@ -9,7 +9,6 @@ import { Group } from '@peblish/ui/components/group';
 import { Link } from '@peblish/ui/components/link';
 import { Notice } from '@peblish/ui/components/notice';
 import { Select } from '@peblish/ui/components/select';
-import { Separator } from '@peblish/ui/components/separator';
 import { Text } from '@peblish/ui/components/text';
 import { createFileRoute } from '@tanstack/react-router';
 import { createServerFn } from '@tanstack/react-start';
@@ -33,7 +32,7 @@ import { useRouteHydrated } from '../../shell/hydration.ts';
 import { asFormError } from './-ui/errors.ts';
 import { AuthForm, Field, rich } from './-ui/form.tsx';
 import { authHead, SearchText } from './-route.ts';
-import { AuthCard } from './-ui/page.tsx';
+import { AuthPage, FormActions } from './-ui/page.tsx';
 import { input } from '../../server/input.ts';
 import { errorLine } from '@peblish/core/error-line';
 
@@ -56,6 +55,7 @@ export const Route = createFileRoute('/auth/sign-up')({
   loaderDeps: ({ search }) => ({ invite: search.invite }),
   loader: ({ deps }) => loadSignUp({ data: deps.invite ? { invite: deps.invite } : {} }),
   head: authHead,
+  staticData: { viewHeader: 'own' },
   component: SignUp,
   server: {
     handlers: {
@@ -101,18 +101,20 @@ export const Route = createFileRoute('/auth/sign-up')({
 });
 
 function SignUp() {
+  const { t } = useTranslate();
   const data = Route.useLoaderData();
   useRouteHydrated();
-  return <AuthCard>{data.blocked ? <UnderSixteen host={data.host} /> : <SignUpForm />}</AuthCard>;
+  return (
+    <AuthPage title={t('auth', data.blocked ? 'under16.title' : 'signUp.title')}>
+      {data.blocked ? <UnderSixteen host={data.host} /> : <SignUpForm />}
+    </AuthPage>
+  );
 }
 
 function UnderSixteen({ host }: { host: string }) {
   const { t } = useTranslate();
   return (
     <div className="auth-form">
-      <Text as="h1" variant="heading" size="sm">
-        {t('auth', 'under16.title')}
-      </Text>
       <Notice tone="warning" role="alert">
         {t('auth', 'under16.body', { host })}
       </Notice>
@@ -135,9 +137,6 @@ function SignUpForm() {
   const months = Array.from({ length: 12 }, (_, month) => ({ id: String(month + 1), label: monthName.format(Date.UTC(2000, month, 1)) }));
   return (
     <AuthForm action="/auth/sign-up" label={t('auth', 'signUp.title')} error={asFormError(search.error)} className="auth-form">
-      <Text as="h1" variant="heading" size="sm">
-        {t('auth', 'signUp.title')}
-      </Text>
       <Field
         label={t('auth', 'signUp.invite')}
         name="invite"
@@ -212,13 +211,17 @@ function SignUpForm() {
           })}
         </span>
       </Checkbox>
-      <Button type="submit" variant="primary" className="auth-submit">
-        {t('auth', 'signUp.submit')}
-      </Button>
-      <Separator />
-      <Text as="p" size="sm" color="muted">
-        {t('auth', 'signUp.haveAccount')} <Link href="/auth/sign-in">{t('auth', 'signUp.signIn')}</Link>
-      </Text>
+      <FormActions
+        aside={
+          <Text as="p" size="sm" color="muted">
+            {t('auth', 'signUp.haveAccount')} <Link href="/auth/sign-in">{t('auth', 'signUp.signIn')}</Link>
+          </Text>
+        }
+      >
+        <Button type="submit" variant="primary">
+          {t('auth', 'signUp.submit')}
+        </Button>
+      </FormActions>
     </AuthForm>
   );
 }

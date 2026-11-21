@@ -1,17 +1,57 @@
 import { Input } from '@peblish/ui/components/input';
 import { Notice } from '@peblish/ui/components/notice';
 import { type } from 'arktype';
-import { Fragment, useState, type FormEvent, type FocusEvent, type InputHTMLAttributes, type ReactNode } from 'react';
+import { Link } from '@peblish/ui/components/link';
+import {
+  createContext,
+  Fragment,
+  use,
+  useId,
+  useState,
+  type FormEvent,
+  type FocusEvent,
+  type InputHTMLAttributes,
+  type ReactNode,
+} from 'react';
 import { useTranslate } from '../../../i18n/use-translate.ts';
 import { asFormError, errorKey, type FormError } from './errors.ts';
 
 const Answer = type({ 'redirect?': 'string', 'error?': 'string' });
 
 /**
+ * The field a refusal is about, by the names a form's fields may have (the first one the form has
+ * wins): sign-up's and reset's `password`, the security page's `current` and `next`. A refusal that
+ * names no field (wrong credentials, a rate limit) stays the form's alone.
+ */
+const fieldOfError: Partial<Record<FormError, readonly string[]>> = {
+  'invite.unknown': ['invite'],
+  'invite.expired': ['invite'],
+  'invite.exhausted': ['invite'],
+  'invite.revoked': ['invite'],
+  'name.invalid': ['username'],
+  'name.reserved': ['username'],
+  'name.taken': ['username'],
+  'email.invalid': ['email'],
+  'email.taken': ['email'],
+  'password.too_short': ['password', 'next'],
+  'password.too_long': ['password', 'next'],
+  'password.wrong': ['password', 'current'],
+  'two_factor.invalid_code': ['code'],
+  'confirm.mismatch': ['confirm'],
+};
+
+/**
+ * The refusal a form is showing, for its fields: the field it is about (by `fieldOfError`, never two in
+ * one form) says it too, and takes `id`, the summary's link target.
+ */
+const RefusalContext = createContext<{ error: FormError; id: string; answer: number } | undefined>(undefined);
+
+/**
  * A form that posts to its route and works without JavaScript (the server answers 303).
  * Once hydrated it posts by fetch instead (Accept: application/json), so an error keeps
  * what was typed, and follows the redirect the server names with a full navigation, since
- * these forms change who is signed in. The error shows first, as a danger Notice.
+ * these forms change who is signed in. The error shows first, as a danger Notice: the form's
+ * summary, which links to the field the refusal is about when there is one (`fieldOfError`).
  */
 export function AuthForm({
   action,
@@ -29,6 +69,10 @@ export function AuthForm({
   const { t } = useTranslate();
   const [error, setError] = useState(initial);
   const [busy, setBusy] = useState(false);
+  // Counts the answers, so a field that was typed in since one shows the next one's refusal again.
+  const [answer, setAnswer] = useState(0);
+  const refusedId = `${useId()}-refused`;
+  const tied = error !== undefined && fieldOfError[error] !== undefined;
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -36,6 +80,7 @@ export function AuthForm({
     const body = new URLSearchParams();
     for (const [name, value] of new FormData(event.currentTarget, submitter)) if (typeof value === 'string') body.append(name, value);
     setBusy(true);
+    setAnswer((count) => count + 1);
     try {
       const response = await fetch(action, { method: 'POST', body, headers: { accept: 'application/json' } });
       const answer = Answer(await response.json());
@@ -51,12 +96,13 @@ export function AuthForm({
 
   return (
     <form method="post" action={action} aria-label={label} aria-busy={busy} className={className} onSubmit={submit}>
+      {/* The summary: the refusal, as a link to the field it is about, which says it again (Field). */}
       {error && (
         <Notice tone="danger" role="alert">
-          {t('auth', errorKey(error))}
+          {tied ? <Link href={`#${refusedId}`}>{t('auth', errorKey(error))}</Link> : t('auth', errorKey(error))}
         </Notice>
       )}
-      {children}
+      <RefusalContext value={error && { error, id: refusedId, answer }}>{children}</RefusalContext>
     </form>
   );
 }
@@ -74,6 +120,9 @@ export function AuthForm({
  * on the submit button below is what blurs the field, and a message going then moves the button
  * between the press and the release, losing the click (the shared fields do the same,
  * `nextProblem` in @peblish/ui field-problem). A blur re-judges a message still showing. Without JavaScript the browser validates as it always does.
+ *
+ * A refusal from the server about this field (the form's alert, `AuthForm`) is said here too, under the
+ * field and as its description, until the field is typed in; it is not a second alert.
  */
 export function Field({
   label,
@@ -88,6 +137,11 @@ export function Field({
 }: { label: string; hint?: ReactNode; aside?: ReactNode } & InputHTMLAttributes<HTMLInputElement>) {
   const { t } = useTranslate();
   const [problem, setProblem] = useState<string>();
+  const refusal = use(RefusalContext);
+  const refused = refusal && typeof input.name === 'string' && fieldOfError[refusal.error]?.includes(input.name) ? refusal : undefined;
+  // The answer whose refusal this field was typed in after: it shows no more until the next answer.
+  const [typedAfter, setTypedAfter] = useState<number>();
+  const refusedMessage = refused && typedAfter !== refused.answer ? t('auth', errorKey(refused.error)) : undefined;
   const text = (given: typeof value) => (given === undefined ? undefined : String(given));
   // The message for the input's own constraints. A custom error is left out: React Aria sets one
   // itself while the field is marked invalid (below), so it would keep a corrected field wrong.
@@ -103,11 +157,13 @@ export function Field({
   return (
     <Input.Root
       className="auth-field"
+      // The form's alert links here.
+      id={refused ? refused.id : input.id}
       value={text(value)}
       defaultValue={text(defaultValue)}
       required={required}
       // The message and the invalid flag come from the same state, so they go together.
-      invalid={problem !== undefined}
+      invalid={problem !== undefined || refusedMessage !== undefined}
       disabled={disabled}
       readOnly={readOnly}
     >
@@ -123,6 +179,7 @@ export function Field({
         }}
         onInput={(event) => {
           input.onInput?.(event);
+          if (refused) setTypedAfter(refused.answer);
           if (problem !== undefined && explain(event.currentTarget) === undefined) setProblem(undefined);
         }}
         onBlur={(event: FocusEvent<HTMLInputElement>) => {
@@ -131,7 +188,11 @@ export function Field({
         }}
       />
       {hint && <Input.Description>{hint}</Input.Description>}
-      {problem !== undefined && <Input.Error role="alert">{problem}</Input.Error>}
+      {problem !== undefined ? (
+        <Input.Error role="alert">{problem}</Input.Error>
+      ) : (
+        refusedMessage !== undefined && <Input.Error>{refusedMessage}</Input.Error>
+      )}
     </Input.Root>
   );
 }
