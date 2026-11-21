@@ -64,10 +64,13 @@ async function sortBy(page: Page, sort: 'Hot' | 'New' | 'Old' | 'Top', period?: 
   await page.getByRole('menuitem', { name: period, exact: true }).click();
 }
 
-/** Opens the header's View menu and picks a density. */
-async function view(page: Page, density: 'Card' | 'Classic' | 'Compact') {
+/** Opens the header's View menu and picks a density; `saved` waits until the choice is in the cookie. */
+async function view(page: Page, density: 'Card' | 'Classic' | 'Compact', { saved = false } = {}) {
+  const stored =
+    saved && page.waitForResponse((response) => response.request().method() === 'POST' && response.url().includes('/_serverFn/'));
   await page.getByRole('button', { name: /^View: / }).click();
   await page.getByRole('menuitem', { name: density, exact: true }).click();
+  await stored;
 }
 
 /** Scrolls to the end of the list until `count` rows are there. */
@@ -141,7 +144,7 @@ test.describe('anyone', () => {
     const first = page.locator('.feed-list article').first();
     await expect(first).toHaveAttribute('data-density', 'classic');
     await expect(page.getByRole('button', { name: 'View: Classic' })).toBeVisible();
-    await view(page, 'Compact');
+    await view(page, 'Compact', { saved: true });
     await expect(first).toHaveAttribute('data-density', 'compact');
     // Reloaded, the menu opens only once the page has hydrated: until then its trigger is disabled.
     await page.reload();
@@ -150,7 +153,7 @@ test.describe('anyone', () => {
     // A second selection persists as well, not only the first.
     await view(page, 'Card');
     await expect(page.locator('.feed-list article').first()).toHaveAttribute('data-density', 'card');
-    await view(page, 'Classic');
+    await view(page, 'Classic', { saved: true });
     await expect(page.locator('.feed-list article').first()).toHaveAttribute('data-density', 'classic');
     await page.reload();
     await page.locator('html[data-hydrated="1"]').waitFor({ state: 'attached' });
@@ -445,6 +448,29 @@ test.describe('a viewer', () => {
     await expect(page.locator('.feed-list > li')).toHaveCount(20);
   });
 
+  test('a vote cast in a later batch is still there after Back', async ({ page }) => {
+    await signedIn(page, seed.viewer.name);
+    await gotoHydrated(page, '/?sort=new');
+    await loadUntil(page, 40);
+    const card = page.locator('.feed-list article', { hasText: `Followed ${seed.suffix} 30` });
+    const up = card.getByRole('button', { name: 'Upvote' });
+    const score = Number(await card.locator('.pb-vote__score').textContent());
+    const saved = page.waitForResponse((response) => response.request().method() === 'POST' && response.url().includes('/_serverFn/'));
+    await up.click();
+    await saved;
+    await card.locator('.pb-post__title a').click();
+    await page.waitForURL(/\/post\//);
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText(`Followed ${seed.suffix} 30`);
+    await page.goBack();
+    await page.waitForURL('**/?sort=new');
+    await expect(up).toHaveAttribute('aria-pressed', 'true');
+    await expect(card.locator('.pb-vote__score')).toHaveText(String(score + 1));
+    // Taken back, so the next run starts from the same score.
+    const unsaved = page.waitForResponse((response) => response.request().method() === 'POST' && response.url().includes('/_serverFn/'));
+    await up.click();
+    await unsaved;
+  });
+
   test('a batch that fails offers Retry; focus waits, then goes to the first new post', async ({ page }) => {
     await signedIn(page, seed.viewer.name);
     await gotoHydrated(page, '/?sort=new');
@@ -540,13 +566,28 @@ test.describe('a viewer', () => {
     await expect(card.getByRole('status')).toHaveText('');
   });
 
+  test('on a narrow phone whose bar shows the site name, one menu holds the sorts and the views', async ({ page }) => {
+    await page.setViewportSize({ width: 320, height: 700 });
+    await gotoHydrated(page, '/all');
+    await expect(page.getByRole('button', { name: /^View: / })).toHaveCount(0);
+    const menu = page.getByRole('button', { name: 'Sort: Hot; View: Classic' });
+    const box = (await menu.boundingBox())!;
+    expect(Math.min(box.width, box.height)).toBeGreaterThanOrEqual(44);
+    await menu.click();
+    await page.getByRole('menuitem', { name: 'Compact', exact: true }).click();
+    await expect(page.locator('.feed-list article').first()).toHaveAttribute('data-density', 'compact');
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(320);
+  });
+
   test('on a phone the header and row controls are 44px targets', async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     await signedIn(page, seed.viewer.name);
     await gotoHydrated(page, '/?sort=new');
+    // The header's menus as the bar shows them: Sort and View, or Sort holding the views beside a site name.
+    const menus = page.locator('.feed-menus button:visible');
+    expect(await menus.count()).toBeGreaterThan(0);
     const controls = [
-      page.getByRole('button', { name: /^Sort: / }),
-      page.getByRole('button', { name: /^View: / }),
+      ...(await menus.all()),
       page
         .locator('.feed-list article')
         .first()
@@ -554,7 +595,7 @@ test.describe('a viewer', () => {
     ];
     for (const control of controls) {
       const box = (await control.boundingBox())!;
-      expect(Math.min(box.width, box.height), await control.getAttribute('aria-label')).toBeGreaterThanOrEqual(44);
+      expect(Math.min(box.width, box.height), (await control.getAttribute('aria-label')) ?? '').toBeGreaterThanOrEqual(44);
     }
     await expect(page.getByRole('heading', { level: 1 })).toBeInViewport();
   });
