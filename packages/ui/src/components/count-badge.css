@@ -1,0 +1,19 @@
+@layer app {
+  /* CountBadge: the brand action colours, a pill at least as wide as it is tall. */
+  .pb-count {
+    box-sizing: border-box;
+    display: inline-grid;
+    place-items: center;
+    min-inline-size: calc(var(--muxui-semantic-typography-badge-size) * 1.6);
+    block-size: calc(var(--muxui-semantic-typography-badge-size) * 1.6);
+    padding-inline: var(--muxui-semantic-layout-dense-gap);
+    border-radius: var(--muxui-semantic-shape-pill-radius);
+    background: var(--muxui-semantic-action-background);
+    color: var(--muxui-semantic-action-foreground);
+    font-family: var(--muxui-semantic-typography-label-font-family);
+    font-size: var(--muxui-semantic-typography-badge-size);
+    font-weight: var(--muxui-semantic-typography-label-weight);
+    font-variant-numeric: tabular-nums;
+    line-height: var(--muxui-semantic-typography-compact-line-height);
+  }
+}

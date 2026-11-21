@@ -23,3 +23,9 @@ test('native attributes reach the dl', () => {
   const html = renderToStaticMarkup(<FactList id="f" aria-describedby="note" items={[{ label: 'Joined', value: '3 May' }]} />);
   expect(html).toMatch(/^<dl id="f" aria-describedby="note" class="pb-facts pb-facts--rows">/);
 });
+
+test('a rail panel sets its facts a step smaller', () => {
+  const html = renderToStaticMarkup(<FactList size="xs" items={[{ label: 'Created', value: '3 May' }]} />);
+  expect(html).toContain('muxui-text--label-xs');
+  expect(html).toContain('muxui-text--body-xs');
+});
