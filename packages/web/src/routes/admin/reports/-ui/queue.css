@@ -1,7 +1,6 @@
 /* The report queue (lane REP): tabs, the filter, the table of groups in an outlined card. Layout only; the look is Mux UI's. */
 @layer app {
   .rq-page {
-    max-width: 1180px;
     display: flex;
     flex-direction: column;
     gap: var(--muxui-semantic-layout-content-gap);

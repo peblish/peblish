@@ -3,7 +3,6 @@ import { mediaOverview, type MediaOverview } from '@peblish/core/mediascan/overv
 import { addToBlocklist, blockCategories, removeFromBlocklist } from '@peblish/core/mediascan/list';
 import { confirmQuarantined, holdQuarantined, releaseQuarantined } from '@peblish/core/mediascan/review';
 import { Notice as NoticeBox } from '@peblish/ui/components/notice';
-import { Text } from '@peblish/ui/components/text';
 import { createFileRoute, redirect } from '@tanstack/react-router';
 import { createServerFn } from '@tanstack/react-start';
 import { setResponseStatus } from '@tanstack/react-start/server';
@@ -19,6 +18,7 @@ import { accessOf } from '../settings/-access.ts';
 import { Evidence, Failed, Hashes, Review, sections, Status, StatusStrip, SubNav, Warning, type Section } from './-ui/sections.tsx';
 import mediaCss from './-ui/media.css?url';
 import { headTitle } from '../../../shell/title.ts';
+import { AdminPage, ownHeader } from '../-page.tsx';
 
 // The admin Media tab (R2b pick media-split): scanner status, the quarantine review with one
 // shared decision control, the blocked-image list, failed scans, evidence manifests. Admins only
@@ -98,6 +98,7 @@ export const Route = createFileRoute('/admin/media/')({
   validateSearch: Search,
   loader: () => loadMedia(),
   head: (context) => ({ meta: headTitle(context, 'mediascan', 'media.title'), links: [{ rel: 'stylesheet', href: mediaCss }] }),
+  staticData: ownHeader,
   component: MediaTab,
   server: {
     handlers: {
@@ -183,10 +184,7 @@ function MediaTab() {
   useRouteHydrated();
   if (data.access !== 'ok')
     return (
-      <main className="pb-page media-admin">
-        <Text as="h1" variant="heading" size="sm">
-          {t('mediascan', 'media.title')}
-        </Text>
+      <AdminPage title={t('mediascan', 'media.title')} className="media-admin">
         <Denial
           access={data.access}
           copy={{
@@ -195,16 +193,13 @@ function MediaTab() {
             notAdmin: t('mediascan', 'media.notAdmin'),
           }}
         />
-      </main>
+      </AdminPage>
     );
   const { overview, notice } = data;
   const section: Section = sections.find((key) => key === search.section) ?? 'review';
   const error = asErrorCode(search.error);
   return (
-    <main className="pb-page media-admin">
-      <Text as="h1" variant="heading" size="sm">
-        {t('mediascan', 'media.title')}
-      </Text>
+    <AdminPage title={t('mediascan', 'media.title')} className="media-admin">
       <Warning scanner={overview.scanner} />
       <StatusStrip overview={overview} />
       {notice && <NoticeBanner notice={notice} />}
@@ -215,7 +210,7 @@ function MediaTab() {
       )}
       <SubNav section={section} counts={overview.counts} />
       <Sections section={section} overview={overview} item={search.item} value={search.value} manifest={search.manifest} />
-    </main>
+    </AdminPage>
   );
 }
 

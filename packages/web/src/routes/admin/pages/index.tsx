@@ -21,7 +21,8 @@ import { SearchText } from '../../auth/-route.ts';
 import { accessOf } from '../settings/-access.ts';
 import { StatusCell } from './-status.tsx';
 import { adminHead } from '../settings/-head.ts';
-import { AccessNotice, AdminTitle } from '../settings/-ui.tsx';
+import { AdminPage, ownHeader } from '../-page.tsx';
+import { AccessNotice } from '../settings/-ui.tsx';
 import { shippedPages } from './-bundled.ts';
 
 // /admin/pages (R2 pick admin-tabs, its Pages tab): the ten pages in English and German with
@@ -53,6 +54,7 @@ export const Route = createFileRoute('/admin/pages/')({
   validateSearch: Search,
   loader: () => loadPages(),
   head: adminHead('pages.title'),
+  staticData: ownHeader,
   component: Pages,
   server: {
     handlers: {
@@ -87,8 +89,7 @@ function Pages() {
     </form>
   );
   return (
-    <main className="pb-page adm-page">
-      <AdminTitle>{t('admin', 'pages.title')}</AdminTitle>
+    <AdminPage title={t('admin', 'pages.title')} className="adm-page">
       {added !== null && Number.isInteger(added) && (
         <Notice role="status" tone="success">
           {added === 0 ? t('admin', 'pages.seeded.none') : translatePlural(locale, 'admin', 'pages.seeded', added)}
@@ -109,7 +110,7 @@ function Pages() {
           <PagesTable rows={rows} />
         </>
       )}
-    </main>
+    </AdminPage>
   );
 }
 

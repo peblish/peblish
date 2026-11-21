@@ -2,10 +2,13 @@ import { removeFromReportAs, resolveReportsAs, routeReportsAs } from '@peblish/c
 import type { ReportTarget } from '@peblish/core/reports/types';
 import { Uuid } from '@peblish/schema/ids';
 import { Button } from '@peblish/ui/components/button';
+import { Handle } from '@peblish/ui/components/handle';
 import { EmptyState } from '@peblish/ui/components/empty-state';
 import { LinkTabs } from '@peblish/ui/components/link-tabs';
 import { Notice } from '@peblish/ui/components/notice';
 import { Pager } from '@peblish/ui/components/pager';
+import { RailLinks } from '@peblish/ui/components/rail-links';
+import { RailPanel } from '@peblish/ui/components/rail-panel';
 import { Select } from '@peblish/ui/components/select';
 import { Text } from '@peblish/ui/components/text';
 import { createFileRoute, redirect } from '@tanstack/react-router';
@@ -13,6 +16,7 @@ import { type } from 'arktype';
 import { useTranslate } from '../../../i18n/use-translate.ts';
 import { forbidden, formSession, principalOf, readForm, sameOrigin } from '../../../server/auth.ts';
 import { useRouteHydrated } from '../../../shell/hydration.ts';
+import { Rail } from '../../../shell/rail.tsx';
 import { SearchText } from '../../auth/-route.ts';
 import { answer } from '../../report/-form.ts';
 import { asReportError, errorKey } from '../../report/-ui/errors.ts';
@@ -21,6 +25,7 @@ import { queueHref, type QueueView } from './-href.ts';
 import { QueueTable } from './-ui/queue.tsx';
 import queueCss from './-ui/queue.css?url';
 import { headTitle } from '../../../shell/title.ts';
+import { AdminPage, ownHeader } from '../-page.tsx';
 
 // /admin/reports: the report queue, open to moderators (their communities' groups, and their
 // own escalations read only) and to admins (everything). The admin layout draws the tab bar and
@@ -68,6 +73,7 @@ export const Route = createFileRoute('/admin/reports/')({
     return data;
   },
   head: (context) => ({ meta: headTitle(context, 'reports', 'queue.title'), links: [{ rel: 'stylesheet', href: queueCss }] }),
+  staticData: ownHeader,
   component: Queue,
   server: {
     handlers: {
@@ -109,14 +115,11 @@ function Queue() {
   const search = Route.useSearch();
   if (data.access !== 'ok') {
     return (
-      <main className="pb-page rq-page">
-        <Text as="h1" variant="heading" size="sm">
-          {t('reports', 'queue.title')}
-        </Text>
+      <AdminPage title={t('reports', 'queue.title')} className="rq-page">
         <Notice tone="danger" role="alert">
           {t('reports', 'queue.notStaff')}
         </Notice>
-      </main>
+      </AdminPage>
     );
   }
   const view: QueueView = {
@@ -134,60 +137,76 @@ function Queue() {
     : (['open', 'escalated', 'resolved', 'dismissed'] as const);
   const error = asReportError(search.error);
   return (
-    <main className="pb-page rq-page">
-      <Text as="h1" variant="heading" size="sm">
-        {t('reports', 'queue.title')}
-      </Text>
-      <LinkTabs
-        aria-label={t('reports', 'queue.tabs')}
-        items={tabs.map((tab) => ({
-          to: queueHref(view, { tab, cursor: null, show: null, details: null, remove: null }),
-          label: t('reports', `queue.tab.${tab}`),
-          active: tab === data.tab,
-        }))}
-      />
-      <form method="get" action="/admin/reports" className="rq-filter">
-        <input type="hidden" name="tab" value={data.tab} />
-        <Select
-          name="community"
-          size="sm"
-          label={t('reports', 'queue.community')}
-          defaultValue={data.community ?? ''}
-          items={[
-            { id: '', label: t('reports', 'queue.community.all') },
-            ...data.communities.map((community) => ({ id: community.id, label: `!${community.handle}` })),
-          ]}
+    <>
+      <AdminPage title={t('reports', 'queue.title')} className="rq-page" root>
+        <Text as="p" size="sm" color="muted">
+          {t('reports', data.admin ? 'queue.intro.admin' : 'queue.intro.moderator')}
+        </Text>
+        <LinkTabs
+          aria-label={t('reports', 'queue.tabs')}
+          items={tabs.map((tab) => ({
+            to: queueHref(view, { tab, cursor: null, show: null, details: null, remove: null }),
+            label: t('reports', `queue.tab.${tab}`),
+            active: tab === data.tab,
+          }))}
         />
-        <Select
-          name="sort"
-          size="sm"
-          label={t('reports', 'queue.sort')}
-          defaultValue={data.sort}
-          items={(['oldest', 'newest', 'most'] as const).map((sort) => ({ id: sort, label: t('reports', `queue.sort.${sort}`) }))}
-        />
-        <Button type="submit" variant="neutral" size="sm">
-          {t('reports', 'queue.apply')}
-        </Button>
-      </form>
-      {error && (
-        <Notice tone="danger" role="alert">
-          {t('reports', errorKey(error))}
-        </Notice>
+        <form method="get" action="/admin/reports" className="rq-filter">
+          <input type="hidden" name="tab" value={data.tab} />
+          <Select
+            name="community"
+            size="sm"
+            label={t('reports', 'queue.community')}
+            defaultValue={data.community ?? ''}
+            items={[
+              { id: '', label: t('reports', 'queue.community.all') },
+              ...data.communities.map((community) => ({ id: community.id, label: `!${community.handle}` })),
+            ]}
+          />
+          <Select
+            name="sort"
+            size="sm"
+            label={t('reports', 'queue.sort')}
+            defaultValue={data.sort}
+            items={(['oldest', 'newest', 'most'] as const).map((sort) => ({ id: sort, label: t('reports', `queue.sort.${sort}`) }))}
+          />
+          <Button type="submit" variant="neutral" size="sm">
+            {t('reports', 'queue.apply')}
+          </Button>
+        </form>
+        {error && (
+          <Notice tone="danger" role="alert">
+            {t('reports', errorKey(error))}
+          </Notice>
+        )}
+        {data.groups.length === 0 ? (
+          <EmptyState title={t('reports', data.tab === 'open' ? 'queue.empty.open' : 'queue.empty.other')} />
+        ) : (
+          <QueueTable groups={data.groups} tab={data.tab} admin={data.admin} view={view} now={data.now} />
+        )}
+        {data.next && (
+          <Pager
+            aria-label={t('reports', 'queue.pages')}
+            next={{
+              href: queueHref(view, { cursor: data.next, show: null, details: null, remove: null }),
+              label: t('reports', 'queue.more'),
+            }}
+          />
+        )}
+      </AdminPage>
+      {data.communities.length > 0 && (
+        <Rail label={t('shell', 'rail.label')}>
+          <RailPanel title={t('reports', data.admin ? 'queue.rail.admin' : 'queue.rail.moderator')}>
+            <RailLinks
+              items={data.communities.map((community) => ({
+                key: community.id,
+                href: queueHref(view, { community: community.id, cursor: null, show: null, details: null, remove: null }),
+                label: <Handle prefix="!" handle={community.handle} />,
+                current: community.id === data.community,
+              }))}
+            />
+          </RailPanel>
+        </Rail>
       )}
-      {data.groups.length === 0 ? (
-        <EmptyState title={t('reports', data.tab === 'open' ? 'queue.empty.open' : 'queue.empty.other')} />
-      ) : (
-        <QueueTable groups={data.groups} tab={data.tab} admin={data.admin} view={view} now={data.now} />
-      )}
-      {data.next && (
-        <Pager
-          aria-label={t('reports', 'queue.pages')}
-          next={{
-            href: queueHref(view, { cursor: data.next, show: null, details: null, remove: null }),
-            label: t('reports', 'queue.more'),
-          }}
-        />
-      )}
-    </main>
+    </>
   );
 }

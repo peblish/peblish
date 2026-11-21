@@ -27,6 +27,7 @@ import { changes, hostFrom, Body } from './-act.ts';
 import { loadPeers } from './-load.ts';
 import peersCss from './-ui/peers.css?url';
 import { headTitle } from '../../../shell/title.ts';
+import { AdminPage, ownHeader } from '../-page.tsx';
 
 // /admin/peers: the Peers tab (R2 pick admin-tabs). Every instance we know of, with what this
 // server does about it: its media (quarantined until approved, approved, purged), its inbox
@@ -47,6 +48,7 @@ export const Route = createFileRoute('/admin/peers/')({
   validateSearch: Search,
   loader: () => loadPeers(),
   head: (context) => ({ meta: headTitle(context, 'peers', 'title'), links: [{ rel: 'stylesheet', href: peersCss }] }),
+  staticData: ownHeader,
   component: Peers,
   server: {
     middleware: [privateResponses],
@@ -190,10 +192,7 @@ function Peers() {
   useRouteHydrated();
   if (data.access !== 'ok')
     return (
-      <main className="pb-page peers-page">
-        <Text as="h1" variant="heading" size="sm">
-          {t('peers', 'title')}
-        </Text>
+      <AdminPage title={t('peers', 'title')} className="peers-page">
         <Denial
           access={data.access}
           copy={{
@@ -202,14 +201,11 @@ function Peers() {
             notAdmin: t('peers', 'notAdmin'),
           }}
         />
-      </main>
+      </AdminPage>
     );
   const selected = chosen ? data.peers.find((peer) => peer.domain === chosen) : undefined;
   return (
-    <main className="pb-page peers-page">
-      <Text as="h1" variant="heading" size="sm">
-        {t('peers', 'title')}
-      </Text>
+    <AdminPage title={t('peers', 'title')} className="peers-page">
       <Text as="p" color="muted">
         {t('peers', 'intro')}
       </Text>
@@ -266,6 +262,6 @@ function Peers() {
         {t('peers', 'trusted', { hosts: data.trusted.length > 0 ? data.trusted.join(', ') : t('peers', 'none') })}{' '}
         <Link href={adminPaths.settings}>{t('peers', 'settingsLink')}</Link>
       </Text>
-    </main>
+    </AdminPage>
   );
 }
