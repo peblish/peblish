@@ -162,3 +162,6 @@ export function MarkIcon({ mark, className }: { mark: BrandPack['mark']; classNa
 
 // The community page and the directory (community-directory lane): a pending join, and the directory's Cards view.
 export { HourglassIcon, LayoutGridIcon } from './icons-community.tsx';
+// The comment tree (comment-thread.tsx): the mark before the name a deep reply answers.
+import { CornerDownRight } from 'lucide-react';
+export const CornerDownRightIcon = icon(CornerDownRight);

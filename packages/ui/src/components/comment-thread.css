@@ -1,9 +1,12 @@
-/* The comment tree. Mux UI has no thread component: the parts are Mux's (IconButton, Link, Text,
-   Button), and the indent and thread lines are layout drawn with Mux border tokens. */
+/* The comment tree (Commons). Mux UI has no thread component: the parts are Mux's (IconButton, Link, Text,
+   Button, Menu), and the indent and the thread lines (the spines) are layout drawn with Mux tokens. */
 @layer app {
   .pb-thread {
-    /* The fold button's width: the column the thread line hangs from and the body indents past. */
+    /* The fold button's width: the column the thread line hangs from and the text indents past. */
     --pb-comment-rail: var(--muxui-semantic-control-size-sm);
+    /* The spine: a 2px line at 3:1 or more against the page in both schemes (a graphic that shows the
+       structure, and the fold button's pointer target). */
+    --pb-comment-spine: var(--muxui-semantic-border-strong);
     min-inline-size: 0;
   }
 
@@ -23,10 +26,12 @@
     flex-wrap: wrap;
     align-items: center;
     gap: 0 var(--muxui-semantic-layout-tight-gap);
+    min-block-size: var(--pb-comment-rail);
     font-size: var(--muxui-semantic-typography-text-s-font-size);
   }
 
   .pb-comment__fold {
+    flex: none;
     color: var(--muxui-semantic-content-muted);
   }
 
@@ -46,13 +51,46 @@
     inline-size: calc(var(--muxui-semantic-layout-tight-gap) * 2);
   }
 
+  .pb-comment__by,
+  .pb-comment__to {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--muxui-semantic-layout-dense-gap);
+    min-inline-size: 0;
+  }
+
   .pb-comment__author {
     font-weight: var(--muxui-semantic-typography-label-weight);
   }
 
+  /* The head's links are 24px targets (WCAG 2.2, 2.5.8), as the post rows' meta links are; a long handle still wraps inside its link. */
+  .pb-comment__head .muxui-link {
+    display: inline-flex;
+    align-items: center;
+    max-inline-size: 100%;
+    min-inline-size: 24px;
+    min-block-size: 24px;
+    line-height: inherit;
+  }
+
+  /* The comment a permalink page starts from, in the selection's tint. */
+  .pb-comment[data-focus] > .pb-comment__head,
+  .pb-comment[data-focus] > .pb-comment__main > .pb-comment__text {
+    border-radius: var(--muxui-semantic-control-radius);
+    background: var(--muxui-semantic-selection-background);
+  }
+
+  .pb-comment__to svg {
+    flex: none;
+  }
+
+  .pb-comment__tombstone,
+  .pb-comment__note {
+    font-style: italic;
+  }
+
   .pb-comment__text,
   .pb-comment__note,
-  .pb-comment__stub,
   .pb-comment__actions {
     margin-inline-start: calc(var(--pb-comment-rail) + var(--muxui-semantic-layout-tight-gap));
   }
@@ -62,44 +100,166 @@
     margin-block: 0;
   }
 
-  .pb-comment__note {
-    font-style: italic;
-  }
-
-  .pb-comment__stub,
   .pb-comment__actions {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
     gap: 0 var(--muxui-semantic-layout-dense-gap);
+    margin-block-start: var(--muxui-semantic-layout-dense-gap);
+    color: var(--muxui-semantic-content-muted);
   }
 
-  .pb-comment__stub {
-    gap: 0 var(--muxui-semantic-layout-control-gap);
+  /* A tombstone's row holds only what the page adds for a moderator (restore); for anyone else it is empty. */
+  .pb-comment__actions:empty {
+    display: none;
   }
 
-  /* The levels under a comment sit in a column with a line down its start edge, under the fold button. */
+  .pb-comment__reply {
+    gap: var(--muxui-semantic-layout-dense-gap);
+  }
+
+  /* What Copy link did, after the comment's actions; a link the clipboard refused stays to copy by hand. */
+  .pb-comment__notice {
+    flex-basis: 100%;
+  }
+
+  .pb-comment__link {
+    overflow-wrap: anywhere;
+    user-select: all;
+  }
+
+  .pb-comment__menu-icon {
+    flex: none;
+    margin-inline-end: var(--muxui-semantic-layout-tight-gap);
+  }
+
+  /* The levels under a comment sit in a column with the spine down its start edge, under the fold button. */
   .pb-comment__kids {
     margin-block-start: var(--muxui-semantic-layout-tight-gap);
     margin-inline-start: calc(var(--pb-comment-rail) / 2);
     padding-inline-start: var(--muxui-semantic-layout-tight-gap);
-    border-inline-start: 1px solid var(--muxui-semantic-border-subtle);
+    border-inline-start: 2px solid var(--pb-comment-spine);
   }
 
+  /* Pointing at the spine says what a press folds: the line darkens and the branch takes the hover fill. */
   .pb-comment[data-lined]:has(> .pb-comment__head > .pb-comment__fold:hover)
     > .pb-comment__main
     > .pb-comment__kids:not(.pb-comment__more) {
-    border-inline-start-color: var(--muxui-semantic-border-strong);
+    border-inline-start-color: var(--muxui-semantic-content-default);
+    background: var(--muxui-semantic-surface-hover);
   }
 
   .pb-comment__more {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--muxui-semantic-layout-dense-gap) var(--muxui-semantic-layout-tight-gap);
     padding-block: var(--muxui-semantic-layout-tight-gap);
+    border-inline-start-color: transparent;
     font-size: var(--muxui-semantic-typography-text-s-font-size);
   }
 
+  /* "Continue this thread": a pill, as the mock's, that stays a link. */
   .pb-comment__continue {
+    box-sizing: border-box;
     display: inline-flex;
     align-items: center;
     gap: var(--muxui-semantic-layout-dense-gap);
+    min-block-size: var(--muxui-semantic-control-size-sm);
+    padding-inline: var(--muxui-semantic-layout-inset-small);
+    border-radius: var(--muxui-semantic-shape-pill-radius);
+    background: var(--muxui-semantic-action-neutral-background);
+    color: var(--muxui-semantic-content-default);
+    font-weight: var(--muxui-semantic-typography-control-weight);
+    text-decoration: none;
+  }
+
+  .pb-comment__continue:hover {
+    background: var(--muxui-semantic-action-neutral-background-hover);
+    text-decoration: none;
+  }
+
+  /* A comment folded for its low score is drawn and hidden here only while scripts run: without them its
+     fold button cannot open it, so it reads as open. */
+  @media (scripting: enabled) {
+    .pb-comment[data-soft] > .pb-comment__main {
+      display: none;
+    }
+  }
+
+  /* Without scripts the fold, Reply (which chooses the comment the docked bar answers) and the comment
+     menu cannot work: they give way, the fold button keeping its place so the levels stay aligned. */
+  @media (scripting: none) {
+    .pb-comment__fold {
+      visibility: hidden;
+    }
+
+    .pb-comment[data-soft] > .pb-comment__head > .pb-comment__summary,
+    .pb-comment__reply,
+    .pb-comment__menu {
+      display: none;
+    }
+  }
+
+  /* The phone: 44px targets, a narrower text indent, and past the third level the replies stop stepping
+     in (each names the comment it answers instead), so a deep branch keeps a readable measure. */
+  @media (max-width: 859.98px) {
+    .pb-thread {
+      --pb-comment-rail: calc(var(--muxui-semantic-control-size-lg) + 2 * var(--muxui-semantic-layout-dense-gap));
+    }
+
+    .pb-comment__fold,
+    .pb-comment__reply,
+    .pb-comment__menu {
+      min-inline-size: var(--pb-comment-rail);
+      min-block-size: var(--pb-comment-rail);
+    }
+
+    .pb-comment__continue {
+      min-block-size: var(--pb-comment-rail);
+    }
+
+    /* The head's links and the page's own actions in a row (report, block, moderate) are 44px targets too. */
+    .pb-comment__head .muxui-link,
+    .pb-comment__actions :is(.muxui-link, .muxui-button) {
+      min-inline-size: var(--pb-comment-rail);
+      min-block-size: var(--pb-comment-rail);
+    }
+
+    .pb-comment__text,
+    .pb-comment__note,
+    .pb-comment__actions {
+      margin-inline-start: calc(var(--pb-comment-rail) / 2 + var(--muxui-semantic-layout-tight-gap));
+    }
+
+    .pb-comment:is(
+        [data-level='3'],
+        [data-level='4'],
+        [data-level='5'],
+        [data-level='6'],
+        [data-level='7'],
+        [data-level='8'],
+        [data-level='9']
+      )
+      > .pb-comment__main
+      > .pb-comment__kids {
+      margin-inline-start: 0;
+      padding-inline-start: 0;
+      border-inline-start-width: 0;
+    }
+
+    .pb-comment:is(
+        [data-level='3'],
+        [data-level='4'],
+        [data-level='5'],
+        [data-level='6'],
+        [data-level='7'],
+        [data-level='8'],
+        [data-level='9']
+      )[data-lined]
+      > .pb-comment__head
+      > .pb-comment__fold::after {
+      content: none;
+    }
   }
 }

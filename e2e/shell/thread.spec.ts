@@ -37,9 +37,10 @@ test('Tab walks the controls in reading order', async ({ page }) => {
       await page.evaluate(() => document.activeElement?.getAttribute('aria-label') ?? document.activeElement?.textContent?.trim() ?? ''),
     );
   }
-  // The author link, the vote arrows, reply and share, then the next comment's fold button.
-  expect(order.slice(0, 5)).toEqual(['@jun@lemmy.world', 'Upvote', 'Downvote', 'reply', 'share']);
-  expect(order[5]).toMatch(/^Collapse comment/);
+  // The author link, the vote arrows and reply, then the next comment's fold button. (Share is in the comment
+  // menu, which needs the tree's own labels: e2e/comments/thread.spec.ts.)
+  expect(order.slice(0, 4)).toEqual(['@jun@lemmy.world', 'Upvote', 'Downvote', 'reply']);
+  expect(order[4]).toMatch(/^Collapse comment/);
 });
 
 test('a low-score comment starts folded, a removed one shows a note, and badges name who is who', async ({ page }) => {
@@ -47,10 +48,11 @@ test('a low-score comment starts folded, a removed one shows a note, and badges 
   const thread = page.getByTestId('kit-thread');
   await expect(thread.getByText('Collapsed, score -9 is below -5. 1 reply hidden.')).toBeVisible();
   await expect(thread.getByText('Buy followers cheap.')).toBeHidden();
-  await thread.getByRole('button', { name: 'show' }).click();
+  await thread.getByRole('button', { name: 'Expand comment and 1 reply' }).click();
   await expect(thread.getByText('Buy followers cheap.')).toBeVisible();
   await expect(thread.getByText('[removed by a moderator]')).toBeVisible();
-  await expect(thread.getByText('[deleted]')).toHaveCount(2);
+  // A tombstone says what it was once, in place of its author.
+  await expect(thread.getByText('[deleted]')).toHaveCount(1);
   await expect(thread.locator('.pb-badge--op').first()).toHaveText('OP');
   await expect(thread.locator('.pb-badge--moderator').first()).toHaveText('MOD');
 });
