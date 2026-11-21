@@ -29,6 +29,7 @@
     display: inline-flex;
     align-items: center;
     max-inline-size: 100%;
+    min-inline-size: 24px;
     min-block-size: 24px;
     line-height: inherit;
   }
