@@ -1,6 +1,6 @@
 @layer app {
-  /* Skeleton shapes (shape.tsx): static neutral fills sized like what they stand for. No motion:
-     Mux UI's Skeleton, which replaces them, brings its own. */
+  /* The loading layouts (skeletons.tsx): groups of Mux UI's Skeleton shapes in the real components' layout
+     classes, sized like what they stand for. Nothing moves. */
   .pb-skeleton,
   .pb-skeleton__shapes {
     display: flex;
@@ -25,96 +25,42 @@
     background: none;
   }
 
-  .pb-skel {
-    display: block;
-    flex: none;
-    background: var(--muxui-semantic-action-neutral-background);
-  }
-
-  /* A line box as tall as the role's line, the bar inside it about its cap height. */
-  .pb-skel--line {
-    box-sizing: border-box;
-    block-size: 1lh;
-    /* The line's leading as clear edges around the bar. */
-    border-block: 0.15lh solid transparent;
-    background-clip: padding-box;
-    border-radius: var(--muxui-semantic-shape-pill-radius);
+  /* The shapes are Mux UI's Skeleton (shape.tsx). A line is one line of the text around it, so each role
+     sets the type its line stands in for; the leading matches the body's, as the text it gives way to. */
+  .pb-skel-line {
     font-size: var(--muxui-semantic-typography-body-size);
     line-height: var(--muxui-semantic-typography-body-line-height);
   }
 
-  .pb-skel--line[data-kind='title'] {
+  .pb-skel-line[data-kind='title'] {
     font-size: var(--muxui-semantic-typography-label-m-font-size);
   }
 
-  .pb-skel--line[data-kind='meta'] {
+  .pb-skel-line[data-kind='meta'] {
     font-size: var(--muxui-semantic-typography-small-size);
   }
 
-  .pb-skel--line[data-kind='label'] {
+  .pb-skel-line[data-kind='label'] {
     font-size: var(--muxui-semantic-typography-label-s-font-size);
   }
 
-  .pb-skel--line[data-width='100'] {
-    inline-size: 100%;
-  }
-  .pb-skel--line[data-width='90'] {
-    inline-size: 90%;
-  }
-  .pb-skel--line[data-width='80'] {
-    inline-size: 80%;
-  }
-  .pb-skel--line[data-width='70'] {
-    inline-size: 70%;
-  }
-  .pb-skel--line[data-width='60'] {
-    inline-size: 60%;
-  }
-  .pb-skel--line[data-width='50'] {
-    inline-size: 50%;
-  }
-  .pb-skel--line[data-width='40'] {
-    inline-size: 40%;
-  }
-  .pb-skel--line[data-width='30'] {
-    inline-size: 30%;
-  }
-  .pb-skel--line[data-width='20'] {
-    inline-size: 20%;
-  }
-
-  .pb-skel--circle {
-    inline-size: var(--muxui-semantic-control-size-md);
-    block-size: var(--muxui-semantic-control-size-md);
-    border-radius: var(--muxui-semantic-shape-pill-radius);
-  }
-
-  .pb-skel--circle[data-size='sm'] {
-    inline-size: var(--muxui-semantic-control-size-sm);
-    block-size: var(--muxui-semantic-control-size-sm);
-  }
-
-  .pb-skel--block {
-    inline-size: 100%;
-    aspect-ratio: 16 / 9;
+  /* A picture's corners, as the row draws them. */
+  .pb-skel-block {
     border-radius: var(--muxui-semantic-shape-option-radius);
   }
 
-  .pb-skel--block[data-ratio='thumb'] {
-    aspect-ratio: 4 / 3;
-  }
-
-  .pb-skel--pill {
+  /* A control pill: a Block of the small control's height, as wide as the vote or the comments count. */
+  .pb-skel-pill {
     inline-size: calc(var(--muxui-semantic-control-size-sm) * 2);
     block-size: var(--muxui-semantic-control-size-sm);
     border-radius: var(--muxui-semantic-shape-pill-radius);
   }
 
-  .pb-skel--pill[data-size='sm'] {
+  .pb-skel-pill[data-size='sm'] {
     inline-size: calc(var(--muxui-semantic-control-size-sm) * 1.6);
   }
 
-  .pb-skel--pill[data-size='lg'] {
+  .pb-skel-pill[data-size='lg'] {
     inline-size: calc(var(--muxui-semantic-control-size-sm) * 3);
   }
 

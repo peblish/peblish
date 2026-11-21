@@ -179,7 +179,7 @@ export function Shell({ children }: { children: ReactNode }) {
               labels={{ name: t('shell', 'sidebar.label'), collapse: t('shell', 'side.collapse'), expand: t('shell', 'side.expand') }}
             />
             <Sidebar.Root className="pb-side" aria-label={t('shell', 'sidebar.label')}>
-              <Navigation session={session} shell={shell} pathname={pathname} />
+              <Navigation session={session} shell={shell} pathname={pathname} foldable folded={fold.collapsed} />
             </Sidebar.Root>
           </div>
           <div className="pb-app__page">

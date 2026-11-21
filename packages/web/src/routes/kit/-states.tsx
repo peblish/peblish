@@ -1,8 +1,20 @@
 import { BottomTabBar, type BottomTab } from '@peblish/ui/components/bottom-tab-bar';
 import { Button } from '@peblish/ui/components/button';
+import { CountBadge } from '@peblish/ui/components/count-badge';
 import { EdgeToggle } from '@peblish/ui/components/edge-toggle';
 import { IconButton } from '@peblish/ui/components/icon-button';
-import { ChevronLeft, CompassIcon, HouseIcon, InboxIcon, LogInIcon, MapPinIcon, SquarePenIcon } from '@peblish/ui/components/icons';
+import {
+  ChevronLeft,
+  CompassIcon,
+  EllipsisIcon,
+  HouseIcon,
+  InboxIcon,
+  InfoIcon,
+  LockIcon,
+  LogInIcon,
+  MapPinIcon,
+  SquarePenIcon,
+} from '@peblish/ui/components/icons';
 import { Sidebar } from '@peblish/ui/components/sidebar';
 import { Text } from '@peblish/ui/components/text';
 import { ViewHeader } from '@peblish/ui/components/view-header';
@@ -10,6 +22,7 @@ import { VoteControl, type Vote } from '@peblish/ui/components/vote-control';
 import { useState, type ComponentType } from 'react';
 import { useTranslate } from '../../i18n/use-translate.ts';
 import { useVoteLabels } from '../../shell/labels.ts';
+import { SiteMenu } from '../../shell/sidebar.tsx';
 import { sharedPieces } from './-shared-pieces.tsx';
 
 /**
@@ -36,7 +49,13 @@ const tabs = (current?: string): BottomTab[] => [
   { id: 'home', href: '/', label: 'Home', icon: <HouseIcon />, current: current === 'home' },
   { id: 'communities', href: '/communities', label: 'Communities', icon: <CompassIcon /> },
   { id: 'create', href: '/submit', label: 'Create', icon: <SquarePenIcon /> },
-  { id: 'inbox', href: '/notifications', label: 'Inbox', icon: <InboxIcon />, count: { shown: '3', spoken: 'unread' } },
+  {
+    id: 'inbox',
+    href: '/notifications',
+    label: 'Inbox',
+    icon: <InboxIcon />,
+    count: <CountBadge count={3} locale="en" label="3 unread" />,
+  },
   { id: 'sign-in', href: '/auth/sign-in', label: 'Sign in', icon: <LogInIcon /> },
 ];
 
@@ -67,6 +86,53 @@ function Fold({ folded }: { folded: boolean }) {
             Local
           </Sidebar.NavItem>
         </Sidebar.NavList>
+      </Sidebar.Root>
+    </Sidebar.Provider>
+  );
+}
+
+/**
+ * The sidebar as the frame's will be once pins arrive (a later branch), so it is laid out before it is used: a
+ * folding section whose pinned row has its own action (a row's `action`, a separate tab stop) and ends at a
+ * NavDivider before the rest, and, folded into the rail, the site's pages as one menu at the foot.
+ */
+function Side({ folded }: { folded: boolean }) {
+  const [collapsed, setCollapsed] = useState(folded);
+  const state = folded ? 'folded' : 'open';
+  return (
+    <Sidebar.Provider collapsed={collapsed} onCollapsedChange={setCollapsed}>
+      <Sidebar.Root aria-label={`Sample sidebar with a pin, ${state}`}>
+        <Sidebar.NavList navLabel={`Sample navigation, ${state}`}>
+          <Sidebar.NavItem href="/local" icon={MapPinIcon}>
+            Local
+          </Sidebar.NavItem>
+          <Sidebar.Section label="Communities" collapsible>
+            <Sidebar.NavItem
+              href="/c/bushwalking"
+              icon={CompassIcon}
+              action={
+                <IconButton size="sm" variant="ghost" aria-label="Options for Bushwalking">
+                  <EllipsisIcon />
+                </IconButton>
+              }
+            >
+              Bushwalking
+            </Sidebar.NavItem>
+            <Sidebar.NavDivider />
+            <Sidebar.NavItem href="/c/coffee" icon={CompassIcon}>
+              Coffee
+            </Sidebar.NavItem>
+          </Sidebar.Section>
+        </Sidebar.NavList>
+        {collapsed && (
+          <SiteMenu
+            siteName="Sample site"
+            pages={[
+              { href: '/about', label: 'About', icon: InfoIcon },
+              { href: '/privacy', label: 'Privacy', icon: LockIcon },
+            ]}
+          />
+        )}
       </Sidebar.Root>
     </Sidebar.Provider>
   );
@@ -109,6 +175,10 @@ export const compositions: Readonly<Record<string, Composition>> = {
   'edge-toggle': {
     name: 'Edge toggle',
     states: { rest: () => <Fold folded />, selected: () => <Fold folded={false} /> },
+  },
+  sidebar: {
+    name: 'Sidebar with a pin',
+    states: { rest: () => <Side folded={false} />, selected: () => <Side folded /> },
   },
   ...sharedPieces,
 };

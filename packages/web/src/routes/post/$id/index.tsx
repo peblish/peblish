@@ -9,6 +9,7 @@ import { PostPage } from '../-ui/post-page.tsx';
 import postCss from '../-ui/post.css?url';
 import gateCss from '../../c/-ui/gate.css?url';
 import { gateTitle } from '../../c/-ui/gate.tsx';
+import { PostPending } from '../../../shell/pending.tsx';
 import { headTitle, ownTitle } from '../../../shell/title.ts';
 
 // /post/<id>: one post, its actions and (lane D) its thread. The page is personal (the gate,
@@ -41,6 +42,7 @@ export const Route = createFileRoute('/post/$id/')({
     };
   },
   component: PostRoute,
+  pendingComponent: PostPending,
   server: {
     handlers: {
       POST: async ({ request, params }) => {

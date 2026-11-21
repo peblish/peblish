@@ -238,19 +238,83 @@
     block-size: calc(100dvh - var(--pb-top-h));
   }
 
-  /* Commons keeps one ground with hairlines between regions: Mux paints the sidebar neutral-10
-     (neutral-14 dark) with a neutral-20 edge and no token for either. */
+  /* Commons keeps one ground with hairlines between regions: Mux paints the sidebar and its foot
+     neutral-10 (neutral-14 dark) with a neutral-20 edge. Mux reads a hook for each colour but declares
+     neither, so the guard knows them as no token: the colours are set on the parts. */
+  .pb-side,
+  .pb-side > .pb-side__foot {
+    background: var(--muxui-semantic-surface-background);
+  }
+
   .pb-side {
     block-size: 100%;
-    background: var(--muxui-semantic-surface-background);
     border-inline-end-color: var(--pb-rule);
   }
 
-  .pb-nav {
+  /* The folded rail's foot (sidebar.tsx): the site's pages as one menu, its button a rail row. Mux gap:
+     Menu.Trigger is an unstyled button, and Sidebar has no menu row. */
+  /* Mux's Menu root is inline-block: as wide as the foot, so the button is a row of the rail. */
+  .pb-side__foot > .muxui-menu__root {
+    display: block;
+  }
+
+  .pb-side__site {
+    display: grid;
+    place-items: center;
+    inline-size: 100%;
+    min-block-size: var(--muxui-control-size-md);
+    padding: 0;
+    border: 0;
+    border-radius: var(--muxui-semantic-shape-navigation-radius);
+    background: transparent;
+    color: var(--muxui-semantic-content-muted);
+    cursor: pointer;
+    transition:
+      background-color var(--muxui-semantic-motion-state-transition-duration) var(--muxui-semantic-motion-state-transition-easing),
+      color var(--muxui-semantic-motion-state-transition-duration) var(--muxui-semantic-motion-state-transition-easing);
+  }
+
+  .pb-side__site:is(:hover, [aria-expanded='true']) {
+    background: color-mix(in srgb, var(--muxui-semantic-color-neutral-100) 4%, transparent);
+    color: var(--muxui-semantic-content-default);
+  }
+
+  /* At the navigation icon's size, as the rows above it draw theirs. */
+  .pb-side__site svg {
+    inline-size: 1.25rem;
+    block-size: 1.25rem;
+  }
+
+  .pb-side__site:focus-visible {
+    outline: 2px solid var(--muxui-semantic-focus-ring);
+    outline-offset: 2px;
+  }
+
+  /* As the rows above it (components/sidebar.css). */
+  @media (prefers-reduced-motion: reduce) {
+    .pb-side__site {
+      transition: none;
+    }
+  }
+
+  .pb-side__site-item {
     display: flex;
-    flex: 1;
-    flex-direction: column;
-    min-block-size: 0;
+    align-items: center;
+    gap: var(--muxui-semantic-layout-control-gap);
+  }
+
+  /* Folded, the site's section gives way to the foot's menu; with scripts off the menu cannot open, so
+     the rail keeps the section's icons and has no foot. */
+  @media (scripting: enabled) {
+    .pb-side[data-muxui-collapsed] .pb-nav__site {
+      display: none;
+    }
+  }
+
+  @media (scripting: none) {
+    .pb-side__foot {
+      display: none;
+    }
   }
 
   /* Folded, the rail's list starts below the round toggle on the edge, so no row passes under it. */

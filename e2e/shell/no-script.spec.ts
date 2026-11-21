@@ -133,6 +133,17 @@ test('phone, scripts off: the navigation sits under the page, and Terms and a co
   });
 });
 
+test("folded with scripts off, the rail keeps the site's pages, since its foot menu cannot open", async ({ browser, baseURL }) => {
+  await withoutScripts(browser, baseURL, desktop, async (page) => {
+    await page.context().addCookies([{ name: 'peblish_side', value: 'rail', url: baseURL! }]);
+    await page.goto('/');
+    const side = page.getByRole('complementary', { name: 'Sidebar' });
+    await expect(side).toHaveAttribute('data-muxui-collapsed', '');
+    await expect(side.getByRole('link', { name: 'Privacy' })).toBeVisible();
+    await expect(side.locator('.pb-side__foot')).toBeHidden();
+  });
+});
+
 test('with scripts on, the account list and the no-script link are not shown and the menu is', async ({ page }) => {
   const admin = seedAdmin();
   await gotoHydrated(page, '/auth/sign-in');

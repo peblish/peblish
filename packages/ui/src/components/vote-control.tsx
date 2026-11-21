@@ -38,7 +38,7 @@ export interface VoteControlProps {
 }
 
 /**
- * Up and down arrows with the score between them: a Mux UI Group of two ToggleButtons (pressed
+ * Up and down arrows with the score between them: a Mux UI Group of two quiet ToggleButtons (pressed
  * state, `aria-pressed`) and the score in Mux Text, which is passive (not announced as it changes).
  * Not a ToggleButtonGroup: its single selection is a radio group, and a vote must be removable.
  * Optimistic: the viewer's choice shows before `onVote` settles. The cast arrow is filled as well
@@ -86,6 +86,7 @@ export function VoteControl({
       data-vote={state.vote === 1 ? 'up' : state.vote === -1 ? 'down' : undefined}
     >
       <ToggleButton
+        variant="quiet"
         size="sm"
         className="pb-vote__up"
         aria-label={labels.up}
@@ -99,6 +100,7 @@ export function VoteControl({
         {new Intl.NumberFormat(locale).format(shown)}
       </Text>
       <ToggleButton
+        variant="quiet"
         size="sm"
         className="pb-vote__down"
         aria-label={labels.down}

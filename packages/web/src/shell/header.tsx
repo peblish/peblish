@@ -1,6 +1,7 @@
+import { unreadCap } from '@peblish/core/notifications/view';
 import type { SessionView } from '@peblish/schema/session';
 import type { BrandPack } from '@peblish/ui/brand/pack.ts';
-import { Badge } from '@peblish/ui/components/badge';
+import { CountBadge } from '@peblish/ui/components/count-badge';
 import { HeaderNav } from '@peblish/ui/components/header-nav';
 import { InboxIcon, SearchIcon } from '@peblish/ui/components/icons';
 import { Link } from '@peblish/ui/components/link';
@@ -36,23 +37,16 @@ export function FindLink({ compact = false }: { compact?: boolean }) {
 }
 
 /**
- * The inbox in the desktop header: its icon and name, and the unread count after the name with its word
- * for assistive tech ("Inbox 3 unread"), current on the inbox's page.
+ * The inbox in the desktop header: its icon and name, and the unread count after the name, a CountBadge
+ * read as "3 unread" (so the link reads "Inbox 3 unread"), current on the inbox's page.
  */
 export function InboxLink({ unread, current }: { unread: number; current: boolean }) {
-  const { t } = useTranslate();
+  const { t, locale } = useTranslate();
   return (
     <HeaderNav.NavButton className="pb-top__link" href={inboxPath} current={current}>
       <InboxIcon className="pb-top__icon" />
       <Text className="pb-top__label">{t('shell', 'you.inbox')}</Text>
-      {unread > 0 && (
-        <>
-          <Badge tone="brand" className="pb-top__count">
-            {badgeText(unread)}
-          </Badge>
-          <Text className="pb-sr"> {t('shell', 'you.unread')}</Text>
-        </>
-      )}
+      <CountBadge count={unread} max={unreadCap - 1} locale={locale} label={`${badgeText(unread)} ${t('shell', 'you.unread')}`} />
     </HeaderNav.NavButton>
   );
 }

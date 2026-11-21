@@ -6,9 +6,11 @@ import {
   ChevronDown as LucideChevronDown,
   ChevronLeft as LucideChevronLeft,
   ChevronRight as LucideChevronRight,
+  CircleHelp,
   ClipboardList,
   Code,
   Compass,
+  Ellipsis,
   ExternalLink,
   EyeOff,
   FileText,
@@ -112,6 +114,10 @@ export const InfoIcon = icon(Info);
 export const HeartHandshakeIcon = icon(HeartHandshake);
 export const LockIcon = icon(Lock);
 export const FileTextIcon = icon(FileText);
+/** The site's pages, as one menu at the foot of the folded sidebar. */
+export const CircleHelpIcon = icon(CircleHelp);
+/** A row's own actions (a sidebar row's options). */
+export const EllipsisIcon = icon(Ellipsis);
 export const CheckIcon = icon(Check);
 
 // The Markdown editor's formatting toolbar (composer/markdown-editor.tsx); its links reuse LinkIcon.

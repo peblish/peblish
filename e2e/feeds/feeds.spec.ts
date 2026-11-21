@@ -373,8 +373,11 @@ test.describe('a viewer', () => {
     const card = page.locator('.feed-list article', { hasText: `Followed ${seed.suffix} 02` });
     const up = card.getByRole('button', { name: 'Upvote' });
     await expect(up).toHaveAttribute('aria-pressed', 'false');
+    const saved = page.waitForResponse((response) => response.request().method() === 'POST' && response.url().includes('/_serverFn/'));
     await up.click();
     await expect(up).toHaveAttribute('aria-pressed', 'true');
+    // Reloaded once the vote is saved: a reload sooner cancels the request, as it would in any browser.
+    await saved;
     await expect(async () => {
       await page.reload();
       await page.locator('html[data-hydrated="1"]').waitFor({ state: 'attached' });

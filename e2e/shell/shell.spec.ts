@@ -152,6 +152,58 @@ test('until the visitor chooses, the sidebar follows the window: folded below 12
   await expect(side).toHaveAttribute('data-muxui-collapsed', '');
 });
 
+test("the sidebar's sections fold from their titles, open in the server's page, and stay as the viewer left them in this browser", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await gotoHydrated(page, '/');
+  const nav = navigation(page);
+  const title = () => nav.getByRole('button', { name: 'Communities' });
+  const browse = () => nav.getByRole('link', { name: 'Browse all communities' });
+  await expect(title()).toHaveAttribute('aria-expanded', 'true');
+  await expect(browse()).toBeVisible();
+  await title().focus();
+  await page.keyboard.press('Enter');
+  await expect(title()).toHaveAttribute('aria-expanded', 'false');
+  await expect(browse()).toBeHidden();
+  await expect(title()).toBeFocused();
+  // Every section is open in the server's page: none is closed before its title works, or with scripts off.
+  const html = await (await page.context().request.get('/')).text();
+  expect(html).not.toMatch(/<ul[^>]*muxui-sidebar__section-items[^>]*hidden/);
+  // The fold is remembered in this browser.
+  await gotoHydrated(page, '/');
+  await expect(title()).toHaveAttribute('aria-expanded', 'false');
+  await expect(browse()).toBeHidden();
+  // Folded into the rail, every section's rows show, and the titles are no buttons.
+  await fold(page).click();
+  await expect(browse()).toBeVisible();
+  await expect(title()).toHaveCount(0);
+  await fold(page).click();
+  await title().click();
+  await expect(browse()).toBeVisible();
+});
+
+test("folded into the rail, the site's pages are one menu at the rail's foot, named by the site", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await gotoHydrated(page, '/');
+  const site = await siteName(page);
+  // Open, the site's name titles its section (a button that folds it); the menu is only the folded rail's.
+  const menu = sidebar(page).locator('.pb-side__foot').getByRole('button', { name: site, exact: true });
+  await expect(menu).toHaveCount(0);
+  await fold(page).focus();
+  await page.keyboard.press('Enter');
+  // The section's rows give way to the menu at the foot, outside the scrolling list.
+  await expect(navigation(page).getByRole('link', { name: 'Privacy' })).toBeHidden();
+  await expect(menu).toBeVisible();
+  await menu.focus();
+  await expect(page.getByRole('tooltip')).toHaveText(site);
+  await page.keyboard.press('Enter');
+  const items = page.getByRole('menu', { name: site }).getByRole('menuitem');
+  await expect(items).toHaveText(['About', 'Code of conduct', 'Privacy', 'Terms']);
+  await page.getByRole('menuitem', { name: 'Privacy' }).click();
+  await landed(page, '**/privacy');
+});
+
 test('the right rail a route puts beside its main sits beside the centre, and gives way where the page is narrower than 62rem', async ({
   page,
 }) => {

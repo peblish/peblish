@@ -30,17 +30,14 @@
     background: var(--muxui-component-taggroup-indigo-tint-weak);
   }
 
-  /* Mux gap: ToggleButton has no icon-only (square) size and no quiet variant; a round, unfilled
-     button is drawn from its own parts. */
+  /* Mux's quiet ToggleButton draws no outline and no selected fill, muted at rest. Mux gap: ToggleButton
+     has no icon-only (square) size, so the round button is sized here. */
   .pb-vote .muxui-toggle-button {
     box-sizing: border-box;
     padding: 0;
     min-inline-size: var(--muxui-semantic-control-size-sm);
     min-block-size: var(--muxui-semantic-control-size-sm);
     border-radius: var(--muxui-semantic-shape-pill-radius);
-    background-color: transparent;
-    outline-color: transparent;
-    color: var(--muxui-semantic-content-muted);
   }
 
   .pb-vote .muxui-toggle-button svg {

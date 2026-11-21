@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, useSyncExternalStore } from 'react';
 
 // Whether the sidebar is open or folded into its icon rail (Commons). The viewer's choice is kept in a
 // cookie of the shell's own, so the server draws the page with it and a reload moves nothing. Until
@@ -67,4 +67,46 @@ export function useSideFold(initial: SideCookie): { collapsed: boolean; setColla
   }, []);
 
   return { collapsed: foldedFor(value), setCollapsed };
+}
+
+/** The sidebar's sections that fold (Commons): Moderation, Communities and the site's own pages. */
+export type SideSection = 'moderation' | 'communities' | 'site';
+
+// Which sections the viewer folded, remembered in this browser (Commons) as their names, space-separated.
+// The server and hydration draw every section open, so no section is closed before its button works and
+// none is closed with scripts off; a remembered fold applies just after hydration.
+const sectionsKey = 'peblish_side_closed';
+const sectionListeners = new Set<() => void>();
+// This page's latest choice wins over storage, so a fold holds even where storage refuses it.
+let folded: string | undefined;
+const readSections = () => {
+  if (folded !== undefined) return folded;
+  try {
+    return localStorage.getItem(sectionsKey) ?? '';
+  } catch {
+    return '';
+  }
+};
+const subscribeSections = (listener: () => void) => {
+  sectionListeners.add(listener);
+  return () => sectionListeners.delete(listener);
+};
+
+/** Whether each section is open, and the viewer's choice to fold or open one. */
+export function useSectionFolds(): { isOpen: (section: SideSection) => boolean; setOpen: (section: SideSection, open: boolean) => void } {
+  const stored = useSyncExternalStore(subscribeSections, readSections, () => '');
+  const closed = new Set(stored.split(' ').filter(Boolean));
+  const setOpen = useCallback((section: SideSection, open: boolean) => {
+    const next = new Set(readSections().split(' ').filter(Boolean));
+    if (open) next.delete(section);
+    else next.add(section);
+    folded = [...next].join(' ');
+    try {
+      localStorage.setItem(sectionsKey, folded);
+    } catch {
+      // Storage refused: the fold holds until the page is reloaded.
+    }
+    for (const listener of sectionListeners) listener();
+  }, []);
+  return { isOpen: (section) => !closed.has(section), setOpen };
 }

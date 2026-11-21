@@ -1,5 +1,4 @@
 import type { ReactNode } from 'react';
-import { Badge } from './badge.tsx';
 import { Link } from './link.tsx';
 import { Text } from './text.tsx';
 
@@ -16,8 +15,8 @@ export interface BottomTab {
    * Communities: `aria-current="page"`, as Commons marks it (Mux's Link has no `aria-current="true"`).
    */
   current?: boolean;
-  /** A count on the icon (the inbox's unread): `shown` as drawn, `spoken` the word read after it. */
-  count?: { shown: string; spoken: string };
+  /** A count on the icon (the inbox's unread): a CountBadge, named so the tab reads "Inbox 3 unread". */
+  count?: ReactNode;
 }
 
 /**
@@ -36,14 +35,7 @@ export function BottomTabBar({ label, tabs, className }: { label: string; tabs: 
           </span>
           <Text className="pb-tabbar__label">{tab.label}</Text>
           {/* After the label, so the tab's name starts with what it shows: "Inbox 3 unread". */}
-          {tab.count && (
-            <>
-              <Badge tone="brand" className="pb-tabbar__count">
-                {tab.count.shown}
-              </Badge>
-              <Text className="pb-sr"> {tab.count.spoken}</Text>
-            </>
-          )}
+          {tab.count && <span className="pb-tabbar__count">{tab.count}</span>}
         </Link>
       ))}
     </nav>

@@ -3,7 +3,7 @@ import { closePools } from '../../packages/core/src/db/pools.ts';
 import { readSetting } from '../../packages/core/src/settings/read.ts';
 import { seedSetting } from '../../packages/core/src/testing/seed-a.ts';
 import type { SiteBrand } from '../../packages/schema/src/site-settings.ts';
-import { expectAccessible } from '../auth/support.ts';
+import { expectAccessible, expectAccessibleOnPhone } from '../auth/support.ts';
 import { prefsCookie } from '../support/kit.ts';
 import { gotoHydrated } from '../support/route-marker.ts';
 import { siteName } from '../support/site-name.ts';
@@ -112,7 +112,7 @@ test('on a phone the bar shows the mark alone, named by the site name, and the w
     await expect(bar.locator('svg')).toBeVisible();
     await expect(bar).toHaveText('');
     expect(await wordmarkFaces(page)).toEqual(['unloaded']);
-    await expectAccessible(page);
+    await expectAccessibleOnPhone(page);
   } finally {
     await page.context().close();
   }

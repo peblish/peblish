@@ -9,4 +9,13 @@
   .muxui-sidebar__mobile-header {
     box-sizing: border-box;
   }
+
+  /* Mux gap: when the system asks for reduced motion Mux stills the fold, its links and disclosures,
+     but a sidebar row still eases its colours on hover and press (only Mux's own reduced setting
+     zeroes their clock). Still them too; delete when Mux does. */
+  @media (prefers-reduced-motion: reduce) {
+    :is(.muxui-sidebar__nav-link, .muxui-sidebar__nav-button, .muxui-sidebar__nav-chevron, .muxui-sidebar__section-toggle) {
+      transition: none;
+    }
+  }
 }

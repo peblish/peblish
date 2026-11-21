@@ -7,6 +7,17 @@ import { gotoHydrated } from '../support/route-marker.ts';
 // The frame's geometry: the phone's two bars at 320 and 360 px, the header and the sidebar on a page
 // longer than the screen, and the sidebar's community rows with long or unusual names.
 
+/** Mux Sidebar's open width, its 1px edge left out, from the custom property Mux declares for layouts beside it. */
+const openSize = (page: Page) =>
+  page.evaluate(() => {
+    const probe = document.createElement('div');
+    probe.style.inlineSize = 'var(--muxui-component-sidebar-open-size)';
+    document.body.append(probe);
+    const width = probe.getBoundingClientRect().width;
+    probe.remove();
+    return width;
+  });
+
 /** The phone's bars, measured in the page. */
 const bars = (page: Page) =>
   page.evaluate(() => {
@@ -108,10 +119,10 @@ test('on a long page the header stays at the top and the sidebar under it, and t
       const { x, y, width, height } = element.getBoundingClientRect();
       return [x, y, width, height].map((value) => Math.round(value) || 0);
     });
-  // The header is pinned to the top, 4rem and its hairline; the Sidebar under it, 16rem and its hairline
-  // wide and the rest of the screen tall.
+  // The header is pinned to the top, 4rem and its hairline; the Sidebar under it, Mux's open width (16rem)
+  // and its hairline wide and the rest of the screen tall.
   expect(await rounded('.pb-top')).toEqual([0, 0, 1280, 65]);
-  expect(await rounded('.pb-side')).toEqual([0, 65, 257, 735]);
+  expect(await rounded('.pb-side')).toEqual([0, 65, Math.round((await openSize(page)) + 1), 735]);
   // The centre column's hairlines run from under the header to the page's end.
   const frame = await page.locator('#pb-main').evaluate((element) => {
     const box = element.getBoundingClientRect();
@@ -149,7 +160,7 @@ test('a long community name in the sidebar ends in an ellipsis, keeps its whole 
       page: document.documentElement.scrollWidth,
     };
   });
-  expect(measured.column, 'the column keeps its 16rem and its hairline').toBeCloseTo(257, 0);
+  expect(measured.column, "the column keeps Mux's open width and its hairline").toBeCloseTo((await openSize(page)) + 1, 0);
   expect(measured.linkRight, 'the row stays inside the column').toBeLessThanOrEqual(measured.columnRight);
   expect(measured.cut, 'the name is cut').toBe(true);
   expect(measured.ellipsis).toBe('ellipsis');

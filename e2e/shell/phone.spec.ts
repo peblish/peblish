@@ -1,7 +1,7 @@
 import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
 import { expect, test, type Locator, type Page } from '@playwright/test';
-import { expectAccessible, landed, signIn } from '../auth/support.ts';
+import { expectAccessibleOnPhone, landed, signIn } from '../auth/support.ts';
 import { gotoHydrated } from '../support/route-marker.ts';
 
 // The phone (below 860 px): the top bar (the frame's view header: the mark, the finder and Mux UI's
@@ -67,7 +67,7 @@ test('the top bar and the bottom bar are named navigations of 44px targets, the 
   }
   await expect(links.nth(0)).toHaveAttribute('aria-current', 'page');
   await expect(tabs(page).locator('[aria-current]')).toHaveCount(1);
-  await expectAccessible(page);
+  await expectAccessibleOnPhone(page);
 });
 
 test('the bottom bar marks the section a page is in: another feed is under Home, a community under Communities', async ({ page }) => {
@@ -132,6 +132,8 @@ test("signed in, the bottom bar's fifth is You, the inbox tab says how many are 
   await expect(drawer(page)).toHaveCount(0);
 
   await opener(page).tap();
+  // Nothing folds on a phone: the drawer's section titles are headings, not buttons.
+  await expect(drawer(page).locator('.muxui-sidebar__section-toggle')).toHaveCount(0);
   const account = drawer(page).getByRole('link', { name: 'Settings' });
   await expect(account).toBeVisible();
   expect((await size(account)).height).toBeGreaterThanOrEqual(44);
