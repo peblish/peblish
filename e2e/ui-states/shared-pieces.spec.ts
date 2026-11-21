@@ -15,6 +15,7 @@ const compositions: Record<string, { states: string[]; target: 44 | 24 }> = {
   'post-row-card': { states: ['rest', 'selected', 'disabled', 'hover', 'focus', 'pressed'], target: 24 },
   'post-row-classic': { states: ['rest', 'selected', 'disabled', 'hover', 'focus', 'pressed'], target: 24 },
   'post-row-compact': { states: ['rest', 'selected', 'disabled', 'hover', 'focus', 'pressed'], target: 24 },
+  'post-row-sensitive': { states: ['rest', 'selected', 'disabled', 'pending', 'hover', 'focus', 'pressed'], target: 24 },
   'vote-pill': { states: ['rest', 'selected', 'disabled', 'hover', 'focus', 'pressed'], target: 44 },
   'link-preview': { states: ['rest', 'disabled', 'hover', 'focus', 'pressed'], target: 24 },
   // Its revealed sample holds a text link; Show itself is held to 44 below.
@@ -90,11 +91,25 @@ test('the cover keeps the concealed content out of the page until Show, then mov
   await expect(page.locator('[data-kit-state="pending"] [data-muxui-state-pending]')).toHaveCount(1);
 });
 
-test('on a phone Show is a 44px target, beside a post or in place of its thumbnail', async ({ page, baseURL }) => {
+test('on a phone Show is a 44px target, in a covered slot and in place of a thumbnail, and the thumbnail cover fits', async ({
+  page,
+  baseURL,
+}) => {
   await phone(page, baseURL!);
-  await gotoHydrated(page, '/kit/nsfw-cover');
-  const box = (await page.locator('[data-kit-state="rest"]').getByRole('button', { name: 'Show' }).boundingBox())!;
-  expect(Math.min(box.width, box.height)).toBeGreaterThanOrEqual(44);
+  for (const path of ['/kit/nsfw-cover', '/kit/post-row-sensitive']) {
+    await gotoHydrated(page, path);
+    const rest = page.locator('[data-kit-state="rest"]');
+    const box = (await rest.getByRole('button', { name: 'Show' }).boundingBox())!;
+    expect(Math.min(box.width, box.height), path).toBeGreaterThanOrEqual(44);
+    // Nothing in the cover spills out of it.
+    const spill = await rest.locator('.pb-cover').evaluate((cover) => {
+      const outer = cover.getBoundingClientRect();
+      return [...cover.children]
+        .map((child) => child.getBoundingClientRect())
+        .filter((inner) => inner.left < outer.left - 0.5 || inner.right > outer.right + 0.5 || inner.bottom > outer.bottom + 0.5).length;
+    });
+    expect(spill, path).toBe(0);
+  }
 });
 
 test('a press on a row outside its links opens the post through the title link', async ({ page }) => {
@@ -112,4 +127,38 @@ test('the skeleton hosts are inert: no control, nothing named but the one status
   await expect(sample.locator('a, button, input, [tabindex]')).toHaveCount(0);
   await expect(sample.getByRole('status')).toHaveText('Loading posts');
   expect(await page.evaluate(() => document.getAnimations().length)).toBe(0);
+});
+
+test('a row keeps its links separate in every density: title, community, author and comments, none inside another', async ({ page }) => {
+  for (const density of ['card', 'classic', 'compact']) {
+    await gotoHydrated(page, `/kit/post-row-${density}`);
+    const row = page.locator('[data-kit-state="rest"] article');
+    await expect(row.locator('a a'), density).toHaveCount(0);
+    for (const link of ['.pb-post__title a', '.pb-post__community', '.pb-post__by a', '.pb-post__comments'])
+      await expect(row.locator(link), `${density} ${link}`).toHaveCount(1);
+    if (density === 'card') await expect(row.locator('.pb-link-preview')).toHaveAttribute('href', /^https:/);
+  }
+});
+
+test('selecting text on a row does not open the post', async ({ page }) => {
+  await gotoHydrated(page, '/kit/post-row-card');
+  const row = page.locator('[data-kit-state="rest"] article');
+  const time = (await row.locator('.pb-post__meta time').boundingBox())!;
+  const meta = (await row.locator('.pb-post__meta').boundingBox())!;
+  // A drag from the age to the meta line's empty end selects text; the click it ends with must not navigate.
+  await page.mouse.move(time.x + 1, time.y + time.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(meta.x + meta.width - 4, time.y + time.height / 2, { steps: 8 });
+  await page.mouse.up();
+  expect(await page.evaluate(() => getSelection()!.toString())).not.toBe('');
+  await page.waitForTimeout(300);
+  await expect(page).toHaveURL(/\/kit\/post-row-card$/);
+});
+
+test('a vote being saved marks its group busy until the save settles', async ({ page }) => {
+  await gotoHydrated(page, '/kit');
+  const group = page.getByTestId('kit-vote-slow').getByRole('group');
+  await group.getByRole('button', { name: 'Upvote' }).click();
+  await expect(group).toHaveAttribute('aria-busy', 'true');
+  await expect(group).not.toHaveAttribute('aria-busy');
 });

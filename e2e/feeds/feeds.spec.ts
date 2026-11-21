@@ -438,13 +438,14 @@ test.describe('a viewer', () => {
     await expect(card.locator('.pb-vote__score')).toHaveText(String(score + 1));
   });
 
-  test('a person who has declared 16+ gets the sensitive post hidden behind show; one who has not does not get it', async ({ page }) => {
+  test('a person who has declared 16+ gets the sensitive post; one who has not does not get it', async ({ page }) => {
     await signedIn(page, seed.viewer.name);
     await gotoHydrated(page, '/all?sort=top');
+    // A title-only post has no media to cover: it is flagged, and nothing is hidden behind Show.
     const card = page.locator('.feed-list article[data-sensitive]', { hasText: `Sensitive ${seed.suffix}` });
-    await expect(card).toHaveAttribute('data-hidden', 'true');
-    await card.getByRole('button', { name: 'hidden, show' }).click();
+    await expect(card).toBeVisible();
     await expect(card).not.toHaveAttribute('data-hidden');
+    await expect(card.getByRole('button', { name: 'Show' })).toHaveCount(0);
     await page.context().clearCookies();
     await signedIn(page, seed.undeclared.name);
     expect(await html(page, '/all?sort=top')).not.toContain(`Sensitive ${seed.suffix}`);

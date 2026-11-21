@@ -3,7 +3,7 @@ import { FactList } from '@peblish/ui/components/fact-list';
 import { Link } from '@peblish/ui/components/link';
 import { LinkPreview } from '@peblish/ui/components/link-preview';
 import { NsfwCover } from '@peblish/ui/components/nsfw-cover';
-import { PostRow, type Density } from '@peblish/ui/components/post-row';
+import { PostRow, type Density, type PostRowCover } from '@peblish/ui/components/post-row';
 import { RailPanel } from '@peblish/ui/components/rail-panel';
 import { Text } from '@peblish/ui/components/text';
 import { VoteControl, type Vote } from '@peblish/ui/components/vote-control';
@@ -19,7 +19,7 @@ import type { Composition } from './-states.tsx';
 // The Commons shared pieces' state pages (/kit/<key>), registered in -states.tsx. Sample content is
 // invented; the pieces' own words come from the ui catalogue.
 
-function Row({ post, density, voteDisabled }: { post: PostView; density: Density; voteDisabled?: boolean }) {
+function Row({ post, density, voteDisabled, cover }: { post: PostView; density: Density; voteDisabled?: boolean; cover?: PostRowCover }) {
   const { locale } = useTranslate();
   return (
     <PostRow
@@ -30,6 +30,7 @@ function Row({ post, density, voteDisabled }: { post: PostView; density: Density
       locale={locale}
       thumbnailSrc={thumbnailSrc(post)}
       voteDisabled={voteDisabled}
+      cover={cover}
       onShare={() => undefined}
       headingLevel={3}
       now={now}
@@ -112,6 +113,16 @@ export const sharedPieces: Readonly<Record<string, Composition>> = {
   'post-row-card': { name: 'PostRow, Card', states: rowStates('card') },
   'post-row-classic': { name: 'PostRow, Classic', states: rowStates('classic') },
   'post-row-compact': { name: 'PostRow, Compact', states: rowStates('compact') },
+  // A sensitive picture post in Classic: the cover in the thumbnail's place.
+  'post-row-sensitive': {
+    name: 'PostRow, Classic, sensitive',
+    states: {
+      rest: () => <Row post={posts.nsfw} density="classic" />,
+      selected: () => <Row post={posts.nsfw} density="classic" cover={{ revealed: true }} />,
+      disabled: () => <Row post={posts.nsfw} density="classic" cover={{ eligible: false }} />,
+      pending: () => <Row post={posts.nsfw} density="classic" cover={{ pending: true, onRevealedChange: () => undefined }} />,
+    },
+  },
   'vote-pill': {
     name: 'Vote control, pill',
     states: { rest: () => <Pill />, selected: () => <Pill myVote={-1} />, disabled: () => <Pill disabled /> },
