@@ -4,7 +4,7 @@ One page for the lanes that move the app onto Mux UI. How each component is mean
 
 ## The import rule
 
-- Mux UI comes only from the vendored tarball, `vendor/muxui/muxui-react-0.1.0-rc.8-c1.tgz` (candidate c1 of rc.8, built from Mux UI's `main`; provenance in `vendor/muxui/README.md`), a dependency of `packages/ui` alone.
+- Mux UI comes only from the vendored tarball, `vendor/muxui/muxui-react-0.1.0-rc.8-c3.tgz` (candidate c3 of rc.8, built from Mux UI's `main`; provenance in `vendor/muxui/README.md`), a dependency of `packages/ui` alone.
 - Only `packages/ui` imports `@muxui/react`. Routes and the shell import one module per component: `import { Card } from '@peblish/ui/components/card'` (no extension, no barrel). One module per component keeps tree-shaking working: a route that imports `separator` does not load `sidebar`.
 - A wrapper re-exports the component, its parts and its prop types and nothing else. If one you need is missing, add `packages/ui/src/components/<kebab-name>.tsx` the same way and say so in your notes.
 - The app's own composed components (`PostCard`, `CommentThread`, `VoteControl`, `ReplyBar`, `Prose`, `Handle`, `Time`, `Badge`, the form fields) keep their public props.
@@ -155,6 +155,12 @@ New `--pb-*` tokens go in `packages/ui/src/tokens/tokens.css` (the groundwork la
 - Grouped ToggleButtons draw no outline of their own (the group's border and dividers are the edges; the focus ring is unchanged), and a `sm` grouped button has square corners. Buttons and ToggleButtons take their height from their minimum size, with no block padding.
 - A horizontal RadioGroup or CheckboxGroup that wraps puts its rows as close as a vertical group's options (the composer's post types on a phone).
 - Playfair Display, the `expressive` text face, ships only as full TTF files. The app uses no expressive text; the payload check fails any page that loads a TTF.
+
+### What candidate c3 changed for the app
+
+- Nothing at rest: c1 and c3 draw today's screens the same (the gallery pages and the main routes at 1440, 1100 and 390 px, light and dark, with and without the `feddit` pack, and under forced colours, compared pixel for pixel).
+- Pressed, a Sidebar row (the sidebar's and the phone drawer's) takes a 12% neutral tint, and the current row a step of its own. A standalone ToggleButton has a pressed fill too, which the vote's own styles keep out.
+- New to use: Skeleton (`Root`, `Line`, `Circle`, `Block`), Badge (`tone`, `variant` soft or solid, `label` read in place of the text) and Banner; Sidebar's `navLabel` landmark, collapsible sections, `NavDivider`, `Footer`, row `action`s and its width and colour custom properties (`--muxui-component-sidebar-open-size`, `-rail-size`, `-background`, `-border-color`); ToggleButton's `quiet` variant and `preventFocusOnPress`. Forced-colour fixes for selected Table rows, Tabs, GridList, Tree, Virtualizer and the default ToggleButton; square joins in ButtonGroup; a horizontal CheckboxGroup gives its description and error a row of their own.
 
 ## Client-only components under server rendering
 

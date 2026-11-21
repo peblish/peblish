@@ -15,7 +15,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@muxui/react": "file:../../vendor/muxui/muxui-react-0.1.0-rc.8-c1.tgz",
+    "@muxui/react": "file:../../vendor/muxui/muxui-react-0.1.0-rc.8-c3.tgz",
     "@peblish/schema": "workspace:*",
     "lucide-react": "1.37.0"
   },
