@@ -1,6 +1,7 @@
 import { createFileRoute, notFound } from '@tanstack/react-router';
 import { DEFAULT_LOCALE } from '../i18n/negotiate.ts';
 import { headTitle, ownTitle, rootTitleData } from '../shell/title.ts';
+import { ownHeader } from './admin/-page.tsx';
 import { LegalPage } from './-legal/legal-page.tsx';
 import legalCss from './-legal/legal.css?url';
 import { loadLegalPage } from './-legal/load.ts';
@@ -27,6 +28,7 @@ export const Route = createFileRoute('/$slug')({
         : [];
     return { meta: title, links: [{ rel: 'stylesheet', href: legalCss }] };
   },
+  staticData: ownHeader,
   component: Legal,
 });
 
