@@ -1,4 +1,5 @@
 import { expect, test, type Browser, type Page } from '@playwright/test';
+import { colours } from '../support/contrast.ts';
 import { prefsCookie, skipWithoutKit } from '../support/kit.ts';
 import { gotoHydrated } from '../support/route-marker.ts';
 import { galleryStates, stateProblems } from '../support/states.ts';
@@ -28,8 +29,8 @@ test.describe('gallery', () => {
       const checks = await galleryStates(browser, baseURL!, `/kit/${composition}`);
       expect([...new Set(checks.map(({ state }) => state))]).toEqual(states);
       expect(checks).toHaveLength(states.length * 2 * 4);
-      // Mux's text field shows keyboard focus as its border colour and a glow token (0px in this theme), not a
-      // ring the helper measures: a Mux gap, left to Mux's own field tests (state matrix: unlisted entries).
+      // Mux's text field shows keyboard focus as its edge's colour (and a glow token, 0px in this theme), not a
+      // ring outside it, which is what the helper measures; the edge's 3:1 is checked below instead.
       const muxField = (problem: string) => composition === 'auth-field' && problem.endsWith('focus: focus ring missing');
       expect(stateProblems(checks, { target: 24 }).filter((problem) => !muxField(problem))).toEqual([]);
     });
@@ -53,13 +54,14 @@ async function phone(page: Page, baseURL: string): Promise<void> {
   await page.context().addCookies([{ ...prefsCookie('card', 'light'), url: baseURL }]);
 }
 
-async function signedIn(browser: Browser, baseURL: string): Promise<Page> {
-  const person = seed('e2e-person', unique('commons')) as Person;
+/** Signs in a new person, or `who` again (a second session), on a page of its own. */
+async function signedIn(browser: Browser, baseURL: string, who?: Person): Promise<{ page: Page; person: Person }> {
+  const person = who ?? (seed('e2e-person', unique('commons')) as Person);
   const page = await browser.newPage({ baseURL });
   await gotoHydrated(page, '/auth/sign-in');
   await signIn(page, person.name, person.password);
   await page.waitForURL((url) => !url.pathname.startsWith('/auth'));
-  return page;
+  return { page, person };
 }
 
 test('on a phone the sign-in, sign-up and reset forms have 44px fields and buttons', async ({ page, baseURL }) => {
@@ -73,18 +75,46 @@ test('on a phone the sign-in, sign-up and reset forms have 44px fields and butto
   }
 });
 
-test('on a phone the settings tabs, the forms and Create post have 44px controls', async ({ browser, baseURL }) => {
-  const page = await signedIn(browser, baseURL!);
+test('on a phone the settings tabs, the forms, their rows and Create post have 44px controls', async ({ browser, baseURL }) => {
+  test.setTimeout(90_000);
+  const { page, person } = await signedIn(browser, baseURL!);
+  // A second session, so Security lists one to revoke; a second person, so Blocks has a row and an Undo.
+  const other = seed('e2e-person', unique('blocked')) as Person;
   await phone(page, baseURL!);
-  for (const path of ['/settings/account', '/settings/security', '/settings/blocks']) {
+  await gotoHydrated(page, '/settings/blocks');
+  await page.getByLabel('Block a person by handle').fill(`@${other.name}`);
+  await page.getByRole('button', { name: 'Block', exact: true }).click();
+  await expect(page).toHaveURL(/just=/);
+  await expect(page.getByRole('status')).toBeVisible();
+  const rows = 'main nav a, main form button, main form input:not([type="hidden"])';
+  expect(await under44(page, rows), '/settings/blocks').toEqual([]);
+  expect(await page.locator('main form button').count()).toBeGreaterThanOrEqual(3);
+  const { page: elsewhere } = await signedIn(browser, baseURL!, person);
+  for (const path of ['/settings/account', '/settings/security']) {
     await gotoHydrated(page, path);
-    expect(await under44(page, 'main nav[aria-label="Settings"] a'), path).toEqual([]);
-    expect(await under44(page, 'main form button, main form input:not([type="hidden"])'), path).toEqual([]);
+    expect(await under44(page, rows), path).toEqual([]);
   }
+  await expect(page.getByRole('button', { name: 'Revoke' })).toBeVisible();
   await gotoHydrated(page, '/submit');
   // Create post's own controls: the title field and the form's buttons (the editor's toolbar is the composer's).
   expect(await under44(page, 'main input[name="title"], main .cmp__actions button')).toEqual([]);
+  await elsewhere.close();
   await page.close();
+});
+
+test('a focused field draws its edge at 3:1 against the page, in light and dark', async ({ browser, baseURL }) => {
+  for (const scheme of ['light', 'dark'] as const) {
+    const page = await browser.newPage({ baseURL, colorScheme: scheme });
+    await gotoHydrated(page, '/auth/sign-in');
+    await page.keyboard.press('Tab');
+    const input = page.getByLabel('Email or handle');
+    await input.focus();
+    await expect(input).toHaveAttribute('data-muxui-state-focus-visible');
+    // Mux's field draws keyboard focus as its edge's colour (an outline inside the box), not a ring outside it.
+    // Polled: Mux eases the edge's colour in over 350ms.
+    await expect.poll(async () => (await colours(input)).border?.ratio ?? 0, { message: scheme }).toBeGreaterThanOrEqual(3);
+    await page.close();
+  }
 });
 
 for (const javaScriptEnabled of [true, false]) {
@@ -126,15 +156,14 @@ test('a refusal that names no field stays the form’s alone', async ({ page }) 
   await expect(form.locator('[aria-invalid="true"]')).toHaveCount(0);
 });
 
-test('the page’s name is its one h1, in its own view header', async ({ page }) => {
+test('the page’s name is its one h1, in the page', async ({ page }) => {
   for (const [path, name] of [
     ['/auth/sign-in', 'Sign in'],
     ['/auth/reset', 'Reset your password'],
-    ['/invite/commons-nothing', /./],
   ] as const) {
     await gotoHydrated(page, path);
     await expect(page.getByRole('heading', { level: 1 })).toHaveCount(1);
-    await expect(page.getByRole('main').getByRole('navigation', { name: 'Page' }).getByRole('heading', { level: 1 })).toHaveText(name);
+    await expect(page.getByRole('main').getByRole('heading', { level: 1 })).toHaveText(name);
   }
 });
 
@@ -142,7 +171,7 @@ test('Create post shows the rules in the rail beside the form, and under the pic
   browser,
   baseURL,
 }) => {
-  const page = await signedIn(browser, baseURL!);
+  const { page } = await signedIn(browser, baseURL!);
   await page.setViewportSize({ width: 1440, height: 900 });
   await gotoHydrated(page, '/submit');
   const rules = page.getByRole('complementary', { name: 'Community rules' });

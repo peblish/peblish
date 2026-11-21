@@ -55,7 +55,6 @@ export const Route = createFileRoute('/auth/sign-up')({
   loaderDeps: ({ search }) => ({ invite: search.invite }),
   loader: ({ deps }) => loadSignUp({ data: deps.invite ? { invite: deps.invite } : {} }),
   head: authHead,
-  staticData: { viewHeader: 'own' },
   component: SignUp,
   server: {
     handlers: {
@@ -148,7 +147,8 @@ function SignUpForm() {
             <Text size="sm" className="auth-tone--ok">
               {t('auth', 'signUp.inviteValid', { inviter: invite.inviter.handle, left: invite.usesLeft, max: invite.maxUses })}
             </Text>
-          ) : invite && invite.status !== 'valid' ? (
+          ) : invite && invite.status !== 'valid' && !search.error?.startsWith('invite.') ? (
+            // A refusal about the code is said under the field already (Field), so it is not said twice.
             <Text size="sm" className="auth-tone--error">
               {t('auth', `error.invite.${invite.status}`)}
             </Text>
