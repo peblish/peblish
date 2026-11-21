@@ -109,7 +109,9 @@ test.describe('anyone', () => {
     await expect(first).toHaveAttribute('data-density', 'classic');
     await page.getByRole('radiogroup', { name: 'View' }).getByRole('radio', { name: 'Compact' }).click();
     await expect(first).toHaveAttribute('data-density', 'compact');
+    // Reloaded, the switch is pressed only once the page has hydrated: before that a press only focuses it.
     await page.reload();
+    await page.locator('html[data-hydrated="1"]').waitFor({ state: 'attached' });
     await expect(page.locator('.feed-list article').first()).toHaveAttribute('data-density', 'compact');
     // A second selection persists as well, not only the first.
     await page.getByRole('radiogroup', { name: 'View' }).getByRole('radio', { name: 'Card' }).click();
@@ -117,6 +119,7 @@ test.describe('anyone', () => {
     await page.getByRole('radiogroup', { name: 'View' }).getByRole('radio', { name: 'Classic' }).click();
     await expect(page.locator('.feed-list article').first()).toHaveAttribute('data-density', 'classic');
     await page.reload();
+    await page.locator('html[data-hydrated="1"]').waitFor({ state: 'attached' });
     await expect(page.locator('.feed-list article').first()).toHaveAttribute('data-density', 'classic');
     await expect(page.getByRole('radiogroup', { name: 'View' }).getByRole('radio', { name: 'Classic' })).toHaveAttribute(
       'aria-checked',

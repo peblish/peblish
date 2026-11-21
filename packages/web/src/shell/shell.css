@@ -312,6 +312,12 @@
     min-inline-size: 0;
   }
 
+  /* One gutter, as Commons has it: a list of post rows (`pb-rows`) bleeds through the page's side padding
+     (`.pb-page`), so each row's own padding is the gutter and its divider and hover run the column's width. */
+  .pb-page .pb-rows {
+    margin-inline: calc(-1 * var(--muxui-semantic-layout-inset-large));
+  }
+
   /* Focus targets, not controls: the skip link's and the one a navigation moves focus to (shell.tsx). */
   .pb-frame:focus,
   .pb-frame main:focus {
@@ -440,6 +446,15 @@
     .pb-frame {
       max-inline-size: none;
       border-inline: 0;
+    }
+
+    /* A phone's gutter is the rows' (inset medium), on every page. */
+    .pb-frame .pb-page {
+      padding-inline: var(--muxui-semantic-layout-inset-medium);
+    }
+
+    .pb-page .pb-rows {
+      margin-inline: calc(-1 * var(--muxui-semantic-layout-inset-medium));
     }
 
     .pb-frame-vh__home {
