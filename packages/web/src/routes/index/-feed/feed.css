@@ -55,8 +55,21 @@
     gap: var(--muxui-semantic-layout-dense-gap);
   }
 
-  .feed-no-script {
+  .feed-no-script,
+  .feed-menus__narrow {
     display: none;
+  }
+
+  /* A phone's bar that shows the site's name rather than a mark: one menu, Sort with the views, so the
+     site's name and the feed's keep their room. */
+  @media (max-width: 419.98px) {
+    .feed .pb-vh:has(.pb-bar-brand > .muxui-text) .feed-menus__wide {
+      display: none;
+    }
+
+    .feed .pb-vh:has(.pb-bar-brand > .muxui-text) .feed-menus__narrow {
+      display: block;
+    }
   }
 
   /* The bar runs the column's width, as the frame's own does: through the page's padding, at its top. */
@@ -74,10 +87,11 @@
     }
 
     /* The phone's bar is narrow: the feed's glyph gives way to its name, and the frame's side (the site's
-       name, the finder) gives way to the menus before the page would scroll sideways. Frame gap: the
-       view header's sides never shrink below their content. */
+       name, the finder) keeps its room first, then the feed's name takes what is left, and a site name
+       too long for the window is cut before the page would scroll sideways. Frame gap: the view header's
+       sides never shrink below their content. */
     .feed .pb-vh {
-      grid-template-columns: minmax(0, 1fr) minmax(0, max-content) auto;
+      grid-template-columns: minmax(0, max-content) minmax(0, 1fr) auto;
     }
 
     .feed .pb-vh__leading {

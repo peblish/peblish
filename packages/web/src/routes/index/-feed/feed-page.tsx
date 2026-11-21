@@ -51,7 +51,7 @@ import { Rail } from '../../../shell/rail.tsx';
 import { ViewHeader } from '../../../shell/view-header.tsx';
 import { castVoteFn } from '../../post/-vote.ts';
 import { loadFeed, type FeedData } from './load.ts';
-import { firstPlace, loadNext, readPlace, subscribePlaces, type Batch, type Place, type PlaceRow } from './places.ts';
+import { firstPlace, loadNext, readPlace, subscribePlaces, updateRows, type Batch, type Place, type PlaceRow } from './places.ts';
 import type { FeedRoute } from './route.ts';
 import { feedHref, resolveFeedSearch, type FeedSearch } from './search.ts';
 
@@ -133,6 +133,25 @@ function FeedHeader({ path, feed, search: address }: { path: string; feed: FeedN
   const periodChoices: MenuChoice<Period>[] = periods.map((id) => ({ id, label: t('feeds', `period.${id}`) }));
   const viewChoices: MenuChoice<Density>[] = densities.map((id) => ({ id, label: densityLabels[id], icon: viewIcons[id] }));
   const sortName = t('feeds', `sort.${search.sort}`);
+  const setDensity = (density: Density) => setPrefs({ density });
+  const sortProps = {
+    sorts: sortChoices,
+    sort: search.sort,
+    periodSort: 'top' as const,
+    periods: periodChoices,
+    period: search.period,
+    labels: {
+      group: t('feeds', 'sort.group'),
+      periodGroup: t('feeds', 'period.group'),
+      current: t('feeds', 'menu.current'),
+      trigger:
+        search.sort === 'top'
+          ? t('feeds', 'header.sortTop', { period: t('feeds', `period.${search.period}`) })
+          : t('feeds', 'header.sort', { sort: sortName }),
+    },
+    onChange: (sort: Sort, period?: Period) => openInRouter(router, feedHref(path, { sort, period: period ?? search.period })),
+    disabled: !hydrated,
+  };
   return (
     <>
       <ViewHeader
@@ -147,24 +166,7 @@ function FeedHeader({ path, feed, search: address }: { path: string; feed: FeedN
         }
         trailing={
           <span className="feed-menus">
-            <SortMenu
-              sorts={sortChoices}
-              sort={search.sort}
-              periodSort="top"
-              periods={periodChoices}
-              period={search.period}
-              labels={{
-                group: t('feeds', 'sort.group'),
-                periodGroup: t('feeds', 'period.group'),
-                current: t('feeds', 'menu.current'),
-                trigger:
-                  search.sort === 'top'
-                    ? t('feeds', 'header.sortTop', { period: t('feeds', `period.${search.period}`) })
-                    : t('feeds', 'header.sort', { sort: sortName }),
-              }}
-              onChange={(sort, period) => openInRouter(router, feedHref(path, { sort, period: period ?? search.period }))}
-              disabled={!hydrated}
-            />
+            <SortMenu {...sortProps} className="feed-menus__wide" />
             <ViewMenu
               views={viewChoices}
               view={prefs.density}
@@ -173,8 +175,19 @@ function FeedHeader({ path, feed, search: address }: { path: string; feed: FeedN
                 current: t('feeds', 'menu.current'),
                 trigger: t('feeds', 'header.view', { view: densityLabels[prefs.density] }),
               }}
-              onChange={(density) => setPrefs({ density })}
+              onChange={setDensity}
               disabled={!hydrated}
+              className="feed-menus__wide"
+            />
+            {/* A phone's bar with the site's name has room for one menu: Sort holds the views too (feed.css). */}
+            <SortMenu
+              {...sortProps}
+              labels={{
+                ...sortProps.labels,
+                trigger: t('feeds', 'header.sortView', { sort: sortProps.labels.trigger, view: densityLabels[prefs.density] }),
+              }}
+              viewSection={{ title: densityLabels.group, views: viewChoices, view: prefs.density, onChange: setDensity }}
+              className="feed-menus__narrow"
             />
           </span>
         }
@@ -298,6 +311,18 @@ export function FeedCards({
   );
   const auto = more !== undefined && hydrated && typeof IntersectionObserver !== 'undefined';
 
+  // A kept place shows its own rows, not the page's data. When the page's data comes again (Back reloads
+  // the first page in the background), the posts it holds are taken from it: a vote cast on the post's
+  // own page, a new comment count.
+  useEffect(() => {
+    if (!more || !readPlace(key)) return;
+    for (const item of data.items) updateRows(key, item.post.id, (row) => ({ ...row, post: item.post }));
+  }, [data, key, more]);
+  // A saved vote is written into the kept place too, so Back shows it.
+  const voted = (postId: string, myVote: -1 | 0 | 1, tally: { upvotes: number; downvotes: number }) => {
+    if (more) updateRows(key, postId, (row) => ({ ...row, post: { ...row.post, myVote, counts: { ...row.post.counts, ...tally } } }));
+  };
+
   const box = useRef<HTMLDivElement>(null);
   const end = useRef<HTMLDivElement>(null);
   const messages = {
@@ -384,6 +409,7 @@ export function FeedCards({
                   actions={rowActions}
                   hydrated={hydrated}
                   voteFailed={voteFailed}
+                  voted={voted}
                 />
               </li>
             ))}
@@ -430,6 +456,7 @@ function FeedRow({
   actions,
   hydrated,
   voteFailed,
+  voted,
 }: {
   row: PlaceRow;
   density: Density;
@@ -437,6 +464,7 @@ function FeedRow({
   actions: boolean;
   hydrated: boolean;
   voteFailed: () => void;
+  voted: (postId: string, myVote: -1 | 0 | 1, tally: { upvotes: number; downvotes: number }) => void;
 }) {
   const { t, locale } = useTranslate();
   const postLabels = { ...usePostCardLabels(), voteOn: (title: string) => t('posts', 'vote.on', { title }) };
@@ -459,6 +487,7 @@ function FeedRow({
         try {
           const result = await castVoteFn({ data: { target: { kind: 'post', id: post.id }, value } });
           if (!result.ok) throw new Error(result.reason);
+          voted(post.id, result.value, result.tally);
         } catch (error) {
           voteFailed();
           throw error;

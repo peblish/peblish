@@ -65,7 +65,15 @@ function Trigger({
   );
 }
 
-export interface SortMenuProps<Sort extends string, Period extends string> {
+/** The view's choices, as a section of the sort menu where the bar has no room for a View menu of its own. */
+export interface ViewSection<View extends string> {
+  title: string;
+  views: readonly MenuChoice<View>[];
+  view: View;
+  onChange: (view: View) => void;
+}
+
+export interface SortMenuProps<Sort extends string, Period extends string, View extends string = string> {
   sorts: readonly MenuChoice<Sort>[];
   sort: Sort;
   /** The sort that takes a period (Top): its item opens the periods as a submenu. */
@@ -76,13 +84,16 @@ export interface SortMenuProps<Sort extends string, Period extends string> {
   /** A new sort, or the period sort with a period. */
   onChange: (sort: Sort, period?: Period) => void;
   disabled?: boolean;
+  /** The view's choices after the sorts, in a section of their own. */
+  viewSection?: ViewSection<View>;
+  className?: string;
 }
 
 /**
  * A feed's sort (Commons' header menu): Hot, New, Old, and Top with its periods in a submenu. The
  * trigger names the sort in force and, for Top, its period ("Top Week").
  */
-export function SortMenu<Sort extends string, Period extends string>({
+export function SortMenu<Sort extends string, Period extends string, View extends string = string>({
   sorts,
   sort,
   periodSort,
@@ -91,11 +102,13 @@ export function SortMenu<Sort extends string, Period extends string>({
   labels,
   onChange,
   disabled,
-}: SortMenuProps<Sort, Period>) {
+  viewSection,
+  className,
+}: SortMenuProps<Sort, Period, View>) {
   const current = sorts.find((choice) => choice.id === sort);
   const currentPeriod = periods.find((choice) => choice.id === period);
   return (
-    <Menu.Root>
+    <Menu.Root className={className}>
       <Trigger icon={current?.icon} labels={labels} disabled={disabled}>
         {current?.label}
         {sort === periodSort && currentPeriod && <span className="pb-feed-menu__sub"> {currentPeriod.label}</span>}
@@ -129,6 +142,23 @@ export function SortMenu<Sort extends string, Period extends string>({
               </Menu.Item>
             ),
           )}
+          {viewSection && (
+            <>
+              <Menu.Separator />
+              <Menu.Section title={viewSection.title}>
+                {viewSection.views.map((choice) => (
+                  <Menu.Item
+                    key={choice.id}
+                    id={`view-${choice.id}`}
+                    textValue={choice.label}
+                    onAction={() => viewSection.onChange(choice.id)}
+                  >
+                    <Choice choice={choice} current={choice.id === viewSection.view} labels={labels} />
+                  </Menu.Item>
+                ))}
+              </Menu.Section>
+            </>
+          )}
         </Menu.List>
       </Menu.Popup>
     </Menu.Root>
@@ -141,13 +171,14 @@ export interface ViewMenuProps<View extends string> {
   labels: FeedMenuLabels;
   onChange: (view: View) => void;
   disabled?: boolean;
+  className?: string;
 }
 
 /** A feed's view (Card, Classic, Compact) as Commons' header menu: the trigger is the view's glyph alone. */
-export function ViewMenu<View extends string>({ views, view, labels, onChange, disabled }: ViewMenuProps<View>) {
+export function ViewMenu<View extends string>({ views, view, labels, onChange, disabled, className }: ViewMenuProps<View>) {
   const current = views.find((choice) => choice.id === view);
   return (
-    <Menu.Root>
+    <Menu.Root className={className}>
       <Trigger icon={current?.icon} labels={labels} disabled={disabled} iconOnly />
       <Menu.Popup placement="bottom-end">
         <Menu.List aria-label={labels.group}>
