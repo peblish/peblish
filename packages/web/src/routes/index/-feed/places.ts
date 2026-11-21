@@ -93,6 +93,16 @@ export function loadNext(key: string, from: Place, load: (cursor: string) => Pro
   );
 }
 
+/**
+ * Changes the kept rows of one post (a vote that was saved, the post as a fresher page has it), so Back
+ * shows it as it is now. A place that was never kept is left alone: it renders the page's own data.
+ */
+export function updateRows(key: string, postId: string, change: (row: PlaceRow) => PlaceRow): void {
+  const place = places.get(key);
+  if (!place?.rows.some((row) => row.post.id === postId)) return;
+  write(key, { ...place, rows: place.rows.map((row) => (row.post.id === postId ? change(row) : row)) });
+}
+
 /** For tests: forget every place. */
 export function forgetPlaces(): void {
   places.clear();

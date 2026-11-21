@@ -1,7 +1,7 @@
 import type { PostView } from '@peblish/schema/views';
 import { afterEach, expect, test } from 'vitest';
 import type { FeedItem } from './items.ts';
-import { firstPlace, forgetPlaces, loadNext, readPlace, type Batch } from './places.ts';
+import { firstPlace, forgetPlaces, loadNext, readPlace, updateRows, type Batch } from './places.ts';
 
 afterEach(forgetPlaces);
 
@@ -48,6 +48,18 @@ test('a failed batch keeps the rows and the cursor, so Retry asks for the same b
   expect(readPlace('k')!.rows).toHaveLength(2);
   loadNext('k', first, load, messages);
   expect(asked).toEqual(['c1', 'c1']);
+});
+
+test('a kept post can be changed in place, and a place never kept is left alone', async () => {
+  const { load, settle } = gate();
+  loadNext('k', first, load, messages);
+  settle().resolve({ items: [item('c')], next: 'c2', now: '2026-11-22T10:05:00.000Z' });
+  await Promise.resolve();
+  await Promise.resolve();
+  updateRows('k', 'c', (row) => ({ ...row, post: { ...row.post, myVote: 1 } }));
+  expect(readPlace('k')!.rows.find((row) => row.post.id === 'c')!.post.myVote).toBe(1);
+  updateRows('other', 'c', (row) => row);
+  expect(readPlace('other')).toBeUndefined();
 });
 
 test('places are kept apart by key', () => {
