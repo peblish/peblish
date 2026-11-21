@@ -1,3 +1,4 @@
+import { brandPack } from '@peblish/ui/brand/packs.ts';
 import { HeaderNav } from '@peblish/ui/components/header-nav';
 import { Link } from '@peblish/ui/components/link';
 import { Sidebar } from '@peblish/ui/components/sidebar';
@@ -74,6 +75,7 @@ export function Shell({ children }: { children: ReactNode }) {
   const pathname = useRouterState({ select: (state) => state.location.pathname });
   useFocusLostToPage(useRouterState({ select: (state) => state.resolvedLocation?.pathname }));
   const navigation = <Navigation session={session} shell={shell} pathname={pathname} />;
+  const pack = brandPack(shell.brand);
 
   return (
     <Sidebar.Provider>
@@ -83,7 +85,7 @@ export function Shell({ children }: { children: ReactNode }) {
         </Link>
         <header className="pb-app__bar">
           <div className="pb-app__bar-start">
-            <Brand siteName={shell.siteName} className="pb-bar-brand" />
+            <Brand siteName={shell.siteName} pack={pack} className="pb-bar-brand" />
             <span className="pb-app__actions">
               <Actions appearance={false} />
             </span>
@@ -101,7 +103,7 @@ export function Shell({ children }: { children: ReactNode }) {
         <div className="pb-app__side">
           <Sidebar.Root className="pb-side" hideBorder aria-label={t('shell', 'sidebar.label')}>
             <Sidebar.Header>
-              <Brand siteName={shell.siteName} />
+              <Brand siteName={shell.siteName} pack={pack} />
             </Sidebar.Header>
             {navigation}
           </Sidebar.Root>

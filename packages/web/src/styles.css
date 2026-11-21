@@ -3,6 +3,7 @@
 @layer reset, muxui.tokens, muxui.components, muxui.utilities, app;
 @import '@peblish/ui/tokens/tokens.css';
 @import '@peblish/ui/components/link.css';
+@import '@peblish/ui/brand/brand.css';
 @import '@peblish/ui/components/sidebar.css';
 @import '@peblish/ui/density/density-control.css';
 @import '@peblish/ui/components/vote-control.css';

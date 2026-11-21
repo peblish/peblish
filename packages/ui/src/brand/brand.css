@@ -1,0 +1,32 @@
+/* A brand pack's lockup (brand.tsx). The mark is as tall as a small control, its width from its own
+   proportions (the svg's viewBox), in the brand's action colour; the wordmark is in the pack's face
+   and weight (--pb-brand-*, set by the pack's pack.css), lowercase. */
+@layer app {
+  .pb-brand-lockup {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--muxui-semantic-layout-group-gap);
+    min-inline-size: 0;
+    max-inline-size: 100%;
+  }
+
+  /* The site's name in place of a wordmark it does not contain: truncated like the plain brand. */
+  .pb-brand-lockup__name {
+    min-inline-size: 0;
+  }
+
+  .pb-brand-lockup__mark {
+    flex: none;
+    block-size: var(--muxui-semantic-control-size-sm);
+    inline-size: auto;
+    color: var(--muxui-semantic-action-background);
+  }
+
+  .pb-brand-lockup__wordmark {
+    font-family: var(--pb-brand-wordmark-font, var(--muxui-semantic-typography-title-font-family));
+    font-size: var(--muxui-semantic-typography-label-l-font-size);
+    font-weight: var(--pb-brand-wordmark-weight, var(--muxui-semantic-typography-label-weight));
+    color: var(--muxui-semantic-content-strong);
+    text-transform: lowercase;
+  }
+}

@@ -9,6 +9,7 @@ The budget check is `e2e/payload/budget.spec.ts` (with `e2e/composer/payload.spe
 - **Mux UI CSS, report-only:** 65 kB, printed and noted on the test (`payload-over`) when over, never a failure.
 - **Editor:** the sheet's lazy script, when it opens, stays inside 200 kB (enforced); the editor chunk on the signed-out `/submit` is report-only against the same figure; no other page loads it.
 - Also enforced: no vendor package outside its named chunk, no `themes.css` rules, and every page budgeted or excused in `routes.ts`.
+- **Under a brand pack** (`site.brand`, `packages/ui/src/brand`): `e2e/payload/brand.serial.spec.ts` sets the feddit pack and runs the same checks on `/kit` (the most fonts) and `/`, which also need the pack's sheet to hold only token overrides on `:root` and its faces, and its wordmark face to load. The pack adds the same files to every page: its sheet, its icons and, in the desktop header only, the wordmark face (Quicksand Bold cut to the letters of "feddit", 7.2 kB as a woff file): `/kit`'s 259.2 kB of fonts and the face make 266.4 kB, inside 270. The figures print as `payload <page> (brand pack): ..., pack css ...`.
 
 Until 2026-11-12 the script budget was one figure for every page, 170 kB (the `/kit` gallery 180 kB), set before the Mux UI shell; the shell and Mux UI took every page to 181 to 230 kB, so the check could only report, and each page now has its own budget instead.
 

@@ -122,6 +122,10 @@ The accents use TagGroup's hue foregrounds because they are the only Mux accent 
 
 The other jobs, straight from Mux (prefix `--muxui-`): text `semantic-content-default`; muted text (meta lines, counts, times) `semantic-content-muted`; links `semantic-content-link`; separators and thread lines `semantic-border-subtle`; hover fill `semantic-surface-hover`; page `semantic-surface-background`; raised surface (cards, menus, the docked bar) `semantic-surface-raised`; quiet fill (notice, code, stub) `semantic-surface-subtle`; link hover `semantic-content-link-hover`; borders on controls and collections `semantic-border-default`; dense row lines `semantic-border-faint`; selected item `semantic-selection-background`; focus ring `outline: 2px solid var(--muxui-semantic-focus-ring)` (Mux's own `:focus-visible` rule already draws it, so the app no longer sets one). Anything else: the catalogue's "Which token for which job" table.
 
+### Brand packs
+
+An instance may have a brand pack (`packages/ui/src/brand/<id>/`, chosen by the site setting `site.brand`; `pack.ts` there describes the folder). Its `pack.css` is the one stylesheet that sets values by hand: Mux reference tokens on `:root` (only those that differ from Mux's default; semantic and dark values follow from them), Mux tokens to tokens (feddit's label weight 500), the wordmark's `--pb-brand-wordmark-font` and `--pb-brand-wordmark-weight`, and the wordmark's `@font-face`. The guard's `css-brand-pack` rule holds it to that. Components never read a pack: they keep using the tokens above, which the pack changes. With no pack, nothing of this loads and the app is Mux UI's default palette.
+
 ### Base rules
 
 Mux UI rc.7 components bring their own font and box model: they no longer take font, box sizing or Separator margin from the page, and Mux's base rule gives the body its text face, size (fluid 14 to 16px), line height and colour. What `tokens.css` adds:
