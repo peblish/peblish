@@ -1,9 +1,8 @@
-/* The modlog (lane MODF), after the R2 mock modlog-feed: a stream of Mux Text and Link. Layout only, colours from Mux tokens. */
+/* The modlog (lane MODF), after the R2 mock modlog-feed: a stream of Mux Text and Link in the Commons
+   frame, its filters in the frame's rail. Layout only, colours from Mux tokens. */
 @layer app {
   .modlog {
-    max-inline-size: 1100px;
-    margin-inline: auto;
-    padding: var(--muxui-semantic-layout-inset-large) var(--muxui-semantic-layout-inset-medium);
+    padding-block-start: var(--muxui-semantic-layout-inset-large);
   }
   .modlog-head {
     display: flex;
@@ -12,27 +11,24 @@
     gap: var(--muxui-semantic-layout-tight-gap) var(--muxui-semantic-layout-action-gap);
     margin-block-end: var(--muxui-semantic-layout-section-gap);
   }
-  .modlog-layout {
+  /* The filters in the page, only where the frame's rail is gone (shell.css drops it under 62rem). */
+  .modlog-facets {
+    display: none;
+  }
+  @container page (width < 62rem) {
+    .modlog-facets {
+      display: block;
+      margin-block-end: var(--muxui-semantic-layout-section-gap);
+    }
+  }
+  /* The two panels, a group gap apart: one above the other in the rail, side by side in the page where they fit. */
+  .modlog-panels {
     display: grid;
-    grid-template-columns: 220px minmax(0, 1fr);
-    gap: var(--muxui-semantic-layout-content-gap);
-  }
-  .modlog-rail-heading {
-    margin-block-end: var(--muxui-semantic-layout-tight-gap);
-  }
-  .modlog-rail ul {
-    list-style: none;
-    margin: 0 0 var(--muxui-semantic-layout-section-gap);
-    padding: 0;
-  }
-  .modlog-rail-link {
-    display: flex;
-    justify-content: space-between;
+    align-items: start;
     gap: var(--muxui-semantic-layout-group-gap);
-    padding-block: var(--muxui-semantic-layout-description-gap);
   }
-  .modlog-rail-link[aria-current] .modlog-rail-label {
-    font-weight: var(--muxui-semantic-typography-label-weight);
+  .modlog-facets .modlog-panels {
+    grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
   }
   .modlog .modlog-day {
     margin-block: var(--muxui-semantic-layout-section-gap) var(--muxui-semantic-layout-tight-gap);
@@ -67,9 +63,6 @@
     margin-block-start: var(--muxui-semantic-layout-section-gap);
   }
   @media (max-width: 760px) {
-    .modlog-layout {
-      grid-template-columns: minmax(0, 1fr);
-    }
     .modlog-l2 {
       margin-inline-start: 0;
     }

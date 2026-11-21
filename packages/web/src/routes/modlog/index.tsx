@@ -3,13 +3,17 @@ import { EmptyState } from '@peblish/ui/components/empty-state';
 import { BidiText, Handle } from '@peblish/ui/components/handle';
 import { Link } from '@peblish/ui/components/link';
 import { Pager } from '@peblish/ui/components/pager';
+import { RailLinks } from '@peblish/ui/components/rail-links';
+import { RailPanel } from '@peblish/ui/components/rail-panel';
 import { Text } from '@peblish/ui/components/text';
 import { Time } from '@peblish/ui/components/time';
 import { createFileRoute, notFound } from '@tanstack/react-router';
 import { useTranslate } from '../../i18n/use-translate.ts';
 import { useRouteHydrated } from '../../shell/hydration.ts';
+import { Rail } from '../../shell/rail.tsx';
 import { commentPath, communityPath, postPath, userPath } from '../../shell/paths.ts';
 import { headTitle } from '../../shell/title.ts';
+import { ownHeader, PageHeader } from '../admin/-page.tsx';
 import { loadModlog, modlogEntryValid, type LineView, type ModlogData, type ModlogSearch } from './-load.ts';
 import { actionKey, banLength } from './-ui/labels.ts';
 import modlogCss from './-ui/modlog.css?url';
@@ -62,6 +66,7 @@ export const Route = createFileRoute('/modlog/')({
     return loadModlog({ data: deps });
   },
   head: (context) => ({ meta: headTitle(context, 'modlog', 'title'), links: [{ rel: 'stylesheet', href: modlogCss }] }),
+  staticData: ownHeader,
   component: ModlogPage,
 });
 
@@ -77,81 +82,88 @@ function ModlogPage() {
   const keep = { community: chosen.communityHandle ?? undefined, action: chosen.group ?? undefined, remote: chosen.remote || undefined };
   const days = groupByDay(data.lines);
   return (
-    <main className="modlog">
-      <div className="modlog-head">
-        <Text as="h1" variant="display" size="sm">
-          {t('modlog', 'title')}
-        </Text>
-        <Text>{chosen.community ? <Handle prefix="!" handle={chosen.community.handle} /> : t('modlog', 'allCommunities')}</Text>
-        <Note>{t('modlog', 'timesInUtc')}</Note>
-        {data.staff && <Note>{t('modlog', 'staffView')}</Note>}
-        {!data.signedIn && <Note>{t('modlog', 'signedOut')}</Note>}
-      </div>
-      <div className="modlog-layout">
-        <Rail data={data} keep={keep} />
-        <div className="modlog-body">
-          {data.lines.length === 0 ? (
-            <EmptyState
-              title={filtered ? t('modlog', 'noMatch') : t('modlog', 'empty')}
-              action={filtered && <Link href="/modlog">{t('modlog', 'clearFilters')}</Link>}
-              data-testid="modlog-empty"
-            />
-          ) : (
-            days.map(({ day, lines }) => (
-              <section key={day} aria-label={day}>
-                <Text as="h2" variant="title" size="sm" className="modlog-day">
-                  {dayHeading(lines[0]!.entry.createdAt, locale)}
+    <>
+      <main className="modlog-main">
+        <PageHeader title={t('modlog', 'title')} />
+        <div className="pb-page modlog">
+          <div className="modlog-head">
+            <Text>{chosen.community ? <Handle prefix="!" handle={chosen.community.handle} /> : t('modlog', 'allCommunities')}</Text>
+            <Note>{t('modlog', 'timesInUtc')}</Note>
+            {data.staff && <Note>{t('modlog', 'staffView')}</Note>}
+            {!data.signedIn && <Note>{t('modlog', 'signedOut')}</Note>}
+          </div>
+          {/* Where the frame's rail gives way (under 62rem, and on a phone) the filters show here instead. */}
+          <section className="modlog-facets" aria-label={t('modlog', 'rail.label')}>
+            <Facets data={data} keep={keep} />
+          </section>
+          <div className="modlog-body">
+            {data.lines.length === 0 ? (
+              <EmptyState
+                title={filtered ? t('modlog', 'noMatch') : t('modlog', 'empty')}
+                action={filtered && <Link href="/modlog">{t('modlog', 'clearFilters')}</Link>}
+                data-testid="modlog-empty"
+              />
+            ) : (
+              days.map(({ day, lines }) => (
+                <section key={day} aria-label={day}>
+                  <Text as="h2" variant="title" size="sm" className="modlog-day">
+                    {dayHeading(lines[0]!.entry.createdAt, locale)}
+                  </Text>
+                  {lines.map((line) => (
+                    <Entry key={line.entry.id} line={line} />
+                  ))}
+                </section>
+              ))
+            )}
+            {data.lines.length > 0 && (
+              <Pager
+                aria-label={t('modlog', 'older')}
+                first={chosen.cursor ? { href: href(keep), label: t('modlog', 'newest') } : undefined}
+                next={data.next ? { href: href({ ...keep, cursor: data.next }), label: t('modlog', 'older') } : undefined}
+              >
+                <Text size="sm" color="muted" data-testid="modlog-range">
+                  {t('modlog', 'range', {
+                    from: number.format(data.from),
+                    to: number.format(data.from + data.lines.length - 1),
+                    total: number.format(data.total),
+                  })}
                 </Text>
-                {lines.map((line) => (
-                  <Entry key={line.entry.id} line={line} />
-                ))}
-              </section>
-            ))
-          )}
-          {data.lines.length > 0 && (
-            <Pager
-              aria-label={t('modlog', 'older')}
-              first={chosen.cursor ? { href: href(keep), label: t('modlog', 'newest') } : undefined}
-              next={data.next ? { href: href({ ...keep, cursor: data.next }), label: t('modlog', 'older') } : undefined}
-            >
-              <Text size="sm" color="muted" data-testid="modlog-range">
-                {t('modlog', 'range', {
-                  from: number.format(data.from),
-                  to: number.format(data.from + data.lines.length - 1),
-                  total: number.format(data.total),
-                })}
-              </Text>
-            </Pager>
-          )}
-          <Text as="p" size="sm" color="muted" className="modlog-legend">
-            <Text size="sm" color="muted">
-              <Text variant="label" size="sm">
-                {t('modlog', 'marker.relayed')}
-              </Text>{' '}
-              {t('modlog', 'legend.relayed')}
-            </Text>
-            <Text size="sm" color="muted">
-              <Text variant="label" size="sm">
-                {t('modlog', 'marker.withheld')}
-              </Text>{' '}
-              {t('modlog', 'legend.withheld')}
-            </Text>
-            {data.staff && (
+              </Pager>
+            )}
+            <Text as="p" size="sm" color="muted" className="modlog-legend">
               <Text size="sm" color="muted">
                 <Text variant="label" size="sm">
-                  {t('modlog', 'marker.private')}
+                  {t('modlog', 'marker.relayed')}
                 </Text>{' '}
-                {t('modlog', 'legend.private')}
+                {t('modlog', 'legend.relayed')}
               </Text>
-            )}
-          </Text>
+              <Text size="sm" color="muted">
+                <Text variant="label" size="sm">
+                  {t('modlog', 'marker.withheld')}
+                </Text>{' '}
+                {t('modlog', 'legend.withheld')}
+              </Text>
+              {data.staff && (
+                <Text size="sm" color="muted">
+                  <Text variant="label" size="sm">
+                    {t('modlog', 'marker.private')}
+                  </Text>{' '}
+                  {t('modlog', 'legend.private')}
+                </Text>
+              )}
+            </Text>
+          </div>
         </div>
-      </div>
-    </main>
+      </main>
+      <Rail label={t('modlog', 'rail.label')}>
+        <Facets data={data} keep={keep} />
+      </Rail>
+    </>
   );
 }
 
-function Rail({
+/** The filters, community and action, each a RailPanel of links with their counts; every filter is a link. */
+function Facets({
   data,
   keep,
 }: {
@@ -162,44 +174,55 @@ function Rail({
   const number = new Intl.NumberFormat(locale);
   const { chosen, facets } = data;
   const communityTotal = facets.communities.reduce((sum, row) => sum + row.count, 0);
-  const item = (label: React.ReactNode, count: number, target: string, current: boolean) => (
-    <li>
-      <Link href={target} current={current} className="modlog-rail-link pb-link-quiet">
-        <Text className="modlog-rail-label">{label}</Text>
-        <Note>{number.format(count)}</Note>
-      </Link>
-    </li>
-  );
+  const item = (key: string, label: React.ReactNode, count: number, target: string, current: boolean) => ({
+    key,
+    label,
+    count: number.format(count),
+    href: target,
+    current,
+  });
   return (
-    <aside className="modlog-rail" aria-label={t('modlog', 'rail.label')}>
-      <RailHeading>{t('modlog', 'rail.community')}</RailHeading>
-      <ul>
-        {item(t('modlog', 'rail.all'), communityTotal, href({ ...keep, community: undefined }), !chosen.communityHandle)}
-        {facets.communities.map((row) => {
-          const handle = row.label?.handle ?? row.apId;
-          return item(
-            <Handle prefix="!" handle={handle} />,
-            row.count,
-            href({ ...keep, community: handle }),
-            chosen.community?.id === row.id,
-          );
-        })}
-        {item(t('modlog', 'rail.remote'), facets.remote, href({ ...keep, remote: chosen.remote ? undefined : true }), chosen.remote)}
-      </ul>
-      <RailHeading>{t('modlog', 'rail.action')}</RailHeading>
-      <ul>
-        {groupOrder
-          .filter((group) => group !== 'site' || data.staff || facets.groups.site > 0)
-          .map((group) =>
+    <div className="modlog-panels">
+      <RailPanel title={t('modlog', 'rail.community')}>
+        <RailLinks
+          items={[
+            item('all', t('modlog', 'rail.all'), communityTotal, href({ ...keep, community: undefined }), !chosen.communityHandle),
+            ...facets.communities.map((row) => {
+              const handle = row.label?.handle ?? row.apId;
+              return item(
+                row.id,
+                <Handle prefix="!" handle={handle} />,
+                row.count,
+                href({ ...keep, community: handle }),
+                chosen.community?.id === row.id,
+              );
+            }),
             item(
-              t('modlog', `group.${group}`),
-              facets.groups[group],
-              href({ ...keep, action: chosen.group === group ? undefined : group }),
-              chosen.group === group,
+              'remote',
+              t('modlog', 'rail.remote'),
+              facets.remote,
+              href({ ...keep, remote: chosen.remote ? undefined : true }),
+              chosen.remote,
             ),
-          )}
-      </ul>
-    </aside>
+          ]}
+        />
+      </RailPanel>
+      <RailPanel title={t('modlog', 'rail.action')}>
+        <RailLinks
+          items={groupOrder
+            .filter((group) => group !== 'site' || data.staff || facets.groups.site > 0)
+            .map((group) =>
+              item(
+                group,
+                t('modlog', `group.${group}`),
+                facets.groups[group],
+                href({ ...keep, action: chosen.group === group ? undefined : group }),
+                chosen.group === group,
+              ),
+            )}
+        />
+      </RailPanel>
+    </div>
   );
 }
 
@@ -347,12 +370,6 @@ const Note = ({ children }: { children: React.ReactNode }) => (
 /** A marker on an entry ([mods only], [relayed], [withheld]): small muted label text. */
 const Marker = ({ children }: { children: React.ReactNode }) => (
   <Text variant="label" size="sm" color="muted">
-    {children}
-  </Text>
-);
-
-const RailHeading = ({ children }: { children: React.ReactNode }) => (
-  <Text as="h2" variant="label" size="sm" color="muted" className="modlog-rail-heading">
     {children}
   </Text>
 );
