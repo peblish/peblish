@@ -9,6 +9,7 @@ import {
   ClipboardList,
   Code,
   Compass,
+  ExternalLink,
   EyeOff,
   FileText,
   Flame,
@@ -24,6 +25,7 @@ import {
   List,
   ListOrdered,
   Lock,
+  MessageSquare,
   LogIn,
   MapPin,
   Menu,
@@ -33,6 +35,7 @@ import {
   Plus,
   Search,
   Settings,
+  Share,
   Shield,
   ShieldCheck,
   SquarePen,
@@ -121,6 +124,15 @@ export const BulletListIcon = icon(List);
 export const NumberedListIcon = icon(ListOrdered);
 export const HeadingIcon = icon(Heading);
 export const SpoilerIcon = icon(EyeOff);
+
+// The shared post pieces (post-row, vote-control, link-preview, nsfw-cover). The vote arrows here
+// are outlined; vote-control.css fills the one that is cast, so a vote never shows by colour alone.
+export const VoteUpIcon = icon(ArrowBigUp);
+export const VoteDownIcon = icon(ArrowBigDown);
+export const CommentsIcon = icon(MessageSquare);
+export const ShareIcon = icon(Share);
+export const ExternalLinkIcon = icon(ExternalLink);
+export const CoverIcon = icon(EyeOff);
 
 /** A brand pack's mark (brand/pack.ts): its one path in currentColor, always hidden (the link around it is named). */
 export function MarkIcon({ mark, className }: { mark: BrandPack['mark']; className?: string }) {

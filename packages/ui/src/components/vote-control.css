@@ -1,46 +1,92 @@
 @layer app {
-  /* The vote column: Mux ToggleButtons stacked around the score. Layout here; the arrows' look is
-     Mux UI's own, except that a voted arrow takes the up or down accent instead of the neutral fill. */
+  /* The vote: Mux ToggleButtons around a passive score. At rest the arrows are outlined and muted;
+     a cast arrow is filled and takes the up or down accent (never colour alone), and a pill vote
+     takes that accent's weak tint. Mux tokens only. */
   .pb-vote {
-    display: flex;
+    display: inline-flex;
     flex: none;
     flex-direction: column;
     align-items: center;
     gap: var(--muxui-semantic-layout-micro-gap);
+    border-radius: var(--muxui-semantic-shape-pill-radius);
   }
 
   .pb-vote--row {
     flex-direction: row;
+    gap: 0;
   }
 
-  /* Mux gap: ToggleButton has no icon-only (square) size. */
+  .pb-vote--pill {
+    flex-direction: row;
+    gap: 0;
+    background: var(--muxui-semantic-action-neutral-background);
+  }
+
+  .pb-vote--pill[data-vote='up'] {
+    background: var(--muxui-component-taggroup-orange-tint-weak);
+  }
+
+  .pb-vote--pill[data-vote='down'] {
+    background: var(--muxui-component-taggroup-indigo-tint-weak);
+  }
+
+  /* Mux gap: ToggleButton has no icon-only (square) size and no quiet variant; a round, unfilled
+     button is drawn from its own parts. */
   .pb-vote .muxui-toggle-button {
-    padding-inline: 0;
+    box-sizing: border-box;
+    padding: 0;
     min-inline-size: var(--muxui-semantic-control-size-sm);
+    min-block-size: var(--muxui-semantic-control-size-sm);
+    border-radius: var(--muxui-semantic-shape-pill-radius);
+    background-color: transparent;
+    outline-color: transparent;
+    color: var(--muxui-semantic-content-muted);
+  }
+
+  .pb-vote .muxui-toggle-button svg {
+    inline-size: var(--muxui-semantic-typography-label-m-font-size);
+    block-size: var(--muxui-semantic-typography-label-m-font-size);
+  }
+
+  .pb-vote .muxui-toggle-button:hover {
+    background-color: var(--muxui-semantic-action-neutral-background-hover);
+  }
+
+  .pb-vote .pb-vote__up:hover {
+    color: var(--pb-up);
+  }
+
+  .pb-vote .pb-vote__down:hover {
+    color: var(--pb-down);
   }
 
   /* Mux gap: a disabled ToggleButton looks the same as an enabled one. */
-  .pb-vote .muxui-toggle-button[data-muxui-state-disabled] {
+  .pb-vote .muxui-toggle-button[data-muxui-state-disabled],
+  .pb-vote .muxui-toggle-button[data-muxui-state-disabled]:hover {
+    background-color: transparent;
     color: var(--muxui-semantic-content-faint);
   }
 
   /* Mux gap: ToggleButton has no tone for its selected state. */
   .pb-vote .pb-vote__up[data-muxui-state-selected],
   .pb-vote .pb-vote__up[data-muxui-state-selected]:hover {
-    background-color: var(--muxui-component-taggroup-orange-tint-weak);
-    outline-color: var(--pb-up);
+    background-color: transparent;
     color: var(--pb-up);
   }
 
   .pb-vote .pb-vote__down[data-muxui-state-selected],
   .pb-vote .pb-vote__down[data-muxui-state-selected]:hover {
-    background-color: var(--muxui-component-taggroup-indigo-tint-weak);
-    outline-color: var(--pb-down);
+    background-color: transparent;
     color: var(--pb-down);
+  }
+
+  .pb-vote .muxui-toggle-button[data-muxui-state-selected] svg {
+    fill: currentColor;
   }
 
   .pb-vote__score {
     min-inline-size: 3ch;
+    padding-inline: var(--muxui-semantic-layout-micro-gap);
     font-variant-numeric: tabular-nums;
     text-align: center;
   }
@@ -51,5 +97,13 @@
 
   .pb-vote[data-vote='down'] .pb-vote__score {
     color: var(--pb-down);
+  }
+
+  /* A phone: each arrow is a 44px target (Mux's large control and two dense gaps), the glyph unchanged. */
+  @media (max-width: 859.98px) {
+    .pb-vote .muxui-toggle-button {
+      min-inline-size: calc(var(--muxui-semantic-control-size-lg) + 2 * var(--muxui-semantic-layout-dense-gap));
+      min-block-size: calc(var(--muxui-semantic-control-size-lg) + 2 * var(--muxui-semantic-layout-dense-gap));
+    }
   }
 }
