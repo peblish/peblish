@@ -1,12 +1,18 @@
 /* The public pages at /<slug>: the legal and about texts, after the mock's Feddit pages (styles/pages.css):
-   the text at a readable measure, then the other pages under a rule in the muted meta size. The title is
-   the h1 in the frame's view header. Layout only; type and colour come from Mux Text, Prose and tokens. */
+   the title and text, then the other pages under a rule in the muted meta size. Layout only; type and colour come from Mux Text, Prose and tokens. */
 @layer app {
   .legal-page {
     display: flex;
     flex-direction: column;
     gap: var(--muxui-semantic-layout-group-gap);
     padding-block: var(--muxui-semantic-layout-inset-large) var(--muxui-semantic-layout-inset-xlarge);
+  }
+  .legal-page .legal-text {
+    display: grid;
+    gap: var(--muxui-semantic-layout-group-gap);
+  }
+  .legal-page .legal-text .muxui-text {
+    margin: 0;
   }
   .legal-page .legal-list {
     display: grid;
