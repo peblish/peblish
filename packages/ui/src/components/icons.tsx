@@ -52,6 +52,7 @@ import {
   CornerDownRight,
   UserCheck,
   UserX,
+  CheckCheck,
   type LucideIcon,
   type LucideProps,
 } from 'lucide-react';
@@ -154,11 +155,13 @@ export const ViewCardIcon = icon(StretchHorizontal);
 export const ViewClassicIcon = icon(LayoutList);
 export const ViewCompactIcon = icon(Rows3);
 export const CopyLinkIcon = icon(Link2);
-// The inbox's notice marks (inbox-row): a reply or a mention on the person's avatar, a ban or its end.
+// The inbox (inbox-row and its route): a reply or a mention on the person's avatar, a ban or its end, and Mark all read.
 export const ReplyIcon = icon(CornerDownRight);
 export const AtSignIcon = icon(AtSign);
 export const UserXIcon = icon(UserX);
 export const UserCheckIcon = icon(UserCheck);
+/** Mark all read. */
+export const CheckCheckIcon = icon(CheckCheck);
 
 /** A brand pack's mark (brand/pack.ts): its one path in currentColor, always hidden (the link around it is named). */
 export function MarkIcon({ mark, className }: { mark: BrandPack['mark']; className?: string }) {

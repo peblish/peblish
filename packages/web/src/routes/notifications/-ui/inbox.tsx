@@ -5,7 +5,7 @@ import { Button } from '@peblish/ui/components/button';
 import { ButtonLink } from '@peblish/ui/components/button-link';
 import { EmptyState } from '@peblish/ui/components/empty-state';
 import { BidiText, Handle, neutraliseBidi } from '@peblish/ui/components/handle';
-import { CommentsIcon } from '@peblish/ui/components/icons';
+import { CheckCheckIcon, CommentsIcon } from '@peblish/ui/components/icons';
 import { InboxReply, InboxRow, type InboxMark } from '@peblish/ui/components/inbox-row';
 import { Link } from '@peblish/ui/components/link';
 import { LinkTabs } from '@peblish/ui/components/link-tabs';
@@ -27,8 +27,8 @@ import { asCommentError, errorKey, type CommentError } from '../../post/$id/comm
 import type { InboxData } from '../-load.ts';
 import { inboxAction, inboxHref, type InboxSearch } from '../-search.ts';
 
-// The inbox (notifications-list), in Commons' layout: its own view header with the unread count and
-// Mark all read, the filter tabs with their unread badges, and one InboxRow per notice. Everything is a
+// The inbox (notifications-list), in Commons' layout: its own view header holding Mark all read, the
+// title with the unread count, the filter tabs with their unread badges, and one InboxRow per notice. Everything is a
 // plain form or link, so it works without scripts; once hydrated the forms post by fetch and the page
 // reloads its data (router.invalidate), so the header's badge follows. A form's fields ride in its
 // action's address (inboxAction), so a row's form holds only its Mux submit Button. A reply or mention
@@ -46,11 +46,14 @@ function unreadFor(filter: InboxFilter, inbox: Signed): number {
 
 const errorKeys = ['auth.required', 'auth.site_banned', 'notification.not_yours', 'target.not_found', 'invalid'] as const;
 
-/** The page's title in its view header: the h1 and, beside it, the unread count. */
+/**
+ * The page's title: the h1 and, beside it, the unread count. It heads the page rather than the view
+ * header, whose title stays quiet: beside a long site name on a phone the bar has no room for it.
+ */
 function Title({ unread }: { unread?: number }) {
   const { t, locale } = useTranslate();
   return (
-    <span className="pb-inbox__name">
+    <div className="pb-inbox__name">
       <Text as="h1" variant="heading" size="sm" className="pb-inbox__h1">
         {t('notifications', 'title')}
       </Text>
@@ -59,7 +62,7 @@ function Title({ unread }: { unread?: number }) {
           {unread > 0 ? translatePlural(locale, 'notifications', 'unread', unread) : t('notifications', 'allRead')}
         </Text>
       )}
-    </span>
+    </div>
   );
 }
 
@@ -69,8 +72,9 @@ export function Inbox({ data, search }: { data: InboxData; search: InboxSearch }
   if (!data.signedIn)
     return (
       <main className="pb-inbox">
-        <ViewHeader root title={<Title />} />
+        <ViewHeader root quiet />
         <div className="pb-page pb-inbox__body">
+          <Title />
           <EmptyState
             title={t('notifications', 'signedOut')}
             action={
@@ -125,16 +129,19 @@ function SignedInbox({ data, search }: { data: Signed; search: InboxSearch }) {
     <main className="pb-inbox">
       <ViewHeader
         root
-        title={<Title unread={data.unread} />}
+        quiet
         trailing={
-          <form method="post" action={inboxAction({ intent: 'read_all' }, page)} onSubmit={submit}>
+          <form method="post" action={inboxAction({ intent: 'read_all' }, page)} onSubmit={submit} className="pb-inbox__all">
+            {/* On a phone its name gives way to its icon (inbox.css); the name stays for assistive technology. */}
             <Button type="submit" variant="ghost" size="sm" disabled={data.unread === 0}>
-              {t('notifications', 'markAllRead')}
+              <CheckCheckIcon aria-hidden="true" />
+              <Text className="pb-inbox__all-label">{t('notifications', 'markAllRead')}</Text>
             </Button>
           </form>
         }
       />
       <div className="pb-page pb-inbox__body">
+        <Title unread={data.unread} />
         {shownError !== undefined && (
           <Notice tone="danger" role="alert">
             {t('notifications', errorKey ? `error.${errorKey}` : 'error.generic')}

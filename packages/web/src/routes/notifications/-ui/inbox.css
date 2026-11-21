@@ -4,10 +4,9 @@
 @layer app {
   .pb-inbox__name {
     display: flex;
+    flex-wrap: wrap;
     align-items: baseline;
-    gap: var(--muxui-semantic-layout-tight-gap);
-    min-inline-size: 0;
-    white-space: nowrap;
+    gap: var(--muxui-semantic-layout-tight-gap) var(--muxui-semantic-layout-action-gap);
   }
 
   .pb-inbox__h1 {
@@ -18,5 +17,22 @@
     display: grid;
     grid-template-columns: minmax(0, 1fr);
     gap: var(--muxui-semantic-layout-group-gap);
+  }
+
+  /* On a phone Mark all read in the bar is its icon, a 44px target, its name kept for assistive technology. */
+  @media (max-width: 859.98px) {
+    .pb-inbox__all-label {
+      position: absolute;
+      inline-size: 1px;
+      block-size: 1px;
+      overflow: hidden;
+      clip-path: inset(50%);
+      white-space: nowrap;
+    }
+
+    .pb-inbox__all {
+      --pb-touch: calc(var(--muxui-semantic-control-size-lg) + 2 * var(--muxui-semantic-layout-dense-gap));
+      --muxui-control-size-sm: var(--pb-touch);
+    }
   }
 }

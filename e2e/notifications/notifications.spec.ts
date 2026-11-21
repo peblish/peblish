@@ -103,10 +103,10 @@ test.describe('the inbox of a person who was replied to, mentioned, moderated an
 
     const text = (phrase: string) => rows(page).filter({ hasText: phrase });
     await expect(text('replied to your post')).toHaveCount(4);
-    await expect(text('replied to your comment on')).toHaveCount(1);
-    await expect(text('mentioned you in a comment on')).toHaveCount(1);
-    await expect(text('removed your comment on')).toHaveCount(2);
-    await expect(text('restored your comment on')).toHaveCount(1);
+    await expect(text('replied to your comment')).toHaveCount(1);
+    await expect(text('mentioned you in a comment')).toHaveCount(1);
+    await expect(text('removed your comment')).toHaveCount(2);
+    await expect(text('restored your comment')).toHaveCount(1);
     await expect(text('banned you from')).toHaveCount(1);
     await expect(text('lifted your ban from')).toHaveCount(1);
 
@@ -147,7 +147,7 @@ test.describe('the inbox of a person who was replied to, mentioned, moderated an
     for (const [name, count, phrase] of [
       ['Replies', 5, 'replied to your'],
       ['Mentions', 1, 'mentioned you'],
-      ['Your content', 3, 'your comment on'],
+      ['Your content', 3, 'your comment'],
       ['Account', 2, 'ban'],
       ['Unread', 11, ''],
       ['All', 11, ''],
@@ -248,6 +248,24 @@ test.describe('the inbox of a person who was replied to, mentioned, moderated an
       'page',
     );
     await page.context().close();
+  });
+});
+
+test.describe('a reply written in place', () => {
+  test('posts through the comment form, says so, and the reply is on the post', async ({ page }) => {
+    await signedIn(page, seed.me.name);
+    const log = recordConsole(page);
+    await gotoHydrated(page, '/notifications?filter=replies');
+    const row = rows(page).filter({ hasText: `Great post ${seed.suffix}` });
+    await row.getByRole('button', { name: /^Reply: / }).click();
+    await row.getByRole('textbox', { name: /^Reply to @/ }).fill(`Thanks, glad you liked it ${seed.suffix}`);
+    await row.getByRole('button', { name: 'Reply', exact: true }).click();
+    await expect(row.getByRole('status')).toHaveText('Reply posted. View reply');
+    await expect(row.getByRole('textbox')).toHaveCount(0);
+    await row.getByRole('link', { name: 'View reply' }).click();
+    await page.waitForURL(/\/post\/[0-9a-f-]{36}\/comments\/[0-9a-f-]{36}$/);
+    await expect(page.getByText(`Thanks, glad you liked it ${seed.suffix}`).filter({ visible: true }).first()).toBeVisible();
+    expect(log.hydrationProblems()).toEqual([]);
   });
 });
 
