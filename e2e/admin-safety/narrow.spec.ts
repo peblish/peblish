@@ -1,4 +1,5 @@
-import { expect, test, type BrowserContextOptions } from '@playwright/test';
+import { expect, test, type BrowserContextOptions, type Locator } from '@playwright/test';
+import { expectAccessible, expectAccessibleOnPhone } from '../auth/support.ts';
 import { seedWorld, signedInAdmin, type World } from '../modlog/support.ts';
 import { gotoHydrated } from '../support/route-marker.ts';
 import { postFromPage, seedSafetyRows } from './support.ts';
@@ -68,3 +69,55 @@ for (const width of [375, 320]) {
     await page.context().close();
   });
 }
+
+// The staff pages in the Commons frame: the page's name is the h1 in the frame's view header, the admin
+// tabs sit under it, and the rail holds the queue's communities and the modlog's filters beside a page
+// wide enough for it; where the rail gives way the modlog's filters show in the page.
+test('the report queue and the modlog put their name in the view header and their places in the rail', async ({ browser }) => {
+  test.setTimeout(90_000);
+  const page = await (await browser.newContext({ storageState: session, viewport: { width: 1440, height: 900 } })).newPage();
+  await gotoHydrated(page, '/admin/reports');
+  await expect(page.getByRole('navigation', { name: 'Page' }).getByRole('heading', { level: 1, name: 'Reports' })).toBeVisible();
+  await expect(page.getByRole('navigation', { name: 'Admin sections' }).getByRole('link', { name: 'Reports' })).toHaveAttribute(
+    'aria-current',
+    'page',
+  );
+  // The queue promises what it holds: reports, never held posts.
+  await expect(page.getByRole('main')).not.toContainText(/held/i);
+  const places = page.getByRole('complementary', { name: 'About this place' }).getByRole('region', { name: 'Communities with reports' });
+  const first = places.getByRole('link').first();
+  await expect(first).toBeVisible();
+  await first.click();
+  await expect(page).toHaveURL(/[?&]community=/);
+  await expect(places.locator('a[aria-current="page"]')).toHaveCount(1);
+  await expectAccessible(page);
+
+  await gotoHydrated(page, '/modlog');
+  await expect(page.getByRole('navigation', { name: 'Page' }).getByRole('heading', { level: 1, name: 'Modlog' })).toBeVisible();
+  const rail = page.getByRole('complementary', { name: 'Filters' });
+  await expect(rail.getByRole('link', { name: /^All/ })).toHaveAttribute('aria-current', 'page');
+  await expect(page.getByRole('main').getByRole('link', { name: /^All/ })).toBeHidden();
+  await expectAccessible(page);
+
+  // Narrower than the rail allows: the filters move into the page.
+  await page.setViewportSize({ width: 960, height: 900 });
+  await expect(rail).toBeHidden();
+  await expect(page.getByRole('main').getByRole('region', { name: 'Filters' }).getByRole('link', { name: /^All/ })).toBeVisible();
+  await page.context().close();
+});
+
+test('on a phone the admin tabs and the modlog filters are 44px targets', async ({ browser }) => {
+  test.setTimeout(90_000);
+  const page = await (await browser.newContext({ storageState: session, viewport: { width: 390, height: 844 } })).newPage();
+  const shortest = (links: Locator) => links.evaluateAll((nodes) => nodes.map((node) => Math.round(node.getBoundingClientRect().height)));
+  await gotoHydrated(page, '/admin/bans');
+  const tabs = await shortest(page.getByRole('navigation', { name: 'Admin sections' }).getByRole('link'));
+  expect(tabs.length).toBeGreaterThan(1);
+  expect(tabs.filter((height) => height < 44)).toEqual([]);
+  await gotoHydrated(page, '/modlog');
+  const filters = await shortest(page.getByRole('main').getByRole('region', { name: 'Filters' }).getByRole('link'));
+  expect(filters.length).toBeGreaterThan(1);
+  expect(filters.filter((height) => height < 44)).toEqual([]);
+  await expectAccessibleOnPhone(page);
+  await page.context().close();
+});
