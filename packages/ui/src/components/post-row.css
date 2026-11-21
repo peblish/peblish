@@ -24,9 +24,12 @@
     min-inline-size: 0;
   }
 
-  /* Mux gap: Link is an inline-flex box with its own line height, which breaks a wrapping meta line. */
+  /* The meta line's links are 24px targets (WCAG 2.2, 2.5.8); a long handle still wraps inside its link. */
   .pb-post__meta .muxui-link {
-    display: inline;
+    display: inline-flex;
+    align-items: center;
+    max-inline-size: 100%;
+    min-block-size: 24px;
     line-height: inherit;
   }
 
@@ -235,6 +238,8 @@
 
   .pb-post[data-density='compact'] .pb-post__title .muxui-link {
     flex: 0 1 auto;
+    /* A 24px target (WCAG 2.2, 2.5.8) though the line is shorter. */
+    min-block-size: 24px;
     min-inline-size: 0;
     overflow: hidden;
     text-overflow: ellipsis;

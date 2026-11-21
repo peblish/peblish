@@ -23,6 +23,15 @@
     margin: 0;
   }
 
+  /* A link in the heading row or among the facts is a 24px target (WCAG 2.2, 2.5.8). */
+  .pb-panel__head .muxui-link,
+  .pb-panel .pb-facts .muxui-link {
+    display: inline-flex;
+    align-items: center;
+    max-inline-size: 100%;
+    min-block-size: 24px;
+  }
+
   /* Facts in a panel: the label column as wide as its longest label. */
   .pb-panel .pb-facts--rows {
     grid-template-columns: auto minmax(0, 1fr);
