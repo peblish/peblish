@@ -117,8 +117,7 @@ export interface CommunityViewLabels {
 
 /**
  * List or Cards: a Mux ToggleButtonGroup with single selection (a radio group named "View"), as the
- * feed's density switch is. It reports the choice; the page keeps it (a browser preference). On a
- * phone each choice is its glyph alone, a 44px square, its word kept as its name.
+ * feed's density switch is. It reports the choice; the page keeps it (a browser preference).
  */
 export function CommunityViewControl({
   value,
@@ -143,11 +142,11 @@ export function CommunityViewControl({
     >
       <ToggleButton id="list">
         <BulletListIcon />
-        <span className="pb-cview__label">{labels.list}</span>
+        {labels.list}
       </ToggleButton>
       <ToggleButton id="cards">
         <LayoutGridIcon />
-        <span className="pb-cview__label">{labels.cards}</span>
+        {labels.cards}
       </ToggleButton>
     </ToggleButtonGroup>
   );

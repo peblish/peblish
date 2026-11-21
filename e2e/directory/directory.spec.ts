@@ -87,7 +87,8 @@ async function post(page: Page, path: string, form: Record<string, string>, json
   );
 }
 
-const row = (page: Page, name: string) => page.getByRole('row').filter({ hasText: name });
+/** A community's row (or card) in the directory's list. */
+const row = (page: Page, name: string) => page.getByRole('main').locator('.pb-clist > li').filter({ hasText: name });
 const search = (extra = '') => `/communities?q=${seed.suffix}${extra}`;
 
 test.describe('the directory, signed out', () => {
@@ -100,7 +101,8 @@ test.describe('the directory, signed out', () => {
       'page',
     );
     await expect(page.getByRole('navigation', { name: 'Scope' }).getByRole('link', { name: /^Local 1$/ })).toBeVisible();
-    await expect(row(page, seed.communities.local)).toContainText('local');
+    await expect(row(page, seed.communities.local)).toContainText(`!${seed.communities.local}`);
+    await expect(row(page, seed.communities.local)).not.toContainText('local copy');
     await expect(row(page, seed.communities.remote)).toContainText(`${seed.host} · local copy refreshed`);
     await expect(row(page, seed.communities.remote).getByRole('link', { name: 'Sign in to join' })).toHaveAttribute(
       'href',
@@ -180,25 +182,31 @@ test.describe('the directory, signed out', () => {
     await context.close();
   });
 
-  test('on a phone the table scrolls inside its own box and the page never scrolls sideways', async ({ browser }) => {
+  test('on a phone the page never scrolls sideways, in List and Cards, and its controls are 44px targets', async ({ browser, baseURL }) => {
     for (const width of [375, 320]) {
-      const { context, page } = await as(browser, null, { viewport: { width, height: 800 } });
-      await gotoHydrated(page, search());
-      await expect(row(page, seed.communities.local)).toBeVisible();
-      const geometry = await page.evaluate(() => {
-        const box = document.querySelector('.dir-scroll');
-        // Asking the page to scroll sideways shows what a swipe would reach, whatever escapes the box.
-        window.scrollTo(10_000, 0);
-        return {
-          page: document.documentElement.scrollWidth - document.documentElement.clientWidth,
-          scrolledX: window.scrollX,
-          box: box ? box.scrollWidth - box.clientWidth : -1,
-        };
-      });
-      // The rows are wider than the phone, so the box scrolls; the page does not.
-      expect(geometry.box, `${width}px`).toBeGreaterThan(0);
-      expect([width, geometry.page, geometry.scrolledX]).toEqual([width, 0, 0]);
-      await context.close();
+      for (const view of ['list', 'cards']) {
+        const { context, page } = await as(browser, null, { viewport: { width, height: 800 } });
+        if (view === 'cards') await context.addCookies([{ name: 'peblish_dir_view', value: 'cards', url: baseURL! }]);
+        await gotoHydrated(page, search());
+        await expect(row(page, seed.communities.local)).toBeVisible();
+        const geometry = await page.evaluate(() => {
+          // Asking the page to scroll sideways shows what a swipe would reach.
+          window.scrollTo(10_000, 0);
+          return { page: document.documentElement.scrollWidth - document.documentElement.clientWidth, scrolledX: window.scrollX };
+        });
+        expect([width, view, geometry.page, geometry.scrolledX]).toEqual([width, view, 0, 0]);
+        const controls = [
+          row(page, seed.communities.local).getByRole('link', { name: 'Sign in to join' }),
+          row(page, seed.communities.local).getByRole('link').first(),
+          page.getByRole('radio', { name: 'List' }),
+          page.getByRole('radio', { name: 'Cards' }),
+        ];
+        for (const control of controls) {
+          const box = await control.boundingBox();
+          expect(Math.round(Math.min(box!.width, box!.height)), `${width} ${view}`).toBeGreaterThanOrEqual(44);
+        }
+        await context.close();
+      }
     }
   });
 
@@ -209,7 +217,68 @@ test.describe('the directory, signed out', () => {
       'href',
       `/resolve?q=${encodeURIComponent('!lab@lemmy.example')}`,
     );
-    expect(await page.getByRole('row').count()).toBeGreaterThan(2);
+    expect(await page.getByRole('main').getByRole('list', { name: 'Communities' }).getByRole('listitem').count()).toBeGreaterThan(1);
+  });
+});
+
+test.describe('List and Cards', () => {
+  test('the view is a radio group, kept in this browser, which the server draws, without JavaScript too', async ({ browser }) => {
+    const { context, page } = await as(browser, viewerState, { viewport: { width: 1440, height: 900 } });
+    await gotoHydrated(page, search());
+    const list = page.getByRole('main').getByRole('list', { name: 'Communities' });
+    await expect(list).toHaveAttribute('data-view', 'list');
+    const view = page.getByRole('radiogroup', { name: 'View' });
+    await expect(view.getByRole('radio', { name: 'List' })).toBeChecked();
+    // Keyboard only: Tab into the group, an arrow to Cards.
+    await view.getByRole('radio', { name: 'List' }).focus();
+    await page.keyboard.press('ArrowRight');
+    await page.keyboard.press('Space');
+    await expect(view.getByRole('radio', { name: 'Cards' })).toBeChecked();
+    await expect(list).toHaveAttribute('data-view', 'cards');
+    await expectAccessible(page);
+    expect((await context.cookies()).find(({ name }) => name === 'peblish_dir_view')?.value).toBe('cards');
+    await page.reload();
+    await expect(page.getByRole('main').getByRole('list', { name: 'Communities' })).toHaveAttribute('data-view', 'cards');
+
+    const plain = await (await browser.newContext({ storageState: await context.storageState(), javaScriptEnabled: false })).newPage();
+    await plain.goto(search());
+    await expect(plain.getByRole('main').getByRole('list', { name: 'Communities' })).toHaveAttribute('data-view', 'cards');
+    // Join still posts as a plain form from a card.
+    await row(plain, seed.communities.local).getByRole('button', { name: 'Join', exact: true }).click();
+    await plain.waitForURL(search());
+    await row(plain, seed.communities.local)
+      .getByRole('button', { name: /^Joined/ })
+      .click();
+    await plain.waitForURL(search());
+    await expect(row(plain, seed.communities.local).getByRole('button', { name: 'Join', exact: true })).toBeVisible();
+    await plain.context().close();
+
+    // Back to List, which clears the cookie.
+    await page.getByRole('radio', { name: 'List' }).click();
+    await expect(page.getByRole('main').getByRole('list', { name: 'Communities' })).toHaveAttribute('data-view', 'list');
+    expect((await context.cookies()).find(({ name }) => name === 'peblish_dir_view')).toBeUndefined();
+    await context.close();
+  });
+
+  test('in both views the keyboard reaches each community and then its Join, in reading order', async ({ browser, baseURL }) => {
+    for (const view of ['list', 'cards']) {
+      const { context, page } = await as(browser, viewerState, { viewport: { width: 1440, height: 900 } });
+      await context.addCookies([{ name: 'peblish_dir_view', value: view, url: baseURL! }]);
+      await gotoHydrated(page, search());
+      const item = row(page, seed.communities.local);
+      const link = item.getByRole('link').first();
+      await link.focus();
+      await expect(link).toHaveAccessibleName(new RegExp(seed.communities.local));
+      await page.keyboard.press('Tab');
+      const join = item.getByRole('button', { name: 'Join', exact: true });
+      await expect(join).toBeFocused();
+      await expect(join).toHaveAccessibleDescription(new RegExp(seed.communities.local));
+      await page.keyboard.press('Enter');
+      await expect(item.getByRole('button', { name: /^Joined/ })).toBeVisible();
+      await item.getByRole('button', { name: /^Joined/ }).press('Enter');
+      await expect(join).toBeVisible();
+      await context.close();
+    }
   });
 });
 
@@ -304,17 +373,20 @@ test.describe('the directory, signed in', () => {
     // "New community" is for site admins (e2e/communities checks they get it).
     await expect(page.getByRole('link', { name: 'New community' })).toHaveCount(0);
     const local = row(page, seed.communities.local);
-    await expect(local.getByRole('button', { name: 'Join' })).toBeVisible();
-    await local.getByRole('button', { name: 'Join' }).click();
-    await expect(local.getByRole('button', { name: 'Joined' })).toBeVisible();
+    await expect(local.getByRole('button', { name: 'Join', exact: true })).toBeVisible();
+    await local.getByRole('button', { name: 'Join', exact: true }).click();
+    await expect(local.getByRole('button', { name: /^Joined/ })).toBeVisible();
     await expect(local).toContainText('1');
-    await local.getByRole('button', { name: 'Joined' }).click();
-    await expect(local.getByRole('button', { name: 'Join' })).toBeVisible();
+    await local.getByRole('button', { name: /^Joined/ }).click();
+    await expect(local.getByRole('button', { name: 'Join', exact: true })).toBeVisible();
 
+    // A remote community waits for its home server: Pending, which cancels the request.
     const remote = row(page, seed.communities.remote);
-    await remote.getByRole('button', { name: 'Join' }).click();
-    await expect(remote.getByRole('button', { name: 'Pending' })).toBeDisabled();
+    await remote.getByRole('button', { name: 'Join', exact: true }).click();
+    await expect(remote.getByRole('button', { name: 'Pending, Cancel the request' })).toBeVisible();
     await expectAccessible(page);
+    await remote.getByRole('button', { name: 'Pending, Cancel the request' }).click();
+    await expect(remote.getByRole('button', { name: 'Join', exact: true })).toBeVisible();
     await context.close();
   });
 
@@ -322,12 +394,14 @@ test.describe('the directory, signed in', () => {
     const { context, page } = await as(browser, viewerState, { javaScriptEnabled: false });
     await page.goto(search());
     const local = row(page, seed.communities.local);
-    await local.getByRole('button', { name: 'Join' }).click();
+    await local.getByRole('button', { name: 'Join', exact: true }).click();
     await page.waitForURL(search());
-    await expect(row(page, seed.communities.local).getByRole('button', { name: 'Joined' })).toBeVisible();
-    await row(page, seed.communities.local).getByRole('button', { name: 'Joined' }).click();
+    await expect(row(page, seed.communities.local).getByRole('button', { name: /^Joined/ })).toBeVisible();
+    await row(page, seed.communities.local)
+      .getByRole('button', { name: /^Joined/ })
+      .click();
     await page.waitForURL(search());
-    await expect(row(page, seed.communities.local).getByRole('button', { name: 'Join' })).toBeVisible();
+    await expect(row(page, seed.communities.local).getByRole('button', { name: 'Join', exact: true })).toBeVisible();
     await context.close();
   });
 

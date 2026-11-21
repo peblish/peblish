@@ -152,18 +152,6 @@
 
     .pb-cview .muxui-toggle-button {
       min-block-size: calc(var(--muxui-semantic-control-size-lg) + 2 * var(--muxui-semantic-layout-dense-gap));
-      min-inline-size: calc(var(--muxui-semantic-control-size-lg) + 2 * var(--muxui-semantic-layout-dense-gap));
-      justify-content: center;
-    }
-
-    /* The word stays the button's name, out of sight. */
-    .pb-cview__label {
-      position: absolute;
-      inline-size: 1px;
-      block-size: 1px;
-      overflow: hidden;
-      clip-path: inset(50%);
-      white-space: nowrap;
     }
   }
 }

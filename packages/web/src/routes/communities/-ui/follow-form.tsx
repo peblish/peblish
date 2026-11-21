@@ -16,16 +16,23 @@ export function FollowForm({
   intent,
   next,
   onError,
+  onBusy,
   children,
 }: {
   community: string;
   intent: 'join' | 'leave';
   next: string;
   onError: (error: DirectoryError | undefined) => void;
+  /** Told when a post starts and ends, so the button can show it is busy. */
+  onBusy?: (busy: boolean) => void;
   children: ReactNode;
 }) {
   const router = useRouter();
-  const [busy, setBusy] = useState(false);
+  const [busy, setState] = useState(false);
+  const setBusy = (next: boolean) => {
+    setState(next);
+    onBusy?.(next);
+  };
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
