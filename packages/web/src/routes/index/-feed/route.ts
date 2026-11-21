@@ -26,5 +26,7 @@ export function feedRoute(feed: FeedRoute, title?: MessageKey<'shell'>) {
       };
     },
     pendingComponent: FeedPending,
+    // The feed draws its own view header, with its name and the Sort and View menus (feed-page.tsx).
+    staticData: { viewHeader: 'own' as const },
   };
 }

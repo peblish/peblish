@@ -29,3 +29,75 @@
     list-style: none;
   }
 }
+
+/* The feed's view header (Commons): the feed's glyph and name, then Sort and View. With scripts off the
+   menus cannot open, so they give way to the sort and period links under the bar. */
+@layer app {
+  .feed-name {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--muxui-semantic-layout-tight-gap);
+    min-inline-size: 0;
+  }
+
+  .feed-name__icon {
+    flex: none;
+    color: var(--muxui-semantic-content-muted);
+  }
+
+  .feed-name .feed-title {
+    margin: 0;
+  }
+
+  .feed-menus {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--muxui-semantic-layout-dense-gap);
+  }
+
+  .feed-no-script {
+    display: none;
+  }
+
+  /* The bar runs the column's width, as the frame's own does: through the page's padding, at its top. */
+  .pb-page.feed {
+    padding-block-start: 0;
+  }
+
+  .feed > .pb-frame-vh {
+    margin-inline: calc(-1 * var(--muxui-semantic-layout-inset-large));
+  }
+
+  @media (max-width: 859.98px) {
+    .feed > .pb-frame-vh {
+      margin-inline: calc(-1 * var(--muxui-semantic-layout-inset-medium));
+    }
+
+    /* The phone's bar is narrow: the feed's name keeps its room, its glyph gives way. */
+    .feed-name {
+      flex: none;
+    }
+
+    .feed-name__icon {
+      display: none;
+    }
+  }
+
+  @media (scripting: none) {
+    .feed-menus {
+      display: none;
+    }
+
+    .feed-no-script {
+      display: flex;
+      flex-wrap: wrap;
+      gap: var(--muxui-semantic-layout-tight-gap) var(--muxui-semantic-layout-group-gap);
+      padding-block: var(--muxui-semantic-layout-tight-gap) var(--muxui-semantic-layout-inset-small);
+      border-block-end: 1px solid var(--muxui-semantic-border-subtle);
+    }
+  }
+
+  .feed-rail__text {
+    margin: 0;
+  }
+}
