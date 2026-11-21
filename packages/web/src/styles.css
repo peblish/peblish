@@ -16,6 +16,7 @@
 @import '@peblish/ui/components/nsfw-cover.css';
 @import '@peblish/ui/components/rail-panel.css';
 @import '@peblish/ui/components/count-badge.css';
+@import '@peblish/ui/skeleton/skeleton.css';
 @import '@peblish/ui/components/comment-thread.css';
 @import '@peblish/ui/components/reply-bar.css';
 @import '@peblish/ui/components/prose.css';
