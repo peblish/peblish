@@ -28,7 +28,7 @@ for (const [composition, states] of Object.entries(compositions)) {
     // inverse colour clipped over its moving indicator, a sibling the shared helper does not see behind it,
     // so it measures that copy against the page (1:1). The pair is measured below instead.
     const problems = stateProblems(checks, { target: 44 });
-    expect(composition === 'community-view' ? problems.filter((problem) => !/ text 1:1$/.test(problem)) : problems).toEqual([]);
+    expect(composition === 'community-view' ? problems.filter((problem) => !problem.endsWith(' text 1:1')) : problems).toEqual([]);
   });
 }
 
