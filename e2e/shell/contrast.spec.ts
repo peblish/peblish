@@ -1,4 +1,5 @@
 import { execFileSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import { landed, signIn } from '../auth/support.ts';
@@ -122,5 +123,57 @@ for (const scheme of ['Light', 'Dark'] as const) {
       surfaces.flatMap((surface) => inks.map((ink) => [`${ink} on ${surface}`, page.locator(`[data-sample="${ink} on ${surface}"]`)])),
     );
     await measure(page, scheme, samples);
+  });
+}
+
+// The feddit pack's focus rings (packages/ui/src/brand/feddit/pack.css). Mux draws two: its brand ring (links,
+// buttons) and a neutral one (checkboxes, switches, a field's focus edge). Under the pack the neutral ring is the
+// pack's brand 60, so both reach 3:1 (WCAG 1.4.11) on every ground the pack's neutrals make, in both schemes. The
+// pack's sheet is put in the page, so site.brand is left alone (its face is left out: the wordmark is not measured).
+const packSheet = readFileSync(join(import.meta.dirname, '../../packages/ui/src/brand/feddit/pack.css'), 'utf8').replace(
+  /@font-face\s*\{[^}]*\}/g,
+  '',
+);
+const grounds = ['surface-background', 'surface-canvas', 'surface-raised', 'surface-subtle', 'surface-hover'] as const;
+const rings = ['focus-ring', 'focus-neutral-ring'] as const;
+for (const scheme of ['Light', 'Dark'] as const) {
+  test(`under the feddit pack in ${scheme}, both focus rings reach 3:1 on every ground`, async ({ page }) => {
+    await gotoHydrated(page, '/all');
+    await choose(page, scheme);
+    await page.addStyleTag({ content: packSheet });
+    const resolve = (name: string) =>
+      page.evaluate((name) => {
+        const probe = document.body.appendChild(document.createElement('span'));
+        probe.style.color = `var(${name})`;
+        const colour = getComputedStyle(probe).color;
+        probe.remove();
+        return colour;
+      }, name);
+    expect(await resolve('--muxui-semantic-focus-neutral-ring')).toBe(await resolve('--muxui-reference-color-brand-60'));
+    await page
+      .locator('main')
+      .first()
+      .evaluate(
+        (main, [grounds, rings]) => {
+          for (const ground of grounds) {
+            const box = main.appendChild(document.createElement('div'));
+            box.style.background = `var(--muxui-semantic-${ground})`;
+            for (const ring of rings) {
+              const sample = box.appendChild(document.createElement('span'));
+              sample.dataset.sample = `${ring} on ${ground}`;
+              sample.style.color = `var(--muxui-semantic-${ring})`;
+              sample.textContent = 'Aa';
+            }
+          }
+        },
+        [grounds, rings] as const,
+      );
+    const samples = grounds.flatMap((ground) => rings.map((ring) => `${ring} on ${ground}`));
+    await measure(
+      page,
+      `${scheme} feddit`,
+      Object.fromEntries(samples.map((name) => [name, page.locator(`[data-sample="${name}"]`)])),
+      Object.fromEntries(samples.map((name) => [name, 3])),
+    );
   });
 }

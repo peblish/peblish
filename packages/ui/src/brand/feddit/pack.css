@@ -52,6 +52,12 @@
     --muxui-reference-dimension-radius-2xl: 3rem;
     /* Labels (sidebar rows, header links, buttons) are medium, not Mux's semibold. */
     --muxui-semantic-typography-label-weight: var(--muxui-reference-number-font-weight-medium);
+    /* An accessibility override added during the Commons build, awaiting the owner's review. Mux's neutral
+       focus ring (a checkbox's, a switch's, a field's focus edge) is these neutrals' step 60 in dark, 2.60:1
+       on the subtle ground, and step 50 in light, 2.95:1 on the hover tint. It takes brand step 60, the
+       nearest step of the blue ramp above to reach 3:1 on every ground these neutrals make in both schemes
+       (3.03 to 3.67 in dark, 4.06 to 4.78 in light). A pack sets :root only, so one value serves both. */
+    --muxui-semantic-focus-neutral-ring: var(--muxui-reference-color-brand-60);
     /* The wordmark (packages/ui/src/brand/brand.tsx): Quicksand at 700, the face below. */
     --pb-brand-wordmark-font: 'Feddit Wordmark', var(--muxui-semantic-typography-title-font-family);
     --pb-brand-wordmark-weight: 700;
