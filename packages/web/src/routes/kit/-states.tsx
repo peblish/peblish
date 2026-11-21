@@ -24,6 +24,7 @@ import { useTranslate } from '../../i18n/use-translate.ts';
 import { useVoteLabels } from '../../shell/labels.ts';
 import { SiteMenu } from '../../shell/sidebar.tsx';
 import { sharedPieces } from './-shared-pieces.tsx';
+import { feedPieces } from './-feed.tsx';
 
 /**
  * The states a state page shows as samples, in the state matrix's order ('selected' stands for current, checked
@@ -181,4 +182,5 @@ export const compositions: Readonly<Record<string, Composition>> = {
     states: { rest: () => <Side folded={false} />, selected: () => <Side folded /> },
   },
   ...sharedPieces,
+  ...feedPieces,
 };
