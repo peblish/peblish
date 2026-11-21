@@ -59,7 +59,12 @@
     "edit.error.auth.site_banned": "You are banned from this instance.",
     "edit.error.target.deleted": "This account was deleted, so nothing can be saved.",
     "edit.error.generic": "Could not save. Nothing was changed. Try again.",
-    "edit.error.network": "Could not save. The server did not answer. Nothing was changed. Try again."
+    "edit.error.network": "Could not save. The server did not answer. Nothing was changed. Try again.",
+    "rail.label": "About this person",
+    "rail.home": "Home instance",
+    "rail.server": "Server",
+    "rail.refreshed": "Copy refreshed",
+    "rail.never": "Not yet"
   },
   "de": {
     "title": "{name} ({handle})",
@@ -121,6 +126,11 @@
     "edit.error.auth.site_banned": "Du bist von dieser Instanz gesperrt.",
     "edit.error.target.deleted": "Dieses Konto wurde gelöscht, deshalb lässt sich nichts speichern.",
     "edit.error.generic": "Konnte nicht speichern. Nichts wurde geändert. Versuche es noch einmal.",
-    "edit.error.network": "Konnte nicht speichern. Der Server hat nicht geantwortet. Nichts wurde geändert. Versuche es noch einmal."
+    "edit.error.network": "Konnte nicht speichern. Der Server hat nicht geantwortet. Nichts wurde geändert. Versuche es noch einmal.",
+    "rail.label": "Über diese Person",
+    "rail.home": "Heimatinstanz",
+    "rail.server": "Server",
+    "rail.refreshed": "Kopie aktualisiert",
+    "rail.never": "Noch nicht"
   }
 }

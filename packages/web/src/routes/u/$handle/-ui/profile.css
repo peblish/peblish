@@ -1,45 +1,57 @@
-/* A profile (profile-side) and its edit page (profile-edit-inline): layout only, on Mux UI tokens.
-   The card is a Mux Card, the tabs and sort are LinkTabs, notices are Notice. */
+/* A profile (Commons, the mock's person header over the person's list) and its edit page: layout only,
+   on Mux UI tokens. The tabs and sort are LinkTabs, notices are Notice, the rail is the frame's. */
 @layer app {
-  .prof-lay {
+  .prof {
+    /* 44px phone targets, as the frame's (shell.css): Mux's control sizes stop at 40. */
+    --pb-touch: calc(var(--muxui-semantic-control-size-lg) + 2 * var(--muxui-semantic-layout-dense-gap));
     display: grid;
-    grid-template-columns: 280px minmax(0, 1fr);
-    gap: var(--muxui-semantic-layout-content-gap);
-    align-items: start;
+    gap: var(--muxui-semantic-layout-section-gap);
   }
 
-  .prof-card {
-    position: sticky;
-    top: var(--muxui-semantic-layout-inset-medium);
-  }
-
-  /* One track that never grows past the card: a long name, handle or host wraps instead (the Card hides overflow). */
-  .prof-head,
-  .prof-body {
+  .prof-hero {
     display: grid;
     grid-template-columns: minmax(0, 1fr);
+    gap: var(--muxui-semantic-layout-group-gap);
+    padding-block-start: var(--muxui-semantic-layout-inset-medium);
+  }
+
+  .prof-hero__head {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: center;
+    column-gap: var(--muxui-semantic-layout-action-gap);
+  }
+
+  .prof-hero__id {
+    display: grid;
+    gap: var(--muxui-semantic-layout-micro-gap);
+    min-inline-size: 0;
+  }
+
+  .prof-hero__title {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
     gap: var(--muxui-semantic-layout-tight-gap);
-    justify-items: start;
+    min-inline-size: 0;
   }
 
   /* Handle keeps itself on one line elsewhere; here a long remote one breaks anywhere, host included. */
-  .prof-head .pb-handle,
-  .prof-body dd {
+  .prof-hero .pb-handle,
+  .prof-hero dd {
     white-space: normal;
     overflow-wrap: anywhere;
   }
 
-  .prof-body {
-    gap: var(--muxui-semantic-layout-group-gap);
-  }
-
   .prof-handle,
-  .prof-name {
+  .prof-name,
+  .prof-bio {
     margin: 0;
   }
 
   .prof-name {
-    margin-block-start: var(--muxui-semantic-layout-tight-gap);
+    min-inline-size: 0;
+    color: var(--muxui-semantic-content-strong);
     overflow-wrap: anywhere;
   }
 
@@ -49,8 +61,11 @@
     gap: var(--muxui-semantic-layout-micro-gap);
   }
 
-  .prof-bio {
-    margin: 0;
+  /* Beside the rail the rail holds the person's home; where the rail gives way (shell.css) it is here. */
+  @container page (width >= 62rem) {
+    .prof-hero__home {
+      display: none;
+    }
   }
 
   .prof-actions {
@@ -58,6 +73,14 @@
     flex-wrap: wrap;
     align-items: center;
     gap: var(--muxui-semantic-layout-action-gap);
+  }
+
+  /* A tab's count is muted beside its name; under forced colours it takes the tab's own colour, so on the
+     current tab's Highlight it is HighlightText as the name is. */
+  @media (forced-colors: active) {
+    .prof-tab-count {
+      color: inherit;
+    }
   }
 
   .prof-main {
@@ -81,12 +104,10 @@
     list-style: none;
   }
 
-  .prof-list[data-density='card'] {
-    gap: var(--muxui-semantic-layout-group-gap);
-  }
-
-  .prof-list:not([data-density='card']) > .prof-comment {
-    padding-block: var(--muxui-semantic-layout-inset-small);
+  /* A comment is a flat row as a post row is (post-row.css): the gutter inside it, a faint line under it. */
+  .prof-comment {
+    padding-block: var(--muxui-semantic-layout-inset-medium);
+    padding-inline: var(--muxui-semantic-layout-inset-large);
     border-block-end: 1px solid var(--muxui-semantic-border-faint);
   }
 
@@ -132,13 +153,13 @@
     gap: var(--muxui-semantic-layout-action-gap);
   }
 
-  @media (max-width: 760px) {
-    .prof-lay {
-      grid-template-columns: minmax(0, 1fr);
-    }
-
-    .prof-card {
-      position: static;
+  /* Phone: the person's actions, the tabs, the sort and density switches, the page links and a comment's
+     actions are 44px targets (the frame's --pb-touch, shell.css). */
+  @media (max-width: 859.98px) {
+    .prof {
+      --muxui-control-size-md: var(--pb-touch);
+      --muxui-control-size-sm: var(--pb-touch);
+      --muxui-component-button-min-height: var(--pb-touch);
     }
   }
 }
