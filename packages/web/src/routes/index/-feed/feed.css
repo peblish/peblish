@@ -73,9 +73,16 @@
       margin-inline: calc(-1 * var(--muxui-semantic-layout-inset-medium));
     }
 
-    /* The phone's bar is narrow: the feed's name keeps its room, its glyph gives way. */
-    .feed-name {
-      flex: none;
+    /* The phone's bar is narrow: the feed's glyph gives way to its name, and the frame's side (the site's
+       name, the finder) gives way to the menus before the page would scroll sideways. Frame gap: the
+       view header's sides never shrink below their content. */
+    .feed .pb-vh {
+      grid-template-columns: minmax(0, 1fr) minmax(0, max-content) auto;
+    }
+
+    .feed .pb-vh__leading {
+      min-inline-size: 0;
+      overflow: hidden;
     }
 
     .feed-name__icon {
