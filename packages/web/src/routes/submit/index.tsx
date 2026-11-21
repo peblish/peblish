@@ -17,7 +17,6 @@ import { Composer } from './-ui/composer.tsx';
 import submitCss from './-ui/submit.css?url';
 import { ownTitle } from '../../shell/title.ts';
 import { Rail } from '../../shell/rail.tsx';
-import { ViewHeader } from '../../shell/view-header.tsx';
 import { PageTitle } from '../auth/-ui/page.tsx';
 
 // /submit: the composer as a page (composer-page), and with ?edit=<postId> the author's edit
@@ -52,7 +51,6 @@ export const Route = createFileRoute('/submit/')({
     links: [composerCss, submitCss].map((href) => ({ rel: 'stylesheet', href })),
   }),
   component: Submit,
-  staticData: { viewHeader: 'own' },
   // The page is personal: never from a shared cache (server/auth.ts).
   server: {
     middleware: [privateResponses],
@@ -91,20 +89,18 @@ function Submit() {
   const viewer = root.useLoaderData({ select: ({ session }) => session?.actorId ?? '' });
   useRouteHydrated();
   const editing = search.edit !== undefined;
-  // The page's name in its own view header (Commons' Create post), its form flat in the centre column.
-  const header = <ViewHeader title={<PageTitle>{editing ? t('composer', 'title.edit') : t('composer', 'title.create')}</PageTitle>} />;
+  // The page's name, then its form flat in the centre column (Commons' Create post).
+  const header = <PageTitle>{editing ? t('composer', 'title.edit') : t('composer', 'title.create')}</PageTitle>;
   if (data.status === 'unavailable')
     return (
-      <main className="cmp-page">
+      <main className="pb-page cmp-page cmp-page__body">
         {header}
-        <div className="pb-page cmp-page__body">
-          <Notice tone="danger" role="alert">
-            {t('composer', `unavailable.${data.reason}`)}
-          </Notice>
-          <Text as="p">
-            <Link href="/">{t('composer', 'back')}</Link>
-          </Text>
-        </div>
+        <Notice tone="danger" role="alert">
+          {t('composer', `unavailable.${data.reason}`)}
+        </Notice>
+        <Text as="p">
+          <Link href="/">{t('composer', 'back')}</Link>
+        </Text>
       </main>
     );
   return (
@@ -117,9 +113,9 @@ function Submit() {
       onDiscard={() => openInRouter(router, '/')}
       page={({ form, rules }) => (
         <>
-          <main className="cmp-page">
+          <main className="pb-page cmp-page cmp-page__body">
             {header}
-            <div className="pb-page cmp-page__body">{form}</div>
+            {form}
           </main>
           {/* The community's rules beside the form (the inline copy under the picker shows where this gives way). */}
           <Rail label={t('composer', 'panel.label')}>{rules}</Rail>

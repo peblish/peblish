@@ -15,7 +15,6 @@ export const Route = createFileRoute('/settings/blocks/')({
   loaderDeps: ({ search }) => ({ tab: search.tab ?? ('people' as BlockTab), just: search.just }),
   loader: ({ deps }) => loadBlocks({ data: { tab: deps.tab, ...(deps.just ? { just: deps.just } : {}) } }),
   head: () => ({ links: [...settingsHead().links, { rel: 'stylesheet', href: blocksCss }] }),
-  staticData: { viewHeader: 'own' },
   component: Blocks,
   server: { handlers: { POST: ({ request }) => handleBlocksPost(request) } },
 });

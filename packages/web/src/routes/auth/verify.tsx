@@ -43,7 +43,6 @@ export const Route = createFileRoute('/auth/verify')({
   loaderDeps: ({ search }) => ({ token: search.token }),
   loader: ({ deps }) => loadVerify({ data: deps.token ? { token: deps.token } : {} }),
   head: authHead,
-  staticData: { viewHeader: 'own' },
   component: Verify,
   server: {
     handlers: {

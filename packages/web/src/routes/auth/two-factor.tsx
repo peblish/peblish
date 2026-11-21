@@ -22,7 +22,6 @@ const expiredCodes = new Set(['INVALID_TWO_FACTOR_COOKIE', 'TOO_MANY_ATTEMPTS_RE
 export const Route = createFileRoute('/auth/two-factor')({
   validateSearch: Search,
   head: authHead,
-  staticData: { viewHeader: 'own' },
   component: TwoFactor,
   server: {
     handlers: {

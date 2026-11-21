@@ -44,7 +44,6 @@ export const Route = createFileRoute('/settings/account/')({
   validateSearch: Search,
   loader: () => loadAccount(),
   head: settingsHead,
-  staticData: { viewHeader: 'own' },
   component: Account,
   server: {
     handlers: {

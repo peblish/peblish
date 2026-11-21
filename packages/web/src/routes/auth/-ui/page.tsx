@@ -1,15 +1,15 @@
 import { Text } from '@peblish/ui/components/text';
 import type { ReactNode } from 'react';
 import { useTranslate } from '../../../i18n/use-translate.ts';
-import { ViewHeader } from '../../../shell/view-header.tsx';
 
 /**
- * The page's name as its h1, in the route's own view header (Commons puts a plain page's name in the
- * bar, as the mock's Create post and Feddit's pages do). The route says `staticData: { viewHeader: 'own' }`.
+ * The page's name as its h1, at the top of the centre column; the frame's view header shows it too once it
+ * has scrolled under the bar. (The mock puts a plain page's name in the bar itself, but on a phone the bar
+ * also holds the mark, the finder and the menu, and cuts most of these names short.)
  */
 export function PageTitle({ children }: { children: ReactNode }) {
   return (
-    <Text as="h1" variant="label" truncate className="pb-frame-vh__title">
+    <Text as="h1" variant="heading" size="sm" className="pb-page-title">
       {children}
     </Text>
   );
@@ -17,14 +17,14 @@ export function PageTitle({ children }: { children: ReactNode }) {
 
 /**
  * One task on its own page (sign in, sign up, two-factor, reset, verify, an invite), in the Commons
- * frame's centre column: the view header with the page's name, then the form, flat on the page (the
- * mock's form layout, `auth.css`). `state` names which of a page's outcomes is shown.
+ * frame's centre column: the page's name, then the form, flat on the page (the mock's form layout,
+ * `auth.css`). `state` names which of a page's outcomes is shown.
  */
 export function AuthPage({ title, state, children }: { title: string; state?: string; children: ReactNode }) {
   return (
-    <main className="auth-page" data-state={state}>
-      <ViewHeader title={<PageTitle>{title}</PageTitle>} />
-      <div className="pb-page auth-body">{children}</div>
+    <main className="pb-page auth-page auth-body" data-state={state}>
+      <PageTitle>{title}</PageTitle>
+      {children}
     </main>
   );
 }

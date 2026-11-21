@@ -21,7 +21,6 @@ const Body = type({ intent: "'request'", email: 'string' }).or({ intent: "'reset
 export const Route = createFileRoute('/auth/reset')({
   validateSearch: Search,
   head: authHead,
-  staticData: { viewHeader: 'own' },
   component: Reset,
   server: {
     handlers: {

@@ -21,7 +21,6 @@ const Body = type({ identifier: 'string', password: 'string', 'redirect?': 'stri
 export const Route = createFileRoute('/auth/sign-in')({
   validateSearch: Search,
   head: authHead,
-  staticData: { viewHeader: 'own' },
   component: SignIn,
   server: {
     handlers: {

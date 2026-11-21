@@ -29,7 +29,6 @@ const loadInvite = createServerFn({ method: 'GET' })
 export const Route = createFileRoute('/invite/$code')({
   loader: ({ params }) => loadInvite({ data: { code: params.code } }),
   head: authHead,
-  staticData: { viewHeader: 'own' },
   component: InviteLanding,
 });
 

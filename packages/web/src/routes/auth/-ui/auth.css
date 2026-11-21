@@ -1,9 +1,11 @@
-/* The auth pages (sign in, sign up, two-factor, reset, verify, the invite landing): the page's name in the
-   view header, then the form flat in the frame's centre column, in the mock's form layout (Commons'
-   `.a-form`): the parts a group gap apart, the end of the form over a rule. AuthPage in page.tsx. The
-   settings pages link this file too, for the shared field (`.auth-field`, form.tsx) and the actions row. */
+/* The auth pages (sign in, sign up, two-factor, reset, verify, the invite landing): the page's name, then
+   the form flat in the frame's centre column, in the mock's form layout (Commons' `.a-form`): the parts a
+   group gap apart, the end of the form over a rule. AuthPage in page.tsx. The settings pages link this
+   file too, for the shared field (`.auth-field`, form.tsx) and the actions row. */
 @layer app {
   .auth-body {
+    display: grid;
+    gap: var(--muxui-semantic-layout-section-gap);
     padding-block: var(--muxui-semantic-layout-inset-large) var(--muxui-semantic-layout-inset-xlarge);
   }
   .auth-form {
@@ -119,6 +121,8 @@
       --pb-touch: calc(var(--muxui-semantic-control-size-lg) + 2 * var(--muxui-semantic-layout-dense-gap));
       --muxui-component-button-min-height: var(--pb-touch);
       --muxui-control-size-md: var(--pb-touch);
+      /* The rows' small buttons too (Unblock, Undo, Revoke). */
+      --muxui-control-size-sm: var(--pb-touch);
     }
   }
 }

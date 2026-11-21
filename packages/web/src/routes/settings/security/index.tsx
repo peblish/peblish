@@ -64,7 +64,6 @@ export const Route = createFileRoute('/settings/security/')({
   validateSearch: Search,
   loader: () => loadSecurity(),
   head: settingsHead,
-  staticData: { viewHeader: 'own' },
   component: Security,
   server: {
     handlers: {
