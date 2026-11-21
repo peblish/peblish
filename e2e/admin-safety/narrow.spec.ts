@@ -114,6 +114,12 @@ test('on a phone the admin tabs and the modlog filters are 44px targets', async 
   const tabs = await shortest(page.getByRole('navigation', { name: 'Admin sections' }).getByRole('link'));
   expect(tabs.length).toBeGreaterThan(1);
   expect(tabs.filter((height) => height < 44)).toEqual([]);
+  await gotoHydrated(page, '/admin/reports');
+  const queue = await shortest(
+    page.getByRole('navigation', { name: 'Report queue' }).getByRole('link').or(page.locator('.rq-filter').locator('select, button')),
+  );
+  expect(queue.length).toBeGreaterThan(4);
+  expect(queue.filter((height) => height < 44)).toEqual([]);
   await gotoHydrated(page, '/modlog');
   const filters = await shortest(page.getByRole('main').getByRole('region', { name: 'Filters' }).getByRole('link'));
   expect(filters.length).toBeGreaterThan(1);

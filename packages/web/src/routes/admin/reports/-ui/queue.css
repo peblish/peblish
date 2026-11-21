@@ -18,6 +18,13 @@
   .rq-filter > :not(button) {
     inline-size: 14rem;
   }
+  /* A phone: the filter's selects and Apply grow to 44px targets (Mux's large control and two dense gaps). */
+  @media (max-width: 859.98px) {
+    .rq-filter {
+      --muxui-control-size-sm: calc(var(--muxui-semantic-control-size-lg) + 2 * var(--muxui-semantic-layout-dense-gap));
+      --muxui-component-button-min-height: calc(var(--muxui-semantic-control-size-lg) + 2 * var(--muxui-semantic-layout-dense-gap));
+    }
+  }
   /* Mux Table has no breakpoint: on a narrow screen the table scrolls inside its card. */
   .rq-table {
     overflow-x: auto;

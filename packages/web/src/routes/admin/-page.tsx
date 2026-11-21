@@ -8,7 +8,8 @@ import { ViewHeader } from '../../shell/view-header.tsx';
 
 // The staff pages in the Commons frame (the mock's page header): the page's name is the h1 in the
 // frame's view header, so a route that uses PageHeader sets `staticData: ownHeader` and the shell
-// leaves its default bar out. Used by the admin tabs, the report form, the modlog and the site pages.
+// leaves its default bar out. Used by the admin tabs, the report form and the modlog. The name wraps rather
+// than being cut short, so a long one (a page editor's) can always be read whole.
 
 /** The route option for a page that draws its own view header (PageHeader). */
 export const ownHeader = { viewHeader: 'own' } as const;
@@ -22,7 +23,7 @@ export function PageHeader({ title, root, lang }: { title: ReactNode; root?: boo
     <ViewHeader
       root={root}
       title={
-        <Text as="h1" variant="label" truncate className="pb-frame-vh__title" lang={lang}>
+        <Text as="h1" variant="label" className="pb-frame-vh__title" lang={lang}>
           {title}
         </Text>
       }
