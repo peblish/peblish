@@ -162,11 +162,14 @@
       --muxui-component-button-min-height: var(--pb-touch);
     }
 
-    /* The page links are text links (Pager): their whole row's height is the target. */
-    .prof .pb-pager .muxui-link {
+    /* The page links (Pager) and a comment's Reply are text links: the row's height is their target, at least as wide. */
+    .prof .pb-pager .muxui-link,
+    .prof-comment-actions > .muxui-link {
       display: inline-flex;
       align-items: center;
+      justify-content: center;
       min-block-size: var(--pb-touch);
+      min-inline-size: var(--pb-touch);
     }
   }
 }

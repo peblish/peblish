@@ -91,6 +91,27 @@ test.describe('anyone', () => {
     await expect(page.getByText(seed.posts.owner[0]!)).toBeVisible();
   });
 
+  test("a slow tab change shows the rows as shapes in a busy main, then the profile's own main", async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await gotoHydrated(page, profile(seed.owner.name));
+    // The router's data requests answer past its pending delay (a second), so the loading host shows.
+    await page.route('**/_serverFn/**', async (route) => {
+      await new Promise((resolve) => setTimeout(resolve, 2500));
+      await route.continue();
+    });
+    await page
+      .getByRole('navigation', { name: 'Activity' })
+      .getByRole('link', { name: /^Posts/ })
+      .click();
+    const busy = page.locator('#pb-main main[aria-busy="true"]');
+    await expect(busy.getByRole('status')).toHaveText('Loading posts');
+    await expect(busy.locator('a, button, input')).toHaveCount(0);
+    await expect(busy).toHaveCount(0, { timeout: 10_000 });
+    await expect(page).toHaveURL(/tab=posts/);
+    await expect(personOf(page).getByRole('heading', { level: 1, name: 'Pat Profile' })).toBeVisible();
+    await expect(page.getByRole('complementary', { name: 'About this person' })).toBeVisible();
+  });
+
   test('works without JavaScript', async ({ browser }) => {
     const plain = await (await browser.newContext({ javaScriptEnabled: false })).newPage();
     await plain.goto(`${profile(seed.owner.name)}?tab=posts`);
@@ -129,6 +150,21 @@ test.describe('anyone', () => {
       nodes.map((node) => Math.round(Math.min(node.getBoundingClientRect().width, node.getBoundingClientRect().height))),
     );
     expect(sides.length).toBeGreaterThanOrEqual(8);
+    expect(sides.filter((side) => side < 44)).toEqual([]);
+  });
+
+  test("on a phone a signed-in reader's comment actions are 44px targets", async ({ page }) => {
+    await signedIn(page, seed.viewers[4]!);
+    await page.setViewportSize({ width: 390, height: 844 });
+    await gotoHydrated(page, `${profile(seed.owner.name)}?tab=comments`);
+    const sides = await page
+      .locator('.prof-comment-actions')
+      .first()
+      .locator('a, button')
+      .evaluateAll((nodes) =>
+        nodes.map((node) => Math.round(Math.min(node.getBoundingClientRect().width, node.getBoundingClientRect().height))),
+      );
+    expect(sides.length).toBeGreaterThanOrEqual(3);
     expect(sides.filter((side) => side < 44)).toEqual([]);
   });
 
