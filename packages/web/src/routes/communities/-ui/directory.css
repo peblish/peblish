@@ -67,9 +67,10 @@
     align-items: center;
     min-block-size: 24px;
   }
-  /* A phone: the choices, Sign in to join and New community are 44px targets. */
+  /* A phone: the choices, Search, Sign in to join and New community are 44px targets. */
   @media (max-width: 859.98px) {
     .dir-seg .muxui-link,
+    .dir-search > .muxui-button,
     .dir-signin,
     .dir-new {
       min-block-size: calc(var(--muxui-semantic-control-size-lg) + 2 * var(--muxui-semantic-layout-dense-gap));

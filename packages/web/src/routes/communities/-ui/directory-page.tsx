@@ -59,7 +59,9 @@ export function DirectoryPage({ data, error: fromAddress }: { data: DirectoryDat
   const { t, locale } = useTranslate();
   useRouteHydrated();
   const [refused, setRefused] = useState<DirectoryError | undefined>();
-  const [view, setView] = useState<CommunityView>(data.view);
+  // The loader reads the view from the cookie; a choice made on this page wins until the page is left.
+  const [chosen, setChosen] = useState<CommunityView>();
+  const view = chosen ?? data.view;
   const { query } = data;
   const error = refused ?? asDirectoryError(fromAddress);
   const number = new Intl.NumberFormat(locale);
@@ -94,7 +96,7 @@ export function DirectoryPage({ data, error: fromAddress }: { data: DirectoryDat
   });
 
   const choose = (next: CommunityView) => {
-    setView(next);
+    setChosen(next);
     storeView(next);
   };
 

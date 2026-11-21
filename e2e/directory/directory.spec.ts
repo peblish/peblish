@@ -200,6 +200,9 @@ test.describe('the directory, signed out', () => {
           row(page, seed.communities.local).getByRole('link').first(),
           page.getByRole('radio', { name: 'List' }),
           page.getByRole('radio', { name: 'Cards' }),
+          page.getByRole('navigation', { name: 'Scope' }).getByRole('link').first(),
+          page.getByRole('navigation', { name: 'Sort' }).getByRole('link').first(),
+          page.getByRole('search').getByRole('button', { name: 'Search', exact: true }),
         ];
         for (const control of controls) {
           const box = await control.boundingBox();
@@ -252,6 +255,13 @@ test.describe('List and Cards', () => {
     await plain.waitForURL(search());
     await expect(row(plain, seed.communities.local).getByRole('button', { name: 'Join', exact: true })).toBeVisible();
     await plain.context().close();
+
+    // Kept across a visit to a community and Back.
+    await row(page, seed.communities.local).getByRole('link').first().click();
+    await page.waitForURL(/\/c\//);
+    await page.goBack();
+    await page.waitForURL(/\/communities/);
+    await expect(page.getByRole('main').getByRole('list', { name: 'Communities' })).toHaveAttribute('data-view', 'cards');
 
     // Back to List, which clears the cookie.
     await page.getByRole('radio', { name: 'List' }).click();
