@@ -164,6 +164,10 @@ Every page renders on the server and must hydrate without warnings (the e2e hydr
 
 Mux hides the native input of its choice controls and draws the visible box, tick, dot and thumb from `data-muxui-state-*` attributes that React sets. Since rc.7 Mux's own stylesheet also draws Checkbox, CheckboxField, CheckboxGroup, Switch, SwitchField, RadioGroup and RadioField from the native input while those attributes are stale (scripts off, or before hydration), including the keyboard focus ring and forced colours, so the app adds nothing. `e2e/ui-nojs` is the regression test: the drawing follows clicks and keys with scripts off, matches a hydrated page pixel for pixel in light, dark and forced colours, and Mux's input rules change nothing once hydrated.
 
+## State pages
+
+Each composition can have a page of its states in the component gallery, `/kit/<key>` (like `/kit`, only with `PEBLISH_UI_KIT=1`): add it to `compositions` in `packages/web/src/routes/kit/-states.tsx`, one sample per state it takes as a prop (rest, selected, disabled, pending, invalid, in the state matrix's order; selected stands for current, checked and expanded). `galleryStates` in `e2e/support/states.ts` hovers, focuses from the keyboard and presses the rest sample, and for every state, in light and dark, under forced colours, under reduced motion and at a phone's width, runs axe and measures text, icon and focus ring contrast, leftover motion and target size; `stateProblems` lists what fails. `e2e/ui-states/states.spec.ts` runs it on Button and VoteControl.
+
 ## Examples
 
 A Card with actions (a community in a list):
