@@ -54,7 +54,25 @@ export const requestedSort = (): ThreadSort => parseSort(URL.parse(getRequest().
 /** The `after` cursor of the page being requested, in the same way. */
 export const requestedAfter = (): string | null => URL.parse(getRequest().url)?.searchParams.get('after') ?? null;
 
-function render(renderer: MarkdownRenderer, { view, body }: ThreadComment): CommentView {
+/**
+ * The author a tombstone carries to a reader who does not moderate the community: nobody. Core's view has
+ * the author on every comment, and the page sends its data with the HTML for hydration, so a deleted or
+ * removed comment's author is taken out here, not only left unrendered. Moderators keep it for their
+ * actions (restore, ban).
+ */
+const withheldAuthor: ActorRef = {
+  id: '00000000-0000-0000-0000-000000000000',
+  apId: '',
+  kind: 'Person',
+  name: '',
+  displayName: null,
+  local: true,
+  handle: '',
+};
+
+function render(renderer: MarkdownRenderer, { view, body }: ThreadComment, moderator: boolean): CommentView {
+  const tombstone = (view.deleted || view.removed) && !moderator;
+  if (tombstone) return { ...view, author: withheldAuthor, authorBadge: null, contentHtml: null };
   const contentHtml =
     body?.kind === 'markdown'
       ? renderer.render(body.source, { idPrefix: view.id, content: { kind: 'comment', id: view.id, apId: view.apId } }).html
@@ -96,7 +114,7 @@ export async function loadThread(options: {
     postAuthorId: page.view.author.id,
     sort: thread.sort,
     after,
-    comments: thread.comments.map((comment) => render(renderer, comment)),
+    comments: thread.comments.map((comment) => render(renderer, comment, page.moderator)),
     now: new Date().toISOString(),
     focus: thread.focus,
     next: thread.next,
