@@ -387,11 +387,20 @@ test.describe('a viewer', () => {
     expect(first.slice(0, 2)).toEqual([`Picture ${seed.suffix}`, `Followed ${seed.suffix} 01`]);
     // With scripts the next page is no link: the list loads it near its end.
     await expect(page.getByRole('link', { name: 'Next page' })).toHaveCount(0);
-    const status = page.locator('.feed-posts > [role="status"]');
-    await loadUntil(page, 40);
-    await expect(status).toHaveText('20 more posts loaded.');
+    // Every message the list's status says, in order (it is emptied while a batch loads).
+    await page.locator('.feed-posts > [role="status"]').evaluate((status) => {
+      const said: string[] = [];
+      Object.assign(window, { said });
+      new MutationObserver(() => status.textContent && said.push(status.textContent)).observe(status, {
+        childList: true,
+        subtree: true,
+        characterData: true,
+      });
+    });
     await loadUntil(page, 46);
-    await expect(status).toHaveText('6 more posts loaded. That is everything for now.');
+    await expect
+      .poll(() => page.evaluate(() => (window as unknown as { said: string[] }).said))
+      .toEqual(['20 more posts loaded.', '6 more posts loaded. That is everything for now.']);
     const all = await titles(page);
     expect(all.slice(0, 20)).toEqual(first);
     expect(all[20]).toBe(`Followed ${seed.suffix} 20`);
@@ -417,9 +426,13 @@ test.describe('a viewer', () => {
     await loadUntil(page, 46);
     const row = page.locator('.feed-list > li').nth(30);
     await row.scrollIntoViewIfNeeded();
+    // The router saves the position from scroll events it throttles: a reader pauses before a press.
+    await page.waitForTimeout(300);
     const y = await page.evaluate(() => scrollY);
+    const title = await row.locator('.pb-post__title a').textContent();
     await row.locator('.pb-post__title a').click();
     await page.waitForURL(/\/post\//);
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText(title!);
     await page.goBack();
     await page.waitForURL('**/?sort=new');
     await expect(page.locator('.feed-list > li')).toHaveCount(46);
@@ -467,7 +480,8 @@ test.describe('a viewer', () => {
     await expect(title).toBeFocused();
   });
 
-  test('Skip past the posts moves focus to what follows the list', async ({ page }) => {
+  test('Skip past the posts moves focus to what follows the list: the rail, else the end of the posts', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
     await signedIn(page, seed.viewer.name);
     await gotoHydrated(page, '/?sort=new');
     const skip = page.getByRole('button', { name: 'Skip past the posts' });
@@ -480,6 +494,11 @@ test.describe('a viewer', () => {
     await expect(
       page.getByRole('complementary', { name: 'About this feed' }).getByRole('link', { name: 'Browse communities' }),
     ).toBeFocused();
+    // Narrower, the rail gives way and nothing follows the posts: focus waits at their end, where the next batch starts.
+    await page.setViewportSize({ width: 1100, height: 900 });
+    await skip.focus();
+    await page.keyboard.press('Enter');
+    await expect(page.locator('.pb-feed-end')).toBeFocused();
   });
 
   test('Share copies the link where the system has no share sheet, and says so politely', async ({ page, context, baseURL }) => {
