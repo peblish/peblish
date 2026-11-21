@@ -28,8 +28,9 @@ export interface FrameParts {
 export const FrameContext = createContext<FrameParts | null>(null);
 
 /**
- * The centre column's bar (Commons), sticky under the header; on a phone it is the top bar. Every page
- * gets one: the shell renders a default one, with the page's name from its title, unless the route says
+ * The centre column's bar (Commons), sticky under the header; on a phone it is the top bar. A named
+ * navigation landmark ("Page"), so the bar is reachable as one wherever it sits. Every page gets one:
+ * the shell renders a default one, with the page's name from its title, unless the route says
  * `staticData: { viewHeader: 'own' }` and renders this itself with its own `title` (its h1, if the bar is
  * where the page's name lives) and `trailing` actions. `root` is a top destination (a feed, the inbox,
  * the directory, the queue, the viewer's profile), which has no Back.
@@ -56,31 +57,34 @@ export function ViewHeader({
   const hydrated = useHydrated();
   const canGoBack = useCanGoBack();
   const back = !root && hydrated && canGoBack;
+  // A named navigation: the shell's own bar sits beside the route's <main>, so it needs a landmark of
+  // its own, and a second <header> would be a second banner beside the site's header.
   return (
-    <Bar
-      className="pb-frame-vh"
-      leading={
-        back ? (
-          <IconButton variant="ghost" aria-label={t('shell', 'back')} onActivate={() => router.history.back()}>
-            <ChevronLeft />
-          </IconButton>
-        ) : (
-          <span className="pb-frame-vh__home">
-            {parts?.brand}
-            <FindLink compact />
-          </span>
-        )
-      }
-      title={title}
-      quiet={quiet}
-      trailing={
-        <>
-          {trailing}
-          {/* A section, so Mux's own <header> around the button is not a second banner. */}
-          <section className="pb-frame-vh__menu">{parts?.drawer}</section>
-        </>
-      }
-    />
+    <nav className="pb-frame-vh" aria-label={t('shell', 'bar.label')}>
+      <Bar
+        leading={
+          back ? (
+            <IconButton variant="ghost" aria-label={t('shell', 'back')} onActivate={() => router.history.back()}>
+              <ChevronLeft />
+            </IconButton>
+          ) : (
+            <span className="pb-frame-vh__home">
+              {parts?.brand}
+              <FindLink compact />
+            </span>
+          )
+        }
+        title={title}
+        quiet={quiet}
+        trailing={
+          <>
+            {trailing}
+            {/* Inside the nav, Mux's own <header> around the button is not a second banner. */}
+            <div className="pb-frame-vh__menu">{parts?.drawer}</div>
+          </>
+        }
+      />
+    </nav>
   );
 }
 

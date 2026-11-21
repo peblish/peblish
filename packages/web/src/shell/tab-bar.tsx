@@ -17,7 +17,7 @@ const feeds: readonly string[] = Object.values(feedPaths);
  */
 export function PhoneTabs({ session, shell, pathname }: { session: SessionView | null; shell: ShellData; pathname: string }) {
   const { t } = useTranslate();
-  const at = (href: string, under = false): BottomTab['current'] => (pathname === href ? 'page' : under ? 'section' : undefined);
+  const at = (href: string, under = false) => pathname === href || under;
   const you = session ? userPath({ handle: session.name }) : '';
   const tabs: BottomTab[] = [
     {

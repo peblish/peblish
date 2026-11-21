@@ -27,15 +27,18 @@ import { communityPath, directoryPaths, feedPaths, reportQueuePath, sitePaths } 
 /** A count as the badges print it: "99+" from the cap on. */
 export const badgeText = (count: number) => (count >= unreadCap ? `${unreadCap - 1}+` : String(count));
 
-/** A community's name in the sidebar: its display name, else its name, with directional controls drawn as a mark. */
-const communityLabel = (community: ActorRef) => neutraliseBidi(community.displayName?.trim() || community.name);
+/**
+ * A community's name in the sidebar: its display name, else its name, without its directional controls; the
+ * row isolates it (<bdi>), as display names from other servers are shown everywhere (BidiText).
+ */
+const communityLabel = (community: ActorRef) => neutraliseBidi(community.displayName?.trim() || community.name, '');
 
 // A community's row draws a small Mux Avatar with its initial, as Sidebar.NavItem's icon (the shell's data
 // has no community pictures yet), so folded into the rail the row keeps a mark and its tooltip. One component
 // per letter, so a row keeps its icon across renders.
 const initialIcons = new Map<string, ComponentType<{ className?: string }>>();
 function initialIcon(label: string): ComponentType<{ className?: string }> {
-  const initial = [...neutraliseBidi(label, '')][0]?.toUpperCase() ?? '';
+  const initial = [...label][0]?.toUpperCase() ?? '';
   let Icon = initialIcons.get(initial);
   if (!Icon) {
     Icon = function CommunityInitial({ className }: { className?: string }) {
@@ -107,7 +110,8 @@ export function Navigation({
             const href = communityPath(community);
             return (
               <Sidebar.NavItem key={community.id} href={href} icon={initialIcon(label)} current={pathname === href}>
-                {label}
+                {/* An element with the text as its child, so Mux still reads the folded rail's tooltip from it. */}
+                <bdi>{label}</bdi>
               </Sidebar.NavItem>
             );
           })}

@@ -72,7 +72,8 @@
     "tab.home": "Home",
     "tab.create": "Create",
     "theme.current": "current",
-    "rail.label": "About this place"
+    "rail.label": "About this place",
+    "bar.label": "Page"
   },
   "de": {
     "tagline": "Gemeinschaften im Fediverse.",
@@ -147,6 +148,7 @@
     "tab.home": "Start",
     "tab.create": "Erstellen",
     "theme.current": "aktuell",
-    "rail.label": "Über diesen Ort"
+    "rail.label": "Über diesen Ort",
+    "bar.label": "Seite"
   }
 }

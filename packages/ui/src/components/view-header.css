@@ -38,9 +38,17 @@
     min-inline-size: 0;
   }
 
-  /* Quiet, the title takes no room, so the two sides share the bar. */
+  /* Quiet, the title takes no room and nothing needs centring: the start takes what the end leaves. */
   .pb-vh__title[data-quiet] {
     display: none;
+  }
+
+  .pb-vh:has(> .pb-vh__title[data-quiet]) {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .pb-vh:has(> .pb-vh__title[data-quiet]) > .pb-vh__trailing {
+    grid-column: 2;
   }
 
   /* The phone's top bar: its medium controls grow to the 44px target. Buttons and icon buttons (Back,

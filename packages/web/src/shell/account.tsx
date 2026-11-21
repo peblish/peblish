@@ -107,12 +107,12 @@ export function Account({ session }: { session: SessionView }) {
                 >
                   <span className="pb-account__choice">
                     <Text className="pb-account__choice-label">{t('shell', `theme.${choice}`)}</Text>
-                    {choice === scheme && (
-                      <>
-                        <Text className="pb-sr">, {t('shell', 'theme.current')}</Text>
-                        <CheckIcon className="pb-account__check" />
-                      </>
-                    )}
+                    {/* Mux's Menu has no checked items yet: the tick, and "current" as the item's description, whose
+                        element is always there, as React Aria looks for it only when the item mounts. */}
+                    <Text slot="description" className="pb-sr">
+                      {choice === scheme ? t('shell', 'theme.current') : ''}
+                    </Text>
+                    {choice === scheme && <CheckIcon className="pb-account__check" />}
                   </span>
                 </Menu.Item>
               ))}

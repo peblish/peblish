@@ -12,10 +12,10 @@ export interface BottomTab {
   /** Drawn above the label, hidden from assistive technology: the label names the tab. */
   icon: ReactNode;
   /**
-   * `page`: the page shown is this destination (`aria-current="page"`); `section`: the page shown lies
-   * under it, as a feed under Home or a community under Communities (`aria-current="true"`).
+   * The page shown is this destination or lies under it, as a feed under Home or a community under
+   * Communities: `aria-current="page"`, as Commons marks it (Mux's Link has no `aria-current="true"`).
    */
-  current?: 'page' | 'section';
+  current?: boolean;
   /** A count on the icon (the inbox's unread): `shown` as drawn, `spoken` the word read after it. */
   count?: { shown: string; spoken: string };
 }
@@ -30,13 +30,7 @@ export function BottomTabBar({ label, tabs, className }: { label: string; tabs: 
   return (
     <nav className={['pb-tabbar', className].filter(Boolean).join(' ')} aria-label={label}>
       {tabs.map((tab) => (
-        <Link
-          key={tab.id}
-          className="pb-tabbar__tab"
-          href={tab.href}
-          current={tab.current === 'page'}
-          aria-current={tab.current === 'section' ? 'true' : undefined}
-        >
+        <Link key={tab.id} className="pb-tabbar__tab" href={tab.href} current={tab.current}>
           <span className="pb-tabbar__icon" aria-hidden="true">
             {tab.icon}
           </span>

@@ -480,9 +480,10 @@
       display: inline-grid;
     }
 
+    /* Under the page, in its column: the sticky sidebar, a window tall, runs past a short page's row. */
     .pb-account-links {
       display: flex;
-      grid-column: 1 / -1;
+      grid-column: page;
       flex-wrap: wrap;
       align-items: center;
       gap: var(--muxui-semantic-layout-inset-tight) var(--muxui-semantic-layout-inset-medium);
