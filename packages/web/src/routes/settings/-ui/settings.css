@@ -1,23 +1,28 @@
-/* The settings pages (account, security, blocks): a navigation column beside a column of Mux
-   Cards. Layout only; colour, type and shape come from Mux components and tokens. */
+/* The settings pages (account, security, blocks), in the Commons frame's centre column: the view header,
+   the settings tabs, then the page's sections flat on the page, each set off by a rule (the mock has no
+   card in the centre). Layout only; colour, type and shape come from Mux components and tokens. */
 @layer app {
-  .settings {
+  .settings__page {
     display: grid;
-    grid-template-columns: 200px minmax(0, 1fr);
-    gap: var(--muxui-semantic-layout-content-gap);
-    max-width: var(--pb-page-width);
-    margin: 0 auto;
-    padding: var(--muxui-semantic-layout-inset-large) var(--muxui-semantic-layout-inset-medium);
-  }
-  .settings__nav .muxui-sidebar__nav-list {
-    padding: 0;
-    overflow: visible;
+    gap: var(--muxui-semantic-layout-section-gap);
+    padding-block: var(--muxui-semantic-layout-inset-medium) var(--muxui-semantic-layout-inset-xlarge);
   }
   .settings__main {
     display: grid;
     gap: var(--muxui-semantic-layout-section-gap);
     align-content: start;
     min-width: 0;
+  }
+  .settings__section {
+    display: grid;
+    gap: var(--muxui-semantic-layout-group-gap);
+  }
+  .settings__section + .settings__section {
+    padding-block-start: var(--muxui-semantic-layout-section-gap);
+    border-block-start: 1px solid var(--muxui-semantic-border-faint);
+  }
+  .settings__section > :where(.muxui-text) {
+    margin: 0;
   }
   .settings__body {
     display: grid;
@@ -28,7 +33,7 @@
   .settings__body form > :where(.muxui-text) {
     margin: 0;
   }
-  /* Forms keep a readable measure inside a wide card. */
+  /* Forms keep a readable measure in the column. */
   .settings__body form {
     display: grid;
     gap: var(--muxui-semantic-layout-group-gap);
@@ -127,18 +132,5 @@
     flex-wrap: wrap;
     gap: var(--muxui-semantic-layout-tight-gap);
     align-items: center;
-  }
-
-  @media (max-width: 760px) {
-    .settings {
-      grid-template-columns: minmax(0, 1fr);
-      gap: var(--muxui-semantic-layout-group-gap);
-      padding-inline: var(--muxui-semantic-layout-inset-small);
-    }
-    .settings__nav .muxui-sidebar__nav-list {
-      flex-direction: row;
-      flex-wrap: wrap;
-      gap: var(--muxui-semantic-layout-tight-gap);
-    }
   }
 }

@@ -1,5 +1,4 @@
 import { Button } from '@peblish/ui/components/button';
-import { Card } from '@peblish/ui/components/card';
 import { EmptyState } from '@peblish/ui/components/empty-state';
 import { Handle, neutraliseBidi } from '@peblish/ui/components/handle';
 import { Table } from '@peblish/ui/components/table';
@@ -30,6 +29,7 @@ export function BlocksPage({ data, search }: { data: BlocksData; search: BlocksS
     <SettingsLayout admin={data.admin} title={t('blocks', 'title')}>
       <LinkTabs
         aria-label={t('blocks', 'tabs.label')}
+        variant="segment"
         items={blockTabs.map((name) => ({
           to: `${blocksPath}?tab=${name}`,
           active: name === tab,
@@ -91,7 +91,7 @@ export function BlocksPage({ data, search }: { data: BlocksData; search: BlocksS
         {data.rows.length === 0 ? (
           <EmptyState title={t('blocks', `${tab}.emptyTitle`)}>{t('blocks', `${tab}.empty`)}</EmptyState>
         ) : (
-          <Card.Root padding="sm" className="blk-list">
+          <div className="blk-list">
             <Table
               aria-label={t('blocks', 'list.label', { kind: t('blocks', `tab.${tab}`) })}
               columns={[
@@ -129,7 +129,7 @@ export function BlocksPage({ data, search }: { data: BlocksData; search: BlocksS
                 },
               }))}
             />
-          </Card.Root>
+          </div>
         )}
       </section>
     </SettingsLayout>
