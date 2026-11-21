@@ -5,6 +5,10 @@
 @import '@peblish/ui/components/link.css';
 @import '@peblish/ui/brand/brand.css';
 @import '@peblish/ui/components/sidebar.css';
+/* The Commons frame's compositions (frame lane). */
+@import '@peblish/ui/components/view-header.css';
+@import '@peblish/ui/components/bottom-tab-bar.css';
+@import '@peblish/ui/components/edge-toggle.css';
 @import '@peblish/ui/density/density-control.css';
 @import '@peblish/ui/components/vote-control.css';
 @import '@peblish/ui/components/post-card.css';

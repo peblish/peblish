@@ -1,0 +1,19 @@
+/* EdgeToggle (edge-toggle.tsx): a round ghost IconButton in a hairline ring on the page's surface, its
+   icon muted until hovered. The default size reads Mux's button radius token, set here to a pill. */
+@layer app {
+  .pb-edge-toggle {
+    --muxui-component-button-radius: var(--muxui-semantic-shape-pill-radius);
+    display: inline-flex;
+    border: 1px solid var(--muxui-semantic-border-default);
+    border-radius: var(--muxui-semantic-shape-pill-radius);
+    background: var(--muxui-semantic-surface-background);
+  }
+
+  .pb-edge-toggle .muxui-icon-button {
+    color: var(--muxui-semantic-content-muted);
+  }
+
+  .pb-edge-toggle .muxui-icon-button:is(:hover, [data-muxui-state-hovered], [data-muxui-state-pressed]) {
+    color: var(--muxui-semantic-content-strong);
+  }
+}

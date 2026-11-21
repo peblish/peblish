@@ -1,0 +1,55 @@
+/* ViewHeader (view-header.tsx): the centre column's bar. Three columns, the outer two of equal share,
+   so the title stays centred whatever Back or the page's actions take; the frame makes it sticky. */
+@layer app {
+  .pb-vh {
+    /* 44px phone targets, from tokens: Mux's control sizes stop at 40. */
+    --pb-touch: calc(var(--muxui-semantic-control-size-lg) + 2 * var(--muxui-semantic-layout-dense-gap));
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+    align-items: center;
+    gap: var(--muxui-semantic-layout-group-gap);
+    min-block-size: calc(var(--muxui-semantic-control-size-md) + 2 * var(--muxui-semantic-layout-inset-small));
+    padding-inline: var(--muxui-semantic-layout-inset-small);
+    border-block-end: 1px solid var(--muxui-semantic-border-faint);
+    background: var(--muxui-semantic-surface-background);
+  }
+
+  .pb-vh__leading,
+  .pb-vh__trailing {
+    display: flex;
+    align-items: center;
+    gap: var(--muxui-semantic-layout-tight-gap);
+    min-inline-size: 0;
+  }
+
+  .pb-vh__leading {
+    grid-column: 1;
+  }
+
+  .pb-vh__trailing {
+    grid-column: 3;
+    justify-content: flex-end;
+  }
+
+  .pb-vh__title {
+    display: flex;
+    grid-column: 2;
+    justify-content: center;
+    min-inline-size: 0;
+  }
+
+  /* Quiet, the title takes no room, so the two sides share the bar. */
+  .pb-vh__title[data-quiet] {
+    display: none;
+  }
+
+  /* The phone's top bar: its medium controls grow to the 44px target. Buttons and icon buttons (Back,
+     the drawer's button) take their height from Mux's button minimum, the rest from the control size. */
+  @media (max-width: 859.98px) {
+    .pb-vh {
+      --muxui-component-button-min-height: var(--pb-touch);
+      --muxui-control-size-md: var(--pb-touch);
+      min-block-size: calc(var(--pb-touch) + var(--muxui-semantic-layout-inset-tight));
+    }
+  }
+}

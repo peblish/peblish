@@ -2,33 +2,45 @@ import {
   ArrowBigDown,
   ArrowBigUp,
   Bold,
+  Check,
   ChevronDown as LucideChevronDown,
+  ChevronLeft as LucideChevronLeft,
   ChevronRight as LucideChevronRight,
+  ClipboardList,
   Code,
   Compass,
   EyeOff,
+  FileText,
   Flame,
   Globe,
+  HeartHandshake,
   Heading,
   House,
   Image,
   Inbox,
+  Info,
   Italic,
   Link,
   List,
   ListOrdered,
+  Lock,
   LogIn,
   MapPin,
   Menu,
   Network,
+  PanelLeftClose,
+  PanelLeftOpen,
   Plus,
   Search,
+  Settings,
   Shield,
   ShieldCheck,
+  SquarePen,
   Strikethrough,
   Text,
   TextQuote,
   UserPlus,
+  UserRound,
   Users,
   X,
   type LucideIcon,
@@ -82,6 +94,22 @@ export const SearchIcon = icon(Search);
 // The phone bar's signed-out actions when they collapse to icons (shell/account.tsx).
 export const LogInIcon = icon(LogIn);
 export const UserPlusIcon = icon(UserPlus);
+
+// The Commons frame (packages/web/src/shell): Create post, Back, the sidebar's fold, the moderation
+// queue, the site's own pages, the account's pages in the phone drawer and the current appearance in
+// the account menu.
+export const SquarePenIcon = icon(SquarePen);
+export const UserRoundIcon = icon(UserRound);
+export const SettingsIcon = icon(Settings);
+export const ChevronLeft = icon(LucideChevronLeft);
+export const PanelLeftCloseIcon = icon(PanelLeftClose);
+export const PanelLeftOpenIcon = icon(PanelLeftOpen);
+export const ClipboardListIcon = icon(ClipboardList);
+export const InfoIcon = icon(Info);
+export const HeartHandshakeIcon = icon(HeartHandshake);
+export const LockIcon = icon(Lock);
+export const FileTextIcon = icon(FileText);
+export const CheckIcon = icon(Check);
 
 // The Markdown editor's formatting toolbar (composer/markdown-editor.tsx); its links reuse LinkIcon.
 export const BoldIcon = icon(Bold);

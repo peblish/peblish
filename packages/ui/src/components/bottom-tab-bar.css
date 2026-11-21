@@ -1,0 +1,109 @@
+/* BottomTabBar (bottom-tab-bar.tsx): five equal tabs, each its icon over its name, on the page's
+   surface with a hairline above. Mux Link as it comes is a text link; a tab takes the muted colour
+   around it, a hover and pressed wash like Mux's navigation rows, and the strong colour and a filled
+   indicator when current. */
+@layer app {
+  .pb-tabbar {
+    /* 44px phone targets, from tokens: Mux's control sizes stop at 40. */
+    --pb-touch: calc(var(--muxui-semantic-control-size-lg) + 2 * var(--muxui-semantic-layout-dense-gap));
+    display: grid;
+    grid-auto-columns: minmax(0, 1fr);
+    grid-auto-flow: column;
+    padding-inline: var(--muxui-semantic-layout-inset-tight);
+    border-block-start: 1px solid var(--muxui-semantic-border-faint);
+    background: var(--muxui-semantic-surface-background);
+  }
+
+  .pb-tabbar__tab {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: var(--muxui-semantic-layout-dense-gap);
+    min-inline-size: var(--pb-touch);
+    min-block-size: calc(var(--pb-touch) + var(--muxui-semantic-layout-inset-small));
+    border-radius: var(--muxui-semantic-shape-navigation-radius);
+    color: var(--muxui-semantic-content-muted);
+    text-decoration: none;
+    transition: background-color var(--muxui-semantic-motion-state-transition-duration) var(--muxui-semantic-motion-state-transition-easing);
+  }
+
+  .pb-tabbar__tab:is(:hover, [data-muxui-state-hovered], [data-muxui-state-pressed]),
+  .pb-tabbar__tab[aria-current] {
+    color: var(--muxui-semantic-content-strong);
+    text-decoration: none;
+  }
+
+  .pb-tabbar__tab:is(:hover, [data-muxui-state-hovered]) {
+    background-color: color-mix(in srgb, var(--muxui-semantic-color-neutral-100) 4%, transparent);
+  }
+
+  .pb-tabbar__tab:is(:active, [data-muxui-state-pressed]) {
+    background-color: color-mix(in srgb, var(--muxui-semantic-color-neutral-100) 8%, transparent);
+  }
+
+  /* Before hydration and with scripts off Mux has not marked the link focused, so its ring is not
+     drawn yet: the keyboard focus still shows, as an outline. */
+  .pb-tabbar__tab:focus-visible:not([data-muxui-state-focus-visible]) {
+    outline: 2px solid var(--muxui-semantic-focus-ring);
+    outline-offset: -2px;
+  }
+
+  .pb-tabbar__icon {
+    display: grid;
+    place-items: center;
+    inline-size: calc(2 * var(--muxui-semantic-control-size-sm));
+    block-size: var(--muxui-semantic-control-size-sm);
+    border-radius: var(--muxui-semantic-shape-pill-radius);
+    font-size: var(--muxui-semantic-typography-heading-s-font-size);
+  }
+
+  /* The current tab's indicator: a filled pill behind its icon, Mux's current navigation fill. Its
+     transparent outline is drawn under forced colours, where the fill is not. */
+  .pb-tabbar__tab[aria-current] .pb-tabbar__icon {
+    background-color: var(--muxui-semantic-color-neutral-16);
+    outline: 2px solid transparent;
+  }
+
+  .pb-tabbar__label {
+    color: inherit;
+    font-size: var(--muxui-semantic-typography-badge-size);
+    font-weight: var(--muxui-semantic-typography-control-weight);
+    line-height: var(--muxui-semantic-typography-compact-line-height);
+  }
+
+  .pb-tabbar__tab[aria-current] .pb-tabbar__label {
+    font-weight: var(--muxui-semantic-typography-label-weight);
+  }
+
+  /* The count rides the icon's top end. */
+  .pb-tabbar__count {
+    position: absolute;
+    inset-block-start: var(--muxui-semantic-layout-inset-tight);
+    inset-inline-start: calc(50% + var(--muxui-semantic-layout-inset-small));
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .pb-tabbar__tab {
+      transition: none;
+    }
+  }
+
+  :where([data-muxui-motion='reduced']) .pb-tabbar__tab {
+    transition: none;
+  }
+
+  @media (forced-colors: active) {
+    .pb-tabbar__tab[aria-current] .pb-tabbar__label {
+      text-decoration-line: underline;
+      text-decoration-thickness: 0.15em;
+      text-underline-offset: 0.3em;
+    }
+
+    .pb-tabbar__tab:focus-visible {
+      outline: 2px solid Highlight;
+      outline-offset: -2px;
+    }
+  }
+}
