@@ -428,6 +428,10 @@ test.describe('the community page', () => {
       await expect(page.locator('.feed-list')).toHaveCount(1);
       if (width === 1440) {
         await expect(tabs).toBeHidden();
+        // Beside the rail, an About address still shows the posts and one charter, the rail's.
+        await gotoHydrated(page, `${community(handle)}?tab=about`);
+        await expect(page.locator('.cm-posts')).toBeVisible();
+        await expect(page.locator('.cm-charter--view')).toBeHidden();
         await expect(page.getByRole('complementary', { name: `About Open ${seed.suffix}` })).toBeVisible();
         continue;
       }

@@ -100,7 +100,7 @@
   }
   /* Posts and About: only where the rail has given way. */
   .cm-tabs,
-  .cm-charter--view {
+  .cm-charter.cm-charter--view {
     display: none;
   }
   .cm-charter {
@@ -151,8 +151,17 @@
     .cm-page[data-tab='about'] .cm-posts {
       display: none;
     }
-    .cm-charter--view {
+    .cm-charter.cm-charter--view {
       display: flex;
+    }
+    /* The Posts tab names the list here; its heading stays for assistive technology. */
+    .cm-posts-title {
+      position: absolute;
+      inline-size: 1px;
+      block-size: 1px;
+      overflow: hidden;
+      clip-path: inset(50%);
+      white-space: nowrap;
     }
   }
   /* A phone: the header wraps, Join and the community's actions take a row of their own. */
