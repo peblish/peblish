@@ -52,6 +52,8 @@ import {
   type LucideProps,
 } from 'lucide-react';
 import type { BrandPack } from '../brand/pack.ts';
+// The feed lane's sort and view menus and its row actions (feed-menus, feed-row-actions).
+import { History, LayoutList, Link2, Rows3, Sparkles, StretchHorizontal, Trophy } from 'lucide-react';
 
 // Icons from Lucide, the set Mux UI draws its own with, imported by name so the bundle keeps
 // only these. Drawn as SVG rather than typed as characters: a glyph outside the Latin font
@@ -139,6 +141,15 @@ export const CommentsIcon = icon(MessageSquare);
 export const ShareIcon = icon(Share);
 export const ExternalLinkIcon = icon(ExternalLink);
 export const CoverIcon = icon(EyeOff);
+
+// The feed lane: the sorts (Hot is FlameIcon), the three views, and Copy link.
+export const SortNewIcon = icon(Sparkles);
+export const SortOldIcon = icon(History);
+export const SortTopIcon = icon(Trophy);
+export const ViewCardIcon = icon(StretchHorizontal);
+export const ViewClassicIcon = icon(LayoutList);
+export const ViewCompactIcon = icon(Rows3);
+export const CopyLinkIcon = icon(Link2);
 
 /** A brand pack's mark (brand/pack.ts): its one path in currentColor, always hidden (the link around it is named). */
 export function MarkIcon({ mark, className }: { mark: BrandPack['mark']; className?: string }) {
