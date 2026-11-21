@@ -128,11 +128,14 @@ test('a position kept at hydration is where Back returns to, with no scroll afte
   await hydrated(page);
   await page.waitForTimeout(300);
   expect(await scrollY(page)).toBe(scrolled);
-  // A link already on screen, so following it scrolls nothing first.
+  // A link already on screen, and not under the sticky header or view header, so following it scrolls nothing first.
   const href = await page.evaluate((here) => {
     const link = [...document.querySelectorAll<HTMLAnchorElement>('main a[href^="/"]')].find((candidate) => {
       const box = candidate.getBoundingClientRect();
-      return !candidate.getAttribute('href')!.startsWith(here) && box.height > 0 && box.top >= 0 && box.bottom <= window.innerHeight;
+      if (candidate.getAttribute('href')!.startsWith(here) || box.height === 0 || box.top < 0 || box.bottom > window.innerHeight)
+        return false;
+      const hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);
+      return !!hit && candidate.contains(hit);
     });
     link?.setAttribute('data-pick', '');
     return link?.getAttribute('href') ?? null;

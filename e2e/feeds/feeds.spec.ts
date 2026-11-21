@@ -326,8 +326,10 @@ test.describe('a viewer', () => {
     const side = page.getByRole('complementary', { name: 'Sidebar' });
     await expect(side.getByRole('link', { name: 'Subscribed' })).toBeVisible();
     await expect(side.getByRole('link', { name: 'Moderating' })).toBeVisible();
-    await expect(side.getByRole('link', { name: new RegExp(`^!${seed.communities.remote}@`) })).toBeVisible();
-    await expect(side.getByRole('navigation', { name: 'Communities' })).toContainText('Remote (1)');
+    // The communities they follow, local or remote, by name under Communities.
+    await expect(
+      side.locator('.muxui-sidebar__section', { hasText: 'Communities' }).getByRole('link', { name: seed.communities.remote, exact: true }),
+    ).toBeVisible();
     await expectAccessible(page);
   });
 

@@ -73,8 +73,14 @@ test('a spoiler that holds a link stays a plain span with its own reveal control
   await expect(reveal).toHaveAttribute('aria-pressed', 'false');
   await expect(holder).not.toHaveAttribute('data-revealed', /.*/);
 
-  // Clicking the text beside the link (not the link) reveals it too and keeps the control in step.
-  await holder.click({ position: { x: 3, y: 5 } });
+  // Clicking the text beside the link (not the link) reveals it too and keeps the control in step: at
+  // the start of the span's first line, wherever the column's width wraps it.
+  const box = (await holder.boundingBox())!;
+  const first = await holder.evaluate((span) => {
+    const line = span.getClientRects()[0]!;
+    return { x: line.left, y: line.top };
+  });
+  await holder.click({ position: { x: first.x - box.x + 3, y: first.y - box.y + 5 } });
   await expect(reveal).toHaveAttribute('aria-pressed', 'true');
   await expect(holder).not.toHaveAttribute('aria-pressed', /.*/);
 });

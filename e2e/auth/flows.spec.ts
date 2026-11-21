@@ -36,13 +36,15 @@ async function freshPage(browser: Browser): Promise<Page> {
 }
 
 /**
- * The sidebar's You links, by accessible name: a link's text also holds its count badge ("2 open"),
+ * The viewer's own links, by accessible name: the header's Inbox and, for a moderator or an admin, the
+ * sidebar's Moderation queue (none for anyone else). A link's text also holds its count badge ("2 open"),
  * which the name leads with the label.
  */
-async function expectYouLinks(page: Page, names: readonly (string | RegExp)[]): Promise<void> {
-  const links = page.getByRole('navigation', { name: 'You' }).getByRole('link');
-  await expect(links).toHaveCount(names.length);
-  for (const [index, name] of names.entries()) await expect(links.nth(index)).toHaveAccessibleName(name);
+async function expectViewerLinks(page: Page, inbox: string | RegExp, queue?: string | RegExp): Promise<void> {
+  await expect(page.getByRole('banner').getByRole('link', { name: /^Inbox/ })).toHaveAccessibleName(inbox);
+  const queueLink = page.getByRole('complementary', { name: 'Sidebar' }).getByRole('link', { name: /^Moderation queue/ });
+  if (queue) await expect(queueLink).toHaveAccessibleName(queue);
+  else await expect(queueLink).toHaveCount(0);
 }
 
 /** Ticks the terms box as a keyboard user does: Mux's checkbox keeps its native input visually hidden, at no size. */
@@ -77,12 +79,12 @@ test('the admin signs in with a TOTP code and creates an invite', async ({ page 
     expect([path, response?.status(), response?.headers()['cache-control']]).toEqual([path, 200, 'private, no-store']);
   }
   await gotoHydrated(page, '/admin/registration');
-  // An admin sees every admin tab, the You group and the Admin entry in the account menu.
+  // An admin sees every admin tab, the inbox and the queue, and the Admin entry in the account menu.
   const tabs = page.getByRole('navigation', { name: 'Admin sections' });
   await expect(tabs.getByRole('link')).toHaveText(['Settings', 'Pages', 'Reports', 'Bans', 'Peers', 'Media', 'Registration and invites']);
   await expect(tabs.getByRole('link', { name: 'Registration and invites' })).toHaveAttribute('aria-current', 'page');
   // Each link may carry a count: the lane database keeps notices and open reports from other specs.
-  await expectYouLinks(page, [/^Inbox(\s+\d+\+?\s+unread)?$/, /^Moderation queue(\s+\d+\+?\s+open)?$/]);
+  await expectViewerLinks(page, /^Inbox(\s+\d+\+?\s+unread)?$/, /^Moderation queue(\s+\d+\+?\s+open)?$/);
   // The account menu is a Mux Menu: its entries exist only while it is open, as menu items.
   await page
     .getByRole('banner')
@@ -144,7 +146,7 @@ test('TOTP turns on with a code and shows the recovery codes once', async ({ pag
   await signIn(page, person.name, person.password);
   await landed(page, '/');
   // A member who moderates nothing: the Inbox and no Moderation queue; no admin tabs on an admin page.
-  await expectYouLinks(page, ['Inbox']);
+  await expectViewerLinks(page, 'Inbox');
   await gotoHydrated(page, '/admin/registration');
   await expect(page.getByRole('navigation', { name: 'Admin sections' })).toHaveCount(0);
   await gotoHydrated(page, '/settings/security');
