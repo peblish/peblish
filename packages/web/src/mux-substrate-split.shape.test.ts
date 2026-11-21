@@ -90,13 +90,14 @@ describe('rewriteSubstrateImports', () => {
   ])('rejects %s', (_, code, error) => expect(rewrite(code)).toThrow(error));
 });
 
-// The vendored rc.7 files pass every check and split into the parts the client build has always had.
+// The vendored files pass every check. Candidate c1 adds four to overlays.js (the Tooltip's content scope:
+// SCOPE_ATTRIBUTES, readContentScope, useContentScope, CONTENT_SCOPE_STYLE), none exported.
 describe('the vendored Mux UI files', () => {
   const generated = join(import.meta.dirname, '../../ui/node_modules/@muxui/react/generated');
   test('substrate.js splits into 81 wrappers', () => expect(splitSubstrate(join(generated, 'substrate.js')).wrappers.size).toBe(81));
-  test('overlays.js splits into 48 declarations, 9 of them exported', () => {
+  test('overlays.js splits into 52 declarations, 9 of them exported', () => {
     const { declarations } = splitDeclarations(join(generated, 'overlays.js'));
-    expect(declarations.size).toBe(48);
+    expect(declarations.size).toBe(52);
     expect([...declarations.values()].filter(({ exported }) => exported)).toHaveLength(9);
   });
 });

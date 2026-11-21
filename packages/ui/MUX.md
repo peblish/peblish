@@ -4,7 +4,7 @@ One page for the lanes that move the app onto Mux UI. How each component is mean
 
 ## The import rule
 
-- Mux UI comes only from the vendored tarball, `vendor/muxui/muxui-react-0.1.0-rc.7.tgz`, a dependency of `packages/ui` alone.
+- Mux UI comes only from the vendored tarball, `vendor/muxui/muxui-react-0.1.0-rc.8-c1.tgz` (candidate c1 of rc.8, built from Mux UI's `main`; provenance in `vendor/muxui/README.md`), a dependency of `packages/ui` alone.
 - Only `packages/ui` imports `@muxui/react`. Routes and the shell import one module per component: `import { Card } from '@peblish/ui/components/card'` (no extension, no barrel). One module per component keeps tree-shaking working: a route that imports `separator` does not load `sidebar`.
 - A wrapper re-exports the component, its parts and its prop types and nothing else. If one you need is missing, add `packages/ui/src/components/<kebab-name>.tsx` the same way and say so in your notes.
 - The app's own composed components (`PostCard`, `CommentThread`, `VoteControl`, `ReplyBar`, `Prose`, `Handle`, `Time`, `Badge`, the form fields) keep their public props.
@@ -134,6 +134,14 @@ Mux UI rc.7 components bring their own font and box model: they no longer take f
 - `.pb-page` padding takes Mux layout tokens.
 
 New `--pb-*` tokens go in `packages/ui/src/tokens/tokens.css` (the groundwork lane's file; ask root) and are only Mux tokens. Prefer using the Mux token directly.
+
+### What candidate c1 changed for the app
+
+- Dark scheme only: muted text, field labels (and so Tabs' labels) and links are a half-and-half mix of Mux's steps 70 and 80, lighter than before (muted `rgb(181 177 173)`, links `rgb(144 186 189)` on the page). Light is unchanged.
+- An `svg` placed directly in a Button's label (`ButtonLink`'s included) or in a ToggleButton takes the button's icon size (`--muxui-button-icon-size`: 1.25rem, 1rem at size `sm`) over the icon's own `1em`, so the vote arrows and Create post's plus are 16px. IconButton keeps the icon's size.
+- Grouped ToggleButtons draw no outline of their own (the group's border and dividers are the edges; the focus ring is unchanged), and a `sm` grouped button has square corners. Buttons and ToggleButtons take their height from their minimum size, with no block padding.
+- A horizontal RadioGroup or CheckboxGroup that wraps puts its rows as close as a vertical group's options (the composer's post types on a phone).
+- Playfair Display, the `expressive` text face, ships only as full TTF files. The app uses no expressive text; the payload check fails any page that loads a TTF.
 
 ## Client-only components under server rendering
 
