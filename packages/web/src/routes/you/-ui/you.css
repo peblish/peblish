@@ -1,0 +1,87 @@
+/* The You page (Commons' You tab, the mock's .a-phero on the viewer's own page): the viewer, then lists
+   of pages as 44px rows, Appearance and Sign out, on one ground with hairlines between the parts.
+   Layout only, on Mux UI tokens. */
+@layer app {
+  /* 44px phone targets, as the frame's (shell.css): Mux's control sizes stop at 40. */
+  .you {
+    --pb-touch: calc(var(--muxui-semantic-control-size-lg) + 2 * var(--muxui-semantic-layout-dense-gap));
+  }
+
+  .you-body {
+    display: grid;
+    gap: var(--muxui-semantic-layout-section-gap);
+    padding-block: var(--muxui-semantic-layout-inset-large);
+  }
+
+  .you-id {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: center;
+    column-gap: var(--muxui-semantic-layout-action-gap);
+  }
+
+  .you-id__name,
+  .you-id__handle {
+    margin: 0;
+    overflow-wrap: anywhere;
+  }
+
+  .you-id__handle .pb-handle {
+    white-space: normal;
+  }
+
+  .you-part {
+    display: grid;
+    gap: var(--muxui-semantic-layout-tight-gap);
+    padding-block-start: var(--muxui-semantic-layout-group-gap);
+    border-block-start: 1px solid var(--muxui-semantic-border-subtle);
+  }
+
+  .you-part__title {
+    margin: 0;
+  }
+
+  .you-links {
+    display: grid;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  /* A row: its glyph, then its name, the whole row the link's target. */
+  .you-link {
+    display: flex;
+    align-items: center;
+    gap: var(--muxui-semantic-layout-group-gap);
+    min-block-size: var(--pb-touch);
+  }
+
+  .you-link__icon {
+    flex: none;
+    color: var(--muxui-semantic-content-muted);
+  }
+
+  .you-bar__title {
+    color: var(--muxui-semantic-content-strong);
+  }
+
+  .you-end {
+    display: flex;
+  }
+
+  /* Phone: Appearance's choices and Sign out are 44px targets too. */
+  @media (max-width: 859.98px) {
+    .you {
+      --muxui-control-size-md: var(--pb-touch);
+      --muxui-control-size-sm: var(--pb-touch);
+      --muxui-component-button-min-height: var(--pb-touch);
+    }
+  }
+
+  /* Without scripts the choice cannot be made here (the stored scheme still renders). */
+  @media (scripting: none) {
+    .you-appearance {
+      display: none;
+    }
+  }
+}
