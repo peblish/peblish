@@ -44,10 +44,10 @@
   }
 
   /* Before hydration and with scripts off Mux has not marked the link focused, so its ring is not
-     drawn yet: the keyboard focus still shows, as an outline. */
+     drawn yet: the keyboard focus still shows, as an outline around the tab. */
   .pb-tabbar__tab:focus-visible:not([data-muxui-state-focus-visible]) {
     outline: 2px solid var(--muxui-semantic-focus-ring);
-    outline-offset: -2px;
+    outline-offset: 0;
   }
 
   .pb-tabbar__icon {
@@ -101,9 +101,10 @@
       text-underline-offset: 0.3em;
     }
 
+    /* Mux's ring is a shadow, which forced colours drop: an outline around the tab instead. */
     .pb-tabbar__tab:focus-visible {
       outline: 2px solid Highlight;
-      outline-offset: -2px;
+      outline-offset: 0;
     }
   }
 }
