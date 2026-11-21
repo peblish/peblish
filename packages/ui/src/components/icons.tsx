@@ -159,3 +159,6 @@ export function MarkIcon({ mark, className }: { mark: BrandPack['mark']; classNa
     </svg>
   );
 }
+
+// The community page and the directory (community-directory lane): a pending join, and the directory's Cards view.
+export { HourglassIcon, LayoutGridIcon } from './icons-community.tsx';
