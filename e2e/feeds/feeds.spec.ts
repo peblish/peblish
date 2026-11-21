@@ -152,19 +152,18 @@ test.describe('anyone', () => {
 
   /**
    * Every line box of the post's handles and domain, with the box of the element that would clip
-   * it: the nearest ancestor that hides overflow, or the post's frame when none does.
+   * it: the nearest ancestor that hides overflow, or the post when none does.
    */
   const identityLayout = (card: ReturnType<Page['locator']>) =>
     card.evaluate((article) => {
-      const frame = article.querySelector('.pb-post__frame')!;
       const clipOf = (element: Element) => {
         for (let node = element.parentElement; node && node !== article; node = node.parentElement) {
           const style = getComputedStyle(node);
           if (style.overflowX !== 'visible' || style.overflowY !== 'visible') return node;
         }
-        return frame;
+        return article;
       };
-      const pieces = [...article.querySelectorAll('.pb-handle__name, .pb-handle__host, .pb-post__domain')];
+      const pieces = [...article.querySelectorAll('.pb-handle__name, .pb-handle__host, .pb-post__domain, .pb-link-preview__domain')];
       const outside = pieces.flatMap((piece) => {
         const range = document.createRange();
         range.selectNodeContents(piece);
@@ -205,7 +204,10 @@ test.describe('anyone', () => {
         const author = card.locator('.pb-post__by .pb-handle');
         await expect(author, label).toHaveText(`@${long.author}@${long.host}`);
         await expect(author.locator('.pb-handle__host'), label).toBeVisible();
-        await expect(card.locator('.pb-post__domain'), label).toHaveText(`(${long.host})`);
+        // Card says where a link goes in its link line; Classic and Compact after the title.
+        await expect(card.locator(density === 'card' ? '.pb-link-preview__domain' : '.pb-post__domain'), label).toHaveText(
+          density === 'card' ? long.host : `(${long.host})`,
+        );
         expect(await identityLayout(card), label).toEqual({ pageScrolls: false, cardOverflows: false, outside: [] });
       }
     }

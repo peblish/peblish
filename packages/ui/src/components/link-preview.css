@@ -1,0 +1,23 @@
+@layer app {
+  /* LinkPreview: the glyph and the domain. */
+  .pb-link-preview {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--muxui-semantic-layout-tight-gap);
+    max-inline-size: 100%;
+    min-block-size: 24px;
+    font-size: var(--muxui-semantic-typography-small-size);
+  }
+
+  .pb-link-preview svg {
+    flex: none;
+    inline-size: 1em;
+    block-size: 1em;
+  }
+
+  /* The host is how a reader judges where the link goes: shown whole, broken anywhere if it must. */
+  .pb-link-preview__domain {
+    min-inline-size: 0;
+    overflow-wrap: anywhere;
+  }
+}

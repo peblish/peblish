@@ -1,0 +1,274 @@
+@layer app {
+  /* PostRow: a flat row on the page, divided from the next by a faint line. The meta line, then
+     the body (title and media), then the action row. Layout here; type and colour are Mux's. */
+  .pb-post {
+    display: flex;
+    flex-direction: column;
+    gap: var(--muxui-semantic-layout-tight-gap);
+    min-inline-size: 0;
+    padding-block: var(--muxui-semantic-layout-inset-medium);
+    padding-inline: var(--muxui-semantic-layout-inset-large);
+    border-block-end: 1px solid var(--muxui-semantic-border-faint);
+    cursor: pointer;
+  }
+
+  .pb-post:hover {
+    background: var(--muxui-semantic-surface-hover);
+  }
+
+  .pb-post__meta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--muxui-semantic-layout-dense-gap) var(--muxui-semantic-layout-tight-gap);
+    min-inline-size: 0;
+  }
+
+  /* Mux gap: Link is an inline-flex box with its own line height, which breaks a wrapping meta line. */
+  .pb-post__meta .muxui-link {
+    display: inline;
+    line-height: inherit;
+  }
+
+  .pb-post__community {
+    font-weight: var(--muxui-semantic-typography-label-weight);
+  }
+
+  .pb-post__by {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--muxui-semantic-layout-tight-gap);
+    min-inline-size: 0;
+  }
+
+  .pb-post__flags {
+    display: inline-flex;
+    flex-wrap: wrap;
+    gap: var(--muxui-semantic-layout-tight-gap);
+  }
+
+  /* A handle has no spaces, so a long remote one (name@a-long-host.example) breaks anywhere rather
+     than overflowing a narrow column; the host stays visible. */
+  .pb-handle {
+    overflow-wrap: anywhere;
+  }
+
+  .pb-handle__host {
+    /* Muted, not secondary: secondary falls under 4.5:1 on the hover fill. */
+    color: var(--muxui-semantic-content-muted);
+    font-weight: var(--muxui-semantic-typography-text-font-weight);
+  }
+
+  /* The body: the title (and a Card's excerpt and link line) in the first column, a thumbnail
+     beside it, a wide picture or a cover across both. */
+  .pb-post__body {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: var(--muxui-semantic-layout-group-gap) var(--muxui-semantic-layout-action-gap);
+    align-items: start;
+  }
+
+  .pb-post__body > * {
+    grid-column: 1;
+    min-inline-size: 0;
+  }
+
+  .pb-post__title {
+    margin: 0;
+    min-block-size: 24px;
+    overflow-wrap: anywhere;
+    text-wrap: pretty;
+  }
+
+  .pb-post__title .muxui-link {
+    /* Inline, so a long title wraps with the domain after it. Mux gap: Link has no inline mode. */
+    display: inline;
+    font-weight: inherit;
+    line-height: inherit;
+  }
+
+  .pb-post__domain {
+    margin-inline-start: var(--muxui-semantic-layout-tight-gap);
+    font-weight: var(--muxui-semantic-typography-text-font-weight);
+    overflow-wrap: anywhere;
+  }
+
+  .pb-post__excerpt {
+    display: -webkit-box;
+    overflow: hidden;
+    max-inline-size: 72ch;
+    margin: 0;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+  }
+
+  .pb-post__aside {
+    grid-column: 2;
+    grid-row: 1 / span 3;
+    inline-size: calc(var(--muxui-semantic-control-size-lg) * 3);
+  }
+
+  .pb-post__media,
+  .pb-post__concealed {
+    grid-column: 1 / -1;
+  }
+
+  .pb-post__thumb {
+    position: relative;
+    display: block;
+    overflow: hidden;
+    aspect-ratio: 16 / 9;
+    border-radius: var(--muxui-semantic-shape-option-radius);
+    background: var(--muxui-semantic-surface-subtle);
+  }
+
+  .pb-post__media .pb-post__thumb {
+    aspect-ratio: auto;
+    max-block-size: 32rem;
+    border-radius: var(--muxui-semantic-shape-container-radius);
+  }
+
+  .pb-post__picture {
+    display: block;
+    inline-size: 100%;
+    block-size: 100%;
+  }
+
+  /* A revealed cover lays its media out in one column. */
+  .pb-cover-revealed.pb-post__concealed {
+    display: grid;
+    gap: var(--muxui-semantic-layout-group-gap);
+  }
+
+  .pb-cover-revealed .pb-post__aside {
+    grid-column: auto;
+    grid-row: auto;
+  }
+
+  /* Classic: a smaller thumbnail beside the title; the cover takes the thumbnail's place. */
+  .pb-post[data-density='classic'] .pb-post__aside,
+  .pb-post[data-density='classic'] .pb-post__concealed {
+    grid-column: 2;
+    grid-row: 1;
+    inline-size: calc(var(--muxui-semantic-control-size-lg) * 2.2);
+  }
+
+  .pb-post[data-density='classic'] .pb-post__thumb {
+    aspect-ratio: 4 / 3;
+  }
+
+  /* The action row: the vote pill, the comments count, the post's other actions. */
+  .pb-post__actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--muxui-semantic-layout-tight-gap);
+    margin-block-start: var(--muxui-semantic-layout-dense-gap);
+  }
+
+  .pb-post__comments {
+    box-sizing: border-box;
+    display: inline-flex;
+    align-items: center;
+    gap: var(--muxui-semantic-layout-tight-gap);
+    min-block-size: var(--muxui-semantic-control-size-sm);
+    padding-inline: var(--muxui-semantic-layout-inset-small);
+    border-radius: var(--muxui-semantic-shape-pill-radius);
+    background: var(--muxui-semantic-action-neutral-background);
+    font-size: var(--muxui-semantic-typography-small-size);
+    font-weight: var(--muxui-semantic-typography-control-weight);
+    font-variant-numeric: tabular-nums;
+    text-decoration: none;
+  }
+
+  .pb-post__comments:hover {
+    background: var(--muxui-semantic-action-neutral-background-hover);
+    text-decoration: none;
+  }
+
+  .pb-post__comments svg,
+  .pb-post__action svg {
+    flex: none;
+    inline-size: var(--muxui-semantic-typography-label-m-font-size);
+    block-size: var(--muxui-semantic-typography-label-m-font-size);
+    color: var(--muxui-semantic-content-muted);
+  }
+
+  .pb-post__action {
+    border-radius: var(--muxui-semantic-shape-pill-radius);
+  }
+
+  /* Compact: tighter, a smaller title, and a plain action row. */
+  .pb-post[data-density='compact'] {
+    gap: var(--muxui-semantic-layout-dense-gap);
+    padding-block: var(--muxui-semantic-layout-inset-small);
+  }
+
+  .pb-post[data-density='compact'] .pb-post__actions {
+    margin-block-start: 0;
+  }
+
+  .pb-post[data-density='compact'] .pb-post__comments {
+    background: transparent;
+    padding-inline: var(--muxui-semantic-layout-dense-gap);
+  }
+
+  .pb-post[data-density='compact'] .pb-post__comments:hover {
+    background: var(--muxui-semantic-action-neutral-background);
+  }
+
+  /* One line: the title text truncates, never the link's domain, which is how a reader judges
+     where the link goes. The domain keeps its width up to the row less 6em, so some of the title
+     always shows; only a domain longer than that wraps, inside itself. */
+  .pb-post[data-density='compact'] .pb-post__title {
+    display: flex;
+    align-items: baseline;
+    column-gap: var(--muxui-semantic-layout-tight-gap);
+    min-inline-size: 0;
+    white-space: nowrap;
+  }
+
+  .pb-post[data-density='compact'] .pb-post__title > * {
+    flex: none;
+    margin: 0;
+  }
+
+  .pb-post[data-density='compact'] .pb-post__title .muxui-link {
+    flex: 0 1 auto;
+    min-inline-size: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .pb-post[data-density='compact'] .pb-post__domain {
+    max-inline-size: calc(100% - 6em);
+    white-space: normal;
+  }
+
+  /* A phone: 44px targets for the action row, the share label folded into its name. */
+  @media (max-width: 859.98px) {
+    .pb-post {
+      padding-inline: var(--muxui-semantic-layout-inset-medium);
+    }
+
+    .pb-post__aside {
+      inline-size: calc(var(--muxui-semantic-control-size-lg) * 2.2);
+    }
+
+    .pb-post[data-density='classic'] .pb-post__aside,
+    .pb-post[data-density='classic'] .pb-post__concealed {
+      inline-size: calc(var(--muxui-semantic-control-size-lg) * 1.8);
+    }
+
+    .pb-post__comments,
+    .pb-post__action {
+      min-block-size: calc(var(--muxui-semantic-control-size-lg) + 2 * var(--muxui-semantic-layout-dense-gap));
+      min-inline-size: calc(var(--muxui-semantic-control-size-lg) + 2 * var(--muxui-semantic-layout-dense-gap));
+      justify-content: center;
+    }
+
+    .pb-post__action-label {
+      display: none;
+    }
+  }
+}

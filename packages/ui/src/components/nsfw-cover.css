@@ -1,0 +1,46 @@
+@layer app {
+  /* NsfwCover: a quiet covered slot with the glyph, the words and Show. */
+  .pb-cover {
+    box-sizing: border-box;
+    display: flex;
+    align-items: center;
+    gap: var(--muxui-semantic-layout-group-gap);
+    min-block-size: var(--muxui-semantic-control-size-lg);
+    padding: var(--muxui-semantic-layout-inset-small) var(--muxui-semantic-layout-inset-medium);
+    border-radius: var(--muxui-semantic-shape-container-radius);
+    background: var(--muxui-semantic-surface-subtle);
+    color: var(--muxui-semantic-content-muted);
+  }
+
+  .pb-cover > svg {
+    flex: none;
+    inline-size: var(--muxui-semantic-typography-label-m-font-size);
+    block-size: var(--muxui-semantic-typography-label-m-font-size);
+  }
+
+  .pb-cover__text {
+    flex: 1;
+  }
+
+  /* In place of a thumbnail: stacked and centred in the thumbnail's own box. */
+  .pb-cover[data-size='thumb'] {
+    flex-direction: column;
+    justify-content: center;
+    gap: var(--muxui-semantic-layout-dense-gap);
+    aspect-ratio: 4 / 3;
+    min-block-size: auto;
+    padding: var(--muxui-semantic-layout-inset-tight);
+    border-radius: var(--muxui-semantic-shape-option-radius);
+    text-align: center;
+  }
+
+  .pb-cover[data-size='thumb'] .pb-cover__text {
+    flex: none;
+    font-size: var(--muxui-semantic-typography-tiny-size);
+  }
+
+  /* The revealed content takes focus from script only (after Show), to carry the reader on. */
+  .pb-cover-revealed:focus:not(:focus-visible) {
+    outline: none;
+  }
+}
