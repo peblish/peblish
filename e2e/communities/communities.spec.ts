@@ -231,6 +231,8 @@ test.describe('the NSFW gate', () => {
 test.describe('the community page', () => {
   test('a local community for a member: header, counts held here, feed, sidebar, rules and hydration', async ({ page }) => {
     const log = recordConsole(page);
+    // Wide enough for the rail, which holds the charter.
+    await page.setViewportSize({ width: 1440, height: 900 });
     await signedIn(page, seed.people.member);
     const { handle } = seed.communities.open;
     const response = await page.goto(community(handle), { waitUntil: 'commit' });
@@ -240,10 +242,11 @@ test.describe('the community page', () => {
     await expect(stat(page, 'Posts')).toHaveText('3');
     await expect(stat(page, 'Subscribers')).toBeVisible();
     await expect(page.getByRole('link', { name: `Plain post ${seed.suffix}` })).toBeVisible();
-    await expect(page.getByRole('region', { name: 'About' }).or(page.locator('#about'))).toContainText('A friendly place');
+    const rail = page.getByRole('complementary', { name: `About Open ${seed.suffix}` });
+    await expect(rail.getByRole('region', { name: 'About' })).toContainText('A friendly place');
     await expect(page.locator('.cm-rules > li')).toContainText(['Be civil', 'Stay on topic']);
     await expect(page.locator('.cm-mods')).toContainText('local');
-    await expect(page.getByRole('link', { name: 'Modlog for this community' })).toHaveAttribute('href', /\/modlog\?community=/);
+    await expect(rail.getByRole('link', { name: 'Modlog for this community' })).toHaveAttribute('href', /\/modlog\?community=/);
     await page.waitForLoadState('networkidle');
     expect(log.hydrationProblems()).toEqual([]);
     await expectAccessible(page);
@@ -282,7 +285,7 @@ test.describe('the community page', () => {
     await page.waitForURL(`**/auth/sign-in?redirect=${encodeURIComponent(community(handle))}`);
     await signedIn(page, seed.people.banned);
     await gotoHydrated(page, community(handle));
-    await expect(page.locator('.cm-head')).toContainText('You are banned from this community.');
+    await expect(page.locator('.cm-hero')).toContainText('You are banned from this community.');
     await expect(page.getByRole('button', { name: 'Join', exact: true })).toHaveCount(0);
   });
 
@@ -308,14 +311,16 @@ test.describe('the community page', () => {
     await expectAccessible(page);
   });
 
-  test('New post is disabled with a reason in a restricted community unless staff; Mod tools only for staff', async ({ page, browser }) => {
+  test('a restricted community says only its staff post, with no dead control, unless staff; Mod tools only for staff', async ({
+    page,
+    browser,
+  }) => {
     const { restricted, open, remote } = seed.communities;
     await signedIn(page, seed.people.member);
     await gotoHydrated(page, community(restricted.handle));
-    const disabled = page.getByRole('button', { name: 'New post' });
-    await expect(disabled).toBeDisabled();
-    await expect(disabled).toHaveAccessibleDescription('Posting is restricted to moderators');
-    await expect(page.getByRole('link', { name: 'New post' })).toHaveCount(0);
+    await expect(page.locator('.cm-start')).toHaveText('Posting is restricted to moderators');
+    await expect(page.getByRole('link', { name: /^Create a post in / })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: /post/i })).toHaveCount(0);
     await expect(page.getByText('Mod tools')).toHaveCount(0);
     await page.context().clearCookies();
     await gotoHydrated(page, community(restricted.handle));
@@ -324,7 +329,10 @@ test.describe('the community page', () => {
     const moderator = await (await browser.newContext()).newPage();
     await signedIn(moderator, seed.people.moderator);
     await gotoHydrated(moderator, community(restricted.handle));
-    await expect(moderator.getByRole('link', { name: 'New post' })).toHaveAttribute('href', `/submit?community=${restricted.handle}`);
+    await expect(moderator.getByRole('link', { name: /^Create a post in / })).toHaveAttribute(
+      'href',
+      `/submit?community=${restricted.handle}`,
+    );
     await moderator.getByRole('button', { name: 'Mod tools' }).click();
     await expect(moderator.getByRole('link', { name: 'Reports' })).toHaveAttribute('href', /\/admin\/reports\?community=/);
     await expect(moderator.getByRole('link', { name: 'Edit community' })).toHaveAttribute('href', `/c/${restricted.handle}/edit`);
@@ -369,7 +377,8 @@ test.describe('the community page', () => {
   });
 
   test('rule texts read without JavaScript', async ({ browser }) => {
-    const plain = await (await browser.newContext({ javaScriptEnabled: false })).newPage();
+    // In the rail; where it gives way, the About tab (below) holds them.
+    const plain = await (await browser.newContext({ javaScriptEnabled: false, viewport: { width: 1440, height: 900 } })).newPage();
     await plain.goto(community(seed.communities.open.handle));
     await expect(plain.locator('.cm-rules > li').first()).toContainText('Be civil');
     await expect(plain.getByText('No harassment.')).toBeVisible();
@@ -387,6 +396,74 @@ test.describe('the community page', () => {
     await plain.getByRole('button', { name: 'Pending' }).click();
     await expect(plain.getByRole('button', { name: 'Join', exact: true })).toBeVisible();
     await plain.context().close();
+  });
+
+  test("Top applies its period to the community's posts, by plain links", async ({ page }) => {
+    const { handle } = seed.communities.open;
+    await gotoHydrated(page, community(handle));
+    const posts = page.locator('.cm-posts');
+    await expect(posts.getByRole('link', { name: `Older post ${seed.suffix}` })).toBeVisible();
+    await posts.getByRole('link', { name: 'Top', exact: true }).click();
+    await page.waitForURL(/[?&]sort=top/);
+    // Day is Top's default period, so the address leaves it out.
+    await expect(posts.getByRole('link', { name: 'Day', exact: true })).toHaveAttribute('aria-current', 'page');
+    // Two days old: outside Top of the day, inside Top of the week.
+    await expect(posts.getByRole('link', { name: `Plain post ${seed.suffix}` })).toBeVisible();
+    await expect(posts.getByRole('link', { name: `Older post ${seed.suffix}` })).toHaveCount(0);
+    await posts.getByRole('link', { name: 'Week', exact: true }).click();
+    await page.waitForURL(/[?&]period=week/);
+    await expect(posts.getByRole('link', { name: `Older post ${seed.suffix}` })).toBeVisible();
+  });
+
+  test('where the rail gives way, Posts and About are link tabs; About shows the charter in place of the posts, without JavaScript too', async ({
+    page,
+    browser,
+  }) => {
+    const { handle } = seed.communities.open;
+    for (const width of [1440, 1000]) {
+      await page.setViewportSize({ width, height: 900 });
+      await gotoHydrated(page, community(handle));
+      const tabs = page.getByRole('navigation', { name: 'Posts and about' });
+      // One list of posts at every width.
+      await expect(page.locator('.feed-list')).toHaveCount(1);
+      if (width === 1440) {
+        await expect(tabs).toBeHidden();
+        await expect(page.getByRole('complementary', { name: `About Open ${seed.suffix}` })).toBeVisible();
+        continue;
+      }
+      await expect(page.getByRole('complementary', { name: `About Open ${seed.suffix}` })).toBeHidden();
+      await tabs.getByRole('link', { name: 'About' }).click();
+      await page.waitForURL(/[?&]tab=about/);
+      const about = page.getByRole('main').getByRole('region', { name: `About Open ${seed.suffix}` });
+      await expect(about).toBeVisible();
+      await expect(about.getByRole('region', { name: 'Rules' })).toContainText('Be civil');
+      await expect(page.locator('.cm-posts')).toBeHidden();
+      await expect(tabs.getByRole('link', { name: 'About' })).toHaveAttribute('aria-current', 'page');
+      await tabs.getByRole('link', { name: 'Posts' }).click();
+      await expect(page.locator('.cm-posts')).toBeVisible();
+    }
+
+    const plain = await (await browser.newContext({ javaScriptEnabled: false, viewport: { width: 1000, height: 900 } })).newPage();
+    await plain.goto(community(handle));
+    await plain.getByRole('navigation', { name: 'Posts and about' }).getByRole('link', { name: 'About' }).click();
+    await plain.waitForURL(/[?&]tab=about/);
+    await expect(plain.getByRole('main').getByText('No harassment.')).toBeVisible();
+    await plain.context().close();
+  });
+
+  test('on a phone Join, the way to post and the tabs are 44px targets', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await signedIn(page, seed.people.member);
+    await gotoHydrated(page, community(seed.communities.open.handle));
+    const controls = [
+      page.locator('.cm-join').getByRole('button').first(),
+      page.getByRole('link', { name: /^Create a post in / }),
+      page.getByRole('navigation', { name: 'Posts and about' }).getByRole('link', { name: 'About' }),
+    ];
+    for (const control of controls) {
+      const box = await control.boundingBox();
+      expect(Math.round(Math.min(box!.width, box!.height))).toBeGreaterThanOrEqual(44);
+    }
   });
 
   test('unknown, and noindex only when the community says so', async ({ page }) => {
@@ -460,8 +537,8 @@ test.describe('the community form', () => {
     await page.locator('html[data-hydrated="1"]').waitFor({ state: 'attached' });
     await expect(page.getByRole('heading', { level: 1 })).toHaveText('A new place');
     await expect(page.locator('.cm-rules > li')).toHaveText(['No spam', 'Be kind']);
-    await expect(page.locator('.cm-side')).toContainText('fresh');
-    await expect(page.locator('.cm-side')).toContainText('German');
+    await expect(page.locator('.pb-rail')).toContainText('fresh');
+    await expect(page.locator('.pb-rail')).toContainText('German');
     // A site admin posts in a restricted community; the header still says it is restricted.
     await expect(page.locator('.cm-address')).toContainText('Only moderators can post here');
   });
@@ -496,7 +573,7 @@ test.describe('the community form', () => {
     await page.getByRole('button', { name: 'Save changes' }).click();
     await page.waitForURL(`**${community(restricted.handle)}`);
     await expect(page.getByRole('heading', { level: 1 })).toHaveText('Renamed notices');
-    await expect(page.getByRole('link', { name: 'New post' })).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Create a post in Renamed notices' })).toBeVisible();
     await expect(page.locator('.cm-rules > li')).toHaveText(['Read first']);
     await gotoHydrated(page, `/c/${restricted.handle}/edit`);
     await expect(page.getByLabel('Title')).toHaveValue('Renamed notices');
