@@ -1,0 +1,22 @@
+/* SectionTabs: LinkTabs under the frame's view header, at the page's gutter, their line across the column. */
+@layer app {
+  .pb-section-tabs {
+    padding-inline: var(--muxui-semantic-layout-inset-large);
+    border-block-end: 1px solid var(--muxui-semantic-border-subtle);
+  }
+
+  .pb-section-tabs .muxui-tabs__list {
+    border-block-end: 0;
+  }
+
+  /* A phone: the phone's gutter, and each tab a 44px target (Mux's large control and two dense gaps). */
+  @media (max-width: 859.98px) {
+    .pb-section-tabs {
+      padding-inline: var(--muxui-semantic-layout-inset-medium);
+    }
+
+    .pb-section-tabs .muxui-tabs__tab {
+      min-block-size: calc(var(--muxui-semantic-control-size-lg) + 2 * var(--muxui-semantic-layout-dense-gap));
+    }
+  }
+}

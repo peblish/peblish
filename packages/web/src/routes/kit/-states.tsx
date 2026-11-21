@@ -31,6 +31,7 @@ import { threadPieces } from './-thread.tsx';
 // The inbox's state pages (inbox lane).
 import { inboxPieces } from './-inbox.tsx';
 import { peoplePieces } from './-people.tsx';
+import { staffPieces } from './-staff-pieces.tsx';
 
 /**
  * The states a state page shows as samples, in the state matrix's order ('selected' stands for current, checked
@@ -194,4 +195,5 @@ export const compositions: Readonly<Record<string, Composition>> = {
   ...threadPieces,
   ...inboxPieces,
   ...peoplePieces,
+  ...staffPieces,
 };

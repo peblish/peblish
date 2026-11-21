@@ -37,3 +37,6 @@
 @import '@peblish/ui/components/community-list.css';
 /* The inbox's row (inbox lane). */
 @import '@peblish/ui/components/inbox-row.css';
+/* The staff pages' pieces (staff-pages lane). */
+@import '@peblish/ui/components/section-tabs.css';
+@import '@peblish/ui/components/rail-links.css';
