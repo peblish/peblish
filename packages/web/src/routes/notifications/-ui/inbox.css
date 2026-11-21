@@ -1,90 +1,22 @@
-/* The inbox (notifications-list): layout only, on Mux UI tokens. The rows sit in a Mux Card;
-   an unread row carries a selection stripe at its start edge. */
+/* The inbox (notifications-list): layout only, on Mux UI tokens. The view header runs the column's
+   width above the page; the rows (InboxRow, components/inbox-row.css) bleed through the page's side
+   padding as a feed's do (pb-rows, shell.css). */
 @layer app {
-  .pb-inbox {
+  .pb-inbox__name {
+    display: flex;
+    align-items: baseline;
+    gap: var(--muxui-semantic-layout-tight-gap);
+    min-inline-size: 0;
+    white-space: nowrap;
+  }
+
+  .pb-inbox__h1 {
+    margin: 0;
+  }
+
+  .pb-inbox__body {
     display: grid;
     grid-template-columns: minmax(0, 1fr);
     gap: var(--muxui-semantic-layout-group-gap);
-  }
-
-  .pb-inbox__head {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: baseline;
-    gap: var(--muxui-semantic-layout-tight-gap) var(--muxui-semantic-layout-action-gap);
-  }
-
-  .pb-inbox__all {
-    margin-inline-start: auto;
-  }
-
-  .pb-inbox__list {
-    margin: 0;
-    padding: 0;
-    list-style: none;
-  }
-
-  .pb-notice {
-    display: grid;
-    grid-template-columns: auto minmax(0, 1fr) auto;
-    align-items: start;
-    gap: var(--muxui-semantic-layout-action-gap);
-    padding: var(--muxui-semantic-layout-inset-small);
-    border-inline-start: 3px solid transparent;
-  }
-
-  .pb-notice + .pb-notice {
-    border-block-start: 1px solid var(--muxui-semantic-border-faint);
-  }
-
-  .pb-notice:not([data-read]) {
-    border-inline-start-color: var(--muxui-semantic-selection-indicator);
-  }
-
-  .pb-notice__body {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr);
-    gap: var(--muxui-semantic-layout-micro-gap);
-    min-width: 0;
-  }
-
-  /* A long remote handle or title breaks anywhere rather than run past the Card, which hides
-     overflow; Handle keeps itself on one line elsewhere. */
-  .pb-notice__text {
-    overflow-wrap: anywhere;
-  }
-
-  .pb-notice .pb-handle {
-    white-space: normal;
-  }
-
-  .pb-notice__text,
-  .pb-notice__excerpt,
-  .pb-notice__statement {
-    margin: 0;
-  }
-
-  .pb-notice__meta {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: var(--muxui-semantic-layout-action-gap);
-  }
-
-  .pb-notice__excerpt {
-    overflow: hidden;
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    -webkit-box-orient: vertical;
-  }
-
-  @media (max-width: 640px) {
-    .pb-notice {
-      grid-template-columns: auto minmax(0, 1fr);
-    }
-
-    .pb-notice > form {
-      grid-column: 2;
-    }
   }
 }

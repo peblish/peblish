@@ -35,3 +35,5 @@
 /* The community page and the directory (community-directory lane). */
 @import '@peblish/ui/components/join-button.css';
 @import '@peblish/ui/components/community-list.css';
+/* The inbox's row (inbox lane). */
+@import '@peblish/ui/components/inbox-row.css';

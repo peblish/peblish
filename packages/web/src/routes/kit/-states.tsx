@@ -28,6 +28,8 @@ import { feedPieces } from './-feed.tsx';
 // The community page and the directory (community-directory lane).
 import { communityPieces } from './-community-pieces.tsx';
 import { threadPieces } from './-thread.tsx';
+// The inbox's state pages (inbox lane).
+import { inboxPieces } from './-inbox.tsx';
 
 /**
  * The states a state page shows as samples, in the state matrix's order ('selected' stands for current, checked
@@ -189,4 +191,5 @@ export const compositions: Readonly<Record<string, Composition>> = {
   // The community page and the directory (community-directory lane).
   ...communityPieces,
   ...threadPieces,
+  ...inboxPieces,
 };

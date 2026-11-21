@@ -48,6 +48,10 @@ import {
   UserRound,
   Users,
   X,
+  AtSign,
+  CornerDownRight,
+  UserCheck,
+  UserX,
   type LucideIcon,
   type LucideProps,
 } from 'lucide-react';
@@ -150,6 +154,11 @@ export const ViewCardIcon = icon(StretchHorizontal);
 export const ViewClassicIcon = icon(LayoutList);
 export const ViewCompactIcon = icon(Rows3);
 export const CopyLinkIcon = icon(Link2);
+// The inbox's notice marks (inbox-row): a reply or a mention on the person's avatar, a ban or its end.
+export const ReplyIcon = icon(CornerDownRight);
+export const AtSignIcon = icon(AtSign);
+export const UserXIcon = icon(UserX);
+export const UserCheckIcon = icon(UserCheck);
 
 /** A brand pack's mark (brand/pack.ts): its one path in currentColor, always hidden (the link around it is named). */
 export function MarkIcon({ mark, className }: { mark: BrandPack['mark']; className?: string }) {
@@ -163,5 +172,4 @@ export function MarkIcon({ mark, className }: { mark: BrandPack['mark']; classNa
 // The community page and the directory (community-directory lane): a pending join, and the directory's Cards view.
 export { HourglassIcon, LayoutGridIcon } from './icons-community.tsx';
 // The comment tree (comment-thread.tsx): the mark before the name a deep reply answers.
-import { CornerDownRight } from 'lucide-react';
 export const CornerDownRightIcon = icon(CornerDownRight);
