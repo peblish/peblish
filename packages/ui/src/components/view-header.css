@@ -5,7 +5,8 @@
     /* 44px phone targets, from tokens: Mux's control sizes stop at 40. */
     --pb-touch: calc(var(--muxui-semantic-control-size-lg) + 2 * var(--muxui-semantic-layout-dense-gap));
     display: grid;
-    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+    /* The sides keep their content and share what is left equally; the title takes what they leave, cut short. */
+    grid-template-columns: 1fr minmax(0, max-content) 1fr;
     align-items: center;
     gap: var(--muxui-semantic-layout-group-gap);
     min-block-size: calc(var(--muxui-semantic-control-size-md) + 2 * var(--muxui-semantic-layout-inset-small));
@@ -19,7 +20,6 @@
     display: flex;
     align-items: center;
     gap: var(--muxui-semantic-layout-tight-gap);
-    min-inline-size: 0;
   }
 
   .pb-vh__leading {
@@ -45,6 +45,10 @@
 
   .pb-vh:has(> .pb-vh__title[data-quiet]) {
     grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .pb-vh:has(> .pb-vh__title[data-quiet]) > .pb-vh__leading {
+    min-inline-size: 0;
   }
 
   .pb-vh:has(> .pb-vh__title[data-quiet]) > .pb-vh__trailing {

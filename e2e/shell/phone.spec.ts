@@ -182,3 +182,45 @@ test('on a page shorter than the screen the top bar starts the page, the bottom 
   expect(Math.abs(bottom.y + bottom.height - 800)).toBeLessThan(1);
   expect(main.y + main.height).toBeLessThanOrEqual(bottom.y + 1);
 });
+
+test('a bar the page docks at the foot of the window sits above the bottom bar', async ({ page }) => {
+  await gotoHydrated(page, '/');
+  // The thread's reply bar, as the post page docks it, under a page several screens long.
+  await page.locator('#pb-main main').evaluate((main) => {
+    const spacer = document.createElement('div');
+    spacer.style.blockSize = '3000px';
+    const dock = document.createElement('div');
+    dock.className = 'pb-reply';
+    dock.textContent = 'Reply';
+    main.append(spacer, dock);
+  });
+  const dock = (await page.locator('.pb-reply').boundingBox())!;
+  const bar = (await tabs(page).boundingBox())!;
+  expect(Math.abs(dock.y + dock.height - bar.y)).toBeLessThan(1);
+});
+
+test('a long page name in the top bar is cut short beside the mark, the finder and the menu, never over them', async ({ page }) => {
+  await gotoHydrated(page, '/about');
+  await page.locator('#pb-main main').evaluate((main) => {
+    const spacer = document.createElement('div');
+    spacer.style.blockSize = '3000px';
+    main.append(spacer);
+  });
+  await page.evaluate(() => window.scrollTo(0, 1000));
+  const title = topBar(page).locator('.pb-vh__title');
+  await expect(title).not.toHaveAttribute('data-quiet', /.*/);
+  await title.locator('.muxui-text').evaluate((name) => (name.textContent = 'A page name long enough to need far more than the bar has'));
+  const parts = await topBar(page).evaluate((bar) => {
+    const box = (selector: string) => bar.querySelector(selector)!.getBoundingClientRect();
+    const name = bar.querySelector<HTMLElement>('.pb-vh__title .muxui-text')!;
+    return {
+      leading: box('.pb-vh__leading'),
+      title: box('.pb-vh__title'),
+      trailing: box('.pb-vh__trailing'),
+      cut: name.scrollWidth > name.clientWidth,
+    };
+  });
+  expect(parts.leading.right).toBeLessThanOrEqual(parts.title.left);
+  expect(parts.title.right).toBeLessThanOrEqual(parts.trailing.left);
+  expect(parts.cut).toBe(true);
+});

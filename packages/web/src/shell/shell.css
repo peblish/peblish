@@ -3,18 +3,29 @@
    sidebar and the right rail stick under it and scroll on their own, and the view header sticks under
    the header. Colours, radii and type come from Mux tokens; sizes and grids are the frame's. */
 @layer app {
+  /* The frame's bands, on the root, where the document's scroll padding and the portals (the drawer,
+     Appearance's choices) see them too. */
+  :root {
+    /* 44px phone targets, from tokens: Mux's control sizes stop at 40. */
+    --pb-touch: calc(var(--muxui-semantic-control-size-lg) + 2 * var(--muxui-semantic-layout-dense-gap));
+    /* HeaderNav's own height and its hairline; the view header's under it. */
+    --pb-top-h: calc(4rem + 1px);
+    --pb-bar-h: calc(var(--muxui-semantic-control-size-md) + 2 * var(--muxui-semantic-layout-inset-small) + 1px);
+    /* What the frame docks at the window's foot: nothing, and on a phone the bottom bar. A bar a page docks
+       there (the thread's reply bar) sits above it, at `inset-block-end: var(--pb-dock-end, 0px)`. */
+    --pb-dock-end: 0px;
+    /* Keyboard focus and in-page jumps stop clear of the sticky bands (WCAG 2.4.11). */
+    scroll-padding-block: calc(var(--pb-top-h) + var(--pb-bar-h)) var(--pb-dock-end);
+  }
+
   .pb-app {
     --pb-rule: var(--muxui-semantic-border-faint);
-    /* HeaderNav's own height, and its hairline. */
-    --pb-top-h: calc(4rem + 1px);
     /* Column widths, the Default width preset (Mux has no content-width scale): a 40rem centre beside a
        19.5rem rail. The admin's width setting moves --pb-page-max in a later branch. */
     --pb-centre-w: 40rem;
     --pb-rail-w: 19.5rem;
     --pb-page-max: calc(var(--pb-centre-w) + var(--pb-rail-w));
     --pb-gutter: var(--muxui-semantic-layout-inset-large);
-    /* 44px phone targets, from tokens: Mux's control sizes stop at 40. */
-    --pb-touch: calc(var(--muxui-semantic-control-size-lg) + 2 * var(--muxui-semantic-layout-dense-gap));
     display: grid;
     grid-template-areas:
       'top top'
@@ -356,6 +367,16 @@
     display: none;
   }
 
+  /* The thread's docked reply bar (reply-bar.css) docks above the frame's own bar at the window's foot,
+     and what the page scrolls into view stops above both. */
+  .pb-reply:not(.pb-reply--inline) {
+    inset-block-end: var(--pb-dock-end);
+  }
+
+  :root:has(.pb-reply:not(.pb-reply--inline)) {
+    scroll-padding-block-end: calc(var(--muxui-semantic-control-size-lg) * 4 + var(--pb-dock-end));
+  }
+
   .pb-app__tab-avatar.muxui-avatar {
     inline-size: 1.5rem;
     block-size: 1.5rem;
@@ -373,7 +394,6 @@
   /* The phone drawer's rows, its close button and Appearance's choices are 44px targets. It is a
      portal: only a phone shows its button. */
   .muxui-sidebar__mobile-drawer {
-    --pb-touch: calc(var(--muxui-semantic-control-size-lg) + 2 * var(--muxui-semantic-layout-dense-gap));
     --muxui-control-size-md: var(--pb-touch);
     --muxui-control-size-sm: var(--pb-touch);
     --muxui-component-button-min-height: var(--pb-touch);
@@ -393,6 +413,13 @@
 
   /* The phone: the header and the sidebar give way to the top bar (the view header) and the bottom bar. */
   @media (max-width: 859.98px) {
+    :root {
+      --pb-top-h: 0px;
+      --pb-bar-h: calc(var(--pb-touch) + var(--muxui-semantic-layout-inset-tight) + 1px);
+      /* The bottom bar: a tab's height (bottom-tab-bar.css) and its hairline. */
+      --pb-dock-end: calc(var(--pb-touch) + var(--muxui-semantic-layout-inset-small) + 1px);
+    }
+
     .pb-app {
       grid-template-areas:
         'page'
@@ -413,10 +440,6 @@
     .pb-frame {
       max-inline-size: none;
       border-inline: 0;
-    }
-
-    .pb-frame-vh {
-      inset-block-start: 0;
     }
 
     .pb-frame-vh__home {
@@ -454,7 +477,6 @@
 
     /* Appearance's choices, a portal too, opened from the drawer. */
     .pb-theme__choices {
-      --pb-touch: calc(var(--muxui-semantic-control-size-lg) + 2 * var(--muxui-semantic-layout-dense-gap));
       --muxui-control-size-sm: var(--pb-touch);
       --muxui-control-size-md: var(--pb-touch);
     }
