@@ -7,7 +7,17 @@ import { comments } from '../../db/tables/content.ts';
 import { switchedOn } from '../../media/settings.ts';
 import { allow, deny, forNoKeyUpdate, type PolicyRequest, type PolicyResult } from '../policy.ts';
 import { emailUnverified, ownerAuthority } from '../roles.ts';
-import { commentState, commentingDenial, communityDenial, isBanned, liveDenial, postState, type CommentState } from '../state.ts';
+import {
+  ageDenial,
+  commentState,
+  commentingDenial,
+  communityDenial,
+  flaggedContent,
+  isBanned,
+  liveDenial,
+  postState,
+  type CommentState,
+} from '../state.ts';
 
 // Owned by lane D. Rows are read in the lock order of state.ts: the acting actor, the
 // community, the post, the comment. Lane AZ's guards do the locked reads of the thread's
@@ -26,8 +36,10 @@ async function isCommunity(request: Pick<PolicyRequest<unknown>, 'db'>, actorId:
  * local person needs a verified email; then AZ's commentingDenial (the community is open and
  * has not banned the actor, the post and the comment replied to are live and belong together,
  * and the post is not locked: a lock stops moderators and site admins too, so post.locked is
- * final); then, for a remote author, an Announce must name the remote community the post is in
- * (mod.announce_mismatch); then the depth, where a reply to a comment on level 50 is refused.
+ * final); then, for a local person, the age gate (ageDenial: a post the page withholds from
+ * them takes no comment from them either); then, for a remote author, an Announce must name the
+ * remote community the post is in (mod.announce_mismatch); then the depth, where a reply to a
+ * comment on level 50 is refused.
  * A remote author is allowed as the owner of what they write: the inbound pipeline has matched
  * the signer to the object's attributedTo. A community does not comment (as it does not post
  * or vote), so a remote Group principal is refused first, before any lock.
@@ -43,6 +55,8 @@ const create = async (request: PolicyRequest<{ postId: Uuid; parentId: Uuid | nu
   if (denied) return denied;
   const post = await postState(request, subject.postId);
   if (!post) return deny('target.not_found');
+  const gated = await ageDenial(request, principal, flaggedContent(post));
+  if (gated) return gated;
   if (principal.kind === 'remote' && principal.announcedBy) {
     if (post.community.local || principal.announcedBy.communityId !== post.community.id) return deny('mod.announce_mismatch');
   }
@@ -96,17 +110,26 @@ const reason = (denial: { reason: RefusalReason } | null): RefusalReason | null 
 export const policies = {
   'comment.create': create,
   // Editing needs the author in good standing and a live post (a deleted or removed post takes
-  // no edits, as Lemmy); a lock does not stop it, since a lock stops new comments.
+  // no edits, as Lemmy); a lock does not stop it, since a lock stops new comments. Nor does a
+  // thread the age gate withholds from the author take new words from them (ageDenial).
   'comment.update': authorAction(async (request, comment) => {
     if (await isBanned(request, comment.community.id, comment.authorId)) return 'community.banned';
-    return reason(liveDenial(comment)) ?? reason(liveDenial(comment.post));
+    return (
+      reason(liveDenial(comment)) ??
+      reason(liveDenial(comment.post)) ??
+      reason(await ageDenial(request, request.principal, flaggedContent(comment)))
+    );
   }),
-  // Retracting your own comment needs none of that.
+  // Retracting your own comment needs none of that, the age gate included: it takes words out of
+  // a thread and shows the author nothing.
   'comment.delete': authorAction(async (_request, comment) => reason(liveDenial(comment))),
-  // Taking the retraction back needs the author in good standing and a comment that is only
-  // deleted: a moderator's removal is not the author's to undo.
+  // Taking the retraction back needs the author in good standing, a comment that is only
+  // deleted (a moderator's removal is not the author's to undo), and a thread the age gate does
+  // not withhold from them, since it puts the words back.
   'comment.restore': authorAction(async (request, comment) => {
     if (await isBanned(request, comment.community.id, comment.authorId)) return 'community.banned';
-    return comment.removed ? 'target.removed' : comment.deleted ? null : 'comment.not_deleted';
+    if (comment.removed) return 'target.removed';
+    if (!comment.deleted) return 'comment.not_deleted';
+    return reason(await ageDenial(request, request.principal, flaggedContent(comment)));
   }),
 };
