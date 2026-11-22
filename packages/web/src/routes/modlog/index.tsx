@@ -182,7 +182,7 @@ function Facets({
     current,
   });
   return (
-    <div className="modlog-panels">
+    <>
       <RailPanel title={t('modlog', 'rail.community')}>
         <RailLinks
           items={[
@@ -222,7 +222,7 @@ function Facets({
             )}
         />
       </RailPanel>
-    </div>
+    </>
   );
 }
 

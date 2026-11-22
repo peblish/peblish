@@ -194,10 +194,8 @@ export function CommunityPage({
           </section>
         )}
       </main>
-      <Rail label={t('communities', 'page.rail', { title: data.title })}>
-        <div className="cm-charter">
-          <Charter data={data} />
-        </div>
+      <Rail label={t('communities', 'page.rail', { title: data.title })} className="cm-rail">
+        <Charter data={data} />
       </Rail>
     </>
   );

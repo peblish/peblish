@@ -15,20 +15,15 @@
   .modlog-facets {
     display: none;
   }
+  /* There the two panels sit side by side where they fit; in the rail, one above the other. */
   @container page (width < 62rem) {
     .modlog-facets {
-      display: block;
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+      align-items: start;
+      gap: var(--muxui-semantic-layout-group-gap);
       margin-block-end: var(--muxui-semantic-layout-section-gap);
     }
-  }
-  /* The two panels, a group gap apart: one above the other in the rail, side by side in the page where they fit. */
-  .modlog-panels {
-    display: grid;
-    align-items: start;
-    gap: var(--muxui-semantic-layout-group-gap);
-  }
-  .modlog-facets .modlog-panels {
-    grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
   }
   .modlog .modlog-day {
     margin-block: var(--muxui-semantic-layout-section-gap) var(--muxui-semantic-layout-tight-gap);

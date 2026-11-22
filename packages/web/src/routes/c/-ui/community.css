@@ -8,7 +8,7 @@
   }
   /* Mux's base styles give a paragraph a one-line bottom margin unless it is the last one; the gaps space
      these parts, so Text rendered as a paragraph keeps none. */
-  :is(.cm-page, .cm-form, .cm-charter) .muxui-text {
+  :is(.cm-page, .cm-form, .cm-charter, .cm-rail) .muxui-text {
     margin: 0;
   }
   .cm-refused {
@@ -137,8 +137,8 @@
     min-inline-size: 0;
     overflow-wrap: anywhere;
   }
-  /* The rail's links are 24px targets (WCAG 2.2, 2.5.8). */
-  .cm-charter .muxui-link {
+  /* The charter's links, in the rail or the About tab, are 24px targets (WCAG 2.2, 2.5.8). */
+  :is(.cm-charter, .cm-rail) .muxui-link {
     display: inline-flex;
     align-items: center;
     min-block-size: 24px;
