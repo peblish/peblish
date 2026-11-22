@@ -1,3 +1,4 @@
+import { publicOrigin } from '@peblish/core/config';
 import { readPost, type Viewer } from '@peblish/core/posts/read';
 import type { PostView } from '@peblish/schema/views';
 import { createServerFn } from '@tanstack/react-start';
@@ -10,13 +11,15 @@ import { postPath } from '../../shell/paths.ts';
 import { gateData, requestNsfw } from '../c/-gate.ts';
 import { loadThread } from './$id/comments/-thread.ts';
 import { postMedia, postTime, threadVisible } from './-page-data.ts';
+import { postAsShown } from './-withheld.ts';
 import { input } from '../../server/input.ts';
 
 /**
  * The post page's data, for the route loader (a server function: it runs on the server for a
  * document request and over fetch for a client-side navigation). Lane D adds its one loader
  * call for the thread here, beside readPost. Everything that depends on who looks (the gate,
- * a tombstone, a removed post) is decided in core's readPost; this renders what it hands over.
+ * a tombstone, a removed post) is decided in core's readPost; this renders what it hands over,
+ * and leaves out who wrote a removed or deleted post for anyone it does not tell (-withheld.ts).
  */
 export const loadPost = createServerFn({ method: 'GET' })
   .validator(input(type({ id: 'string' })))
@@ -40,7 +43,10 @@ export const loadPost = createServerFn({ method: 'GET' })
     const { thumbnail, image } = postMedia(view, renderer);
     const locale = negotiateLocale(getRequestHeader('accept-language'));
     // The page draws `thumbnail` (through the proxy rule); the picture's own address stays out of the page data.
-    const post: PostView = { ...view, thumbnailUrl: null, contentHtml };
+    const origin = publicOrigin();
+    if (!origin) throw new Error('PUBLIC_ORIGIN is not set');
+    const told = { id: viewer?.actorId ?? null, moderator: page.moderator };
+    const post: PostView = { ...postAsShown(view, told, origin), thumbnailUrl: null, contentHtml };
     return {
       kind: 'post' as const,
       post,

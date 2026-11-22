@@ -31,8 +31,9 @@ import {
 // post or community that is sensitive or NSFL shows only that for every viewer (a notice must
 // not carry what the gate would hide), a removed or deleted comment shows only that word, and a
 // removed or deleted post loses its title too. Who wrote a reply or mention follows the thread:
-// a deleted comment and sensitive content the viewer has not declared 16+ for name no one
-// (actorWithheldOf). A page is a handful of queries however many rows it lists: the notices,
+// a deleted comment, a removed or deleted post and sensitive content the viewer has not declared
+// 16+ for name no one (actorWithheldOf), and such a notice keeps no comment id to look its author
+// up by. A page is a handful of queries however many rows it lists: the notices,
 // their people, their posts and comments, their modlog entries and the viewer's declaration.
 
 export const inboxPageSize = 25;
@@ -175,8 +176,9 @@ async function describe(q: Queryable, rows: (typeof notifications.$inferSelect)[
       actor: actorWithheld ? null : (row.actorId && personById.get(row.actorId)) || null,
       actorWithheld,
       community: (row.communityId && personById.get(row.communityId)) || null,
+      // The post links to the thread, which names no one here either; the comment's id would lead to its author.
       postId: row.postId,
-      commentId: row.commentId,
+      commentId: actorWithheld ? null : row.commentId,
       postTitle: titleOf(post),
       about: row.commentId ? 'comment' : row.postId ? 'post' : null,
       replyTo: row.kind === 'reply' ? (comment?.parentId ? 'comment' : 'post') : null,
@@ -236,17 +238,17 @@ function withheldOf(subject: { comment: CommentRow | null; post: PostRow | null 
 }
 
 /**
- * Whether a reply or mention may say who wrote it, as the thread decides for the same text: a
- * deleted comment is a tombstone without its author (removed as well or not), and a sensitive
- * post or community shows a viewer without a 16+ declaration nothing at all (gateOf, the post
- * page's rule; an access rule, so the browser's Hide NSFW plays no part). Under a post a
- * moderator removed, the page sends no comments (to its moderators only, whom this does not look
- * up), so a comment there names no one either; a mention in the removed post itself keeps its
- * author, whom the post page still shows. A declared viewer is
- * named the author: Hide NSFW is a prompt they pass on the page, which then shows who wrote it
- * (the words stay withheld here for everyone, as `withheld` says). A removed comment keeps its
- * author, as the thread shows it, and so does a reply under a deleted post. A moderator's notice
- * (removal, restore, ban) names the moderator, whatever it is about.
+ * Whether a reply or mention may say who wrote it, as the thread and the post page decide for the
+ * same text: a deleted comment is a tombstone without its author (removed as well or not), and a
+ * sensitive post or community shows a viewer without a 16+ declaration nothing at all (gateOf,
+ * the post page's rule; an access rule, so the browser's Hide NSFW plays no part). Under a post a
+ * moderator removed, the page sends no comments, and a removed or deleted post names no author
+ * (to anyone but its author and the moderators, whom this does not look up), so a comment there
+ * and a mention in such a post name no one either. A declared viewer is named the author: Hide
+ * NSFW is a prompt they pass on the page, which then shows who wrote it (the words stay withheld
+ * here for everyone, as `withheld` says). A removed comment keeps its author, as the thread shows
+ * it, and so does a reply under a deleted post. A moderator's notice (removal, restore, ban)
+ * names the moderator, whatever it is about.
  */
 function actorWithheldOf(
   kind: InboxItem['kind'],
@@ -257,6 +259,9 @@ function actorWithheldOf(
   if (kind !== 'reply' && kind !== 'mention') return null;
   if (comment?.deletedAt) return 'deleted';
   if (comment && post?.removedAt) return 'removed';
+  // A mention in the post itself: the post page withholds the author of a deleted or removed post.
+  if (!comment && post?.deletedAt) return 'deleted';
+  if (!comment && post?.removedAt) return 'removed';
   if (post && gateOf(post.hidden, { declared }, true) !== 'none') return 'sensitive';
   return null;
 }

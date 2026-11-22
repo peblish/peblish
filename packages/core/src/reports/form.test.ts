@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, test } from 'vitest';
 import { hideNsfw, showNsfw } from '../communities/gate.ts';
 import { db } from '../db/read.ts';
 import { actors } from '../db/tables/actors.ts';
+import { comments, posts } from '../db/tables/content.ts';
 import { writer } from '../db/write.ts';
 import { ageDeclarations } from '../identity/tables.ts';
 import { peerControls } from '../peers/tables.ts';
@@ -69,8 +70,8 @@ describe('a forwarded report names every host it goes to', () => {
     const sent = await createReportAs(user, { target: { kind: 'post', id: both.id }, category: 'spam', forward: true, details: '' });
     const kept = await createReportAs(user, { target: { kind: 'post', id: authorOnly.id }, category: 'spam', forward: false, details: '' });
     if (!sent.ok || !kept.ok) throw new Error('not filed');
-    expect(await readSentReport(w.people.user.id, sent.number)).toMatchObject({ forwardedTo: ['lemmy.test', 'other.test'] });
-    expect(await readSentReport(w.people.user.id, kept.number)).toMatchObject({ forwardedTo: [] });
+    expect(await readSentReport(user, sent.number)).toMatchObject({ forwardedTo: ['lemmy.test', 'other.test'] });
+    expect(await readSentReport(user, kept.number)).toMatchObject({ forwardedTo: [] });
 
     // The delivery worker skips a blocked peer at send time, and an actor without an inbox gets nothing: neither is named.
     await writer().insert(peerControls).values({ instanceId: w.instances.other.id, blocked: true });
@@ -100,7 +101,7 @@ describe('the receipt names what was forwarded when the report was filed', () =>
         { instanceId: w.instances.lemmy.id, blocked: true },
         { instanceId: w.instances.other.id, blocked: true },
       ]);
-    expect(await readSentReport(w.people.user.id, sent.number)).toMatchObject({ forwardedTo: ['lemmy.test', 'other.test'] });
+    expect(await readSentReport(user, sent.number)).toMatchObject({ forwardedTo: ['lemmy.test', 'other.test'] });
 
     // Filed while other.test was blocked, then other.test unblocked: the receipt still names lemmy.test alone.
     await writer().delete(peerControls).where(eq(peerControls.instanceId, w.instances.lemmy.id));
@@ -108,6 +109,75 @@ describe('the receipt names what was forwarded when the report was filed', () =>
     const later = await createReportAs(user, { target: { kind: 'post', id: second.id }, category: 'spam', forward: true, details: '' });
     if (!later.ok) throw new Error(later.reason);
     await writer().delete(peerControls).where(eq(peerControls.instanceId, w.instances.other.id));
-    expect(await readSentReport(w.people.user.id, later.number)).toMatchObject({ forwardedTo: ['lemmy.test'] });
+    expect(await readSentReport(user, later.number)).toMatchObject({ forwardedTo: ['lemmy.test'] });
+  });
+});
+
+describe('the report form and its receipt name the author only where the post page would', () => {
+  test('gated content: the community and not the author for someone without a 16+ declaration, who can still report it', async () => {
+    const w = await seedModerationWorld();
+    const community = w.communities.local.live;
+    await writer().update(actors).set({ sensitive: true }).where(eq(actors.id, community.id));
+    const post = await seedPost(w.instances.local, community, w.people.author, { title: 'Plain title' });
+    const comment = await seedComment(w.instances.local, post, w.people.author, { bodyMd: 'Plain words' });
+    const user = localUser(w.people.user.id);
+    const targets: ReportTarget[] = [
+      { kind: 'post', id: post.id },
+      { kind: 'comment', id: comment.id },
+    ];
+    const about = async (target: ReportTarget, nsfw = hideNsfw) => {
+      const form = await readReportForm(user, target, db(), nsfw);
+      if (!form.ok) throw new Error(form.reason);
+      return form.about;
+    };
+    for (const target of targets) {
+      // The browser's choice does not open the age gate.
+      for (const nsfw of [hideNsfw, showNsfw])
+        expect(await about(target, nsfw)).toEqual({ kind: target.kind, handle: null, community: community.name });
+    }
+    // Someone else files one, so the form above stays open to `user`.
+    const reporter = localUser((await seedActor(w.instances.local, 'Person', 'reporter')).id);
+    const sent = await createReportAs(reporter, {
+      target: { kind: 'comment', id: comment.id },
+      category: 'spam',
+      forward: false,
+      details: '',
+    });
+    if (!sent.ok) throw new Error(sent.reason);
+    expect((await readSentReport(reporter, sent.number))?.blockHandle).toBeNull();
+
+    // Declared: named as before, Hide NSFW on or not (a prompt the page lets them pass).
+    await writer()
+      .insert(ageDeclarations)
+      .values([{ actorId: w.people.user.id }, { actorId: reporter.actorId }]);
+    for (const target of targets) {
+      for (const nsfw of [hideNsfw, showNsfw]) expect((await about(target, nsfw)).handle).toBe('author');
+    }
+    expect((await readSentReport(reporter, sent.number))?.blockHandle).toBe('author');
+  });
+
+  test('the receipt drops the author once the post page would: a deleted comment, a removed or deleted post', async () => {
+    const w = await seedModerationWorld();
+    const community = w.communities.local.live;
+    const post = await seedPost(w.instances.local, community, w.people.author, { title: 'Plain title' });
+    const comment = await seedComment(w.instances.local, post, w.people.author, { bodyMd: 'Plain words' });
+    const file = async (reporter: { id: string }, target: ReportTarget) => {
+      const sent = await createReportAs(localUser(reporter.id), { target, category: 'spam', forward: false, details: '' });
+      if (!sent.ok) throw new Error(sent.reason);
+      return async () => (await readSentReport(localUser(reporter.id), sent.number))?.blockHandle;
+    };
+    const onComment = await file(w.people.user, { kind: 'comment', id: comment.id });
+    const onPost = await file(w.people.user, { kind: 'post', id: post.id });
+    const byModerator = await file(w.people.moderator, { kind: 'post', id: post.id });
+    expect([await onComment(), await onPost(), await byModerator()]).toEqual(['author', 'author', 'author']);
+
+    await writer().update(comments).set({ deletedAt: new Date() }).where(eq(comments.id, comment.id));
+    expect(await onComment()).toBeNull();
+    await writer().update(posts).set({ removedAt: new Date() }).where(eq(posts.id, post.id));
+    expect(await onPost()).toBeNull();
+    // The community's moderators are told, as the post page tells them.
+    expect(await byModerator()).toBe('author');
+    await writer().update(posts).set({ removedAt: null, deletedAt: new Date() }).where(eq(posts.id, post.id));
+    expect(await onPost()).toBeNull();
   });
 });
