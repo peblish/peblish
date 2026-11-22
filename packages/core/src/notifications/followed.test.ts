@@ -1,0 +1,251 @@
+import type { Principal } from '@peblish/schema/authz';
+import { parseEvent } from '@peblish/schema/events';
+import { and, eq } from 'drizzle-orm';
+import { beforeEach, describe, expect, test, vi } from 'vitest';
+import { db } from '../db/read.ts';
+import { actors } from '../db/tables/actors.ts';
+import { comments } from '../db/tables/content.ts';
+import { follows } from '../db/tables/follows.ts';
+import { outboxCursors } from '../db/tables/outbox.ts';
+import { writer } from '../db/write.ts';
+import { acceptFollow } from '../follows/follow.ts';
+import { followAs } from '../follows/service.ts';
+import { truncateAll } from '../testing/db.ts';
+import { grantFor, outboxEvents, seedComment, seedPost } from '../testing/seed-az.ts';
+import { declareAge } from '../testing/seed-b1.ts';
+import { seedBlock } from '../testing/seed-e1.ts';
+import { drainNotices, emitEvent, kindsOf, noticeCount, noticesOf, say, seedInboxWorld } from '../testing/seed-e2.ts';
+import { localUser, seedActor } from '../testing/seed.ts';
+import { threadWatches } from '../watches/tables.ts';
+import { threadFollowersOf, threadReplyFanOut } from '../watches/watchers.ts';
+import { watchThreadAs } from '../watches/watches.ts';
+import { readInbox } from './read.ts';
+import { unreadCount } from './unread.ts';
+
+// The two notice kinds of branch 5 (lane f-notify), written by the real consumer from the real
+// mutations: `thread_reply` for a followed thread's new comment, `follow_accept` for a remote
+// community's Accept.
+
+vi.setConfig({ testTimeout: 60_000 });
+beforeEach(truncateAll);
+
+const follow = async (person: { id: string }, postId: string) => {
+  const result = await watchThreadAs(localUser(person.id), { postId });
+  if (!result.ok) throw new Error(result.reason);
+};
+const createdEvents = async () => (await outboxEvents()).map(parseEvent).filter((event) => event.type === 'notification.created');
+
+describe('thread_reply', () => {
+  test('a new comment in a followed thread tells each follower once, never its author or a follow newer than it', async () => {
+    const w = await seedInboxWorld();
+    const postId = w.posts.local.normal;
+    await follow(w.people.reader, postId);
+    await follow(w.people.moderator, postId);
+    const id = await say(w.people.owner, postId, 'A new thought');
+    const own = await say(w.people.reader, postId, 'My own');
+    await follow(w.people.admin, postId); // after both comments: hears of neither
+    await drainNotices();
+
+    expect(await noticesOf(w.people.reader.id)).toMatchObject([
+      { kind: 'thread_reply', refId: id, actorId: w.people.owner.id, postId, commentId: id, communityId: w.communities.open.id },
+    ]);
+    expect(await noticesOf(w.people.moderator.id)).toMatchObject([
+      { kind: 'thread_reply', refId: id },
+      { kind: 'thread_reply', refId: own },
+    ]);
+    expect(await kindsOf(w.people.admin.id)).toEqual([]);
+    // The post's author, who follows nothing, has the replies as before.
+    expect(await kindsOf(w.people.author.id)).toEqual(['reply', 'reply']);
+  });
+
+  test('never a second notice for a comment that made a reply or a mention for that person', async () => {
+    const w = await seedInboxWorld();
+    const postId = w.posts.local.normal;
+    await follow(w.people.author, postId);
+    await follow(w.people.moderator, postId);
+    await follow(w.people.owner, postId);
+    const id = await say(w.people.reader, postId, 'Asking @moderator@feddit.test');
+    await drainNotices();
+    expect(await noticesOf(w.people.author.id)).toMatchObject([{ kind: 'reply', refId: id }]);
+    expect(await noticesOf(w.people.moderator.id)).toMatchObject([{ kind: 'mention', refId: id }]);
+    expect(await noticesOf(w.people.owner.id)).toMatchObject([{ kind: 'thread_reply', refId: id }]);
+    expect(await noticeCount()).toBe(3);
+  });
+
+  test('a follower who blocks the author or the community, a closed or gone comment and sensitive content for the undeclared tell nobody', async () => {
+    const w = await seedInboxWorld();
+    const postId = w.posts.local.normal;
+    for (const person of [w.people.reader, w.people.moderator, w.people.owner]) await follow(person, postId);
+    await seedBlock(w.people.reader, w.people.admin);
+    await seedBlock(w.people.moderator, w.communities.open);
+    await say(w.people.admin, postId, 'Hello all');
+    await drainNotices();
+    expect(await kindsOf(w.people.reader.id)).toEqual([]);
+    expect(await kindsOf(w.people.moderator.id)).toEqual([]);
+    expect(await kindsOf(w.people.owner.id)).toEqual(['thread_reply']);
+
+    // A comment on a removed post, and a removed or deleted comment, as the inbound path stores them.
+    await writer()
+      .insert(threadWatches)
+      .values({ ownerId: w.people.owner.id, postId: w.posts.local.removed, since: new Date(0) });
+    const post = { id: w.posts.local.removed };
+    const underRemoved = await seedComment(w.instances.local, post, w.people.admin);
+    const removed = await seedComment(w.instances.local, { id: postId }, w.people.admin, { removedAt: new Date() });
+    const deleted = await seedComment(w.instances.local, { id: postId }, w.people.admin, { deletedAt: new Date() });
+    for (const [comment, onPost] of [
+      [underRemoved, post.id],
+      [removed, postId],
+      [deleted, postId],
+    ] as const) {
+      await emitEvent({
+        type: 'comment.created',
+        v: 1,
+        commentId: comment.id,
+        postId: onPost,
+        authorId: w.people.admin.id,
+        local: true,
+        parentId: null,
+      });
+    }
+    await drainNotices();
+    expect(await kindsOf(w.people.owner.id)).toEqual(['thread_reply']);
+
+    // Sensitive: only a follower who declared 16+ hears of it.
+    const sensitive = await seedPost(w.instances.local, w.communities.open, w.people.author, { sensitive: true });
+    await declareAge(w.people.owner);
+    await follow(w.people.owner, sensitive.id);
+    await writer()
+      .insert(threadWatches)
+      .values({ ownerId: w.people.reader.id, postId: sensitive.id, since: new Date(0) });
+    await say(w.people.admin, sensitive.id, 'Careful');
+    await drainNotices();
+    expect(await kindsOf(w.people.owner.id)).toEqual(['thread_reply', 'thread_reply']);
+    expect(await kindsOf(w.people.reader.id)).toEqual([]);
+  });
+
+  test('a replay of the same event writes nothing more and emits nothing more', async () => {
+    const w = await seedInboxWorld();
+    const postId = w.posts.local.normal;
+    await follow(w.people.reader, postId);
+    await follow(w.people.moderator, postId);
+    const id = await say(w.people.owner, postId, 'Once');
+    await drainNotices();
+    expect(await noticeCount()).toBe(3); // the author's reply and two thread replies
+    const emitted = (await createdEvents()).length;
+
+    // The same event again, and the whole outbox replayed from the start.
+    await emitEvent({ type: 'comment.created', v: 1, commentId: id, postId, authorId: w.people.owner.id, local: true, parentId: null });
+    await drainNotices();
+    await writer().update(outboxCursors).set({ txId: '0', eventId: 0 }).where(eq(outboxCursors.consumer, 'notifications.create'));
+    await drainNotices();
+    expect(await noticeCount()).toBe(3);
+    expect(await kindsOf(w.people.reader.id)).toEqual(['thread_reply']);
+    expect((await createdEvents()).length).toBe(emitted);
+  });
+
+  test(`at most ${threadReplyFanOut} followers, the earliest first`, async () => {
+    const w = await seedInboxWorld();
+    const postId = w.posts.local.normal;
+    const many = [];
+    for (let n = 0; n <= threadReplyFanOut; n++) many.push(await seedActor(w.instances.local, 'Person', `follower_${n}`));
+    await writer()
+      .insert(threadWatches)
+      .values(many.map((person, n) => ({ ownerId: person.id, postId, since: new Date(Date.UTC(2026, 0, 1, 0, 0, n)) })));
+    const comment = await seedComment(w.instances.local, { id: postId }, w.people.reader);
+    const told = await threadFollowersOf(db(), comment.id, []);
+    expect(told).toHaveLength(threadReplyFanOut);
+    expect(told).toEqual(many.slice(0, threadReplyFanOut).map((person) => person.id));
+  });
+
+  test('a later block hides it from the list and every count; a later removal of the comment withholds who wrote it', async () => {
+    const w = await seedInboxWorld();
+    const postId = w.posts.local.normal;
+    await follow(w.people.reader, postId);
+    const id = await say(w.people.owner, postId, 'Visible words');
+    await drainNotices();
+    const viewer = { actorId: w.people.reader.id, siteRole: 'user' } as const;
+    const inbox = await readInbox(viewer);
+    expect(inbox.items).toMatchObject([
+      { kind: 'thread_reply', actor: { id: w.people.owner.id }, commentId: id, excerpt: 'Visible words' },
+    ]);
+    expect([inbox.unread, inbox.unreadByGroup.replies, inbox.unreadByGroup.account]).toEqual([1, 1, 0]);
+
+    await writer().update(comments).set({ removedAt: new Date() }).where(eq(comments.id, id));
+    expect((await readInbox(viewer)).items).toMatchObject([
+      { kind: 'thread_reply', withheld: 'removed', actor: null, commentId: null, excerpt: null, postId },
+    ]);
+
+    await seedBlock(w.people.reader, w.people.owner);
+    expect((await readInbox(viewer)).items).toEqual([]);
+    expect(await unreadCount(w.people.reader.id)).toBe(0);
+  });
+});
+
+describe('follow_accept', () => {
+  async function pending(
+    w: Awaited<ReturnType<typeof seedInboxWorld>>,
+    person: { id: string; apId: string },
+    community = w.communities.remote,
+  ) {
+    const asked = await followAs(localUser(person.id), community.id);
+    if (!asked.ok || asked.state !== 'pending') throw new Error('expected a pending follow');
+    const [row] = await db()
+      .select()
+      .from(follows)
+      .where(and(eq(follows.followerId, person.id), eq(follows.followeeId, community.id)));
+    const remote: Principal = { kind: 'remote', actorId: community.id, announcedBy: null };
+    return {
+      row: row!,
+      accept: async () =>
+        acceptFollow(await grantFor('follow.accept', remote, { followApId: row!.apId!, followerApId: person.apId }), undefined),
+    };
+  }
+
+  test('a remote community’s Accept tells the person once, in the Account group, with the community and nobody as actor', async () => {
+    const w = await seedInboxWorld();
+    const { row, accept } = await pending(w, w.people.reader);
+    expect(await accept()).toEqual({ accepted: true });
+    await drainNotices();
+    expect(await noticesOf(w.people.reader.id)).toMatchObject([
+      { kind: 'follow_accept', refId: row.id, actorId: null, communityId: w.communities.remote.id, postId: null, commentId: null },
+    ]);
+    const inbox = await readInbox({ actorId: w.people.reader.id, siteRole: 'user' }, { filter: 'account' });
+    expect(inbox.items).toMatchObject([{ kind: 'follow_accept', actor: null, community: { id: w.communities.remote.id }, about: null }]);
+    expect([inbox.unread, inbox.unreadByGroup.account, inbox.unreadByGroup.replies]).toEqual([1, 1, 0]);
+
+    // A second Accept changes nothing (core skips it), and a replay of the whole outbox writes nothing.
+    expect(await accept()).toEqual({ accepted: false });
+    await writer().update(outboxCursors).set({ txId: '0', eventId: 0 }).where(eq(outboxCursors.consumer, 'notifications.create'));
+    await drainNotices();
+    expect(await noticeCount()).toBe(1);
+  });
+
+  test('not for a local community, a blocked or closed one, a sensitive one for the undeclared, or a stale accept', async () => {
+    const w = await seedInboxWorld();
+    expect((await followAs(localUser(w.people.reader.id), w.communities.open.id)).ok).toBe(true); // accepted at once
+    const blocked = await pending(w, w.people.moderator);
+    await seedBlock(w.people.moderator, w.communities.remote);
+    await blocked.accept();
+    const sensitiveGroup = await seedActor(w.instances.lemmy, 'Group', 'spicy', { sensitive: true });
+    const sensitive = await pending(w, w.people.owner, sensitiveGroup);
+    await sensitive.accept();
+    const stale = await pending(w, w.people.author);
+    await stale.accept();
+    await writer()
+      .update(follows)
+      .set({ acceptedAt: new Date(Date.now() - 8 * 24 * 60 * 60 * 1000) })
+      .where(eq(follows.id, stale.row.id));
+    await drainNotices();
+    expect(await noticeCount()).toBe(0);
+
+    // The same sensitive community, for a person who declared 16+.
+    await declareAge(w.people.admin);
+    const declared = await pending(w, w.people.admin, sensitiveGroup);
+    await declared.accept();
+    await drainNotices();
+    expect(await kindsOf(w.people.admin.id)).toEqual(['follow_accept']);
+    // A community deleted since: the notice is neither listed nor counted.
+    await writer().update(actors).set({ deletedAt: new Date() }).where(eq(actors.id, sensitiveGroup.id));
+    expect(await unreadCount(w.people.admin.id)).toBe(0);
+  });
+});

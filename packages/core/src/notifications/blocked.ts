@@ -4,19 +4,24 @@ import { communityBlocks, instanceBlocks } from '../blocks/tables.ts';
 import type { Uuid } from '@peblish/schema/ids';
 import { actors } from '../db/tables/actors.ts';
 import { notifications } from './tables.ts';
+import type { NotificationKind } from './view.ts';
 
-// Blocks and the inbox (lane E1's tables and predicate). A reply or mention from someone the
-// recipient blocked is never written, listed or counted. Removal and ban notices are never
-// blocked: the statement of reasons is owed.
+// Blocks and the inbox (lane E1's tables and predicate). A reply, mention or followed thread's
+// comment from someone the recipient blocked, or in a community they blocked, is never written,
+// listed or counted, nor is a blocked community's acceptance of a follow. Removal and ban notices
+// are never blocked: the statement of reasons is owed.
 
 /**
  * SQL true when `viewerId` blocks the person `actorId` (directly or through their instance),
  * or the community `communityId` (directly or through its instance). Pass SQL for the values:
  * a parameter with a ::uuid cast, or a column written out in full. A Drizzle column would
  * lose its table name inside a single-table select and, in these sub-selects, compare a block
- * row's own column with itself.
+ * row's own column with itself. The viewer can be such SQL too (the thread follows' fan-out).
  */
-export function noticeBlocked(viewerId: Uuid, { actorId, communityId }: { actorId: SQLWrapper; communityId: SQLWrapper }): SQL<boolean> {
+export function noticeBlocked(
+  viewerId: Uuid | SQLWrapper,
+  { actorId, communityId }: { actorId: SQLWrapper; communityId: SQLWrapper },
+): SQL<boolean> {
   return sql<boolean>`(
     ${actorBlockedBy(viewerId, actorId)}
     or exists (select 1 from ${communityBlocks} as cb where cb.blocker_id = ${viewerId} and cb.community_id = ${communityId})
@@ -27,6 +32,9 @@ export function noticeBlocked(viewerId: Uuid, { actorId, communityId }: { actorI
   )`;
 }
 
+/** The notices a block hides: what someone wrote, and a community's answer to a follow request. */
+const blockableKinds = ['reply', 'mention', 'thread_reply', 'follow_accept'] as const satisfies readonly NotificationKind[];
+
 const column = (name: string) => sql.raw(`"notifications"."${name}"`);
 
 /**
@@ -35,4 +43,4 @@ const column = (name: string) => sql.raw(`"notifications"."${name}"`);
  * reason noticeBlocked gives; the table is the one the query selects from.
  */
 export const notBlocked = (viewerId: Uuid): SQL =>
-  sql`not (${inArray(notifications.kind, ['reply', 'mention'])} and ${noticeBlocked(viewerId, { actorId: column('actor_id'), communityId: column('community_id') })})`;
+  sql`not (${inArray(notifications.kind, [...blockableKinds])} and ${noticeBlocked(viewerId, { actorId: column('actor_id'), communityId: column('community_id') })})`;

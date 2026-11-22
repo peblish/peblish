@@ -10,9 +10,10 @@ import { communityBlocks, instanceBlocks, personBlocks } from './tables.ts';
 /**
  * SQL that is true when `viewerId` blocked the person `actor` names (an id column or a
  * sub-select), directly or through the instance the person lives on. For joins and filters
- * such as the inbox: `not actorBlockedBy(viewer, notifications.actorId)`.
+ * such as the inbox: `not actorBlockedBy(viewer, notifications.actorId)`. The viewer can be a
+ * column too, for a query over many viewers (a thread's followers).
  */
-export function actorBlockedBy(viewerId: Uuid, actor: SQLWrapper): SQL {
+export function actorBlockedBy(viewerId: Uuid | SQLWrapper, actor: SQLWrapper): SQL {
   return sql`(
     exists (select 1 from ${personBlocks} as pb where pb.blocker_id = ${viewerId} and pb.blocked_id = ${actor})
     or exists (

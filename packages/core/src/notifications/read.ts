@@ -104,8 +104,15 @@ export async function readInbox(
   ]);
   const page = rows.slice(0, limit).map(({ notice }) => notice);
   const next = rows.length > limit ? (page.at(-1)?.id ?? null) : null;
-  return { items: await describe(q, page), next, unread, unreadByGroup };
+  return { items: (await describe(q, page)).map(followedThreadShown), next, unread, unreadByGroup };
 }
+
+/**
+ * A followed thread's notice (`thread_reply`) whose comment is withheld (sensitive, removed or
+ * deleted since) names nobody and links no comment, so nothing on the row leads to its author.
+ */
+const followedThreadShown = (item: InboxItem): InboxItem =>
+  item.kind === 'thread_reply' && item.withheld !== null ? { ...item, actor: null, commentId: null } : item;
 
 async function groupCounts(q: Queryable, viewerId: Uuid): Promise<UnreadByGroup> {
   const [replies, mentions, content, account] = await Promise.all(
