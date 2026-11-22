@@ -8,7 +8,7 @@
   }
   /* Mux's base styles give a paragraph a one-line bottom margin unless it is the last one; the gaps space
      these parts, so Text rendered as a paragraph keeps none. */
-  :is(.cm-page, .cm-form, .cm-charter, .cm-rail) .muxui-text {
+  :is(.cm-page, .cm-form, .cm-rail) .muxui-text {
     margin: 0;
   }
   .cm-refused {
@@ -99,14 +99,8 @@
     color: var(--muxui-semantic-content-strong);
   }
   /* Posts and About: only where the rail has given way. */
-  .cm-tabs,
-  .cm-charter.cm-charter--view {
+  .cm-tabs {
     display: none;
-  }
-  .cm-charter {
-    display: flex;
-    flex-direction: column;
-    gap: var(--muxui-semantic-layout-group-gap);
   }
   .cm-rules {
     display: flex;
@@ -137,8 +131,8 @@
     min-inline-size: 0;
     overflow-wrap: anywhere;
   }
-  /* The charter's links, in the rail or the About tab, are 24px targets (WCAG 2.2, 2.5.8). */
-  :is(.cm-charter, .cm-rail) .muxui-link {
+  /* The charter's links, in the rail (also the About tab's), are 24px targets (WCAG 2.2, 2.5.8). */
+  .cm-rail .muxui-link {
     display: inline-flex;
     align-items: center;
     min-block-size: 24px;
@@ -151,8 +145,20 @@
     .cm-page[data-tab='about'] .cm-posts {
       display: none;
     }
-    .cm-charter.cm-charter--view {
+    /* About: the rail comes back in the page's flow, under the page in place of the posts and at the
+       page's gutter, rather than sticking beside it. */
+    .pb-frame:has(> .cm-page[data-tab='about']) {
+      grid-template-rows: auto auto minmax(0, 1fr);
+    }
+    .pb-frame:has(> .cm-page[data-tab='about']) > .cm-rail {
       display: flex;
+      grid-column: 1;
+      grid-row: 3;
+      position: static;
+      max-block-size: none;
+      overflow: visible;
+      padding: 0 var(--muxui-semantic-layout-inset-large) var(--muxui-reference-dimension-space-l);
+      border-inline: 0;
     }
     /* The Posts tab names the list here; its heading stays for assistive technology. */
     .cm-posts-title {
@@ -169,6 +175,9 @@
     .cm-hero {
       grid-template-columns: auto minmax(0, 1fr);
     }
+    .pb-frame:has(> .cm-page[data-tab='about']) > .cm-rail {
+      padding-inline: var(--muxui-semantic-layout-inset-medium);
+    }
     .cm-actions {
       grid-column: 1 / -1;
       justify-content: flex-start;
@@ -180,7 +189,7 @@
     .cm-tabs .muxui-link {
       min-block-size: calc(var(--muxui-semantic-control-size-lg) + 2 * var(--muxui-semantic-layout-dense-gap));
     }
-    .cm-charter .muxui-link {
+    .cm-rail .muxui-link {
       min-block-size: calc(var(--muxui-semantic-control-size-lg) + 2 * var(--muxui-semantic-layout-dense-gap));
     }
   }

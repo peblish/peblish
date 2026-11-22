@@ -188,12 +188,9 @@ export function CommunityPage({
           </FeedToolbar>
           <FeedCards path={path} data={data.feed} search={search} empty={empty} />
         </section>
-        {tab === 'about' && (
-          <section className="cm-charter cm-charter--view" aria-label={t('communities', 'page.rail', { title: data.title })}>
-            <Charter data={data} />
-          </section>
-        )}
       </main>
+      {/* The charter, once: the rail beside a wide page, and where the rail gives way, on the About tab, the
+          rail in the page's flow in place of the posts (community.css), so an id inside it names one element. */}
       <Rail label={t('communities', 'page.rail', { title: data.title })} className="cm-rail">
         <Charter data={data} />
       </Rail>
@@ -204,7 +201,7 @@ export function CommunityPage({
 /**
  * The community's charter (the mock's Charter): About with the facts this server holds and the
  * community's own text, its rules (always shown in full: they are content), its moderators, and the
- * modlog. The rail on a wide page, the About tab below that.
+ * modlog. In the rail, which on a narrower page is the About tab's content.
  */
 function Charter({ data }: { data: CommunityPageData }) {
   const { t } = useTranslate();
