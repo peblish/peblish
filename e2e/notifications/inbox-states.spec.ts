@@ -159,6 +159,44 @@ test('the reply posts through the comment form; a refusal and a lost connection 
   expect(marked).toEqual(['?intent=read&id=00000000-0000-7000-8000-000000000001']);
 });
 
+test('a reply is sent once: Send stays held until the notice is marked read as well', async ({ page }) => {
+  await gotoHydrated(page, '/kit/inbox-replies');
+  const sent: string[] = [];
+  await page.route('**/post/*/comments', async (route) => {
+    sent.push(new URLSearchParams(route.request().postData() ?? '').get('body') ?? '');
+    await route.fulfill({ status: 200, json: { ok: true, id: '00000000-0000-7000-8000-000000000400' } });
+  });
+  // The comment is saved at once; the notice's mark-read answers only when released.
+  let marking!: () => void;
+  const marked = new Promise<void>((resolve) => (marking = resolve));
+  let release!: () => void;
+  const released = new Promise<void>((resolve) => (release = resolve));
+  await page.route('**/notifications?*', async (route) => {
+    marking();
+    await released;
+    await route.fulfill({ status: 200, json: { ok: true } });
+  });
+
+  await first(page)
+    .getByRole('button', { name: /^Reply: / })
+    .click();
+  const field = first(page).getByRole('textbox', { name: 'Reply to @jun@lemmy.world' });
+  await field.fill('Once is enough.');
+  const send = first(page).getByRole('button', { name: 'Reply', exact: true });
+  await send.click();
+  await marked;
+  // Saved, not yet marked read: a second press, Ctrl+Enter or more typing sends and clears nothing.
+  await send.click({ force: true });
+  await field.press('Control+Enter');
+  await field.pressSequentially(' More.');
+  await expect(field).toHaveValue('Once is enough.');
+  expect(sent).toEqual(['Once is enough.']);
+  release();
+  await expect(first(page).getByRole('status')).toHaveText('Reply posted. View reply');
+  await expect(field).toHaveCount(0);
+  expect(sent).toEqual(['Once is enough.']);
+});
+
 test('without scripts Reply is a link to the comment, whose page has the reply form', async ({ browser, baseURL }) => {
   const context = await browser.newContext({ baseURL, javaScriptEnabled: false });
   const page = await context.newPage();

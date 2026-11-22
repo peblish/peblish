@@ -275,21 +275,27 @@ export function NoticeRow({
   const backToReply = () =>
     requestAnimationFrame(() => document.querySelector<HTMLElement>(`[aria-controls="${formId}"]`)?.focus({ preventScroll: true }));
 
+  // One lock from the press until the comment is saved and the notice marked read: Send stays pending and the field read-only throughout.
   async function sendNow() {
+    const body = text;
     setPending(true);
     setError(undefined);
-    const answer = await sendReply(item, text);
-    setPending(false);
-    if (!('ok' in answer)) {
-      // The text stays in the field, with the refusal under it.
-      setError(asCommentError(answer.error) ?? 'generic');
-      return;
+    try {
+      const answer = await sendReply(item, body);
+      if (!('ok' in answer)) {
+        // The text stays in the field, with the refusal under it.
+        setError(asCommentError(answer.error) ?? 'generic');
+        return;
+      }
+      if (!item.read) await post(readAction);
+      setPosted(answer.id ?? '');
+      // Only what was sent clears.
+      setText((current) => (current === body ? '' : current));
+      setOpen(false);
+      backToReply();
+    } finally {
+      setPending(false);
     }
-    if (!item.read) await post(readAction);
-    setPosted(answer.id ?? '');
-    setText('');
-    setOpen(false);
-    backToReply();
     await router.invalidate();
   }
 
