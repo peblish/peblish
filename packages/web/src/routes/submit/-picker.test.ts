@@ -31,25 +31,24 @@ const core = vi.hoisted(() => ({
   follows: [] as Follow[],
   staffOf: new Set<string>(),
   bannedFrom: new Set<string>(),
-  /** Communities on a host this server or the person blocks. */
-  hostBlocked: new Set<string>(),
+  /** Communities the directory's block rules hide from the person. */
+  blocked: new Set<string>(),
   listLocalCommunities: vi.fn(),
   moderatedAmong: vi.fn(),
   followedCommunities: vi.fn(),
   readCommunity: vi.fn(),
-  authorize: vi.fn(),
+  mayStartPostIn: vi.fn(),
 }));
 vi.mock('@peblish/core/communities/read', () => ({
   listLocalCommunities: core.listLocalCommunities,
   moderatedAmong: core.moderatedAmong,
   readCommunity: core.readCommunity,
-  hostBlockedFor: async (_viewerId: string, id: string) => core.hostBlocked.has(id),
   // As core's: a local name in any case, or name@host for a remote one; removed or gated or not.
   findCommunityId: async (handle: string) =>
     [...core.local, ...core.remote].find(({ actor }) => actor.handle === handle.toLowerCase())?.actor.id ?? null,
 }));
 vi.mock('@peblish/core/follows/read', () => ({ followedCommunities: core.followedCommunities }));
-vi.mock('@peblish/core/authz/authorize', () => ({ authorize: core.authorize }));
+vi.mock('@peblish/core/communities/start', () => ({ mayStartPostIn: core.mayStartPostIn }));
 const { pickerFor, pickerMax } = await import('./-picker.ts');
 
 const local = (name: string, extra: Partial<Local> = {}): Local => ({
@@ -90,7 +89,7 @@ beforeEach(() => {
   core.follows = [];
   core.staffOf = new Set();
   core.bannedFrom = new Set();
-  core.hostBlocked = new Set();
+  core.blocked = new Set();
   // As core's: by name, at most `limit`, `ids` keeping only those; sensitive ones only when asked.
   core.listLocalCommunities
     .mockReset()
@@ -115,18 +114,18 @@ beforeEach(() => {
     const row = [...core.local, ...core.remote].find(({ actor }) => actor.id === id);
     return row && { ...row, actor: { ...row.actor } };
   });
-  // post.create's precheck as it reads here: a ban, then mods-only for anyone but staff, then the age gate.
-  core.authorize
-    .mockReset()
-    .mockImplementation(async (_action: string, principal: { siteRole: string }, { communityId }: { communityId: string }) => {
-      const row = [...core.local, ...core.remote].find(({ actor }) => actor.id === communityId);
-      if (!row) return { ok: false, reason: 'target.not_found' };
-      if (core.bannedFrom.has(communityId)) return { ok: false, reason: 'community.banned' };
-      if (row.postingRestrictedToMods && principal.siteRole !== 'admin' && !core.staffOf.has(communityId))
-        return { ok: false, reason: 'mod.moderator_required' };
-      if (row.sensitive || row.nsfl) return { ok: false, reason: 'age.declaration_required' };
-      return { ok: true };
-    });
+  // Core's start rule as a plain yes or no; communities/start.test.ts tests the rule itself through
+  // the real policy. Here: a known community, no ban, no block, mods-only for staff, the age gate.
+  core.mayStartPostIn.mockReset().mockImplementation(async (viewer: { siteRole: string; ageDeclaredAt: string | null }, id: string) => {
+    const row = [...core.local, ...core.remote].find(({ actor }) => actor.id === id);
+    return (
+      row !== undefined &&
+      !core.bannedFrom.has(id) &&
+      !core.blocked.has(id) &&
+      (!row.postingRestrictedToMods || viewer.siteRole === 'admin' || core.staffOf.has(id)) &&
+      (viewer.ageDeclaredAt !== null || !(row.sensitive || row.nsfl))
+    );
+  });
 });
 
 /** Where the form starts: nothing asked for, or the keys in `wanted`, in order. */
@@ -210,12 +209,6 @@ describe('the community the form starts in', () => {
     expect((await pickerFor(person(), start('news'))).communities.map(({ handle }) => handle)).toContain('news');
   });
 
-  test('a refusal about the person, not the community, does not stop it', async () => {
-    core.local = [local('art')];
-    core.authorize.mockResolvedValue({ ok: false, reason: 'auth.email_unverified' });
-    expect((await pickerFor(person({ emailVerified: false }), start('art'))).selected).toBe('id-art');
-  });
-
   test('a remote community the person does not follow, where they may post, is looked up and listed', async () => {
     core.local = [local('art')];
     core.follows = [follow('tech')];
@@ -238,10 +231,10 @@ describe('the community the form starts in', () => {
     expect((await pickerFor(person(), start('!closed@lemmy.test'))).selected).toBeNull();
   });
 
-  test('a remote community on a host this server or the person blocks is not looked up', async () => {
+  test('a community it may not start in, looked up on its own, leaves nothing of itself in the data', async () => {
     core.local = [local('art')];
     core.remote = [{ ...local('walled'), actor: { id: 'id-walled', handle: 'walled@shut.test', displayName: null, local: false } }];
-    core.hostBlocked = new Set(['id-walled']);
+    core.blocked = new Set(['id-walled']);
     const picker = await pickerFor(person(), start('walled@shut.test', 'art'));
     expect(picker.selected).toBe('id-art');
     expect(picker.communities.map(({ handle }) => handle)).toEqual(['art']);
@@ -251,7 +244,7 @@ describe('the community the form starts in', () => {
     core.local = [local('art'), local('news')];
     core.bannedFrom = new Set(['id-news']);
     expect((await pickerFor(person(), { edit: 'id-news', wanted: ['art'] })).selected).toBe('id-news');
-    expect(core.authorize).not.toHaveBeenCalled();
+    expect(core.mayStartPostIn).not.toHaveBeenCalled();
   });
 });
 

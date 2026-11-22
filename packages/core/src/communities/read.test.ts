@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, test } from 'vitest';
-import { instanceBlocks } from '../blocks/tables.ts';
+import { communityBlocks, instanceBlocks } from '../blocks/tables.ts';
 import { follows } from '../db/tables/follows.ts';
 import { writer } from '../db/write.ts';
 import { proxyUrlBuilder } from '../media/proxy-url.ts';
@@ -9,7 +9,7 @@ import { seedCommunityRemoval, seedModerator } from '../testing/seed-az.ts';
 import { person, sampleCommunity, seedCommunityWorld } from '../testing/seed-f.ts';
 import { seedActor, seedInstance } from '../testing/seed.ts';
 import { createCommunityAs } from './create.ts';
-import { hostBlockedFor, listLocalCommunities, listModerators, moderatedAmong, readCommunity } from './read.ts';
+import { communityBlockedFor, listLocalCommunities, listModerators, moderatedAmong, readCommunity } from './read.ts';
 import { updateCommunityAs } from './update.ts';
 
 beforeEach(truncateAll);
@@ -217,21 +217,23 @@ describe('listModerators', () => {
   });
 });
 
-describe('hostBlockedFor', () => {
-  test('a community on a host this server blocks, or on one the person blocks; not elsewhere, nor for anyone else', async () => {
+describe('communityBlockedFor', () => {
+  test("the directory's block rules: a host this server blocks, a community the person blocks or one on a host they block; for them alone", async () => {
     const { people, instances } = await setup();
     const shut = await seedInstance('shut.test', false);
     const quiet = await seedInstance('quiet.test', false);
-    const [walled, hushed, open] = await Promise.all([
+    const [walled, hushed, shunned, open] = await Promise.all([
       seedActor(shut, 'Group', 'walled'),
       seedActor(quiet, 'Group', 'hushed'),
+      seedActor(instances.lemmy, 'Group', 'shunned'),
       seedActor(instances.lemmy, 'Group', 'open'),
     ]);
     await writer().insert(peerControls).values({ instanceId: shut.id, blocked: true });
     await writer().insert(instanceBlocks).values({ blockerId: people.user.id, instanceId: quiet.id });
+    await writer().insert(communityBlocks).values({ blockerId: people.user.id, communityId: shunned.id });
     const blocked = async (who: { id: string }) =>
-      Promise.all([walled, hushed, open].map((community) => hostBlockedFor(who.id, community.id)));
-    expect(await blocked(people.user)).toEqual([true, true, false]);
-    expect(await blocked(people.moderator)).toEqual([true, false, false]);
+      Promise.all([walled, hushed, shunned, open].map((community) => communityBlockedFor(who.id, community.id)));
+    expect(await blocked(people.user)).toEqual([true, true, true, false]);
+    expect(await blocked(people.moderator)).toEqual([true, false, false, false]);
   });
 });
