@@ -55,6 +55,7 @@ export async function sidebarCommunities(viewerId: Uuid | null, q: Queryable = d
       .from(follows)
       .innerJoin(actors, eq(actors.id, follows.followeeId))
       .innerJoin(instances, eq(instances.id, actors.instanceId))
+      // shownPins (pins/shown.ts) repeats this rule for the pins: a condition added here goes there too.
       .where(and(eq(follows.followerId, viewerId), eq(actors.kind, 'Group'), open))
       .orderBy(pinnedFirst(viewerId, actors.id), sql`lower(${actors.name})`, actors.id)
       .limit(sidebarLimit),
