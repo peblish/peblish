@@ -42,6 +42,13 @@
     "reason": "A press on the row's own space follows its title link, a pointer shortcut the keyboard does not need: the title link is the row's keyboard path."
   },
   {
+    "file": "packages/ui/src/components/inbox-row.tsx",
+    "rule": "widget-handler",
+    "match": "<li onClick>",
+    "anchor": "InboxRow",
+    "reason": "A press on the row's own space follows its context link, a pointer shortcut; the link is the keyboard path."
+  },
+  {
     "file": "packages/web/src/routes/admin/reports/-ui/queue.css",
     "rule": "css-blur",
     "match": "blur(",

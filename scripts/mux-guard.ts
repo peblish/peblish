@@ -58,6 +58,9 @@ const exceptionsPath = join(import.meta.dirname, 'mux-guard.exceptions.json');
 /** The vendored Mux UI tarball, read from packages/ui's `file:` dependency so a swap needs no edit here. */
 export const muxTarball = vendoredTarball(readFileSync(join(root, 'packages/ui/package.json'), 'utf8'));
 const tokensFile = 'packages/ui/src/tokens/tokens.css';
+// The Commons frame's sheet: the custom properties it defines (the phone's 44px target, what docks at the
+// window's foot) are the app's to read, so the app's own sheets may use them without defining their own.
+const frameFile = 'packages/web/src/shell/shell.css';
 // The file that imports Mux UI's own stylesheet and nothing else.
 const muxStylesheet = 'packages/ui/src/styles.css';
 // The only files that may render a raw <time> and a raw <svg>.
@@ -1482,9 +1485,20 @@ export const scriptGlob = '{packages,tools}/*/**/*.{ts,tsx,mts,cts,js,jsx,mjs,cj
 export const cssGlob = '{packages,tools}/*/**/*.css';
 
 /** Every violation in the repository before exceptions, and the /* layout *\/ counts. */
+/**
+ * What `file` may read beside `context`: a sheet of the app (packages/web) also reads the frame's custom
+ * properties (`frame`, shell.css's); packages/ui does not know the frame.
+ */
+export function cssContextFor(file: string, context: CssContext, frame: Names): CssContext {
+  if (!file.startsWith('packages/web/')) return context;
+  const { defined } = context;
+  return { ...context, defined: { has: (name) => frame.has(name) || defined.has(name) } };
+}
+
 export function scanRepository() {
   const files = (pattern: string) => globSync(pattern, { cwd: root, exclude: (name) => name === 'node_modules' }).filter(walked);
   const tokensCss = readFileSync(join(root, tokensFile), 'utf8');
+  const frame = definedProperties(readFileSync(join(root, frameFile), 'utf8'));
   // The app's stylesheets read the brand properties a pack may set as tokens (with a fallback for no pack).
   const context: CssContext = {
     aliases: new Set([...pureAliases(tokensCss), ...brandProperties]),
@@ -1496,7 +1510,7 @@ export function scanRepository() {
   const violations = [
     ...files(scriptGlob).flatMap((file) => scanScript(file, readFileSync(join(root, file), 'utf8'))),
     ...files(cssGlob).flatMap((file) => {
-      const found = scanCss(file, readFileSync(join(root, file), 'utf8'), context);
+      const found = scanCss(file, readFileSync(join(root, file), 'utf8'), cssContextFor(file, context, frame));
       layout.comments += found.layout.comments;
       layout.used += found.layout.used;
       return found.violations;
