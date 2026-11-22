@@ -22,8 +22,10 @@ import { SaveForm } from './save-form.tsx';
 // /saved (Commons has no Saved view; built from the feed's parts): the viewer's saved posts, newest save
 // first, as the feed's rows in the viewer's density, each with its vote and an Unsave, then the links to
 // the first and the next page, and a rail that says who can see the list. Unsave removes the row in
-// place: focus moves to the next row's title, else the previous one's, else what follows the list, and
-// a polite status says it was removed. A failed Unsave leaves the row and its focus and says so there.
+// place and a polite status says it was removed; when focus left with the row it moves to the next
+// remaining row's title, else the previous one's, else what follows the list (on a later page that is
+// Newest saves: the empty state with Browse All is for an account with no saves). Unsaves that overlap
+// each remove their own row. A failed Unsave leaves the row and its focus and says so there.
 // With scripts off every Unsave is a plain form (303 back to this page) and paging is links.
 
 const noneGone: ReadonlySet<string> = new Set();
@@ -38,28 +40,32 @@ export function SavedPage({ data, cursor, error }: { data: SavedData; cursor?: s
   const gone = removedFrom.data === data ? removedFrom.ids : noneGone;
   const [said, setSaid] = useState('');
   const list = useRef<HTMLDivElement>(null);
-  // Where focus goes once the removed row has left the list: a post id, or 'after' for what follows it.
-  const focusNext = useRef<string | null>(null);
+  // The row last removed, whose remaining neighbour takes focus once it has left the list.
+  const lastRemoved = useRef<string | null>(null);
 
   const rows = data.items.filter((item) => !gone.has(item.post.id));
   const here = savedHref(cursor);
 
+  // Merged into the latest set: an Unsave that answers after another one keeps the other's removal.
   const removed = (id: string) => {
-    const at = rows.findIndex((item) => item.post.id === id);
-    focusNext.current = rows[at + 1]?.post.id ?? rows[at - 1]?.post.id ?? 'after';
-    setRemovedFrom({ data, ids: new Set(gone).add(id) });
+    lastRemoved.current = id;
+    setRemovedFrom((latest) => ({ data, ids: new Set(latest.data === data ? latest.ids : noneGone).add(id) }));
     setSaid(t('saves', 'status.unsaved'));
   };
 
   useEffect(() => {
-    const target = focusNext.current;
-    if (target === null) return;
-    focusNext.current = null;
+    const id = lastRemoved.current;
+    if (id === null) return;
+    lastRemoved.current = null;
+    // Focus that is elsewhere (another row's Unsave still on its way) stays there.
+    if (document.activeElement !== null && document.activeElement !== document.body) return;
+    const at = data.items.findIndex((item) => item.post.id === id);
+    const stays = (item: SavedItem) => !gone.has(item.post.id);
+    const target = data.items.slice(at + 1).find(stays) ?? data.items.slice(0, Math.max(at, 0)).findLast(stays);
     const box = list.current;
-    const title =
-      target === 'after' ? null : box?.querySelector<HTMLElement>(`[data-saved-post="${CSS.escape(target)}"] .pb-post__title a[href]`);
+    const title = target && box?.querySelector<HTMLElement>(`[data-saved-post="${CSS.escape(target.post.id)}"] .pb-post__title a[href]`);
     (title ?? box?.querySelector<HTMLElement>('.saved-after a[href]'))?.focus();
-  }, [gone]);
+  }, [gone, data]);
 
   const nextHref = data.next ? savedHref(data.next) : undefined;
   return (
@@ -79,7 +85,9 @@ export function SavedPage({ data, cursor, error }: { data: SavedData; cursor?: s
               {t('saves', failureKey('unsave', error))}
             </Notice>
           )}
-          {rows.length === 0 && !nextHref ? (
+          {rows.length === 0 && !nextHref && cursor ? (
+            <EmptyState title={t('saves', 'empty.later')} />
+          ) : rows.length === 0 && !nextHref ? (
             <EmptyState
               title={t('saves', 'empty.title')}
               className="saved-after"

@@ -290,3 +290,46 @@ test('a feed row’s own Save is the account’s: a second press waits, and anot
   await expect(stale.getByRole('menuitem', { name: 'Unsave' })).toHaveCount(0);
   await context.close();
 });
+
+test('emptying a later page points to the newest saves, not to an empty account', async ({ page }) => {
+  await signedIn(page, seed.owner);
+  await gotoHydrated(page, '/saved');
+  await page.getByRole('link', { name: 'Older saves' }).click();
+  await landed(page, /\/saved\?cursor=/);
+  await expect(rows(page).first()).toBeVisible();
+  for (const name of await titles(page)) await page.getByRole('button', { name: `Unsave ${name}` }).click();
+  await expect(rows(page)).toHaveCount(0);
+  await expect(page.getByRole('link', { name: 'Newest saves' })).toBeFocused();
+  await expect(page.getByRole('heading', { name: 'Nothing saved yet' })).toHaveCount(0);
+  await expect(page.locator('.saved-posts').getByRole('link', { name: 'Browse All' })).toHaveCount(0);
+  await expect(page.getByRole('heading', { name: 'No more saves on this page' })).toBeVisible();
+  // As the server draws it, too.
+  await page.reload();
+  await expect(page.getByRole('heading', { name: 'No more saves on this page' })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Newest saves' })).toBeVisible();
+  await expectAccessible(page);
+});
+
+test('two Unsaves at once both leave the list, and focus lands on a row that stays', async ({ page }) => {
+  await signedIn(page, seed.owner);
+  await gotoHydrated(page, '/saved');
+  const [first, second, third] = await titles(page);
+  const held: (() => void)[] = [];
+  await page.route('**/saved', async (route) => {
+    if (route.request().method() !== 'POST') return route.fallback();
+    await new Promise<void>((resolve) => held.push(resolve));
+    await route.continue();
+  });
+  await page.getByRole('button', { name: `Unsave ${first}` }).click();
+  await page.getByRole('button', { name: `Unsave ${second}` }).click();
+  await expect.poll(() => held.length).toBe(2);
+  held[0]!();
+  await expect(rows(page).filter({ hasText: first! })).toHaveCount(0);
+  // The second press keeps its focus while its own request is out.
+  await expect(page.getByRole('button', { name: `Unsave ${second}` })).toBeFocused();
+  held[1]!();
+  await expect(rows(page).filter({ hasText: second! })).toHaveCount(0);
+  await expect(rows(page).filter({ hasText: first! })).toHaveCount(0);
+  await expect(page.getByRole('link', { name: third!, exact: true })).toBeFocused();
+  await page.unroute('**/saved');
+});
