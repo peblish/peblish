@@ -39,6 +39,8 @@ import { bannerPieces } from './-banner-pieces.tsx';
 import { finderPieces } from './-finder-pieces.tsx';
 // Saved posts (saves lane).
 import { savesPieces } from './-saves.tsx';
+// New since your last visit (f-visits).
+import { visitPieces } from './-visits.tsx';
 
 /**
  * The states a state page shows as samples, in the state matrix's order ('selected' stands for current, checked
@@ -207,4 +209,5 @@ export const compositions: Readonly<Record<string, Composition>> = {
   ...bannerPieces,
   ...finderPieces,
   ...savesPieces,
+  ...visitPieces,
 };
