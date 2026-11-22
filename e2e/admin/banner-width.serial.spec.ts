@@ -230,66 +230,31 @@ test('with scripts off the banner shows with its message and link, its script-on
   await context.close();
 });
 
-/** The frame's width and its rail's, and whether the rail shows, at a window width. */
+/** The frame's width on `path` at a window width, signed in as the admin, the sidebar folded to its rail. */
 async function frame(browser: Browser, path: string, width: number) {
   const context = await browser.newContext({ viewport: { width, height: 900 }, storageState: await page.context().storageState() });
-  // The sidebar folded to its rail, so the page's room does not wait on the fold following the window.
   await context.addCookies([{ name: 'peblish_side', value: 'rail', url: new URL(page.url()).origin }]);
   const view = await context.newPage();
   await gotoHydrated(view, path);
-  const measured = await view.evaluate(() => {
-    const box = (selector: string) => document.querySelector(selector)?.getBoundingClientRect();
-    const prose = document.querySelector('.pb-prose');
-    return {
-      frame: Math.round(box('#pb-main')!.width),
-      rail: box('.pb-rail')?.width ? Math.round(box('.pb-rail')!.width) : 0,
-      prose: prose ? Math.round(prose.getBoundingClientRect().width) : null,
-    };
-  });
+  const measured = Math.round((await view.locator('#pb-main').boundingBox())!.width);
   await context.close();
   return measured;
 }
 
-test('the three widths at 1440, 1100 and 390: the frame and the rail, a staff table kept wide, text kept at its measure', async ({
+test("each width saved through the form is the frame's preset, and a staff table keeps its wide centre at every preset", async ({
   browser,
 }) => {
-  // Frame widths include the frame's own hairline. With the sidebar folded, 1100 leaves Wide less than its 1112.
-  const expected: Record<SiteWidth, [number, number, number]> = {
-    narrow: [873, 873, 390],
-    default: [953, 953, 390],
-    wide: [1113, 1006, 390],
-  };
+  // The widths themselves are measured in e2e/shell/banner-width.serial.spec.ts.
   const staff = new Set<number>();
-  // A post on the lane database whose page has body text.
-  const html = await (await page.request.get('/all')).text();
-  let withProse = '';
-  for (const [, path] of html.matchAll(/href="(\/post\/[^"/]+)"/g))
-    if ((await (await page.request.get(path!)).text()).includes('pb-prose')) {
-      withProse = path!;
-      break;
-    }
-  expect(withProse).not.toBe('');
   for (const width of ['narrow', 'default', 'wide'] as const) {
     await gotoHydrated(page, '/admin/settings');
     await choose(page.locator('form').filter({ has: page.getByRole('button', { name: 'Save width' }) }), labelOf(width));
     await page.getByRole('button', { name: 'Save width' }).click();
-    await page.waitForURL(/saved=width/);
+    await page.waitForURL(/saved=width#layout$/);
+    await expect(page.getByRole('status').filter({ hasText: 'Saved.' })).toBeVisible();
     expect(await readSetting('site.width')).toBe(width);
-    const sizes = [];
-    for (const window of [1440, 1100, 390]) sizes.push(await frame(browser, '/', window));
-    expect(
-      sizes.map(({ frame }) => frame),
-      width,
-    ).toEqual(expected[width]);
-    // The rail keeps its 312px beside the centre on a computer, and is gone on a phone.
-    expect(
-      sizes.map(({ rail }) => rail),
-      width,
-    ).toEqual([312, 312, 0]);
-    // The staff tables' wide centre whatever the preset.
-    staff.add((await frame(browser, '/admin/reports', 1440)).frame);
-    // A post's text keeps Default's 600px measure at Wide; Narrow's column is narrower than that.
-    expect((await frame(browser, withProse, 1440)).prose, width).toBe(width === 'narrow' ? 520 : 600);
+    await expect(page.locator('.pb-app')).toHaveAttribute('data-width', width);
+    staff.add(await frame(browser, '/admin/reports', 1440));
   }
   expect(staff.size).toBe(1);
 });
