@@ -1,96 +1,246 @@
-/* The post page: the post in an outlined Mux Card with its vote column, then the thread. Layout
-   only, in Mux UI tokens. */
+/* The post page (Commons' PostDetail): the post on the page's own ground, its pill row and its manage
+   row, a hairline, then the thread. Layout only, in Mux UI tokens. */
 @layer app {
-  .post-page {
-    max-inline-size: 860px;
-    margin: 0 auto;
-    padding: var(--muxui-semantic-layout-inset-large) var(--muxui-semantic-layout-inset-medium) var(--muxui-semantic-layout-content-gap);
-  }
   .post {
-    display: grid;
-    grid-template-columns: auto minmax(0, 1fr);
-    gap: var(--muxui-semantic-layout-action-gap);
+    display: flex;
+    flex-direction: column;
+    gap: var(--muxui-semantic-layout-group-gap);
+    padding-block: var(--muxui-semantic-layout-inset-medium);
+    border-block-end: 1px solid var(--muxui-semantic-border-faint);
   }
-  .post-meta,
-  .post-flags {
-    margin: 0 0 var(--muxui-semantic-layout-tight-gap);
+
+  .post-meta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--muxui-semantic-layout-dense-gap) var(--muxui-semantic-layout-tight-gap);
+    margin: 0;
   }
+
+  /* The meta line's links are 24px targets (WCAG 2.2, 2.5.8). */
+  .post-meta .muxui-link {
+    display: inline-flex;
+    align-items: center;
+    max-inline-size: 100%;
+    min-inline-size: 24px;
+    min-block-size: 24px;
+    line-height: inherit;
+  }
+
+  .post-meta__by {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--muxui-semantic-layout-dense-gap);
+  }
+
+  .post-content {
+    display: flex;
+    flex-direction: column;
+    gap: var(--muxui-semantic-layout-group-gap);
+  }
+
+  .post-title {
+    margin: 0;
+    overflow-wrap: anywhere;
+    text-wrap: pretty;
+  }
+
   .post-flags {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
     gap: var(--muxui-semantic-layout-tight-gap);
   }
-  .post-title {
-    margin: 0 0 var(--muxui-semantic-layout-control-gap);
-    overflow-wrap: anywhere;
-  }
+
   .post-notice__title {
     margin: 0 0 var(--muxui-semantic-layout-tight-gap);
   }
+
   .post-notice__body {
     margin: 0;
   }
-  .post-image,
-  .post-link-card {
+
+  .post-image {
     display: block;
-    margin: 0 0 var(--muxui-semantic-layout-group-gap);
     max-inline-size: 100%;
   }
+
   .post-image__img {
     max-inline-size: 100%;
     block-size: auto;
   }
-  .post-link-card {
-    inline-size: fit-content;
-  }
+
+  /* A link post's box: its thumbnail, the domain over the address, and the external mark. */
   .post-link {
-    display: inline-flex;
+    box-sizing: border-box;
+    display: flex;
     align-items: center;
-    gap: var(--muxui-semantic-layout-group-gap);
+    gap: var(--muxui-semantic-layout-action-gap);
     max-inline-size: 100%;
-    overflow-wrap: anywhere;
+    padding: var(--muxui-semantic-layout-inset-small);
+    border: 1px solid var(--muxui-semantic-border-subtle);
+    border-radius: var(--muxui-semantic-shape-container-radius);
+    color: var(--muxui-semantic-content-default);
+    text-decoration: none;
   }
+
+  .post-link:hover {
+    background: var(--muxui-semantic-surface-hover);
+    text-decoration: none;
+  }
+
   .post-link__thumb {
     flex: none;
     inline-size: 64px;
     block-size: 64px;
   }
+
+  .post-link__text {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    min-inline-size: 0;
+  }
+
+  .post-link__url {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .post-link__icon {
+    flex: none;
+    color: var(--muxui-semantic-content-muted);
+  }
+
   .post-text {
     overflow-wrap: anywhere;
   }
+
+  /* The pill row: the vote, the comments count, Share and Copy link, then what Share or Copy link did. */
   .post-actions {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: var(--muxui-semantic-layout-control-gap) var(--muxui-semantic-layout-action-gap);
-    margin-block-start: var(--muxui-semantic-layout-group-gap);
+    gap: var(--muxui-semantic-layout-tight-gap);
   }
-  .post-own {
-    display: flex;
-    flex-wrap: wrap;
+
+  .post-pill {
+    box-sizing: border-box;
+    display: inline-flex;
     align-items: center;
-    gap: var(--muxui-semantic-layout-control-gap) var(--muxui-semantic-layout-action-gap);
+    gap: var(--muxui-semantic-layout-tight-gap);
+    min-block-size: var(--muxui-semantic-control-size-sm);
+    border-radius: var(--muxui-semantic-shape-pill-radius);
   }
+
+  .post-pill--count {
+    padding-inline: var(--muxui-semantic-layout-inset-small);
+    background: var(--muxui-semantic-action-neutral-background);
+    color: var(--muxui-semantic-content-default);
+    font-size: var(--muxui-semantic-typography-small-size);
+    font-weight: var(--muxui-semantic-typography-control-weight);
+    font-variant-numeric: tabular-nums;
+    text-decoration: none;
+  }
+
+  .post-pill--count:hover {
+    background: var(--muxui-semantic-action-neutral-background-hover);
+    text-decoration: none;
+  }
+
+  /* Mux gap: Text sets its own colour and type, with no tone that takes them from the control around it. */
+  .post-pill__label,
+  .post-pill__count {
+    color: inherit;
+    font: inherit;
+  }
+
+  .post-pill svg {
+    flex: none;
+    inline-size: var(--muxui-semantic-typography-label-m-font-size);
+    block-size: var(--muxui-semantic-typography-label-m-font-size);
+    color: var(--muxui-semantic-content-muted);
+  }
+
+  .post-share__status:empty {
+    display: none;
+  }
+
+  /* A link the clipboard refused, to copy by hand. */
+  .post-share__link {
+    overflow-wrap: anywhere;
+    user-select: all;
+  }
+
+  /* The author's own actions and the action slots (report, block, moderate): forms and links. */
+  .post-manage,
+  .post-own,
   .post-own form {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
+    gap: var(--muxui-semantic-layout-control-gap) var(--muxui-semantic-layout-action-gap);
+  }
+
+  .post-own form {
     gap: var(--muxui-semantic-layout-control-gap);
   }
+
   .post-error,
   .post-hint {
-    margin: var(--muxui-semantic-layout-control-gap) 0 0;
+    margin: 0;
   }
-  .post-thread {
-    margin-block-start: var(--muxui-semantic-layout-content-gap);
+
+  /* The view header's "Post in !community". */
+  .post-vh {
+    display: inline-flex;
+    align-items: center;
+    min-inline-size: 0;
+    max-inline-size: 100%;
+    text-decoration: none;
   }
-  @media (max-width: 600px) {
-    .post-page {
-      padding-inline: var(--muxui-semantic-layout-inset-small);
+
+  .post-vh__title {
+    color: var(--muxui-semantic-content-strong);
+  }
+
+  .post-rail__community {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--muxui-semantic-layout-dense-gap);
+    text-decoration: none;
+  }
+
+  /* Share and Copy link need scripts. */
+  @media (scripting: none) {
+    .post-share {
+      display: none;
     }
-    .post-card {
-      padding: var(--muxui-semantic-layout-inset-medium);
+  }
+
+  /* The phone: 44px targets, and the pills' words give way to their icons (their names stay). */
+  @media (max-width: 859.98px) {
+    .post-pill,
+    .post-vh {
+      min-block-size: calc(var(--muxui-semantic-control-size-lg) + 2 * var(--muxui-semantic-layout-dense-gap));
+    }
+
+    /* The meta line's links and the manage row's controls (the author's own, report, block, moderate). */
+    .post-meta .muxui-link,
+    .post-manage :is(.muxui-link, .muxui-button) {
+      min-inline-size: calc(var(--muxui-semantic-control-size-lg) + 2 * var(--muxui-semantic-layout-dense-gap));
+      min-block-size: calc(var(--muxui-semantic-control-size-lg) + 2 * var(--muxui-semantic-layout-dense-gap));
+    }
+
+    .post-pill {
+      min-inline-size: calc(var(--muxui-semantic-control-size-lg) + 2 * var(--muxui-semantic-layout-dense-gap));
+      justify-content: center;
+    }
+
+    .post-pill__label {
+      display: none;
     }
   }
 }

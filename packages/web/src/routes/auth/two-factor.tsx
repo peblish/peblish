@@ -2,7 +2,6 @@ import { auth, authErrorCode } from '@peblish/core/identity/auth';
 import { localHandles } from '@peblish/core/identity/handles';
 import { Button } from '@peblish/ui/components/button';
 import { Link } from '@peblish/ui/components/link';
-import { Separator } from '@peblish/ui/components/separator';
 import { Text } from '@peblish/ui/components/text';
 import { createFileRoute } from '@tanstack/react-router';
 import { type } from 'arktype';
@@ -12,7 +11,7 @@ import { useRouteHydrated } from '../../shell/hydration.ts';
 import { asFormError } from './-ui/errors.ts';
 import { AuthForm, Field, Hidden } from './-ui/form.tsx';
 import { authHead, SearchText } from './-route.ts';
-import { AuthCard } from './-ui/page.tsx';
+import { AuthPage, FormActions } from './-ui/page.tsx';
 
 const Search = type({ 'error?': SearchText, 'redirect?': SearchText, 'recovery?': SearchText });
 const Body = type({ code: 'string', method: "'totp' | 'recovery'", 'redirect?': 'string' });
@@ -69,16 +68,13 @@ function TwoFactor() {
   const query = other.toString();
   const otherHref = query ? `/auth/two-factor?${query}` : '/auth/two-factor';
   return (
-    <AuthCard>
+    <AuthPage title={t('auth', recovery ? 'twoFactor.recoveryTitle' : 'twoFactor.title')}>
       <AuthForm
         action="/auth/two-factor"
         label={t('auth', recovery ? 'twoFactor.recoveryTitle' : 'twoFactor.title')}
         error={asFormError(search.error)}
         className="auth-form"
       >
-        <Text as="h1" variant="heading" size="sm">
-          {t('auth', recovery ? 'twoFactor.recoveryTitle' : 'twoFactor.title')}
-        </Text>
         <Text as="p">{t('auth', recovery ? 'twoFactor.recoveryIntro' : 'twoFactor.intro')}</Text>
         <Hidden name="method" value={recovery ? 'recovery' : 'totp'} />
         {search.redirect && <Hidden name="redirect" value={search.redirect} />}
@@ -102,14 +98,18 @@ function TwoFactor() {
             className="auth-code"
           />
         )}
-        <Button type="submit" variant="primary" className="auth-submit">
-          {t('auth', 'twoFactor.submit')}
-        </Button>
-        <Separator />
-        <Text as="p" size="sm">
-          <Link href={otherHref}>{t('auth', recovery ? 'twoFactor.useApp' : 'twoFactor.useRecovery')}</Link>
-        </Text>
+        <FormActions
+          aside={
+            <Text as="p" size="sm">
+              <Link href={otherHref}>{t('auth', recovery ? 'twoFactor.useApp' : 'twoFactor.useRecovery')}</Link>
+            </Text>
+          }
+        >
+          <Button type="submit" variant="primary">
+            {t('auth', 'twoFactor.submit')}
+          </Button>
+        </FormActions>
       </AuthForm>
-    </AuthCard>
+    </AuthPage>
   );
 }

@@ -1,14 +1,21 @@
-/* The admin frame (lane ADMIN-A): the tab bar above every admin page, and the Settings, Pages
-   and Registration tabs. Layout only; colour, type and shape come from Mux components and tokens.
-   Linked by the admin layout route, so it reaches every admin page. */
+/* The admin pages in the Commons frame (AdminPage, -page.tsx), and the Settings, Pages and Registration
+   tabs, after the mock's admin page and form (styles/admin.css,
+   composer-2.css). Layout only; colour, type and shape come from Mux components and tokens. Linked by
+   the admin layout route, so it reaches every admin page. */
 @layer app {
-  .adm-tabs {
-    max-width: var(--pb-page-width);
-    margin: var(--muxui-semantic-layout-inset-medium) auto 0;
-    padding-inline: var(--muxui-semantic-layout-inset-large);
+  /* A phone: every tab inside an admin page (the queue's, the media sections', the editor's) is a 44px target. */
+  @media (max-width: 859.98px) {
+    .adm-main .pb-page .muxui-tabs__tab {
+      min-block-size: calc(var(--muxui-semantic-control-size-lg) + 2 * var(--muxui-semantic-layout-dense-gap));
+    }
   }
 
-  /* An admin page: a heading, its notices, then sections separated by Mux's section gap. */
+  /* The page under the tabs starts a large inset down, as the mock's admin page does. */
+  .adm-main > .pb-page {
+    padding-block-start: var(--muxui-semantic-layout-inset-large);
+  }
+
+  /* An admin page: its notices, then sections separated by Mux's section gap. */
   .adm-page {
     display: grid;
     gap: var(--muxui-semantic-layout-section-gap);
@@ -25,11 +32,20 @@
     gap: var(--muxui-semantic-layout-group-gap);
   }
 
-  /* A form of stacked fields, narrower than the page so lines stay readable. */
+  /* Sections after the first are set apart by a rule, as the mock's admin sections are. */
+  .adm-section + .adm-section {
+    padding-block-start: var(--muxui-semantic-layout-section-gap);
+    border-block-start: 1px solid var(--muxui-semantic-border-subtle);
+  }
+
+  .adm-section__title {
+    color: var(--muxui-semantic-content-strong);
+  }
+
+  /* A form of stacked fields in the column. */
   .adm-form {
     display: grid;
     gap: var(--muxui-semantic-layout-section-gap);
-    max-width: 640px;
   }
 
   /* The page editor uses the whole column for its Markdown. */
@@ -41,11 +57,15 @@
     max-width: 160px;
   }
 
+  /* A form's actions (the mock's .a-form__actions): at the end of the row, under a rule. */
   .adm-actions {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
+    justify-content: flex-end;
     gap: var(--muxui-semantic-layout-group-gap);
+    padding-block-start: var(--muxui-semantic-layout-group-gap);
+    border-block-start: 1px solid var(--muxui-semantic-border-subtle);
   }
 
   /* The kill switches: one row each, what it does on the left and its one button on the right. */
@@ -84,11 +104,19 @@
     gap: var(--muxui-semantic-layout-tight-gap);
   }
 
-  /* Tables scroll sideways on a phone instead of squeezing their columns. */
-  .adm-table {
+  /* A staff table's card (TableCard, -table-card.tsx): where the page is narrower than the table (a phone, or
+     beside the open sidebar at 1100px) the table scrolls sideways inside it instead of squeezing its columns,
+     and while it does the card is a keyboard stop with a focus ring. */
+  .adm-scroller {
     overflow-x: auto;
   }
 
+  .adm-scroller:focus-visible {
+    outline: 2px solid var(--muxui-semantic-focus-ring);
+    outline-offset: 2px;
+  }
+
+  /* Pages and Registration: at least this wide, scrolling inside the card where the page is narrower. */
   .adm-table > * {
     min-width: 760px;
   }

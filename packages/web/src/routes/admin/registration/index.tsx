@@ -5,7 +5,6 @@ import { registrationOverview } from '@peblish/core/registration/settings';
 import { InviteCreateBody, type InviteRow, type InviteStatus } from '@peblish/schema/invite';
 import { Badge, type BadgeTone } from '@peblish/ui/components/badge';
 import { Button } from '@peblish/ui/components/button';
-import { Card } from '@peblish/ui/components/card';
 import { EmptyState } from '@peblish/ui/components/empty-state';
 import { Handle } from '@peblish/ui/components/handle';
 import { Input } from '@peblish/ui/components/input';
@@ -31,7 +30,8 @@ import { SearchText } from '../../auth/-route.ts';
 import { useDate } from '../../auth/-ui/page.tsx';
 import { Denial } from '../-denial.tsx';
 import { accessOf } from '../settings/-access.ts';
-import { AdminTitle } from '../settings/-ui.tsx';
+import { AdminPage, ownHeaderWide } from '../-page.tsx';
+import { TableCard } from '../-table-card.tsx';
 
 // `usedBy`: the invite whose "used by" list the server renders open, for its link without scripts.
 const Search = type({ 'error?': SearchText, 'usedBy?': SearchText });
@@ -64,6 +64,7 @@ const days = { '7': 7, '30': 30, '90': 90, never: null } as const;
 export const Route = createFileRoute('/admin/registration/')({
   validateSearch: Search,
   loader: () => loadRegistration(),
+  staticData: ownHeaderWide,
   component: Registration,
   server: {
     handlers: {
@@ -119,8 +120,7 @@ function Registration() {
   useRouteHydrated();
   if (data.access !== 'ok')
     return (
-      <main className="pb-page adm-page">
-        <AdminTitle>{t('invites', 'admin.title')}</AdminTitle>
+      <AdminPage title={t('invites', 'admin.title')} className="adm-page">
         <Denial
           access={data.access}
           copy={{
@@ -129,14 +129,13 @@ function Registration() {
             notAdmin: t('invites', 'admin.notAdmin'),
           }}
         />
-      </main>
+      </AdminPage>
     );
   const { registration } = data;
   const error = asFormError(search.error);
   const cap = t('invites', 'admin.cap', { count: registration.accounts, cap: registration.cap });
   return (
-    <main className="pb-page adm-page">
-      <AdminTitle>{t('invites', 'admin.title')}</AdminTitle>
+    <AdminPage title={t('invites', 'admin.title')} className="adm-page">
       <div className="adm-summary">
         <Text variant="label" size="md">
           {t('invites', 'admin.registration')}
@@ -187,7 +186,7 @@ function Registration() {
       </form>
       {data.created && <CreatedInvite created={data.created} origin={data.origin} />}
       <InvitesTable invites={data.invites} open={search.usedBy} />
-    </main>
+    </AdminPage>
   );
 }
 
@@ -232,7 +231,7 @@ function InvitesTable({ invites, open }: { invites: InviteRow[]; open: string | 
   if (invites.length === 0) return <EmptyState title={t('invites', 'admin.empty')} />;
   const actions = t('invites', 'admin.colActions');
   return (
-    <Card.Root variant="outlined" padding="sm" className="adm-table">
+    <TableCard label={t('invites', 'admin.title')} className="adm-table">
       {/* One form for every Revoke button: each submits it with its invite's id. */}
       <form id={revokeForm} method="post" action={path} hidden>
         <Input.Input type="hidden" name="intent" value="revoke" />
@@ -298,6 +297,6 @@ function InvitesTable({ invites, open }: { invites: InviteRow[]; open: string | 
           },
         }))}
       />
-    </Card.Root>
+    </TableCard>
   );
 }

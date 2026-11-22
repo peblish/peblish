@@ -5,7 +5,6 @@ import type { ReportForm } from '@peblish/core/reports/form';
 import { Uuid } from '@peblish/schema/ids';
 import { Link } from '@peblish/ui/components/link';
 import { Notice } from '@peblish/ui/components/notice';
-import { Text } from '@peblish/ui/components/text';
 import { createFileRoute, notFound, redirect } from '@tanstack/react-router';
 import { type } from 'arktype';
 import { useTranslate } from '../../i18n/use-translate.ts';
@@ -18,6 +17,7 @@ import { asReportError, errorKey } from './-ui/errors.ts';
 import { ReportFormView } from './-ui/report-form.tsx';
 import reportCss from './-ui/report.css?url';
 import { headTitle } from '../../shell/title.ts';
+import { ownHeader, PageHeader } from '../admin/-page.tsx';
 
 // /report?kind=post|comment|actor&id=<uuid>&back=<path>: the report form as a page. It is the
 // same form the Report control opens in a dialog once hydrated. Signed out, GET answers 303 to
@@ -76,6 +76,7 @@ export const Route = createFileRoute('/report/')({
       links: [{ rel: 'stylesheet', href: reportCss }],
     };
   },
+  staticData: ownHeader,
   component: ReportPage,
   server: {
     middleware: [privateResponses],
@@ -127,25 +128,20 @@ function ReportPage() {
   const search = Route.useSearch();
   const kind = form ? reportedKind(form) : null;
   return (
-    <main className="rp-page">
-      {form && kind ? (
-        <>
-          <Text as="h1" variant="display" size="sm">
-            {t('reports', `form.title.${kind}`)}
-          </Text>
+    <main className="rp-main">
+      <PageHeader title={t('reports', form && kind ? `form.title.${kind}` : 'form.open')} />
+      <div className="pb-page rp-page">
+        {form && kind ? (
           <ReportFormView form={form} back={back} initialError={asReportError(search.error)} initialCategory={search.category} />
-        </>
-      ) : (
-        <>
-          <Text as="h1" variant="display" size="sm">
-            {t('reports', 'form.open')}
-          </Text>
-          <Notice tone="warning" role="alert">
-            {t('reports', errorKey(asReportError(refusal) ?? 'generic'))}
-          </Notice>
-          <Link href={back}>{t('reports', 'sent.done')}</Link>
-        </>
-      )}
+        ) : (
+          <>
+            <Notice tone="warning" role="alert">
+              {t('reports', errorKey(asReportError(refusal) ?? 'generic'))}
+            </Notice>
+            <Link href={back}>{t('reports', 'sent.done')}</Link>
+          </>
+        )}
+      </div>
     </main>
   );
 }

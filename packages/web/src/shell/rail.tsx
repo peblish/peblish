@@ -7,11 +7,12 @@ import type { ReactNode } from 'react';
  * scrolling on its own. A page without one is a single centre column, centred at the width it has
  * beside a rail. Where the page is narrower than 62rem the rail gives way, before the phone layout
  * does, so a route shows what the rail held inside its view there itself. Server rendered: it reads
- * the same with scripts off.
+ * the same with scripts off. Its panels stand a gap apart (shell.css); `className` is the page's own,
+ * for what it styles inside them.
  */
-export function Rail({ label, children }: { label: string; children: ReactNode }) {
+export function Rail({ label, className, children }: { label: string; className?: string; children: ReactNode }) {
   return (
-    <aside className="pb-rail" aria-label={label}>
+    <aside className={className ? `pb-rail ${className}` : 'pb-rail'} aria-label={label}>
       {children}
     </aside>
   );

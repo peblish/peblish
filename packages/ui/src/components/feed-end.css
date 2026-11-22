@@ -1,0 +1,63 @@
+/* The end of a list that loads by itself (feed-end.tsx), and Skip past the posts. */
+@layer app {
+  /* A focus target, not a control: Retry parks focus here, and Skip lands here when nothing follows. */
+  .pb-feed-end:focus {
+    outline: none;
+  }
+
+  .pb-feed-end:focus-visible {
+    outline: 2px solid var(--muxui-semantic-focus-ring);
+    outline-offset: -2px;
+  }
+
+  /* The observer's mark: no height of its own, so it never shifts what is above it. */
+  .pb-feed-end__sentinel {
+    block-size: 1px;
+  }
+
+  .pb-feed-end__failed,
+  .pb-feed-end__line {
+    padding: var(--muxui-semantic-layout-inset-medium) var(--muxui-semantic-layout-inset-large);
+    margin: 0;
+    text-align: center;
+  }
+
+  .pb-feed-end__failed {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--muxui-semantic-layout-tight-gap);
+    border-block-start: 1px solid var(--muxui-semantic-border-faint);
+  }
+
+  .pb-feed-end__actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+    gap: var(--muxui-semantic-layout-group-gap);
+  }
+
+  /* Out of sight until it has focus, then at the list's top, over the first row. The gallery shows it
+     in place (`data-shown`). */
+  .pb-feed-skip {
+    position: relative;
+    z-index: 1;
+    block-size: 0;
+  }
+
+  .pb-feed-skip:not(:focus-within, [data-shown]) {
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+
+  .pb-feed-skip:not([data-shown]) .muxui-button {
+    position: absolute;
+    inset-block-start: var(--muxui-semantic-layout-inset-tight);
+    inset-inline-start: var(--muxui-semantic-layout-inset-large);
+  }
+
+  .pb-feed-skip[data-shown] {
+    block-size: auto;
+  }
+}

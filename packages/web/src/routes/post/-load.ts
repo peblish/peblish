@@ -1,4 +1,3 @@
-import { publicOrigin } from '@peblish/core/config';
 import { readPost, type Viewer } from '@peblish/core/posts/read';
 import type { PostView } from '@peblish/schema/views';
 import { createServerFn } from '@tanstack/react-start';
@@ -10,8 +9,8 @@ import { createMarkdownRenderer } from '../../server/markdown.ts';
 import { postPath } from '../../shell/paths.ts';
 import { gateData, requestNsfw } from '../c/-gate.ts';
 import { loadThread } from './$id/comments/-thread.ts';
-import { postMedia, postTime, threadVisible } from './-page-data.ts';
-import { postAsShown } from './-withheld.ts';
+import { hasSpoiler, postMedia, postTime, threadVisible } from './-page-data.ts';
+import { postForViewer } from './-withheld.ts';
 import { input } from '../../server/input.ts';
 
 /**
@@ -43,10 +42,8 @@ export const loadPost = createServerFn({ method: 'GET' })
     const { thumbnail, image } = postMedia(view, renderer);
     const locale = negotiateLocale(getRequestHeader('accept-language'));
     // The page draws `thumbnail` (through the proxy rule); the picture's own address stays out of the page data.
-    const origin = publicOrigin();
-    if (!origin) throw new Error('PUBLIC_ORIGIN is not set');
-    const told = { id: viewer?.actorId ?? null, moderator: page.moderator };
-    const post: PostView = { ...postAsShown(view, told, origin), thumbnailUrl: null, contentHtml };
+    // A tombstone's author stays out too, but for staff and the author (-withheld.ts: postForViewer).
+    const post: PostView = { ...postForViewer(page, session?.view.actorId ?? null), thumbnailUrl: null, contentHtml };
     return {
       kind: 'post' as const,
       post,
@@ -63,6 +60,8 @@ export const loadPost = createServerFn({ method: 'GET' })
       /** The edit time as text in the request's locale, so hydration formats nothing (postTime). */
       edited: view.editedAt && postTime(locale, view.editedAt),
       domain: view.url ? (URL.parse(view.url)?.hostname.replace(/^www\./, '') ?? null) : null,
+      /** The body holds a spoiler: the post's Spoiler badge, derived from the text it already has. */
+      spoiler: hasSpoiler(contentHtml),
     };
   });
 

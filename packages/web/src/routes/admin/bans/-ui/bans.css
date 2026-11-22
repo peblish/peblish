@@ -15,10 +15,7 @@
   .bans-find > :first-child {
     inline-size: min(28rem, 100%);
   }
-  /* Mux Table has no breakpoint: on a narrow screen the table scrolls inside its card. */
-  .bans-table {
-    overflow-x: auto;
-  }
+  /* Mux Table has no breakpoint: on a narrow screen the table scrolls inside its card (TableCard). */
   .bans-table .muxui-table {
     inline-size: 100%;
     min-inline-size: 52rem;

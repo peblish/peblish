@@ -4,7 +4,6 @@ import { attempt } from '@peblish/core/identity/throttle';
 import { Button } from '@peblish/ui/components/button';
 import { Link } from '@peblish/ui/components/link';
 import { Notice } from '@peblish/ui/components/notice';
-import { Separator } from '@peblish/ui/components/separator';
 import { Text } from '@peblish/ui/components/text';
 import { createFileRoute } from '@tanstack/react-router';
 import { type } from 'arktype';
@@ -14,7 +13,7 @@ import { useRouteHydrated } from '../../shell/hydration.ts';
 import { asFormError } from './-ui/errors.ts';
 import { AuthForm, Field, Hidden } from './-ui/form.tsx';
 import { authHead, SearchText } from './-route.ts';
-import { AuthCard } from './-ui/page.tsx';
+import { AuthPage, FormActions } from './-ui/page.tsx';
 
 const Search = type({ 'error?': SearchText, 'redirect?': SearchText, 'reset?': SearchText });
 const Body = type({ identifier: 'string', password: 'string', 'redirect?': 'string' });
@@ -65,11 +64,8 @@ function SignIn() {
   const search = Route.useSearch();
   useRouteHydrated();
   return (
-    <AuthCard>
+    <AuthPage title={t('auth', 'signIn.title')}>
       <AuthForm action="/auth/sign-in" label={t('auth', 'signIn.title')} error={asFormError(search.error)} className="auth-form">
-        <Text as="h1" variant="heading" size="sm">
-          {t('auth', 'signIn.title')}
-        </Text>
         {search.reset && <Notice tone="success">{t('auth', 'signIn.resetDone')}</Notice>}
         {search.redirect && <Hidden name="redirect" value={search.redirect} />}
         <Field
@@ -92,14 +88,18 @@ function SignIn() {
             </Text>
           }
         />
-        <Button type="submit" variant="primary" className="auth-submit">
-          {t('auth', 'signIn.submit')}
-        </Button>
-        <Separator />
-        <Text as="p" size="sm" color="muted">
-          {t('auth', 'signIn.noAccount')} <Link href="/auth/sign-up">{t('auth', 'signIn.signUp')}</Link>
-        </Text>
+        <FormActions
+          aside={
+            <Text as="p" size="sm" color="muted">
+              {t('auth', 'signIn.noAccount')} <Link href="/auth/sign-up">{t('auth', 'signIn.signUp')}</Link>
+            </Text>
+          }
+        >
+          <Button type="submit" variant="primary">
+            {t('auth', 'signIn.submit')}
+          </Button>
+        </FormActions>
       </AuthForm>
-    </AuthCard>
+    </AuthPage>
   );
 }

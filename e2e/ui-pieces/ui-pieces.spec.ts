@@ -213,8 +213,10 @@ test('the current tab stays marked in forced colours, in both variants', async (
 test('a long translated fact label leaves room for its value, in both layouts', async ({ browser }) => {
   for (const width of widths) {
     const { context, page } = await open(browser, `/u/${seed.owner.name}`, width, 'light');
-    // The profile's list uses the rows layout; a copy of it in the inline layout covers the other one.
+    // The profile's list uses the rows layout; a copy of it in the inline layout covers the other one. The rail's
+    // facts, later on the page, may already be inline.
     await expect(page.locator('dl.pb-facts--rows')).toHaveCount(1);
+    const inline = await page.locator('dl.pb-facts--inline').count();
     await page
       .locator('dl.pb-facts')
       .first()
@@ -224,7 +226,7 @@ test('a long translated fact label leaves room for its value, in both layouts', 
         inline.classList.replace('pb-facts--rows', 'pb-facts--inline');
         list.after(inline);
       }, longLabel);
-    await expect(page.locator('dl.pb-facts--inline')).toHaveCount(1);
+    await expect(page.locator('dl.pb-facts--inline')).toHaveCount(inline + 1);
     await page.screenshot({ path: join(shots, `long-fact-${width}.png`), fullPage: true });
     expect(await sideways(page)).toBe(0);
     const sizes = await page.evaluate(() =>

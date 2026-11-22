@@ -3,15 +3,15 @@ import type { ActorRef, CommentView, PostView } from '@peblish/schema/views';
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 import type { MarkdownRenderer } from '../../../../server/markdown.ts';
 
-// What the thread's data tells a viewer about who wrote a tombstone: a deleted comment, and a
-// deleted post (through the OP badge's postAuthorId), name no one to anyone but the author and the
-// moderators. Checked on the serialised data, with authors whose addresses carry their handle.
+// What the thread's data tells a viewer about who wrote a tombstone: a deleted or removed comment
+// names no one to anyone but the moderators, and a deleted post (through the OP badge's
+// postAuthorId) no one but its author and the moderators. Checked on the serialised data, with
+// authors whose addresses carry their handle.
 
 const thread = vi.hoisted(() => ({ comments: [] as { view: CommentView; body: null; removal: null }[] }));
 vi.mock('@peblish/core/comments/read', () => ({
   readThread: async (postId: string) => ({ postId, sort: 'hot', comments: thread.comments, focus: null, moderator: false, next: null }),
 }));
-vi.mock('@peblish/core/config', () => ({ publicOrigin: () => 'https://feddit.test' }));
 const { loadThread } = await import('./-thread.ts');
 
 const person = (id: string, name: string, host: string): ActorRef => ({
@@ -101,17 +101,19 @@ describe('a deleted comment', () => {
     }
   });
 
-  test('is as before for its author and for the moderators', async () => {
+  test('is as before for the moderators; its author is not told either, as its row draws no author', async () => {
     const asModerator = await load(pageOf({}, true), reader);
-    const asAuthor = await load(pageOf({}), alice.id);
-    for (const data of [asModerator, asAuthor]) expect(data?.comments.map((row) => row.author)).toEqual([carol, alice]);
+    expect(asModerator?.comments.map((row) => row.author)).toEqual([carol, alice]);
     expect(asModerator?.comments[1]).toEqual({ ...thread.comments[1]!.view, contentHtml: null });
+    const asAuthor = JSON.stringify(await load(pageOf({}), alice.id));
+    for (const trace of traces(alice).filter((trace) => trace !== alice.id))
+      expect([trace, asAuthor.includes(trace)]).toEqual([trace, false]);
   });
 });
 
-// The thread names the author of a comment a moderator removed, and of one by someone the
-// viewer blocks: both keep their author line (the UI's own tests). Their text is withheld, so a
-// removed comment's own address, where a peer may still serve the text, is not sent either.
+// A comment a moderator removed is a tombstone like a deleted one: no author, address or text but
+// to the moderators. One by someone the viewer blocks keeps its author line: only the viewer's own
+// block hides its text.
 describe('a removed comment, and one by someone the viewer blocks', () => {
   const removedId = '019a0000-0000-7000-8000-00000000c003';
   const blockedId = '019a0000-0000-7000-8000-00000000c004';
@@ -123,20 +125,18 @@ describe('a removed comment, and one by someone the viewer blocks', () => {
   });
   const original = (id: string) => `${alice.apId}/statuses/${id}`;
 
-  test('keep their author line; the removed one goes without its own address', async () => {
+  test('the removed one goes without its author and address, the blocked one keeps them', async () => {
     const data = await load(pageOf({}), reader);
     const [removed, blocked] = data?.comments ?? [];
-    expect([removed?.author, blocked?.author]).toEqual([alice, alice]);
-    expect(removed?.apId).toBe(`https://feddit.test/ap/comment/${removedId}`);
+    expect([removed?.author.handle, removed?.apId, blocked?.author]).toEqual(['', '', alice]);
     expect(JSON.stringify(removed)).not.toContain(original(removedId));
     // The viewer's own block hides nothing anyone else withholds: as before.
     expect(blocked).toEqual({ ...thread.comments[1]!.view, contentHtml: null });
   });
 
-  test('are as before for the moderators and the author', async () => {
-    for (const data of [await load(pageOf({}, true), reader), await load(pageOf({}), alice.id)]) {
-      expect(data?.comments.map(({ apId }) => apId)).toEqual([original(removedId), original(blockedId)]);
-    }
+  test('are as before for the moderators; the removed one is a tombstone to its author too', async () => {
+    expect((await load(pageOf({}, true), reader))?.comments.map(({ apId }) => apId)).toEqual([original(removedId), original(blockedId)]);
+    expect((await load(pageOf({}), alice.id))?.comments.map(({ apId }) => apId)).toEqual(['', original(blockedId)]);
   });
 });
 

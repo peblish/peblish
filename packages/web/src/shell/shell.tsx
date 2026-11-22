@@ -20,7 +20,7 @@ import { AccountLinks, accountPages, signOutFormId } from './account.tsx';
 import { Brand } from './brand.tsx';
 import type { ShellData } from './data.ts';
 import { TopHeader } from './header.tsx';
-import { directoryPaths, feedPaths, inboxPath, reportQueuePath, userPath } from './paths.ts';
+import { directoryPaths, feedPaths, inboxPath, reportQueuePath } from './paths.ts';
 import { useSideFold } from './side-state.ts';
 import { Navigation } from './sidebar.tsx';
 import { PhoneTabs } from './tab-bar.tsx';
@@ -28,6 +28,13 @@ import { ThemeMenu } from './theme-menu.tsx';
 import { DefaultViewHeader, FrameContext } from './view-header.tsx';
 
 const root = getRouteApi('__root__');
+
+declare module '@tanstack/react-router' {
+  interface StaticDataRouteOption {
+    /** 'wide': the page holds a staff table, which needs the wide centre (shell.css) to sit whole on a computer. */
+    centre?: 'wide';
+  }
+}
 
 /**
  * After a navigation that took focus with it (a drawer link, or Back with the drawer open: the
@@ -77,10 +84,13 @@ function useTapAgainForTop() {
   }, []);
 }
 
-/** The top destinations, which have no Back: the feeds, the inbox, the directory, the moderation queue and the viewer's profile. */
-function isRootPage(pathname: string, session: SessionView | null) {
+/**
+ * The top destinations, which have no Back: the feeds, the inbox, the directory and the moderation queue (the
+ * You page draws its own bar). A profile, the viewer's own too, is a page under them: it has Back.
+ */
+function isRootPage(pathname: string) {
   const roots: string[] = [...Object.values(feedPaths), inboxPath, directoryPaths.browse, reportQueuePath()];
-  return roots.includes(pathname) || (session !== null && pathname === userPath({ handle: session.name }));
+  return roots.includes(pathname);
 }
 
 const accountIcons: Record<string, ComponentType<IconProps>> = {
@@ -148,13 +158,15 @@ export function Shell({ children }: { children: ReactNode }) {
   const { session, shell, side } = root.useLoaderData();
   const { t } = useTranslate();
   const pathname = useRouterState({ select: (state) => state.location.pathname });
-  // A route that renders its own view header says so (view-header.tsx); a page that failed shows the error page instead.
+  // A route that renders its own view header says so (view-header.tsx), and its loading host renders one too, so
+  // the default bar never shows while it loads; a page that failed shows the error page, under the default bar.
   const ownHeader = useRouterState({
     select: (state) => {
       const last = state.matches.at(-1);
-      return last?.status === 'success' && last.staticData.viewHeader === 'own';
+      return (last?.status === 'success' || last?.status === 'pending') && last.staticData.viewHeader === 'own';
     },
   });
+  const wide = useRouterState({ select: (state) => state.matches.at(-1)?.staticData.centre === 'wide' });
   useFocusLostToPage(useRouterState({ select: (state) => state.resolvedLocation?.pathname }));
   useTapAgainForTop();
   const fold = useSideFold(side);
@@ -183,8 +195,8 @@ export function Shell({ children }: { children: ReactNode }) {
             </Sidebar.Root>
           </div>
           <div className="pb-app__page">
-            <div id="pb-main" className="pb-frame" tabIndex={-1}>
-              {!ownHeader && <DefaultViewHeader siteName={shell.siteName} root={isRootPage(pathname, session)} />}
+            <div id="pb-main" className="pb-frame" data-centre={wide ? 'wide' : undefined} tabIndex={-1}>
+              {!ownHeader && <DefaultViewHeader siteName={shell.siteName} root={isRootPage(pathname)} />}
               {children}
             </div>
           </div>

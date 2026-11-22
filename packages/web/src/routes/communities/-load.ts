@@ -2,14 +2,17 @@ import { DirectorySort, NsfwMode, Scope, effectiveNsfw, maxPage } from '@peblish
 import { listCommunities } from '@peblish/core/directory/read';
 import { parseLookup } from '@peblish/core/resolve/parse';
 import { createServerFn } from '@tanstack/react-start';
+import { getRequestHeader } from '@tanstack/react-start/server';
 import { type } from 'arktype';
 import { pageSession } from '../../server/auth.ts';
 import { input } from '../../server/input.ts';
+import { parseViewCookie } from './-view.ts';
 
 /**
  * The directory page's data for the route loader (a server function: it runs on the server for
  * a document request and over fetch for a client-side navigation). It depends on who asks (the
- * NSFW setting, the person's own joins), so it is private: pageSession says so.
+ * NSFW setting, the person's own joins), so it is private: pageSession says so. The List or Cards
+ * choice comes from the browser's own cookie (-view.ts), so the server draws the view chosen.
  */
 export const loadDirectory = createServerFn({ method: 'GET' })
   .validator(
@@ -42,6 +45,8 @@ export const loadDirectory = createServerFn({ method: 'GET' })
       lookup: data.q !== '' && parseLookup(data.q) !== null,
       /** The clock "refreshed 2h ago" is read against, so the browser prints what the server did. */
       now: new Date().toISOString(),
+      /** List or Cards, as this browser last chose. */
+      view: parseViewCookie(getRequestHeader('cookie')),
     };
   });
 

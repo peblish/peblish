@@ -78,5 +78,12 @@
     * {
       scroll-behavior: auto !important;
     }
+
+    /* Mux gap: its fields (Input; TextField and SearchField; TextArea; Select's trigger) ease their edge
+       and glow over 350ms even when the system asks for reduced motion (Mux's own query stills its
+       buttons and links, and only its reduced setting stops a field's clock); every field changes at once then. */
+    :is(.muxui-input, .muxui-field-input, .muxui-text-area__textarea, .muxui-select__trigger) {
+      transition: none;
+    }
   }
 }

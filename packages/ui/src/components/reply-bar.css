@@ -1,32 +1,26 @@
-/* The docked reply bar: a raised Mux Card stuck to the bottom of the thread. */
+/* The docked reply (Commons): the last thing in the comments, sticky to the bottom of the window on the
+   page's own opaque surface under a hairline. The frame keeps it above the phone's bottom bar and stops
+   what the page scrolls into view above it (web/src/shell/shell.css); its height stays inside that scroll
+   padding, four large control heights. */
 @layer app {
   .pb-reply {
     position: sticky;
     inset-block-end: 0;
     z-index: 20;
-    margin-block-start: var(--muxui-semantic-layout-content-gap);
+    display: flex;
+    flex-direction: column;
+    gap: var(--muxui-semantic-layout-tight-gap);
+    margin-block-start: var(--muxui-semantic-layout-group-gap);
     padding-block: var(--muxui-semantic-layout-inset-small);
-    /* The page shows through above the card and is covered below it, so text never runs under the bar's edge. */
-    background: linear-gradient(to bottom, transparent, var(--muxui-semantic-surface-background) 35%);
-  }
-
-  /* Whatever the page scrolls into view (a focused control, a find, a #comment link) stops above
-     the docked bar instead of under it (WCAG 2.4.11). The bar is about this tall with its
-     "Replying to" line; a little more room costs nothing. */
-  :root:has(.pb-reply:not(.pb-reply--inline)) {
-    scroll-padding-block-end: calc(var(--muxui-semantic-control-size-lg) * 4);
+    border-block-start: 1px solid var(--muxui-semantic-border-faint);
+    background: var(--muxui-semantic-surface-background);
   }
 
   .pb-reply--inline {
     position: static;
     margin: 0;
+    border-block-start: 0;
     background: none;
-  }
-
-  .pb-reply__box {
-    display: flex;
-    flex-direction: column;
-    gap: var(--muxui-semantic-layout-control-gap);
   }
 
   .pb-reply__to {
@@ -50,5 +44,32 @@
   .pb-reply__field {
     flex: 1;
     min-inline-size: 0;
+  }
+
+  /* Two lines and no grip: the bar keeps the height the frame's scroll padding allows for it. */
+  .pb-reply__field .muxui-text-area__textarea {
+    resize: none;
+  }
+
+  /* Where the docked reply would be: why there is none. */
+  .pb-reply-notice {
+    display: flex;
+    align-items: center;
+    gap: var(--muxui-semantic-layout-tight-gap);
+    margin-block: var(--muxui-semantic-layout-group-gap) 0;
+    padding-block: var(--muxui-semantic-layout-inset-small);
+    border-block-start: 1px solid var(--muxui-semantic-border-faint);
+  }
+
+  .pb-reply-notice svg {
+    flex: none;
+  }
+
+  /* The phone: 44px targets. */
+  @media (max-width: 859.98px) {
+    .pb-reply__action,
+    .pb-reply__send {
+      min-block-size: calc(var(--muxui-semantic-control-size-lg) + 2 * var(--muxui-semantic-layout-dense-gap));
+    }
   }
 }

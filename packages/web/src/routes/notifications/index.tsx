@@ -29,6 +29,8 @@ export const Route = createFileRoute('/notifications/')({
       links: [{ rel: 'stylesheet', href: inboxCss }],
     };
   },
+  // The inbox draws its own view header: its title with the unread count, and Mark all read.
+  staticData: { viewHeader: 'own' },
   component: InboxRoute,
   pendingComponent: InboxPending,
   // The page is personal: never from a shared cache (server/auth.ts).

@@ -110,7 +110,7 @@ test('tapping the tab of the page shown puts the page at its top and focus on it
   expect(focused).toBe(titles > 0 ? 'title' : 'main');
 });
 
-test("signed in, the bottom bar's fifth is You, the inbox tab says how many are unread, and the drawer holds the account", async ({
+test("signed in, the bottom bar's fifth is You, the inbox tab says how many are unread, a profile has Back, and the drawer holds the account", async ({
   page,
 }) => {
   test.skip(Boolean(process.env.BASE_URL), 'needs the lane database for its seed (DATABASE_URL)');
@@ -122,12 +122,16 @@ test("signed in, the bottom bar's fifth is You, the inbox tab says how many are 
   await landed(page, '/');
 
   const you = tabs(page).getByRole('link', { name: 'You' });
-  await expect(you).toHaveAttribute('href', `/u/${people[0]}`);
+  await expect(you).toHaveAttribute('href', '/you');
   // The count is shown and spoken: "Inbox 2 unread".
   await expect(tabs(page).getByRole('link', { name: /^Inbox/ })).toHaveAccessibleName('Inbox 2 unread');
   await you.tap();
-  await page.waitForURL(`**/u/${people[0]}`);
+  await page.waitForURL('**/you');
   await expect(you).toHaveAttribute('aria-current', 'page');
+  // The viewer's profile is a page under You, not a top destination: its top bar has Back.
+  await page.getByRole('main').getByRole('link', { name: 'Profile', exact: true }).tap();
+  await page.waitForURL(`**/u/${people[0]}`);
+  await expect(topBar(page).getByRole('button', { name: 'Back' })).toBeVisible();
   await settle(page);
   await expect(drawer(page)).toHaveCount(0);
 

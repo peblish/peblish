@@ -74,3 +74,13 @@ test('the detector catches a tampered server render', async ({ page, request }) 
   await page.locator('html[data-shell-hydrated="1"]').waitFor({ state: 'attached' });
   await expect.poll(() => log.hydrationProblems().length).toBeGreaterThan(0);
 });
+
+// Some browsers have no Intl.Segmenter (Firefox before 125, say). Nothing the shell loads may depend on it, or
+// the whole page stays as the server drew it.
+test('a browser without Intl.Segmenter hydrates the shell, avatars and all', async ({ page }) => {
+  await page.addInitScript(() => Reflect.deleteProperty(Intl, 'Segmenter'));
+  const log = recordConsole(page);
+  await gotoHydrated(page, '/');
+  expect(await page.evaluate(() => 'Segmenter' in Intl)).toBe(false);
+  expect(log.problems().filter(({ type }) => type === 'pageerror')).toEqual([]);
+});

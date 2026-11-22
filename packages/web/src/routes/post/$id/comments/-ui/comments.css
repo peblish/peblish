@@ -1,8 +1,8 @@
-/* The thread under a post and the permalink page: layout only, in Mux UI tokens. The comment
+/* The thread under a post and the permalink page (Commons): layout only, in Mux UI tokens. The comment
    tree and the reply bar have their own (comment-thread.css, reply-bar.css). */
 @layer app {
   .th-thread {
-    margin-block-start: var(--muxui-semantic-layout-content-gap);
+    margin-block-start: var(--muxui-semantic-layout-inset-small);
     scroll-margin-block-start: var(--muxui-semantic-layout-inset-medium);
   }
   .th-head {
@@ -20,13 +20,8 @@
     margin: 0 0 var(--muxui-semantic-layout-control-gap);
     overflow-wrap: anywhere;
   }
-  .th-notice,
   .th-trail {
     margin-block: var(--muxui-semantic-layout-group-gap);
-  }
-  .th-notice {
-    padding-block-start: var(--muxui-semantic-layout-group-gap);
-    border-block-start: 1px solid var(--muxui-semantic-border-default);
   }
   .th-error {
     margin-block: var(--muxui-semantic-layout-group-gap) 0;
@@ -58,5 +53,28 @@
   }
   .th-own__edit form > .th-own__save {
     justify-self: start;
+  }
+
+  /* The docked reply and its stand-in run the centre column's width, through the page's side padding, as
+     the frame's post rows do: their hairline meets the column's edges. */
+  .pb-page .th-thread > :is(.pb-reply:not(.pb-reply--inline), .th-notice) {
+    margin-inline: calc(-1 * var(--muxui-semantic-layout-inset-large));
+    padding-inline: var(--muxui-semantic-layout-inset-large);
+  }
+
+  @media (max-width: 859.98px) {
+    .pb-page .th-thread > :is(.pb-reply:not(.pb-reply--inline), .th-notice) {
+      margin-inline: calc(-1 * var(--muxui-semantic-layout-inset-medium));
+      padding-inline: var(--muxui-semantic-layout-inset-medium);
+    }
+
+    /* The sort's buttons, the pager's links and the permalink page's trail, forms and links are 44px targets. */
+    .th-sort,
+    :is(.th-trail, .th-own, .th-thread > .pb-pager) :is(.muxui-link, .muxui-button, .muxui-breadcrumbs__link) {
+      display: inline-flex;
+      align-items: center;
+      min-inline-size: calc(var(--muxui-semantic-control-size-lg) + 2 * var(--muxui-semantic-layout-dense-gap));
+      min-block-size: calc(var(--muxui-semantic-control-size-lg) + 2 * var(--muxui-semantic-layout-dense-gap));
+    }
   }
 }

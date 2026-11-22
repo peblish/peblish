@@ -8,6 +8,7 @@ import { privateResponses } from '../../../server/auth.ts';
 import { loadSentReport } from '../-load.ts';
 import { hostList } from '../-ui/hosts.ts';
 import reportCss from '../-ui/report.css?url';
+import { ownHeader, PageHeader } from '../../admin/-page.tsx';
 
 // /report/sent?n=<number>: the reporter's receipt. Only the person who filed report #N sees it;
 // anyone else, signed in or not, gets not found (the case number is not a secret to guess at).
@@ -28,6 +29,7 @@ export const Route = createFileRoute('/report/sent/')({
     return { ...result.sent, back: result.back };
   },
   head: () => ({ links: [{ rel: 'stylesheet', href: reportCss }] }),
+  staticData: ownHeader,
   component: Sent,
 });
 
@@ -36,23 +38,23 @@ function Sent() {
   useRouteHydrated();
   const sent = Route.useLoaderData();
   return (
-    <main className="rp-page">
-      <Text as="h1" variant="display" size="sm">
-        {t('reports', 'sent.title', { number: sent.number })}
-      </Text>
-      {/* The anonymity promise holds only for a report that stayed here; a forwarded one names every host that can see it. */}
-      <Text as="p" className="rp-text">
-        {sent.forwardedTo.length > 0
-          ? t('reports', 'sent.promise.forwarded', { hosts: hostList(locale, sent.forwardedTo) })
-          : t('reports', 'sent.promise')}
-      </Text>
-      <div className="rp-buttons">
-        {sent.blockHandle && (
-          <Link href={`/settings/blocks?person=${encodeURIComponent(sent.blockHandle)}`}>
-            {t('reports', 'sent.block', { handle: `@${sent.blockHandle}` })}
-          </Link>
-        )}
-        <Link href={sent.back}>{t('reports', 'sent.done')}</Link>
+    <main className="rp-main">
+      <PageHeader title={t('reports', 'sent.title', { number: sent.number })} />
+      <div className="pb-page rp-page">
+        {/* The anonymity promise holds only for a report that stayed here; a forwarded one names every host that can see it. */}
+        <Text as="p" className="rp-text">
+          {sent.forwardedTo.length > 0
+            ? t('reports', 'sent.promise.forwarded', { hosts: hostList(locale, sent.forwardedTo) })
+            : t('reports', 'sent.promise')}
+        </Text>
+        <div className="rp-buttons">
+          {sent.blockHandle && (
+            <Link href={`/settings/blocks?person=${encodeURIComponent(sent.blockHandle)}`}>
+              {t('reports', 'sent.block', { handle: `@${sent.blockHandle}` })}
+            </Link>
+          )}
+          <Link href={sent.back}>{t('reports', 'sent.done')}</Link>
+        </div>
       </div>
     </main>
   );

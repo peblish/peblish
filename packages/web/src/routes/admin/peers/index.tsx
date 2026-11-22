@@ -12,7 +12,7 @@ import { Text } from '@peblish/ui/components/text';
 import { TextField } from '@peblish/ui/components/text-field';
 import { createFileRoute, useRouter } from '@tanstack/react-router';
 import { type } from 'arktype';
-import { useState, type FormEvent } from 'react';
+import { useRef, useState, type FormEvent } from 'react';
 import { useTranslate } from '../../../i18n/use-translate.ts';
 import { forbidden, formSession, principalOf, privateResponses, readForm, sameOrigin } from '../../../server/auth.ts';
 import { useRouteHydrated } from '../../../shell/hydration.ts';
@@ -27,6 +27,8 @@ import { changes, hostFrom, Body } from './-act.ts';
 import { loadPeers } from './-load.ts';
 import peersCss from './-ui/peers.css?url';
 import { headTitle } from '../../../shell/title.ts';
+import { AdminPage, ownHeaderWide } from '../-page.tsx';
+import { TableCard } from '../-table-card.tsx';
 
 // /admin/peers: the Peers tab (R2 pick admin-tabs). Every instance we know of, with what this
 // server does about it: its media (quarantined until approved, approved, purged), its inbox
@@ -47,6 +49,7 @@ export const Route = createFileRoute('/admin/peers/')({
   validateSearch: Search,
   loader: () => loadPeers(),
   head: (context) => ({ meta: headTitle(context, 'peers', 'title'), links: [{ rel: 'stylesheet', href: peersCss }] }),
+  staticData: ownHeaderWide,
   component: Peers,
   server: {
     middleware: [privateResponses],
@@ -86,8 +89,12 @@ function PeerForm({
   const router = useRouter();
   const [error, setError] = useState(initialError);
   const [busy, setBusy] = useState(false);
+  // From a press until its answer and the reload are in, a second press posts nothing (Purge twice).
+  const sending = useRef(false);
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (sending.current) return;
+    sending.current = true;
     const submitter = event.nativeEvent instanceof SubmitEvent ? event.nativeEvent.submitter : null;
     const body = new URLSearchParams();
     for (const [name, value] of new FormData(event.currentTarget, submitter)) if (typeof value === 'string') body.append(name, value);
@@ -104,6 +111,7 @@ function PeerForm({
       setError('network');
     } finally {
       setBusy(false);
+      sending.current = false;
     }
   }
   return (
@@ -190,10 +198,7 @@ function Peers() {
   useRouteHydrated();
   if (data.access !== 'ok')
     return (
-      <main className="pb-page peers-page">
-        <Text as="h1" variant="heading" size="sm">
-          {t('peers', 'title')}
-        </Text>
+      <AdminPage title={t('peers', 'title')} className="peers-page">
         <Denial
           access={data.access}
           copy={{
@@ -202,14 +207,11 @@ function Peers() {
             notAdmin: t('peers', 'notAdmin'),
           }}
         />
-      </main>
+      </AdminPage>
     );
   const selected = chosen ? data.peers.find((peer) => peer.domain === chosen) : undefined;
   return (
-    <main className="pb-page peers-page">
-      <Text as="h1" variant="heading" size="sm">
-        {t('peers', 'title')}
-      </Text>
+    <AdminPage title={t('peers', 'title')} className="peers-page">
       <Text as="p" color="muted">
         {t('peers', 'intro')}
       </Text>
@@ -223,7 +225,7 @@ function Peers() {
       {data.peers.length === 0 ? (
         <EmptyState title={t('peers', 'empty')} />
       ) : (
-        <Card.Root variant="outlined" padding="sm" className="peers-table">
+        <TableCard label={t('peers', 'title')} className="peers-table">
           <Table
             aria-label={t('peers', 'title')}
             columns={[
@@ -254,7 +256,7 @@ function Peers() {
               },
             }))}
           />
-        </Card.Root>
+        </TableCard>
       )}
       {selected && <PeerControls key={selected.domain} peer={selected} />}
       {chosen && !selected && (
@@ -266,6 +268,6 @@ function Peers() {
         {t('peers', 'trusted', { hosts: data.trusted.length > 0 ? data.trusted.join(', ') : t('peers', 'none') })}{' '}
         <Link href={adminPaths.settings}>{t('peers', 'settingsLink')}</Link>
       </Text>
-    </main>
+    </AdminPage>
   );
 }

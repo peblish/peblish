@@ -1,7 +1,6 @@
 /* The report queue (lane REP): tabs, the filter, the table of groups in an outlined card. Layout only; the look is Mux UI's. */
 @layer app {
   .rq-page {
-    max-width: 1180px;
     display: flex;
     flex-direction: column;
     gap: var(--muxui-semantic-layout-content-gap);
@@ -19,10 +18,7 @@
   .rq-filter > :not(button) {
     inline-size: 14rem;
   }
-  /* Mux Table has no breakpoint: on a narrow screen the table scrolls inside its card. */
-  .rq-table {
-    overflow-x: auto;
-  }
+  /* Mux Table has no breakpoint: on a narrow screen the table scrolls inside its card (TableCard). */
   .rq-table .muxui-table {
     inline-size: 100%;
     min-inline-size: 52rem;
@@ -76,6 +72,14 @@
     align-items: center;
     min-height: 24px;
     min-width: 24px;
+  }
+  /* A phone: they are 44px targets, as every control there is (the frame's --pb-touch). */
+  @media (max-width: 859.98px) {
+    .rq-open,
+    .rq-toggle {
+      min-block-size: var(--pb-touch);
+      min-inline-size: var(--pb-touch);
+    }
   }
   .rq-reporters {
     margin: 0;

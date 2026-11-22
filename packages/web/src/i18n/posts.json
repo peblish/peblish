@@ -39,7 +39,19 @@
     "error.community.deleted": "This community has been deleted.",
     "error.generic": "Something went wrong. Try again.",
     "error.network": "The request did not get through. Check your connection and try again.",
-    "vote.on": "Vote on {title}"
+    "vote.on": "Vote on {title}",
+    "header.postIn": "Post in",
+    "flag.spoiler": "Spoiler",
+    "share.share": "Share",
+    "share.copy": "Copy link",
+    "share.copied": "Link copied.",
+    "share.failed": "Copy this link:",
+    "rail.label": "About this post",
+    "rail.postedIn": "Posted in",
+    "rail.thread": "In this thread",
+    "rail.comments": "Comments",
+    "rail.startedBy": "Started by",
+    "rail.posted": "Posted"
   },
   "de": {
     "page.fallbackTitle": "Beitrag",
@@ -81,6 +93,18 @@
     "error.community.deleted": "Diese Community wurde gelöscht.",
     "error.generic": "Etwas ist schiefgelaufen. Versuche es erneut.",
     "error.network": "Die Anfrage ist nicht durchgekommen. Prüfe deine Verbindung und versuche es erneut.",
-    "vote.on": "Über „{title}“ abstimmen"
+    "vote.on": "Über „{title}“ abstimmen",
+    "header.postIn": "Beitrag in",
+    "flag.spoiler": "Spoiler",
+    "share.share": "Teilen",
+    "share.copy": "Link kopieren",
+    "share.copied": "Link kopiert.",
+    "share.failed": "Kopiere diesen Link:",
+    "rail.label": "Über diesen Beitrag",
+    "rail.postedIn": "Gepostet in",
+    "rail.thread": "In diesem Thread",
+    "rail.comments": "Kommentare",
+    "rail.startedBy": "Begonnen von",
+    "rail.posted": "Gepostet"
   }
 }

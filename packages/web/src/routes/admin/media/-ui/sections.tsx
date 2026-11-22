@@ -22,6 +22,7 @@ import { adminPaths } from '../../../../shell/paths.ts';
 import { useDate } from '../../../auth/-ui/page.tsx';
 import { CheckedInput } from '../../-checked-input.tsx';
 import { NoEnterSubmit } from '../../-no-enter-submit.tsx';
+import { TableCard } from '../../-table-card.tsx';
 
 // The sections of the Media tab (R2b media-split). Every form is a plain POST, so the decisions
 // work without JavaScript; the decision panels open and close with it. No image is rendered or
@@ -406,7 +407,7 @@ export function Failed({ rows }: { rows: FailedRow[] }) {
       {rows.length === 0 ? (
         <EmptyState title={t('mediascan', 'media.failed.empty')} />
       ) : (
-        <Card.Root variant="outlined" padding="sm" className="media-table">
+        <TableCard label={t('mediascan', 'media.nav.failed')} className="media-table">
           <Table
             aria-label={t('mediascan', 'media.nav.failed')}
             columns={[
@@ -425,7 +426,7 @@ export function Failed({ rows }: { rows: FailedRow[] }) {
               },
             }))}
           />
-        </Card.Root>
+        </TableCard>
       )}
       <Text as="p" size="sm" color="muted">
         {t('mediascan', 'media.failed.help')}
@@ -469,7 +470,7 @@ export function Hashes({ rows, value }: { rows: HashRow[]; value: string | undef
       {rows.length === 0 ? (
         <EmptyState title={t('mediascan', 'media.hash.empty')} />
       ) : (
-        <Card.Root variant="outlined" padding="sm" className="media-table">
+        <TableCard label={t('mediascan', 'media.nav.hashes')} className="media-table">
           <Table
             aria-label={t('mediascan', 'media.nav.hashes')}
             columns={[
@@ -506,7 +507,7 @@ export function Hashes({ rows, value }: { rows: HashRow[]; value: string | undef
               },
             }))}
           />
-        </Card.Root>
+        </TableCard>
       )}
       <Text as="p" size="sm" color="muted">
         {t('mediascan', 'media.hash.help')}

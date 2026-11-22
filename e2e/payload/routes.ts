@@ -157,6 +157,9 @@ export const routes: readonly PayloadRoute[] = [
     target: async (base) => `/u/${(await fixtures(base)).admin.name}/edit`,
     admin: true,
   },
+  // The phone's You tab (Commons): until a production build measures it (CI), the budget of its nearest page,
+  // /settings/account, another of the account's own pages.
+  { route: '/you/', path: '/you', js: { budget: 194.6, measured: 185.3, on: '2026-11-12' }, admin: true },
   { route: '/notifications/', path: '/notifications', js: { budget: 191.3, measured: 182.1, on: '2026-11-12' }, admin: true },
   { route: '/admin/registration/', path: '/admin/registration', js: { budget: 214.2, measured: 204.0, on: '2026-11-12' }, admin: true },
   { route: '/c/$handle/', path: '/c/<handle>', js: { budget: 198.5, measured: 189.0, on: '2026-11-12' }, target: () => seededCommunity() },

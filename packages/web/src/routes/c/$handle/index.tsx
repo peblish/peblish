@@ -11,6 +11,7 @@ import feedCss from '../../index/-feed/feed.css?url';
 import { loadCommunityPage } from '../-load.ts';
 import { communityPost } from '../-intents.ts';
 import { CommunityPage } from '../-ui/community-page.tsx';
+import { CommunityPending } from '../-ui/community-pending.tsx';
 import communityCss from '../-ui/community.css?url';
 import { GateNotice, gateTitle } from '../-ui/gate.tsx';
 import gateCss from '../-ui/gate.css?url';
@@ -21,11 +22,13 @@ import gateCss from '../-ui/gate.css?url';
 // POST takes the form intents of c/-intents.ts (join, leave, declare, show and hide NSFW).
 
 // ?tools=1 renders Mod tools open, for a browser without script (community-page.tsx). The router
-// reads the 1 as a number.
-const Search = (raw: Parameters<typeof parseFeedSearch>[0] & { error?: unknown; tools?: unknown }) => ({
+// reads the 1 as a number. ?tab=about shows the charter in place of the posts where the page is too
+// narrow for the rail; it reads nothing more, so it is not a loader dependency.
+const Search = (raw: Parameters<typeof parseFeedSearch>[0] & { error?: unknown; tools?: unknown; tab?: unknown }) => ({
   ...parseFeedSearch(raw),
   error: typeof raw.error === 'string' ? raw.error : undefined,
   tools: raw.tools === 1 || raw.tools === '1' ? (1 as const) : undefined,
+  tab: raw.tab === 'about' ? ('about' as const) : undefined,
 });
 
 export const Route = createFileRoute('/c/$handle/')({
@@ -63,15 +66,16 @@ export const Route = createFileRoute('/c/$handle/')({
     };
   },
   component: CommunityRoute,
+  pendingComponent: CommunityPending,
   notFoundComponent: ({ data }) => <CommunityNotFound handle={(data as { handle: string }).handle} />,
   server: { handlers: { POST: ({ request, params }) => communityPost(request, params.handle) } },
 });
 
 function CommunityRoute() {
   const data = Route.useLoaderData();
-  const { error, tools, ...feed } = Route.useSearch();
+  const { error, tools, tab, ...feed } = Route.useSearch();
   if (data.kind === 'gate') return <GateNotice data={data} error={error} />;
-  return <CommunityPage data={data} search={feed} error={error} tools={tools === 1} />;
+  return <CommunityPage data={data} search={feed} tab={tab ?? 'posts'} error={error} tools={tools === 1} />;
 }
 
 /** Unknown, deleted or removed. An unknown remote handle may just not be held here yet: /resolve can fetch it. */

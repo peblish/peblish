@@ -1,6 +1,5 @@
-import { readThread, type ThreadComment } from '@peblish/core/comments/read';
+import { readThread, type Thread, type ThreadComment } from '@peblish/core/comments/read';
 import { parseSort, type ThreadSort } from '@peblish/core/comments/sort';
-import { publicOrigin } from '@peblish/core/config';
 import type { PostPage, Viewer } from '@peblish/core/posts/read';
 import type { Uuid } from '@peblish/schema/ids';
 import type { SessionView } from '@peblish/schema/session';
@@ -8,19 +7,20 @@ import type { ActorRef, CommentView } from '@peblish/schema/views';
 import { getRequest } from '@tanstack/react-start/server';
 import type { MarkdownRenderer } from '../../../../server/markdown.ts';
 import type { SlotViewer } from '../../../-actions/props.ts';
-import { commentAsShown, postAsShown } from '../../-withheld.ts';
+import { authorShown, commentForViewer } from '../../-withheld.ts';
 
 // The thread's data for a page (server only): core's read model, with each comment's text
 // rendered by the page's Markdown renderer, and what the viewer can do beside reading. The post
 // page's loader (routes/post/-load.ts) and the permalink page call loadThread; the thread
 // section calls it again, through a server function (-thread-fn.ts), when the sort changes.
-// A deleted comment, and a deleted post through the OP badge, name their author only to that
-// author and the moderators (../-withheld.ts).
+// A tombstone, and a tombstone post through the OP badge, name their author only as
+// ../-withheld.ts decides (commentForViewer, authorShown).
 
 /** What the thread section needs, all JSON. */
 export type ThreadData = {
   postId: Uuid;
-  postAuthorId: Uuid;
+  /** The post's author, for the OP badge; null where the post is a tombstone to this viewer (-withheld.ts authorShown). */
+  postAuthorId: Uuid | null;
   sort: ThreadSort;
   /** The `after` this was loaded for, as the page asked for it (null for the first page): the section reloads when the address names another. */
   after: string | null;
@@ -93,18 +93,28 @@ export async function loadThread(options: {
   const viewer: Viewer = session ? { actorId: session.view.actorId, siteRole: session.view.siteRole } : null;
   const thread = await readThread(page.view.id, viewer, { sort, after, rootId: rootId ?? null });
   if (!thread) return null;
+  return threadData({ page, session, renderer, after, thread });
+}
+
+/** What loadThread sends for what core read: everything but the read itself, so it is tested without a database. */
+export function threadData(options: {
+  page: PostPage;
+  session: { view: SessionView } | null;
+  renderer: MarkdownRenderer;
+  after: string | null;
+  thread: Thread;
+}): ThreadData {
+  const { page, session, renderer, after, thread } = options;
+  const viewer: Viewer = session ? { actorId: session.view.actorId, siteRole: session.view.siteRole } : null;
   const focused = thread.focus ? thread.comments.find(({ view }) => view.id === thread.focus?.id) : undefined;
   const mine = focused && viewer?.actorId === focused.view.author.id && !focused.view.deleted && !focused.view.removed;
-  const told = { id: viewer?.actorId ?? null, moderator: page.moderator };
-  // The renderer needed it too (siteMarkdown): a tombstone's local address is minted under it.
-  const origin = publicOrigin();
-  if (!origin) throw new Error('PUBLIC_ORIGIN is not set');
   return {
     postId: page.view.id,
-    postAuthorId: postAsShown(page.view, told, origin).author.id,
+    postAuthorId: authorShown(page, viewer?.actorId ?? null) ? page.view.author.id : null,
     sort: thread.sort,
     after,
-    comments: thread.comments.map((comment) => commentAsShown(render(renderer, comment), told, origin)),
+    // A tombstone goes without its author, address and text, but to the community's staff, who act on it (restore, ban).
+    comments: thread.comments.map((comment) => commentForViewer(render(renderer, comment), page.moderator)),
     now: new Date().toISOString(),
     focus: thread.focus,
     next: thread.next,

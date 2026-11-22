@@ -1,0 +1,7 @@
+/* The thread's state pages (-thread.tsx): each sample takes the column, as the thread does on a post page. */
+@layer app {
+  .kit-row > :is(.kit-tree, .kit-dock, .kit-pills) {
+    flex: 1 1 100%;
+    min-inline-size: 0;
+  }
+}

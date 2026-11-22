@@ -22,6 +22,8 @@ import { NoEnterSubmit } from '../-no-enter-submit.tsx';
 import { type BansData, loadBans } from './-load.ts';
 import bansCss from './-ui/bans.css?url';
 import { headTitle } from '../../../shell/title.ts';
+import { AdminPage, ownHeaderWide } from '../-page.tsx';
+import { TableCard } from '../-table-card.tsx';
 
 // /admin/bans: the Bans tab (R2 pick admin-tabs). Who is banned from this instance, a form to
 // ban someone by handle (a person of ours, or one of a peer we hold) that first shows what the
@@ -47,6 +49,7 @@ export const Route = createFileRoute('/admin/bans/')({
   loaderDeps: ({ search }) => (search.person === undefined ? {} : { person: search.person }),
   loader: ({ deps }) => loadBans({ data: deps }),
   head: (context) => ({ meta: headTitle(context, 'bans', 'title'), links: [{ rel: 'stylesheet', href: bansCss }] }),
+  staticData: ownHeaderWide,
   component: Bans,
   server: {
     handlers: {
@@ -97,15 +100,12 @@ function Bans() {
   useRouteHydrated();
   if (data.access !== 'ok')
     return (
-      <main className="pb-page bans-page">
-        <Text as="h1" variant="heading" size="sm">
-          {t('bans', 'title')}
-        </Text>
+      <AdminPage title={t('bans', 'title')} className="bans-page">
         <Denial
           access={data.access}
           copy={{ needsTwoFactor: t('bans', 'needsTwoFactor'), securityLink: t('bans', 'securityLink'), notAdmin: t('bans', 'notAdmin') }}
         />
-      </main>
+      </AdminPage>
     );
   const { bans, candidate } = data;
   const refused = search.modFor?.startsWith('site_unban:') ? search.modFor.slice('site_unban:'.length) : undefined;
@@ -138,10 +138,7 @@ function BansPage({
     if (lifted) void navigate({ to: adminPaths.bans, search: {}, replace: true });
   }, [lifted, navigate]);
   return (
-    <main className="pb-page bans-page">
-      <Text as="h1" variant="heading" size="sm">
-        {t('bans', 'title')}
-      </Text>
+    <AdminPage title={t('bans', 'title')} className="bans-page">
       <form method="get" action={adminPaths.bans} className="bans-find">
         <TextField
           name="person"
@@ -194,7 +191,7 @@ function BansPage({
       {bans.length === 0 ? (
         <EmptyState title={t('bans', 'empty')} className="bans-empty" />
       ) : (
-        <Card.Root variant="outlined" padding="sm" className="bans-table" data-testid="bans-table">
+        <TableCard label={t('bans', 'title')} className="bans-table" data-testid="bans-table">
           <Table
             aria-label={t('bans', 'title')}
             columns={[
@@ -237,7 +234,7 @@ function BansPage({
               },
             }))}
           />
-        </Card.Root>
+        </TableCard>
       )}
       {lifting && <LiftPanel key={lifting.person.id} ban={lifting} />}
       {wanted && !lifting && !lifted && (
@@ -245,6 +242,6 @@ function BansPage({
           {t('bans', 'liftMissing')}
         </Notice>
       )}
-    </main>
+    </AdminPage>
   );
 }

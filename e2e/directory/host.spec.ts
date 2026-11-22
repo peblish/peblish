@@ -14,7 +14,8 @@ test('the local copy line names the real host of a community whose name holds an
   ) as { name: string; host: string; suffix: string };
   await gotoHydrated(page, `/communities?q=hostile_${hostile.suffix}`);
   const line = page
-    .getByRole('row')
+    .getByRole('main')
+    .locator('.pb-clist > li')
     .filter({ hasText: `hostile_${hostile.suffix}` })
     .getByText(/local copy/);
   await expect(line).toHaveText(new RegExp(`^${hostile.host.replaceAll('.', '\\.')} · local copy`));

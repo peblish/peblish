@@ -15,7 +15,7 @@ type Seed = {
   password: string;
   secret: string;
   community: { handle: string };
-  author: { name: string };
+  author: { name: string; actorId: string };
   moderator: { name: string };
   viewer: { name: string };
   undeclared: { name: string };
@@ -97,6 +97,34 @@ test.describe('anyone', () => {
     expect(log.hydrationProblems()).toEqual([]);
   });
 
+  for (const [what, to] of [
+    ['a gated post', 'sensitive'],
+    ['an ordinary post', 'plain'],
+  ] as const) {
+    test(`${what} keeps the columns its loading host showed, on a computer`, async ({ page }) => {
+      await page.setViewportSize({ width: 1440, height: 900 });
+      await gotoHydrated(page, '/about');
+      // The data answers past the router's pending delay, so the loading host shows first.
+      await page.route('**/_serverFn/**', async (route) => {
+        await new Promise((resolve) => setTimeout(resolve, 2500));
+        await route.continue();
+      });
+      // As a link in the app opens it (shell/client-links.ts), not waiting for the navigation to end.
+      await page.evaluate((href) => {
+        void (window as unknown as { __TSR_ROUTER__: { navigate(to: { href: string }): Promise<void> } }).__TSR_ROUTER__.navigate({ href });
+      }, url(seed.posts[to]));
+      const bar = page.locator('#pb-main > .pb-frame-vh').filter({ visible: true });
+      const busy = page.locator('#pb-main main[aria-busy="true"]');
+      await expect(busy).toBeVisible();
+      const loading = (await bar.boundingBox())!;
+      await expect(busy).toHaveCount(0, { timeout: 10_000 });
+      await expect(page.locator(to === 'sensitive' ? '#pb-main main.gate' : '#pb-main main.post-page')).toBeVisible();
+      const loaded = (await bar.boundingBox())!;
+      expect([Math.round(loaded.x), Math.round(loaded.width)]).toEqual([Math.round(loading.x), Math.round(loading.width)]);
+      await expect(page.getByRole('complementary', { name: 'About this post' })).toBeVisible();
+    });
+  }
+
   test('the page is personal: never cached; an unknown post is a 404', async ({ page }) => {
     const { status, cacheControl } = await html(page, seed.posts.plain);
     expect([status, cacheControl]).toEqual([200, 'private, no-store']);
@@ -112,6 +140,23 @@ test.describe('anyone', () => {
     expect(text).not.toContain('Deleted body');
     await gotoHydrated(page, url(seed.posts.deleted));
     await expectAccessible(page);
+  });
+
+  test('a tombstone sends nothing of its author, signed out or signed in, but to staff', async ({ browser }) => {
+    // The page's data goes into the HTML for hydration: what is withheld must not be in it at all.
+    const as = async (name: string | null) => {
+      const page = await (await browser.newContext()).newPage();
+      if (name) await signedIn(page, name);
+      const { text } = await html(page, seed.posts.deleted);
+      await page.close();
+      return text;
+    };
+    for (const name of [null, seed.viewer.name]) {
+      const text = await as(name);
+      for (const trace of [seed.author.name, seed.author.actorId]) expect(text, name ?? 'signed out').not.toContain(trace);
+    }
+    // A moderator of the community keeps the author, for their actions.
+    expect(await as(seed.moderator.name)).toContain(seed.author.actorId);
   });
 
   test('a link post whose remote thumbnail URL is too long to proxy still renders, as a plain link', async ({ page }) => {
@@ -175,9 +220,10 @@ test.describe('a German browser', () => {
     const [, title, server] = /<time[^>]*title="([^"]*)"[^>]*>([^<]*)<\/time>/.exec((await response?.text()) ?? '') ?? [];
     await page.locator('html[data-hydrated="1"]').waitFor({ state: 'attached' });
     await expect(page.getByRole('group', { name: 'Für diesen Beitrag abstimmen' })).toBeVisible();
-    // The date is German and was formatted once, on the server: hydration printed the same text. Its title adds the time.
-    expect(server).toMatch(/^\d{1,2}\. \p{L}+\.? \d{4}$/u);
-    expect(title).toMatch(/^\d{1,2}\. \p{L}+\.? \d{4}, \d{2}:\d{2} UTC$/u);
+    // The date and time are German and were formatted once, on the server: hydration printed the same text. The
+    // meta line shows them in full, as its title does.
+    expect(server).toMatch(/^\d{1,2}\. \p{L}+\.? \d{4}, \d{2}:\d{2} UTC$/u);
+    expect(title).toBe(server);
     const time = page.locator('.post-meta time');
     await expect(time).toHaveText(server ?? '');
     await expect(time).toHaveAttribute('title', title ?? '');

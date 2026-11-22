@@ -1,6 +1,6 @@
 import AxeBuilder from '@axe-core/playwright';
 import type { Browser, Locator, Page } from '@playwright/test';
-import { colours } from './contrast.ts';
+import { colours, type Pair } from './contrast.ts';
 import { prefsCookie } from './kit.ts';
 import { gotoHydrated } from './route-marker.ts';
 
@@ -27,17 +27,26 @@ export interface StateCheck {
   text?: number;
   /** The target's icons against what is behind them. */
   icon?: number;
-  /** Focus only: the ring around the target (an outline outside it, or a solid box-shadow ring). */
+  /**
+   * Focus only: the ring around the target (an outline outside it, or a solid box-shadow ring); for a field without
+   * one, its edge, which Mux's fields draw in the focus colour instead. A ring or an edge focus leaves as it was at
+   * rest is no indicator, and counts as none (0).
+   */
   ring?: number;
   /** Reduced motion only: animations still running once the state is reached, as `name duration`. */
   motion?: string[];
   /** Phone only: the smallest control in the sample, in CSS pixels. */
   target?: { width: number; height: number };
+  /** Phone only: the smallest of its form controls (a field, or a button of a form), in CSS pixels. */
+  formTarget?: { width: number; height: number };
 }
 
 const controls =
   'button, a[href], input:not([type="hidden"]), select, textarea, [role="button"], [role="checkbox"], [role="radio"], ' +
   '[role="switch"], [role="tab"], [tabindex]:not([tabindex="-1"])';
+// A form's controls: its fields (a Mux checkbox or radio draws over a hidden native input, so those are left to
+// `controls`) and its buttons. On a phone they are 44px, whatever floor a composition allows its other targets.
+const formControls = 'input:not([type="hidden"]):not([type="checkbox"]):not([type="radio"]), select, textarea, form button';
 
 /** Waits for every animation that ends (a pending spinner's never does). */
 const settle = (page: Page) =>
@@ -71,8 +80,12 @@ const running = (page: Page) =>
       }),
   );
 
-const smallest = (sample: Locator) =>
-  sample.locator(controls).evaluateAll(
+/** Whether focus changed a ring or a field's edge: its colour, or one where there was none. */
+const changed = (rest: Pair | undefined, focused: Pair | undefined) =>
+  focused !== undefined && (rest === undefined || focused.fore.some((channel, index) => channel !== rest.fore[index]));
+
+const smallest = (sample: Locator, selector = controls) =>
+  sample.locator(selector).evaluateAll(
     (nodes) =>
       nodes
         .filter((node) => node.checkVisibility())
@@ -93,6 +106,8 @@ async function check(page: Page, state: KitState, condition: Condition): Promise
   // that happens to straddle it, and axe would count that as an obscured target).
   await page.locator(section).evaluate((node) => node.scrollIntoView({ block: 'center' }));
   await page.mouse.move(0, 0);
+  // The target's ring and edge at rest, to tell what focus draws from what was always there.
+  const rest = state === 'focus' && (await target.count()) ? await colours(target) : undefined;
   if (state === 'hover') await target.hover();
   if (state === 'focus') {
     // A key both React Aria (which ignores a lone modifier) and the browser's :focus-visible count, then the target.
@@ -112,14 +127,21 @@ async function check(page: Page, state: KitState, condition: Condition): Promise
     .analyze();
   const painted = await colours(sample);
   const own = (await target.count()) ? await colours(target) : {};
+  const field = state === 'focus' && (await target.evaluate((node) => node.matches('input, textarea, select')));
   const result = {
     state,
     axe: axe.violations.flatMap(({ id, nodes }) => nodes.map(({ target }) => `${id}: ${target.join(' ')}`)),
     text: painted.text?.ratio,
     icon: own.icon?.ratio,
-    ring: state === 'focus' ? (own.outline?.ratio ?? 0) : undefined,
+    ring:
+      state === 'focus'
+        ? ((changed(rest?.outline, own.outline) ? own.outline?.ratio : undefined) ??
+          (field && changed(rest?.border, own.border) ? own.border?.ratio : undefined) ??
+          0)
+        : undefined,
     motion,
     target: condition === 'phone' ? await smallest(sample) : undefined,
+    formTarget: condition === 'phone' ? await smallest(sample, formControls) : undefined,
   };
   if (state === 'pressed') {
     // Released away from the target, so the press is cancelled and nothing is activated.
@@ -131,7 +153,7 @@ async function check(page: Page, state: KitState, condition: Condition): Promise
 }
 
 /** Every state `path` shows, plus the driven ones, in light and dark under each condition. */
-export async function galleryStates(browser: Browser, baseURL: string, path: string): Promise<StateCheck[]> {
+export async function galleryStates(browser: Pick<Browser, 'newContext'>, baseURL: string, path: string): Promise<StateCheck[]> {
   const checks: StateCheck[] = [];
   for (const scheme of ['light', 'dark'] as const) {
     for (const condition of conditions) {
@@ -164,7 +186,8 @@ export async function galleryStates(browser: Browser, baseURL: string, path: str
 /**
  * What fails, one line each: an axe violation; text under 4.5:1 or an icon under 3:1 (a disabled state's are exempt,
  * WCAG 1.4.3 and 1.4.11); a focused target without a 3:1 ring; motion left under reduced motion; a phone target
- * under `target` CSS pixels a side (the state matrix's floor is 44; WCAG 2.5.8's is 24).
+ * under `target` CSS pixels a side (the state matrix's floor is 44; WCAG 2.5.8's is 24), and a form control under
+ * 44 whatever `target` is (the app's phone rule, shell.css).
  */
 export function stateProblems(checks: readonly StateCheck[], { target = 44 } = {}): string[] {
   return checks.flatMap((check) => {
@@ -176,6 +199,8 @@ export function stateProblems(checks: readonly StateCheck[], { target = 44 } = {
     for (const animation of check.motion ?? []) problems.push(`${where}: moves under reduced motion: ${animation}`);
     if (check.target && Math.min(check.target.width, check.target.height) < target)
       problems.push(`${where}: target ${check.target.width}×${check.target.height} px`);
+    if (check.formTarget && Math.min(check.formTarget.width, check.formTarget.height) < 44)
+      problems.push(`${where}: form control ${check.formTarget.width}×${check.formTarget.height} px`);
     return problems;
   });
 }

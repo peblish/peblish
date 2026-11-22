@@ -57,24 +57,21 @@ for (const [layout, viewport] of [
       const banner = page.getByRole('banner');
       // The menu's button cannot open without scripts: in the desktop header it gives way to a link with the
       // same name, to the account list under the page. A phone has no header: the list is under the page,
-      // after the navigation, and You in the bottom bar is the profile.
+      // after the navigation, and You in the bottom bar is the You page.
       await expect(page.getByRole('button', { name: `Account: ${admin.name}` })).toHaveCount(0);
       await expect(page.getByRole('button', { name: 'Appearance' })).toHaveCount(0);
       const account = banner.getByRole('link', { name: `Account: ${admin.name}` });
       if (layout === 'desktop') await expect(account).toBeVisible();
       else {
         await expect(banner).toHaveCount(0);
-        await expect(page.getByRole('navigation', { name: 'Sections' }).getByRole('link', { name: 'You' })).toHaveAttribute(
-          'href',
-          `/u/${admin.name}`,
-        );
+        await expect(page.getByRole('navigation', { name: 'Sections' }).getByRole('link', { name: 'You' })).toHaveAttribute('href', '/you');
       }
       /** To the account list: by the header's link on a desktop, scrolled to on a phone. */
       const toList = async () => {
         if (layout === 'desktop') {
           await account.click();
           await page.waitForURL((url) => url.hash === '#pb-account-links');
-        } else await page.getByRole('navigation', { name: 'Account' }).scrollIntoViewIfNeeded();
+        } else await page.getByRole('navigation', { name: 'Account pages' }).scrollIntoViewIfNeeded();
       };
 
       const destinations = [
@@ -87,7 +84,7 @@ for (const [layout, viewport] of [
       for (const [name, path] of destinations) {
         await page.goto('/');
         await toList();
-        const list = page.getByRole('navigation', { name: 'Account' });
+        const list = page.getByRole('navigation', { name: 'Account pages' });
         await expect(list).toBeInViewport();
         await list.getByRole('link', { name, exact: true }).click();
         await page.waitForURL((url) => url.pathname === path);
@@ -95,11 +92,11 @@ for (const [layout, viewport] of [
       }
 
       await toList();
-      await page.getByRole('navigation', { name: 'Account' }).getByRole('button', { name: 'Sign out' }).click();
+      await page.getByRole('navigation', { name: 'Account pages' }).getByRole('button', { name: 'Sign out' }).click();
       await page.waitForURL((url) => url.pathname === '/');
       const signedOut = layout === 'desktop' ? banner : page.getByRole('navigation', { name: 'Sections' });
       await expect(signedOut.getByRole('link', { name: 'Sign in' })).toBeVisible();
-      await expect(page.getByRole('navigation', { name: 'Account' }).getByRole('link', { name: 'Profile' })).toHaveCount(0);
+      await expect(page.getByRole('navigation', { name: 'Account pages' }).getByRole('link', { name: 'Profile' })).toHaveCount(0);
     });
   });
 }
@@ -157,6 +154,6 @@ test('with scripts on, the account list and the no-script link are not shown and
   const banner = page.getByRole('banner');
   await expect(banner.getByRole('button', { name: `Account: ${admin.name}` })).toBeVisible();
   await expect(banner.getByRole('link', { name: `Account: ${admin.name}` })).toHaveCount(0);
-  await expect(page.getByRole('navigation', { name: 'Account' })).toHaveCount(0);
+  await expect(page.getByRole('navigation', { name: 'Account pages' })).toHaveCount(0);
   await expect(page.locator('#pb-account-links')).toBeHidden();
 });

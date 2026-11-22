@@ -1,0 +1,73 @@
+/* The You page (Commons' You tab, the mock's .a-phero on the viewer's own page): the viewer, then lists
+   of pages as 44px rows, Appearance and Sign out, on one ground with hairlines between the parts.
+   Layout only, on Mux UI tokens. */
+@layer app {
+  .you-body {
+    display: grid;
+    gap: var(--muxui-semantic-layout-section-gap);
+    padding-block: var(--muxui-semantic-layout-inset-large);
+  }
+
+  .you-id {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: center;
+    column-gap: var(--muxui-semantic-layout-action-gap);
+  }
+
+  .you-id__name,
+  .you-id__handle {
+    margin: 0;
+    overflow-wrap: anywhere;
+  }
+
+  .you-id__handle .pb-handle {
+    white-space: normal;
+  }
+
+  .you-part {
+    display: grid;
+    gap: var(--muxui-semantic-layout-tight-gap);
+    padding-block-start: var(--muxui-semantic-layout-group-gap);
+    border-block-start: 1px solid var(--muxui-semantic-border-subtle);
+  }
+
+  .you-part__title {
+    margin: 0;
+  }
+
+  .you-links {
+    display: grid;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  /* A row: its glyph, then its name, the whole row the link's target. */
+  .you-link {
+    display: flex;
+    align-items: center;
+    gap: var(--muxui-semantic-layout-group-gap);
+    min-block-size: var(--pb-touch);
+  }
+
+  .you-link__icon {
+    flex: none;
+    color: var(--muxui-semantic-content-muted);
+  }
+
+  .you-bar__title {
+    color: var(--muxui-semantic-content-strong);
+  }
+
+  .you-end {
+    display: flex;
+  }
+
+  /* Without scripts the choice cannot be made here (the stored scheme still renders). */
+  @media (scripting: none) {
+    .you-appearance {
+      display: none;
+    }
+  }
+}

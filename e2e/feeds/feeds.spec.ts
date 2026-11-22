@@ -5,9 +5,10 @@ import { expectAccessible, landed, signIn } from '../auth/support.ts';
 import { gotoHydrated, recordConsole } from '../support/route-marker.ts';
 
 // Lane C1 end to end, on the built server and the lane database: the five feeds hydrate and
-// pass axe, the sorts and the density switch, the next page with and without JavaScript, the
-// sensitive-content gate in the feed, and a remote picture never reaching the page as it is.
-// The steps share seeded posts, so they run in order.
+// pass axe, the header's Sort and View menus, the next batch loading by itself (and the next page
+// as a link without JavaScript), the place kept for Back, Retry and Skip past the posts, Share and
+// Copy link, the sensitive-content gate in the feed, and a remote picture never reaching the page
+// as it is. The steps share seeded posts, so they run in order.
 test.skip(Boolean(process.env.BASE_URL), 'needs the lane database for its seed (DATABASE_URL)');
 test.describe.configure({ mode: 'serial' });
 
@@ -52,6 +53,34 @@ const titles = (page: Page) => page.locator('.feed-list .pb-post__title a').allT
 const postLinks = (page: Page) =>
   page.locator('.feed-list .pb-post__title a').evaluateAll((links) => links.map((link) => link.getAttribute('href')));
 
+/**
+ * Opens the header's Sort menu and picks `sort`; Top takes a period from its submenu. Mux names a menu
+ * by its trigger ("Sort: Hot") and a submenu by its item, so the items are found by their own names.
+ */
+async function sortBy(page: Page, sort: 'Hot' | 'New' | 'Old' | 'Top', period?: string) {
+  await page.getByRole('button', { name: /^Sort: / }).click();
+  if (sort !== 'Top') return page.getByRole('menuitem', { name: sort, exact: true }).click();
+  await page.getByRole('menuitem', { name: 'Top', exact: true }).hover();
+  await page.getByRole('menuitem', { name: period, exact: true }).click();
+}
+
+/** Opens the header's View menu and picks a density; `saved` waits until the choice is in the cookie. */
+async function view(page: Page, density: 'Card' | 'Classic' | 'Compact', { saved = false } = {}) {
+  const stored =
+    saved && page.waitForResponse((response) => response.request().method() === 'POST' && response.url().includes('/_serverFn/'));
+  await page.getByRole('button', { name: /^View: / }).click();
+  await page.getByRole('menuitem', { name: density, exact: true }).click();
+  await stored;
+}
+
+/** Scrolls to the end of the list until `count` rows are there. */
+async function loadUntil(page: Page, count: number) {
+  await expect(async () => {
+    await page.locator('.feed-list > li').last().scrollIntoViewIfNeeded();
+    expect(await page.locator('.feed-list > li').count()).toBeGreaterThanOrEqual(count);
+  }).toPass({ timeout: 20_000 });
+}
+
 /** The server-rendered HTML of `path` for this page's session, before any script runs. */
 async function html(page: Page, path: string) {
   const response = await page.goto(path, { waitUntil: 'commit' });
@@ -67,7 +96,8 @@ test.describe('anyone', () => {
       await expect(page.getByRole('heading', { level: 1 })).toHaveText(
         { '/': 'Local', '/all': 'All', '/local': 'Local', '/popular': 'Popular', '/moderating': 'Moderating' }[path]!,
       );
-      await expect(page.getByRole('radiogroup', { name: 'View' })).toBeVisible();
+      await expect(page.getByRole('button', { name: /^View: / })).toBeEnabled();
+      await expect(page.getByRole('button', { name: 'Sort: Hot' })).toBeEnabled();
       await expectAccessible(page);
       expect(log.hydrationProblems()).toEqual([]);
     });
@@ -82,49 +112,54 @@ test.describe('anyone', () => {
     );
   });
 
-  test('the toolbar sorts by link: New, Old and Top with its period, and an unknown sort falls back', async ({ page }) => {
+  test('the Sort menu sorts: New, Old and Top with its period, and an unknown sort falls back', async ({ page }) => {
     await gotoHydrated(page, '/all');
-    await expect(page.getByRole('navigation', { name: 'Sort' }).getByRole('link', { name: 'Hot' })).toHaveAttribute('aria-current', 'page');
-    await page.getByRole('navigation', { name: 'Sort' }).getByRole('link', { name: 'Top' }).click();
+    await page.getByRole('button', { name: 'Sort: Hot' }).click();
+    await expect(page.getByRole('menuitem', { name: 'Hot' })).toHaveAccessibleDescription('current');
+    await page.keyboard.press('Escape');
+    await sortBy(page, 'Top', 'Day');
     await page.waitForURL('**/all?sort=top');
-    await expect(page.getByRole('navigation', { name: 'Top of' }).getByRole('link', { name: 'Day' })).toHaveAttribute(
-      'aria-current',
-      'page',
-    );
-    // The period is a link too: the top of the week is the best scored post first.
-    await page.getByRole('navigation', { name: 'Top of' }).getByRole('link', { name: 'Week' }).click();
+    await expect(page.getByRole('button', { name: 'Sort: Top, Day' })).toContainText('Top Day');
+    // The period is in Top's submenu: the top of the week is the best scored post first.
+    await sortBy(page, 'Top', 'Week');
     await page.waitForURL('**/all?sort=top&period=week');
-    expect((await titles(page))[0]).toBe(`Picture ${seed.suffix}`);
-    await page.getByRole('navigation', { name: 'Sort' }).getByRole('link', { name: 'New' }).click();
+    await expect.poll(async () => (await titles(page))[0]).toBe(`Picture ${seed.suffix}`);
+    await sortBy(page, 'New');
     await page.waitForURL('**/all?sort=new');
-    await expect(page.getByRole('navigation', { name: 'Top of' })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Sort: New' })).toBeVisible();
     await gotoHydrated(page, '/all?sort=bogus&period=nonsense');
     await expect(page).toHaveURL(/\/all$/);
-    await expect(page.getByRole('navigation', { name: 'Sort' }).getByRole('link', { name: 'Hot' })).toHaveAttribute('aria-current', 'page');
+    await expect(page.getByRole('button', { name: 'Sort: Hot' })).toBeVisible();
   });
 
-  test('the density switch changes the cards and the choice is kept', async ({ page }) => {
+  test('Popular keeps all four sorts', async ({ page }) => {
+    await gotoHydrated(page, '/popular');
+    await sortBy(page, 'Old');
+    await page.waitForURL('**/popular?sort=old');
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText('Popular');
+  });
+
+  test('the View menu changes the rows and the choice is kept', async ({ page }) => {
     await gotoHydrated(page, '/all?sort=top');
     const first = page.locator('.feed-list article').first();
     await expect(first).toHaveAttribute('data-density', 'classic');
-    await page.getByRole('radiogroup', { name: 'View' }).getByRole('radio', { name: 'Compact' }).click();
+    await expect(page.getByRole('button', { name: 'View: Classic' })).toBeVisible();
+    await view(page, 'Compact', { saved: true });
     await expect(first).toHaveAttribute('data-density', 'compact');
-    // Reloaded, the switch is pressed only once the page has hydrated: before that a press only focuses it.
+    // Reloaded, the menu opens only once the page has hydrated: until then its trigger is disabled.
     await page.reload();
     await page.locator('html[data-hydrated="1"]').waitFor({ state: 'attached' });
     await expect(page.locator('.feed-list article').first()).toHaveAttribute('data-density', 'compact');
     // A second selection persists as well, not only the first.
-    await page.getByRole('radiogroup', { name: 'View' }).getByRole('radio', { name: 'Card' }).click();
+    await view(page, 'Card');
     await expect(page.locator('.feed-list article').first()).toHaveAttribute('data-density', 'card');
-    await page.getByRole('radiogroup', { name: 'View' }).getByRole('radio', { name: 'Classic' }).click();
+    await view(page, 'Classic', { saved: true });
     await expect(page.locator('.feed-list article').first()).toHaveAttribute('data-density', 'classic');
     await page.reload();
     await page.locator('html[data-hydrated="1"]').waitFor({ state: 'attached' });
     await expect(page.locator('.feed-list article').first()).toHaveAttribute('data-density', 'classic');
-    await expect(page.getByRole('radiogroup', { name: 'View' }).getByRole('radio', { name: 'Classic' })).toHaveAttribute(
-      'aria-checked',
-      'true',
-    );
+    await page.getByRole('button', { name: 'View: Classic' }).click();
+    await expect(page.getByRole('menuitem', { name: 'Classic' })).toHaveAccessibleDescription('current');
   });
 
   test('each post is named by its title, and so is its vote group', async ({ page }) => {
@@ -304,10 +339,13 @@ test.describe('anyone', () => {
 test.describe('a German browser', () => {
   test.use({ locale: 'de-DE' });
 
-  test('the toolbar speaks German, with no axe violations', async ({ page }) => {
+  test('the header speaks German, with no axe violations', async ({ page }) => {
     await gotoHydrated(page, '/all?sort=top');
-    await expect(page.getByRole('navigation', { name: 'Sortierung' })).toBeVisible();
-    await expect(page.getByRole('navigation', { name: 'Top aus' }).getByRole('link', { name: 'Woche' })).toBeVisible();
+    await page.getByRole('button', { name: 'Sortierung: Top, Tag' }).click();
+    await page.getByRole('menuitem', { name: 'Top', exact: true }).hover();
+    await expect(page.getByRole('menuitem', { name: 'Woche' })).toBeVisible();
+    await page.keyboard.press('Escape');
+    await page.keyboard.press('Escape');
     await expectAccessible(page);
   });
 
@@ -344,27 +382,262 @@ test.describe('a viewer', () => {
     expect(await titles(page)).toEqual([`Local ${seed.suffix}`]);
   });
 
-  test('next pages join up in order, by link and by the first-page link', async ({ page }) => {
+  test('the next batches load by themselves, in order, and say so; a cursor address starts there', async ({ page }) => {
     await signedIn(page, seed.viewer.name);
     await gotoHydrated(page, '/?sort=new');
     const first = await titles(page);
     expect(first).toHaveLength(20);
     expect(first.slice(0, 2)).toEqual([`Picture ${seed.suffix}`, `Followed ${seed.suffix} 01`]);
-    await page.getByRole('link', { name: 'Next page' }).click();
-    await page.waitForURL(/\?sort=new&cursor=/);
-    await expect.poll(() => titles(page)).not.toEqual(first);
-    const second = await titles(page);
-    expect(second).toHaveLength(20);
-    expect(second[0]).toBe(`Followed ${seed.suffix} 20`);
-    await page.getByRole('link', { name: 'Next page' }).click();
-    await expect.poll(() => titles(page)).not.toEqual(second);
-    const third = await titles(page);
-    expect(third.at(-1)).toBe(`Followed ${seed.suffix} 45`);
-    expect([...first, ...second, ...third]).toHaveLength(46);
+    // With scripts the next page is no link: the list loads it near its end.
     await expect(page.getByRole('link', { name: 'Next page' })).toHaveCount(0);
+    // Every message the list's status says, in order (it is emptied while a batch loads).
+    await page.locator('.feed-posts > [role="status"]').evaluate((status) => {
+      const said: string[] = [];
+      Object.assign(window, { said });
+      new MutationObserver(() => status.textContent && said.push(status.textContent)).observe(status, {
+        childList: true,
+        subtree: true,
+        characterData: true,
+      });
+    });
+    await loadUntil(page, 46);
+    await expect
+      .poll(() => page.evaluate(() => (window as unknown as { said: string[] }).said))
+      .toEqual(['20 more posts loaded.', '6 more posts loaded. That is everything for now.']);
+    const all = await titles(page);
+    expect(all.slice(0, 20)).toEqual(first);
+    expect(all[20]).toBe(`Followed ${seed.suffix} 20`);
+    expect(all.at(-1)).toBe(`Followed ${seed.suffix} 45`);
+    expect(new Set(await postLinks(page)).size).toBe(46);
+    await expect(page.locator('.pb-feed-end')).toHaveText('That is everything for now.');
+    // An address with a cursor (a link from a page without scripts) starts at that page, with the way back to the first.
+    const cursor = await page.evaluate(async () => {
+      const response = await fetch('/?sort=new', { headers: { accept: 'text/html' } });
+      return /cursor=([^"&]+)/.exec(await response.text())?.[1] ?? null;
+    });
+    expect(cursor).not.toBeNull();
+    await gotoHydrated(page, `/?sort=new&cursor=${cursor}`);
+    expect((await titles(page))[0]).toBe(`Followed ${seed.suffix} 20`);
     await page.getByRole('link', { name: 'Back to the first page' }).click();
     await page.waitForURL('**/?sort=new');
     expect(await titles(page)).toEqual(first);
+  });
+
+  test('Back finds the place: the batches loaded and the scroll position', async ({ page }) => {
+    await signedIn(page, seed.viewer.name);
+    await gotoHydrated(page, '/?sort=new');
+    await loadUntil(page, 46);
+    const row = page.locator('.feed-list > li').nth(30);
+    await row.scrollIntoViewIfNeeded();
+    // The router saves the position from scroll events it throttles: a reader pauses before a press.
+    await page.waitForTimeout(300);
+    const y = await page.evaluate(() => scrollY);
+    const title = await row.locator('.pb-post__title a').textContent();
+    await row.locator('.pb-post__title a').click();
+    await page.waitForURL(/\/post\//);
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText(title!);
+    await page.goBack();
+    await page.waitForURL('**/?sort=new');
+    await expect(page.locator('.feed-list > li')).toHaveCount(46);
+    await expect.poll(() => page.evaluate(() => scrollY)).toBe(y);
+    // The later batches show once the server has answered each again, in the same place, and the position stays.
+    await expect(page.locator('.feed-list > li.feed-row--held')).toHaveCount(0);
+    await expect(page.locator('.feed-list > li').nth(30).locator('.pb-post__title a')).toHaveText(title!);
+    expect(await page.evaluate(() => scrollY)).toBe(y);
+    // A new visit to the same address (not Back) starts again at the first batch.
+    await sortBy(page, 'Old');
+    await page.waitForURL('**/?sort=old');
+    await sortBy(page, 'New');
+    await page.waitForURL('**/?sort=new');
+    await expect(page.locator('.feed-list > li')).toHaveCount(20);
+  });
+
+  test('a vote cast in a later batch is still there after Back', async ({ page }) => {
+    await signedIn(page, seed.viewer.name);
+    await gotoHydrated(page, '/?sort=new');
+    await loadUntil(page, 40);
+    const card = page.locator('.feed-list article', { hasText: `Followed ${seed.suffix} 30` });
+    const up = card.getByRole('button', { name: 'Upvote' });
+    const score = Number(await card.locator('.pb-vote__score').textContent());
+    const saved = page.waitForResponse((response) => response.request().method() === 'POST' && response.url().includes('/_serverFn/'));
+    await up.click();
+    await saved;
+    await card.locator('.pb-post__title a').click();
+    await page.waitForURL(/\/post\//);
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText(`Followed ${seed.suffix} 30`);
+    await page.goBack();
+    await page.waitForURL('**/?sort=new');
+    await expect(up).toHaveAttribute('aria-pressed', 'true');
+    await expect(card.locator('.pb-vote__score')).toHaveText(String(score + 1));
+    // Taken back, so the next run starts from the same score.
+    const unsaved = page.waitForResponse((response) => response.request().method() === 'POST' && response.url().includes('/_serverFn/'));
+    await up.click();
+    await unsaved;
+  });
+
+  test('a batch that fails offers Retry; focus waits, then goes to the first new post', async ({ page }) => {
+    await signedIn(page, seed.viewer.name);
+    await gotoHydrated(page, '/?sort=new');
+    let fail = true;
+    await page.route(
+      (url) => url.pathname.includes('/_serverFn/') && decodeURIComponent(url.search).includes('cursor'),
+      (route) => (fail ? route.abort('failed') : route.fallback()),
+    );
+    await page.locator('.feed-list > li').last().scrollIntoViewIfNeeded();
+    const retry = page.getByRole('button', { name: 'Retry' });
+    await expect(retry).toBeVisible();
+    await expect(page.locator('.feed-posts > [role="status"]')).toHaveText('More posts did not load.');
+    // The real next page is still there beside it.
+    await expect(page.locator('.pb-feed-end').getByRole('link', { name: 'Next page' })).toHaveAttribute('href', /cursor=/);
+    // Failing again: focus goes back to Retry.
+    await retry.focus();
+    await page.keyboard.press('Enter');
+    await expect(retry).toBeFocused();
+    fail = false;
+    await page.keyboard.press('Enter');
+    await expect(page.locator('.feed-list > li')).toHaveCount(40);
+    await expect(page.locator('.feed-list > li').nth(20).locator('.pb-post__title a')).toBeFocused();
+    await expect(page.locator('.feed-posts > [role="status"]')).toHaveText('20 more posts loaded.');
+  });
+
+  test('a batch that loads on its own never moves focus', async ({ page }) => {
+    await signedIn(page, seed.viewer.name);
+    await gotoHydrated(page, '/?sort=new');
+    const title = page.locator('.feed-list > li').nth(19).locator('.pb-post__title a');
+    await title.focus();
+    await title.scrollIntoViewIfNeeded();
+    await expect(page.locator('.feed-list > li')).toHaveCount(40);
+    await expect(title).toBeFocused();
+  });
+
+  test('Skip past the posts moves focus to what follows the list: the rail, else the end of the posts', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await signedIn(page, seed.viewer.name);
+    await gotoHydrated(page, '/?sort=new');
+    const skip = page.getByRole('button', { name: 'Skip past the posts' });
+    // Out of sight until it has focus: the first Tab into the list reaches it.
+    await page.getByRole('button', { name: /^View: / }).focus();
+    await page.keyboard.press('Tab');
+    await expect(skip).toBeFocused();
+    await expect(skip).toBeInViewport();
+    await page.keyboard.press('Enter');
+    await expect(
+      page.getByRole('complementary', { name: 'About this feed' }).getByRole('link', { name: 'Browse communities' }),
+    ).toBeFocused();
+    // Narrower, the rail gives way and nothing follows the posts: focus waits at their end, where the next batch starts.
+    await page.setViewportSize({ width: 1100, height: 900 });
+    await skip.focus();
+    await page.keyboard.press('Enter');
+    await expect(page.locator('.pb-feed-end')).toBeFocused();
+  });
+
+  test('Share copies the link where the system has no share sheet, and says so politely', async ({ page, context, baseURL }) => {
+    await context.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: baseURL });
+    await page.addInitScript(() => Object.defineProperty(navigator, 'share', { value: undefined }));
+    await signedIn(page, seed.viewer.name);
+    await gotoHydrated(page, '/?sort=new');
+    const card = page.locator('.feed-list article', { hasText: `Followed ${seed.suffix} 01` });
+    const href = await card.locator('.pb-post__title a').getAttribute('href');
+    await card.getByRole('button', { name: 'Share' }).click();
+    await expect(card.getByRole('status')).toHaveText('Link copied');
+    expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(new URL(href!, baseURL).href);
+    // Copy link, in the row's menu, does the same.
+    await page.evaluate(() => navigator.clipboard.writeText(''));
+    await card.getByRole('button', { name: `More actions for Followed ${seed.suffix} 01` }).click();
+    await page.getByRole('menuitem', { name: 'Copy link' }).click();
+    expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(new URL(href!, baseURL).href);
+  });
+
+  test("a row's exact date and time heads its menu, by keyboard and by touch, with no stop of its own", async ({
+    page,
+    browser,
+    baseURL,
+  }) => {
+    const title = `Followed ${seed.suffix} 01`;
+    await signedIn(page, seed.viewer.name);
+    await gotoHydrated(page, '/?sort=new');
+    const card = page.locator('.feed-list article', { hasText: title });
+    const exact = (await card.locator('time').first().getAttribute('title'))!;
+    expect(exact).toMatch(/\d{4}/);
+    await card.getByRole('button', { name: `More actions for ${title}` }).focus();
+    await page.keyboard.press('Enter');
+    // Mux names the menu by its trigger.
+    const menu = page.getByRole('menu', { name: `More actions for ${title}` });
+    await expect(menu).toContainText(exact);
+    // The date is the menu's heading, not one of its actions.
+    await expect(menu.getByRole('menuitem', { name: exact })).toHaveCount(0);
+    await page.keyboard.press('Escape');
+
+    const phone = await (await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, baseURL })).newPage();
+    await signedIn(phone, seed.viewer.name);
+    await gotoHydrated(phone, '/?sort=new');
+    await phone
+      .locator('.feed-list article', { hasText: title })
+      .getByRole('button', { name: `More actions for ${title}` })
+      .tap();
+    await expect(phone.getByRole('menu', { name: `More actions for ${title}` })).toContainText(exact);
+    await phone.context().close();
+  });
+
+  test('Share opens the system share sheet where there is one, and a cancel says nothing', async ({ page, baseURL }) => {
+    await page.addInitScript(() => {
+      const shared: unknown[] = [];
+      Object.assign(window, { shared });
+      Object.defineProperty(navigator, 'share', {
+        value: async (data: unknown) => {
+          shared.push(data);
+          throw new DOMException('cancelled', 'AbortError');
+        },
+      });
+    });
+    await signedIn(page, seed.viewer.name);
+    await gotoHydrated(page, '/?sort=new');
+    const card = page.locator('.feed-list article', { hasText: `Followed ${seed.suffix} 02` });
+    const href = await card.locator('.pb-post__title a').getAttribute('href');
+    await card.getByRole('button', { name: 'Share' }).click();
+    await expect
+      .poll(() => page.evaluate(() => (window as unknown as { shared: unknown[] }).shared))
+      .toEqual([{ title: `Followed ${seed.suffix} 02`, url: new URL(href!, baseURL).href }]);
+    await expect(card.getByRole('status')).toHaveText('');
+  });
+
+  test('on a narrow phone the views are a 44px menu away, one with the sorts beside the site name, and nothing scrolls sideways', async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 320, height: 700 });
+    await gotoHydrated(page, '/all');
+    // The site's name leaves the bar room for one menu, Sort holding the views; a brand pack's mark leaves room for
+    // both (feed.css).
+    const named = (await page.locator('.pb-frame-vh .pb-bar-brand > .muxui-text').count()) > 0;
+    if (named) await expect(page.getByRole('button', { name: /^View: / })).toHaveCount(0);
+    const menu = page.getByRole('button', { name: named ? 'Sort: Hot; View: Classic' : 'View: Classic' });
+    const box = (await menu.boundingBox())!;
+    expect(Math.min(box.width, box.height)).toBeGreaterThanOrEqual(44);
+    await menu.click();
+    await page.getByRole('menuitem', { name: 'Compact', exact: true }).click();
+    await expect(page.locator('.feed-list article').first()).toHaveAttribute('data-density', 'compact');
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(320);
+  });
+
+  test('on a phone the header and row controls are 44px targets', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await signedIn(page, seed.viewer.name);
+    await gotoHydrated(page, '/?sort=new');
+    // The header's menus as the bar shows them: Sort and View, or Sort holding the views beside a site name.
+    const menus = page.locator('.feed-menus button:visible');
+    expect(await menus.count()).toBeGreaterThan(0);
+    const controls = [
+      ...(await menus.all()),
+      page
+        .locator('.feed-list article')
+        .first()
+        .getByRole('button', { name: /^More actions for / }),
+    ];
+    for (const control of controls) {
+      const box = (await control.boundingBox())!;
+      expect(Math.min(box.width, box.height), (await control.getAttribute('aria-label')) ?? '').toBeGreaterThanOrEqual(44);
+    }
+    await expect(page.getByRole('heading', { level: 1 })).toBeInViewport();
   });
 
   test('a vote from the feed is kept', async ({ page }) => {
@@ -433,7 +706,7 @@ test.describe('a viewer', () => {
     const saved = page.waitForResponse((response) => isVoteOn(id)(response.request()));
     await up.click();
     for (const density of ['Card', 'Classic', 'Compact'] as const) {
-      await page.getByRole('radiogroup', { name: 'View' }).getByRole('radio', { name: density }).click();
+      await view(page, density);
       await expect(card).toHaveAttribute('data-density', density.toLowerCase());
       await expect(up, density).toHaveAttribute('aria-pressed', 'true');
       await expect(card.locator('.pb-vote__score'), density).toHaveText(String(score + 1));
@@ -461,8 +734,9 @@ test.describe('a viewer', () => {
 test.describe('without JavaScript', () => {
   test.use({ javaScriptEnabled: false });
 
-  test('the sort and the next page are plain links', async ({ page }) => {
+  test('the sort and the next page are plain links, and the menus give way to them', async ({ page }) => {
     await page.goto('/all?sort=new');
+    await expect(page.getByRole('button', { name: /^Sort: / })).toBeHidden();
     const first = await postLinks(page);
     expect(first).toHaveLength(20);
     await page.getByRole('link', { name: 'Next page' }).click();
@@ -473,5 +747,14 @@ test.describe('without JavaScript', () => {
     await page.getByRole('navigation', { name: 'Sort' }).getByRole('link', { name: 'Top' }).click();
     await expect(page).toHaveURL(/sort=top/);
     expect((await titles(page))[0]).toBe(`Picture ${seed.suffix}`);
+  });
+
+  test('Share, which needs scripts, is not offered; the post stays a plain link', async ({ page }) => {
+    await page.goto('/all?sort=new');
+    const card = page.locator('.feed-list article').first();
+    await expect(card.locator('.pb-post__title a')).toHaveAttribute('href', /^\/post\//);
+    // Card and Classic carry Share once scripts run (Compact never does).
+    await expect(card).not.toHaveAttribute('data-density', 'compact');
+    await expect(card.getByRole('button', { name: 'Share' })).toHaveCount(0);
   });
 });

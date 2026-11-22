@@ -18,7 +18,6 @@ vi.mock('../../server/markdown.ts', () => ({
 }));
 vi.mock('../c/-gate.ts', () => ({ requestNsfw: () => ({ always: false, once: [] }), gateData: () => null }));
 vi.mock('./$id/comments/-thread.ts', () => ({ loadThread: async () => null }));
-vi.mock('@peblish/core/config', () => ({ publicOrigin: () => 'https://feddit.test' }));
 vi.mock('@peblish/core/posts/read', () => ({ readPost: async () => page(state.moderator) }));
 const { loadPost } = await import('./-load.ts');
 
