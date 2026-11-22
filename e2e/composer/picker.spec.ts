@@ -112,6 +112,15 @@ async function freshPoster(browser: Browser, baseURL: string) {
   return browser.newContext({ baseURL, storageState: { cookies, origins: [] } });
 }
 const draftKeys = (page: Page) => page.evaluate(() => Object.keys(localStorage).filter((name) => name.startsWith('peblish.draft:')));
+/** The drafts this browser keeps, as {slot: title}: a community's id, `none` or `carried`. */
+const stored = (page: Page) =>
+  page.evaluate(() =>
+    Object.fromEntries(
+      Object.keys(localStorage)
+        .filter((name) => name.startsWith('peblish.draft:'))
+        .map((name) => [name.split(':').at(-1), (JSON.parse(localStorage.getItem(name)!) as { title: string }).title]),
+    ),
+  );
 const body = (page: Page) => page.getByRole('textbox', { name: 'Body', exact: true });
 
 /** To the directory from the field. The page goes back up first: a scroll closes the field's list (React Aria). */
@@ -177,6 +186,75 @@ test('a saved draft that Browse takes along leaves no copy under its community o
   await page.getByRole('button', { name: 'Post', exact: true }).click();
   await page.waitForURL(/\/post\/[0-9a-f-]{36}$/);
   expect(await draftKeys(page)).toEqual([]);
+  await context.close();
+});
+
+test('a text carried in beside a community’s own saved draft is kept apart: discarding or posting it leaves that draft', async ({
+  browser,
+  baseURL,
+}) => {
+  const context = await freshPoster(browser, baseURL!);
+  const page = await context.newPage();
+  const { open } = world.communities;
+  const saveForB = async () => {
+    await gotoHydrated(page, '/submit');
+    await choose(page, open.handle);
+    await page.getByLabel('Title').fill('Saved for B');
+    await page.getByRole('button', { name: 'Save draft' }).click();
+    await expect(page.getByText('Draft saved in this browser.')).toBeVisible();
+  };
+  const carryIn = async (title: string) => {
+    await gotoHydrated(page, '/submit');
+    await page.getByLabel('Title').fill(title);
+    await browseAway(page);
+    await page.waitForURL('**/communities');
+    await gotoHydrated(page, `/submit?community=${open.handle}`);
+    await expect(page.getByLabel('Title')).toHaveValue(title);
+    await expect(page.getByText('Your saved draft for this community is kept')).toBeVisible();
+  };
+  await saveForB();
+  await carryIn('Carried, then discarded');
+  await page.getByRole('button', { name: 'Discard' }).click();
+  await expect.poll(() => stored(page)).toEqual({ [open.id]: 'Saved for B' });
+
+  await carryIn('Carried, then posted');
+  await page.getByRole('button', { name: 'Post', exact: true }).click();
+  await page.waitForURL(/\/post\/[0-9a-f-]{36}$/);
+  expect(await stored(page)).toEqual({ [open.id]: 'Saved for B' });
+
+  // B's own comes back after a reload, and posting it clears it.
+  await gotoHydrated(page, `/submit?community=${open.handle}`);
+  await expect(page.getByLabel('Title')).toHaveValue('Saved for B');
+  await page.getByRole('button', { name: 'Post', exact: true }).click();
+  await page.waitForURL(/\/post\/[0-9a-f-]{36}$/);
+  expect(await stored(page)).toEqual({});
+  await context.close();
+});
+
+test('closing the sheet keeps what was written without writing over a community’s other saved draft', async ({ browser, baseURL }) => {
+  const context = await freshPoster(browser, baseURL!);
+  const page = await context.newPage();
+  const { open } = world.communities;
+  await gotoHydrated(page, '/submit');
+  await choose(page, open.handle);
+  await page.getByLabel('Title').fill('Saved for B');
+  await page.getByRole('button', { name: 'Save draft' }).click();
+  await expect(page.getByText('Draft saved in this browser.')).toBeVisible();
+
+  await gotoHydrated(page, '/');
+  const create = page.getByRole('link', { name: 'Create post' });
+  const sheet = page.getByRole('dialog', { name: 'Create post' });
+  await create.click();
+  await sheet.getByLabel('Title').fill('Written in the sheet');
+  // Typed first, so B's saved draft is not laid over it.
+  await choose(sheet, open.handle);
+  await expect(sheet.getByLabel('Title')).toHaveValue('Written in the sheet');
+  await sheet.getByLabel('Title').press('Escape');
+  await expect(sheet).toHaveCount(0);
+  expect(await stored(page)).toEqual({ [open.id]: 'Saved for B', carried: 'Written in the sheet' });
+  // The sheet's text comes back the next time.
+  await create.click();
+  await expect(sheet.getByLabel('Title')).toHaveValue('Written in the sheet');
   await context.close();
 });
 

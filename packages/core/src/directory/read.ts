@@ -82,7 +82,8 @@ async function visible(query: Pick<DirectoryQuery, 'nsfw'>, viewer: DirectoryVie
   )!;
 }
 
-async function conditions(query: DirectoryQuery, viewer: DirectoryViewer): Promise<SQL> {
+/** What the directory lists for this query and viewer, as SQL over actors joined to instances (also followed.ts). */
+export async function conditions(query: DirectoryQuery, viewer: DirectoryViewer): Promise<SQL> {
   // A search that is a handle or a link is a resolve, not a filter: the list stays whole.
   const term = query.q !== '' && parseLookup(query.q) === null ? like(query.q) : null;
   return and(

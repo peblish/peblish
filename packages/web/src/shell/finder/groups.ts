@@ -1,8 +1,9 @@
 import type { ActorRef } from '@peblish/schema/views';
-import type { FoundCommunity } from './load.ts';
+import type { FinderAnswer } from './load.ts';
 
-// The finder's two groups, from what the browser already has (the sidebar's joined communities, in the root
-// loader's data) and the directory's answer for the text typed. Plain functions, so they are tested alone.
+// The finder's two groups, from the server's answer for the text typed (load.ts): the viewer's own communities it
+// lists them, and the directory's first page. Nothing else is drawn, so nothing the server withholds from this
+// viewer shows. Plain functions, so they are tested alone.
 
 export interface FinderEntry {
   actor: ActorRef;
@@ -28,22 +29,29 @@ export function matches(actor: Pick<ActorRef, 'name' | 'displayName' | 'handle'>
 const byName = (a: FinderEntry, b: FinderEntry) => a.actor.name.localeCompare(b.actor.name) || a.actor.id.localeCompare(b.actor.id);
 
 /**
- * Joined: the viewer's communities that match (the sidebar's list, which a long one cuts short, plus any the
- * directory found that the viewer joined or asked to join), by name. More communities: the rest of the directory's
- * answer, in its order (most joined first), never one already in Joined.
+ * Joined: the viewer's own communities the server listed that the text matches (a pasted handle finds one by its
+ * handle), by name. More communities: the rest of the directory's answer, in its order (most joined first), never
+ * one of the viewer's own, so one the server left out of Joined (blocked by the viewer) is not shown here either.
  */
-export function finderGroups({ joined, found, query }: { joined: readonly ActorRef[]; found: readonly FoundCommunity[]; query: string }): {
+export function finderGroups({
+  followed,
+  found,
+  query,
+}: {
+  followed: FinderAnswer['followed'];
+  found: FinderAnswer['rows'];
+  query: string;
+}): {
   joined: FinderEntry[];
   others: FinderEntry[];
 } {
-  const follow = new Map(found.map((row) => [row.actor.id, row.follow]));
-  const mine = new Map<string, FinderEntry>();
-  for (const actor of joined) if (matches(actor, query)) mine.set(actor.id, { actor, pending: follow.get(actor.id) === 'pending' });
-  for (const row of found)
-    if (row.follow !== 'none' && !mine.has(row.actor.id)) mine.set(row.actor.id, { actor: row.actor, pending: row.follow === 'pending' });
-  const joinedIds = new Set(joined.map(({ id }) => id));
+  const joined = followed
+    .filter(({ actor }) => matches(actor, query))
+    .map(({ actor, follow }) => ({ actor, pending: follow === 'pending' }))
+    .sort(byName);
+  const mine = new Set(followed.map(({ actor }) => actor.id));
   const others = found
-    .filter((row) => row.follow === 'none' && !joinedIds.has(row.actor.id))
+    .filter((row) => row.follow === 'none' && !mine.has(row.actor.id))
     .map((row) => ({ actor: row.actor, pending: false }));
-  return { joined: [...mine.values()].sort(byName), others };
+  return { joined, others };
 }
