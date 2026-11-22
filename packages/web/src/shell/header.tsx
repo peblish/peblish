@@ -9,7 +9,7 @@ import { Link } from '@peblish/ui/components/link';
 import { Text } from '@peblish/ui/components/text';
 import { useHydrated } from '@peblish/ui/composer/use-hydrated.ts';
 import { getRouteApi } from '@tanstack/react-router';
-import { useId, useState, type KeyboardEvent, type MouseEvent } from 'react';
+import { useId, useRef, useState, type FocusEvent, type KeyboardEvent, type MouseEvent } from 'react';
 import { useTranslate } from '../i18n/use-translate.ts';
 import { Account, SignedOutActions } from './account.tsx';
 import { Brand } from './brand.tsx';
@@ -42,6 +42,13 @@ export function FindLink({ compact = false }: { compact?: boolean }) {
   // The finder's code, once loaded.
   const [Finder, setFinder] = useState<FinderView | null>(null);
   const load = () => loadFinder().then(({ default: loaded }) => setFinder(() => loaded));
+  // Each press that opens the finder: one let go before its code arrived is not followed to the directory.
+  const request = useRef(0);
+  const waiting = open && !Finder;
+  const letGo = () => {
+    request.current++;
+    setOpen(false);
+  };
   // Who the finder is for: another account (or none) gets a new finder, with nothing of the last one's (its text,
   // its rows and their follows, a request on its way).
   const viewer = root.useLoaderData({ select: ({ session }) => session?.actorId ?? '' });
@@ -62,14 +69,22 @@ export function FindLink({ compact = false }: { compact?: boolean }) {
       event.preventDefault();
       setTop(event.currentTarget.closest('.pb-frame-vh')?.getBoundingClientRect().bottom);
       setOpen(true);
+      const press = ++request.current;
       load().catch(() => {
+        if (press !== request.current) return;
         setOpen(false);
         window.location.assign(directoryPaths.browse);
       });
     },
-    // Focus stays here while the finder loads: Escape lets it go.
+    // While the finder loads, focus is held here, as the finder will hold it (its loading panel takes none): Tab
+    // stays, and Escape, or focus taken elsewhere by a press outside, lets it go.
     onKeyDown: (event: KeyboardEvent<HTMLAnchorElement>) => {
-      if (event.key === 'Escape' && open && !Finder) setOpen(false);
+      if (!waiting) return;
+      if (event.key === 'Tab') event.preventDefault();
+      if (event.key === 'Escape') letGo();
+    },
+    onBlur: (event: FocusEvent<HTMLAnchorElement>) => {
+      if (waiting && !event.currentTarget.contains(event.relatedTarget)) letGo();
     },
   };
   return (

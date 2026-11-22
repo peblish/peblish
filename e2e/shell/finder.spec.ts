@@ -291,6 +291,66 @@ test('a press before the finder’s code is in shows the finder loading at once,
   await context.close();
 });
 
+test('a press before the finder’s code is in holds focus on the link: Tab stays, Escape lets go, and closing returns there', async ({
+  browser,
+  baseURL,
+}) => {
+  for (const width of [1440, 390]) {
+    const context = await browser.newContext({ baseURL, viewport: { width, height: 900 } });
+    const page = await context.newPage();
+    let release = () => {};
+    const held = new Promise<void>((resolve) => (release = resolve));
+    await page.route(finderModule, async (route) => {
+      await held;
+      await route.continue();
+    });
+    await gotoHydrated(page, '/');
+    const link =
+      width > 860 ? finderLink(page) : page.getByRole('navigation', { name: 'Page' }).getByRole('link', { name: 'Find a community' });
+    const pending = page.locator('.pb-finder-pending');
+    await link.focus();
+    await page.keyboard.press('Enter');
+    await expect(pending).toBeVisible();
+    await page.keyboard.press('Tab');
+    await expect(link, `${width}px, Tab`).toBeFocused();
+    await page.keyboard.press('Shift+Tab');
+    await expect(link, `${width}px, Shift+Tab`).toBeFocused();
+    await page.keyboard.press('Escape');
+    await expect(pending).toHaveCount(0);
+    await expect(link).toBeFocused();
+    // Asked again, it opens once its code is in, and closing it returns focus to the link.
+    await page.keyboard.press('Enter');
+    await page.keyboard.press('Tab');
+    release();
+    await expect(field(page)).toBeFocused();
+    await page.keyboard.press('Escape');
+    await page.keyboard.press('Escape');
+    await expect(link, `${width}px, after closing`).toBeFocused();
+    await context.close();
+  }
+});
+
+test('an open let go before its code arrives stays let go, even when that code then fails to load', async ({ browser, baseURL }) => {
+  const context = await browser.newContext({ baseURL, viewport: { width: 1440, height: 900 } });
+  const page = await context.newPage();
+  let fail = () => {};
+  const failing = new Promise<void>((resolve) => (fail = resolve));
+  await page.route(finderModule, async (route) => {
+    await failing;
+    await route.abort();
+  });
+  await gotoHydrated(page, '/');
+  await finderLink(page).click();
+  const pending = page.locator('.pb-finder-pending');
+  await expect(pending).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(pending).toHaveCount(0);
+  fail();
+  await page.waitForTimeout(1_500);
+  expect(new URL(page.url()).pathname).toBe('/');
+  await context.close();
+});
+
 test('a finder whose code cannot load leaves for the directory, as its link does without scripts', async ({ browser, baseURL }) => {
   const context = await browser.newContext({ baseURL, viewport: { width: 1440, height: 900 } });
   const page = await context.newPage();
