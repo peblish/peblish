@@ -1,5 +1,6 @@
 import type { InboxFilter, InboxItem } from '@peblish/core/notifications/view';
 import { filterKinds, inboxFilters, unreadCap } from '@peblish/core/notifications/view';
+import { avatarInitial } from '@peblish/ui/components/avatar-initial.ts';
 import { Badge } from '@peblish/ui/components/badge';
 import { Button } from '@peblish/ui/components/button';
 import { ButtonLink } from '@peblish/ui/components/button-link';
@@ -378,7 +379,7 @@ export function NoticeRow({
       unread={!item.read}
       kind={item.kind}
       mark={markOf(item.kind)}
-      initial={(neutraliseBidi(item.actor?.handle ?? '', '') || '?').slice(0, 1).toUpperCase()}
+      initial={avatarInitial(neutraliseBidi(item.actor?.handle ?? '', ''), '?')}
       headline={
         <>
           {!item.read && (

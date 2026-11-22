@@ -1,4 +1,5 @@
 import { Avatar } from '@peblish/ui/components/avatar';
+import { avatarInitial } from '@peblish/ui/components/avatar-initial.ts';
 import { Handle } from '@peblish/ui/components/handle';
 import type { IconProps } from '@peblish/ui/components/icons';
 import { Link } from '@peblish/ui/components/link';
@@ -17,7 +18,7 @@ export function YouIdentity({ name, handle }: { name: string; handle: string }) 
     <div className="you-id">
       {/* Decorative: the heading names the person. */}
       <Avatar.Root size="lg" aria-hidden="true">
-        <Avatar.Fallback>{name.slice(0, 1).toUpperCase()}</Avatar.Fallback>
+        <Avatar.Fallback>{avatarInitial(name, '')}</Avatar.Fallback>
       </Avatar.Root>
       <div className="you-id__text">
         <Text as="h1" variant="title" size="sm" className="you-id__name">

@@ -1,5 +1,6 @@
 import { directoryHref, directorySorts, nsfwModes, scopes, type DirectoryQuery } from '@peblish/core/directory/input';
 import type { DirectoryRow } from '@peblish/core/directory/read';
+import { avatarInitial } from '@peblish/ui/components/avatar-initial.ts';
 import { Badge } from '@peblish/ui/components/badge';
 import { Button } from '@peblish/ui/components/button';
 import { CommunityList, CommunityViewControl, type CommunityListItem, type CommunityView } from '@peblish/ui/components/community-list';
@@ -44,9 +45,6 @@ const sortKey = {
 } as const;
 const nsfwKey = { hide: 'directory.nsfw.hide', show: 'directory.nsfw.show', only: 'directory.nsfw.only' } as const;
 
-/** One letter for an icon without a picture. */
-const initial = (text: string) => (text.trim()[0] ?? '?').toUpperCase();
-
 /** A message whose {placeholders} are elements: the age of a copy is a <time>. */
 function rich(message: string, parts: Record<string, ReactNode>): ReactNode[] {
   return message.split(/(\{\w+\})/).map((piece, index) => {
@@ -88,7 +86,7 @@ export function DirectoryPage({ data, error: fromAddress }: { data: DirectoryDat
       href: communityPath(actor),
       linkId,
       title: <BidiText text={actor.displayName ?? actor.name} />,
-      initial: initial(actor.displayName ?? actor.name),
+      initial: avatarInitial(actor.displayName ?? actor.name, '?'),
       meta: (
         <>
           <Handle prefix="!" handle={actor.handle} />

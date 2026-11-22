@@ -1,4 +1,5 @@
 import { Avatar } from '@peblish/ui/components/avatar';
+import { avatarInitial } from '@peblish/ui/components/avatar-initial.ts';
 import { Badge, type BadgeLabels } from '@peblish/ui/components/badge';
 import { FactList, type Fact } from '@peblish/ui/components/fact-list';
 import { BidiText, Handle, neutraliseBidi } from '@peblish/ui/components/handle';
@@ -46,7 +47,7 @@ export function ProfileHero({ data, children }: { data: ProfileData; children?: 
         {/* Without a picture the initial is decorative: the heading names the person. */}
         <Avatar.Root size="lg" aria-hidden={data.avatarSrc ? undefined : 'true'}>
           {data.avatarSrc && <Avatar.Image src={data.avatarSrc} alt={t('profiles', 'card.avatar', { name: plainName })} />}
-          <Avatar.Fallback>{plainName.slice(0, 1).toUpperCase()}</Avatar.Fallback>
+          <Avatar.Fallback>{avatarInitial(plainName, '')}</Avatar.Fallback>
         </Avatar.Root>
         <div className="prof-hero__id">
           <div className="prof-hero__title">
