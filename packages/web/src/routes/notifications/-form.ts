@@ -7,7 +7,7 @@ import { Uuid } from '@peblish/schema/ids';
 import { type } from 'arktype';
 import { forbidden, formSession, principalOf, readForm, sameOrigin } from '../../server/auth.ts';
 import { postPath } from '../../shell/paths.ts';
-import { inboxHref, type InboxSearch } from './-search.ts';
+import { inboxHref, markedRow, type InboxSearch } from './-search.ts';
 
 // The inbox's form endpoint (server only): POST /notifications with an intent. Like the comment
 // forms, a plain post works without JavaScript and answers 303 back to the page the form came
@@ -26,7 +26,7 @@ import { inboxHref, type InboxSearch } from './-search.ts';
 const Page = { 'filter?': 'string', 'cursor?': 'string' } as const;
 const Form = type({ intent: "'read' | 'unread'", id: 'string', ...Page })
   .or({ intent: "'read_all'", ...Page })
-  .or({ intent: "'undo_read_all'", batch: 'string', ...Page })
+  .or({ intent: "'undo_read_all'", batch: 'string', 'marked?': 'string', ...Page })
   .or({ intent: "'watch' | 'unwatch'", post: 'string', ...Page });
 
 type Reason = RefusalReason | 'invalid';
@@ -73,7 +73,10 @@ export async function handleInboxPost(request: Request): Promise<Response> {
         filter: inboxFilters.find((filter) => filter === known?.filter),
         cursor: known?.cursor && Uuid.allows(known.cursor) ? known.cursor : undefined,
       };
-  const refuse = (reason: Reason) => answer(request, cookies, { ok: false, reason, location: inboxHref({ ...page, error: reason }) });
+  // A refused Undo goes back to its status row (its count and stamp, when both are sound), so it can be pressed again.
+  const undoRow = known?.intent === 'undo_read_all' ? markedRow(known.marked, known.batch) : {};
+  const refuse = (reason: Reason) =>
+    answer(request, cookies, { ok: false, reason, location: inboxHref({ ...page, ...undoRow, error: reason }) });
   if (!session) return refuse('auth.required');
   if (!known) return refuse('invalid');
   const principal = principalOf(session.view);
@@ -95,7 +98,7 @@ export async function handleInboxPost(request: Request): Promise<Response> {
       return answer(
         request,
         cookies,
-        back(result, page, ({ count }) => ({ fields: { count }, page: { ...page, restored: count } })),
+        back(result, { ...page, ...undoRow }, ({ count }) => ({ fields: { count }, page: { ...page, restored: count } })),
       );
     }
     case 'watch':

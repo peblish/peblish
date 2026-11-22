@@ -6,8 +6,8 @@ import type { SearchSchemaInput } from '@tanstack/react-router';
 // optional and one that is not valid is dropped, so a stale or hand-edited link still opens the
 // inbox. Defaults are applied after parsing and never written into the address. After Mark all
 // read the address also says how many it marked and the stamp its Undo takes (`marked`, `batch`),
-// and after the Undo how many came back (`restored`), so the page shows the same status row with
-// scripts and without.
+// and after the Undo how many came back (`restored`, 0 when another tab undid it first), so the
+// page shows the same status row with scripts and without.
 
 export type InboxSearch = {
   filter?: InboxFilter | undefined;
@@ -21,10 +21,10 @@ export type InboxSearch = {
 
 const isFilter = (value: unknown): value is InboxFilter => inboxFilters.some((filter) => filter === value);
 
-/** A count in the address: the router may already have read it as a number. */
+/** A count in the address, 0 included: the router may already have read it as a number. */
 function countOf(value: unknown): number | undefined {
   const text = typeof value === 'number' ? String(value) : value;
-  return typeof text === 'string' && /^[1-9][0-9]{0,5}$/.test(text) ? Number(text) : undefined;
+  return typeof text === 'string' && /^(0|[1-9][0-9]{0,5})$/.test(text) ? Number(text) : undefined;
 }
 
 /** A stamp in the address, whether the router read it as a number or not (microseconds stay exact as one until 2255). */
@@ -33,19 +33,23 @@ function batchOf(value: unknown): number | undefined {
   return typeof text === 'string' && isReadBatch(text) && Number.isSafeInteger(Number(text)) ? Number(text) : undefined;
 }
 
+/** Mark all read's status row: its count and stamp come together or not at all, as an Undo needs both, and something marked. */
+export function markedRow(marked: unknown, batch: unknown): Pick<InboxSearch, 'marked' | 'batch'> {
+  const count = countOf(marked);
+  const stamp = batchOf(batch);
+  const both = count !== undefined && count > 0 && stamp !== undefined;
+  return { marked: both ? count : undefined, batch: both ? stamp : undefined };
+}
+
 export function parseInboxSearch(
   raw: { filter?: unknown; cursor?: unknown; error?: unknown; marked?: unknown; batch?: unknown; restored?: unknown } & SearchSchemaInput,
 ): InboxSearch {
-  const marked = countOf(raw.marked);
-  const batch = batchOf(raw.batch);
   return {
     filter: isFilter(raw.filter) ? raw.filter : undefined,
     cursor: typeof raw.cursor === 'string' && Uuid.allows(raw.cursor) ? raw.cursor : undefined,
     // A reason code ("target.not_found"); the page maps the ones it knows and shows a general message for the rest.
     error: typeof raw.error === 'string' && raw.error.length > 0 && raw.error.length <= 60 ? raw.error : undefined,
-    // The two come together or not at all: an Undo needs both.
-    marked: marked !== undefined && batch !== undefined ? marked : undefined,
-    batch: marked !== undefined && batch !== undefined ? batch : undefined,
+    ...markedRow(raw.marked, raw.batch),
     restored: countOf(raw.restored),
   };
 }
@@ -60,12 +64,16 @@ export function inboxHref({ filter, cursor, error, marked, batch, restored }: In
     params.set('marked', String(marked));
     params.set('batch', String(batch));
   }
-  if (restored) params.set('restored', String(restored));
+  if (restored !== undefined) params.set('restored', String(restored));
   const query = params.toString();
   return query ? `/notifications?${query}` : '/notifications';
 }
 
-export type InboxIntent = { intent: 'read' | 'unread'; id: string } | { intent: 'read_all' } | { intent: 'undo_read_all'; batch: string };
+export type InboxIntent =
+  | { intent: 'read' | 'unread'; id: string }
+  | { intent: 'read_all' }
+  /** `marked` rides along so that a refused Undo goes back to its status row (-form.ts). */
+  | { intent: 'undo_read_all'; batch: string; marked?: number };
 
 /**
  * Where an inbox form posts: the intent, the notice and the page to come back to ride in the
@@ -74,7 +82,10 @@ export type InboxIntent = { intent: 'read' | 'unread'; id: string } | { intent: 
 export function inboxAction(what: InboxIntent, { filter, cursor }: InboxSearch = {}): string {
   const params = new URLSearchParams({ intent: what.intent });
   if (what.intent === 'read' || what.intent === 'unread') params.set('id', what.id);
-  if (what.intent === 'undo_read_all') params.set('batch', what.batch);
+  if (what.intent === 'undo_read_all') {
+    params.set('batch', what.batch);
+    if (what.marked) params.set('marked', String(what.marked));
+  }
   if (filter && filter !== 'all') params.set('filter', filter);
   if (cursor) params.set('cursor', cursor);
   return `/notifications?${params.toString()}`;

@@ -198,7 +198,8 @@ function SignedInbox({ data, search }: { data: Signed; search: InboxSearch }) {
   // that comes once the reader has gone to another view only reloads the data: it neither takes them back nor moves focus.
   const [bulk, setBulk] = useState<'all' | 'undo' | null>(null);
   const entry = useLocation({ select: (location) => location.state.__TSR_key ?? '' });
-  // The history entry where an Undo found nothing left to restore (another tab undid it first): said there, as the address has no zero.
+  // The history entry where an Undo found nothing left to restore (another tab undid it first): said there. A plain form's answer says it
+  // through the address instead (restored=0).
   const [noneAt, setNoneAt] = useState<string | null>(null);
   async function bulkSubmit(event: FormEvent<HTMLFormElement>, which: 'all' | 'undo') {
     event.preventDefault();

@@ -284,9 +284,15 @@ test('without scripts Mark all read and its Undo are plain forms', async ({ brow
   await page.getByRole('button', { name: 'Mark all read' }).click();
   await expect(page).toHaveURL(/\/notifications\?filter=replies&marked=3&batch=[1-9][0-9]+$/);
   await expect(page.getByRole('status').filter({ hasText: 'Marked 3 notices as read.' })).toBeVisible();
+  // A second tab on the same answer, whose Undo comes after this one.
+  const second = await page.context().newPage();
+  await second.goto(page.url());
   await page.getByRole('button', { name: 'Undo: mark the 3 unread again' }).click();
   await expect(page).toHaveURL(/\/notifications\?filter=replies&restored=3$/);
   await expect(page.getByRole('status').filter({ hasText: '3 notices are unread again.' })).toBeVisible();
   await expect(unreadText(page, 3)).toBeVisible();
+  await second.getByRole('button', { name: 'Undo: mark the 3 unread again' }).click();
+  await expect(second).toHaveURL(/\/notifications\?filter=replies&restored=0$/);
+  await expect(second.getByRole('status').filter({ hasText: 'Nothing left to undo.' })).toBeVisible();
   await page.context().close();
 });

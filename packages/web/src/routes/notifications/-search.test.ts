@@ -48,16 +48,24 @@ test('after Mark all read the address carries its count and Undo stamp together,
   // The router may hand the numbers over already read as numbers.
   expect(parseInboxSearch(raw({ marked: '3', batch }))).toMatchObject({ marked: 3, batch: Number(batch) });
   expect(parseInboxSearch(raw({ marked: 3, batch: Number(batch) }))).toMatchObject({ marked: 3, batch: Number(batch) });
-  // One without the other is neither; a stamp that is not digits, or a count of 0, is dropped.
+  // One without the other is neither; a stamp that is not digits, or a count of 0 marked, is dropped.
+  expect(parseInboxSearch(raw({ marked: '0', batch }))).toMatchObject({ marked: undefined, batch: undefined });
   expect(parseInboxSearch(raw({ marked: '3' }))).toMatchObject({ marked: undefined, batch: undefined });
   expect(parseInboxSearch(raw({ batch }))).toMatchObject({ marked: undefined, batch: undefined });
   expect(parseInboxSearch(raw({ marked: '3', batch: '12 or 1' }))).toMatchObject({ marked: undefined, batch: undefined });
-  expect(parseInboxSearch(raw({ restored: '0' }))).toMatchObject({ restored: undefined });
+  // An Undo that found nothing left says so without scripts too: none came back.
+  expect(parseInboxSearch(raw({ restored: '0' }))).toMatchObject({ restored: 0 });
+  expect(parseInboxSearch(raw({ restored: '00' }))).toMatchObject({ restored: undefined });
+  expect(inboxHref({ restored: 0 })).toBe('/notifications?restored=0');
   expect(parseInboxSearch(raw({ restored: '2' }))).toMatchObject({ restored: 2 });
   expect(inboxHref({ filter: 'replies', marked: 3, batch: Number(batch) })).toBe(`/notifications?filter=replies&marked=3&batch=${batch}`);
   expect(inboxHref({ restored: 2 })).toBe('/notifications?restored=2');
   expect(inboxAction({ intent: 'undo_read_all', batch }, { filter: 'replies' })).toBe(
     `/notifications?intent=undo_read_all&batch=${batch}&filter=replies`,
+  );
+  // The Undo carries its count, so a refused one can go back to its status row.
+  expect(inboxAction({ intent: 'undo_read_all', batch, marked: 3 }, { filter: 'replies' })).toBe(
+    `/notifications?intent=undo_read_all&batch=${batch}&marked=3&filter=replies`,
   );
   expect(watchAction('watch', 'p1')).toBe('/notifications?intent=watch&post=p1');
 });

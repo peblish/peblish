@@ -8,8 +8,8 @@ import { inboxAction, type InboxSearch } from '../-search.ts';
 // What Mark all read leaves on the page: "Marked 3 as read." with an Undo, then, once undone, how
 // many are unread again. The vendored Mux UI has no toast with an action, so this is the mock's
 // in-page fallback: a status row under the title. It reads the page's address (`marked`, `batch`,
-// `restored`, which -form.ts's answer puts there), so it is the same with scripts and without; an
-// Undo that found nothing left (`none`) is the inbox's to say, as the address has no zero.
+// `restored`, which -form.ts's answer puts there), so it is the same with scripts and without. An
+// Undo that found nothing left says so: by `restored=0` without scripts, by `none` from the inbox with them.
 // The region is always there, so a change in it is announced; empty, it takes no room.
 
 export const undoButtonId = 'inbox-undo';
@@ -37,7 +37,7 @@ export function MarkedStatus({
       {marked && batch ? (
         <>
           <Text size="sm">{translatePlural(locale, 'notifications', 'undo.marked', marked)}</Text>
-          <form method="post" action={inboxAction({ intent: 'undo_read_all', batch: String(batch) }, page)} onSubmit={onUndo}>
+          <form method="post" action={inboxAction({ intent: 'undo_read_all', batch: String(batch), marked }, page)} onSubmit={onUndo}>
             <Button
               id={undoButtonId}
               type="submit"
@@ -53,7 +53,7 @@ export function MarkedStatus({
       ) : restored ? (
         <Text size="sm">{translatePlural(locale, 'notifications', 'undo.restored', restored)}</Text>
       ) : (
-        none && <Text size="sm">{t('notifications', 'undo.none')}</Text>
+        (none || restored === 0) && <Text size="sm">{t('notifications', 'undo.none')}</Text>
       )}
     </Text>
   );

@@ -188,6 +188,15 @@ test('signed out, a form is refused and nothing changes', async () => {
   );
   expect(location(signedOut)).toEqual([303, '/notifications?error=auth.required']);
   expect(readNow()).toEqual({ [ann]: [], [bob]: [] });
+  // A refused Undo goes back with its status row, so it can be pressed again once signed in.
+  const undo = await handleInboxPost(
+    new Request(`https://feddit.test/notifications?intent=undo_read_all&batch=${batch}&marked=2&filter=replies`, {
+      method: 'POST',
+      body: new URLSearchParams(),
+      headers: { host: 'feddit.test', 'content-type': 'application/x-www-form-urlencoded' },
+    }),
+  );
+  expect(location(undo)).toEqual([303, `/notifications?filter=replies&error=auth.required&marked=2&batch=${batch}`]);
 });
 
 test('the answer always goes back under /notifications, keeping only a known filter and a cursor that is an id', async () => {
@@ -233,6 +242,8 @@ test('Mark all read answers its count and its Undo stamp, in the JSON and in the
     '/notifications?filter=replies&restored=2',
   ]);
   expect(readNow()).toEqual({ [ann]: [], [bob]: [] });
+  // Without scripts an Undo that finds nothing left answers that none came back.
+  expect(location(await send({ query: { intent: 'undo_read_all', batch, marked: '2' } }))).toEqual([303, '/notifications?restored=0']);
   // Without scripts the answer is the page with the status row's fields.
   expect(location(await send({ query: { intent: 'read_all', filter: 'replies' } }))).toEqual([
     303,
