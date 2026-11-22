@@ -463,6 +463,19 @@ test.describe('the directory, signed in', () => {
     await context.close();
   });
 
+  test('a Leave of a community that does not exist is refused, with and without script', async ({ browser }) => {
+    const body = { community: '0192f2c0-0000-7000-8000-00000000dead', intent: 'leave', next: '/communities?sort=active' };
+    const { context, page } = await as(browser, viewerState);
+    await gotoHydrated(page, '/communities');
+    const json = await post(page, '/communities/follow', body, true);
+    expect([json.status, JSON.parse(json.text)]).toEqual([400, { error: 'target.not_found' }]);
+    expect(await post(page, '/communities/follow', body)).toMatchObject({
+      redirected: true,
+      url: '/communities?sort=active&error=target.not_found',
+    });
+    await context.close();
+  });
+
   test('a refused join says why, with and without script', async ({ browser, page }) => {
     // A community that does not exist: the form post names it by a made-up id.
     const body = { community: '0192f2c0-0000-7000-8000-00000000dead', intent: 'join', next: '/communities?sort=active' };
