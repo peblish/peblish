@@ -36,6 +36,14 @@ test('moderating counts a moderator row that holds a role now, not an expired or
   expect((await sidebarCommunities(people.stranger.id)).moderating).toBe(0);
 });
 
+test('moderating counts a sensitive community only once the moderator declared 16+, as the joined list lists it', async () => {
+  const { people, communities } = await seedFeedWorld();
+  await seedModerator(communities.adult, people.stranger);
+  expect((await sidebarCommunities(people.stranger.id)).moderating).toBe(0);
+  await writer().insert(ageDeclarations).values({ actorId: people.stranger.id });
+  expect((await sidebarCommunities(people.stranger.id)).moderating).toBe(1);
+});
+
 test('a signed-out viewer, and a signed-in one with no follows, get the right lists', async () => {
   const { people } = await seedFeedWorld();
   // The sensitive local community is not listed to someone who has not declared.
