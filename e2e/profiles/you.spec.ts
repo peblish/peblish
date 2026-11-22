@@ -88,6 +88,9 @@ test('without scripts the links and Sign out work, and Appearance is not offered
   await plain.goto('/you');
   const main = plain.getByRole('main');
   await expect(main.getByRole('navigation', { name: 'Account' }).getByRole('link', { name: 'Security' })).toBeVisible();
+  // The page's list and the frame's own account list (under the page with scripts off) are named apart.
+  await expect(plain.getByRole('navigation', { name: 'Account', exact: true })).toHaveCount(1);
+  await expect(plain.getByRole('navigation', { name: 'Account pages', exact: true })).toHaveCount(1);
   await expect(main.getByText('Appearance')).toBeHidden();
   await main.getByRole('button', { name: 'Sign out' }).click();
   await plain.goto('/you');

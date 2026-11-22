@@ -135,11 +135,12 @@ export function Account({ session }: { session: SessionView }) {
  * The account's pages and sign-out as plain links and a form, at the foot of every page for a
  * signed-in viewer. Shown only with scripts off (shell.css), where the account menu and the phone
  * drawer cannot open; otherwise it is not displayed, and its form is the one their Sign out submits.
+ * Named apart from the You page's own Account list, which it sits under there.
  */
 export function AccountLinks({ session }: { session: SessionView }) {
   const { t } = useTranslate();
   return (
-    <nav id={accountLinksId} className="pb-account-links" aria-label={t('shell', 'account.menu')}>
+    <nav id={accountLinksId} className="pb-account-links" aria-label={t('shell', 'account.links')}>
       {accountPages(session, t).map(({ id, href, label }) => (
         <Link key={id} className="pb-link-quiet" href={href}>
           {label}

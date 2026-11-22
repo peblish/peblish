@@ -71,7 +71,7 @@ for (const [layout, viewport] of [
         if (layout === 'desktop') {
           await account.click();
           await page.waitForURL((url) => url.hash === '#pb-account-links');
-        } else await page.getByRole('navigation', { name: 'Account' }).scrollIntoViewIfNeeded();
+        } else await page.getByRole('navigation', { name: 'Account pages' }).scrollIntoViewIfNeeded();
       };
 
       const destinations = [
@@ -84,7 +84,7 @@ for (const [layout, viewport] of [
       for (const [name, path] of destinations) {
         await page.goto('/');
         await toList();
-        const list = page.getByRole('navigation', { name: 'Account' });
+        const list = page.getByRole('navigation', { name: 'Account pages' });
         await expect(list).toBeInViewport();
         await list.getByRole('link', { name, exact: true }).click();
         await page.waitForURL((url) => url.pathname === path);
@@ -92,11 +92,11 @@ for (const [layout, viewport] of [
       }
 
       await toList();
-      await page.getByRole('navigation', { name: 'Account' }).getByRole('button', { name: 'Sign out' }).click();
+      await page.getByRole('navigation', { name: 'Account pages' }).getByRole('button', { name: 'Sign out' }).click();
       await page.waitForURL((url) => url.pathname === '/');
       const signedOut = layout === 'desktop' ? banner : page.getByRole('navigation', { name: 'Sections' });
       await expect(signedOut.getByRole('link', { name: 'Sign in' })).toBeVisible();
-      await expect(page.getByRole('navigation', { name: 'Account' }).getByRole('link', { name: 'Profile' })).toHaveCount(0);
+      await expect(page.getByRole('navigation', { name: 'Account pages' }).getByRole('link', { name: 'Profile' })).toHaveCount(0);
     });
   });
 }
@@ -154,6 +154,6 @@ test('with scripts on, the account list and the no-script link are not shown and
   const banner = page.getByRole('banner');
   await expect(banner.getByRole('button', { name: `Account: ${admin.name}` })).toBeVisible();
   await expect(banner.getByRole('link', { name: `Account: ${admin.name}` })).toHaveCount(0);
-  await expect(page.getByRole('navigation', { name: 'Account' })).toHaveCount(0);
+  await expect(page.getByRole('navigation', { name: 'Account pages' })).toHaveCount(0);
   await expect(page.locator('#pb-account-links')).toBeHidden();
 });
