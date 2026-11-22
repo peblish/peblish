@@ -2,6 +2,7 @@ import { Uuid } from '@peblish/schema/ids';
 import { excerptLength } from '@peblish/schema/markdown';
 import { aliasedTable, and, desc, eq, inArray, isNull, lt, type SQL } from 'drizzle-orm';
 import { gateOf } from '../communities/gate.ts';
+import { moderatedAmong } from '../communities/read.ts';
 import { localInstance } from '../db/local-instance.ts';
 import { db, type Queryable } from '../db/read.ts';
 import { actors } from '../db/tables/actors.ts';
@@ -43,6 +44,7 @@ const noticeExcerptLength = Math.min(excerptLength, 200);
 
 type PostRow = {
   id: Uuid;
+  communityId: Uuid;
   title: string;
   bodyMd: string | null;
   contentHtml: string | null;
@@ -110,7 +112,7 @@ export async function readInbox(
   ]);
   const page = rows.slice(0, limit).map(({ notice }) => notice);
   const next = rows.length > limit ? (page.at(-1)?.id ?? null) : null;
-  return { items: await describe(q, page, viewer.actorId), next, unread, unreadByGroup };
+  return { items: await describe(q, page, viewer), next, unread, unreadByGroup };
 }
 
 async function groupCounts(q: Queryable, viewerId: Uuid): Promise<UnreadByGroup> {
@@ -121,7 +123,8 @@ async function groupCounts(q: Queryable, viewerId: Uuid): Promise<UnreadByGroup>
 }
 
 /** The rows as items: who, where, what it says (or why it says nothing) and the moderator's statement. */
-async function describe(q: Queryable, rows: (typeof notifications.$inferSelect)[], viewerId: Uuid): Promise<InboxItem[]> {
+async function describe(q: Queryable, rows: (typeof notifications.$inferSelect)[], viewer: NonNullable<Viewer>): Promise<InboxItem[]> {
+  const viewerId = viewer.actorId;
   if (rows.length === 0) return [];
   const actorIds = [...new Set(rows.flatMap((row) => [row.actorId, row.communityId]).filter((id) => id !== null))];
   const commentIds = rows.flatMap((row) => (row.commentId ? [row.commentId] : []));
@@ -156,6 +159,9 @@ async function describe(q: Queryable, rows: (typeof notifications.$inferSelect)[
     q.select({ actorId: ageDeclarations.actorId }).from(ageDeclarations).where(eq(ageDeclarations.actorId, viewerId)),
   ]);
   const declared = declaration.length > 0;
+  // The staff of a post's community (and site admins) are told who wrote what is removed or deleted there, as its pages tell them.
+  const communityIds = [...new Set(postRows.map((row) => row.communityId))];
+  const staffOf = viewer.siteRole === 'admin' ? new Set(communityIds) : await moderatedAmong(viewerId, communityIds, q);
   const personById = new Map(people.map((row) => [row.id, asActor(row)]));
   const commentById = new Map<string, CommentRow>(commentRows.map((row) => [row.id, row]));
   const postById = new Map<string, PostRow>(postRows.map((row) => [row.id, row]));
@@ -167,7 +173,10 @@ async function describe(q: Queryable, rows: (typeof notifications.$inferSelect)[
     const text = comment ?? (row.commentId ? undefined : post);
     const withheld = withheldOf(text ? { comment: comment ?? null, post: post ?? null } : null);
     const entry = row.modlogId ? entryById.get(row.modlogId) : undefined;
-    const actorWithheld = actorWithheldOf(row.kind, comment, post, declared);
+    const actorWithheld = actorWithheldOf(row.kind, comment, post, {
+      declared,
+      staff: post !== undefined && staffOf.has(post.communityId),
+    });
     return {
       id: row.id,
       kind: row.kind,
@@ -198,6 +207,7 @@ async function postsOf(q: Queryable, ids: Uuid[]): Promise<PostRow[]> {
   const rows = await q
     .select({
       id: posts.id,
+      communityId: posts.communityId,
       title: posts.title,
       bodyMd: posts.bodyMd,
       contentHtml: posts.contentHtml,
@@ -245,9 +255,10 @@ function withheldOf(subject: { comment: CommentRow | null; post: PostRow | null 
  * same text: a deleted comment is a tombstone without its author (removed as well or not), and a
  * sensitive post or community shows a viewer without a 16+ declaration nothing at all (gateOf,
  * the post page's rule; an access rule, so the browser's Hide NSFW plays no part). Under a post a
- * moderator removed, the page sends no comments, and a removed or deleted post names no author
- * (to anyone but its author and the moderators, whom this does not look up), so a comment there
- * and a mention in such a post name no one either. A declared viewer is named the author: Hide
+ * moderator removed, the page sends no comments, and a removed or deleted post names no author,
+ * so a comment there and a mention in such a post name no one either. The community's staff
+ * (`staff`: its moderators and the site admins) are told for removed and deleted content, as its
+ * pages tell them; the age gate holds for them too, as the page's does. A declared viewer is named the author: Hide
  * NSFW is a prompt they pass on the page, which then shows who wrote it (the words stay withheld
  * here for everyone, as `withheld` says). A removed comment keeps its author, as the thread shows
  * it, and so does a reply under a deleted post. A moderator's notice (removal, restore, ban)
@@ -257,14 +268,16 @@ function actorWithheldOf(
   kind: InboxItem['kind'],
   comment: CommentRow | undefined,
   post: PostRow | undefined,
-  declared: boolean,
+  { declared, staff }: { declared: boolean; staff: boolean },
 ): NoticeActorWithheld | null {
   if (kind !== 'reply' && kind !== 'mention') return null;
-  if (comment?.deletedAt) return 'deleted';
-  if (comment && post?.removedAt) return 'removed';
-  // A mention in the post itself: the post page withholds the author of a deleted or removed post.
-  if (!comment && post?.deletedAt) return 'deleted';
-  if (!comment && post?.removedAt) return 'removed';
+  if (!staff) {
+    if (comment?.deletedAt) return 'deleted';
+    if (comment && post?.removedAt) return 'removed';
+    // A mention in the post itself: the post page withholds the author of a deleted or removed post.
+    if (!comment && post?.deletedAt) return 'deleted';
+    if (!comment && post?.removedAt) return 'removed';
+  }
   if (post && gateOf(post.hidden, { declared }, true) !== 'none') return 'sensitive';
   return null;
 }
