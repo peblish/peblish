@@ -1,14 +1,17 @@
 import type { Uuid } from '@peblish/schema/ids';
 import type { ActorRef } from '@peblish/schema/views';
-import { and, count, eq, isNull, sql } from 'drizzle-orm';
+import { and, count, eq, isNull, not, sql } from 'drizzle-orm';
 import { freshModerator } from '../authz/roles.ts';
+import { instanceBlockedBy } from '../blocks/predicate.ts';
 import { listLocalCommunities } from '../communities/read.ts';
 import { db, type Queryable } from '../db/read.ts';
 import { actors } from '../db/tables/actors.ts';
 import { follows } from '../db/tables/follows.ts';
 import { instances } from '../db/tables/instances.ts';
 import { communityModerators } from '../db/tables/moderation.ts';
+import { ageDeclarations } from '../identity/tables.ts';
 import { communityRemovals } from '../moderation/tables.ts';
+import { peerBlocked } from '../peers/gate.ts';
 
 // The lists the sidebar shows beyond its fixed links (web's shell/data.ts calls this).
 
@@ -30,7 +33,10 @@ const open = and(
 /**
  * A signed-in viewer's communities: the ones they follow, local and remote, with a follow that
  * is still pending included (the Subscribed feed shows only the accepted ones), plus how many
- * they moderate. A signed-out viewer gets the local communities that are not age-gated.
+ * they moderate. As everywhere else, a sensitive or NSFL one only once they declared 16+, and none
+ * on a host this server or the viewer blocks. One that opted out of search is still listed: the
+ * choice keeps it out of the directory, and its follower found it already. A signed-out viewer
+ * gets the local communities that are not age-gated.
  */
 export async function sidebarCommunities(viewerId: Uuid | null, q: Queryable = db()): Promise<SidebarCommunities> {
   if (!viewerId) {
@@ -51,7 +57,16 @@ export async function sidebarCommunities(viewerId: Uuid | null, q: Queryable = d
       .from(follows)
       .innerJoin(actors, eq(actors.id, follows.followeeId))
       .innerJoin(instances, eq(instances.id, actors.instanceId))
-      .where(and(eq(follows.followerId, viewerId), eq(actors.kind, 'Group'), open))
+      .where(
+        and(
+          eq(follows.followerId, viewerId),
+          eq(actors.kind, 'Group'),
+          open,
+          sql`(not (${actors.sensitive} or ${actors.nsfl}) or exists (select 1 from ${ageDeclarations} as ad where ad.actor_id = ${viewerId}))`,
+          not(peerBlocked(actors.instanceId)),
+          not(instanceBlockedBy(viewerId, actors.instanceId)),
+        ),
+      )
       .orderBy(sql`lower(${actors.name})`, actors.id)
       .limit(sidebarLimit),
     q
