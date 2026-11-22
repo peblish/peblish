@@ -159,6 +159,20 @@ describe('the communities a viewer follows, for the sidebar and the composer', (
       },
     ]);
   });
+
+  test('communities of one name come by host, then id, the same on every read', async () => {
+    const w = await world();
+    const hosts = ['zeta.test', 'alpha.test', 'mid.test'];
+    // Followed in an order that is neither, so the read's order is its own.
+    const seeded = [];
+    for (const host of hosts) seeded.push(await seedActor(await seedInstance(host, false), 'Group', 'news'));
+    for (const community of seeded.toReversed()) {
+      await writer()
+        .insert(follows)
+        .values({ followerId: w.alice.id, followeeId: community.id, apId: `https://fed-a.test/f/${community.id}`, state: 'accepted' });
+    }
+    expect((await followedCommunities(w.alice.id)).map(({ host }) => host)).toEqual(['alpha.test', 'mid.test', 'zeta.test']);
+  });
 });
 
 describe('the answers that come back', () => {

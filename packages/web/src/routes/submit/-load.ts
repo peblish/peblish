@@ -96,8 +96,11 @@ export const loadComposer = createServerFn({ method: 'GET' })
     // What a refused post had typed (without JavaScript), kept for this person by the POST handler.
     const kept = readFlash(data.flash, view.actorId);
     // The community the words were meant for, if it is still one to pick, then the one asked for in the URL.
-    const { communities, truncated, selected } = await pickerFor(view, (rows) =>
-      target ? target.community : (pickFrom(rows, kept?.community) ?? pickFrom(rows, data.community) ?? null),
+    const wanted = target ? [] : [kept?.community, data.community];
+    const { communities, truncated, selected } = await pickerFor(
+      view,
+      (rows) => (target ? target.community : (pickFrom(rows, kept?.community) ?? pickFrom(rows, data.community) ?? null)),
+      wanted,
     );
     const [handles, uploads, panel] = await Promise.all([
       localHandles(),

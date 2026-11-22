@@ -33,6 +33,8 @@ vi.mock('@peblish/core/communities/read', () => ({
   listLocalCommunities: core.listLocalCommunities,
   moderatedAmong: core.moderatedAmong,
   readCommunity: async () => null,
+  // As core's for a local name: any case, removed or gated or not.
+  findCommunityId: async (handle: string) => core.local.find(({ actor }) => actor.handle === handle.toLowerCase())?.actor.id ?? null,
 }));
 vi.mock('@peblish/core/follows/read', () => ({ followedCommunities: async () => core.follows }));
 const { pickerFor, pickerMax } = await import('./-picker.ts');
@@ -163,6 +165,49 @@ describe('past the cap', () => {
     expect(picker.communities).toHaveLength(pickerMax);
     expect(picker.communities.map(({ handle }) => handle)).toContain(name(200));
     expect(picker.selected).toBe(`id-${name(200)}`);
+  });
+
+  test('a community asked for by name or id past the first page is looked up on its own, where the person may post', async () => {
+    core.local = Array.from({ length: 260 }, (_, n) =>
+      local(name(n), { postingRestrictedToMods: n === 240 || n === 241, sensitive: n === 230 }),
+    );
+    core.staffOf = new Set([`id-${name(241)}`]);
+    const ask = (wanted: string) => pickerFor(person(), none, [wanted]);
+    for (const wanted of [name(250), `!${name(250).toUpperCase()}`]) {
+      const picker = await ask(wanted);
+      expect([wanted, picker.selected]).toEqual([wanted, `id-${name(250)}`]);
+      const handles = picker.communities.map(({ handle }) => handle);
+      expect(handles).toHaveLength(pickerMax);
+      expect(handles).toContain(name(250));
+      // In its place by name, after the first page's.
+      expect(handles).toEqual(handles.toSorted());
+    }
+    // One read for the page and one for the community asked for.
+    expect(core.listLocalCommunities.mock.calls.at(-1)?.[0]).toMatchObject({ ids: [`id-${name(250)}`] });
+    // Not where they may not post: mods-only without being staff there, or age-gated for them.
+    expect((await ask(name(240))).selected).toBeNull();
+    expect((await ask(name(241))).selected).toBe(`id-${name(241)}`);
+    expect((await ask(name(230))).selected).toBeNull();
+    expect((await ask('nowhere')).selected).toBeNull();
+    // By id, as a link from the community's page names it.
+    const id = '019a0000-0000-7000-8000-0000000000ff';
+    core.local.push({ ...local('zz'), actor: { id, handle: 'zz' } });
+    expect((await ask(id)).selected).toBe(id);
+    // What the list already holds is chosen from it, with no further read.
+    core.listLocalCommunities.mockClear();
+    expect((await pickerFor(person(), (rows) => rows[3]?.id ?? null, [name(250)])).selected).toBe(`id-${name(3)}`);
+    expect(core.listLocalCommunities).toHaveBeenCalledTimes(1);
+  });
+
+  test('follows past the first page are read at most a cap at a time', async () => {
+    core.local = Array.from({ length: 900 }, (_, n) => local(name(n)));
+    core.follows = Array.from({ length: 600 }, (_, n) => follow(name(300 + n), { host: 'feddit.test', local: true }));
+    const picker = await pickerFor(person(), none);
+    expect(picker.communities).toHaveLength(pickerMax);
+    const ids = core.listLocalCommunities.mock.calls[1]?.[0]?.ids as string[];
+    expect(ids).toHaveLength(pickerMax);
+    // The first by name: the ones the cap keeps.
+    expect(ids[0]).toBe(`id-${name(300)}`);
   });
 
   test('more follows than the cap: the first by name, and the cut is said', async () => {
