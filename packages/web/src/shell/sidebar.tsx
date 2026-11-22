@@ -2,6 +2,7 @@ import { unreadCap } from '@peblish/core/notifications/view';
 import type { SessionView } from '@peblish/schema/session';
 import type { ActorRef } from '@peblish/schema/views';
 import { Avatar } from '@peblish/ui/components/avatar';
+import { avatarInitial } from '@peblish/ui/components/avatar-initial.ts';
 import { neutraliseBidi } from '@peblish/ui/components/handle';
 import {
   CircleHelpIcon,
@@ -41,10 +42,10 @@ const communityLabel = (community: ActorRef) => neutraliseBidi(community.display
 
 // A community's row draws a small Mux Avatar with its initial, as Sidebar.NavItem's icon (the shell's data
 // has no community pictures yet), so folded into the rail the row keeps a mark and its tooltip. One component
-// per letter, so a row keeps its icon across renders.
+// per initial (the label's first grapheme, so a flag or an emoji stays whole), so a row keeps its icon across renders.
 const initialIcons = new Map<string, ComponentType<{ className?: string }>>();
-function initialIcon(label: string): ComponentType<{ className?: string }> {
-  const initial = [...label][0]?.toUpperCase() ?? '';
+export function initialIcon(label: string): ComponentType<{ className?: string }> {
+  const initial = avatarInitial(label, '');
   let Icon = initialIcons.get(initial);
   if (!Icon) {
     Icon = function CommunityInitial({ className }: { className?: string }) {
