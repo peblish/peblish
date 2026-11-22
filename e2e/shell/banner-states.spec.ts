@@ -1,13 +1,13 @@
 import AxeBuilder from '@axe-core/playwright';
-import { expect, test, type Browser, type Locator, type Page } from '@playwright/test';
+import { expect, test } from '@playwright/test';
 import { colours } from '../support/contrast.ts';
-import { prefsCookie, skipWithoutKit } from '../support/kit.ts';
+import { skipWithoutKit } from '../support/kit.ts';
 import { gotoHydrated } from '../support/route-marker.ts';
 import { galleryStates, stateProblems } from '../support/states.ts';
+import { open, settled } from './banner-support.ts';
 
 // The site banner and the admin form's controls on their gallery pages (/kit/<key>, routes/kit/-banner-pieces.tsx):
-// every state, scheme and condition through the shared helper; then every tone in both emphases, each control at
-// rest, hovered and pressed, in light and dark; and the pictures (the previews, the width preview), which have no
+// every state, scheme and condition through the shared helper, and the pictures (the previews, the width preview), which have no
 // control to drive.
 test.beforeEach(async ({ request }) => skipWithoutKit(request));
 test.setTimeout(300_000);
@@ -126,101 +126,6 @@ for (const composition of choices) {
     expect(problems).toEqual([]);
   });
 }
-
-async function open(browser: Browser, baseURL: string, path: string, scheme: 'light' | 'dark', options = {}) {
-  const context = await browser.newContext({ baseURL, colorScheme: scheme, viewport: { width: 1280, height: 900 }, ...options });
-  await context.addCookies([{ ...prefsCookie('card', scheme), url: baseURL }]);
-  const page = await context.newPage();
-  await gotoHydrated(page, path);
-  return page;
-}
-
-/** Waits for every transition to end, so a state is measured once it is reached. */
-const settled = (page: Page) =>
-  page.evaluate(() =>
-    Promise.all(
-      document
-        .getAnimations()
-        .filter((animation) => animation.effect?.getComputedTiming().endTime !== Infinity)
-        .map((animation) => animation.finished),
-    ),
-  );
-
-/** What `part` paints in each state of `control`: rest, hovered, pressed (released away, so nothing is activated). */
-async function inStates(page: Page, control: Locator, part: Locator, kind: 'text' | 'icon') {
-  const measured: Record<string, number> = {};
-  await page.mouse.move(0, 0);
-  await settled(page);
-  measured.rest = (await colours(part))[kind]!.ratio;
-  await control.hover();
-  await settled(page);
-  measured.hover = (await colours(part))[kind]!.ratio;
-  await page.mouse.down();
-  await settled(page);
-  measured.pressed = (await colours(part))[kind]!.ratio;
-  await page.mouse.move(0, 0);
-  await page.mouse.up();
-  return measured;
-}
-
-test('every tone in both emphases: the text at 4.5:1 and the dismiss icon at 3:1, at rest, hovered and pressed, light and dark', async ({
-  browser,
-  baseURL,
-}) => {
-  const problems: string[] = [];
-  for (const scheme of ['light', 'dark'] as const) {
-    const page = await open(browser, baseURL!, '/kit/site-banner-tones', scheme);
-    const banners = page.locator('[data-kit-banner]');
-    expect(await banners.count()).toBe(14);
-    for (const banner of await banners.all()) {
-      const name = `${scheme} ${await banner.getAttribute('data-kit-banner')}`;
-      for (const part of ['.muxui-banner__message', '.muxui-banner__title']) {
-        if (!(await banner.locator(part).count())) continue;
-        const ratio = (await colours(banner.locator(part)))[`text`]!.ratio;
-        if (ratio < 4.5) problems.push(`${name} ${part} ${ratio}`);
-      }
-      const button = banner.locator('.muxui-banner__action');
-      const link = banner.locator('.muxui-banner__link');
-      const dismiss = banner.locator('.muxui-banner__dismiss');
-      for (const [control, part, kind, floor] of [
-        [button, button.locator('.muxui-button__label'), 'text', 4.5],
-        [link, link, 'text', 4.5],
-        [dismiss, dismiss, 'icon', 3],
-      ] as const)
-        for (const [state, ratio] of Object.entries(await inStates(page, control, part, kind)))
-          if (ratio < floor) problems.push(`${name} ${await control.getAttribute('class')} ${state} ${ratio}`);
-    }
-    await page.context().close();
-  }
-  expect(problems).toEqual([]);
-});
-
-test('focused from the keyboard, every control on every banner has a ring at 3:1 against the banner, light and dark', async ({
-  browser,
-  baseURL,
-}) => {
-  const problems: string[] = [];
-  for (const scheme of ['light', 'dark'] as const) {
-    const page = await open(browser, baseURL!, '/kit/site-banner-tones', scheme);
-    for (const banner of await page.locator('[data-kit-banner]').all()) {
-      const name = `${scheme} ${await banner.getAttribute('data-kit-banner')}`;
-      for (const control of [
-        banner.locator('.muxui-banner__action'),
-        banner.locator('.muxui-banner__link'),
-        banner.locator('.muxui-banner__dismiss'),
-      ]) {
-        // A key first, so the browser and React Aria count the focus as the keyboard's.
-        await page.keyboard.press('Shift+Tab');
-        await control.focus();
-        await settled(page);
-        const ring = (await colours(control)).outline;
-        if (!ring || ring.ratio < 3) problems.push(`${name} ${await control.getAttribute('class')}: ${ring?.ratio ?? 'none'}`);
-      }
-    }
-    await page.context().close();
-  }
-  expect(problems).toEqual([]);
-});
 
 test('a custom colour Mux cannot keep readable is drawn in black or white text, and a translucent one falls back to the tone', async ({
   browser,
