@@ -1,5 +1,6 @@
 import type { SessionView } from '@peblish/schema/session';
 import { Avatar } from '@peblish/ui/components/avatar';
+import { avatarInitial } from '@peblish/ui/components/avatar-initial.ts';
 import { Button } from '@peblish/ui/components/button';
 import { ButtonLink } from '@peblish/ui/components/button-link';
 import { CheckIcon, LogInIcon, UserPlusIcon } from '@peblish/ui/components/icons';
@@ -41,7 +42,7 @@ function AccountName({ name, label }: { name: string; label: string }) {
   return (
     <>
       <Avatar.Root size="sm" aria-hidden="true">
-        <Avatar.Fallback>{name.slice(0, 1).toUpperCase()}</Avatar.Fallback>
+        <Avatar.Fallback>{avatarInitial(name, '')}</Avatar.Fallback>
       </Avatar.Root>
       <Text className="pb-sr">
         {label}: {name}

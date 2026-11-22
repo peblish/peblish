@@ -1,4 +1,5 @@
 import { Avatar } from '@peblish/ui/components/avatar';
+import { avatarInitial } from '@peblish/ui/components/avatar-initial.ts';
 import { Badge } from '@peblish/ui/components/badge';
 import { ButtonLink } from '@peblish/ui/components/button-link';
 import { EmptyState } from '@peblish/ui/components/empty-state';
@@ -42,8 +43,8 @@ import { HideNsfwForm } from './gate.tsx';
 // The LinkedDisclosure's id: the fragment its scripts-off link ends with.
 const toolsAnchor = 'cm-tools';
 
-/** One letter for an icon without a picture. */
-const initial = (text: string) => (text.trim()[0] ?? '?').toUpperCase();
+/** The first character, whole, for an icon without a picture. */
+const initial = (text: string) => avatarInitial(text, '?');
 
 export type CommunityTab = 'posts' | 'about';
 

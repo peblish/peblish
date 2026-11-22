@@ -24,7 +24,7 @@ import { Sidebar } from '@peblish/ui/components/sidebar';
 import { Text } from '@peblish/ui/components/text';
 import { Tooltip } from '@peblish/ui/components/tooltip';
 import { useRouter } from '@tanstack/react-router';
-import type { ComponentType, ReactNode } from 'react';
+import { useMemo, type ComponentType, type ReactNode } from 'react';
 import { useTranslate } from '../i18n/use-translate.ts';
 import { openInRouter } from './client-links.ts';
 import type { ShellData } from './data.ts';
@@ -40,24 +40,29 @@ export const badgeText = (count: number) => (count >= unreadCap ? `${unreadCap -
  */
 const communityLabel = (community: ActorRef) => neutraliseBidi(community.displayName?.trim() || community.name, '');
 
-// A community's row draws a small Mux Avatar with its initial, as Sidebar.NavItem's icon (the shell's data
-// has no community pictures yet), so folded into the rail the row keeps a mark and its tooltip. One component
-// per initial (the label's first grapheme, so a flag or an emoji stays whole), so a row keeps its icon across renders.
-const initialIcons = new Map<string, ComponentType<{ className?: string }>>();
-export function initialIcon(label: string): ComponentType<{ className?: string }> {
+// A community's row draws a small Mux Avatar with its initial (the label's first character, whole) as
+// Sidebar.NavItem's icon, which is a component: the shell's data has no community pictures yet, and folded into
+// the rail the row keeps a mark and its tooltip.
+const iconOf = (initial: string): ComponentType<{ className?: string }> =>
+  function CommunityInitial({ className }: { className?: string }) {
+    return (
+      <Avatar.Root size="sm" className={`${className ?? ''} pb-nav__avatar`} aria-hidden="true">
+        <Avatar.Fallback>{initial}</Avatar.Fallback>
+      </Avatar.Root>
+    );
+  };
+export const initialIcon = (label: string) => iconOf(avatarInitial(label, ''));
+
+/** A community's row: its icon made once for the row and its initial, so the row keeps it across renders. */
+function CommunityItem({ label, href, current }: { label: string; href: string; current: boolean }) {
   const initial = avatarInitial(label, '');
-  let Icon = initialIcons.get(initial);
-  if (!Icon) {
-    Icon = function CommunityInitial({ className }: { className?: string }) {
-      return (
-        <Avatar.Root size="sm" className={`${className ?? ''} pb-nav__avatar`} aria-hidden="true">
-          <Avatar.Fallback>{initial}</Avatar.Fallback>
-        </Avatar.Root>
-      );
-    };
-    initialIcons.set(initial, Icon);
-  }
-  return Icon;
+  const icon = useMemo(() => iconOf(initial), [initial]);
+  return (
+    <Sidebar.NavItem href={href} icon={icon} current={current}>
+      {/* An element with the text as its child, so Mux still reads the folded rail's tooltip from it. */}
+      <bdi>{label}</bdi>
+    </Sidebar.NavItem>
+  );
 }
 
 /** The site's own pages, in the sidebar's last section and, folded, in the rail's foot menu. */
@@ -173,12 +178,7 @@ export function Navigation({
         <Sidebar.Section {...section('communities', t('shell', 'nav.communities'))}>
           {communities.map(({ community, label }) => {
             const href = communityPath(community);
-            return (
-              <Sidebar.NavItem key={community.id} href={href} icon={initialIcon(label)} current={pathname === href}>
-                {/* An element with the text as its child, so Mux still reads the folded rail's tooltip from it. */}
-                <bdi>{label}</bdi>
-              </Sidebar.NavItem>
-            );
+            return <CommunityItem key={community.id} label={label} href={href} current={pathname === href} />;
           })}
           {item(directoryPaths.browse, t('shell', 'communities.browse'), CompassIcon)}
         </Sidebar.Section>
