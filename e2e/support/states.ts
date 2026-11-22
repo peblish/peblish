@@ -1,6 +1,6 @@
 import AxeBuilder from '@axe-core/playwright';
 import type { Browser, Locator, Page } from '@playwright/test';
-import { colours } from './contrast.ts';
+import { colours, type Pair } from './contrast.ts';
 import { prefsCookie } from './kit.ts';
 import { gotoHydrated } from './route-marker.ts';
 
@@ -29,7 +29,8 @@ export interface StateCheck {
   icon?: number;
   /**
    * Focus only: the ring around the target (an outline outside it, or a solid box-shadow ring); for a field without
-   * one, its edge, which Mux's fields draw in the focus colour instead.
+   * one, its edge, which Mux's fields draw in the focus colour instead. An edge focus leaves as it was at rest is no
+   * indicator, and counts as none (0).
    */
   ring?: number;
   /** Reduced motion only: animations still running once the state is reached, as `name duration`. */
@@ -79,6 +80,10 @@ const running = (page: Page) =>
       }),
   );
 
+/** Whether focus changed a field's edge: its colour, or an edge where there was none. */
+const changed = (rest: Pair | undefined, focused: Pair | undefined) =>
+  focused !== undefined && (rest === undefined || focused.fore.some((channel, index) => channel !== rest.fore[index]));
+
 const smallest = (sample: Locator, selector = controls) =>
   sample.locator(selector).evaluateAll(
     (nodes) =>
@@ -101,6 +106,8 @@ async function check(page: Page, state: KitState, condition: Condition): Promise
   // that happens to straddle it, and axe would count that as an obscured target).
   await page.locator(section).evaluate((node) => node.scrollIntoView({ block: 'center' }));
   await page.mouse.move(0, 0);
+  // A field's edge at rest, to tell a focus edge from one that was always there.
+  const restEdge = state === 'focus' && (await target.count()) ? (await colours(target)).border : undefined;
   if (state === 'hover') await target.hover();
   if (state === 'focus') {
     // A key both React Aria (which ignores a lone modifier) and the browser's :focus-visible count, then the target.
@@ -126,7 +133,8 @@ async function check(page: Page, state: KitState, condition: Condition): Promise
     axe: axe.violations.flatMap(({ id, nodes }) => nodes.map(({ target }) => `${id}: ${target.join(' ')}`)),
     text: painted.text?.ratio,
     icon: own.icon?.ratio,
-    ring: state === 'focus' ? (own.outline?.ratio ?? (field ? own.border?.ratio : undefined) ?? 0) : undefined,
+    ring:
+      state === 'focus' ? (own.outline?.ratio ?? (field && changed(restEdge, own.border) ? own.border?.ratio : undefined) ?? 0) : undefined,
     motion,
     target: condition === 'phone' ? await smallest(sample) : undefined,
     formTarget: condition === 'phone' ? await smallest(sample, formControls) : undefined,
@@ -141,7 +149,7 @@ async function check(page: Page, state: KitState, condition: Condition): Promise
 }
 
 /** Every state `path` shows, plus the driven ones, in light and dark under each condition. */
-export async function galleryStates(browser: Browser, baseURL: string, path: string): Promise<StateCheck[]> {
+export async function galleryStates(browser: Pick<Browser, 'newContext'>, baseURL: string, path: string): Promise<StateCheck[]> {
   const checks: StateCheck[] = [];
   for (const scheme of ['light', 'dark'] as const) {
     for (const condition of conditions) {
