@@ -11,6 +11,7 @@ export interface PickerCommunity {
   id: string;
   /** `name` for a local community, `name@host` for a remote one. */
   handle: string;
+  displayName: string | null;
   local: boolean;
   /** Null where this instance does not know (a remote community). */
   subscribers: number | null;

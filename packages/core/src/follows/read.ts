@@ -35,11 +35,15 @@ export type FollowedCommunity = {
 };
 
 /**
- * The communities `actorId` follows, pending ones included, by name; for the sidebar and the
- * composer's picker. Deleted and removed communities are left out.
+ * The communities `actorId` follows, pending ones included, by name; for the composer's picker.
+ * Deleted and removed communities are left out. `accepted` leaves out pending follows,
+ * `includeSensitive: false` the age-gated communities, and `limit` keeps the first by name.
  */
-export async function followedCommunities(actorId: Uuid): Promise<FollowedCommunity[]> {
-  const rows = await db()
+export async function followedCommunities(
+  actorId: Uuid,
+  options: { accepted?: boolean; includeSensitive?: boolean; limit?: number } = {},
+): Promise<FollowedCommunity[]> {
+  const query = db()
     .select({
       id: actors.id,
       apId: actors.apId,
@@ -61,9 +65,12 @@ export async function followedCommunities(actorId: Uuid): Promise<FollowedCommun
         eq(actors.kind, 'Group'),
         isNull(actors.deletedAt),
         sql`not exists (select 1 from ${communityRemovals} where ${communityRemovals.communityId} = ${actors.id})`,
+        options.accepted ? eq(follows.state, 'accepted') : undefined,
+        options.includeSensitive === false ? and(eq(actors.sensitive, false), eq(actors.nsfl, false)) : undefined,
       ),
     )
     // One name on several hosts comes by host, then id, so every read lists them alike.
-    .orderBy(asc(actors.name), asc(instances.domain), asc(actors.id));
-  return rows;
+    .orderBy(asc(actors.name), asc(instances.domain), asc(actors.id))
+    .$dynamic();
+  return options.limit === undefined ? query : query.limit(options.limit);
 }

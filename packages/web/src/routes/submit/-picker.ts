@@ -1,6 +1,8 @@
-import { findCommunityId, listLocalCommunities, moderatedAmong } from '@peblish/core/communities/read';
+import { authorize } from '@peblish/core/authz/authorize';
+import { findCommunityId, listLocalCommunities, moderatedAmong, readCommunity } from '@peblish/core/communities/read';
 import { followedCommunities } from '@peblish/core/follows/read';
 import { Uuid } from '@peblish/schema/ids';
+import type { RefusalReason } from '@peblish/schema/refusal';
 import type { SessionView } from '@peblish/schema/session';
 import type { PickerCommunity } from './-types.ts';
 
@@ -29,11 +31,11 @@ export type Candidate = Omit<PickerCommunity, 'canPost'> & { followed: boolean }
  */
 async function candidates(viewer: SessionView): Promise<Candidate[]> {
   const includeSensitive = viewer.ageDeclaredAt !== null;
-  const [first, followed] = await Promise.all([
+  // The follows are read as the local communities are: the first by name, one past the cap.
+  const [first, follows] = await Promise.all([
     listLocalCommunities({ includeSensitive, limit: pickerMax + 1 }),
-    followedCommunities(viewer.actorId),
+    followedCommunities(viewer.actorId, { accepted: true, includeSensitive, limit: pickerMax + 1 }),
   ]);
-  const follows = followed.filter((community) => community.state === 'accepted' && ageAllows(viewer, community));
   const followedIds = new Set(follows.map(({ id }) => id));
   const listed = new Set(first.map(({ actor }) => actor.id));
   // Only on a server with more local communities than the picker lists: names past the first page, so they sort after it.
@@ -44,9 +46,10 @@ async function candidates(viewer: SessionView): Promise<Candidate[]> {
   const local = [...first, ...more].map((row) => localCandidate(row, followedIds.has(row.actor.id)));
   const remote = follows
     .filter((community) => !community.local)
-    .map(({ id, name, host, postingRestrictedToMods }): Candidate => ({
+    .map(({ id, name, displayName, host, postingRestrictedToMods }): Candidate => ({
       id,
       handle: `${name}@${host}`,
+      displayName,
       local: false,
       subscribers: null,
       restricted: postingRestrictedToMods,
@@ -60,6 +63,7 @@ type LocalRow = Awaited<ReturnType<typeof listLocalCommunities>>[number];
 const localCandidate = ({ actor, postingRestrictedToMods, subscribers }: LocalRow, followed: boolean): Candidate => ({
   id: actor.id,
   handle: actor.handle,
+  displayName: actor.displayName,
   local: true,
   subscribers,
   restricted: postingRestrictedToMods,
@@ -67,20 +71,56 @@ const localCandidate = ({ actor, postingRestrictedToMods, subscribers }: LocalRo
 });
 
 /**
- * The first of `wanted` (an id, or a local name with or without `!`) that names a local community
- * the person may post in, looked up on its own: listLocalCommunities's rules (live, and past the
- * age gate), and a mods-only one only for its staff. For one the first page left out.
+ * Refusals of post.create that are about the person, not the community: they would refuse a post
+ * anywhere, so they do not stop the form from starting in the community asked for.
  */
-async function wantedCandidate(viewer: SessionView, wanted: readonly (string | null | undefined)[]): Promise<Candidate | null> {
+const anywhere: ReadonlySet<RefusalReason> = new Set(['auth.required', 'auth.email_unverified', 'auth.site_banned', 'site.disabled']);
+
+/** Whether the person may post in the community, as post.create's precheck decides it (bans, mods-only, the age gate, a closed community). */
+async function mayPost(viewer: SessionView, communityId: string): Promise<boolean> {
+  const principal = { kind: 'local', actorId: viewer.actorId, siteRole: viewer.siteRole } as const;
+  const decision = await authorize('post.create', principal, { communityId });
+  return decision.ok || anywhere.has(decision.reason);
+}
+
+/**
+ * The community a `wanted` key (an id, or a handle with or without `!`: `name` here, `name@host`
+ * elsewhere) names, looked up on its own, for one the candidates do not hold: a local community
+ * past the first page, or a remote one the person does not follow.
+ */
+async function lookUp(key: string): Promise<Candidate | null> {
+  const trimmed = key.trim().replace(/^!/, '');
+  if (!trimmed) return null;
+  const id = Uuid.allows(trimmed) ? trimmed : await findCommunityId(trimmed);
+  const community = id ? await readCommunity({ id }) : null;
+  if (!community) return null;
+  const { actor } = community;
+  return {
+    id: actor.id,
+    handle: actor.handle,
+    displayName: actor.displayName,
+    local: actor.local,
+    subscribers: actor.local ? community.subscribers : null,
+    restricted: community.postingRestrictedToMods,
+    followed: false,
+  };
+}
+
+/**
+ * The community the form starts in: the first of `wanted` that names one the person may post in
+ * (mayPost), from the candidates or looked up on its own, however it ranks.
+ */
+async function startIn(
+  viewer: SessionView,
+  listed: readonly Candidate[],
+  wanted: readonly (string | null | undefined)[],
+): Promise<{ id: string; extra: Candidate | null } | null> {
   for (const key of wanted) {
-    const trimmed = key?.trim().replace(/^!/, '');
-    if (!trimmed) continue;
-    const id = Uuid.allows(trimmed) ? trimmed : await findCommunityId(trimmed);
-    if (!id) continue;
-    const [row] = await listLocalCommunities({ includeSensitive: viewer.ageDeclaredAt !== null, ids: [id], limit: 1 });
-    if (!row) continue;
-    const staff = !row.postingRestrictedToMods || viewer.siteRole === 'admin' || (await moderatedAmong(viewer.actorId, [id])).has(id);
-    if (staff) return localCandidate(row, false);
+    if (!key) continue;
+    const held = pickFrom(listed, key);
+    const extra = held ? null : await lookUp(key);
+    const id = held ?? extra?.id;
+    if (id && (await mayPost(viewer, id))) return { id, extra: extra && !listed.some((row) => row.id === extra.id) ? extra : null };
   }
   return null;
 }
@@ -112,23 +152,19 @@ function capPicker(rows: readonly Candidate[], keep: string | null, max = picker
 }
 
 /**
- * The communities the person may pick, at most pickerMax (capPicker), and `selected`, the one
- * `choose` names from the candidates for the form to start in (kept through the cut). When it
- * names none, the first of `wanted` is looked up on its own (wantedCandidate), so a community past
- * the first page that the person asked for is still the one the form starts in. A mods-only
+ * The communities the person may pick, at most pickerMax (capPicker), and `selected`, the one the
+ * form starts in, kept through the cut: an edit's own community, else the first of `wanted` the
+ * person may post in (startIn), added in its place when the candidates did not hold it. A mods-only
  * community is disabled for anyone who is not staff there: one query for all of them.
  */
 export async function pickerFor(
   viewer: SessionView,
-  choose: (rows: readonly Candidate[]) => string | null,
-  wanted: readonly (string | null | undefined)[] = [],
+  start: { edit: string | null; wanted: readonly (string | null | undefined)[] },
 ): Promise<{ communities: PickerCommunity[]; truncated: boolean; selected: string | null }> {
   const listed = await candidates(viewer);
-  const chosen = choose(listed);
-  const extra = chosen === null ? await wantedCandidate(viewer, wanted) : null;
-  const known = extra && listed.some(({ id }) => id === extra.id);
-  const all = extra && !known ? withCandidate(listed, extra) : listed;
-  const selected = chosen ?? extra?.id ?? null;
+  const chosen = start.edit === null ? await startIn(viewer, listed, start.wanted) : { id: start.edit, extra: null };
+  const all = chosen?.extra ? withCandidate(listed, chosen.extra) : listed;
+  const selected = chosen?.id ?? null;
   const { rows, truncated } = capPicker(all, selected);
   const admin = viewer.siteRole === 'admin';
   const staff = await moderatedAmong(viewer.actorId, admin ? [] : rows.filter(({ restricted }) => restricted).map(({ id }) => id));
