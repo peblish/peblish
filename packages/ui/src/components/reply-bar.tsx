@@ -88,7 +88,8 @@ export function ReplyBar({
   // thread's end, carrying the reader away from where they are. It scrolls before the focus event, whose
   // scroll event comes after it, so the place the window last settled at is the one before that jump: the
   // bar is in view where it sticks, so the page goes back there, unless that would leave the control out of
-  // view (a bar resting below the window). Only after a Tab: a press that focuses a control must land where
+  // view (a bar resting below the window, or under an on-screen keyboard: the visual viewport is what shows), so
+  // a scroll that brought it into view stands. Only after a Tab: a press that focuses a control must land where
   // it was aimed, whatever the page scrolled just before. The tab order is the document's, as before.
   const settled = useRef<{ x: number; y: number }>(null);
   const tabbed = useRef(false);
@@ -120,7 +121,10 @@ export function ReplyBar({
     if (moved.x === was.x && moved.y === was.y) return;
     window.scrollTo(was.x, was.y);
     const box = event.target.getBoundingClientRect();
-    if (box.top < 0 || box.bottom > window.innerHeight) window.scrollTo(moved.x, moved.y);
+    const shown = window.visualViewport;
+    const top = shown?.offsetTop ?? 0;
+    const bottom = shown ? shown.offsetTop + shown.height : window.innerHeight;
+    if (box.top < top || box.bottom > bottom) window.scrollTo(moved.x, moved.y);
   }
 
   function shortcut(event: KeyboardEvent<HTMLFormElement>) {

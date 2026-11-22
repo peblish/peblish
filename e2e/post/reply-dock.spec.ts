@@ -115,3 +115,40 @@ test('moving into the dock by keyboard keeps the reader’s place in the thread;
   expect(await page.evaluate(() => scrollY)).toBe(y);
   await context.close();
 });
+
+test('with an on-screen keyboard over the dock, a Tab into it keeps the scroll that brings it into view', async ({ browser, baseURL }) => {
+  const context = await browser.newContext({ viewport: { width: 1280, height: 560 }, baseURL });
+  const page = await context.newPage();
+  // A keyboard over the lower part of the window: the visual viewport is its top 300px, where the dock, stuck to
+  // the window's bottom, is not. The scroll the browser makes for the focus is noted before the dock sees it.
+  await page.addInitScript(() => {
+    const keyboard = { offsetTop: 0, offsetLeft: 0, height: 300, width: 1280, scale: 1, pageTop: 0, pageLeft: 0 };
+    Object.assign(keyboard, { addEventListener: () => undefined, removeEventListener: () => undefined });
+    Object.defineProperty(window, 'visualViewport', { get: () => keyboard, configurable: true });
+    window.addEventListener('focusin', () => Object.assign(window, { browserScrolled: window.scrollY }), { capture: true });
+  });
+  await signedIn(page);
+  await gotoHydrated(page, postUrl(seed.posts.thread));
+  const dock = page.getByRole('form', { name: 'Reply' });
+  const field = dock.getByRole('textbox', { name: 'Reply' });
+  const reply = page.locator(`#comment-${seed.comments.second} > .pb-comment__main > .pb-comment__actions`).getByRole('button', {
+    name: 'Reply',
+  });
+  await reply.scrollIntoViewIfNeeded();
+  await page.evaluate(() => scrollBy(0, 120));
+  const y = await page.evaluate(() => scrollY);
+  await reply.click();
+  await expect(field).toBeFocused();
+  await page.keyboard.press('Shift+Tab');
+  await page.keyboard.press('Tab');
+  await expect(field).toBeFocused();
+  await page.waitForTimeout(100);
+  const { browserScrolled, now } = await page.evaluate(() => ({
+    browserScrolled: (window as unknown as { browserScrolled: number }).browserScrolled,
+    now: scrollY,
+  }));
+  expect(browserScrolled, 'the browser scrolled for the focus').not.toBe(y);
+  // Put back where it was, the field would be under the keyboard: the browser's scroll stands.
+  expect(now).toBe(browserScrolled);
+  await context.close();
+});
