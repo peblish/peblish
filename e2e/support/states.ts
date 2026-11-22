@@ -29,8 +29,8 @@ export interface StateCheck {
   icon?: number;
   /**
    * Focus only: the ring around the target (an outline outside it, or a solid box-shadow ring); for a field without
-   * one, its edge, which Mux's fields draw in the focus colour instead. An edge focus leaves as it was at rest is no
-   * indicator, and counts as none (0).
+   * one, its edge, which Mux's fields draw in the focus colour instead. A ring or an edge focus leaves as it was at
+   * rest is no indicator, and counts as none (0).
    */
   ring?: number;
   /** Reduced motion only: animations still running once the state is reached, as `name duration`. */
@@ -80,7 +80,7 @@ const running = (page: Page) =>
       }),
   );
 
-/** Whether focus changed a field's edge: its colour, or an edge where there was none. */
+/** Whether focus changed a ring or a field's edge: its colour, or one where there was none. */
 const changed = (rest: Pair | undefined, focused: Pair | undefined) =>
   focused !== undefined && (rest === undefined || focused.fore.some((channel, index) => channel !== rest.fore[index]));
 
@@ -106,8 +106,8 @@ async function check(page: Page, state: KitState, condition: Condition): Promise
   // that happens to straddle it, and axe would count that as an obscured target).
   await page.locator(section).evaluate((node) => node.scrollIntoView({ block: 'center' }));
   await page.mouse.move(0, 0);
-  // A field's edge at rest, to tell a focus edge from one that was always there.
-  const restEdge = state === 'focus' && (await target.count()) ? (await colours(target)).border : undefined;
+  // The target's ring and edge at rest, to tell what focus draws from what was always there.
+  const rest = state === 'focus' && (await target.count()) ? await colours(target) : undefined;
   if (state === 'hover') await target.hover();
   if (state === 'focus') {
     // A key both React Aria (which ignores a lone modifier) and the browser's :focus-visible count, then the target.
@@ -134,7 +134,11 @@ async function check(page: Page, state: KitState, condition: Condition): Promise
     text: painted.text?.ratio,
     icon: own.icon?.ratio,
     ring:
-      state === 'focus' ? (own.outline?.ratio ?? (field && changed(restEdge, own.border) ? own.border?.ratio : undefined) ?? 0) : undefined,
+      state === 'focus'
+        ? ((changed(rest?.outline, own.outline) ? own.outline?.ratio : undefined) ??
+          (field && changed(rest?.border, own.border) ? own.border?.ratio : undefined) ??
+          0)
+        : undefined,
     motion,
     target: condition === 'phone' ? await smallest(sample) : undefined,
     formTarget: condition === 'phone' ? await smallest(sample, formControls) : undefined,
