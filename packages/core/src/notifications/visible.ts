@@ -4,21 +4,25 @@ import { actors } from '../db/tables/actors.ts';
 import { comments, posts } from '../db/tables/content.ts';
 import { ageDeclarations } from '../identity/tables.ts';
 import { communityRemovals } from '../moderation/tables.ts';
+import { feedPredicate as nsfwGate } from '../posts/feed-predicate.ts';
 import { feedPredicates } from '../registry/feed-predicates.gen.ts';
 import { notBlocked, peerBlocked } from './blocked.ts';
 import { notifications } from './tables.ts';
 
 /**
  * A followed thread's notice (`thread_reply`) exists for the viewer only while its comment is one
- * they may read: the comment and its post are live (not removed, deleted or purged, for every
- * viewer alike), its commenter is not on a peer this server blocks (peerBlocked), and the post
- * passes the feeds' rules for this viewer (blocks of its author, its community or their servers,
- * blocked peers, the 16+ declaration). So a block of a withheld
- * comment's author changes nothing the viewer can see: the notice was left out already. Other
- * kinds pass untouched.
+ * they may read and its row may say who wrote it: the comment and its post are live (not removed,
+ * deleted or purged), its commenter is not on a peer this server blocks (peerBlocked), the post
+ * is not flagged sensitive or NSFL, and it passes the feeds' other rules for this viewer (blocks
+ * of its author, its community or their servers, blocked peers). All but the blocks hold for
+ * every viewer alike, so no row is ever anonymous: one would be, for a declared reader of flagged
+ * content, and a block of its commenter would then tell who wrote it by the row's absence. The
+ * NSFW gate is applied as a signed-out viewer meets it for that reason. Other kinds pass untouched.
  */
 const followedThreadReadable = (viewerId: Uuid): SQL => {
-  const rules = feedPredicates.flatMap((predicate) => predicate.where({ actorId: viewerId }) ?? []);
+  const rules = feedPredicates.flatMap(
+    (predicate) => predicate.where(predicate.name === nsfwGate.name ? null : { actorId: viewerId }) ?? [],
+  );
   return sql`("notifications"."kind" <> 'thread_reply' or exists (
     select 1 from ${comments} as notice_comment
     join ${actors} as notice_author on notice_author.id = notice_comment.author_id

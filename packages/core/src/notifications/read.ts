@@ -79,12 +79,23 @@ function excerptOf(body: { bodyMd: string | null; contentHtml: string | null }, 
  * inboxVisible's (no blocked author's reply or mention, nothing in a deleted or removed
  * community), shared with every count. `unread` is the shell's badge number and
  * `unreadByGroup` the filter links', both capped.
+ *
+ * The page is read from one snapshot: without `q`, in a read-only REPEATABLE READ transaction,
+ * whose statements all see the database as it was at its first, so the rows, the counts and what
+ * each row says agree even when a comment is purged, or a block made, while the page is read. A
+ * caller passing `q` passes one snapshot.
  */
 export async function readInbox(
   viewer: NonNullable<Viewer>,
   options: { filter?: InboxFilter; cursor?: string | null; limit?: number } = {},
-  q: Queryable = db(),
+  q?: Queryable,
 ): Promise<Inbox> {
+  if (!q) {
+    return db().transaction((snapshot) => readInbox(viewer, options, snapshot), {
+      isolationLevel: 'repeatable read',
+      accessMode: 'read only',
+    });
+  }
   const { filter = 'all', cursor = null, limit = inboxPageSize } = options;
   const conditions: (SQL | undefined)[] = [
     inboxVisible(viewer.actorId),
@@ -104,16 +115,9 @@ export async function readInbox(
   ]);
   const page = rows.slice(0, limit).map(({ notice }) => notice);
   const next = rows.length > limit ? (page.at(-1)?.id ?? null) : null;
-  return { items: (await describe(q, page)).map(followedThreadShown), next, unread, unreadByGroup };
+  // A followed thread's notice is listed only with nothing withheld (inboxVisible), so it names its commenter as a reply does.
+  return { items: await describe(q, page), next, unread, unreadByGroup };
 }
-
-/**
- * A followed thread's notice (`thread_reply`) whose comment is withheld (sensitive) names nobody
- * and links no comment, so nothing on the row leads to its author. One whose comment is removed,
- * deleted or gone is not listed at all (inboxVisible).
- */
-const followedThreadShown = (item: InboxItem): InboxItem =>
-  item.kind === 'thread_reply' && item.withheld !== null ? { ...item, actor: null, commentId: null } : item;
 
 async function groupCounts(q: Queryable, viewerId: Uuid): Promise<UnreadByGroup> {
   const [replies, mentions, content, account] = await Promise.all(
