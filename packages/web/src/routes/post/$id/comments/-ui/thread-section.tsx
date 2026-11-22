@@ -18,7 +18,7 @@ import { Text } from '@peblish/ui/components/text';
 import type { CommentView } from '@peblish/schema/views';
 import { useRouter, useRouterState } from '@tanstack/react-router';
 import { type } from 'arktype';
-import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { translatePlural } from '../../../../../i18n/translate.ts';
 import { useTranslate } from '../../../../../i18n/use-translate.ts';
 import { useCommentThreadLabels, useReplyBarLabels } from '../../../../../shell/labels.ts';
@@ -125,7 +125,39 @@ export function ThreadSection({ data: loaded, heading }: { data: ThreadData; hea
   }, [current, loaded, wanted, wantedAfter]);
   // A fetch is drawn only for the view it was made for, so one left from another view (back on the loaded one, or on a third) never shows.
   const fetchedHere = fetched?.sort === wanted && fetched.after === wantedAfter ? fetched : null;
-  const data = current ? loaded : (fetchedHere ?? loaded);
+  // On the loaded view a fetch shows only while it is the fresher (a refresh); a reply's reload is newer still.
+  const data = fetchedHere && (!current || Date.parse(fetchedHere.now) >= Date.parse(loaded.now)) ? fetchedHere : loaded;
+
+  // NewSince's refresh when a tab comes forward: the page on screen (this sort and cursor) fetched again, true
+  // once it is drawn. The view is read when the answer comes, so one the reader has left since is not drawn.
+  const view = useRef({ wanted, wantedAfter });
+  useLayoutEffect(() => {
+    view.current = { wanted, wantedAfter };
+  });
+  const drawn = useRef<{ data: ThreadData; done: (shown: boolean) => void } | null>(null);
+  useEffect(() => {
+    if (drawn.current?.data !== data) return;
+    drawn.current.done(true);
+    drawn.current = null;
+  }, [data]);
+  useEffect(() => () => drawn.current?.done(false), []);
+  const refresh = useCallback(async () => {
+    const asked = view.current;
+    const next = await loadThreadFn({
+      data: {
+        postId: loaded.postId,
+        sort: asked.wanted,
+        ...(asked.wantedAfter && { after: asked.wantedAfter }),
+        ...(loaded.focus && { rootId: loaded.focus.id }),
+      },
+    }).catch(() => null);
+    if (!next || view.current.wanted !== asked.wanted || view.current.wantedAfter !== asked.wantedAfter) return false;
+    return new Promise<boolean>((done) => {
+      drawn.current?.done(false);
+      drawn.current = { data: next, done };
+      setFetched(next);
+    });
+  }, [loaded.postId, loaded.focus]);
   const now = useMemo(() => new Date(data.now), [data.now]);
   // The address of a page of this thread: the post's or the permalink's, in this sort.
   const here = data.focus ? commentPath(data.postId, data.focus.id) : postPath(data.postId);
@@ -136,9 +168,14 @@ export function ThreadSection({ data: loaded, heading }: { data: ThreadData; hea
 
   const labels = useTreeLabels();
   const replyLabels = useReplyBarLabels();
-  // The comment being answered: on a permalink page the one it starts from, else the post.
-  const [targetId, setTargetId] = useState<string | null>(loaded.focus?.id ?? null);
-  const target = data.comments.find((comment) => comment.id === targetId) ?? null;
+  // The comment being answered: on a permalink page the one it starts from, else the post. The reply goes to
+  // the comment chosen when the editor opened, whatever the list shows meanwhile (a refresh, another sort or
+  // page): it is never sent to the post instead, and a parent gone from the server is refused there.
+  const [choice, setChoice] = useState<{ id: string; comment: CommentView | null } | null>(
+    loaded.focus ? { id: loaded.focus.id, comment: null } : null,
+  );
+  const targetId = choice?.id ?? null;
+  const target = data.comments.find((comment) => comment.id === targetId) ?? choice?.comment ?? null;
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<CommentError>();
   // "Reply posted.", read out politely once a reply is in: the field stays focused, and the comment lands in the tree.
@@ -150,7 +187,7 @@ export function ThreadSection({ data: loaded, heading }: { data: ThreadData; hea
     setPending(true);
     setError(undefined);
     try {
-      const form = new URLSearchParams({ intent: 'reply', parent: target?.id ?? '', body, ...(data.focus && { focus: data.focus.id }) });
+      const form = new URLSearchParams({ intent: 'reply', parent: targetId ?? '', body, ...(data.focus && { focus: data.focus.id }) });
       const response = await fetch(`/post/${data.postId}/comments`, {
         method: 'POST',
         body: form,
@@ -162,7 +199,7 @@ export function ThreadSection({ data: loaded, heading }: { data: ThreadData; hea
         setError(asCommentError(answer.error) ?? 'generic');
         throw new Error(answer.error);
       }
-      setTargetId(loaded.focus?.id ?? null);
+      setChoice(loaded.focus ? { id: loaded.focus.id, comment: null } : null);
       await router.invalidate();
       clearTimeout(postedTimer.current);
       setPosted(t('comments', 'reply.posted'));
@@ -224,11 +261,11 @@ export function ThreadSection({ data: loaded, heading }: { data: ThreadData; hea
 
   // Reply on a comment points the docked bar at it and puts the caret there without scrolling: the bar is
   // in view, and a stuck bar scrolled into view would carry the page to the thread's end, away from the
-  // comment being answered.
-  const startReply = useCallback((comment: CommentView) => {
-    setTargetId(comment.id);
+  // comment being answered. The thread calls its latest onReply, so this needs no stable identity.
+  const startReply = (comment: CommentView) => {
+    setChoice({ id: comment.id, comment });
     document.querySelector<HTMLTextAreaElement>('.pb-reply textarea')?.focus({ preventScroll: true });
-  }, []);
+  };
 
   return (
     <section id="comments" className="th-thread" data-slot="thread" aria-labelledby="comments-heading">
@@ -238,7 +275,9 @@ export function ThreadSection({ data: loaded, heading }: { data: ThreadData; hea
         <Text as="h2" variant="title" size="sm" id="comments-heading" className="th-heading">
           {heading ?? t('comments', 'heading')}
         </Text>
-        {!data.focus && <NewSince postId={data.postId} viewerId={data.viewerId} newCount={data.newCount} comments={data.comments} />}
+        {!data.focus && (
+          <NewSince postId={data.postId} viewerId={data.viewerId} newCount={data.newCount} comments={data.comments} refresh={refresh} />
+        )}
         <form method="get" action="#comments" onSubmit={chooseSort}>
           <ButtonGroup role="group" aria-label={t('comments', 'sort.group')} attached>
             {threadSorts.map((sort) => (
@@ -315,10 +354,10 @@ export function ThreadSection({ data: loaded, heading }: { data: ThreadData; hea
           target={target && { handle: `@${neutraliseBidi(target.author.handle)}`, excerpt: excerptOf(target.contentHtml) }}
           labels={replyLabels}
           action={`/post/${data.postId}/comments`}
-          fields={{ intent: 'reply', parent: target?.id ?? '', ...(data.focus && { focus: data.focus.id }) }}
+          fields={{ intent: 'reply', parent: targetId ?? '', ...(data.focus && { focus: data.focus.id }) }}
           onSubmit={reply}
-          onPostInstead={() => setTargetId(null)}
-          onCancel={() => setTargetId(null)}
+          onPostInstead={() => setChoice(null)}
+          onCancel={() => setChoice(null)}
           pending={pending}
           {...(error && { error: t('comments', errorKey(error)) })}
           limit={{

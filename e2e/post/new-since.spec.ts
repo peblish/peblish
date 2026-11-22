@@ -1,6 +1,7 @@
-import { execFileSync } from 'node:child_process';
+import { execFile, execFileSync } from 'node:child_process';
 import { join } from 'node:path';
-import { expect, test, type Browser, type Page } from '@playwright/test';
+import { promisify } from 'node:util';
+import { expect, test, type Browser, type Page, type Request } from '@playwright/test';
 import { landed, signIn } from '../auth/support.ts';
 import { gotoHydrated } from '../support/route-marker.ts';
 
@@ -20,6 +21,7 @@ type Seed = {
 type Marker = { lastVisitAt: string; previousVisitAt: string | null } | null;
 
 const root = join(import.meta.dirname, '../..');
+const execFileAsync = promisify(execFile);
 const run = (...args: string[]) =>
   execFileSync('node', ['packages/core/src/testing/seed-visits.ts', ...args], { cwd: root, encoding: 'utf8' });
 let seed: Seed;
@@ -135,78 +137,257 @@ test('on a phone the jump is a 44px target', async ({ browser, baseURL }) => {
   await context.close();
 });
 
-/** A tab that starts in the background: hidden until `show(tab)` brings it forward. */
+/** A tab that starts in the background: hidden until `show(tab)` brings it forward (`hide(tab)` sends it back). */
 async function backgroundTab(page: Page) {
   const tab = await page.context().newPage();
   await tab.addInitScript(() => {
     let state: DocumentVisibilityState = 'hidden';
     Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => state });
     Object.defineProperty(document, 'hidden', { configurable: true, get: () => state === 'hidden' });
-    Object.assign(window, {
-      __show: () => {
-        state = 'visible';
-        document.dispatchEvent(new Event('visibilitychange'));
-      },
-    });
+    const set = (next: DocumentVisibilityState) => {
+      state = next;
+      document.dispatchEvent(new Event('visibilitychange'));
+    };
+    Object.assign(window, { __show: () => set('visible'), __hide: () => set('hidden') });
   });
   return tab;
 }
 const show = (tab: Page) => tab.evaluate(() => (window as unknown as { __show: () => void }).__show());
+const hide = (tab: Page) => tab.evaluate(() => (window as unknown as { __hide: () => void }).__hide());
 
-test('a thread opened in the background is refreshed when brought forward, before its visit is recorded; one never brought forward records nothing', async ({
+/** The thread section's own reload of a page of the thread (its server function, which takes the sort). */
+const isRefresh = (request: Request) => request.url().includes('/_serverFn/') && decodeURIComponent(request.url()).includes('"sort"');
+const isVisit = (request: Request, postId: string) => request.method() === 'POST' && request.url().endsWith(`/post/${postId}/visit`);
+
+/** What the tab asked and was answered, in order: each thread refresh answered and each visit sent. */
+function journal(tab: Page, postId: string) {
+  const events: string[] = [];
+  tab.on('requestfinished', (request) => isRefresh(request) && events.push('refresh answered'));
+  tab.on('requestfailed', (request) => isRefresh(request) && events.push('refresh failed'));
+  tab.on('request', (request) => isVisit(request, postId) && events.push('visit'));
+  return events;
+}
+
+/** `name` comments on `postId` through the real action; the new comment's id. */
+const say = (postId: string, name: string) =>
+  (
+    JSON.parse(
+      execFileSync('node', ['packages/core/src/testing/seed-notify.ts', 'comment', postId, name], { cwd: root, encoding: 'utf8' }),
+    ) as {
+      id: string;
+    }
+  ).id;
+const sayAll = (postId: string, name: string, count: number) =>
+  Promise.all(
+    Array.from({ length: count }, () =>
+      execFileAsync('node', ['packages/core/src/testing/seed-notify.ts', 'comment', postId, name], { cwd: root, encoding: 'utf8' }),
+    ),
+  );
+/** The parent the server stored for the comment whose text is `body` ('none' when there is no such comment). */
+const storedParent = (body: string) =>
+  JSON.parse(
+    execFileSync(
+      'node',
+      [
+        '--input-type=module',
+        '-e',
+        `import { eq } from 'drizzle-orm';
+import { closePools } from './src/db/pools.ts';
+import { db } from './src/db/read.ts';
+import { comments } from './src/db/tables/content.ts';
+const [found] = await db().select({ parentId: comments.parentId }).from(comments).where(eq(comments.bodyMd, process.argv[1]));
+console.log(JSON.stringify(found ? found.parentId : 'none'));
+await closePools();`,
+        body,
+      ],
+      { cwd: join(root, 'packages/core'), encoding: 'utf8' },
+    ),
+  ) as string | null;
+
+/** Lets a tab settle: the effects of its last render have run. */
+const settled = (tab: Page) => tab.evaluate(() => new Promise((done) => requestAnimationFrame(() => setTimeout(done))));
+
+test('a thread opened in the background is refreshed when brought forward, and its visit recorded after; only once; one never brought forward records nothing', async ({
   page,
 }) => {
   // Its own cast: the cases above recorded visits on theirs. `seen` was last visited two hours ago.
   seed = JSON.parse(run('e2e')) as Seed;
-  const say = (postId: string, name: string) =>
-    (
-      JSON.parse(
-        execFileSync('node', ['packages/core/src/testing/seed-notify.ts', 'comment', postId, name], { cwd: root, encoding: 'utf8' }),
-      ) as {
-        id: string;
-      }
-    ).id;
   await signedIn(page);
   const before = marker(seed.posts.seen)!.lastVisitAt;
 
   const tab = await backgroundTab(page);
+  const events = journal(tab, seed.posts.seen);
   await gotoHydrated(tab, `/post/${seed.posts.seen}`);
   const author = (await row(tab, seed.comments.first).locator('> .pb-comment__head .pb-comment__author').textContent())!
     .trim()
     .replace(/^@/, '')
     .split('@')[0]!;
-  // A reply arrives while the tab is still in the background: nothing is recorded meanwhile.
+  // A reply arrives while the tab is still in the background: nothing is sent meanwhile.
   const late = say(seed.posts.seen, author);
-  await tab.waitForTimeout(500);
+  await settled(tab);
+  expect(events).toEqual([]);
   expect(marker(seed.posts.seen)!.lastVisitAt).toBe(before);
 
-  const visit = tab.waitForRequest((request) => request.method() === 'POST' && request.url().endsWith(`/post/${seed.posts.seen}/visit`));
+  const visit = tab.waitForRequest((request) => isVisit(request, seed.posts.seen));
   await show(tab);
-  // The reader sees the reply that arrived, marked New, and only then does the visit count it as seen.
+  await visit;
+  // The refresh was answered before the visit went, and the reader sees the reply that arrived, marked New.
+  expect(events).toEqual(['refresh answered', 'visit']);
   await expect(mark(tab, late)).toHaveText('New');
   await expect(jump(tab)).toHaveText('3 new since your last visit');
-  await visit;
   await expect.poll(() => marker(seed.posts.seen)?.previousVisitAt ?? null).not.toBeNull();
+
+  // Back and forth between tabs is the same visit: no second refresh, no second record.
+  await hide(tab);
+  await show(tab);
+  await settled(tab);
+  expect(events).toEqual(['refresh answered', 'visit']);
 
   // Another thread opened in the background and never brought forward writes nothing.
   const never = await backgroundTab(page);
+  const nothing = journal(never, seed.posts.unseen);
   await gotoHydrated(never, `/post/${seed.posts.unseen}`);
-  await never.waitForTimeout(1_000);
+  await settled(never);
+  expect(nothing).toEqual([]);
   expect(marker(seed.posts.unseen)).toBeNull();
 });
 
-test('a thread brought forward while its reload fails keeps what it showed, and records nothing', async ({ page }) => {
+test('a tab brought forward before the page hydrated is refreshed too, before its visit', async ({ page }) => {
+  seed = JSON.parse(run('e2e')) as Seed;
+  await signedIn(page);
+  const tab = await page.context().newPage();
+  // In front by the time scripts run, but out of sight when it loaded: the document's visibility record says so.
+  await tab.addInitScript(() => {
+    const real = performance.getEntriesByType.bind(performance);
+    performance.getEntriesByType = (type: string) =>
+      type === 'visibility-state' ? ([{ name: 'hidden', entryType: 'visibility-state', startTime: 0, duration: 0 }] as never) : real(type);
+  });
+  const events = journal(tab, seed.posts.seen);
+  const visit = tab.waitForRequest((request) => isVisit(request, seed.posts.seen));
+  await gotoHydrated(tab, `/post/${seed.posts.seen}`);
+  await visit;
+  expect(events).toEqual(['refresh answered', 'visit']);
+});
+
+test('a thread brought forward while its refresh fails keeps what it showed, with no error page, and records nothing', async ({ page }) => {
   seed = JSON.parse(run('e2e')) as Seed;
   await signedIn(page);
   const before = marker(seed.posts.seen)!.lastVisitAt;
   const tab = await backgroundTab(page);
+  const events = journal(tab, seed.posts.seen);
   await gotoHydrated(tab, `/post/${seed.posts.seen}`);
   await tab.context().setOffline(true);
+  const failed = tab.waitForEvent('requestfailed', isRefresh);
   await show(tab);
-  await tab.waitForTimeout(1_000);
+  await failed;
+  await settled(tab);
   await tab.context().setOffline(false);
   await expect(row(tab, seed.comments.first)).toBeVisible();
   await expect(jump(tab)).toHaveText('2 new since your last visit');
-  await tab.waitForTimeout(500);
+  expect(events).toEqual(['refresh failed']);
   expect(marker(seed.posts.seen)!.lastVisitAt).toBe(before);
+});
+
+test('a later page brought forward is refreshed as that page, and a reply begun on it while that is slow keeps its parent', async ({
+  page,
+}) => {
+  test.setTimeout(90_000);
+  seed = JSON.parse(run('e2e')) as Seed;
+  // Five top-level comments and 21 more: two pages of 25, oldest first.
+  await sayAll(seed.posts.seen, seed.reader.name, 21);
+  await signedIn(page);
+  await gotoHydrated(page, `/post/${seed.posts.seen}?sort=old`);
+  const later = await page.locator('#comments a[href*="after="]').first().getAttribute('href');
+  expect(later).toBeTruthy();
+
+  const tab = await backgroundTab(page);
+  const events = journal(tab, seed.posts.seen);
+  await gotoHydrated(tab, later!);
+  await expect(row(tab, seed.comments.old)).toHaveCount(0);
+  const parent = (await tab.locator('#comments .pb-comment').first().getAttribute('id'))!.replace(/^comment-/, '');
+  // The page's top-level comments: what must stay on screen, page two's and no others.
+  const topLevel = () => tab.locator('#comments .pb-comment[data-level="0"]').evaluateAll((rows) => rows.map((found) => found.id));
+  const pageTwo = await topLevel();
+  // The refresh of this page is held until the reply is in.
+  let asked!: () => void;
+  const held = new Promise<void>((done) => (asked = done));
+  let release!: () => void;
+  const released = new Promise<void>((done) => (release = done));
+  await tab.route('**/_serverFn/**', async (route) => {
+    if (!isRefresh(route.request())) return route.fallback();
+    asked();
+    await released;
+    await route.fallback();
+  });
+  await row(tab, parent).locator('> .pb-comment__main .pb-comment__reply').click();
+  const dock = tab.getByRole('form', { name: 'Reply' });
+  const body = `From page two ${Math.random().toString(36).slice(2, 8)}`;
+  await dock.getByRole('textbox', { name: 'Reply' }).fill(body);
+
+  await show(tab);
+  await held;
+  // While the refresh is out, the page on screen stays page two: page one never stands in for it.
+  expect(decodeURIComponent(tab.url())).toContain('after=');
+  await expect(row(tab, parent)).toBeVisible();
+  await expect.poll(topLevel).toEqual(pageTwo);
+  const posted = tab.waitForResponse(
+    (response) => response.url().endsWith(`/post/${seed.posts.seen}/comments`) && response.request().method() === 'POST',
+  );
+  await dock.getByRole('button', { name: 'Reply' }).click();
+  expect((await posted).ok()).toBe(true);
+  // The server stored the reply under the comment it answered, not as a top-level comment.
+  expect(storedParent(body)).toBe(parent);
+  expect(events).toEqual([]);
+
+  const visit = tab.waitForRequest((request) => isVisit(request, seed.posts.seen));
+  release();
+  await visit;
+  expect(events).toEqual(['refresh answered', 'visit']);
+  await expect(row(tab, parent)).toBeVisible();
+  expect(await topLevel()).toEqual(pageTwo);
+});
+
+test('a reply keeps the comment it was begun on when that comment leaves the list (another sort)', async ({ page }) => {
+  seed = JSON.parse(run('e2e')) as Seed;
+  await sayAll(seed.posts.seen, seed.reader.name, 21);
+  await signedIn(page);
+  await gotoHydrated(page, `/post/${seed.posts.seen}?sort=old`);
+  await row(page, seed.comments.old).locator('> .pb-comment__main .pb-comment__reply').click();
+  const dock = page.getByRole('form', { name: 'Reply' });
+  const body = `Across sorts ${Math.random().toString(36).slice(2, 8)}`;
+  await dock.getByRole('textbox', { name: 'Reply' }).fill(body);
+  // Newest first, the oldest comment is on the second page.
+  await page.getByRole('button', { name: 'New', exact: true }).click();
+  await expect(page).toHaveURL(/sort=new/);
+  await expect(row(page, seed.comments.old)).toHaveCount(0);
+  await expect(dock.getByRole('textbox', { name: 'Reply' })).toHaveValue(body);
+  const posted = page.waitForResponse(
+    (response) => response.url().endsWith(`/post/${seed.posts.seen}/comments`) && response.request().method() === 'POST',
+  );
+  await dock.getByRole('button', { name: 'Reply' }).click();
+  expect((await posted).ok()).toBe(true);
+  expect(storedParent(body)).toBe(seed.comments.old);
+});
+
+test('a refresh when brought forward keeps the reader’s scroll, focus, folds and open draft', async ({ page }) => {
+  seed = JSON.parse(run('e2e')) as Seed;
+  await signedIn(page);
+  const tab = await backgroundTab(page);
+  await tab.setViewportSize({ width: 1280, height: 500 });
+  await gotoHydrated(tab, `/post/${seed.posts.seen}`);
+  await row(tab, seed.comments.old).locator('> .pb-comment__head .pb-comment__fold').click();
+  await row(tab, seed.comments.first).locator('> .pb-comment__main .pb-comment__reply').click();
+  const field = tab.getByRole('form', { name: 'Reply' }).getByRole('textbox', { name: 'Reply' });
+  await field.fill('A draft in waiting');
+  await tab.evaluate(() => window.scrollTo(0, 200));
+  const scrolled = await tab.evaluate(() => window.scrollY);
+  expect(scrolled).toBeGreaterThan(0);
+
+  const visit = tab.waitForRequest((request) => isVisit(request, seed.posts.seen));
+  await show(tab);
+  await visit;
+  await expect(field).toHaveValue('A draft in waiting');
+  await expect(field).toBeFocused();
+  await expect(row(tab, seed.comments.old)).toHaveAttribute('data-folded', 'true');
+  expect(await tab.evaluate(() => window.scrollY)).toBe(scrolled);
 });
