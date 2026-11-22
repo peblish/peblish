@@ -92,6 +92,8 @@ export default function Finder({ onClose }: { onClose: () => void }) {
         signal: controller.signal,
       });
       const reply = Answer(await response.json());
+      // The text changed while it was asked: this answer is for a lookup no longer shown.
+      if (controller.signal.aborted) return;
       if (reply instanceof type.errors) return setLookupError({ text, code: 'generic' });
       if (reply.redirect) {
         onClose();
@@ -157,7 +159,11 @@ export default function Finder({ onClose }: { onClose: () => void }) {
         if (!open) onClose();
       }}
       query={query}
-      onQueryChange={setQuery}
+      onQueryChange={(next) => {
+        setQuery(next);
+        // A lookup asked for other text is let go: its answer would take the person away from this one.
+        if (next.trim() !== asking) lookupRequest.current?.abort();
+      }}
       joined={groups.joined.map(row)}
       others={groups.others.map(row)}
       lookup={lookup}

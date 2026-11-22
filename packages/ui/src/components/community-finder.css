@@ -58,6 +58,36 @@
     gap: var(--muxui-semantic-layout-tight-gap);
   }
 
+  /* The finder loading (community-finder-pending.tsx): Mux's scrim, and the popup where Mux will put it, with the same
+     field row and results height, so the finder lands on it without a jump. */
+  .pb-finder-pending {
+    position: fixed;
+    inset: 0;
+    z-index: 100;
+    background-color: var(--muxui-modal-backdrop-bg);
+  }
+
+  .pb-finder-pending__popup {
+    position: fixed;
+    /* layout: the palette popup's own place (Mux CommandPalette) */
+    top: 12vh;
+    left: 50%;
+    inline-size: min(92vw, 40rem);
+    transform: translateX(-50%);
+    border-radius: var(--muxui-semantic-shape-overlay-radius);
+    background-color: var(--muxui-semantic-surface-raised);
+    overflow: hidden;
+  }
+
+  .pb-finder-pending__field {
+    display: flex;
+    align-items: center;
+    gap: var(--muxui-semantic-layout-control-gap);
+    min-block-size: var(--muxui-semantic-control-size-lg);
+    padding-inline: var(--muxui-semantic-layout-inset-small);
+    border-block-end: 1px solid var(--muxui-semantic-border-default);
+  }
+
   /* The phone: every row a 44px target, as the frame's controls are there. */
   @media (max-width: 859.98px) {
     .pb-finder {

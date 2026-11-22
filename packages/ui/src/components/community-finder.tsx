@@ -1,9 +1,9 @@
 import { CommandPalette } from '@muxui/react';
 import { Button } from './button.tsx';
+import { FinderSkeleton } from './community-finder-pending.tsx';
 import { BidiText, Handle, neutraliseBidi } from './handle.tsx';
 import { SearchIcon } from './icons.tsx';
 import { Text } from './text.tsx';
-import { SkelCircle, SkelLine } from '../skeleton/shape.tsx';
 
 /** A community the finder lists: a link to its page. */
 export interface FinderRow {
@@ -83,23 +83,6 @@ function Row({ row }: { row: FinderRow }) {
         </CommandPalette.ItemDescription>
       </CommandPalette.ItemContent>
     </CommandPalette.Item>
-  );
-}
-
-/** Rows that stand in for the first answer: no motion, hidden from assistive technology (the status says it). */
-function SkeletonRows() {
-  return (
-    <div className="pb-finder__skeleton" aria-hidden="true">
-      {[70, 50, 60, 40].map((width) => (
-        <div key={width} className="pb-finder__skeleton-row">
-          <SkelCircle size="sm" />
-          <div className="pb-finder__skeleton-text">
-            <SkelLine kind="label" width={width === 70 ? 50 : 40} />
-            <SkelLine kind="meta" width={width === 70 ? 70 : 60} />
-          </div>
-        </div>
-      ))}
-    </div>
   );
 }
 
@@ -191,7 +174,7 @@ export function FinderPanel({
             )}
           </CommandPalette.ListBox>
         )}
-        {empty && busy && <SkeletonRows />}
+        {empty && busy && <FinderSkeleton />}
         {empty && status === 'ready' && (
           <CommandPalette.Empty className="pb-finder__state">
             <Text variant="label">{labels.noneTitle}</Text>

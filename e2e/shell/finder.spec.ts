@@ -131,6 +131,25 @@ test('a pasted handle is one row, sent to the resolve form only when chosen; one
   await page.close();
 });
 
+test('a lookup is let go once the text changes: its answer, when it comes, moves nothing', async () => {
+  const page = await member.newPage();
+  await page.route('**/resolve', async (route) => {
+    if (route.request().method() !== 'POST') return route.continue();
+    await new Promise((resolve) => setTimeout(resolve, 1_500));
+    // The finder may have aborted it by now.
+    await route.fulfill({ json: { redirect: `/c/${cast.communities.kiln.handle}` } }).catch(() => undefined);
+  });
+  await open(page);
+  await page.keyboard.type(`!${cast.communities.kiln.handle}`);
+  await rows(page, 'Find by handle').click();
+  await field(page).fill(cast.word);
+  await expect(rows(page, 'Joined')).toHaveCount(2);
+  await page.waitForTimeout(2_500);
+  expect(new URL(page.url()).pathname).toBe('/');
+  await expect(field(page)).toHaveValue(cast.word);
+  await page.close();
+});
+
 test('a visitor’s lookup row opens the lookup page, which says who may ask', async ({ page }) => {
   await open(page);
   await page.keyboard.type('!somewhere@far.example');
@@ -211,6 +230,40 @@ test('the finder’s code loads when it is first wanted, not with the page', asy
   await finderLink(page).click();
   await expect(field(page)).toBeFocused();
   await page.close();
+});
+
+/** The finder's own module (its chunk in a build). */
+const finderModule = (url: URL) => /\/shell\/finder\/finder\.tsx$|\/finder-[\w-]+\.js$/.test(url.pathname);
+
+test('a press before the finder’s code is in shows the finder loading at once, then its field', async ({ browser, baseURL }) => {
+  // A browser that has not loaded it yet.
+  const context = await browser.newContext({ baseURL, viewport: { width: 1440, height: 900 } });
+  const page = await context.newPage();
+  let release = () => {};
+  const held = new Promise<void>((resolve) => (release = resolve));
+  await page.route(finderModule, async (route) => {
+    await held;
+    await route.continue();
+  });
+  await gotoHydrated(page, '/');
+  await finderLink(page).click();
+  const pending = page.locator('.pb-finder-pending');
+  await expect(pending).toBeVisible({ timeout: 1_000 });
+  await expect(pending.getByRole('status')).toHaveText('Loading communities');
+  release();
+  await expect(field(page)).toBeFocused();
+  await expect(pending).toHaveCount(0);
+  await context.close();
+});
+
+test('a finder whose code cannot load leaves for the directory, as its link does without scripts', async ({ browser, baseURL }) => {
+  const context = await browser.newContext({ baseURL, viewport: { width: 1440, height: 900 } });
+  const page = await context.newPage();
+  await page.route(finderModule, (route) => route.abort());
+  await gotoHydrated(page, '/');
+  await finderLink(page).click();
+  await page.waitForURL('**/communities');
+  await context.close();
 });
 
 test('on a phone the top bar’s icon opens the finder across the window, under the bar', async () => {
