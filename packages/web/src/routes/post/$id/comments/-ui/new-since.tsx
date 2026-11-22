@@ -3,15 +3,13 @@ import { ButtonLink } from '@peblish/ui/components/button-link';
 import { Text } from '@peblish/ui/components/text';
 import type { Uuid } from '@peblish/schema/ids';
 import type { CommentView } from '@peblish/schema/views';
-import { useRouter } from '@tanstack/react-router';
 import { setFold } from '@peblish/ui/components/comment-folds.ts';
 import { buildCommentTree, type CommentNode } from '@peblish/ui/components/comment-tree.ts';
-import { useEffect, useId, useMemo, useRef, useState, type MouseEvent } from 'react';
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
 import { flushSync } from 'react-dom';
 import { translatePlural } from '../../../../../i18n/translate.ts';
 import { useTranslate } from '../../../../../i18n/use-translate.ts';
 import { postPath } from '../../../../../shell/paths.ts';
-import { loadPost } from '../../../-load.ts';
 import newSinceCss from './new-since.css?url';
 
 // "New since your last visit" on a post's thread (core visits/): it records the visit, and when
@@ -20,40 +18,57 @@ import newSinceCss from './new-since.css?url';
 // does not, so opening one branch never counts as having seen the rest of the thread.
 
 /**
+ * Whether this document has been out of sight since it loaded: a tab opened in the background, or one
+ * brought forward before the page hydrated (Chromium lists the document's visibility changes; elsewhere
+ * a tab in front by the time scripts run counts as watched).
+ */
+function wasHidden(): boolean {
+  if (document.visibilityState !== 'visible') return true;
+  if (!PerformanceObserver.supportedEntryTypes.includes('visibility-state')) return false;
+  return performance.getEntriesByType('visibility-state').some((entry) => entry.name === 'hidden');
+}
+
+/**
  * Records the visit once the page is on screen: after hydration (so a prefetch, a preload or a
  * page without scripts records nothing), in its own POST to /post/<id>/visit (so it cannot fail
  * or slow the page), and only once the tab is visible (a page opened in the background is not a
- * visit until it is looked at). A page brought forward from the background reloads its data first,
- * so the visit counts as seen only what the reader is then shown, not a reply that arrived while
- * it waited. That reload is tried first on its own (loadPost), because a failed router reload
- * would swap the thread on screen for the error page: when it fails, the page stays as it was and
- * nothing is recorded, so nothing it did not show counts as seen. A failed record is dropped too:
- * the next visit records instead.
+ * visit until it is looked at). A page that has been out of sight first has the thread section
+ * reload the very page on screen (`refresh`: its sort and cursor), so the visit counts as seen only
+ * what the reader is then shown, not a reply that arrived while it waited; the visit is recorded
+ * once that page is drawn, if the tab is still in front. A failed reload leaves the thread as it
+ * was and records nothing (the next time the tab comes forward tries again). A failed record is
+ * dropped too: the next visit records instead.
  */
-function useRecordVisit(postId: Uuid, signedIn: boolean) {
-  const router = useRouter();
+function useRecordVisit(postId: Uuid, signedIn: boolean, refresh: (() => Promise<boolean>) | undefined) {
+  const latest = useRef(refresh);
+  useLayoutEffect(() => {
+    latest.current = refresh;
+  });
   useEffect(() => {
     if (!signedIn) return;
     let live = true;
+    const visible = () => document.visibilityState === 'visible';
     const record = () => void fetch(`${postPath(postId)}/visit`, { method: 'POST', keepalive: true }).catch(() => undefined);
-    if (document.visibilityState === 'visible') return record();
-    const onVisible = () => {
-      if (document.visibilityState !== 'visible') return;
-      document.removeEventListener('visibilitychange', onVisible);
-      void loadPost({ data: { id: postId } })
-        .then(async (fresh) => {
-          if (!fresh || !live) return;
-          await router.invalidate();
-          if (live) record();
-        })
-        .catch(() => undefined);
+    const forward = async () => {
+      const shown = (await latest.current?.()) ?? false;
+      if (!live) return;
+      if (shown && visible()) record();
+      else wait();
     };
-    document.addEventListener('visibilitychange', onVisible);
+    const onVisible = () => {
+      if (!visible()) return;
+      document.removeEventListener('visibilitychange', onVisible);
+      void forward();
+    };
+    const wait = () => document.addEventListener('visibilitychange', onVisible);
+    if (!wasHidden()) record();
+    else if (visible()) void forward();
+    else wait();
     return () => {
       live = false;
       document.removeEventListener('visibilitychange', onVisible);
     };
-  }, [postId, signedIn, router]);
+  }, [postId, signedIn]);
 }
 
 /** The new comments in the order the thread draws them (the tree's, depth first). */
@@ -74,13 +89,16 @@ export function NewSince({
   viewerId,
   newCount,
   comments,
+  refresh,
 }: {
   postId: Uuid;
   viewerId: Uuid | null;
   newCount: number;
   comments: readonly CommentView[];
+  /** Reloads the thread page on screen; true once it is drawn. Without it, a tab that was out of sight records nothing. */
+  refresh?: () => Promise<boolean>;
 }) {
-  useRecordVisit(postId, viewerId !== null);
+  useRecordVisit(postId, viewerId !== null, refresh);
   const { t, locale } = useTranslate();
   const [said, setSaid] = useState('');
   const last = useRef<string | null>(null);
