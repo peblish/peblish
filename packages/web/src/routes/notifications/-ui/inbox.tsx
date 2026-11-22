@@ -22,7 +22,7 @@ import { useLayoutEffect, useRef, useState, type FormEvent, type ReactNode } fro
 import { translatePlural } from '../../../i18n/translate.ts';
 import { useTranslate } from '../../../i18n/use-translate.ts';
 import { useRouteHydrated } from '../../../shell/hydration.ts';
-import { commentPath, communityPath, inboxPath, modlogEntryPath, postPath } from '../../../shell/paths.ts';
+import { commentPath, communityPath, inboxPath, modlogEntryPath } from '../../../shell/paths.ts';
 import { useHeadingInView, ViewHeader } from '../../../shell/view-header.tsx';
 import { asCommentError, errorKey, type CommentError } from '../../post/$id/comments/-ui/errors.ts';
 import { noticeTarget } from './target.ts';
@@ -309,10 +309,13 @@ export function NoticeRow({
     if (!item.read && hydrated) void post(readAction, '', true);
   };
 
-  // Where Reply leads: a reply's or mention's comment (or post), unless it was removed or deleted since. Only one whose words are
-  // shown is answered in place; a sensitive one is withheld here for every viewer, so Reply leads to its thread, which applies the gate.
+  // Where Reply leads: a reply's or mention's comment (or post), unless it was removed or deleted since, or the notice withholds
+  // it (no post id: its link goes to the community, where there is nothing to answer). Only one whose words are shown is
+  // answered in place; a sensitive one is withheld here for every viewer, so Reply leads to its thread, which applies the gate.
   const replyTarget =
-    (item.kind === 'reply' || item.kind === 'mention') && item.withheld !== 'removed' && item.withheld !== 'deleted' ? target : null;
+    (item.kind === 'reply' || item.kind === 'mention') && item.postId !== null && item.withheld !== 'removed' && item.withheld !== 'deleted'
+      ? target
+      : null;
   const replyable = replyTarget !== null && item.withheld === null;
   const formId = `reply-${item.id}`;
   const [open, setOpen] = useState(false);
