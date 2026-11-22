@@ -1,7 +1,7 @@
 import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
 import { expect, test, type Browser, type Page, type Route } from '@playwright/test';
-import { expectAccessible, landed, signIn } from '../auth/support.ts';
+import { expectAccessible, landed, signIn, signOut } from '../auth/support.ts';
 import { gotoHydrated, recordConsole } from '../support/route-marker.ts';
 
 // Branch 5's notices and the thread follows end to end (lane f-notify), on the lane database: Follow
@@ -166,6 +166,102 @@ test('opening a followed thread’s notice or an accepted follow marks it read, 
   await expect(page).toHaveURL(`/c/${cast.remote.handle}`);
   await expect.poll(() => badge(page)).toBe(before - 2);
   expect(await page.evaluate(() => 'stayed' in window)).toBe(true);
+});
+
+/** A POST of the comment form (post/$id/comments/-form.ts), as the inbox's reply in place sends it. */
+const isCommentPost = (url: URL, method: string) => method === 'POST' && /^\/post\/[^/]+\/comments$/.test(url.pathname);
+
+// The reviewer's steps: a reply is sent and its read receipt held; the reader goes to Mentions, which has nothing in
+// it, comes back to Replies and sends again. What the server stored is counted on the post page afterwards.
+test('a reply on its way is still held after a filter with nothing in it, and the server stores it once', async ({ page }) => {
+  test.setTimeout(90_000);
+  await signedIn(page, cast.reader.name);
+  // The reader follows the thread again, and a new comment there brings an unread notice to answer.
+  await gotoHydrated(page, `/post/${cast.post.id}`);
+  if ((await bell(page).getAttribute('aria-pressed')) !== 'true') await bell(page).click();
+  await expect(bell(page)).toHaveAttribute('aria-pressed', 'true');
+  const said = JSON.parse(seed('comment', cast.post.id, cast.other.name)) as { id: string };
+  await gotoHydrated(page, '/notifications?filter=replies');
+  const row = rows(page).filter({ has: page.locator(`a[href$="/comments/${said.id}"]`) });
+  await expect(row).toHaveCount(1);
+
+  let commentsSent = 0;
+  let commentsAnswered = 0;
+  page.on('request', (request) => void (isCommentPost(new URL(request.url()), request.method()) && commentsSent++));
+  page.on('requestfinished', (request) => void (isCommentPost(new URL(request.url()), request.method()) && commentsAnswered++));
+  const receipts: Route[] = [];
+  let released = false;
+  await page.route(
+    (url) => url.pathname === '/notifications' && url.searchParams.get('intent') === 'read',
+    (route) => void (released ? route.continue() : receipts.push(route)),
+  );
+
+  const body = `Stored once ${cast.suffix}`;
+  await row.getByRole('button', { name: /^Reply: / }).click();
+  const field = row.getByRole('textbox', { name: /^Reply to @/ });
+  await field.fill(body);
+  const saved = page.waitForResponse((response) => isCommentPost(new URL(response.url()), response.request().method()));
+  await row.getByRole('button', { name: 'Reply', exact: true }).click();
+  expect((await saved).status()).toBe(200);
+  await expect.poll(() => receipts.length).toBe(1);
+
+  const filters = page.getByRole('navigation', { name: 'Filter' });
+  await filters.getByRole('link', { name: /^Mentions/ }).click();
+  await expect(page.getByText('Nothing new. Replies, mentions and moderator messages land here.')).toBeVisible();
+  await filters.getByRole('link', { name: /^Replies/ }).click();
+  await expect(row).toHaveCount(1);
+  // The reader sends again, as they find the row: its field opened, and the reply typed again if the field is empty.
+  if (!(await field.isVisible())) await row.getByRole('button', { name: /^Reply: / }).click();
+  if ((await field.inputValue()) === '') await field.fill(body);
+  await row.getByRole('button', { name: 'Reply', exact: true }).click({ force: true });
+  await field.press('Control+Enter');
+  // Another notice's reply is not held by this one's: it is posted while this one waits.
+  const another = rows(page)
+    .filter({ hasNot: page.locator(`a[href$="/comments/${said.id}"]`) })
+    .first();
+  await another.getByRole('button', { name: /^Reply: / }).click();
+  await another.getByRole('textbox', { name: /^Reply to @/ }).fill(`Not held ${cast.suffix}`);
+  await another.getByRole('button', { name: 'Reply', exact: true }).click();
+  await expect(another.getByRole('status')).toHaveText(/^Reply posted\./);
+  await expect(row.getByRole('button', { name: 'Reply', exact: true })).toHaveAttribute('aria-busy', 'true');
+
+  // The receipt answers, then every comment sent has had its answer before the post page counts what was stored.
+  released = true;
+  for (const receipt of receipts) await receipt.continue();
+  await expect(row.getByRole('status')).toHaveText(/^Reply posted\./);
+  await expect.poll(() => commentsAnswered).toBe(commentsSent);
+  await gotoHydrated(page, `/post/${cast.post.id}`);
+  await expect(page.getByText(body, { exact: true })).toHaveCount(1);
+  await expect(page.getByText(`Not held ${cast.suffix}`, { exact: true })).toHaveCount(1);
+});
+
+// The browser signs in as someone else in another tab and then as the reader again: the inbox, shown again, follows
+// each account (shell/viewer-sync.ts), and a reply the reader had begun is not kept across them.
+test('a reply begun in the inbox is gone once the browser has been signed in as someone else', async ({ page }) => {
+  test.setTimeout(90_000);
+  await signedIn(page, cast.reader.name);
+  await gotoHydrated(page, '/notifications?filter=replies');
+  const href = await rows(page).first().getByRole('link', { name: cast.post.title }).getAttribute('href');
+  const row = rows(page).filter({ has: page.locator(`a[href="${href}"]`) });
+  await row.getByRole('button', { name: /^Reply: / }).click();
+  await row.getByRole('textbox', { name: /^Reply to @/ }).fill('Only the reader should see this.');
+
+  const other = await page.context().newPage();
+  const signInThere = async (name: string) => {
+    await signOut(other);
+    await gotoHydrated(other, '/auth/sign-in');
+    await signIn(other, `@${name}`, cast.password);
+    await landed(other, '/');
+    // This tab is shown again.
+    await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+  };
+  await signInThere(cast.other.name);
+  await expect(row).toHaveCount(0);
+  await signInThere(cast.reader.name);
+  await expect(row).toHaveCount(1);
+  await expect(row.getByRole('button', { name: /^Reply: / })).toHaveAttribute('aria-expanded', 'false');
+  await expect(row.getByRole('textbox')).toHaveCount(0);
+  await other.close();
 });
 
 test('Undo of Mark all read restores exactly what was unread, with a notice arriving in between', async ({ page }) => {
