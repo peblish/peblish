@@ -42,3 +42,7 @@ export function commentAsShown(view: CommentView, viewer: { id: string | null; m
   const apId = newObjectApId(origin, 'comment', view.id);
   return view.deleted ? { ...view, apId, author: nobody(apId), authorBadge: null } : { ...view, apId };
 }
+
+/** The word a tombstone's row prints (the thread's rule: both flags read as removed), for the reply bar to say the same. */
+export const tombstoneWord = (comment: Pick<CommentView, 'removed' | 'deleted'>, labels: { removed: string; deleted: string }) =>
+  comment.removed ? labels.removed : labels.deleted;

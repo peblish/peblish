@@ -1,6 +1,6 @@
 import type { ActorRef, PostView } from '@peblish/schema/views';
 import { describe, expect, test } from 'vitest';
-import { authorWithheld, postAsShown } from './-withheld.ts';
+import { authorWithheld, postAsShown, tombstoneWord } from './-withheld.ts';
 
 // The post page's data for a removed or deleted post (loadPost sends postAsShown's answer): no
 // author, badge, own address or series for anyone but the author and the moderators.
@@ -71,4 +71,11 @@ describe.each([{ removed: true }, { deleted: true }, { removed: true, deleted: t
 test('a live post is as before', () => {
   expect(postAsShown(post({}), { id: reader, moderator: false }, origin)).toEqual(post({}));
   expect(authorWithheld(carol)).toBe(false);
+});
+
+test('a tombstone is named as its row names it: removed when both flags are set', () => {
+  const labels = { removed: '[removed]', deleted: '[deleted]' };
+  expect(tombstoneWord({ removed: true, deleted: true }, labels)).toBe('[removed]');
+  expect(tombstoneWord({ removed: true, deleted: false }, labels)).toBe('[removed]');
+  expect(tombstoneWord({ removed: false, deleted: true }, labels)).toBe('[deleted]');
 });
