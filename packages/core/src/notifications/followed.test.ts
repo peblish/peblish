@@ -4,7 +4,7 @@ import { and, eq } from 'drizzle-orm';
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 import { db } from '../db/read.ts';
 import { actors } from '../db/tables/actors.ts';
-import { comments, votes } from '../db/tables/content.ts';
+import { comments, posts, votes } from '../db/tables/content.ts';
 import { follows } from '../db/tables/follows.ts';
 import { outboxCursors } from '../db/tables/outbox.ts';
 import { writer } from '../db/write.ts';
@@ -13,7 +13,7 @@ import { followAs } from '../follows/service.ts';
 import { removeContent } from '../moderation/remove.ts';
 import { peerControls } from '../peers/tables.ts';
 import { truncateAll } from '../testing/db.ts';
-import { grantFor, outboxEvents, seedComment, seedPost } from '../testing/seed-az.ts';
+import { grantFor, outboxEvents, seedBan, seedComment, seedPost } from '../testing/seed-az.ts';
 import { declareAge } from '../testing/seed-b1.ts';
 import { seedBlock } from '../testing/seed-e1.ts';
 import { drainNotices, emitEvent, kindsOf, noticeCount, noticesOf, say, seedInboxWorld } from '../testing/seed-e2.ts';
@@ -157,6 +157,51 @@ describe('thread_reply', () => {
     const told = await threadFollowersOf(db(), comment.id, []);
     expect(told).toHaveLength(threadReplyFanOut);
     expect(told).toEqual(many.slice(0, threadReplyFanOut).map((person) => person.id));
+  });
+
+  test("a follower who blocks the post's author is not told, and a later block of it, or a later flag, hides a notice already sent", async () => {
+    const w = await seedInboxWorld();
+    const postId = w.posts.local.normal;
+    for (const person of [w.people.reader, w.people.moderator, w.people.owner]) await follow(person, postId);
+    await declareAge(w.people.owner);
+    await seedBlock(w.people.reader, w.people.author); // the post's author, not the commenter
+    await say(w.people.admin, postId, 'About this post');
+    await drainNotices();
+    expect(await kindsOf(w.people.reader.id)).toEqual([]);
+    expect(await kindsOf(w.people.moderator.id)).toEqual(['thread_reply']);
+    expect(await kindsOf(w.people.owner.id)).toEqual(['thread_reply']);
+    // A replay tells the eligible followers nothing more.
+    await writer().update(outboxCursors).set({ txId: '0', eventId: 0 }).where(eq(outboxCursors.consumer, 'notifications.create'));
+    await drainNotices();
+    expect(await kindsOf(w.people.moderator.id)).toEqual(['thread_reply']);
+
+    const shown = async (person: { id: string }) => {
+      const inbox = await readInbox({ actorId: person.id, siteRole: 'user' });
+      return [inbox.items.length, inbox.unread, inbox.unreadByGroup.replies, await unreadCount(person.id)];
+    };
+    // A locked thread and a ban from the community still let a follower read: nothing changes.
+    await writer().update(posts).set({ locked: true }).where(eq(posts.id, postId));
+    await seedBan(w.communities.open, w.people.moderator);
+    expect(await shown(w.people.moderator)).toEqual([1, 1, 1, 1]);
+    // The moderator blocks the post's author after the notice: it goes from the list and every count.
+    await seedBlock(w.people.moderator, w.people.author);
+    expect(await shown(w.people.moderator)).toEqual([0, 0, 0, 0]);
+
+    // The post is flagged sensitive since: an undeclared follower no longer has it; a declared one keeps it, withheld.
+    const other = await seedPost(w.instances.local, w.communities.open, w.people.admin);
+    await follow(w.people.reader, other.id);
+    await follow(w.people.owner, other.id);
+    await say(w.people.admin, other.id, 'Before the flag');
+    await drainNotices();
+    expect(await shown(w.people.reader)).toEqual([1, 1, 1, 1]);
+    await writer().update(posts).set({ sensitive: true }).where(eq(posts.id, other.id));
+    expect(await shown(w.people.reader)).toEqual([0, 0, 0, 0]);
+    expect(await shown(w.people.owner)).toEqual([2, 2, 2, 2]);
+    expect((await readInbox({ actorId: w.people.owner.id, siteRole: 'user' })).items[0]).toMatchObject({
+      postId: other.id,
+      withheld: 'sensitive',
+      actor: null,
+    });
   });
 
   test('a later block of its author hides it from the list and every count', async () => {

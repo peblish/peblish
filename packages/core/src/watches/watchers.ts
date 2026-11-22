@@ -1,5 +1,6 @@
 import type { Uuid } from '@peblish/schema/ids';
 import { sql } from 'drizzle-orm';
+import { actorBlockedBy } from '../blocks/predicate.ts';
 import type { Queryable } from '../db/read.ts';
 import { actors } from '../db/tables/actors.ts';
 import { comments, posts } from '../db/tables/content.ts';
@@ -23,8 +24,10 @@ export const threadReplyFanOut = 200;
  * and its community are live (neither deleted nor removed); the follow started before this server
  * received the comment (`since` before `comments.created_at`); the follower is a live local person
  * who is not its author, not in `told` (already given a reply or mention for it), does not block
- * its author or community (noticeBlocked, the inbox's rule), and has declared 16+ when the post or
- * community is sensitive or NSFL. None for a comment that is gone.
+ * its author or community (noticeBlocked, the inbox's rule) nor the post's author (actorBlockedBy:
+ * the notice names the post), and has declared 16+ when the post or community is sensitive or
+ * NSFL. None for a comment that is gone. The inbox rechecks the same when it lists the notice
+ * (notifications/visible.ts).
  */
 export async function threadFollowersOf(q: Queryable, commentId: Uuid, told: readonly Uuid[]): Promise<Uuid[]> {
   const blocked = noticeBlocked(sql`tw.owner_id`, { actorId: sql`c.author_id`, communityId: sql`p.community_id` });
@@ -52,6 +55,7 @@ export async function threadFollowersOf(q: Queryable, commentId: Uuid, told: rea
       and follower.kind = 'Person' and follower.local and follower.deleted_at is null
       and ${notTold}
       and not ${blocked}
+      and not ${actorBlockedBy(sql`tw.owner_id`, sql`p.author_id`)}
       and (
         not (p.sensitive or p.nsfl or community.sensitive or community.nsfl)
         or exists (select 1 from ${ageDeclarations} as declared where declared.actor_id = tw.owner_id)
