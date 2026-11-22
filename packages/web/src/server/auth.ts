@@ -221,15 +221,28 @@ export function ageGated(request: Request): boolean {
 
 const hasControlCharacter = (text: string) => [...text].some((char) => char.charCodeAt(0) < 0x20 || char.charCodeAt(0) === 0x7f);
 
+/** One slash, then not a slash or a backslash, and no backslash or control character anywhere. */
+const onePath = (path: string) => /^\/(?![/\\])/.test(path) && !path.includes('\\') && !hasControlCharacter(path);
+
 /**
- * Where to go after signing in: a path on this site, else '/'. An open redirect would turn the
- * sign-in page into a phishing aid, and browsers drop tabs and line breaks from a URL, so
- * `/\t/evil.example` would become `//evil.example`. So a control character or a backslash
- * anywhere refuses it, it must start with one slash, and resolved against the instance's
- * origin it must stay there.
+ * Where to go after signing in (or after any form that names its way back): a path on this
+ * site, else '/'. An open redirect would turn the sign-in page into a phishing aid, and browsers
+ * drop tabs and line breaks from a URL, so `/\t/evil.example` would become `//evil.example`. So
+ * a control character or a backslash anywhere refuses it, and it must start with one slash.
+ * Resolving it against the instance's origin removes dot segments (`/.//evil.example` and
+ * `/%2e%2e//evil.example` resolve to `//evil.example`), so the path it resolves to, the value
+ * this returns, is checked again, and once more with its escapes decoded, since a router that
+ * decodes `/%2F%2Fevil.example` would read the same thing.
  */
 export function safeRedirect(target: string | undefined, origin: string): string {
-  if (!target || hasControlCharacter(target) || target.includes('\\') || !/^\/(?!\/)/.test(target)) return '/';
+  if (!target || !onePath(target)) return '/';
   const url = new URL(target, origin);
-  return url.origin === new URL(origin).origin ? url.pathname + url.search + url.hash : '/';
+  if (url.origin !== new URL(origin).origin || !onePath(url.pathname)) return '/';
+  let decoded: string;
+  try {
+    decoded = decodeURIComponent(url.pathname);
+  } catch {
+    return '/';
+  }
+  return onePath(decoded) ? url.pathname + url.search + url.hash : '/';
 }

@@ -4,26 +4,28 @@ import { Route as authGroup } from '../routes/auth/route.tsx';
 import { Route as inviteGroup } from '../routes/invite/route.tsx';
 import { Route as settingsGroup } from '../routes/settings/route.tsx';
 import type { CurrentSession } from '@peblish/core/identity/session';
+import { hostileReturns, ordinaryReturns } from './__fixtures__/return-addresses.ts';
 import { clientAddress, privateResponse, privateResponses, safeRedirect, sameOrigin, withSession } from './auth.ts';
 
 const origin = 'https://feddit.test';
 
 describe('safeRedirect keeps the visitor on this site', () => {
-  test.each([
-    ['tab', '/\t/attacker.example'],
-    ['carriage return', '/\r/attacker.example'],
-    ['line feed', '/\n/attacker.example'],
-    ['delete', '/\x7f/attacker.example'],
-    ['backslash', '/\\attacker.example'],
-    ['protocol-relative', '//attacker.example'],
-    ['absolute', 'https://attacker.example/'],
-    ['relative', 'attacker.example'],
-    ['empty', ''],
-  ])('%s: home instead', (_, target) => expect(safeRedirect(target, origin)).toBe('/'));
+  test.each([...hostileReturns, ['delete', '/\x7f/attacker.example'], ['relative', 'attacker.example'], ['empty', '']])(
+    '%s: home instead',
+    (_, target) => expect(safeRedirect(target, origin)).toBe('/'),
+  );
 
-  test('a path on this site, with its query and fragment', () => {
-    expect(safeRedirect('/c/news?sort=new#top', origin)).toBe('/c/news?sort=new#top');
-    expect(safeRedirect(undefined, origin)).toBe('/');
+  test.each(ordinaryReturns)('%s comes back as given', (target) => expect(safeRedirect(target, origin)).toBe(target));
+
+  test('nothing given: home', () => expect(safeRedirect(undefined, origin)).toBe('/'));
+
+  // The answer helpers parse what safeRedirect gives them again (withError, backTo, respond's error branch).
+  test('its answer reads the same when parsed again', () => {
+    for (const target of [...ordinaryReturns, ...hostileReturns.map(([, target]) => target)]) {
+      const safe = safeRedirect(target, origin);
+      const again = new URL(safe, 'http://local');
+      expect([target, again.pathname + again.search + again.hash]).toEqual([target, safe]);
+    }
   });
 });
 
