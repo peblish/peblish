@@ -25,7 +25,7 @@ import { PostReport } from './actions/report.tsx';
 import { PostSave } from './actions/save.tsx';
 import { ActionForm } from './action-form.tsx';
 import { asPostError, errorKey } from './errors.ts';
-import { FollowBell, FollowSwitch, useFollowThread } from './follow-thread.tsx';
+import { FollowBell, FollowBellButton, FollowSwitch, useFollowThread } from './follow-thread.tsx';
 import { PostHeader } from './post-header.tsx';
 import { GateRail, PostRail } from './post-rail.tsx';
 import { PostPills } from './post-pills.tsx';
@@ -44,7 +44,8 @@ export function PostPage({ data, error }: { data: PostPageData; error?: string |
   useRouteHydrated();
   return data.kind === 'gate' ? (
     <>
-      <PostHeader handle={data.handle} />
+      {/* A follower whose thread is gated since keeps its Unfollow: a plain form, so it works without scripts. */}
+      <PostHeader handle={data.handle} trailing={data.unfollow && <FollowBellButton postId={data.unfollow} on pending={false} />} />
       <GateNotice data={data} error={error} />
       <GateRail handle={data.handle} />
     </>

@@ -12,6 +12,9 @@ import { grantFor, seedModerator, seedPost } from './seed-az.ts';
 import { drainNotices, noticesOf, say } from './seed-e2.ts';
 import { localUser, seedActor, seedInstance } from './seed.ts';
 import { actors } from '../db/tables/actors.ts';
+import { posts } from '../db/tables/content.ts';
+import { writer as dbWriter } from '../db/write.ts';
+import { watchThreadAs } from '../watches/watches.ts';
 
 // Lane f-notify's seeds: the cast of the thread follows' and the inbox's branch 5 cases in
 // e2e/notifications, on the lane database (DATABASE_URL from scripts/lane.sh), on fresh names every
@@ -23,20 +26,30 @@ import { actors } from '../db/tables/actors.ts';
 // `reader` follows nothing yet and has, written by the real consumer: a remote community's accept
 // of their request to join, and a removal of their comment.
 // `marker` has two unread replies and one read, for Mark all read and its Undo. `writer` wrote the
-// thread `post` and `markerPost`; `other` comments when a case asks. Invented content only.
+// thread `post` and `markerPost`; `other` comments when a case asks. `fan` follows `gatedPost`, which
+// is flagged sensitive afterwards, and has not declared 16+, so the gate stands there. Invented content only.
 
 async function cast() {
   const suffix = Math.random().toString(36).slice(2, 8);
   const origin = (await localInstance(db())).origin;
   const host = new URL(origin).host;
   const instance = { ...(await localInstance(db())), domain: host, local: true };
-  const [reader, writer, other, mod, marker] = await Promise.all(
-    ['reader', 'writer', 'other', 'mod', 'marker'].map((role) => seedAccount(`f${role}_${suffix}`)),
+  const [reader, writer, other, mod, marker, fan] = await Promise.all(
+    ['reader', 'writer', 'other', 'mod', 'marker', 'fan'].map((role) => seedAccount(`f${role}_${suffix}`)),
   );
   const community = await seedActor(instance, 'Group', `follows_${suffix}`);
   await seedModerator(community, { id: mod!.actorId });
   const post = await seedPost(instance, community, { id: writer!.actorId }, { title: `A thread to follow ${suffix}`, bodyMd: 'Body' });
   const markerPost = await seedPost(instance, community, { id: marker!.actorId }, { title: `Marker's post ${suffix}`, bodyMd: 'Body' });
+  const gatedPost = await seedPost(
+    instance,
+    community,
+    { id: writer!.actorId },
+    { title: `A thread flagged later ${suffix}`, bodyMd: 'Body' },
+  );
+  const watched = await watchThreadAs(localUser(fan!.actorId), { postId: gatedPost.id });
+  if (!watched.ok) throw new Error(`watch refused: ${watched.reason}`);
+  await dbWriter().update(posts).set({ sensitive: true }).where(eq(posts.id, gatedPost.id));
 
   // A remote community accepts the reader's request to join.
   const peer = await seedInstance(`lemmy-${suffix}.test`, false);
@@ -74,6 +87,8 @@ async function cast() {
     marker: { name: marker!.name },
     post: { id: post.id, title: post.title },
     markerPost: { id: markerPost.id },
+    fan: { name: fan!.name },
+    gatedPost: { id: gatedPost.id, title: gatedPost.title },
     remote: { name: remote.name, handle: `${remote.name}@${peer.domain}` },
   };
 }

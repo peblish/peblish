@@ -26,9 +26,13 @@ export const loadPost = createServerFn({ method: 'GET' })
     const viewer: Viewer = session ? { actorId: session.view.actorId, siteRole: session.view.siteRole } : null;
     const page = await readPost(data.id, viewer, undefined, requestNsfw());
     if (!page) return null;
-    // A flagged post that is not shown to this viewer sends the gate and nothing about the post (not even its community's name).
+    // A flagged post that is not shown to this viewer sends the gate and nothing about the post (not even its community's name);
+    // only someone who followed it before it was gated gets its id back, for their Unfollow there.
     if (page.gate !== 'none')
-      return gateData({ subject: 'post', gate: page.gate, handle: page.view.community.handle, back: postPath(page.view.id) });
+      return {
+        ...gateData({ subject: 'post', gate: page.gate, handle: page.view.community.handle, back: postPath(page.view.id) }),
+        unfollow: session && page.view.watching ? page.view.id : null,
+      };
     const renderer = await createMarkdownRenderer();
     const { body } = page;
     const contentHtml =

@@ -10,7 +10,14 @@ import { gotoHydrated } from '../support/route-marker.ts';
 test.skip(Boolean(process.env.BASE_URL), 'needs the lane database for its seed (DATABASE_URL)');
 test.describe.configure({ mode: 'serial' });
 
-type Cast = { password: string; reader: { name: string }; post: { id: string }; markerPost: { id: string } };
+type Cast = {
+  password: string;
+  reader: { name: string };
+  fan: { name: string };
+  post: { id: string };
+  markerPost: { id: string };
+  gatedPost: { id: string; title: string };
+};
 
 let cast: Cast;
 test.beforeAll(() => {
@@ -71,4 +78,33 @@ test('the rail switch’s change is said once, in the bell’s status, and the b
   await expect(bell(page)).toHaveAttribute('aria-pressed', 'false');
   await expect(said(page, on)).toHaveCount(0);
   expect(await page.evaluate(() => (window as unknown as { __survives?: boolean }).__survives)).toBe(true);
+});
+
+test('a follower whose thread is gated since can unfollow there without scripts; nobody else is offered it', async ({ browser, page }) => {
+  const gated = `/post/${cast.gatedPost.id}`;
+  // Signed out, and signed in without following: the gate, and no bell.
+  await gotoHydrated(page, gated);
+  await expect(page.locator('main.gate')).toBeVisible();
+  await expect(bell(page)).toHaveCount(0);
+  await gotoHydrated(page, '/auth/sign-in');
+  await signIn(page, `@${cast.reader.name}`, cast.password);
+  await landed(page, '/');
+  await gotoHydrated(page, gated);
+  await expect(page.locator('main.gate')).toBeVisible();
+  await expect(bell(page)).toHaveCount(0);
+
+  // The follower, with scripts off: the gate still withholds the post, and the bell undoes the follow.
+  const plain = await (await browser.newContext({ javaScriptEnabled: false })).newPage();
+  await plain.goto('/auth/sign-in');
+  await signIn(plain, `@${cast.fan.name}`, cast.password);
+  await plain.waitForURL('/');
+  await plain.goto(gated);
+  await expect(plain.locator('main.gate')).toBeVisible();
+  await expect(plain.getByText(cast.gatedPost.title)).toHaveCount(0);
+  await expect(bell(plain)).toHaveAttribute('aria-pressed', 'true');
+  await bell(plain).click();
+  await plain.waitForURL(gated);
+  await expect(plain.locator('main.gate')).toBeVisible();
+  await expect(bell(plain)).toHaveCount(0);
+  await plain.context().close();
 });
