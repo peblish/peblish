@@ -123,11 +123,10 @@ test.describe('anyone', () => {
     ]);
     await plain.getByRole('button', { name: 'New' }).click();
     await expect(plain).toHaveURL(/\?sort=new#comments$/);
-    expect(await topLevel(plain)).toEqual([
-      `Third comment ${seed.suffix}`,
-      `Second comment ${seed.suffix}`,
-      `First comment ${seed.suffix}`,
-    ]);
+    // The address commits before the new document has its thread: read until it does.
+    await expect
+      .poll(() => topLevel(plain))
+      .toEqual([`Third comment ${seed.suffix}`, `Second comment ${seed.suffix}`, `First comment ${seed.suffix}`]);
     await plain.close();
 
     await gotoHydrated(page, postUrl(seed.posts.thread));
@@ -155,7 +154,7 @@ test.describe('anyone', () => {
     await expect(plain.getByRole('link', { name: 'Back to the first comments' })).toHaveCount(0);
     await plain.getByRole('link', { name: 'More comments' }).click();
     await expect(plain).toHaveURL(/\?sort=old&after=[\w-]+#comments$/);
-    expect(await topLevel(plain)).toEqual(['Comment 25', 'Comment 26', 'Comment 27']);
+    await expect.poll(() => topLevel(plain)).toEqual(['Comment 25', 'Comment 26', 'Comment 27']);
     await expect(plain.getByRole('link', { name: 'More comments' })).toHaveCount(0);
     await plain.getByRole('link', { name: 'Back to the first comments' }).click();
     await expect(plain).toHaveURL(/\?sort=old#comments$/);
