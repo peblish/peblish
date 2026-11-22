@@ -170,13 +170,16 @@ async function describe(q: Queryable, rows: (typeof notifications.$inferSelect)[
   return rows.map((row): InboxItem => {
     const comment = row.commentId ? commentById.get(row.commentId) : undefined;
     const post = postById.get(row.postId ?? comment?.postId ?? '');
-    const text = comment ?? (row.commentId ? undefined : post);
-    const withheld = withheldOf(text ? { comment: comment ?? null, post: post ?? null } : null);
+    // A reply's or mention's ref is the comment or post itself. Once that row is purged its link
+    // goes null, but what is left (the post it was under) is not what the notice was about: it
+    // names no one and quotes nothing, for staff as well.
+    const gone = (row.kind === 'reply' || row.kind === 'mention') && !commentById.has(row.refId) && !postById.has(row.refId);
+    const text = gone ? undefined : (comment ?? (row.commentId ? undefined : post));
+    const withheld = gone ? 'deleted' : withheldOf(text ? { comment: comment ?? null, post: post ?? null } : null);
     const entry = row.modlogId ? entryById.get(row.modlogId) : undefined;
-    const actorWithheld = actorWithheldOf(row.kind, comment, post, {
-      declared,
-      staff: post !== undefined && staffOf.has(post.communityId),
-    });
+    const actorWithheld = gone
+      ? 'deleted'
+      : actorWithheldOf(row.kind, comment, post, { declared, staff: post !== undefined && staffOf.has(post.communityId) });
     return {
       id: row.id,
       kind: row.kind,
@@ -185,10 +188,9 @@ async function describe(q: Queryable, rows: (typeof notifications.$inferSelect)[
       actor: actorWithheld ? null : (row.actorId && personById.get(row.actorId)) || null,
       actorWithheld,
       community: (row.communityId && personById.get(row.communityId)) || null,
-      // The post links to the thread, which names no one here either; the comment's id would lead to its
-      // author. A notice about the post itself keeps no post id: it leads to the post's author elsewhere
-      // (the public modlog, the object route), and the row links to the community instead.
-      postId: actorWithheld && !row.commentId ? null : row.postId,
+      // A notice that names no one keeps no comment or post id: the comment's leads to its author, and
+      // the post's to a title and an author elsewhere (the public modlog). The row links to the community.
+      postId: actorWithheld ? null : row.postId,
       commentId: actorWithheld ? null : row.commentId,
       // A notice that names no one shows no title either: the title of the post it answers can name its author.
       postTitle: actorWithheld ? null : titleOf(post),
