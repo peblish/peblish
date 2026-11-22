@@ -1,4 +1,4 @@
-import { defaultPageSize, Period, Sort, type FeedName } from '@peblish/core/feeds/input';
+import { defaultPageSize, Period, Sort } from '@peblish/core/feeds/input';
 import { readFeed } from '@peblish/core/feeds/read';
 import type { Viewer } from '@peblish/core/posts/read';
 import { createServerFn } from '@tanstack/react-start';
@@ -6,6 +6,7 @@ import { type } from 'arktype';
 import { pageSession } from '../../../server/auth.ts';
 import { createMarkdownRenderer } from '../../../server/markdown.ts';
 import { feedItem, type FeedItem } from './items.ts';
+import { routeFeed } from './names.ts';
 import { input } from '../../../server/input.ts';
 
 /**
@@ -22,7 +23,7 @@ export const loadFeed = createServerFn({ method: 'GET' })
   .handler(async ({ data }) => {
     const session = await pageSession();
     const viewer: Viewer = session ? { actorId: session.view.actorId, siteRole: session.view.siteRole } : null;
-    const feed: FeedName = data.feed === 'home' ? (viewer ? 'subscribed' : 'local') : data.feed;
+    const feed = routeFeed(data.feed, viewer !== null);
     // `now` is the clock the card ages are printed against, so the server's text and the browser's hydrate the same.
     const base = { feed, signedIn: viewer !== null, now: new Date().toISOString() };
     if (!viewer && feed === 'moderating') return { ...base, signIn: true, items: [] as FeedItem[], next: null };

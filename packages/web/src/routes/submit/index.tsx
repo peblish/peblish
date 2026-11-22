@@ -16,6 +16,8 @@ import { asComposerError } from './-types.ts';
 import { Composer } from './-ui/composer.tsx';
 import submitCss from './-ui/submit.css?url';
 import { ownTitle } from '../../shell/title.ts';
+import { Rail } from '../../shell/rail.tsx';
+import { PageTitle } from '../auth/-ui/page.tsx';
 
 // /submit: the composer as a page (composer-page), and with ?edit=<postId> the author's edit
 // form. The shell's "Create post" opens the same form as a sheet over the page instead
@@ -87,30 +89,38 @@ function Submit() {
   const viewer = root.useLoaderData({ select: ({ session }) => session?.actorId ?? '' });
   useRouteHydrated();
   const editing = search.edit !== undefined;
+  // The page's name, then its form flat in the centre column (Commons' Create post).
+  const header = <PageTitle>{editing ? t('composer', 'title.edit') : t('composer', 'title.create')}</PageTitle>;
+  if (data.status === 'unavailable')
+    return (
+      <main className="pb-page cmp-page cmp-page__body">
+        {header}
+        <Notice tone="danger" role="alert">
+          {t('composer', `unavailable.${data.reason}`)}
+        </Notice>
+        <Text as="p">
+          <Link href="/">{t('composer', 'back')}</Link>
+        </Text>
+      </main>
+    );
   return (
-    <main className="cmp-page">
-      <Text as="h1" variant="heading" size="sm" className="cmp-page__title">
-        {editing ? t('composer', 'title.edit') : t('composer', 'title.create')}
-      </Text>
-      {data.status === 'unavailable' ? (
+    <Composer
+      // Another person, a different post (or none), or the words kept from another refusal, is a different form.
+      key={`${viewer}:${data.edit?.id ?? 'new'}:${search.flash ?? ''}`}
+      data={data}
+      error={asComposerError(search.error)}
+      onDone={(path) => openInRouter(router, path)}
+      onDiscard={() => openInRouter(router, '/')}
+      page={({ form, rules }) => (
         <>
-          <Notice tone="danger" role="alert">
-            {t('composer', `unavailable.${data.reason}`)}
-          </Notice>
-          <Text as="p">
-            <Link href="/">{t('composer', 'back')}</Link>
-          </Text>
+          <main className="pb-page cmp-page cmp-page__body">
+            {header}
+            {form}
+          </main>
+          {/* The community's rules beside the form (the inline copy under the picker shows where this gives way). */}
+          <Rail label={t('composer', 'panel.label')}>{rules}</Rail>
         </>
-      ) : (
-        <Composer
-          // Another person, a different post (or none), or the words kept from another refusal, is a different form.
-          key={`${viewer}:${data.edit?.id ?? 'new'}:${search.flash ?? ''}`}
-          data={data}
-          error={asComposerError(search.error)}
-          onDone={(path) => openInRouter(router, path)}
-          onDiscard={() => openInRouter(router, '/')}
-        />
       )}
-    </main>
+    />
   );
 }

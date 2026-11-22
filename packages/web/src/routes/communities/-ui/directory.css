@@ -1,5 +1,5 @@
-/* The community directory and /resolve after directory-table.html, in Mux UI. Layout only;
-   colours, radii and type come from Mux components and tokens. */
+/* The community directory (Commons, the mock's CommunitiesView) and /resolve, in Mux UI. Layout
+   only; colours, radii and type come from Mux components and tokens. */
 @layer app {
   .dir {
     display: flex;
@@ -53,28 +53,28 @@
   .dir-pending {
     flex-basis: 100%;
   }
-  .dir-scroll {
-    overflow-x: auto;
+  .dir-toolbar .pb-cview {
+    margin-inline-start: auto;
   }
-  .dir-table {
-    inline-size: 100%;
-    min-inline-size: 36rem;
+  .dir-title {
+    color: var(--muxui-semantic-content-strong);
   }
-  .dir-community {
-    display: flex;
-    flex-direction: column;
-    gap: var(--muxui-semantic-layout-micro-gap);
-  }
-  .dir-name {
-    display: flex;
-    flex-wrap: wrap;
+  /* The rail's link to Find a community, a 24px target (WCAG 2.2, 2.5.8). */
+  .dir-rail-note .muxui-link,
+  .dir-signin,
+  .dir-new {
+    display: inline-flex;
     align-items: center;
-    gap: var(--muxui-semantic-layout-tight-gap);
+    min-block-size: 24px;
   }
-  .dir-num {
-    display: block;
-    text-align: end;
-    font-variant-numeric: tabular-nums;
+  /* A phone: the choices, Search, Sign in to join and New community are 44px targets. */
+  @media (max-width: 859.98px) {
+    .dir-seg .muxui-link,
+    .dir-search > .muxui-button,
+    .dir-signin,
+    .dir-new {
+      min-block-size: calc(var(--muxui-semantic-control-size-lg) + 2 * var(--muxui-semantic-layout-dense-gap));
+    }
   }
   .dir-notes {
     display: flex;

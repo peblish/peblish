@@ -27,7 +27,8 @@ import { useRouteHydrated } from '../../../../shell/hydration.ts';
 import { SearchText } from '../../../auth/-route.ts';
 import { accessOf } from '../../settings/-access.ts';
 import { adminHead } from '../../settings/-head.ts';
-import { AccessNotice, AdminTitle, SectionTitle } from '../../settings/-ui.tsx';
+import { AdminPage, ownHeader } from '../../-page.tsx';
+import { AccessNotice, SectionTitle } from '../../settings/-ui.tsx';
 import { StatusCell } from '../-status.tsx';
 import { input } from '../../../../server/input.ts';
 
@@ -85,6 +86,7 @@ export const Route = createFileRoute('/admin/pages/$slug/$language')({
     return data;
   },
   head: adminHead('pages.title'),
+  staticData: ownHeader,
   component: Editor,
   server: {
     handlers: {
@@ -132,12 +134,11 @@ function Editor() {
   const live = row?.status === 'published' || row?.status === 'changed';
   const known = errorKeys.find((key) => key === search.error);
   return (
-    <main className="pb-page adm-page">
+    <AdminPage title={title} className="adm-page">
       <Breadcrumbs
         aria-label={t('admin', 'pages.trail')}
         items={[{ label: t('admin', 'pages.back'), href: '/admin/pages' }, { label: title }]}
       />
-      <AdminTitle>{title}</AdminTitle>
       <LinkTabs
         aria-label={t('admin', 'pages.language.label')}
         variant="segment"
@@ -195,7 +196,7 @@ function Editor() {
         ))}
       {/* Keyed by page and language, so typing in one language never shows up in another. */}
       <PageForm key={`${slug}/${language}`} here={hereOf(slug, language)} language={language} draft={draft} live={live} />
-    </main>
+    </AdminPage>
   );
 }
 

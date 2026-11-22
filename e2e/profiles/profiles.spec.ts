@@ -46,12 +46,14 @@ async function sameSession(browser: Browser, page: Page, options: { javaScriptEn
 }
 
 const profile = (name: string) => `/u/${name}`;
+/** The person at the top of a profile and of its edit page: a region named Profile (the rail beside it is a complementary landmark of its own). */
+const personOf = (on: Page) => on.getByRole('region', { name: 'Profile' });
 
 test.describe('anyone', () => {
   test('a local profile: card, tabs, posts and comments, and no axe violations', async ({ page }) => {
     const log = recordConsole(page);
     await gotoHydrated(page, profile(seed.owner.name));
-    const card = page.getByRole('complementary', { name: 'Profile' });
+    const card = personOf(page);
     await expect(card.getByRole('heading', { level: 1, name: 'Pat Profile' })).toBeVisible();
     await expect(card).toContainText(seed.owner.name);
     await expect(card.locator('strong, b')).toContainText('write');
@@ -89,6 +91,27 @@ test.describe('anyone', () => {
     await expect(page.getByText(seed.posts.owner[0]!)).toBeVisible();
   });
 
+  test("a slow tab change shows the rows as shapes in a busy main, then the profile's own main", async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await gotoHydrated(page, profile(seed.owner.name));
+    // The router's data requests answer past its pending delay (a second), so the loading host shows.
+    await page.route('**/_serverFn/**', async (route) => {
+      await new Promise((resolve) => setTimeout(resolve, 2500));
+      await route.continue();
+    });
+    await page
+      .getByRole('navigation', { name: 'Activity' })
+      .getByRole('link', { name: /^Posts/ })
+      .click();
+    const busy = page.locator('#pb-main main[aria-busy="true"]');
+    await expect(busy.getByRole('status')).toHaveText('Loading posts');
+    await expect(busy.locator('a, button, input')).toHaveCount(0);
+    await expect(busy).toHaveCount(0, { timeout: 10_000 });
+    await expect(page).toHaveURL(/tab=posts/);
+    await expect(personOf(page).getByRole('heading', { level: 1, name: 'Pat Profile' })).toBeVisible();
+    await expect(page.getByRole('complementary', { name: 'About this person' })).toBeVisible();
+  });
+
   test('works without JavaScript', async ({ browser }) => {
     const plain = await (await browser.newContext({ javaScriptEnabled: false })).newPage();
     await plain.goto(`${profile(seed.owner.name)}?tab=posts`);
@@ -99,11 +122,50 @@ test.describe('anyone', () => {
 
   test('a remote person shows their home and when the copy was refreshed', async ({ page }) => {
     await gotoHydrated(page, profile(seed.remote.handle));
-    const card = page.getByRole('complementary', { name: 'Profile' });
+    const card = personOf(page);
     await expect(card.getByRole('heading', { level: 1, name: 'Remote Rita' })).toBeVisible();
     await expect(card).toContainText('Hello from elsewhere');
     await expect(card).toContainText(`${seed.remoteHost}, copy refreshed 3h`);
     await expectAccessible(page);
+
+    // Wide enough for the rail, the home is there and not in the page twice; narrower, it is back under the person.
+    await page.setViewportSize({ width: 1440, height: 900 });
+    const rail = page.getByRole('complementary', { name: 'About this person' });
+    const home = rail.getByRole('region', { name: 'Home instance' });
+    await expect(home).toContainText(seed.remoteHost);
+    await expect(home).toContainText('3h');
+    await expect(card.getByText(`${seed.remoteHost}, copy refreshed 3h`)).toBeHidden();
+    await expectAccessible(page);
+    await page.setViewportSize({ width: 900, height: 900 });
+    await expect(rail).toBeHidden();
+    await expect(card.getByText(`${seed.remoteHost}, copy refreshed 3h`)).toBeVisible();
+  });
+
+  test('on a phone the tabs, the sort, the density and the page links are 44px targets', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    // 23 posts: a second page, so Next page shows.
+    await gotoHydrated(page, `${profile(reviewSeed().prolific.name)}?tab=posts`);
+    const controls = page.getByRole('main').locator('.prof-main > .pb-link-tabs a, .prof-toolbar a, .prof-toolbar button, .pb-pager a');
+    const sides = await controls.evaluateAll((nodes) =>
+      nodes.map((node) => Math.round(Math.min(node.getBoundingClientRect().width, node.getBoundingClientRect().height))),
+    );
+    expect(sides.length).toBeGreaterThanOrEqual(8);
+    expect(sides.filter((side) => side < 44)).toEqual([]);
+  });
+
+  test("on a phone a signed-in reader's comment actions are 44px targets", async ({ page }) => {
+    await signedIn(page, seed.viewers[4]!);
+    await page.setViewportSize({ width: 390, height: 844 });
+    await gotoHydrated(page, `${profile(seed.owner.name)}?tab=comments`);
+    const sides = await page
+      .locator('.prof-comment-actions')
+      .first()
+      .locator('a, button')
+      .evaluateAll((nodes) =>
+        nodes.map((node) => Math.round(Math.min(node.getBoundingClientRect().width, node.getBoundingClientRect().height))),
+      );
+    expect(sides.length).toBeGreaterThanOrEqual(3);
+    expect(sides.filter((side) => side < 44)).toEqual([]);
   });
 
   test('a remote display name with directional controls is isolated and cannot reorder the card', async ({ page }) => {
@@ -111,7 +173,7 @@ test.describe('anyone', () => {
       execFileSync('node', ['e2e/profiles/bidi-seed.ts'], { cwd: join(import.meta.dirname, '../..'), encoding: 'utf8' }),
     ) as { handle: string; name: string };
     await gotoHydrated(page, profile(bidi.handle));
-    const heading = page.getByRole('complementary', { name: 'Profile' }).getByRole('heading', { level: 1 });
+    const heading = personOf(page).getByRole('heading', { level: 1 });
     // The override (U+202E) and the isolate (U+2066) are dropped and the name sits in its own <bdi>.
     await expect(heading).toHaveText('Ada evil Admin');
     await expect(heading.locator('bdi')).toHaveText('Ada evil Admin');
@@ -120,7 +182,7 @@ test.describe('anyone', () => {
 
   test('a bot account carries the Bot badge', async ({ page }) => {
     await gotoHydrated(page, profile(seed.bot.handle));
-    await expect(page.getByRole('complementary', { name: 'Profile' }).getByText('Bot', { exact: true })).toBeVisible();
+    await expect(personOf(page).getByText('Bot', { exact: true })).toBeVisible();
   });
 
   test('a deleted account says so and has no tabs', async ({ page }) => {
@@ -152,7 +214,7 @@ test.describe('signed in', () => {
   test('a member blocks a person from their profile and unblocks from the notice', async ({ page }) => {
     await signedIn(page, seed.viewers[0]!);
     await gotoHydrated(page, profile(seed.owner.name));
-    const card = page.getByRole('complementary', { name: 'Profile' });
+    const card = personOf(page);
     await expect(card.getByRole('link', { name: 'Edit profile' })).toHaveCount(0);
     await card.getByRole('button', { name: 'Block' }).click();
     await expect(page.getByText('You blocked this person.')).toBeVisible();
@@ -179,7 +241,7 @@ test.describe('signed in', () => {
     await signedIn(page, seed.viewers[1]!);
     const plain = await sameSession(browser, page, { javaScriptEnabled: false });
     await plain.goto(profile(seed.owner.name));
-    await plain.getByRole('complementary', { name: 'Profile' }).getByRole('button', { name: 'Block' }).click();
+    await personOf(plain).getByRole('button', { name: 'Block' }).click();
     await expect(plain).toHaveURL(new RegExp(`${profile(seed.owner.name)}$`));
     await expect(plain.getByText('You blocked this person.')).toBeVisible();
     await plain.getByRole('button', { name: 'Unblock' }).click();
@@ -201,7 +263,7 @@ test.describe('signed in', () => {
   test("one's own profile offers Edit profile and Settings, no Block", async ({ page }) => {
     await signedIn(page, seed.owner.name);
     await gotoHydrated(page, profile(seed.owner.name));
-    const card = page.getByRole('complementary', { name: 'Profile' });
+    const card = personOf(page);
     await expect(card.getByRole('link', { name: 'Edit profile' })).toHaveAttribute('href', `${profile(seed.owner.name)}/edit`);
     await expect(card.getByRole('link', { name: 'Settings' })).toBeVisible();
     await expect(card.getByRole('button', { name: 'Block' })).toHaveCount(0);
@@ -224,8 +286,8 @@ test.describe('signed in', () => {
     await page.getByRole('radio', { name: 'Write' }).click();
     await page.getByRole('button', { name: 'Save changes' }).click();
     await expect(page.getByRole('status')).toContainText('Profile saved.');
-    // The card on the left shows the new name once the data reloads.
-    await expect(page.getByRole('complementary', { name: 'Profile' }).getByRole('heading', { level: 1 })).toHaveText('Pat Q. Profile');
+    // The person at the top shows the new name once the data reloads.
+    await expect(personOf(page).getByRole('heading', { level: 1 })).toHaveText('Pat Q. Profile');
     expect(log.hydrationProblems()).toEqual([]);
 
     // Over the limit: the counter turns, and Save is off.
@@ -324,7 +386,7 @@ test.describe('review cases', () => {
     test(`at ${width} px a long name, handle and host wrap inside the card`, async ({ page }) => {
       await page.setViewportSize({ width, height: 800 });
       await gotoHydrated(page, profile(review.long.handle));
-      const card = page.getByRole('complementary', { name: 'Profile' });
+      const card = personOf(page);
       await expect(card.getByRole('heading', { level: 1, name: review.long.displayName })).toBeVisible();
       await expect(card).toContainText(`@${review.long.handle}`);
       await expect(card.locator('.pb-handle__host')).toHaveText(`@${review.long.host}`);
@@ -425,11 +487,11 @@ test.describe('review cases', () => {
   });
 
   test('a moderator sees the community ban, an admin the instance ban, and a visitor neither', async ({ page, browser }) => {
-    const moderateOf = (on: Page) => on.getByRole('complementary', { name: 'Profile' }).getByTestId('profile-moderate');
+    const moderateOf = (on: Page) => personOf(on).getByTestId('profile-moderate');
 
     await signedIn(page, review.visitor.name);
     await gotoHydrated(page, profile(review.prolific.name));
-    await expect(page.getByRole('complementary', { name: 'Profile' }).getByRole('button', { name: 'Block' })).toBeVisible();
+    await expect(personOf(page).getByRole('button', { name: 'Block' })).toBeVisible();
     await expect(moderateOf(page)).toHaveCount(0);
 
     const moderator = await (await browser.newContext()).newPage();

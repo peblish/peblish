@@ -5,9 +5,10 @@ import { loadProfile } from './-load.ts';
 import { parseProfileSearch, resolveProfileSearch } from './-search.ts';
 import { ProfilePage } from './-ui/profile-page.tsx';
 import profileCss from './-ui/profile.css?url';
+import { FeedPending } from '../../../shell/pending.tsx';
 import { ownTitle } from '../../../shell/title.ts';
 
-// /u/<handle> (profile-side): a person's card beside their posts and comments. The same address
+// /u/<handle> (Commons): a person over their posts and comments, their home in the rail. The same address
 // is the person's ActivityPub id, which federation answers first (README, web rules). Public;
 // what the viewer sees of the person (blocked, tools) is personal, so the loader says no-store.
 
@@ -38,6 +39,8 @@ export const Route = createFileRoute('/u/$handle/')({
     };
   },
   component: Profile,
+  // Moving between tabs or pages of a slow profile: the frame stays and the list's rows hold their places.
+  pendingComponent: FeedPending,
 });
 
 function Profile() {

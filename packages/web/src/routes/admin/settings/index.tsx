@@ -20,7 +20,8 @@ import { SearchText } from '../../auth/-route.ts';
 import { accessOf } from './-access.ts';
 import { savePatch, switchPatch } from './-form.ts';
 import { adminHead } from './-head.ts';
-import { AccessNotice, AdminTitle, AreaField, SectionTitle } from './-ui.tsx';
+import { AdminPage, ownHeader } from '../-page.tsx';
+import { AccessNotice, AreaField, SectionTitle } from './-ui.tsx';
 
 // /admin/settings (R2 pick admin-tabs, its Site tab): identity, the operator's details that fill
 // the legal pages, the registration cap and the federation settings in one form, then one kill
@@ -48,6 +49,7 @@ export const Route = createFileRoute('/admin/settings/')({
   validateSearch: Search,
   loader: () => loadSettings(),
   head: adminHead('settings.title'),
+  staticData: ownHeader,
   component: Settings,
   server: {
     handlers: {
@@ -83,8 +85,7 @@ function Settings() {
     ...(invalid === key && { errorMessage: t('admin', 'settings.invalid') }),
   });
   return (
-    <main className="pb-page adm-page">
-      <AdminTitle>{t('admin', 'settings.title')}</AdminTitle>
+    <AdminPage title={t('admin', 'settings.title')} className="adm-page">
       {search.saved && (
         <Notice role="status" tone="success">
           {t('admin', 'settings.saved')}
@@ -182,12 +183,12 @@ function Settings() {
           />
         </section>
         <div className="adm-actions">
-          <Button type="submit" variant="primary">
-            {t('admin', 'settings.save')}
-          </Button>
           <Text color="muted" size="sm">
             {t('admin', 'settings.save.hint')}
           </Text>
+          <Button type="submit" variant="primary">
+            {t('admin', 'settings.save')}
+          </Button>
         </div>
       </form>
       <section className="adm-section" aria-labelledby="switches">
@@ -203,7 +204,7 @@ function Settings() {
           </ul>
         </Card.Root>
       </section>
-    </main>
+    </AdminPage>
   );
 }
 

@@ -31,15 +31,18 @@ test('Tab walks the controls in reading order', async ({ page }) => {
   const thread = page.getByTestId('kit-thread');
   await thread.getByRole('button', { name: 'Collapse comment and 4 replies' }).focus();
   const order: string[] = [];
-  for (let step = 0; step < 6; step += 1) {
+  for (let step = 0; step < 7; step += 1) {
     await page.keyboard.press('Tab');
     order.push(
       await page.evaluate(() => document.activeElement?.getAttribute('aria-label') ?? document.activeElement?.textContent?.trim() ?? ''),
     );
   }
-  // The author link, the vote arrows, reply and share, then the next comment's fold button.
-  expect(order.slice(0, 5)).toEqual(['@jun@lemmy.world', 'Upvote', 'Downvote', 'reply', 'share']);
+  // The author link, the vote arrows, Reply and the comment's menu, then the next comment's fold button.
+  expect(order.slice(0, 5)).toEqual(['@jun@lemmy.world', 'Upvote', 'Downvote', 'Reply', 'More actions']);
   expect(order[5]).toMatch(/^Collapse comment/);
+  // The menu holds Copy link (and Share where the browser has a share sheet), as the thread page's does.
+  await thread.getByRole('button', { name: 'More actions' }).first().click();
+  await expect(page.getByRole('menu', { name: 'Comment actions' }).getByRole('menuitem', { name: 'Copy link' })).toBeVisible();
 });
 
 test('a low-score comment starts folded, a removed one shows a note, and badges name who is who', async ({ page }) => {
@@ -47,10 +50,11 @@ test('a low-score comment starts folded, a removed one shows a note, and badges 
   const thread = page.getByTestId('kit-thread');
   await expect(thread.getByText('Collapsed, score -9 is below -5. 1 reply hidden.')).toBeVisible();
   await expect(thread.getByText('Buy followers cheap.')).toBeHidden();
-  await thread.getByRole('button', { name: 'show' }).click();
+  await thread.getByRole('button', { name: 'Expand comment and 1 reply' }).click();
   await expect(thread.getByText('Buy followers cheap.')).toBeVisible();
   await expect(thread.getByText('[removed by a moderator]')).toBeVisible();
-  await expect(thread.getByText('[deleted]')).toHaveCount(2);
+  // A tombstone says what it was once, in place of its author.
+  await expect(thread.getByText('[deleted]')).toHaveCount(1);
   await expect(thread.locator('.pb-badge--op').first()).toHaveText('OP');
   await expect(thread.locator('.pb-badge--moderator').first()).toHaveText('MOD');
 });
@@ -101,4 +105,30 @@ test("plain links in the app's own components navigate in the page too", async (
   await page.goBack();
   await page.waitForURL('**/kit');
   expect(await page.evaluate(() => (window as unknown as { __survives?: boolean }).__survives)).toBe(true);
+});
+
+test('a comment’s exact date and time is at the head of its menu, by keyboard and by touch, with no stop of its own', async ({
+  page,
+  browser,
+  baseURL,
+}) => {
+  await gotoHydrated(page, '/kit');
+  const thread = page.getByTestId('kit-thread');
+  const first = thread.locator('.pb-comment').first();
+  const exact = (await first.locator('> .pb-comment__head time').first().getAttribute('title'))!;
+  expect(exact).toMatch(/\d{4}/);
+  await first.locator('> .pb-comment__main > .pb-comment__actions').getByRole('button', { name: 'More actions' }).focus();
+  await page.keyboard.press('Enter');
+  const menu = page.getByRole('menu', { name: 'Comment actions' });
+  await expect(menu).toContainText(exact);
+  // The date is the menu's heading, not one of its actions.
+  await expect(menu.getByRole('menuitem', { name: exact })).toHaveCount(0);
+  await page.keyboard.press('Escape');
+
+  const phone = await (await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, baseURL })).newPage();
+  await gotoHydrated(phone, '/kit');
+  const row = phone.getByTestId('kit-thread').locator('.pb-comment').first();
+  await row.locator('> .pb-comment__main > .pb-comment__actions').getByRole('button', { name: 'More actions' }).tap();
+  await expect(phone.getByRole('menu', { name: 'Comment actions' })).toContainText(exact);
+  await phone.close();
 });

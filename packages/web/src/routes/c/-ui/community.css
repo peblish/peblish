@@ -1,7 +1,6 @@
-/* The community page and form after the R2 mocks community-twocol and community-form-page, in Mux UI
-   (mock RM, direction A). Layout only; colours, radii and type come from Mux components and tokens. */
+/* The community page (Commons, the mock's Community.tsx and styles/community*.css) and the community
+   form. Layout only; colours, radii and type come from Mux components and tokens. */
 @layer app {
-  .cm-page,
   .cm-form {
     max-inline-size: 1100px;
     margin: 0 auto;
@@ -9,7 +8,7 @@
   }
   /* Mux's base styles give a paragraph a one-line bottom margin unless it is the last one; the gaps space
      these parts, so Text rendered as a paragraph keeps none. */
-  :is(.cm-page, .cm-form) .muxui-text {
+  :is(.cm-page, .cm-form, .cm-rail) .muxui-text {
     margin: 0;
   }
   .cm-refused {
@@ -24,57 +23,53 @@
     max-block-size: 160px;
     margin-block-start: var(--muxui-semantic-layout-content-gap);
   }
-  .cm-head {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: flex-start;
-    gap: var(--muxui-semantic-layout-content-gap) var(--muxui-semantic-layout-group-gap);
-    padding-block: var(--muxui-semantic-layout-group-gap) var(--muxui-semantic-layout-content-gap);
+  /* The header: the icon, the name and handle, Join at the end; the facts and Mod tools under them. */
+  .cm-hero {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+    gap: var(--muxui-semantic-layout-group-gap) var(--muxui-semantic-layout-action-gap);
+    padding-block: var(--muxui-semantic-layout-inset-large) var(--muxui-semantic-layout-inset-medium);
   }
   .cm-icon {
     flex: none;
   }
-  .cm-title {
+  .cm-id {
     display: flex;
-    flex: 1 1 240px;
     flex-direction: column;
     gap: var(--muxui-semantic-layout-micro-gap);
     min-inline-size: 0;
   }
   .cm-name {
     overflow-wrap: anywhere;
+    color: var(--muxui-semantic-content-strong);
   }
   .cm-address {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
     gap: var(--muxui-semantic-layout-tight-gap);
+    overflow-wrap: anywhere;
   }
   .cm-actions {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
+    justify-content: flex-end;
     gap: var(--muxui-semantic-layout-control-gap);
   }
-  .cm-newpost-off {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--muxui-semantic-layout-control-gap);
+  .cm-stats,
+  .cm-tools {
+    grid-column: 1 / -1;
   }
   /* A refused join or leave puts its Notice on a line of its own under the button. */
   .cm-join {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
+    justify-content: flex-end;
     gap: var(--muxui-semantic-layout-control-gap);
     margin: 0;
-  }
-  .cm-join .pb-alert {
-    flex-basis: 100%;
-  }
-  /* Mod tools take the header's full width, so its panels have room when they open. */
-  .cm-tools {
-    flex: 1 0 100%;
   }
   .cm-tool-row,
   .cm-tool-links {
@@ -91,36 +86,26 @@
   .cm-notice {
     margin-block-end: var(--muxui-semantic-layout-content-gap);
   }
-  .cm-jump {
+  /* The way to post: one wide link to the composer, its words at the start. */
+  .cm-start {
+    margin-block-end: var(--muxui-semantic-layout-inset-medium);
+  }
+  .cm-start__link.muxui-button {
+    inline-size: 100%;
+    justify-content: flex-start;
+  }
+  /* The posts' own heading leads the feed's toolbar. */
+  .cm-posts-title {
+    color: var(--muxui-semantic-content-strong);
+  }
+  /* Posts and About: only where the rail has given way. */
+  .cm-tabs {
     display: none;
-    margin-block-end: var(--muxui-semantic-layout-content-gap);
-  }
-  .cm-layout {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) 300px;
-    gap: var(--muxui-semantic-layout-section-gap);
-    align-items: start;
-  }
-  .cm-feed {
-    min-inline-size: 0;
-    padding: 0;
-  }
-  .cm-side {
-    position: sticky;
-    inset-block-start: var(--muxui-semantic-layout-group-gap);
-    display: flex;
-    flex-direction: column;
-    gap: var(--muxui-semantic-layout-group-gap);
-  }
-  .cm-card-body {
-    display: flex;
-    flex-direction: column;
-    gap: var(--muxui-semantic-layout-tight-gap);
   }
   .cm-rules {
     display: flex;
     flex-direction: column;
-    gap: var(--muxui-semantic-layout-tight-gap);
+    gap: var(--muxui-semantic-layout-group-gap);
     margin: 0;
     padding-inline-start: var(--muxui-semantic-layout-inset-large);
   }
@@ -130,7 +115,7 @@
   .cm-mods {
     display: flex;
     flex-direction: column;
-    gap: var(--muxui-semantic-layout-tight-gap);
+    gap: var(--muxui-semantic-layout-group-gap);
     margin: 0;
     padding: 0;
     list-style: none;
@@ -140,15 +125,72 @@
     align-items: center;
     gap: var(--muxui-semantic-layout-tight-gap);
   }
-  @media (max-width: 800px) {
-    .cm-layout {
-      grid-template-columns: minmax(0, 1fr);
+  .cm-mod {
+    display: flex;
+    flex-direction: column;
+    min-inline-size: 0;
+    overflow-wrap: anywhere;
+  }
+  /* The charter's links, in the rail (also the About tab's), are 24px targets (WCAG 2.2, 2.5.8). */
+  .cm-rail .muxui-link {
+    display: inline-flex;
+    align-items: center;
+    min-block-size: 24px;
+  }
+  @container page (width < 62rem) {
+    .cm-tabs {
+      display: flex;
+      margin-block-end: var(--muxui-semantic-layout-inset-small);
     }
-    .cm-side {
+    .cm-page[data-tab='about'] .cm-posts {
+      display: none;
+    }
+    /* About: the rail comes back in the page's flow, under the page in place of the posts and at the
+       page's gutter, rather than sticking beside it. */
+    .pb-frame:has(> .cm-page[data-tab='about']) {
+      grid-template-rows: auto auto minmax(0, 1fr);
+    }
+    .pb-frame:has(> .cm-page[data-tab='about']) > .cm-rail {
+      display: flex;
+      grid-column: 1;
+      grid-row: 3;
       position: static;
+      max-block-size: none;
+      overflow: visible;
+      padding: 0 var(--muxui-semantic-layout-inset-large) var(--muxui-reference-dimension-space-l);
+      border-inline: 0;
     }
-    .cm-jump {
-      display: block;
+    /* The Posts tab names the list here; its heading stays for assistive technology. */
+    .cm-posts-title {
+      position: absolute;
+      inline-size: 1px;
+      block-size: 1px;
+      overflow: hidden;
+      clip-path: inset(50%);
+      white-space: nowrap;
+    }
+  }
+  /* A phone: the header wraps, Join and the community's actions take a row of their own. */
+  @media (max-width: 859.98px) {
+    .cm-hero {
+      grid-template-columns: auto minmax(0, 1fr);
+    }
+    .pb-frame:has(> .cm-page[data-tab='about']) > .cm-rail {
+      padding-inline: var(--muxui-semantic-layout-inset-medium);
+    }
+    .cm-actions {
+      grid-column: 1 / -1;
+      justify-content: flex-start;
+    }
+    .cm-join {
+      justify-content: flex-start;
+    }
+    .cm-start__link.muxui-button,
+    .cm-tabs .muxui-link {
+      min-block-size: calc(var(--muxui-semantic-control-size-lg) + 2 * var(--muxui-semantic-layout-dense-gap));
+    }
+    .cm-rail .muxui-link {
+      min-block-size: calc(var(--muxui-semantic-control-size-lg) + 2 * var(--muxui-semantic-layout-dense-gap));
     }
   }
 

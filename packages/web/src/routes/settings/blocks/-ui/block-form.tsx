@@ -1,6 +1,6 @@
 import { useRouter } from '@tanstack/react-router';
 import { type } from 'arktype';
-import { useState, type FormEvent, type ReactNode } from 'react';
+import { useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { useTranslate } from '../../../../i18n/use-translate.ts';
 import { tabOfKind, blocksPath } from '../-tabs.ts';
 import { Notice } from '@peblish/ui/components/notice';
@@ -31,10 +31,15 @@ export function BlockForm({
   const router = useRouter();
   const [error, setError] = useState<{ code: string; query: string }>();
   const [busy, setBusy] = useState(false);
+  // Set from the press until the answer is in, so a second press, or Enter in the field, posts nothing
+  // meanwhile (as the account forms do). A ref, not the state, so two presses before a render are refused too.
+  const sending = useRef(false);
   const action = `${blocksPath}?${new URLSearchParams(fields)}`;
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (sending.current) return;
+    sending.current = true;
     const submitter = event.nativeEvent instanceof SubmitEvent ? event.nativeEvent.submitter : null;
     const body = new URLSearchParams();
     for (const [name, value] of new FormData(event.currentTarget, submitter)) if (typeof value === 'string') body.append(name, value);
@@ -59,6 +64,7 @@ export function BlockForm({
     } catch {
       fail('network');
     } finally {
+      sending.current = false;
       setBusy(false);
     }
   }

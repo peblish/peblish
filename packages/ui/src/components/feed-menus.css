@@ -1,0 +1,120 @@
+/* A feed's sort and view menus (feed-menus.tsx), Commons' quiet header control: no fill at rest, the
+   neutral tint on hover and while open, a stronger one pressed. Mux gap: Menu.Trigger is an unstyled
+   button. The transparent border is what forced colours draws as the control's edge. */
+@layer app {
+  .pb-feed-menu {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--muxui-semantic-layout-tight-gap);
+    box-sizing: border-box;
+    min-block-size: var(--muxui-semantic-control-size-md);
+    padding-inline: var(--muxui-semantic-layout-inset-small);
+    border: 1px solid transparent;
+    border-radius: var(--muxui-semantic-control-radius);
+    background: transparent;
+    color: var(--muxui-semantic-content-default);
+    font: inherit;
+    font-weight: var(--muxui-semantic-typography-control-weight);
+    white-space: nowrap;
+    cursor: pointer;
+    transition: background-color var(--muxui-semantic-motion-state-transition-duration) var(--muxui-semantic-motion-state-transition-easing);
+  }
+
+  .pb-feed-menu[data-icon-only] {
+    padding-inline: var(--muxui-semantic-layout-inset-tight);
+  }
+
+  .pb-feed-menu:is(:hover, [aria-expanded='true']):not(:disabled) {
+    background: color-mix(in srgb, var(--muxui-semantic-color-neutral-100) 8%, transparent);
+  }
+
+  .pb-feed-menu:active:not(:disabled) {
+    background: color-mix(in srgb, var(--muxui-semantic-color-neutral-100) 12%, transparent);
+  }
+
+  .pb-feed-menu:focus-visible {
+    outline: 2px solid var(--muxui-semantic-focus-ring);
+    outline-offset: 2px;
+  }
+
+  .pb-feed-menu:disabled {
+    cursor: default;
+  }
+
+  .pb-feed-menu__icon,
+  .pb-feed-menu__chevron {
+    flex: none;
+    inline-size: 1.25em;
+    block-size: 1.25em;
+    color: var(--muxui-semantic-content-muted);
+  }
+
+  .pb-feed-menu__chevron {
+    inline-size: 1em;
+    block-size: 1em;
+  }
+
+  .pb-feed-menu__sub {
+    color: var(--muxui-semantic-content-muted);
+  }
+
+  /* A choice in the list: glyph, name, and the tick of the one in force at the end. */
+  .pb-feed-menu__choice {
+    display: flex;
+    flex: 1;
+    align-items: center;
+    gap: var(--muxui-semantic-layout-action-gap);
+  }
+
+  .pb-feed-menu__choice-label {
+    flex: 1;
+  }
+
+  .pb-feed-menu__choice-icon,
+  .pb-feed-menu__check {
+    flex: none;
+    inline-size: 1.25em;
+    block-size: 1.25em;
+  }
+
+  .pb-feed-menu__choice-icon {
+    color: var(--muxui-semantic-content-muted);
+  }
+
+  @media (forced-colors: active) {
+    .pb-feed-menu:is(:hover, [aria-expanded='true']):not(:disabled) {
+      border-color: Highlight;
+    }
+
+    .pb-feed-menu:disabled {
+      color: GrayText;
+    }
+
+    .pb-feed-menu__icon,
+    .pb-feed-menu__chevron,
+    .pb-feed-menu__sub,
+    .pb-feed-menu__choice-icon {
+      color: inherit;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .pb-feed-menu {
+      transition: none;
+    }
+  }
+
+  /* Phone: 44px targets, each the glyph alone, so the bar keeps room for the brand and the feed's name. */
+  @media (max-width: 859.98px) {
+    .pb-feed-menu {
+      min-block-size: calc(var(--muxui-semantic-control-size-lg) + 2 * var(--muxui-semantic-layout-dense-gap));
+      min-inline-size: calc(var(--muxui-semantic-control-size-lg) + 2 * var(--muxui-semantic-layout-dense-gap));
+      justify-content: center;
+    }
+
+    .pb-feed-menu .pb-feed-menu__label,
+    .pb-feed-menu .pb-feed-menu__chevron {
+      display: none;
+    }
+  }
+}

@@ -226,3 +226,36 @@ test('an instance block hides what lives there', async ({ page }) => {
     new Set([seed.posts.friendTitle]),
   );
 });
+
+test('the block form takes one press until the answer is in, and a refusal can be retried', async ({ page }) => {
+  await signedIn(page, seed.viewers[0]!);
+  await gotoHydrated(page, '/settings/blocks');
+  // The answer is held in the browser and is a refusal, so nothing is blocked on the server.
+  let release = () => {};
+  const held = new Promise<void>((resolve) => (release = resolve));
+  let posts = 0;
+  await page.route(/\/settings\/blocks\?/, async (route) => {
+    if (route.request().method() !== 'POST') return route.continue();
+    posts += 1;
+    await held;
+    await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ error: 'handle.not_found' }) });
+  });
+  const field = page.getByLabel('Block a person by handle');
+  await field.fill(`@${seed.noisy.name}`);
+  const form = page.locator('form.blk-add');
+  const block = page.getByRole('button', { name: 'Block', exact: true });
+  await block.click();
+  await expect(form).toHaveAttribute('aria-busy', 'true');
+  // A second press, and Enter in the field, while the first is pending.
+  await block.click({ force: true });
+  await field.press('Enter');
+  await page.waitForTimeout(300);
+  expect(posts).toBe(1);
+
+  release();
+  await expect(form.getByRole('alert')).toContainText(`Could not find @${seed.noisy.name}.`);
+  await expect(form).toHaveAttribute('aria-busy', 'false');
+  // Refused, the form takes the next press.
+  await block.click();
+  await expect.poll(() => posts).toBe(2);
+});

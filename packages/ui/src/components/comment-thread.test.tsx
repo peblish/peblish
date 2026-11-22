@@ -1,7 +1,7 @@
 import type { ActorRef, CommentView } from '@peblish/schema/views';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, test } from 'vitest';
-import { CommentThread, unloadedReplies, type CommentThreadLabels } from './comment-thread.tsx';
+import { CommentThread, unloadedReplies, type CommentThreadLabels, type CommentThreadProps } from './comment-thread.tsx';
 import { buildCommentTree } from './comment-tree.ts';
 
 const person: ActorRef = {
@@ -52,7 +52,11 @@ const labels = {
   share: 'share',
 } as unknown as CommentThreadLabels;
 
-const draw = (comments: CommentView[], continueHref: (c: CommentView) => string | null = (c) => `/c/${c.id}`) =>
+const draw = (
+  comments: CommentView[],
+  continueHref: (c: CommentView) => string | null = (c) => `/c/${c.id}`,
+  props: Partial<CommentThreadProps> = {},
+) =>
   renderToStaticMarkup(
     <CommentThread
       comments={comments}
@@ -61,6 +65,7 @@ const draw = (comments: CommentView[], continueHref: (c: CommentView) => string 
       authorHref={() => '/u/jun'}
       labels={labels}
       locale="en-US"
+      {...props}
     />,
   );
 
@@ -91,24 +96,77 @@ describe('replies the list leaves out', () => {
   });
 });
 
-describe('a comment that is both deleted and removed', () => {
-  test('shows one label, removed, and hides the author as a deleted one does', () => {
+describe('a tombstone', () => {
+  test('both deleted and removed shows one label, removed, and no author', () => {
     const html = draw([comment('a', null, 0, { deleted: true, removed: true, contentHtml: null })]);
     expect(html).toContain('[removed]');
     expect(html).not.toContain('[deleted]');
     expect(html).not.toContain('@jun');
   });
 
-  test('removed alone still shows the author', () => {
-    const html = draw([comment('a', null, 0, { removed: true, contentHtml: null })]);
-    expect(html).toContain('[removed]');
-    expect(html).toContain('@jun');
+  test('removed or deleted alone carries no author, badge, text, vote or reply', () => {
+    for (const flags of [{ removed: true }, { deleted: true }]) {
+      const html = draw([comment('a', null, 0, { ...flags, contentHtml: '<p>text of a</p>', authorBadge: 'moderator' })], () => null, {
+        postAuthorId: person.id,
+        onReply: () => {},
+        onVote: () => {},
+      });
+      expect(html).not.toContain('@jun');
+      expect(html).not.toContain('href="/u/jun"');
+      expect(html).not.toContain('text of a');
+      expect(html).not.toContain('>OP<');
+      expect(html).not.toContain('>mod<');
+      expect(html).not.toContain('aria-label="Vote"');
+      expect(html).not.toContain('>reply<');
+    }
   });
 
-  test('deleted alone still hides the author', () => {
-    const html = draw([comment('a', null, 0, { deleted: true, contentHtml: null })]);
-    expect(html).toContain('[deleted]');
-    expect(html).not.toContain('@jun');
+  test("its replies stay, and a deep one does not name the tombstone's author as the one it answers", () => {
+    const chain = [
+      comment('a', null, 4),
+      comment('b', 'a', 3),
+      comment('c', 'b', 2, { removed: true, contentHtml: null }),
+      comment('d', 'c', 1),
+      comment('e', 'd', 0),
+    ];
+    const html = draw(chain, () => null, { labels: { ...labels, inReplyTo: 'in reply to' } });
+    expect(html).toContain('text of d');
+    // d (level 3) answers the tombstone: no name; e (level 4) answers d, whose author is shown.
+    expect(html.match(/in reply to/g)).toHaveLength(1);
+  });
+});
+
+describe('folding', () => {
+  test('a low score folds the comment, drawn in the page so a browser without scripts still reads it', () => {
+    const html = draw([comment('a', null, 1, { counts: { upvotes: 0, downvotes: 9, comments: 1 } }), comment('b', 'a', 0)]);
+    expect(html).toContain('data-soft="true"');
+    expect(html).toContain('aria-expanded="false"');
+    expect(html).toContain('text of a');
+    expect(html).toContain('text of b');
+    // Why it is folded, and what the fold hides.
+    expect(html).toContain('low 1 hidden');
+  });
+
+  test('the comment a permalink page starts from opens unfolded, whatever its score', () => {
+    const html = draw([comment('a', null, 0, { counts: { upvotes: 0, downvotes: 9, comments: 0 } })], () => null, { focusId: 'a' });
+    expect(html).not.toContain('data-folded');
+    expect(html).toContain('aria-expanded="true"');
+    expect(html).toContain('data-focus="true"');
+  });
+});
+
+describe('the comment menu', () => {
+  const menuLabels = { ...labels, more: 'More actions', menu: 'Comment actions', copyLink: 'Copy link' };
+
+  test('each comment shown has a More actions button once the page gives its address and the labels', () => {
+    const list = [comment('a', null, 0), comment('b', null, 0, { deleted: true, contentHtml: null })];
+    expect(draw(list, () => null, { labels: menuLabels })).not.toContain('More actions');
+    const html = draw(list, () => null, { labels: menuLabels, linkOf: (c) => `https://feddit.test/c/${c.id}` });
+    // The tombstone has none; the menu itself mounts only when it opens.
+    expect(html.match(/aria-label="More actions"/g)).toHaveLength(1);
+    expect(html).toContain('aria-haspopup="menu"');
+    expect(html).not.toContain('Copy link');
+    expect(html).toContain('role="status"');
   });
 });
 

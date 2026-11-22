@@ -1,7 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
 import { freshPage, seedWorld, signedInAdmin, type World } from '../modlog/support.ts';
 import { gotoHydrated, recordConsole } from '../support/route-marker.ts';
-import { enterDoesNothing, postsTo, tick, withoutScripts } from './support.ts';
+import { enterDoesNothing, hydrated, postsTo, tick, withoutScripts } from './support.ts';
 
 // The Bans tab's two panels: a choice made for one person ("Also remove their content", a reason,
 // the public switch) never carries over to another, Enter in a field bans or lifts nothing, and
@@ -21,6 +21,7 @@ async function check(page: Page, name: string) {
   await page.getByLabel('Ban someone').fill(`@${name}`);
   await page.getByRole('button', { name: 'Check' }).click();
   await expect(page.getByTestId('ban-confirm')).toContainText(`Ban @${name} from this instance?`);
+  await hydrated(page);
   return page.getByTestId('ban-confirm');
 }
 

@@ -368,6 +368,14 @@
     border-inline-end: 0;
   }
 
+  /* A page that holds a staff table (staticData `centre: 'wide'`, shell.tsx): a centre as wide as the tables'
+     52rem in their outlined card (its small padding and hairlines) in the page's padding, so a table sits
+     whole on a computer rather than scrolling sideways. */
+  .pb-frame[data-centre='wide'] {
+    --pb-centre-w: calc(52rem + 2 * (var(--muxui-semantic-layout-inset-medium) + 1px + var(--muxui-semantic-layout-inset-large)));
+    --pb-page-max: calc(var(--pb-centre-w) + var(--pb-rail-w));
+  }
+
   /* A route's <main> keeps its own height: stretched to the frame's, a grid or flex main would spread
      its rows over the window. */
   .pb-frame > :not(.pb-rail) {
@@ -394,6 +402,13 @@
     z-index: 2;
   }
 
+  /* A route's own view header at the head of its page (a feed's, the directory's) runs the column's width
+     from its top, through the page's padding, as the frame's own bar does. */
+  .pb-page > .pb-frame-vh:first-child {
+    margin-block-start: calc(-1 * var(--muxui-semantic-layout-inset-small));
+    margin-inline: calc(-1 * var(--muxui-semantic-layout-inset-large));
+  }
+
   .pb-frame-vh__home,
   .pb-frame-vh__menu {
     display: none;
@@ -403,8 +418,11 @@
     color: var(--muxui-semantic-content-strong);
   }
 
-  /* The right rail: beside the centre, sticky under the header, scrolling on its own. */
+  /* The right rail: beside the centre, sticky under the header, scrolling on its own; its panels a gap apart. */
   .pb-rail {
+    display: flex;
+    flex-direction: column;
+    gap: var(--muxui-semantic-layout-action-gap);
     grid-column: 2;
     grid-row: 1 / -1;
     position: sticky;
@@ -429,6 +447,22 @@
 
     .pb-rail {
       display: none;
+    }
+  }
+
+  /* Beside the wide centre the rail gives way sooner, where the two no longer fit (on a computer: the
+     phone's frame is edge to edge, and its rail gone, by the rules above and below). */
+  @media (min-width: 860px) {
+    @container page (width < 76rem) {
+      .pb-frame[data-centre='wide']:has(> .pb-rail) {
+        grid-template-columns: minmax(0, 1fr);
+        max-inline-size: var(--pb-centre-w);
+        border-inline-end: 1px solid var(--pb-rule);
+      }
+
+      .pb-frame[data-centre='wide'] > .pb-rail {
+        display: none;
+      }
     }
   }
 
@@ -461,14 +495,6 @@
     padding: var(--muxui-semantic-layout-inset-medium) var(--muxui-semantic-layout-inset-large);
   }
 
-  /* The phone drawer's rows, its close button and Appearance's choices are 44px targets. It is a
-     portal: only a phone shows its button. */
-  .muxui-sidebar__mobile-drawer {
-    --muxui-control-size-md: var(--pb-touch);
-    --muxui-control-size-sm: var(--pb-touch);
-    --muxui-component-button-min-height: var(--pb-touch);
-  }
-
   /* Header labels give way to their icons where the header is narrow; the names stay for assistive tech. */
   @media (max-width: 959.98px) {
     .pb-top__label {
@@ -490,6 +516,25 @@
       --pb-dock-end: calc(var(--pb-touch) + var(--muxui-semantic-layout-inset-small) + 1px);
     }
 
+    /* The phone's targets: Mux's fields and buttons, small or medium, are 44px (its control sizes
+       stop at 40), on every page and in every portal (the drawer, menus, Appearance's choices), where Mux
+       sets its sizes again. An avatar is drawn at a control size too, but it is no target: Mux's own. */
+    :root,
+    [data-muxui-color-scheme],
+    [data-muxui-contrast],
+    [data-muxui-motion],
+    [data-muxui-density],
+    [data-muxui-direction] {
+      --muxui-control-size-sm: var(--pb-touch);
+      --muxui-control-size-md: var(--pb-touch);
+      --muxui-component-button-min-height: var(--pb-touch);
+    }
+
+    .muxui-avatar {
+      --muxui-control-size-sm: var(--muxui-semantic-control-size-sm);
+      --muxui-control-size-md: var(--muxui-semantic-control-size-md);
+    }
+
     .pb-app {
       grid-template-areas:
         'page'
@@ -507,7 +552,9 @@
       padding-inline: 0;
     }
 
-    .pb-frame {
+    /* Edge to edge, a rail's page too (the rail has given way, and its frame keeps no hairline). */
+    .pb-frame,
+    .pb-frame:has(> .pb-rail) {
       max-inline-size: none;
       border-inline: 0;
     }
@@ -517,7 +564,8 @@
       padding-inline: var(--muxui-semantic-layout-inset-medium);
     }
 
-    .pb-page .pb-rows {
+    .pb-page .pb-rows,
+    .pb-page > .pb-frame-vh:first-child {
       margin-inline: calc(-1 * var(--muxui-semantic-layout-inset-medium));
     }
 
@@ -532,8 +580,13 @@
       display: contents;
     }
 
-    /* The brand on the phone's top bar: the mark, or the site's name, in a 44px target. */
+    /* The brand on the phone's top bar: the mark, or the site's name, in a 44px target. A name is what gives
+       way in the bar: at most 45% of the window (an instance's host name, "b1.peblish.test", fits whole at
+       320px), and a longer one ends in an ellipsis, so the page never scrolls sideways and the finder, the
+       menu and a page's actions keep their size. On a narrow phone it gives way to a feed's heading too,
+       down to its 44px target (index/-feed/feed.css). */
     .pb-bar-brand {
+      max-inline-size: 45vw;
       min-block-size: var(--pb-touch);
       min-inline-size: var(--pb-touch);
       justify-content: center;
@@ -552,12 +605,6 @@
       position: sticky;
       inset-block-end: 0;
       z-index: 2;
-    }
-
-    /* Appearance's choices, a portal too, opened from the drawer. */
-    .pb-theme__choices {
-      --muxui-control-size-sm: var(--pb-touch);
-      --muxui-control-size-md: var(--pb-touch);
     }
   }
 

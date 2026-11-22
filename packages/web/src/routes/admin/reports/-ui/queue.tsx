@@ -1,7 +1,6 @@
 import type { QueueGroup, QueueSubject } from '@peblish/core/reports/read';
 import type { QueueTab } from '@peblish/core/reports/scope';
 import { Button } from '@peblish/ui/components/button';
-import { Card } from '@peblish/ui/components/card';
 import { Handle } from '@peblish/ui/components/handle';
 import { Link } from '@peblish/ui/components/link';
 import { LinkedDisclosure } from '@peblish/ui/components/linked-disclosure';
@@ -15,13 +14,14 @@ import { TextField } from '@peblish/ui/components/text-field';
 import { Time } from '@peblish/ui/components/time';
 import { useRouter } from '@tanstack/react-router';
 import { type } from 'arktype';
-import { useEffect, useState, type FormEvent, type MouseEvent, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type FormEvent, type MouseEvent, type ReactNode } from 'react';
 import { useTranslate } from '../../../../i18n/use-translate.ts';
 import { rich } from '../../../auth/-ui/form.tsx';
 import { useDate } from '../../../auth/-ui/page.tsx';
 import { communityPath, commentPath, postPath, userPath } from '../../../../shell/paths.ts';
 import { asReportError, errorKey, type ReportError } from '../../../report/-ui/errors.ts';
 import { queueHref, type QueueView } from '../-href.ts';
+import { TableCard } from '../../-table-card.tsx';
 
 const Answer = type({ 'redirect?': 'string', 'error?': 'string' });
 
@@ -69,12 +69,41 @@ function Toggle({ shown, href, onToggle, children }: { shown: boolean; href: str
   );
 }
 
+/** One action at a time for a row's forms: `take` is false while another holds it, `free` lets the next one go. */
+function useRowLock() {
+  const held = useRef(false);
+  return {
+    take() {
+      if (held.current) return false;
+      held.current = true;
+      return true;
+    },
+    free() {
+      held.current = false;
+    },
+  };
+}
+type RowLock = ReturnType<typeof useRowLock>;
+
 /**
  * A form that posts to the queue and works without JavaScript (303 back to `back`, or back
  * with ?error=<code>). Once hydrated it posts by fetch, shows a refusal in place and reloads the
- * queue's data on success.
+ * queue's data on success. `lock` is the row's: from a press until its answer and the reload are in,
+ * no form of the row posts (Resolve then Dismiss would act twice on one report).
  */
-function QueueForm({ group, back, children, className }: { group: QueueGroup; back: string; children: ReactNode; className?: string }) {
+function QueueForm({
+  group,
+  back,
+  lock,
+  children,
+  className,
+}: {
+  group: QueueGroup;
+  back: string;
+  lock: RowLock;
+  children: ReactNode;
+  className?: string;
+}) {
   const router = useRouter();
   const { t } = useTranslate();
   const [error, setError] = useState<ReportError>();
@@ -82,6 +111,7 @@ function QueueForm({ group, back, children, className }: { group: QueueGroup; ba
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (!lock.take()) return;
     const submitter = event.nativeEvent instanceof SubmitEvent ? event.nativeEvent.submitter : null;
     const body = new URLSearchParams();
     for (const [name, value] of new FormData(event.currentTarget, submitter)) if (typeof value === 'string') body.append(name, value);
@@ -98,6 +128,7 @@ function QueueForm({ group, back, children, className }: { group: QueueGroup; ba
       setError('network');
     } finally {
       setBusy(false);
+      lock.free();
     }
   }
 
@@ -262,6 +293,7 @@ function Actions({ group, tab, admin, view }: { group: QueueGroup; tab: QueueTab
   const { t } = useTranslate();
   const back = queueHref(view, { show: null, details: null, remove: null });
   const isContent = group.subject.kind === 'post' || group.subject.kind === 'comment';
+  const lock = useRowLock();
   if (tab === 'resolved' || tab === 'dismissed') {
     const closed = group.closed;
     return closed ? (
@@ -285,7 +317,7 @@ function Actions({ group, tab, admin, view }: { group: QueueGroup; tab: QueueTab
     );
   return (
     <div className="rq-actions">
-      <QueueForm group={group} back={back} className="rq-act">
+      <QueueForm group={group} back={back} lock={lock} className="rq-act">
         <TextField
           name="note"
           size="sm"
@@ -310,7 +342,7 @@ function Actions({ group, tab, admin, view }: { group: QueueGroup; tab: QueueTab
           openHref={`${queueHref(view, { remove: group.key })}#rq-remove-${group.key}`}
           defaultExpanded={view.remove === group.key}
         >
-          <QueueForm group={group} back={back} className="rq-act">
+          <QueueForm group={group} back={back} lock={lock} className="rq-act">
             <Text as="p" size="sm" color="muted">
               {t('reports', 'queue.remove.title')}
             </Text>
@@ -344,14 +376,14 @@ function Actions({ group, tab, admin, view }: { group: QueueGroup; tab: QueueTab
         </LinkedDisclosure>
       )}
       {group.audience === 'moderators' && (
-        <QueueForm group={group} back={back}>
+        <QueueForm group={group} back={back} lock={lock}>
           <Button type="submit" name="intent" value="escalate" variant="neutral" size="sm">
             {t('reports', 'queue.escalate')}
           </Button>
         </QueueForm>
       )}
       {group.audience === 'admins' && tab === 'escalated' && admin && (
-        <QueueForm group={group} back={back}>
+        <QueueForm group={group} back={back} lock={lock}>
           <Button type="submit" name="intent" value="back" variant="neutral" size="sm">
             {t('reports', 'queue.sendBack')}
           </Button>
@@ -378,7 +410,7 @@ export function QueueTable({
   const { t, locale } = useTranslate();
   useFieldKeys();
   return (
-    <Card.Root variant="outlined" padding="sm" className="rq-table">
+    <TableCard label={t('reports', 'queue.title')} className="rq-table">
       <Table
         aria-label={t('reports', 'queue.title')}
         columns={[
@@ -397,6 +429,6 @@ export function QueueTable({
           },
         }))}
       />
-    </Card.Root>
+    </TableCard>
   );
 }

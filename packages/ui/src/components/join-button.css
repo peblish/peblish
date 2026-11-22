@@ -1,0 +1,19 @@
+@layer app {
+  /* Join (join-button.tsx): the glyph of Joined and Pending sits before the word at the button's icon size. */
+  .pb-join {
+    flex: none;
+  }
+
+  /* A refusal takes a line of its own under the button. */
+  .pb-join__error {
+    flex-basis: 100%;
+  }
+
+  /* A phone: a 44px target. */
+  @media (max-width: 859.98px) {
+    .pb-join.muxui-button {
+      min-block-size: calc(var(--muxui-semantic-control-size-lg) + 2 * var(--muxui-semantic-layout-dense-gap));
+      min-inline-size: calc(var(--muxui-semantic-control-size-lg) + 2 * var(--muxui-semantic-layout-dense-gap));
+    }
+  }
+}

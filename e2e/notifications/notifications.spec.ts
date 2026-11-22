@@ -91,6 +91,20 @@ test.describe('a quiet inbox', () => {
   });
 });
 
+test.describe('on a phone', () => {
+  test('Mark all read in the bar is its icon in a 44px target, at 320 and 390', async ({ page }) => {
+    await signedIn(page, seed.me.name);
+    for (const width of [320, 390]) {
+      await page.setViewportSize({ width, height: 800 });
+      await gotoHydrated(page, '/notifications');
+      const all = page.getByRole('button', { name: 'Mark all read' });
+      await expect(all).toBeEnabled();
+      const box = (await all.boundingBox())!;
+      expect([width, box.width >= 44, box.height >= 44]).toEqual([width, true, true]);
+    }
+  });
+});
+
 test.describe('the inbox of a person who was replied to, mentioned, moderated and banned', () => {
   test('lists every kind once, with the badge, the title and no violations', async ({ page }) => {
     await signedIn(page, seed.me.name);
@@ -103,10 +117,10 @@ test.describe('the inbox of a person who was replied to, mentioned, moderated an
 
     const text = (phrase: string) => rows(page).filter({ hasText: phrase });
     await expect(text('replied to your post')).toHaveCount(4);
-    await expect(text('replied to your comment on')).toHaveCount(1);
-    await expect(text('mentioned you in a comment on')).toHaveCount(1);
-    await expect(text('removed your comment on')).toHaveCount(2);
-    await expect(text('restored your comment on')).toHaveCount(1);
+    await expect(text('replied to your comment')).toHaveCount(1);
+    await expect(text('mentioned you in a comment')).toHaveCount(1);
+    await expect(text('removed your comment')).toHaveCount(2);
+    await expect(text('restored your comment')).toHaveCount(1);
     await expect(text('banned you from')).toHaveCount(1);
     await expect(text('lifted your ban from')).toHaveCount(1);
 
@@ -147,7 +161,7 @@ test.describe('the inbox of a person who was replied to, mentioned, moderated an
     for (const [name, count, phrase] of [
       ['Replies', 5, 'replied to your'],
       ['Mentions', 1, 'mentioned you'],
-      ['Your content', 3, 'your comment on'],
+      ['Your content', 3, 'your comment'],
       ['Account', 2, 'ban'],
       ['Unread', 11, ''],
       ['All', 11, ''],
@@ -248,6 +262,108 @@ test.describe('the inbox of a person who was replied to, mentioned, moderated an
       'page',
     );
     await page.context().close();
+  });
+
+  test('in Unread a notice marked read leaves and focus goes to the next one, or the one before; in All it stays', async ({ page }) => {
+    await signedIn(page, seed.busy.name);
+    await gotoHydrated(page, '/notifications?filter=unread');
+    await expect(rows(page)).toHaveCount(25);
+    const markRead = (n: number) =>
+      rows(page)
+        .nth(n)
+        .getByRole('button', { name: /^Mark read/ });
+    const holdsFocus = (row: Awaited<ReturnType<Locator['elementHandle']>>) => row!.evaluate((el) => el.contains(document.activeElement));
+    const next = await rows(page).nth(1).elementHandle();
+    await markRead(0).press('Enter');
+    await expect(page.getByRole('main').getByText('29 unread', { exact: true })).toBeVisible();
+    await expect(markRead(0)).toBeFocused();
+    expect(await holdsFocus(next)).toBe(true);
+
+    // The last row of the older page has none after it: the one before takes focus.
+    await page.getByRole('link', { name: 'Older' }).click();
+    await expect(rows(page)).toHaveCount(4);
+    const before = await rows(page).nth(2).elementHandle();
+    await markRead(3).press('Enter');
+    await expect(rows(page)).toHaveCount(3);
+    await expect(markRead(2)).toBeFocused();
+    expect(await holdsFocus(before)).toBe(true);
+    // Marking the rest from the keyboard ends on the empty state, which takes focus.
+    for (const count of [2, 1]) {
+      await page.keyboard.press('Enter');
+      await expect(rows(page)).toHaveCount(count);
+      await expect(markRead(count - 1)).toBeFocused();
+    }
+    await page.keyboard.press('Enter');
+    await expect(page.getByRole('heading', { name: 'Nothing new. Replies, mentions and moderator messages land here.' })).toBeVisible();
+    await expect(page.locator('#pb-inbox-empty')).toBeFocused();
+
+    // In All the notice stays, and so does focus, on its button, now Mark unread (the first, newest, was read above).
+    await gotoHydrated(page, '/notifications');
+    await markRead(1).press('Enter');
+    await expect(
+      rows(page)
+        .nth(1)
+        .getByRole('button', { name: /^Mark unread/ }),
+    ).toBeFocused();
+    await page.context().close();
+  });
+
+  test('in Unread focus goes to the notice after the one marked read, though a newer one came in meanwhile', async ({ page }) => {
+    await signedIn(page, seed.busy.name);
+    await gotoHydrated(page, '/notifications');
+    const ids = await rows(page)
+      .locator('form[data-toggle]')
+      .evaluateAll((forms) => forms.slice(0, 4).map((form) => new URL((form as HTMLFormElement).action).searchParams.get('id')!));
+    const [newest, a, b, c] = ids;
+    /** Posts an inbox form by fetch, as the page does. */
+    const mark = (intent: string, id = '') => {
+      const fields: Record<string, string> = id ? { intent, id } : { intent };
+      return page.evaluate(
+        (fields) =>
+          fetch(`/notifications?${new URLSearchParams(fields)}`, {
+            method: 'POST',
+            headers: { accept: 'application/json', 'content-type': 'application/x-www-form-urlencoded' },
+          }).then((response) => response.json()),
+        fields,
+      );
+    };
+    // Everything read, then the three after the newest unread again: Unread lists them in order.
+    await mark('read_all');
+    for (const id of [a, b, c]) expect(await mark('unread', id)).toEqual({ ok: true });
+    await gotoHydrated(page, '/notifications?filter=unread');
+    await expect(rows(page)).toHaveCount(3);
+    const toggle = (id: string | undefined) => page.locator(`form[data-toggle][action*="id=${id}"] button`);
+    // While b's Mark read is on its way the newest notice is unread again, so the list b leaves is [newest, a, c].
+    await page.route(
+      (url) => url.pathname === '/notifications' && url.searchParams.get('intent') === 'read',
+      async (route) => {
+        await mark('unread', newest);
+        await route.continue();
+      },
+    );
+    await toggle(b).press('Enter');
+    await expect(rows(page)).toHaveCount(3);
+    await expect(toggle(b)).toHaveCount(0);
+    await expect(toggle(c)).toBeFocused();
+    await page.context().close();
+  });
+});
+
+test.describe('a reply written in place', () => {
+  test('posts through the comment form, says so, and the reply is on the post', async ({ page }) => {
+    await signedIn(page, seed.me.name);
+    const log = recordConsole(page);
+    await gotoHydrated(page, '/notifications?filter=replies');
+    const row = rows(page).filter({ hasText: `Great post ${seed.suffix}` });
+    await row.getByRole('button', { name: /^Reply: / }).click();
+    await row.getByRole('textbox', { name: /^Reply to @/ }).fill(`Thanks, glad you liked it ${seed.suffix}`);
+    await row.getByRole('button', { name: 'Reply', exact: true }).click();
+    await expect(row.getByRole('status')).toHaveText('Reply posted. View reply');
+    await expect(row.getByRole('textbox')).toHaveCount(0);
+    await row.getByRole('link', { name: 'View reply' }).click();
+    await page.waitForURL(/\/post\/[0-9a-f-]{36}\/comments\/[0-9a-f-]{36}$/);
+    await expect(page.getByText(`Thanks, glad you liked it ${seed.suffix}`).filter({ visible: true }).first()).toBeVisible();
+    expect(log.hydrationProblems()).toEqual([]);
   });
 });
 

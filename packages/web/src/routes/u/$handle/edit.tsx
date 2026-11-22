@@ -4,7 +4,7 @@ import { translate } from '../../../i18n/translate.ts';
 import { useTranslate } from '../../../i18n/use-translate.ts';
 import { useRouteHydrated } from '../../../shell/hydration.ts';
 import { EditForm } from './-ui/edit-form.tsx';
-import { ProfileCard } from './-ui/profile-card.tsx';
+import { ProfileHero } from './-ui/profile-hero.tsx';
 import profileCss from './-ui/profile.css?url';
 import { handleEditPost } from './-edit.ts';
 import { titleContext } from './-head.ts';
@@ -12,7 +12,7 @@ import { loadEdit } from './-load.ts';
 import { parseProfileSearch } from './-search.ts';
 import { ownTitle } from '../../../shell/title.ts';
 
-// /u/<handle>/edit (profile-edit-inline, R2b): the profile card stays on the left and the form
+// /u/<handle>/edit (profile-edit-inline, R2b): the person stays at the top and the form
 // replaces the activity. Display name and bio only; avatar, banner and the Bot switch come with
 // uploads and bot accounts. Own profile only: signed out goes to sign in, someone else's to the
 // profile.
@@ -43,12 +43,10 @@ function Edit() {
   useRouteHydrated();
   return (
     <main className="pb-page prof">
-      <div className="prof-lay">
-        <ProfileCard data={data.profile} />
-        <section className="prof-main" aria-label={t('profiles', 'edit.editing')}>
-          <EditForm data={data} saved={search.saved === true} error={search.error} />
-        </section>
-      </div>
+      <ProfileHero data={data.profile} />
+      <section className="prof-main" aria-label={t('profiles', 'edit.editing')}>
+        <EditForm data={data} saved={search.saved === true} error={search.error} />
+      </section>
     </main>
   );
 }

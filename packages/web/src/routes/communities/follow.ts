@@ -1,3 +1,4 @@
+import { readCommunity } from '@peblish/core/communities/read';
 import { joinCommunityAs, leaveCommunityAs } from '@peblish/core/directory/follow';
 import { Uuid } from '@peblish/schema/ids';
 import { createFileRoute } from '@tanstack/react-router';
@@ -10,6 +11,16 @@ import { answer, type Outcome } from './-answer.ts';
 // unfollowAs, which authorize and answer with the reason a refusal has.
 
 const Body = type({ community: 'string', intent: "'join' | 'leave'", 'next?': 'string' });
+
+/**
+ * A Leave or Cancel that finds no follow to remove, in a community that is there, did what it was asked: the person is
+ * not in the community. So a second press, a retry or a request already gone answers as done. A community that is not
+ * there (a made-up id, or one deleted or removed since) stays not found, and any other refusal stands.
+ */
+async function leftAnyway(outcome: Outcome, community: Uuid): Promise<Outcome> {
+  if (outcome.ok || outcome.reason !== 'target.not_found') return outcome;
+  return (await readCommunity({ id: community })) ? { ok: true } : outcome;
+}
 
 export const Route = createFileRoute('/communities/follow')({
   server: {
@@ -28,7 +39,9 @@ export const Route = createFileRoute('/communities/follow')({
         }
         const principal = principalOf(session.view);
         const outcome: Outcome =
-          body.intent === 'join' ? await joinCommunityAs(principal, body.community) : await leaveCommunityAs(principal, body.community);
+          body.intent === 'join'
+            ? await joinCommunityAs(principal, body.community)
+            : await leftAnyway(await leaveCommunityAs(principal, body.community), body.community);
         return answer(request, cookies, outcome, back);
       },
     },

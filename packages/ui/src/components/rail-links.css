@@ -1,0 +1,39 @@
+/* RailLinks: a rail panel's list of places, a row each, the label at the start and its count at the end. */
+@layer app {
+  .pb-rail-links {
+    display: grid;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .pb-rail-links__link {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--muxui-semantic-layout-group-gap);
+    min-block-size: 24px;
+    padding-block: var(--muxui-semantic-layout-description-gap);
+  }
+
+  .pb-rail-links__label {
+    min-inline-size: 0;
+    overflow-wrap: anywhere;
+  }
+
+  .pb-rail-links__count {
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Weight as well as Mux Link's current colour, so the current place does not rest on colour alone. */
+  .pb-rail-links__link[aria-current] .pb-rail-links__label {
+    font-weight: var(--muxui-semantic-typography-label-weight);
+  }
+
+  /* A phone: each row is a 44px target. */
+  @media (max-width: 859.98px) {
+    .pb-rail-links__link {
+      min-block-size: calc(var(--muxui-semantic-control-size-lg) + 2 * var(--muxui-semantic-layout-dense-gap));
+    }
+  }
+}

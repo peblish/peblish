@@ -3,24 +3,16 @@ import { Text } from '@peblish/ui/components/text';
 import type { ReactNode, TextareaHTMLAttributes } from 'react';
 import { useTranslate } from '../../../i18n/use-translate.ts';
 import { Denial } from '../-denial.tsx';
+import { AdminPage } from '../-page.tsx';
 import type { Access } from './-access.ts';
 
 // Pieces the admin Settings and Pages routes share. The admin stylesheet is linked by the
 // admin layout route (admin/route.tsx), so every admin page has it.
 
-/** An admin page's heading: Mux heading text on an h1. */
-export function AdminTitle({ children }: { children: ReactNode }) {
-  return (
-    <Text as="h1" variant="heading" size="sm">
-      {children}
-    </Text>
-  );
-}
-
-/** A section heading inside an admin page. */
+/** A section heading inside an admin page (Commons: label text in the strong colour). */
 export function SectionTitle({ id, children }: { id?: string; children: ReactNode }) {
   return (
-    <Text as="h2" variant="title" size="md" id={id}>
+    <Text as="h2" variant="label" size="md" id={id} className="adm-section__title">
       {children}
     </Text>
   );
@@ -30,8 +22,7 @@ export function SectionTitle({ id, children }: { id?: string; children: ReactNod
 export function AccessNotice({ access, title }: { access: Exclude<Access, 'ok'>; title: string }) {
   const { t } = useTranslate();
   return (
-    <main className="pb-page adm-page">
-      <AdminTitle>{title}</AdminTitle>
+    <AdminPage title={title} className="adm-page">
       <Denial
         access={access}
         copy={{
@@ -40,7 +31,7 @@ export function AccessNotice({ access, title }: { access: Exclude<Access, 'ok'>;
           notAdmin: t('admin', 'access.notAdmin'),
         }}
       />
-    </main>
+    </AdminPage>
   );
 }
 

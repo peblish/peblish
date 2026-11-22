@@ -5,6 +5,7 @@ import {
   applyExceptions,
   area,
   count,
+  cssContextFor,
   cssGlob,
   isPackSheet,
   muxDefaults,
@@ -614,6 +615,15 @@ test('css-unknown-token reports a var() that Mux, tokens.css and the file itself
     mux: new Set(['--muxui-semantic-layout-inset-small']),
   };
   expect(css(sheet, context)).toEqual(['css-unknown-token:4', 'css-unknown-token:6']);
+});
+
+test("the app's sheets may read the frame's custom properties; packages/ui's may not", () => {
+  const sheet = lines('.a {', '  min-block-size: var(--pb-touch);', '}');
+  const context = { aliases: new Set<string>(), defined: new Set<string>(), mux: new Set<string>() };
+  const frame = new Set(['--pb-touch']);
+  const read = (file: string) => css(sheet, cssContextFor(file, context, frame), file);
+  expect(read('packages/web/src/routes/you/-ui/you.css')).toEqual([]);
+  expect(read('packages/ui/src/components/inbox-row.css')).toEqual(['css-unknown-token:2']);
 });
 
 test('a local custom property counts as a token only when it is built from tokens', () => {

@@ -1,0 +1,157 @@
+@layer app {
+  /* The directory's communities (community-list.tsx): rows, or as many 15rem cards as fit. */
+  .pb-clist {
+    box-sizing: border-box;
+    inline-size: 100%;
+    display: flex;
+    flex-direction: column;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .pb-clist .muxui-text {
+    margin: 0;
+  }
+
+  .pb-clist[data-view='cards'] {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
+    gap: var(--muxui-semantic-layout-action-gap);
+  }
+
+  .pb-clist__item {
+    display: flex;
+    min-inline-size: 0;
+  }
+
+  /* A row: the identity and its lines, then the action; hairlines between rows. */
+  .pb-clist__row {
+    align-items: center;
+    gap: var(--muxui-semantic-layout-group-gap);
+    padding-block: var(--muxui-semantic-layout-inset-small);
+    border-block-end: 1px solid var(--muxui-semantic-border-faint);
+  }
+
+  .pb-clist__main {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    gap: var(--muxui-semantic-layout-micro-gap);
+    min-inline-size: 0;
+  }
+
+  .pb-clist__end {
+    display: flex;
+    flex: none;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-end;
+    gap: var(--muxui-semantic-layout-control-gap);
+  }
+
+  .pb-clist__head {
+    display: flex;
+    align-items: center;
+    gap: var(--muxui-semantic-layout-tight-gap);
+    min-inline-size: 0;
+  }
+
+  /* The identity: one link, the icon and the two lines its target. */
+  .pb-clist__link {
+    display: flex;
+    align-items: center;
+    gap: var(--muxui-semantic-layout-group-gap);
+    min-inline-size: 0;
+    min-block-size: var(--muxui-semantic-control-size-md);
+  }
+
+  .pb-clist__icon {
+    flex: none;
+  }
+
+  .pb-clist__text {
+    display: flex;
+    flex-direction: column;
+    min-inline-size: 0;
+  }
+
+  .pb-clist__title,
+  .pb-clist__meta {
+    overflow-wrap: anywhere;
+  }
+
+  .pb-clist__title {
+    color: var(--muxui-semantic-content-strong);
+  }
+
+  .pb-clist__badges {
+    display: inline-flex;
+    flex: none;
+    gap: var(--muxui-semantic-layout-dense-gap);
+  }
+
+  .pb-clist__line {
+    padding-inline-start: calc(var(--muxui-semantic-control-size-md) + var(--muxui-semantic-layout-group-gap));
+  }
+
+  /* A card: the identity, the community's line clamped to three lines, the action at the foot. */
+  .pb-clist__card {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    gap: var(--muxui-semantic-layout-inset-small);
+    min-inline-size: 0;
+  }
+
+  .pb-clist__card--skeleton {
+    padding: var(--muxui-semantic-layout-inset-medium);
+  }
+
+  .pb-clist__about {
+    display: -webkit-box;
+    overflow: hidden;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 3;
+    line-clamp: 3;
+  }
+
+  .pb-clist__foot {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-end;
+    gap: var(--muxui-semantic-layout-control-gap);
+    margin-block-start: auto;
+  }
+
+  .pb-clist__item > .pb-skel-pill {
+    flex: none;
+  }
+
+  .pb-clist__card > .pb-skel-pill {
+    align-self: flex-end;
+  }
+
+  .pb-cview {
+    flex: none;
+  }
+
+  /* The view switch needs scripts; without them the page lists in the view last chosen. */
+  @media (scripting: none) {
+    .pb-cview {
+      display: none;
+    }
+  }
+
+  /* A phone: the identity and the view's choices are 44px targets. */
+  @media (max-width: 859.98px) {
+    .pb-clist__link {
+      min-block-size: calc(var(--muxui-semantic-control-size-lg) + 2 * var(--muxui-semantic-layout-dense-gap));
+    }
+
+    .pb-cview .muxui-toggle-button {
+      min-block-size: calc(var(--muxui-semantic-control-size-lg) + 2 * var(--muxui-semantic-layout-dense-gap));
+    }
+  }
+}

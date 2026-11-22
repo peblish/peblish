@@ -1,16 +1,14 @@
-import { Card } from '@peblish/ui/components/card';
 import { EmptyState } from '@peblish/ui/components/empty-state';
 import { Handle } from '@peblish/ui/components/handle';
 import { Link } from '@peblish/ui/components/link';
 import { LinkTabs } from '@peblish/ui/components/link-tabs';
 import { Pager } from '@peblish/ui/components/pager';
-import { PostCard } from '@peblish/ui/components/post-card';
+import { PostRow } from '@peblish/ui/components/post-row';
 import { Prose } from '@peblish/ui/components/prose';
 import { Text } from '@peblish/ui/components/text';
 import { Time } from '@peblish/ui/components/time';
 import { DensityControl } from '@peblish/ui/density/density-control';
 import { profileSorts, profileTabs } from '@peblish/core/profiles/input';
-import type { ReactNode } from 'react';
 import { useTranslate } from '../../../../i18n/use-translate.ts';
 import { useDensityLabels, usePostCardLabels } from '../../../../shell/labels.ts';
 import { communityPath, postPath, commentPath, userPath } from '../../../../shell/paths.ts';
@@ -25,18 +23,8 @@ import { profileHref } from '../-search.ts';
 
 type Comment = Extract<ProfileEntry, { kind: 'comment' }>;
 
-/** A comment sits in an outlined Mux Card at the Card density, like the posts beside it, and in a plain row otherwise. */
-function Surface({ card, children }: { card: boolean; children: ReactNode }) {
-  return card ? (
-    <Card.Root variant="outlined" padding="sm" className="prof-comment-body">
-      {children}
-    </Card.Root>
-  ) : (
-    <div className="prof-comment-body">{children}</div>
-  );
-}
-
-function CommentRow({ entry, data, path, card }: { entry: Comment; data: ProfileData; path: string; card: boolean }) {
+/** A comment in the list: a flat row like the post rows beside it (PostRow), in every density. */
+function CommentRow({ entry, data, path }: { entry: Comment; data: ProfileData; path: string }) {
   const { t, locale } = useTranslate();
   const { view, post, community } = entry;
   const slotViewer: SlotViewer | null = data.viewer && {
@@ -55,7 +43,7 @@ function CommentRow({ entry, data, path, card }: { entry: Comment; data: Profile
   };
   return (
     <li className="prof-comment" id={`comment-${view.id}`}>
-      <Surface card={card}>
+      <div className="prof-comment-body">
         <Text as="p" size="sm" color="muted" className="prof-comment-meta">
           <Text variant="label" size="sm" color="default">
             {t('profiles', 'comment.score', { count: view.counts.upvotes - view.counts.downvotes })}
@@ -80,7 +68,7 @@ function CommentRow({ entry, data, path, card }: { entry: Comment; data: Profile
             </>
           )}
         </div>
-      </Surface>
+      </div>
     </li>
   );
 }
@@ -105,7 +93,12 @@ export function Activity({ data, path }: { data: ProfileData; path: string }) {
             label: (
               <>
                 {t('profiles', `tab.${tab}`)}
-                {count !== null && <Text color="muted"> {new Intl.NumberFormat(locale).format(count)}</Text>}
+                {count !== null && (
+                  <Text color="muted" className="prof-tab-count">
+                    {' '}
+                    {new Intl.NumberFormat(locale).format(count)}
+                  </Text>
+                )}
               </>
             ),
           };
@@ -132,7 +125,7 @@ export function Activity({ data, path }: { data: ProfileData; path: string }) {
           {data.entries.map((entry) =>
             entry.kind === 'post' ? (
               <li key={entry.item.post.id}>
-                <PostCard
+                <PostRow
                   post={entry.item.post}
                   density={prefs.density}
                   hrefs={{
@@ -152,7 +145,7 @@ export function Activity({ data, path }: { data: ProfileData; path: string }) {
                 />
               </li>
             ) : (
-              <CommentRow key={entry.view.id} entry={entry} data={data} path={profileHref(path, here)} card={prefs.density === 'card'} />
+              <CommentRow key={entry.view.id} entry={entry} data={data} path={profileHref(path, here)} />
             ),
           )}
         </ul>

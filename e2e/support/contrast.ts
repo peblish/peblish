@@ -12,8 +12,8 @@ export interface Pair {
 
 /**
  * What an element paints, each against what is behind it: its own text colour (`color`, whether or not it holds
- * text), its text (the lowest of its text nodes), its icons (each svg's stroke or fill), its own fill, its edge (a
- * border, or else an outline drawn inside it or an inset ring) and the ring around it (an outline outside it, or
+ * text), its text (the lowest of its text nodes), its icons (each svg's stroke or fill), its own fill, its edge (its
+ * borders, the lowest of the sides it paints, or else an outline drawn inside it or an inset ring) and the ring around it (an outline outside it, or
  * else the widest solid box-shadow ring), such as a focus ring. Absent where it paints none.
  */
 export interface Colours {
@@ -46,8 +46,9 @@ type Painted = [Rgb, Rgb][];
 /**
  * Runs in the page. Each colour is composited in a 1 px canvas over what the element's ancestors paint, from
  * white, so alpha and any CSS colour syntax resolve as the browser paints them; an element with opacity below 1
- * paints itself and what it holds as one group at that opacity (a disabled control). Only ancestors are seen:
- * a background image, or an element positioned over another that is not its ancestor, is not.
+ * paints itself and what it holds as one group at that opacity (a disabled control). Only ancestors are seen, and
+ * the one layer Mux paints beside them (a ToggleButtonGroup's chosen fill, under its label copies): a background
+ * image, or any other element positioned over another that is not its ancestor, is not.
  */
 function paintedColours(element: Element) {
   const layer = () => {
@@ -62,6 +63,11 @@ function paintedColours(element: Element) {
   const ancestry = (node: Element) => {
     const chain: Element[] = [];
     for (let at: Element | null = node; at; at = at.parentElement) chain.unshift(at);
+    // Mux's single-choice ToggleButtonGroup paints the chosen button's fill on a layer beside the buttons and draws
+    // that button's label again over it: what is behind a copy is that layer, which is not its ancestor.
+    const copies = node.closest('.muxui-toggle-button-group__motion-foreground');
+    const fill = copies?.parentElement?.querySelector(':scope > .muxui-toggle-button-group__motion-indicator');
+    if (copies && fill) chain.splice(chain.indexOf(copies), 0, fill);
     return chain;
   };
   // The backgrounds of chain[0..to), then `top`.
@@ -137,14 +143,18 @@ function paintedColours(element: Element) {
   const outlined = style.outlineStyle !== 'none' && Number.parseFloat(style.outlineWidth) > 0 && visible(style.outlineColor);
   // An outline drawn inside the box (a negative offset) is the control's edge; one outside it, a ring.
   const inside = outlined && Number.parseFloat(style.outlineOffset) < 0;
-  const bordered = Number.parseFloat(style.borderTopWidth) > 0 && style.borderTopStyle !== 'none' && visible(style.borderTopColor);
+  // Every side that paints a border (a row's rule is often its bottom one alone), the lowest of them counted.
+  const sides = (['Top', 'Right', 'Bottom', 'Left'] as const)
+    .filter((side) => Number.parseFloat(style[`border${side}Width`]) > 0 && style[`border${side}Style`] !== 'none')
+    .map((side) => style[`border${side}Color`])
+    .filter(visible);
   return {
     color: [over(element, style.color, true)],
     text,
     placeholder: element.hasAttribute('placeholder') ? [over(element, getComputedStyle(element, '::placeholder').color, true)] : [],
     icon,
     fill: own(style.backgroundColor),
-    border: own(bordered ? style.borderTopColor : inside ? style.outlineColor : widest(true)),
+    border: sides.length ? sides.flatMap((colour) => own(colour)) : own(inside ? style.outlineColor : widest(true)),
     outline: own(outlined && !inside ? style.outlineColor : widest(false)),
   } satisfies Record<keyof Colours, Painted>;
 }

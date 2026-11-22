@@ -1,19 +1,24 @@
-/* The public pages at /<slug>: the legal and about texts. Headings and the rule are Mux Text and
-   Separator; this file only lays them out. */
+/* The public pages at /<slug>: the legal and about texts, after the mock's Feddit pages (styles/pages.css):
+   the title and text, then the other pages under a rule in the muted meta size. Layout only; type and colour come from Mux Text, Prose and tokens. */
 @layer app {
   .legal-page {
-    max-width: 760px;
-    margin: 0 auto;
-    padding: var(--muxui-semantic-layout-inset-xlarge) var(--muxui-semantic-layout-inset-large);
+    display: flex;
+    flex-direction: column;
+    gap: var(--muxui-semantic-layout-group-gap);
+    padding-block: var(--muxui-semantic-layout-inset-large) var(--muxui-semantic-layout-inset-xlarge);
   }
-  .legal-page .legal-title {
-    margin: 0 0 var(--muxui-semantic-layout-group-gap);
+  .legal-page .legal-text {
+    display: grid;
+    gap: var(--muxui-semantic-layout-group-gap);
   }
-  .legal-page .legal-rule {
-    margin-block: var(--muxui-semantic-layout-section-gap) var(--muxui-semantic-layout-group-gap);
+  .legal-page .legal-text .muxui-text {
+    margin: 0;
   }
-  .legal-page .legal-list-title {
-    margin: 0 0 var(--muxui-semantic-layout-tight-gap);
+  .legal-page .legal-list {
+    display: grid;
+    gap: var(--muxui-semantic-layout-tight-gap);
+    padding-block-start: var(--muxui-semantic-layout-group-gap);
+    border-block-start: 1px solid var(--muxui-semantic-border-subtle);
   }
   .legal-page .legal-links {
     list-style: none;
@@ -22,5 +27,16 @@
     display: flex;
     flex-wrap: wrap;
     gap: var(--muxui-semantic-layout-tight-gap) var(--muxui-semantic-layout-content-gap);
+  }
+  /* Each page link is a 24px target, 44px on a phone. */
+  .legal-page .legal-links .muxui-link {
+    display: inline-flex;
+    align-items: center;
+    min-block-size: 24px;
+  }
+  @media (max-width: 859.98px) {
+    .legal-page .legal-links .muxui-link {
+      min-block-size: calc(var(--muxui-semantic-control-size-lg) + 2 * var(--muxui-semantic-layout-dense-gap));
+    }
   }
 }

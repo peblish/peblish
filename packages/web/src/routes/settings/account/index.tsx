@@ -3,7 +3,6 @@ import { deleteAccountAs } from '@peblish/core/identity/delete';
 import { localHandles } from '@peblish/core/identity/handles';
 import { attempt } from '@peblish/core/identity/throttle';
 import { Button } from '@peblish/ui/components/button';
-import { Card } from '@peblish/ui/components/card';
 import { Link } from '@peblish/ui/components/link';
 import { Text } from '@peblish/ui/components/text';
 import { createFileRoute, redirect } from '@tanstack/react-router';
@@ -85,8 +84,8 @@ function Account() {
   useRouteHydrated();
   return (
     <SettingsLayout admin={account.admin} title={t('settings', 'account.title')}>
-      <Card.Root className="settings__section">
-        <Card.Body className="settings__body">
+      <div className="settings__section">
+        <div className="settings__body">
           <FactList
             items={[
               { label: t('settings', 'account.username'), value: <Text variant="mono">@{account.handle}</Text> },
@@ -119,8 +118,8 @@ function Account() {
               {t('settings', 'account.signOut')}
             </Button>
           </form>
-        </Card.Body>
-      </Card.Root>
+        </div>
+      </div>
       <SettingsSection id="delete" title={t('settings', 'account.deleteTitle')}>
         <Text as="p" color="muted">
           {t('settings', 'account.deleteBody')}

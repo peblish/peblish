@@ -175,3 +175,23 @@ test('a title with a right-to-left override is an isolated run drawn without its
   expect(html).toContain('aria-label="Vote: Plain \u203Devil\u203D title"');
   expect(html).not.toMatch(/[‪-‮⁦-⁩‎‏؜]/);
 });
+
+test('Share needs scripts: the server draws it disabled and marked to give way without them, in Card and Classic', () => {
+  for (const density of ['card', 'classic'] as const) {
+    const html = renderToStaticMarkup(
+      <PostRow
+        post={post}
+        density={density}
+        hrefs={{ post: '/post/1', community: '/c/news', author: '/u/jun' }}
+        labels={labels}
+        locale="en-US"
+        thumbnailSrc={null}
+        now={new Date('2026-11-09T12:00:00Z')}
+        onShare={() => undefined}
+      />,
+    );
+    const share = /<button[^>]*aria-label="Share"[^>]*>/.exec(html)?.[0] ?? '';
+    expect(share, density).toMatch(/\sdisabled=""/);
+    expect(share, density).toMatch(/class="[^"]*\bpb-post__share\b/);
+  }
+});

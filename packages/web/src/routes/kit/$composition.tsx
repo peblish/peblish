@@ -8,10 +8,16 @@ import { compositions, kitStates } from './-states.tsx';
 // A composition's states on one page (the compositions are in -states.tsx), for the shared state helper
 // (e2e/support/states.ts) and for reading: one sample for each state it takes as a prop, each in a
 // [data-kit-state] section. Like /kit, it answers 404 unless PEBLISH_UI_KIT=1.
+//
+// Only the component (split off into its own chunk by the router) may import -states.tsx statically: the
+// guard stays in the route tree every page loads, so it reads the names through a dynamic import, after
+// the gallery is known to be on (checked by -graph.test.ts).
 export const Route = createFileRoute('/kit/$composition')({
   head: () => ({ links: [{ rel: 'stylesheet', href: kitCss }] }),
   beforeLoad: async ({ params }) => {
-    if (!Object.hasOwn(compositions, params.composition) || !(await kitEnabled())) throw notFound();
+    if (!(await kitEnabled())) throw notFound();
+    const registry = await import('./-states.tsx');
+    if (!Object.hasOwn(registry.compositions, params.composition)) throw notFound();
   },
   component: StatePage,
 });

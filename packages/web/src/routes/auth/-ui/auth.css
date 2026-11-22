@@ -1,17 +1,12 @@
-/* The auth pages (sign in, sign up, two-factor, reset, verify, the invite landing) are one Mux
-   Card each (AuthCard in page.tsx); these rules lay them out. The settings pages link this file
-   too, for the shared field (`.auth-field`, form.tsx). */
+/* The auth pages (sign in, sign up, two-factor, reset, verify, the invite landing): the page's name, then
+   the form flat in the frame's centre column, in the mock's form layout (Commons' `.a-form`): the parts a
+   group gap apart, the end of the form over a rule. AuthPage in page.tsx. The settings pages link this
+   file too, for the shared field (`.auth-field`, form.tsx) and the actions row. */
 @layer app {
-  .auth-center {
+  .auth-body {
     display: grid;
-    justify-items: center;
-    padding: var(--muxui-semantic-layout-inset-xlarge) var(--muxui-semantic-layout-inset-large);
-  }
-  /* Mux UI rc.7 gives its own elements the browser's box model (content-box), so the card's
-     padding and border count inside this width only with border-box. */
-  .auth-card {
-    box-sizing: border-box;
-    inline-size: min(26rem, 100%);
+    gap: var(--muxui-semantic-layout-section-gap);
+    padding-block: var(--muxui-semantic-layout-inset-large) var(--muxui-semantic-layout-inset-xlarge);
   }
   .auth-form {
     display: flex;
@@ -35,13 +30,43 @@
     align-items: baseline;
     gap: var(--muxui-semantic-layout-tight-gap);
   }
-  .auth-submit {
-    inline-size: 100%;
+  /* A link beside a field's label, in the form's alert or at the end of the form is a 24px target (WCAG 2.2,
+     2.5.8), as the shared pieces' links are. */
+  .auth-field__head .muxui-link,
+  .auth-form [role='alert'] .muxui-link,
+  .auth-actions__aside .muxui-link {
+    display: inline-flex;
+    align-items: center;
+    max-inline-size: 100%;
+    min-block-size: 24px;
   }
-  .auth-links {
+  /* The end of a form (FormActions): its other ways out at the start, its submit at the end, over a rule. */
+  .auth-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--muxui-semantic-layout-group-gap);
+    padding-block-start: var(--muxui-semantic-layout-group-gap);
+    border-block-start: 1px solid var(--muxui-semantic-border-faint);
+  }
+  .auth-actions__aside {
     display: flex;
     flex-wrap: wrap;
     gap: var(--muxui-semantic-layout-tight-gap) var(--muxui-semantic-layout-content-gap);
+    min-inline-size: 0;
+  }
+  .auth-actions__aside :where(.muxui-text) {
+    margin: 0;
+  }
+  .auth-actions__main {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--muxui-semantic-layout-group-gap);
+    margin-inline-start: auto;
+  }
+  .auth-actions__main form {
+    display: contents;
   }
   .auth-dob {
     display: grid;

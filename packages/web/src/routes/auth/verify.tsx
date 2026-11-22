@@ -15,7 +15,7 @@ import { useRouteHydrated } from '../../shell/hydration.ts';
 import { asFormError } from './-ui/errors.ts';
 import { AuthForm, rich } from './-ui/form.tsx';
 import { authHead, SearchText } from './-route.ts';
-import { AuthCard } from './-ui/page.tsx';
+import { AuthPage, FormActions } from './-ui/page.tsx';
 import { input } from '../../server/input.ts';
 import { errorLine } from '@peblish/core/error-line';
 
@@ -73,9 +73,11 @@ function Verify() {
   useRouteHydrated();
   const resend = (
     <AuthForm action="/auth/verify" label={t('auth', 'verify.resend')} error={asFormError(search.error)} className="auth-form">
-      <Button type="submit" variant="neutral" className="auth-submit">
-        {t('auth', 'verify.resend')}
-      </Button>
+      <FormActions>
+        <Button type="submit" variant="neutral">
+          {t('auth', 'verify.resend')}
+        </Button>
+      </FormActions>
     </AuthForm>
   );
   const signInForLink = (
@@ -83,17 +85,18 @@ function Verify() {
       {t('auth', 'verify.signInForLink')} <Link href="/auth/sign-in">{t('auth', 'verify.signIn')}</Link>
     </Text>
   );
-  const title = (key: MessageKey<'auth'>) => (
-    <Text as="h1" variant="heading" size="sm">
-      {t('auth', key)}
-    </Text>
-  );
+  const titles: Record<typeof state, MessageKey<'auth'>> = {
+    pending: 'verify.title',
+    verified: 'verify.verifiedTitle',
+    used: 'verify.usedTitle',
+    expired: 'verify.expiredTitle',
+    invalid: 'verify.invalidTitle',
+  };
   return (
-    <AuthCard state={state}>
+    <AuthPage title={t('auth', titles[state])} state={state}>
       <div className="auth-form">
         {state === 'pending' && (
           <>
-            {title('verify.title')}
             <Text as="p">
               {rich(t('auth', 'verify.sent'), {
                 email: (
@@ -116,7 +119,6 @@ function Verify() {
         )}
         {state === 'verified' && (
           <>
-            {title('verify.verifiedTitle')}
             <Notice tone="success">{t('auth', 'verify.verifiedBody')}</Notice>
             <Text as="p">
               <Link href="/">{t('auth', 'verify.continue')}</Link>
@@ -125,7 +127,6 @@ function Verify() {
         )}
         {state === 'used' && (
           <>
-            {title('verify.usedTitle')}
             <Text as="p">{t('auth', 'verify.usedBody')}</Text>
             <Text as="p">
               <Link href="/auth/sign-in">{t('auth', 'verify.signIn')}</Link>
@@ -134,12 +135,11 @@ function Verify() {
         )}
         {(state === 'expired' || state === 'invalid') && (
           <>
-            {title(state === 'expired' ? 'verify.expiredTitle' : 'verify.invalidTitle')}
             <Notice tone="warning">{t('auth', state === 'expired' ? 'verify.expiredBody' : 'verify.invalidBody')}</Notice>
             {signedIn ? resend : signInForLink}
           </>
         )}
       </div>
-    </AuthCard>
+    </AuthPage>
   );
 }

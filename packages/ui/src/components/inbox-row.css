@@ -1,0 +1,190 @@
+/* InboxRow and InboxReply (inbox-row.tsx), Commons' inbox row on Mux UI tokens: a dot column, the
+   mark and the notice, a hairline between rows. An unread row has the dot and a strong headline; a
+   read one has neither, so unread never shows by colour alone. */
+@layer app {
+  /* The list the rows go in, the width of what holds it. */
+  .pb-notices {
+    inline-size: 100%;
+    margin-block: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .pb-notice {
+    display: grid;
+    grid-template-columns: var(--muxui-semantic-layout-inset-tiny) var(--muxui-semantic-control-size-md) minmax(0, 1fr);
+    column-gap: var(--muxui-semantic-layout-group-gap);
+    padding: var(--muxui-semantic-layout-inset-small);
+    border-block-end: 1px solid var(--muxui-semantic-border-faint);
+  }
+
+  .pb-notice[data-link] {
+    cursor: pointer;
+  }
+
+  .pb-notice[data-link]:hover {
+    background: var(--muxui-semantic-surface-hover);
+  }
+
+  /* A border, not a fill, so forced colours keep it. */
+  .pb-notice__dot {
+    align-self: start;
+    margin-block-start: calc(var(--muxui-semantic-control-size-md) / 2 - var(--muxui-semantic-layout-inset-tiny) / 2);
+    inline-size: var(--muxui-semantic-layout-inset-tiny);
+    block-size: var(--muxui-semantic-layout-inset-tiny);
+    box-sizing: border-box;
+    border-radius: var(--muxui-semantic-shape-pill-radius);
+  }
+
+  .pb-notice:not([data-read]) .pb-notice__dot {
+    border: calc(var(--muxui-semantic-layout-inset-tiny) / 2) solid var(--muxui-semantic-action-background);
+  }
+
+  .pb-notice__mark {
+    position: relative;
+    align-self: start;
+    line-height: 0;
+  }
+
+  /* The kind's glyph overlaps the avatar, so it stays opaque, cut out by a ring in the page's colour. */
+  .pb-notice__kind {
+    position: absolute;
+    inset-block-end: calc(-1 * var(--muxui-semantic-layout-dense-gap) - 2px);
+    inset-inline-end: calc(-1 * var(--muxui-semantic-layout-dense-gap) - 2px);
+    display: grid;
+    place-items: center;
+    inline-size: calc(var(--muxui-semantic-control-size-sm) / 2);
+    block-size: calc(var(--muxui-semantic-control-size-sm) / 2);
+    border-radius: var(--muxui-semantic-shape-pill-radius);
+    background: var(--muxui-semantic-surface-raised);
+    color: var(--muxui-semantic-content-strong);
+    box-sizing: content-box;
+    border: 2px solid var(--muxui-semantic-surface-background);
+    font-size: calc(var(--muxui-semantic-control-size-sm) * 3 / 8);
+  }
+
+  .pb-notice__glyph {
+    align-self: start;
+    display: grid;
+    place-items: center;
+    inline-size: var(--muxui-semantic-control-size-md);
+    block-size: var(--muxui-semantic-control-size-md);
+    border-radius: var(--muxui-semantic-shape-pill-radius);
+    background: var(--muxui-semantic-surface-subtle);
+    color: var(--muxui-semantic-content-secondary);
+    font-size: var(--muxui-semantic-typography-text-m-font-size);
+  }
+
+  .pb-notice__main {
+    display: flex;
+    flex-direction: column;
+    gap: var(--muxui-semantic-layout-tight-gap);
+    min-inline-size: 0;
+  }
+
+  .pb-notice__title,
+  .pb-notice__context {
+    margin: 0;
+  }
+
+  /* Its links are 24px targets (WCAG 2.2, 2.5.8) though the line is shorter; a long title still wraps inside its link. */
+  .pb-notice__context .muxui-link,
+  .pb-notice__links .muxui-link {
+    display: inline-flex;
+    align-items: center;
+    max-inline-size: 100%;
+    min-block-size: 24px;
+  }
+
+  /* A long remote handle or title breaks anywhere rather than run past the row; Handle keeps itself on one line elsewhere. */
+  .pb-notice__title,
+  .pb-notice__context {
+    overflow-wrap: anywhere;
+  }
+
+  .pb-notice .pb-handle {
+    white-space: normal;
+  }
+
+  .pb-notice__title {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: var(--muxui-semantic-layout-dense-gap) var(--muxui-semantic-layout-inset-tiny);
+  }
+
+  .pb-notice__headline {
+    color: var(--muxui-semantic-content-default);
+  }
+
+  .pb-notice:not([data-read]) .pb-notice__headline {
+    color: var(--muxui-semantic-content-strong);
+  }
+
+  .pb-notice__actor {
+    font-weight: var(--muxui-semantic-typography-label-weight);
+  }
+
+  .pb-notice:not([data-read]) .pb-notice__actor {
+    color: var(--muxui-semantic-content-strong);
+  }
+
+  .pb-notice__quote {
+    padding: var(--muxui-semantic-layout-inset-tiny) var(--muxui-semantic-layout-inset-small);
+    border-radius: var(--muxui-semantic-control-radius);
+    background: var(--muxui-semantic-surface-subtle);
+  }
+
+  /* Someone else's words, a few lines at most. */
+  .pb-notice__quote .pb-quote__text {
+    overflow: hidden;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+  }
+
+  .pb-notice__actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--muxui-semantic-layout-tight-gap);
+    margin-inline-start: calc(-1 * var(--muxui-semantic-layout-dense-gap));
+  }
+
+  .pb-notice__reply {
+    display: grid;
+    gap: var(--muxui-semantic-layout-tight-gap);
+  }
+
+  .pb-notice__reply .pb-notice__actions {
+    margin-inline-start: 0;
+  }
+
+  /* What the caller puts in the row: a withheld word, the reason's links, the line a sent reply leaves. */
+  .pb-notice__note,
+  .pb-notice__links {
+    margin: 0;
+  }
+
+  .pb-notice__links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--muxui-semantic-layout-tight-gap) var(--muxui-semantic-layout-group-gap);
+  }
+
+  .pb-notice__posted {
+    margin: 0;
+  }
+
+  .pb-notice__posted:empty {
+    display: none;
+  }
+
+  @media (max-width: 859.98px) {
+    .pb-notice {
+      grid-template-columns: var(--muxui-semantic-layout-tight-gap) var(--muxui-semantic-control-size-md) minmax(0, 1fr);
+      column-gap: var(--muxui-semantic-layout-inset-tiny);
+      padding-inline: var(--muxui-semantic-layout-inset-tight) var(--muxui-semantic-layout-inset-small);
+    }
+  }
+}

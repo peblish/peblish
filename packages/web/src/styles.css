@@ -29,3 +29,14 @@
 @import '@peblish/ui/components/fact-list.css';
 @import '@peblish/ui/components/empty-state.css';
 @import '@peblish/ui/components/linked-disclosure.css';
+/* The feed lane's header menus, list end and row actions. */
+@import '@peblish/ui/components/feed-menus.css';
+@import '@peblish/ui/components/feed-end.css';
+/* The community page and the directory (community-directory lane). */
+@import '@peblish/ui/components/join-button.css';
+@import '@peblish/ui/components/community-list.css';
+/* The inbox's row (inbox lane). */
+@import '@peblish/ui/components/inbox-row.css';
+/* The staff pages' pieces (staff-pages lane). */
+@import '@peblish/ui/components/section-tabs.css';
+@import '@peblish/ui/components/rail-links.css';

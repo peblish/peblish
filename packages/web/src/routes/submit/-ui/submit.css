@@ -1,15 +1,60 @@
-/* The composer's layout: the form beside the community's rules, on the page and in the sheet.
-   Colours, radii and type come from Mux UI's tokens and components. */
+/* The composer's layout: in the sheet, the form beside the community's rules; on Create post's page
+   (Commons), the form flat in the frame's centre column and the rules in its right rail, or under the
+   community picker where the rail gives way. Colours, radii and type come from Mux UI's tokens and
+   components. */
 @layer app {
-  .cmp-page {
-    /* The page's layout width, not a scale step. */
-    max-width: 1020px;
-    margin: 0 auto;
-    padding: var(--muxui-semantic-layout-inset-medium) var(--muxui-semantic-layout-inset-medium) var(--muxui-reference-dimension-space-xl);
+  .cmp-page__body {
+    display: grid;
+    gap: var(--muxui-semantic-layout-group-gap);
+    padding-block: var(--muxui-semantic-layout-inset-large) var(--muxui-semantic-layout-inset-xlarge);
   }
 
-  .cmp-page__title {
-    margin-bottom: var(--muxui-semantic-layout-content-gap);
+  .cmp-page__body > :where(.muxui-text) {
+    margin: 0;
+  }
+
+  /* The page's form is one column: its rules are in the rail. */
+  .cmp.cmp--page {
+    grid-template-columns: minmax(0, 1fr);
+    padding-top: 0;
+  }
+
+  /* The rules under the picker, only where the rail is not beside the form (the frame drops the rail
+     where the page is narrower than 62rem, shell.css). */
+  .cmp-page__rules {
+    display: none;
+    min-inline-size: 0;
+    overflow-wrap: anywhere;
+  }
+
+  @container page (width < 62rem) {
+    .cmp-page__rules {
+      display: block;
+    }
+  }
+
+  /* A community name or a rule title has no spaces to break at: it wraps anywhere in the rail too. */
+  .cmp__panel {
+    min-inline-size: 0;
+    overflow-wrap: anywhere;
+  }
+
+  .cmp__panel > :where(.muxui-text, .cmp__rules) {
+    margin: 0;
+  }
+
+  /* The panel's link to the full rules is a 24px target (WCAG 2.2, 2.5.8). */
+  .cmp__panel > .muxui-link {
+    display: inline-flex;
+    align-items: center;
+    align-self: start;
+    min-block-size: 24px;
+  }
+
+  /* The end of the page's form, over a rule (the mock's form actions). */
+  .cmp--page .cmp__actions {
+    padding-block-start: var(--muxui-semantic-layout-group-gap);
+    border-block-start: 1px solid var(--muxui-semantic-border-faint);
   }
 
   .cmp {
@@ -146,10 +191,6 @@
     .cmp {
       grid-template-columns: minmax(0, 1fr);
       gap: var(--muxui-semantic-layout-section-gap);
-    }
-
-    .cmp-page {
-      padding: var(--muxui-semantic-layout-inset-tiny) var(--muxui-semantic-layout-inset-small) var(--muxui-reference-dimension-space-xl);
     }
   }
 }

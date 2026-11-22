@@ -1,12 +1,11 @@
 /* The report form, its Mux Dialog and the sent page (lane REP). Layout only; colours from Mux tokens. */
 @layer app {
+  /* The page (Commons' form layout): the page's name in the frame's bar, then the form in the column. */
   .rp-page {
-    max-inline-size: 640px;
-    margin-inline: auto;
-    padding: var(--muxui-semantic-layout-inset-medium);
     display: flex;
     flex-direction: column;
     gap: var(--muxui-semantic-layout-section-gap);
+    padding-block-start: var(--muxui-semantic-layout-inset-large);
   }
   .rp-text {
     margin: 0;
@@ -48,8 +47,15 @@
   }
   .rp-buttons {
     display: flex;
+    flex-wrap: wrap;
     gap: var(--muxui-semantic-layout-action-gap);
     align-items: center;
+  }
+  /* On the page the form's actions sit at the end of the row under a rule, as the mock's forms do. */
+  .rp-page .rp-form .rp-buttons {
+    justify-content: flex-end;
+    padding-block-start: var(--muxui-semantic-layout-group-gap);
+    border-block-start: 1px solid var(--muxui-semantic-border-subtle);
   }
   .rp-dialog {
     inline-size: min(640px, calc(100vw - 24px));
