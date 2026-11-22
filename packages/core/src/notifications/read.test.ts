@@ -170,7 +170,8 @@ describe('what a row shows', () => {
     expect(items.map((item) => [item.withheld, item.excerpt, item.postTitle])).toEqual([
       [null, 'Visible words', 'Plain'],
       ['removed', null, 'Plain'],
-      ['deleted', null, 'Plain'],
+      // A deleted reply names no one, and so no title either (actorWithheld).
+      ['deleted', null, null],
       ['sensitive', null, null],
       ['sensitive', null, null],
       ['sensitive', null, null],
@@ -254,8 +255,11 @@ describe('what a row shows', () => {
       for (const leak of [replier.id, moderator.id, replier.name, moderator.name, replier.apId, moderator.apId])
         expect([id, text.includes(leak)]).toEqual([id, false]);
       expect([id, item.commentId, item.postId === null]).toEqual([id, null, false]);
+      // Nor the title of the post it answers: a title can name its author.
+      expect([id, item.postTitle]).toEqual([id, null]);
     }
     expect(items.get(ids.live)?.commentId).not.toBeNull();
+    expect(items.get(ids.live)?.postTitle).toBe('Plain');
     // A blocked author's reply is not listed at all (inboxVisible), which says less than a tombstone.
     await seedBlock(me, replier);
     expect((await readInbox(viewerOf(me))).items.map((item) => item.id)).not.toContain(ids.live);
