@@ -7,7 +7,8 @@ import { hostileReturns, ordinaryReturns } from './__fixtures__/return-addresses
 // answer stay on this site, on success and on refusal. Better-auth, the session and the core
 // calls are stubbed. The blocks page and the report pages have their own (blocks/-post.test.ts,
 // reportBack is safeRedirect); sign-out, verification, reset, sign-up and the invite page only
-// ever redirect to fixed paths.
+// ever redirect to fixed paths, and the inbox's forms (a notice's marks, Mark all read and its Undo,
+// Follow thread) and the visit endpoint to addresses they build from checked ids.
 
 const origin = 'https://feddit.test';
 const api = vi.hoisted(() => ({ signInEmail: vi.fn(), verifyTOTP: vi.fn(), verifyBackupCode: vi.fn() }));
@@ -23,6 +24,8 @@ vi.mock('@peblish/core/identity/throttle', () => ({ attempt: async () => ({ allo
 vi.mock('@peblish/core/communities/read', () => ({ findCommunityId: async () => '019a0000-0000-7000-8000-000000000001' }));
 const follow = vi.hoisted(() => vi.fn());
 vi.mock('@peblish/core/follows/service', () => ({ followAs: follow, unfollowAs: follow }));
+const save = vi.hoisted(() => vi.fn());
+vi.mock('@peblish/core/saves/saves', () => ({ savePostAs: save, unsavePostAs: save }));
 const signedIn = vi.hoisted(() => ({ session: null as CurrentSession | null }));
 vi.mock('./auth.ts', async (original) => {
   const real = await original<typeof import('./auth.ts')>();
@@ -39,6 +42,8 @@ const { Route: join } = await import('../routes/communities/follow.ts');
 const { Route: act } = await import('../routes/modlog/act.ts');
 const { communityPost } = await import('../routes/c/-intents.ts');
 const { Route: bans } = await import('../routes/admin/bans/index.tsx');
+const { handleSavePost } = await import('../routes/saved/-post.ts');
+const { Route: pins } = await import('../routes/communities/pins.ts');
 
 const mira: CurrentSession = {
   view: {
@@ -63,6 +68,7 @@ beforeEach(() => {
   api.signInEmail.mockReset().mockResolvedValue({ headers: new Headers(), response: {} });
   api.verifyTOTP.mockReset().mockResolvedValue({ headers: new Headers() });
   follow.mockReset().mockResolvedValue({ ok: false, reason: 'community.banned' });
+  save.mockReset().mockResolvedValue({ ok: false, reason: 'target.not_found' });
 });
 
 type Handler = (context: { request: Request }) => unknown;
@@ -136,6 +142,22 @@ const entries: [name: string, redirects: boolean, send: (target: string, json: b
       signedIn.session = mira;
       return communityPost(form('/c/news', { intent: 'follow', redirect: target }, json), 'news');
     },
+  ],
+  // Refused (a post gone since): back to `back` with ?error=.
+  [
+    'Save',
+    false,
+    (target, json) => {
+      signedIn.session = mira;
+      return handleSavePost(form('/saved', { intent: 'save', postId: '019a0000-0000-7000-8000-0000000000c1', back: target }, json));
+    },
+  ],
+  // Refused (signed out): back to `next` with ?error=.
+  [
+    'pin',
+    false,
+    (target, json) =>
+      Promise.resolve(postOf(pins)({ request: form('/communities/pins', { community: 'x', intent: 'pin', next: target }, json) })),
   ],
 ];
 
