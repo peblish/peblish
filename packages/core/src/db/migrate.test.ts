@@ -104,3 +104,42 @@ test(
     }
   },
 );
+
+test('0017 does nothing where its index was built by hand beforehand, and builds it where it was not', migrating, async () => {
+  // The migrations up to 0016 in a folder of their own: the database as it was before 0017.
+  const before = await mkdtemp(join(tmpdir(), 'peblish-0016-'));
+  try {
+    const journal = JSON.parse(await readFile(join(migrationsFolder, 'meta/_journal.json'), 'utf8')) as { entries: { tag: string }[] };
+    const entries = journal.entries.slice(
+      0,
+      journal.entries.findIndex(({ tag }) => tag === '0017_profile_comment_count_index'),
+    );
+    await mkdir(join(before, 'meta'));
+    await writeFile(join(before, 'meta/_journal.json'), JSON.stringify({ ...journal, entries }));
+    for (const { tag } of entries) await copyFile(join(migrationsFolder, `${tag}.sql`), join(before, `${tag}.sql`));
+    const index = (client: postgres.Sql) =>
+      client`select pg_get_indexdef(indexrelid) as def from pg_index where indexrelid = 'comments_author_post'::regclass`;
+    for (const byHand of [true, false]) {
+      await recreateDatabase(url, { migrate: false });
+      await runMigrations(url.href, { folder: before });
+      const client = postgres(url.href, { max: 1, onnotice: () => {} });
+      try {
+        // What a large site runs first, outside any transaction, so comment writes never wait on the build.
+        if (byHand)
+          await client.unsafe(
+            `CREATE INDEX CONCURRENTLY IF NOT EXISTS "comments_author_post" ON "comments" USING btree ("author_id","post_id") WHERE "comments"."deleted_at" is null and "comments"."removed_at" is null`,
+          );
+        await expect(runMigrations(url.href)).resolves.toBeUndefined();
+        const [row] = await index(client);
+        expect([byHand, row?.def]).toEqual([
+          byHand,
+          expect.stringMatching(/comments_author_post ON public\.comments USING btree \(author_id, post_id\) WHERE/),
+        ]);
+      } finally {
+        await client.end();
+      }
+    }
+  } finally {
+    await rm(before, { recursive: true, force: true });
+  }
+});
