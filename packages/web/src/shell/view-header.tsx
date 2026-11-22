@@ -116,7 +116,10 @@ export function useHeadingInView(pathname: string): boolean {
     const heading = document.querySelector('#pb-main main h1');
     const bar = document.querySelector('.pb-frame-vh');
     if (!bar) return;
-    const line = Math.round(bar.getBoundingClientRect().bottom);
+    // The bar's lower edge, under which the heading counts as gone. The bar sticks inside its column, so a page
+    // that hydrates scrolled past the column's end has it above the window: then the window's top, as a
+    // negative bottom would make the margin "--…px", which IntersectionObserver refuses by throwing.
+    const line = Math.max(0, Math.round(bar.getBoundingClientRect().bottom));
     // Without a heading the observer watches the bar, and its first report says the name is not in view.
     const observer = new IntersectionObserver(([entry]) => setInView(!!heading && !!entry && entry.boundingClientRect.bottom > line), {
       rootMargin: `-${line}px 0px 0px 0px`,
