@@ -169,8 +169,8 @@ describe('what a row shows', () => {
     const items = (await readInbox(viewerOf(me))).items.toReversed();
     expect(items.map((item) => [item.withheld, item.excerpt, item.postTitle])).toEqual([
       [null, 'Visible words', 'Plain'],
-      ['removed', null, 'Plain'],
-      // A deleted reply names no one, and so no title either (actorWithheld).
+      // A removed or deleted reply names no one, and so no title either (actorWithheld).
+      ['removed', null, null],
       ['deleted', null, null],
       ['sensitive', null, null],
       ['sensitive', null, null],
@@ -223,6 +223,7 @@ describe('what a row shows', () => {
       // To a moderator of the community, who sees removed and deleted content's authors on the page.
       staffUnderRemovedPost: await reply(moderator, takenDown),
       staffDeleted: await reply(moderator, plain, { deletedAt: new Date() }),
+      staffRemoved: await reply(moderator, plain, { removedAt: new Date() }),
       staffMentionInRemovedPost: (
         await seedNotice({ recipientId: moderator.id, kind: 'mention', refId: takenDown.id, actorId: replier.id, postId: takenDown.id })
       ).id,
@@ -236,10 +237,11 @@ describe('what a row shows', () => {
       [...(await readInbox(viewerOf(me))).items, ...(await readInbox(viewerOf(moderator))).items].map((item) => [item.id, item]),
     );
     const named = (id: string) => [items.get(id)?.actor?.id ?? null, items.get(id)?.actorWithheld ?? null, items.get(id)?.withheld];
-    // As the thread shows them: a live or removed comment with its author, and a comment under a deleted post too.
+    // As the thread shows them: a live comment with its author, and one under a deleted post too.
     expect(named(ids.live)).toEqual([replier.id, null, null]);
-    expect(named(ids.removed)).toEqual([replier.id, null, 'removed']);
     expect(named(ids.underDeletedPost)).toEqual([replier.id, null, 'deleted']);
+    // A removed comment is a tombstone without its author, as a deleted one is.
+    expect(named(ids.removed)).toEqual([null, 'removed', 'removed']);
     // Under a post a moderator removed the page sends no comments, and a removed or deleted post names no author.
     expect(named(ids.underRemovedPost)).toEqual([null, 'removed', 'removed']);
     expect(named(ids.mentionInRemovedPost)).toEqual([null, 'removed', 'removed']);
@@ -255,11 +257,19 @@ describe('what a row shows', () => {
     // The community's staff are told, as its pages tell them.
     expect(named(ids.staffUnderRemovedPost)).toEqual([replier.id, null, 'removed']);
     expect(named(ids.staffDeleted)).toEqual([replier.id, null, 'deleted']);
+    expect(named(ids.staffRemoved)).toEqual([replier.id, null, 'removed']);
     expect(named(ids.staffMentionInRemovedPost)).toEqual([replier.id, null, 'removed']);
     expect(items.get(ids.staffMentionInRemovedPost)?.postId).toBe(takenDown.id);
     // Nothing else of the person rides along: no id, name, handle or address, and no comment id to
     // look the comment up by. What is left links to the thread (the post) and marks the notice read.
-    const withheld = [ids.deleted, ids.deletedAndRemoved, ids.underRemovedPost, ids.mentionInRemovedPost, ids.mentionInDeletedPost];
+    const withheld = [
+      ids.deleted,
+      ids.deletedAndRemoved,
+      ids.removed,
+      ids.underRemovedPost,
+      ids.mentionInRemovedPost,
+      ids.mentionInDeletedPost,
+    ];
     for (const id of [...withheld, ids.gated, ids.mention]) {
       const item = items.get(id)!;
       const text = JSON.stringify(item);

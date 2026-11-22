@@ -254,7 +254,7 @@ function withheldOf(subject: { comment: CommentRow | null; post: PostRow | null 
 
 /**
  * Whether a reply or mention may say who wrote it, as the thread and the post page decide for the
- * same text: a deleted comment is a tombstone without its author (removed as well or not), and a
+ * same text: a deleted or removed comment is a tombstone without its author, and a
  * sensitive post or community shows a viewer without a 16+ declaration nothing at all (gateOf,
  * the post page's rule; an access rule, so the browser's Hide NSFW plays no part). Under a post a
  * moderator removed, the page sends no comments, and a removed or deleted post names no author,
@@ -262,9 +262,9 @@ function withheldOf(subject: { comment: CommentRow | null; post: PostRow | null 
  * (`staff`: its moderators and the site admins) are told for removed and deleted content, as its
  * pages tell them; the age gate holds for them too, as the page's does. A declared viewer is named the author: Hide
  * NSFW is a prompt they pass on the page, which then shows who wrote it (the words stay withheld
- * here for everyone, as `withheld` says). A removed comment keeps its author, as the thread shows
- * it, and so does a reply under a deleted post. A moderator's notice (removal, restore, ban)
- * names the moderator, whatever it is about.
+ * here for everyone, as `withheld` says). A reply under a deleted post keeps its author, as the
+ * thread shows it. A moderator's notice (removal, restore, ban) names the moderator, whatever it
+ * is about.
  */
 function actorWithheldOf(
   kind: InboxItem['kind'],
@@ -275,7 +275,7 @@ function actorWithheldOf(
   if (kind !== 'reply' && kind !== 'mention') return null;
   if (!staff) {
     if (comment?.deletedAt) return 'deleted';
-    if (comment && post?.removedAt) return 'removed';
+    if (comment?.removedAt || (comment && post?.removedAt)) return 'removed';
     // A mention in the post itself: the post page withholds the author of a deleted or removed post.
     if (!comment && post?.deletedAt) return 'deleted';
     if (!comment && post?.removedAt) return 'removed';
