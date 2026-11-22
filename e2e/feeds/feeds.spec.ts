@@ -711,4 +711,13 @@ test.describe('without JavaScript', () => {
     await expect(page).toHaveURL(/sort=top/);
     expect((await titles(page))[0]).toBe(`Picture ${seed.suffix}`);
   });
+
+  test('Share, which needs scripts, is not offered; the post stays a plain link', async ({ page }) => {
+    await page.goto('/all?sort=new');
+    const card = page.locator('.feed-list article').first();
+    await expect(card.locator('.pb-post__title a')).toHaveAttribute('href', /^\/post\//);
+    // Card and Classic carry Share once scripts run (Compact never does).
+    await expect(card).not.toHaveAttribute('data-density', 'compact');
+    await expect(card.getByRole('button', { name: 'Share' })).toHaveCount(0);
+  });
 });

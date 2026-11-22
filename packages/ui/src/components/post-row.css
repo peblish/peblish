@@ -202,6 +202,14 @@
     border-radius: var(--muxui-semantic-shape-pill-radius);
   }
 
+  /* Share is a script's (the share sheet, or the copied link): disabled until the page has hydrated, and
+     gone without scripts, where the post's own link is the way to it. */
+  @media (scripting: none) {
+    .pb-post__share {
+      display: none;
+    }
+  }
+
   /* Compact: tighter, a smaller title, and a plain action row. */
   .pb-post[data-density='compact'] {
     gap: var(--muxui-semantic-layout-dense-gap);

@@ -1,6 +1,7 @@
 import type { PostView } from '@peblish/schema/views';
 import { useId, useState, type MouseEvent, type ReactNode } from 'react';
 import { Badge, type BadgeLabels } from './badge.tsx';
+import { useHydrated } from '../composer/use-hydrated.ts';
 import { Button } from './button.tsx';
 import { BidiText, Handle, neutraliseBidi } from './handle.tsx';
 import { CommentsIcon, ShareIcon } from './icons.tsx';
@@ -133,6 +134,7 @@ export function PostRow({
   now,
 }: PostRowProps) {
   const [ownRevealed, setOwnRevealed] = useState(cover.revealed ?? false);
+  const hydrated = useHydrated();
   const revealed = cover.onRevealedChange ? (cover.revealed ?? false) : ownRevealed;
   const setRevealed = cover.onRevealedChange ?? setOwnRevealed;
   const kind = kindOf(post);
@@ -289,7 +291,15 @@ export function PostRow({
           </Button>
         )}
         {onShare && !compact && (
-          <Button variant="neutral" size="sm" className="pb-post__action" aria-label={labels.share} onActivate={onShare}>
+          // A script's action: disabled until the page has hydrated, and gone without scripts (post-row.css).
+          <Button
+            variant="neutral"
+            size="sm"
+            className="pb-post__action pb-post__share"
+            aria-label={labels.share}
+            onActivate={onShare}
+            disabled={!hydrated}
+          >
             <ShareIcon />
             <span className="pb-post__action-label">{labels.share}</span>
           </Button>
