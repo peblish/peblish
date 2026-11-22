@@ -8,7 +8,7 @@ import { posts } from '../db/tables/content.ts';
 import { writer } from '../db/write.ts';
 import { truncateAll } from '../testing/db.ts';
 import { grantFor, outboxEvents, seedComment, writeCounts } from '../testing/seed-az.ts';
-import { sameTransaction, seedPostWorld } from '../testing/seed-b1.ts';
+import { declareAge, sameTransaction, seedPostWorld } from '../testing/seed-b1.ts';
 import { localUser } from '../testing/seed.ts';
 import { Refused } from '../tx/refused.ts';
 import { tx } from '../tx/tx.ts';
@@ -79,6 +79,8 @@ describe('createPost', () => {
 
   test('a post in a sensitive or NSFL community is that too; NSFL makes a post sensitive', async () => {
     const { world, grant } = await create({ title: 'x' });
+    // Sign-up's 16+ declaration: without it the recheck refuses a post into a flagged community (ageDenial).
+    await declareAge(world.people.author);
     await writer().update(actors).set({ sensitive: true }).where(eq(actors.id, world.communities.open.id));
     expect(await postRow((await createPost(grant, { title: 'In a sensitive community' })).id)).toMatchObject({
       sensitive: true,
@@ -175,6 +177,7 @@ describe('updatePost', () => {
 
   test('an edit that changes nothing writes nothing and emits nothing; a sensitive community keeps its posts sensitive', async () => {
     const { world, author, grant } = await create({ title: 'x' });
+    await declareAge(world.people.author);
     await writer().update(actors).set({ sensitive: true }).where(eq(actors.id, world.communities.open.id));
     const { id } = await createPost(grant, { title: 'Same', bodyMd: 'body' });
     const edit = await grantFor('post.update', author, { postId: id });

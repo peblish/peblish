@@ -2,6 +2,7 @@ import type { BlockTarget } from '@peblish/core/blocks/actions';
 import type { CurrentSession } from '@peblish/core/identity/session';
 import type { Principal } from '@peblish/schema/authz';
 import { beforeEach, expect, test, vi } from 'vitest';
+import { hostileReturns } from '../../../server/__fixtures__/return-addresses.ts';
 
 // The POST handler's request contract (PR #26): a form's fixed fields come in its address and
 // what was typed in the body, which wins. The session and the core calls are stubbed; the block
@@ -145,9 +146,9 @@ test('the redirect stays on this site, and under /settings without a slot’s ow
   expect(where(plain)).toEqual([303, `/settings/blocks?tab=people&just=${noisy}`]);
   // A slot's `back` is a page of this site; one that leaves it is refused.
   expect(where(await post({ ...add, back: '/post/1#c2' }, {}))).toEqual([303, '/post/1#c2']);
-  for (const back of ['https://evil.example/', '//evil.example/', '/\\evil.example', '/\t/evil.example', 'javascript:alert(1)']) {
+  for (const [, back] of hostileReturns) {
     const location = (await post({ ...add, back }, {})).headers.get('location') ?? '';
-    expect([back, new URL(location, 'https://disc.test').origin]).toEqual([back, 'https://disc.test']);
+    expect([back, location]).toEqual([back, '/']);
   }
   // A body `back` wins over the address's, and is checked the same way.
   expect(where(await post({ ...add, back: '/post/1' }, { back: '//evil.example/' }))).toEqual([303, '/']);

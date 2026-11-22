@@ -3,7 +3,7 @@ import { and, eq } from 'drizzle-orm';
 import { actors } from '../../db/tables/actors.ts';
 import { follows } from '../../db/tables/follows.ts';
 import { allow, deny, forNoKeyUpdate, type PolicyRequest } from '../policy.ts';
-import { communityDenial, communityState, isBanned } from '../state.ts';
+import { ageDenial, communityDenial, communityState, isBanned } from '../state.ts';
 
 // Owned by lane FED-A: follows (a local actor follows a community, a remote actor follows ours,
 // the answers that come back). Lock order as everywhere: the acting actor, then the community's
@@ -11,7 +11,11 @@ import { communityDenial, communityState, isBanned } from '../state.ts';
 // follow row, so the policies read it FOR NO KEY UPDATE.
 
 export const policies = {
-  /** A signed-in local person follows a community: it exists, is not removed, and the person is not banned from it. */
+  /**
+   * A signed-in local person follows a community: it exists, is not removed, the person is not
+   * banned from it, and a sensitive or NSFL one takes their 16+ declaration (ageDenial), as its
+   * page does. Unfollowing (follow.remove) stays open.
+   */
   'follow.request': async ({ principal, subject, db, lock }: PolicyRequest<{ communityId: Uuid }>) => {
     if (principal.kind !== 'local') return deny('auth.required');
     const community = await communityState({ db, lock }, subject.communityId);
@@ -19,6 +23,8 @@ export const policies = {
     const closed = communityDenial(community);
     if (closed) return closed;
     if (await isBanned({ db, lock }, subject.communityId, principal.actorId)) return deny('community.banned');
+    const gated = await ageDenial({ db, lock }, principal, community.flagged);
+    if (gated) return gated;
     return allow({ kind: 'local-role', actorId: principal.actorId, role: 'user', communityId: subject.communityId });
   },
 

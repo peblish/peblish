@@ -57,3 +57,18 @@ export function nsfwSetCookies(choice: NsfwChoice, secure: boolean): string[] {
 
 /** Whether this browser's choice opens a flagged community. */
 export const shows = (choice: NsfwChoice, communityId: Uuid): boolean => choice.always || choice.once.includes(communityId);
+
+/**
+ * Where the sensitive-content gate stands for this viewer: none (the post is not sensitive, or
+ * the viewer declared 16+ and chose to show it), sign-in (signed out), age (signed in without a
+ * 16+ declaration) or hidden (declared, Hide NSFW on). Every gate but none withholds the content.
+ */
+export type Gate = 'none' | 'sign-in' | 'age' | 'hidden';
+
+/**
+ * The gate (C10) for something flagged sensitive or NSFL, or not: the one rule readPost,
+ * communityGate and the write policies (authz/state.ts: ageDenial) share. `viewer` is null when
+ * signed out; `shown` is the browser's Hide NSFW choice for it, true where only access counts.
+ */
+export const gateOf = (flagged: boolean, viewer: { declared: boolean } | null, shown: boolean): Gate =>
+  !flagged ? 'none' : !viewer ? 'sign-in' : !viewer.declared ? 'age' : shown ? 'none' : 'hidden';
