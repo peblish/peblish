@@ -252,7 +252,8 @@ test('a feed row’s own Save is the account’s: a second press waits, and anot
   const context = await browser.newContext({ baseURL });
   const stale = await context.newPage();
   await signedIn(stale, seed.owner);
-  await gotoHydrated(stale, '/all?sort=new');
+  // The Subscribed feed holds only the seeded community, so the post is on its first page.
+  await gotoHydrated(stale, '/?sort=new');
   const row = stale.locator('.feed-list > li').filter({ hasText: title(25) });
   const more = row.getByRole('button', { name: `More actions for ${title(25)}` });
 
@@ -282,6 +283,10 @@ test('a feed row’s own Save is the account’s: a second press waits, and anot
   await gotoHydrated(other, '/auth/sign-in');
   await signIn(other, `@${seed.other}`, seed.password);
   await landed(other, '/');
+  // The second account joins the community, so its Subscribed feed has the same row.
+  await gotoHydrated(other, `/c/${seed.community}`);
+  await other.getByRole('button', { name: 'Join', exact: true }).click();
+  await expect(other.getByRole('button', { name: 'Joined' })).toBeVisible();
   await expect.poll(() => other.evaluate(() => localStorage.getItem('pb-viewer'))).not.toBe('');
   await showAgain(stale);
   await expect(stale.getByRole('banner').getByRole('button', { name: `Account: ${seed.other}` })).toBeAttached();
@@ -345,11 +350,11 @@ test('with scripts off, a feed row’s Save is a plain form that comes back to t
     await expect(page).toHaveURL(address);
     await expect(control(name)).toHaveAccessibleName(before.startsWith('Save') ? `Unsave ${name}` : `Save ${name}`);
   };
-  await turn('/all?sort=new', title(25));
-  await turn('/all?sort=new', title(25));
+  await turn('/?sort=new', title(25));
+  await turn('/?sort=new', title(25));
 
   // A later page of the feed, its cursor and all.
-  await page.goto('/all?sort=new');
+  await page.goto('/?sort=new');
   await page.getByRole('link', { name: 'Next page' }).click();
   const later = page.url().slice(baseURL!.length);
   expect(later).toContain('cursor=');
@@ -360,9 +365,25 @@ test('with scripts off, a feed row’s Save is a plain form that comes back to t
 
   // With scripts, once hydrated, the menu is the one way to Save.
   const { context: live, page: hydrated } = await contextFor(browser, baseURL!, seed.owner);
-  await gotoHydrated(hydrated, '/all?sort=new');
+  await gotoHydrated(hydrated, '/?sort=new');
   const row = hydrated.locator('.feed-list > li').filter({ hasText: title(25) });
   await expect(row.getByRole('button', { name: new RegExp(`^(Save|Unsave) ${title(25)}$`) })).toHaveCount(0);
   await expect(row.getByRole('button', { name: `More actions for ${title(25)}` })).toBeEnabled();
+
+  // A feed's address can be long (a remote community's handle and host, a cursor): the form still comes back to it.
+  const long = `/?sort=new&cursor=${'a'.repeat(400)}&from=${'b'.repeat(200)}`;
+  await Promise.all([
+    hydrated.waitForURL((url) => url.searchParams.get('cursor')?.length === 400 && !url.searchParams.has('error')),
+    hydrated.evaluate(
+      ({ postId, back }) => {
+        const form = Object.assign(document.createElement('form'), { method: 'post', action: '/saved' });
+        for (const [name, value] of Object.entries({ intent: 'unsave', postId, back }))
+          form.append(Object.assign(document.createElement('input'), { type: 'hidden', name, value }));
+        document.body.append(form);
+        form.submit();
+      },
+      { postId: seed.posts.unsaved[2]!, back: long },
+    ),
+  ]);
   await live.close();
 });

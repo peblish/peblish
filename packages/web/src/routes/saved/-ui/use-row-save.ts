@@ -33,7 +33,8 @@ export function shownSaved(mine: RowAnswer | null, now: Omit<RowAnswer, 'saved'>
 export function useRowSave(post: PostView, say: (message: string) => void): FeedRowSave {
   const { t } = useTranslate();
   const viewer = root.useLoaderData({ select: ({ session }) => session?.actorId ?? '' });
-  const here = useRouterState({ select: ({ location }) => location.href });
+  // The path and query only: the server never sees a fragment, so the two renders agree.
+  const here = useRouterState({ select: ({ location }) => location.pathname + location.searchStr });
   const given = post.saved === true;
   const [mine, setMine] = useState<RowAnswer | null>(null);
   const saved = shownSaved(mine, { viewer, given });
