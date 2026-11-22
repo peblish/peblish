@@ -1,4 +1,4 @@
-import { useState, type FormEvent, type KeyboardEvent, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type FocusEvent, type FormEvent, type KeyboardEvent, type ReactNode } from 'react';
 import { useHydrated } from '../composer/use-hydrated.ts';
 import { Button } from './button.tsx';
 import { Text } from './text.tsx';
@@ -84,6 +84,45 @@ export function ReplyBar({
     }
   }
 
+  // Chrome scrolls a stuck bar's control, focused by Tab or Shift+Tab, to where the bar would rest at the
+  // thread's end, carrying the reader away from where they are. It scrolls before the focus event, whose
+  // scroll event comes after it, so the place the window last settled at is the one before that jump: the
+  // bar is in view where it sticks, so the page goes back there, unless that would leave the control out of
+  // view (a bar resting below the window). Only after a Tab: a press that focuses a control must land where
+  // it was aimed, whatever the page scrolled just before. The tab order is the document's, as before.
+  const settled = useRef<{ x: number; y: number }>(null);
+  const tabbed = useRef(false);
+  useEffect(() => {
+    if (!docked) return;
+    const note = () => {
+      settled.current = { x: window.scrollX, y: window.scrollY };
+    };
+    const key = (event: globalThis.KeyboardEvent) => {
+      tabbed.current = event.key === 'Tab';
+    };
+    const press = () => {
+      tabbed.current = false;
+    };
+    note();
+    window.addEventListener('scroll', note, { passive: true });
+    window.addEventListener('keydown', key, { capture: true });
+    window.addEventListener('pointerdown', press, { capture: true });
+    return () => {
+      window.removeEventListener('scroll', note);
+      window.removeEventListener('keydown', key, { capture: true });
+      window.removeEventListener('pointerdown', press, { capture: true });
+    };
+  }, [docked]);
+  function keepPlace(event: FocusEvent<HTMLFormElement>) {
+    const was = settled.current;
+    if (!docked || !was || !tabbed.current) return;
+    const moved = { x: window.scrollX, y: window.scrollY };
+    if (moved.x === was.x && moved.y === was.y) return;
+    window.scrollTo(was.x, was.y);
+    const box = event.target.getBoundingClientRect();
+    if (box.top < 0 || box.bottom > window.innerHeight) window.scrollTo(moved.x, moved.y);
+  }
+
   function shortcut(event: KeyboardEvent<HTMLFormElement>) {
     if (event.key === 'Enter' && (event.metaKey || event.ctrlKey) && event.target instanceof HTMLTextAreaElement) {
       event.preventDefault();
@@ -100,6 +139,7 @@ export function ReplyBar({
       aria-busy={pending || undefined}
       noValidate={checksItself}
       onSubmit={submit}
+      onFocus={keepPlace}
       onKeyDown={shortcut}
     >
       {target && (

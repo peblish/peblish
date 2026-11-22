@@ -78,3 +78,38 @@ test('a refused reply can be sent again, by Send and by Ctrl+Enter; an empty one
   await page.waitForTimeout(200);
   expect(sent).toBe(3);
 });
+
+test('moving into the dock by keyboard keeps the reader’s place in the thread; Reply still puts the caret there', async ({
+  browser,
+  baseURL,
+}) => {
+  // A window shorter than the thread, so the dock is stuck to its bottom while the thread runs on below.
+  const context = await browser.newContext({ viewport: { width: 1280, height: 560 }, baseURL });
+  const page = await context.newPage();
+  await signedIn(page);
+  await gotoHydrated(page, postUrl(seed.posts.thread));
+  const dock = page.getByRole('form', { name: 'Reply' });
+  const field = dock.getByRole('textbox', { name: 'Reply' });
+  const reply = page.locator(`#comment-${seed.comments.second} > .pb-comment__main > .pb-comment__actions`).getByRole('button', {
+    name: 'Reply',
+  });
+  await reply.scrollIntoViewIfNeeded();
+  await page.evaluate(() => scrollBy(0, 120));
+  const y = await page.evaluate(() => scrollY);
+  const end = await page.evaluate(() => document.documentElement.scrollHeight - innerHeight);
+  expect(end - y, 'the thread runs on below the window').toBeGreaterThan(200);
+
+  // Reply points the dock at the comment and puts the caret there, the page where it was.
+  await reply.click();
+  await expect(field).toBeFocused();
+  await expect(dock).toContainText('Replying to');
+  expect(await page.evaluate(() => scrollY)).toBe(y);
+  // Out of the field to the dock's cancel and back, by keyboard: the page stays.
+  await page.keyboard.press('Shift+Tab');
+  await expect(dock.getByRole('button', { name: 'cancel' })).toBeFocused();
+  await page.keyboard.press('Tab');
+  await expect(field).toBeFocused();
+  await page.waitForTimeout(100);
+  expect(await page.evaluate(() => scrollY)).toBe(y);
+  await context.close();
+});
