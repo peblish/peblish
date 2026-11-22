@@ -133,7 +133,7 @@ test('on a phone the banner is the top of the page, and each of its controls is 
   const region = page.getByRole('region', { name: 'Site notice' });
   expect((await region.boundingBox())!.y).toBe(0);
   for (const control of [
-    region.getByRole('button', { name: 'Details' }),
+    region.getByRole('link', { name: 'Details' }),
     region.getByRole('link', { name: 'Rules' }),
     region.getByRole('button', { name: 'Dismiss notice' }),
   ]) {

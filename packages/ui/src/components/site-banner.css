@@ -7,8 +7,18 @@
     flex-basis: auto;
   }
 
-  /* A phone's 44px target for the link, as for the banner's buttons (shell.css sets Mux's control sizes). */
+  /* The actions (site-banner.tsx) follow the message in its line, or wrap under it, centred when the banner is. */
+  .pb-banner .pb-banner__actions {
+    display: inline-flex;
+    flex-wrap: wrap;
+    vertical-align: middle;
+    margin-inline-start: var(--muxui-semantic-layout-group-gap);
+  }
+
+  /* A phone's 44px target, both ways, for the actions as for the dismiss button (shell.css sets Mux's control
+     sizes; a one-letter label would leave a button or a link narrower). */
   @media (max-width: 859.98px) {
+    .pb-banner .muxui-banner__action,
     .pb-banner .muxui-banner__link {
       display: inline-flex;
       align-items: center;
@@ -18,10 +28,8 @@
     }
   }
 
-  /* With scripts off the button action and the dismiss button cannot work (Mux's actions are buttons with a
-     callback), so they are left out; the banner keeps its message and its link. */
+  /* With scripts off the dismiss button cannot work (it keeps a cookie), so it is left out; the actions are links. */
   @media (scripting: none) {
-    .pb-banner .muxui-banner__action,
     .pb-banner .muxui-banner__dismiss {
       display: none;
     }

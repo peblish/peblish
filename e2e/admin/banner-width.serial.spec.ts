@@ -97,7 +97,7 @@ test('an admin publishes a banner: the shell shows it on every page, server-rend
   await choose(form(page), 'Accent');
   // The previews follow the draft before anything is published.
   await expect(page.getByRole('region', { name: 'Preview, light theme' })).toContainText('Posting pauses for an hour');
-  await expect(page.getByRole('region', { name: 'Preview, dark theme' }).getByRole('button', { name: 'Details' })).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Preview, dark theme' }).getByRole('link', { name: 'Details' })).toBeVisible();
   await form(page).getByRole('button', { name: 'Publish banner' }).click();
   await page.waitForURL(/saved=banner#banner$/);
   await expect(page.getByRole('status').filter({ hasText: 'Banner published.' })).toBeVisible();
@@ -127,7 +127,9 @@ test('an admin publishes a banner: the shell shows it on every page, server-rend
   const [top, box] = [await page.locator('.pb-top').boundingBox(), await region.boundingBox()];
   expect(box!.y).toBeCloseTo(top!.y + top!.height, 0);
   expect(box!.width).toBe(1440);
-  await region.getByRole('button', { name: 'Details' }).click();
+  // The button action is a link: an address to open in a new tab or copy, followed like any other.
+  await expect(region.getByRole('link', { name: 'Details' })).toHaveAttribute('href', '/about');
+  await region.getByRole('link', { name: 'Details' }).click();
   await landed(page, '/about');
   await region.getByRole('link', { name: 'Rules' }).click();
   await landed(page, '/rules');
@@ -274,7 +276,10 @@ test('with scripts off the banner shows with its message and link, its script-on
   await expect(region).toContainText('Posting pauses for an hour');
   await expect(region.getByRole('link', { name: 'Rules' })).toBeVisible();
   await expect(region.getByRole('button', { name: 'Dismiss notice' })).toBeHidden();
-  await expect(region.getByRole('button', { name: 'Details' })).toBeHidden();
+  // The button action is a link, so it goes with scripts off too.
+  await region.getByRole('link', { name: 'Details' }).click();
+  await plain.waitForURL(/\/about$/);
+  await plain.goto('/');
   // Enter on a field or a switch decides nothing; only pressing Publish publishes.
   await plain.goto('/admin/settings');
   const revision = (await readSetting('site.banner')).revision;

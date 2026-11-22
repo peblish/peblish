@@ -34,7 +34,6 @@ function Sample({ banner }: { banner: Partial<SiteBannerContent> }) {
       banner={{ ...full, ...banner }}
       label={t('shell', 'banner.label')}
       dismissLabel={t('shell', 'banner.dismiss')}
-      onNavigate={() => undefined}
       onDismiss={() => undefined}
     />
   );
@@ -195,6 +194,17 @@ export const bannerPieces: Readonly<Record<string, Composition>> = {
   'site-banner-dismiss': {
     name: 'Site banner, dismiss only',
     states: { rest: () => <Sample banner={{ primary: null, link: null, tone: 'warning', emphasis: 'solid', title: '' }} /> },
+  },
+  // One-letter labels: each action still a 44px target both ways on a phone.
+  'site-banner-short': {
+    name: 'Site banner, one-letter actions',
+    states: {
+      rest: () => (
+        <Sample
+          banner={{ primary: { label: 'i', href: '/kit/site-banner-short#i' }, link: { label: 'x', href: '/kit/site-banner-short#x' } }}
+        />
+      ),
+    },
   },
   'site-banner-plain': {
     name: 'Site banner, message only',

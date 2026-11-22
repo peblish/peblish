@@ -1,6 +1,5 @@
 import type { SiteBanner as SiteBannerSetting } from '@peblish/schema/banner';
 import { SiteBanner } from '@peblish/ui/components/site-banner';
-import { useRouter } from '@tanstack/react-router';
 import { useSyncExternalStore } from 'react';
 import { useTranslate } from '../i18n/use-translate.ts';
 
@@ -67,7 +66,6 @@ export function showBannerAgain(revision: number) {
  */
 export function ShellBanner({ banner, cookieRevision }: { banner: SiteBannerSetting | null; cookieRevision: number | null }) {
   const { t } = useTranslate();
-  const router = useRouter();
   const dismissed = useBannerDismissed(banner?.revision ?? 0, cookieRevision);
   if (!banner?.enabled || dismissed) return null;
   return (
@@ -76,7 +74,6 @@ export function ShellBanner({ banner, cookieRevision }: { banner: SiteBannerSett
       banner={banner}
       label={t('shell', 'banner.label')}
       dismissLabel={t('shell', 'banner.dismiss')}
-      onNavigate={(href) => void router.navigate({ href })}
       onDismiss={() => {
         dismissBanner(banner.revision);
         const target = document.querySelector<HTMLElement>('#pb-main main') ?? document.getElementById('pb-main');

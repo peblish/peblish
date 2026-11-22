@@ -32,7 +32,11 @@ test('a named region with its button, link and dismiss, each only when set', () 
   });
   expect(html).toContain('role="region"');
   expect(html).toContain('aria-label="Site notice"');
-  expect(html).toContain('>Details</span></button>');
+  // The button action is a real link drawn as Mux's banner button, so it works with scripts off too.
+  expect(html).toMatch(
+    /<a [^>]*class="[^"]*muxui-button[^"]*muxui-banner__action[^"]*"[^>]*href="\/about"|<a [^>]*href="\/about"[^>]*class="[^"]*muxui-button[^"]*muxui-banner__action/,
+  );
+  expect(html).not.toContain('<button class="muxui-button muxui-banner__action');
   expect(html).toMatch(/<a [^>]*href="\/rules"[^>]*>Rules<\/a>/);
   expect(html).toContain('aria-label="Dismiss notice"');
   expect(html).toContain('muxui-banner__icon');

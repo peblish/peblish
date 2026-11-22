@@ -20,6 +20,7 @@ const pages: Record<string, string[]> = {
   'site-banner-translucent': driven,
   'site-banner-link': driven,
   'site-banner-dismiss': driven,
+  'site-banner-short': driven,
   'banner-form-address': ['rest', 'invalid', 'hover', 'focus', 'pressed'],
   'banner-form-message': ['rest', 'invalid', 'hover', 'focus', 'pressed'],
   'banner-form-colour': ['rest', 'invalid', 'hover', 'focus', 'pressed'],

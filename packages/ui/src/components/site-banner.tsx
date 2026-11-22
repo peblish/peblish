@@ -1,6 +1,7 @@
-import { Banner, type BannerTone } from '@muxui/react';
+import { Banner, Link, type BannerTone } from '@muxui/react';
 import type { SiteBanner as SiteBannerSetting } from '@peblish/schema/banner';
 import type { ComponentType } from 'react';
+import { ButtonLink } from './button-link.tsx';
 import { AlertIcon, CalendarIcon, InfoIcon, MegaphoneIcon, SparklesIcon, WrenchIcon } from './icons.tsx';
 
 // The site banner (Commons): the `site.banner` setting drawn with Mux UI's Banner. The shell shows the
@@ -34,18 +35,13 @@ export interface SiteBannerProps {
   /** The region's name ("Site notice"). */
   label: string;
   dismissLabel: string;
-  /**
-   * Follows the button action's address. Mux's Banner actions are buttons, not links, so the button needs
-   * scripts: with them off it is hidden (site-banner.css) and the link is the banner's one way on.
-   */
-  onNavigate?: (href: string) => void;
   /** Called by the dismiss button, which shows when the banner is dismissible. With scripts off it is hidden. */
   onDismiss?: () => void;
   className?: string;
 }
 
 /** A published banner, or a preview of one. It never hides itself: whoever shows it stops rendering it once dismissed. */
-export function SiteBanner({ banner, label, dismissLabel, onNavigate, onDismiss, className }: SiteBannerProps) {
+export function SiteBanner({ banner, label, dismissLabel, onDismiss, className }: SiteBannerProps) {
   const Glyph = banner.icon === 'none' ? null : glyphs[banner.icon];
   const { primary, link } = banner;
   return (
@@ -57,14 +53,30 @@ export function SiteBanner({ banner, label, dismissLabel, onNavigate, onDismiss,
       {...muxTone(banner)}
       emphasis={banner.emphasis}
       align={banner.align}
-      actions={primary ? [{ id: 'primary', label: primary.label, onAction: () => onNavigate?.(primary.href) }] : []}
-      link={link ?? undefined}
       dismissible={banner.dismissible}
       dismissed={false}
       onDismiss={onDismiss}
       dismissLabel={dismissLabel}
     >
       {banner.message}
+      {/* Mux's Banner actions are buttons with a callback, so the button action would be dead with scripts off and
+          no ordinary link with them on. Both actions are real links here (the button one the facade's ButtonLink),
+          after the message, in a group with Mux's own actions class: Mux's banner recipe draws them (the filled
+          button, the link in the banner's colours) as it draws its own. site-banner.css places the group. */}
+      {primary || link ? (
+        <span className="muxui-banner__actions pb-banner__actions">
+          {primary ? (
+            <ButtonLink href={primary.href} variant="neutral" size="sm" className="muxui-banner__action">
+              {primary.label}
+            </ButtonLink>
+          ) : null}
+          {link ? (
+            <Link className="muxui-banner__link" href={link.href}>
+              {link.label}
+            </Link>
+          ) : null}
+        </span>
+      ) : null}
     </Banner>
   );
 }
