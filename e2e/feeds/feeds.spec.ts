@@ -569,6 +569,9 @@ test.describe('a viewer', () => {
   test('on a narrow phone whose bar shows the site name, one menu holds the sorts and the views', async ({ page }) => {
     await page.setViewportSize({ width: 320, height: 700 });
     await gotoHydrated(page, '/all');
+    // A brand pack's mark leaves the bar room for both menus (feed.css).
+    const named = await page.locator('.pb-frame-vh .pb-bar-brand > .muxui-text').count();
+    test.skip(!named, 'a brand pack shows its mark, not the name, on the phone');
     await expect(page.getByRole('button', { name: /^View: / })).toHaveCount(0);
     const menu = page.getByRole('button', { name: 'Sort: Hot; View: Classic' });
     const box = (await menu.boundingBox())!;
