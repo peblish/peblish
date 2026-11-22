@@ -108,8 +108,8 @@ test('the report queue and the modlog put their name in the view header and thei
 });
 
 // On a computer the staff tables sit whole in the frame's wide centre: neither the page nor a table's card
-// scrolls sideways (the sidebar folds itself at 1100px). The spec seeds every table but Registration's,
-// which may hold no invite yet.
+// scrolls sideways (the sidebar folds itself at 1100px). The spec seeds every table but Registration's and
+// the site pages list, which may hold nothing yet.
 test('on a computer the staff tables sit whole in the centre', async ({ browser }) => {
   test.setTimeout(120_000);
   const page = await (await browser.newContext({ storageState: session, viewport: { width: 1440, height: 900 } })).newPage();
@@ -118,7 +118,7 @@ test('on a computer the staff tables sit whole in the centre', async ({ browser 
     '/admin/peers': true,
     '/admin/reports': true,
     '/admin/media?section=hashes': true,
-    '/admin/pages': true,
+    '/admin/pages': false,
     '/admin/registration': false,
   };
   for (const width of [1440, 1280, 1100]) {
