@@ -195,7 +195,10 @@ test('at 1440px the queue’s inline filter chooses a community where the rail h
 
 // On a computer the staff tables sit whole in the frame's wide centre: neither the page nor a table's card
 // scrolls sideways (the sidebar folds itself at 1100px). The spec seeds every table but the site pages
-// list, which may hold nothing yet.
+// list, which may hold nothing yet. The fold follows the window from the page that is open when it
+// narrows, and its cookie tells the server how to draw the next page: until it is written, the next page
+// is drawn with the sidebar open, where a table scrolls inside its card (TableCard), and folds once its
+// scripts run. Each width waits for the cookie, so every page is measured with the fold it calls for.
 test('on a computer the staff tables sit whole in the centre', async ({ browser }) => {
   test.setTimeout(120_000);
   const page = await (await browser.newContext({ storageState: session, viewport: { width: 1440, height: 900 } })).newPage();
@@ -208,8 +211,11 @@ test('on a computer the staff tables sit whole in the centre', async ({ browser 
     '/admin/pages': false,
     '/admin/registration': true,
   };
+  const fold = async () => (await page.context().cookies()).find((cookie) => cookie.name === 'peblish_side')?.value ?? '';
   for (const width of [1440, 1280, 1100]) {
     await page.setViewportSize({ width, height: 900 });
+    // WIDE_AT in packages/web/src/shell/side-state.ts.
+    await expect.poll(fold).toBe(width < 1264 ? 'narrow' : '');
     for (const [path, seeded] of Object.entries(tables)) {
       await gotoHydrated(page, path);
       const geometry = await page.evaluate(() => ({
