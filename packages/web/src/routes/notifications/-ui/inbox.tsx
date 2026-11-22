@@ -17,7 +17,8 @@ import { useState, type FormEvent } from 'react';
 import { translatePlural } from '../../../i18n/translate.ts';
 import { useTranslate } from '../../../i18n/use-translate.ts';
 import { useRouteHydrated } from '../../../shell/hydration.ts';
-import { commentPath, modlogEntryPath, postPath } from '../../../shell/paths.ts';
+import { modlogEntryPath } from '../../../shell/paths.ts';
+import { noticeTarget } from './target.ts';
 import type { InboxData } from '../-load.ts';
 import { inboxAction, inboxHref, type InboxSearch } from '../-search.ts';
 
@@ -153,7 +154,7 @@ function NoticeRow({
 }) {
   const { t, locale } = useTranslate();
   const moderator = filterKinds.content.some((kind) => kind === item.kind) || filterKinds.account.some((kind) => kind === item.kind);
-  const target = item.postId ? (item.commentId ? commentPath(item.postId, item.commentId) : postPath(item.postId)) : null;
+  const target = noticeTarget(item);
   const where = item.about ?? 'post';
   const community = item.community ? <Handle prefix="!" handle={item.community.handle} /> : null;
 

@@ -254,7 +254,10 @@ describe('what a row shows', () => {
       const text = JSON.stringify(item);
       for (const leak of [replier.id, moderator.id, replier.name, moderator.name, replier.apId, moderator.apId])
         expect([id, text.includes(leak)]).toEqual([id, false]);
-      expect([id, item.commentId, item.postId === null]).toEqual([id, null, false]);
+      // A notice about a comment links to its thread; one about the post itself keeps no post id,
+      // which would lead to the post's author (the modlog, the object route) as surely as a name.
+      const postLevel = [ids.mentionInRemovedPost, ids.mentionInDeletedPost, ids.mention].includes(id);
+      expect([id, item.commentId, item.postId === null]).toEqual([id, null, postLevel]);
       // Nor the title of the post it answers: a title can name its author.
       expect([id, item.postTitle]).toEqual([id, null]);
     }
