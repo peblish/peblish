@@ -1,4 +1,5 @@
 import { useState, type FormEvent, type KeyboardEvent, type ReactNode } from 'react';
+import { useHydrated } from '../composer/use-hydrated.ts';
 import { Button } from './button.tsx';
 import { Text } from './text.tsx';
 import { TextAreaField } from './text-area.tsx';
@@ -66,6 +67,10 @@ export function ReplyBar({
   docked = true,
 }: ReplyBarProps) {
   const [body, setBody] = useState('');
+  // A refusal marks the field invalid (React Aria sets a custom validity), which would hold the retry back
+  // before `submit` runs: while one shows, the browser's check is off and `submit` refuses an empty reply
+  // itself. Otherwise, and before hydration or without scripts, the browser checks the form as before.
+  const checksItself = useHydrated() && onSubmit !== undefined && error !== undefined;
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     if (!onSubmit) return;
@@ -93,6 +98,7 @@ export function ReplyBar({
       action={withFields(action, fields)}
       aria-label={labels.region}
       aria-busy={pending || undefined}
+      noValidate={checksItself}
       onSubmit={submit}
       onKeyDown={shortcut}
     >
