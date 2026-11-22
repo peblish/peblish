@@ -178,9 +178,12 @@ export function SidebarCommunities({
       {pinned.map((entry, place) => row(entry, place))}
       {pinned.length > 0 && unpinned.length > 0 && <Sidebar.NavDivider />}
       {unpinned.map((entry) => row(entry))}
-      {/* Out of the flow, so it takes no room in the list; a change to it is read out once. */}
+      {/* Out of the flow, so it takes no room in the list; a change to it is read out once. A live region
+          rather than role="status": the sidebar is on every page, and a page's own status stays the only one. */}
       <li className="pb-sr" ref={anchor}>
-        <Text role="status">{action.error ? t('pins', pinErrorKey(action.error)) : status}</Text>
+        <Text aria-live="polite" aria-atomic="true">
+          {action.error ? t('pins', pinErrorKey(action.error)) : status}
+        </Text>
       </li>
     </>
   );

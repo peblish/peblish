@@ -97,7 +97,7 @@ test.describe('seeded', () => {
     const { context, page } = await signedIn(browser, seed);
     await gotoHydrated(page, '/local');
     const side = page.locator('.pb-side');
-    const status = side.getByRole('status').filter({ hasText: /./ });
+    const status = side.locator('[aria-live="polite"]').filter({ hasText: /./ });
 
     // The first pin cannot move up; Move down moves it, keeps focus on its menu and says where it went.
     await menuOf(side, `Elm ${seed.suffix}`).focus();
