@@ -11,13 +11,14 @@ import type { Composition } from './-states.tsx';
 import threadCss from './-thread.css?url';
 
 // "New since your last visit" (f-visits), registered in -states.tsx: the thread's heading row with the
-// jump to the next new comment, and the comments it marks New. Disabled is a count whose new comments
-// are all on other pages. Signed out (viewerId null), so the sample records no visit. Invented content.
+// jump to the next new comment, and the comments it marks New, one of them a reply under a comment folded
+// for its low score (the jump opens it). Disabled is a count whose new comments are all on other pages.
+// Signed out (viewerId null), so the sample records no visit. Invented content.
 
 const ago = (hours: number) => new Date(now.getTime() - hours * 3_600_000).toISOString();
 
 function rows(prefix: string, newOnPage: boolean): CommentView[] {
-  const row = (key: string, parent: string | null, html: string, isNew: boolean, replies = 0): CommentView => ({
+  const row = (key: string, parent: string | null, html: string, isNew: boolean, replies = 0, downvotes = 0): CommentView => ({
     id: `${prefix}-${key}`,
     apId: `https://feddit.test/comment/${prefix}-${key}`,
     postId: posts.link.id,
@@ -30,7 +31,7 @@ function rows(prefix: string, newOnPage: boolean): CommentView[] {
     editedAt: null,
     deleted: false,
     removed: false,
-    counts: { upvotes: 4, downvotes: 0, comments: replies },
+    counts: { upvotes: 4, downvotes, comments: replies },
     myVote: 0,
     isNew: newOnPage && isNew,
   });
@@ -39,6 +40,8 @@ function rows(prefix: string, newOnPage: boolean): CommentView[] {
     row('b', 'a', '<p>Walked it on Sunday: muddy past the second creek, otherwise fine.</p>', true),
     row('c', null, '<p>Parking fills by nine on weekends.</p>', false),
     row('d', null, '<p>The kiosk at the top takes cards now.</p>', true),
+    row('e', null, '<p>Skip it, the view is overrated.</p>', false, 1, 14),
+    row('f', 'e', '<p>The view from the ridge is the whole point.</p>', true),
   ];
 }
 
@@ -51,9 +54,9 @@ function Sample({ newOnPage }: { newOnPage: boolean }) {
       <link rel="stylesheet" href={commentsCss} />
       <div className="th-head">
         <Text as="h2" variant="title" size="sm" className="th-heading">
-          4 comments
+          6 comments
         </Text>
-        <NewSince postId={posts.link.id} viewerId={null} newCount={2} comments={list} />
+        <NewSince postId={posts.link.id} viewerId={null} newCount={3} comments={list} />
       </div>
       <CommentThread
         comments={list}

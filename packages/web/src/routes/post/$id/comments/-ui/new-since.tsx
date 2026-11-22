@@ -3,7 +3,10 @@ import { ButtonLink } from '@peblish/ui/components/button-link';
 import { Text } from '@peblish/ui/components/text';
 import type { Uuid } from '@peblish/schema/ids';
 import type { CommentView } from '@peblish/schema/views';
-import { useEffect, useId, useRef, useState, type MouseEvent } from 'react';
+import { setFold } from '@peblish/ui/components/comment-folds.ts';
+import { buildCommentTree, type CommentNode } from '@peblish/ui/components/comment-tree.ts';
+import { useEffect, useId, useMemo, useRef, useState, type MouseEvent } from 'react';
+import { flushSync } from 'react-dom';
 import { translatePlural } from '../../../../../i18n/translate.ts';
 import { useTranslate } from '../../../../../i18n/use-translate.ts';
 import { postPath } from '../../../../../shell/paths.ts';
@@ -35,6 +38,19 @@ function useRecordVisit(postId: Uuid, signedIn: boolean) {
   }, [postId, signedIn]);
 }
 
+/** The new comments in the order the thread draws them (the tree's, depth first). */
+function newInOrder(comments: readonly CommentView[]): CommentView[] {
+  const found: CommentView[] = [];
+  const walk = (nodes: readonly CommentNode[]) => {
+    for (const node of nodes) {
+      if (node.comment.isNew && !node.comment.deleted && !node.comment.removed) found.push(node.comment);
+      walk(node.children);
+    }
+  };
+  walk(buildCommentTree(comments));
+  return found;
+}
+
 export function NewSince({
   postId,
   viewerId,
@@ -51,24 +67,32 @@ export function NewSince({
   const [said, setSaid] = useState('');
   const last = useRef<string | null>(null);
   const offPage = useId();
+  const order = useMemo(() => newInOrder(comments), [comments]);
+  const parents = useMemo(() => new Map(comments.map((comment) => [comment.id, comment.parentId])), [comments]);
   if (newCount === 0) return null;
   const label = translatePlural(locale, 'visits', 'jump', newCount);
-  const first = comments.find((comment) => comment.isNew);
+  const first = order[0];
 
-  // To the next new comment drawn now (one under a folded comment is not), after the last one jumped to, round again at the end.
+  // To the next new comment on this page, after the last one jumped to, round again at the end. A comment it
+  // lies under that is folded (for its low score, or by the reader) is opened first, so focus lands on a
+  // drawn row before the position is said.
   function jump(event: MouseEvent<HTMLElement>) {
-    const rows = [...document.querySelectorAll<HTMLElement>('.pb-comment[data-new]')];
-    if (rows.length === 0) return;
+    if (order.length === 0) return;
     event.preventDefault();
-    const index = (rows.findIndex((row) => row.id === last.current) + 1) % rows.length;
-    const row = rows[index];
+    const index = (order.findIndex((comment) => comment.id === last.current) + 1) % order.length;
+    const target = order[index];
+    if (!target) return;
+    flushSync(() => {
+      for (let id = parents.get(target.id); id; id = parents.get(id)) setFold(id, false);
+    });
+    const row = document.getElementById(`comment-${target.id}`);
     if (!row) return;
-    last.current = row.id;
+    last.current = target.id;
     row.tabIndex = -1;
     // Straight there: no smooth travel, whatever the motion setting.
     row.scrollIntoView({ block: 'start' });
     row.focus({ preventScroll: true });
-    setSaid(t('visits', 'position', { index: index + 1, total: rows.length }));
+    setSaid(t('visits', 'position', { index: index + 1, total: order.length }));
   }
 
   return (
