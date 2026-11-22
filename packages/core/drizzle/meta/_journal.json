@@ -127,6 +127,20 @@
       "when": 1795325772721,
       "tag": "0017_account_features",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1795325793380,
+      "tag": "0018_notice_kinds_unvalidated",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1795325802579,
+      "tag": "0019_notice_kinds_validate",
+      "breakpoints": true
     }
   ]
 }

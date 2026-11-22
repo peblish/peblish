@@ -1,7 +1,20 @@
 // Owned by lane E2. Browser-safe: the shell's badge imports these, so nothing here touches the database.
 
-/** What a notice is about: a reply or mention, a moderator's removal or restore of the person's content, a ban or unban. */
-export const notificationKinds = ['reply', 'mention', 'mod_remove', 'mod_restore', 'ban', 'unban'] as const;
+/**
+ * What a notice is about: a reply or mention, a moderator's removal or restore of the person's
+ * content, a ban or unban; `follow_accept`, a remote community accepted the person's request,
+ * and `thread_reply`, a new comment in a thread they follow (branch 5; nothing writes either yet).
+ */
+export const notificationKinds = [
+  'reply',
+  'mention',
+  'mod_remove',
+  'mod_restore',
+  'ban',
+  'unban',
+  'follow_accept',
+  'thread_reply',
+] as const;
 export type NotificationKind = (typeof notificationKinds)[number];
 
 /** unreadCount stops counting here; the badge prints "99+" at the cap. */
@@ -15,10 +28,10 @@ export type InboxFilter = (typeof inboxFilters)[number];
 export const filterKinds = {
   all: notificationKinds,
   unread: notificationKinds,
-  replies: ['reply'],
+  replies: ['reply', 'thread_reply'],
   mentions: ['mention'],
   content: ['mod_remove', 'mod_restore'],
-  account: ['ban', 'unban'],
+  account: ['ban', 'unban', 'follow_accept'],
 } as const satisfies Record<InboxFilter, readonly NotificationKind[]>;
 
 /** Why a notice shows a word instead of the text: sensitive content for every viewer, or a comment removed or deleted since. */

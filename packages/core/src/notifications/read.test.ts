@@ -31,7 +31,7 @@ describe('readInbox filters', () => {
 
     const kindsOf = async (filter: InboxFilter) => (await readInbox(viewerOf(me), { filter })).items.map((item) => item.kind);
     const everything = await readInbox(viewerOf(me), { filter: 'all' });
-    expect(everything.items).toHaveLength(12);
+    expect(everything.items).toHaveLength(2 * notificationKinds.length);
     expect(everything.items.map((item) => item.id)).toEqual(
       everything.items
         .map((item) => item.id)
@@ -45,10 +45,11 @@ describe('readInbox filters', () => {
       expect(new Set(kinds), filter).toEqual(new Set(filterKinds[filter]));
     }
     const unread = await readInbox(viewerOf(me), { filter: 'unread' });
-    expect(unread.items).toHaveLength(6);
+    expect(unread.items).toHaveLength(notificationKinds.length);
     expect(unread.items.every((item) => !item.read)).toBe(true);
-    expect(everything.unread).toBe(6);
-    expect(everything.unreadByGroup).toEqual({ replies: 1, mentions: 1, content: 2, account: 2 });
+    expect(everything.unread).toBe(notificationKinds.length);
+    // thread_reply counts with the replies, follow_accept with the account notices.
+    expect(everything.unreadByGroup).toEqual({ replies: 2, mentions: 1, content: 2, account: 3 });
   });
 
   test('pages by the last id: a notice that arrives between pages does not move them', async () => {
