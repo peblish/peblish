@@ -3,6 +3,7 @@ import { ButtonLink } from '@peblish/ui/components/button-link';
 import { Text } from '@peblish/ui/components/text';
 import type { Uuid } from '@peblish/schema/ids';
 import type { CommentView } from '@peblish/schema/views';
+import { useRouter } from '@tanstack/react-router';
 import { setFold } from '@peblish/ui/components/comment-folds.ts';
 import { buildCommentTree, type CommentNode } from '@peblish/ui/components/comment-tree.ts';
 import { useEffect, useId, useMemo, useRef, useState, type MouseEvent } from 'react';
@@ -21,21 +22,32 @@ import newSinceCss from './new-since.css?url';
  * Records the visit once the page is on screen: after hydration (so a prefetch, a preload or a
  * page without scripts records nothing), in its own POST to /post/<id>/visit (so it cannot fail
  * or slow the page), and only once the tab is visible (a page opened in the background is not a
- * visit until it is looked at). A failure is dropped: the next visit records instead.
+ * visit until it is looked at). A page brought forward from the background reloads its data first,
+ * so the visit counts as seen only what the reader is then shown, not a reply that arrived while
+ * it waited. A failure is dropped: the next visit records instead.
  */
 function useRecordVisit(postId: Uuid, signedIn: boolean) {
+  const router = useRouter();
   useEffect(() => {
     if (!signedIn) return;
+    let live = true;
     const record = () => void fetch(`${postPath(postId)}/visit`, { method: 'POST', keepalive: true }).catch(() => undefined);
     if (document.visibilityState === 'visible') return record();
     const onVisible = () => {
       if (document.visibilityState !== 'visible') return;
       document.removeEventListener('visibilitychange', onVisible);
-      record();
+      // A failed reload still records: the page shows what it had, as a visible tab's would.
+      void router
+        .invalidate()
+        .catch(() => undefined)
+        .then(() => live && record());
     };
     document.addEventListener('visibilitychange', onVisible);
-    return () => document.removeEventListener('visibilitychange', onVisible);
-  }, [postId, signedIn]);
+    return () => {
+      live = false;
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  }, [postId, signedIn, router]);
 }
 
 /** The new comments in the order the thread draws them (the tree's, depth first). */

@@ -134,3 +134,63 @@ test('on a phone the jump is a 44px target', async ({ browser, baseURL }) => {
   expect(Math.min(box!.width, box!.height)).toBeGreaterThanOrEqual(44);
   await context.close();
 });
+
+/** A tab that starts in the background: hidden until `show(tab)` brings it forward. */
+async function backgroundTab(page: Page) {
+  const tab = await page.context().newPage();
+  await tab.addInitScript(() => {
+    let state: DocumentVisibilityState = 'hidden';
+    Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => state });
+    Object.defineProperty(document, 'hidden', { configurable: true, get: () => state === 'hidden' });
+    Object.assign(window, {
+      __show: () => {
+        state = 'visible';
+        document.dispatchEvent(new Event('visibilitychange'));
+      },
+    });
+  });
+  return tab;
+}
+const show = (tab: Page) => tab.evaluate(() => (window as unknown as { __show: () => void }).__show());
+
+test('a thread opened in the background is refreshed when brought forward, before its visit is recorded; one never brought forward records nothing', async ({
+  page,
+}) => {
+  // Its own cast: the cases above recorded visits on theirs. `seen` was last visited two hours ago.
+  seed = JSON.parse(run('e2e')) as Seed;
+  const say = (postId: string, name: string) =>
+    (
+      JSON.parse(
+        execFileSync('node', ['packages/core/src/testing/seed-notify.ts', 'comment', postId, name], { cwd: root, encoding: 'utf8' }),
+      ) as {
+        id: string;
+      }
+    ).id;
+  await signedIn(page);
+  const before = marker(seed.posts.seen)!.lastVisitAt;
+
+  const tab = await backgroundTab(page);
+  await gotoHydrated(tab, `/post/${seed.posts.seen}`);
+  const author = (await row(tab, seed.comments.first).locator('> .pb-comment__head .pb-comment__author').textContent())!
+    .trim()
+    .replace(/^@/, '')
+    .split('@')[0]!;
+  // A reply arrives while the tab is still in the background: nothing is recorded meanwhile.
+  const late = say(seed.posts.seen, author);
+  await tab.waitForTimeout(500);
+  expect(marker(seed.posts.seen)!.lastVisitAt).toBe(before);
+
+  const visit = tab.waitForRequest((request) => request.method() === 'POST' && request.url().endsWith(`/post/${seed.posts.seen}/visit`));
+  await show(tab);
+  // The reader sees the reply that arrived, marked New, and only then does the visit count it as seen.
+  await expect(mark(tab, late)).toHaveText('New');
+  await expect(jump(tab)).toHaveText('3 new since your last visit');
+  await visit;
+  await expect.poll(() => marker(seed.posts.seen)?.previousVisitAt ?? null).not.toBeNull();
+
+  // Another thread opened in the background and never brought forward writes nothing.
+  const never = await backgroundTab(page);
+  await gotoHydrated(never, `/post/${seed.posts.unseen}`);
+  await never.waitForTimeout(1_000);
+  expect(marker(seed.posts.unseen)).toBeNull();
+});
