@@ -252,12 +252,16 @@ test('on a computer the page never scrolls sideways: the tables sit whole beside
   for (const [path, seeded] of Object.entries(tables)) {
     await gotoHydrated(page, path);
     await expect(page.getByRole('button', { name: 'Sidebar', exact: true })).toHaveAttribute('aria-expanded', 'true');
-    const geometry = await measure();
-    if (seeded) expect(geometry.cards.length, `${path} open at 1100px`).toBeGreaterThan(0);
-    expect(geometry, `${path} open at 1100px`).toEqual({
-      page: 0,
-      cards: geometry.cards.map(({ over }) => ({ over, role: 'region', named: true, stop: over > 0 ? '0' : null })),
-    });
+    // A card takes its stop once the browser has measured it, an effect after hydration: measured until it has.
+    let geometry = await measure();
+    await expect(async () => {
+      geometry = await measure();
+      if (seeded) expect(geometry.cards.length, `${path} open at 1100px`).toBeGreaterThan(0);
+      expect(geometry, `${path} open at 1100px`).toEqual({
+        page: 0,
+        cards: geometry.cards.map(({ over }) => ({ over, role: 'region', named: true, stop: over > 0 ? '0' : null })),
+      });
+    }).toPass({ timeout: 5_000 });
     const wide = geometry.cards.findIndex(({ over }) => over > 0);
     if (wide < 0) continue;
     scrolled += 1;
