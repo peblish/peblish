@@ -440,6 +440,10 @@ test.describe('a viewer', () => {
     await page.waitForURL('**/?sort=new');
     await expect(page.locator('.feed-list > li')).toHaveCount(46);
     await expect.poll(() => page.evaluate(() => scrollY)).toBe(y);
+    // The later batches show once the server has answered each again, in the same place, and the position stays.
+    await expect(page.locator('.feed-list > li.feed-row--held')).toHaveCount(0);
+    await expect(page.locator('.feed-list > li').nth(30).locator('.pb-post__title a')).toHaveText(title!);
+    expect(await page.evaluate(() => scrollY)).toBe(y);
     // A new visit to the same address (not Back) starts again at the first batch.
     await sortBy(page, 'Old');
     await page.waitForURL('**/?sort=old');

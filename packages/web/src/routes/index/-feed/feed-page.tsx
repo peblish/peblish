@@ -54,9 +54,11 @@ import { loadFeed, type FeedData } from './load.ts';
 import { feedTitleKeys } from './names.ts';
 import {
   firstPlace,
+  isHeld,
   loadNext,
   readPlace,
   refreshPlace,
+  revalidatePlace,
   subscribePlaces,
   updateRows,
   type Batch,
@@ -341,6 +343,12 @@ export function FeedCards({
     const { key, place, more, messages } = latest.current;
     if (more) loadNext(key, place, more.load, messages);
   }, []);
+  // A list that mounts on a kept place is a return (Back or Forward): its later batches are held, unseen in
+  // their space, until the server has answered each of them again (places.ts).
+  useEffect(() => {
+    const { more } = latest.current;
+    return more ? revalidatePlace(key, more.load) : undefined;
+  }, [key]);
 
   // The observer lives with the sentinel, which mounts again after every batch, so it reports at once
   // whether the end is still near. Its margin is one screen below the window.
@@ -403,7 +411,7 @@ export function FeedCards({
           {auto && <FeedSkip label={t('feeds', 'skip')} onSkip={skip} />}
           <ul className="feed-list pb-rows" aria-label={t('feeds', 'list.label')}>
             {place.rows.map((row) => (
-              <li key={row.post.id}>
+              <li key={row.post.id} className={isHeld(place, row) ? 'feed-row--held' : undefined} inert={isHeld(place, row)}>
                 <FeedRow
                   row={row}
                   density={prefs.density}

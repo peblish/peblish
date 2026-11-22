@@ -6,10 +6,17 @@ import type { FeedItem } from './items.ts';
 // the list, so Back and Forward find the place again, while a fresh visit to the same address (a new
 // history entry) starts at the first batch. The router puts the scroll position back itself, once the
 // rows are there again. The page's data (the first batch) is the truth for the rows it holds: when a
-// fresh copy of it comes (Back reloads it in the background), refreshPlace takes it.
+// fresh copy of it comes (Back reloads it in the background), refreshPlace takes it. A later batch is
+// shown from memory only once the server has confirmed it since the reader came back (revalidatePlace).
 
-/** A row and the clock its age prints against (the server's, for the batch it came with). */
-export type PlaceRow = FeedItem & { now: string };
+/**
+ * A row and the clock its age prints against (the server's, for the batch it came with); `batch` is the
+ * cursor a later batch was asked with, absent for the first batch (the page's own data).
+ */
+export type PlaceRow = FeedItem & { now: string; batch?: string };
+
+/** One request for a batch: an answer lands only while its ask is still the place's, so a newer ask for the same cursor wins. */
+type Ask = { readonly cursor: string };
 
 export interface Place {
   rows: readonly PlaceRow[];
@@ -17,6 +24,12 @@ export interface Place {
   first: readonly string[];
   /** The cursor of the next batch; null at the end. */
   next: string | null;
+  /** The cursors the later batches were asked with, in order. */
+  batches: readonly string[];
+  /** Later batches held back since the reader came back, each with the ask that may confirm it: their rows keep their space, unseen. */
+  held: ReadonlyMap<string, Ask>;
+  /** The ask for the next batch, while it is pending. */
+  asked: Ask | null;
   state: 'idle' | 'pending' | 'failed';
   /** What the list's status last said: once per batch, emptied while the next one loads. */
   said: string;
@@ -62,41 +75,117 @@ export const firstPlace = (batch: Batch): Place => ({
   rows: batch.items.map((item) => ({ ...item, now: batch.now })),
   first: batch.items.map((item) => item.post.id),
   next: batch.next,
+  batches: [],
+  held: new Map(),
+  asked: null,
   state: 'idle',
   said: '',
 });
+
+/** Whether a row waits for the server to confirm it: the list keeps its space but does not show it. */
+export const isHeld = (place: Place, row: PlaceRow): boolean => row.batch !== undefined && place.held.has(row.batch);
 
 /**
  * Loads the batch after the place's last one and appends it, leaving out a post already in the list
  * (a ranking can move a post across a cursor). It runs here, outside the list: a batch still loading
  * when the reader opens a post lands anyway, and Back finds it. Nothing happens while a batch loads or
- * once the list has ended. A batch lands only on the place that asked for it: one that refreshPlace
- * dropped meanwhile, or that started again from fresh data, waits for a cursor of its own.
+ * once the list has ended. A batch lands only on the ask that is still the place's: an answer for a place
+ * that refreshPlace dropped meanwhile, or for an earlier ask with the same cursor, is left out.
  */
 export function loadNext(key: string, from: Place, load: (cursor: string) => Promise<Batch>, messages: PlaceMessages): void {
   const current = places.get(key) ?? from;
   if (current.state === 'pending' || current.next === null) return;
   const cursor = current.next;
-  write(key, { ...current, state: 'pending', said: '' });
+  const ask: Ask = { cursor };
+  write(key, { ...current, state: 'pending', asked: ask, said: '' });
   load(cursor).then(
     (batch) => {
       const now = places.get(key);
-      if (now?.state !== 'pending' || now.next !== cursor) return;
+      if (now?.asked !== ask) return;
       const seen = new Set(now.rows.map((row) => row.post.id));
-      const added = batch.items.filter((item) => !seen.has(item.post.id)).map((item) => ({ ...item, now: batch.now }));
+      const added = batch.items.filter((item) => !seen.has(item.post.id)).map((item) => ({ ...item, now: batch.now, batch: cursor }));
       write(key, {
         ...now,
         rows: [...now.rows, ...added],
+        batches: [...now.batches, cursor],
         next: batch.next,
         state: 'idle',
+        asked: null,
         said: messages.loaded(added.length, batch.next === null),
       });
     },
     () => {
       const now = places.get(key);
-      if (now?.state === 'pending' && now.next === cursor) write(key, { ...now, state: 'failed', said: messages.failed });
+      if (now?.asked === ask) write(key, { ...now, state: 'failed', asked: null, said: messages.failed });
     },
   );
+}
+
+/**
+ * The reader came back to a kept place (Back or Forward mounted its list again): every later batch is held,
+ * its rows keeping their space so the router's scroll position still fits, and is asked for again with its
+ * own cursor. Each answer is the truth for its batch: its posts take their rows' place, a post it no longer
+ * holds (removed, or by an author blocked since) leaves, and a post it moved up from a later batch is shown
+ * once, in the earlier one. A batch that fails is dropped with the ones after it, and the list loads from its
+ * cursor again. The first batch is the page's data, which refreshPlace takes. The returned function ends the
+ * visit's asks: an answer that comes after it confirms nothing, and the rows stay held for the next visit.
+ */
+export function revalidatePlace(key: string, load: (cursor: string) => Promise<Batch>): () => void {
+  const place = places.get(key);
+  if (!place || place.batches.length === 0) return () => {};
+  const asks = new Map(place.batches.map((cursor): [string, Ask] => [cursor, { cursor }]));
+  write(key, { ...place, held: asks });
+  for (const ask of asks.values())
+    load(ask.cursor).then(
+      (batch) => confirmBatch(key, ask, batch),
+      () => dropFrom(key, ask),
+    );
+  return () => {
+    const now = places.get(key);
+    if (!now || ![...asks.values()].some((ask) => now.held.get(ask.cursor) === ask)) return;
+    write(key, {
+      ...now,
+      held: new Map([...now.held].map(([cursor, ask]): [string, Ask] => [cursor, asks.get(cursor) === ask ? { cursor } : ask])),
+    });
+  };
+}
+
+function confirmBatch(key: string, ask: Ask, batch: Batch): void {
+  const place = places.get(key);
+  if (place?.held.get(ask.cursor) !== ask) return;
+  // Each row's batch in list order: 0 for the first, then the later ones as they were asked.
+  const rank = (row: PlaceRow) => (row.batch === undefined ? 0 : place.batches.indexOf(row.batch) + 1);
+  const at = place.batches.indexOf(ask.cursor) + 1;
+  const before = place.rows.filter((row) => rank(row) < at);
+  const shown = new Set(before.map((row) => row.post.id));
+  const fresh = batch.items.filter((item) => !shown.has(item.post.id)).map((item) => ({ ...item, now: batch.now, batch: ask.cursor }));
+  const taken = new Set(fresh.map((row) => row.post.id));
+  const held = new Map(place.held);
+  held.delete(ask.cursor);
+  const last = at === place.batches.length && place.state !== 'pending';
+  write(key, {
+    ...place,
+    rows: [...before, ...fresh, ...place.rows.filter((row) => rank(row) > at && !taken.has(row.post.id))],
+    held,
+    ...(last ? { next: batch.next } : {}),
+  });
+}
+
+function dropFrom(key: string, ask: Ask): void {
+  const place = places.get(key);
+  if (place?.held.get(ask.cursor) !== ask) return;
+  const batches = place.batches.slice(0, place.batches.indexOf(ask.cursor));
+  const kept = new Set(batches);
+  write(key, {
+    ...place,
+    rows: place.rows.filter((row) => row.batch === undefined || kept.has(row.batch)),
+    batches,
+    held: new Map([...place.held].filter(([cursor]) => kept.has(cursor))),
+    next: ask.cursor,
+    state: 'idle',
+    asked: null,
+    said: '',
+  });
 }
 
 /**

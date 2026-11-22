@@ -1,7 +1,7 @@
 import type { PostView } from '@peblish/schema/views';
 import { afterEach, expect, test } from 'vitest';
 import type { FeedItem } from './items.ts';
-import { firstPlace, forgetPlaces, loadNext, readPlace, refreshPlace, updateRows, type Batch } from './places.ts';
+import { firstPlace, forgetPlaces, isHeld, loadNext, readPlace, refreshPlace, revalidatePlace, updateRows, type Batch } from './places.ts';
 
 afterEach(forgetPlaces);
 
@@ -126,4 +126,131 @@ test('a fresh first batch with the same posts keeps every batch and takes the po
   expect(after.rows.map((row) => row.now)).toEqual(before.rows.map((row) => row.now));
   expect(after).toMatchObject({ next: 'c3', state: 'idle' });
   expect(after.rows[1]!.post.myVote).toBe(1);
+});
+
+/** A loader that answers each request when the test says, by cursor and in any order. */
+function gates() {
+  const asked: string[] = [];
+  const pending = new Map<string, { resolve: (batch: Batch) => void; reject: (error: Error) => void }[]>();
+  const load = (cursor: string) => {
+    asked.push(cursor);
+    return new Promise<Batch>((resolve, reject) => pending.set(cursor, [...(pending.get(cursor) ?? []), { resolve, reject }]));
+  };
+  /** The oldest unanswered request for `cursor`. */
+  const answer = (cursor: string) => {
+    const queue = pending.get(cursor)!;
+    const settle = queue.shift()!;
+    return settle;
+  };
+  return { asked, load, answer };
+}
+
+const batch = (ids: string[], next: string | null): Batch => ({ items: ids.map(item), next, now: '2026-11-22T11:00:00.000Z' });
+const page: Batch = batch(['a', 'b'], 'c1');
+
+/** A kept place of three batches: the page's [a, b], then [c, d] from c1 and [e, f] from c2, and c3 next. */
+async function kept(load: (cursor: string) => Promise<Batch>, answer: (cursor: string) => { resolve: (batch: Batch) => void }) {
+  loadNext('k', firstPlace(page), load, messages);
+  answer('c1').resolve(batch(['c', 'd'], 'c2'));
+  await settled();
+  loadNext('k', firstPlace(page), load, messages);
+  answer('c2').resolve(batch(['e', 'f'], 'c3'));
+  await settled();
+}
+
+/** The rows the list shows now: a held row keeps its space but is not shown (FeedCards). */
+const visible = () => {
+  const place = readPlace('k')!;
+  return place.rows.filter((row) => !isHeld(place, row)).map((row) => row.post.id);
+};
+
+test('back to a kept place, a post removed from batch two never shows while batch one is unchanged', async () => {
+  const { asked, load, answer } = gates();
+  await kept(load, answer);
+  revalidatePlace('k', load);
+  refreshPlace('k', page);
+  // Until the server answers again, only the page's own batch shows; the others keep their space.
+  expect(visible()).toEqual(['a', 'b']);
+  expect(readPlace('k')!.rows.map((row) => row.post.id)).toEqual(['a', 'b', 'c', 'd', 'e', 'f']);
+  expect(asked.slice(-2)).toEqual(['c1', 'c2']);
+  answer('c1').resolve(batch(['c', 'e'], 'c2'));
+  await settled();
+  expect(visible()).toEqual(['a', 'b', 'c', 'e']);
+  answer('c2').resolve(batch(['f', 'g'], 'c3'));
+  await settled();
+  expect(visible()).toEqual(['a', 'b', 'c', 'e', 'f', 'g']);
+});
+
+test("back to a kept place, a blocked author's post in batch three leaves before batch three shows", async () => {
+  const { load, answer } = gates();
+  await kept(load, answer);
+  loadNext('k', firstPlace(page), load, messages);
+  answer('c3').resolve(batch(['blocked', 'h'], null));
+  await settled();
+  revalidatePlace('k', load);
+  answer('c1').resolve(batch(['c', 'd'], 'c2'));
+  answer('c2').resolve(batch(['e', 'f'], 'c3'));
+  await settled();
+  expect(visible()).toEqual(['a', 'b', 'c', 'd', 'e', 'f']);
+  answer('c3').resolve(batch(['h'], null));
+  await settled();
+  expect(visible()).toEqual(['a', 'b', 'c', 'd', 'e', 'f', 'h']);
+  expect(readPlace('k')!.rows.map((row) => row.post.id)).not.toContain('blocked');
+});
+
+test('with a reused cursor an older answer never replaces a newer one', async () => {
+  const { load, answer } = gates();
+  loadNext('k', firstPlace(page), load, messages);
+  // The first batch changes, the place is dropped, and the fresh batch's next cursor is the same one.
+  const fresh = batch(['new', 'b'], 'c1');
+  refreshPlace('k', fresh);
+  loadNext('k', firstPlace(fresh), load, messages);
+  const older = answer('c1');
+  const newer = answer('c1');
+  older.resolve(batch(['stale'], 'x'));
+  await settled();
+  expect(readPlace('k')).toMatchObject({ state: 'pending', next: 'c1' });
+  newer.resolve(batch(['current'], 'c2'));
+  await settled();
+  expect(visible()).toEqual(['new', 'b', 'current']);
+});
+
+test('a later batch that fails to answer again is dropped with the ones after it and loads again from its cursor', async () => {
+  const { asked, load, answer } = gates();
+  await kept(load, answer);
+  revalidatePlace('k', load);
+  answer('c2').reject(new Error('offline'));
+  await settled();
+  expect(readPlace('k')!.rows.map((row) => row.post.id)).toEqual(['a', 'b', 'c', 'd']);
+  expect(readPlace('k')).toMatchObject({ next: 'c2', state: 'idle' });
+  answer('c1').resolve(batch(['c', 'd'], 'c2'));
+  await settled();
+  loadNext('k', firstPlace(page), load, messages);
+  expect(asked.at(-1)).toBe('c2');
+});
+
+test('with nothing changed, back to a kept place shows the same rows in the same order, kept in place meanwhile', async () => {
+  const { load, answer } = gates();
+  await kept(load, answer);
+  const before = readPlace('k')!.rows.map((row) => row.post.id);
+  revalidatePlace('k', load);
+  refreshPlace('k', page);
+  expect(readPlace('k')!.rows.map((row) => row.post.id)).toEqual(before);
+  answer('c1').resolve(batch(['c', 'd'], 'c2'));
+  answer('c2').resolve(batch(['e', 'f'], 'c3'));
+  await settled();
+  expect(visible()).toEqual(before);
+  expect(readPlace('k')).toMatchObject({ next: 'c3', state: 'idle' });
+});
+
+test('a visit that ended confirms nothing: its answers come too late, and the next visit asks again', async () => {
+  const { asked, load, answer } = gates();
+  await kept(load, answer);
+  const leave = revalidatePlace('k', load);
+  leave();
+  answer('c1').resolve(batch(['c', 'd'], 'c2'));
+  await settled();
+  expect(visible()).toEqual(['a', 'b']);
+  revalidatePlace('k', load);
+  expect(asked.slice(-4)).toEqual(['c1', 'c2', 'c1', 'c2']);
 });
