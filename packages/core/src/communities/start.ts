@@ -1,17 +1,22 @@
-import type { Uuid } from '@peblish/schema/ids';
-import { authorize } from '../authz/authorize.ts';
-import { communityBlockedFor } from './read.ts';
+import { Uuid } from '@peblish/schema/ids';
+import { communityBlockedFor, findCommunityId, readCommunity, type CommunityDetail } from './read.ts';
 
 /**
- * Whether the composer may start in the community for this member (web's picker): the directory's
- * block rules do not hide it from them (communityBlockedFor), and post.create's precheck allows
- * the post outright. That policy answers for the community (it is live, past the age gate, they
- * are not banned, a mods-only one has them as staff) and for the member (a verified email,
- * posting switched on), and a refusal of either refuses here: a member who may post nowhere
- * starts nowhere. Anything else starts the form as if no community had been asked for.
+ * The community `key` names (an id, or a handle with or without `!`: `name` here, `name@host`
+ * elsewhere) as the composer may show it to this member (web's picker and panel), or null. Only
+ * one they could see in the directory or on its own page: live (readCommunity), past the age gate
+ * (a sensitive or NSFL one only once they declared 16+), and not hidden by the directory's block
+ * rules (communityBlockedFor: theirs, or this server's for its host). Whether they may post there
+ * is not asked: in a mods-only community, one that bans them, or as a member who has not verified
+ * their email, the form starts in it and says why it cannot post (its panel, then the submit's
+ * refusal). One they could not see starts the form as if none had been asked for, and the
+ * composer sends nothing of it.
  */
-export async function mayStartPostIn(viewer: { actorId: Uuid; siteRole: 'user' | 'admin' }, communityId: Uuid): Promise<boolean> {
-  if (await communityBlockedFor(viewer.actorId, communityId)) return false;
-  const principal = { kind: 'local', actorId: viewer.actorId, siteRole: viewer.siteRole } as const;
-  return (await authorize('post.create', principal, { communityId })).ok;
+export async function composerCommunity(viewer: { actorId: Uuid; declared: boolean }, key: string): Promise<CommunityDetail | null> {
+  const trimmed = key.trim().replace(/^!/, '');
+  if (!trimmed) return null;
+  const id = Uuid.allows(trimmed) ? trimmed : await findCommunityId(trimmed);
+  const community = id ? await readCommunity({ id }) : null;
+  if (!community || ((community.sensitive || community.nsfl) && !viewer.declared)) return null;
+  return (await communityBlockedFor(viewer.actorId, community.actor.id)) ? null : community;
 }

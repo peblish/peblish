@@ -1,4 +1,5 @@
-import { communityBlockedFor, moderatedAmong, readCommunity } from '@peblish/core/communities/read';
+import { moderatedAmong, readCommunity } from '@peblish/core/communities/read';
+import { composerCommunity } from '@peblish/core/communities/start';
 import { localHandles } from '@peblish/core/identity/handles';
 import { showNsfw } from '@peblish/core/communities/gate';
 import { readPost } from '@peblish/core/posts/read';
@@ -13,7 +14,7 @@ import { pageSession, sameOrigin } from '../../server/auth.ts';
 import { createMarkdownRenderer, type MarkdownRenderer } from '../../server/markdown.ts';
 import { communityPath } from '../../shell/paths.ts';
 import { readFlash } from './-flash.ts';
-import { ageAllows, pickerFor } from './-picker.ts';
+import { composerViewer, pickerFor } from './-picker.ts';
 import type { CommunityPanel, ComposerData, EditTarget } from './-types.ts';
 import { input } from '../../server/input.ts';
 
@@ -29,10 +30,11 @@ async function canPostIn(viewer: SessionView, community: { id: string; restricte
 
 async function panelFor(communityId: string, viewer: SessionView, renderer: MarkdownRenderer): Promise<CommunityPanel | null> {
   if (!Uuid.allows(communityId)) return null;
-  const community = await readCommunity({ id: communityId });
   // Removed, deleted, age-gated for someone who has not declared 16+, or hidden by the directory's
-  // block rules (theirs, or this server's for its host): it does not exist for them.
-  if (!community || !ageAllows(viewer, community) || (await communityBlockedFor(viewer.actorId, community.actor.id))) return null;
+  // block rules (theirs, or this server's for its host): it does not exist for them. Any other is
+  // shown, and says whether they may post there.
+  const community = await composerCommunity(composerViewer(viewer), communityId);
+  if (!community) return null;
   const restricted = community.postingRestrictedToMods;
   const content = { kind: 'actor', id: community.actor.id, apId: community.actor.apId } as const;
   const summary = community.summaryMd

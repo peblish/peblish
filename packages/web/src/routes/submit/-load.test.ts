@@ -1,7 +1,8 @@
 import { describe, expect, test, vi } from 'vitest';
 
 // The composer's panel loader itself (its handler, with createServerFn handing it back as it is):
-// a community the directory's block rules hide from the person sends no panel.
+// a community the person could not see (core's composerCommunity, tested in communities/start.test.ts)
+// sends no panel.
 
 vi.mock('@tanstack/react-start', () => ({
   createServerFn: () => ({ validator: () => ({ handler: <F>(fn: F) => fn }) }),
@@ -18,32 +19,37 @@ vi.mock('../../server/markdown.ts', () => ({
   }),
 }));
 const state = vi.hoisted(() => ({ blocked: false }));
-vi.mock('@peblish/core/communities/read', () => ({
-  moderatedAmong: async () => new Set(),
-  communityBlockedFor: async () => state.blocked,
-  readCommunity: async () => ({
-    actor: {
-      id: '019a0000-0000-7000-8000-0000000c0111',
-      apId: 'https://lemmy.test/c/lab',
-      kind: 'Group',
-      name: 'lab',
-      displayName: null,
-      local: false,
-      handle: 'lab@lemmy.test',
-    },
-    summaryMd: 'Our rules',
-    summaryHtml: null,
-    postingWarning: null,
-    postingRestrictedToMods: false,
-    rules: [{ title: 'Be kind', bodyMd: 'Be kind' }],
-    sensitive: false,
-    nsfl: false,
-  }),
+vi.mock('@peblish/core/communities/read', () => ({ moderatedAmong: async () => new Set(), readCommunity: async () => null }));
+vi.mock('@peblish/core/communities/start', () => ({
+  composerCommunity: async () =>
+    state.blocked
+      ? null
+      : {
+          actor: {
+            id: '019a0000-0000-7000-8000-0000000c0111',
+            apId: 'https://lemmy.test/c/lab',
+            kind: 'Group',
+            name: 'lab',
+            displayName: null,
+            local: false,
+            handle: 'lab@lemmy.test',
+          },
+          summaryMd: 'Our rules',
+          summaryHtml: null,
+          postingWarning: null,
+          postingRestrictedToMods: false,
+          rules: [{ title: 'Be kind', bodyMd: 'Be kind' }],
+          sensitive: false,
+          nsfl: false,
+        },
 }));
 vi.mock('@peblish/core/identity/handles', () => ({ localHandles: async () => ({ handle: (name: string) => ({ handle: name }) }) }));
 vi.mock('@peblish/core/posts/read', () => ({ readPost: async () => null }));
 vi.mock('@peblish/core/settings/read', () => ({ readSetting: async () => true }));
-vi.mock('./-picker.ts', () => ({ ageAllows: () => true, pickerFor: async () => ({ communities: [], truncated: false, selected: null }) }));
+vi.mock('./-picker.ts', () => ({
+  composerViewer: () => ({ actorId: 'me', declared: true }),
+  pickerFor: async () => ({ communities: [], truncated: false, selected: null }),
+}));
 const { loadCommunityPanel } = await import('./-load.ts');
 
 describe("a community's panel", () => {
@@ -52,7 +58,7 @@ describe("a community's panel", () => {
     return (await loadCommunityPanel({ data: { id: '019a0000-0000-7000-8000-0000000c0111' } })).panel;
   };
 
-  test('is not sent for a community the person blocks, or on a host they or this server block', async () => {
+  test('is not sent for a community the person could not see', async () => {
     expect(await panel(true)).toBeNull();
   });
 
