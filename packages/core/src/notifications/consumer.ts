@@ -11,7 +11,7 @@ import { findMentioned } from '../mentions/scan.ts';
 import { communityRemovals } from '../moderation/tables.ts';
 import { defineConsumer, type ConsumerTx } from '../outbox/consumers.ts';
 import { threadFollowersOf } from '../watches/watchers.ts';
-import { noticeBlocked } from './blocked.ts';
+import { noticeBlocked, peerBlocked } from './blocked.ts';
 import { createNotification, purgeNotifications, type NotificationContext } from './mutations.ts';
 import type { NotificationKind } from './view.ts';
 
@@ -32,7 +32,8 @@ import type { NotificationKind } from './view.ts';
 //   cause, so the same unique index makes a replay write nothing.
 // - A remote community's Accept of a person's request to join (follow.accepted, remote
 //   followee): `follow_accept` for the person, once per follow, unless they block the
-//   community, it is closed or sensitive to an undeclared person, or the accept is stale.
+//   community, it is closed, on a peer this server blocks, or sensitive to an undeclared
+//   person, or the accept is stale.
 // - Not for the author themselves, a recipient who is not a live local person, an object over a
 //   week old (a backfill must not flood the inbox), or a recipient who blocks the author.
 // - A moderator's removal or restore of someone's content and a ban or unban are told to the
@@ -153,12 +154,13 @@ async function followAccepted(t: ConsumerTx, followId: Uuid): Promise<void> {
       acceptedAt: follows.acceptedAt,
       deletedAt: actors.deletedAt,
       flagged: sql<boolean>`${actors.sensitive} or ${actors.nsfl}`,
+      peerBlocked: peerBlocked(actors.instanceId),
     })
     .from(follows)
     .innerJoin(actors, eq(actors.id, follows.followeeId))
     .where(eq(follows.id, followId));
   if (!row || row.state !== 'accepted' || !row.acceptedAt || row.acceptedAt.getTime() < Date.now() - freshWindowMs) return;
-  if (row.deletedAt) return;
+  if (row.deletedAt || row.peerBlocked) return;
   const [removal] = await t.db
     .select({ communityId: communityRemovals.communityId })
     .from(communityRemovals)

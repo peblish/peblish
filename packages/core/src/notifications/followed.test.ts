@@ -19,7 +19,7 @@ import { truncateAll } from '../testing/db.ts';
 import { grantFor, outboxEvents, seedBan, seedComment, seedPost } from '../testing/seed-az.ts';
 import { declareAge } from '../testing/seed-b1.ts';
 import { seedBlock } from '../testing/seed-e1.ts';
-import { drainNotices, emitEvent, kindsOf, noticeCount, noticesOf, say, seedInboxWorld } from '../testing/seed-e2.ts';
+import { drainNotices, emitEvent, kindsOf, noticeCount, noticesOf, remoteSay, say, seedInboxWorld } from '../testing/seed-e2.ts';
 import { localUser, seedActor } from '../testing/seed.ts';
 import { threadWatches } from '../watches/tables.ts';
 import { threadFollowersOf, threadReplyFanOut } from '../watches/watchers.ts';
@@ -342,6 +342,50 @@ describe('thread_reply', () => {
     expect(after.items.map((entry) => entry.postId)).toEqual([local.id]);
     expect([after.unread, after.unreadByGroup.replies, await unreadCount(w.people.reader.id)]).toEqual([1, 1, 1]);
   });
+  test("a peer this server blocks: its commenter's notice in a local thread leaves rows and counts, nothing new is told, and it comes back unread", async () => {
+    const w = await seedInboxWorld();
+    const postId = w.posts.local.normal;
+    const [post] = await db().select({ apId: posts.apId }).from(posts).where(eq(posts.id, postId));
+    await follow(w.people.reader, postId);
+    const here = await say(w.people.owner, postId, 'From here');
+    const there = await remoteSay(w.people.remoteAuthor, post!.apId);
+    await drainNotices();
+    const viewer = { actorId: w.people.reader.id, siteRole: 'user' } as const;
+    const seen = async () => {
+      const inbox = await readInbox(viewer);
+      return {
+        comments: inbox.items.map((item) => [item.commentId, item.read]),
+        counts: [inbox.unread, inbox.unreadByGroup.replies, await unreadCount(w.people.reader.id)],
+      };
+    };
+    expect(await seen()).toEqual({
+      comments: [
+        [there, false],
+        [here, false],
+      ],
+      counts: [2, 2, 2],
+    });
+
+    await writer().insert(peerControls).values({ instanceId: w.instances.lemmy.id, blocked: true });
+    expect(await seen()).toEqual({ comments: [[here, false]], counts: [1, 1, 1] });
+    // A comment from that peer while it is blocked tells nobody.
+    const later = await remoteSay(w.people.remoteAuthor, post!.apId);
+    await drainNotices();
+    expect((await noticesOf(w.people.reader.id)).map((notice) => notice.refId)).not.toContain(later);
+
+    // A locked thread and a ban from the community still read; unblocking brings the notice back, unread.
+    await writer().update(posts).set({ locked: true }).where(eq(posts.id, postId));
+    await seedBan(w.communities.open, w.people.reader);
+    expect(await seen()).toEqual({ comments: [[here, false]], counts: [1, 1, 1] });
+    await writer().update(peerControls).set({ blocked: false }).where(eq(peerControls.instanceId, w.instances.lemmy.id));
+    expect(await seen()).toEqual({
+      comments: [
+        [there, false],
+        [here, false],
+      ],
+      counts: [2, 2, 2],
+    });
+  });
 });
 
 describe('follow_accept', () => {
@@ -412,6 +456,25 @@ describe('follow_accept', () => {
     // A community deleted since: the notice is neither listed nor counted.
     await writer().update(actors).set({ deletedAt: new Date() }).where(eq(actors.id, sensitiveGroup.id));
     expect(await unreadCount(w.people.admin.id)).toBe(0);
+  });
+
+  test('a community on a peer this server blocks: its Accept leaves rows and counts, a late one tells nobody, and unblocking brings it back unread', async () => {
+    const w = await seedInboxWorld();
+    await (await pending(w, w.people.reader)).accept();
+    await drainNotices();
+    const seen = async (person: { id: string }) => {
+      const inbox = await readInbox({ actorId: person.id, siteRole: 'user' }, { filter: 'account' });
+      return [inbox.items.map((item) => item.read), inbox.unread, inbox.unreadByGroup.account, await unreadCount(person.id)];
+    };
+    expect(await seen(w.people.reader)).toEqual([[false], 1, 1, 1]);
+    // Accepted, then the peer is blocked before the consumer reads the Accept.
+    await (await pending(w, w.people.moderator)).accept();
+    await writer().insert(peerControls).values({ instanceId: w.instances.lemmy.id, blocked: true });
+    await drainNotices();
+    expect(await kindsOf(w.people.moderator.id)).toEqual([]);
+    expect(await seen(w.people.reader)).toEqual([[], 0, 0, 0]);
+    await writer().update(peerControls).set({ blocked: false }).where(eq(peerControls.instanceId, w.instances.lemmy.id));
+    expect(await seen(w.people.reader)).toEqual([[false], 1, 1, 1]);
   });
 
   test('a community flagged after its Accept is listed and counted only where the community gate opens it', async () => {

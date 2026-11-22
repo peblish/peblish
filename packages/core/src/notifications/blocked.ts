@@ -3,6 +3,7 @@ import { actorBlockedBy } from '../blocks/predicate.ts';
 import { communityBlocks, instanceBlocks } from '../blocks/tables.ts';
 import type { Uuid } from '@peblish/schema/ids';
 import { actors } from '../db/tables/actors.ts';
+import { peerControls } from '../peers/tables.ts';
 import { notifications } from './tables.ts';
 import type { NotificationKind } from './view.ts';
 
@@ -31,6 +32,16 @@ export function noticeBlocked(
     )
   )`;
 }
+
+/**
+ * SQL true when the instance `instanceId` names (SQL written out in full, as for noticeBlocked) is
+ * a peer this server blocks: the server-level block the feeds apply to a post's server and its
+ * community's (peers/feed-predicate.ts), with the blocked set read once per query into an array
+ * as they read it. The followed-thread notices test their commenter's, post's and community's
+ * servers with it, and a follow's answer its community's, when written and when listed.
+ */
+export const peerBlocked = (instanceId: SQLWrapper): SQL<boolean> =>
+  sql<boolean>`(${instanceId} = any(array(select pc.instance_id from ${peerControls} as pc where pc.blocked)))`;
 
 /** The notices a block hides: what someone wrote, and a community's answer to a follow request. */
 const blockableKinds = ['reply', 'mention', 'thread_reply', 'follow_accept'] as const satisfies readonly NotificationKind[];
