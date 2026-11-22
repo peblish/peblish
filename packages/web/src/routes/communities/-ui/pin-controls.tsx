@@ -11,7 +11,7 @@ import { getRouteApi } from '@tanstack/react-router';
 import { useId, useState, type FormEvent, type ReactNode } from 'react';
 import { useTranslate } from '../../../i18n/use-translate.ts';
 import { communityPath } from '../../../shell/paths.ts';
-import { pinErrorKey, usePinAction, type PinFields } from '../../../shell/pin-post.ts';
+import { pinErrorKey, usePinAction, type PinFields, type PinPlace } from '../../../shell/pin-post.ts';
 
 // The directory's pin controls (Commons, notes/community.md "Pin" and "The pinned group"): an
 // icon-only Pin before Join on each row the viewer follows or asked to join, and above the list the
@@ -40,8 +40,8 @@ function PinActionForm({
 }: {
   fields: PinFields;
   next: string;
-  run: (fields: PinFields, done?: () => void) => Promise<void>;
-  done?: () => void;
+  run: (fields: PinFields, done?: (place: PinPlace | null) => void) => Promise<void>;
+  done?: (place: PinPlace | null) => void;
   children: ReactNode;
 }) {
   const submit = (event: FormEvent<HTMLFormElement>) => {
@@ -52,7 +52,7 @@ function PinActionForm({
     <form method="post" action="/communities/pins" className="dir-pin__form" onSubmit={submit}>
       <input type="hidden" name="community" value={fields.community} />
       <input type="hidden" name="intent" value={fields.intent} />
-      {fields.to !== undefined && <input type="hidden" name="to" value={fields.to} />}
+      {fields.intent === 'move' && <input type="hidden" name="direction" value={fields.direction} />}
       <input type="hidden" name="next" value={next} />
       {children}
     </form>
@@ -199,17 +199,17 @@ function MoveButtons({
   const { t } = useTranslate();
   const action = usePinAction();
   const name = communityName(community);
-  // After the reload the row has moved: focus the same button, or the other one once this end disables it.
-  const done = (way: 'up' | 'down', to: number) => () => {
-    const last = to === total - 1;
-    const keep = way === 'up' ? to > 0 : !last;
+  // After the reload the row is where the move committed it: focus the same button, or the other one once
+  // that end disables it, and say the committed place (a stale page may have drawn another).
+  const done = (way: 'up' | 'down') => (moved: PinPlace | null) => {
+    if (!moved) return;
+    const keep = way === 'up' ? moved.position > 0 : moved.position < moved.order.length - 1;
     document.getElementById(idFor(community.id, keep ? way : way === 'up' ? 'down' : 'up'))?.focus();
-    onStatus(t('pins', 'pins.place', { name, place: to + 1, total }));
+    onStatus(t('pins', 'pins.place', { name, place: moved.position + 1, total: moved.order.length }));
   };
   const button = (way: 'up' | 'down') => {
-    const to = way === 'up' ? place - 1 : place + 1;
     return (
-      <PinActionForm fields={{ community: community.id, intent: 'move', to }} next={next} run={action.run} done={done(way, to)}>
+      <PinActionForm fields={{ community: community.id, intent: 'move', direction: way }} next={next} run={action.run} done={done(way)}>
         <MoveButton
           way={way}
           name={name}

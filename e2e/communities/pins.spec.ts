@@ -131,6 +131,24 @@ test.describe('seeded', () => {
     expect(await order(page, seed)).toEqual(['Elm', 'Birch', 'Yew', 'Damson']);
     await context.close();
   });
+
+  test('with scripts off, a move from a stale page goes the way the reader pressed, from the order as it stands', async ({ browser }) => {
+    const seed = seedWorld();
+    const { context, page } = await signedIn(browser, seed, false);
+    const stale = await context.newPage();
+    for (const tab of [page, stale]) await tab.goto('/communities');
+    const up = (tab: Page, title: string) => group(tab).getByRole('button', { name: `Move ${title} ${seed.suffix} up` });
+    await up(page, 'Birch').click();
+    await page.waitForURL('/communities');
+    expect(await order(page, seed)).toEqual(['Elm', 'Birch', 'Yew']);
+
+    // The stale page still draws Birch last; its Move up takes Birch one place up from where it is now.
+    expect(await order(stale, seed)).toEqual(['Elm', 'Yew', 'Birch']);
+    await up(stale, 'Birch').click();
+    await stale.waitForURL('/communities');
+    expect(await order(stale, seed)).toEqual(['Birch', 'Elm', 'Yew']);
+    await context.close();
+  });
 });
 
 test.describe('gallery', () => {

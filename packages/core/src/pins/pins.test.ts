@@ -51,7 +51,7 @@ describe('pin, unpin and move', () => {
 
     expect(await pinCommunityAs({ kind: 'anonymous' }, { communityId: w.ids.art })).toEqual({ ok: false, reason: 'auth.required' });
     expect(await unpinCommunityAs({ kind: 'anonymous' }, { communityId: w.ids.art })).toEqual({ ok: false, reason: 'auth.required' });
-    expect(await movePinAs({ kind: 'anonymous' }, { communityId: w.ids.art, toPosition: 0 })).toEqual({
+    expect(await movePinAs({ kind: 'anonymous' }, { communityId: w.ids.art, direction: 'up' })).toEqual({
       ok: false,
       reason: 'auth.required',
     });
@@ -59,7 +59,7 @@ describe('pin, unpin and move', () => {
     expect(await pinCommunityAs(w.me, { communityId: missing })).toEqual({ ok: false, reason: 'target.not_found' });
     expect(await pinCommunityAs(w.me, { communityId: w.alice.id })).toEqual({ ok: false, reason: 'target.not_found' });
     expect(await pinCommunityAs(w.me, { communityId: closed.id })).toEqual({ ok: false, reason: 'community.removed' });
-    expect(await movePinAs(w.me, { communityId: w.ids.art, toPosition: 0 })).toEqual({ ok: false, reason: 'target.not_found' });
+    expect(await movePinAs(w.me, { communityId: w.ids.art, direction: 'up' })).toEqual({ ok: false, reason: 'target.not_found' });
     expect(await pinEvents()).toEqual([]);
   });
 
@@ -81,7 +81,7 @@ describe('pin, unpin and move', () => {
       [w.ids.art, 0],
       [w.remote.id, 1],
     ]);
-    expect(await movePinAs(w.me, { communityId: w.ids.art, toPosition: 0 })).toMatchObject({ ok: true, position: 0 });
+    expect(await movePinAs(w.me, { communityId: w.ids.art, direction: 'up' })).toMatchObject({ ok: true, position: 0 });
 
     expect(await pinEvents()).toEqual([
       { type: 'pin.added', v: 1, ownerId: w.alice.id, communityId: w.ids.cats, position: 0 },
@@ -91,25 +91,24 @@ describe('pin, unpin and move', () => {
     ]);
   });
 
-  test('a move shifts the pins between by one, either way, and past the end means last', async () => {
+  test('a move takes one place up or down, and the pin it passes takes its place', async () => {
     const w = await world();
     for (const name of ['art', 'bikes', 'cats', 'dogs'] as const) await pinCommunityAs(w.me, { communityId: w.ids[name] });
-    expect(await movePinAs(w.me, { communityId: w.ids.art, toPosition: 2 })).toMatchObject({ ok: true, position: 2 });
+    expect(await movePinAs(w.me, { communityId: w.ids.art, direction: 'down' })).toMatchObject({ ok: true, position: 1 });
+    expect(await movePinAs(w.me, { communityId: w.ids.art, direction: 'down' })).toMatchObject({ ok: true, position: 2 });
     expect((await stored(w.alice.id)).map(([id]) => id)).toEqual([w.ids.bikes, w.ids.cats, w.ids.art, w.ids.dogs]);
-    expect(await movePinAs(w.me, { communityId: w.ids.dogs, toPosition: 0 })).toMatchObject({ ok: true, position: 0 });
-    expect((await stored(w.alice.id)).map(([id]) => id)).toEqual([w.ids.dogs, w.ids.bikes, w.ids.cats, w.ids.art]);
-    expect(await movePinAs(w.me, { communityId: w.ids.dogs, toPosition: 99 })).toMatchObject({ ok: true, position: 3 });
+    expect(await movePinAs(w.me, { communityId: w.ids.dogs, direction: 'up' })).toMatchObject({ ok: true, position: 2 });
     expect(await stored(w.alice.id)).toEqual([
       [w.ids.bikes, 0],
       [w.ids.cats, 1],
-      [w.ids.art, 2],
-      [w.ids.dogs, 3],
+      [w.ids.dogs, 2],
+      [w.ids.art, 3],
     ]);
     const moved = (await pinEvents()).filter((event) => event.type === 'pin.moved');
     expect(moved).toEqual([
-      { type: 'pin.moved', v: 1, ownerId: w.alice.id, communityId: w.ids.art, from: 0, to: 2 },
-      { type: 'pin.moved', v: 1, ownerId: w.alice.id, communityId: w.ids.dogs, from: 3, to: 0 },
-      { type: 'pin.moved', v: 1, ownerId: w.alice.id, communityId: w.ids.dogs, from: 0, to: 3 },
+      { type: 'pin.moved', v: 1, ownerId: w.alice.id, communityId: w.ids.art, from: 0, to: 1 },
+      { type: 'pin.moved', v: 1, ownerId: w.alice.id, communityId: w.ids.art, from: 1, to: 2 },
+      { type: 'pin.moved', v: 1, ownerId: w.alice.id, communityId: w.ids.dogs, from: 3, to: 2 },
     ]);
   });
 
@@ -117,12 +116,9 @@ describe('pin, unpin and move', () => {
     const w = await world();
     for (const name of ['art', 'bikes', 'cats'] as const) await pinCommunityAs(w.me, { communityId: w.ids[name] });
     // Another tab moved cats to the top; this one still shows cats last and asks to move it up one.
-    await movePinAs(w.me, { communityId: w.ids.cats, toPosition: 0 });
-    // The old shape, computed from the stale list (place 2 minus one), sends cats down the wrong way.
-    expect(await movePinAs(w.me, { communityId: w.ids.cats, toPosition: 1 })).toMatchObject({ ok: true, position: 1 });
-    expect(await movePinAs(w.me, { communityId: w.ids.cats, toPosition: 0 })).toMatchObject({ ok: true, position: 0 });
+    for (let step = 0; step < 2; step++) await movePinAs(w.me, { communityId: w.ids.cats, direction: 'up' });
 
-    // Up from the top and down from the bottom change nothing and emit nothing, as a move to the same place does.
+    // Up from the top and down from the bottom change nothing and emit nothing: the stale tab's Up leaves cats first.
     const before = (await pinEvents()).length;
     expect(await movePinAs(w.me, { communityId: w.ids.cats, direction: 'up' })).toEqual({
       ok: true,
@@ -181,7 +177,7 @@ test("two accounts: the second can neither read nor change the first's pins", as
 
   // Writing: the entry points take the owner from the principal, so Bob only ever touches his own rows.
   expect(await unpinCommunityAs(w.them, { communityId: w.ids.art })).toEqual({ ok: true, pinned: false });
-  expect(await movePinAs(w.them, { communityId: w.ids.bikes, toPosition: 0 })).toEqual({ ok: false, reason: 'target.not_found' });
+  expect(await movePinAs(w.them, { communityId: w.ids.bikes, direction: 'up' })).toEqual({ ok: false, reason: 'target.not_found' });
   expect(await pinCommunityAs(w.them, { communityId: w.ids.bikes })).toEqual({ ok: false, reason: 'pin.not_followed' });
   expect(await pinCommunityAs(w.them, { communityId: w.ids.art })).toEqual({ ok: true, position: 0 });
   expect(await stored(w.alice.id)).toEqual(before);
@@ -193,8 +189,11 @@ test('racing moves of one owner take turns: the order stays dense and is one of 
   for (const name of ['art', 'bikes', 'cats', 'dogs', 'eels'] as const) await pinCommunityAs(w.me, { communityId: w.ids[name] });
   const order = (await stored(w.alice.id)).map(([id]) => id);
 
-  // What a serial run of the two moves gives, in either order.
-  const apply = (list: string[], id: string, to: number) => {
+  // What a serial run of the two moves gives, in either order: each one place up or down from where it then is.
+  type Way = 'up' | 'down';
+  const apply = (list: string[], id: string, way: Way) => {
+    const from = list.indexOf(id);
+    const to = Math.max(0, Math.min(from + (way === 'up' ? -1 : 1), list.length - 1));
     const rest = list.filter((x) => x !== id);
     return [...rest.slice(0, to), id, ...rest.slice(to)];
   };
@@ -202,17 +201,17 @@ test('racing moves of one owner take turns: the order stays dense and is one of 
   for (let round = 0; round < 12; round++) {
     const a = current[round % 5]!;
     const b = current[(round + 2) % 5]!;
-    const toA = (round * 3) % 5;
-    const toB = (round * 2 + 1) % 5;
+    const wayA: Way = round % 2 ? 'up' : 'down';
+    const wayB: Way = round % 3 ? 'down' : 'up';
     const results = await Promise.all([
-      movePinAs(w.me, { communityId: a, toPosition: toA }),
-      movePinAs(w.me, { communityId: b, toPosition: toB }),
+      movePinAs(w.me, { communityId: a, direction: wayA }),
+      movePinAs(w.me, { communityId: b, direction: wayB }),
     ]);
     expect(results.every((result) => result.ok)).toBe(true);
     const after = await stored(w.alice.id);
     expect(after.map(([, position]) => position)).toEqual([0, 1, 2, 3, 4]);
     const ids = after.map(([id]) => id);
-    expect([apply(apply(current, a, toA), b, toB), apply(apply(current, b, toB), a, toA)]).toContainEqual(ids);
+    expect([apply(apply(current, a, wayA), b, wayB), apply(apply(current, b, wayB), a, wayA)]).toContainEqual(ids);
     current = ids;
   }
 });
@@ -246,9 +245,9 @@ describe('hidden pins', () => {
     expect(shell.local.map((row) => row.name)).not.toContain('cats');
 
     // Moves count the shown pins only: dogs moves before art across the hidden bikes and cats.
-    expect(await movePinAs(w.me, { communityId: w.ids.dogs, toPosition: 0 })).toMatchObject({ ok: true, position: 0 });
+    expect(await movePinAs(w.me, { communityId: w.ids.dogs, direction: 'up' })).toMatchObject({ ok: true, position: 0 });
     expect(places((await sidebarCommunities(w.alice.id)).local)).toEqual({ dogs: 0, art: 1 });
-    expect(await movePinAs(w.me, { communityId: w.ids.bikes, toPosition: 0 })).toEqual({ ok: false, reason: 'target.not_found' });
+    expect(await movePinAs(w.me, { communityId: w.ids.bikes, direction: 'up' })).toEqual({ ok: false, reason: 'target.not_found' });
     // A pin of an unfollowed community can still be dropped.
     expect(await unpinCommunityAs(w.me, { communityId: w.ids.cats })).toEqual({ ok: true, pinned: false });
     expect((await stored(w.alice.id)).map(([, position]) => position)).toEqual([0, 1, 2]);
@@ -277,8 +276,8 @@ describe('hidden pins', () => {
           .map((row) => [row.name, row.pinPosition]),
       );
     expect(await places()).toEqual({ art: 0, dogs: 1 });
-    expect(await movePinAs(w.me, { communityId: w.ids.cats, toPosition: 0 })).toEqual({ ok: false, reason: 'target.not_found' });
-    expect(await movePinAs(w.me, { communityId: w.ids.dogs, toPosition: 0 })).toMatchObject({ ok: true, position: 0 });
+    expect(await movePinAs(w.me, { communityId: w.ids.cats, direction: 'up' })).toEqual({ ok: false, reason: 'target.not_found' });
+    expect(await movePinAs(w.me, { communityId: w.ids.dogs, direction: 'up' })).toMatchObject({ ok: true, position: 0 });
     expect(await places()).toEqual({ dogs: 0, art: 1 });
     // Kept, not deleted: the stored order still holds both blocked pins.
     expect((await stored(w.alice.id)).map(([id]) => id)).toEqual([w.ids.dogs, w.ids.art, w.ids.cats, w.remote.id]);
@@ -318,7 +317,7 @@ describe('hidden pins', () => {
       return Object.fromEntries([...shell.local, ...shell.remote].filter((row) => row.pinned).map((row) => [row.id, row.pinPosition]));
     };
     expect(await pinned()).toEqual({ [first]: 0, [last]: 1 });
-    expect(await movePinAs(w.me, { communityId: first, toPosition: 1 })).toMatchObject({ ok: true, position: 1 });
+    expect(await movePinAs(w.me, { communityId: first, direction: 'down' })).toMatchObject({ ok: true, position: 1 });
     expect(await pinned()).toEqual({ [last]: 0, [first]: 1 });
   });
 

@@ -10,7 +10,7 @@ import { Text } from '@peblish/ui/components/text';
 import { useId, useRef, useState, type ComponentType } from 'react';
 import { useTranslate } from '../i18n/use-translate.ts';
 import { communityPath } from './paths.ts';
-import { pinErrorKey, usePinAction } from './pin-post.ts';
+import { pinErrorKey, usePinAction, type PinPlace } from './pin-post.ts';
 
 /** The Communities section's most rows while unpinned ones show; pinned ones always show in full (Commons). */
 export const communityRows = 50;
@@ -97,6 +97,9 @@ export function SidebarCommunities({
     };
     focus(30);
   };
+  // A move says the place it committed, which a stale page may not have drawn.
+  const moved = (community: ShellCommunity, label: string) => (place: PinPlace | null) =>
+    settle(community, place ? t('pins', 'pins.place', { name: label, place: place.position + 1, total: place.order.length }) : '', false)();
 
   const row = ({ community, label }: (typeof rows)[number], place?: number) => {
     const href = communityPath(community);
@@ -120,12 +123,7 @@ export function SidebarCommunities({
                 id="up"
                 disabled={place === 0}
                 textValue={t('pins', 'pins.up')}
-                onAction={() =>
-                  action.run(
-                    { community: community.id, intent: 'move', to: place - 1 },
-                    settle(community, t('pins', 'pins.place', { name: label, place, total: pinned.length }), false),
-                  )
-                }
+                onAction={() => action.run({ community: community.id, intent: 'move', direction: 'up' }, moved(community, label))}
               >
                 {t('pins', 'pins.up')}
               </Menu.Item>
@@ -133,12 +131,7 @@ export function SidebarCommunities({
                 id="down"
                 disabled={place === pinned.length - 1}
                 textValue={t('pins', 'pins.down')}
-                onAction={() =>
-                  action.run(
-                    { community: community.id, intent: 'move', to: place + 1 },
-                    settle(community, t('pins', 'pins.place', { name: label, place: place + 2, total: pinned.length }), false),
-                  )
-                }
+                onAction={() => action.run({ community: community.id, intent: 'move', direction: 'down' }, moved(community, label))}
               >
                 {t('pins', 'pins.down')}
               </Menu.Item>

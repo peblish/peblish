@@ -91,11 +91,8 @@ export const removePin = defineMutation({
   },
 });
 
-/**
- * Where a move goes: one shown place up or down from where the pin is now (the menus' Move up and
- * Move down), or the older `toPosition`, a shown place a page computed from what it last drew.
- */
-export type MoveTo = { direction: 'up' | 'down' } | { toPosition: number };
+/** Where a move goes: one shown place up or down from where the pin is now (Move up and Move down). */
+type MoveTo = { direction: 'up' | 'down' };
 
 /** The shown order with `communityId` taken out and put back at `to`: what a move leaves. */
 const reordered = (ids: readonly Uuid[], communityId: Uuid, to: number) => {
@@ -116,8 +113,7 @@ const moveRow = defineMutation({
     // A pin the owner no longer sees (unfollowed, or a closed community) is not offered to move.
     if (mover < 0) throw new Refused('pin.move', 'target.not_found');
     // A direction is resolved here, under the owner's lock, from the committed order: a stale page cannot send it the wrong way.
-    const wanted = 'direction' in input ? mover + (input.direction === 'up' ? -1 : 1) : input.toPosition;
-    const to = Math.max(0, Math.min(wanted, shown.length - 1));
+    const to = Math.max(0, Math.min(mover + (input.direction === 'up' ? -1 : 1), shown.length - 1));
     const from = shown[mover]!.position;
     // The mover takes the stored place of the shown pin at `to`; everything stored between shifts by one.
     const target = shown[to]!.position;
@@ -149,9 +145,8 @@ const moveRow = defineMutation({
 });
 
 /**
- * Moves a pin one shown place up or down, or to the shown place `toPosition` (from 0, past the
- * end means last), in one transaction, and answers its new shown place and the shown order as
- * committed (community ids). Pins hidden from the owner keep their stored order around it. A
+ * Moves a pin one shown place up or down in one transaction, and answers its new shown place and
+ * the shown order as committed (community ids). Pins hidden from the owner keep their stored order around it. A
  * move to where it already is (up from the top, down from the bottom) changes nothing and emits
  * nothing.
  */

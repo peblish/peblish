@@ -46,7 +46,7 @@ test('pinning, moving and unpinning reach no other server', async () => {
   const me = { kind: 'local', actorId: alice.id, siteRole: 'user' } as const;
   expect(await pinCommunityAs(me, { communityId: news.id })).toMatchObject({ ok: true });
   expect(await pinCommunityAs(me, { communityId: art.id })).toMatchObject({ ok: true });
-  expect(await movePinAs(me, { communityId: art.id, toPosition: 0 })).toMatchObject({ ok: true });
+  expect(await movePinAs(me, { communityId: art.id, direction: 'up' })).toMatchObject({ ok: true });
   expect(await unpinCommunityAs(me, { communityId: news.id })).toMatchObject({ ok: true });
   expect((await outboxEvents()).map((event) => (event as { type: string }).type)).toEqual([
     'pin.added',

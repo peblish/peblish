@@ -133,6 +133,27 @@ test.describe('seeded', () => {
     await context.close();
   });
 
+  test('a move from a stale tab goes the way the reader pressed, from the order as it stands, and says that place', async ({ browser }) => {
+    const seed = seedWorld();
+    const { context, page } = await signedIn(browser, seed);
+    const stale = await context.newPage();
+    for (const tab of [page, stale]) await gotoHydrated(tab, '/local');
+    // One tab moves Birch up; the other still draws it last.
+    await menuOf(page.locator('.pb-side'), `Birch ${seed.suffix}`).click();
+    await page.getByRole('menuitem', { name: 'Move up' }).click();
+    await expect.poll(() => titles(page, seed)).toEqual(['Elm', 'Birch', 'Yew', 'Ash', 'Cedar', 'Damson']);
+    expect((await titles(stale, seed)).slice(0, 3)).toEqual(['Elm', 'Yew', 'Birch']);
+
+    // Up from the stale tab takes Birch one place up from where it is now, to the top, and says so.
+    const side = stale.locator('.pb-side');
+    await menuOf(side, `Birch ${seed.suffix}`).click();
+    await stale.getByRole('menuitem', { name: 'Move up' }).click();
+    await expect.poll(() => titles(stale, seed)).toEqual(['Birch', 'Elm', 'Yew', 'Ash', 'Cedar', 'Damson']);
+    await expect(menuOf(side, `Birch ${seed.suffix}`)).toBeFocused();
+    await expect(side.locator('[aria-live="polite"]').filter({ hasText: /./ })).toHaveText(`Birch ${seed.suffix}, position 1 of 3`);
+    await context.close();
+  });
+
   test('on a phone the drawer’s pinned rows keep their menu, a 44px target', async ({ browser }) => {
     const seed = seedWorld();
     const { context, page } = await signedIn(browser, seed, { viewport: { width: 390, height: 844 }, hasTouch: true });
