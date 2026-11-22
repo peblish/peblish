@@ -95,6 +95,37 @@ test('a banner that is off sends nothing of itself to any page, signed out inclu
   expect(await (await request.get('/')).text()).toContain('Posting pauses for an hour on Sunday');
 });
 
+test('a tab that comes back after five minutes takes a new banner and width; one that comes back sooner keeps its own', async ({
+  page,
+}) => {
+  await seedSetting('site.banner', banner);
+  await seedSetting('site.width', 'default');
+  await page.clock.install();
+  await gotoHydrated(page, '/');
+  const region = page.getByRole('region', { name: 'Site notice' });
+  await expect(region).toContainText('Posting pauses for an hour');
+  await seedSetting('site.banner', { ...banner, revision: 8, message: 'Posting is back.' });
+  await seedSetting('site.width', 'wide');
+  const back = () => page.evaluate(() => window.dispatchEvent(new Event('focus')));
+  // Sooner: nothing is asked.
+  await page.clock.fastForward('02:00');
+  await back();
+  await page.waitForTimeout(500);
+  await expect(region).toContainText('Posting pauses for an hour');
+  await expect(page.locator('.pb-app')).toHaveAttribute('data-width', 'default');
+  await page.clock.fastForward('04:00');
+  await back();
+  await expect(region).toContainText('Posting is back.');
+  await expect(page.locator('.pb-app')).toHaveAttribute('data-width', 'wide');
+  // Turned off meanwhile: it goes.
+  await seedSetting('site.banner', { ...banner, enabled: false, revision: 9 });
+  await page.clock.fastForward('06:00');
+  await back();
+  await expect(page.locator('.pb-app__banner')).toHaveCount(0);
+  await seedSetting('site.banner', banner);
+  await seedSetting('site.width', 'default');
+});
+
 test('on a phone the banner is the top of the page, and each of its controls is a 44px target', async ({ browser, baseURL }) => {
   const context = await browser.newContext({ baseURL, viewport: { width: 390, height: 844 }, hasTouch: true });
   const page = await context.newPage();
