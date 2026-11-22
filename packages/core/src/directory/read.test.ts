@@ -3,7 +3,10 @@ import { beforeEach, describe, expect, test, vi } from 'vitest';
 import { actors } from '../db/tables/actors.ts';
 import { writer } from '../db/write.ts';
 import { truncateAll } from '../testing/db';
+import { seedPost } from '../testing/seed-az.ts';
 import { seedDirectoryWorld } from '../testing/seed-disc';
+import { seedBlock } from '../testing/seed-e1.ts';
+import { seedActor } from '../testing/seed.ts';
 import { defaultQuery, type DirectoryQuery } from './input.ts';
 import { listCommunities } from './read.ts';
 
@@ -13,8 +16,8 @@ beforeEach(async () => {
   world = await seedDirectoryWorld();
 });
 
-const declared = () => ({ actorId: world.people.viewer.id, declared: true });
-const undeclared = () => ({ actorId: world.people.minor.id, declared: false });
+const declared = () => ({ actorId: world.people.viewer.id, siteRole: 'user' as const, declared: true });
+const undeclared = () => ({ actorId: world.people.minor.id, siteRole: 'user' as const, declared: false });
 const list = (query: Partial<DirectoryQuery>, viewer: ReturnType<typeof declared> | null = null) =>
   listCommunities({ ...defaultQuery, ...query }, viewer);
 const names = async (query: Partial<DirectoryQuery>, viewer: ReturnType<typeof declared> | null = null) =>
@@ -84,6 +87,21 @@ describe('what a row says', () => {
     });
     expect(row('art')).toMatchObject({ subscribers: 1, active: 0, follow: 'none' });
     expect((await list({})).rows.every((entry) => entry.follow === 'none')).toBe(true);
+  });
+
+  test('the authors this week are the ones the viewer is shown: none of a flagged post without a 16+ declaration, none the viewer blocks', async () => {
+    const { local } = world.instances;
+    const shy = await seedActor(local, 'Person', 'shy');
+    const loud = await seedActor(local, 'Person', 'loud');
+    await seedPost(local, world.communities.art, shy, { sensitive: true });
+    await seedPost(local, world.communities.art, loud);
+    const active = async (viewer: Parameters<typeof list>[1]) =>
+      (await list({}, viewer)).rows.find((row) => row.actor.handle === 'art')?.active;
+    expect(await active(null)).toBe(1);
+    expect(await active(undeclared())).toBe(1);
+    expect(await active(declared())).toBe(2);
+    await seedBlock(world.people.viewer, loud);
+    expect(await active(declared())).toBe(1);
   });
 
   test('prints an excerpt of the summary as plain text, with no markup or remote picture', async () => {

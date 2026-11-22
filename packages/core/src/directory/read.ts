@@ -1,12 +1,14 @@
-import type { Uuid } from '@peblish/schema/ids';
 import type { ActorRef } from '@peblish/schema/views';
 import { and, eq, inArray, isNull, notInArray, or, sql, type SQL } from 'drizzle-orm';
 import { db as readDb, type Queryable } from '../db/read.ts';
 import { actors } from '../db/tables/actors.ts';
+import { posts } from '../db/tables/content.ts';
 import { follows } from '../db/tables/follows.ts';
 import { instances } from '../db/tables/instances.ts';
+import { shownTo } from '../feeds/read.ts';
 import { sanitizeRemoteHtml } from '../markdown/sanitize.ts';
 import { communityRemovals } from '../moderation/tables.ts';
+import type { Viewer } from '../posts/read.ts';
 import { blockedHosts } from '../resolve/blocked.ts';
 import { parseLookup } from '../resolve/parse.ts';
 import { effectiveNsfw, maxPage, pageSize, type DirectoryQuery } from './input.ts';
@@ -15,9 +17,9 @@ import { actorRef } from './ref.ts';
 // The community directory (lane DISC): every community this server knows, local and remote, with
 // the figures this server itself keeps. A remote community's own subscriber and post totals are
 // stored nowhere (its Group document carries none), so `subscribers` is the people here who
-// joined, and `active` the authors of its posts in this server's copy.
+// joined, and `active` the authors of its posts in this server's copy that the viewer is shown.
 
-export type DirectoryViewer = { actorId: Uuid; declared: boolean } | null;
+export type DirectoryViewer = (NonNullable<Viewer> & { declared: boolean }) | null;
 
 export type DirectoryRow = {
   actor: ActorRef;
@@ -27,7 +29,7 @@ export type DirectoryRow = {
   nsfl: boolean;
   /** People on this server who joined (accepted follows). */
   subscribers: number;
-  /** Distinct authors of live posts in the last 7 days in this server's copy. */
+  /** Distinct authors of the last 7 days' posts in this server's copy that the community's feed shows this viewer. */
   active: number;
   /** When the copy of a remote community was last fetched (ISO); null for a local one. */
   refreshedAt: string | null;
@@ -48,9 +50,19 @@ const excerptLength = 160;
 const excerptSource = 4000;
 
 const subscribers = sql<number>`(select count(*)::int from follows where follows.followee_id = actors.id and follows.state = 'accepted')`;
-// The posts_community_published index answers this from the newest post back.
-const active = sql<number>`(select count(distinct posts.author_id)::int from posts where posts.community_id = actors.id
-  and posts.published_at > now() - interval '7 days' and posts.deleted_at is null and posts.removed_at is null)`;
+/**
+ * Authors this week: over the posts the community's feed lists for this viewer (feeds/read.ts:
+ * live, published, past shownTo's age gate, blocks and peer controls), so no author of a post the
+ * viewer is not shown is counted. The feed's open-community checks are left out: the row is a
+ * live Group the directory lists, and they would cost an index lookup per post. The
+ * posts_community_published index answers it from the newest post back. The outer row is
+ * spelled out: a query without a join prints its own columns unqualified, and a bare "id" in
+ * here would be the post's.
+ */
+export const activeAuthors = (viewer: Viewer) =>
+  sql<number>`(select count(distinct ${posts.authorId})::int from ${posts} where ${posts.communityId} = "actors"."id"
+    and ${posts.publishedAt} > now() - interval '7 days' and ${posts.publishedAt} <= now()
+    and ${and(isNull(posts.deletedAt), isNull(posts.removedAt), ...shownTo(viewer))})`;
 const published = sql`coalesce(${actors.publishedAt}, ${actors.createdAt})`;
 const flagged = sql`(${actors.sensitive} or ${actors.nsfl})`;
 
@@ -124,7 +136,7 @@ export async function listCommunities(query: DirectoryQuery, viewer: DirectoryVi
         nsfl: actors.nsfl,
         fetchedAt: actors.fetchedAt,
         subscribers: subscribers.as('subscribers'),
-        active: active.as('active'),
+        active: activeAuthors(viewer).as('active'),
       })
       .from(actors)
       .innerJoin(instances, eq(instances.id, actors.instanceId))
