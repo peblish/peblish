@@ -8,6 +8,7 @@ import { writer } from '../db/write.ts';
 import { ageDeclarations } from '../identity/tables.ts';
 import { peerControls } from '../peers/tables.ts';
 import { truncateAll } from '../testing/db.ts';
+import { seedBlock } from '../testing/seed-e1.ts';
 import { seedComment, seedModerationWorld, seedPost } from '../testing/seed-az.ts';
 import { localUser, seedActor } from '../testing/seed.ts';
 import { createReportAs } from './actions.ts';
@@ -43,6 +44,22 @@ describe('the report form quotes only what the post page would show this viewer'
     // the NSFL flag gates the same way
     await writer().update(actors).set({ sensitive: false, nsfl: true }).where(eq(actors.id, community.id));
     expect(await quote(onPost)).toBeNull();
+  });
+});
+
+describe("the quote follows the comment's own visibility for this viewer", () => {
+  test('a comment by someone the reporter blocks is not quoted, though its author line stays as the thread draws it', async () => {
+    const w = await seedModerationWorld();
+    const post = await seedPost(w.instances.local, w.communities.local.live, w.people.author, { title: 'Plain title' });
+    const comment = await seedComment(w.instances.local, post, w.people.author, { bodyMd: 'Hidden words' });
+    const form = async () => {
+      const read = await readReportForm(localUser(w.people.user.id), { kind: 'comment', id: comment.id });
+      if (!read.ok) throw new Error(read.reason);
+      return [read.quote, read.about.handle];
+    };
+    expect(await form()).toEqual(['Hidden words', w.people.author.name]);
+    await seedBlock(w.people.user, w.people.author);
+    expect(await form()).toEqual([null, w.people.author.name]);
   });
 });
 
