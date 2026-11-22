@@ -178,6 +178,7 @@ export function Shell({ children }: { children: ReactNode }) {
   const parts = {
     brand: <Brand siteName={shell.siteName} pack={pack} className="pb-bar-brand" />,
     drawer: <Drawer session={session} shell={shell} pathname={pathname} />,
+    banner: <ShellBanner banner={look.banner} cookieRevision={bannerDismissed} placement="view" />,
   };
 
   return (
@@ -188,7 +189,7 @@ export function Shell({ children }: { children: ReactNode }) {
             {t('shell', 'skip')}
           </Link>
           <TopHeader session={session} shell={shell} pack={pack} pathname={pathname} />
-          <ShellBanner banner={look.banner} cookieRevision={bannerDismissed} />
+          <ShellBanner banner={look.banner} cookieRevision={bannerDismissed} placement="frame" />
           <div className="pb-app__side">
             <EdgeToggle
               className="pb-app__fold"

@@ -58,7 +58,12 @@ async function layout(browser: Browser, baseURL: string, width: number, hydrated
       return rect ? [rect.x, rect.y, rect.width, rect.height].map(Math.round) : null;
     };
     // The page's place, not its height, which its own content sets once hydrated.
-    return { banner: box('.pb-app__banner'), main: box('#pb-main')!.slice(0, 3) };
+    const shown = [...document.querySelectorAll('.pb-app__banner')].find((banner) => banner.getBoundingClientRect().height > 0);
+    const banner = shown ? shown.getBoundingClientRect() : null;
+    return {
+      banner: banner ? [banner.x, banner.y, banner.width, banner.height].map(Math.round) : null,
+      main: box('#pb-main')!.slice(0, 3),
+    };
   });
   await context.close();
   return measured;
@@ -126,12 +131,36 @@ test('a tab that comes back after five minutes takes a new banner and width; one
   await seedSetting('site.width', 'default');
 });
 
-test('on a phone the banner is the top of the page, and each of its controls is a 44px target', async ({ browser, baseURL }) => {
+test('on a phone the banner sits under the top bar, after it in focus order, on a feed and on a page with its own bar; each control 44px', async ({
+  browser,
+  baseURL,
+}) => {
   const context = await browser.newContext({ baseURL, viewport: { width: 390, height: 844 }, hasTouch: true });
   const page = await context.newPage();
+  for (const path of ['/', '/communities', '/about']) {
+    await gotoHydrated(page, path);
+    // One banner on a phone, as on a computer: the other place's is not drawn.
+    const region = page.getByRole('region', { name: 'Site notice' });
+    await expect(region, path).toHaveCount(1);
+    const bar = page.locator('.pb-frame-vh').first();
+    const [barBox, box] = [(await bar.boundingBox())!, (await region.boundingBox())!];
+    // Under the bar: flush, or a page's own gap below it where the page draws its own bar among its spaced parts.
+    expect(box.y, path).toBeGreaterThanOrEqual(barBox.y + barBox.height - 1);
+    expect(box.y - (barBox.y + barBox.height), path).toBeLessThanOrEqual(32);
+    // Nothing between them: the banner is the bar's next element.
+    expect(await bar.evaluate((node) => node.nextElementSibling?.matches('.pb-app__banner--view')), path).toBe(true);
+    expect(Math.round(box.width), path).toBe(390);
+    // In the document, so in focus order, the bar comes first.
+    expect(
+      await bar.evaluate(
+        (node, banner) => Boolean(node.compareDocumentPosition(banner!) & Node.DOCUMENT_POSITION_FOLLOWING),
+        await region.elementHandle(),
+      ),
+      path,
+    ).toBe(true);
+  }
   await gotoHydrated(page, '/');
   const region = page.getByRole('region', { name: 'Site notice' });
-  expect((await region.boundingBox())!.y).toBe(0);
   for (const control of [
     region.getByRole('link', { name: 'Details' }),
     region.getByRole('link', { name: 'Rules' }),
@@ -140,9 +169,13 @@ test('on a phone the banner is the top of the page, and each of its controls is 
     const box = (await control.boundingBox())!;
     expect(Math.min(box.width, box.height), await control.textContent()).toBeGreaterThanOrEqual(44);
   }
-  // The bar below it sticks at the top once the banner has scrolled away.
+  // The bar sticks at the top as the banner scrolls away under it.
   await page.mouse.wheel(0, 600);
   await expect.poll(async () => (await page.locator('.pb-frame-vh').first().boundingBox())!.y).toBe(0);
+  // Dismissed in one place, it is gone from both.
+  await gotoHydrated(page, '/');
+  await page.getByRole('region', { name: 'Site notice' }).getByRole('button', { name: 'Dismiss notice' }).click();
+  await expect(page.locator('.pb-app__banner')).toHaveCount(0);
   await context.close();
 });
 

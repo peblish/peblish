@@ -61,16 +61,25 @@ export function showBannerAgain(revision: number) {
 }
 
 /**
- * The banner under the header, full width, above the sidebar and the page; on a phone, at the top of the
- * page above its bar. Dismissing it moves focus to the page's main region, without scrolling.
+ * The banner under the header, full width, above the sidebar and the page; on a phone, under the top bar, as
+ * the mock has it. Dismissing it moves focus to the page's main region, without scrolling.
  */
-export function ShellBanner({ banner, cookieRevision }: { banner: SiteBannerSetting | null; cookieRevision: number | null }) {
+export function ShellBanner({
+  banner,
+  cookieRevision,
+  placement,
+}: {
+  banner: SiteBannerSetting | null;
+  cookieRevision: number | null;
+  /** `frame`: under the header, on a computer; `view`: under the top bar, on a phone (view-header.tsx). shell.css shows one. */
+  placement: 'frame' | 'view';
+}) {
   const { t } = useTranslate();
   const dismissed = useBannerDismissed(banner?.revision ?? 0, cookieRevision);
   if (!banner?.enabled || dismissed) return null;
   return (
     <SiteBanner
-      className="pb-app__banner"
+      className={placement === 'view' ? 'pb-app__banner pb-app__banner--view' : 'pb-app__banner'}
       banner={banner}
       label={t('shell', 'banner.label')}
       dismissLabel={t('shell', 'banner.dismiss')}

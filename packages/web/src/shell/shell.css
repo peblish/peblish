@@ -54,10 +54,15 @@
     max-inline-size: calc(40rem - 2 * var(--pb-gutter));
   }
 
-  /* The site banner (banner.tsx): full width under the header, above the sidebar and the page. It scrolls
-     away under the header, which stays on top. */
+  /* The site banner (banner.tsx): on a computer full width under the header, above the sidebar and the page,
+     scrolling away under the header; on a phone under the top bar (view-header.tsx), edge to edge. One is shown. */
   .pb-app__banner {
     grid-area: banner;
+  }
+
+  .pb-app__banner--view {
+    grid-area: auto;
+    display: none;
   }
 
   /* The frame's focus ring: Mux's ring colour is brand step 60, under 3:1 on the dark page with some
@@ -561,16 +566,21 @@
 
     .pb-app {
       grid-template-areas:
-        'banner'
         'page'
         'tabs';
       grid-template-columns: minmax(0, 1fr);
-      grid-template-rows: auto minmax(0, 1fr) auto;
+      grid-template-rows: minmax(0, 1fr) auto;
     }
 
     .pb-top,
-    .pb-app__side {
+    .pb-app__side,
+    .pb-app__banner:not(.pb-app__banner--view) {
       display: none;
+    }
+
+    /* Under the bar, through the page's side padding where the bar is a page's own (below). */
+    .pb-app__banner--view {
+      display: flex;
     }
 
     .pb-app__page {
@@ -590,7 +600,8 @@
     }
 
     .pb-page .pb-rows,
-    .pb-page > .pb-frame-vh:first-child {
+    .pb-page > .pb-frame-vh:first-child,
+    .pb-page > .pb-app__banner--view {
       margin-inline: calc(-1 * var(--muxui-semantic-layout-inset-medium));
     }
 
@@ -672,11 +683,10 @@
   @media (scripting: none) and (max-width: 859.98px) {
     .pb-app {
       grid-template-areas:
-        'banner'
         'page'
         'side'
         'tabs';
-      grid-template-rows: auto minmax(0, 1fr) auto auto;
+      grid-template-rows: minmax(0, 1fr) auto auto;
     }
 
     .pb-app__side {
