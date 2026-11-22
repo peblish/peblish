@@ -1,0 +1,171 @@
+import { execFileSync } from 'node:child_process';
+import { join } from 'node:path';
+import { expect, test, type Browser, type Page } from '@playwright/test';
+import { landed, signIn } from '../auth/support.ts';
+import { skipWithoutKit } from '../support/kit.ts';
+import { gotoHydrated } from '../support/route-marker.ts';
+import { galleryStates, stateProblems } from '../support/states.ts';
+
+// The directory's pin controls (f-pins): Pin before Join on the rows the viewer follows or asked to join,
+// and the pinned group above the list with Move up and Move down, hydrated (focus kept, the change said
+// politely, the sidebar in step) and as plain forms with scripts off. Each test seeds its own person
+// (packages/core/src/testing/seed-pins.ts) on the lane database; the gallery pages cover every state.
+
+type Ref = { id: string; name: string; title: string };
+type Seed = {
+  password: string;
+  name: string;
+  suffix: string;
+  communities: Record<'ash' | 'birch' | 'cedar' | 'damson' | 'elm' | 'fir' | 'yew', Ref>;
+};
+
+const seedWorld = (): Seed =>
+  JSON.parse(
+    execFileSync('node', ['packages/core/src/testing/seed-pins.ts', 'e2e'], { cwd: join(import.meta.dirname, '../..'), encoding: 'utf8' }),
+  ) as Seed;
+
+async function signedIn(browser: Browser, seed: Seed, javaScriptEnabled = true) {
+  const login = await browser.newContext();
+  const first = await login.newPage();
+  await gotoHydrated(first, '/auth/sign-in');
+  await signIn(first, `@${seed.name}`, seed.password);
+  await landed(first, '/');
+  const storageState = await login.storageState();
+  await login.close();
+  const context = await browser.newContext({ storageState, javaScriptEnabled });
+  return { context, page: await context.newPage() };
+}
+
+const group = (page: Page) => page.getByRole('region', { name: 'Pinned' });
+/** The pinned group's titles in order, without the seed's suffix. */
+const order = async (page: Page, seed: Seed) =>
+  (await group(page).getByRole('list', { name: 'Your pinned communities' }).locator('.pb-clist__title').allTextContents()).map((text) =>
+    text.replace(` ${seed.suffix}`, ''),
+  );
+const sidebarOrder = async (page: Page, seed: Seed) =>
+  (await page.locator('.pb-side bdi').filter({ hasText: seed.suffix }).allTextContents()).map((text) =>
+    text.replace(` ${seed.suffix}`, ''),
+  );
+
+test.describe('seeded', () => {
+  test.skip(Boolean(process.env.BASE_URL), 'needs the lane database for its seed (DATABASE_URL)');
+
+  test('Pin is offered on followed and pending rows only, and pins at the end of the group and the sidebar', async ({ browser }) => {
+    const seed = seedWorld();
+    const { context, page } = await signedIn(browser, seed);
+    await gotoHydrated(page, `/communities?q=${seed.suffix}`);
+    const list = page.getByRole('main').getByRole('list', { name: 'Communities' });
+    const pin = (title: string) => list.getByRole('button', { name: `Pin ${title} ${seed.suffix}` });
+    await expect(pin('Elm')).toHaveAttribute('aria-pressed', 'true');
+    await expect(pin('Ash')).toHaveAttribute('aria-pressed', 'false');
+    await expect(pin('Fir')).toHaveCount(0);
+    // A search hides the group: it is the viewer's own list, not a result.
+    await expect(group(page)).toHaveCount(0);
+
+    await pin('Ash').focus();
+    await page.keyboard.press('Enter');
+    await expect(pin('Ash')).toHaveAttribute('aria-pressed', 'true');
+    await expect(pin('Ash')).toBeFocused();
+    await expect(page.getByRole('status').filter({ hasText: `Ash ${seed.suffix} pinned` })).toHaveCount(1);
+    await expect.poll(() => sidebarOrder(page, seed)).toEqual(['Elm', 'Yew', 'Birch', 'Ash', 'Cedar', 'Damson']);
+
+    await page.keyboard.press('Space');
+    await expect(pin('Ash')).toHaveAttribute('aria-pressed', 'false');
+    await expect.poll(() => sidebarOrder(page, seed)).toEqual(['Elm', 'Yew', 'Birch', 'Ash', 'Cedar', 'Damson']);
+    await expect(page.getByRole('status').filter({ hasText: `Ash ${seed.suffix} unpinned` })).toHaveCount(1);
+    await context.close();
+  });
+
+  test('the pinned group moves a row up and down: focus stays on the button, or hops at an end, and the place is said', async ({
+    browser,
+  }) => {
+    const seed = seedWorld();
+    const { context, page } = await signedIn(browser, seed);
+    await gotoHydrated(page, '/communities');
+    expect(await order(page, seed)).toEqual(['Elm', 'Yew', 'Birch']);
+    const button = (name: string) => group(page).getByRole('button', { name: `${name.replace('$', seed.suffix)}` });
+    await expect(button('Move Elm $ up')).toBeDisabled();
+    await expect(button('Move Birch $ down')).toBeDisabled();
+
+    await button('Move Elm $ down').click();
+    await expect.poll(() => order(page, seed)).toEqual(['Yew', 'Elm', 'Birch']);
+    await expect(button('Move Elm $ down')).toBeFocused();
+    await expect(group(page).getByRole('status')).toHaveText(`Elm ${seed.suffix}, position 2 of 3`);
+    await expect.poll(() => sidebarOrder(page, seed)).toEqual(['Yew', 'Elm', 'Birch', 'Ash', 'Cedar', 'Damson']);
+
+    // At the end Move down disables, so focus goes to Move up.
+    await page.keyboard.press('Enter');
+    await expect.poll(() => order(page, seed)).toEqual(['Yew', 'Birch', 'Elm']);
+    await expect(button('Move Elm $ up')).toBeFocused();
+    await expect(group(page).getByRole('status')).toHaveText(`Elm ${seed.suffix}, position 3 of 3`);
+
+    // Unpinning from the group: the row leaves it, and focus goes to its Pin in the list below, or to the
+    // group's heading when the community is not on this page of the list.
+    await group(page)
+      .getByRole('button', { name: `Pin Elm ${seed.suffix}` })
+      .click();
+    await expect.poll(() => order(page, seed)).toEqual(['Yew', 'Birch']);
+    await expect
+      .poll(() => page.evaluate(() => document.activeElement?.id ?? ''))
+      .toMatch(new RegExp(`^(dir-pin-${seed.communities.elm.id}|.*-title)$`));
+    await expect(group(page).getByRole('status')).toHaveText(`Elm ${seed.suffix} unpinned`);
+    await context.close();
+  });
+
+  test('with scripts off, Pin and the moves are plain forms that come back to the page', async ({ browser }) => {
+    const seed = seedWorld();
+    const { context, page } = await signedIn(browser, seed, false);
+    await page.goto('/communities');
+    expect(await order(page, seed)).toEqual(['Elm', 'Yew', 'Birch']);
+    await group(page)
+      .getByRole('button', { name: `Move Birch ${seed.suffix} up` })
+      .click();
+    await page.waitForURL('/communities');
+    expect(await order(page, seed)).toEqual(['Elm', 'Birch', 'Yew']);
+
+    await page.goto(`/communities?q=${seed.suffix}`);
+    await page.getByRole('button', { name: `Pin Damson ${seed.suffix}` }).click();
+    await page.waitForURL(`/communities?q=${seed.suffix}`);
+    await expect(page.getByRole('button', { name: `Pin Damson ${seed.suffix}` })).toHaveAttribute('aria-pressed', 'true');
+    await page.goto('/communities');
+    expect(await order(page, seed)).toEqual(['Elm', 'Birch', 'Yew', 'Damson']);
+    await context.close();
+  });
+});
+
+test.describe('gallery', () => {
+  test.beforeEach(async ({ request }) => skipWithoutKit(request));
+  test.setTimeout(240_000);
+
+  const compositions: Record<string, string[]> = {
+    'pin-toggle': ['rest', 'selected', 'pending', 'invalid', 'hover', 'focus', 'pressed'],
+    'pin-move': ['rest', 'disabled', 'pending', 'hover', 'focus', 'pressed'],
+    'pinned-group': ['rest', 'selected', 'hover', 'focus', 'pressed'],
+  };
+  for (const [composition, states] of Object.entries(compositions)) {
+    test(`/kit/${composition}: every state, scheme and condition passes`, async ({ browser, baseURL }) => {
+      const checks = await galleryStates(browser, baseURL!, `/kit/${composition}`);
+      expect([...new Set(checks.map(({ state }) => state))]).toEqual(states);
+      expect(stateProblems(checks, { target: 44 })).toEqual([]);
+    });
+  }
+
+  test('Pin says what it is and whether it is on; Move up and Move down name the community', async ({ page }) => {
+    await gotoHydrated(page, '/kit/pin-toggle');
+    await expect(page.locator('[data-kit-state="rest"]').getByRole('button', { name: 'Pin Tide pools' })).toHaveAttribute(
+      'aria-pressed',
+      'false',
+    );
+    await expect(page.locator('[data-kit-state="selected"]').getByRole('button', { name: 'Pin Tide pools' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    await expect(page.locator('[data-kit-state="invalid"]').getByRole('alert')).toHaveText('That did not work. Try again.');
+    await gotoHydrated(page, '/kit/pin-move');
+    await expect(page.locator('[data-kit-state="disabled"]').getByRole('button', { name: 'Move Loomwork up' })).toBeDisabled();
+    await expect(page.locator('[data-kit-state="pending"]').getByRole('button', { name: 'Move Loomwork down' })).toHaveAttribute(
+      'aria-busy',
+      'true',
+    );
+  });
+});

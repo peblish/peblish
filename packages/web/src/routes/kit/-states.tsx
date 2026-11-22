@@ -41,6 +41,8 @@ import { finderPieces } from './-finder-pieces.tsx';
 import { savesPieces } from './-saves.tsx';
 // New since your last visit (f-visits).
 import { visitPieces } from './-visits.tsx';
+// The sidebar's pins and the directory's pin controls (f-pins).
+import { pinsPieces } from './-pins.tsx';
 
 /**
  * The states a state page shows as samples, in the state matrix's order ('selected' stands for current, checked
@@ -210,4 +212,6 @@ export const compositions: Readonly<Record<string, Composition>> = {
   ...finderPieces,
   ...savesPieces,
   ...visitPieces,
+  // The sidebar's pins and the directory's pin controls (f-pins).
+  ...pinsPieces,
 };
