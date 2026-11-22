@@ -32,6 +32,7 @@ import type { ContentActionProps } from '../../../../-actions/props.ts';
 import type { ThreadData } from '../-thread.ts';
 import commentsCss from './comments.css?url';
 import { asCommentError, errorKey, type CommentError } from './errors.ts';
+import { NewSince } from './new-since.tsx';
 
 // The thread under a post, and the whole of a permalink page (Commons' Comments.tsx): the heading
 // with the sort choice, the comment tree (CommentThread, with Copy link and Share in its menu), and
@@ -71,6 +72,7 @@ export function useTreeLabels(): CommentTreeLabels {
     linkCopied: t('comments', 'share.copied'),
     copyFailed: t('comments', 'share.failed'),
     inReplyTo: t('comments', 'inReplyTo'),
+    isNew: t('visits', 'marker'),
   };
   // The rows are memoised and the labels a fresh object each render, but they depend on the locale
   // alone, so one object per locale lets a row skip re-rendering when the section does.
@@ -236,6 +238,7 @@ export function ThreadSection({ data: loaded, heading }: { data: ThreadData; hea
         <Text as="h2" variant="title" size="sm" id="comments-heading" className="th-heading">
           {heading ?? t('comments', 'heading')}
         </Text>
+        {!data.focus && <NewSince postId={data.postId} viewerId={data.viewerId} newCount={data.newCount} comments={data.comments} />}
         <form method="get" action="#comments" onSubmit={chooseSort}>
           <ButtonGroup role="group" aria-label={t('comments', 'sort.group')} attached>
             {threadSorts.map((sort) => (

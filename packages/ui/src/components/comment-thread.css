@@ -81,6 +81,19 @@
     background: var(--muxui-semantic-selection-background);
   }
 
+  /* New since the viewer's last visit: the "New" badge says it; a stripe down the text's start edge shows it at a glance. A border, so forced colours keep it. */
+  .pb-comment[data-new] > .pb-comment__main {
+    position: relative;
+  }
+
+  .pb-comment[data-new] > .pb-comment__main::before {
+    position: absolute;
+    inset-block: 0;
+    inset-inline-start: calc(var(--pb-comment-rail) - 2px);
+    border-inline-start: 2px solid var(--muxui-component-taggroup-success-foreground);
+    content: '';
+  }
+
   .pb-comment__to svg {
     flex: none;
   }
