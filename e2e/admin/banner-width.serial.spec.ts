@@ -275,6 +275,23 @@ test('with scripts off the banner shows with its message and link, its script-on
   await expect(region.getByRole('link', { name: 'Rules' })).toBeVisible();
   await expect(region.getByRole('button', { name: 'Dismiss notice' })).toBeHidden();
   await expect(region.getByRole('button', { name: 'Details' })).toBeHidden();
+  // Enter on a field or a switch decides nothing; only pressing Publish publishes.
+  await plain.goto('/admin/settings');
+  const revision = (await readSetting('site.banner')).revision;
+  for (const field of [form(plain).getByRole('switch', { name: 'Show the banner' }), form(plain).getByLabel('Title', { exact: true })]) {
+    await field.focus();
+    const navigated = plain.waitForEvent('load', { timeout: 3000 }).catch(() => null);
+    await plain.keyboard.press('Enter');
+    await navigated;
+    expect(plain.url()).not.toMatch(/saved=banner/);
+    await plain.goto('/admin/settings');
+  }
+  expect((await readSetting('site.banner')).revision).toBe(revision);
+  // Publish from the keyboard still publishes.
+  await form(plain).getByRole('button', { name: 'Publish banner' }).focus();
+  await plain.keyboard.press('Enter');
+  await plain.waitForURL(/saved=banner/);
+  expect((await readSetting('site.banner')).revision).toBe(revision + 1);
   await plain.goto('/admin/settings');
   await choose(plain.locator('body'), 'Wide, 1112 px');
   await plain.getByRole('button', { name: 'Save width' }).click();

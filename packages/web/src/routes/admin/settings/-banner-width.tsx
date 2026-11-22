@@ -2,7 +2,6 @@ import { bannerIcons, bannerTones, type SiteBanner } from '@peblish/schema/banne
 import { siteWidths, type SiteWidth } from '@peblish/schema/site-settings';
 import { Button } from '@peblish/ui/components/button';
 import { ColorField } from '@peblish/ui/components/color-field';
-import { Input } from '@peblish/ui/components/input';
 import { Notice } from '@peblish/ui/components/notice';
 import { RadioGroup } from '@peblish/ui/components/radio-group';
 import { Select } from '@peblish/ui/components/select';
@@ -149,9 +148,10 @@ export function BannerSection({
           onSubmit(event);
         }}
       >
-        {/* Enter never publishes a notice every page shows: in the colour field it applies the colour, as Mux's ColorField does. */}
+        {/* Enter never publishes a notice every page shows: in the colour field it applies the colour, as Mux's ColorField
+            does. The intent is on Publish itself, so a post from anything else (NoEnterSubmit's fallback, with scripts
+            off) names none and the server refuses it. */}
         <NoEnterSubmit />
-        <Input.Input type="hidden" name="intent" value="banner" />
         <Switch
           label={t('admin', 'settings.banner.enabled')}
           description={t('admin', 'settings.banner.enabled.hint')}
@@ -292,7 +292,7 @@ export function BannerSection({
           >
             {t('admin', 'settings.banner.showAgain')}
           </Button>
-          <Button type="submit" variant="primary" pending={sending}>
+          <Button type="submit" name="intent" value="banner" variant="primary" pending={sending}>
             {t('admin', 'settings.banner.publish')}
           </Button>
         </div>
@@ -345,7 +345,6 @@ export function WidthSection({
         unreadable={unreadable ? t('admin', 'settings.width.unreadable') : undefined}
       />
       <form className="adm-form" method="post" action={path} aria-labelledby="settings-layout" onSubmit={onSubmit}>
-        <Input.Input type="hidden" name="intent" value="width" />
         <RadioGroup
           label={t('admin', 'settings.width')}
           name="site.width"
@@ -358,7 +357,8 @@ export function WidthSection({
         </Text>
         <WidthPreview width={draft} />
         <div className="adm-actions">
-          <Button type="submit" variant="primary" pending={sending}>
+          {/* The intent on the button, as Publish has it; Enter on a preset saves through it, the form's one button. */}
+          <Button type="submit" name="intent" value="width" variant="primary" pending={sending}>
             {t('admin', 'settings.width.save')}
           </Button>
         </div>
