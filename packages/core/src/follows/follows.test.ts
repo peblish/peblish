@@ -1,11 +1,13 @@
 import { eq, sql } from 'drizzle-orm';
 import { beforeEach, describe, expect, test } from 'vitest';
 import { authorize } from '../authz/authorize.ts';
+import { instanceBlocks } from '../blocks/tables.ts';
 import { systemPrincipal } from '../authz/system.ts';
 import { db } from '../db/read.ts';
 import { actors } from '../db/tables/actors.ts';
 import { follows } from '../db/tables/follows.ts';
 import { writer } from '../db/write.ts';
+import { peerControls } from '../peers/tables.ts';
 import { Refused } from '../tx/refused.ts';
 import { tx } from '../tx/tx.ts';
 import { truncateAll } from '../testing/db.ts';
@@ -181,6 +183,22 @@ describe('the communities a viewer follows, for the sidebar and the composer', (
     expect(await names({ accepted: true })).toEqual(['gated', 'lab', 'news', 'other']);
     expect(await names({ accepted: true, includeSensitive: false })).toEqual(['lab', 'news', 'other']);
     expect(await names({ accepted: true, includeSensitive: false, limit: 2 })).toEqual(['lab', 'news']);
+  });
+
+  test("the composer's read leaves out a community on a host this server blocks or the person blocks", async () => {
+    const w = await world();
+    const shut = await seedInstance('shut.test', false);
+    const quiet = await seedInstance('quiet.test', false);
+    const walled = await seedActor(shut, 'Group', 'walled');
+    const hushed = await seedActor(quiet, 'Group', 'hushed');
+    for (const community of [w.remote, walled, hushed]) {
+      await writer()
+        .insert(follows)
+        .values({ followerId: w.alice.id, followeeId: community.id, apId: `https://fed-a.test/f/${community.name}`, state: 'accepted' });
+    }
+    await writer().insert(peerControls).values({ instanceId: shut.id, blocked: true });
+    await writer().insert(instanceBlocks).values({ blockerId: w.alice.id, instanceId: quiet.id });
+    expect((await followedCommunities(w.alice.id, { accepted: true })).map(({ name }) => name)).toEqual(['lab']);
   });
 
   test('communities of one name come by host, then id, the same on every read', async () => {

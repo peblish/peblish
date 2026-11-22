@@ -1,13 +1,15 @@
 import { beforeEach, describe, expect, test } from 'vitest';
+import { instanceBlocks } from '../blocks/tables.ts';
 import { follows } from '../db/tables/follows.ts';
 import { writer } from '../db/write.ts';
 import { proxyUrlBuilder } from '../media/proxy-url.ts';
+import { peerControls } from '../peers/tables.ts';
 import { truncateAll } from '../testing/db.ts';
 import { seedCommunityRemoval, seedModerator } from '../testing/seed-az.ts';
 import { person, sampleCommunity, seedCommunityWorld } from '../testing/seed-f.ts';
-import { seedActor } from '../testing/seed.ts';
+import { seedActor, seedInstance } from '../testing/seed.ts';
 import { createCommunityAs } from './create.ts';
-import { listLocalCommunities, listModerators, moderatedAmong, readCommunity } from './read.ts';
+import { hostBlockedFor, listLocalCommunities, listModerators, moderatedAmong, readCommunity } from './read.ts';
 import { updateCommunityAs } from './update.ts';
 
 beforeEach(truncateAll);
@@ -212,5 +214,24 @@ describe('listModerators', () => {
 
     await seedModerator(community, people.other, { source: 'remote', expiresAt: new Date(Date.now() + 3_600_000) });
     expect((await listModerators(news.id)).map(({ actor }) => actor.name)).toContain('otto');
+  });
+});
+
+describe('hostBlockedFor', () => {
+  test('a community on a host this server blocks, or on one the person blocks; not elsewhere, nor for anyone else', async () => {
+    const { people, instances } = await setup();
+    const shut = await seedInstance('shut.test', false);
+    const quiet = await seedInstance('quiet.test', false);
+    const [walled, hushed, open] = await Promise.all([
+      seedActor(shut, 'Group', 'walled'),
+      seedActor(quiet, 'Group', 'hushed'),
+      seedActor(instances.lemmy, 'Group', 'open'),
+    ]);
+    await writer().insert(peerControls).values({ instanceId: shut.id, blocked: true });
+    await writer().insert(instanceBlocks).values({ blockerId: people.user.id, instanceId: quiet.id });
+    const blocked = async (who: { id: string }) =>
+      Promise.all([walled, hushed, open].map((community) => hostBlockedFor(who.id, community.id)));
+    expect(await blocked(people.user)).toEqual([true, true, false]);
+    expect(await blocked(people.moderator)).toEqual([true, false, false]);
   });
 });

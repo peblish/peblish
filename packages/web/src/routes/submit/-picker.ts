@@ -1,5 +1,5 @@
 import { authorize } from '@peblish/core/authz/authorize';
-import { findCommunityId, listLocalCommunities, moderatedAmong, readCommunity } from '@peblish/core/communities/read';
+import { findCommunityId, hostBlockedFor, listLocalCommunities, moderatedAmong, readCommunity } from '@peblish/core/communities/read';
 import { followedCommunities } from '@peblish/core/follows/read';
 import { Uuid } from '@peblish/schema/ids';
 import type { RefusalReason } from '@peblish/schema/refusal';
@@ -26,8 +26,9 @@ export type Candidate = Omit<PickerCommunity, 'canPost'> & { followed: boolean }
 /**
  * Every community the picker could list, in its order: local ones by name (the first
  * pickerMax + 1, so a cut shows, and any the person follows past them), then the remote ones the
- * person follows (accepted follows only). A community age-gated as sensitive or NSFL is listed
- * only for someone who declared 16+, a removed one never.
+ * person follows (accepted follows only, none on a host this server or the person blocks). A
+ * community age-gated as sensitive or NSFL is listed only for someone who declared 16+, a removed
+ * one never.
  */
 async function candidates(viewer: SessionView): Promise<Candidate[]> {
   const includeSensitive = viewer.ageDeclaredAt !== null;
@@ -86,14 +87,15 @@ async function mayPost(viewer: SessionView, communityId: string): Promise<boolea
 /**
  * The community a `wanted` key (an id, or a handle with or without `!`: `name` here, `name@host`
  * elsewhere) names, looked up on its own, for one the candidates do not hold: a local community
- * past the first page, or a remote one the person does not follow.
+ * past the first page, or a remote one the person does not follow. Like the follows, none on a
+ * host this server or the person blocks.
  */
-async function lookUp(key: string): Promise<Candidate | null> {
+async function lookUp(viewer: SessionView, key: string): Promise<Candidate | null> {
   const trimmed = key.trim().replace(/^!/, '');
   if (!trimmed) return null;
   const id = Uuid.allows(trimmed) ? trimmed : await findCommunityId(trimmed);
   const community = id ? await readCommunity({ id }) : null;
-  if (!community) return null;
+  if (!community || (await hostBlockedFor(viewer.actorId, community.actor.id))) return null;
   const { actor } = community;
   return {
     id: actor.id,
@@ -118,7 +120,7 @@ async function startIn(
   for (const key of wanted) {
     if (!key) continue;
     const held = pickFrom(listed, key);
-    const extra = held ? null : await lookUp(key);
+    const extra = held ? null : await lookUp(viewer, key);
     const id = held ?? extra?.id;
     if (id && (await mayPost(viewer, id))) return { id, extra: extra && !listed.some((row) => row.id === extra.id) ? extra : null };
   }
