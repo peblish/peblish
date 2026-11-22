@@ -420,6 +420,14 @@ test.describe('the community page', () => {
     browser,
   }) => {
     const { handle } = seed.communities.open;
+    // The charter is the rail, once in the page: beside a wide page, and on a narrower page's About tab, in the
+    // page's flow after the page's main.
+    const charter = (on: Page) => on.getByRole('complementary', { name: `About Open ${seed.suffix}` });
+    const afterMain = (on: Page) =>
+      charter(on).evaluate((rail) => {
+        const main = document.querySelector('#pb-main main');
+        return !!main && !main.contains(rail) && !!(main.compareDocumentPosition(rail) & Node.DOCUMENT_POSITION_FOLLOWING);
+      });
     for (const width of [1440, 1000]) {
       await page.setViewportSize({ width, height: 900 });
       await gotoHydrated(page, community(handle));
@@ -431,15 +439,17 @@ test.describe('the community page', () => {
         // Beside the rail, an About address still shows the posts and one charter, the rail's.
         await gotoHydrated(page, `${community(handle)}?tab=about`);
         await expect(page.locator('.cm-posts')).toBeVisible();
-        await expect(page.locator('.cm-charter--view')).toBeHidden();
-        await expect(page.getByRole('complementary', { name: `About Open ${seed.suffix}` })).toBeVisible();
+        await expect(charter(page)).toBeVisible();
+        await expect(page.getByRole('region', { name: 'Rules', includeHidden: true })).toHaveCount(1);
         continue;
       }
-      await expect(page.getByRole('complementary', { name: `About Open ${seed.suffix}` })).toBeHidden();
+      await expect(charter(page)).toBeHidden();
       await tabs.getByRole('link', { name: 'About' }).click();
       await page.waitForURL(/[?&]tab=about/);
-      const about = page.getByRole('main').getByRole('region', { name: `About Open ${seed.suffix}` });
+      const about = charter(page);
       await expect(about).toBeVisible();
+      expect(await afterMain(page)).toBe(true);
+      await expect(page.getByRole('region', { name: 'Rules', includeHidden: true })).toHaveCount(1);
       await expect(about.getByRole('region', { name: 'Rules' })).toContainText('Be civil');
       await expect(page.locator('.cm-posts')).toBeHidden();
       await expect(tabs.getByRole('link', { name: 'About' })).toHaveAttribute('aria-current', 'page');
@@ -451,7 +461,8 @@ test.describe('the community page', () => {
     await plain.goto(community(handle));
     await plain.getByRole('navigation', { name: 'Posts and about' }).getByRole('link', { name: 'About' }).click();
     await plain.waitForURL(/[?&]tab=about/);
-    await expect(plain.getByRole('main').getByText('No harassment.')).toBeVisible();
+    await expect(charter(plain).getByText('No harassment.')).toBeVisible();
+    expect(await afterMain(plain)).toBe(true);
     await plain.context().close();
   });
 
