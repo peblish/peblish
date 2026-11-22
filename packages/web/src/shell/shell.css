@@ -167,6 +167,27 @@
     text-decoration: none;
   }
 
+  /* Pressed, a step darker; open (the finder over the page), the hover's edge and text on the hover surface. */
+  .pb-find[data-muxui-state-pressed] {
+    border-color: var(--muxui-semantic-border-strong);
+    background: var(--muxui-semantic-surface-pressed);
+    color: var(--muxui-semantic-content-default);
+  }
+
+  .pb-find[aria-expanded='true']:not([data-muxui-state-pressed]) {
+    border-color: var(--muxui-semantic-border-strong);
+    background: var(--muxui-semantic-surface-hover);
+    color: var(--muxui-semantic-content-default);
+  }
+
+  /* Forced colours keep no background or edge of the page's own, so hover and open are drawn as outlines. */
+  @media (forced-colors: active) {
+    .pb-find:is(:hover, [data-muxui-state-hovered], [aria-expanded='true']) {
+      outline: 1px solid Highlight;
+      outline-offset: 1px;
+    }
+  }
+
   .pb-find__icon {
     flex: none;
     font-size: var(--muxui-semantic-typography-label-l-font-size);
@@ -193,6 +214,11 @@
   .pb-find--compact:is(:hover, [data-muxui-state-hovered]) {
     border-color: transparent;
     background: color-mix(in srgb, var(--muxui-semantic-color-neutral-100) 4%, transparent);
+  }
+
+  .pb-find--compact[data-muxui-state-pressed],
+  .pb-find--compact[aria-expanded='true']:not([data-muxui-state-pressed]) {
+    border-color: transparent;
   }
 
   /* The actions: Create post, Inbox, the account; a visitor's Appearance, Sign in and Sign up. */

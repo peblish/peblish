@@ -9,7 +9,7 @@ import { Link } from '@peblish/ui/components/link';
 import { Text } from '@peblish/ui/components/text';
 import { useHydrated } from '@peblish/ui/composer/use-hydrated.ts';
 import { getRouteApi } from '@tanstack/react-router';
-import { useState, type KeyboardEvent, type MouseEvent } from 'react';
+import { useId, useState, type KeyboardEvent, type MouseEvent } from 'react';
 import { useTranslate } from '../i18n/use-translate.ts';
 import { Account, SignedOutActions } from './account.tsx';
 import { Brand } from './brand.tsx';
@@ -36,6 +36,9 @@ export function FindLink({ compact = false }: { compact?: boolean }) {
   const { t } = useTranslate();
   const label = t('shell', 'find');
   const [open, setOpen] = useState(false);
+  const popup = useId();
+  // On the phone's top bar, where the bar ends as the finder opens: it starts there (a banner above moves the bar).
+  const [top, setTop] = useState<number | undefined>(undefined);
   // The finder's code, once loaded.
   const [Finder, setFinder] = useState<FinderView | null>(null);
   const load = () => loadFinder().then(({ default: loaded }) => setFinder(() => loaded));
@@ -47,6 +50,8 @@ export function FindLink({ compact = false }: { compact?: boolean }) {
   const opener = {
     href: directoryPaths.browse,
     'aria-haspopup': hydrated ? ('dialog' as const) : undefined,
+    'aria-expanded': hydrated ? open : undefined,
+    'aria-controls': open && Finder ? popup : undefined,
     // A load that fails here is tried again by a press.
     onPointerEnter: () => void load().catch(() => undefined),
     onFocus: () => void load().catch(() => undefined),
@@ -55,6 +60,7 @@ export function FindLink({ compact = false }: { compact?: boolean }) {
       const modified = event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey;
       if (modified || event.defaultPrevented) return;
       event.preventDefault();
+      setTop(event.currentTarget.closest('.pb-frame-vh')?.getBoundingClientRect().bottom);
       setOpen(true);
       load().catch(() => {
         setOpen(false);
@@ -80,9 +86,9 @@ export function FindLink({ compact = false }: { compact?: boolean }) {
       )}
       {open &&
         (Finder ? (
-          <Finder key={viewer} onClose={() => setOpen(false)} />
+          <Finder key={viewer} id={popup} top={top} onClose={() => setOpen(false)} />
         ) : (
-          <FinderPending label={t('finder', 'placeholder')} loading={t('finder', 'loading')} />
+          <FinderPending label={t('finder', 'placeholder')} loading={t('finder', 'loading')} top={top} />
         ))}
     </>
   );

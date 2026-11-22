@@ -383,6 +383,81 @@ test('the link draws hover, keeps a system-coloured edge and label in forced col
   }
 });
 
+test('the link says whether the finder is open and names it, and draws pressed, open and a forced-colours hover', async ({
+  browser,
+  baseURL,
+}) => {
+  const background = (link: Locator) => link.evaluate((element) => getComputedStyle(element).backgroundColor);
+  const context = await browser.newContext({ baseURL, reducedMotion: 'reduce', viewport: { width: 1440, height: 900 } });
+  const page = await context.newPage();
+  await gotoHydrated(page, '/');
+  const link = finderLink(page);
+  await expect(link).toHaveAttribute('aria-expanded', 'false');
+  await page.mouse.move(0, 0);
+  const rest = await background(link);
+  await link.hover();
+  await page.mouse.down();
+  const pressed = await background(link);
+  await page.mouse.up();
+  await expect(field(page)).toBeFocused();
+  await expect(link).toHaveAttribute('aria-expanded', 'true');
+  await expect(finder(page)).toHaveAttribute('id', (await link.getAttribute('aria-controls'))!);
+  // On a desktop the popup stays where Mux puts it, across the middle of the window.
+  const popup = (await finder(page).boundingBox())!;
+  expect(Math.abs(popup.x + popup.width / 2 - 720)).toBeLessThanOrEqual(1);
+  await page.mouse.move(0, 0);
+  const opened = await background(link);
+  expect(pressed).not.toBe(rest);
+  expect(opened).not.toBe(rest);
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('Escape');
+  await expect(link).toHaveAttribute('aria-expanded', 'false');
+  await expect(link).not.toHaveAttribute('aria-controls');
+  await context.close();
+
+  // Forced colours keep no background or edge colour of the page's own: hover draws an outline.
+  const forced = await browser.newContext({
+    baseURL,
+    forcedColors: 'active',
+    reducedMotion: 'reduce',
+    viewport: { width: 1440, height: 900 },
+  });
+  const high = await forced.newPage();
+  await gotoHydrated(high, '/');
+  await high.mouse.move(0, 0);
+  const outline = (link: Locator) => link.evaluate((element) => getComputedStyle(element).outlineStyle);
+  expect(await outline(finderLink(high))).toBe('none');
+  await finderLink(high).hover();
+  expect(await outline(finderLink(high))).toBe('solid');
+  await forced.close();
+});
+
+for (const width of [320, 390]) {
+  test(`at ${width}px the finder is a full-width field just under the top bar, with or without a banner above the bar`, async () => {
+    const page = await member.newPage();
+    await page.setViewportSize({ width, height: 800 });
+    for (const banner of [false, true]) {
+      await gotoHydrated(page, '/');
+      // A banner above the frame (another lane's): a strip at the top of the page that moves the bar down.
+      if (banner)
+        await page.evaluate(() => document.body.prepend(Object.assign(document.createElement('div'), { className: 'pb-test-banner' })));
+      if (banner) await page.addStyleTag({ content: '.pb-test-banner { block-size: 56px; }' });
+      const bar = page.getByRole('navigation', { name: 'Page' });
+      const box = (await bar.boundingBox())!;
+      if (banner) expect(box.y).toBeGreaterThanOrEqual(56);
+      await bar.getByRole('link', { name: 'Find a community' }).click();
+      await expect(field(page)).toBeFocused();
+      const popup = (await finder(page).boundingBox())!;
+      expect(Math.abs(popup.y - (box.y + box.height)), `banner ${banner}`).toBeLessThanOrEqual(1);
+      expect(popup.x).toBeLessThanOrEqual(1);
+      expect(popup.width).toBeGreaterThanOrEqual(width - 1);
+      await page.keyboard.press('Escape');
+      await page.keyboard.press('Escape');
+    }
+    await page.close();
+  });
+}
+
 test('with scripts off the link is the directory', async ({ browser, baseURL }) => {
   const context = await browser.newContext({ baseURL, javaScriptEnabled: false });
   const page = await context.newPage();

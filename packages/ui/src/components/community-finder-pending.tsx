@@ -26,10 +26,10 @@ export function FinderSkeleton() {
  * be, its field's place and skeleton rows, and a status that says it is loading. Nothing in it takes focus or a
  * press; the finder replaces it, its field focused, once loaded.
  */
-export function FinderPending({ label, loading }: { label: string; loading: string }) {
+export function FinderPending({ label, loading, top }: { label: string; loading: string; top?: number }) {
   return (
-    <div className="pb-finder-pending">
-      <div className="pb-finder-popup pb-finder-pending__popup" aria-hidden="true">
+    <div className="pb-finder-pending" style={top === undefined ? undefined : { '--pb-finder-top': top }}>
+      <div className="pb-finder-pending__popup" aria-hidden="true">
         <div className="pb-finder-pending__field">
           <SearchIcon className="pb-finder__field-icon" />
           <Text size="sm" color="muted">

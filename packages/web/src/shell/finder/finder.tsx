@@ -27,7 +27,8 @@ function askedHost(text: string): string | null {
   return lookup.kind === 'handle' ? lookup.host : new URL(lookup.url).host;
 }
 
-export default function Finder({ onClose }: { onClose: () => void }) {
+/** `id` and `top` go to the popup (CommunityFinder). */
+export default function Finder({ onClose, id, top }: { onClose: () => void; id: string; top?: number }) {
   const { t, locale } = useTranslate();
   const router = useRouter();
   const data = root.useLoaderData();
@@ -154,6 +155,8 @@ export default function Finder({ onClose }: { onClose: () => void }) {
 
   return (
     <CommunityFinder
+      id={id}
+      top={top}
       open
       onOpenChange={(open) => {
         if (!open) onClose();

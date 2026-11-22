@@ -88,6 +88,26 @@
     border-block-end: 1px solid var(--muxui-semantic-border-default);
   }
 
+  /* The phone: a full-width field just under the top bar, from where the bar ends as it opens (`--pb-finder-top`,
+     read from the frame, so a banner above the bar moves it too), the loading one alike. */
+  .pb-finder-backdrop,
+  .pb-finder-pending {
+    --pb-finder-top: 0;
+  }
+
+  @media (max-width: 859.98px) {
+    .pb-finder-backdrop > .muxui-command-palette__popup,
+    .pb-finder-pending__popup {
+      /* layout: the bar's measured end */
+      top: calc(var(--pb-finder-top) * 1px);
+      left: 0;
+      inline-size: 100%;
+      max-block-size: calc(100dvh - var(--pb-finder-top) * 1px);
+      transform: none;
+      border-radius: 0;
+    }
+  }
+
   /* The phone: every row a 44px target, as the frame's controls are there. */
   @media (max-width: 859.98px) {
     .pb-finder {

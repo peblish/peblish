@@ -200,9 +200,20 @@ export function FinderPanel({
   );
 }
 
+declare module 'react' {
+  interface CSSProperties {
+    /** Where the phone's top bar ends, in CSS pixels: the finder's top there (community-finder.css). */
+    '--pb-finder-top'?: number;
+  }
+}
+
 export interface CommunityFinderProps extends FinderPanelProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** The popup's id, which its trigger names in `aria-controls`. */
+  id?: string;
+  /** Where the phone's top bar ends (its bottom, read from the frame as it opens); the popup starts there on a phone. */
+  top?: number;
 }
 
 /**
@@ -210,11 +221,16 @@ export interface CommunityFinderProps extends FinderPanelProps {
  * (Mux's own reduced-motion scope on the backdrop, so neither the panel nor its blur fades in). No trigger part: the
  * shell's link opens it, and the palette's modal returns focus to that link when it closes.
  */
-export function CommunityFinder({ open, onOpenChange, ...panel }: CommunityFinderProps) {
+export function CommunityFinder({ open, onOpenChange, id, top, ...panel }: CommunityFinderProps) {
   return (
     <CommandPalette.Root open={open} onOpenChange={onOpenChange} className="pb-finder-root">
-      <CommandPalette.Backdrop data-muxui-motion="reduced">
-        <CommandPalette.Popup aria-label={panel.labels.field} translucent className="pb-finder-popup">
+      {/* The bar's end is set on the backdrop, whose child the popup is (Popup's own props reach its dialog inside). */}
+      <CommandPalette.Backdrop
+        data-muxui-motion="reduced"
+        className="pb-finder-backdrop"
+        style={top === undefined ? undefined : { '--pb-finder-top': top }}
+      >
+        <CommandPalette.Popup id={id} aria-label={panel.labels.field} translucent>
           <FinderPanel {...panel} />
         </CommandPalette.Popup>
       </CommandPalette.Backdrop>
