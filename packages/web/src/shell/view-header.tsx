@@ -116,16 +116,37 @@ export function useHeadingInView(pathname: string): boolean {
     const heading = document.querySelector('#pb-main main h1');
     const bar = document.querySelector('.pb-frame-vh');
     if (!bar) return;
-    // The bar's lower edge, under which the heading counts as gone. The bar sticks inside its column, so a page
-    // that hydrates scrolled past the column's end has it above the window: then the window's top, as a
-    // negative bottom would make the margin "--…px", which IntersectionObserver refuses by throwing.
-    const line = Math.max(0, Math.round(bar.getBoundingClientRect().bottom));
-    // Without a heading the observer watches the bar, and its first report says the name is not in view.
-    const observer = new IntersectionObserver(([entry]) => setInView(!!heading && !!entry && entry.boundingClientRect.bottom > line), {
-      rootMargin: `-${line}px 0px 0px 0px`,
-    });
-    observer.observe(heading ?? bar);
-    return () => observer.disconnect();
+    let observer: IntersectionObserver | undefined;
+    let line = -1;
+    let frame = 0;
+    // The bar's lower edge, under which the heading counts as gone. The bar sticks inside its column, so near the
+    // column's end it moves up, and a page that hydrates scrolled past that end has it above the window: then the
+    // window's top, as a negative bottom would make the margin "--…px", which IntersectionObserver refuses by
+    // throwing. So the edge is taken again after a scroll or a resize, and the observer made again when it moved.
+    const watch = () => {
+      frame = 0;
+      const edge = Math.max(0, Math.round(bar.getBoundingClientRect().bottom));
+      if (edge === line) return;
+      line = edge;
+      observer?.disconnect();
+      // Without a heading the observer watches the bar, and its first report says the name is not in view.
+      observer = new IntersectionObserver(([entry]) => setInView(!!heading && !!entry && entry.boundingClientRect.bottom > edge), {
+        rootMargin: `-${edge}px 0px 0px 0px`,
+      });
+      observer.observe(heading ?? bar);
+    };
+    const soon = () => {
+      if (frame === 0) frame = requestAnimationFrame(watch);
+    };
+    watch();
+    window.addEventListener('scroll', soon, { passive: true });
+    window.addEventListener('resize', soon);
+    return () => {
+      cancelAnimationFrame(frame);
+      window.removeEventListener('scroll', soon);
+      window.removeEventListener('resize', soon);
+      observer?.disconnect();
+    };
   }, [pathname]);
   return inView;
 }
