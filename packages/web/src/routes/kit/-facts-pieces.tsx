@@ -43,7 +43,7 @@ function Heads({ tab }: { tab: 'open' | 'resolved' }) {
 function Moderates({ more = false }: { more?: boolean }) {
   return (
     <div className="kit-rail">
-      <ModeratesPanel moderates={{ communities: [communities.announcements, communities.art, communities.fediverse], more }} />
+      <ModeratesPanel moderates={[communities.announcements, communities.art, communities.fediverse]} more={more} />
     </div>
   );
 }

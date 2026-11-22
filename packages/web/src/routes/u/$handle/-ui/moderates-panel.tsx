@@ -11,19 +11,19 @@ import type { ProfileData } from '../-load.ts';
  * person moderates, as this server verified it and this viewer may see it, by handle. Left out when
  * there is none; past the list's bound it says there are more.
  */
-export function ModeratesPanel({ moderates }: { moderates: ProfileData['moderates'] }) {
+export function ModeratesPanel({ moderates, more }: { moderates: ProfileData['moderates']; more: boolean }) {
   const { t } = useTranslate();
-  if (moderates.communities.length === 0) return null;
+  if (moderates.length === 0) return null;
   return (
     <RailPanel title={t('facts', 'moderates.title')}>
       <RailLinks
-        items={moderates.communities.map((community) => ({
+        items={moderates.map((community) => ({
           key: community.id,
           href: communityPath(community),
           label: <Handle prefix="!" handle={community.handle} />,
         }))}
       />
-      {moderates.more && (
+      {more && (
         <Text as="p" size="sm" color="muted">
           {t('facts', 'moderates.more')}
         </Text>

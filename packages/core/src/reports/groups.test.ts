@@ -76,6 +76,25 @@ describe('the queue by community', () => {
     expect(data.groups.flatMap((group) => group.rows.flatMap((row) => row.categories))).not.toContain('child_safety');
   });
 
+  test('on every tab, a moderator gets nothing of a community they do not moderate', async () => {
+    const w = await world();
+    // Kitchen's moderator escalates one of its groups and dismisses the other, so it has rows under every tab.
+    const [knives, ovens] = (await payload(w.cook)).groups[0]!.rows;
+    await routeReportsAs(localUser(w.cook.actorId), { target: knives!.target, audience: 'moderators' }, 'admins');
+    const done = await resolveReportsAs(
+      localUser(w.cook.actorId),
+      { target: ovens!.target, audience: 'moderators' },
+      { resolution: 'dismissed' },
+    );
+    if (!done.ok) throw new Error(done.reason);
+    expect(summary(await payload(w.cook, 'escalated'))).toEqual([{ community: 'kitchen', openCount: 1, rows: ['admins:post'] }]);
+    for (const tab of ['open', 'escalated', 'resolved', 'dismissed'] as const) {
+      const text = JSON.stringify(await payload(w.mod, tab));
+      for (const secret of [w.kitchen.id, 'kitchen', 'Secret kitchen', 'Knives', 'Ovens'])
+        expect(text, `${tab}: ${secret}`).not.toContain(secret);
+    }
+  });
+
   test('naming a community the moderator does not moderate reads as naming none', async () => {
     const w = await world();
     const none = await payload(w.mod, 'open', 'no-such-community');

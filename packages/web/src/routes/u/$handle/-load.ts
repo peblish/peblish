@@ -37,8 +37,10 @@ export type ProfileData = {
   state: Profile['state'];
   blocked: Profile['blocked'];
   moderatedCommunities: ActorRef[];
-  /** The communities the person moderates, verified here, that this viewer may see (the rail's Moderates), and whether there are more. */
-  moderates: { communities: ActorRef[]; more: boolean };
+  /** The communities the person moderates, verified here, that this viewer may see (the rail's Moderates; the contract's `moderates`). */
+  moderates: ActorRef[];
+  /** More communities than `moderates` lists. */
+  moderatesMore: boolean;
   /** A remote person's home software from its NodeInfo, null when unknown; always null for a local person. */
   homeSoftware: string | null;
   indexable: boolean;
@@ -128,7 +130,8 @@ async function buildProfile(
       state: profile.state,
       blocked: profile.blocked,
       moderatedCommunities: profile.moderatedCommunities.map(publicActorRef),
-      moderates: { communities: moderates.communities.map(publicActorRef), more: moderates.more },
+      moderates: moderates.communities.map(publicActorRef),
+      moderatesMore: moderates.more,
       homeSoftware,
       indexable: profile.indexable,
       viewer: viewer && { actorId: viewer.actorId, admin: viewer.siteRole === 'admin' },

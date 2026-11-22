@@ -102,7 +102,7 @@ function ProfileRail({ data }: { data: ProfileData }) {
           ]}
         />
       </RailPanel>
-      <ModeratesPanel moderates={data.moderates} />
+      <ModeratesPanel moderates={data.moderates} more={data.moderatesMore} />
     </Rail>
   );
 }
