@@ -18,7 +18,7 @@ import { Time } from '@peblish/ui/components/time';
 import { useHydrated } from '@peblish/ui/composer/use-hydrated.ts';
 import { useRouter } from '@tanstack/react-router';
 import { type } from 'arktype';
-import { useLayoutEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { translatePlural } from '../../../i18n/translate.ts';
 import { useTranslate } from '../../../i18n/use-translate.ts';
 import { useRouteHydrated } from '../../../shell/hydration.ts';
@@ -27,6 +27,8 @@ import { useHeadingInView, ViewHeader } from '../../../shell/view-header.tsx';
 import { asCommentError, errorKey, type CommentError } from '../../post/$id/comments/-ui/errors.ts';
 import type { InboxData } from '../-load.ts';
 import { inboxAction, inboxHref, type InboxSearch } from '../-search.ts';
+import { NoticeGroups } from './groups.tsx';
+import { MarkedStatus, undoButtonId } from './marked.tsx';
 
 // The inbox (notifications-list), in Commons' layout: its own view header holding Mark all read, the
 // title with the unread count, the filter tabs with their unread badges, and one InboxRow per notice. Everything is a
@@ -108,11 +110,15 @@ export function Inbox({ data, search }: { data: InboxData; search: InboxSearch }
   return <SignedInbox data={data} search={search} />;
 }
 
-/** Inbox posts answer `{ ok }` or `{ error }` (-form.ts); the comment form adds the new comment's id. */
-const Answer = type({ ok: 'true', 'id?': 'string' }).or({ error: 'string' });
+/** Inbox posts answer `{ ok }` or `{ error }` (-form.ts), Mark all read with its count and Undo stamp; the comment form adds the new comment's id. */
+const Answer = type({ ok: 'true', 'id?': 'string', 'count?': 'number', 'batch?': 'string | null' }).or({ error: 'string' });
 
 /** A POST by fetch to one of the page's form addresses, read as JSON; a network failure or an unreadable answer is `network`. */
-async function post(action: string, body = '', keepalive = false): Promise<{ ok: true; id?: string } | { error: string }> {
+async function post(
+  action: string,
+  body = '',
+  keepalive = false,
+): Promise<{ ok: true; id?: string; count?: number; batch?: string | null } | { error: string }> {
   try {
     const response = await fetch(action, {
       method: 'POST',
@@ -182,13 +188,48 @@ function SignedInbox({ data, search }: { data: Signed; search: InboxSearch }) {
     await router.invalidate();
   }
 
+  // Mark all read and its Undo go to the address the plain form's 303 would (marked.tsx reads it), then reload the data.
+  // Focus goes to Undo once it shows, and back to Mark all read once it is gone: each control disappears or disables under it.
+  const [bulk, setBulk] = useState<'all' | 'undo' | null>(null);
+  async function bulkSubmit(event: FormEvent<HTMLFormElement>, which: 'all' | 'undo') {
+    event.preventDefault();
+    if (bulk) return;
+    setBulk(which);
+    const answer = await post(event.currentTarget.action);
+    setFailed('ok' in answer ? null : answer.error === 'network' ? 'generic' : answer.error);
+    const next =
+      'ok' in answer && which === 'all' && answer.batch && answer.count
+        ? { ...page, marked: answer.count, batch: Number(answer.batch) }
+        : 'ok' in answer && which === 'undo' && answer.count
+          ? { ...page, restored: answer.count }
+          : page;
+    await router.navigate({ href: inboxHref(next), replace: true });
+    await router.invalidate();
+    setBulk(null);
+    if (next !== page) setFocusNext(which === 'all' ? 'undo' : 'all');
+  }
+  // Once the reloaded page shows it (Undo there, or Mark all read enabled again), the control takes focus.
+  const [focusNext, setFocusNext] = useState<'undo' | 'all' | null>(null);
+  useEffect(() => {
+    if (!focusNext) return;
+    const target = document.querySelector<HTMLButtonElement>(focusNext === 'undo' ? `#${undoButtonId}` : '.pb-inbox__all button');
+    if (!target || target.disabled) return;
+    target.focus();
+    setFocusNext(null);
+  }, [focusNext, data.unread, search.marked, search.restored]);
+
   return (
     <main className="pb-inbox">
       <InboxHeader
         trailing={
-          <form method="post" action={inboxAction({ intent: 'read_all' }, page)} onSubmit={submit} className="pb-inbox__all">
+          <form
+            method="post"
+            action={inboxAction({ intent: 'read_all' }, page)}
+            onSubmit={(event) => void bulkSubmit(event, 'all')}
+            className="pb-inbox__all"
+          >
             {/* On a phone its name gives way to its icon (inbox.css); the name stays for assistive technology. */}
-            <Button type="submit" variant="ghost" size="sm" disabled={data.unread === 0}>
+            <Button type="submit" variant="ghost" size="sm" disabled={data.unread === 0} pending={bulk === 'all'}>
               <CheckCheckIcon aria-hidden="true" />
               <Text className="pb-inbox__all-label">{t('notifications', 'markAllRead')}</Text>
             </Button>
@@ -197,6 +238,7 @@ function SignedInbox({ data, search }: { data: Signed; search: InboxSearch }) {
       />
       <div className="pb-page pb-inbox__body">
         <Title unread={data.unread} />
+        <MarkedStatus search={search} page={page} pending={bulk === 'undo'} onUndo={(event) => void bulkSubmit(event, 'undo')} />
         {shownError !== undefined && (
           <Notice tone="danger" role="alert">
             {t('notifications', errorKey ? `error.${errorKey}` : 'error.generic')}
@@ -229,11 +271,21 @@ function SignedInbox({ data, search }: { data: Signed; search: InboxSearch }) {
           // Focusable by script only: it takes focus when the last notice it was on leaves the list (keepFocus).
           <EmptyState id={emptyId} tabIndex={-1} title={t('notifications', 'empty')} />
         ) : (
-          <ul className="pb-rows pb-notices" aria-label={t('notifications', 'list')}>
-            {data.items.map((item) => (
-              <NoticeRow key={item.id} item={item} now={data.now} submit={submit} page={page} afterReload={afterReload} />
-            ))}
-          </ul>
+          <NoticeGroups
+            items={data.items}
+            now={data.now}
+            row={(item) => (
+              <NoticeRow
+                key={item.id}
+                item={item}
+                now={data.now}
+                submit={submit}
+                page={page}
+                afterReload={afterReload}
+                contact={data.contact}
+              />
+            )}
+          />
         )}
         <Pager
           aria-label={t('notifications', 'pages')}
@@ -244,10 +296,21 @@ function SignedInbox({ data, search }: { data: Signed; search: InboxSearch }) {
   );
 }
 
-const moderatorKinds: readonly string[] = [...filterKinds.content, ...filterKinds.account];
+// A community's acceptance of a follow is in the Account filter but is no moderator's word.
+const moderatorKinds: readonly string[] = [...filterKinds.content, ...filterKinds.account].filter((kind) => kind !== 'follow_accept');
 
 const markOf = (kind: InboxItem['kind']): InboxMark =>
-  kind === 'reply' || kind === 'mention' || kind === 'ban' || kind === 'unban' ? kind : 'moderator';
+  kind === 'reply' || kind === 'mention' || kind === 'ban' || kind === 'unban'
+    ? kind
+    : kind === 'thread_reply'
+      ? 'reply'
+      : kind === 'follow_accept'
+        ? 'follow'
+        : 'moderator';
+
+/** A mail to the review address about one decision. */
+const reviewHref = (contact: string, subject: string) =>
+  `mailto:${encodeURIComponent(contact).replace('%40', '@')}?subject=${encodeURIComponent(subject)}`;
 
 /** Sends a reply to the notice's comment (or post) through the comment form; `id` is the new comment's. */
 const sendReply = (item: InboxItem, body: string) =>
@@ -260,6 +323,7 @@ export function NoticeRow({
   submit,
   page,
   afterReload,
+  contact = '',
 }: {
   item: InboxItem;
   now: string;
@@ -267,12 +331,22 @@ export function NoticeRow({
   page: InboxSearch;
   /** Runs `keep` once the inbox's reloaded notices are drawn; without it (the gallery, whose rows stay) focus is left as it is. */
   afterReload?: (keep: () => void) => void;
+  /** The published review address (contact.email): a removal's "Ask for a review" mails it; empty, there is no such link. */
+  contact?: string;
 }) {
   const { t, locale } = useTranslate();
   const router = useRouter();
   const hydrated = useHydrated();
   const moderator = moderatorKinds.includes(item.kind);
-  const target = item.postId ? (item.commentId ? commentPath(item.postId, item.commentId) : postPath(item.postId)) : null;
+  // A follow's answer leads to its community (its headline already names it).
+  const follow = item.kind === 'follow_accept';
+  const target = item.postId
+    ? item.commentId
+      ? commentPath(item.postId, item.commentId)
+      : postPath(item.postId)
+    : follow && item.community
+      ? communityPath(item.community)
+      : null;
   const where = item.about ?? 'post';
   const community = item.community ? <Handle prefix="!" handle={item.community.handle} /> : null;
 
@@ -280,7 +354,9 @@ export function NoticeRow({
   // The ban sentences print the community's handle as plain text: drop any directional controls a remote one carries.
   const handle = item.community ? `!${neutraliseBidi(item.community.handle)}` : '';
   // The buttons' names below are plain text too: the handle and the title lose their directional controls, as Handle shows them.
-  const actor = item.actor ? `@${neutraliseBidi(item.actor.handle)}` : t('notifications', 'actor.unknown');
+  // Nobody named on a followed thread's withheld comment is "Someone", not "A moderator"; a follow's answer is its community's.
+  const unknown = t('notifications', item.kind === 'thread_reply' ? 'actor.someone' : 'actor.unknown');
+  const actor = item.actor ? `@${neutraliseBidi(item.actor.handle)}` : follow && handle ? handle : unknown;
   const subject = item.postTitle ? neutraliseBidi(item.postTitle) : handle || t('notifications', `type.${item.kind}`);
   const sentence = (() => {
     switch (item.kind) {
@@ -296,6 +372,10 @@ export function NoticeRow({
         return item.community ? t('notifications', 'verb.ban.community', { community: handle }) : t('notifications', 'verb.ban.site');
       case 'unban':
         return item.community ? t('notifications', 'verb.unban.community', { community: handle }) : t('notifications', 'verb.unban.site');
+      case 'thread_reply':
+        return t('notifications', 'verb.thread_reply');
+      case 'follow_accept':
+        return t('notifications', 'verb.follow_accept');
     }
   })();
 
@@ -306,10 +386,15 @@ export function NoticeRow({
     if (!item.read && hydrated) void post(readAction, '', true);
   };
 
-  // Where Reply leads: a reply's or mention's comment (or post), unless it was removed or deleted since. Only one whose words are
-  // shown is answered in place; a sensitive one is withheld here for every viewer, so Reply leads to its thread, which applies the gate.
+  // Where Reply leads: a reply's or mention's comment (or post), unless it was removed or deleted since, and a followed thread's
+  // new comment only while the reader sees it (one withheld links no comment to answer). Only one whose words are shown is
+  // answered in place; a sensitive one is withheld here for every viewer, so Reply leads to its thread, which applies the gate.
   const replyTarget =
-    (item.kind === 'reply' || item.kind === 'mention') && item.withheld !== 'removed' && item.withheld !== 'deleted' ? target : null;
+    (item.kind === 'reply' || item.kind === 'mention' || (item.kind === 'thread_reply' && item.withheld === null)) &&
+    item.withheld !== 'removed' &&
+    item.withheld !== 'deleted'
+      ? target
+      : null;
   const replyable = replyTarget !== null && item.withheld === null;
   const formId = `reply-${item.id}`;
   const [open, setOpen] = useState(false);
@@ -402,7 +487,13 @@ export function NoticeRow({
             </Text>
           )}
           <Text variant="label" className="pb-notice__actor">
-            {item.actor ? <Handle prefix="@" handle={item.actor.handle} /> : t('notifications', 'actor.unknown')}
+            {item.actor ? (
+              <Handle prefix="@" handle={item.actor.handle} />
+            ) : follow && item.community ? (
+              <Handle prefix="!" handle={item.community.handle} />
+            ) : (
+              unknown
+            )}
           </Text>
           {moderator && (
             <>
@@ -420,10 +511,10 @@ export function NoticeRow({
           <>
             {target && (
               <Link href={target} onActivate={markOnOpen}>
-                {item.postTitle !== null ? <BidiText text={item.postTitle} /> : t('notifications', 'open')}
+                {item.postTitle !== null ? <BidiText text={item.postTitle} /> : t('notifications', follow ? 'openCommunity' : 'open')}
               </Link>
             )}
-            {community && (
+            {community && !follow && (
               <>
                 {' '}
                 {t('notifications', 'in')} {community}
@@ -505,6 +596,12 @@ export function NoticeRow({
         <Text as="p" size="sm" className="pb-notice__links">
           {/* The modlog shows the entry to the person it is about, public or not. */}
           {item.statement && <Link href={modlogEntryPath(item.statement.modlogId)}>{t('notifications', 'statement')}</Link>}
+          {/* "Message moderators", first scope: the published review address, with the decision named, as the statement of reasons says. */}
+          {item.kind === 'mod_remove' && item.statement && contact && (
+            <Link href={reviewHref(contact, t('notifications', 'review.subject', { decision: item.statement.modlogId }))}>
+              {t('notifications', 'review')}
+            </Link>
+          )}
           {moderator && item.community && (
             <Link href={communityPath(item.community)}>{t('notifications', 'rules', { community: handle })}</Link>
           )}

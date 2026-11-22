@@ -17,6 +17,12 @@ export const notificationKinds = [
 ] as const;
 export type NotificationKind = (typeof notificationKinds)[number];
 
+/**
+ * A Mark all read's stamp as it hands it out for its Undo (mutations.ts): the rows' read time in
+ * whole microseconds, digits only, so it can ride in an address.
+ */
+export const isReadBatch = (value: string): boolean => /^[1-9][0-9]{0,18}$/.test(value);
+
 /** unreadCount stops counting here; the badge prints "99+" at the cap. */
 export const unreadCap = 100;
 

@@ -182,3 +182,5 @@ export const CornerDownRightIcon = icon(CornerDownRight);
 export { AlertIcon, CalendarIcon, MegaphoneIcon, SparklesIcon, WrenchIcon } from './icons-banner.tsx';
 // The sidebar's pins and the directory's pin controls (pins lane): Pin and Move up.
 export { ChevronUpIcon, PinIcon } from './icons-pins.tsx';
+// Following a thread (lane f-notify): the post's bell, off and on.
+export { BellIcon, BellRingIcon } from './icons-watches.tsx';

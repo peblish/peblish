@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { Handle } from '@peblish/ui/components/handle';
 import { Link } from '@peblish/ui/components/link';
 import { Text } from '@peblish/ui/components/text';
@@ -9,9 +10,9 @@ import { ViewHeader } from '../../../shell/view-header.tsx';
  * The post page's and the comment pages' own view header (the routes say `viewHeader: 'own'`): Back, and
  * "Post in !community" as a link to the community, as the Commons thread has it. Every state of these
  * routes renders it (the post, a tombstone, the NSFW gate, which already names the community); a page
- * still loading or failed gets the frame's default bar.
+ * still loading or failed gets the frame's default bar. `trailing` holds the post's own actions (Follow thread).
  */
-export function PostHeader({ handle }: { handle: string }) {
+export function PostHeader({ handle, trailing }: { handle: string; trailing?: ReactNode }) {
   const { t } = useTranslate();
   return (
     <ViewHeader
@@ -25,6 +26,7 @@ export function PostHeader({ handle }: { handle: string }) {
           </Text>
         </Link>
       }
+      trailing={trailing}
     />
   );
 }

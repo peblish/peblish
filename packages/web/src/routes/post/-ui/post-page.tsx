@@ -24,6 +24,7 @@ import { PostReport } from './actions/report.tsx';
 import { PostSave } from './actions/save.tsx';
 import { ActionForm } from './action-form.tsx';
 import { asPostError, errorKey } from './errors.ts';
+import { FollowBell, FollowSwitch } from './follow-thread.tsx';
 import { PostHeader } from './post-header.tsx';
 import { GateRail, PostRail } from './post-rail.tsx';
 import { PostPills } from './post-pills.tsx';
@@ -33,7 +34,8 @@ import { isWithheld } from '../-withheld.ts';
 // time, title, flags, picture or link, body, the pill row of vote, comments, Share and Copy link, then
 // the author's own actions and the action slots: report for REP, block for E1, moderate for MODF, for a
 // signed-in viewer), the thread, and the rail. Left out on purpose: lock and pin authoring, save, hide,
-// crosspost, thread following and post series. The NSFW gate replaces the post (GateNotice, from the
+// crosspost and post series. Follow thread is the view header's bell and the rail's switch
+// (follow-thread.tsx). The NSFW gate replaces the post (GateNotice, from the
 // loader's `kind: 'gate'`), and tombstone states withhold their content in core (readPost); this only
 // lays out what it was given.
 
@@ -95,6 +97,8 @@ function PostContent({ data, error }: { data: Extract<PostPageData, { kind: 'pos
   const count = post.counts.comments;
   const countLabel = count === 1 ? t('posts', 'comments.one') : t('posts', 'comments.other', { count });
   const shownError = asPostError(error);
+  // Follow thread for a signed-in reader of a live post; Unfollow stays wherever the thread is followed.
+  const followable = viewerId !== null && (post.watching === true || (!post.removed && !post.deleted));
   const badgeLabels = { admin: t('posts', 'badge.admin'), moderator: t('posts', 'badge.moderator'), op: '' };
   // A tombstone's author comes only to staff and the author (-page-data.ts postForViewer).
   const withheldAuthor = isWithheld(post.author);
@@ -153,7 +157,10 @@ function PostContent({ data, error }: { data: Extract<PostPageData, { kind: 'pos
 
   return (
     <>
-      <PostHeader handle={post.community.handle} />
+      <PostHeader
+        handle={post.community.handle}
+        trailing={followable && <FollowBell postId={post.id} watching={post.watching === true} />}
+      />
       {/* Keyed by the post: the router reuses this component when a link goes from one post to another, and
           the vote control's optimistic vote and queue, the thread's and the forms' state belong to one post. */}
       <main key={post.id} className="pb-page post-page" data-state={withheld ?? 'visible'}>
@@ -236,7 +243,12 @@ function PostContent({ data, error }: { data: Extract<PostPageData, { kind: 'pos
           <div id="comments" className="post-thread" data-slot="thread" />
         )}
       </main>
-      <PostRail post={post} withheld={withheld !== null} facts={data.facts} />
+      <PostRail
+        post={post}
+        withheld={withheld !== null}
+        facts={data.facts}
+        follow={followable && <FollowSwitch postId={post.id} watching={post.watching === true} />}
+      />
     </>
   );
 }

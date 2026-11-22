@@ -1,6 +1,7 @@
 import type { Uuid } from '@peblish/schema/ids';
 import { and, eq, isNotNull, isNull, sql } from 'drizzle-orm';
 import { notifications } from './tables.ts';
+import { isReadBatch } from './view.ts';
 import { defineMutation } from '../tx/mutation.ts';
 
 // The inbox's five writes. A person's marks recheck, so a site-banned person writes nothing
@@ -58,9 +59,6 @@ export const markNotification = defineMutation({
  * stamp picks out exactly those rows; text, since a JS Date keeps only milliseconds.
  */
 const readStamp = sql<string>`(extract(epoch from ${notifications.readAt}) * 1000000)::bigint::text`;
-
-/** A stamp as Mark all read hands it out: digits only, so it can ride in an address. */
-export const isReadBatch = (value: string): boolean => /^[1-9][0-9]{0,18}$/.test(value);
 
 /**
  * Marks every unread notice of the owner read; answers how many it changed and `batch`, the

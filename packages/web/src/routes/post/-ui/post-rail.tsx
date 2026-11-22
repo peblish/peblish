@@ -1,5 +1,6 @@
 import type { ThreadFacts } from '@peblish/core/posts/facts';
 import type { ActorRef, PostView } from '@peblish/schema/views';
+import type { ReactNode } from 'react';
 import { FactList } from '@peblish/ui/components/fact-list';
 import { BidiText, Handle } from '@peblish/ui/components/handle';
 import { Link } from '@peblish/ui/components/link';
@@ -14,12 +15,22 @@ import { useThreadFacts } from './thread-facts.tsx';
 /**
  * The post's right rail (Commons' Rail.tsx, PostPanels), from what the page already has: where it was
  * posted, then the thread's facts (comments, who started it, when). Left out until their data exists: the
- * community's description, subscribers and Join, and Follow thread; the thread's people, last activity and
- * language are `facts` (thread-facts.tsx). Below 62rem the frame hides the rail; the page itself already says all of this (the view
+ * community's description, subscribers and Join; the thread's people, last activity and language are
+ * `facts` (thread-facts.tsx). Below 62rem the frame hides the rail; the page itself already says all of this (the view
  * header, the meta line, the comments' heading). A withheld post (deleted, or removed to a reader who does
- * not moderate) keeps only where it was posted.
+ * not moderate) keeps only where it was posted. `follow` is the thread's Follow switch, under its facts.
  */
-export function PostRail({ post, withheld, facts = null }: { post: PostView; withheld: boolean; facts?: ThreadFacts | null }) {
+export function PostRail({
+  post,
+  withheld,
+  facts = null,
+  follow,
+}: {
+  post: PostView;
+  withheld: boolean;
+  facts?: ThreadFacts | null;
+  follow?: ReactNode;
+}) {
   const { t, locale } = useTranslate();
   const threadFacts = useThreadFacts(facts);
   return (
@@ -48,6 +59,7 @@ export function PostRail({ post, withheld, facts = null }: { post: PostView; wit
               ...threadFacts,
             ]}
           />
+          {follow}
         </RailPanel>
       )}
     </Rail>

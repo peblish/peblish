@@ -19,6 +19,12 @@
     gap: var(--muxui-semantic-layout-group-gap);
   }
 
+  /* Mark all read's status row (marked.tsx, laid out in inbox-row.css) is always there for its
+     announcements; empty, it gives back the page's gap above it, so it takes no room. */
+  .pb-notice-status:empty {
+    margin-block-start: calc(-1 * var(--muxui-semantic-layout-group-gap));
+  }
+
   /* On a phone Mark all read in the bar is its icon, a 44px target, its name kept for assistive technology. */
   @media (max-width: 859.98px) {
     .pb-inbox__all-label {

@@ -5,8 +5,11 @@ import { AtSignIcon, ReplyIcon, ShieldIcon, UserCheckIcon, UserXIcon } from './i
 import { Text } from './text.tsx';
 import { TextAreaField } from './text-area.tsx';
 
-/** What the row's mark shows: the person's initial with a reply or mention glyph, or a moderator's or the account's glyph. */
-export type InboxMark = 'reply' | 'mention' | 'moderator' | 'ban' | 'unban';
+/**
+ * What the row's mark shows: the person's initial with a reply or mention glyph, or a moderator's or
+ * the account's glyph; `follow` is a community's acceptance of the person's request to join.
+ */
+export type InboxMark = 'reply' | 'mention' | 'moderator' | 'ban' | 'unban' | 'follow';
 
 export interface InboxRowProps {
   unread: boolean;
@@ -38,7 +41,14 @@ const rowPress = (event: MouseEvent<HTMLElement>) =>
   !(event.target as Element).closest('a, button, input, textarea, select, form, [role="button"]') &&
   !window.getSelection()?.toString();
 
-const glyphs = { mention: AtSignIcon, reply: ReplyIcon, moderator: ShieldIcon, ban: UserXIcon, unban: UserCheckIcon } as const;
+const glyphs = {
+  mention: AtSignIcon,
+  reply: ReplyIcon,
+  moderator: ShieldIcon,
+  ban: UserXIcon,
+  unban: UserCheckIcon,
+  follow: UserCheckIcon,
+} as const;
 
 /**
  * One notice in the inbox (Commons' InboxRow), as a list item: an unread dot (drawn, beside words in the

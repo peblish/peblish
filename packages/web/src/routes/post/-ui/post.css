@@ -244,3 +244,20 @@
     }
   }
 }
+
+/* Follow thread (follow-thread.tsx, lane f-notify): the bell's form sits in the view header's row as
+   its button alone; once on, the bell rings (another shape) and takes the strong colour, as the mock's.
+   The rail's switch sits under the thread's facts. */
+@layer app {
+  .post-follow {
+    display: contents;
+  }
+
+  .post-follow [data-state='on'] {
+    color: var(--muxui-semantic-content-strong);
+  }
+
+  .post-rail__follow {
+    margin-block-start: var(--muxui-semantic-layout-group-gap);
+  }
+}
