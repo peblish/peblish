@@ -147,7 +147,8 @@ test.describe('seeded', () => {
     const { context, page } = await signedIn(browser, seed);
     await gotoHydrated(page, '/communities');
     const button = (name: string) => group(page).getByRole('button', { name: name.replace('$', seed.suffix) });
-    const status = page.getByRole('main').getByRole('status').filter({ hasText: seed.suffix });
+    // The page's own pin status, beside the group (a row's Pin has one of its own).
+    const status = page.locator('main > [role="status"]');
     await button('Move Elm $ down').click();
     await expect(status).toHaveText(`Elm ${seed.suffix}, position 2 of 3`);
     await page.route('**/communities/pins', (route) => route.fulfill({ status: 500, json: { error: 'generic' } }));
@@ -160,7 +161,23 @@ test.describe('seeded', () => {
     await expect(status).toHaveText(`Elm ${seed.suffix}, position 3 of 3`);
     expect(await said(page)).toEqual([`Elm ${seed.suffix}, position 3 of 3`]);
 
-    for (const title of ['Yew', 'Birch', 'Elm']) {
+    // The same words twice are said twice: unpin Elm, pin it again from its own row, unpin it again.
+    await page.goto(`/communities?sort=newest`);
+    await page.locator('html[data-hydrated="1"]').waitFor({ state: 'attached' });
+    const row = page
+      .getByRole('main')
+      .getByRole('list', { name: 'Communities', exact: true })
+      .getByRole('button', { name: `Pin Elm ${seed.suffix}` });
+    await button('Pin Elm $').click();
+    await expect(status).toHaveText(`Elm ${seed.suffix} unpinned`);
+    await row.click();
+    await expect(row).toHaveAttribute('aria-pressed', 'true');
+    await listen(status);
+    await button('Pin Elm $').click();
+    await expect.poll(() => said(page)).toEqual([`Elm ${seed.suffix} unpinned`]);
+
+    // Elm is unpinned now: the last two go, and the last Unpin is said too.
+    for (const title of ['Yew', 'Birch']) {
       await button(`Pin ${title} $`).click();
       await expect(status).toHaveText(`${title} ${seed.suffix} unpinned`);
     }

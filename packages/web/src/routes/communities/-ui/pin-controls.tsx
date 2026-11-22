@@ -30,22 +30,28 @@ export function useShellPins(): ShellCommunity[] {
 
 const communityName = (community: { displayName: string | null; name: string }) => community.displayName?.trim() || community.name;
 
-/** A form for one pin action; hydrated it posts by fetch and calls `done` once the data has reloaded. */
+/**
+ * A form for one pin action; hydrated it posts by fetch and calls `done` once the data has reloaded. `clear`
+ * empties the status it reports to as it starts, so one action's words are said once and a repeat again.
+ */
 function PinActionForm({
   fields,
   next,
   run,
   done,
+  clear,
   children,
 }: {
   fields: PinFields;
   next: string;
   run: (fields: PinFields, done?: (place: PinPlace | null) => void) => Promise<void>;
   done?: (place: PinPlace | null) => void;
+  clear: () => void;
   children: ReactNode;
 }) {
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    clear();
     void run(fields, done);
   };
   return (
@@ -164,7 +170,13 @@ export function PinToggle({
     onDone?.();
   };
   return (
-    <PinActionForm fields={{ community: community.id, intent: pinned ? 'unpin' : 'pin' }} next={next} run={action.run} done={done}>
+    <PinActionForm
+      fields={{ community: community.id, intent: pinned ? 'unpin' : 'pin' }}
+      next={next}
+      run={action.run}
+      done={done}
+      clear={() => (onStatus ?? setStatus)('')}
+    >
       <PinButton pinned={pinned} name={name} busy={action.busy} id={id} describedBy={describedBy} />
       {!onStatus && (
         <Text role="status" className="pb-sr">
@@ -209,7 +221,13 @@ function MoveButtons({
   };
   const button = (way: 'up' | 'down') => {
     return (
-      <PinActionForm fields={{ community: community.id, intent: 'move', direction: way }} next={next} run={action.run} done={done(way)}>
+      <PinActionForm
+        fields={{ community: community.id, intent: 'move', direction: way }}
+        next={next}
+        run={action.run}
+        done={done(way)}
+        clear={() => onStatus('')}
+      >
         <MoveButton
           way={way}
           name={name}
