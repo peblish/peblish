@@ -31,16 +31,18 @@ test('Tab walks the controls in reading order', async ({ page }) => {
   const thread = page.getByTestId('kit-thread');
   await thread.getByRole('button', { name: 'Collapse comment and 4 replies' }).focus();
   const order: string[] = [];
-  for (let step = 0; step < 6; step += 1) {
+  for (let step = 0; step < 7; step += 1) {
     await page.keyboard.press('Tab');
     order.push(
       await page.evaluate(() => document.activeElement?.getAttribute('aria-label') ?? document.activeElement?.textContent?.trim() ?? ''),
     );
   }
-  // The author link, the vote arrows and reply, then the next comment's fold button. (Share is in the comment
-  // menu, which needs the tree's own labels: e2e/comments/thread.spec.ts.)
-  expect(order.slice(0, 4)).toEqual(['@jun@lemmy.world', 'Upvote', 'Downvote', 'reply']);
-  expect(order[4]).toMatch(/^Collapse comment/);
+  // The author link, the vote arrows, Reply and the comment's menu, then the next comment's fold button.
+  expect(order.slice(0, 5)).toEqual(['@jun@lemmy.world', 'Upvote', 'Downvote', 'Reply', 'More actions']);
+  expect(order[5]).toMatch(/^Collapse comment/);
+  // The menu holds Copy link (and Share where the browser has a share sheet), as the thread page's does.
+  await thread.getByRole('button', { name: 'More actions' }).first().click();
+  await expect(page.getByRole('menu', { name: 'Comment actions' }).getByRole('menuitem', { name: 'Copy link' })).toBeVisible();
 });
 
 test('a low-score comment starts folded, a removed one shows a note, and badges name who is who', async ({ page }) => {

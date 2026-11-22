@@ -26,9 +26,10 @@ import { createFileRoute, notFound } from '@tanstack/react-router';
 import { useState } from 'react';
 import { useTranslate } from '../../i18n/use-translate.ts';
 import { useRouteHydrated } from '../../shell/hydration.ts';
-import { useCommentThreadLabels, useDensityLabels, usePostCardLabels, useReplyBarLabels, useVoteLabels } from '../../shell/labels.ts';
+import { useDensityLabels, usePostCardLabels, useReplyBarLabels, useVoteLabels } from '../../shell/labels.ts';
 import { commentPath, communityPath, postPath, userPath } from '../../shell/paths.ts';
 import { usePrefs } from '../../shell/prefs.tsx';
+import { useTreeLabels } from '../post/$id/comments/-ui/thread-section.tsx';
 import { kitEnabled } from './-enabled.ts';
 import { SlowVotes } from './-slow-votes.tsx';
 import { SavedFields } from './-saved-fields.tsx';
@@ -67,7 +68,8 @@ function KitPage() {
   const { locale, t } = useTranslate();
   const { prefs, setPrefs } = usePrefs();
   const postLabels = usePostCardLabels();
-  const threadLabels = useCommentThreadLabels();
+  // The thread page's own labels (thread-section.tsx), so the sample has the comment menu: Copy link, and Share where the browser has a share sheet.
+  const threadLabels = useTreeLabels();
   const replyLabels = useReplyBarLabels();
   const voteLabels = useVoteLabels();
   const densityLabels = useDensityLabels();
@@ -237,6 +239,7 @@ function KitPage() {
               setReplyTarget({ handle: `@${comment.author.handle}`, excerpt: comment.contentHtml?.replace(/<[^>]+>/g, '') ?? '' })
             }
             onShare={() => toast.add('Link copied')}
+            linkOf={(comment) => commentPath(posts.link.id, comment.id)}
             now={now}
           />
         </div>
