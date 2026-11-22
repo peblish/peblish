@@ -159,6 +159,26 @@ describe('readProfile', () => {
     expect(await counted(w.mod, showNsfw)).toEqual(await listed(w.mod, showNsfw));
   });
 
+  test('blocking a person or their instance hides their comments on other people’s posts from the counts and the tab', async () => {
+    const w = await world();
+    // Mod's post, which the blocker still sees; Alice's comment under it, and the remote person's.
+    const others = await seedPost(w.local, w.news, w.mod);
+    await seedComment(w.local, others, w.alice);
+    await seedComment(w.lemmy, others, w.remote);
+    const comments = async (handle: string, viewer: { id: string }) => ({
+      counted: (await readProfile(handle, w.as(viewer)))?.counts.comments,
+      listed: (await readActivity({ personId: handle === 'Alice' ? w.alice.id : w.remote.id, tab: 'comments', sort: 'new' }, w.as(viewer)))
+        .items.length,
+    });
+    await seedBlock(w.viewer, w.alice);
+    await seedBlock(w.viewer, { instance: w.lemmy });
+    expect(await comments('Alice', w.viewer)).toEqual({ counted: 0, listed: 0 });
+    expect(await comments('rem@lemmy.test', w.viewer)).toEqual({ counted: 0, listed: 0 });
+    // Someone who blocks neither sees both, as before.
+    expect(await comments('Alice', w.mod)).toEqual({ counted: 1, listed: 1 });
+    expect(await comments('rem@lemmy.test', w.mod)).toEqual({ counted: 1, listed: 1 });
+  });
+
   test('moderated communities: the viewer moderates and the person has live content, at most five', async () => {
     const w = await world();
     const communities = [];
