@@ -3,8 +3,8 @@ import { truncateAll } from '../testing/db';
 import { seedActor, seedInstance } from '../testing/seed';
 import { seedComment, seedCommunityRemoval, seedPost } from '../testing/seed-az';
 import { seedLocalInstance } from '../testing/seed-fed-a';
-import { findHeld, pointsHere } from './local.ts';
-import type { Lookup } from './outcome.ts';
+import { ageGated, findHeld, pointsHere } from './local.ts';
+import type { Held, Lookup } from './outcome.ts';
 import { parseLookup } from './parse.ts';
 
 const lookup = (text: string): Lookup => {
@@ -124,4 +124,24 @@ describe('a link', () => {
     await seedCommunityRemoval(world.lab);
     expect(await findHeld(lookup('https://lemmy.test/post/8'))).toBeNull();
   });
+});
+
+test('age-gated: a flagged community, a flagged post or one in a flagged community, and a comment on either; never a person', async () => {
+  const { here, lemmy, lab, mira, alice, post, comment, localPost } = world;
+  const adult = await seedActor(here, 'Group', 'adult', { sensitive: true });
+  const inAdult = await seedPost(here, adult, alice);
+  const flagged = await seedPost(lemmy, lab, mira, { nsfl: true });
+  const onFlagged = await seedComment(lemmy, flagged, mira);
+  const actor = async (text: string) => (await findHeld(lookup(text)))!;
+  const ofPost = (row: { id: string }): Held => ({ kind: 'post', postId: row.id });
+  const ofComment = (row: { id: string; postId: string }): Held => ({ kind: 'comment', postId: row.postId, commentId: row.id });
+  const gated = async (held: Held[]) => Promise.all(held.map((one) => ageGated(one)));
+  expect(await gated([await actor('!adult@held.test'), ofPost(inAdult), ofPost(flagged), ofComment(onFlagged)])).toEqual([
+    true,
+    true,
+    true,
+    true,
+  ]);
+  const open = [await actor('!lab@lemmy.test'), await actor('!news@held.test'), await actor('@mira@lemmy.test')];
+  expect(await gated([...open, ofPost(post), ofPost(localPost), ofComment(comment)])).toEqual([false, false, false, false, false, false]);
 });
