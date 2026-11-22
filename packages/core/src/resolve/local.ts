@@ -1,5 +1,6 @@
 import { Uuid } from '@peblish/schema/ids';
 import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
+import { instanceBlockedBy } from '../blocks/predicate.ts';
 import { actorRef } from '../directory/ref.ts';
 import { localInstance } from '../db/local-instance.ts';
 import { db as readDb, type Queryable } from '../db/read.ts';
@@ -7,6 +8,7 @@ import { actors } from '../db/tables/actors.ts';
 import { comments, posts } from '../db/tables/content.ts';
 import { instances } from '../db/tables/instances.ts';
 import { communityRemovals } from '../moderation/tables.ts';
+import { blockedHosts } from './blocked.ts';
 import type { Held, Lookup } from './outcome.ts';
 
 // What this server already holds for a lookup, from the database alone: no request is made
@@ -188,4 +190,24 @@ export async function ageGated(held: Held, q: Queryable = readDb()): Promise<boo
     .innerJoin(actors, eq(actors.id, posts.communityId))
     .where(eq(posts.id, held.postId));
   return row?.flagged === true;
+}
+
+/**
+ * Whether what `held` is lives on a host this server blocks or `viewerId` blocks, by the
+ * directory's host rules (blockedHosts, instanceBlockedBy): the host of the actor itself, or of
+ * the post or comment (an object lives on its author's origin), whatever address named it. This
+ * server's own page for a remote community (/c/name@host) names this server's host, not the
+ * community's.
+ */
+export async function heldHostBlocked(held: Held, viewerId: Uuid, q: Queryable = readDb()): Promise<boolean> {
+  const instanceId =
+    'actor' in held
+      ? sql`(select instance_id from ${actors} where id = ${held.actor.id}::uuid)`
+      : held.kind === 'post'
+        ? sql`(select instance_id from ${posts} where id = ${held.postId}::uuid)`
+        : sql`(select instance_id from ${comments} where id = ${held.commentId}::uuid)`;
+  const [row] = await q.execute<{ domain: string; blocked: boolean }>(
+    sql`select i.domain, ${instanceBlockedBy(viewerId, sql`i.id`)} as blocked from ${instances} as i where i.id = ${instanceId}`,
+  );
+  return row !== undefined && (row.blocked || (await blockedHosts()).includes(row.domain));
 }
