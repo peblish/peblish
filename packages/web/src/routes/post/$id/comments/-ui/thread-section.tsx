@@ -26,7 +26,7 @@ import { CommentModerate } from './actions/moderate.tsx';
 import { CommentReport } from './actions/report.tsx';
 import type { ContentActionProps } from '../../../../-actions/props.ts';
 import type { ThreadData } from '../-thread.ts';
-import { authorWithheld, tombstoneWord } from '../../../-withheld.ts';
+import { replyTargetName } from '../../../-withheld.ts';
 import commentsCss from './comments.css?url';
 import { asCommentError, errorKey, type CommentError } from './errors.ts';
 
@@ -267,10 +267,10 @@ export function ThreadSection({ data: loaded }: { data: ThreadData }) {
       )}
       {data.reply === 'yes' ? (
         <ReplyBar
-          // A deleted comment whose author the page was not told is answered as the tombstone it shows.
+          // A deleted comment is answered as the tombstone its row shows, whoever is looking.
           target={
             target && {
-              handle: authorWithheld(target.author) ? tombstoneWord(target, labels) : `@${neutraliseBidi(target.author.handle)}`,
+              handle: replyTargetName(target, labels, (raw) => `@${neutraliseBidi(raw)}`),
               excerpt: excerptOf(target.contentHtml),
             }
           }

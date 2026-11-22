@@ -46,3 +46,14 @@ export function commentAsShown(view: CommentView, viewer: { id: string | null; m
 /** The word a tombstone's row prints (the thread's rule: both flags read as removed), for the reply bar to say the same. */
 export const tombstoneWord = (comment: Pick<CommentView, 'removed' | 'deleted'>, labels: { removed: string; deleted: string }) =>
   comment.removed ? labels.removed : labels.deleted;
+
+/**
+ * How the reply bar names the comment it answers: a deleted one by the word its row prints, for
+ * whoever is looking (the row draws no author then, for its author and staff too, who are told
+ * it); any other, a removed-only one included, by its author's handle as `handle` formats it.
+ */
+export const replyTargetName = (
+  comment: Pick<CommentView, 'removed' | 'deleted' | 'author'>,
+  labels: { removed: string; deleted: string },
+  handle: (raw: string) => string,
+) => (comment.deleted ? tombstoneWord(comment, labels) : handle(comment.author.handle));
