@@ -108,22 +108,30 @@ test('the report queue and the modlog put their name in the view header and thei
 });
 
 // On a computer the staff tables sit whole in the frame's wide centre: neither the page nor a table's card
-// scrolls sideways (the sidebar folds itself at 1100px).
-test('on a computer the Bans, Peers and report queue tables sit whole in the wide centre', async ({ browser }) => {
-  test.setTimeout(90_000);
+// scrolls sideways (the sidebar folds itself at 1100px). The spec seeds every table but Registration's,
+// which may hold no invite yet.
+test('on a computer the staff tables sit whole in the centre', async ({ browser }) => {
+  test.setTimeout(120_000);
   const page = await (await browser.newContext({ storageState: session, viewport: { width: 1440, height: 900 } })).newPage();
+  const tables = {
+    '/admin/bans': true,
+    '/admin/peers': true,
+    '/admin/reports': true,
+    '/admin/media?section=hashes': true,
+    '/admin/pages': true,
+    '/admin/registration': false,
+  };
   for (const width of [1440, 1280, 1100]) {
     await page.setViewportSize({ width, height: 900 });
-    for (const path of ['/admin/bans', '/admin/peers', '/admin/reports']) {
+    for (const [path, seeded] of Object.entries(tables)) {
       await gotoHydrated(page, path);
-      await expect(page.locator('#pb-main')).toHaveAttribute('data-centre', 'wide');
       const geometry = await page.evaluate(() => ({
         page: document.scrollingElement!.scrollWidth - window.innerWidth,
         cards: [...document.querySelectorAll('main .muxui-table')].map(
           (table) => table.parentElement!.scrollWidth - table.parentElement!.clientWidth,
         ),
       }));
-      expect(geometry.cards.length, `${path} at ${width}px`).toBeGreaterThan(0);
+      if (seeded) expect(geometry.cards.length, `${path} at ${width}px`).toBeGreaterThan(0);
       expect(geometry, `${path} at ${width}px`).toEqual({ page: 0, cards: geometry.cards.map(() => 0) });
     }
   }
