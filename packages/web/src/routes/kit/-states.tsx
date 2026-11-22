@@ -43,6 +43,8 @@ import { savesPieces } from './-saves.tsx';
 import { visitPieces } from './-visits.tsx';
 // The sidebar's pins and the directory's pin controls (f-pins).
 import { pinsPieces } from './-pins.tsx';
+// Profile, thread and Instances facts and the queue by community (f-facts lane).
+import { factsPieces } from './-facts-pieces.tsx';
 
 /**
  * The states a state page shows as samples, in the state matrix's order ('selected' stands for current, checked
@@ -214,4 +216,5 @@ export const compositions: Readonly<Record<string, Composition>> = {
   ...visitPieces,
   // The sidebar's pins and the directory's pin controls (f-pins).
   ...pinsPieces,
+  ...factsPieces,
 };
