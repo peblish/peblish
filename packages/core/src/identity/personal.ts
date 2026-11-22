@@ -2,6 +2,7 @@ import type { Uuid } from '@peblish/schema/ids';
 import { and, eq, inArray, or } from 'drizzle-orm';
 import type { WriteTx } from '../db/write.ts';
 import { notifications } from '../notifications/tables.ts';
+import type { NotificationKind } from '../notifications/view.ts';
 import { communityPins } from '../pins/tables.ts';
 import { savedPosts } from '../saves/tables.ts';
 import { threadVisits } from '../visits/tables.ts';
@@ -18,7 +19,7 @@ export const personalTables = [savedPosts, communityPins, threadWatches, threadV
 export type PersonalTable = (typeof personalTables)[number];
 
 /** The notice kinds the personal features write: a followed thread's comment, a remote community's Accept. */
-const personalNoticeKinds = ['thread_reply', 'follow_accept'] as const;
+export const personalNoticeKinds = ['thread_reply', 'follow_accept'] as const satisfies readonly NotificationKind[];
 
 /**
  * Deletes everything the personal features hold for `ownerId`, in the caller's transaction: their

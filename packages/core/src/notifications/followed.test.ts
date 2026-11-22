@@ -449,6 +449,20 @@ describe('thread_reply', () => {
       counts: [2, 2, 2],
     });
   });
+  test('a notice held back from a blocked peer is not marked by Mark all read, so unblocking brings it back unread', async () => {
+    const w = await seedInboxWorld();
+    const postId = w.posts.local.normal;
+    const [post] = await db().select({ apId: posts.apId }).from(posts).where(eq(posts.id, postId));
+    await follow(w.people.reader, postId);
+    const there = await remoteSay(w.people.remoteAuthor, post!.apId);
+    await drainNotices();
+    await writer().insert(peerControls).values({ instanceId: w.instances.lemmy.id, blocked: true });
+    expect(await markAllNotificationsReadAs(localUser(w.people.reader.id))).toEqual({ ok: true, count: 0, batch: null });
+    await writer().update(peerControls).set({ blocked: false }).where(eq(peerControls.instanceId, w.instances.lemmy.id));
+    const inbox = await readInbox({ actorId: w.people.reader.id, siteRole: 'user' }, { filter: 'unread' });
+    expect(inbox.items).toMatchObject([{ kind: 'thread_reply', commentId: there, read: false }]);
+    expect(inbox.unread).toBe(1);
+  });
 });
 
 describe('follow_accept', () => {
