@@ -1,4 +1,5 @@
-import { readQueue, readQueueCommunities, type QueueSort } from '@peblish/core/reports/read';
+import { readQueueByCommunity } from '@peblish/core/reports/groups';
+import type { QueueSort } from '@peblish/core/reports/read';
 import { queueTabs, type QueueTab } from '@peblish/core/reports/scope';
 import { createServerFn } from '@tanstack/react-start';
 import { setResponseStatus } from '@tanstack/react-start/server';
@@ -25,17 +26,9 @@ export const loadQueue = createServerFn({ method: 'GET' })
     if (!session) return { access: 'signed-out' } as const;
     const viewer = { actorId: session.view.actorId, siteRole: session.view.siteRole };
     const tab = isTab(data.tab) ? data.tab : 'open';
-    const communities = await readQueueCommunities(viewer);
-    // `community` is an id or a handle (the sidebar and the community page link by handle).
-    const wanted = data.community?.replace(/^!/, '');
-    const community = wanted ? communities.find((item) => item.id === wanted || item.handle === wanted) : undefined;
     const sort = isSort(data.sort) ? data.sort : tab === 'resolved' || tab === 'dismissed' ? 'newest' : 'oldest';
-    const queue = await readQueue(viewer, {
-      tab,
-      sort,
-      ...(community && { communityId: community.id }),
-      ...(data.cursor && { cursor: data.cursor }),
-    });
+    // `community` is an id or a handle (the sidebar and the community page link by handle); core resolves it among the viewer's own.
+    const queue = await readQueueByCommunity(viewer, { tab, sort, community: data.community, cursor: data.cursor });
     if (!queue.ok) {
       setResponseStatus(403);
       return { access: 'denied', reason: queue.reason } as const;
@@ -47,8 +40,9 @@ export const loadQueue = createServerFn({ method: 'GET' })
       admin: viewer.siteRole === 'admin',
       tab,
       sort,
-      communities,
-      community: community?.id ?? null,
+      // The communities, the chosen one, the rows by community and the next page, as core read them for this viewer.
+      communities: queue.communities,
+      community: queue.community,
       groups: queue.groups,
       next: queue.next,
     } as const;
