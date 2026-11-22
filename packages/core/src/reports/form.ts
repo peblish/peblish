@@ -2,6 +2,7 @@ import type { ActingPrincipal, Principal } from '@peblish/schema/authz';
 import type { Uuid } from '@peblish/schema/ids';
 import { and, eq } from 'drizzle-orm';
 import { authorize } from '../authz/authorize.ts';
+import { blockedAmong } from '../blocks/predicate.ts';
 import { hideNsfw, showNsfw, type NsfwChoice } from '../communities/gate.ts';
 import { db, type Queryable } from '../db/read.ts';
 import { actors } from '../db/tables/actors.ts';
@@ -84,6 +85,8 @@ export async function readReportForm(
             contentHtml: posts.contentHtml,
             authorId: posts.authorId,
             communityId: posts.communityId,
+            deletedAt: posts.deletedAt,
+            removedAt: posts.removedAt,
           })
           .from(posts)
           .where(eq(posts.id, target.id))
@@ -96,6 +99,8 @@ export async function readReportForm(
             contentHtml: comments.contentHtml,
             authorId: comments.authorId,
             communityId: posts.communityId,
+            deletedAt: comments.deletedAt,
+            removedAt: comments.removedAt,
           })
           .from(comments)
           .innerJoin(posts, eq(posts.id, comments.postId))
@@ -110,11 +115,19 @@ export async function readReportForm(
   // The post page's own decision for this viewer; a comment is quoted only when its post is shown.
   const viewer = principal.kind === 'local' ? { actorId: principal.actorId, siteRole: principal.siteRole } : null;
   const page = await readPost(row.postId, viewer, q, nsfw);
-  const shown = page !== null && page.gate === 'none' && !page.view.deleted && !page.view.removed;
+  // The post or comment as it is now, not as the policy found it a moment ago: no text once
+  // deleted or removed. A comment is also hidden as the thread hides it from this viewer, by
+  // someone they block (blockedAmong); the post page shows such a post.
+  const hidden =
+    row.deletedAt !== null ||
+    row.removedAt !== null ||
+    (target.kind === 'comment' && viewer !== null && (await blockedAmong(q, viewer.actorId, [row.authorId])).has(row.authorId));
+  const shown = page !== null && page.gate === 'none' && !page.view.deleted && !page.view.removed && !hidden;
+  const named = authorNamed(page, target.kind, row.deletedAt !== null);
   return {
     ok: true,
     target,
-    about: { kind: target.kind, handle: authorNamed(page, target.kind, false) ? author.handle : null, community: community.handle },
+    about: { kind: target.kind, handle: named ? author.handle : null, community: community.handle },
     quote: shown ? cut(text) : null,
     hosts,
     categories: options(hosts),
