@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 import { skipWithoutKit } from '../support/kit.ts';
 import { gotoHydrated } from '../support/route-marker.ts';
 import { galleryStates, stateProblems } from '../support/states.ts';
@@ -18,15 +18,23 @@ test('/kit/new-since: every state, scheme and condition passes', async ({ browse
   expect(stateProblems(checks)).toEqual([]);
 });
 
-test('/kit/new-since: the jump opens a folded parent before it moves focus and says where, round again', async ({ page }) => {
-  await gotoHydrated(page, '/kit/new-since');
+const sampleOf = (page: Page) => {
   const sample = page.locator('[data-kit-state="rest"]');
-  const jump = sample.getByRole('link', { name: '3 new since your last visit' });
-  const status = sample.locator('.th-head [role="status"]');
   const row = (key: string) => page.locator(`#comment-on-${key}`);
-  const text = (key: string) => row(key).locator('> .pb-comment__main .pb-comment__text');
-  const fold = (key: string) => row(key).locator('> .pb-comment__head .pb-comment__fold');
+  return {
+    jump: sample.getByRole('link', { name: '3 new since your last visit' }),
+    status: sample.locator('.th-head [role="status"]'),
+    row,
+    text: (key: string) => row(key).locator('> .pb-comment__main .pb-comment__text'),
+    fold: (key: string) => row(key).locator('> .pb-comment__head .pb-comment__fold'),
+  };
+};
 
+test('/kit/new-since: the jump opens a parent folded for its low score before it moves focus and says where, round again', async ({
+  page,
+}) => {
+  await gotoHydrated(page, '/kit/new-since');
+  const { jump, status, row, text } = sampleOf(page);
   // The reply under the low-scored comment is drawn but hidden: the jump opens its parent, then focuses it.
   await expect(text('f')).toBeHidden();
   for (const [index, key] of ['b', 'd', 'f', 'b'].entries()) {
@@ -38,10 +46,12 @@ test('/kit/new-since: the jump opens a folded parent before it moves focus and s
   }
   await expect(text('f')).toBeVisible();
   await expect(row('e')).not.toHaveAttribute('data-folded');
+});
 
-  // A parent the reader folds by hand takes its replies off the page; the jump opens it again for its new reply.
-  await page.reload();
-  await page.locator('html[data-hydrated="1"]').waitFor({ state: 'attached' });
+test('/kit/new-since: a parent the reader folded is opened again for its new reply, and the link never goes nowhere', async ({ page }) => {
+  await gotoHydrated(page, '/kit/new-since');
+  const { jump, status, row, fold } = sampleOf(page);
+  // Folding takes the replies off the page.
   await fold('a').click();
   await expect(row('b')).toHaveCount(0);
   await jump.click();

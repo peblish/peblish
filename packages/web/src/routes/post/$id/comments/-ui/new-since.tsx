@@ -97,9 +97,10 @@ export function NewSince({
     flushSync(() => {
       for (let id = parents.get(target.id); id; id = parents.get(id)) setFold(id, false);
     });
+    // Past it next time even when it cannot be drawn, so the jump never sticks on one comment.
+    last.current = target.id;
     const row = document.getElementById(`comment-${target.id}`);
     if (!row) return;
-    last.current = target.id;
     row.tabIndex = -1;
     // Straight there: no smooth travel, whatever the motion setting.
     row.scrollIntoView({ block: 'start' });
