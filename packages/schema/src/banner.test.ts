@@ -28,3 +28,17 @@ test('what an admin publishes leaves the revision to the server', () => {
   expect(BannerPublish.allows(published)).toBe(true);
   expect(BannerPublish.allows(defaultBanner)).toBe(false);
 });
+
+test('a path refuses control characters, raw and percent-encoded: C0, DEL and C1', () => {
+  for (const code of [0x00, 0x01, 0x09, 0x1f, 0x7f, 0x80, 0x85, 0x9f]) {
+    expect(InternalPath.allows(`/rules${String.fromCharCode(code)}`), `raw ${code}`).toBe(false);
+    const hex = code.toString(16).padStart(2, '0');
+    expect(InternalPath.allows(`/rules%${hex}`), `%${hex}`).toBe(false);
+    expect(InternalPath.allows(`/rules%${hex.toUpperCase()}`), `%${hex.toUpperCase()}`).toBe(false);
+  }
+  // C1 as UTF-8 percent escapes.
+  for (const escape of ['%C2%80', '%c2%85', '%C2%9F']) expect(InternalPath.allows(`/rules${escape}`), escape).toBe(false);
+  // Their neighbours stay allowed.
+  for (const path of ['/rules%20', '/rules%7E', '/rules%C2%A0', '/rules%E2%80%93', '/über'])
+    expect(InternalPath.allows(path), path).toBe(true);
+});

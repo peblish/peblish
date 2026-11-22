@@ -137,7 +137,7 @@ export function BannerSection({
           const checked = bannerPatch(fieldsOf(event.currentTarget));
           if ('field' in checked) {
             event.preventDefault();
-            setProblem(checked.field);
+            setProblem(checked.field ?? undefined);
             // A field that posts through a hidden input (Mux's ColorField) is focused at its visible one beside it.
             const named = event.currentTarget.querySelector<HTMLInputElement>(`[name="${checked.field}"]`);
             const visible =

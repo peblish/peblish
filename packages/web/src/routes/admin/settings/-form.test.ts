@@ -92,6 +92,13 @@ test('a refused banner names the field to mark', () => {
   expect(field({ 'banner.colour': 'red' })).toMatchObject({ patch: { 'site.banner': { colour: '#007ba7' } } });
 });
 
+test('a banner post that carries a banner field the form does not have is refused whole', () => {
+  expect(bannerPatch({ ...banner, 'banner.revision': '9' })).toEqual({ field: null });
+  expect(bannerPatch({ ...banner, 'banner.extra': 'x' })).toEqual({ field: null });
+  // Fields of the page's other forms are no banner fields.
+  expect(bannerPatch({ ...banner, intent: 'banner', 'site.name': 'x' })).toHaveProperty('patch');
+});
+
 test('the width form names one of the three presets', () => {
   expect(widthPatch({ 'site.width': 'wide' })).toEqual({ 'site.width': 'wide' });
   expect(widthPatch({ 'site.width': 'full' })).toBeNull();

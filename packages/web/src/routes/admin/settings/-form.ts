@@ -76,9 +76,13 @@ const colour = (value: string) => {
  * The banner form as a `site.banner` patch: text trimmed and CRLF folded, an action only when it has a label or an
  * address, and `revision` 0, which the writer replaces with the next one. Refused, with the field to mark, where
  * the contract would refuse it or the form's own rules do: an enabled banner needs a message, and an action needs
- * both its label and its address. A switch that is off is not in the form.
+ * both its label and its address, and a `banner.` field the form does not have is refused whole. A switch that
+ * is off is not in the form.
  */
-export function bannerPatch(form: Record<string, string>): { patch: SettingsPatch } | { field: BannerField } {
+export function bannerPatch(form: Record<string, string>): { patch: SettingsPatch } | { field: BannerField | null } {
+  // The banner is always published whole from its own fields: a post that names another `banner.` field (a
+  // revision, say) is refused rather than have it dropped unseen. Null: no field of the form to mark.
+  if (Object.keys(form).some((name) => name.startsWith('banner.') && !isBannerField(name))) return { field: null };
   const value = (name: BannerField) => text(form[name]).trim();
   const enabled = form['banner.enabled'] === 'on';
   const actions: Record<'primary' | 'link', BannerAction | null> = { primary: null, link: null };
