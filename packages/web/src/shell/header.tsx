@@ -7,6 +7,7 @@ import { InboxIcon, SearchIcon } from '@peblish/ui/components/icons';
 import { Link } from '@peblish/ui/components/link';
 import { Text } from '@peblish/ui/components/text';
 import { useHydrated } from '@peblish/ui/composer/use-hydrated.ts';
+import { getRouteApi } from '@tanstack/react-router';
 import { lazy, Suspense, useState, type MouseEvent } from 'react';
 import { useTranslate } from '../i18n/use-translate.ts';
 import { Account, SignedOutActions } from './account.tsx';
@@ -21,6 +22,7 @@ import { ThemeMenu } from './theme-menu.tsx';
 // before then; pointing at the link or focusing it starts the load early.
 const loadFinder = () => import('./finder/finder.tsx');
 const Finder = lazy(loadFinder);
+const root = getRouteApi('__root__');
 
 /**
  * Find a community. A link to the directory, whose search is the community search, so with scripts off (or a
@@ -32,6 +34,9 @@ export function FindLink({ compact = false }: { compact?: boolean }) {
   const { t } = useTranslate();
   const label = t('shell', 'find');
   const [open, setOpen] = useState(false);
+  // Who the finder is for: another account (or none) gets a new finder, with nothing of the last one's (its text,
+  // its rows and their follows, a request on its way).
+  const viewer = root.useLoaderData({ select: ({ session }) => session?.actorId ?? '' });
   // It opens a popup only once the page has hydrated; before then, and with scripts off, it is a plain link.
   const hydrated = useHydrated();
   const opener = {
@@ -61,7 +66,7 @@ export function FindLink({ compact = false }: { compact?: boolean }) {
       )}
       {open && (
         <Suspense fallback={null}>
-          <Finder onClose={() => setOpen(false)} />
+          <Finder key={viewer} onClose={() => setOpen(false)} />
         </Suspense>
       )}
     </>

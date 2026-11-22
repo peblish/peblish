@@ -1,7 +1,7 @@
 import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
 import { expect, test, type Browser, type BrowserContext, type Locator, type Page } from '@playwright/test';
-import { expectAccessible, landed, signIn } from '../auth/support.ts';
+import { expectAccessible, landed, signIn, signOut } from '../auth/support.ts';
 import { gotoHydrated } from '../support/route-marker.ts';
 
 // The header's finder (shell/header.tsx, shell/finder/): opened by the header's link over the page, its rows in named
@@ -231,6 +231,50 @@ test('on a phone the top bar’s icon opens the finder across the window, under 
   await page.keyboard.press('Escape');
   await expect(icon).toBeFocused();
   await page.close();
+});
+
+/** What the browser does when the person comes back to the tab (headless pages are always "visible", so hide it first). */
+async function showAgain(page: Page) {
+  await page.evaluate(() => {
+    const set = (state: string) => {
+      Object.defineProperty(document, 'visibilityState', { value: state, configurable: true });
+      document.dispatchEvent(new Event('visibilitychange'));
+    };
+    set('hidden');
+    set('visible');
+  });
+}
+
+test('another account in another tab starts an open finder over, and a refresh for the same viewer keeps its text', async ({
+  browser,
+  baseURL,
+}) => {
+  // A session of its own: signing it out leaves the other tests' session alone.
+  const context = await signedIn(browser, baseURL!);
+  const page = await context.newPage();
+  await open(page);
+  await page.keyboard.type(cast.word);
+  await expect(rows(page, 'Joined')).toHaveCount(2);
+
+  // The shell reloads its data for the same viewer (shell/viewer-sync.ts, here told someone else was seen last).
+  await page.evaluate(() => localStorage.setItem('pb-viewer', 'someone-else'));
+  const refreshed = page.waitForRequest((request) => request.url().includes('/_serverFn/'));
+  await showAgain(page);
+  await refreshed;
+  await page.waitForLoadState('networkidle');
+  await expect(field(page)).toHaveValue(cast.word);
+  await expect(rows(page, 'Joined')).toHaveCount(2);
+
+  // Signed out in another tab, then shown again: the finder is a visitor's, with nothing of the member's left.
+  const other = await context.newPage();
+  await signOut(other);
+  await expect.poll(() => other.evaluate(() => localStorage.getItem('pb-viewer'))).toBe('');
+  await showAgain(page);
+  await expect(field(page)).toHaveValue('');
+  await page.keyboard.type(cast.word);
+  await expect(rows(page, 'More communities')).toHaveCount(4);
+  await expect(group(page, 'Joined')).toHaveCount(0);
+  await context.close();
 });
 
 test('the link draws hover, keeps a system-coloured edge and label in forced colours, and never eases under reduced motion', async ({
