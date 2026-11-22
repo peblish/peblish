@@ -12,7 +12,8 @@ import { notifications } from './tables.ts';
 /**
  * A followed thread's notice (`thread_reply`) exists for the viewer only while its comment is one
  * they may read and its row may say who wrote it: the comment and its post are live (not removed,
- * deleted or purged), its commenter is not on a peer this server blocks (peerBlocked), the post
+ * deleted or purged), its commenter's account is live and not on a peer this server blocks
+ * (peerBlocked; a deleted account's notices are cleared, identity/personal.ts), the post
  * is not flagged sensitive or NSFL, and it passes the feeds' other rules for this viewer (blocks
  * of its author, its community or their servers, blocked peers). All but the blocks hold for
  * every viewer alike, so no row is ever anonymous: one would be, for a declared reader of flagged
@@ -29,7 +30,7 @@ const followedThreadReadable = (viewerId: Uuid): SQL => {
     join ${posts} on ${posts.id} = notice_comment.post_id
     where notice_comment.id = "notifications"."comment_id"
       and notice_comment.deleted_at is null and notice_comment.removed_at is null
-      and not ${peerBlocked(sql`notice_author.instance_id`)}
+      and notice_author.deleted_at is null and not ${peerBlocked(sql`notice_author.instance_id`)}
       and ${posts.deletedAt} is null and ${posts.removedAt} is null
       and ${sql.join(rules, sql` and `)}
   ))`;

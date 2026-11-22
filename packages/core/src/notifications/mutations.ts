@@ -1,5 +1,6 @@
 import type { Uuid } from '@peblish/schema/ids';
 import { and, eq, isNotNull, isNull, sql } from 'drizzle-orm';
+import { deletePersonalNotices } from '../identity/personal.ts';
 import { notifications } from './tables.ts';
 import { isReadBatch } from './view.ts';
 import { inboxVisible } from './visible.ts';
@@ -110,13 +111,18 @@ export const undoMarkAllRead = defineMutation({
   },
 });
 
-/** Removes every notice of a person whose account was deleted; answers how many. */
+/**
+ * Removes every notice of a person whose account was deleted; answers how many. The personal
+ * kinds' notices that name them in other inboxes go too (deletePersonalNotices): one a fan-out
+ * committed after the deletion's own clean-up is still caught here.
+ */
 export const purgeNotifications = defineMutation({
   action: 'notification.purge',
   emits: ['notification.purged'],
   async run(t, grant) {
     const { recipientId } = grant.subject;
     const rows = await t.db.delete(notifications).where(eq(notifications.recipientId, recipientId)).returning({ id: notifications.id });
+    await deletePersonalNotices(t.db, recipientId);
     if (rows.length > 0) await t.emit({ type: 'notification.purged', v: 1, recipientId, count: rows.length });
     return { count: rows.length };
   },

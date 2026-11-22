@@ -1,6 +1,6 @@
 import type { Principal } from '@peblish/schema/authz';
 import { parseEvent } from '@peblish/schema/events';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 import { authorize } from '../authz/authorize.ts';
 import { gateOf } from '../communities/gate.ts';
@@ -21,10 +21,13 @@ import { declareAge } from '../testing/seed-b1.ts';
 import { seedBlock } from '../testing/seed-e1.ts';
 import { drainNotices, emitEvent, kindsOf, noticeCount, noticesOf, remoteSay, say, seedInboxWorld } from '../testing/seed-e2.ts';
 import { localUser, seedActor } from '../testing/seed.ts';
+import { outboxEmitter } from '../tx/tx.ts';
 import { threadWatches } from '../watches/tables.ts';
 import { threadFollowersOf, threadReplyFanOut } from '../watches/watchers.ts';
 import { watchThreadAs } from '../watches/watches.ts';
+import { consumer } from './consumer.ts';
 import { readInbox } from './read.ts';
+import { notifications } from './tables.ts';
 import { inboxFilters } from './view.ts';
 import { markAllNotificationsReadAs } from './service.ts';
 import { unreadCount } from './unread.ts';
@@ -145,6 +148,71 @@ describe('thread_reply', () => {
     await writer().update(outboxCursors).set({ txId: '0', eventId: 0 }).where(eq(outboxCursors.consumer, 'notifications.create'));
     await drainNotices();
     expect(await kindsOf(w.people.reader.id)).toEqual([]);
+  });
+
+  test("a notice naming a deleted commenter that lands after the account's clean-up is never listed, and the deletion's consumer clears it", async () => {
+    const w = await seedInboxWorld();
+    const postId = w.posts.local.normal;
+    await follow(w.people.reader, postId);
+    const theirs = await say(w.people.owner, postId, 'Gone soon');
+    const kept = await say(w.people.admin, postId, 'Staying');
+    const decision = await authorize('account.delete', localUser(w.people.owner.id), { actorId: w.people.owner.id });
+    if (!decision.ok) throw new Error(decision.reason);
+    await deleteAccount(decision.grant, { reason: 'owner request' });
+    // The fan-out chose its followers while the account was live, and its insert commits after the deletion's clean-up.
+    await writer().insert(notifications).values({
+      recipientId: w.people.reader.id,
+      kind: 'thread_reply',
+      refId: theirs,
+      actorId: w.people.owner.id,
+      communityId: w.communities.open.id,
+      postId,
+      commentId: theirs,
+    });
+    const viewer = { actorId: w.people.reader.id, siteRole: 'user' } as const;
+    expect([(await readInbox(viewer)).items, await unreadCount(w.people.reader.id)]).toEqual([[], 0]);
+
+    await drainNotices();
+    expect((await noticesOf(w.people.reader.id)).map((notice) => notice.refId)).toEqual([kept]);
+    expect((await readInbox(viewer)).items).toMatchObject([{ kind: 'thread_reply', actor: { id: w.people.admin.id }, commentId: kept }]);
+  });
+
+  test("a live commenter's fan-out does not wait on another write holding their account row", async () => {
+    const w = await seedInboxWorld();
+    const postId = w.posts.local.normal;
+    await follow(w.people.reader, postId);
+    const id = await say(w.people.owner, postId, 'A busy account');
+    let release!: () => void;
+    const released = new Promise<void>((resolve) => (release = resolve));
+    let locked!: () => void;
+    const holding = new Promise<void>((resolve) => (locked = resolve));
+    const holder = writer().transaction(async (t) => {
+      await t.execute(sql`select 1 from actors where id = ${w.people.owner.id}::uuid for no key update`);
+      locked();
+      await released;
+    });
+    await holding;
+    try {
+      // The consumer's own handler, in a transaction that fails instead of waiting on a lock (the worker's horizon is the
+      // whole server's, so its timing proves nothing here).
+      await writer().transaction(async (db) => {
+        await db.execute(sql`set local lock_timeout = '2s'`);
+        const event = {
+          type: 'comment.created',
+          v: 1,
+          commentId: id,
+          postId,
+          authorId: w.people.owner.id,
+          local: true,
+          parentId: null,
+        } as const;
+        await consumer.handle(event, { db, emit: outboxEmitter(db).emit });
+      });
+    } finally {
+      release();
+      await holder;
+    }
+    expect(await kindsOf(w.people.reader.id)).toEqual(['thread_reply']);
   });
 
   test('a replay of the same event writes nothing more and emits nothing more', async () => {
