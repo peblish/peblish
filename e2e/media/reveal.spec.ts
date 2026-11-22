@@ -72,10 +72,12 @@ test('a declared reader reveals a sensitive card and the proxy fetches its remot
   await gotoHydrated(page, `/c/${seed.community}`);
   const card = page.locator('article[data-sensitive]', { hasText: seed.title });
   await expect(card).toHaveAttribute('data-hidden', 'true');
+  // Covered, the picture is not in the page at all; Show puts it there.
+  await expect(card.locator('.pb-post__thumb img')).toHaveCount(0);
+  await card.getByRole('button', { name: 'Show' }).click();
+  await expect(card).not.toHaveAttribute('data-hidden');
   const src = await card.locator('.pb-post__thumb img').getAttribute('src');
   expect(src).toMatch(/^\/media\/proxy\//);
-  await card.getByRole('button', { name: 'hidden, show' }).click();
-  await expect(card).not.toHaveAttribute('data-hidden');
 
   // The browser's request for the picture passed every access check and reached the fetch.
   const answered = await thumbnail;

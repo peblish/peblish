@@ -50,7 +50,7 @@ async function plainPage(browser: Browser, name: string) {
 
 /** The notices, by the list's name ("Benachrichtigungen" in German). */
 const rows = (page: Page, list = 'Notices') => page.getByRole('list', { name: list }).getByRole('listitem');
-const inboxLink = (page: Page) => page.locator('.pb-side').getByRole('link', { name: /^Inbox/ });
+const inboxLink = (page: Page) => page.getByRole('banner').getByRole('link', { name: /^Inbox/ });
 
 test.describe('signed out', () => {
   test('answers 200 with a sign-in link and no data, privately', async ({ page, request }) => {

@@ -1,29 +1,33 @@
+import type { SessionView } from '@peblish/schema/session';
 import { brandPack } from '@peblish/ui/brand/packs.ts';
-import { HeaderNav } from '@peblish/ui/components/header-nav';
+import { Button } from '@peblish/ui/components/button';
+import { EdgeToggle } from '@peblish/ui/components/edge-toggle';
+import {
+  LogInIcon,
+  SettingsIcon,
+  ShieldCheckIcon,
+  ShieldIcon,
+  UserPlusIcon,
+  UserRoundIcon,
+  type IconProps,
+} from '@peblish/ui/components/icons';
 import { Link } from '@peblish/ui/components/link';
 import { Sidebar } from '@peblish/ui/components/sidebar';
 import { getRouteApi, useRouterState } from '@tanstack/react-router';
-import { useEffect, useRef, type ReactNode } from 'react';
+import { useEffect, useRef, type ComponentType, type ReactNode } from 'react';
 import { useTranslate } from '../i18n/use-translate.ts';
-import { Account, AccountLinks } from './account.tsx';
-import { CreatePost } from './create-post.tsx';
-import { Brand, Navigation } from './sidebar.tsx';
+import { AccountLinks, accountPages, signOutFormId } from './account.tsx';
+import { Brand } from './brand.tsx';
+import type { ShellData } from './data.ts';
+import { TopHeader } from './header.tsx';
+import { directoryPaths, feedPaths, inboxPath, reportQueuePath, userPath } from './paths.ts';
+import { useSideFold } from './side-state.ts';
+import { Navigation } from './sidebar.tsx';
+import { PhoneTabs } from './tab-bar.tsx';
 import { ThemeMenu } from './theme-menu.tsx';
+import { DefaultViewHeader, FrameContext } from './view-header.tsx';
 
 const root = getRouteApi('__root__');
-
-/** Create post (signed in), Appearance and the account: the top bar's actions. The phone bar has
- * no room for Appearance, which moves into the drawer. */
-function Actions({ appearance }: { appearance: boolean }) {
-  const { session } = root.useLoaderData();
-  return (
-    <>
-      {session && <CreatePost />}
-      {appearance && <ThemeMenu />}
-      <Account session={session} />
-    </>
-  );
-}
 
 /**
  * After a navigation that took focus with it (a drawer link, or Back with the drawer open: the
@@ -48,81 +52,146 @@ function useFocusLostToPage(pathname: string | undefined) {
 }
 
 /**
- * The application frame (shell-sidebar, mock direction A): the Mux Sidebar column on the left,
- * the actions at the top right in a sticky HeaderNav on the page's own surface (no band, no
- * edge), and the page centred in the width that is left. Below 860 px the column and the bar
- * give way to the Sidebar's phone bar, whose menu button opens the same navigation in Mux's
- * drawer (with Appearance at its foot), and the other actions sit beside the brand. The drawer needs scripts. Each route renders its own
- * <main>; the frame only supplies the landmarks around it.
+ * Tap again for top (Commons): a press on one of the frame's own links to the page already shown (the
+ * sidebar's, the drawer's, the phone's tabs, the brand) puts the page at its top, without loading it
+ * again, and moves focus to its first post's title, else its main landmark, so the next Tab carries on
+ * from the top rather than from the link used.
+ */
+function useTapAgainForTop() {
+  useEffect(() => {
+    const onClick = (event: MouseEvent) => {
+      if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+      const link = event.target instanceof Element ? event.target.closest('a[href]') : null;
+      if (!(link instanceof HTMLAnchorElement) || !link.closest('.pb-side, .pb-nav, .pb-tabbar, .pb-brand, .pb-bar-brand')) return;
+      if (link.origin !== location.origin || link.pathname + link.search !== location.pathname + location.search) return;
+      event.preventDefault();
+      window.scrollTo({ top: 0 });
+      const main = document.querySelector<HTMLElement>('#pb-main main');
+      const target = main?.querySelector<HTMLElement>('.pb-post__title a[href]') ?? main;
+      if (target && !target.matches('a[href]') && !target.hasAttribute('tabindex')) target.tabIndex = -1;
+      target?.focus({ preventScroll: true });
+    };
+    // Captured on the document before the page's client-link listener, which would load the page again.
+    document.addEventListener('click', onClick, true);
+    return () => document.removeEventListener('click', onClick, true);
+  }, []);
+}
+
+/** The top destinations, which have no Back: the feeds, the inbox, the directory, the moderation queue and the viewer's profile. */
+function isRootPage(pathname: string, session: SessionView | null) {
+  const roots: string[] = [...Object.values(feedPaths), inboxPath, directoryPaths.browse, reportQueuePath()];
+  return roots.includes(pathname) || (session !== null && pathname === userPath({ handle: session.name }));
+}
+
+const accountIcons: Record<string, ComponentType<IconProps>> = {
+  profile: UserRoundIcon,
+  settings: SettingsIcon,
+  security: ShieldCheckIcon,
+  invites: UserPlusIcon,
+  admin: ShieldIcon,
+};
+
+/**
+ * The phone drawer (Mux's Sidebar.MobileTrigger): the sidebar's navigation, then the account's pages
+ * (or Sign in and Sign up for a visitor), with Sign out and Appearance at its foot. It stays until the
+ * bottom bar's You page holds the account and the site's pages. Keyed by the page, so a navigation (a
+ * link tap in the drawer, Back or Forward) closes it.
+ */
+function Drawer({ session, shell, pathname }: { session: SessionView | null; shell: ShellData; pathname: string }) {
+  const { t } = useTranslate();
+  const entry = (id: string, href: string, label: string, icon: ComponentType<IconProps>) => (
+    <Sidebar.NavItem key={id} href={href} icon={icon} current={pathname === href}>
+      {label}
+    </Sidebar.NavItem>
+  );
+  const account = (
+    <Sidebar.Section label={t('shell', 'account.menu')}>
+      {session
+        ? accountPages(session, t).map(({ id, href, label }) => entry(id, href, label, accountIcons[id] ?? UserRoundIcon))
+        : [
+            entry('sign-in', '/auth/sign-in', t('shell', 'account.signIn'), LogInIcon),
+            entry('sign-up', '/auth/sign-up', t('shell', 'account.signUp'), UserPlusIcon),
+          ]}
+    </Sidebar.Section>
+  );
+  return (
+    <Sidebar.MobileTrigger key={pathname}>
+      <Navigation session={session} shell={shell} pathname={pathname} extra={account} />
+      <div className="pb-app__drawer-foot">
+        {session && (
+          <Button type="submit" form={signOutFormId} variant="neutral" size="sm">
+            {t('shell', 'account.signOut')}
+          </Button>
+        )}
+        <ThemeMenu />
+      </div>
+    </Sidebar.MobileTrigger>
+  );
+}
+
+/**
+ * The application frame (Commons): a full-width header (header.tsx) over the sidebar, flush to the
+ * window's left edge, and the page beside it, centred in what the sidebar leaves: the centre column
+ * under its sticky view header, and the right rail a route puts beside its <main> (rail.tsx). The sidebar
+ * folds into Mux's icon rail; its fold is in the server render (side-state.ts). The right rail gives way
+ * where the page is narrower than 62rem; below 860 px the header and the sidebar give way to the phone's
+ * top bar (the view header, with the mark, the finder and the drawer's button) and its bottom bar of
+ * five destinations. Each route renders its own <main>; the frame supplies the landmarks around it.
  *
- * The phone bar and the desktop bar each render the actions; CSS shows one of them, so
- * assistive technology and role queries only ever meet one.
- *
- * With scripts off (`@media (scripting: none)`, shell.css) the menu, the popover and the drawer
- * cannot open: the account's button becomes a link to the account list under the page
- * (AccountLinks), Appearance is hidden, and on phones the drawer's button gives way to the
- * Sidebar column itself, laid out under the page. A browser that does not know the media feature
- * gets the scripted layout.
- *
- * On the phone bar the brand and the actions sit beside Sidebar.MobileTrigger, laid over its
- * bar by CSS: Mux has no slot for actions beside its `logo`, and the brand stays with them. (The
- * `logo` slot itself keeps a press its own since Mux UI rc.7.) The trigger sits in a <section> so its <header> is not a second
- * banner beside the bar's own.
+ * With scripts off (`@media (scripting: none)`, shell.css) the menu, the popovers, the fold and the
+ * drawer cannot open: the account's button becomes a link to the account list under the page
+ * (AccountLinks), Appearance and the edge toggle are hidden, and on phones the drawer's button gives way
+ * to the sidebar itself, laid out under the page. A browser that does not know the media feature gets
+ * the scripted layout.
  */
 export function Shell({ children }: { children: ReactNode }) {
-  const { session, shell } = root.useLoaderData();
+  const { session, shell, side } = root.useLoaderData();
   const { t } = useTranslate();
   const pathname = useRouterState({ select: (state) => state.location.pathname });
+  // A route that renders its own view header says so (view-header.tsx); a page that failed shows the error page instead.
+  const ownHeader = useRouterState({
+    select: (state) => {
+      const last = state.matches.at(-1);
+      return last?.status === 'success' && last.staticData.viewHeader === 'own';
+    },
+  });
   useFocusLostToPage(useRouterState({ select: (state) => state.resolvedLocation?.pathname }));
-  const navigation = <Navigation session={session} shell={shell} pathname={pathname} />;
+  useTapAgainForTop();
+  const fold = useSideFold(side);
   const pack = brandPack(shell.brand);
+  const parts = {
+    brand: <Brand siteName={shell.siteName} pack={pack} className="pb-bar-brand" />,
+    drawer: <Drawer session={session} shell={shell} pathname={pathname} />,
+  };
 
   return (
-    <Sidebar.Provider>
-      <div className="pb-app">
-        <Link className="pb-skip pb-link-quiet" href="#pb-main">
-          {t('shell', 'skip')}
-        </Link>
-        <header className="pb-app__bar">
-          <div className="pb-app__bar-start">
-            <Brand siteName={shell.siteName} pack={pack} className="pb-bar-brand" />
-            <span className="pb-app__actions">
-              <Actions appearance={false} />
-            </span>
+    <Sidebar.Provider collapsed={fold.collapsed} onCollapsedChange={fold.setCollapsed}>
+      <FrameContext value={parts}>
+        <div className="pb-app">
+          <Link className="pb-skip pb-link-quiet" href="#pb-main">
+            {t('shell', 'skip')}
+          </Link>
+          <TopHeader session={session} shell={shell} pack={pack} pathname={pathname} />
+          <div className="pb-app__side">
+            <EdgeToggle
+              className="pb-app__fold"
+              collapsed={fold.collapsed}
+              labels={{ name: t('shell', 'sidebar.label'), collapse: t('shell', 'side.collapse'), expand: t('shell', 'side.expand') }}
+            />
+            <Sidebar.Root className="pb-side" aria-label={t('shell', 'sidebar.label')}>
+              <Navigation session={session} shell={shell} pathname={pathname} foldable folded={fold.collapsed} />
+            </Sidebar.Root>
           </div>
-          <section className="pb-app__menu">
-            {/* Keyed by the page, so a navigation (a link tap in the drawer, Back or Forward) closes the drawer. */}
-            <Sidebar.MobileTrigger key={pathname}>
-              {navigation}
-              <div className="pb-app__drawer-foot">
-                <ThemeMenu />
-              </div>
-            </Sidebar.MobileTrigger>
-          </section>
-        </header>
-        <div className="pb-app__side">
-          <Sidebar.Root className="pb-side" hideBorder aria-label={t('shell', 'sidebar.label')}>
-            <Sidebar.Header>
-              <Brand siteName={shell.siteName} pack={pack} />
-            </Sidebar.Header>
-            {navigation}
-          </Sidebar.Root>
-        </div>
-        <div className="pb-app__body">
-          {/* The background HeaderNav: the page's own surface, no edge, its controls in the page's scheme. */}
-          <div className="pb-top">
-            <HeaderNav.Root variant="background">
-              <HeaderNav.Actions>
-                <Actions appearance />
-              </HeaderNav.Actions>
-            </HeaderNav.Root>
+          <div className="pb-app__page">
+            <div id="pb-main" className="pb-frame" tabIndex={-1}>
+              {!ownHeader && <DefaultViewHeader siteName={shell.siteName} root={isRootPage(pathname, session)} />}
+              {children}
+            </div>
           </div>
-          <div id="pb-main" className="pb-app__content" tabIndex={-1}>
-            {children}
-          </div>
+          <PhoneTabs session={session} shell={shell} pathname={pathname} />
           {session && <AccountLinks session={session} />}
         </div>
-      </div>
+      </FrameContext>
     </Sidebar.Provider>
   );
 }

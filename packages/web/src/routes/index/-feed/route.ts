@@ -1,5 +1,6 @@
 import { DEFAULT_LOCALE } from '../../../i18n/negotiate.ts';
 import type { MessageKey } from '../../../i18n/translate.ts';
+import { FeedPending } from '../../../shell/pending.tsx';
 import { ownTitle, pageTitle, rootTitleData } from '../../../shell/title.ts';
 import feedCss from './feed.css?url';
 import { loadFeed } from './load.ts';
@@ -9,7 +10,7 @@ import { parseFeedSearch, resolveFeedSearch, type FeedSearch } from './search.ts
 
 export type FeedRoute = 'home' | 'local' | 'all' | 'popular' | 'moderating';
 
-/** A feed route's options: lenient search, a loader keyed by the whole address, and the page's style. */
+/** A feed route's options: lenient search, a loader keyed by the whole address, the page's style and its loading rows. */
 export function feedRoute(feed: FeedRoute, title?: MessageKey<'shell'>) {
   return {
     validateSearch: parseFeedSearch,
@@ -24,5 +25,6 @@ export function feedRoute(feed: FeedRoute, title?: MessageKey<'shell'>) {
         links: [{ rel: 'stylesheet', href: feedCss }],
       };
     },
+    pendingComponent: FeedPending,
   };
 }

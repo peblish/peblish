@@ -124,7 +124,7 @@ test('ages are counted from the clock the page passes, so the server and the bro
       now={new Date('2026-11-09T12:00:00Z')}
     />,
   );
-  expect(html).toMatch(/<time dateTime="2026-11-09T09:00:00Z" title="Nov 9, 2026, 09:00 (AM )?UTC">3h<\/time>/);
+  expect(html).toMatch(/<time dateTime="2026-11-09T09:00:00Z" title="Nov 9, 2026, 09:00 (AM )?UTC"><span>3h<\/span>/);
 });
 
 describe('a comment by someone the viewer blocks', () => {

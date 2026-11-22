@@ -35,11 +35,11 @@
     "reason": "Prose's stylesheet styles the elements of the sanitised Markdown HTML, which are plain HTML by design (see the prose.tsx exceptions)."
   },
   {
-    "file": "packages/ui/src/components/post-card.css",
-    "rule": "css-blur",
-    "match": "blur(",
-    "anchor": "[data-hidden] .pb-post__picture",
-    "reason": "A static blur hides a hidden or NSFW thumbnail; it is not animated, so it does not repaint."
+    "file": "packages/ui/src/components/post-row.tsx",
+    "rule": "widget-handler",
+    "match": "<article onClick>",
+    "anchor": "PostRow",
+    "reason": "A press on the row's own space follows its title link, a pointer shortcut the keyboard does not need: the title link is the row's keyboard path."
   },
   {
     "file": "packages/web/src/routes/admin/reports/-ui/queue.css",

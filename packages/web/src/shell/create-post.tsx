@@ -1,5 +1,5 @@
-import { ButtonLink } from '@peblish/ui/components/button-link';
-import { PlusIcon } from '@peblish/ui/components/icons';
+import { HeaderNav } from '@peblish/ui/components/header-nav';
+import { SquarePenIcon } from '@peblish/ui/components/icons';
 import { Text } from '@peblish/ui/components/text';
 import { getRouteApi, useRouterState } from '@tanstack/react-router';
 import { lazy, Suspense, useState, type MouseEvent } from 'react';
@@ -21,10 +21,10 @@ const communityOf = (pathname: string) => {
 };
 
 /**
- * The "Create post" entry in the top bar: a Mux link with the primary Button's look (ButtonLink).
- * A link to the composer page, which is what it is
- * without JavaScript or with a modified click (a new tab); otherwise it opens the composer as a
- * bottom sheet over the page, which stays mounted underneath (composer-page).
+ * "Create post" in the desktop header (Commons): a header navigation link with its icon, current on the
+ * composer's page. It is a link to the composer page, which is what it is without JavaScript or with a
+ * modified click (a new tab); otherwise it opens the composer as a bottom sheet over the page, which
+ * stays mounted underneath (composer-page). In a narrow header its name gives way to its icon (shell.css).
  */
 export function CreatePost() {
   const { t } = useTranslate();
@@ -34,26 +34,27 @@ export function CreatePost() {
   // The sheet is open for the page it was opened on: a navigation closes it without an effect.
   const [openAt, setOpenAt] = useState<string | null>(null);
   const open = openAt === pathname;
+  const onComposer = pathname.startsWith(createPostPath);
   return (
     <>
-      <ButtonLink
-        className="pb-create"
+      <HeaderNav.NavButton
+        className="pb-create pb-top__link"
         href={createPostPath}
-        size="sm"
+        current={onComposer}
         onPointerEnter={() => void loadSheet()}
         onFocus={() => void loadSheet()}
-        // Mux's Link runs onClick before its own click handling, so preventDefault also stops the router navigation.
-        onClick={(event: MouseEvent<HTMLElement>) => {
+        // A plain link: the page's client-link listener (shell/client-links.ts) skips a click this prevented.
+        onClick={(event: MouseEvent<HTMLAnchorElement>) => {
           const modified = event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey;
           // On the composer's own page there is nothing to open over.
-          if (modified || event.defaultPrevented || pathname.startsWith(createPostPath)) return;
+          if (modified || event.defaultPrevented || onComposer) return;
           event.preventDefault();
           setOpenAt(pathname);
         }}
       >
-        <PlusIcon />
-        <Text className="pb-action__label">{t('shell', 'create')}</Text>
-      </ButtonLink>
+        <SquarePenIcon className="pb-top__icon" />
+        <Text className="pb-top__label">{t('shell', 'create')}</Text>
+      </HeaderNav.NavButton>
       {open && (
         <Suspense fallback={null}>
           {/* Another viewer is another sheet: it loads that person's communities and never carries the words over. */}

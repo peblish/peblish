@@ -109,7 +109,9 @@ test.describe('anyone', () => {
     await expect(first).toHaveAttribute('data-density', 'classic');
     await page.getByRole('radiogroup', { name: 'View' }).getByRole('radio', { name: 'Compact' }).click();
     await expect(first).toHaveAttribute('data-density', 'compact');
+    // Reloaded, the switch is pressed only once the page has hydrated: before that a press only focuses it.
     await page.reload();
+    await page.locator('html[data-hydrated="1"]').waitFor({ state: 'attached' });
     await expect(page.locator('.feed-list article').first()).toHaveAttribute('data-density', 'compact');
     // A second selection persists as well, not only the first.
     await page.getByRole('radiogroup', { name: 'View' }).getByRole('radio', { name: 'Card' }).click();
@@ -117,6 +119,7 @@ test.describe('anyone', () => {
     await page.getByRole('radiogroup', { name: 'View' }).getByRole('radio', { name: 'Classic' }).click();
     await expect(page.locator('.feed-list article').first()).toHaveAttribute('data-density', 'classic');
     await page.reload();
+    await page.locator('html[data-hydrated="1"]').waitFor({ state: 'attached' });
     await expect(page.locator('.feed-list article').first()).toHaveAttribute('data-density', 'classic');
     await expect(page.getByRole('radiogroup', { name: 'View' }).getByRole('radio', { name: 'Classic' })).toHaveAttribute(
       'aria-checked',
@@ -152,19 +155,18 @@ test.describe('anyone', () => {
 
   /**
    * Every line box of the post's handles and domain, with the box of the element that would clip
-   * it: the nearest ancestor that hides overflow, or the post's frame when none does.
+   * it: the nearest ancestor that hides overflow, or the post when none does.
    */
   const identityLayout = (card: ReturnType<Page['locator']>) =>
     card.evaluate((article) => {
-      const frame = article.querySelector('.pb-post__frame')!;
       const clipOf = (element: Element) => {
         for (let node = element.parentElement; node && node !== article; node = node.parentElement) {
           const style = getComputedStyle(node);
           if (style.overflowX !== 'visible' || style.overflowY !== 'visible') return node;
         }
-        return frame;
+        return article;
       };
-      const pieces = [...article.querySelectorAll('.pb-handle__name, .pb-handle__host, .pb-post__domain')];
+      const pieces = [...article.querySelectorAll('.pb-handle__name, .pb-handle__host, .pb-post__domain, .pb-link-preview__domain')];
       const outside = pieces.flatMap((piece) => {
         const range = document.createRange();
         range.selectNodeContents(piece);
@@ -205,7 +207,10 @@ test.describe('anyone', () => {
         const author = card.locator('.pb-post__by .pb-handle');
         await expect(author, label).toHaveText(`@${long.author}@${long.host}`);
         await expect(author.locator('.pb-handle__host'), label).toBeVisible();
-        await expect(card.locator('.pb-post__domain'), label).toHaveText(`(${long.host})`);
+        // Card says where a link goes in its link line; Classic and Compact after the title.
+        await expect(card.locator(density === 'card' ? '.pb-link-preview__domain' : '.pb-post__domain'), label).toHaveText(
+          density === 'card' ? long.host : `(${long.host})`,
+        );
         expect(await identityLayout(card), label).toEqual({ pageScrolls: false, cardOverflows: false, outside: [] });
       }
     }
@@ -326,8 +331,10 @@ test.describe('a viewer', () => {
     const side = page.getByRole('complementary', { name: 'Sidebar' });
     await expect(side.getByRole('link', { name: 'Subscribed' })).toBeVisible();
     await expect(side.getByRole('link', { name: 'Moderating' })).toBeVisible();
-    await expect(side.getByRole('link', { name: new RegExp(`^!${seed.communities.remote}@`) })).toBeVisible();
-    await expect(side.getByRole('navigation', { name: 'Communities' })).toContainText('Remote (1)');
+    // The communities they follow, local or remote, by name under Communities.
+    await expect(
+      side.locator('.muxui-sidebar__section', { hasText: 'Communities' }).getByRole('link', { name: seed.communities.remote, exact: true }),
+    ).toBeVisible();
     await expectAccessible(page);
   });
 
@@ -366,8 +373,11 @@ test.describe('a viewer', () => {
     const card = page.locator('.feed-list article', { hasText: `Followed ${seed.suffix} 02` });
     const up = card.getByRole('button', { name: 'Upvote' });
     await expect(up).toHaveAttribute('aria-pressed', 'false');
+    const saved = page.waitForResponse((response) => response.request().method() === 'POST' && response.url().includes('/_serverFn/'));
     await up.click();
     await expect(up).toHaveAttribute('aria-pressed', 'true');
+    // Reloaded once the vote is saved: a reload sooner cancels the request, as it would in any browser.
+    await saved;
     await expect(async () => {
       await page.reload();
       await page.locator('html[data-hydrated="1"]').waitFor({ state: 'attached' });
@@ -434,13 +444,14 @@ test.describe('a viewer', () => {
     await expect(card.locator('.pb-vote__score')).toHaveText(String(score + 1));
   });
 
-  test('a person who has declared 16+ gets the sensitive post hidden behind show; one who has not does not get it', async ({ page }) => {
+  test('a person who has declared 16+ gets the sensitive post; one who has not does not get it', async ({ page }) => {
     await signedIn(page, seed.viewer.name);
     await gotoHydrated(page, '/all?sort=top');
+    // A title-only post has no media to cover: it is flagged, and nothing is hidden behind Show.
     const card = page.locator('.feed-list article[data-sensitive]', { hasText: `Sensitive ${seed.suffix}` });
-    await expect(card).toHaveAttribute('data-hidden', 'true');
-    await card.getByRole('button', { name: 'hidden, show' }).click();
+    await expect(card).toBeVisible();
     await expect(card).not.toHaveAttribute('data-hidden');
+    await expect(card.getByRole('button', { name: 'Show' })).toHaveCount(0);
     await page.context().clearCookies();
     await signedIn(page, seed.undeclared.name);
     expect(await html(page, '/all?sort=top')).not.toContain(`Sensitive ${seed.suffix}`);

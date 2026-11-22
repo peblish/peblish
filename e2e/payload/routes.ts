@@ -170,7 +170,7 @@ export const routes: readonly PayloadRoute[] = [
   },
   { route: '/admin/bans/', path: '/admin/bans', js: { budget: 215.2, measured: 204.9, on: '2026-11-12' }, admin: true },
   { route: '/admin/peers/', path: '/admin/peers', js: { budget: 215.2, measured: 204.9, on: '2026-11-12' }, admin: true },
-  { route: '/modlog/', path: '/modlog', js: { budget: 190.5, measured: 181.4, on: '2026-11-12' } },
+  { route: '/modlog/', path: '/modlog', js: { budget: 200.4, measured: 190.8, on: '2026-11-22' } },
   { route: '/admin/reports/', path: '/admin/reports', js: { budget: 214.2, measured: 204.0, on: '2026-11-12' }, admin: true },
   { route: '/admin/settings/', path: '/admin/settings', js: { budget: 196.1, measured: 186.7, on: '2026-11-12' }, admin: true },
   { route: '/admin/pages/', path: '/admin/pages', js: { budget: 213.2, measured: 203.0, on: '2026-11-12' }, admin: true },
@@ -181,7 +181,7 @@ export const routes: readonly PayloadRoute[] = [
     target: () => '/admin/pages/rules/en',
     admin: true,
   },
-  { route: '/$slug', path: '/about', js: { budget: 190.5, measured: 181.4, on: '2026-11-12' }, target: () => '/about' },
+  { route: '/$slug', path: '/about', js: { budget: 200.4, measured: 190.8, on: '2026-11-22' }, target: () => '/about' },
   { route: '/admin/media/', path: '/admin/media', js: { budget: 222.6, measured: 212.0, on: '2026-11-12' }, admin: true },
   { route: '/post/$id/', path: '/post/<id>', js: { budget: 198.7, measured: 189.2, on: '2026-11-12' }, target: seededPost },
   {
@@ -210,7 +210,7 @@ export const routes: readonly PayloadRoute[] = [
   {
     route: '/report/sent/',
     path: '/report/sent?n=<number>',
-    js: { budget: 190.5, measured: 181.4, on: '2026-11-12' },
+    js: { budget: 200.4, measured: 190.8, on: '2026-11-22' },
     target: async (base) => `/report/sent?n=${(await reportedOnce(base)).number}`,
     admin: true,
   },

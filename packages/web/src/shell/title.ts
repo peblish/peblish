@@ -12,6 +12,13 @@ import { translate, type Area, type MessageKey } from '../i18n/translate.ts';
 /** "<page> · <site>", or the page alone while the site is unknown (the root loader failed). */
 const titled = (page: string, site: string) => (site ? `${page} · ${site}` : page);
 
+/** The page's own name in a title the convention composed: "<page> · <site>" gives the page, the site alone gives ''. */
+export function pageName(title: string, site: string): string {
+  if (!site) return title;
+  if (title === site) return '';
+  return title.endsWith(` · ${site}`) ? title.slice(0, -` · ${site}`.length) : title;
+}
+
 /** A page's title in the locale; `name` is a message in the shell catalogue. */
 export function pageTitle(locale: string, site: string, name?: MessageKey<'shell'>): string {
   return name ? titled(translate(locale, 'shell', name), site) : site;

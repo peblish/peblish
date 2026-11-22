@@ -1,0 +1,10 @@
+@layer app {
+  /* CountBadge: Mux's solid brand Badge as Commons draws a count, a pill at least as wide as it is tall. */
+  .pb-count.muxui-badge {
+    justify-content: center;
+    min-inline-size: calc(var(--muxui-semantic-typography-badge-size) * 1.6);
+    block-size: calc(var(--muxui-semantic-typography-badge-size) * 1.6);
+    padding-inline: var(--muxui-semantic-layout-dense-gap);
+    border-radius: var(--muxui-semantic-shape-pill-radius);
+  }
+}

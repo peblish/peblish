@@ -55,11 +55,27 @@ for (const [layout, viewport] of [
     await withoutScripts(browser, baseURL, viewport, async (page) => {
       await signInWithoutScripts(page, admin);
       const banner = page.getByRole('banner');
-      // The menu's button cannot open without scripts: it gives way to a link with the same name.
-      await expect(banner.getByRole('button', { name: `Account: ${admin.name}` })).toHaveCount(0);
+      // The menu's button cannot open without scripts: in the desktop header it gives way to a link with the
+      // same name, to the account list under the page. A phone has no header: the list is under the page,
+      // after the navigation, and You in the bottom bar is the profile.
+      await expect(page.getByRole('button', { name: `Account: ${admin.name}` })).toHaveCount(0);
+      await expect(page.getByRole('button', { name: 'Appearance' })).toHaveCount(0);
       const account = banner.getByRole('link', { name: `Account: ${admin.name}` });
-      await expect(account).toBeVisible();
-      await expect(banner.getByRole('button', { name: 'Appearance' })).toHaveCount(0);
+      if (layout === 'desktop') await expect(account).toBeVisible();
+      else {
+        await expect(banner).toHaveCount(0);
+        await expect(page.getByRole('navigation', { name: 'Sections' }).getByRole('link', { name: 'You' })).toHaveAttribute(
+          'href',
+          `/u/${admin.name}`,
+        );
+      }
+      /** To the account list: by the header's link on a desktop, scrolled to on a phone. */
+      const toList = async () => {
+        if (layout === 'desktop') {
+          await account.click();
+          await page.waitForURL((url) => url.hash === '#pb-account-links');
+        } else await page.getByRole('navigation', { name: 'Account' }).scrollIntoViewIfNeeded();
+      };
 
       const destinations = [
         ['Profile', `/u/${admin.name}`],
@@ -70,8 +86,7 @@ for (const [layout, viewport] of [
       ] as const;
       for (const [name, path] of destinations) {
         await page.goto('/');
-        await account.click();
-        await page.waitForURL((url) => url.hash === '#pb-account-links');
+        await toList();
         const list = page.getByRole('navigation', { name: 'Account' });
         await expect(list).toBeInViewport();
         await list.getByRole('link', { name, exact: true }).click();
@@ -79,10 +94,11 @@ for (const [layout, viewport] of [
         await expect(page.getByRole('main')).toBeVisible();
       }
 
-      await account.click();
+      await toList();
       await page.getByRole('navigation', { name: 'Account' }).getByRole('button', { name: 'Sign out' }).click();
       await page.waitForURL((url) => url.pathname === '/');
-      await expect(banner.getByRole('link', { name: 'Sign in' })).toBeVisible();
+      const signedOut = layout === 'desktop' ? banner : page.getByRole('navigation', { name: 'Sections' });
+      await expect(signedOut.getByRole('link', { name: 'Sign in' })).toBeVisible();
       await expect(page.getByRole('navigation', { name: 'Account' }).getByRole('link', { name: 'Profile' })).toHaveCount(0);
     });
   });
@@ -101,23 +117,30 @@ test('phone, scripts off: the navigation sits under the page, and Terms and a co
     expect(sideBox!.y, 'the navigation comes after the page').toBeGreaterThanOrEqual(main!.y + main!.height);
     expect(sideBox!.width, 'the column takes the phone width').toBeLessThanOrEqual(phone.width);
     expect(await page.evaluate(() => document.documentElement.scrollWidth), 'no sideways scroll').toBeLessThanOrEqual(phone.width);
-    // The community filter only works with scripts.
+    // No field in the sidebar: everything in it is a link.
     await expect(side.getByRole('textbox')).toHaveCount(0);
 
-    await side.getByRole('navigation', { name: 'About this site' }).getByRole('link', { name: 'Terms' }).click();
+    await side.getByRole('link', { name: 'Terms', exact: true }).click();
     await page.waitForURL('**/terms');
 
     await page.goto('/');
-    const community = page
-      .getByRole('complementary', { name: 'Sidebar' })
-      .getByRole('navigation', { name: 'Communities' })
-      .getByRole('link', { name: /^!/ })
-      .first();
+    const community = page.getByRole('complementary', { name: 'Sidebar' }).locator('a[href^="/c/"]').first();
     const href = await community.getAttribute('href');
     expect(href).toMatch(/^\/c\//);
     await community.click();
     await page.waitForURL((url) => url.pathname === href);
     await expect(page.getByRole('main')).toBeVisible();
+  });
+});
+
+test("folded with scripts off, the rail keeps the site's pages, since its foot menu cannot open", async ({ browser, baseURL }) => {
+  await withoutScripts(browser, baseURL, desktop, async (page) => {
+    await page.context().addCookies([{ name: 'peblish_side', value: 'rail', url: baseURL! }]);
+    await page.goto('/');
+    const side = page.getByRole('complementary', { name: 'Sidebar' });
+    await expect(side).toHaveAttribute('data-muxui-collapsed', '');
+    await expect(side.getByRole('link', { name: 'Privacy' })).toBeVisible();
+    await expect(side.locator('.pb-side__foot')).toBeHidden();
   });
 });
 

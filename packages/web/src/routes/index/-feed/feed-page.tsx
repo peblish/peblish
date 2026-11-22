@@ -125,7 +125,7 @@ export function FeedCards({
       ) : data.items.length === 0 ? (
         empty
       ) : (
-        <ul className="feed-list" aria-label={t('feeds', 'list.label')}>
+        <ul className="feed-list pb-rows" aria-label={t('feeds', 'list.label')}>
           {data.items.map(({ post, thumbnailSrc }) => (
             <li key={post.id}>
               <PostCard

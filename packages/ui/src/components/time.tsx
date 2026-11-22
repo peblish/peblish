@@ -1,4 +1,5 @@
 // Compact ages ("3h", "2m"), dates, dates with times and clock times for <time>, in the request's locale.
+import { Text } from './text.tsx';
 
 const units = [
   ['year', 31_536_000],
@@ -73,9 +74,9 @@ export interface TimeProps {
   iso: string;
   locale: string;
   /**
-   * `age` (the default): the compact age ("3h"). `date`: the date alone. `date-time`: the date and
-   * time in UTC. `time`: the clock time alone, 24-hour, in UTC (under a heading that names the
-   * day). The full date and time is always the `title`.
+   * `age` (the default): the compact age ("3h"), with the exact date read after it. `date`: the
+   * date alone. `date-time`: the date and time in UTC. `time`: the clock time alone, 24-hour, in
+   * UTC (under a heading that names the day). The full date and time is always the `title`.
    */
   format?: 'age' | 'date' | 'date-time' | 'time';
   /** The clock for the age, so a test or a story can fix it. */
@@ -85,14 +86,17 @@ export interface TimeProps {
 /**
  * A <time> for `iso`. The age depends on the clock, so the server's text can differ from the
  * browser's by a unit; the browser keeps the server's until the next render. The dates are in
- * UTC, so they match on both sides.
+ * UTC, so they match on both sides. An age also carries the exact date as hidden text, so it is
+ * in what assistive technology reads ("3h, Nov 3, 2026, 11:30 PM UTC"), which `title` is not;
+ * the title stays for a pointer's hover.
  */
 export function Time({ iso, locale, format = 'age', now }: TimeProps) {
   const title = absoluteTime(iso, locale);
   if (format === 'age')
     return (
-      <time dateTime={iso} title={title} suppressHydrationWarning>
-        {compactAge(iso, now ?? clock(), locale)}
+      <time dateTime={iso} title={title}>
+        <span suppressHydrationWarning>{compactAge(iso, now ?? clock(), locale)}</span>
+        <Text className="pb-sr">, {title}</Text>
       </time>
     );
   return (

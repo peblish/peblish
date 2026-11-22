@@ -1,83 +1,142 @@
 import { unreadCap } from '@peblish/core/notifications/view';
 import type { SessionView } from '@peblish/schema/session';
 import type { ActorRef } from '@peblish/schema/views';
-import { BrandLockup } from '@peblish/ui/brand/brand';
-import type { BrandPack } from '@peblish/ui/brand/pack.ts';
 import { Avatar } from '@peblish/ui/components/avatar';
-import { Handle, neutraliseBidi } from '@peblish/ui/components/handle';
+import { neutraliseBidi } from '@peblish/ui/components/handle';
 import {
+  CircleHelpIcon,
+  ClipboardListIcon,
   CompassIcon,
+  FileTextIcon,
   FlameIcon,
   GlobeIcon,
+  HeartHandshakeIcon,
   HouseIcon,
-  InboxIcon,
+  InfoIcon,
+  LockIcon,
   MapPinIcon,
-  NetworkIcon,
-  SearchIcon,
-  ShieldCheckIcon,
   ShieldIcon,
-  UsersIcon,
   type IconProps,
 } from '@peblish/ui/components/icons';
-import { Link } from '@peblish/ui/components/link';
+import { Menu } from '@peblish/ui/components/menu';
 import { Sidebar } from '@peblish/ui/components/sidebar';
 import { Text } from '@peblish/ui/components/text';
-import { useState, type ComponentType } from 'react';
+import { Tooltip } from '@peblish/ui/components/tooltip';
+import { useRouter } from '@tanstack/react-router';
+import type { ComponentType, ReactNode } from 'react';
 import { useTranslate } from '../i18n/use-translate.ts';
+import { openInRouter } from './client-links.ts';
 import type { ShellData } from './data.ts';
-import { communityPath, directoryPaths, feedPaths, inboxPath, reportQueuePath, sitePaths } from './paths.ts';
+import { communityPath, directoryPaths, feedPaths, reportQueuePath, sitePaths } from './paths.ts';
+import { useSectionFolds, type SideSection } from './side-state.ts';
 
 /** A count as the badges print it: "99+" from the cap on. */
-const badgeText = (count: number) => (count >= unreadCap ? `${unreadCap - 1}+` : String(count));
+export const badgeText = (count: number) => (count >= unreadCap ? `${unreadCap - 1}+` : String(count));
 
 /**
- * The site's name, linking home: the column's header (`pb-brand`, which e2e/support/site-name.ts
- * reads, so only the column has it) and the phone bar (`pb-bar-brand`). With a brand pack the
- * pack's mark stands for it, with the wordmark beside it in the column only, and the name names
- * the link.
+ * A community's name in the sidebar: its display name, else its name, without its directional controls; the
+ * row isolates it (<bdi>), as display names from other servers are shown everywhere (BidiText).
  */
-export function Brand({
-  siteName,
-  pack,
-  className = 'pb-brand',
-}: {
-  siteName: string;
-  pack: BrandPack | null;
-  className?: 'pb-brand' | 'pb-bar-brand';
-}) {
-  if (pack)
-    return (
-      <Link className={`${className} pb-link-quiet`} href="/" aria-label={siteName}>
-        <BrandLockup pack={pack} siteName={siteName} withText={className === 'pb-brand'} />
-      </Link>
-    );
+const communityLabel = (community: ActorRef) => neutraliseBidi(community.displayName?.trim() || community.name, '');
+
+// A community's row draws a small Mux Avatar with its initial, as Sidebar.NavItem's icon (the shell's data
+// has no community pictures yet), so folded into the rail the row keeps a mark and its tooltip. One component
+// per letter, so a row keeps its icon across renders.
+const initialIcons = new Map<string, ComponentType<{ className?: string }>>();
+function initialIcon(label: string): ComponentType<{ className?: string }> {
+  const initial = [...label][0]?.toUpperCase() ?? '';
+  let Icon = initialIcons.get(initial);
+  if (!Icon) {
+    Icon = function CommunityInitial({ className }: { className?: string }) {
+      return (
+        <Avatar.Root size="sm" className={`${className ?? ''} pb-nav__avatar`} aria-hidden="true">
+          <Avatar.Fallback>{initial}</Avatar.Fallback>
+        </Avatar.Root>
+      );
+    };
+    initialIcons.set(initial, Icon);
+  }
+  return Icon;
+}
+
+/** The site's own pages, in the sidebar's last section and, folded, in the rail's foot menu. */
+export type SitePage = { href: string; label: string; icon: ComponentType<IconProps> };
+
+/**
+ * Folded into the icon rail, the site's pages are one menu at the rail's foot (Mux's Sidebar.Footer, which
+ * stays in view while the rail scrolls), named by the site and by a tooltip, as Commons has it, rather than
+ * four more icons. With scripts off the menu cannot open, so shell.css shows the section in the rail instead.
+ */
+export function SiteMenu({ siteName, pages }: { siteName: string; pages: readonly SitePage[] }) {
+  const router = useRouter();
   return (
-    <Link className={`${className} pb-link-quiet`} href="/">
-      <Text variant="title" size="sm" truncate>
-        {siteName}
-      </Text>
-    </Link>
+    <Sidebar.Footer className="pb-side__foot">
+      <Menu.Root>
+        <Tooltip
+          placement="end"
+          content={siteName}
+          trigger={
+            <Menu.Trigger className="pb-side__site" aria-label={siteName}>
+              <CircleHelpIcon />
+            </Menu.Trigger>
+          }
+        />
+        <Menu.Popup placement="end-bottom">
+          <Menu.List aria-label={siteName}>
+            {pages.map(({ href, label, icon: Icon }) => (
+              <Menu.Item key={href} id={href} textValue={label} onAction={() => openInRouter(router, href)}>
+                <span className="pb-side__site-item">
+                  <Icon />
+                  {label}
+                </span>
+              </Menu.Item>
+            ))}
+          </Menu.List>
+        </Menu.Popup>
+      </Menu.Root>
+    </Sidebar.Footer>
   );
 }
 
 /**
- * The sidebar's navigation (shell-sidebar): the feeds, the viewer's inbox and queue, the
- * viewer's communities with a filter, links to the directory and the resolver, and the site's
- * pages. The shell renders it twice, in the Mux Sidebar column and in its phone drawer, so each
- * marks the current page itself.
+ * The sidebar's navigation (Commons): the feeds; Moderation (the queue, for moderators and admins); the
+ * viewer's communities (a signed-out visitor's: the local ones), A to Z by name, then the directory; and
+ * the site's own pages under the site's name. Mux's NavList names the landmark (`navLabel`). The shell
+ * renders it in the column, where its sections fold (`foldable`, remembered in this browser) and, folded
+ * into the rail (`folded`), the site's pages move to the foot menu; and in the phone drawer, where `extra`
+ * adds the account's section and nothing folds, as Commons has it. Each marks the current page itself.
+ * Pinned communities arrive with their data in a later branch: they go first in the Communities section,
+ * then a Sidebar.NavDivider when unpinned rows follow, and a row's own control (Unpin, a menu) is
+ * Sidebar.NavItem's `action` (the gallery's sidebar page lays both out).
  */
-export function Navigation({ session, shell, pathname }: { session: SessionView | null; shell: ShellData; pathname: string }) {
-  const { t } = useTranslate();
-  const [filter, setFilter] = useState('');
-  const query = filter.trim().toLowerCase();
-  const matching = (communities: readonly ActorRef[]) =>
-    query === '' ? communities : communities.filter(({ handle }) => handle.toLowerCase().includes(query));
+export function Navigation({
+  session,
+  shell,
+  pathname,
+  extra,
+  foldable = false,
+  folded = false,
+}: {
+  session: SessionView | null;
+  shell: ShellData;
+  pathname: string;
+  extra?: ReactNode;
+  foldable?: boolean;
+  folded?: boolean;
+}) {
+  const { t, locale } = useTranslate();
+  const folds = useSectionFolds();
   // Every item has an icon: without one Mux draws the label's first letter, which is in the link's text.
-  const item = (href: string, label: string, icon: ComponentType<IconProps>) => (
-    <Sidebar.NavItem href={href} icon={icon} current={pathname === href}>
+  const item = (href: string, label: string, icon: ComponentType<IconProps>, badge?: ReactNode) => (
+    <Sidebar.NavItem key={href} href={href} icon={icon} current={pathname === href} badge={badge}>
       {label}
     </Sidebar.NavItem>
   );
+  // A section's title is a button that folds it, in the column; never closed in the server's page.
+  const section = (id: SideSection, label: string) =>
+    foldable
+      ? { label, collapsible: true, expanded: folds.isOpen(id), onExpandedChange: (open: boolean) => folds.setOpen(id, open) }
+      : { label };
   // The count's word is hidden text, so the link's name starts with what it shows (axe label-content-name-mismatch).
   const count = (value: number, word: string) =>
     value > 0 ? (
@@ -86,105 +145,48 @@ export function Navigation({ session, shell, pathname }: { session: SessionView 
         <Text className="pb-sr"> {word}</Text>
       </>
     ) : undefined;
-  // Nested rows have no icon slot (Mux draws their label only), so each community's label starts
-  // with a Mux Avatar of its initial; the data carries no community icon.
-  const group = (id: string, label: string, icon: ComponentType<IconProps>, communities: readonly ActorRef[]) =>
-    communities.length > 0 && (
-      <Sidebar.NavItem
-        key={id}
-        icon={icon}
-        defaultExpanded
-        items={communities.map((community) => {
-          const href = communityPath(community);
-          const label = (
-            <span className="pb-nav__community">
-              <Avatar.Root size="sm" aria-hidden="true">
-                {/* A remote name may start with a directional control, which has no glyph to show. */}
-                <Avatar.Fallback>{[...neutraliseBidi(community.name, '')][0]?.toUpperCase()}</Avatar.Fallback>
-              </Avatar.Root>
-              <Handle prefix="!" handle={community.handle} />
-            </span>
-          );
-          return { id: community.id, href, current: pathname === href, label };
-        })}
-      >
-        {label}
-      </Sidebar.NavItem>
-    );
-  const local = matching(shell.local);
-  const remote = matching(shell.remote);
+  const collator = new Intl.Collator(locale);
+  const communities = [...shell.local, ...shell.remote]
+    .map((community) => ({ community, label: communityLabel(community) }))
+    .sort((a, b) => collator.compare(a.label, b.label));
+  const sitePages: readonly SitePage[] = [
+    { href: sitePaths.about, label: t('shell', 'footer.about'), icon: InfoIcon },
+    { href: sitePaths.rules, label: t('shell', 'footer.conduct'), icon: HeartHandshakeIcon },
+    { href: sitePaths.privacy, label: t('shell', 'footer.privacy'), icon: LockIcon },
+    { href: sitePaths.terms, label: t('shell', 'footer.terms'), icon: FileTextIcon },
+  ];
 
   return (
-    <div className="pb-nav">
-      <nav aria-label={t('shell', 'nav.feeds')}>
-        <Sidebar.NavList>
-          {session && item(feedPaths.subscribed, t('shell', 'feed.subscribed'), HouseIcon)}
-          {item(feedPaths.local, t('shell', 'feed.local'), MapPinIcon)}
-          {item(feedPaths.all, t('shell', 'feed.all'), GlobeIcon)}
-          {item(feedPaths.popular, t('shell', 'feed.popular'), FlameIcon)}
-          {session && shell.moderating > 0 && item(feedPaths.moderating, t('shell', 'feed.moderating'), ShieldIcon)}
-        </Sidebar.NavList>
-      </nav>
-      {session && (
-        <nav aria-label={t('shell', 'nav.you')}>
-          <Sidebar.NavList>
-            <Sidebar.Section label={t('shell', 'nav.you')}>
-              <Sidebar.NavItem
-                href={inboxPath}
-                icon={InboxIcon}
-                current={pathname === inboxPath}
-                badge={count(shell.unread, t('shell', 'you.unread'))}
-              >
-                {t('shell', 'you.inbox')}
-              </Sidebar.NavItem>
-              {shell.reportCount !== null && (
-                <Sidebar.NavItem
-                  href={reportQueuePath()}
-                  icon={ShieldCheckIcon}
-                  current={pathname === reportQueuePath()}
-                  badge={count(shell.reportCount, t('shell', 'you.open'))}
-                >
-                  {t('shell', 'you.queue')}
-                </Sidebar.NavItem>
-              )}
-            </Sidebar.Section>
-          </Sidebar.NavList>
-        </nav>
-      )}
-      <nav aria-label={t('shell', 'nav.communities')}>
-        <Sidebar.NavList>
-          <Sidebar.Section label={t('shell', 'nav.communities')}>
-            {shell.local.length + shell.remote.length > 0 && (
-              <li className="pb-nav__filter">
-                {/* Search's change type also carries its wrapper's div events, hence the narrowing. */}
-                <Sidebar.Search
-                  placeholder={t('shell', 'communities.filter')}
-                  value={filter}
-                  onChange={({ target }) => target instanceof HTMLInputElement && setFilter(target.value)}
-                />
-              </li>
-            )}
-            {group('local', t('shell', 'communities.local', { count: local.length }), UsersIcon, local)}
-            {group('remote', t('shell', 'communities.remote', { count: remote.length }), NetworkIcon, remote)}
-            {item(directoryPaths.browse, t('shell', 'communities.browse'), CompassIcon)}
-            {item(directoryPaths.find, t('shell', 'communities.find'), SearchIcon)}
+    <>
+      <Sidebar.NavList className="pb-nav" navLabel={t('shell', 'nav.label')}>
+        {session && item(feedPaths.subscribed, t('shell', 'feed.subscribed'), HouseIcon)}
+        {item(feedPaths.local, t('shell', 'feed.local'), MapPinIcon)}
+        {item(feedPaths.all, t('shell', 'feed.all'), GlobeIcon)}
+        {item(feedPaths.popular, t('shell', 'feed.popular'), FlameIcon)}
+        {session && shell.moderating > 0 && item(feedPaths.moderating, t('shell', 'feed.moderating'), ShieldIcon)}
+        {shell.reportCount !== null && (
+          <Sidebar.Section {...section('moderation', t('shell', 'nav.moderation'))}>
+            {item(reportQueuePath(), t('shell', 'you.queue'), ClipboardListIcon, count(shell.reportCount, t('shell', 'you.open')))}
           </Sidebar.Section>
-        </Sidebar.NavList>
-      </nav>
-      <nav className="pb-nav__foot" aria-label={t('shell', 'footer.label')}>
-        <Link className="pb-link-muted" href={sitePaths.rules}>
-          {t('shell', 'footer.rules')}
-        </Link>
-        <Link className="pb-link-muted" href={sitePaths.terms}>
-          {t('shell', 'footer.terms')}
-        </Link>
-        <Link className="pb-link-muted" href={sitePaths.privacy}>
-          {t('shell', 'footer.privacy')}
-        </Link>
-        <Link className="pb-link-muted" href={sitePaths.about}>
-          {t('shell', 'footer.about')}
-        </Link>
-      </nav>
-    </div>
+        )}
+        <Sidebar.Section {...section('communities', t('shell', 'nav.communities'))}>
+          {communities.map(({ community, label }) => {
+            const href = communityPath(community);
+            return (
+              <Sidebar.NavItem key={community.id} href={href} icon={initialIcon(label)} current={pathname === href}>
+                {/* An element with the text as its child, so Mux still reads the folded rail's tooltip from it. */}
+                <bdi>{label}</bdi>
+              </Sidebar.NavItem>
+            );
+          })}
+          {item(directoryPaths.browse, t('shell', 'communities.browse'), CompassIcon)}
+        </Sidebar.Section>
+        <Sidebar.Section className="pb-nav__site" {...section('site', shell.siteName)}>
+          {sitePages.map(({ href, label, icon }) => item(href, label, icon))}
+        </Sidebar.Section>
+        {extra}
+      </Sidebar.NavList>
+      {folded && <SiteMenu siteName={shell.siteName} pages={sitePages} />}
+    </>
   );
 }

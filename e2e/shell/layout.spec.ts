@@ -4,34 +4,36 @@ import { expect, test, type Browser, type Page } from '@playwright/test';
 import { landed, signIn } from '../auth/support.ts';
 import { gotoHydrated } from '../support/route-marker.ts';
 
-// The frame's geometry: what gives way in the phone bar at 320 and 360 px, and the sidebar
-// column on a page longer than the screen.
+// The frame's geometry: the phone's two bars at 320 and 360 px, the header and the sidebar on a page
+// longer than the screen, and the sidebar's community rows with long or unusual names.
 
-/** The phone bar's parts, measured in the page. */
-const bar = (page: Page) =>
+/** Mux Sidebar's open width, its 1px edge left out, from the custom property Mux declares for layouts beside it. */
+const openSize = (page: Page) =>
   page.evaluate(() => {
-    const box = (selector: string) => document.querySelector(selector)!.getBoundingClientRect();
-    const name = document.querySelector<HTMLElement>('.pb-bar-brand > .muxui-text')!;
-    return {
-      page: document.documentElement.scrollWidth,
-      brand: box('.pb-bar-brand'),
-      actions: box('.pb-app__bar .pb-app__actions'),
-      menu: box('.muxui-sidebar__mobile-trigger'),
-      nameCut: name.scrollWidth > name.clientWidth,
-      ellipsis: getComputedStyle(name).textOverflow,
-    };
+    const probe = document.createElement('div');
+    probe.style.inlineSize = 'var(--muxui-component-sidebar-open-size)';
+    document.body.append(probe);
+    const width = probe.getBoundingClientRect().width;
+    probe.remove();
+    return width;
   });
 
-/** Whether an element shows only its icon: its label is visually hidden (1 px) and its icon drawn. */
-const iconOnly = (page: Page, name: string) =>
-  page
-    .locator('.pb-app__bar')
-    .getByRole('link', { name, exact: true })
-    .evaluate(
-      (link) =>
-        link.querySelector('.pb-action__label')!.getBoundingClientRect().width <= 1 &&
-        link.querySelector('svg')!.getBoundingClientRect().width > 0,
-    );
+/** The phone's bars, measured in the page. */
+const bars = (page: Page) =>
+  page.evaluate(() => {
+    const box = (element: Element) => element.getBoundingClientRect().toJSON() as DOMRect;
+    const top = document.querySelector('.pb-frame-vh')!;
+    const name = top.querySelector<HTMLElement>('.pb-bar-brand > .muxui-text');
+    return {
+      page: document.documentElement.scrollWidth,
+      brand: box(top.querySelector('.pb-bar-brand')!),
+      finder: box(top.querySelector('.pb-find')!),
+      menu: box(top.querySelector('.muxui-sidebar__mobile-trigger')!),
+      nameCut: name ? name.scrollWidth > name.clientWidth : false,
+      ellipsis: name ? getComputedStyle(name).textOverflow : '',
+      tabs: [...document.querySelectorAll('.pb-tabbar__tab')].map(box),
+    };
+  });
 
 async function signedInPage(browser: Browser): Promise<Page> {
   const { password, people } = JSON.parse(
@@ -45,7 +47,7 @@ async function signedInPage(browser: Browser): Promise<Page> {
 }
 
 for (const signedIn of [false, true]) {
-  test(`phone bar at 320 and 360 px, signed ${signedIn ? 'in' : 'out'}: the actions give way before the site name`, async ({
+  test(`the phone's bars at 320 and 360 px, signed ${signedIn ? 'in' : 'out'}: everything fits, in order, at 44px or more`, async ({
     page,
     browser,
   }) => {
@@ -57,42 +59,47 @@ for (const signedIn of [false, true]) {
       for (const path of ['/', '/auth/sign-in', '/communities', ...(signedIn ? ['/notifications'] : [])]) {
         await gotoHydrated(viewer, path);
         const at = `${width} px ${path}`;
-        const { page: pageWidth, brand, actions, menu, nameCut } = await bar(viewer);
+        const { page: pageWidth, brand, finder, menu, nameCut, tabs } = await bars(viewer);
         expect(pageWidth, at).toBe(width);
-        // The name, the actions and the menu button in that order, none overlapping, inside the bar.
-        expect(brand.right, at).toBeLessThanOrEqual(actions.left);
-        expect(actions.right, at).toBeLessThanOrEqual(menu.left);
+        // The mark or name, the finder and the menu button in that order, none overlapping, inside the bar.
+        expect(brand.right, at).toBeLessThanOrEqual(finder.left);
+        expect(finder.right, at).toBeLessThanOrEqual(menu.left);
         expect(menu.right, at).toBeLessThanOrEqual(width);
-        // This instance's name ("b1.peblish.test" or the like) fits whole once the actions are icons.
+        for (const target of [brand, finder, menu]) expect(Math.min(target.width, target.height), at).toBeGreaterThanOrEqual(44);
+        // This instance's name ("b1.peblish.test" or the like) fits whole.
         expect(nameCut, at).toBe(false);
-        const banner = viewer.getByRole('banner');
-        if (signedIn) {
-          expect(await iconOnly(viewer, 'Create post'), at).toBe(true);
-          await expect(banner.getByRole('button', { name: /^Account:/ })).toBeVisible();
-        } else {
-          // Below 360 px the signed-out labels give way too; their names stay.
-          for (const name of ['Sign in', 'Sign up']) expect(await iconOnly(viewer, name), `${at} ${name}`).toBe(width < 360);
+        // Five tabs side by side across the width, each a 44px target.
+        expect(tabs, at).toHaveLength(5);
+        for (const [index, tab] of tabs.entries()) {
+          expect(Math.min(tab.width, tab.height), `${at} tab ${index}`).toBeGreaterThanOrEqual(44);
+          if (index > 0) expect(tab.left, `${at} tab ${index}`).toBeGreaterThanOrEqual(tabs[index - 1]!.right - 0.5);
         }
+        expect(tabs.at(-1)!.right, at).toBeLessThanOrEqual(width + 0.5);
       }
     }
 
-    // A name too long for what is left ends in an ellipsis; the actions keep their size and the link its whole name.
+    // A name too long for what is left ends in an ellipsis; the finder and the menu keep their size and the link its whole name.
     await viewer.setViewportSize({ width: 320, height: 700 });
     await gotoHydrated(viewer, '/');
-    const before = await bar(viewer);
+    const brandText = viewer.locator('.pb-frame-vh .pb-bar-brand > .muxui-text');
+    test.skip((await brandText.count()) === 0, 'a brand pack shows its mark, not the name, on the phone');
+    const before = await bars(viewer);
     const long = 'A community site with a very long name indeed';
-    await viewer.locator('.pb-bar-brand > .muxui-text').evaluate((name, text) => (name.textContent = text), long);
-    const after = await bar(viewer);
+    await brandText.evaluate((name, text) => (name.textContent = text), long);
+    const after = await bars(viewer);
     expect(after.nameCut).toBe(true);
     expect(after.ellipsis).toBe('ellipsis');
-    expect(after.actions.width).toBe(before.actions.width);
-    expect(after.brand.right).toBeLessThanOrEqual(after.actions.left);
+    expect(after.finder.width).toBe(before.finder.width);
+    expect(after.menu.width).toBe(before.menu.width);
+    expect(after.brand.right).toBeLessThanOrEqual(after.finder.left);
     expect(after.page).toBe(320);
-    await expect(viewer.getByRole('banner').getByRole('link', { name: long })).toBeVisible();
+    await expect(viewer.getByRole('navigation', { name: 'Page', exact: true }).getByRole('link', { name: long })).toBeVisible();
   });
 }
 
-test('on a long page the sidebar stays in view, and its column runs the page height with the sidebar surface', async ({ page }) => {
+test('on a long page the header stays at the top and the sidebar under it, and the centre column runs the page height', async ({
+  page,
+}) => {
   await page.setViewportSize({ width: 1280, height: 800 });
   await gotoHydrated(page, '/all');
   // However many posts the lane database holds, the page is several screens long.
@@ -101,72 +108,66 @@ test('on a long page the sidebar stays in view, and its column runs the page hei
     spacer.style.blockSize = '3000px';
     main.append(spacer);
   });
-  const side = page.getByRole('complementary', { name: 'Sidebar' });
-  const column = page.locator('.pb-app__side');
   const height = await page.evaluate(() => Math.round(document.documentElement.getBoundingClientRect().height));
   expect(height).toBeGreaterThan(3 * 800);
-
   await page.screenshot({ path: test.info().outputPath('long-page.png'), fullPage: true });
 
   await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
   await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(2 * 800);
-  // The Sidebar is pinned to the screen, full height (to the pixel: a fractional page height leaves a fraction)...
-  const sideBox = await side.evaluate((element) => {
-    const { x, y, width, height } = element.getBoundingClientRect();
-    return [x, y, width, height].map((value) => Math.round(value) || 0);
-  });
-  expect(sideBox).toEqual([0, 0, 256, 800]);
-  // ...and its column, which a full-page capture shows below the fold, spans the whole page in the same colour.
-  const columnBox = await column.evaluate((element) => {
+  const rounded = (selector: string) =>
+    page.locator(selector).evaluate((element) => {
+      const { x, y, width, height } = element.getBoundingClientRect();
+      return [x, y, width, height].map((value) => Math.round(value) || 0);
+    });
+  // The header is pinned to the top, 4rem and its hairline; the Sidebar under it, Mux's open width (16rem)
+  // and its hairline wide and the rest of the screen tall.
+  expect(await rounded('.pb-top')).toEqual([0, 0, 1280, 65]);
+  expect(await rounded('.pb-side')).toEqual([0, 65, Math.round((await openSize(page)) + 1), 735]);
+  // The centre column's hairlines run from under the header to the page's end.
+  const frame = await page.locator('#pb-main').evaluate((element) => {
     const box = element.getBoundingClientRect();
-    return { top: Math.round(box.top + window.scrollY), height: Math.round(box.height) };
+    return { top: Math.round(box.top + window.scrollY), bottom: Math.round(box.bottom + window.scrollY) };
   });
-  expect(columnBox).toEqual({ top: 0, height });
+  expect(frame).toEqual({ top: 65, bottom: height });
+  // One ground: the sidebar is on the page's own surface.
   const background = (selector: string) => page.locator(selector).evaluate((element) => getComputedStyle(element).backgroundColor);
-  expect(await background('.pb-app__side')).toBe(await background('.pb-side'));
+  expect(await background('.pb-side')).toBe(await page.evaluate(() => getComputedStyle(document.body).backgroundColor));
 });
 
-test('a long community handle in the sidebar ends in an ellipsis, keeps its whole name and never widens the column', async ({ page }) => {
+test('a long community name in the sidebar ends in an ellipsis, keeps its whole name and never widens the column', async ({ page }) => {
   test.skip(Boolean(process.env.BASE_URL), 'needs the lane database for its seed (DATABASE_URL)');
   // At least one local community for the signed-out sidebar to list (the payload budget's seed).
   execFileSync('node', ['packages/core/src/testing/seed-b1.ts', 'e2e'], { cwd: join(import.meta.dirname, '../..'), encoding: 'utf8' });
   await page.setViewportSize({ width: 1280, height: 800 });
   await gotoHydrated(page, '/');
-  const communities = page.getByRole('complementary', { name: 'Sidebar' }).getByRole('navigation', { name: 'Communities' });
-  const row = communities.getByRole('link', { name: /^!/ }).first();
-  // A handle as long as a remote one can be: the name and host the data could carry, in place.
-  const long = '!a_community_with_a_very_long_name_indeed@lemmy.a-very-long-host-name.example.org';
-  await row.locator('.pb-handle__name').evaluate((name, text) => (name.textContent = text.slice(0, text.indexOf('@'))), long);
-  await row.locator('.pb-handle').evaluate(
-    (handle, host) => {
-      const part = document.createElement('bdi');
-      part.className = 'pb-handle__host';
-      part.textContent = host;
-      handle.append(part);
-    },
-    long.slice(long.indexOf('@')),
-  );
-  await expect(row).toHaveAccessibleName(new RegExp(`${long.replace(/[.]/g, '\\.')}$`));
+  const row = page
+    .getByRole('complementary', { name: 'Sidebar' })
+    .locator('.muxui-sidebar__section', { hasText: 'Communities' })
+    .locator('a.muxui-sidebar__nav-link')
+    .first();
+  const long = 'A community with a very long name indeed, from a host with a long name too';
+  await row.locator('bdi').evaluate((name, text) => (name.textContent = text), long);
+  await expect(row).toHaveAccessibleName(long);
   const measured = await row.evaluate((link) => {
-    const handle = link.querySelector<HTMLElement>('.pb-handle')!;
+    const label = link.querySelector<HTMLElement>('.muxui-sidebar__nav-label')!;
     const column = document.querySelector('.pb-app__side')!.getBoundingClientRect();
     return {
       column: column.width,
       columnRight: column.right,
       linkRight: link.getBoundingClientRect().right,
-      cut: handle.scrollWidth > handle.clientWidth,
-      ellipsis: getComputedStyle(handle).textOverflow,
+      cut: label.scrollWidth > label.clientWidth,
+      ellipsis: getComputedStyle(label).textOverflow,
       page: document.documentElement.scrollWidth,
     };
   });
-  expect(measured.column, 'the column keeps its 16rem').toBeCloseTo(256, 0);
+  expect(measured.column, "the column keeps Mux's open width and its hairline").toBeCloseTo((await openSize(page)) + 1, 0);
   expect(measured.linkRight, 'the row stays inside the column').toBeLessThanOrEqual(measured.columnRight);
-  expect(measured.cut, 'the handle is cut').toBe(true);
+  expect(measured.cut, 'the name is cut').toBe(true);
   expect(measured.ellipsis).toBe('ellipsis');
   expect(measured.page).toBe(1280);
 });
 
-test('a remote community whose name starts with a directional control shows a letter in its sidebar row, not the control', async ({
+test('a remote community whose name starts with directional controls shows a letter in its sidebar row, and its name without them', async ({
   browser,
 }) => {
   test.skip(Boolean(process.env.BASE_URL), 'needs the lane database for its seed (DATABASE_URL)');
@@ -177,10 +178,11 @@ test('a remote community whose name starts with a directional control shows a le
   await gotoHydrated(page, '/auth/sign-in');
   await signIn(page, `@${people[0]}`, password);
   await landed(page, '/');
-  const communities = page.getByRole('complementary', { name: 'Sidebar' }).getByRole('navigation', { name: 'Communities' });
-  const row = communities.getByRole('link', { name: new RegExp(remote.slice(1)) });
+  // Its display name is the seed's "Shell <suffix>" after a right-to-left override and an isolate.
+  const suffix = remote.slice(remote.indexOf('_') + 1);
+  const row = page.getByRole('complementary', { name: 'Sidebar' }).getByRole('link', { name: `Shell ${suffix}`, exact: true });
   await expect(row).toBeVisible();
-  // The avatar's initial is the first letter after the control; the handle shows the control as the replacement mark (U+203D).
+  // The avatar's initial is the first letter after the controls; the name is isolated with them taken out.
   await expect(row.locator('.muxui-avatar')).toHaveText('S');
-  await expect(row.locator('.pb-handle__name')).toHaveText(`!\u203D${remote.slice(1)}`);
+  await expect(row.locator('bdi')).toHaveText(`Shell ${suffix}`);
 });

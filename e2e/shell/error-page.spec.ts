@@ -62,7 +62,7 @@ test('an unknown community answers 404 with its own page, and a remote one offer
 
 test('Try again reruns the failed loader once, and shows the page when it loads', async ({ page }) => {
   await gotoHydrated(page, '/');
-  // The resolver page's loader is a server function; fail every call until released.
+  // A site page's loader is a server function; fail every call until released.
   let calls = 0;
   let failing = true;
   await page.route('**/_serverFn/**', async (route) => {
@@ -70,8 +70,8 @@ test('Try again reruns the failed loader once, and shows the page when it loads'
     if (failing) await route.fulfill({ status: 500, contentType: 'text/plain', body: 'down' });
     else await route.continue();
   });
-  await page.getByRole('complementary', { name: 'Sidebar' }).getByRole('link', { name: 'Find by handle' }).click();
-  await page.waitForURL('**/resolve');
+  await page.getByRole('complementary', { name: 'Sidebar' }).getByRole('link', { name: 'About', exact: true }).click();
+  await page.waitForURL('**/about');
   await expectErrorPage(page);
 
   // Still failing: one press, one more call, the error page again, and nothing after it.

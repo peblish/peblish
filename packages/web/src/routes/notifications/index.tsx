@@ -1,6 +1,7 @@
 import { unreadCap } from '@peblish/core/notifications/view';
 import { createFileRoute } from '@tanstack/react-router';
 import { DEFAULT_LOCALE } from '../../i18n/negotiate.ts';
+import { InboxPending } from '../../shell/pending.tsx';
 import { ownTitle, pageTitle, rootTitleData } from '../../shell/title.ts';
 import { privateResponses } from '../../server/auth.ts';
 import { handleInboxPost } from './-form.ts';
@@ -29,6 +30,7 @@ export const Route = createFileRoute('/notifications/')({
     };
   },
   component: InboxRoute,
+  pendingComponent: InboxPending,
   // The page is personal: never from a shared cache (server/auth.ts).
   server: { middleware: [privateResponses], handlers: { POST: ({ request }) => handleInboxPost(request) } },
 });

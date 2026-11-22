@@ -128,7 +128,7 @@ export function Activity({ data, path }: { data: ProfileData; path: string }) {
       {data.entries.length === 0 ? (
         <EmptyState title={t('profiles', `empty.${data.tab}`)} />
       ) : (
-        <ul className="prof-list" data-density={prefs.density} aria-label={t('profiles', 'list.posts')}>
+        <ul className="prof-list pb-rows" data-density={prefs.density} aria-label={t('profiles', 'list.posts')}>
           {data.entries.map((entry) =>
             entry.kind === 'post' ? (
               <li key={entry.item.post.id}>

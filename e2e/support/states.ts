@@ -89,6 +89,9 @@ async function check(page: Page, state: KitState, condition: Condition): Promise
   const sample = page.locator(section).locator('[data-kit-sample]');
   const marked = sample.locator('[data-kit-target]');
   const target = (await marked.count()) ? marked.first() : sample.locator(controls).first();
+  // In the middle of the window, clear of the frame's fixed bars (a phone's bottom bar would cover a sample
+  // that happens to straddle it, and axe would count that as an obscured target).
+  await page.locator(section).evaluate((node) => node.scrollIntoView({ block: 'center' }));
   await page.mouse.move(0, 0);
   if (state === 'hover') await target.hover();
   if (state === 'focus') {

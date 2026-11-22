@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test';
 import { skipWithoutKit } from '../support/kit.ts';
 import { gotoHydrated } from '../support/route-marker.ts';
 
-// PostCard in three densities, the always-visible density control, and the display cookie:
+// PostRow (PostCard) in three densities, the always-visible density control, and the display cookie:
 // the chosen density and scheme survive a reload and are in the server's HTML, so nothing flashes.
 test.beforeEach(({ request }) => skipWithoutKit(request));
 
@@ -11,36 +11,42 @@ test('the same post lays out differently in Card, Classic and Compact', async ({
   const box = async (density: string, selector: string) =>
     page.locator(`[data-testid="kit-density-${density}"] article`).nth(1).locator(selector).boundingBox();
 
-  // A text post: the excerpt is shown in Card and Classic and left out of Compact.
+  // A text post: the excerpt is shown in Card only.
   const excerpt = (density: string) => page.locator(`[data-testid="kit-density-${density}"] article`).nth(1).locator('.pb-post__excerpt');
   await expect(excerpt('card')).toBeVisible();
-  await expect(excerpt('classic')).toBeVisible();
-  await expect(excerpt('compact')).toBeHidden();
+  await expect(excerpt('classic')).toHaveCount(0);
+  await expect(excerpt('compact')).toHaveCount(0);
 
-  // A link post: Card puts a wide picture under the text, Classic a small one beside it, Compact none.
+  // A link post: Card puts a picture beside the title and the link line under it, Classic a smaller picture beside it, Compact none.
   const link = (density: string) => page.locator(`[data-testid="kit-density-${density}"] article`).first();
   const cardThumb = await link('card').locator('.pb-post__thumb').boundingBox();
-  const cardBody = await link('card').locator('.pb-post__body').boundingBox();
-  expect(cardThumb!.width).toBeGreaterThan(400);
-  expect(cardThumb!.y).toBeGreaterThan(cardBody!.y + cardBody!.height - 1);
+  const cardTitle = await link('card').locator('.pb-post__title').boundingBox();
+  await expect(link('card').locator('.pb-link-preview')).toBeVisible();
+  expect(cardThumb!.x).toBeGreaterThanOrEqual(cardTitle!.x + cardTitle!.width);
   const classicThumb = await link('classic').locator('.pb-post__thumb').boundingBox();
-  const classicBody = await link('classic').locator('.pb-post__body').boundingBox();
-  expect(classicThumb!.width).toBeLessThan(100);
-  expect(classicThumb!.x + classicThumb!.width).toBeLessThanOrEqual(classicBody!.x);
-  await expect(link('compact').locator('.pb-post__thumb')).toBeHidden();
+  const classicTitle = await link('classic').locator('.pb-post__title').boundingBox();
+  expect(classicThumb!.width).toBeLessThan(cardThumb!.width);
+  expect(classicThumb!.x).toBeGreaterThanOrEqual(classicTitle!.x + classicTitle!.width);
+  await expect(link('compact').locator('.pb-post__thumb')).toHaveCount(0);
   expect((await link('compact').boundingBox())!.height).toBeLessThan((await link('classic').boundingBox())!.height);
   expect(await box('card', '.pb-post__title')).not.toBeNull();
 });
 
-test('a sensitive post is hidden until shown', async ({ page }) => {
+test('a sensitive post is covered until shown, and covered again by Hide', async ({ page, context, baseURL }) => {
+  await context.addCookies([{ name: 'peblish_prefs', value: 'density=card&scheme=system', url: baseURL! }]);
   await gotoHydrated(page, '/kit');
   const post = page.getByTestId('kit-feed').locator('article[data-sensitive]');
   await expect(post).toHaveAttribute('data-hidden', 'true');
-  await expect(post.locator('.pb-post__excerpt')).toHaveCount(0);
-  await post.getByRole('button', { name: 'hidden, show' }).click();
+  // Covered, the picture is not in the page at all.
+  await expect(post.locator('img')).toHaveCount(0);
+  await post.getByRole('button', { name: 'Show' }).click();
   await expect(post).not.toHaveAttribute('data-hidden');
-  await expect(post.locator('.pb-post__excerpt')).toBeVisible();
-  await expect(post.getByRole('button', { name: 'hide' })).toHaveAttribute('aria-pressed', 'true');
+  await expect(post.locator('.pb-post__thumb img')).toBeVisible();
+  // Focus moves to what was revealed, so the next Tab continues there.
+  await expect(post.locator('.pb-cover-revealed')).toBeFocused();
+  await post.getByRole('button', { name: 'Hide' }).click();
+  await expect(post).toHaveAttribute('data-hidden', 'true');
+  await expect(post.getByRole('button', { name: 'Show' })).toBeFocused();
 });
 
 test('the density control switches the feed and the choice survives a reload', async ({ page, context, request }) => {

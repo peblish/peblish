@@ -60,10 +60,12 @@ test('the date-time format prints the absolute time', () => {
   );
 });
 
-test('the age stays the default', () => {
-  expect(renderToStaticMarkup(<Time iso={iso} locale="en-US" now={new Date('2026-11-04T02:30:00Z')} />)).toBe(
-    '<time dateTime="2026-11-03T23:30:00Z" title="Nov 3, 2026, 11:30 PM UTC">3h</time>',
+test('the age stays the default, with the exact date after it for assistive technology', () => {
+  const html = renderToStaticMarkup(<Time iso={iso} locale="en-US" now={new Date('2026-11-04T02:30:00Z')} />);
+  expect(html).toMatch(
+    /^<time dateTime="2026-11-03T23:30:00Z" title="Nov 3, 2026, 11:30 PM UTC"><span>3h<\/span><span class="[^"]*\bpb-sr">/,
   );
+  expect(html).toMatch(/>, Nov 3, 2026, 11:30 PM UTC<\/span><\/time>$/);
 });
 
 test('the time format prints the clock time alone, 24-hour, in UTC', () => {

@@ -39,12 +39,8 @@ export function usePostCardLabels(): PostCardLabels {
     deleted: t('ui', 'post.deleted'),
     comments: (count) => translatePlural(locale, 'ui', 'post.comments', count),
     share: t('ui', 'post.share'),
-    show: t('ui', 'post.show'),
     hide: t('ui', 'post.hide'),
-    by: t('ui', 'post.by'),
-    text: t('ui', 'post.kind.text'),
-    link: t('ui', 'post.kind.link'),
-    image: t('ui', 'post.kind.image'),
+    cover: { hidden: t('ui', 'cover.hidden'), show: t('ui', 'cover.show') },
   };
 }
 

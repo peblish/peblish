@@ -2,33 +2,50 @@ import {
   ArrowBigDown,
   ArrowBigUp,
   Bold,
+  Check,
   ChevronDown as LucideChevronDown,
+  ChevronLeft as LucideChevronLeft,
   ChevronRight as LucideChevronRight,
+  CircleHelp,
+  ClipboardList,
   Code,
   Compass,
+  Ellipsis,
+  ExternalLink,
   EyeOff,
+  FileText,
   Flame,
   Globe,
+  HeartHandshake,
   Heading,
   House,
   Image,
   Inbox,
+  Info,
   Italic,
   Link,
   List,
   ListOrdered,
+  Lock,
+  MessageSquare,
   LogIn,
   MapPin,
   Menu,
   Network,
+  PanelLeftClose,
+  PanelLeftOpen,
   Plus,
   Search,
+  Settings,
+  Share,
   Shield,
   ShieldCheck,
+  SquarePen,
   Strikethrough,
   Text,
   TextQuote,
   UserPlus,
+  UserRound,
   Users,
   X,
   type LucideIcon,
@@ -83,6 +100,26 @@ export const SearchIcon = icon(Search);
 export const LogInIcon = icon(LogIn);
 export const UserPlusIcon = icon(UserPlus);
 
+// The Commons frame (packages/web/src/shell): Create post, Back, the sidebar's fold, the moderation
+// queue, the site's own pages, the account's pages in the phone drawer and the current appearance in
+// the account menu.
+export const SquarePenIcon = icon(SquarePen);
+export const UserRoundIcon = icon(UserRound);
+export const SettingsIcon = icon(Settings);
+export const ChevronLeft = icon(LucideChevronLeft);
+export const PanelLeftCloseIcon = icon(PanelLeftClose);
+export const PanelLeftOpenIcon = icon(PanelLeftOpen);
+export const ClipboardListIcon = icon(ClipboardList);
+export const InfoIcon = icon(Info);
+export const HeartHandshakeIcon = icon(HeartHandshake);
+export const LockIcon = icon(Lock);
+export const FileTextIcon = icon(FileText);
+/** The site's pages, as one menu at the foot of the folded sidebar. */
+export const CircleHelpIcon = icon(CircleHelp);
+/** A row's own actions (a sidebar row's options). */
+export const EllipsisIcon = icon(Ellipsis);
+export const CheckIcon = icon(Check);
+
 // The Markdown editor's formatting toolbar (composer/markdown-editor.tsx); its links reuse LinkIcon.
 export const BoldIcon = icon(Bold);
 export const ItalicIcon = icon(Italic);
@@ -93,6 +130,15 @@ export const BulletListIcon = icon(List);
 export const NumberedListIcon = icon(ListOrdered);
 export const HeadingIcon = icon(Heading);
 export const SpoilerIcon = icon(EyeOff);
+
+// The shared post pieces (post-row, vote-control, link-preview, nsfw-cover). The vote arrows here
+// are outlined; vote-control.css fills the one that is cast, so a vote never shows by colour alone.
+export const VoteUpIcon = icon(ArrowBigUp);
+export const VoteDownIcon = icon(ArrowBigDown);
+export const CommentsIcon = icon(MessageSquare);
+export const ShareIcon = icon(Share);
+export const ExternalLinkIcon = icon(ExternalLink);
+export const CoverIcon = icon(EyeOff);
 
 /** A brand pack's mark (brand/pack.ts): its one path in currentColor, always hidden (the link around it is named). */
 export function MarkIcon({ mark, className }: { mark: BrandPack['mark']; className?: string }) {

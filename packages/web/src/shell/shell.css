@@ -1,10 +1,50 @@
-/* The application frame (shell-sidebar, mock direction A): layout around Mux UI's Sidebar and
-   HeaderNav. Colours, radii and type come from Mux tokens; sizes and grids are the app's. */
+/* The application frame (Commons, shell.tsx): a full-width header over the sidebar and the page, one
+   ground with hairlines between regions. The document scrolls; the header sticks at the top, the
+   sidebar and the right rail stick under it and scroll on their own, and the view header sticks under
+   the header. Colours, radii and type come from Mux tokens; sizes and grids are the frame's. */
 @layer app {
+  /* The frame's bands, on the root, where the document's scroll padding and the portals (the drawer,
+     Appearance's choices) see them too. */
+  :root {
+    /* 44px phone targets, from tokens: Mux's control sizes stop at 40. */
+    --pb-touch: calc(var(--muxui-semantic-control-size-lg) + 2 * var(--muxui-semantic-layout-dense-gap));
+    /* HeaderNav's own height and its hairline; the view header's under it. */
+    --pb-top-h: calc(4rem + 1px);
+    --pb-bar-h: calc(var(--muxui-semantic-control-size-md) + 2 * var(--muxui-semantic-layout-inset-small) + 1px);
+    /* What the frame docks at the window's foot: nothing, and on a phone the bottom bar. A bar a page docks
+       there (the thread's reply bar) sits above it, at `inset-block-end: var(--pb-dock-end, 0px)`. */
+    --pb-dock-end: 0px;
+    /* Keyboard focus and in-page jumps stop clear of the sticky bands (WCAG 2.4.11). */
+    scroll-padding-block: calc(var(--pb-top-h) + var(--pb-bar-h)) var(--pb-dock-end);
+  }
+
   .pb-app {
+    --pb-rule: var(--muxui-semantic-border-faint);
+    /* Column widths, the Default width preset (Mux has no content-width scale): a 40rem centre beside a
+       19.5rem rail. The admin's width setting moves --pb-page-max in a later branch. */
+    --pb-centre-w: 40rem;
+    --pb-rail-w: 19.5rem;
+    --pb-page-max: calc(var(--pb-centre-w) + var(--pb-rail-w));
+    --pb-gutter: var(--muxui-semantic-layout-inset-large);
     display: grid;
-    grid-template-columns: 16rem minmax(0, 1fr);
+    grid-template-areas:
+      'top top'
+      'side page'
+      'tabs tabs';
+    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr) auto;
     min-block-size: 100dvh;
+  }
+
+  /* The frame's focus ring: Mux's ring colour is brand step 60, under 3:1 on the dark page with some
+     brand packs (2.60:1 under feddit's). The action colour stays the brand and keeps 3:1 against the
+     page in both schemes, with a pack or without. The drawer is a portal, outside the frame. */
+  .pb-top,
+  .pb-app__side,
+  .pb-frame-vh,
+  .pb-app__tabs,
+  .muxui-sidebar__mobile-overlay {
+    --muxui-semantic-focus-ring: var(--muxui-semantic-action-background);
   }
 
   .pb-skip {
@@ -23,126 +63,110 @@
     inset-block-start: var(--muxui-semantic-layout-inset-small);
   }
 
-  /* The phone bar: Mux's Sidebar.MobileTrigger, shown below 860 px. */
-  .pb-app__bar {
-    display: none;
-  }
-
-  /* The column (mock direction A): the Sidebar stays in view while the page scrolls, and its
-     navigation scrolls on its own. Its cell runs the page's full height with the Sidebar's own
-     surface and edge (the Root has hideBorder), so the column never ends below the fold, even in
-     a full-page capture, which does not move sticky boxes. */
-  .pb-app__side {
-    border-inline-end: 1px solid var(--muxui-semantic-color-neutral-20);
-    background: var(--muxui-semantic-color-neutral-10);
-  }
-
-  .pb-app__side > .pb-side {
+  /* Header: Mux HeaderNav on the page's own surface (background variant). The brand and the actions
+     share the space either side equally, so the finder sits in the middle of the window. */
+  .pb-top {
+    grid-area: top;
     position: sticky;
     inset-block-start: 0;
-    block-size: 100dvh;
+    z-index: 4;
+    border-block-end: 1px solid var(--pb-rule);
+    background: var(--muxui-semantic-surface-background);
   }
 
-  .pb-side .pb-nav {
-    flex: 1;
-    min-block-size: 0;
-    overflow-y: auto;
+  .pb-top__logo,
+  .pb-top__actions {
+    flex: 1 1 0;
+    min-inline-size: max-content;
   }
 
-  /* The site name shrinks to what the bar leaves; its Text (truncate) ends it in an ellipsis. */
+  .pb-top__actions {
+    justify-content: flex-end;
+    gap: var(--muxui-semantic-layout-tight-gap);
+  }
+
+  .pb-top__find {
+    display: flex;
+    flex: 0 1 28rem;
+    min-inline-size: var(--muxui-semantic-control-size-md);
+  }
+
+  /* The site name shrinks to what the header leaves; its Text (truncate) ends it in an ellipsis. */
   .pb-brand,
   .pb-bar-brand {
     min-inline-size: 0;
     color: var(--muxui-semantic-content-strong);
   }
 
-  .pb-app__drawer-foot {
-    padding: var(--muxui-semantic-layout-inset-medium) var(--muxui-semantic-layout-inset-large);
+  /* Create post and Inbox: Mux's header navigation links with an icon. */
+  .pb-top__link {
+    gap: var(--muxui-semantic-layout-tight-gap);
   }
 
-  /* The four navigation lists read as one column: Mux's list padding once, at the outer edges.
-     Mux gap: a nav list always pads itself and scrolls on its own; there is no static list to stack. */
-  .pb-nav {
-    display: flex;
-    flex-direction: column;
-    padding-block: var(--muxui-semantic-layout-inset-medium);
-  }
-
-  .pb-nav .muxui-sidebar__nav-list {
+  .pb-top__icon {
     flex: none;
-    padding-block: 0;
-    overflow: visible;
+    font-size: var(--muxui-semantic-typography-label-l-font-size);
   }
 
-  .pb-nav > nav + nav {
-    margin-block-start: var(--muxui-semantic-layout-group-gap);
+  /* Mux gap: Text always sets its own colour and type, with no tone that takes them from the control
+     around it, so each label takes its control's here. */
+  .pb-top__label,
+  .pb-action__label {
+    color: inherit;
+    font: inherit;
   }
 
-  /* A community row: a small Mux Avatar with the initial (nested rows have no icon slot), then the
-     handle. Mux gap: Avatar's smallest size is the control height, too tall for a nav row. */
-  .pb-nav__community {
+  /* The finder's trigger: reads as a search field with its name in it (a visible label, never a
+     placeholder), on Mux's subtle surface with a control's edge. */
+  .pb-find {
     display: flex;
+    flex: 1;
     align-items: center;
     gap: var(--muxui-semantic-layout-control-gap);
-    min-inline-size: 0;
-    max-inline-size: 100%;
+    min-block-size: var(--muxui-semantic-control-size-md);
+    padding-inline: var(--muxui-semantic-layout-inset-small);
+    border: 1px solid var(--muxui-semantic-border-default);
+    border-radius: var(--muxui-semantic-shape-pill-radius);
+    background: var(--muxui-semantic-surface-subtle);
+    color: var(--muxui-semantic-content-muted);
+    font-size: var(--muxui-semantic-typography-small-size);
   }
 
-  .pb-nav__community .muxui-avatar {
-    inline-size: 1.25rem;
-    block-size: 1.25rem;
-    font-size: var(--muxui-semantic-typography-badge-size);
+  .pb-find:is(:hover, [data-muxui-state-hovered]) {
+    border-color: var(--muxui-semantic-border-strong);
+    color: var(--muxui-semantic-content-default);
+    text-decoration: none;
   }
 
-  /* Mux's label is nowrap; a long handle (a remote host) ends in an ellipsis here, inside the
-     column, and the link's name keeps the whole handle. */
-  .pb-nav__community > .pb-handle {
-    display: block;
-    min-inline-size: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+  .pb-find__icon {
+    flex: none;
+    font-size: var(--muxui-semantic-typography-label-l-font-size);
   }
 
-  .pb-nav__filter {
-    list-style: none;
-    padding-block-end: var(--muxui-semantic-layout-inset-tight);
+  .pb-find__text {
+    color: inherit;
+    font: inherit;
   }
 
-  .pb-nav__foot {
-    display: flex;
-    flex-wrap: wrap;
-    gap: var(--muxui-semantic-layout-inset-tight) var(--muxui-semantic-layout-inset-small);
-    padding-inline: var(--muxui-semantic-layout-inset-large);
-    font-size: var(--muxui-semantic-typography-text-s-font-size);
+  /* On the phone's top bar: the icon alone, a round 44px target. */
+  .pb-find--compact {
+    box-sizing: border-box;
+    flex: none;
+    justify-content: center;
+    inline-size: var(--pb-touch);
+    min-block-size: var(--pb-touch);
+    padding-inline: 0;
+    border-color: transparent;
+    background: transparent;
+    color: var(--muxui-semantic-content-default);
   }
 
-  .pb-app__body {
-    display: flex;
-    flex-direction: column;
-    min-inline-size: 0;
+  .pb-find--compact:is(:hover, [data-muxui-state-hovered]) {
+    border-color: transparent;
+    background: color-mix(in srgb, var(--muxui-semantic-color-neutral-100) 4%, transparent);
   }
 
-  /* HeaderNav's background variant is opaque, so content scrolling under the sticky bar is hidden
-     behind the page colour; at rest the bar cannot be seen. */
-  .pb-top {
-    position: sticky;
-    inset-block-start: 0;
-    z-index: 2;
-  }
-
-  .pb-app__content {
-    flex: 1;
-  }
-
-  /* Focus targets, not controls: the skip link's and the one a navigation moves focus to (shell.tsx). */
-  .pb-app__content:focus,
-  .pb-app__content main:focus {
-    outline: none;
-  }
-
-  /* The actions: Create post, Appearance, the account. */
-  .pb-app__actions,
+  /* The actions: Create post, Inbox, the account; a visitor's Appearance, Sign in and Sign up. */
   .pb-account {
     display: flex;
     flex: none;
@@ -151,193 +175,451 @@
     white-space: nowrap;
   }
 
-  /* Create post and Sign up are ButtonLinks (Mux's primary Button look), Sign in a Mux Link. Mux
-     gap: Text always sets its own colour and type, with no tone that takes them from the control
-     around it, so each label takes its control's here. */
-  .pb-action__label {
-    color: inherit;
-    font: inherit;
-  }
-
   .pb-sign-in {
     justify-content: center;
   }
 
-  /* The signed-out links show their icons only once their labels give way (below 360 px). */
-  :is(.pb-sign-in, .pb-cta) svg {
+  /* The signed-out links show their icons only once their labels give way. */
+  :is(.pb-sign-in, .pb-cta) .lucide {
     display: none;
   }
 
-  /* The account menu's trigger. Mux gap: Menu.Trigger is an unstyled button, with no Button variants. */
+  /* The account menu's trigger: the viewer's avatar in a round control. Mux gap: Menu.Trigger is an
+     unstyled button, with no Button variants. */
   .pb-account__trigger {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--muxui-semantic-layout-control-gap);
-    block-size: var(--muxui-semantic-control-size-sm);
-    padding-inline: var(--muxui-semantic-layout-inset-tight);
+    display: inline-grid;
+    place-items: center;
+    inline-size: var(--muxui-semantic-control-size-md);
+    block-size: var(--muxui-semantic-control-size-md);
+    margin-inline-start: var(--muxui-semantic-layout-tight-gap);
+    padding: 0;
     border: 0;
-    border-radius: var(--muxui-semantic-control-radius);
+    border-radius: var(--muxui-semantic-shape-pill-radius);
     background: transparent;
-    color: var(--muxui-semantic-content-default);
-    font-family: var(--muxui-semantic-typography-label-font-family);
-    font-size: var(--muxui-semantic-typography-body-size);
-    font-weight: var(--muxui-semantic-typography-control-weight);
     cursor: pointer;
+    transition: background-color var(--muxui-semantic-motion-state-transition-duration) var(--muxui-semantic-motion-state-transition-easing);
   }
 
-  .pb-account__trigger:hover {
-    background: var(--muxui-semantic-surface-hover);
+  .pb-account__trigger:is(:hover, [aria-expanded='true']) {
+    background: color-mix(in srgb, var(--muxui-semantic-color-neutral-100) 8%, transparent);
+  }
+
+  .pb-account__trigger:focus-visible {
+    outline: 2px solid var(--muxui-semantic-focus-ring);
+    outline-offset: 2px;
+  }
+
+  /* Appearance in the account menu: the current choice is ticked (and called so, hidden). */
+  .pb-account__choice {
+    display: flex;
+    flex: 1;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--muxui-semantic-layout-action-gap);
+  }
+
+  .pb-account__choice-label {
+    color: inherit;
+    font: inherit;
+  }
+
+  .pb-account__check {
+    flex: none;
+  }
+
+  /* Sidebar (Mux Sidebar): flush left under the header, as tall as the window below it, scrolling on
+     its own. The column follows the sidebar's own width, which Mux animates as it folds. */
+  .pb-app__side {
+    grid-area: side;
+    position: sticky;
+    inset-block-start: var(--pb-top-h);
+    z-index: 3;
+    align-self: start;
+    block-size: calc(100dvh - var(--pb-top-h));
+  }
+
+  /* Commons keeps one ground with hairlines between regions: Mux paints the sidebar and its foot
+     neutral-10 (neutral-14 dark) with a neutral-20 edge. Mux reads a hook for each colour but declares
+     neither, so the guard knows them as no token: the colours are set on the parts. */
+  .pb-side,
+  .pb-side > .pb-side__foot {
+    background: var(--muxui-semantic-surface-background);
+  }
+
+  .pb-side {
+    block-size: 100%;
+    border-inline-end-color: var(--pb-rule);
+  }
+
+  /* The folded rail's foot (sidebar.tsx): the site's pages as one menu, its button a rail row. Mux gap:
+     Menu.Trigger is an unstyled button, and Sidebar has no menu row. */
+  /* Mux's Menu root is inline-block: as wide as the foot, so the button is a row of the rail. */
+  .pb-side__foot > .muxui-menu__root {
+    display: block;
+  }
+
+  .pb-side__site {
+    display: grid;
+    place-items: center;
+    inline-size: 100%;
+    min-block-size: var(--muxui-control-size-md);
+    padding: 0;
+    border: 0;
+    border-radius: var(--muxui-semantic-shape-navigation-radius);
+    background: transparent;
+    color: var(--muxui-semantic-content-muted);
+    cursor: pointer;
+    transition:
+      background-color var(--muxui-semantic-motion-state-transition-duration) var(--muxui-semantic-motion-state-transition-easing),
+      color var(--muxui-semantic-motion-state-transition-duration) var(--muxui-semantic-motion-state-transition-easing);
+  }
+
+  .pb-side__site:is(:hover, [aria-expanded='true']) {
+    background: color-mix(in srgb, var(--muxui-semantic-color-neutral-100) 4%, transparent);
+    color: var(--muxui-semantic-content-default);
+  }
+
+  /* At the navigation icon's size, as the rows above it draw theirs. */
+  .pb-side__site svg {
+    inline-size: 1.25rem;
+    block-size: 1.25rem;
+  }
+
+  .pb-side__site:focus-visible {
+    outline: 2px solid var(--muxui-semantic-focus-ring);
+    outline-offset: 2px;
+  }
+
+  /* As the rows above it (components/sidebar.css). */
+  @media (prefers-reduced-motion: reduce) {
+    .pb-side__site {
+      transition: none;
+    }
+  }
+
+  .pb-side__site-item {
+    display: flex;
+    align-items: center;
+    gap: var(--muxui-semantic-layout-control-gap);
+  }
+
+  /* Folded, the site's section gives way to the foot's menu; with scripts off the menu cannot open, so
+     the rail keeps the section's icons and has no foot. */
+  @media (scripting: enabled) {
+    .pb-side[data-muxui-collapsed] .pb-nav__site {
+      display: none;
+    }
+  }
+
+  @media (scripting: none) {
+    .pb-side__foot {
+      display: none;
+    }
+  }
+
+  /* Folded, the rail's list starts below the round toggle on the edge, so no row passes under it. */
+  .pb-side[data-muxui-collapsed] .muxui-sidebar__nav-list {
+    margin-block-start: calc(
+      var(--muxui-semantic-layout-inset-medium) + var(--muxui-semantic-control-size-md) + var(--muxui-semantic-layout-inset-tight)
+    );
+    padding-block-start: 0;
+  }
+
+  /* A community's initial in its row: Mux's Avatar at the navigation icon's size (its smallest size is
+     the control height, too tall for a row). */
+  .pb-nav__avatar.muxui-avatar {
+    inline-size: 1.25rem;
+    block-size: 1.25rem;
+    font-size: var(--muxui-semantic-typography-badge-size);
+  }
+
+  /* The fold's round toggle rides the sidebar's edge beside the first row, on the sidebar's own clock. */
+  .pb-app__fold {
+    position: absolute;
+    inset-block-start: var(--muxui-semantic-layout-inset-medium);
+    inset-inline-start: 100%;
+    z-index: 1;
+    translate: -50% 0;
+  }
+
+  /* The page beside the sidebar, the rail's query box. The frame (#pb-main) is the centre column, and
+     beside a rail (a route's <aside class="pb-rail">) the centre and the rail, centred in the space. */
+  .pb-app__page {
+    grid-area: page;
+    min-inline-size: 0;
+    padding-inline: var(--pb-gutter);
+    container: page / inline-size;
+  }
+
+  .pb-frame {
+    box-sizing: content-box;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+    min-block-size: 100%;
+    max-inline-size: var(--pb-centre-w);
+    margin-inline: auto;
+    border-inline: 1px solid var(--pb-rule);
+  }
+
+  .pb-frame:has(> .pb-rail) {
+    grid-template-columns: minmax(0, 1fr) var(--pb-rail-w);
+    max-inline-size: var(--pb-page-max);
+    border-inline-end: 0;
+  }
+
+  /* A route's <main> keeps its own height: stretched to the frame's, a grid or flex main would spread
+     its rows over the window. */
+  .pb-frame > :not(.pb-rail) {
+    grid-column: 1;
+    align-self: start;
+    min-inline-size: 0;
+  }
+
+  /* One gutter, as Commons has it: a list of post rows (`pb-rows`) bleeds through the page's side padding
+     (`.pb-page`), so each row's own padding is the gutter and its divider and hover run the column's width. */
+  .pb-page .pb-rows {
+    margin-inline: calc(-1 * var(--muxui-semantic-layout-inset-large));
+  }
+
+  /* Focus targets, not controls: the skip link's and the one a navigation moves focus to (shell.tsx). */
+  .pb-frame:focus,
+  .pb-frame main:focus {
+    outline: none;
+  }
+
+  .pb-frame-vh {
+    position: sticky;
+    inset-block-start: var(--pb-top-h);
+    z-index: 2;
+  }
+
+  .pb-frame-vh__home,
+  .pb-frame-vh__menu {
+    display: none;
+  }
+
+  .pb-frame-vh__title {
+    color: var(--muxui-semantic-content-strong);
+  }
+
+  /* The right rail: beside the centre, sticky under the header, scrolling on its own. */
+  .pb-rail {
+    grid-column: 2;
+    grid-row: 1 / -1;
+    position: sticky;
+    inset-block-start: var(--pb-top-h);
+    align-self: start;
+    box-sizing: border-box;
+    max-block-size: calc(100dvh - var(--pb-top-h));
+    padding: var(--muxui-semantic-layout-inset-medium);
+    overflow-y: auto;
+    border-inline: 1px solid var(--pb-rule);
+    scrollbar-width: thin;
+  }
+
+  /* Too narrow for the centre and the rail side by side: the rail gives way, before the phone layout
+     does, and the centre keeps the width it had beside it. */
+  @container page (width < 62rem) {
+    .pb-frame:has(> .pb-rail) {
+      grid-template-columns: minmax(0, 1fr);
+      max-inline-size: var(--pb-centre-w);
+      border-inline-end: 1px solid var(--pb-rule);
+    }
+
+    .pb-rail {
+      display: none;
+    }
+  }
+
+  .pb-app__tabs {
+    grid-area: tabs;
+    display: none;
+  }
+
+  /* The thread's docked reply bar (reply-bar.css) docks above the frame's own bar at the window's foot,
+     and what the page scrolls into view stops above both. */
+  .pb-reply:not(.pb-reply--inline) {
+    inset-block-end: var(--pb-dock-end);
+  }
+
+  :root:has(.pb-reply:not(.pb-reply--inline)) {
+    scroll-padding-block-end: calc(var(--muxui-semantic-control-size-lg) * 4 + var(--pb-dock-end));
+  }
+
+  .pb-app__tab-avatar.muxui-avatar {
+    inline-size: 1.5rem;
+    block-size: 1.5rem;
+    font-size: var(--muxui-semantic-typography-badge-size);
+  }
+
+  .pb-app__drawer-foot {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--muxui-semantic-layout-control-gap);
+    padding: var(--muxui-semantic-layout-inset-medium) var(--muxui-semantic-layout-inset-large);
+  }
+
+  /* The phone drawer's rows, its close button and Appearance's choices are 44px targets. It is a
+     portal: only a phone shows its button. */
+  .muxui-sidebar__mobile-drawer {
+    --muxui-control-size-md: var(--pb-touch);
+    --muxui-control-size-sm: var(--pb-touch);
+    --muxui-component-button-min-height: var(--pb-touch);
+  }
+
+  /* Header labels give way to their icons where the header is narrow; the names stay for assistive tech. */
+  @media (max-width: 959.98px) {
+    .pb-top__label {
+      position: absolute;
+      inline-size: 1px;
+      block-size: 1px;
+      overflow: hidden;
+      clip-path: inset(50%);
+      white-space: nowrap;
+    }
+  }
+
+  /* The phone: the header and the sidebar give way to the top bar (the view header) and the bottom bar. */
+  @media (max-width: 859.98px) {
+    :root {
+      --pb-top-h: 0px;
+      --pb-bar-h: calc(var(--pb-touch) + var(--muxui-semantic-layout-inset-tight) + 1px);
+      /* The bottom bar: a tab's height (bottom-tab-bar.css) and its hairline. */
+      --pb-dock-end: calc(var(--pb-touch) + var(--muxui-semantic-layout-inset-small) + 1px);
+    }
+
+    .pb-app {
+      grid-template-areas:
+        'page'
+        'tabs';
+      grid-template-columns: minmax(0, 1fr);
+      grid-template-rows: minmax(0, 1fr) auto;
+    }
+
+    .pb-top,
+    .pb-app__side {
+      display: none;
+    }
+
+    .pb-app__page {
+      padding-inline: 0;
+    }
+
+    .pb-frame {
+      max-inline-size: none;
+      border-inline: 0;
+    }
+
+    /* A phone's gutter is the rows' (inset medium), on every page. */
+    .pb-frame .pb-page {
+      padding-inline: var(--muxui-semantic-layout-inset-medium);
+    }
+
+    .pb-page .pb-rows {
+      margin-inline: calc(-1 * var(--muxui-semantic-layout-inset-medium));
+    }
+
+    .pb-frame-vh__home {
+      display: flex;
+      align-items: center;
+      gap: var(--muxui-semantic-layout-tight-gap);
+      min-inline-size: 0;
+    }
+
+    .pb-frame-vh__menu {
+      display: contents;
+    }
+
+    /* The brand on the phone's top bar: the mark, or the site's name, in a 44px target. */
+    .pb-bar-brand {
+      min-block-size: var(--pb-touch);
+      min-inline-size: var(--pb-touch);
+      justify-content: center;
+    }
+
+    /* Mux's phone header around the drawer's button: only the button shows, in the top bar. */
+    .pb-frame-vh__menu .muxui-sidebar__mobile-header {
+      block-size: auto;
+      padding: 0;
+      border: 0;
+      background: transparent;
+    }
+
+    .pb-app__tabs {
+      display: grid;
+      position: sticky;
+      inset-block-end: 0;
+      z-index: 2;
+    }
+
+    /* Appearance's choices, a portal too, opened from the drawer. */
+    .pb-theme__choices {
+      --muxui-control-size-sm: var(--pb-touch);
+      --muxui-control-size-md: var(--pb-touch);
+    }
   }
 
   /* Without scripts (account.tsx): the account menu's button gives way to a link of the same look
-     to the account list under the page. Both are hidden unless the browser says scripting is
-     off, so a browser that does not know the media feature keeps the menu. */
+     to the account list under the page. Both are hidden unless the browser says scripting is off,
+     so a browser that does not know the media feature keeps the menu. */
   .pb-account__no-script,
   .pb-account-links {
     display: none;
   }
 
   @media (scripting: none) {
-    /* The community filter only filters with scripts. */
+    /* Appearance and the fold need scripts. */
     .pb-account__trigger:not(.pb-account__no-script),
     .pb-theme,
-    .pb-nav__filter {
+    .pb-app__fold {
       display: none;
     }
 
     .pb-account__no-script {
-      display: inline-flex;
+      display: inline-grid;
     }
 
+    /* Under the page, in its column: the sticky sidebar, a window tall, runs past a short page's row. */
     .pb-account-links {
       display: flex;
+      grid-column: page;
       flex-wrap: wrap;
       align-items: center;
       gap: var(--muxui-semantic-layout-inset-tight) var(--muxui-semantic-layout-inset-medium);
       padding: var(--muxui-semantic-layout-inset-medium) var(--muxui-semantic-layout-inset-large);
-      border-block-start: 1px solid var(--muxui-semantic-border-subtle);
-      /* The Account link jumps here: clear of the sticky bar above it. */
+      border-block-start: 1px solid var(--pb-rule);
+      /* The Account link jumps here: clear of the sticky header above it. */
       scroll-margin-block-start: 5rem;
     }
   }
 
-  /* Below 860 px the column and the HeaderNav bar give way to the phone bar and its drawer. */
-  @media (max-width: 859.98px) {
-    /* Explicit rows: the spare height of a short page belongs to the page, not to the bar. */
-    .pb-app {
-      grid-template-columns: minmax(0, 1fr);
-      grid-template-rows: auto minmax(0, 1fr);
-    }
-
-    .pb-app__side,
-    .pb-top {
-      display: none;
-    }
-
-    /* Mux's bar (the header Sidebar.MobileTrigger renders) and the brand with the actions share
-       one cell: Mux paints the bar and keeps its button at the end, the brand and the actions lie
-       over the rest. Mux gap: the phone header has no slot for actions beside its logo. */
-    .pb-app__bar {
-      display: grid;
-      position: sticky;
-      inset-block-start: 0;
-      z-index: 2;
-    }
-
-    .pb-app__bar > * {
-      grid-area: 1 / 1;
-    }
-
-    .pb-app__bar-start {
-      z-index: 1;
-      display: flex;
-      align-items: center;
-      gap: var(--muxui-semantic-layout-control-gap);
-      min-inline-size: 0;
-      margin-inline: var(--muxui-semantic-layout-inset-large)
-        calc(var(--muxui-semantic-layout-inset-large) + var(--muxui-semantic-control-size-md) + var(--muxui-semantic-layout-control-gap));
-    }
-
-    .pb-app__bar .muxui-sidebar__mobile-header {
-      justify-content: flex-end;
-    }
-
-    .pb-app__bar .pb-app__actions {
-      margin-inline-start: auto;
-    }
-
-    /* What gives way in the phone bar, in order: Create post's label (an icon button, as in mock
-       direction A), the account's name (the avatar shows), then below 360 px the signed-out
-       labels; only then the site name, which ends in an ellipsis. Each name stays whole for
-       assistive technology. */
-    .pb-app__bar .pb-create {
-      justify-content: center;
-      inline-size: var(--muxui-semantic-control-size-sm);
-      padding-inline: 0;
-    }
-
-    .pb-app__bar .pb-create .pb-action__label,
-    .pb-account__name {
-      position: absolute;
-      inline-size: 1px;
-      block-size: 1px;
-      overflow: hidden;
-      clip-path: inset(50%);
-      white-space: nowrap;
-    }
-  }
-
-  @media (max-width: 359.98px) {
-    .pb-app__bar :is(.pb-sign-in, .pb-cta) {
-      inline-size: var(--muxui-semantic-control-size-sm);
-      block-size: var(--muxui-semantic-control-size-sm);
-      padding-inline: 0;
-    }
-
-    .pb-app__bar :is(.pb-sign-in, .pb-cta) svg {
-      display: block;
-    }
-
-    .pb-app__bar :is(.pb-sign-in, .pb-cta) .pb-action__label {
-      position: absolute;
-      inline-size: 1px;
-      block-size: 1px;
-      overflow: hidden;
-      clip-path: inset(50%);
-      white-space: nowrap;
-    }
-  }
-
-  /* Phones without scripts: the drawer cannot open, so its button goes and the Sidebar column
-     itself is laid out under the page (and under the account list), every link in reach. */
+  /* Phones without scripts: the drawer cannot open, so its button goes and the sidebar itself is laid
+     out under the page, every link in reach. */
   @media (scripting: none) and (max-width: 859.98px) {
     .pb-app {
-      grid-template-rows: auto minmax(0, 1fr) auto;
-    }
-
-    .pb-app__body {
-      grid-row: 2;
+      grid-template-areas:
+        'page'
+        'side'
+        'tabs';
+      grid-template-rows: minmax(0, 1fr) auto auto;
     }
 
     .pb-app__side {
       display: block;
-      grid-row: 3;
-      border-inline-end: 0;
-      border-block-start: 1px solid var(--muxui-semantic-color-neutral-20);
+      position: static;
+      block-size: auto;
+      border-block-start: 1px solid var(--pb-rule);
     }
 
     .pb-app__side > .pb-side {
-      position: static;
       inline-size: auto;
       block-size: auto;
     }
 
-    .pb-app__bar .muxui-sidebar__mobile-trigger {
+    .pb-frame-vh__menu {
       display: none;
-    }
-
-    .pb-app__bar-start {
-      margin-inline-end: var(--muxui-semantic-layout-inset-large);
     }
   }
 }

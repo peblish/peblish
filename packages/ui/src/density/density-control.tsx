@@ -1,4 +1,4 @@
-import type { Density } from '../components/post-card.tsx';
+import type { Density } from '../components/post-row.tsx';
 import { ToggleButton, ToggleButtonGroup } from '../components/toggle-button-group.tsx';
 
 export const densities = ['card', 'classic', 'compact'] as const satisfies readonly Density[];

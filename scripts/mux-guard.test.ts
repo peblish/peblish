@@ -836,9 +836,9 @@ test("the vendored tarball is the one packages/ui's file: dependency names", () 
 test('the Mux token list comes from the vendored tarball', () => {
   const tarball = muxTarball;
   const tokens = muxTokens();
-  // Candidate c1 has 1228: rc.8's 1220 and none removed, plus the button, checkbox tick, command palette and
-  // grouped toggle divider sizes.
-  expect(tokens.size).toBe(1228);
+  // Candidate c3 has 1237: c1's 1228 and none removed, plus the sidebar's open width and the colours Badge and Banner
+  // declare for their tones (c1 added the button, checkbox tick, command palette and grouped toggle divider sizes).
+  expect(tokens.size).toBe(1237);
   expect(tokens.has('--muxui-semantic-content-default')).toBe(true);
   expect(tokens.has('--muxui-semantic-content-danger')).toBe(false);
   expect(muxTokens()).toBe(tokens);

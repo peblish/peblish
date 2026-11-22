@@ -1,0 +1,40 @@
+@layer app {
+  /* RailPanel: flat, a faint edge on the quiet fill; heading and rows spaced by the group gap. */
+  .pb-panel {
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    gap: var(--muxui-semantic-layout-group-gap);
+    min-inline-size: 0;
+    padding: var(--muxui-semantic-layout-inset-medium);
+    border: 1px solid var(--muxui-semantic-border-faint);
+    border-radius: var(--muxui-semantic-shape-container-radius);
+    background: var(--muxui-semantic-surface-subtle);
+  }
+
+  .pb-panel__head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--muxui-semantic-layout-group-gap);
+  }
+
+  .pb-panel__title {
+    margin: 0;
+  }
+
+  /* A link in the heading row or among the facts is a 24px target (WCAG 2.2, 2.5.8). */
+  .pb-panel__head .muxui-link,
+  .pb-panel .pb-facts .muxui-link {
+    display: inline-flex;
+    align-items: center;
+    max-inline-size: 100%;
+    min-inline-size: 24px;
+    min-block-size: 24px;
+  }
+
+  /* Facts in a panel: the label column as wide as its longest label. */
+  .pb-panel .pb-facts--rows {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+}

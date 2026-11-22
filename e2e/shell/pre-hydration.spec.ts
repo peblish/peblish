@@ -44,10 +44,12 @@ test('with scripts off, the page reads and the sidebar links are plain links', a
     const page = await context.newPage();
     await page.goto('/');
     const side = page.getByRole('complementary', { name: 'Sidebar' });
-    const feeds = side.getByRole('navigation', { name: 'Feeds' });
-    for (const name of ['Local', 'All', 'Popular']) await expect(feeds.getByRole('link', { name })).toBeVisible();
-    await expect(side.getByRole('navigation', { name: 'About this site' }).getByRole('link', { name: 'Privacy' })).toBeVisible();
+    const feeds = side.getByRole('navigation', { name: 'Feeds and communities' });
+    for (const name of ['Local', 'All', 'Popular', 'Privacy']) await expect(feeds.getByRole('link', { name, exact: true })).toBeVisible();
     await expect(page.getByRole('banner').getByRole('link', { name: 'Sign in' })).toHaveAttribute('href', '/auth/sign-in');
+    await expect(page.getByRole('banner').getByRole('link', { name: 'Find a community' })).toHaveAttribute('href', '/communities');
+    // The fold needs scripts: its button is not drawn, and the sidebar stays open.
+    await expect(page.getByRole('button', { name: 'Sidebar', exact: true })).toBeHidden();
     await feeds.getByRole('link', { name: 'Local', exact: true }).click();
     await page.waitForURL('**/local');
     await expect(page.getByRole('main')).toBeVisible();
@@ -59,7 +61,7 @@ test('with scripts off, the page reads and the sidebar links are plain links', a
 test.describe('on a phone', () => {
   test.use({ viewport: phone });
 
-  test('with scripts off, the phone bar and the page still render', async ({ browser, baseURL }) => {
+  test('with scripts off, the top bar, the bottom bar and the page still render', async ({ browser, baseURL }) => {
     const context = await browser.newContext({ javaScriptEnabled: false, viewport: phone, baseURL });
     try {
       const page = await context.newPage();
@@ -67,7 +69,14 @@ test.describe('on a phone', () => {
       // The drawer needs scripts: its button gives way to the Sidebar laid out under the page (no-script.spec.ts).
       await expect(page.getByRole('button', { name: 'Open navigation' })).toBeHidden();
       await expect(page.getByRole('complementary', { name: 'Sidebar' })).toBeVisible();
-      await expect(page.getByRole('banner').getByRole('link', { name: 'Sign in' })).toHaveAttribute('href', '/auth/sign-in');
+      const bar = page.getByRole('navigation', { name: 'Page', exact: true });
+      await expect(bar.getByRole('link', { name: 'Find a community' })).toHaveAttribute('href', '/communities');
+      // Back needs scripts, so the server draws the mark in its place.
+      await expect(bar.locator('.pb-bar-brand')).toBeVisible();
+      await expect(page.getByRole('navigation', { name: 'Sections' }).getByRole('link', { name: 'Sign in' })).toHaveAttribute(
+        'href',
+        '/auth/sign-in',
+      );
       await expect(page.getByRole('main')).toBeVisible();
     } finally {
       await context.close();

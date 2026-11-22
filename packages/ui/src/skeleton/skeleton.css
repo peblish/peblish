@@ -1,0 +1,90 @@
+@layer app {
+  /* The loading layouts (skeletons.tsx): groups of Mux UI's Skeleton shapes in the real components' layout
+     classes, sized like what they stand for. Nothing moves. */
+  .pb-skeleton,
+  .pb-skeleton__shapes {
+    display: flex;
+    flex-direction: column;
+    min-inline-size: 0;
+  }
+
+  .pb-skeleton--rail .pb-skeleton__shapes,
+  .pb-skeleton--inbox .pb-skeleton__shapes {
+    gap: var(--muxui-semantic-layout-action-gap);
+  }
+
+  .pb-skeleton--thread .pb-skeleton__shapes {
+    gap: var(--muxui-semantic-layout-content-gap);
+  }
+
+  .pb-skeleton .pb-post {
+    cursor: default;
+  }
+
+  .pb-skeleton .pb-post:hover {
+    background: none;
+  }
+
+  /* The shapes are Mux UI's Skeleton (shape.tsx). A line is one line of the text around it, so each role
+     sets the type its line stands in for; the leading matches the body's, as the text it gives way to. */
+  .pb-skel-line {
+    font-size: var(--muxui-semantic-typography-body-size);
+    line-height: var(--muxui-semantic-typography-body-line-height);
+  }
+
+  .pb-skel-line[data-kind='title'] {
+    font-size: var(--muxui-semantic-typography-label-m-font-size);
+  }
+
+  .pb-skel-line[data-kind='meta'] {
+    font-size: var(--muxui-semantic-typography-small-size);
+  }
+
+  .pb-skel-line[data-kind='label'] {
+    font-size: var(--muxui-semantic-typography-label-s-font-size);
+  }
+
+  /* A picture's corners, as the row draws them. */
+  .pb-skel-block {
+    border-radius: var(--muxui-semantic-shape-option-radius);
+  }
+
+  /* A control pill: a Block of the small control's height, as wide as the vote or the comments count. */
+  .pb-skel-pill {
+    inline-size: calc(var(--muxui-semantic-control-size-sm) * 2);
+    block-size: var(--muxui-semantic-control-size-sm);
+    border-radius: var(--muxui-semantic-shape-pill-radius);
+  }
+
+  .pb-skel-pill[data-size='sm'] {
+    inline-size: calc(var(--muxui-semantic-control-size-sm) * 1.6);
+  }
+
+  .pb-skel-pill[data-size='lg'] {
+    inline-size: calc(var(--muxui-semantic-control-size-sm) * 3);
+  }
+
+  .pb-skel__lines {
+    display: flex;
+    flex-direction: column;
+    min-inline-size: 0;
+  }
+
+  .pb-skel__row {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+    gap: var(--muxui-semantic-layout-group-gap);
+  }
+
+  .pb-skel__comment {
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: start;
+  }
+
+  .pb-skel__post {
+    display: flex;
+    flex-direction: column;
+    gap: var(--muxui-semantic-layout-group-gap);
+  }
+}

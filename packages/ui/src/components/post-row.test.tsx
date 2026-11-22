@@ -1,7 +1,8 @@
 import type { ActorRef, PostView } from '@peblish/schema/views';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { expect, test } from 'vitest';
-import { PostCard, type PostCardLabels } from './post-card.tsx';
+import { PostCard } from './post-card.tsx';
+import { PostRow, type PostRowLabels } from './post-row.tsx';
 
 const actor = (name: string, kind: 'Person' | 'Group'): ActorRef => ({
   id: `00000000-0000-7000-9000-00000000000${kind === 'Group' ? 1 : 2}`,
@@ -38,7 +39,7 @@ const post: PostView = {
   myVote: 0,
 };
 
-const labels: PostCardLabels = {
+const labels: PostRowLabels = {
   vote: { group: 'Vote', up: 'Upvote', down: 'Downvote' },
   badges: { admin: 'admin', moderator: 'mod', op: 'OP' },
   pinned: 'Pinned',
@@ -49,18 +50,14 @@ const labels: PostCardLabels = {
   deleted: '[deleted]',
   comments: (count) => `${count} comments`,
   share: 'Share',
-  show: 'show',
-  hide: 'hide',
-  by: 'by',
-  text: 'Text',
-  link: 'Link',
-  image: 'Image',
+  hide: 'Hide',
+  cover: { hidden: 'NSFW content hidden', show: 'Show' },
 };
 
-const render = (thumbnailSrc: string | null) =>
+const render = (thumbnailSrc: string | null, extra: Partial<PostView> = {}) =>
   renderToStaticMarkup(
-    <PostCard
-      post={post}
+    <PostRow
+      post={{ ...post, ...extra }}
       density="classic"
       hrefs={{ post: '/post/1', community: '/c/news', author: '/u/jun' }}
       labels={labels}
@@ -76,6 +73,10 @@ test('the thumbnail loads from the resolved source, never from the post own URL'
   expect(html).not.toContain('tracker.example');
 });
 
+test('PostCard is still PostRow, for the routes that import it by its former name', () => {
+  expect(PostCard).toBe(PostRow);
+});
+
 test('the thumbnail is a Mux Link to the post, out of the tab order and hidden from assistive technology', () => {
   const thumb = /<a [^>]*class="[^"]*pb-post__thumb[^"]*"[^>]*>/.exec(render('/media/proxy/signed/thumb'))?.[0];
   expect(thumb).toContain('muxui-link');
@@ -84,16 +85,57 @@ test('the thumbnail is a Mux Link to the post, out of the tab order and hidden f
   expect(thumb).toContain('aria-hidden="true"');
 });
 
-test('without a resolved source the card shows its type mark and loads nothing, whatever the post carries', () => {
+test('without a resolved source the row has no thumbnail and loads nothing, whatever the post carries', () => {
   const html = render(null);
   expect(html).not.toContain('<img');
   expect(html).not.toContain('tracker.example');
-  expect(html).toContain('pb-post__mark');
+  expect(html).not.toContain('pb-post__thumb');
 });
 
-const renderWith = (labels: PostCardLabels, extra: Partial<PostView> = {}) =>
+test('a sensitive post renders the cover in place of its picture: no image, nothing focusable, a named Show', () => {
+  const html = render('/media/proxy/signed/thumb', { sensitive: true });
+  expect(html).toContain('data-hidden="true"');
+  expect(html).not.toContain('<img');
+  expect(html).not.toContain('/media/proxy/signed/thumb');
+  expect(html).toMatch(/<div class="pb-cover[^"]*"[^>]*data-size="thumb"/);
+  expect(html).toContain('NSFW content hidden');
+  // Disabled on the server: Show needs scripts.
+  expect(html).toMatch(/<button[^>]*disabled=""[^>]*>[^]*Show/);
+});
+
+test('a revealed sensitive post shows its picture and a Hide action; one the page keeps covered keeps it out', () => {
+  const shown = renderToStaticMarkup(
+    <PostRow
+      post={{ ...post, sensitive: true }}
+      density="card"
+      hrefs={{ post: '/post/1', community: '/c/news', author: '/u/jun' }}
+      labels={labels}
+      locale="en-US"
+      thumbnailSrc="/media/proxy/signed/thumb"
+      cover={{ revealed: true }}
+    />,
+  );
+  expect(shown).toContain('src="/media/proxy/signed/thumb"');
+  expect(shown).toMatch(/<button[^>]*><span class="muxui-button__label">Hide<\/span><\/button>/);
+  expect(shown).not.toContain('data-hidden');
+});
+
+test('the comments link shows the number and is named by the count', () => {
+  expect(render(null)).toMatch(/<a [^>]*aria-label="0 comments"[^>]*class="[^"]*pb-post__comments/);
+});
+
+test('a Card link post says where it goes in a link line to the address; Classic keeps the domain after the title', () => {
+  const card = renderWith(labels);
+  expect(card).toMatch(
+    /<a [^>]*class="[^"]*pb-link-preview[^"]*"[^>]*href="https:\/\/example.com\/article"[^>]*rel="noopener noreferrer nofollow ugc"/,
+  );
+  expect(card).not.toContain('pb-post__domain');
+  expect(render(null)).toContain('pb-post__domain');
+});
+
+const renderWith = (labels: PostRowLabels, extra: Partial<PostView> = {}) =>
   renderToStaticMarkup(
-    <PostCard
+    <PostRow
       post={{ ...post, ...extra }}
       density="card"
       hrefs={{ post: '/post/1', community: '/c/news', author: '/u/jun' }}
@@ -122,7 +164,7 @@ test('without a pattern the vote group still names the post, after the plain gro
 });
 
 test('a link post domain is a left-to-right isolated run with its directional controls neutralised', () => {
-  const html = renderWith(labels, { url: 'https://example.com/a' });
+  const html = render(null, { url: 'https://example.com/a' });
   expect(html).toMatch(/<bdi dir="ltr">\(example\.com\)<\/bdi>/);
 });
 
