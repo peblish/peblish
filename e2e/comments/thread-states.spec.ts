@@ -11,32 +11,22 @@ test.setTimeout(180_000);
 
 const driven = ['hover', 'focus', 'pressed'];
 
-/**
- * Mux UI c3's text area, the dock's field and the driven target of its page: focused, it shows a 1 px outline inside
- * itself (the theme's focus glow has no spread), which is no 3:1 ring, and its outline and shadow ease in under reduced
- * motion. Logged, not failed: the field is the shared TextAreaField, and its theme is not this page's to change.
- */
-const fieldGaps = /: (focus ring missing|moves under reduced motion: (outline-color|box-shadow) )/;
-
-const compositions: Record<string, { states: string[]; known?: RegExp }> = {
+const compositions: Record<string, { states: string[] }> = {
   // At rest, a permalink's own comment (selected) and signed out (disabled).
   'comment-tree': { states: ['rest', 'selected', 'disabled', ...driven] },
   'comment-tombstones': { states: ['rest', ...driven] },
   // Answering a comment (selected), a locked post's reason in its place (disabled), sending, and refused.
-  'reply-dock': { states: ['rest', 'selected', 'disabled', 'pending', 'invalid', ...driven], known: fieldGaps },
+  'reply-dock': { states: ['rest', 'selected', 'disabled', 'pending', 'invalid', ...driven] },
   // Voted on (selected) and signed out (disabled).
   'post-pills': { states: ['rest', 'selected', 'disabled', ...driven] },
 };
 
-for (const [composition, { states, known }] of Object.entries(compositions)) {
+for (const [composition, { states }] of Object.entries(compositions)) {
   test(`/kit/${composition}: every state, scheme and condition passes`, async ({ browser, baseURL }) => {
     const checks = await galleryStates(browser, baseURL!, `/kit/${composition}`);
     expect([...new Set(checks.map(({ state }) => state))]).toEqual(states);
     expect(checks).toHaveLength(states.length * 2 * 4);
-    const problems = stateProblems(checks);
-    const gaps = known ? problems.filter((problem) => known.test(problem)) : [];
-    if (gaps.length) console.log(`/kit/${composition}, known gaps:\n  ${gaps.join('\n  ')}`);
-    expect(problems.filter((problem) => !gaps.includes(problem))).toEqual([]);
+    expect(stateProblems(checks)).toEqual([]);
   });
 }
 

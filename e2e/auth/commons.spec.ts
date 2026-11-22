@@ -29,10 +29,8 @@ test.describe('gallery', () => {
       const checks = await galleryStates(browser, baseURL!, `/kit/${composition}`);
       expect([...new Set(checks.map(({ state }) => state))]).toEqual(states);
       expect(checks).toHaveLength(states.length * 2 * 4);
-      // Mux's text field shows keyboard focus as its edge's colour (and a glow token, 0px in this theme), not a
-      // ring outside it, which is what the helper measures; the edge's 3:1 is checked below instead.
-      const muxField = (problem: string) => composition === 'auth-field' && problem.endsWith('focus: focus ring missing');
-      expect(stateProblems(checks, { target: 24 }).filter((problem) => !muxField(problem))).toEqual([]);
+      // Mux's text field shows keyboard focus as its edge's colour, which the helper measures for a field.
+      expect(stateProblems(checks, { target: 24 })).toEqual([]);
     });
   }
 });

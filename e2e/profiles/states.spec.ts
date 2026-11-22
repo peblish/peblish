@@ -17,19 +17,12 @@ const compositions: Record<string, string[]> = {
   'you-appearance': ['rest', 'selected', 'disabled', 'hover', 'focus', 'pressed'],
 };
 
-/**
- * The helper sees only an element's ancestors. Mux's ToggleButtonGroup draws its selected choice as a copy of the
- * labels in inverse colours over an indicator that is their sibling, so the helper reads that copy against the page
- * (1:1). Appearance drops those readings and measures the pair itself below.
- */
-const unseenLayer = (composition: string, problem: string) => composition === 'you-appearance' && problem.endsWith(': text 1:1');
-
 for (const [composition, states] of Object.entries(compositions)) {
   test(`/kit/${composition}: every state, scheme and condition passes`, async ({ browser, baseURL }) => {
     const checks = await galleryStates(browser, baseURL!, `/kit/${composition}`);
     expect([...new Set(checks.map(({ state }) => state))]).toEqual(states);
     expect(checks).toHaveLength(states.length * 2 * 4);
-    expect(stateProblems(checks, { target: 44 }).filter((problem) => !unseenLayer(composition, problem))).toEqual([]);
+    expect(stateProblems(checks, { target: 44 })).toEqual([]);
   });
 }
 

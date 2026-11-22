@@ -27,7 +27,10 @@ export interface StateCheck {
   text?: number;
   /** The target's icons against what is behind them. */
   icon?: number;
-  /** Focus only: the ring around the target (an outline outside it, or a solid box-shadow ring). */
+  /**
+   * Focus only: the ring around the target (an outline outside it, or a solid box-shadow ring); for a field without
+   * one, its edge, which Mux's fields draw in the focus colour instead.
+   */
   ring?: number;
   /** Reduced motion only: animations still running once the state is reached, as `name duration`. */
   motion?: string[];
@@ -117,12 +120,13 @@ async function check(page: Page, state: KitState, condition: Condition): Promise
     .analyze();
   const painted = await colours(sample);
   const own = (await target.count()) ? await colours(target) : {};
+  const field = state === 'focus' && (await target.evaluate((node) => node.matches('input, textarea, select')));
   const result = {
     state,
     axe: axe.violations.flatMap(({ id, nodes }) => nodes.map(({ target }) => `${id}: ${target.join(' ')}`)),
     text: painted.text?.ratio,
     icon: own.icon?.ratio,
-    ring: state === 'focus' ? (own.outline?.ratio ?? 0) : undefined,
+    ring: state === 'focus' ? (own.outline?.ratio ?? (field ? own.border?.ratio : undefined) ?? 0) : undefined,
     motion,
     target: condition === 'phone' ? await smallest(sample) : undefined,
     formTarget: condition === 'phone' ? await smallest(sample, formControls) : undefined,
