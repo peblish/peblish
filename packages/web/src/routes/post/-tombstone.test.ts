@@ -106,7 +106,7 @@ const session = (who: ActorRef): { view: SessionView } => ({
 async function payload(view: PostView, viewer: ActorRef | null, moderator = false) {
   const renderer = await createMarkdownRenderer(site);
   const page: PostPage = { view, body: null, gate: 'none', moderator };
-  const thread: Thread = { postId: view.id, sort: 'top', comments, focus: null, moderator, next: null };
+  const thread: Thread = { postId: view.id, sort: 'top', comments, focus: null, moderator, next: null, previousVisitAt: null, newCount: 0 };
   const data = {
     post: postForViewer(page, viewer?.id ?? null),
     thread: threadData({ page, session: viewer && session(viewer), renderer, after: null, thread }),

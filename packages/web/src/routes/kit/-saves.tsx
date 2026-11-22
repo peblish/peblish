@@ -39,11 +39,13 @@ function RowUnsave({ pending, failed }: { pending?: boolean; failed?: boolean })
 }
 
 function RowMenu({ saved = false, pending, said }: { saved?: boolean; pending?: boolean; said?: boolean }) {
-  const { t } = useTranslate();
+  const { t, locale } = useTranslate();
   return (
     <span className="pb-post__actions">
       <FeedRowActions
         labels={{ more: t('feeds', 'row.more', { title: sample.title }), list: t('feeds', 'row.list'), copy: t('feeds', 'row.copy') }}
+        publishedAt="2026-11-03T23:30:00.000Z"
+        locale={locale}
         onCopy={() => undefined}
         status={said ? t('saves', saved ? 'status.saved' : 'status.saveFailed') : ''}
         save={{ label: t('saves', saved ? 'action.unsave' : 'action.save'), onSave: () => undefined, pending }}
