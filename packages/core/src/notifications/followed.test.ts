@@ -179,6 +179,27 @@ describe('thread_reply', () => {
     expect((await readInbox(viewer)).items).toEqual([]);
     expect(await unreadCount(w.people.reader.id)).toBe(0);
   });
+  test.each(['removed', 'deleted'] as const)(
+    "a notice whose comment is %s carries no id, address or name that leads to the comment's author",
+    async (state) => {
+      const w = await seedInboxWorld();
+      const postId = w.posts.local.normal;
+      await follow(w.people.reader, postId);
+      const id = await say(w.people.owner, postId, 'Words to withhold');
+      await drainNotices();
+      await writer()
+        .update(comments)
+        .set(state === 'removed' ? { removedAt: new Date() } : { deletedAt: new Date() })
+        .where(eq(comments.id, id));
+      const [comment] = await db().select({ apId: comments.apId }).from(comments).where(eq(comments.id, id));
+      const [author] = await db().select({ apId: actors.apId, name: actors.name }).from(actors).where(eq(actors.id, w.people.owner.id));
+      const [item] = (await readInbox({ actorId: w.people.reader.id, siteRole: 'user' })).items;
+      expect(item).toMatchObject({ kind: 'thread_reply', withheld: state, actor: null, commentId: null, excerpt: null, postId });
+      // What is left: the notice's own id (its read actions), the followed post, and the post's community.
+      const sent = JSON.stringify(item);
+      for (const secret of [id, comment!.apId, w.people.owner.id, author!.apId, author!.name]) expect(sent).not.toContain(secret);
+    },
+  );
 });
 
 describe('follow_accept', () => {
