@@ -15,7 +15,7 @@ type Seed = {
   password: string;
   secret: string;
   community: { handle: string };
-  author: { name: string };
+  author: { name: string; actorId: string };
   moderator: { name: string };
   viewer: { name: string };
   undeclared: { name: string };
@@ -112,6 +112,23 @@ test.describe('anyone', () => {
     expect(text).not.toContain('Deleted body');
     await gotoHydrated(page, url(seed.posts.deleted));
     await expectAccessible(page);
+  });
+
+  test('a tombstone sends nothing of its author, signed out or signed in, but to staff', async ({ browser }) => {
+    // The page's data goes into the HTML for hydration: what is withheld must not be in it at all.
+    const as = async (name: string | null) => {
+      const page = await (await browser.newContext()).newPage();
+      if (name) await signedIn(page, name);
+      const { text } = await html(page, seed.posts.deleted);
+      await page.close();
+      return text;
+    };
+    for (const name of [null, seed.viewer.name]) {
+      const text = await as(name);
+      for (const trace of [seed.author.name, seed.author.actorId]) expect(text, name ?? 'signed out').not.toContain(trace);
+    }
+    // A moderator of the community keeps the author, for their actions.
+    expect(await as(seed.moderator.name)).toContain(seed.author.actorId);
   });
 
   test('a link post whose remote thumbnail URL is too long to proxy still renders, as a plain link', async ({ page }) => {

@@ -64,8 +64,8 @@ export interface CommentTreeLabels extends CommentThreadLabels {
 export interface CommentThreadProps {
   /** A flat list in display order (core's read model); `parentId` and `depth` place each comment. */
   comments: readonly CommentView[];
-  /** The post's author, to mark their comments OP. */
-  postAuthorId: string;
+  /** The post's author, to mark their comments OP; null when the page withholds it (a tombstone's). */
+  postAuthorId: string | null;
   /** Where "Continue this thread" leads for a comment: its permalink page. Null for a comment that has none to offer (the one a permalink page starts from, whose replies the page pages itself). */
   continueHref: (comment: CommentView) => string | null;
   authorHref: (comment: CommentView) => string;
@@ -144,7 +144,7 @@ function createRowNotes() {
 
 /** What every row of one thread shares. One object, rebuilt only when one of these changes, so a row's memo holds. */
 interface RowContext {
-  postAuthorId: string;
+  postAuthorId: string | null;
   continueHref: CommentThreadProps['continueHref'];
   authorHref: CommentThreadProps['authorHref'];
   labels: CommentTreeLabels;

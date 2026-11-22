@@ -1,4 +1,4 @@
-import { readThread, type ThreadComment } from '@peblish/core/comments/read';
+import { readThread, type Thread, type ThreadComment } from '@peblish/core/comments/read';
 import { parseSort, type ThreadSort } from '@peblish/core/comments/sort';
 import type { PostPage, Viewer } from '@peblish/core/posts/read';
 import type { Uuid } from '@peblish/schema/ids';
@@ -7,6 +7,8 @@ import type { ActorRef, CommentView } from '@peblish/schema/views';
 import { getRequest } from '@tanstack/react-start/server';
 import type { MarkdownRenderer } from '../../../../server/markdown.ts';
 import type { SlotViewer } from '../../../-actions/props.ts';
+import { authorShown } from '../../-page-data.ts';
+import { withheldAuthor } from '../../-withheld.ts';
 
 // The thread's data for a page (server only): core's read model, with each comment's text
 // rendered by the page's Markdown renderer, and what the viewer can do beside reading. The post
@@ -16,7 +18,8 @@ import type { SlotViewer } from '../../../-actions/props.ts';
 /** What the thread section needs, all JSON. */
 export type ThreadData = {
   postId: Uuid;
-  postAuthorId: Uuid;
+  /** The post's author, for the OP badge; null where the post is a tombstone to this viewer (-page-data.ts authorShown). */
+  postAuthorId: Uuid | null;
   sort: ThreadSort;
   /** The `after` this was loaded for, as the page asked for it (null for the first page): the section reloads when the address names another. */
   after: string | null;
@@ -55,24 +58,14 @@ export const requestedSort = (): ThreadSort => parseSort(URL.parse(getRequest().
 export const requestedAfter = (): string | null => URL.parse(getRequest().url)?.searchParams.get('after') ?? null;
 
 /**
- * The author a tombstone carries to a reader who does not moderate the community: nobody. Core's view has
- * the author on every comment, and the page sends its data with the HTML for hydration, so a deleted or
- * removed comment's author is taken out here, not only left unrendered. Moderators keep it for their
+ * A comment as the page sends it. A tombstone (deleted or removed) says nothing of its author to a reader
+ * who does not moderate the community (-withheld.ts): no author, badge or text, and no address of its own,
+ * since a federated comment's address can hold its author's handle. Moderators keep it all for their
  * actions (restore, ban).
  */
-const withheldAuthor: ActorRef = {
-  id: '00000000-0000-0000-0000-000000000000',
-  apId: '',
-  kind: 'Person',
-  name: '',
-  displayName: null,
-  local: true,
-  handle: '',
-};
-
 function render(renderer: MarkdownRenderer, { view, body }: ThreadComment, moderator: boolean): CommentView {
   const tombstone = (view.deleted || view.removed) && !moderator;
-  if (tombstone) return { ...view, author: withheldAuthor, authorBadge: null, contentHtml: null };
+  if (tombstone) return { ...view, apId: '', author: withheldAuthor, authorBadge: null, contentHtml: null };
   const contentHtml =
     body?.kind === 'markdown'
       ? renderer.render(body.source, { idPrefix: view.id, content: { kind: 'comment', id: view.id, apId: view.apId } }).html
@@ -107,11 +100,24 @@ export async function loadThread(options: {
   const viewer: Viewer = session ? { actorId: session.view.actorId, siteRole: session.view.siteRole } : null;
   const thread = await readThread(page.view.id, viewer, { sort, after, rootId: rootId ?? null });
   if (!thread) return null;
+  return threadData({ page, session, renderer, after, thread });
+}
+
+/** What loadThread sends for what core read: everything but the read itself, so it is tested without a database. */
+export function threadData(options: {
+  page: PostPage;
+  session: { view: SessionView } | null;
+  renderer: MarkdownRenderer;
+  after: string | null;
+  thread: Thread;
+}): ThreadData {
+  const { page, session, renderer, after, thread } = options;
+  const viewer: Viewer = session ? { actorId: session.view.actorId, siteRole: session.view.siteRole } : null;
   const focused = thread.focus ? thread.comments.find(({ view }) => view.id === thread.focus?.id) : undefined;
   const mine = focused && viewer?.actorId === focused.view.author.id && !focused.view.deleted && !focused.view.removed;
   return {
     postId: page.view.id,
-    postAuthorId: page.view.author.id,
+    postAuthorId: authorShown(page, viewer?.actorId ?? null) ? page.view.author.id : null,
     sort: thread.sort,
     after,
     comments: thread.comments.map((comment) => render(renderer, comment, page.moderator)),

@@ -9,7 +9,7 @@ import { createMarkdownRenderer } from '../../server/markdown.ts';
 import { postPath } from '../../shell/paths.ts';
 import { gateData, requestNsfw } from '../c/-gate.ts';
 import { loadThread } from './$id/comments/-thread.ts';
-import { hasSpoiler, postMedia, postTime, threadVisible } from './-page-data.ts';
+import { hasSpoiler, postForViewer, postMedia, postTime, threadVisible } from './-page-data.ts';
 import { input } from '../../server/input.ts';
 
 /**
@@ -40,7 +40,8 @@ export const loadPost = createServerFn({ method: 'GET' })
     const { thumbnail, image } = postMedia(view, renderer);
     const locale = negotiateLocale(getRequestHeader('accept-language'));
     // The page draws `thumbnail` (through the proxy rule); the picture's own address stays out of the page data.
-    const post: PostView = { ...view, thumbnailUrl: null, contentHtml };
+    // A tombstone's author stays out too, but for staff and the author (postForViewer).
+    const post: PostView = { ...postForViewer(page, session?.view.actorId ?? null), thumbnailUrl: null, contentHtml };
     return {
       kind: 'post' as const,
       post,

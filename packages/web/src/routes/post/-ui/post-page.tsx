@@ -26,6 +26,7 @@ import { asPostError, errorKey } from './errors.ts';
 import { PostHeader } from './post-header.tsx';
 import { PostRail } from './post-rail.tsx';
 import { PostPills } from './post-pills.tsx';
+import { isWithheld } from '../-withheld.ts';
 
 // The post page (Commons' Thread.tsx, PostDetail): its view header, the post (meta line with the exact
 // time, title, flags, picture or link, body, the pill row of vote, comments, Share and Copy link, then
@@ -93,18 +94,22 @@ function PostContent({ data, error }: { data: Extract<PostPageData, { kind: 'pos
   const countLabel = count === 1 ? t('posts', 'comments.one') : t('posts', 'comments.other', { count });
   const shownError = asPostError(error);
   const badgeLabels = { admin: t('posts', 'badge.admin'), moderator: t('posts', 'badge.moderator'), op: '' };
-  // The slots get the post for a signed-in viewer; a removed or deleted post still has them (a moderator restores it).
-  const actions: ContentActionProps | null = viewerId
-    ? {
-        target: { kind: 'post', id: post.id },
-        author: post.author,
-        community: post.community,
-        removed: post.removed,
-        deleted: post.deleted,
-        viewer: { actorId: viewerId, moderator, admin: viewerAdmin },
-        back,
-      }
-    : null;
+  // A tombstone's author comes only to staff and the author (-page-data.ts postForViewer).
+  const withheldAuthor = isWithheld(post.author);
+  // The slots get the post for a signed-in viewer; a removed or deleted post still has them for staff (a
+  // moderator restores it). Where its author is withheld, as in the thread, there is no slot at all.
+  const actions: ContentActionProps | null =
+    viewerId && !withheldAuthor
+      ? {
+          target: { kind: 'post', id: post.id },
+          author: post.author,
+          community: post.community,
+          removed: post.removed,
+          deleted: post.deleted,
+          viewer: { actorId: viewerId, moderator, admin: viewerAdmin },
+          back,
+        }
+      : null;
 
   let body: ReactNode;
   if (withheld) {
@@ -156,13 +161,17 @@ function PostContent({ data, error }: { data: Extract<PostPageData, { kind: 'pos
               <Handle prefix="!" handle={post.community.handle} />
             </Link>
             <Text aria-hidden="true">·</Text>
-            <span className="post-meta__by">
-              <Link className="pb-link-muted" href={userPath(post.author)}>
-                <Handle prefix="@" handle={post.author.handle} />
-              </Link>
-              {post.authorBadge && <Badge kind={post.authorBadge} labels={badgeLabels} />}
-            </span>
-            <Text aria-hidden="true">·</Text>
+            {!withheldAuthor && (
+              <>
+                <span className="post-meta__by">
+                  <Link className="pb-link-muted" href={userPath(post.author)}>
+                    <Handle prefix="@" handle={post.author.handle} />
+                  </Link>
+                  {post.authorBadge && <Badge kind={post.authorBadge} labels={badgeLabels} />}
+                </span>
+                <Text aria-hidden="true">·</Text>
+              </>
+            )}
             {/* The exact time, in full: a reader of a thread needs it, and a title is out of reach of touch and keys. */}
             <Time iso={post.publishedAt} locale={locale} format="date-time" />
             {data.edited && (
