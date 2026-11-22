@@ -25,10 +25,10 @@ export const filterKinds = {
 export type NoticeWithheld = 'sensitive' | 'removed' | 'deleted';
 
 /**
- * Why a reply or mention names no one, as the thread would not: its comment is deleted (a
- * tombstone without its author), it is under a post a moderator removed (whose comments the page
- * does not send), or it is sensitive content the viewer has not declared 16+ for (the post page
- * shows them nothing of it).
+ * Why a reply or mention names no one, as the thread would not: its comment or post is deleted (a
+ * tombstone without its author), it is in or under a post a moderator removed (whose author and
+ * comments the page withholds), or it is sensitive content the viewer has not declared 16+ for
+ * (the post page shows them nothing of it).
  */
 export type NoticeActorWithheld = 'deleted' | 'removed' | 'sensitive';
 
@@ -56,6 +56,7 @@ export type InboxItem = {
   actorWithheld: NoticeActorWithheld | null;
   community: NoticeActor | null;
   postId: string | null;
+  /** Null when `actorWithheld` is set: the row links to the post, and the comment's id stays out of the page. */
   commentId: string | null;
   /** The post's title; null when the post is gone, removed or deleted, or the notice is sensitive. */
   postTitle: string | null;

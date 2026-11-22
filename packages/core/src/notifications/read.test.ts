@@ -182,7 +182,7 @@ describe('what a row shows', () => {
     expect(items.at(-1)?.statement).toMatchObject({ modlogId: entry.id, reason: 'Rule 3' });
   });
 
-  test('a reply or mention names its author only where the thread would: not for a deleted comment, nor gated content to the undeclared', async () => {
+  test('a reply or mention names its author only where the thread would: not for a deleted comment, a removed or deleted post, nor gated content to the undeclared', async () => {
     const w = await seedInboxWorld();
     const { author: me, reader: replier, moderator } = w.people;
     // `moderator` declared 16+ at sign-up; `me` is the imported kind that has no declaration.
@@ -214,6 +214,9 @@ describe('what a row shows', () => {
       mentionInRemovedPost: (
         await seedNotice({ recipientId: me.id, kind: 'mention', refId: takenDown.id, actorId: moderator.id, postId: takenDown.id })
       ).id,
+      mentionInDeletedPost: (
+        await seedNotice({ recipientId: me.id, kind: 'mention', refId: gone.id, actorId: moderator.id, postId: gone.id })
+      ).id,
       gated: await reply(me, sensitive),
       gatedDeclared: await reply(moderator, sensitive),
       mention: (await seedNotice({ recipientId: me.id, kind: 'mention', refId: sensitive.id, actorId: moderator.id, postId: sensitive.id }))
@@ -230,9 +233,10 @@ describe('what a row shows', () => {
     expect(named(ids.live)).toEqual([replier.id, null, null]);
     expect(named(ids.removed)).toEqual([replier.id, null, 'removed']);
     expect(named(ids.underDeletedPost)).toEqual([replier.id, null, 'deleted']);
-    // Under a post a moderator removed the page sends no comments; the removed post itself still shows its author.
+    // Under a post a moderator removed the page sends no comments, and a removed or deleted post names no author.
     expect(named(ids.underRemovedPost)).toEqual([null, 'removed', 'removed']);
-    expect(named(ids.mentionInRemovedPost)).toEqual([moderator.id, null, 'removed']);
+    expect(named(ids.mentionInRemovedPost)).toEqual([null, 'removed', 'removed']);
+    expect(named(ids.mentionInDeletedPost)).toEqual([null, 'deleted', 'deleted']);
     // A deleted comment is a tombstone without its author, removed as well or not.
     expect(named(ids.deleted)).toEqual([null, 'deleted', 'deleted']);
     expect(named(ids.deletedAndRemoved)).toEqual([null, 'deleted', 'deleted']);
@@ -241,12 +245,17 @@ describe('what a row shows', () => {
     expect(named(ids.mention)).toEqual([null, 'sensitive', 'sensitive']);
     expect(named(ids.gatedDeclared)).toEqual([replier.id, null, 'sensitive']);
     expect(named(ids.removal)).toEqual([moderator.id, null, 'sensitive']);
-    // Nothing else of the person rides along: no id, name, handle or address.
-    for (const id of [ids.deleted, ids.underRemovedPost, ids.gated, ids.mention]) {
-      const text = JSON.stringify(items.get(id));
+    // Nothing else of the person rides along: no id, name, handle or address, and no comment id to
+    // look the comment up by. What is left links to the thread (the post) and marks the notice read.
+    const withheld = [ids.deleted, ids.deletedAndRemoved, ids.underRemovedPost, ids.mentionInRemovedPost, ids.mentionInDeletedPost];
+    for (const id of [...withheld, ids.gated, ids.mention]) {
+      const item = items.get(id)!;
+      const text = JSON.stringify(item);
       for (const leak of [replier.id, moderator.id, replier.name, moderator.name, replier.apId, moderator.apId])
         expect([id, text.includes(leak)]).toEqual([id, false]);
+      expect([id, item.commentId, item.postId === null]).toEqual([id, null, false]);
     }
+    expect(items.get(ids.live)?.commentId).not.toBeNull();
     // A blocked author's reply is not listed at all (inboxVisible), which says less than a tombstone.
     await seedBlock(me, replier);
     expect((await readInbox(viewerOf(me))).items.map((item) => item.id)).not.toContain(ids.live);

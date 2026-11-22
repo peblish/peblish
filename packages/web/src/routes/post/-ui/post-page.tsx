@@ -16,6 +16,7 @@ import { useVoteLabels } from '../../../shell/labels.ts';
 import { GateNotice, HideNsfwForm } from '../../c/-ui/gate.tsx';
 import { castVoteFn } from '../-vote.ts';
 import type { PostPageData } from '../-load.ts';
+import { authorWithheld } from '../-withheld.ts';
 import type { ContentActionProps } from '../../-actions/props.ts';
 import { ThreadSection } from '../$id/comments/-ui/thread-section.tsx';
 import { PostBlock } from './actions/block.tsx';
@@ -155,10 +156,15 @@ function PostContent({ data, error }: { data: Extract<PostPageData, { kind: 'pos
               <Link href={`/c/${post.community.handle}`}>
                 <Handle prefix="!" handle={post.community.handle} />
               </Link>{' '}
-              {t('posts', 'meta.by')}{' '}
-              <Link className="pb-link-muted" href={`/u/${post.author.handle}`}>
-                <Handle prefix="@" handle={post.author.handle} />
-              </Link>
+              {/* A removed or deleted post names its author only to them and the moderators (loadPost). */}
+              {!authorWithheld(post.author) && (
+                <>
+                  {t('posts', 'meta.by')}{' '}
+                  <Link className="pb-link-muted" href={`/u/${post.author.handle}`}>
+                    <Handle prefix="@" handle={post.author.handle} />
+                  </Link>
+                </>
+              )}
               {post.authorBadge && (
                 <>
                   {' '}
