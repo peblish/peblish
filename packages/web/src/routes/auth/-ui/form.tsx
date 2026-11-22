@@ -6,7 +6,9 @@ import {
   createContext,
   Fragment,
   use,
+  useEffect,
   useId,
+  useRef,
   useState,
   type FormEvent,
   type FocusEvent,
@@ -69,6 +71,20 @@ export function AuthForm({
   const { t } = useTranslate();
   const [error, setError] = useState(initial);
   const [busy, setBusy] = useState(false);
+  // Set from the press until the answer is in (a redirect keeps it while the page goes), so a second press,
+  // or Enter in a field, posts nothing meanwhile: a recovery code is not spent twice. A ref, not the state,
+  // so two presses before a render are refused too.
+  const sending = useRef(false);
+  // A page Back brings out of the browser's cache after a redirect is the same page, still locked: free it.
+  useEffect(() => {
+    const restored = (event: PageTransitionEvent) => {
+      if (!event.persisted) return;
+      sending.current = false;
+      setBusy(false);
+    };
+    window.addEventListener('pageshow', restored);
+    return () => window.removeEventListener('pageshow', restored);
+  }, []);
   // Counts the answers, so a field that was typed in since one shows the next one's refusal again.
   const [answer, setAnswer] = useState(0);
   const refusedId = `${useId()}-refused`;
@@ -76,21 +92,30 @@ export function AuthForm({
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (sending.current) return;
+    sending.current = true;
     const submitter = event.nativeEvent instanceof SubmitEvent ? event.nativeEvent.submitter : null;
     const body = new URLSearchParams();
     for (const [name, value] of new FormData(event.currentTarget, submitter)) if (typeof value === 'string') body.append(name, value);
     setBusy(true);
     setAnswer((count) => count + 1);
+    let leaving = false;
     try {
       const response = await fetch(action, { method: 'POST', body, headers: { accept: 'application/json' } });
       const answer = Answer(await response.json());
       if (answer instanceof type.errors) return setError('generic');
-      if (answer.redirect) return window.location.assign(answer.redirect);
+      if (answer.redirect) {
+        leaving = true;
+        return window.location.assign(answer.redirect);
+      }
       setError(asFormError(answer.error) ?? 'generic');
     } catch {
       setError('network');
     } finally {
-      setBusy(false);
+      if (!leaving) {
+        setBusy(false);
+        sending.current = false;
+      }
     }
   }
 
