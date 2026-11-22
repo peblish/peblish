@@ -5,6 +5,7 @@ import {
   HeartHandshakeIcon,
   InfoIcon,
   LockIcon,
+  NetworkIcon,
   SettingsIcon,
   ShieldCheckIcon,
   ShieldIcon,
@@ -21,7 +22,7 @@ import type { ComponentType } from 'react';
 import { useTranslate } from '../../../i18n/use-translate.ts';
 import { accountPages, signOutFormId } from '../../../shell/account.tsx';
 import { useRouteHydrated } from '../../../shell/hydration.ts';
-import { reportQueuePath, sitePaths } from '../../../shell/paths.ts';
+import { instancesPath, reportQueuePath, sitePaths } from '../../../shell/paths.ts';
 import { usePrefs } from '../../../shell/prefs.tsx';
 import { ViewHeader } from '../../../shell/view-header.tsx';
 import { AppearanceChoice, YouIdentity, YouLinks, type YouLink } from './you-parts.tsx';
@@ -81,6 +82,7 @@ export function YouPage() {
     { href: sitePaths.rules, label: t('shell', 'footer.conduct'), icon: HeartHandshakeIcon },
     { href: sitePaths.privacy, label: t('shell', 'footer.privacy'), icon: LockIcon },
     { href: sitePaths.terms, label: t('shell', 'footer.terms'), icon: FileTextIcon },
+    { href: instancesPath, label: t('facts', 'instances.nav'), icon: NetworkIcon },
   ];
   return (
     <main className="pb-page you">

@@ -12,6 +12,7 @@ import {
   InfoIcon,
   LockIcon,
   MapPinIcon,
+  NetworkIcon,
   ShieldIcon,
   type IconProps,
 } from '@peblish/ui/components/icons';
@@ -24,7 +25,7 @@ import type { ComponentType, ReactNode } from 'react';
 import { useTranslate } from '../i18n/use-translate.ts';
 import { openInRouter } from './client-links.ts';
 import type { ShellData } from './data.ts';
-import { directoryPaths, feedPaths, reportQueuePath, sitePaths } from './paths.ts';
+import { directoryPaths, feedPaths, instancesPath, reportQueuePath, sitePaths } from './paths.ts';
 import { useSectionFolds, type SideSection } from './side-state.ts';
 // The Saved page's entry (saves lane).
 import { BookmarkIcon } from '@peblish/ui/components/icons';
@@ -122,6 +123,7 @@ export function Navigation({
     { href: sitePaths.rules, label: t('shell', 'footer.conduct'), icon: HeartHandshakeIcon },
     { href: sitePaths.privacy, label: t('shell', 'footer.privacy'), icon: LockIcon },
     { href: sitePaths.terms, label: t('shell', 'footer.terms'), icon: FileTextIcon },
+    { href: instancesPath, label: t('facts', 'instances.nav'), icon: NetworkIcon },
   ];
 
   return (

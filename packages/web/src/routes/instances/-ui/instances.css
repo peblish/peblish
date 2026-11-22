@@ -1,0 +1,34 @@
+/* The public Instances page (Commons, the mock's styles for .a-instances): the title and count, then
+   one row per peer with its domain and software, rows apart by hairlines. Layout only; type and colour
+   come from Mux Text and tokens. */
+@layer app {
+  .instances-page {
+    display: flex;
+    flex-direction: column;
+    gap: var(--muxui-semantic-layout-group-gap);
+    padding-block: var(--muxui-semantic-layout-inset-large) var(--muxui-semantic-layout-inset-xlarge);
+  }
+  .instances-page .muxui-text {
+    margin: 0;
+  }
+  .instances-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+  }
+  .instances-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--muxui-semantic-layout-dense-gap) var(--muxui-semantic-layout-content-gap);
+    align-items: baseline;
+    justify-content: space-between;
+    padding-block: var(--muxui-semantic-layout-tight-gap);
+    border-block-end: 1px solid var(--muxui-semantic-border-subtle);
+  }
+  /* A long domain wraps rather than widen the page. */
+  .instances-domain {
+    min-inline-size: 0;
+    overflow-wrap: anywhere;
+  }
+}
