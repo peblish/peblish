@@ -57,22 +57,28 @@ test.describe('seeded', () => {
     const list = page.getByRole('main').getByRole('list', { name: 'Communities' });
     const pin = (title: string) => list.getByRole('button', { name: `Pin ${title} ${seed.suffix}` });
     await expect(pin('Elm')).toHaveAttribute('aria-pressed', 'true');
-    await expect(pin('Ash')).toHaveAttribute('aria-pressed', 'false');
+    await expect(pin('Damson')).toHaveAttribute('aria-pressed', 'false');
     await expect(pin('Fir')).toHaveCount(0);
     // A search hides the group: it is the viewer's own list, not a result.
     await expect(group(page)).toHaveCount(0);
 
-    await pin('Ash').focus();
+    // Damson sorts last of the unpinned rows, so pinning it moves it in the sidebar: up to the end of the pins,
+    // with a menu of its own, and unpinning puts it back.
+    const sideMenu = page.locator('.pb-side').getByRole('button', { name: `Options for Damson ${seed.suffix}` });
+    await expect(sideMenu).toHaveCount(0);
+    await pin('Damson').focus();
     await page.keyboard.press('Enter');
-    await expect(pin('Ash')).toHaveAttribute('aria-pressed', 'true');
-    await expect(pin('Ash')).toBeFocused();
-    await expect(page.getByRole('status').filter({ hasText: `Ash ${seed.suffix} pinned` })).toHaveCount(1);
-    await expect.poll(() => sidebarOrder(page, seed)).toEqual(['Elm', 'Yew', 'Birch', 'Ash', 'Cedar', 'Damson']);
+    await expect(pin('Damson')).toHaveAttribute('aria-pressed', 'true');
+    await expect(pin('Damson')).toBeFocused();
+    await expect(page.getByRole('status').filter({ hasText: `Damson ${seed.suffix} pinned` })).toHaveCount(1);
+    await expect.poll(() => sidebarOrder(page, seed)).toEqual(['Elm', 'Yew', 'Birch', 'Damson', 'Ash', 'Cedar']);
+    await expect(sideMenu).toHaveCount(1);
 
     await page.keyboard.press('Space');
-    await expect(pin('Ash')).toHaveAttribute('aria-pressed', 'false');
+    await expect(pin('Damson')).toHaveAttribute('aria-pressed', 'false');
     await expect.poll(() => sidebarOrder(page, seed)).toEqual(['Elm', 'Yew', 'Birch', 'Ash', 'Cedar', 'Damson']);
-    await expect(page.getByRole('status').filter({ hasText: `Ash ${seed.suffix} unpinned` })).toHaveCount(1);
+    await expect(sideMenu).toHaveCount(0);
+    await expect(page.getByRole('status').filter({ hasText: `Damson ${seed.suffix} unpinned` })).toHaveCount(1);
     await context.close();
   });
 
