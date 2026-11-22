@@ -233,6 +233,25 @@ describe('the banner', () => {
     expect(await writeCounts()).toEqual({ modlog: 3, outbox: 3 });
   });
 
+  test('two publishes racing raise the revision by exactly two, and both are audited', async () => {
+    const { admin } = await world();
+    await updateSettingsAs(admin, { 'site.banner': banner });
+    const results = await Promise.all([
+      updateSettingsAs(admin, { 'site.banner': { ...banner, message: 'First of two.' } }),
+      updateSettingsAs(admin, { 'site.banner': { ...banner, message: 'Second of two.' } }),
+    ]);
+    expect(results.map((result) => result.ok)).toEqual([true, true]);
+    expect((await readSetting('site.banner')).revision).toBe(3);
+    const rows = await db().select({ details: modlog.details }).from(modlog).orderBy(modlog.createdAt);
+    expect(rows).toHaveLength(3);
+    for (const revision of [1, 2, 3])
+      expect(rows).toContainEqual({
+        details: expect.objectContaining({
+          changes: { 'site.banner': expect.objectContaining({ after: expect.objectContaining({ revision }) }) },
+        }),
+      });
+  });
+
   test('a publish replaces a stored banner that is unreadable, and the log says it was unreadable without its content', async () => {
     const { admin } = await world();
     for (const [malformed, revision] of [
