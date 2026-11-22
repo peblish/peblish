@@ -3,6 +3,7 @@ import { createServerFn } from '@tanstack/react-start';
 import { getRequestHeader, setResponseHeader } from '@tanstack/react-start/server';
 import { negotiateLocale } from '../i18n/negotiate.ts';
 import { pageSession } from '../server/auth.ts';
+import { parseBannerCookie } from './banner.tsx';
 import { loadShellData } from './data.ts';
 import { parseSideCookie } from './side-state.ts';
 
@@ -23,6 +24,7 @@ export const getRootData = createServerFn({ method: 'GET' }).handler(async () =>
     locale: negotiateLocale(getRequestHeader('accept-language')),
     prefs: parsePrefs(getRequestHeader('cookie')),
     side: parseSideCookie(getRequestHeader('cookie')),
+    bannerDismissed: parseBannerCookie(getRequestHeader('cookie')),
     session: session?.view ?? null,
     shell: await loadShellData(session?.view ?? null),
   };

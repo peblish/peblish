@@ -21,7 +21,7 @@
   .pb-app {
     --pb-rule: var(--muxui-semantic-border-faint);
     /* Column widths, the Default width preset (Mux has no content-width scale): a 40rem centre beside a
-       19.5rem rail. The admin's width setting moves --pb-page-max in a later branch. */
+       19.5rem rail. The admin's other presets move the centre (`data-width`, below). */
     --pb-centre-w: 40rem;
     --pb-rail-w: 19.5rem;
     --pb-page-max: calc(var(--pb-centre-w) + var(--pb-rail-w));
@@ -29,11 +29,35 @@
     display: grid;
     grid-template-areas:
       'top top'
+      'banner banner'
       'side page'
       'tabs tabs';
     grid-template-columns: auto minmax(0, 1fr);
-    grid-template-rows: auto minmax(0, 1fr) auto;
+    grid-template-rows: auto auto minmax(0, 1fr) auto;
     min-block-size: 100dvh;
+  }
+
+  /* The admin's width preset (site.width, shell.tsx): the centre beside the rail's own 19.5rem, 35rem at
+     Narrow and 50rem at Wide (872 and 1112px with the rail, Default's 952 between them). A staff table's
+     wide centre (data-centre, below) wins at every preset, and a phone's frame is edge to edge at all. */
+  .pb-app[data-width='narrow'] {
+    --pb-centre-w: 35rem;
+  }
+
+  .pb-app[data-width='wide'] {
+    --pb-centre-w: 50rem;
+  }
+
+  /* At Wide, post and comment text and a card's excerpt keep Default's measure (its centre less the gutters,
+     600px); media and rows take the width. */
+  .pb-app[data-width='wide'] .pb-frame:not([data-centre='wide']) :is(.pb-prose, .pb-post__excerpt) {
+    max-inline-size: calc(40rem - 2 * var(--pb-gutter));
+  }
+
+  /* The site banner (banner.tsx): full width under the header, above the sidebar and the page. It scrolls
+     away under the header, which stays on top. */
+  .pb-app__banner {
+    grid-area: banner;
   }
 
   /* The frame's focus ring: Mux's ring colour is brand step 60, under 3:1 on the dark page with some
@@ -537,10 +561,11 @@
 
     .pb-app {
       grid-template-areas:
+        'banner'
         'page'
         'tabs';
       grid-template-columns: minmax(0, 1fr);
-      grid-template-rows: minmax(0, 1fr) auto;
+      grid-template-rows: auto minmax(0, 1fr) auto;
     }
 
     .pb-top,
@@ -647,10 +672,11 @@
   @media (scripting: none) and (max-width: 859.98px) {
     .pb-app {
       grid-template-areas:
+        'banner'
         'page'
         'side'
         'tabs';
-      grid-template-rows: minmax(0, 1fr) auto auto;
+      grid-template-rows: auto minmax(0, 1fr) auto auto;
     }
 
     .pb-app__side {
