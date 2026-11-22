@@ -1,11 +1,13 @@
 import { Uuid } from '@peblish/schema/ids';
 import { excerptLength } from '@peblish/schema/markdown';
 import { aliasedTable, and, desc, eq, inArray, isNull, lt, type SQL } from 'drizzle-orm';
+import { gateOf } from '../communities/gate.ts';
 import { localInstance } from '../db/local-instance.ts';
 import { db, type Queryable } from '../db/read.ts';
 import { actors } from '../db/tables/actors.ts';
 import { comments, posts } from '../db/tables/content.ts';
 import { instances } from '../db/tables/instances.ts';
+import { ageDeclarations } from '../identity/tables.ts';
 import { renderMarkdown } from '../markdown/render.ts';
 import { sanitizeRemoteHtml } from '../markdown/sanitize.ts';
 import { readModlogEntries } from '../modlog/read.ts';
@@ -19,6 +21,7 @@ import {
   type InboxFilter,
   type InboxItem,
   type NoticeActor,
+  type NoticeActorWithheld,
   type NoticeWithheld,
   type UnreadByGroup,
 } from './view.ts';
@@ -27,8 +30,10 @@ import {
 // newest first, with what each is about. It decides what a notice may show, in one place: a
 // post or community that is sensitive or NSFL shows only that for every viewer (a notice must
 // not carry what the gate would hide), a removed or deleted comment shows only that word, and a
-// removed or deleted post loses its title too. A page is a handful of queries however many rows
-// it lists: the notices, their people, their posts and comments, and their modlog entries.
+// removed or deleted post loses its title too. Who wrote a reply or mention follows the thread:
+// a deleted comment and sensitive content the viewer has not declared 16+ for name no one
+// (actorWithheldOf). A page is a handful of queries however many rows it lists: the notices,
+// their people, their posts and comments, their modlog entries and the viewer's declaration.
 
 export const inboxPageSize = 25;
 
@@ -104,7 +109,7 @@ export async function readInbox(
   ]);
   const page = rows.slice(0, limit).map(({ notice }) => notice);
   const next = rows.length > limit ? (page.at(-1)?.id ?? null) : null;
-  return { items: await describe(q, page), next, unread, unreadByGroup };
+  return { items: await describe(q, page, viewer.actorId), next, unread, unreadByGroup };
 }
 
 async function groupCounts(q: Queryable, viewerId: Uuid): Promise<UnreadByGroup> {
@@ -115,13 +120,13 @@ async function groupCounts(q: Queryable, viewerId: Uuid): Promise<UnreadByGroup>
 }
 
 /** The rows as items: who, where, what it says (or why it says nothing) and the moderator's statement. */
-async function describe(q: Queryable, rows: (typeof notifications.$inferSelect)[]): Promise<InboxItem[]> {
+async function describe(q: Queryable, rows: (typeof notifications.$inferSelect)[], viewerId: Uuid): Promise<InboxItem[]> {
   if (rows.length === 0) return [];
   const actorIds = [...new Set(rows.flatMap((row) => [row.actorId, row.communityId]).filter((id) => id !== null))];
   const commentIds = rows.flatMap((row) => (row.commentId ? [row.commentId] : []));
   const postIds = rows.flatMap((row) => (row.postId ? [row.postId] : []));
   const modlogIds = rows.flatMap((row) => (row.modlogId ? [row.modlogId] : []));
-  const [people, commentRows, postRows, entries, instance] = await Promise.all([
+  const [people, commentRows, postRows, entries, instance, declaration] = await Promise.all([
     actorIds.length === 0
       ? []
       : q
@@ -147,7 +152,9 @@ async function describe(q: Queryable, rows: (typeof notifications.$inferSelect)[
     // Staff sees every entry: the person it affects is owed the reason, public or not (the page links only public ones).
     readModlogEntries(modlogIds, { audience: 'staff', db: q }),
     localInstance(q),
+    q.select({ actorId: ageDeclarations.actorId }).from(ageDeclarations).where(eq(ageDeclarations.actorId, viewerId)),
   ]);
+  const declared = declaration.length > 0;
   const personById = new Map(people.map((row) => [row.id, asActor(row)]));
   const commentById = new Map<string, CommentRow>(commentRows.map((row) => [row.id, row]));
   const postById = new Map<string, PostRow>(postRows.map((row) => [row.id, row]));
@@ -159,12 +166,14 @@ async function describe(q: Queryable, rows: (typeof notifications.$inferSelect)[
     const text = comment ?? (row.commentId ? undefined : post);
     const withheld = withheldOf(text ? { comment: comment ?? null, post: post ?? null } : null);
     const entry = row.modlogId ? entryById.get(row.modlogId) : undefined;
+    const actorWithheld = actorWithheldOf(row.kind, comment, post, declared);
     return {
       id: row.id,
       kind: row.kind,
       read: row.readAt !== null,
       createdAt: row.createdAt.toISOString(),
-      actor: (row.actorId && personById.get(row.actorId)) || null,
+      actor: actorWithheld ? null : (row.actorId && personById.get(row.actorId)) || null,
+      actorWithheld,
       community: (row.communityId && personById.get(row.communityId)) || null,
       postId: row.postId,
       commentId: row.commentId,
@@ -223,5 +232,31 @@ function withheldOf(subject: { comment: CommentRow | null; post: PostRow | null 
   if (!gone) return null;
   if (gone.deletedAt || post?.deletedAt) return 'deleted';
   if (gone.removedAt || post?.removedAt) return 'removed';
+  return null;
+}
+
+/**
+ * Whether a reply or mention may say who wrote it, as the thread decides for the same text: a
+ * deleted comment is a tombstone without its author (removed as well or not), and a sensitive
+ * post or community shows a viewer without a 16+ declaration nothing at all (gateOf, the post
+ * page's rule; an access rule, so the browser's Hide NSFW plays no part). Under a post a
+ * moderator removed, the page sends no comments (to its moderators only, whom this does not look
+ * up), so a comment there names no one either; a mention in the removed post itself keeps its
+ * author, whom the post page still shows. A declared viewer is
+ * named the author: Hide NSFW is a prompt they pass on the page, which then shows who wrote it
+ * (the words stay withheld here for everyone, as `withheld` says). A removed comment keeps its
+ * author, as the thread shows it, and so does a reply under a deleted post. A moderator's notice
+ * (removal, restore, ban) names the moderator, whatever it is about.
+ */
+function actorWithheldOf(
+  kind: InboxItem['kind'],
+  comment: CommentRow | undefined,
+  post: PostRow | undefined,
+  declared: boolean,
+): NoticeActorWithheld | null {
+  if (kind !== 'reply' && kind !== 'mention') return null;
+  if (comment?.deletedAt) return 'deleted';
+  if (comment && post?.removedAt) return 'removed';
+  if (post && gateOf(post.hidden, { declared }, true) !== 'none') return 'sensitive';
   return null;
 }
