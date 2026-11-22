@@ -65,11 +65,11 @@ export function showBannerAgain(revision: number) {
  * The banner under the header, full width, above the sidebar and the page; on a phone, at the top of the
  * page above its bar. Dismissing it moves focus to the page's main region, without scrolling.
  */
-export function ShellBanner({ banner, cookieRevision }: { banner: SiteBannerSetting; cookieRevision: number | null }) {
+export function ShellBanner({ banner, cookieRevision }: { banner: SiteBannerSetting | null; cookieRevision: number | null }) {
   const { t } = useTranslate();
   const router = useRouter();
-  const dismissed = useBannerDismissed(banner.revision, cookieRevision);
-  if (!banner.enabled || dismissed) return null;
+  const dismissed = useBannerDismissed(banner?.revision ?? 0, cookieRevision);
+  if (!banner?.enabled || dismissed) return null;
   return (
     <SiteBanner
       className="pb-app__banner"

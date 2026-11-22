@@ -18,8 +18,11 @@ export interface ShellData {
   siteName: string;
   /** The instance's brand pack (site setting site.brand), '' for none: the root head links its sheet and icons, and the brand shows its mark. */
   brand: SiteBrand;
-  /** The site banner (site setting site.banner), shown across the top of every page while enabled (banner.tsx). */
-  banner: SiteBanner;
+  /**
+   * The site banner (site setting site.banner) while it is on, shown across the top of every page (banner.tsx);
+   * null while it is off, so none of an unpublished draft reaches a page or its hydration data.
+   */
+  banner: SiteBanner | null;
   /** The centre column's width preset (site setting site.width), the frame's `data-width`. */
   width: SiteWidth;
   local: ActorRef[];
@@ -57,5 +60,5 @@ export async function loadShellData(session: SessionView | null): Promise<ShellD
   ]);
   const staff = session !== null && (communities.moderating > 0 || session.siteRole === 'admin');
   const reportCount = staff ? await openReportCount({ actorId: session.actorId, siteRole: session.siteRole }) : null;
-  return { siteName: name || host(), brand, banner, width, ...communities, unread, reportCount };
+  return { siteName: name || host(), brand, banner: banner.enabled ? banner : null, width, ...communities, unread, reportCount };
 }

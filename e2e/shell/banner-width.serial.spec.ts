@@ -77,6 +77,24 @@ test('the banner sits where the server put it: the same box before and after hyd
   }
 });
 
+test('a banner that is off sends nothing of itself to any page, signed out included', async ({ request }) => {
+  await seedSetting('site.banner', {
+    ...banner,
+    enabled: false,
+    title: 'Draft title',
+    message: 'Draft only, not for readers.',
+    primary: { label: 'Draft go', href: '/draft-target' },
+  });
+  for (const path of ['/', '/communities', '/about']) {
+    const html = await (await request.get(path)).text();
+    for (const draft of ['Draft only, not for readers.', 'Draft title', 'Draft go', '/draft-target', 'aria-label="Site notice"'])
+      expect(html, `${path} ${draft}`).not.toContain(draft);
+  }
+  // On again: shown, as before.
+  await seedSetting('site.banner', banner);
+  expect(await (await request.get('/')).text()).toContain('Posting pauses for an hour on Sunday');
+});
+
 test('on a phone the banner is the top of the page, and each of its controls is a 44px target', async ({ browser, baseURL }) => {
   const context = await browser.newContext({ baseURL, viewport: { width: 390, height: 844 }, hasTouch: true });
   const page = await context.newPage();
