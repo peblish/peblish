@@ -1,6 +1,6 @@
 import type { CommunityGroup } from '@peblish/core/reports/groups';
 import type { QueueTab } from '@peblish/core/reports/scope';
-import { BidiText, Handle } from '@peblish/ui/components/handle';
+import { BidiText, Handle, neutraliseBidi } from '@peblish/ui/components/handle';
 import { Link } from '@peblish/ui/components/link';
 import { Text } from '@peblish/ui/components/text';
 import { translatePlural } from '../../../../i18n/translate.ts';
@@ -23,7 +23,9 @@ const countKey = {
  * heading (the community's name, a link to it, and how many groups it holds under this tab in all),
  * over the queue's own table of its rows on this page. A community with nothing waiting says so.
  * The admins' own reports (people, and the admins-only categories) are one section with no
- * community, which only an admin is ever sent.
+ * community, which only an admin is ever sent. Each table's scrolling card is a region, so each is
+ * named for its community by handle ("Reports in !art"), which no two communities share, and the
+ * admins' one apart from its section's heading.
  */
 export function QueueGroups({
   groups,
@@ -69,7 +71,18 @@ export function QueueGroups({
               </Text>
             </div>
             {group.rows.length > 0 ? (
-              <QueueTable groups={group.rows} tab={tab} admin={admin} view={view} now={now} />
+              <QueueTable
+                groups={group.rows}
+                tab={tab}
+                admin={admin}
+                view={view}
+                now={now}
+                label={
+                  group.community
+                    ? t('facts', 'queue.table', { community: `!${neutraliseBidi(group.community.handle)}` })
+                    : t('facts', 'queue.tableAdmins')
+                }
+              />
             ) : (
               <Text as="p" size="sm" color="muted">
                 {t('facts', 'queue.nothing')}

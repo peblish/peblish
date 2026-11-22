@@ -10,7 +10,8 @@ import { galleryStates, stateProblems } from '../support/states.ts';
 // community's name, rows or count; the admins' own reports are one section for admins alone.
 
 const queue = '/admin/reports';
-const section = (page: Page, name: string | RegExp) => page.getByRole('region', { name });
+// By its exact name: each section's table card is a region too, named for the same community ("Reports in !art").
+const section = (page: Page, name: string) => page.getByRole('region', { name, exact: true });
 
 test.describe('seeded', () => {
   test.skip(Boolean(process.env.BASE_URL), 'needs the lane database for its seed (DATABASE_URL)');
@@ -30,7 +31,7 @@ test.describe('seeded', () => {
       // Hate, sensitive, remove, escalate and dismiss: five groups wait in the community.
       await expect(mine).toContainText('5 waiting');
       await expect(mine.locator('tbody tr', { hasText: seed.titles.hate })).toBeVisible();
-      await expect(page.getByRole('region', { name: 'People and admins-only reports' })).toHaveCount(0);
+      await expect(section(page, 'People and admins-only reports')).toHaveCount(0);
       // The whole document and its loader data, less the router's echo of the address's own search.
       const html = (await page.content()).replaceAll(`{\\"community\\":\\"${named}\\"}`, '');
       expect(html).not.toContain(seed.other.handle);

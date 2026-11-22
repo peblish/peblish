@@ -100,7 +100,8 @@ test('the report queue’s card is a keyboard stop only while it scrolls', async
   test.setTimeout(90_000);
   const page = await (await browser.newContext({ storageState: session, viewport: { width: 375, height: 800 } })).newPage();
   await gotoHydrated(page, '/admin/reports');
-  const card = page.getByRole('region', { name: 'Reports', exact: true });
+  // The queue is grouped by community, one table each, named for its community: the first one's card.
+  const card = page.getByRole('region', { name: /^Reports in / }).first();
   await expect(card).toHaveAttribute('tabindex', '0');
   await card.focus();
   await page.keyboard.press('ArrowRight');
@@ -112,7 +113,7 @@ test('the report queue’s card is a keyboard stop only while it scrolls', async
     await browser.newContext({ storageState: session, viewport: { width: 375, height: 800 }, javaScriptEnabled: false })
   ).newPage();
   await plain.goto('/admin/reports');
-  await expect(plain.getByRole('region', { name: 'Reports', exact: true })).not.toHaveAttribute('tabindex');
+  await expect(plain.getByRole('region', { name: /^Reports in / }).first()).not.toHaveAttribute('tabindex');
   await plain.context().close();
   await page.context().close();
 });
