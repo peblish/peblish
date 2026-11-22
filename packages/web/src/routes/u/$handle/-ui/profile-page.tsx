@@ -16,6 +16,8 @@ import { ProfileBlock } from '../../-ui/actions/block.tsx';
 import { ProfileModerate } from '../../-ui/actions/moderate.tsx';
 import { ProfileReport } from '../../-ui/actions/report.tsx';
 import type { ProfileData } from '../-load.ts';
+import { softwareName } from '../../../instances/-software.ts';
+import { ModeratesPanel } from './moderates-panel.tsx';
 import { Activity } from './activity.tsx';
 import { ProfileHero } from './profile-hero.tsx';
 
@@ -78,7 +80,8 @@ function BlockedNotice({ data }: { data: ProfileData }) {
 
 /**
  * The rail beside a profile (Commons, the mock's person panels): the person's home instance, this site for
- * a local person, and for a remote one how fresh this copy is. A deleted account has none.
+ * a local person, and for a remote one how fresh this copy is and its software ("Unknown" when this
+ * server has not learnt it); then the communities they moderate. A deleted account has none.
  */
 function ProfileRail({ data }: { data: ProfileData }) {
   const { t } = useTranslate();
@@ -93,9 +96,13 @@ function ProfileRail({ data }: { data: ProfileData }) {
             ...(data.home
               ? [{ key: 'refreshed', label: t('profiles', 'rail.refreshed'), value: data.home.age ?? t('profiles', 'rail.never') }]
               : []),
+            ...(data.home
+              ? [{ key: 'software', label: t('facts', 'home.software'), value: softwareName(data.homeSoftware) ?? t('facts', 'unknown') }]
+              : []),
           ]}
         />
       </RailPanel>
+      <ModeratesPanel moderates={data.moderates} />
     </Rail>
   );
 }

@@ -236,7 +236,7 @@ function PostContent({ data, error }: { data: Extract<PostPageData, { kind: 'pos
           <div id="comments" className="post-thread" data-slot="thread" />
         )}
       </main>
-      <PostRail post={post} withheld={withheld !== null} />
+      <PostRail post={post} withheld={withheld !== null} facts={data.facts} />
     </>
   );
 }

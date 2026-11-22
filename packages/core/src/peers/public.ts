@@ -38,3 +38,15 @@ export async function publicInstances(q: Queryable = readDb()): Promise<Instance
 export async function instancesPage(q: Queryable = readDb()): Promise<{ instances: InstanceRow[] }> {
   return { instances: await publicInstances(q) };
 }
+
+/**
+ * The software the NodeInfo of the peer at `domain` names (no version), for a profile's home
+ * instance; null when this server does not know it or the domain is no peer.
+ */
+export async function peerSoftware(domain: string, q: Queryable = readDb()): Promise<string | null> {
+  const [row] = await q
+    .select({ software: instances.software })
+    .from(instances)
+    .where(and(eq(instances.domain, domain), eq(instances.local, false)));
+  return row?.software ?? null;
+}

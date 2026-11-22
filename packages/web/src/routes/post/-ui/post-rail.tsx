@@ -1,3 +1,4 @@
+import type { ThreadFacts } from '@peblish/core/posts/facts';
 import type { ActorRef, PostView } from '@peblish/schema/views';
 import { FactList } from '@peblish/ui/components/fact-list';
 import { BidiText, Handle } from '@peblish/ui/components/handle';
@@ -8,17 +9,19 @@ import { Time } from '@peblish/ui/components/time';
 import { useTranslate } from '../../../i18n/use-translate.ts';
 import { communityPath, userPath } from '../../../shell/paths.ts';
 import { Rail } from '../../../shell/rail.tsx';
+import { useThreadFacts } from './thread-facts.tsx';
 
 /**
  * The post's right rail (Commons' Rail.tsx, PostPanels), from what the page already has: where it was
  * posted, then the thread's facts (comments, who started it, when). Left out until their data exists: the
- * community's description, subscribers and Join, the thread's participants, last activity, language and
- * Follow thread. Below 62rem the frame hides the rail; the page itself already says all of this (the view
+ * community's description, subscribers and Join, and Follow thread; the thread's people, last activity and
+ * language are `facts` (thread-facts.tsx). Below 62rem the frame hides the rail; the page itself already says all of this (the view
  * header, the meta line, the comments' heading). A withheld post (deleted, or removed to a reader who does
  * not moderate) keeps only where it was posted.
  */
-export function PostRail({ post, withheld }: { post: PostView; withheld: boolean }) {
+export function PostRail({ post, withheld, facts = null }: { post: PostView; withheld: boolean; facts?: ThreadFacts | null }) {
   const { t, locale } = useTranslate();
+  const threadFacts = useThreadFacts(facts);
   return (
     <Rail label={t('posts', 'rail.label')}>
       <PostedIn community={post.community} />
@@ -42,6 +45,7 @@ export function PostRail({ post, withheld }: { post: PostView; withheld: boolean
                 label: t('posts', 'rail.posted'),
                 value: <Time iso={post.publishedAt} locale={locale} format="date-time" />,
               },
+              ...threadFacts,
             ]}
           />
         </RailPanel>

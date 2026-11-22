@@ -36,6 +36,8 @@ const person: ProfileData = {
   state: 'live',
   blocked: null,
   moderatedCommunities: [],
+  moderates: { communities: [], more: false },
+  homeSoftware: null,
   indexable: true,
   viewer: null,
   tab: 'posts',

@@ -1,3 +1,4 @@
+import { threadFacts } from '@peblish/core/posts/facts';
 import { readPost, type Viewer } from '@peblish/core/posts/read';
 import type { PostView } from '@peblish/schema/views';
 import { createServerFn } from '@tanstack/react-start';
@@ -60,6 +61,8 @@ export const loadPost = createServerFn({ method: 'GET' })
       domain: view.url ? (URL.parse(view.url)?.hostname.replace(/^www\./, '') ?? null) : null,
       /** The body holds a spoiler: the post's Spoiler badge, derived from the text it already has. */
       spoiler: hasSpoiler(contentHtml),
+      /** The rail's thread facts (people, last activity, language); none for a deleted post or one withheld from this reader. */
+      facts: view.deleted || (view.removed && !page.moderator) ? null : await threadFacts(view.id, viewer),
     };
   });
 
