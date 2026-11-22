@@ -11,6 +11,7 @@ import { flushSync } from 'react-dom';
 import { translatePlural } from '../../../../../i18n/translate.ts';
 import { useTranslate } from '../../../../../i18n/use-translate.ts';
 import { postPath } from '../../../../../shell/paths.ts';
+import { loadPost } from '../../../-load.ts';
 import newSinceCss from './new-since.css?url';
 
 // "New since your last visit" on a post's thread (core visits/): it records the visit, and when
@@ -24,7 +25,10 @@ import newSinceCss from './new-since.css?url';
  * or slow the page), and only once the tab is visible (a page opened in the background is not a
  * visit until it is looked at). A page brought forward from the background reloads its data first,
  * so the visit counts as seen only what the reader is then shown, not a reply that arrived while
- * it waited. A failure is dropped: the next visit records instead.
+ * it waited. That reload is tried first on its own (loadPost), because a failed router reload
+ * would swap the thread on screen for the error page: when it fails, the page stays as it was and
+ * nothing is recorded, so nothing it did not show counts as seen. A failed record is dropped too:
+ * the next visit records instead.
  */
 function useRecordVisit(postId: Uuid, signedIn: boolean) {
   const router = useRouter();
@@ -36,11 +40,13 @@ function useRecordVisit(postId: Uuid, signedIn: boolean) {
     const onVisible = () => {
       if (document.visibilityState !== 'visible') return;
       document.removeEventListener('visibilitychange', onVisible);
-      // A failed reload still records: the page shows what it had, as a visible tab's would.
-      void router
-        .invalidate()
-        .catch(() => undefined)
-        .then(() => live && record());
+      void loadPost({ data: { id: postId } })
+        .then(async (fresh) => {
+          if (!fresh || !live) return;
+          await router.invalidate();
+          if (live) record();
+        })
+        .catch(() => undefined);
     };
     document.addEventListener('visibilitychange', onVisible);
     return () => {

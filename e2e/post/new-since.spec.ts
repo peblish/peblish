@@ -194,3 +194,19 @@ test('a thread opened in the background is refreshed when brought forward, befor
   await never.waitForTimeout(1_000);
   expect(marker(seed.posts.unseen)).toBeNull();
 });
+
+test('a thread brought forward while its reload fails keeps what it showed, and records nothing', async ({ page }) => {
+  seed = JSON.parse(run('e2e')) as Seed;
+  await signedIn(page);
+  const before = marker(seed.posts.seen)!.lastVisitAt;
+  const tab = await backgroundTab(page);
+  await gotoHydrated(tab, `/post/${seed.posts.seen}`);
+  await tab.context().setOffline(true);
+  await show(tab);
+  await tab.waitForTimeout(1_000);
+  await tab.context().setOffline(false);
+  await expect(row(tab, seed.comments.first)).toBeVisible();
+  await expect(jump(tab)).toHaveText('2 new since your last visit');
+  await tab.waitForTimeout(500);
+  expect(marker(seed.posts.seen)!.lastVisitAt).toBe(before);
+});
