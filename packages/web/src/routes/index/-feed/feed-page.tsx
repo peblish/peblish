@@ -323,7 +323,8 @@ export function FeedCards({
     if (more) refreshPlace(key, data);
   }, [data, key, more]);
   // A saved vote is written into the kept place too, so Back shows it.
-  const voted = (postId: string, myVote: -1 | 0 | 1, tally: { upvotes: number; downvotes: number }) => {
+  // A take-back on content the gate now withholds answers no tally: the row keeps its counts.
+  const voted = (postId: string, myVote: -1 | 0 | 1, tally: { upvotes: number; downvotes: number } | null) => {
     if (more) updateRows(key, postId, (row) => ({ ...row, post: { ...row.post, myVote, counts: { ...row.post.counts, ...tally } } }));
   };
 
@@ -474,7 +475,7 @@ function FeedRow({
   actions: boolean;
   hydrated: boolean;
   voteFailed: () => void;
-  voted: (postId: string, myVote: -1 | 0 | 1, tally: { upvotes: number; downvotes: number }) => void;
+  voted: (postId: string, myVote: -1 | 0 | 1, tally: { upvotes: number; downvotes: number } | null) => void;
 }) {
   const { t, locale } = useTranslate();
   const postLabels = { ...usePostCardLabels(), voteOn: (title: string) => t('posts', 'vote.on', { title }) };
