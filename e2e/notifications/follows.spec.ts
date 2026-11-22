@@ -6,8 +6,7 @@ import { gotoHydrated, recordConsole } from '../support/route-marker.ts';
 
 // Branch 5's notices and the thread follows end to end (lane f-notify), on the lane database: Follow
 // thread from the post's bell and rail switch, with scripts and without; a followed thread's new
-// comment in the inbox; a remote community's acceptance of a follow; a removal's review link; the
-// date groups; and Mark all read with its exact Undo, with a notice arriving in between. The cast is
+// comment in the inbox; a remote community's acceptance of a follow; the date groups; and Mark all read with its exact Undo, with a notice arriving in between. The cast is
 // packages/core/src/testing/seed-notify.ts, written by the real actions and the real consumer. The
 // steps share it and change it, so they run in order.
 test.skip(Boolean(process.env.BASE_URL), 'needs the lane database for its seed (DATABASE_URL)');
@@ -115,7 +114,7 @@ test('without scripts the bell is a plain form both ways, back to the post', asy
   await page.context().close();
 });
 
-test('a remote community’s acceptance is an Account notice, and a removal offers the review address', async ({ page }) => {
+test('a remote community’s acceptance is an Account notice, and the notices sit under their date group', async ({ page }) => {
   await signedIn(page, cast.reader.name);
   await gotoHydrated(page, '/notifications?filter=account');
   await expect(rows(page)).toHaveCount(1);
@@ -124,12 +123,6 @@ test('a remote community’s acceptance is an Account notice, and a removal offe
   await expect(accepted.getByText('MOD', { exact: true })).toHaveCount(0);
   await expect(accepted.getByRole('link', { name: 'Open community' })).toHaveAttribute('href', `/c/${cast.remote.handle}`);
 
-  await gotoHydrated(page, '/notifications?filter=content');
-  const removal = rows(page).filter({ hasText: 'removed your comment' });
-  await expect(removal.getByRole('link', { name: 'Ask for a review' })).toHaveAttribute(
-    'href',
-    /^mailto:review@example\.test\?subject=Review%20of%20moderation%20decision%20[0-9a-f-]{36}$/,
-  );
   // Every notice here arrived today.
   await gotoHydrated(page, '/notifications');
   await expect(page.getByRole('heading', { level: 2, name: 'Today' })).toBeVisible();

@@ -313,7 +313,9 @@ test('without scripts Reply is a link to the comment, whose page has the reply f
 
 test('the new kinds read as the mock words them, with no moderator badge on an accepted follow', async ({ page }) => {
   await gotoHydrated(page, '/kit/inbox-follows');
-  const [followed, withheld, accepted] = [0, 1, 2].map((n) => rows(page).nth(n));
+  const followed = rows(page).nth(0);
+  const withheld = rows(page).nth(1);
+  const accepted = rows(page).nth(2);
   await expect(followed).toContainText('@mira commented in a thread you follow');
   await expect(followed.getByRole('button', { name: /^Reply: @mira, / })).toBeVisible();
   // A followed thread's comment removed since: nobody is named, and it cannot be answered.
@@ -329,6 +331,10 @@ test('the new kinds read as the mock words them, with no moderator badge on an a
     'mailto:review@example.test?subject=Review%20of%20moderation%20decision%2000000000-0000-7000-8000-000000000300',
   );
   await expect(rows(page).nth(1).getByRole('link', { name: 'Ask for a review' })).toHaveCount(0);
+  // With no published review address there is no such link, rather than a dead one.
+  await gotoHydrated(page, '/kit/inbox-groups');
+  await expect(rows(page).filter({ hasText: 'removed your comment' })).toHaveCount(1);
+  await expect(page.getByRole('link', { name: 'Ask for a review' })).toHaveCount(0);
 });
 
 test('the date groups head their rows, newest first', async ({ page }) => {

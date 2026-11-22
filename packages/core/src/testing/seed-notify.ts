@@ -7,7 +7,7 @@ import { acceptFollow } from '../follows/follow.ts';
 import { followAs } from '../follows/service.ts';
 import { removeContent } from '../moderation/remove.ts';
 import { markNotificationAs } from '../notifications/service.ts';
-import { PASSWORD, seedAccount, seedSetting } from './seed-a.ts';
+import { PASSWORD, seedAccount } from './seed-a.ts';
 import { grantFor, seedModerator, seedPost } from './seed-az.ts';
 import { drainNotices, noticesOf, say } from './seed-e2.ts';
 import { localUser, seedActor, seedInstance } from './seed.ts';
@@ -21,7 +21,7 @@ import { actors } from '../db/tables/actors.ts';
 //   node packages/core/src/testing/seed-notify.ts comment <post> <name>  <name> comments on <post>; the notices are written
 //
 // `reader` follows nothing yet and has, written by the real consumer: a remote community's accept
-// of their request to join, and a removal of their comment (with the published review address set).
+// of their request to join, and a removal of their comment.
 // `marker` has two unread replies and one read, for Mark all read and its Undo. `writer` wrote the
 // thread `post` and `markerPost`; `other` comments when a case asks. Invented content only.
 
@@ -51,8 +51,7 @@ async function cast() {
   const answer = { kind: 'remote', actorId: remote.id, announcedBy: null } as const;
   await acceptFollow(await grantFor('follow.accept', answer, { followApId: row!.apId!, followerApId: person!.apId }), undefined);
 
-  // A removal of the reader's comment, under the published review address.
-  await seedSetting('contact.email', 'review@example.test');
+  // A removal of the reader's comment (the review address is a site setting other specs own, so it is left alone).
   const rude = await say({ id: reader!.actorId }, post.id, `Off topic ${suffix}`);
   const moderator = { kind: 'local', actorId: mod!.actorId, siteRole: 'user' } as const;
   await removeContent(await grantFor('mod.remove', moderator, { target: { kind: 'comment', id: rude } }), { reason: 'Rule 7: on topic' });
