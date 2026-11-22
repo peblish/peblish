@@ -327,7 +327,11 @@ export function NoticeRow({
     });
 
   // One lock from the press until the comment is saved and the notice marked read: Send stays pending and the field read-only throughout.
+  // The ref takes it at once, for a second submit that comes before React has drawn `pending`.
+  const sending = useRef(false);
   async function sendNow() {
+    if (sending.current) return;
+    sending.current = true;
     const body = text;
     let keep: (() => void) | null = null;
     setPending(true);
@@ -348,6 +352,7 @@ export function NoticeRow({
       setOpen(false);
       if (keep) backToReply();
     } finally {
+      sending.current = false;
       setPending(false);
     }
     if (keep) afterReload?.(keep);

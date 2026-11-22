@@ -159,6 +159,30 @@ test('the reply posts through the comment form; a refusal and a lost connection 
   expect(marked).toEqual(['?intent=read&id=00000000-0000-7000-8000-000000000001']);
 });
 
+test('two submits before the page draws again send one reply', async ({ page }) => {
+  await gotoHydrated(page, '/kit/inbox-replies');
+  let sent = 0;
+  await page.route('**/post/*/comments', (route) => {
+    sent += 1;
+    return route.fulfill({ status: 200, json: { ok: true, id: '00000000-0000-7000-8000-000000000400' } });
+  });
+  await page.route('**/notifications?*', (route) => route.fulfill({ status: 200, json: { ok: true } }));
+  await first(page)
+    .getByRole('button', { name: /^Reply: / })
+    .click();
+  await first(page).getByRole('textbox', { name: 'Reply to @jun@lemmy.world' }).fill('Only once.');
+  // Both in one task, so React has not drawn the first one's pending state when the second comes.
+  await first(page)
+    .locator('form.pb-notice__reply')
+    .evaluate((form: HTMLFormElement) => {
+      form.requestSubmit();
+      form.requestSubmit();
+    });
+  await expect(first(page).getByRole('status')).toHaveText('Reply posted. View reply');
+  await page.waitForTimeout(200);
+  expect(sent).toBe(1);
+});
+
 test('a reply is sent once: Send stays held until the notice is marked read as well', async ({ page }) => {
   await gotoHydrated(page, '/kit/inbox-replies');
   const sent: string[] = [];
