@@ -1,5 +1,5 @@
 import type { SettingsPatch } from '@peblish/core/settings/write';
-import { defaultBanner, SiteBanner, type BannerAction } from '@peblish/schema/banner';
+import { customBannerContrast, customBannerMinimum, defaultBanner, SiteBanner, type BannerAction } from '@peblish/schema/banner';
 import { killSwitches, SiteWidth } from '@peblish/schema/site-settings';
 import { type } from 'arktype';
 
@@ -111,6 +111,8 @@ export function bannerPatch(form: Record<string, string>): { patch: SettingsPatc
     ...actions,
   };
   if (enabled && !banner.message) return { field: 'banner.message' };
+  // The contract's contrast check of a custom colour, in both schemes (Mux draws the same fill in each).
+  if (tone === 'custom' && (customBannerContrast(picked) ?? customBannerMinimum) < customBannerMinimum) return { field: 'banner.colour' };
   const checked = SiteBanner(banner);
   if (checked instanceof type.errors) {
     // The first problem's path, as the field that holds it: ['primary', 'href'] is banner.primary.href.

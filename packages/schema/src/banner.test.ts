@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest';
-import { BannerPublish, defaultBanner, InternalPath, SiteBanner } from './banner.ts';
+import { BannerPublish, customBannerContrast, customBannerMinimum, defaultBanner, InternalPath, SiteBanner } from './banner.ts';
 
 test('a banner action goes to a path on this site only', () => {
   expect(['/', '/c/news', '/post/1?sort=new#c2'].map((path) => InternalPath.allows(path))).toEqual([true, true, true]);
@@ -41,4 +41,22 @@ test('a path refuses control characters, raw and percent-encoded: C0, DEL and C1
   // Their neighbours stay allowed.
   for (const path of ['/rules%20', '/rules%7E', '/rules%C2%A0', '/rules%E2%80%93', '/über'])
     expect(InternalPath.allows(path), path).toBe(true);
+});
+
+test("a custom colour's contrast follows Mux's rule: white or black on the colour, whichever reads better", () => {
+  expect(customBannerContrast('#000000')).toBeCloseTo(21, 1);
+  expect(customBannerContrast('#FFFFFF')).toBeCloseTo(21, 1);
+  // Mid grey, where white and black are closest: black, at 4.69.
+  expect(customBannerContrast('#777777')).toBeCloseTo(4.69, 2);
+  expect(customBannerContrast('red')).toBeNull();
+  // No opaque colour falls under 4.5: the closest call, where white and black tie, is about 4.58.
+  let lowest = 21;
+  for (let r = 0; r < 256; r += 5)
+    for (let g = 0; g < 256; g += 5)
+      for (let b = 0; b < 256; b += 5) {
+        const hex = `#${[r, g, b].map((v) => v.toString(16).padStart(2, '0')).join('')}`;
+        lowest = Math.min(lowest, customBannerContrast(hex)!);
+      }
+  expect(lowest).toBeGreaterThanOrEqual(customBannerMinimum);
+  expect(lowest).toBeLessThan(4.6);
 });

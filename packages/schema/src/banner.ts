@@ -64,3 +64,26 @@ export const defaultBanner: SiteBanner = {
   primary: null,
   link: null,
 };
+
+const channel = (value: number) => {
+  const c = value / 255;
+  return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+};
+
+/**
+ * How a custom colour reads as a banner, by Mux UI's Banner rule: the solid fill is the colour itself in both
+ * schemes, its text, link, controls and their focus ring are white or black, whichever contrasts more, and a
+ * subtle banner lays at most a quarter of the colour over the page under the page's own text. So the lowest
+ * ratio is the solid fill's against its text: the WCAG 2 ratio returned here, which must reach 4.5 (text; the
+ * focus ring, 3, then holds too). Null for a colour that is not #RRGGBB.
+ */
+export function customBannerContrast(colour: string): number | null {
+  const hex = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(colour);
+  if (!hex) return null;
+  const [r, g, b] = hex.slice(1).map((part) => channel(Number.parseInt(part, 16)));
+  const fill = 0.2126 * r! + 0.7152 * g! + 0.0722 * b!;
+  return Math.max(1.05 / (fill + 0.05), (fill + 0.05) / 0.05);
+}
+
+/** The ratio a custom banner colour must reach in both schemes, for text; its focus ring needs 3. */
+export const customBannerMinimum = 4.5;

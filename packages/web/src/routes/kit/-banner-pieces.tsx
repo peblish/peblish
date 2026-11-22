@@ -50,6 +50,12 @@ function AllTones() {
           </div>
         )),
       )}
+      {/* A mid grey, where black and white text are closest (both about 4.5:1). */}
+      {(['subtle', 'solid'] as const).map((emphasis) => (
+        <div key={`grey-${emphasis}`} data-kit-banner={`custom-777777-${emphasis}`}>
+          <Sample banner={{ tone: 'custom', emphasis, colour: '#777777' }} />
+        </div>
+      ))}
     </div>
   );
 }

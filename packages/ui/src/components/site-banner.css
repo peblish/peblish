@@ -28,6 +28,15 @@
     }
   }
 
+  /* Mux draws the banner's own focus ring (a gap of the banner's colour, then its foreground) but Mux Link's 2px
+     page ring is drawn over it, in the page's focus colour, which can be the banner's own fill (1:1 on solid
+     Accent). So the link shows the banner's ring alone; under forced colours Link keeps its system outline. */
+  @media (forced-colors: none) {
+    .pb-banner .muxui-banner__link:is(:focus-visible, [data-muxui-state-focus-visible]) {
+      outline: none;
+    }
+  }
+
   /* With scripts off the dismiss button cannot work (it keeps a cookie), so it is left out; the actions are links. */
   @media (scripting: none) {
     .pb-banner .muxui-banner__dismiss {

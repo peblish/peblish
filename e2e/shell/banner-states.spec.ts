@@ -171,7 +171,7 @@ test('every tone in both emphases: the text at 4.5:1 and the dismiss icon at 3:1
   for (const scheme of ['light', 'dark'] as const) {
     const page = await open(browser, baseURL!, '/kit/site-banner-tones', scheme);
     const banners = page.locator('[data-kit-banner]');
-    expect(await banners.count()).toBe(12);
+    expect(await banners.count()).toBe(14);
     for (const banner of await banners.all()) {
       const name = `${scheme} ${await banner.getAttribute('data-kit-banner')}`;
       for (const part of ['.muxui-banner__message', '.muxui-banner__title']) {
@@ -189,6 +189,33 @@ test('every tone in both emphases: the text at 4.5:1 and the dismiss icon at 3:1
       ] as const)
         for (const [state, ratio] of Object.entries(await inStates(page, control, part, kind)))
           if (ratio < floor) problems.push(`${name} ${await control.getAttribute('class')} ${state} ${ratio}`);
+    }
+    await page.context().close();
+  }
+  expect(problems).toEqual([]);
+});
+
+test('focused from the keyboard, every control on every banner has a ring at 3:1 against the banner, light and dark', async ({
+  browser,
+  baseURL,
+}) => {
+  const problems: string[] = [];
+  for (const scheme of ['light', 'dark'] as const) {
+    const page = await open(browser, baseURL!, '/kit/site-banner-tones', scheme);
+    for (const banner of await page.locator('[data-kit-banner]').all()) {
+      const name = `${scheme} ${await banner.getAttribute('data-kit-banner')}`;
+      for (const control of [
+        banner.locator('.muxui-banner__action'),
+        banner.locator('.muxui-banner__link'),
+        banner.locator('.muxui-banner__dismiss'),
+      ]) {
+        // A key first, so the browser and React Aria count the focus as the keyboard's.
+        await page.keyboard.press('Shift+Tab');
+        await control.focus();
+        await settled(page);
+        const ring = (await colours(control)).outline;
+        if (!ring || ring.ratio < 3) problems.push(`${name} ${await control.getAttribute('class')}: ${ring?.ratio ?? 'none'}`);
+      }
     }
     await page.context().close();
   }

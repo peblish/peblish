@@ -85,6 +85,8 @@ test('a refused banner names the field to mark', () => {
     expect(field({ 'banner.primary.href': href }), href).toEqual({ field: 'banner.primary.href' });
   expect(field({ 'banner.tone': 'custom', 'banner.colour': '' })).toEqual({ field: 'banner.colour' });
   expect(field({ 'banner.tone': 'custom', 'banner.colour': 'red' })).toEqual({ field: 'banner.colour' });
+  // A mid grey reads at 4.69:1 with black text, as Mux draws it: saved.
+  expect(field({ 'banner.tone': 'custom', 'banner.colour': '#777777' })).toMatchObject({ patch: { 'site.banner': { colour: '#777777' } } });
   expect(field({ 'banner.tone': 'purple' })).toEqual({ field: 'banner.tone' });
   expect(field({ 'banner.icon': 'skull' })).toEqual({ field: 'banner.icon' });
   // Another tone keeps a valid colour where the field was emptied.
