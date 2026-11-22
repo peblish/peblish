@@ -94,7 +94,8 @@ export const notices: readonly InboxItem[] = [
     replyTo: null,
     excerpt: 'I tried this with a torch held low. The shadows go long.',
   },
-  // A followed thread's comment removed since: nobody is named and no comment is linked (the reader withholds them).
+  // A followed thread's sensitive comment, withheld in the inbox from every reader: nobody is named and no comment
+  // is linked. (One removed or deleted since is not listed at all: notifications/visible.ts.)
   {
     ...base,
     id: id(10),
@@ -102,7 +103,7 @@ export const notices: readonly InboxItem[] = [
     actor: null,
     commentId: null,
     replyTo: null,
-    withheld: 'removed',
+    withheld: 'sensitive',
     excerpt: null,
     read: true,
     createdAt: ago(30),

@@ -318,7 +318,7 @@ test('the new kinds read as the mock words them, with no moderator badge on an a
   const accepted = rows(page).nth(2);
   await expect(followed).toContainText('@mira commented in a thread you follow');
   await expect(followed.getByRole('button', { name: /^Reply: @mira, / })).toBeVisible();
-  // A followed thread's comment removed since: nobody is named, and it cannot be answered.
+  // A followed thread's sensitive comment, withheld in the inbox: nobody is named, and it cannot be answered.
   await expect(withheld.locator('.pb-notice__title')).toContainText('Someone commented in a thread you follow');
   await expect(withheld.getByRole('button', { name: /^Reply/ })).toHaveCount(0);
   await expect(accepted).toContainText('!art accepted your request to join');
