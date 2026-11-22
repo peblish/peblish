@@ -64,6 +64,8 @@ test('a refused reply can be sent again, by Send and by Ctrl+Enter; an empty one
   // The refusal marks the field invalid; Send still goes, and so does the shortcut after an edit.
   await send.click();
   await expect.poll(() => sent).toBe(2);
+  // While a reply is on its way the dock takes no typing and no second send: wait for the answer.
+  await expect(dock).not.toHaveAttribute('aria-busy');
   await field.press('End');
   await field.press('!');
   await field.press('ControlOrMeta+Enter');
