@@ -4,24 +4,33 @@ import { actors } from '../db/tables/actors.ts';
 import { comments, posts } from '../db/tables/content.ts';
 import { ageDeclarations } from '../identity/tables.ts';
 import { communityRemovals } from '../moderation/tables.ts';
+import { feedPredicate as nsfwGate } from '../posts/feed-predicate.ts';
 import { feedPredicates } from '../registry/feed-predicates.gen.ts';
-import { notBlocked } from './blocked.ts';
+import { notBlocked, peerBlocked } from './blocked.ts';
 import { notifications } from './tables.ts';
 
 /**
  * A followed thread's notice (`thread_reply`) exists for the viewer only while its comment is one
- * they may read: the comment and its post are live (not removed, deleted or purged, for every
- * viewer alike) and the post passes the feeds' rules for this viewer (blocks of its author, its
- * community or their servers, blocked peers, the 16+ declaration). So a block of a withheld
- * comment's author changes nothing the viewer can see: the notice was left out already. Other
- * kinds pass untouched.
+ * they may read and its row may say who wrote it: the comment and its post are live (not removed,
+ * deleted or purged), its commenter's account is live and not on a peer this server blocks
+ * (peerBlocked; a deleted account's notices are cleared, identity/personal.ts), the post
+ * is not flagged sensitive or NSFL, and it passes the feeds' other rules for this viewer (blocks
+ * of its author, its community or their servers, blocked peers). All but the blocks hold for
+ * every viewer alike, so no row is ever anonymous: one would be, for a declared reader of flagged
+ * content, and a block of its commenter would then tell who wrote it by the row's absence. The
+ * NSFW gate is applied as a signed-out viewer meets it for that reason. Other kinds pass untouched.
  */
 const followedThreadReadable = (viewerId: Uuid): SQL => {
-  const rules = feedPredicates.flatMap((predicate) => predicate.where({ actorId: viewerId }) ?? []);
+  const rules = feedPredicates.flatMap(
+    (predicate) => predicate.where(predicate.name === nsfwGate.name ? null : { actorId: viewerId }) ?? [],
+  );
   return sql`("notifications"."kind" <> 'thread_reply' or exists (
-    select 1 from ${comments} as notice_comment join ${posts} on ${posts.id} = notice_comment.post_id
+    select 1 from ${comments} as notice_comment
+    join ${actors} as notice_author on notice_author.id = notice_comment.author_id
+    join ${posts} on ${posts.id} = notice_comment.post_id
     where notice_comment.id = "notifications"."comment_id"
       and notice_comment.deleted_at is null and notice_comment.removed_at is null
+      and notice_author.deleted_at is null and not ${peerBlocked(sql`notice_author.instance_id`)}
       and ${posts.deletedAt} is null and ${posts.removedAt} is null
       and ${sql.join(rules, sql` and `)}
   ))`;
@@ -29,15 +38,19 @@ const followedThreadReadable = (viewerId: Uuid): SQL => {
 
 /**
  * A follow's answer (`follow_accept`) names its community, so it exists for the viewer only while
- * the community gate opens that community to them: gateOf(flagged, { declared }, true) is 'none'
- * for a community that is not sensitive or NSFL, or for a viewer who declared 16+ (followed.test.ts
- * checks the four cases against gateOf). In SQL, so rows and counts share it. Other kinds pass.
+ * the community is not on a peer this server blocks (peerBlocked) and the community gate opens it
+ * to them: gateOf(flagged, { declared }, true) is 'none' for a community that is not sensitive or
+ * NSFL, or for a viewer who declared 16+ (followed.test.ts checks the four cases against gateOf).
+ * In SQL, so rows and counts share it. Other kinds pass.
  */
 const followAcceptOpen = (viewerId: Uuid): SQL =>
-  sql`("notifications"."kind" <> 'follow_accept' or not exists (
+  sql`("notifications"."kind" <> 'follow_accept' or (not exists (
+    select 1 from ${actors} as accepted_community
+    where accepted_community.id = "notifications"."community_id" and ${peerBlocked(sql`accepted_community.instance_id`)}
+  ) and (not exists (
     select 1 from ${actors} as accepted_community
     where accepted_community.id = "notifications"."community_id" and (accepted_community.sensitive or accepted_community.nsfl)
-  ) or exists (select 1 from ${ageDeclarations} where ${ageDeclarations.actorId} = ${viewerId}))`;
+  ) or exists (select 1 from ${ageDeclarations} where ${ageDeclarations.actorId} = ${viewerId}))))`;
 
 /**
  * The one condition that decides which of `viewerId`'s notices exist for them: their own, not a

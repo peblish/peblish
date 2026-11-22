@@ -1,5 +1,6 @@
 import type { Uuid } from '@peblish/schema/ids';
-import { and, eq, isNotNull, isNull, sql } from 'drizzle-orm';
+import { and, eq, isNotNull, isNull, notInArray, or, sql } from 'drizzle-orm';
+import { deletePersonalNotices, personalNoticeKinds } from '../identity/personal.ts';
 import { notifications } from './tables.ts';
 import { isReadBatch } from './view.ts';
 import { inboxVisible } from './visible.ts';
@@ -62,9 +63,12 @@ export const markNotification = defineMutation({
 const readStamp = sql<string>`(extract(epoch from ${notifications.readAt}) * 1000000)::bigint::text`;
 
 /**
- * Marks every unread notice of the owner read; answers `count`, how many of them the inbox shows
- * (inboxVisible: the number the reader saw, though hidden ones are marked too), and `batch`, the
- * stamp its Undo takes (null when nothing the inbox shows was unread: there is nothing to undo).
+ * Marks the owner's unread notices read; answers `count`, how many of them the inbox shows
+ * (inboxVisible: the number the reader saw), and `batch`, the stamp its Undo takes (null when
+ * nothing the inbox shows was unread: there is nothing to undo). A notice of the personal kinds
+ * is marked only while the inbox shows it, so the batch holds only what the reader saw of them,
+ * and one held back (by the age gate, a blocked peer) comes back unread. The older kinds are all
+ * marked, shown or not, as before.
  */
 export const markAllNotificationsRead = defineMutation({
   action: 'notification.read_all',
@@ -75,7 +79,13 @@ export const markAllNotificationsRead = defineMutation({
     const rows = await t.db
       .update(notifications)
       .set({ readAt: sql`now()` })
-      .where(and(eq(notifications.recipientId, recipientId), isNull(notifications.readAt)))
+      .where(
+        and(
+          eq(notifications.recipientId, recipientId),
+          isNull(notifications.readAt),
+          or(notInArray(notifications.kind, [...personalNoticeKinds]), inboxVisible(recipientId)),
+        ),
+      )
       .returning({ id: notifications.id, batch: readStamp, shown: inboxVisible(recipientId) });
     if (rows.length > 0) {
       await t.emit({ type: 'notification.read', v: 1, recipientId, notificationId: null, read: true, count: rows.length });
@@ -110,13 +120,18 @@ export const undoMarkAllRead = defineMutation({
   },
 });
 
-/** Removes every notice of a person whose account was deleted; answers how many. */
+/**
+ * Removes every notice of a person whose account was deleted; answers how many. The personal
+ * kinds' notices that name them in other inboxes go too (deletePersonalNotices): one a fan-out
+ * committed after the deletion's own clean-up is still caught here.
+ */
 export const purgeNotifications = defineMutation({
   action: 'notification.purge',
   emits: ['notification.purged'],
   async run(t, grant) {
     const { recipientId } = grant.subject;
     const rows = await t.db.delete(notifications).where(eq(notifications.recipientId, recipientId)).returning({ id: notifications.id });
+    await deletePersonalNotices(t.db, recipientId);
     if (rows.length > 0) await t.emit({ type: 'notification.purged', v: 1, recipientId, count: rows.length });
     return { count: rows.length };
   },

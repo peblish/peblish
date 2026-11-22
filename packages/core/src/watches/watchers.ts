@@ -6,7 +6,7 @@ import { actors } from '../db/tables/actors.ts';
 import { comments, posts } from '../db/tables/content.ts';
 import { ageDeclarations } from '../identity/tables.ts';
 import { communityRemovals } from '../moderation/tables.ts';
-import { noticeBlocked } from '../notifications/blocked.ts';
+import { noticeBlocked, peerBlocked } from '../notifications/blocked.ts';
 import { notifications } from '../notifications/tables.ts';
 import { threadWatches } from './tables.ts';
 
@@ -28,8 +28,9 @@ export const threadReplyFanOut = 200;
  * the follower is a live local person who is not its author, not in `told` (already given a reply
  * or mention for it), does not block its author or community (noticeBlocked, the inbox's rule)
  * nor the post's author (actorBlockedBy: the notice names the post), and has declared 16+ when
- * the post or community is sensitive or NSFL. The inbox rechecks the same when it lists the
- * notice (notifications/visible.ts).
+ * the post or community is sensitive or NSFL; and none of the commenter's, the post's and the
+ * community's servers is a peer this server blocks (peerBlocked). The inbox rechecks the same when
+ * it lists the notice (notifications/visible.ts).
  *
  * None for a comment that is gone, or whose fan-out already ran: a follower of the thread holds
  * its `thread_reply`. Those notices commit with the consumer's cursor, so they are the record of
@@ -74,6 +75,8 @@ export async function threadFollowersOf(q: Queryable, commentId: Uuid, told: rea
       and ${notTold}
       and not ${blocked}
       and not ${actorBlockedBy(sql`tw.owner_id`, sql`p.author_id`)}
+      and not ${peerBlocked(sql`author.instance_id`)} and not ${peerBlocked(sql`p.instance_id`)}
+      and not ${peerBlocked(sql`community.instance_id`)}
       and (
         not (p.sensitive or p.nsfl or community.sensitive or community.nsfl)
         or exists (select 1 from ${ageDeclarations} as declared where declared.actor_id = tw.owner_id)

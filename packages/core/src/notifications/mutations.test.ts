@@ -220,6 +220,32 @@ describe('Undo of Mark all read', () => {
     });
   });
 
+  test('a new-kind notice the inbox hides is left out of the batch, so its Undo restores only what the reader saw', async () => {
+    const { world, owner, notice } = await setup();
+    const me = world.people.author.id;
+    // A follow's answer gated from the undeclared owner (its community is flagged), and an old kind the inbox hides: a
+    // reply by someone the owner blocks.
+    await writer().update(actors).set({ sensitive: true }).where(eq(actors.id, world.communities.remote.id));
+    const gated = await seedNotice({ recipientId: me, kind: 'follow_accept', refId: uuidv7(), communityId: world.communities.remote.id });
+    await seedBlock(world.people.author, world.people.reader);
+    const hidden = await seedNotice({ recipientId: me, kind: 'reply', refId: uuidv7(), actorId: world.people.reader.id });
+    const readAt = async (id: string) => (await noticesOf(me)).find((row) => row.id === id)?.readAt ?? null;
+
+    const marked = await markAllNotificationsRead(await grantFor('notification.read_all', owner, { recipientId: me }), undefined);
+    expect(marked.count).toBe(1);
+    expect(await readAt(notice.id)).not.toBeNull();
+    expect(await readAt(gated.id)).toBeNull();
+    // The old kind is marked as on main, hidden or not.
+    expect(await readAt(hidden.id)).not.toBeNull();
+
+    // The community opens to the owner afterwards: the Undo restores the one notice the owner saw marked.
+    await writer().update(actors).set({ sensitive: false }).where(eq(actors.id, world.communities.remote.id));
+    const undo = await grantFor('notification.undo_read_all', owner, { recipientId: me });
+    expect(await undoMarkAllRead(undo, { batch: marked.batch! })).toEqual({ count: 1 });
+    expect(await readAt(notice.id)).toBeNull();
+    expect(await readAt(gated.id)).toBeNull();
+  });
+
   test('only the owner undoes, and never another person’s notices with the same stamp', async () => {
     const { world, owner, other, remote } = await setup();
     const marked = await markAllNotificationsRead(

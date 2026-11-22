@@ -1,6 +1,6 @@
 import type { Principal } from '@peblish/schema/authz';
 import { parseEvent } from '@peblish/schema/events';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 import { authorize } from '../authz/authorize.ts';
 import { gateOf } from '../communities/gate.ts';
@@ -19,12 +19,16 @@ import { truncateAll } from '../testing/db.ts';
 import { grantFor, outboxEvents, seedBan, seedComment, seedPost } from '../testing/seed-az.ts';
 import { declareAge } from '../testing/seed-b1.ts';
 import { seedBlock } from '../testing/seed-e1.ts';
-import { drainNotices, emitEvent, kindsOf, noticeCount, noticesOf, say, seedInboxWorld } from '../testing/seed-e2.ts';
+import { drainNotices, emitEvent, kindsOf, noticeCount, noticesOf, remoteSay, say, seedInboxWorld } from '../testing/seed-e2.ts';
 import { localUser, seedActor } from '../testing/seed.ts';
+import { outboxEmitter } from '../tx/tx.ts';
 import { threadWatches } from '../watches/tables.ts';
 import { threadFollowersOf, threadReplyFanOut } from '../watches/watchers.ts';
 import { watchThreadAs } from '../watches/watches.ts';
+import { consumer } from './consumer.ts';
 import { readInbox } from './read.ts';
+import { notifications } from './tables.ts';
+import { inboxFilters } from './view.ts';
 import { markAllNotificationsReadAs } from './service.ts';
 import { unreadCount } from './unread.ts';
 
@@ -146,6 +150,71 @@ describe('thread_reply', () => {
     expect(await kindsOf(w.people.reader.id)).toEqual([]);
   });
 
+  test("a notice naming a deleted commenter that lands after the account's clean-up is never listed, and the deletion's consumer clears it", async () => {
+    const w = await seedInboxWorld();
+    const postId = w.posts.local.normal;
+    await follow(w.people.reader, postId);
+    const theirs = await say(w.people.owner, postId, 'Gone soon');
+    const kept = await say(w.people.admin, postId, 'Staying');
+    const decision = await authorize('account.delete', localUser(w.people.owner.id), { actorId: w.people.owner.id });
+    if (!decision.ok) throw new Error(decision.reason);
+    await deleteAccount(decision.grant, { reason: 'owner request' });
+    // The fan-out chose its followers while the account was live, and its insert commits after the deletion's clean-up.
+    await writer().insert(notifications).values({
+      recipientId: w.people.reader.id,
+      kind: 'thread_reply',
+      refId: theirs,
+      actorId: w.people.owner.id,
+      communityId: w.communities.open.id,
+      postId,
+      commentId: theirs,
+    });
+    const viewer = { actorId: w.people.reader.id, siteRole: 'user' } as const;
+    expect([(await readInbox(viewer)).items, await unreadCount(w.people.reader.id)]).toEqual([[], 0]);
+
+    await drainNotices();
+    expect((await noticesOf(w.people.reader.id)).map((notice) => notice.refId)).toEqual([kept]);
+    expect((await readInbox(viewer)).items).toMatchObject([{ kind: 'thread_reply', actor: { id: w.people.admin.id }, commentId: kept }]);
+  });
+
+  test("a live commenter's fan-out does not wait on another write holding their account row", async () => {
+    const w = await seedInboxWorld();
+    const postId = w.posts.local.normal;
+    await follow(w.people.reader, postId);
+    const id = await say(w.people.owner, postId, 'A busy account');
+    let release!: () => void;
+    const released = new Promise<void>((resolve) => (release = resolve));
+    let locked!: () => void;
+    const holding = new Promise<void>((resolve) => (locked = resolve));
+    const holder = writer().transaction(async (t) => {
+      await t.execute(sql`select 1 from actors where id = ${w.people.owner.id}::uuid for no key update`);
+      locked();
+      await released;
+    });
+    await holding;
+    try {
+      // The consumer's own handler, in a transaction that fails instead of waiting on a lock (the worker's horizon is the
+      // whole server's, so its timing proves nothing here).
+      await writer().transaction(async (db) => {
+        await db.execute(sql`set local lock_timeout = '2s'`);
+        const event = {
+          type: 'comment.created',
+          v: 1,
+          commentId: id,
+          postId,
+          authorId: w.people.owner.id,
+          local: true,
+          parentId: null,
+        } as const;
+        await consumer.handle(event, { db, emit: outboxEmitter(db).emit });
+      });
+    } finally {
+      release();
+      await holder;
+    }
+    expect(await kindsOf(w.people.reader.id)).toEqual(['thread_reply']);
+  });
+
   test('a replay of the same event writes nothing more and emits nothing more', async () => {
     const w = await seedInboxWorld();
     const postId = w.posts.local.normal;
@@ -208,7 +277,7 @@ describe('thread_reply', () => {
     await seedBlock(w.people.moderator, w.people.author);
     expect(await shown(w.people.moderator)).toEqual([0, 0, 0, 0]);
 
-    // The post is flagged sensitive since: an undeclared follower no longer has it; a declared one keeps it, withheld.
+    // The post is flagged sensitive since: no follower has it any more, declared or not; unflagged, it is back.
     const other = await seedPost(w.instances.local, w.communities.open, w.people.admin);
     await follow(w.people.reader, other.id);
     await follow(w.people.owner, other.id);
@@ -217,12 +286,9 @@ describe('thread_reply', () => {
     expect(await shown(w.people.reader)).toEqual([1, 1, 1, 1]);
     await writer().update(posts).set({ sensitive: true }).where(eq(posts.id, other.id));
     expect(await shown(w.people.reader)).toEqual([0, 0, 0, 0]);
+    expect(await shown(w.people.owner)).toEqual([1, 1, 1, 1]);
+    await writer().update(posts).set({ sensitive: false }).where(eq(posts.id, other.id));
     expect(await shown(w.people.owner)).toEqual([2, 2, 2, 2]);
-    expect((await readInbox({ actorId: w.people.owner.id, siteRole: 'user' })).items[0]).toMatchObject({
-      postId: other.id,
-      withheld: 'sensitive',
-      actor: null,
-    });
   });
 
   test('a replay after an early follower unfollowed tells no follower past the limit', async () => {
@@ -307,40 +373,95 @@ describe('thread_reply', () => {
     },
   );
 
-  test('a withheld notice names nobody, links no comment and leads only to a community the viewer may see', async () => {
+  test('a followed thread on flagged content is listed for nobody, a declared reader too, so a block of its commenter changes nothing', async () => {
     const w = await seedInboxWorld();
     // The commenter declared 16+ as well: the age gate on writes takes no comment there otherwise.
     for (const person of [w.people.reader, w.people.owner]) await declareAge(person);
-    const local = await seedPost(w.instances.local, w.communities.open, w.people.author, { sensitive: true });
-    const remote = await seedPost(w.instances.lemmy, w.communities.remote, w.people.remoteAuthor, { sensitive: true });
-    await follow(w.people.reader, local.id);
-    await follow(w.people.reader, remote.id);
-    const id = await say(w.people.owner, local.id, 'Careful words');
-    await say(w.people.owner, remote.id, 'Careful words abroad');
+    const flagged = await seedPost(w.instances.local, w.communities.open, w.people.author, { sensitive: true });
+    await follow(w.people.reader, flagged.id);
+    await follow(w.people.reader, w.posts.local.normal);
+    await say(w.people.owner, flagged.id, 'Careful words');
+    const kept = await say(w.people.admin, w.posts.local.normal, 'Plain words');
+    // The reader's own comment there, removed with a reason: a moderator's notice is owed, flagged or not.
+    const own = await say(w.people.reader, flagged.id, 'Off topic');
+    const moderator = { kind: 'local', actorId: w.people.moderator.id, siteRole: 'user' } as const;
+    await removeContent(await grantFor('mod.remove', moderator, { target: { kind: 'comment', id: own } }), { reason: 'Rule 4' });
     await drainNotices();
     const viewer = { actorId: w.people.reader.id, siteRole: 'user' } as const;
-    const inbox = await readInbox(viewer);
-    expect(inbox.items).toHaveLength(2);
-    const item = inbox.items.find((entry) => entry.postId === local.id);
-    expect(item).toMatchObject({
-      kind: 'thread_reply',
-      withheld: 'sensitive',
-      actor: null,
-      commentId: null,
-      excerpt: null,
-      community: { id: w.communities.open.id },
-    });
-    // What is left: the notice's own id (its read actions), the followed post, and the post's community.
-    const [comment] = await db().select({ apId: comments.apId }).from(comments).where(eq(comments.id, id));
-    const [author] = await db().select({ apId: actors.apId, name: actors.name }).from(actors).where(eq(actors.id, w.people.owner.id));
-    const sent = JSON.stringify(item);
-    for (const secret of [id, comment!.apId, w.people.owner.id, author!.apId, author!.name]) expect(sent).not.toContain(secret);
+    // Every filter's rows and its count agree.
+    const pages = async () => {
+      const all = await readInbox(viewer);
+      const counts = { all: all.unread, unread: all.unread, ...all.unreadByGroup };
+      const lists = await Promise.all(inboxFilters.map(async (filter) => (await readInbox(viewer, { filter })).items));
+      for (const [index, filter] of inboxFilters.entries()) expect(lists[index], filter).toHaveLength(counts[filter]);
+      return lists;
+    };
+    const before = await pages();
+    expect(before[0]).toMatchObject([
+      { kind: 'mod_remove', statement: { reason: 'Rule 4' } },
+      { kind: 'thread_reply', commentId: kept, withheld: null },
+    ]);
+    await seedBlock(w.people.reader, w.people.owner);
+    expect(await pages()).toEqual(before);
+  });
 
-    // The remote community's server is blocked here: its thread's notice goes from the list and every count.
+  test("a peer this server blocks: its commenter's notice in a local thread leaves rows and counts, nothing new is told, and it comes back unread", async () => {
+    const w = await seedInboxWorld();
+    const postId = w.posts.local.normal;
+    const [post] = await db().select({ apId: posts.apId }).from(posts).where(eq(posts.id, postId));
+    await follow(w.people.reader, postId);
+    const here = await say(w.people.owner, postId, 'From here');
+    const there = await remoteSay(w.people.remoteAuthor, post!.apId);
+    await drainNotices();
+    const viewer = { actorId: w.people.reader.id, siteRole: 'user' } as const;
+    const seen = async () => {
+      const inbox = await readInbox(viewer);
+      return {
+        comments: inbox.items.map((item) => [item.commentId, item.read]),
+        counts: [inbox.unread, inbox.unreadByGroup.replies, await unreadCount(w.people.reader.id)],
+      };
+    };
+    expect(await seen()).toEqual({
+      comments: [
+        [there, false],
+        [here, false],
+      ],
+      counts: [2, 2, 2],
+    });
+
     await writer().insert(peerControls).values({ instanceId: w.instances.lemmy.id, blocked: true });
-    const after = await readInbox(viewer);
-    expect(after.items.map((entry) => entry.postId)).toEqual([local.id]);
-    expect([after.unread, after.unreadByGroup.replies, await unreadCount(w.people.reader.id)]).toEqual([1, 1, 1]);
+    expect(await seen()).toEqual({ comments: [[here, false]], counts: [1, 1, 1] });
+    // A comment from that peer while it is blocked tells nobody.
+    const later = await remoteSay(w.people.remoteAuthor, post!.apId);
+    await drainNotices();
+    expect((await noticesOf(w.people.reader.id)).map((notice) => notice.refId)).not.toContain(later);
+
+    // A locked thread and a ban from the community still read; unblocking brings the notice back, unread.
+    await writer().update(posts).set({ locked: true }).where(eq(posts.id, postId));
+    await seedBan(w.communities.open, w.people.reader);
+    expect(await seen()).toEqual({ comments: [[here, false]], counts: [1, 1, 1] });
+    await writer().update(peerControls).set({ blocked: false }).where(eq(peerControls.instanceId, w.instances.lemmy.id));
+    expect(await seen()).toEqual({
+      comments: [
+        [there, false],
+        [here, false],
+      ],
+      counts: [2, 2, 2],
+    });
+  });
+  test('a notice held back from a blocked peer is not marked by Mark all read, so unblocking brings it back unread', async () => {
+    const w = await seedInboxWorld();
+    const postId = w.posts.local.normal;
+    const [post] = await db().select({ apId: posts.apId }).from(posts).where(eq(posts.id, postId));
+    await follow(w.people.reader, postId);
+    const there = await remoteSay(w.people.remoteAuthor, post!.apId);
+    await drainNotices();
+    await writer().insert(peerControls).values({ instanceId: w.instances.lemmy.id, blocked: true });
+    expect(await markAllNotificationsReadAs(localUser(w.people.reader.id))).toEqual({ ok: true, count: 0, batch: null });
+    await writer().update(peerControls).set({ blocked: false }).where(eq(peerControls.instanceId, w.instances.lemmy.id));
+    const inbox = await readInbox({ actorId: w.people.reader.id, siteRole: 'user' }, { filter: 'unread' });
+    expect(inbox.items).toMatchObject([{ kind: 'thread_reply', commentId: there, read: false }]);
+    expect(inbox.unread).toBe(1);
   });
 });
 
@@ -412,6 +533,25 @@ describe('follow_accept', () => {
     // A community deleted since: the notice is neither listed nor counted.
     await writer().update(actors).set({ deletedAt: new Date() }).where(eq(actors.id, sensitiveGroup.id));
     expect(await unreadCount(w.people.admin.id)).toBe(0);
+  });
+
+  test('a community on a peer this server blocks: its Accept leaves rows and counts, a late one tells nobody, and unblocking brings it back unread', async () => {
+    const w = await seedInboxWorld();
+    await (await pending(w, w.people.reader)).accept();
+    await drainNotices();
+    const seen = async (person: { id: string }) => {
+      const inbox = await readInbox({ actorId: person.id, siteRole: 'user' }, { filter: 'account' });
+      return [inbox.items.map((item) => item.read), inbox.unread, inbox.unreadByGroup.account, await unreadCount(person.id)];
+    };
+    expect(await seen(w.people.reader)).toEqual([[false], 1, 1, 1]);
+    // Accepted, then the peer is blocked before the consumer reads the Accept.
+    await (await pending(w, w.people.moderator)).accept();
+    await writer().insert(peerControls).values({ instanceId: w.instances.lemmy.id, blocked: true });
+    await drainNotices();
+    expect(await kindsOf(w.people.moderator.id)).toEqual([]);
+    expect(await seen(w.people.reader)).toEqual([[], 0, 0, 0]);
+    await writer().update(peerControls).set({ blocked: false }).where(eq(peerControls.instanceId, w.instances.lemmy.id));
+    expect(await seen(w.people.reader)).toEqual([[false], 1, 1, 1]);
   });
 
   test('a community flagged after its Accept is listed and counted only where the community gate opens it', async () => {
