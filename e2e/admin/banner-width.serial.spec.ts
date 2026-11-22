@@ -293,10 +293,16 @@ test('with scripts off the banner shows with its message and link, its script-on
   }
   expect((await readSetting('site.banner')).revision).toBe(revision);
   // Publish from the keyboard still publishes.
-  await form(plain).getByRole('button', { name: 'Publish banner' }).focus();
-  await plain.keyboard.press('Enter');
-  await plain.waitForURL(/saved=banner/);
-  expect((await readSetting('site.banner')).revision).toBe(revision + 1);
+  for (const [key, published] of [
+    ['Enter', revision + 1],
+    ['Space', revision + 2],
+  ] as const) {
+    await plain.goto('/admin/settings');
+    await form(plain).getByRole('button', { name: 'Publish banner' }).focus();
+    await plain.keyboard.press(key);
+    await plain.waitForURL(/saved=banner/);
+    expect((await readSetting('site.banner')).revision, key).toBe(published);
+  }
   await plain.goto('/admin/settings');
   await choose(plain.locator('body'), 'Wide, 1112 px');
   await plain.getByRole('button', { name: 'Save width' }).click();
