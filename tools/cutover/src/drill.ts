@@ -8,13 +8,14 @@ import { deletionLedger } from '@peblish/core/db/tables/site';
 import { owePurgeAfterRestore } from '@peblish/core/edge/debt';
 import type { WriteTx } from '@peblish/core/db/write';
 import { mediaEvidence } from '@peblish/core/evidence/tables';
+import { personalTables } from '@peblish/core/identity/personal';
 import { categoryOf, listBlockedHash } from '@peblish/core/mediascan/block';
 import { blockCategories } from '@peblish/core/mediascan/list';
 import { outboxEmitter } from '@peblish/core/tx/tx';
 import type { OutboxEvent } from '@peblish/schema/events';
 import type { Uuid } from '@peblish/schema/ids';
 import { type } from 'arktype';
-import { asc, eq, sql, type SQL } from 'drizzle-orm';
+import { asc, eq, getTableName, sql, type SQL } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
 import { openPrivate } from './bundle.ts';
@@ -359,6 +360,19 @@ async function replayHashAdded(t: ReplayTx, row: LedgerRow): Promise<number> {
 }
 
 /**
+ * A deleted account's saves, pins, thread follows and visit markers (core identity/personal.ts),
+ * which a backup taken before the deletion brings back. A backup from before those tables
+ * existed has none, so a table it lacks is skipped: the statement would abort the whole replay.
+ */
+async function deletePersonalRows(q: WriteTx, ownerId: string): Promise<void> {
+  for (const table of personalTables) {
+    const name = getTableName(table);
+    const [found] = await q.execute<{ present: boolean }>(sql`select to_regclass(${`public.${name}`}) is not null as present`);
+    if (found?.present) await q.delete(table).where(eq(table.ownerId, ownerId));
+  }
+}
+
+/**
  * Brings one ledger row's state change back, as the write that recorded it made it (identity/
  * delete.ts, remote/actors.ts, remote/objects.ts, inbound Delete and Undo, mediascan/block.ts and
  * list.ts).
@@ -415,6 +429,7 @@ async function apply(t: ReplayTx, row: LedgerRow, tally: { quarantinedCopies: nu
         deleted_at = coalesce(deleted_at, ${at}::timestamptz)
       where id = ${id} and local`);
     await q.execute(sql`delete from auth_user where id = ${row.details.userId}`);
+    await deletePersonalRows(q, id);
     return found;
   }
   throw new CutoverError(`ledger row ${row.id}: no rule for ${row.subjectKind} ${row.reason}; stop and add one before going live`);
