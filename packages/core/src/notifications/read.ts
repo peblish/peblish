@@ -176,8 +176,10 @@ async function describe(q: Queryable, rows: (typeof notifications.$inferSelect)[
       actor: actorWithheld ? null : (row.actorId && personById.get(row.actorId)) || null,
       actorWithheld,
       community: (row.communityId && personById.get(row.communityId)) || null,
-      // The post links to the thread, which names no one here either; the comment's id would lead to its author.
-      postId: row.postId,
+      // The post links to the thread, which names no one here either; the comment's id would lead to its
+      // author. A notice about the post itself keeps no post id: it leads to the post's author elsewhere
+      // (the public modlog, the object route), and the row links to the community instead.
+      postId: actorWithheld && !row.commentId ? null : row.postId,
       commentId: actorWithheld ? null : row.commentId,
       // A notice that names no one shows no title either: the title of the post it answers can name its author.
       postTitle: actorWithheld ? null : titleOf(post),

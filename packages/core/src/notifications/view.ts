@@ -55,6 +55,7 @@ export type InboxItem = {
   /** Set when a reply or mention withholds who wrote it (and then `actor` is null): the row says "someone". */
   actorWithheld: NoticeActorWithheld | null;
   community: NoticeActor | null;
+  /** Null for a notice about a post itself when `actorWithheld` is set: the row links to its community. */
   postId: string | null;
   /** Null when `actorWithheld` is set: the row links to the post, and the comment's id stays out of the page. */
   commentId: string | null;
