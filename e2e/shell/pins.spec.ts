@@ -190,6 +190,10 @@ test.describe('seeded', () => {
     await page.route('**/communities/pins', (route) => route.fulfill({ status: 500, json: { error: 'generic' } }));
     await down();
     await expect(live).toHaveText('That did not work. Try again.');
+    // The same failure again is said again.
+    await listen(live);
+    await down();
+    await expect.poll(() => said(page)).toEqual(['That did not work. Try again.']);
     await page.unroute('**/communities/pins');
 
     await listen(live);

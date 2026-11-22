@@ -49,8 +49,8 @@ export async function postPin(fields: PinFields): Promise<{ error: PinError } | 
 /**
  * One pin action at a time for a control: `run` posts, reloads the router's data and then calls
  * `done` with what it committed (to put focus back and say what changed); a press while one is on
- * its way does nothing, so the control locks while pending. `error` is the last refusal, cleared by
- * the next success.
+ * its way does nothing, so the control locks while pending. `error` is the last refusal, cleared when
+ * the next action starts, so the same refusal twice is said twice.
  */
 export function usePinAction() {
   const router = useRouter();
@@ -59,10 +59,10 @@ export function usePinAction() {
   async function run(fields: PinFields, done?: (place: PinPlace | null) => void) {
     if (busy) return;
     setBusy(true);
+    setError(undefined);
     try {
       const answer = await postPin(fields);
       if ('error' in answer) return setError(answer.error);
-      setError(undefined);
       await router.invalidate();
       // The reloaded rows are drawn in the next frame; focus waits for them.
       await new Promise((resolve) => requestAnimationFrame(resolve));
