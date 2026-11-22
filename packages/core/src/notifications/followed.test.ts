@@ -114,9 +114,11 @@ describe('thread_reply', () => {
     await drainNotices();
     expect(await kindsOf(w.people.owner.id)).toEqual(['thread_reply']);
 
-    // Sensitive: only a follower who declared 16+ hears of it.
+    // Sensitive: only a follower who declared 16+ hears of it. The commenter has declared too, as the
+    // age gate on writes asks of anyone who comments there.
     const sensitive = await seedPost(w.instances.local, w.communities.open, w.people.author, { sensitive: true });
     await declareAge(w.people.owner);
+    await declareAge(w.people.admin);
     await follow(w.people.owner, sensitive.id);
     await writer()
       .insert(threadWatches)
@@ -305,7 +307,8 @@ describe('thread_reply', () => {
 
   test('a withheld notice names nobody, links no comment and leads only to a community the viewer may see', async () => {
     const w = await seedInboxWorld();
-    await declareAge(w.people.reader);
+    // The commenter declared 16+ as well: the age gate on writes takes no comment there otherwise.
+    for (const person of [w.people.reader, w.people.owner]) await declareAge(person);
     const local = await seedPost(w.instances.local, w.communities.open, w.people.author, { sensitive: true });
     const remote = await seedPost(w.instances.lemmy, w.communities.remote, w.people.remoteAuthor, { sensitive: true });
     await follow(w.people.reader, local.id);
@@ -384,8 +387,10 @@ describe('follow_accept', () => {
     const blocked = await pending(w, w.people.moderator);
     await seedBlock(w.people.moderator, w.communities.remote);
     await blocked.accept();
-    const sensitiveGroup = await seedActor(w.instances.lemmy, 'Group', 'spicy', { sensitive: true });
+    // Flagged after the request: someone who has not declared 16+ cannot ask to join a flagged community at all.
+    const sensitiveGroup = await seedActor(w.instances.lemmy, 'Group', 'spicy');
     const sensitive = await pending(w, w.people.owner, sensitiveGroup);
+    await writer().update(actors).set({ sensitive: true }).where(eq(actors.id, sensitiveGroup.id));
     await sensitive.accept();
     const stale = await pending(w, w.people.author);
     await stale.accept();
