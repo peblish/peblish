@@ -2,10 +2,12 @@ import { newObjectApId } from '@peblish/schema/actor-urls';
 import { type } from 'arktype';
 import { and, eq, sql } from 'drizzle-orm';
 import { uuidv7 } from 'uuidv7';
+import type { Authorized } from '../authz/brand.ts';
+import { ageDenial, contentState, flaggedContent } from '../authz/state.ts';
 import { localInstance } from '../db/local-instance.ts';
 import { actors } from '../db/tables/actors.ts';
 import { comments, posts, votes } from '../db/tables/content.ts';
-import { defineMutation } from '../tx/mutation.ts';
+import { defineMutation, type MutationTx } from '../tx/mutation.ts';
 import { Refused } from '../tx/refused.ts';
 
 /**
@@ -15,6 +17,8 @@ import { Refused } from '../tx/refused.ts';
  */
 export const VoteInput = type({ value: '-1 | 0 | 1', 'apId?': 'string.url' });
 export type VoteInput = typeof VoteInput.infer;
+
+export type Tally = { upvotes: number; downvotes: number };
 
 /**
  * One row per voter and target. A change of direction deletes the row and inserts a new one
@@ -26,7 +30,8 @@ export type VoteInput = typeof VoteInput.infer;
  * The voter is the grant's actor. A remote Undo(Like) carries a freshly minted Like id, so it
  * is applied as value 0 with no apId: the vote is found by voter and target, never by id.
  * vote.cast carries the new activity's id and the replaced vote's id (null when there was
- * none), the only place the replaced id survives, for the outbound Undo.
+ * none), the only place the replaced id survives, for the outbound Undo. A local voter is also
+ * answered the tally (tallyFor).
  */
 export const castVote = defineMutation({
   action: 'vote.cast',
@@ -46,7 +51,7 @@ export const castVote = defineMutation({
       .from(votes)
       .where(and(eq(votes.voterId, grant.actorId), eq(target.kind === 'post' ? votes.postId : votes.commentId, target.id)));
     const previous = existing ? (existing.value === 1 ? 1 : -1) : 0;
-    if (previous === input.value) return { changed: false, value: input.value };
+    if (previous === input.value) return { changed: false, value: input.value, ...(await tallyFor(t, grant)) };
     if (existing) await t.db.delete(votes).where(eq(votes.id, existing.id));
     let apId: string | null = null;
     if (input.value !== 0) {
@@ -90,6 +95,25 @@ export const castVote = defineMutation({
       previousApId: existing?.apId ?? null,
       local: !remote,
     });
-    return { changed: true, value: input.value };
+    return { changed: true, value: input.value, ...(await tallyFor(t, grant)) };
   },
 });
+
+/**
+ * The target's tally as this transaction leaves it, for a local voter (a remote one is answered
+ * nothing). Null when the age gate withholds the target from the voter, which only a withdrawal
+ * gets through (vote.cast's `withdraw`). Decided here, on the rows the recheck holds locked, so
+ * content gated after the precheck tells the voter nothing either.
+ */
+async function tallyFor(t: MutationTx<'vote.cast'>, grant: Authorized<'vote.cast'>): Promise<{ tally?: Tally | null }> {
+  if (grant.principal.kind === 'remote') return {};
+  const { target, withdraw } = grant.subject;
+  const read = { db: t.db, lock: true };
+  if (withdraw) {
+    const state = await contentState(read, target);
+    if (!state || (await ageDenial(read, grant.principal, flaggedContent(state)))) return { tally: null };
+  }
+  const table = target.kind === 'post' ? posts : comments;
+  const [row] = await t.db.select({ upvotes: table.upvotes, downvotes: table.downvotes }).from(table).where(eq(table.id, target.id));
+  return { tally: row ?? { upvotes: 0, downvotes: 0 } };
+}
