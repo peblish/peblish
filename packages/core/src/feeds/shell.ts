@@ -1,5 +1,5 @@
 import type { Uuid } from '@peblish/schema/ids';
-import type { ActorRef } from '@peblish/schema/views';
+import type { ShellCommunity } from '@peblish/schema/views';
 import { and, count, eq, isNull, sql } from 'drizzle-orm';
 import { freshModerator } from '../authz/roles.ts';
 import { listLocalCommunities } from '../communities/read.ts';
@@ -9,12 +9,14 @@ import { follows } from '../db/tables/follows.ts';
 import { instances } from '../db/tables/instances.ts';
 import { communityModerators } from '../db/tables/moderation.ts';
 import { communityRemovals } from '../moderation/tables.ts';
+import { pinsAmong } from '../pins/pins.ts';
 
 // The lists the sidebar shows beyond its fixed links (web's shell/data.ts calls this).
 
 export type SidebarCommunities = {
-  local: ActorRef[];
-  remote: ActorRef[];
+  /** Each with the viewer's follow state ('none' when signed out) and pin (pins.ts). */
+  local: ShellCommunity[];
+  remote: ShellCommunity[];
   /** How many communities the viewer moderates now; the Moderating feed link shows above 0. */
   moderating: number;
 };
@@ -35,7 +37,8 @@ const open = and(
 export async function sidebarCommunities(viewerId: Uuid | null, q: Queryable = db()): Promise<SidebarCommunities> {
   if (!viewerId) {
     const listed = await listLocalCommunities({ limit: sidebarLimit }, q);
-    return { local: listed.map(({ actor }) => actor), remote: [], moderating: 0 };
+    const local = listed.map(({ actor }): ShellCommunity => ({ ...actor, followState: 'none', pinned: false, pinPosition: null }));
+    return { local, remote: [], moderating: 0 };
   }
   const [followed, [moderated]] = await Promise.all([
     q
@@ -47,6 +50,7 @@ export async function sidebarCommunities(viewerId: Uuid | null, q: Queryable = d
         displayName: actors.displayName,
         local: actors.local,
         host: instances.domain,
+        followState: follows.state,
       })
       .from(follows)
       .innerJoin(actors, eq(actors.id, follows.followeeId))
@@ -60,6 +64,16 @@ export async function sidebarCommunities(viewerId: Uuid | null, q: Queryable = d
       .innerJoin(actors, eq(actors.id, communityModerators.communityId))
       .where(and(eq(communityModerators.moderatorId, viewerId), eq(actors.kind, 'Group'), open, freshModerator)),
   ]);
-  const refs = followed.map(({ host, ...row }): ActorRef => ({ ...row, handle: row.local ? row.name : `${row.name}@${host}` }));
+  const pins = await pinsAmong(
+    viewerId,
+    followed.map(({ id }) => id),
+    q,
+  );
+  const refs = followed.map(({ host, ...row }): ShellCommunity => ({
+    ...row,
+    handle: row.local ? row.name : `${row.name}@${host}`,
+    pinned: pins.has(row.id),
+    pinPosition: pins.get(row.id) ?? null,
+  }));
   return { local: refs.filter(({ local }) => local), remote: refs.filter(({ local }) => !local), moderating: moderated?.moderating ?? 0 };
 }

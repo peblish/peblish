@@ -41,6 +41,9 @@ export type ThreadData = {
   removals: { id: Uuid; handle: string; reason: string | null }[];
   /** The focus comment's Markdown, when the viewer wrote it and can still edit it. */
   own: { id: Uuid; bodyMd: string } | null;
+  /** The viewer's previous visit to the thread, null on a first one, and how many comments are new since (core visits.ts). */
+  previousVisitAt: string | null;
+  newCount: number;
 };
 
 /**
@@ -136,5 +139,7 @@ export function threadData(options: {
       removal ? [{ id: view.id, handle: view.author.handle, reason: removal.reason }] : [],
     ),
     own: mine && focused.body?.kind === 'markdown' ? { id: focused.view.id, bodyMd: focused.body.source } : null,
+    previousVisitAt: thread.previousVisitAt,
+    newCount: thread.newCount,
   };
 }

@@ -6,7 +6,7 @@ import { readSetting } from '@peblish/core/settings/read';
 import type { SessionView } from '@peblish/schema/session';
 import type { SiteBanner } from '@peblish/schema/banner';
 import type { SiteBrand, SiteWidth } from '@peblish/schema/site-settings';
-import type { ActorRef } from '@peblish/schema/views';
+import type { ShellCommunity } from '@peblish/schema/views';
 
 /**
  * What the sidebar shows beyond its fixed links. The root loader fetches it once per
@@ -25,8 +25,8 @@ export interface ShellData {
   banner: SiteBanner | null;
   /** The centre column's width preset (site setting site.width), the frame's `data-width`. */
   width: SiteWidth;
-  local: ActorRef[];
-  remote: ActorRef[];
+  local: ShellCommunity[];
+  remote: ShellCommunity[];
   /** How many communities the viewer moderates; the Moderating feed link shows when above 0. */
   moderating: number;
   /** The viewer's unread notices for the Inbox badge (lane E2), at most unreadCap; 0 when signed out. */

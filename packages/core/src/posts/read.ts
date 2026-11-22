@@ -15,6 +15,9 @@ import { ageDeclarations } from '../identity/tables.ts';
 import { renderMarkdown } from '../markdown/render.ts';
 import { sanitizeRemoteHtml } from '../markdown/sanitize.ts';
 import { communityRemovals } from '../moderation/tables.ts';
+import { savedAmong } from '../saves/saves.ts';
+import { watchingAmong } from '../watches/watches.ts';
+import { postPermalink } from './permalink.ts';
 
 // The read model of a post: the row to PostView mapping that feeds reuse (postViews) and the
 // post page's data (readPost). It decides what a viewer may see, in one place, so no caller can
@@ -60,6 +63,9 @@ type Context = {
   moderators: Set<string>;
   moderated: Set<Uuid>;
   mine: Map<Uuid, 1 | -1>;
+  /** The viewer's own saves and thread follows among these posts (saves.ts, watches.ts). */
+  saved: ReadonlySet<Uuid>;
+  watching: ReadonlySet<Uuid>;
 };
 
 const pair = (communityId: Uuid, actorId: Uuid) => `${communityId}:${actorId}`;
@@ -69,7 +75,8 @@ async function load(q: Queryable, rows: readonly PostRow[], viewer: Viewer): Pro
   const communityIds = [...new Set(rows.map((row) => row.communityId))];
   const postIds = rows.map((row) => row.id);
   const empty = rows.length === 0;
-  const [instance, people, removals, admins, moderators, mine, declaration, viewerRoles] = await Promise.all([
+  const viewerId = viewer?.actorId ?? null;
+  const [instance, people, removals, admins, moderators, mine, declaration, viewerRoles, saved, watching] = await Promise.all([
     localInstance(q),
     empty
       ? []
@@ -134,6 +141,8 @@ async function load(q: Queryable, rows: readonly PostRow[], viewer: Viewer): Pro
             ),
           )
       : [],
+    savedAmong(viewerId, postIds, q),
+    watchingAmong(viewerId, postIds, q),
   ]);
   return {
     origin: instance.origin,
@@ -153,6 +162,8 @@ async function load(q: Queryable, rows: readonly PostRow[], viewer: Viewer): Pro
     moderators: new Set(moderators.map(({ communityId, moderatorId }) => pair(communityId, moderatorId))),
     moderated: viewer?.siteRole === 'admin' ? new Set(communityIds) : new Set(viewerRoles.map(({ communityId }) => communityId)),
     mine: new Map(mine.flatMap(({ postId, value }) => (postId ? [[postId, value === 1 ? 1 : -1] as const] : []))),
+    saved,
+    watching,
   };
 }
 
@@ -208,6 +219,10 @@ function describe(row: PostRow, c: Context, nsfw: NsfwChoice): PostPage {
       removed: row.removedAt !== null,
       counts: { upvotes: row.upvotes, downvotes: row.downvotes, comments: row.commentCount },
       myVote: c.mine.get(row.id) ?? 0,
+      // A withheld post (a tombstone, removed for this viewer, or behind the gate) has no address to share.
+      ...(show ? { permalink: postPermalink(c.origin, row.id) } : {}),
+      saved: c.saved.has(row.id),
+      watching: c.watching.has(row.id),
     },
     body,
     gate,
