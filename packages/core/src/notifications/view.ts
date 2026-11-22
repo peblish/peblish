@@ -25,10 +25,10 @@ export const filterKinds = {
 export type NoticeWithheld = 'sensitive' | 'removed' | 'deleted';
 
 /**
- * Why a reply or mention names no one, as the thread would not: its comment or post is deleted (a
- * tombstone without its author) or gone from the database, it is in or under a post a moderator removed (whose author and
- * comments the page withholds), or it is sensitive content the viewer has not declared 16+ for
- * (the post page shows them nothing of it).
+ * Why a reply or mention names no one, as the thread would not: its comment or post is deleted or
+ * removed (a tombstone without its author) or gone from the database, it is in or under a post a
+ * moderator removed (whose author and comments the page withholds), or it is sensitive content the
+ * viewer has not declared 16+ for (the post page shows them nothing of it).
  */
 export type NoticeActorWithheld = 'deleted' | 'removed' | 'sensitive';
 
