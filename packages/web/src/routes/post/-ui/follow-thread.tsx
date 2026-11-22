@@ -11,10 +11,11 @@ import { useTranslate } from '../../../i18n/use-translate.ts';
 import { watchAction } from '../../notifications/-search.ts';
 
 // Follow thread on the post page (Commons' Thread.tsx FollowBell and Rail.tsx's switch; lane
-// f-notify): the bell in the view header and the switch in the rail, one state for both. The bell is
-// a plain form, so it follows and unfollows without scripts (the inbox's endpoint answers 303 back
-// to the post); the switch needs them and reads only until the page hydrates. A change shows at once
-// in both, goes back on a refusal (with a toast), and is said politely once it is saved.
+// f-notify): the bell in the view header and the switch in the rail, one state for both (the post page
+// calls useFollowThread once and hands it to each). The bell is a plain form, so it follows and
+// unfollows without scripts (the inbox's endpoint answers 303 back to the post); the switch needs them
+// and reads only until the page hydrates. A change shows at once in both, goes back on a refusal (with
+// a toast), and is said politely once it is saved, in the bell's status whichever control made it.
 
 /** The state a press asked for, by post, until the server answers: what the bell and the switch show meanwhile. */
 const asked = new Map<string, boolean>();
@@ -31,8 +32,8 @@ const setAsked = (postId: string, watching: boolean | undefined) => {
 
 const Answer = type({ ok: 'true', watching: 'boolean' }).or({ error: 'string' });
 
-/** The post's follow state for both controls: what is shown, whether a change is on its way, and the change itself. */
-function useFollowThread(postId: string, watching: boolean) {
+/** The post's follow state for both controls: what is shown, whether a change is on its way, what was said, and the change itself. */
+export function useFollowThread(postId: string, watching: boolean) {
   const { t } = useTranslate();
   const router = useRouter();
   const toast = useToast();
@@ -41,11 +42,12 @@ function useFollowThread(postId: string, watching: boolean) {
     () => asked.get(postId),
     () => undefined,
   );
-  const [said, setSaid] = useState('');
+  // By post: the page is reused from one post to the next, and what was said about one is not the other's.
+  const [said, setSaid] = useState<{ postId: string; text: string } | null>(null);
   async function change(next: boolean) {
     if (asked.has(postId)) return;
     setAsked(postId, next);
-    setSaid('');
+    setSaid(null);
     let answer: typeof Answer.infer | { error: string };
     try {
       const response = await fetch(watchAction(next ? 'watch' : 'unwatch', postId), {
@@ -60,12 +62,15 @@ function useFollowThread(postId: string, watching: boolean) {
     }
     if ('ok' in answer) {
       await router.invalidate();
-      setSaid(t('watches', answer.watching ? 'status.on' : 'status.off'));
+      setSaid({ postId, text: t('watches', answer.watching ? 'status.on' : 'status.off') });
     } else toast.add(t('watches', 'error'), { variant: 'danger' });
     setAsked(postId, undefined);
   }
-  return { on: wanted ?? watching, pending: wanted !== undefined, said, change };
+  return { on: wanted ?? watching, pending: wanted !== undefined, said: said?.postId === postId ? said.text : '', change };
 }
+
+/** What useFollowThread hands the bell and the switch. */
+export type FollowThread = ReturnType<typeof useFollowThread>;
 
 /** What the bell and the switch draw: on or off, and whether a change is on its way. */
 export type FollowView = { postId: string; on: boolean; pending: boolean };
@@ -122,9 +127,8 @@ export function FollowSwitchControl({
   );
 }
 
-/** The bell, live: a press changes the follow at once, by fetch once hydrated. */
-export function FollowBell({ postId, watching }: { postId: string; watching: boolean }) {
-  const follow = useFollowThread(postId, watching);
+/** The bell, live: a press changes the follow at once, by fetch once hydrated. Its status says what either control saved. */
+export function FollowBell({ postId, follow }: { postId: string; follow: FollowThread }) {
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     void follow.change(!follow.on);
@@ -133,9 +137,8 @@ export function FollowBell({ postId, watching }: { postId: string; watching: boo
 }
 
 /** The rail's switch, live: the same state as the bell; the bell is the control without scripts. */
-export function FollowSwitch({ postId, watching }: { postId: string; watching: boolean }) {
+export function FollowSwitch({ postId, follow }: { postId: string; follow: FollowThread }) {
   const hydrated = useHydrated();
-  const follow = useFollowThread(postId, watching);
   return (
     <FollowSwitchControl
       postId={postId}

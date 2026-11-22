@@ -24,7 +24,7 @@ import { PostReport } from './actions/report.tsx';
 import { PostSave } from './actions/save.tsx';
 import { ActionForm } from './action-form.tsx';
 import { asPostError, errorKey } from './errors.ts';
-import { FollowBell, FollowSwitch } from './follow-thread.tsx';
+import { FollowBell, FollowSwitch, useFollowThread } from './follow-thread.tsx';
 import { PostHeader } from './post-header.tsx';
 import { GateRail, PostRail } from './post-rail.tsx';
 import { PostPills } from './post-pills.tsx';
@@ -99,6 +99,7 @@ function PostContent({ data, error }: { data: Extract<PostPageData, { kind: 'pos
   const shownError = asPostError(error);
   // Follow thread for a signed-in reader of a live post; Unfollow stays wherever the thread is followed.
   const followable = viewerId !== null && (post.watching === true || (!post.removed && !post.deleted));
+  const follow = useFollowThread(post.id, post.watching === true);
   const badgeLabels = { admin: t('posts', 'badge.admin'), moderator: t('posts', 'badge.moderator'), op: '' };
   // A tombstone's author comes only to staff and the author (-page-data.ts postForViewer).
   const withheldAuthor = isWithheld(post.author);
@@ -157,10 +158,7 @@ function PostContent({ data, error }: { data: Extract<PostPageData, { kind: 'pos
 
   return (
     <>
-      <PostHeader
-        handle={post.community.handle}
-        trailing={followable && <FollowBell postId={post.id} watching={post.watching === true} />}
-      />
+      <PostHeader handle={post.community.handle} trailing={followable && <FollowBell postId={post.id} follow={follow} />} />
       {/* Keyed by the post: the router reuses this component when a link goes from one post to another, and
           the vote control's optimistic vote and queue, the thread's and the forms' state belong to one post. */}
       <main key={post.id} className="pb-page post-page" data-state={withheld ?? 'visible'}>
@@ -247,7 +245,7 @@ function PostContent({ data, error }: { data: Extract<PostPageData, { kind: 'pos
         post={post}
         withheld={withheld !== null}
         facts={data.facts}
-        follow={followable && <FollowSwitch postId={post.id} watching={post.watching === true} />}
+        follow={followable && <FollowSwitch postId={post.id} follow={follow} />}
       />
     </>
   );
