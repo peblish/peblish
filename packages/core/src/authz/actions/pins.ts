@@ -1,5 +1,6 @@
 import type { Uuid } from '@peblish/schema/ids';
 import { and, eq } from 'drizzle-orm';
+import { blockedAmong } from '../../blocks/predicate.ts';
 import { follows } from '../../db/tables/follows.ts';
 import { allow, deny, forShare, type PolicyRequest } from '../policy.ts';
 import { communityDenial, communityState } from '../state.ts';
@@ -13,13 +14,17 @@ import { communityDenial, communityState } from '../state.ts';
 const own = (actorId: Uuid) => allow({ kind: 'owner', actorId });
 
 export const policies = {
-  /** Pin a community: an open one the person follows, accepted or still pending. */
+  /**
+   * Pin a community: an open one the person follows, accepted or still pending, and does not
+   * block (itself or its instance; a pin made before the block is kept but hidden, pins/shown.ts).
+   */
   'pin.add': async ({ principal, subject, db, lock }: PolicyRequest<{ communityId: Uuid }>) => {
     if (principal.kind !== 'local') return deny('auth.required');
     const community = await communityState({ db, lock }, subject.communityId);
     if (!community) return deny('target.not_found');
     const closed = communityDenial(community);
     if (closed) return closed;
+    if ((await blockedAmong(db, principal.actorId, [subject.communityId])).size > 0) return deny('target.not_found');
     const [follow] = await forShare(
       db
         .select({ state: follows.state })

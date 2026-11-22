@@ -1,11 +1,12 @@
 import type { Principal } from '@peblish/schema/authz';
 import type { Uuid } from '@peblish/schema/ids';
 import type { MovePin, PinCommunity } from '@peblish/schema/inputs';
-import { and, asc, eq, inArray } from 'drizzle-orm';
+import { sql, type SQL, type SQLWrapper } from 'drizzle-orm';
 import { authorize } from '../authz/authorize.ts';
 import { db, type Queryable } from '../db/read.ts';
 import { refusedAsResult, type Result } from '../identity/result.ts';
 import { addPin, movePin, removePin } from './mutations.ts';
+import { shownPins } from './shown.ts';
 import { communityPins } from './tables.ts';
 
 // The sidebar pins feature (branch 5). The shell's reader (feeds/shell.ts) asks pinsAmong for
@@ -15,9 +16,11 @@ import { communityPins } from './tables.ts';
 
 /**
  * The viewer's pins among `communityIds` (the communities a page shows the viewer), as each
- * one's place in the viewer's order counting from 0: ShellCommunity.pinned and pinPosition. The
- * places are renumbered over the ids given, so a pin the page does not show leaves no gap. A
- * community missing from the map is not pinned. Owner-only; none when signed out.
+ * one's place in the viewer's order counting from 0: ShellCommunity.pinned and pinPosition. Only
+ * shown pins count (shown.ts, the order the moves use too), renumbered over the ids given, so a
+ * pin the page does not show leaves no gap; a page that lists every shown pin (the shell, through
+ * pinnedFirst) gets the places the moves take and answer. A community missing from the map is
+ * not pinned. Owner-only; none when signed out.
  */
 export async function pinsAmong(
   viewerId: Uuid | null,
@@ -25,13 +28,14 @@ export async function pinsAmong(
   q: Queryable = db(),
 ): Promise<ReadonlyMap<Uuid, number>> {
   if (!viewerId || communityIds.length === 0) return new Map();
-  const rows = await q
-    .select({ communityId: communityPins.communityId })
-    .from(communityPins)
-    .where(and(eq(communityPins.ownerId, viewerId), inArray(communityPins.communityId, [...communityIds])))
-    .orderBy(asc(communityPins.position), asc(communityPins.communityId));
-  return new Map(rows.map(({ communityId }, place) => [communityId, place]));
+  const given = new Set(communityIds);
+  const shown = (await shownPins(q, viewerId)).filter((pin) => pin.shown && given.has(pin.communityId));
+  return new Map(shown.map(({ communityId }, place) => [communityId, place]));
 }
+
+/** An ORDER BY term that puts the viewer's pinned communities (`communityId`, a column) first, so a bounded list keeps every pin. */
+export const pinnedFirst = (viewerId: Uuid, communityId: SQLWrapper): SQL =>
+  sql`exists (select 1 from ${communityPins} where ${communityPins.ownerId} = ${viewerId} and ${communityPins.communityId} = ${communityId}) desc`;
 
 /** Pins a community at the end of the principal's order; pinning a pinned one changes nothing. */
 export async function pinCommunityAs(principal: Principal, { communityId }: PinCommunity): Promise<Result<{ position: number }>> {

@@ -9,7 +9,7 @@ import { follows } from '../db/tables/follows.ts';
 import { instances } from '../db/tables/instances.ts';
 import { communityModerators } from '../db/tables/moderation.ts';
 import { communityRemovals } from '../moderation/tables.ts';
-import { pinsAmong } from '../pins/pins.ts';
+import { pinnedFirst, pinsAmong } from '../pins/pins.ts';
 
 // The lists the sidebar shows beyond its fixed links (web's shell/data.ts calls this).
 
@@ -21,7 +21,7 @@ export type SidebarCommunities = {
   moderating: number;
 };
 
-/** The most communities the sidebar lists, by name: it is sent with every page, so it stays bounded. */
+/** The most communities the sidebar lists, pinned ones first, then by name: it is sent with every page, so it stays bounded. */
 const sidebarLimit = 500;
 
 const open = and(
@@ -56,7 +56,7 @@ export async function sidebarCommunities(viewerId: Uuid | null, q: Queryable = d
       .innerJoin(actors, eq(actors.id, follows.followeeId))
       .innerJoin(instances, eq(instances.id, actors.instanceId))
       .where(and(eq(follows.followerId, viewerId), eq(actors.kind, 'Group'), open))
-      .orderBy(sql`lower(${actors.name})`, actors.id)
+      .orderBy(pinnedFirst(viewerId, actors.id), sql`lower(${actors.name})`, actors.id)
       .limit(sidebarLimit),
     q
       .select({ moderating: count() })

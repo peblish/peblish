@@ -1,5 +1,7 @@
 import { and, asc, eq } from 'drizzle-orm';
 import { beforeEach, describe, expect, test } from 'vitest';
+import { communityBlocks, instanceBlocks } from '../blocks/tables.ts';
+import { actors } from '../db/tables/actors.ts';
 import { follows } from '../db/tables/follows.ts';
 import { writer } from '../db/write.ts';
 import { sidebarCommunities } from '../feeds/shell.ts';
@@ -202,6 +204,69 @@ describe('hidden pins', () => {
     const back = (await sidebarCommunities(w.alice.id)).local;
     expect(places(back)).toEqual({ dogs: 0, art: 1, bikes: 2 });
     expect(back.find((row) => row.name === 'bikes')?.followState).toBe('pending');
+  });
+
+  test('a community the owner blocks cannot be pinned; its pin is kept but hidden while blocked, and comes back when unblocked', async () => {
+    const w = await world();
+    for (const name of ['art', 'cats', 'dogs'] as const) await pinCommunityAs(w.me, { communityId: w.ids[name] });
+    await pinCommunityAs(w.me, { communityId: w.remote.id });
+    // Blocking ends the follow; a follow made again afterwards (nothing refuses one) is how a followed community is blocked.
+    await writer()
+      .insert(communityBlocks)
+      .values([w.ids.bikes, w.ids.cats].map((communityId) => ({ blockerId: w.alice.id, communityId })));
+    await writer().insert(instanceBlocks).values({ blockerId: w.alice.id, instanceId: w.remote.instanceId });
+
+    expect(await pinCommunityAs(w.me, { communityId: w.ids.bikes })).toEqual({ ok: false, reason: 'target.not_found' });
+    const places = async () =>
+      Object.fromEntries(
+        [...(await sidebarCommunities(w.alice.id)).local, ...(await sidebarCommunities(w.alice.id)).remote]
+          .filter((row) => row.pinned)
+          .map((row) => [row.name, row.pinPosition]),
+      );
+    expect(await places()).toEqual({ art: 0, dogs: 1 });
+    expect(await movePinAs(w.me, { communityId: w.ids.cats, toPosition: 0 })).toEqual({ ok: false, reason: 'target.not_found' });
+    expect(await movePinAs(w.me, { communityId: w.ids.dogs, toPosition: 0 })).toEqual({ ok: true, position: 0 });
+    expect(await places()).toEqual({ dogs: 0, art: 1 });
+    // Kept, not deleted: the stored order still holds both blocked pins.
+    expect((await stored(w.alice.id)).map(([id]) => id)).toEqual([w.ids.dogs, w.ids.art, w.ids.cats, w.remote.id]);
+
+    await writer().delete(communityBlocks).where(eq(communityBlocks.blockerId, w.alice.id));
+    await writer().delete(instanceBlocks).where(eq(instanceBlocks.blockerId, w.alice.id));
+    expect(await places()).toEqual({ dogs: 0, art: 1, cats: 2, tech: 3 });
+    expect(await pinCommunityAs(w.me, { communityId: w.ids.bikes })).toEqual({ ok: true, position: 4 });
+  });
+
+  test('past the sidebar’s 500 followed communities, every pin is listed where the moves count it', async () => {
+    const w = await world();
+    const many = await seedInstance('many.test', false);
+    const ids = (
+      await writer()
+        .insert(actors)
+        .values(
+          Array.from({ length: 501 }, (_, n) => ({
+            apId: `https://many.test/ap/c.m${String(n).padStart(3, '0')}`,
+            kind: 'Group' as const,
+            local: false,
+            instanceId: many.id,
+            name: `m${String(n).padStart(3, '0')}`,
+          })),
+        )
+        .returning({ id: actors.id })
+    ).map(({ id }) => id);
+    await writer()
+      .insert(follows)
+      .values(ids.map((followeeId) => ({ followerId: w.alice.id, followeeId, state: 'accepted' as const, acceptedAt: new Date() })));
+    // By name, the last of these is past the first 500 the sidebar reads.
+    const [first, last] = [ids[0]!, ids.at(-1)!];
+    await pinCommunityAs(w.me, { communityId: first });
+    await pinCommunityAs(w.me, { communityId: last });
+    const pinned = async () => {
+      const shell = await sidebarCommunities(w.alice.id);
+      return Object.fromEntries([...shell.local, ...shell.remote].filter((row) => row.pinned).map((row) => [row.id, row.pinPosition]));
+    };
+    expect(await pinned()).toEqual({ [first]: 0, [last]: 1 });
+    expect(await movePinAs(w.me, { communityId: first, toPosition: 1 })).toEqual({ ok: true, position: 1 });
+    expect(await pinned()).toEqual({ [last]: 0, [first]: 1 });
   });
 
   test("a gap a purged community left takes no one's place: the next pin goes after the last", async () => {
