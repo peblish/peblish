@@ -1,5 +1,4 @@
 import { useRouter } from '@tanstack/react-router';
-import { type } from 'arktype';
 import { useState } from 'react';
 import type { MessageKey } from '../i18n/translate.ts';
 
@@ -13,7 +12,6 @@ export type PinFields = { community: string; intent: 'pin' | 'unpin' | 'move'; t
 export const pinErrors = ['pin.not_followed', 'target.not_found', 'generic', 'network'] as const;
 export type PinError = (typeof pinErrors)[number];
 
-const Answer = type({ 'ok?': 'boolean', 'error?': 'string' });
 const asPinError = (code: string | undefined): PinError => pinErrors.find((known) => known === code) ?? 'generic';
 export const pinErrorKey = (code: PinError): MessageKey<'pins'> => `pins.error.${code}`;
 
@@ -23,9 +21,11 @@ export async function postPin(fields: PinFields): Promise<PinError | undefined> 
   if (fields.to !== undefined) body.set('to', String(fields.to));
   try {
     const response = await fetch('/communities/pins', { method: 'POST', body, headers: { accept: 'application/json' } });
-    const answer = Answer(await response.json());
-    if (answer instanceof type.errors) return 'generic';
-    return answer.ok ? undefined : asPinError(answer.error);
+    // { ok: true } or { error }, read by hand: this ships with the sidebar on every page, so no validator library.
+    const answer: unknown = await response.json();
+    if (typeof answer !== 'object' || answer === null) return 'generic';
+    if ('ok' in answer && answer.ok === true) return undefined;
+    return asPinError('error' in answer && typeof answer.error === 'string' ? answer.error : undefined);
   } catch {
     return 'network';
   }

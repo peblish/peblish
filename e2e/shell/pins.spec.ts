@@ -111,7 +111,9 @@ test.describe('seeded', () => {
     // By keyboard alone: the menu opens on Enter, the arrows pick, Enter acts.
     await page.keyboard.press('Enter');
     await expect(page.getByRole('menu')).toBeVisible();
-    await page.getByRole('menuitem', { name: 'Move down' }).focus();
+    await expect(page.getByRole('menuitem', { name: 'Move up' })).toBeFocused();
+    await page.keyboard.press('ArrowDown');
+    await expect(page.getByRole('menuitem', { name: 'Move down' })).toBeFocused();
     await page.keyboard.press('Enter');
     await expect.poll(() => titles(page, seed)).toEqual(['Yew', 'Birch', 'Elm', 'Ash', 'Cedar', 'Damson']);
     await expect(menuOf(side, `Elm ${seed.suffix}`)).toBeFocused();

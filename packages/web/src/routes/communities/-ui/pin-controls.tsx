@@ -261,8 +261,15 @@ export function PinnedGroup({ pinned, view, next }: { pinned: readonly ShellComm
             next={next}
             describedBy={linkId}
             onStatus={setStatus}
-            // The row leaves the group: focus its Pin in the list below, else the group's heading.
-            onDone={() => (document.getElementById(rowPinId(community.id)) ?? document.getElementById(headingId))?.focus()}
+            // The row leaves the group: focus its Pin in the list below, else the group's heading, else (the
+            // group is gone with its last pin) the directory's search field.
+            onDone={() =>
+              (
+                document.getElementById(rowPinId(community.id)) ??
+                document.getElementById(headingId) ??
+                document.querySelector<HTMLElement>('.dir-search input')
+              )?.focus()
+            }
           />
         </span>
       ),
