@@ -269,18 +269,22 @@ function nsfwShown(nsfw: NsfwChoice): SQL | undefined {
  * blocks/predicate.ts asks.
  */
 function shownComments(personId: Uuid, viewer: Viewer, asOf: number, nsfw: NsfwChoice): SQL[] {
-  const conditions = [
-    eq(comments.authorId, personId),
-    isNull(comments.deletedAt),
-    isNull(comments.removedAt),
-    ...visible('all', viewer, asOf),
-  ];
+  return [...ownComments(personId, viewer), ...onShownPosts(viewer, asOf, nsfw)];
+}
+
+/** shownComments's conditions on the comment row alone: the person's, live, and not blocked by the viewer. */
+function ownComments(personId: Uuid, viewer: Viewer): SQL[] {
+  const conditions = [eq(comments.authorId, personId), isNull(comments.deletedAt), isNull(comments.removedAt)];
   // Every comment here is the person's, so their block (directly or through their instance) is
   // one answer for the whole read: asked of the id, not of each row's author_id.
   if (viewer) conditions.push(sql`not ${actorBlockedBy(viewer.actorId, sql`${personId}::uuid`)}`);
-  const shown = nsfwShown(nsfw);
-  if (shown) conditions.push(shown);
   return conditions;
+}
+
+/** shownComments's conditions on the comment's post: the viewer may see it, under Hide NSFW. */
+function onShownPosts(viewer: Viewer, asOf: number, nsfw: NsfwChoice): SQL[] {
+  const shown = nsfwShown(nsfw);
+  return [...visible('all', viewer, asOf), ...(shown ? [shown] : [])];
 }
 
 /** The query for the person's live comments on posts the viewer may see. */
@@ -403,20 +407,29 @@ async function commentsPage(q: Queryable, request: ActivityRequest, viewer: View
 
 /**
  * The profile's counts: what the Posts and Comments tabs list for this viewer (shownPosts,
- * shownComments), counted. Exported for the performance test to EXPLAIN the very statements.
+ * shownComments), counted. The comments are counted per post first, from comments_author_post
+ * alone, and each post the viewer may see adds its count: a post's visibility is checked once
+ * however many of the person's comments are on it. Exported for the performance test to EXPLAIN
+ * the very statements.
  */
 export function countQueries(personId: Uuid, viewer: Viewer, nsfw: NsfwChoice, q: Queryable = db()) {
   const asOf = Date.now();
+  const perPost = q
+    .select({ postId: comments.postId, n: count().as('n') })
+    .from(comments)
+    .where(and(...ownComments(personId, viewer)))
+    .groupBy(comments.postId)
+    .as('per_post');
   return {
     posts: q
       .select({ n: count() })
       .from(posts)
       .where(and(...shownPosts(personId, viewer, asOf))),
     comments: q
-      .select({ n: count() })
-      .from(comments)
-      .innerJoin(posts, eq(posts.id, comments.postId))
-      .where(and(...shownComments(personId, viewer, asOf, nsfw))),
+      .select({ n: sql<number>`coalesce(sum(${perPost.n}), 0)::int`.mapWith(Number) })
+      .from(perPost)
+      .innerJoin(posts, eq(posts.id, perPost.postId))
+      .where(and(...onShownPosts(viewer, asOf, nsfw))),
   };
 }
 

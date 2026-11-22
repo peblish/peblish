@@ -98,6 +98,10 @@ export const comments = pgTable(
     index('comments_path').using('gist', t.path),
     index('comments_author').on(t.authorId),
     index('comments_author_published').on(t.authorId, t.publishedAt.desc()),
+    // A profile's comment count: the person's live comments, read from the index alone and counted per post.
+    index('comments_author_post')
+      .on(t.authorId, t.postId)
+      .where(sql`${t.deletedAt} is null and ${t.removedAt} is null`),
     check('comments_depth', sql`nlevel(${t.path}) between 1 and 50`),
   ],
 );
