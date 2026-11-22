@@ -16,7 +16,7 @@ import { Quote } from '@peblish/ui/components/quote';
 import { Text } from '@peblish/ui/components/text';
 import { Time } from '@peblish/ui/components/time';
 import { useHydrated } from '@peblish/ui/composer/use-hydrated.ts';
-import { rootRouteId, useLocation, useRouter } from '@tanstack/react-router';
+import { getRouteApi, rootRouteId, useLocation, useRouter } from '@tanstack/react-router';
 import { type } from 'arktype';
 import { useEffect, useLayoutEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { translatePlural } from '../../../i18n/translate.ts';
@@ -27,7 +27,7 @@ import { useHeadingInView, ViewHeader } from '../../../shell/view-header.tsx';
 import { asCommentError, errorKey } from '../../post/$id/comments/-ui/errors.ts';
 import type { InboxData } from '../-load.ts';
 import { inboxAction, inboxHref, type InboxSearch } from '../-search.ts';
-import { useReplyDraft } from './drafts.tsx';
+import { ReplyDrafts, useReplyDraft } from './drafts.tsx';
 import { NoticeGroups } from './groups.tsx';
 import { MarkedStatus, undoButtonId } from './marked.tsx';
 
@@ -88,9 +88,12 @@ function InboxHeader({ trailing }: { trailing?: ReactNode }) {
   );
 }
 
+const root = getRouteApi('__root__');
+
 export function Inbox({ data, search }: { data: InboxData; search: InboxSearch }) {
   const { t } = useTranslate();
   useRouteHydrated();
+  const viewer = root.useLoaderData({ select: ({ session }) => session?.actorId ?? '' });
   if (!data.signedIn)
     return (
       <main className="pb-inbox">
@@ -108,7 +111,13 @@ export function Inbox({ data, search }: { data: InboxData; search: InboxSearch }
         </div>
       </main>
     );
-  return <SignedInbox data={data} search={search} />;
+  // The replies in place, and their locks, last as long as the inbox does: across its filters, pages and empty state. Another
+  // account starts with none.
+  return (
+    <ReplyDrafts key={viewer}>
+      <SignedInbox data={data} search={search} />
+    </ReplyDrafts>
+  );
 }
 
 /** Inbox posts answer `{ ok }` or `{ error }` (-form.ts), Mark all read with its count and Undo stamp; the comment form adds the new comment's id. */

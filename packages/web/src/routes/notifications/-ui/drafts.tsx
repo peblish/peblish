@@ -1,10 +1,12 @@
 import { createContext, useContext, useLayoutEffect, useState, type ReactNode } from 'react';
 import type { CommentError } from '../../post/$id/comments/-ui/errors.ts';
 
-// A notice's reply in place, kept by notice id above the date groups (NoticeGroups holds it). A notice whose age
+// A notice's reply in place, kept by notice id for as long as the inbox is open (the inbox holds it, one per viewer;
+// NoticeGroups holds its own only where nothing above it does, as on the gallery's pages). A notice whose age
 // crosses into the next group, when a reload brings the loader's later clock, is drawn anew in that group's list,
-// so state of its own row would start over: its field would close, its text go, and a reply on its way lose its
-// lock. Kept here, they carry over, and so does focus in the reply's form, with the field's caret.
+// and a filter with nothing in it draws no rows at all, so state of its own row would start over: its field would
+// close, its text go, and a reply on its way lose its lock, so it could be sent again. Kept here, they carry over,
+// and so does focus in the reply's form, with the field's caret.
 
 export type ReplyDraft = {
   open: boolean;
@@ -63,9 +65,10 @@ function useDrafts(): Drafts {
 
 const Shared = createContext<Drafts | null>(null);
 
-/** Keeps the replies of the notices under it by notice id (NoticeGroups). */
+/** Keeps the replies of the notices under it by notice id, unless a ReplyDrafts above it already does. */
 export function ReplyDrafts({ children }: { children: ReactNode }) {
-  return <Shared.Provider value={useDrafts()}>{children}</Shared.Provider>;
+  const own = useDrafts();
+  return <Shared.Provider value={useContext(Shared) ?? own}>{children}</Shared.Provider>;
 }
 
 const focusable = 'textarea, button';

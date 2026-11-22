@@ -283,9 +283,11 @@ for (const outcome of ['refused', 'lost'] as const) {
     await expect(field).toHaveAttribute('aria-invalid', 'true');
     expect(marked).toEqual([]);
 
+    // Edited, it is sent once, as it now reads.
+    await field.fill('Held until it answers, then edited.');
     await send.click();
     await expect(first(page).getByRole('status')).toHaveText('Reply posted. View reply');
-    expect(sent).toEqual(['Held until it answers.', 'Held until it answers.']);
+    expect(sent).toEqual(['Held until it answers.', 'Held until it answers, then edited.']);
     expect(marked).toEqual(['?intent=read&id=00000000-0000-7000-8000-000000000001']);
   });
 
