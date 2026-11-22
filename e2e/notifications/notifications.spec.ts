@@ -91,6 +91,20 @@ test.describe('a quiet inbox', () => {
   });
 });
 
+test.describe('on a phone', () => {
+  test('Mark all read in the bar is its icon in a 44px target, at 320 and 390', async ({ page }) => {
+    await signedIn(page, seed.me.name);
+    for (const width of [320, 390]) {
+      await page.setViewportSize({ width, height: 800 });
+      await gotoHydrated(page, '/notifications');
+      const all = page.getByRole('button', { name: 'Mark all read' });
+      await expect(all).toBeEnabled();
+      const box = (await all.boundingBox())!;
+      expect([width, box.width >= 44, box.height >= 44]).toEqual([width, true, true]);
+    }
+  });
+});
+
 test.describe('the inbox of a person who was replied to, mentioned, moderated and banned', () => {
   test('lists every kind once, with the badge, the title and no violations', async ({ page }) => {
     await signedIn(page, seed.me.name);

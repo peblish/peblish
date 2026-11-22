@@ -29,5 +29,11 @@
       clip-path: inset(50%);
       white-space: nowrap;
     }
+
+    /* The icon alone: as wide as the phone's buttons are tall (--pb-touch, shell.css). */
+    .pb-inbox__all .muxui-button {
+      justify-content: center;
+      min-inline-size: var(--pb-touch);
+    }
   }
 }
