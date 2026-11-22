@@ -53,15 +53,14 @@ export function CommunityPicker({
 }) {
   const { t } = useTranslate();
   const describe = useDescribe();
-  // The sidebar's communities, which the root loader already holds: the ones the viewer joined.
+  // The sidebar's communities, which the root loader already holds: the ones the viewer joined, with their display
+  // names (the composer's loader has none, so a community not joined shows its handle alone).
   const shell = root.useLoaderData({ select: ({ shell }) => shell });
-  const groups = useMemo(
-    () => pickerGroups(communities, new Set([...shell.local, ...shell.remote].map(({ id }) => id))),
-    [communities, shell],
-  );
+  const names = useMemo(() => new Map([...shell.local, ...shell.remote].map(({ id, displayName }) => [id, displayName])), [shell]);
+  const groups = useMemo(() => pickerGroups(communities, new Set(names.keys())), [communities, names]);
   const option = (community: PickerCommunity): CommunityOption => ({
     id: community.id,
-    displayName: null,
+    displayName: names.get(community.id) || null,
     handle: community.handle,
     description: describe(community),
     disabled: !community.canPost,

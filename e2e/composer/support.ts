@@ -13,7 +13,7 @@ export type Seed = {
   password: string;
   people: { poster: string; unverified: string; moderator: string; banned: string; young: string };
   communities: Record<
-    'open' | 'staff' | 'closed' | 'remote' | 'adult' | 'gated' | 'gone' | 'remoteStaff' | 'long' | 'farAway',
+    'open' | 'staff' | 'closed' | 'remote' | 'adult' | 'gated' | 'gone' | 'remoteStaff' | 'long' | 'farAway' | 'named',
     { id: string; handle: string }
   >;
 };

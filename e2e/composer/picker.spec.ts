@@ -41,6 +41,21 @@ test('the field lists joined communities first, then the rest, then Browse, each
   await page.close();
 });
 
+test('a joined community with a display name is shown by it, its handle after, and found and chosen by it', async () => {
+  const page = await poster.newPage();
+  await gotoHydrated(page, '/submit');
+  const { named } = world.communities;
+  await openCommunities(page);
+  const row = group(page, 'Joined').getByRole('option', { name: 'Kettle Watchers', exact: true });
+  await expect(row).toBeVisible();
+  await expect(row).toHaveAccessibleDescription(new RegExp(`^!${named.handle}, remote`));
+  await communityField(page).fill('kettle watch');
+  await row.click();
+  await expect(communityField(page)).toHaveValue(`Kettle Watchers (!${named.handle})`);
+  await expect(posted(page)).toHaveValue(named.id);
+  await page.close();
+});
+
 test('Enter takes the first community shown, Escape keeps it, Tab chooses nothing, and emptying the field clears it', async () => {
   const page = await poster.newPage();
   await gotoHydrated(page, '/submit');
