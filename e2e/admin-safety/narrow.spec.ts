@@ -193,14 +193,17 @@ test('at 1440px the queue’s inline filter chooses a community where the rail h
   await page.context().close();
 });
 
-// On a computer the staff tables sit whole in the frame's wide centre: neither the page nor a table's card
-// scrolls sideways (the sidebar folds itself at 1100px). The spec seeds every table but the site pages
-// list, which may hold nothing yet. The fold follows the window from the page that is open when it
-// narrows, and its cookie tells the server how to draw the next page: until it is written, the next page
-// is drawn with the sidebar open, where a table scrolls inside its card (TableCard), and folds once its
-// scripts run. Each width waits for the cookie, so every page is measured with the fold it calls for.
-test('on a computer the staff tables sit whole in the centre', async ({ browser }) => {
-  test.setTimeout(120_000);
+// On a computer the page never scrolls sideways, and each staff table either sits whole or scrolls inside its
+// card, a region named like its table that is a keyboard stop while it overflows (TableCard). With the sidebar
+// following the window (open at 1440 and 1280, folded at 1100) every table sits whole in the centre. At 1100
+// with the sidebar opened by hand the centre is narrower, and a table wider than it scrolls inside its card.
+// The spec seeds every table but the site pages list, which may hold nothing yet. The fold follows the window
+// from the page that is open when it narrows, and its cookie tells the server how to draw the next page, so
+// each state waits for the cookie and every page is measured with the fold it calls for.
+test('on a computer the page never scrolls sideways: the tables sit whole beside the sidebar as the window has it, and at 1100px beside the open sidebar a wider one scrolls in its named card, a keyboard stop', async ({
+  browser,
+}) => {
+  test.setTimeout(150_000);
   const page = await (await browser.newContext({ storageState: session, viewport: { width: 1440, height: 900 } })).newPage();
   const tables = {
     '/admin/bans': true,
@@ -212,22 +215,59 @@ test('on a computer the staff tables sit whole in the centre', async ({ browser 
     '/admin/registration': true,
   };
   const fold = async () => (await page.context().cookies()).find((cookie) => cookie.name === 'peblish_side')?.value ?? '';
+  /** The page's sideways overflow, and each table's card: how far it overflows, its role, its name and its stop. */
+  const measure = () =>
+    page.evaluate(() => ({
+      page: document.scrollingElement!.scrollWidth - window.innerWidth,
+      cards: [...document.querySelectorAll('main .muxui-table')].map((table) => {
+        const card = table.parentElement!;
+        return {
+          over: card.scrollWidth - card.clientWidth,
+          role: card.getAttribute('role'),
+          named: Boolean(card.getAttribute('aria-label')),
+          stop: card.getAttribute('tabindex'),
+        };
+      }),
+    }));
+
   for (const width of [1440, 1280, 1100]) {
     await page.setViewportSize({ width, height: 900 });
     // WIDE_AT in packages/web/src/shell/side-state.ts.
     await expect.poll(fold).toBe(width < 1264 ? 'narrow' : '');
     for (const [path, seeded] of Object.entries(tables)) {
       await gotoHydrated(page, path);
-      const geometry = await page.evaluate(() => ({
-        page: document.scrollingElement!.scrollWidth - window.innerWidth,
-        cards: [...document.querySelectorAll('main .muxui-table')].map(
-          (table) => table.parentElement!.scrollWidth - table.parentElement!.clientWidth,
-        ),
-      }));
+      const geometry = await measure();
       if (seeded) expect(geometry.cards.length, `${path} at ${width}px`).toBeGreaterThan(0);
-      expect(geometry, `${path} at ${width}px`).toEqual({ page: 0, cards: geometry.cards.map(() => 0) });
+      expect(geometry, `${path} at ${width}px`).toEqual({
+        page: 0,
+        cards: geometry.cards.map(() => ({ over: 0, role: 'region', named: true, stop: null })),
+      });
     }
   }
+
+  // At 1100 the sidebar opened by hand: the chosen fold is kept in the cookie, and the server draws each page open.
+  await page.getByRole('button', { name: 'Sidebar', exact: true }).click();
+  await expect.poll(fold).toBe('open');
+  let scrolled = 0;
+  for (const [path, seeded] of Object.entries(tables)) {
+    await gotoHydrated(page, path);
+    await expect(page.getByRole('button', { name: 'Sidebar', exact: true })).toHaveAttribute('aria-expanded', 'true');
+    const geometry = await measure();
+    if (seeded) expect(geometry.cards.length, `${path} open at 1100px`).toBeGreaterThan(0);
+    expect(geometry, `${path} open at 1100px`).toEqual({
+      page: 0,
+      cards: geometry.cards.map(({ over }) => ({ over, role: 'region', named: true, stop: over > 0 ? '0' : null })),
+    });
+    const wide = geometry.cards.findIndex(({ over }) => over > 0);
+    if (wide < 0) continue;
+    scrolled += 1;
+    // The arrow keys scroll it from its stop.
+    const card = page.locator('main .muxui-table').nth(wide).locator('..');
+    await card.focus();
+    await page.keyboard.press('ArrowRight');
+    await expect.poll(() => card.evaluate((node) => node.scrollLeft), `${path} open at 1100px`).toBeGreaterThan(0);
+  }
+  expect(scrolled, 'a table wider than the centre beside the open sidebar').toBeGreaterThan(0);
   await page.context().close();
 });
 
