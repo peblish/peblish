@@ -3,7 +3,7 @@ import { expect, test, type Browser, type BrowserContext, type Page } from '@pla
 import { expectAccessible } from '../auth/support.ts';
 import { contrast } from '../support/contrast.ts';
 import { gotoHydrated } from '../support/route-marker.ts';
-import { choose, community, communityField, communityRadio, openCommunities, seed, type Seed, signedIn } from './support.ts';
+import { choose, community, communityField, communityRadio, openCommunities, radioLabel, seed, type Seed, signedIn } from './support.ts';
 
 // Create post's community field (CommunityField on Mux ComboBox): the person's joined communities first, the rest,
 // then Browse; keyboard-complete; the chosen community posted under the same name and value as the radio list a
@@ -260,7 +260,7 @@ test('without scripts the radio list is the field, and the radio chosen is what 
   await page.goto(`/submit?community=${open.handle}`);
   await expect(communityField(page)).toBeHidden();
   await expect(communityRadio(page, open.handle)).toBeChecked();
-  // Another radio than the one asked for in the address wins over the server's choice posted after the list.
+  // Another radio than the one asked for in the address is what posts.
   await choose(page, closed.handle);
   await page.getByLabel('Title').fill('Posted without scripts');
   await page.getByRole('button', { name: 'Post', exact: true }).click();
@@ -269,21 +269,36 @@ test('without scripts the radio list is the field, and the radio chosen is what 
   await context.close();
 });
 
-test('before hydration a plain post still names the community the page started in', async ({ browser, baseURL }) => {
-  // The server's HTML, which a browser with scripts has before they run, when the list in noscript is inert text: a
-  // hidden input carries the choice, after the list (whose checked radio comes first in a form's values without scripts).
-  const context = await browser.newContext({ baseURL, javaScriptEnabled: false, storageState: await poster.storageState() });
+test('with its scripts slow, a radio chosen before the page hydrates is the choice the field takes over', async ({ browser, baseURL }) => {
+  const context = await freshPoster(browser, baseURL!);
   const page = await context.newPage();
-  await page.goto(`/submit?community=${world.communities.open.handle}`);
-  const hidden = page.locator('input[type="hidden"][name="community"]');
-  await expect(hidden).toHaveValue(world.communities.open.id);
-  const after = await hidden.evaluate((input) => {
-    const radio = document.querySelector('input[type="radio"][name="community"]');
-    return radio !== null && (radio.compareDocumentPosition(input) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
+  const { open, remote } = world.communities;
+  // Every script asked for in the first seconds waits until then: the person has the server's page to act on.
+  let release = 0;
+  await page.route('**/*', async (route) => {
+    const wait = release - Date.now();
+    if (route.request().resourceType() === 'script' && wait > 0) await new Promise((resolve) => setTimeout(resolve, wait));
+    await route.continue();
   });
-  expect(after).toBe(true);
+  release = Date.now() + 4_000;
+  await page.goto(`/submit?community=${open.handle}`, { waitUntil: 'commit' });
+  const radio = communityRadio(page, remote.handle);
+  await expect(communityRadio(page, open.handle)).toBeChecked();
+  await radioLabel(radio).click();
+  await expect(radio).toBeChecked();
+  expect(await page.evaluate(() => document.documentElement.dataset.hydrated)).toBeUndefined();
+  // Back to the top before the page hydrates: the view header's observer (shell/view-header.tsx, another lane's)
+  // fails on a bar scrolled above the window then (a negative rootMargin), which shows the error page.
+  await page.evaluate(() => window.scrollTo(0, 0));
+  // Hydrated: the field shows that choice, posts it and shows its rules; the radios are gone.
+  await page.locator('html[data-hydrated="1"]').waitFor({ state: 'attached', timeout: 30_000 });
+  await expect(communityField(page)).toHaveValue(`!${remote.handle}`);
+  await expect(posted(page)).toHaveValue(remote.id);
+  await expect(rules(page).getByRole('heading', { level: 2 })).toContainText(remote.handle);
+  await expect(page.getByRole('radio', { name: new RegExp(`^!${remote.handle}`) })).toHaveCount(0);
   await context.close();
 });
+
 test('the open list reads at 4.5:1 or more in light and dark, at rest and highlighted', async ({ browser, baseURL }) => {
   for (const colorScheme of ['light', 'dark'] as const) {
     const context = await browser.newContext({ baseURL, colorScheme, storageState: await poster.storageState() });

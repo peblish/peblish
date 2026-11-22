@@ -1,5 +1,5 @@
 import { ComboBox } from '@muxui/react';
-import { useState, type KeyboardEvent, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { useHydrated } from '../composer/use-hydrated.ts';
 import { FieldAlert } from './field-problem.tsx';
 import { BidiText, Handle, neutraliseBidi } from './handle.tsx';
@@ -49,8 +49,8 @@ export interface CommunityFieldProps {
   error?: ReactNode;
   required?: boolean;
   /**
-   * The choice as a plain form control, for a browser without scripts: rendered in `<noscript>`, so it is real
-   * only there (with scripts it is inert text, and the field above, hidden without scripts, posts the choice).
+   * The choice as plain radios under `name`: the form control until the page hydrates (for good without scripts).
+   * Then the field takes their place, and the radio chosen on the server's page becomes its choice (`onChange`).
    */
   fallback: ReactNode;
 }
@@ -78,8 +78,7 @@ const matches = (text: string, input: string) => fold(text).includes(fold(input)
  * none is highlighted; Escape closes the list and keeps the choice; Tab moves on and chooses nothing. Emptying the
  * text clears the choice. Browse shows when the text is empty or matches nothing, and says so then.
  *
- * Until the page hydrates the field is disabled and a hidden input posts the server's choice; without scripts the
- * field is hidden and `fallback` is the form control.
+ * Until the page hydrates, and without scripts, `fallback` is the form control in its place.
  */
 export function CommunityField({
   name,
@@ -94,15 +93,31 @@ export function CommunityField({
   fallback,
 }: CommunityFieldProps) {
   const hydrated = useHydrated();
+  const radios = useRef<HTMLDivElement>(null);
+  // As the page hydrates, a radio checked on the server's page (React keeps it checked and tells no one) becomes the
+  // field's choice, and so does one checked in the moment before the field takes their place.
+  useEffect(() => {
+    const list = radios.current;
+    if (!list) return;
+    const picked = () => list.querySelector<HTMLInputElement>('input[type="radio"]:checked')?.value;
+    const first = picked();
+    if (first && first !== value) onChange(first);
+    const report = () => {
+      const next = picked();
+      if (next) onChange(next);
+    };
+    list.addEventListener('change', report);
+    return () => list.removeEventListener('change', report);
+    // Once, as it hydrates: mounted on a page already running (the sheet, a client navigation) it has no radios.
+    // oxlint-disable-next-line react/exhaustive-deps
+  }, []);
   const options = groups.flatMap((group) => group.options);
   const chosen = options.find((option) => option.id === value);
-  const [text, setText] = useState(chosen ? optionText(chosen) : '');
-  // A choice the form makes itself (a community that is gone, a draft's) puts its name in the field.
-  const [shown, setShown] = useState(value);
-  if (shown !== value) {
-    setShown(value);
-    setText(chosen ? optionText(chosen) : '');
-  }
+  // What the person typed, or null for the choice's own name, so a choice the form makes itself (a community that is
+  // gone, the radio chosen before hydration) shows in the field.
+  const [typed, setTyped] = useState<string | null>(null);
+  const chosenText = chosen ? optionText(chosen) : '';
+  const text = typed ?? chosenText;
   const anyMatch = (input: string) => options.some((option) => matches(optionText(option), input));
   const sections = [
     ...groups.map((group) => ({
@@ -163,17 +178,22 @@ export function CommunityField({
     const first = options.find((option) => !option.disabled && matches(optionText(option), text));
     if (!first) return onBrowse();
     onChange(first.id);
-    setText(optionText(first));
+    setTyped(null);
   };
+  if (!hydrated) {
+    return (
+      <div className="pb-cfield" ref={radios}>
+        {fallback}
+      </div>
+    );
+  }
   return (
     <div className="pb-cfield" onKeyDownCapture={onEnter}>
       <ComboBox
         className="pb-cfield__combo"
         label={labels.label}
         placeholder={labels.placeholder}
-        // Posted only once hydrated: before then a submit has no choice to send, and without scripts the fallback posts it.
-        name={hydrated ? name : undefined}
-        disabled={!hydrated}
+        name={name}
         required={required}
         invalid={error !== undefined}
         // React Aria's error part drops a role, so the alert is the span inside it.
@@ -182,23 +202,19 @@ export function CommunityField({
         sections={sections}
         value={text}
         selectedId={value}
-        onChange={setText}
+        // React Aria puts the chosen row's name back itself (on Escape, on leaving): that is no typing.
+        onChange={(next) => setTyped(next === chosenText ? null : next)}
         onSelect={(item) => {
           if (!item) return onChange(null);
           if (item.id === browseId) return onBrowse();
           const option = options.find(({ id }) => id === item.id);
           if (!option) return;
           onChange(option.id);
-          setText(optionText(option));
+          setTyped(null);
         }}
         // React Aria's own props, which Mux passes through: the whole list on focus, and the filter above.
         {...{ menuTrigger: 'focus', defaultFilter: filter }}
       />
-      <noscript>{fallback}</noscript>
-      {/* Until hydration (scripts on) the noscript list is inert text and the field posts nothing: this posts the
-          server's choice, so a plain post before hydration still names it. Without scripts it follows the radios, and
-          a form's first value of a name wins on the server (routes/submit/-submit.ts), so a radio's choice does. */}
-      {!hydrated && value !== null && <input type="hidden" name={name} value={value} />}
     </div>
   );
 }

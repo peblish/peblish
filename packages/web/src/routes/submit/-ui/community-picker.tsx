@@ -35,8 +35,8 @@ function useDescribe() {
 /**
  * Create post's community (composer-page): the grouped field (CommunityField), the viewer's joined communities
  * first, then the rest they may post in, then a row to the directory (`onBrowse`, which keeps what was typed). A
- * community the person may not post in is shown disabled, with the reason after it. Without scripts the choice is
- * the radio list below, posted under the same name and values.
+ * community the person may not post in is shown disabled, with the reason after it. Until the page hydrates, and for
+ * good without scripts, the choice is the radio list below, posted under the same name and values.
  */
 export function CommunityPicker({
   communities,
@@ -98,7 +98,7 @@ export function CommunityPicker({
 }
 
 /**
- * The choice without scripts: one radio per community, a real form field; a closed community is disabled with its
+ * The choice before hydration and without scripts: one radio per community, a real form field; a closed community is disabled with its
  * reason. A list the loader cut short says so, with the directory's link in place of the field's Browse row.
  */
 export function CommunityRadios({
