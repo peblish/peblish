@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { useRouterState } from '@tanstack/react-router';
 import { Badge } from '@peblish/ui/components/badge';
 import { Card } from '@peblish/ui/components/card';
 import { Group } from '@peblish/ui/components/group';
@@ -52,6 +53,20 @@ export function PostPage({ data, error }: { data: PostPageData; error?: string |
   );
 }
 
+/**
+ * Where Save's answer lands without scripts: this page as the reader has it (the thread's sort and page
+ * among its query), less an `error` an earlier answer left, so it is not shown again. The hash stays out
+ * (the server never sees it, so the form would differ between the server and the browser). Past the
+ * endpoint's 500 characters, the post itself. The endpoint checks it is a path here (safeRedirect).
+ */
+function useSaveBack(post: string): string {
+  const here = useRouterState({ select: ({ location }) => `${location.pathname}${location.searchStr}` });
+  const url = new URL(here, 'http://here.invalid');
+  url.searchParams.delete('error');
+  const back = `${url.pathname}${url.search}`;
+  return back.length <= 500 ? back : post;
+}
+
 /** Where a link post goes: its picture or a box with the domain and the address, which opens it. */
 function PostMedia({ data }: { data: Extract<PostPageData, { kind: 'post' }> }) {
   const { t } = useTranslate();
@@ -100,6 +115,7 @@ function PostContent({ data, error }: { data: Extract<PostPageData, { kind: 'pos
   // Follow thread for a signed-in reader of a live post; Unfollow stays wherever the thread is followed.
   const followable = viewerId !== null && (post.watching === true || (!post.removed && !post.deleted));
   const follow = useFollowThread(post.id, post.watching === true);
+  const saveBack = useSaveBack(back);
   const badgeLabels = { admin: t('posts', 'badge.admin'), moderator: t('posts', 'badge.moderator'), op: '' };
   // A tombstone's author comes only to staff and the author (-page-data.ts postForViewer).
   const withheldAuthor = isWithheld(post.author);
@@ -225,7 +241,7 @@ function PostContent({ data, error }: { data: Extract<PostPageData, { kind: 'pos
               )}
               {actions && (
                 <>
-                  <PostSave post={post} withheld={withheld !== null} back={back} />
+                  <PostSave post={post} withheld={withheld !== null} back={saveBack} />
                   <PostReport {...actions} />
                   <PostBlock {...actions} />
                   <PostModerate {...actions} />
