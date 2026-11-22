@@ -31,6 +31,8 @@ const core = vi.hoisted(() => ({
   follows: [] as Follow[],
   staffOf: new Set<string>(),
   bannedFrom: new Set<string>(),
+  /** Communities on a host this server or the person blocks. */
+  hostBlocked: new Set<string>(),
   listLocalCommunities: vi.fn(),
   moderatedAmong: vi.fn(),
   followedCommunities: vi.fn(),
@@ -41,6 +43,7 @@ vi.mock('@peblish/core/communities/read', () => ({
   listLocalCommunities: core.listLocalCommunities,
   moderatedAmong: core.moderatedAmong,
   readCommunity: core.readCommunity,
+  hostBlockedFor: async (_viewerId: string, id: string) => core.hostBlocked.has(id),
   // As core's: a local name in any case, or name@host for a remote one; removed or gated or not.
   findCommunityId: async (handle: string) =>
     [...core.local, ...core.remote].find(({ actor }) => actor.handle === handle.toLowerCase())?.actor.id ?? null,
@@ -87,6 +90,7 @@ beforeEach(() => {
   core.follows = [];
   core.staffOf = new Set();
   core.bannedFrom = new Set();
+  core.hostBlocked = new Set();
   // As core's: by name, at most `limit`, `ids` keeping only those; sensitive ones only when asked.
   core.listLocalCommunities
     .mockReset()
@@ -232,6 +236,15 @@ describe('the community the form starts in', () => {
       canPost: true,
     });
     expect((await pickerFor(person(), start('!closed@lemmy.test'))).selected).toBeNull();
+  });
+
+  test('a remote community on a host this server or the person blocks is not looked up', async () => {
+    core.local = [local('art')];
+    core.remote = [{ ...local('walled'), actor: { id: 'id-walled', handle: 'walled@shut.test', displayName: null, local: false } }];
+    core.hostBlocked = new Set(['id-walled']);
+    const picker = await pickerFor(person(), start('walled@shut.test', 'art'));
+    expect(picker.selected).toBe('id-art');
+    expect(picker.communities.map(({ handle }) => handle)).toEqual(['art']);
   });
 
   test("an edit starts in the post's own community, without asking", async () => {

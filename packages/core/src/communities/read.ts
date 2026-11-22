@@ -2,6 +2,7 @@ import type { Uuid } from '@peblish/schema/ids';
 import type { ActorRef, CommunityView } from '@peblish/schema/views';
 import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { freshModerator } from '../authz/roles.ts';
+import { instanceBlockedBy } from '../blocks/predicate.ts';
 import { db as readDb, type Queryable } from '../db/read.ts';
 import { actors, communityLanguages } from '../db/tables/actors.ts';
 import { follows } from '../db/tables/follows.ts';
@@ -9,6 +10,7 @@ import { instances } from '../db/tables/instances.ts';
 import { communityModerators } from '../db/tables/moderation.ts';
 import { sanitizeRemoteHtml, type SanitizeHooks } from '../markdown/sanitize.ts';
 import { communityRemovals } from '../moderation/tables.ts';
+import { peerBlocked } from '../peers/gate.ts';
 import { communityRules } from './tables.ts';
 
 // Read models of communities (lane F). A community that is deleted or removed by an admin reads
@@ -192,6 +194,18 @@ export async function findCommunityId(handle: string, q: Queryable = readDb()): 
     .orderBy(asc(actors.createdAt), asc(actors.id))
     .limit(1);
   return row?.id ?? null;
+}
+
+/**
+ * Whether the community lives on a host this server blocks or `viewerId` blocks, for one named on
+ * its own rather than read from a list that already leaves those out (the composer's start).
+ */
+export async function hostBlockedFor(viewerId: Uuid, communityId: Uuid, q: Queryable = readDb()): Promise<boolean> {
+  const instanceId = sql`a.instance_id`;
+  const [row] = await q.execute<{ blocked: boolean }>(
+    sql`select ${peerBlocked(instanceId)} or ${instanceBlockedBy(viewerId, instanceId)} as blocked from ${actors} as a where a.id = ${communityId}::uuid`,
+  );
+  return row?.blocked === true;
 }
 
 /**
