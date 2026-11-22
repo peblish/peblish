@@ -1,5 +1,4 @@
 import { Avatar } from '@peblish/ui/components/avatar';
-import { avatarInitial } from '@peblish/ui/components/avatar-initial.ts';
 import { Badge } from '@peblish/ui/components/badge';
 import { ButtonLink } from '@peblish/ui/components/button-link';
 import { EmptyState } from '@peblish/ui/components/empty-state';
@@ -43,9 +42,6 @@ import { HideNsfwForm } from './gate.tsx';
 // The LinkedDisclosure's id: the fragment its scripts-off link ends with.
 const toolsAnchor = 'cm-tools';
 
-/** The first character, whole, for an icon without a picture. */
-const initial = (text: string) => avatarInitial(text, '?');
-
 export type CommunityTab = 'posts' | 'about';
 
 export function CommunityPage({
@@ -86,7 +82,7 @@ export function CommunityPage({
         <header className="cm-hero">
           <Avatar.Root size="lg" className="cm-icon" aria-hidden="true">
             {data.icon && <Avatar.Image src={data.icon} alt="" />}
-            <Avatar.Fallback>{initial(data.title)}</Avatar.Fallback>
+            <Avatar.Fallback>{data.initial}</Avatar.Fallback>
           </Avatar.Root>
           <div className="cm-id">
             <Text as="h1" variant="title" size="sm" className="cm-name">
@@ -274,7 +270,7 @@ function Charter({ data }: { data: CommunityPageData }) {
             {data.moderators.map((moderator) => (
               <li key={moderator.handle}>
                 <Avatar.Root size="sm" aria-hidden="true">
-                  <Avatar.Fallback>{initial(moderator.handle)}</Avatar.Fallback>
+                  <Avatar.Fallback>{moderator.initial}</Avatar.Fallback>
                 </Avatar.Root>
                 <span className="cm-mod">
                   <Text size="sm">

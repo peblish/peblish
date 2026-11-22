@@ -1,9 +1,14 @@
 import { readInbox } from '@peblish/core/notifications/read';
-import { inboxFilters, type Inbox } from '@peblish/core/notifications/view';
+import { inboxFilters, type Inbox, type InboxItem } from '@peblish/core/notifications/view';
+import { avatarInitial } from '@peblish/ui/components/avatar-initial.ts';
+import { neutraliseBidi } from '@peblish/ui/components/handle';
 import { createServerFn } from '@tanstack/react-start';
 import { type } from 'arktype';
 import { pageSession } from '../../server/auth.ts';
 import { input } from '../../server/input.ts';
+
+/** A notice with the initial its row draws for whoever acted: made here, never in the browser (avatar-initial.ts). */
+export type InboxNotice = InboxItem & { initial: string };
 
 /**
  * The inbox page for the route loader (a server function: it runs on the server for a document
@@ -21,7 +26,11 @@ export const loadInbox = createServerFn({ method: 'GET' })
       { actorId: session.view.actorId, siteRole: session.view.siteRole },
       { filter: data.filter, cursor: data.cursor ?? null },
     );
-    return { signedIn: true as const, now, ...inbox };
+    const items = inbox.items.map((item): InboxNotice => ({
+      ...item,
+      initial: avatarInitial(neutraliseBidi(item.actor?.handle ?? '', ''), '?'),
+    }));
+    return { signedIn: true as const, now, ...inbox, items };
   });
 
 export type InboxData = Awaited<ReturnType<typeof loadInbox>>;

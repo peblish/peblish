@@ -1,5 +1,4 @@
 import { Avatar } from '@peblish/ui/components/avatar';
-import { avatarInitial } from '@peblish/ui/components/avatar-initial.ts';
 import { Badge, type BadgeLabels } from '@peblish/ui/components/badge';
 import { FactList, type Fact } from '@peblish/ui/components/fact-list';
 import { BidiText, Handle, neutraliseBidi } from '@peblish/ui/components/handle';
@@ -31,7 +30,7 @@ export function ProfileHero({ data, children }: { data: ProfileData; children?: 
   const home = useHomeLine(data);
   const { person, badges } = data;
   const name = person.displayName || person.name;
-  // A remote name may carry directional controls: the heading isolates it (BidiText), the initial and alt text drop them.
+  // A remote name may carry directional controls: the heading isolates it (BidiText), the alt text drops them (and the initial, made on the server).
   const plainName = neutraliseBidi(name, '');
   const deleted = data.state === 'deleted';
   const count = (n: number) => new Intl.NumberFormat(locale).format(n);
@@ -47,7 +46,7 @@ export function ProfileHero({ data, children }: { data: ProfileData; children?: 
         {/* Without a picture the initial is decorative: the heading names the person. */}
         <Avatar.Root size="lg" aria-hidden={data.avatarSrc ? undefined : 'true'}>
           {data.avatarSrc && <Avatar.Image src={data.avatarSrc} alt={t('profiles', 'card.avatar', { name: plainName })} />}
-          <Avatar.Fallback>{avatarInitial(plainName, '')}</Avatar.Fallback>
+          <Avatar.Fallback>{data.initial}</Avatar.Fallback>
         </Avatar.Root>
         <div className="prof-hero__id">
           <div className="prof-hero__title">

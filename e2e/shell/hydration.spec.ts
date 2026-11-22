@@ -1,4 +1,7 @@
+import { execFileSync } from 'node:child_process';
+import { join } from 'node:path';
 import { expect, test } from '@playwright/test';
+import { landed, signIn } from '../auth/support.ts';
 import { gotoHydrated, recordConsole } from '../support/route-marker.ts';
 import { skipWithoutKit } from '../support/kit.ts';
 
@@ -83,4 +86,34 @@ test('a browser without Intl.Segmenter hydrates the shell, avatars and all', asy
   await gotoHydrated(page, '/');
   expect(await page.evaluate(() => 'Segmenter' in Intl)).toBe(false);
   expect(log.problems().filter(({ type }) => type === 'pageerror')).toEqual([]);
+});
+
+// An avatar's initial is made on the server and only drawn by the browser: where a runtime's Unicode data
+// would make another one (a decomposed Hangul syllable, a letter with U+0897), the page keeps the server's.
+test("a sidebar row's initial is the server's, kept by the browser, with no hydration mismatch", async ({ page }) => {
+  test.skip(Boolean(process.env.BASE_URL), 'needs the lane database for its seed (DATABASE_URL)');
+  const { password, people, initials } = JSON.parse(
+    execFileSync('node', ['e2e/shell/seed.ts', 'initials'], { cwd: join(import.meta.dirname, '../..'), encoding: 'utf8' }),
+  ) as { password: string; people: [string, string]; initials: { hangul: string; pepet: string } };
+  await gotoHydrated(page, '/auth/sign-in');
+  await signIn(page, `@${people[0]}`, password);
+  await landed(page, '/');
+  const expected = { hangul: '각', pepet: 'Aࢗ' };
+  const selector = (name: string) => `a[href*="/c/${name}"] .muxui-avatar`;
+  // The server's page, before any script runs.
+  const served = await page.evaluate(
+    async (selectors) => {
+      const html = await (await fetch('/', { headers: { accept: 'text/html' } })).text();
+      const page = new DOMParser().parseFromString(html, 'text/html');
+      return selectors.map((one) => page.querySelector(one)?.textContent);
+    },
+    [selector(initials.hangul), selector(initials.pepet)],
+  );
+  expect(served).toEqual([expected.hangul, expected.pepet]);
+  const log = recordConsole(page);
+  await gotoHydrated(page, '/');
+  await expect(page.locator(selector(initials.hangul)).first()).toHaveText(expected.hangul);
+  await expect(page.locator(selector(initials.pepet)).first()).toHaveText(expected.pepet);
+  await page.waitForLoadState('networkidle');
+  expect(log.hydrationProblems()).toEqual([]);
 });

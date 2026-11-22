@@ -1,6 +1,5 @@
 import type { SessionView } from '@peblish/schema/session';
 import { Avatar } from '@peblish/ui/components/avatar';
-import { avatarInitial } from '@peblish/ui/components/avatar-initial.ts';
 import { Button } from '@peblish/ui/components/button';
 import { ButtonLink } from '@peblish/ui/components/button-link';
 import { CheckIcon, LogInIcon, UserPlusIcon } from '@peblish/ui/components/icons';
@@ -37,12 +36,15 @@ export function accountPages(session: SessionView, t: Translate) {
   ];
 }
 
-/** The avatar, named "Account: <name>" for assistive technology, as the menu's button and the no-script link show it. */
-function AccountName({ name, label }: { name: string; label: string }) {
+/**
+ * The avatar, named "Account: <name>" for assistive technology, as the menu's button and the no-script link
+ * show it. `initial` is the server's (ShellData.initial).
+ */
+function AccountName({ name, initial, label }: { name: string; initial: string; label: string }) {
   return (
     <>
       <Avatar.Root size="sm" aria-hidden="true">
-        <Avatar.Fallback>{avatarInitial(name, '')}</Avatar.Fallback>
+        <Avatar.Fallback>{initial}</Avatar.Fallback>
       </Avatar.Root>
       <Text className="pb-sr">
         {label}: {name}
@@ -76,7 +78,7 @@ export function SignedOutActions() {
  * with a redirect). The menu needs scripts: with none (`scripting: none`, shell.css) its button gives
  * way to a plain link, with the same look and name, to the account list at the foot of the page.
  */
-export function Account({ session }: { session: SessionView }) {
+export function Account({ session, initial }: { session: SessionView; initial: string }) {
   const { t } = useTranslate();
   const router = useRouter();
   const { prefs, setPrefs } = usePrefs();
@@ -88,7 +90,7 @@ export function Account({ session }: { session: SessionView }) {
     <div className="pb-account">
       <Menu.Root>
         <Menu.Trigger className="pb-account__trigger">
-          <AccountName name={name} label={label} />
+          <AccountName name={name} initial={initial} label={label} />
         </Menu.Trigger>
         <Menu.Popup placement="bottom-end">
           <Menu.List aria-label={label}>
@@ -126,7 +128,7 @@ export function Account({ session }: { session: SessionView }) {
         </Menu.Popup>
       </Menu.Root>
       <Link className="pb-account__trigger pb-account__no-script pb-link-quiet" href={`#${accountLinksId}`}>
-        <AccountName name={name} label={label} />
+        <AccountName name={name} initial={initial} label={label} />
       </Link>
     </div>
   );

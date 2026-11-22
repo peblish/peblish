@@ -1,6 +1,7 @@
 import { DirectorySort, NsfwMode, Scope, effectiveNsfw, maxPage } from '@peblish/core/directory/input';
 import { listCommunities } from '@peblish/core/directory/read';
 import { parseLookup } from '@peblish/core/resolve/parse';
+import { avatarInitial } from '@peblish/ui/components/avatar-initial.ts';
 import { createServerFn } from '@tanstack/react-start';
 import { getRequestHeader } from '@tanstack/react-start/server';
 import { type } from 'arktype';
@@ -32,6 +33,8 @@ export const loadDirectory = createServerFn({ method: 'GET' })
     const directory = await listCommunities(data, viewer);
     return {
       ...directory,
+      // Each card's initial is made here, never in the browser (avatar-initial.ts).
+      rows: directory.rows.map((row) => ({ ...row, initial: avatarInitial(row.actor.displayName ?? row.actor.name, '?') })),
       /** The query as it was applied: a viewer who has not declared 16+ always gets Hide. */
       query: { ...data, nsfw: effectiveNsfw(data, viewer) },
       signedIn: viewer !== null,

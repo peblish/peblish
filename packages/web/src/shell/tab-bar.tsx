@@ -1,7 +1,6 @@
 import { unreadCap } from '@peblish/core/notifications/view';
 import type { SessionView } from '@peblish/schema/session';
 import { Avatar } from '@peblish/ui/components/avatar';
-import { avatarInitial } from '@peblish/ui/components/avatar-initial.ts';
 import { BottomTabBar, type BottomTab } from '@peblish/ui/components/bottom-tab-bar';
 import { CountBadge } from '@peblish/ui/components/count-badge';
 import { CompassIcon, HouseIcon, InboxIcon, LogInIcon, SquarePenIcon } from '@peblish/ui/components/icons';
@@ -61,7 +60,7 @@ export function PhoneTabs({ session, shell, pathname }: { session: SessionView |
           label: t('shell', 'nav.you'),
           icon: (
             <Avatar.Root size="sm" className="pb-app__tab-avatar">
-              <Avatar.Fallback>{avatarInitial(session.name, '')}</Avatar.Fallback>
+              <Avatar.Fallback>{shell.initial}</Avatar.Fallback>
             </Avatar.Root>
           ),
           current: at(youPath),

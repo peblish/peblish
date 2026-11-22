@@ -1,6 +1,5 @@
 import type { InboxFilter, InboxItem } from '@peblish/core/notifications/view';
 import { filterKinds, inboxFilters, unreadCap } from '@peblish/core/notifications/view';
-import { avatarInitial } from '@peblish/ui/components/avatar-initial.ts';
 import { Badge } from '@peblish/ui/components/badge';
 import { Button } from '@peblish/ui/components/button';
 import { ButtonLink } from '@peblish/ui/components/button-link';
@@ -25,7 +24,7 @@ import { useRouteHydrated } from '../../../shell/hydration.ts';
 import { commentPath, communityPath, inboxPath, modlogEntryPath, postPath } from '../../../shell/paths.ts';
 import { useHeadingInView, ViewHeader } from '../../../shell/view-header.tsx';
 import { asCommentError, errorKey, type CommentError } from '../../post/$id/comments/-ui/errors.ts';
-import type { InboxData } from '../-load.ts';
+import type { InboxData, InboxNotice } from '../-load.ts';
 import { inboxAction, inboxHref, type InboxSearch } from '../-search.ts';
 
 // The inbox (notifications-list), in Commons' layout: its own view header holding Mark all read, the
@@ -261,7 +260,7 @@ export function NoticeRow({
   page,
   afterReload,
 }: {
-  item: InboxItem;
+  item: InboxNotice;
   now: string;
   submit: (event: FormEvent<HTMLFormElement>) => void;
   page: InboxSearch;
@@ -393,7 +392,7 @@ export function NoticeRow({
       unread={!item.read}
       kind={item.kind}
       mark={markOf(item.kind)}
-      initial={avatarInitial(neutraliseBidi(item.actor?.handle ?? '', ''), '?')}
+      initial={item.initial}
       headline={
         <>
           {!item.read && (

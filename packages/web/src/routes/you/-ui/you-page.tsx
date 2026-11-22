@@ -86,7 +86,7 @@ export function YouPage() {
     <main className="pb-page you">
       {header}
       <div className="you-body">
-        <YouIdentity name={session.displayName ?? session.name} handle={session.name} />
+        <YouIdentity name={session.displayName ?? session.name} initial={shell.initial} handle={session.name} />
         <YouLinks title={t('shell', 'account.menu')} links={account} />
         <AppearanceChoice value={toScheme(prefs.scheme)} onChange={(scheme) => setPrefs({ scheme })} disabled={!hydrated} />
         <YouLinks title={shell.siteName} links={site} />

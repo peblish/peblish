@@ -6,9 +6,14 @@ import { readSetting } from '@peblish/core/settings/read';
 import type { SessionView } from '@peblish/schema/session';
 import type { SiteBrand } from '@peblish/schema/site-settings';
 import type { ActorRef } from '@peblish/schema/views';
+import { avatarInitial } from '@peblish/ui/components/avatar-initial.ts';
+import { communityLabel } from './community-label.ts';
+
+/** A community in the sidebar, with the initial its row draws (worked out here, on the server: avatar-initial.ts). */
+export type SidebarCommunity = ActorRef & { initial: string };
 
 /**
- * What the sidebar shows beyond its fixed links. The root loader fetches it once per
+ * What the sidebar shows beyond its fixed links, and the viewer's avatar initial. The root loader fetches it once per
  * document (and again after `router.invalidate()`), so a page that changes it, such as a
  * subscribe button, invalidates the router.
  */
@@ -17,8 +22,10 @@ export interface ShellData {
   siteName: string;
   /** The instance's brand pack (site setting site.brand), '' for none: the root head links its sheet and icons, and the brand shows its mark. */
   brand: SiteBrand;
-  local: ActorRef[];
-  remote: ActorRef[];
+  local: SidebarCommunity[];
+  remote: SidebarCommunity[];
+  /** The viewer's avatar initial, from their display name else their name ('' signed out): the account menu, the phone's You tab and the You page draw it. */
+  initial: string;
   /** How many communities the viewer moderates; the Moderating feed link shows when above 0. */
   moderating: number;
   /** The viewer's unread notices for the Inbox badge (lane E2), at most unreadCap; 0 when signed out. */
@@ -50,5 +57,15 @@ export async function loadShellData(session: SessionView | null): Promise<ShellD
   ]);
   const staff = session !== null && (communities.moderating > 0 || session.siteRole === 'admin');
   const reportCount = staff ? await openReportCount({ actorId: session.actorId, siteRole: session.siteRole }) : null;
-  return { siteName: name || host(), brand, ...communities, unread, reportCount };
+  const withInitial = (community: ActorRef): SidebarCommunity => ({ ...community, initial: avatarInitial(communityLabel(community), '') });
+  return {
+    siteName: name || host(),
+    brand,
+    ...communities,
+    local: communities.local.map(withInitial),
+    remote: communities.remote.map(withInitial),
+    initial: session ? avatarInitial(session.displayName ?? session.name, '') : '',
+    unread,
+    reportCount,
+  };
 }

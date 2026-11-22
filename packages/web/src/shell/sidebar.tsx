@@ -1,9 +1,6 @@
 import { unreadCap } from '@peblish/core/notifications/view';
 import type { SessionView } from '@peblish/schema/session';
-import type { ActorRef } from '@peblish/schema/views';
 import { Avatar } from '@peblish/ui/components/avatar';
-import { avatarInitial } from '@peblish/ui/components/avatar-initial.ts';
-import { neutraliseBidi } from '@peblish/ui/components/handle';
 import {
   CircleHelpIcon,
   ClipboardListIcon,
@@ -27,6 +24,7 @@ import { useRouter } from '@tanstack/react-router';
 import { useMemo, type ComponentType, type ReactNode } from 'react';
 import { useTranslate } from '../i18n/use-translate.ts';
 import { openInRouter } from './client-links.ts';
+import { communityLabel } from './community-label.ts';
 import type { ShellData } from './data.ts';
 import { communityPath, directoryPaths, feedPaths, reportQueuePath, sitePaths } from './paths.ts';
 import { useSectionFolds, type SideSection } from './side-state.ts';
@@ -34,13 +32,8 @@ import { useSectionFolds, type SideSection } from './side-state.ts';
 /** A count as the badges print it: "99+" from the cap on. */
 export const badgeText = (count: number) => (count >= unreadCap ? `${unreadCap - 1}+` : String(count));
 
-/**
- * A community's name in the sidebar: its display name, else its name, without its directional controls; the
- * row isolates it (<bdi>), as display names from other servers are shown everywhere (BidiText).
- */
-const communityLabel = (community: ActorRef) => neutraliseBidi(community.displayName?.trim() || community.name, '');
-
-// A community's row draws a small Mux Avatar with its initial (the label's first character, whole) as
+// A community's row draws a small Mux Avatar with its initial (the label's first character, whole, as the
+// shell's data has it from the server) as
 // Sidebar.NavItem's icon, which is a component: the shell's data has no community pictures yet, and folded into
 // the rail the row keeps a mark and its tooltip.
 const iconOf = (initial: string): ComponentType<{ className?: string }> =>
@@ -51,11 +44,10 @@ const iconOf = (initial: string): ComponentType<{ className?: string }> =>
       </Avatar.Root>
     );
   };
-export const initialIcon = (label: string) => iconOf(avatarInitial(label, ''));
+export const initialIcon = iconOf;
 
 /** A community's row: its icon made once for the row and its initial, so the row keeps it across renders. */
-function CommunityItem({ label, href, current }: { label: string; href: string; current: boolean }) {
-  const initial = avatarInitial(label, '');
+function CommunityItem({ label, initial, href, current }: { label: string; initial: string; href: string; current: boolean }) {
   const icon = useMemo(() => iconOf(initial), [initial]);
   return (
     <Sidebar.NavItem href={href} icon={icon} current={current}>
@@ -178,7 +170,7 @@ export function Navigation({
         <Sidebar.Section {...section('communities', t('shell', 'nav.communities'))}>
           {communities.map(({ community, label }) => {
             const href = communityPath(community);
-            return <CommunityItem key={community.id} label={label} href={href} current={pathname === href} />;
+            return <CommunityItem key={community.id} label={label} initial={community.initial} href={href} current={pathname === href} />;
           })}
           {item(directoryPaths.browse, t('shell', 'communities.browse'), CompassIcon)}
         </Sidebar.Section>
