@@ -1,4 +1,4 @@
-import type { PostView } from '@peblish/schema/views';
+import type { ActorRef, PostView } from '@peblish/schema/views';
 import { FactList } from '@peblish/ui/components/fact-list';
 import { BidiText, Handle } from '@peblish/ui/components/handle';
 import { Link } from '@peblish/ui/components/link';
@@ -19,21 +19,9 @@ import { Rail } from '../../../shell/rail.tsx';
  */
 export function PostRail({ post, withheld }: { post: PostView; withheld: boolean }) {
   const { t, locale } = useTranslate();
-  const { community } = post;
   return (
     <Rail label={t('posts', 'rail.label')}>
-      <RailPanel title={t('posts', 'rail.postedIn')}>
-        <Link className="pb-link-quiet post-rail__community" href={communityPath(community)}>
-          {community.displayName && (
-            <Text variant="label" size="sm" className="post-rail__name">
-              <BidiText text={community.displayName} />
-            </Text>
-          )}
-          <Text size="sm" color="muted">
-            <Handle prefix="!" handle={community.handle} />
-          </Text>
-        </Link>
-      </RailPanel>
+      <PostedIn community={post.community} />
       {!withheld && (
         <RailPanel title={t('posts', 'rail.thread')}>
           <FactList
@@ -58,6 +46,39 @@ export function PostRail({ post, withheld }: { post: PostView; withheld: boolean
           />
         </RailPanel>
       )}
+    </Rail>
+  );
+}
+
+/** Where the post was posted: the community's name, when the page has it, over its handle. */
+function PostedIn({ community }: { community: Pick<ActorRef, 'handle' | 'displayName'> }) {
+  const { t } = useTranslate();
+  return (
+    <RailPanel title={t('posts', 'rail.postedIn')}>
+      <Link className="pb-link-quiet post-rail__community" href={communityPath(community)}>
+        {community.displayName && (
+          <Text variant="label" size="sm" className="post-rail__name">
+            <BidiText text={community.displayName} />
+          </Text>
+        )}
+        <Text size="sm" color="muted">
+          <Handle prefix="!" handle={community.handle} />
+        </Text>
+      </Link>
+    </RailPanel>
+  );
+}
+
+/**
+ * The rail beside the NSFW gate on a post's page: where it was posted, which the gate names already (its
+ * forms post to that community), and nothing else. The post's loading host draws a rail, so with this the
+ * gate keeps the columns it loaded in, and the centre does not move when the gate arrives.
+ */
+export function GateRail({ handle }: { handle: string }) {
+  const { t } = useTranslate();
+  return (
+    <Rail label={t('posts', 'rail.label')}>
+      <PostedIn community={{ handle, displayName: null }} />
     </Rail>
   );
 }

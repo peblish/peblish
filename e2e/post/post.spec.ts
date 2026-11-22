@@ -97,6 +97,34 @@ test.describe('anyone', () => {
     expect(log.hydrationProblems()).toEqual([]);
   });
 
+  for (const [what, to] of [
+    ['a gated post', 'sensitive'],
+    ['an ordinary post', 'plain'],
+  ] as const) {
+    test(`${what} keeps the columns its loading host showed, on a computer`, async ({ page }) => {
+      await page.setViewportSize({ width: 1440, height: 900 });
+      await gotoHydrated(page, '/about');
+      // The data answers past the router's pending delay, so the loading host shows first.
+      await page.route('**/_serverFn/**', async (route) => {
+        await new Promise((resolve) => setTimeout(resolve, 2500));
+        await route.continue();
+      });
+      // As a link in the app opens it (shell/client-links.ts), not waiting for the navigation to end.
+      await page.evaluate((href) => {
+        void (window as unknown as { __TSR_ROUTER__: { navigate(to: { href: string }): Promise<void> } }).__TSR_ROUTER__.navigate({ href });
+      }, url(seed.posts[to]));
+      const bar = page.locator('#pb-main > .pb-frame-vh').filter({ visible: true });
+      const busy = page.locator('#pb-main main[aria-busy="true"]');
+      await expect(busy).toBeVisible();
+      const loading = (await bar.boundingBox())!;
+      await expect(busy).toHaveCount(0, { timeout: 10_000 });
+      await expect(page.locator(to === 'sensitive' ? '#pb-main main.gate' : '#pb-main main.post-page')).toBeVisible();
+      const loaded = (await bar.boundingBox())!;
+      expect([Math.round(loaded.x), Math.round(loaded.width)]).toEqual([Math.round(loading.x), Math.round(loading.width)]);
+      await expect(page.getByRole('complementary', { name: 'About this post' })).toBeVisible();
+    });
+  }
+
   test('the page is personal: never cached; an unknown post is a 404', async ({ page }) => {
     const { status, cacheControl } = await html(page, seed.posts.plain);
     expect([status, cacheControl]).toEqual([200, 'private, no-store']);

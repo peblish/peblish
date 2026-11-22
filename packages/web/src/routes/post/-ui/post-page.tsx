@@ -24,7 +24,7 @@ import { PostReport } from './actions/report.tsx';
 import { ActionForm } from './action-form.tsx';
 import { asPostError, errorKey } from './errors.ts';
 import { PostHeader } from './post-header.tsx';
-import { PostRail } from './post-rail.tsx';
+import { GateRail, PostRail } from './post-rail.tsx';
 import { PostPills } from './post-pills.tsx';
 import { isWithheld } from '../-withheld.ts';
 
@@ -42,6 +42,7 @@ export function PostPage({ data, error }: { data: PostPageData; error?: string |
     <>
       <PostHeader handle={data.handle} />
       <GateNotice data={data} error={error} />
+      <GateRail handle={data.handle} />
     </>
   ) : (
     <PostContent data={data} error={error} />
