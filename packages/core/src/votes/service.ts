@@ -20,13 +20,20 @@ export async function readTally(target: ContentRef): Promise<Tally | null> {
  * A signed-in person's vote for web: authorize, cast, and answer with the vote now held and
  * the tally, so a page can settle on the server's numbers. A refusal, from the precheck or
  * the recheck inside the transaction, comes back as a result (the page shows or ignores it).
+ * Taking back one's own vote on content the age gate now withholds is allowed (vote.cast's
+ * `withdraw`) and answers with no tally: nothing of what the gate withholds.
  */
 export async function voteAs(
   principal: Principal,
   target: ContentRef,
   value: -1 | 0 | 1,
-): Promise<Result<{ value: -1 | 0 | 1; tally: Tally }>> {
+): Promise<Result<{ value: -1 | 0 | 1; tally: Tally | null }>> {
   const decision = await authorize('vote.cast', principal, { target });
+  if (!decision.ok && decision.reason === 'age.declaration_required' && value === 0) {
+    const withdrawal = await authorize('vote.cast', principal, { target, withdraw: true });
+    if (!withdrawal.ok) return withdrawal;
+    return refusedAsResult(async () => ({ value: (await castVote(withdrawal.grant, { value: 0 })).value, tally: null }));
+  }
   if (!decision.ok) return decision;
   return refusedAsResult(async () => {
     const result = await castVote(decision.grant, { value });

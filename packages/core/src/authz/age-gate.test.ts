@@ -1,13 +1,18 @@
 import type { Principal } from '@peblish/schema/authz';
-import { eq } from 'drizzle-orm';
+import type { ContentRef } from '@peblish/schema/ids';
+import { parseEvent } from '@peblish/schema/events';
+import { and, eq } from 'drizzle-orm';
 import { beforeAll, describe, expect, test } from 'vitest';
 import { createCommentAs } from '../comments/actions.ts';
-import { comments } from '../db/tables/content.ts';
+import { comments, posts as postRows, votes } from '../db/tables/content.ts';
 import { db, type Queryable } from '../db/read.ts';
+import { writer } from '../db/write.ts';
 import { truncateAll } from '../testing/db.ts';
-import { seedComment, seedPost } from '../testing/seed-az.ts';
+import { outboxEvents, seedComment, seedPost } from '../testing/seed-az.ts';
 import { declareAge, seedAccount } from '../testing/seed-b1.ts';
+import { seedFollow } from '../testing/seed-c1.ts';
 import { localUser, seedActor, seedInstance } from '../testing/seed.ts';
+import { voteAs } from '../votes/service.ts';
 import { tx } from '../tx/tx.ts';
 import { authorize, type Decision } from './authorize.ts';
 import type { ActionName, SubjectOf } from './policy.ts';
@@ -15,8 +20,9 @@ import type { ActionName, SubjectOf } from './policy.ts';
 // The sensitive-content gate on the writes a person makes in a thread (C10): the post page shows
 // a sensitive or NSFL post, or anything in a sensitive or NSFL community, only to someone who
 // declared 16+, so someone who has not cannot comment on it, vote on it or its comments, post
-// into such a community, or edit or restore their own words in it. Retracting their own words and
-// reporting stay open. What peers send is not gated here. Hide NSFW is the browser's and plays no part.
+// into or follow such a community, or edit or restore their own words in it. Retracting their own
+// words or vote, unfollowing and reporting stay open. What peers send is not gated here. Hide
+// NSFW is the browser's and plays no part.
 
 const GATE = 'age.declaration_required';
 const OK = 'allow';
@@ -55,7 +61,20 @@ async function world() {
     deletedSensitivePost: await post(plain, { sensitive: true, deletedAt: new Date() }, undeclared),
   };
   const others = { onPlain: await comment(posts.plain, author), onSensitive: await comment(posts.sensitive, author) };
-  return { declared, undeclared, remote, communities: { plain, adult, gore }, posts, own, others };
+  // Votes and a follow the undeclared person made before the post or the community was flagged.
+  await seedFollow(undeclared, adult);
+  const votedPost = await post(plain);
+  const votedThread = await post(plain);
+  const voted = {
+    post: { kind: 'post', id: votedPost },
+    comment: { kind: 'comment', id: await comment(votedThread, author) },
+  } satisfies Record<string, ContentRef>;
+  for (const target of Object.values(voted)) {
+    const cast = await voteAs(localUser(undeclared.id), target, 1);
+    if (!cast.ok) throw new Error(cast.reason);
+  }
+  for (const id of [votedPost, votedThread]) await writer().update(postRows).set({ sensitive: true }).where(eq(postRows.id, id));
+  return { declared, undeclared, remote, communities: { plain, adult, gore }, posts, own, others, voted };
 }
 
 let w: Awaited<ReturnType<typeof world>>;
@@ -137,6 +156,26 @@ describe.each([
     expect(await decide(lock, 'report.create', localUser(w.undeclared.id), report({ kind: 'actor', id: w.communities.adult.id }))).toBe(OK);
   });
 
+  test('a follow of a flagged community: only from someone who declared 16+, and unfollowing stays open', async () => {
+    for (const community of [w.communities.adult, w.communities.gore]) {
+      expect(await decide(lock, 'follow.request', localUser(w.undeclared.id), { communityId: community.id })).toBe(GATE);
+      expect(await decide(lock, 'follow.request', localUser(w.declared.id), { communityId: community.id })).toBe(OK);
+    }
+    expect(await decide(lock, 'follow.request', localUser(w.undeclared.id), { communityId: w.communities.plain.id })).toBe(OK);
+    const unfollow = { followerId: w.undeclared.id, followeeId: w.communities.adult.id, apId: null };
+    expect(await decide(lock, 'follow.remove', localUser(w.undeclared.id), unfollow)).toBe(OK);
+  });
+
+  test('your own vote on what has since been gated can be taken back, and nothing else done to it', async () => {
+    const me = localUser(w.undeclared.id);
+    for (const target of Object.values(w.voted)) {
+      expect([target, await decide(lock, 'vote.cast', me, { target, withdraw: true })]).toEqual([target, OK]);
+      expect([target, await decide(lock, 'vote.cast', me, { target })]).toEqual([target, GATE]);
+    }
+    // Without a vote of theirs there, there is nothing to take back.
+    expect(await decide(lock, 'vote.cast', me, { target: { kind: 'post', id: w.posts.sensitive }, withdraw: true })).toBe(GATE);
+  });
+
   test('a post into a flagged community', async () => {
     for (const community of [w.communities.adult, w.communities.gore]) {
       expect(await decide(lock, 'post.create', localUser(w.undeclared.id), { communityId: community.id })).toBe(GATE);
@@ -167,4 +206,30 @@ test('a direct comment request on a flagged post writes nothing; once declared, 
   expect(await createCommentAs(localUser(w.undeclared.id), where, { bodyMd: 'hello' })).toEqual({ ok: false, reason: GATE });
   expect(await db().select({ id: comments.id }).from(comments).where(eq(comments.postId, where.postId))).toEqual(before);
   expect(await createCommentAs(localUser(w.declared.id), where, { bodyMd: 'hello' })).toMatchObject({ ok: true });
+});
+
+test('taking back a vote on gated content sends the retraction and answers with nothing of the content', async () => {
+  const me = localUser(w.undeclared.id);
+  const { post } = w.voted;
+  const tally = async () => (await db().select({ up: postRows.upvotes }).from(postRows).where(eq(postRows.id, post.id)))[0]?.up;
+  expect(await tally()).toBe(1);
+  // Casting again, or the other way, stays refused.
+  for (const value of [1, -1] as const) expect(await voteAs(me, post, value)).toEqual({ ok: false, reason: GATE });
+  expect(await voteAs(me, post, 0)).toEqual({ ok: true, value: 0, tally: null });
+  const own = await db()
+    .select({ id: votes.id })
+    .from(votes)
+    .where(and(eq(votes.voterId, w.undeclared.id), eq(votes.postId, post.id)));
+  expect([own, await tally()]).toEqual([[], 0]);
+  // The retraction is an event like any other, so the outbound Undo goes to the peers that had the vote.
+  const retracted = (await outboxEvents())
+    .map(parseEvent)
+    .filter((event) => event.type === 'vote.cast' && event.target.id === post.id && event.value === 0);
+  expect(retracted).toHaveLength(1);
+  // Taken back once: there is nothing left to take back.
+  expect(await voteAs(me, post, 0)).toEqual({ ok: false, reason: GATE });
+  // A declared voter's retraction answers with the tally, as before.
+  const theirs = { kind: 'comment', id: w.others.onPlain } as const;
+  await voteAs(localUser(w.declared.id), theirs, 1);
+  expect(await voteAs(localUser(w.declared.id), theirs, 0)).toEqual({ ok: true, value: 0, tally: { upvotes: 0, downvotes: 0 } });
 });

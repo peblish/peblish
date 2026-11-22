@@ -39,6 +39,7 @@ export const castVote = defineMutation({
     const remote = grant.principal.kind === 'remote';
     if (remote && input.value !== 0 && !input.apId) throw new TypeError('a remote vote needs the activity id (apId)');
     if (!remote && input.apId !== undefined) throw new TypeError('a local vote mints its own id');
+    if (grant.subject.withdraw && input.value !== 0) throw new TypeError('a withdrawal only takes the vote back');
     const { target } = grant.subject;
     const [existing] = await t.db
       .select({ id: votes.id, apId: votes.apId, value: votes.value })
