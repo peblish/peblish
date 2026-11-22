@@ -63,6 +63,7 @@ export async function followedCommunities(actorId: Uuid): Promise<FollowedCommun
         sql`not exists (select 1 from ${communityRemovals} where ${communityRemovals.communityId} = ${actors.id})`,
       ),
     )
-    .orderBy(asc(actors.name));
+    // One name on several hosts comes by host, then id, so every read lists them alike.
+    .orderBy(asc(actors.name), asc(instances.domain), asc(actors.id));
   return rows;
 }
