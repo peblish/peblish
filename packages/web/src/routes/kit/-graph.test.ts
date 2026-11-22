@@ -22,6 +22,9 @@ test('no part of the component gallery is in the script every page loads', async
     root,
     configFile: join(root, 'vite.config.ts'),
     logLevel: 'silent',
+    // A cache of its own: the dev server's prebundled packages are in the default one, and this server would
+    // replace them, so a dev server running beside the tests would then fail a page that loads one of them first.
+    cacheDir: join(root, 'node_modules/.vite-graph-test'),
     server: { middlewareMode: true, hmr: false, ws: false },
     // Packages are not followed, so they need not be prebundled.
     optimizeDeps: { noDiscovery: true, include: [] },
