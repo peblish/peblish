@@ -31,6 +31,7 @@ const routeTitles: Record<string, MessageKey<'shell'>> = {
   '/settings/blocks/': 'page.blocks',
   '/admin/registration/': 'page.invites',
   '/kit/': 'page.kit',
+  '/kit/$composition': 'page.kit',
 };
 
 /** A route match as a route's `head` sees it in `matches`. */

@@ -1,0 +1,72 @@
+/* Feddit's brand pack: the instance layer over Mux UI's default theme, linked after the app's
+   stylesheet only when the site setting site.brand is 'feddit' (packages/web/src/shell/brand-head.ts).
+   The 44 reference tokens in which Feddit's theme (2026-11-20) differs from Mux UI's default: cool
+   blue-grey neutrals, a blue brand (brand-60 #007ba7) and every radius doubled. Every semantic and
+   component token resolves from them, in light and dark. The guard lets only a pack set reference
+   tokens to literals, plus the brand properties and one @font-face (scripts/mux-guard.ts). */
+@layer app {
+  :root {
+    --muxui-reference-color-brand-5: #f7fbfd;
+    --muxui-reference-color-brand-10: #e0edf4;
+    --muxui-reference-color-brand-20: #bad6e5;
+    --muxui-reference-color-brand-30: #95bfd6;
+    --muxui-reference-color-brand-40: #6199b7;
+    --muxui-reference-color-brand-50: #4a96bb;
+    --muxui-reference-color-brand-60: #007ba7;
+    --muxui-reference-color-brand-70: #00688e;
+    --muxui-reference-color-brand-80: #005676;
+    --muxui-reference-color-brand-90: #00445e;
+    --muxui-reference-color-brand-100: #002b3d;
+    --muxui-reference-color-neutral-5: #ffffff;
+    --muxui-reference-color-neutral-10: #f1f4f6;
+    --muxui-reference-color-neutral-12: #edf0f3;
+    --muxui-reference-color-neutral-14: #e9edf0;
+    --muxui-reference-color-neutral-16: #e5e9ec;
+    --muxui-reference-color-neutral-18: #e0e5e9;
+    --muxui-reference-color-neutral-20: #dce1e5;
+    --muxui-reference-color-neutral-22: #d7dde1;
+    --muxui-reference-color-neutral-24: #d3d9dd;
+    --muxui-reference-color-neutral-26: #ced4d9;
+    --muxui-reference-color-neutral-28: #c9d0d5;
+    --muxui-reference-color-neutral-30: #c4cbd1;
+    --muxui-reference-color-neutral-40: #abb4bb;
+    --muxui-reference-color-neutral-50: #818b93;
+    --muxui-reference-color-neutral-60: #5b6770;
+    --muxui-reference-color-neutral-70: #4b555d;
+    --muxui-reference-color-neutral-80: #3b444b;
+    --muxui-reference-color-neutral-82: #384147;
+    --muxui-reference-color-neutral-84: #353d43;
+    --muxui-reference-color-neutral-86: #323a40;
+    --muxui-reference-color-neutral-88: #2f373c;
+    --muxui-reference-color-neutral-90: #2c3439;
+    --muxui-reference-color-neutral-92: #2a3035;
+    --muxui-reference-color-neutral-94: #272d32;
+    --muxui-reference-color-neutral-96: #242a2f;
+    --muxui-reference-color-neutral-98: #21272b;
+    --muxui-reference-color-neutral-100: #181e22;
+    --muxui-reference-dimension-radius-xs: 0.5rem;
+    --muxui-reference-dimension-radius-s: 0.75rem;
+    --muxui-reference-dimension-radius-m: 1rem;
+    --muxui-reference-dimension-radius-l: 1.5rem;
+    --muxui-reference-dimension-radius-xl: 2rem;
+    --muxui-reference-dimension-radius-2xl: 3rem;
+    /* Labels (sidebar rows, header links, buttons) are medium, not Mux's semibold. */
+    --muxui-semantic-typography-label-weight: var(--muxui-reference-number-font-weight-medium);
+    /* The wordmark (packages/ui/src/brand/brand.tsx): Quicksand at 700, the face below. */
+    --pb-brand-wordmark-font: 'Feddit Wordmark', var(--muxui-semantic-typography-title-font-family);
+    --pb-brand-wordmark-weight: 700;
+  }
+}
+
+/* The wordmark's face: Quicksand Bold 3.000 cut down to the letters of "feddit" (with its kerning and hinting)
+   and renamed Feddit Wordmark, since its licence (OFL-Quicksand.txt, which stays beside it) reserves the name
+   Quicksand for unmodified copies. Made with fonttools: subset with --text=feddit --layout-features=kern
+   --flavor=woff, then name IDs 1 to 4, 6, 16 and 17 rewritten. It loads only where the wordmark shows. */
+@font-face {
+  font-family: 'Feddit Wordmark';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('./wordmark.woff') format('woff');
+  unicode-range: U+64-66, U+69, U+74;
+}

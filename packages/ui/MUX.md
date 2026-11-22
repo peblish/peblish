@@ -4,7 +4,7 @@ One page for the lanes that move the app onto Mux UI. How each component is mean
 
 ## The import rule
 
-- Mux UI comes only from the vendored tarball, `vendor/muxui/muxui-react-0.1.0-rc.7.tgz`, a dependency of `packages/ui` alone.
+- Mux UI comes only from the vendored tarball, `vendor/muxui/muxui-react-0.1.0-rc.8-c1.tgz` (candidate c1 of rc.8, built from Mux UI's `main`; provenance in `vendor/muxui/README.md`), a dependency of `packages/ui` alone.
 - Only `packages/ui` imports `@muxui/react`. Routes and the shell import one module per component: `import { Card } from '@peblish/ui/components/card'` (no extension, no barrel). One module per component keeps tree-shaking working: a route that imports `separator` does not load `sidebar`.
 - A wrapper re-exports the component, its parts and its prop types and nothing else. If one you need is missing, add `packages/ui/src/components/<kebab-name>.tsx` the same way and say so in your notes.
 - The app's own composed components (`PostCard`, `CommentThread`, `VoteControl`, `ReplyBar`, `Prose`, `Handle`, `Time`, `Badge`, the form fields) keep their public props.
@@ -122,6 +122,10 @@ The accents use TagGroup's hue foregrounds because they are the only Mux accent 
 
 The other jobs, straight from Mux (prefix `--muxui-`): text `semantic-content-default`; muted text (meta lines, counts, times) `semantic-content-muted`; links `semantic-content-link`; separators and thread lines `semantic-border-subtle`; hover fill `semantic-surface-hover`; page `semantic-surface-background`; raised surface (cards, menus, the docked bar) `semantic-surface-raised`; quiet fill (notice, code, stub) `semantic-surface-subtle`; link hover `semantic-content-link-hover`; borders on controls and collections `semantic-border-default`; dense row lines `semantic-border-faint`; selected item `semantic-selection-background`; focus ring `outline: 2px solid var(--muxui-semantic-focus-ring)` (Mux's own `:focus-visible` rule already draws it, so the app no longer sets one). Anything else: the catalogue's "Which token for which job" table.
 
+### Brand packs
+
+An instance may have a brand pack (`packages/ui/src/brand/<id>/`, chosen by the site setting `site.brand`; `pack.ts` there describes the folder). Its `pack.css` is the one stylesheet that sets values by hand: Mux reference tokens on `:root` (only those that differ from Mux's default; semantic and dark values follow from them), Mux tokens to tokens (feddit's label weight 500), the wordmark's `--pb-brand-wordmark-font` and `--pb-brand-wordmark-weight`, and the wordmark's `@font-face`. The guard's `css-brand-pack` rule holds it to that. Components never read a pack: they keep using the tokens above, which the pack changes. With no pack, nothing of this loads and the app is Mux UI's default palette.
+
 ### Base rules
 
 Mux UI rc.7 components bring their own font and box model: they no longer take font, box sizing or Separator margin from the page, and Mux's base rule gives the body its text face, size (fluid 14 to 16px), line height and colour. What `tokens.css` adds:
@@ -134,6 +138,14 @@ Mux UI rc.7 components bring their own font and box model: they no longer take f
 - `.pb-page` padding takes Mux layout tokens.
 
 New `--pb-*` tokens go in `packages/ui/src/tokens/tokens.css` (the groundwork lane's file; ask root) and are only Mux tokens. Prefer using the Mux token directly.
+
+### What candidate c1 changed for the app
+
+- Dark scheme only: muted text, field labels (and so Tabs' labels) and links are a half-and-half mix of Mux's steps 70 and 80, lighter than before (muted `rgb(181 177 173)`, links `rgb(144 186 189)` on the page). Light is unchanged.
+- An `svg` placed directly in a Button's label (`ButtonLink`'s included) or in a ToggleButton takes the button's icon size (`--muxui-button-icon-size`: 1.25rem, 1rem at size `sm`) over the icon's own `1em`, so the vote arrows and Create post's plus are 16px. IconButton keeps the icon's size.
+- Grouped ToggleButtons draw no outline of their own (the group's border and dividers are the edges; the focus ring is unchanged), and a `sm` grouped button has square corners. Buttons and ToggleButtons take their height from their minimum size, with no block padding.
+- A horizontal RadioGroup or CheckboxGroup that wraps puts its rows as close as a vertical group's options (the composer's post types on a phone).
+- Playfair Display, the `expressive` text face, ships only as full TTF files. The app uses no expressive text; the payload check fails any page that loads a TTF.
 
 ## Client-only components under server rendering
 
@@ -151,6 +163,10 @@ Every page renders on the server and must hydrate without warnings (the e2e hydr
 ## State without JavaScript
 
 Mux hides the native input of its choice controls and draws the visible box, tick, dot and thumb from `data-muxui-state-*` attributes that React sets. Since rc.7 Mux's own stylesheet also draws Checkbox, CheckboxField, CheckboxGroup, Switch, SwitchField, RadioGroup and RadioField from the native input while those attributes are stale (scripts off, or before hydration), including the keyboard focus ring and forced colours, so the app adds nothing. `e2e/ui-nojs` is the regression test: the drawing follows clicks and keys with scripts off, matches a hydrated page pixel for pixel in light, dark and forced colours, and Mux's input rules change nothing once hydrated.
+
+## State pages
+
+Each composition can have a page of its states in the component gallery, `/kit/<key>` (like `/kit`, only with `PEBLISH_UI_KIT=1`): add it to `compositions` in `packages/web/src/routes/kit/-states.tsx`, one sample per state it takes as a prop (rest, selected, disabled, pending, invalid, in the state matrix's order; selected stands for current, checked and expanded). `galleryStates` in `e2e/support/states.ts` hovers, focuses from the keyboard and presses the rest sample, and for every state, in light and dark, under forced colours, under reduced motion and at a phone's width, runs axe and measures text, icon and focus ring contrast, leftover motion and target size; `stateProblems` lists what fails. `e2e/ui-states/states.spec.ts` runs it on Button and VoteControl.
 
 ## Examples
 

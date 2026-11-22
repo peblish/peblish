@@ -8,6 +8,7 @@ import muxCss from '@peblish/ui/styles.css?url';
 import { HeadContent, Outlet, Scripts, createRootRoute, useRouter } from '@tanstack/react-router';
 import { useCallback, useEffect, type ReactNode } from 'react';
 import { DEFAULT_LOCALE } from '../i18n/negotiate.ts';
+import { brandLinks, brandMeta } from '../shell/brand-head.ts';
 import { openInRouter, useClientLinks } from '../shell/client-links.ts';
 import { PageError, PageNotFound } from '../shell/error-page.tsx';
 import { useFieldLabels, useProseLabels } from '../shell/labels.ts';
@@ -35,10 +36,12 @@ export const Route = createRootRoute({
       { title: titleForMatches(loaderData?.locale ?? DEFAULT_LOCALE, loaderData?.shell.siteName ?? '', matches) },
     ],
     // Mux UI's stylesheet is its own file so the payload budget can measure it alone
-    // (e2e/payload); the app's styles come after it and share its layer order.
+    // (e2e/payload); the app's styles come after it and share its layer order, and the site's
+    // brand pack, if it has one, after those (its tokens are in the app layer).
     links: [
       { rel: 'stylesheet', href: muxCss, id: 'pb-mux-css' },
       { rel: 'stylesheet', href: appCss },
+      ...brandLinks(loaderData?.shell.brand ?? ''),
     ],
   }),
   shellComponent: RootDocument,
@@ -64,6 +67,10 @@ function RootDocument({ children }: { children: ReactNode }) {
         {scheme === 'system' && <script dangerouslySetInnerHTML={{ __html: systemSchemeScript }} />}
         {/* What is typed into a text area before the page hydrates (kept-value.ts). */}
         <script dangerouslySetInnerHTML={{ __html: typedTextScript }} />
+        {/* The brand pack's theme colours: here, as head() keeps only the last meta of a name. */}
+        {brandMeta(data?.shell.brand ?? '', scheme).map((meta) => (
+          <meta key={meta.media ?? 'all'} {...meta} />
+        ))}
         <HeadContent />
       </head>
       <body>

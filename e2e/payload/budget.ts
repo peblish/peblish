@@ -153,3 +153,16 @@ export function misplacedPackages(manifest: Manifest): string[] {
 
 /** themes.css rules select `[data-muxui-theme=...]`; styles.css has none. */
 export const hasThemeRules = (css: string) => css.includes('data-muxui-theme');
+
+/**
+ * What a brand pack's stylesheet (packages/ui/src/brand) holds that it may not, as it is sent: it overrides tokens
+ * on :root in the app layer and declares its faces, nothing else (the guard's css-brand-pack checks the source),
+ * and never carries themes.css rules.
+ */
+export function packSheetProblems(css: string): string[] {
+  const preludes = [...css.replace(/\/\*[\s\S]*?\*\//g, '').matchAll(/([^{};]+)\{/g)].map(([, prelude]) => prelude!.trim());
+  return [
+    ...(hasThemeRules(css) ? ['themes.css rules'] : []),
+    ...preludes.filter((prelude) => !['@layer app', ':root', '@font-face'].includes(prelude)).map((prelude) => `a rule for ${prelude}`),
+  ];
+}

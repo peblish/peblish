@@ -225,6 +225,7 @@ export const notPages: Readonly<Record<string, string>> = {
   '/auth': 'a layout group; /auth itself answers 404',
   '/invite': 'a layout group; /invite itself answers 404',
   '/settings': 'a layout group; /settings itself answers 404',
+  '/kit/$composition': "the gallery's state pages, which e2e/support/states.ts drives; /kit carries the gallery's budget",
   '/healthz': 'a probe answering plain text',
   '/readyz': 'a probe answering plain text',
   '/auth/sign-out': 'a form post that answers with a redirect',

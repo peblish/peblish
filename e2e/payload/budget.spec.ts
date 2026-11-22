@@ -1,15 +1,14 @@
-import { expect, test, type Browser, type BrowserContextOptions } from '@playwright/test';
+import { expect, test } from '@playwright/test';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { freshTotp, landed, signIn } from '../auth/support.ts';
-import { gotoHydrated } from '../support/route-marker.ts';
-import { budget, gzipSize, hasThemeRules, loadManifest, misplacedPackages, scriptLimit, scriptOver, vendorKind } from './budget.ts';
-import { fixtures } from './fixtures.ts';
+import { budget, gzipSize, hasThemeRules, loadManifest, misplacedPackages, packSheetProblems, vendorKind } from './budget.ts';
+import { checkFirstVisit, firstVisit, fontFile } from './check.ts';
 import { notPages, routes, unaccounted } from './routes.ts';
 
 // The payload budget as a check: each page's first visit, cold cache, must stay inside its
-// budget. Run against the production build; see routes.ts to add a page. The React and Mux UI
+// budget (check.ts, which brand.serial.spec.ts also runs under a brand pack). Run against the
+// production build; see routes.ts to add a page. The React and Mux UI
 // script fails against each page's own budget (routes.ts), and so do fonts, the vendor
 // placement, the editor's placement and the themes.css rule (budget.ts). The CSS size, and the
 // editor chunk on the composer's signed-out page, are report-only: printed, and noted on the
@@ -23,91 +22,6 @@ import { notPages, routes, unaccounted } from './routes.ts';
 // pages that need fixtures are skipped there, and nothing else is.
 const remote = Boolean(process.env.BASE_URL);
 test.setTimeout(90_000);
-
-const kB = (bytes: number) => `${(bytes / 1000).toFixed(1)} kB`;
-
-/** Report-only (CSS and the signed-out editor figure): an overrun is printed and noted on the test, never a failure. */
-function reportOver(what: string, bytes: number, limit: number) {
-  if (bytes <= limit) return;
-  const note = `${what} ${kB(bytes)} is over its budget of ${kB(limit)} (report-only)`;
-  console.log(`payload over: ${note}`);
-  test.info().annotations.push({ type: 'payload-over', description: note });
-}
-const fontFile = /\.(woff2?|ttf|otf)(\?|$)/;
-
-interface Transfer {
-  path: string;
-  type: string;
-  /** The body of a stylesheet, for the themes.css check. */
-  text?: string;
-  /** Bytes as a client would receive them: gzip -9 of text, the file itself for fonts. */
-  bytes: number;
-}
-
-type StorageState = NonNullable<BrowserContextOptions['storageState']>;
-
-/**
- * Visits `path` once with an empty cache (cookies aside) and returns every same-origin response the
- * page loaded. `shows`, when given, must be visible on the page before its responses are counted.
- */
-async function firstVisit(
-  browser: Browser,
-  origin: string,
-  path: string,
-  locale: string,
-  { storageState, shows }: { storageState?: StorageState; shows?: RegExp } = {},
-) {
-  const context = await browser.newContext({ baseURL: origin, locale, extraHTTPHeaders: { 'Accept-Language': locale }, storageState });
-  try {
-    const page = await context.newPage();
-    const transfers: Promise<Transfer | null>[] = [];
-    page.on('response', (response) => {
-      const url = new URL(response.url());
-      if (!response.ok() || url.origin !== origin) return;
-      const type = response.headers()['content-type'] ?? '';
-      transfers.push(
-        response.body().then(
-          (body) => ({
-            path: url.pathname,
-            type,
-            ...(url.pathname.endsWith('.css') && { text: body.toString('utf8') }),
-            bytes: fontFile.test(url.pathname) && !url.pathname.endsWith('.ttf') ? body.length : gzipSize(body),
-          }),
-          () => null,
-        ),
-      );
-    });
-    await gotoHydrated(page, path);
-    if (shows) await expect(page.getByText(shows).first(), `the page shows ${shows}`).toBeVisible();
-    await page.waitForLoadState('networkidle');
-    const muxHref = await page.locator('link#pb-mux-css').getAttribute('href');
-    return { all: (await Promise.all(transfers)).filter((transfer) => transfer !== null), muxHref };
-  } finally {
-    await context.close();
-  }
-}
-
-/** The admin the fixtures seeded, signed in once with their TOTP code; the session is reused by every signed-in page. */
-let session: Promise<StorageState> | undefined;
-function adminSession(browser: Browser, baseURL: string): Promise<StorageState> {
-  session ??= (async () => {
-    const { admin } = await fixtures(baseURL);
-    const context = await browser.newContext({ baseURL });
-    try {
-      const page = await context.newPage();
-      await gotoHydrated(page, '/auth/sign-in');
-      await signIn(page, `@${admin.name}`, admin.password);
-      await landed(page, /\/auth\/two-factor/);
-      await page.getByRole('textbox', { name: 'Code', exact: true }).fill(await freshTotp(admin.totpSecret));
-      await page.getByRole('button', { name: 'Verify' }).click();
-      await landed(page, '/');
-      return await context.storageState();
-    } finally {
-      await context.close();
-    }
-  })();
-  return session;
-}
 
 test('no vendor package sits outside its named chunk', () => {
   test.skip(remote, 'a remote BASE_URL has no build output beside it');
@@ -137,69 +51,7 @@ test('every page of the app is budgeted or says why it has no payload', () => {
 });
 
 for (const route of routes) {
-  test(`${route.path} first visit is inside the budget`, async ({ browser, baseURL }) => {
-    test.skip(remote && Boolean(route.target ?? route.admin), 'needs the lane database for its seed (DATABASE_URL)');
-    const origin = new URL(baseURL!).origin;
-    const path = (await route.target?.(origin)) ?? route.path;
-    const { all, muxHref } = await firstVisit(browser, origin, path, 'en-US', {
-      storageState: route.admin ? await adminSession(browser, origin) : undefined,
-      shows: remote ? undefined : await route.shows?.(origin),
-    });
-    const scripts = all.filter(({ path, type }) => path.endsWith('.js') && /javascript/.test(type));
-    const sum = (list: Transfer[]) => list.reduce((total, { bytes }) => total + bytes, 0);
-
-    // The figures go to the log on every run, so a drift shows before it breaks the budget.
-    const figures = (list: Transfer[]) => kB(sum(list));
-    // JavaScript: React and Mux UI by the vendor chunks' names; the app's own chunks are not counted.
-    const vendor = scripts.filter(({ path }) => vendorKind(path) === 'react' || vendorKind(path) === 'mux');
-    const editor = scripts.filter(({ path }) => vendorKind(path) === 'editor');
-    expect(vendor.length, 'the React and Mux chunks load').toBeGreaterThan(1);
-    if (route.composer) reportOver(`${route.path}: the editor chunk`, sum(editor), budget.editor);
-    else
-      expect(
-        editor.map(({ path }) => path),
-        'only the composer loads the editor',
-      ).toEqual([]);
-
-    // CSS: Mux UI's styles.css is its own stylesheet (the root route links it by id) and nothing else counts.
-    expect(muxHref, 'the Mux UI stylesheet link').toBeTruthy();
-    const mux = all.find(({ path }) => path === new URL(muxHref!, 'http://x').pathname);
-    expect(mux, 'the Mux UI stylesheet loads').toBeDefined();
-    reportOver(`${route.path}: Mux UI CSS`, mux!.bytes, budget.css);
-    expect(hasThemeRules(mux!.text ?? ''), 'themes.css rules are in the Mux UI stylesheet').toBe(false);
-    expect(
-      all.filter(({ text }) => hasThemeRules(text ?? '')).map(({ path }) => path),
-      'no stylesheet carries themes.css rules',
-    ).toEqual([]);
-
-    // Fonts: the Latin slices only. A .ttf means a character no slice holds, which costs the full file.
-    const fonts = all.filter(({ path }) => fontFile.test(path));
-    expect(
-      fonts.filter(({ path }) => path.endsWith('.ttf')).map(({ path }) => path),
-      'no full font file',
-    ).toEqual([]);
-    expect(sum(fonts), `fonts ${kB(sum(fonts))}`).toBeLessThanOrEqual(budget.fonts);
-    console.log(
-      `payload ${route.path}: js ${figures(vendor)} of ${kB(scriptLimit(route.js))}, css ${kB(mux!.bytes)} of ${kB(budget.css)}, fonts ${figures(fonts)} of ${kB(budget.fonts)}${editor.length ? `, editor ${figures(editor)}` : ''}`,
-    );
-    // Chunk by chunk, largest first: where a shell or vendor change lands.
-    const byChunk = (list: Transfer[]) =>
-      [...list]
-        .sort((a, b) => b.bytes - a.bytes)
-        .map(({ path, bytes }) => `  ${kB(bytes).padStart(9)} ${path}`)
-        .join('\n');
-    // The home page's whole first-visit script (report only).
-    if (route.path === '/')
-      console.log(
-        `payload / first-visit script: ${figures(scripts)} in ${scripts.length} files (React and Mux ${figures(vendor)})\n${byChunk(scripts)}`,
-      );
-    if (route.fonts) expect(fonts.length, 'regular, italic and code faces are in use').toBeGreaterThanOrEqual(3);
-    // The script budget is checked last, once the figures are in the log; over it, the log also
-    // lists the page's React and Mux chunks, to compare with a run of main.
-    const limit = scriptLimit(route.js);
-    if (sum(vendor) > limit) console.log(`payload ${route.path} React and Mux chunks:\n${byChunk(vendor)}`);
-    expect(sum(vendor), scriptOver(route.path, sum(vendor), route.js)).toBeLessThanOrEqual(limit);
-  });
+  test(`${route.path} first visit is inside the budget`, ({ browser, baseURL }) => checkFirstVisit(route, browser, baseURL!));
 }
 
 test('the font budget holds in German too (umlauts stay in the Latin slice)', async ({ browser, baseURL }) => {
@@ -227,6 +79,20 @@ test.describe('the check catches', () => {
     expect(hasThemeRules(styles)).toBe(false);
     // The whole of both files is about what a build with the themes imported would send.
     expect(gzipSize(Buffer.from(styles + themes))).toBeGreaterThan(budget.css);
+  });
+
+  test("a brand pack's sheet with more than token overrides on :root and faces, or with themes.css rules", () => {
+    const feddit = readFileSync(join(import.meta.dirname, '../../packages/ui/src/brand/feddit/pack.css'), 'utf8');
+    expect(packSheetProblems(feddit)).toEqual([]);
+    // As a build sends it: minified, the face's file renamed.
+    expect(packSheetProblems('@layer app{:root{--muxui-reference-color-brand-60:#007ba7}}@font-face{src:url(/assets/w-a1.woff)}')).toEqual(
+      [],
+    );
+    expect(packSheetProblems(`${feddit}\n.pb-brand { color: red; }`)).toEqual(['a rule for .pb-brand']);
+    expect(packSheetProblems('[data-muxui-theme="ocean"]{--muxui-reference-color-brand-60:#00f}')).toEqual([
+      'themes.css rules',
+      'a rule for [data-muxui-theme="ocean"]',
+    ]);
   });
 
   test('a vendor package in an app chunk', () => {

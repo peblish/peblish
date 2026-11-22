@@ -1,4 +1,16 @@
 import { type, type Type } from 'arktype';
+import { defaultBanner, SiteBanner } from './banner.ts';
+
+/** The brand packs checked in with the app (one folder each in packages/ui/src/brand/). */
+export const brandPacks = ['feddit'] as const;
+/** `site.brand`: a brand pack, or '' for none (Mux UI's own palette and the site name as text). */
+export const SiteBrand = type.enumerated('', ...brandPacks);
+export type SiteBrand = typeof SiteBrand.infer;
+
+/** `site.width`: the centre column's preset. */
+export const siteWidths = ['narrow', 'default', 'wide'] as const;
+export const SiteWidth = type.enumerated(...siteWidths);
+export type SiteWidth = typeof SiteWidth.infer;
 
 // The site settings key contract. Anyone may read; only lane ADM's admin settings service
 // writes (c/settings). A missing row means the default below.
@@ -31,6 +43,12 @@ const definitions = {
   'delivery.enabled': { schema: type('boolean'), default: true },
   /** Whether posts marked sensitive (NSFW) are stored when they arrive from other instances; NSFL stays refused. */
   'remote_nsfw.accepted': { schema: type('boolean'), default: false },
+  /** The instance's brand pack: its colours, mark, wordmark and icons. None renders the site as before. */
+  'site.brand': { schema: SiteBrand, default: '' as const },
+  /** The width preset of the centre column. */
+  'site.width': { schema: SiteWidth, default: 'default' as const },
+  /** The site banner (banner.ts); off until an admin publishes one. */
+  'site.banner': { schema: SiteBanner, default: defaultBanner },
 };
 
 /** One key: the schema a stored value must pass, and the value when no row exists. */

@@ -39,5 +39,8 @@ export async function readSettings(q: Queryable = db()): Promise<SiteSettings> {
     'posting.enabled': read('posting.enabled'),
     'delivery.enabled': read('delivery.enabled'),
     'remote_nsfw.accepted': read('remote_nsfw.accepted'),
+    'site.brand': read('site.brand'),
+    'site.width': read('site.width'),
+    'site.banner': read('site.banner'),
   };
 }

@@ -34,6 +34,7 @@ import {
   type LucideIcon,
   type LucideProps,
 } from 'lucide-react';
+import type { BrandPack } from '../brand/pack.ts';
 
 // Icons from Lucide, the set Mux UI draws its own with, imported by name so the bundle keeps
 // only these. Drawn as SVG rather than typed as characters: a glyph outside the Latin font
@@ -92,3 +93,12 @@ export const BulletListIcon = icon(List);
 export const NumberedListIcon = icon(ListOrdered);
 export const HeadingIcon = icon(Heading);
 export const SpoilerIcon = icon(EyeOff);
+
+/** A brand pack's mark (brand/pack.ts): its one path in currentColor, always hidden (the link around it is named). */
+export function MarkIcon({ mark, className }: { mark: BrandPack['mark']; className?: string }) {
+  return (
+    <svg className={className} viewBox={mark.viewBox} aria-hidden="true" focusable="false">
+      <path d={mark.d} transform={mark.transform} fill="currentColor" />
+    </svg>
+  );
+}

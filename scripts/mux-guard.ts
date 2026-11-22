@@ -11,7 +11,8 @@
 // Scope: every script and stylesheet the build can import (.ts .tsx .mts .cts .js .jsx .mjs .cjs .css)
 // anywhere under packages/* and tools/*, except node_modules, build output, generated *.gen.ts files,
 // tests, fixtures and pure wrapper modules (a file whose only statements re-export @muxui/react).
-// packages/ui/src/styles.css, which imports Mux's own stylesheet, may hold only @import and @layer.
+// packages/ui/src/styles.css, which imports Mux's own stylesheet, may hold only @import and @layer. A brand pack's
+// sheet (packages/ui/src/brand/<id>/pack.css) is checked by its own rule, css-brand-pack (see packViolations).
 import { globSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, posix } from 'node:path';
 import { gunzipSync } from 'node:zlib';
@@ -46,6 +47,7 @@ export const cssRules = [
   'css-element-selector',
   'css-import',
   'css-mux-stylesheet',
+  'css-brand-pack',
 ] as const;
 export const rules = [...scriptRules, ...cssRules] as const;
 export type Rule = (typeof rules)[number];
@@ -60,6 +62,8 @@ const tokensFile = 'packages/ui/src/tokens/tokens.css';
 const muxStylesheet = 'packages/ui/src/styles.css';
 // The only files that may render a raw <time> and a raw <svg>.
 const timeModule = 'packages/ui/src/components/time.tsx';
+/** A brand pack's stylesheet (packages/ui/src/brand/pack.ts describes a pack). */
+export const isPackSheet = (file: string) => /^packages\/ui\/src\/brand\/[a-z0-9-]+\/pack\.css$/.test(file);
 const iconsModule = 'packages/ui/src/components/icons.tsx';
 
 /**
@@ -1044,11 +1048,20 @@ export function muxTokens(tarball = muxTarball): Set<string> {
   return tokens;
 }
 
+/** Mux UI's default value of each reference token, as its stylesheet writes it, read from the vendored tarball. */
+export function muxDefaults(tarball = muxTarball): Map<string, string> {
+  const css = tarFile(readFileSync(tarball), 'package/generated/styles.css') ?? '';
+  return new Map(
+    [...css.matchAll(/(--muxui-reference-[\w-]+)\s*:\s*([^;}]+)/g)].map((match) => [match[1]!, match[2]!.trim().toLowerCase()]),
+  );
+}
+
 /**
- * What a stylesheet is checked against: tokens.css's pure aliases, every name Mux and tokens.css define, and Mux's
- * own tokens alone (`mux`), which tell a real Mux token from a --muxui-* name the app made up.
+ * What a stylesheet is checked against: tokens.css's pure aliases and the brand properties packs set, every name
+ * Mux, tokens.css and the packs define, Mux's own tokens alone (`mux`), which tell a real Mux token from a
+ * --muxui-* name the app made up, and (for pack sheets) Mux's reference token `defaults`.
  */
-export type CssContext = { aliases: ReadonlySet<string>; defined: Names; mux: Names };
+export type CssContext = { aliases: ReadonlySet<string>; defined: Names; mux: Names; defaults?: ReadonlyMap<string, string> };
 
 /**
  * Whether a custom property's value is built from tokens: var()s of Mux tokens or `aliases` with nothing
@@ -1177,6 +1190,7 @@ export function scanCss(
   const add = (line: number, rule: Rule, detail: string, anchor: string[]) =>
     out.push({ file, line, rule, detail: detail.replace(/\s+/g, ' '), anchor });
   const { items, layoutComments } = cssItems(css);
+  if (isPackSheet(file)) return { violations: packViolations(file, css, items, context), layout: { comments: layoutComments, used: 0 } };
   let layoutUsed = 0;
   for (const { kind, line, text, anchor } of items) {
     const specifier = kind === 'statement' ? /^@import\s+(?:url\(\s*)?(['"]?)([^'"()\s]+)\1/i.exec(text)?.[2] : undefined;
@@ -1265,6 +1279,64 @@ export function scanCss(
     for (const violation of out.slice(first)) violation.value = value;
   }
   return { violations: out, layout: { comments: layoutComments, used: layoutUsed } };
+}
+
+const fontDescriptors = new Set(['font-family', 'font-style', 'font-weight', 'font-stretch', 'font-display', 'src', 'unicode-range']);
+/** What a pack may set beside Mux tokens, for packages/ui/src/brand/brand.css to read: its wordmark's face and weight. */
+export const brandProperties: ReadonlySet<string> = new Set(['--pb-brand-wordmark-font', '--pb-brand-wordmark-weight']);
+
+/** Why a pack sheet may not hold a declaration, or undefined when it may (see packViolations). */
+function packProblem(
+  { property, value, anchor, important }: { property: string; value: string; anchor: string[]; important: boolean },
+  context: CssContext,
+): string | undefined {
+  const where = anchor.join(' > ');
+  if (important) return '!important';
+  if (where === '@font-face') {
+    if (!fontDescriptors.has(property)) return 'not a font descriptor';
+    const paths = [...value.matchAll(/url\(([^)]*)\)/gi)].map((match) => match[1]!.trim());
+    return property === 'src' && !paths.every((path) => /^(['"]?)\.\/[\w.-]+\1$/.test(path))
+      ? 'a face is a file beside the pack'
+      : undefined;
+  }
+  if (where !== '@layer app > :root') return 'outside :root in @layer app';
+  if (brandProperties.has(property)) return undefined;
+  if (!property.startsWith('--muxui-')) return `a pack sets only Mux tokens and ${[...brandProperties].join(', ')}`;
+  if (!context.mux.has(property)) return undefined; // css-unknown-token
+  if (!property.startsWith('--muxui-reference-'))
+    return fromTokens(value, context.aliases) ? undefined : 'a pack sets reference tokens to values and other Mux tokens to tokens';
+  return context.defaults?.get(property) === value.toLowerCase() ? "Mux UI's default value: leave it out" : undefined;
+}
+
+/**
+ * A brand pack's sheet is an instance's theme over Mux UI's default one, and holds nothing else: on `:root` in
+ * `@layer app` it sets Mux reference tokens to values (only where they differ from Mux's default), other Mux tokens
+ * to tokens, and the `brandProperties` (which the app's stylesheets may read as tokens); at the top level,
+ * @font-face rules for its faces, each a file beside it. Anything else is css-brand-pack.
+ */
+function packViolations(file: string, css: string, items: CssItem[], context: CssContext): Violation[] {
+  const out: Violation[] = [];
+  const add = (line: number, rule: Rule, detail: string, anchor: string[]) =>
+    out.push({ file, line, rule, detail: detail.replace(/\s+/g, ' '), anchor });
+  for (const { kind, line, text, anchor } of items) {
+    if (kind === 'prelude' && !['@layer app', '@layer app > :root', '@font-face'].includes([...anchor, text].join(' > ')))
+      add(line, 'css-brand-pack', `${text} (a pack styles only :root in @layer app, and adds @font-face rules)`, anchor);
+    if (kind === 'statement' && (text.startsWith('@') || !text.includes(':')))
+      add(line, 'css-brand-pack', `${text} (a pack holds no other at-rule)`, anchor);
+  }
+  const own = definedProperties(css);
+  for (const declaration of declarations(css)) {
+    const { line, property, value, text, anchor } = declaration;
+    const why = packProblem(declaration, context);
+    if (why) add(line, 'css-brand-pack', `${text} (${why})`, anchor);
+    if (property.startsWith('--muxui-') && !context.mux.has(property))
+      add(line, 'css-unknown-token', `${property} is not a Mux UI token, in ${text}`, anchor);
+    for (const match of value.matchAll(/var\(\s*(--[\w-]+)/g)) {
+      const name = match[1]!;
+      if (!context.mux.has(name) && !own.has(name)) add(line, 'css-unknown-token', `var(${name}) in ${text}`, anchor);
+    }
+  }
+  return out;
 }
 
 export function count(violations: Violation[]): Counts {
@@ -1413,10 +1485,12 @@ export const cssGlob = '{packages,tools}/*/**/*.css';
 export function scanRepository() {
   const files = (pattern: string) => globSync(pattern, { cwd: root, exclude: (name) => name === 'node_modules' }).filter(walked);
   const tokensCss = readFileSync(join(root, tokensFile), 'utf8');
+  // The app's stylesheets read the brand properties a pack may set as tokens (with a fallback for no pack).
   const context: CssContext = {
-    aliases: pureAliases(tokensCss),
-    defined: new Set([...muxTokens(), ...definedProperties(tokensCss)]),
+    aliases: new Set([...pureAliases(tokensCss), ...brandProperties]),
+    defined: new Set([...muxTokens(), ...definedProperties(tokensCss), ...brandProperties]),
     mux: muxTokens(),
+    defaults: muxDefaults(),
   };
   const layout = { comments: 0, used: 0 };
   const violations = [

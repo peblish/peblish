@@ -6,6 +6,8 @@ import {
   area,
   count,
   cssGlob,
+  isPackSheet,
+  muxDefaults,
   muxTarball,
   muxTokens,
   parseExceptions,
@@ -660,6 +662,77 @@ test('a real Mux token or tokens.css alias may be set to tokens (theming) but no
   expect(css(sheet, themed)).toEqual(['css-token-value:5', 'css-token-value:6', 'css-token-value:7', 'css-token-value:8', 'css-spacing:9']);
 });
 
+// A pack's context: a reference token with its Mux default, a semantic token and the alias that reads a pack property.
+const packed: CssContext = {
+  ...themed,
+  mux: {
+    has: (name) =>
+      themed.mux.has(name) || name === '--muxui-reference-color-brand-60' || name === '--muxui-semantic-typography-label-weight',
+  },
+  defaults: new Map([['--muxui-reference-color-brand-60', '#025768']]),
+};
+const pack = 'packages/ui/src/brand/acme/pack.css';
+
+test('a brand pack sets reference tokens to values, Mux tokens to tokens and its --pb-brand-* properties on :root, and adds faces', () => {
+  expect(
+    ['packages/ui/src/brand/acme/pack.css', 'packages/ui/src/brand/pack.css', 'packages/web/src/brand/acme/pack.css'].map(isPackSheet),
+  ).toEqual([true, false, false]);
+  const sheet = lines(
+    '@layer app {', // 1
+    '  :root {', // 2
+    '    --muxui-reference-color-brand-60: #007BA7;', // 3: a value, legal
+    '    --muxui-semantic-typography-label-weight: var(--muxui-semantic-layout-group-gap);', // 4: tokens, legal
+    "    --pb-brand-wordmark-font: 'Acme', var(--pb-gap); --pb-brand-colour: #f00;", // 5: the wordmark's face, legal; any other, not
+    '    --muxui-semantic-layout-group-gap: 13px;', // 6: not a reference token
+    '    --muxui-reference-color-brand-60: #025768;', // 7: Mux's default
+    '    --muxui-reference-color-brand-61: #fff;', // 8: unknown
+    '    color: #fff;', // 9: not a token
+    '    --pb-gap: 1rem !important;', // 10: not a pack property, and !important
+    '  }', // 11
+    '  .pb-x { --pb-brand-wordmark-weight: 1; }', // 12: not :root
+    '}', // 13
+    ':root { --pb-brand-wordmark-weight: 2; }', // 14: outside the app layer
+    "@font-face { font-family: 'Acme'; font-weight: 700; src: url('./acme.woff2') format('woff2'); }", // 15: legal
+    '@font-face { src: url(https://fonts.example/acme.woff2); color: red; }', // 16: remote file, not a descriptor
+    "@import './more.css';", // 17
+    '@media (prefers-color-scheme: dark) { :root { --muxui-reference-color-brand-60: #fff; } }', // 18
+  );
+  expect(css(sheet, packed, pack)).toEqual([
+    'css-brand-pack:12',
+    'css-brand-pack:14',
+    'css-brand-pack:17',
+    'css-brand-pack:18',
+    'css-brand-pack:18',
+    'css-brand-pack:5',
+    'css-brand-pack:6',
+    'css-brand-pack:7',
+    'css-unknown-token:8',
+    'css-brand-pack:9',
+    'css-brand-pack:10',
+    'css-brand-pack:12',
+    'css-brand-pack:14',
+    'css-brand-pack:16',
+    'css-brand-pack:16',
+    'css-brand-pack:18',
+  ]);
+  // The same declarations anywhere else are checked by the ordinary rules.
+  expect(css(':root { --muxui-reference-color-brand-60: #007ba7; }', packed)).toEqual(['css-colour:1']);
+});
+
+test('the feddit pack passes, setting 44 reference tokens that differ from Mux UI; the app reads its brand properties as tokens', () => {
+  const defaults = muxDefaults();
+  expect(defaults.get('--muxui-reference-color-brand-60')).toBe('#025768');
+  const feddit = readFileSync(join(import.meta.dirname, '../packages/ui/src/brand/feddit/pack.css'), 'utf8');
+  const context: CssContext = { aliases: new Set(), defined: muxTokens(), mux: muxTokens(), defaults };
+  expect(scanCss('packages/ui/src/brand/feddit/pack.css', feddit, context).violations).toEqual([]);
+  const references = [...feddit.matchAll(/(--muxui-reference-[\w-]+):/g)].map((match) => match[1]);
+  expect(references).toHaveLength(44);
+  const brand = lines('.x {', '  font-family: var(--pb-brand-wordmark-font, var(--muxui-semantic-typography-title-font-family));', '}');
+  const read = (aliases: ReadonlySet<string>) => css(brand, { aliases, defined: new Set([...muxTokens(), ...aliases]), mux: muxTokens() });
+  expect(read(new Set())).toEqual(['css-font-family:2', 'css-unknown-token:2']);
+  expect(read(new Set(['--pb-brand-wordmark-font']))).toEqual([]);
+});
+
 test("@property may not register a --muxui-* name; another registration's initial-value is checked as its definition", () => {
   const sheet = lines(
     "@property --muxui-semantic-layout-group-gap { syntax: '<length>'; inherits: true; initial-value: 13px; }", // 1
@@ -763,7 +836,9 @@ test("the vendored tarball is the one packages/ui's file: dependency names", () 
 test('the Mux token list comes from the vendored tarball', () => {
   const tarball = muxTarball;
   const tokens = muxTokens();
-  expect(tokens.size).toBe(1220);
+  // Candidate c1 has 1228: rc.8's 1220 and none removed, plus the button, checkbox tick, command palette and
+  // grouped toggle divider sizes.
+  expect(tokens.size).toBe(1228);
   expect(tokens.has('--muxui-semantic-content-default')).toBe(true);
   expect(tokens.has('--muxui-semantic-content-danger')).toBe(false);
   expect(muxTokens()).toBe(tokens);
