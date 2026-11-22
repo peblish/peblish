@@ -35,6 +35,8 @@ import { staffPieces } from './-staff-pieces.tsx';
 import { accountPieces } from './-account-pieces.tsx';
 // The site banner and the width setting (banner and width lane).
 import { bannerPieces } from './-banner-pieces.tsx';
+// The header's finder and Create post's community field (f-finder lane).
+import { finderPieces } from './-finder-pieces.tsx';
 
 /**
  * The states a state page shows as samples, in the state matrix's order ('selected' stands for current, checked
@@ -201,4 +203,5 @@ export const compositions: Readonly<Record<string, Composition>> = {
   ...staffPieces,
   ...accountPieces,
   ...bannerPieces,
+  ...finderPieces,
 };
