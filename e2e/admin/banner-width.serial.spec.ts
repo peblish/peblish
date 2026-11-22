@@ -307,12 +307,12 @@ test('with scripts off the banner shows with its message and link, its script-on
 });
 
 /** The frame's width on `path` at a window width, signed in as the admin, the sidebar folded to its rail. */
-async function frame(browser: Browser, path: string, width: number) {
+async function frame(browser: Browser, path: string, width: number, selector = '#pb-main') {
   const context = await browser.newContext({ viewport: { width, height: 900 }, storageState: await page.context().storageState() });
   await context.addCookies([{ name: 'peblish_side', value: 'rail', url: new URL(page.url()).origin }]);
   const view = await context.newPage();
   await gotoHydrated(view, path);
-  const measured = Math.round((await view.locator('#pb-main').boundingBox())!.width);
+  const measured = Math.round((await view.locator(selector).first().boundingBox())!.width);
   await context.close();
   return measured;
 }
@@ -322,6 +322,7 @@ test("each width saved through the form is the frame's preset, and a staff table
 }) => {
   // The widths themselves are measured in e2e/shell/banner-width.serial.spec.ts.
   const staff = new Set<number>();
+  const composer: Partial<Record<SiteWidth, number>> = {};
   for (const width of ['narrow', 'default', 'wide'] as const) {
     await gotoHydrated(page, '/admin/settings');
     await choose(page.locator('form').filter({ has: page.getByRole('button', { name: 'Save width' }) }), labelOf(width));
@@ -335,8 +336,12 @@ test("each width saved through the form is the frame's preset, and a staff table
     if (width !== 'default')
       expect(last).toEqual({ public: false, changes: { 'site.width': { before: expect.anything(), after: width } } });
     staff.add(await frame(browser, '/admin/reports', 1440));
+    composer[width] = await frame(browser, '/submit', 1440, '.cmp--page');
   }
   expect(staff.size).toBe(1);
+  // The full-page composer keeps Default's measure at Wide, as post text does; Narrow's column is narrower.
+  expect(composer.wide).toBe(composer.default);
+  expect(composer.narrow).toBeLessThan(composer.default!);
 });
 
 const labelOf = (width: SiteWidth) => ({ narrow: 'Narrow, 872 px', default: 'Default, 952 px', wide: 'Wide, 1112 px' })[width];

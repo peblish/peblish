@@ -48,9 +48,9 @@
     --pb-centre-w: 50rem;
   }
 
-  /* At Wide, post and comment text and a card's excerpt keep Default's measure (its centre less the gutters,
-     600px); media and rows take the width. */
-  .pb-app[data-width='wide'] .pb-frame:not([data-centre='wide']) :is(.pb-prose, .pb-post__excerpt) {
+  /* At Wide, post and comment text, a card's excerpt and the full-page composer keep Default's measure (its
+     centre less the gutters, 600px); media and rows take the width. */
+  .pb-app[data-width='wide'] .pb-frame:not([data-centre='wide']) :is(.pb-prose, .pb-post__excerpt, .cmp--page) {
     max-inline-size: calc(40rem - 2 * var(--pb-gutter));
   }
 
