@@ -235,12 +235,22 @@ function MoveButtons({
 
 /**
  * The viewer's pinned communities above the directory, in their order (the sidebar's), in the view the
- * page shows: each with Move up, Move down and Pin. A polite status says where a row went.
+ * page shows: each with Move up, Move down and Pin. `onStatus` takes the words of where a row went, for a
+ * polite status the page keeps outside the group, as the group goes with its last pin.
  */
-export function PinnedGroup({ pinned, view, next }: { pinned: readonly ShellCommunity[]; view: CommunityView; next: string }) {
+export function PinnedGroup({
+  pinned,
+  view,
+  next,
+  onStatus,
+}: {
+  pinned: readonly ShellCommunity[];
+  view: CommunityView;
+  next: string;
+  onStatus: (message: string) => void;
+}) {
   const { t } = useTranslate();
   const prefix = useId();
-  const [status, setStatus] = useState('');
   const headingId = `${prefix}-title`;
   const idFor = (id: string, way: 'up' | 'down') => `${prefix}-${way}-${id}`;
   const items: CommunityListItem[] = pinned.map((community, place) => {
@@ -254,13 +264,13 @@ export function PinnedGroup({ pinned, view, next }: { pinned: readonly ShellComm
       meta: <Handle prefix="!" handle={community.handle} />,
       action: (
         <span className="dir-pin__actions">
-          <MoveButtons community={community} place={place} total={pinned.length} next={next} idFor={idFor} onStatus={setStatus} />
+          <MoveButtons community={community} place={place} total={pinned.length} next={next} idFor={idFor} onStatus={onStatus} />
           <PinToggle
             community={community}
             pinned
             next={next}
             describedBy={linkId}
-            onStatus={setStatus}
+            onStatus={onStatus}
             // The row leaves the group: focus its Pin in the list below, else the group's heading, else (the
             // group is gone with its last pin) the directory's search field.
             onDone={() =>
@@ -281,9 +291,6 @@ export function PinnedGroup({ pinned, view, next }: { pinned: readonly ShellComm
         {t('pins', 'pins.group.title')}
       </Text>
       <CommunityList view={view} label={t('pins', 'pins.group.label')} items={items} />
-      <Text role="status" className="pb-sr">
-        {status}
-      </Text>
     </section>
   );
 }

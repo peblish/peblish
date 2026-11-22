@@ -78,6 +78,9 @@ function Side({ folded }: { folded: boolean }) {
   );
 }
 
+/** The page's status is the directory's; a sample has none. */
+const ignore = () => {};
+
 const pinnedOnly = followed.filter((c) => c.pinned).sort((a, b) => (a.pinPosition ?? 0) - (b.pinPosition ?? 0));
 
 export const pinsPieces: Readonly<Record<string, Composition>> = {
@@ -101,8 +104,8 @@ export const pinsPieces: Readonly<Record<string, Composition>> = {
   'pinned-group': {
     name: 'Pinned communities',
     states: {
-      rest: () => <PinnedGroup pinned={pinnedOnly} view="list" next="/kit/pinned-group" />,
-      selected: () => <PinnedGroup pinned={pinnedOnly} view="cards" next="/kit/pinned-group" />,
+      rest: () => <PinnedGroup pinned={pinnedOnly} view="list" next="/kit/pinned-group" onStatus={ignore} />,
+      selected: () => <PinnedGroup pinned={pinnedOnly} view="cards" next="/kit/pinned-group" onStatus={ignore} />,
     },
   },
   'sidebar-pins': {

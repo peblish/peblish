@@ -20,10 +20,27 @@ type Seed = {
   communities: Record<'ash' | 'birch' | 'cedar' | 'damson' | 'elm' | 'fir' | 'yew', Ref>;
 };
 
+const root = join(import.meta.dirname, '../..');
 const seedWorld = (): Seed =>
-  JSON.parse(
-    execFileSync('node', ['packages/core/src/testing/seed-pins.ts', 'e2e'], { cwd: join(import.meta.dirname, '../..'), encoding: 'utf8' }),
-  ) as Seed;
+  JSON.parse(execFileSync('node', ['packages/core/src/testing/seed-pins.ts', 'e2e'], { cwd: root, encoding: 'utf8' })) as Seed;
+/** The same world with 50 more followed communities that sort first among the unpinned rows (pins-seed.ts). */
+const seedMany = (): Seed => JSON.parse(execFileSync('node', ['e2e/shell/pins-seed.ts', 'many'], { cwd: root, encoding: 'utf8' })) as Seed;
+
+/** Starts keeping every text the live region takes, from now on; `said` reads them, empty ones and repeats left out. */
+const listen = (live: Locator) =>
+  live.evaluate((region) => {
+    const w = window as Window & { said?: string[] };
+    w.said = [];
+    new MutationObserver(() => w.said!.push(region.textContent ?? '')).observe(region, {
+      subtree: true,
+      childList: true,
+      characterData: true,
+    });
+  });
+const said = (page: Page) =>
+  page.evaluate(() =>
+    ((window as Window & { said?: string[] }).said ?? []).filter((text, index, all) => text !== '' && text !== all[index - 1]),
+  );
 
 async function signedIn(
   browser: Browser,
@@ -154,6 +171,46 @@ test.describe('seeded', () => {
     await expect.poll(() => titles(stale, seed)).toEqual(['Birch', 'Elm', 'Yew', 'Ash', 'Cedar', 'Damson']);
     await expect(menuOf(side, `Birch ${seed.suffix}`)).toBeFocused();
     await expect(side.locator('[aria-live="polite"]').filter({ hasText: /./ })).toHaveText(`Birch ${seed.suffix}, position 1 of 3`);
+    await context.close();
+  });
+
+  test('a retry after a failed move says its own outcome only, never the earlier move again', async ({ browser }) => {
+    const seed = seedWorld();
+    const { context, page } = await signedIn(browser, seed);
+    await gotoHydrated(page, '/local');
+    const side = page.locator('.pb-side');
+    const live = side.locator('[aria-live="polite"]');
+    const down = async () => {
+      await menuOf(side, `Elm ${seed.suffix}`).click();
+      await page.getByRole('menuitem', { name: 'Move down' }).click();
+    };
+    await down();
+    await expect(live).toHaveText(`Elm ${seed.suffix}, position 2 of 3`);
+
+    await page.route('**/communities/pins', (route) => route.fulfill({ status: 500, json: { error: 'generic' } }));
+    await down();
+    await expect(live).toHaveText('That did not work. Try again.');
+    await page.unroute('**/communities/pins');
+
+    await listen(live);
+    await down();
+    await expect.poll(() => titles(page, seed)).toEqual(['Yew', 'Birch', 'Elm', 'Ash', 'Cedar', 'Damson']);
+    await expect(live).toHaveText(`Elm ${seed.suffix}, position 3 of 3`);
+    expect(await said(page)).toEqual([`Elm ${seed.suffix}, position 3 of 3`]);
+    await context.close();
+  });
+
+  test('unpinning a row that then sorts past the 50 shown puts focus on the row now in its place', async ({ browser }) => {
+    const seed = seedMany();
+    const { context, page } = await signedIn(browser, seed);
+    await gotoHydrated(page, '/local');
+    const side = page.locator('.pb-side');
+    await menuOf(side, `Elm ${seed.suffix}`).click();
+    await page.getByRole('menuitem', { name: 'Unpin' }).click();
+    await expect.poll(async () => (await titles(page, seed)).slice(0, 3)).toEqual(['Yew', 'Birch', 'Aa 00']);
+    await expect(rows(page, seed).filter({ hasText: 'Elm' })).toHaveCount(0);
+    await expect(rows(page, seed).filter({ hasText: 'Yew' })).toBeFocused();
+    await expect(side.locator('[aria-live="polite"]')).toHaveText(`Elm ${seed.suffix} unpinned`);
     await context.close();
   });
 

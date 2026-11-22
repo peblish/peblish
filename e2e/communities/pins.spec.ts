@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
-import { expect, test, type Browser, type Page } from '@playwright/test';
+import { expect, test, type Browser, type Locator, type Page } from '@playwright/test';
 import { landed, signIn } from '../auth/support.ts';
 import { skipWithoutKit } from '../support/kit.ts';
 import { gotoHydrated } from '../support/route-marker.ts';
@@ -35,6 +35,22 @@ async function signedIn(browser: Browser, seed: Seed, javaScriptEnabled = true) 
   const context = await browser.newContext({ storageState, javaScriptEnabled });
   return { context, page: await context.newPage() };
 }
+
+/** Starts keeping every text the region takes, from now on; `said` reads them, empty ones and repeats left out. */
+const listen = (live: Locator) =>
+  live.evaluate((region) => {
+    const w = window as Window & { said?: string[] };
+    w.said = [];
+    new MutationObserver(() => w.said!.push(region.textContent ?? '')).observe(region, {
+      subtree: true,
+      childList: true,
+      characterData: true,
+    });
+  });
+const said = (page: Page) =>
+  page.evaluate(() =>
+    ((window as Window & { said?: string[] }).said ?? []).filter((text, index, all) => text !== '' && text !== all[index - 1]),
+  );
 
 const group = (page: Page) => page.getByRole('region', { name: 'Pinned' });
 /** The pinned group's titles in order, without the seed's suffix. */
@@ -90,20 +106,22 @@ test.describe('seeded', () => {
     await gotoHydrated(page, '/communities');
     expect(await order(page, seed)).toEqual(['Elm', 'Yew', 'Birch']);
     const button = (name: string) => group(page).getByRole('button', { name: `${name.replace('$', seed.suffix)}` });
+    // The page's status, beside the group: it outlives the group's last pin.
+    const status = page.getByRole('main').getByRole('status').filter({ hasText: seed.suffix });
     await expect(button('Move Elm $ up')).toBeDisabled();
     await expect(button('Move Birch $ down')).toBeDisabled();
 
     await button('Move Elm $ down').click();
     await expect.poll(() => order(page, seed)).toEqual(['Yew', 'Elm', 'Birch']);
     await expect(button('Move Elm $ down')).toBeFocused();
-    await expect(group(page).getByRole('status')).toHaveText(`Elm ${seed.suffix}, position 2 of 3`);
+    await expect(status).toHaveText(`Elm ${seed.suffix}, position 2 of 3`);
     await expect.poll(() => sidebarOrder(page, seed)).toEqual(['Yew', 'Elm', 'Birch', 'Ash', 'Cedar', 'Damson']);
 
     // At the end Move down disables, so focus goes to Move up.
     await page.keyboard.press('Enter');
     await expect.poll(() => order(page, seed)).toEqual(['Yew', 'Birch', 'Elm']);
     await expect(button('Move Elm $ up')).toBeFocused();
-    await expect(group(page).getByRole('status')).toHaveText(`Elm ${seed.suffix}, position 3 of 3`);
+    await expect(status).toHaveText(`Elm ${seed.suffix}, position 3 of 3`);
 
     // Unpinning from the group: the row leaves it, and focus goes to its Pin in the list below, or to the
     // group's heading when the community is not on this page of the list.
@@ -114,7 +132,33 @@ test.describe('seeded', () => {
     await expect
       .poll(() => page.evaluate(() => document.activeElement?.id ?? ''))
       .toMatch(new RegExp(`^(dir-pin-${seed.communities.elm.id}|.*-title)$`));
-    await expect(group(page).getByRole('status')).toHaveText(`Elm ${seed.suffix} unpinned`);
+    await expect(status).toHaveText(`Elm ${seed.suffix} unpinned`);
+    await context.close();
+  });
+
+  test('the last Unpin in the group is still said, and a retry after a failure says its own outcome only', async ({ browser }) => {
+    const seed = seedWorld();
+    const { context, page } = await signedIn(browser, seed);
+    await gotoHydrated(page, '/communities');
+    const button = (name: string) => group(page).getByRole('button', { name: name.replace('$', seed.suffix) });
+    const status = page.getByRole('main').getByRole('status').filter({ hasText: seed.suffix });
+    await button('Move Elm $ down').click();
+    await expect(status).toHaveText(`Elm ${seed.suffix}, position 2 of 3`);
+    await page.route('**/communities/pins', (route) => route.fulfill({ status: 500, json: { error: 'generic' } }));
+    await button('Move Elm $ down').click();
+    await expect(group(page).getByRole('alert')).toHaveText('That did not work. Try again.');
+    await page.unroute('**/communities/pins');
+    await listen(status);
+    await button('Move Elm $ down').click();
+    await expect.poll(() => order(page, seed)).toEqual(['Yew', 'Birch', 'Elm']);
+    await expect(status).toHaveText(`Elm ${seed.suffix}, position 3 of 3`);
+    expect(await said(page)).toEqual([`Elm ${seed.suffix}, position 3 of 3`]);
+
+    for (const title of ['Yew', 'Birch', 'Elm']) {
+      await button(`Pin ${title} $`).click();
+      await expect(status).toHaveText(`${title} ${seed.suffix} unpinned`);
+    }
+    await expect(group(page)).toHaveCount(0);
     await context.close();
   });
 

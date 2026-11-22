@@ -10,7 +10,7 @@ import { Text } from '@peblish/ui/components/text';
 import { useId, useRef, useState, type ComponentType } from 'react';
 import { useTranslate } from '../i18n/use-translate.ts';
 import { communityPath } from './paths.ts';
-import { pinErrorKey, usePinAction, type PinPlace } from './pin-post.ts';
+import { pinErrorKey, usePinAction, type PinFields, type PinPlace } from './pin-post.ts';
 
 /** The Communities section's most rows while unpinned ones show; pinned ones always show in full (Commons). */
 export const communityRows = 50;
@@ -84,22 +84,31 @@ export function SidebarCommunities({
     .slice(0, signedIn ? Math.max(0, communityRows - pinned.length) : undefined);
   const triggerId = (id: string) => `${prefix}-pin-${id}`;
 
+  // One outcome per action: the last one's words go before it posts, so clearing a failure never says them again.
+  const act = (fields: PinFields, done: (place: PinPlace | null) => void) => {
+    if (action.busy) return;
+    setStatus('');
+    void action.run(fields, done);
+  };
   // After the router has the new order: focus the row's menu, or its link once it is no longer pinned (the
-  // row is drawn again without its menu, so wait for that, a few frames at most).
-  const settle = (community: ShellCommunity, message: string, unpinnedNow: boolean) => () => {
+  // row is drawn again without its menu, so wait for that, a few frames at most). A row unpinned past the
+  // rows shown has no link: focus goes to the row drawn in its place, else the last row.
+  const settle = (community: ShellCommunity, message: string, unpinnedAt?: number) => () => {
     setStatus(message);
-    const nav = anchor.current?.closest('nav');
+    const section = anchor.current?.parentElement;
     const focus = (frames: number) => {
       const menu = document.getElementById(triggerId(community.id));
-      if (unpinnedNow && menu && frames > 0) return void requestAnimationFrame(() => focus(frames - 1));
-      const link = nav?.querySelector<HTMLElement>(`a[href="${CSS.escape(communityPath(community))}"]`);
-      (unpinnedNow ? link : menu)?.focus();
+      if (unpinnedAt === undefined) return void menu?.focus();
+      if (menu && frames > 0) return void requestAnimationFrame(() => focus(frames - 1));
+      const links = [...(section?.querySelectorAll<HTMLElement>('a[href]') ?? [])];
+      const link = links.find((each) => each.getAttribute('href') === communityPath(community));
+      (link ?? links[Math.min(unpinnedAt, links.length - 1)])?.focus();
     };
     focus(30);
   };
   // A move says the place it committed, which a stale page may not have drawn.
   const moved = (community: ShellCommunity, label: string) => (place: PinPlace | null) =>
-    settle(community, place ? t('pins', 'pins.place', { name: label, place: place.position + 1, total: place.order.length }) : '', false)();
+    settle(community, place ? t('pins', 'pins.place', { name: label, place: place.position + 1, total: place.order.length }) : '')();
 
   const row = ({ community, label }: (typeof rows)[number], place?: number) => {
     const href = communityPath(community);
@@ -123,7 +132,7 @@ export function SidebarCommunities({
                 id="up"
                 disabled={place === 0}
                 textValue={t('pins', 'pins.up')}
-                onAction={() => action.run({ community: community.id, intent: 'move', direction: 'up' }, moved(community, label))}
+                onAction={() => act({ community: community.id, intent: 'move', direction: 'up' }, moved(community, label))}
               >
                 {t('pins', 'pins.up')}
               </Menu.Item>
@@ -131,7 +140,7 @@ export function SidebarCommunities({
                 id="down"
                 disabled={place === pinned.length - 1}
                 textValue={t('pins', 'pins.down')}
-                onAction={() => action.run({ community: community.id, intent: 'move', direction: 'down' }, moved(community, label))}
+                onAction={() => act({ community: community.id, intent: 'move', direction: 'down' }, moved(community, label))}
               >
                 {t('pins', 'pins.down')}
               </Menu.Item>
@@ -139,10 +148,7 @@ export function SidebarCommunities({
                 id="unpin"
                 textValue={t('pins', 'pins.unpin')}
                 onAction={() =>
-                  action.run(
-                    { community: community.id, intent: 'unpin' },
-                    settle(community, t('pins', 'pins.unpinned', { name: label }), true),
-                  )
+                  act({ community: community.id, intent: 'unpin' }, settle(community, t('pins', 'pins.unpinned', { name: label }), place))
                 }
               >
                 {t('pins', 'pins.unpin')}

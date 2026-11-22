@@ -82,6 +82,8 @@ export function DirectoryPage({ data, error: fromAddress }: { data: DirectoryDat
   // The viewer's pinned communities, in the sidebar's order, above the first page of an unfiltered list.
   const pins = useShellPins();
   const showPins = data.signedIn && pins.length > 0 && data.page === 1 && query.q === '';
+  // Where a pinned row went, said politely; kept here, as the group goes with its last pin.
+  const [pinStatus, setPinStatus] = useState('');
 
   const items: CommunityListItem[] = data.rows.map((row) => {
     const linkId = `dir-${row.actor.id}`;
@@ -211,7 +213,12 @@ export function DirectoryPage({ data, error: fromAddress }: { data: DirectoryDat
           </Notice>
         )}
 
-        {showPins && <PinnedGroup pinned={pins} view={view} next={current} />}
+        {showPins && <PinnedGroup pinned={pins} view={view} next={current} onStatus={setPinStatus} />}
+        {data.signedIn && (
+          <Text role="status" className="pb-sr">
+            {pinStatus}
+          </Text>
+        )}
         {data.rows.length === 0 ? (
           <EmptyState
             title={t('directory', 'directory.empty.title')}
