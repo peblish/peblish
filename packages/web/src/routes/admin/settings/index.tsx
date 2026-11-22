@@ -1,5 +1,5 @@
 import { settingsOverview } from '@peblish/core/settings/overview';
-import { invalidSetting, updateSettingsAs } from '@peblish/core/settings/write';
+import { invalidSetting, updateSettingsAs, type SettingsPatch } from '@peblish/core/settings/write';
 import { killSwitches, type SiteSettingKey } from '@peblish/schema/site-settings';
 import { Badge } from '@peblish/ui/components/badge';
 import { Button } from '@peblish/ui/components/button';
@@ -18,20 +18,27 @@ import { forbidden, formSession, pageSession, principalOf, readForm, sameOrigin 
 import { useRouteHydrated } from '../../../shell/hydration.ts';
 import { SearchText } from '../../auth/-route.ts';
 import { accessOf } from './-access.ts';
-import { savePatch, switchPatch } from './-form.ts';
+import { BannerSection, WidthSection } from './-banner-width.tsx';
+import { bannerPatch, savePatch, switchPatch, widthPatch } from './-form.ts';
 import { adminHead } from './-head.ts';
 import { AdminPage, ownHeader } from '../-page.tsx';
 import { AccessNotice, AreaField, SectionTitle } from './-ui.tsx';
 
 // /admin/settings (R2 pick admin-tabs, its Site tab): identity, the operator's details that fill
-// the legal pages, the registration cap and the federation settings in one form, then one kill
-// switch per row with its own POST (an emergency needs no form edit). The switches sit below the
+// the legal pages, the registration cap and the federation settings in one form, then the site banner
+// and the layout width, each its own form (-banner-width.tsx), then one kill switch per row with its own
+// POST (an emergency needs no form edit). The switches sit below the
 // form because a form cannot hold another and Mux's fields take no `form` attribute. Plain
 // forms: 303 to ?saved=1, or back with ?error=settings.invalid&field=<key> naming the field to mark.
 
 const Search = type({ 'saved?': SearchText, 'error?': SearchText, 'field?': SearchText });
 const path = '/admin/settings';
-const Intent = type({ intent: "'save' | 'switch'" });
+const Intent = type({ intent: "'save' | 'switch' | 'banner' | 'width'" });
+
+/** Where each form's answer lands: its own section, so the admin stays where they were. */
+const anchors = { save: '', switch: '', banner: '#banner', width: '#layout' } as const;
+/** The form a refused field belongs to, which says so beside it rather than at the top. */
+const sectionOf = (field: string | undefined) => (field?.startsWith('banner.') ? 'banner' : field === 'site.width' ? 'width' : null);
 
 const loadSettings = createServerFn({ method: 'GET' }).handler(async () => {
   const session = await pageSession();
@@ -59,12 +66,31 @@ export const Route = createFileRoute('/admin/settings/')({
         if (!session) return reply({ redirect: `/auth/sign-in?redirect=${encodeURIComponent(path)}` });
         const form = await readForm(request);
         const intent = Intent(form);
-        const patch = intent instanceof type.errors ? null : intent.intent === 'save' ? savePatch(form) : switchPatch(form);
-        if (!patch) return reply({ redirect: `${path}?error=settings.invalid` });
+        if (intent instanceof type.errors) return reply({ redirect: `${path}?error=settings.invalid` });
+        const refused = (field: string | null, reason = 'settings.invalid') =>
+          reply({ redirect: `${path}?${new URLSearchParams({ error: reason, ...(field && { field }) })}${anchors[intent.intent]}` });
+        // The banner's and the width's own checks name a field; only an admin learns them, as updateSettingsAs
+        // decides for the others. An empty patch asks the policy alone, with its exact reason.
+        if (accessOf(session) !== 'ok') {
+          const denied = await updateSettingsAs(principalOf(session.view), {});
+          if (!denied.ok) return refused(null, denied.reason);
+        }
+        let patch: SettingsPatch | null;
+        if (intent.intent === 'banner') {
+          const checked = bannerPatch(form);
+          if ('field' in checked) return refused(checked.field);
+          patch = checked.patch;
+        } else if (intent.intent === 'width') {
+          patch = widthPatch(form);
+          if (!patch) return refused('site.width');
+        } else patch = intent.intent === 'save' ? savePatch(form) : switchPatch(form);
+        if (!patch) return refused(null);
         const result = await updateSettingsAs(principalOf(session.view), patch);
-        if (result.ok) return reply({ redirect: `${path}?saved=1` });
-        const field = result.reason === 'settings.invalid' ? invalidSetting(patch) : null;
-        return reply({ redirect: `${path}?${new URLSearchParams({ error: result.reason, ...(field && { field }) })}` });
+        if (result.ok)
+          return reply({
+            redirect: `${path}?saved=${intent.intent === 'save' || intent.intent === 'switch' ? '1' : intent.intent}${anchors[intent.intent]}`,
+          });
+        return refused(result.reason === 'settings.invalid' ? invalidSetting(patch) : null, result.reason);
       },
     },
   },
@@ -78,6 +104,7 @@ function Settings() {
   if (data.access !== 'ok') return <AccessNotice access={data.access} title={t('admin', 'settings.title')} />;
   const { values, accounts, host } = data;
   const invalid = search.error === 'settings.invalid' ? search.field : undefined;
+  const section = sectionOf(search.field);
   /** A field's name, and its error while the server named it. */
   const field = (key: SiteSettingKey) => ({
     name: key,
@@ -86,12 +113,12 @@ function Settings() {
   });
   return (
     <AdminPage title={t('admin', 'settings.title')} className="adm-page">
-      {search.saved && (
+      {search.saved === '1' && (
         <Notice role="status" tone="success">
           {t('admin', 'settings.saved')}
         </Notice>
       )}
-      {search.error && (
+      {search.error && !section && (
         <Notice role="alert" tone="danger">
           {t('admin', 'settings.failed')}
         </Notice>
@@ -191,6 +218,13 @@ function Settings() {
           </Button>
         </div>
       </form>
+      <BannerSection
+        banner={values['site.banner']}
+        saved={search.saved === 'banner'}
+        invalid={section === 'banner' ? invalid : undefined}
+        failed={Boolean(search.error) && section === 'banner'}
+      />
+      <WidthSection width={values['site.width']} saved={search.saved === 'width'} failed={Boolean(search.error) && section === 'width'} />
       <section className="adm-section" aria-labelledby="switches">
         <SectionTitle id="switches">{t('admin', 'settings.switches')}</SectionTitle>
         <Text as="p" color="muted">
