@@ -62,6 +62,24 @@ test('Moderates lists only roles that grant here, in communities the viewer may 
   expect(handles(await readModerates(w.subject.id, signedIn))).toEqual(['after_dark', 'bikes']);
 });
 
+test('a remote sensitive or NSFL community stays out, as the directory never lists one; a local one still opens with 16+', async () => {
+  const w = await world();
+  const remoteNsfw = await seedActor(w.lemmy, 'Group', 'remote_dark', { sensitive: true });
+  const remoteNsfl = await seedActor(w.lemmy, 'Group', 'remote_gore', { nsfl: true });
+  for (const community of [remoteNsfw, remoteNsfl])
+    await seedModerator(community, w.subject, { source: 'remote', expiresAt: new Date(Date.now() + hour) });
+  await writer().insert(ageDeclarations).values({ actorId: w.viewer.id });
+  const declared = { actorId: w.viewer.id, siteRole: 'user' as const };
+  expect(handles(await readModerates(w.subject.id, declared))).toEqual([
+    'after_dark',
+    'bikes',
+    'blocked',
+    'cooking@lemmy.test',
+    'technology@lemmy.test',
+  ]);
+  expect(handles(await readModerates(w.subject.id, null))).toEqual(['bikes', 'blocked', 'cooking@lemmy.test', 'technology@lemmy.test']);
+});
+
 test('the list is bounded, and says when there are more', async () => {
   const local = await seedInstance('feddit.test');
   const subject = await seedActor(local, 'Person', 'busy');

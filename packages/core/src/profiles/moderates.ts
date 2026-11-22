@@ -27,7 +27,8 @@ export type Moderates = { communities: ActorRef[]; more: boolean };
  * verified and that has not expired; never a site-banned person). A community is listed only when
  * this viewer may see it: not deleted, not removed by an admin, listed in the directory
  * (discoverable), not on a blocked peer, not blocked by the viewer (itself or its instance), and,
- * when flagged sensitive or NSFL, only for a signed-in viewer who declared 16+ (the feeds' gate).
+ * when flagged sensitive or NSFL, only when it is local and the viewer declared 16+: the directory
+ * never lists a flagged remote one (directory/read.ts, its flagged rule), and the feeds' gate.
  */
 export async function readModerates(subjectId: Uuid, viewer: Viewer, q: Queryable = db()): Promise<Moderates> {
   const rows = await q
@@ -57,7 +58,7 @@ export async function readModerates(subjectId: Uuid, viewer: Viewer, q: Queryabl
             and not exists (select 1 from ${instanceBlocks} where ${instanceBlocks.blockerId} = ${viewer.actorId} and ${instanceBlocks.instanceId} = ${actors.instanceId})`
           : undefined,
         viewer
-          ? sql`(not (${actors.sensitive} or ${actors.nsfl}) or exists (select 1 from ${ageDeclarations} where ${ageDeclarations.actorId} = ${viewer.actorId}))`
+          ? sql`(not (${actors.sensitive} or ${actors.nsfl}) or (${actors.local} and exists (select 1 from ${ageDeclarations} where ${ageDeclarations.actorId} = ${viewer.actorId})))`
           : sql`not (${actors.sensitive} or ${actors.nsfl})`,
       ),
     )
