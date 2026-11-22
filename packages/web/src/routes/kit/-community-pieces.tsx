@@ -1,3 +1,4 @@
+import { avatarInitial } from '@peblish/ui/components/avatar-initial.ts';
 import { Badge } from '@peblish/ui/components/badge';
 import {
   CommunityList,
@@ -67,7 +68,7 @@ function List({ view }: { view: CommunityView }) {
     href: `/c/${sample.name}`,
     linkId: `kit-${view}-${index}`,
     title: sample.title,
-    initial: sample.title[0]!,
+    initial: avatarInitial(sample.title, '?'),
     meta: (
       <>
         <Handle prefix="!" handle={sample.name} /> · {sample.subscribers}
