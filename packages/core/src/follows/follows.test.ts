@@ -1,7 +1,7 @@
 import { eq, sql } from 'drizzle-orm';
 import { beforeEach, describe, expect, test } from 'vitest';
 import { authorize } from '../authz/authorize.ts';
-import { instanceBlocks } from '../blocks/tables.ts';
+import { communityBlocks, instanceBlocks } from '../blocks/tables.ts';
 import { systemPrincipal } from '../authz/system.ts';
 import { db } from '../db/read.ts';
 import { actors } from '../db/tables/actors.ts';
@@ -199,6 +199,9 @@ describe('the communities a viewer follows, for the sidebar and the composer', (
     await writer().insert(peerControls).values({ instanceId: shut.id, blocked: true });
     await writer().insert(instanceBlocks).values({ blockerId: w.alice.id, instanceId: quiet.id });
     expect((await followedCommunities(w.alice.id, { accepted: true })).map(({ name }) => name)).toEqual(['lab']);
+    // Nor one the person blocks itself, followed again since.
+    await writer().insert(communityBlocks).values({ blockerId: w.alice.id, communityId: w.remote.id });
+    expect(await followedCommunities(w.alice.id, { accepted: true })).toEqual([]);
   });
 
   test('communities of one name come by host, then id, the same on every read', async () => {

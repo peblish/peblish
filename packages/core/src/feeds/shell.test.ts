@@ -1,6 +1,6 @@
 import { eq } from 'drizzle-orm';
 import { beforeEach, expect, test } from 'vitest';
-import { instanceBlocks } from '../blocks/tables.ts';
+import { communityBlocks, instanceBlocks } from '../blocks/tables.ts';
 import { actors } from '../db/tables/actors.ts';
 import { writer } from '../db/write.ts';
 import { ageDeclarations } from '../identity/tables.ts';
@@ -68,4 +68,7 @@ test("the joined list keeps to the viewer's age gate and host blocks, and keeps 
   // Once declared 16+, the sensitive community they follow is listed too.
   await writer().insert(ageDeclarations).values({ actorId: me.id });
   expect(await handles()).toEqual(['adult', 'news', 'unlisted@lemmy.test']);
+  // A community they block themselves, followed again since, is not listed either.
+  await writer().insert(communityBlocks).values({ blockerId: me.id, communityId: communities.news.id });
+  expect(await handles()).toEqual(['adult', 'unlisted@lemmy.test']);
 });

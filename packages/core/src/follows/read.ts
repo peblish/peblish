@@ -1,6 +1,6 @@
 import type { Uuid } from '@peblish/schema/ids';
 import { and, asc, eq, isNull, not, sql } from 'drizzle-orm';
-import { instanceBlockedBy } from '../blocks/predicate.ts';
+import { communityBlockedBy } from '../blocks/predicate.ts';
 import { db } from '../db/read.ts';
 import { actors } from '../db/tables/actors.ts';
 import { follows } from '../db/tables/follows.ts';
@@ -38,8 +38,8 @@ export type FollowedCommunity = {
 
 /**
  * The communities `actorId` follows, pending ones included, by name; for the composer's picker.
- * Deleted and removed communities are left out, as are those on a host this server or the person
- * blocks. `accepted` leaves out pending follows,
+ * Deleted and removed communities are left out, as are those on a host this server blocks and
+ * those the person blocks, itself or through its host (the directory's rule). `accepted` leaves out pending follows,
  * `includeSensitive: false` the age-gated communities, and `limit` keeps the first by name.
  */
 export async function followedCommunities(
@@ -69,7 +69,7 @@ export async function followedCommunities(
         isNull(actors.deletedAt),
         sql`not exists (select 1 from ${communityRemovals} where ${communityRemovals.communityId} = ${actors.id})`,
         not(peerBlocked(actors.instanceId)),
-        not(instanceBlockedBy(actorId, actors.instanceId)),
+        not(communityBlockedBy(actorId, { id: actors.id, instanceId: actors.instanceId })),
         options.accepted ? eq(follows.state, 'accepted') : undefined,
         options.includeSensitive === false ? and(eq(actors.sensitive, false), eq(actors.nsfl, false)) : undefined,
       ),
