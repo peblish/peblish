@@ -527,7 +527,8 @@ test.describe('a German browser', () => {
     const log = recordConsole(page);
     await gotoHydrated(page, community(seed.communities.open.handle));
     await expect(page.getByRole('button', { name: 'Beitreten' })).toBeVisible();
-    await expect(stat(page, 'Beiträge')).toHaveText('3');
+    // Signed out: the count is of the posts this viewer is shown, so the open community's flagged post is not in it.
+    await expect(stat(page, 'Beiträge')).toHaveText('2');
     await page.waitForLoadState('networkidle');
     expect(log.hydrationProblems()).toEqual([]);
     await expectAccessible(page);
