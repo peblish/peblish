@@ -290,6 +290,36 @@ test.describe('List and Cards', () => {
       await context.close();
     }
   });
+
+  test('a Join on its way stays pending when the view changes; a second press sends nothing and the answer lands', async ({ browser }) => {
+    const { context, page } = await as(browser, viewerState, { viewport: { width: 1440, height: 900 } });
+    await gotoHydrated(page, search());
+    const posts: string[] = [];
+    let release!: () => void;
+    const released = new Promise<void>((resolve) => (release = resolve));
+    await page.route('**/communities/follow', async (route) => {
+      posts.push(route.request().postData() ?? '');
+      await released;
+      await route.continue();
+    });
+    const join = () => row(page, seed.communities.local).getByRole('button', { name: 'Join', exact: true });
+    await join().click();
+    await expect(join()).toHaveAttribute('aria-busy', 'true');
+    await page.getByRole('radio', { name: 'Cards' }).click();
+    await expect(page.getByRole('main').getByRole('list', { name: 'Communities' })).toHaveAttribute('data-view', 'cards');
+    await expect(join()).toHaveAttribute('aria-busy', 'true');
+    await join().click({ force: true });
+    release();
+    await expect(row(page, seed.communities.local).getByRole('button', { name: /^Joined/ })).toBeVisible();
+    expect(posts).toHaveLength(1);
+    // Left again, as the other cases expect it.
+    await page.unroute('**/communities/follow');
+    await row(page, seed.communities.local)
+      .getByRole('button', { name: /^Joined/ })
+      .click();
+    await expect(join()).toBeVisible();
+    await context.close();
+  });
 });
 
 test.describe('the directory, signed in', () => {

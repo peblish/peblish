@@ -62,6 +62,16 @@ export function DirectoryPage({ data, error: fromAddress }: { data: DirectoryDat
   // The loader reads the view from the cookie; a choice made on this page wins until the page is left.
   const [chosen, setChosen] = useState<CommunityView>();
   const view = chosen ?? data.view;
+  // The communities whose Join, Leave or Cancel is on its way. Kept here, not in the row: List and Cards draw
+  // different rows, so a switch remounts each action, and the post must stay pending through it.
+  const [busy, setBusy] = useState<ReadonlySet<string>>(() => new Set());
+  const busyFor = (id: string) => (on: boolean) =>
+    setBusy((current) => {
+      const next = new Set(current);
+      if (on) next.add(id);
+      else next.delete(id);
+      return next;
+    });
   const { query } = data;
   const error = refused ?? asDirectoryError(fromAddress);
   const number = new Intl.NumberFormat(locale);
@@ -91,7 +101,17 @@ export function DirectoryPage({ data, error: fromAddress }: { data: DirectoryDat
       badges: row.sensitive ? <Badge kind="nsfw">{t('directory', 'directory.row.nsfw')}</Badge> : undefined,
       about: row.excerpt ?? undefined,
       note: actor.local ? undefined : <Source row={row} now={now} />,
-      action: <Action row={row} linkId={linkId} signedIn={data.signedIn} next={current} onError={setRefused} />,
+      action: (
+        <Action
+          row={row}
+          linkId={linkId}
+          signedIn={data.signedIn}
+          next={current}
+          busy={busy.has(actor.id)}
+          onBusy={busyFor(actor.id)}
+          onError={setRefused}
+        />
+      ),
     };
   });
 
@@ -256,16 +276,19 @@ function Action({
   linkId,
   signedIn,
   next,
+  busy,
+  onBusy,
   onError,
 }: {
   row: DirectoryRow;
   linkId: string;
   signedIn: boolean;
   next: string;
+  busy: boolean;
+  onBusy: (busy: boolean) => void;
   onError: (error: DirectoryError | undefined) => void;
 }) {
   const { t } = useTranslate();
-  const [busy, setBusy] = useState(false);
   if (!signedIn)
     return (
       <Link href={`/auth/sign-in?redirect=${encodeURIComponent(next)}`} className="dir-signin" aria-describedby={linkId}>
@@ -274,7 +297,14 @@ function Action({
     );
   const state = row.follow === 'accepted' ? 'joined' : row.follow === 'pending' ? 'pending' : 'none';
   return (
-    <FollowForm community={row.actor.id} intent={state === 'none' ? 'join' : 'leave'} next={next} onError={onError} onBusy={setBusy}>
+    <FollowForm
+      community={row.actor.id}
+      intent={state === 'none' ? 'join' : 'leave'}
+      next={next}
+      busy={busy}
+      onBusy={onBusy}
+      onError={onError}
+    >
       <JoinButton
         state={state}
         size="sm"
