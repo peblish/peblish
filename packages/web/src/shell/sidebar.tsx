@@ -30,6 +30,9 @@ import { openInRouter } from './client-links.ts';
 import type { ShellData } from './data.ts';
 import { communityPath, directoryPaths, feedPaths, reportQueuePath, sitePaths } from './paths.ts';
 import { useSectionFolds, type SideSection } from './side-state.ts';
+// The Saved page's entry (saves lane).
+import { BookmarkIcon } from '@peblish/ui/components/icons';
+import { savedPath } from './paths.ts';
 
 /** A count as the badges print it: "99+" from the cap on. */
 export const badgeText = (count: number) => (count >= unreadCap ? `${unreadCap - 1}+` : String(count));
@@ -170,6 +173,7 @@ export function Navigation({
         {item(feedPaths.all, t('shell', 'feed.all'), GlobeIcon)}
         {item(feedPaths.popular, t('shell', 'feed.popular'), FlameIcon)}
         {session && shell.moderating > 0 && item(feedPaths.moderating, t('shell', 'feed.moderating'), ShieldIcon)}
+        {session && item(savedPath, t('saves', 'nav'), BookmarkIcon)}
         {shell.reportCount !== null && (
           <Sidebar.Section {...section('moderation', t('shell', 'nav.moderation'))}>
             {item(reportQueuePath(), t('shell', 'you.queue'), ClipboardListIcon, count(shell.reportCount, t('shell', 'you.open')))}

@@ -1,4 +1,4 @@
-import { CopyLinkIcon, EllipsisIcon } from './icons.tsx';
+import { BookmarkIcon, CopyLinkIcon, EllipsisIcon } from './icons.tsx';
 import { Menu } from './menu.tsx';
 import { Text } from './text.tsx';
 import { Time } from './time.tsx';
@@ -11,9 +11,16 @@ export interface FeedRowActionsLabels {
   copy: string;
 }
 
+/** The menu's Save or Unsave (saves lane): its label for the post's state, and a save on its way disables it. */
+export interface FeedRowSave {
+  label: string;
+  onSave: () => void;
+  pending?: boolean;
+}
+
 /**
- * The end of a feed row's action row (PostRow's `actions`): a menu of more actions, today Copy link
- * (Commons' post menu; Save, Hide and Report wait for their own branches), and a polite status that
+ * The end of a feed row's action row (PostRow's `actions`): a menu of more actions, Save or Unsave (when
+ * `save` is given) and Copy link (Commons' post menu; Hide and Report wait for their own branches), and a polite status that
  * says what Share or Copy link did ("Link copied"), beside the controls that did it. The status is
  * always in the page, so a change to it is read out. The menu opens with the post's exact date and time
  * (`publishedAt`), which the row's age carries only in a title a pointer reaches: the menu is already one
@@ -27,6 +34,7 @@ export function FeedRowActions({
   onCopy,
   status,
   disabled,
+  save,
 }: {
   labels: FeedRowActionsLabels;
   publishedAt: string;
@@ -34,6 +42,7 @@ export function FeedRowActions({
   onCopy: () => void;
   status: string;
   disabled?: boolean;
+  save?: FeedRowSave;
 }) {
   return (
     <>
@@ -44,6 +53,14 @@ export function FeedRowActions({
         <Menu.Popup placement="bottom-end">
           <Menu.List aria-label={labels.list}>
             <Menu.Section title={<Time iso={publishedAt} locale={locale} format="date-time" />}>
+              {save && (
+                <Menu.Item id="save" textValue={save.label} onAction={save.onSave} disabled={save.pending}>
+                  <span className="pb-feed-menu__choice">
+                    <BookmarkIcon className="pb-feed-menu__choice-icon" />
+                    <Text className="pb-feed-menu__choice-label">{save.label}</Text>
+                  </span>
+                </Menu.Item>
+              )}
               <Menu.Item id="copy" textValue={labels.copy} onAction={onCopy}>
                 <span className="pb-feed-menu__choice">
                   <CopyLinkIcon className="pb-feed-menu__choice-icon" />

@@ -174,6 +174,8 @@ export function MarkIcon({ mark, className }: { mark: BrandPack['mark']; classNa
 
 // The community page and the directory (community-directory lane): a pending join, and the directory's Cards view.
 export { HourglassIcon, LayoutGridIcon } from './icons-community.tsx';
+// Saved posts (saves lane): Save and Unsave, and the Saved page's navigation entry.
+export { BookmarkIcon } from './icons-saves.tsx';
 // The comment tree (comment-thread.tsx): the mark before the name a deep reply answers.
 export const CornerDownRightIcon = icon(CornerDownRight);
 // The site banner's icons (site banner lane).

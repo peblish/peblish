@@ -21,6 +21,7 @@ import { ThreadSection } from '../$id/comments/-ui/thread-section.tsx';
 import { PostBlock } from './actions/block.tsx';
 import { PostModerate } from './actions/moderate.tsx';
 import { PostReport } from './actions/report.tsx';
+import { PostSave } from './actions/save.tsx';
 import { ActionForm } from './action-form.tsx';
 import { asPostError, errorKey } from './errors.ts';
 import { PostHeader } from './post-header.tsx';
@@ -30,8 +31,8 @@ import { isWithheld } from '../-withheld.ts';
 
 // The post page (Commons' Thread.tsx, PostDetail): its view header, the post (meta line with the exact
 // time, title, flags, picture or link, body, the pill row of vote, comments, Share and Copy link, then
-// the author's own actions and the action slots: report for REP, block for E1, moderate for MODF, for a
-// signed-in viewer), the thread, and the rail. Left out on purpose: lock and pin authoring, save, hide,
+// the author's own actions and the action slots: save, report for REP, block for E1, moderate for MODF, for a
+// signed-in viewer), the thread, and the rail. Left out on purpose: lock and pin authoring, hide,
 // crosspost, thread following and post series. The NSFW gate replaces the post (GateNotice, from the
 // loader's `kind: 'gate'`), and tombstone states withhold their content in core (readPost); this only
 // lays out what it was given.
@@ -219,6 +220,7 @@ function PostContent({ data, error }: { data: Extract<PostPageData, { kind: 'pos
               )}
               {actions && (
                 <>
+                  <PostSave post={post} withheld={withheld !== null} back={back} />
                   <PostReport {...actions} />
                   <PostBlock {...actions} />
                   <PostModerate {...actions} />
