@@ -41,7 +41,7 @@ const fieldsOf = (form: HTMLFormElement) =>
   Object.fromEntries([...new FormData(form)].map(([key, value]) => [key, typeof value === 'string' ? value : '']));
 
 /** What the page says above a section's form after its post: saved, or refused (`failed`). */
-function Answer({ saved, failed, savedText }: { saved: boolean; failed: boolean; savedText: string }) {
+function Answer({ saved, failed, savedText, unreadable }: { saved: boolean; failed: boolean; savedText: string; unreadable?: string }) {
   const { t } = useTranslate();
   if (saved)
     return (
@@ -55,6 +55,13 @@ function Answer({ saved, failed, savedText }: { saved: boolean; failed: boolean;
         {t('admin', 'settings.failed')}
       </Notice>
     );
+  // A stored value the contract refuses is shown at its default; saving replaces it (core settings read.ts, write.ts).
+  if (unreadable)
+    return (
+      <Notice role="alert" tone="warning">
+        {unreadable}
+      </Notice>
+    );
   return null;
 }
 
@@ -63,10 +70,13 @@ export function BannerSection({
   saved,
   failed,
   invalid,
+  unreadable,
 }: {
   banner: SiteBanner;
   saved: boolean;
   failed: boolean;
+  /** The stored banner failed its contract and is shown here, and on every page, as the default (off). */
+  unreadable: boolean;
   /** The field the server refused. */
   invalid: string | undefined;
 }) {
@@ -104,7 +114,12 @@ export function BannerSection({
   return (
     <section className="adm-section adm-banner" aria-labelledby="settings-banner" id="banner">
       <SectionTitle id="settings-banner">{t('admin', 'settings.banner')}</SectionTitle>
-      <Answer saved={saved} failed={failed} savedText={t('admin', banner.enabled ? 'settings.banner.published' : 'settings.banner.off')} />
+      <Answer
+        saved={saved}
+        failed={failed}
+        savedText={t('admin', banner.enabled ? 'settings.banner.published' : 'settings.banner.off')}
+        unreadable={unreadable ? t('admin', 'settings.banner.unreadable') : undefined}
+      />
       <BannerPreviews
         banner={draft}
         labels={{
@@ -306,14 +321,29 @@ function errorKind(name: BannerField): 'message' | 'title' | 'colour' | 'label' 
   }
 }
 
-export function WidthSection({ width, saved, failed }: { width: SiteWidth; saved: boolean; failed: boolean }) {
+export function WidthSection({
+  width,
+  saved,
+  failed,
+  unreadable,
+}: {
+  width: SiteWidth;
+  saved: boolean;
+  failed: boolean;
+  unreadable: boolean;
+}) {
   const { t } = useTranslate();
   const [draft, setDraft] = useState(width);
   const { sending, onSubmit } = useSendOnce();
   return (
     <section className="adm-section" aria-labelledby="settings-layout" id="layout">
       <SectionTitle id="settings-layout">{t('admin', 'settings.layout')}</SectionTitle>
-      <Answer saved={saved} failed={failed} savedText={t('admin', 'settings.saved')} />
+      <Answer
+        saved={saved}
+        failed={failed}
+        savedText={t('admin', 'settings.saved')}
+        unreadable={unreadable ? t('admin', 'settings.width.unreadable') : undefined}
+      />
       <form className="adm-form" method="post" action={path} aria-labelledby="settings-layout" onSubmit={onSubmit}>
         <Input.Input type="hidden" name="intent" value="width" />
         <RadioGroup

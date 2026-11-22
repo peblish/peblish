@@ -55,6 +55,29 @@ async function fillBanner(
   for (const [label, value] of Object.entries(fields)) await form(page).getByLabel(label, { exact: true }).fill(value);
 }
 
+test('a malformed stored banner or width leaves every page up, the admin page says so, and a save replaces it', async () => {
+  await seedSetting('site.banner', { ...defaultBanner, enabled: true, message: 'Typo.', icon: 'typo' });
+  await seedSetting('site.width', 'full');
+  for (const path of ['/', '/communities', '/admin/settings']) {
+    const response = await page.goto(path);
+    expect(response?.status(), path).toBe(200);
+    await expect(shellBanner(page), path).toHaveCount(0);
+    await expect(page.locator('.pb-app'), path).toHaveAttribute('data-width', 'default');
+  }
+  await gotoHydrated(page, '/admin/settings');
+  await expect(page.locator('#banner').getByRole('alert')).toHaveText(/The saved banner could not be read/);
+  await expect(page.locator('#layout').getByRole('alert')).toHaveText(/The saved width could not be read/);
+  await page.getByRole('button', { name: 'Save width' }).click();
+  await page.waitForURL(/saved=width/);
+  await form(page).getByRole('button', { name: 'Publish banner' }).click();
+  await page.waitForURL(/saved=banner/);
+  await expect(page.getByRole('alert').filter({ hasText: 'could not be read' })).toHaveCount(0);
+  expect(await readSetting('site.width')).toBe('default');
+  expect(await readSetting('site.banner')).toEqual({ ...defaultBanner, colour: '#007BA7', revision: 1 });
+  // Put back to no banner at all, as the cases below expect.
+  await seedSetting('site.banner', defaultBanner);
+});
+
 test('an admin publishes a banner: the shell shows it on every page, server-rendered, and the modlog has the change', async () => {
   const console = recordConsole(page);
   await gotoHydrated(page, '/admin/settings');

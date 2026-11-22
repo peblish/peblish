@@ -1,5 +1,5 @@
 import type { Principal } from '@peblish/schema/authz';
-import { eq, sql } from 'drizzle-orm';
+import { desc, eq, sql } from 'drizzle-orm';
 import { beforeEach, describe, expect, test } from 'vitest';
 import { authorize } from '../authz/authorize.ts';
 import type { SubjectOf } from '../authz/policy.ts';
@@ -231,6 +231,39 @@ describe('the banner', () => {
       details: { public: false, changes: { 'site.banner': { before: defaultBanner, after: { ...banner, revision: 1 } } } },
     });
     expect(await writeCounts()).toEqual({ modlog: 3, outbox: 3 });
+  });
+
+  test('a publish replaces a stored banner that is unreadable, and the log says it was unreadable without its content', async () => {
+    const { admin } = await world();
+    for (const [malformed, revision] of [
+      [{ ...banner, revision: 6, icon: 'typo', note: '<script>' }, 7],
+      ['not a banner', 1],
+    ] as const) {
+      await writer()
+        .insert(siteSettings)
+        .values({ key: 'site.banner', value: malformed })
+        .onConflictDoUpdate({ target: siteSettings.key, set: { value: malformed } });
+      expect(await updateSettingsAs(admin, { 'site.banner': banner })).toMatchObject({ ok: true, changed: ['site.banner'] });
+      // The next revision after a revision it could still read, so a browser that dismissed that one sees this one.
+      expect(await readSetting('site.banner')).toEqual({ ...banner, revision });
+      const [entry] = await db().select({ details: modlog.details }).from(modlog).orderBy(desc(modlog.createdAt)).limit(1);
+      expect(entry?.details).toMatchObject({
+        changes: { 'site.banner': { before: { unreadable: true }, after: { ...banner, revision } } },
+      });
+      expect(JSON.stringify(entry?.details)).not.toContain('<script>');
+    }
+    // A readable old banner is logged as it was, as before.
+    await updateSettingsAs(admin, { 'site.banner': { ...banner, message: 'Again.' } });
+    const [entry] = await db().select({ details: modlog.details }).from(modlog).orderBy(desc(modlog.createdAt)).limit(1);
+    expect(entry?.details).toMatchObject({ changes: { 'site.banner': { before: { ...banner, revision: 1 } } } });
+  });
+
+  test('a width stored as an unknown preset is replaced, and logged as unreadable', async () => {
+    const { admin } = await world();
+    await writer().insert(siteSettings).values({ key: 'site.width', value: 'full' });
+    expect(await updateSettingsAs(admin, { 'site.width': 'wide' })).toMatchObject({ ok: true, changed: ['site.width'] });
+    const [entry] = await db().select({ details: modlog.details }).from(modlog);
+    expect(entry?.details).toMatchObject({ changes: { 'site.width': { before: { unreadable: true }, after: 'wide' } } });
   });
 
   test('an outside address, a long message or an unknown tone is settings.invalid, and nothing is written', async () => {

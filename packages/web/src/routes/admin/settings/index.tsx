@@ -102,7 +102,7 @@ function Settings() {
   const search = Route.useSearch();
   useRouteHydrated();
   if (data.access !== 'ok') return <AccessNotice access={data.access} title={t('admin', 'settings.title')} />;
-  const { values, accounts, host } = data;
+  const { values, accounts, host, unreadable } = data;
   const invalid = search.error === 'settings.invalid' ? search.field : undefined;
   const section = sectionOf(search.field);
   /** A field's name, and its error while the server named it. */
@@ -222,9 +222,15 @@ function Settings() {
         banner={values['site.banner']}
         saved={search.saved === 'banner'}
         invalid={section === 'banner' ? invalid : undefined}
+        unreadable={unreadable.includes('site.banner')}
         failed={Boolean(search.error) && section === 'banner'}
       />
-      <WidthSection width={values['site.width']} saved={search.saved === 'width'} failed={Boolean(search.error) && section === 'width'} />
+      <WidthSection
+        width={values['site.width']}
+        saved={search.saved === 'width'}
+        failed={Boolean(search.error) && section === 'width'}
+        unreadable={unreadable.includes('site.width')}
+      />
       <section className="adm-section" aria-labelledby="switches">
         <SectionTitle id="switches">{t('admin', 'settings.switches')}</SectionTitle>
         <Text as="p" color="muted">
