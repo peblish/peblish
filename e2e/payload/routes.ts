@@ -161,6 +161,9 @@ export const routes: readonly PayloadRoute[] = [
   // /settings/account, another of the account's own pages.
   { route: '/you/', path: '/you', js: { budget: 194.6, measured: 185.3, on: '2026-11-12' }, admin: true },
   { route: '/notifications/', path: '/notifications', js: { budget: 191.3, measured: 182.1, on: '2026-11-12' }, admin: true },
+  // PROVISIONAL until a production build measures it (CI): the Saved page (branch 5) lists feed rows, so it
+  // carries the figures of its nearest page, the feed at /.
+  { route: '/saved/', path: '/saved', js: { budget: 192.6, measured: 183.4, on: '2026-11-12' }, admin: true },
   { route: '/admin/registration/', path: '/admin/registration', js: { budget: 214.2, measured: 204.0, on: '2026-11-12' }, admin: true },
   { route: '/c/$handle/', path: '/c/<handle>', js: { budget: 198.5, measured: 189.0, on: '2026-11-12' }, target: () => seededCommunity() },
   { route: '/c/new', path: '/c/new', js: { budget: 197.4, measured: 188.0, on: '2026-11-12' }, admin: true },
@@ -185,6 +188,9 @@ export const routes: readonly PayloadRoute[] = [
     admin: true,
   },
   { route: '/$slug', path: '/about', js: { budget: 200.4, measured: 190.8, on: '2026-11-22' }, target: () => '/about' },
+  // PROVISIONAL until a production build measures it (CI): the public Instances page (branch 5) is a plain
+  // list of text, so it carries the figures of its nearest page, the site page at /about.
+  { route: '/instances/', path: '/instances', js: { budget: 200.4, measured: 190.8, on: '2026-11-22' } },
   { route: '/admin/media/', path: '/admin/media', js: { budget: 222.6, measured: 212.0, on: '2026-11-12' }, admin: true },
   { route: '/post/$id/', path: '/post/<id>', js: { budget: 198.7, measured: 189.2, on: '2026-11-12' }, target: seededPost },
   {
@@ -233,7 +239,9 @@ export const notPages: Readonly<Record<string, string>> = {
   '/readyz': 'a probe answering plain text',
   '/auth/sign-out': 'a form post that answers with a redirect',
   '/communities/follow': 'the POST endpoint of Join and Leave; a GET answers 404',
+  '/communities/pins': 'the POST endpoint of Pin, Unpin and Move; a GET answers 404',
   '/post/$id/comments/': 'the POST endpoint of the comment forms; a GET redirects to the post page',
+  '/post/$id/visit': 'the POST endpoint that records a thread visit; a GET redirects to the post page',
   '/media/proxy/$signature/$target': 'an image endpoint, not a page',
   '/modlog/act': 'the POST endpoint of the moderator forms; it answers with a redirect or JSON',
   '/media/$id': 'an uploaded image endpoint, not a page',
