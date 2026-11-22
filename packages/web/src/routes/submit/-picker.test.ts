@@ -2,8 +2,9 @@ import type { SessionView } from '@peblish/schema/session';
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 
 // The composer's community picker (pickerFor), with core's reads stubbed: local communities by
-// name, the person's follows, which of a list the person moderates, one community by id, and
-// post.create's precheck (bans, mods-only, the age gate) for the community the form starts in.
+// name, the person's follows, which of a list the person moderates, and one community on its own
+// as the composer may show it (composerCommunity: one the person could see, whether or not they
+// may post there).
 
 type Local = {
   actor: { id: string; handle: string; displayName: string | null; local: boolean };
@@ -30,25 +31,19 @@ const core = vi.hoisted(() => ({
   remote: [] as Local[],
   follows: [] as Follow[],
   staffOf: new Set<string>(),
-  bannedFrom: new Set<string>(),
   /** Communities the directory's block rules hide from the person. */
   blocked: new Set<string>(),
   listLocalCommunities: vi.fn(),
   moderatedAmong: vi.fn(),
   followedCommunities: vi.fn(),
-  readCommunity: vi.fn(),
-  mayStartPostIn: vi.fn(),
+  composerCommunity: vi.fn(),
 }));
 vi.mock('@peblish/core/communities/read', () => ({
   listLocalCommunities: core.listLocalCommunities,
   moderatedAmong: core.moderatedAmong,
-  readCommunity: core.readCommunity,
-  // As core's: a local name in any case, or name@host for a remote one; removed or gated or not.
-  findCommunityId: async (handle: string) =>
-    [...core.local, ...core.remote].find(({ actor }) => actor.handle === handle.toLowerCase())?.actor.id ?? null,
 }));
 vi.mock('@peblish/core/follows/read', () => ({ followedCommunities: core.followedCommunities }));
-vi.mock('@peblish/core/communities/start', () => ({ mayStartPostIn: core.mayStartPostIn }));
+vi.mock('@peblish/core/communities/start', () => ({ composerCommunity: core.composerCommunity }));
 const { pickerFor, pickerMax } = await import('./-picker.ts');
 
 const local = (name: string, extra: Partial<Local> = {}): Local => ({
@@ -88,7 +83,6 @@ beforeEach(() => {
   core.remote = [];
   core.follows = [];
   core.staffOf = new Set();
-  core.bannedFrom = new Set();
   core.blocked = new Set();
   // As core's: by name, at most `limit`, `ids` keeping only those; sensitive ones only when asked.
   core.listLocalCommunities
@@ -110,21 +104,14 @@ beforeEach(() => {
         .filter((row) => options.includeSensitive !== false || !(row.sensitive || row.nsfl))
         .slice(0, options.limit),
     );
-  core.readCommunity.mockReset().mockImplementation(async ({ id }: { id: string }) => {
-    const row = [...core.local, ...core.remote].find(({ actor }) => actor.id === id);
-    return row && { ...row, actor: { ...row.actor } };
-  });
-  // Core's start rule as a plain yes or no; communities/start.test.ts tests the rule itself through
-  // the real policy. Here: a known community, no ban, no block, mods-only for staff, the age gate.
-  core.mayStartPostIn.mockReset().mockImplementation(async (viewer: { siteRole: string; ageDeclaredAt: string | null }, id: string) => {
-    const row = [...core.local, ...core.remote].find(({ actor }) => actor.id === id);
-    return (
-      row !== undefined &&
-      !core.bannedFrom.has(id) &&
-      !core.blocked.has(id) &&
-      (!row.postingRestrictedToMods || viewer.siteRole === 'admin' || core.staffOf.has(id)) &&
-      (viewer.ageDeclaredAt !== null || !(row.sensitive || row.nsfl))
-    );
+  // Core's rule, which communities/start.test.ts tests through the real readers: a known community
+  // by id or handle (a local name in any case, name@host for a remote one), past the age gate and
+  // not blocked; whether the person may post there is not asked.
+  core.composerCommunity.mockReset().mockImplementation(async (viewer: { declared: boolean }, key: string) => {
+    const wanted = key.trim().replace(/^!/, '').toLowerCase();
+    const row = [...core.local, ...core.remote].find(({ actor }) => actor.id === wanted || actor.handle === wanted);
+    if (!row || core.blocked.has(row.actor.id) || (!viewer.declared && (row.sensitive || row.nsfl))) return null;
+    return { ...row, actor: { ...row.actor } };
   });
 });
 
@@ -198,32 +185,30 @@ describe('a person with a handful of follows', () => {
   test('the community the form starts in is chosen from what the picker lists', async () => {
     core.local = [local('art'), local('news')];
     expect((await pickerFor(person(), start('news'))).selected).toBe('id-news');
-    expect(core.readCommunity).not.toHaveBeenCalled();
+    expect(core.composerCommunity).not.toHaveBeenCalled();
   });
 });
 
 describe('the community the form starts in', () => {
-  test('is only one the person may post in, wherever it ranks: not where they are banned, nor mods-only unless staff', async () => {
+  test('is any one the person could see, whether or not they may post there: a mods-only one starts, marked so', async () => {
     core.local = [local('art'), local('news'), local('notices', { postingRestrictedToMods: true })];
-    core.bannedFrom = new Set(['id-news']);
-    expect((await pickerFor(person(), start('news'))).selected).toBeNull();
-    expect((await pickerFor(person(), start('notices'))).selected).toBeNull();
-    // The next key the form names is tried in turn.
-    expect((await pickerFor(person(), start('news', 'art'))).selected).toBe('id-art');
-    core.staffOf = new Set(['id-notices']);
-    expect((await pickerFor(person(), start('notices'))).selected).toBe('id-notices');
-    // The community is still listed, as before: only the start is refused.
-    expect((await pickerFor(person(), start('news'))).communities.map(({ handle }) => handle)).toContain('news');
+    const notices = await pickerFor(person(), start('notices'));
+    expect(notices.selected).toBe('id-notices');
+    expect(notices.communities.find(({ id }) => id === 'id-notices')?.canPost).toBe(false);
+    // An unverified person starts there too: the form says why they cannot post.
+    expect((await pickerFor(person({ emailVerified: false }), start('news'))).selected).toBe('id-news');
+    // One they could not see (age-gated, for someone who has not declared 16+) is skipped, and the next key is tried in turn.
+    core.local.push(local('adults', { sensitive: true }));
+    expect((await pickerFor(person(), start('adults', 'art'))).selected).toBe('id-art');
   });
 
-  test('a remote community the person does not follow, where they may post, is looked up and listed', async () => {
+  test('a remote community the person does not follow is looked up and listed, one that bans them too', async () => {
     core.local = [local('art')];
     core.follows = [follow('tech')];
     core.remote = [
       { ...local('lab'), actor: { id: 'id-lab', handle: 'lab@lemmy.test', displayName: 'The Lab', local: false } },
       { ...local('closed'), actor: { id: 'id-closed', handle: 'closed@lemmy.test', displayName: null, local: false } },
     ];
-    core.bannedFrom = new Set(['id-closed']);
     const picker = await pickerFor(person(), start('lab@lemmy.test'));
     expect(picker.selected).toBe('id-lab');
     expect(picker.communities.find(({ id }) => id === 'id-lab')).toEqual({
@@ -235,10 +220,11 @@ describe('the community the form starts in', () => {
       restricted: false,
       canPost: true,
     });
-    expect((await pickerFor(person(), start('!closed@lemmy.test'))).selected).toBeNull();
+    // A ban is the submit's refusal to give: the form starts there, and the post is refused by its reason.
+    expect((await pickerFor(person(), start('!closed@lemmy.test'))).selected).toBe('id-closed');
   });
 
-  test('a community it may not start in, looked up on its own, leaves nothing of itself in the data', async () => {
+  test('a community the person could not see, looked up on its own, leaves nothing of itself in the data', async () => {
     core.local = [local('art')];
     core.remote = [{ ...local('walled'), actor: { id: 'id-walled', handle: 'walled@shut.test', displayName: null, local: false } }];
     core.blocked = new Set(['id-walled']);
@@ -249,9 +235,8 @@ describe('the community the form starts in', () => {
 
   test("an edit starts in the post's own community, without asking", async () => {
     core.local = [local('art'), local('news')];
-    core.bannedFrom = new Set(['id-news']);
     expect((await pickerFor(person(), { edit: 'id-news', wanted: ['art'] })).selected).toBe('id-news');
-    expect(core.mayStartPostIn).not.toHaveBeenCalled();
+    expect(core.composerCommunity).not.toHaveBeenCalled();
   });
 });
 
@@ -294,7 +279,7 @@ describe('past the cap', () => {
     expect(picker.selected).toBe(`id-${name(200)}`);
   });
 
-  test('a community asked for by name or id past the first page is looked up on its own, where the person may post', async () => {
+  test('a community asked for by name or id past the first page is looked up on its own, where the person could see it', async () => {
     core.local = Array.from({ length: 260 }, (_, n) =>
       local(name(n), { postingRestrictedToMods: n === 240 || n === 241, sensitive: n === 230 }),
     );
@@ -309,10 +294,14 @@ describe('past the cap', () => {
       // In its place by name, after the first page's.
       expect(handles).toEqual(handles.toSorted());
     }
-    expect(core.readCommunity).toHaveBeenLastCalledWith({ id: `id-${name(250)}` });
-    // Not where they may not post: mods-only without being staff there, or age-gated for them.
-    expect((await ask(name(240))).selected).toBeNull();
-    expect((await ask(name(241))).selected).toBe(`id-${name(241)}`);
+    expect(core.composerCommunity).toHaveBeenLastCalledWith({ actorId: 'me', declared: false }, `!${name(250).toUpperCase()}`);
+    // Mods-only starts, staff or not, and says whether they may post; age-gated for them, it is not there.
+    const restricted = await ask(name(240));
+    expect([restricted.selected, restricted.communities.find(({ id }) => id === `id-${name(240)}`)?.canPost]).toEqual([
+      `id-${name(240)}`,
+      false,
+    ]);
+    expect((await ask(name(241))).communities.find(({ id }) => id === `id-${name(241)}`)?.canPost).toBe(true);
     expect((await ask(name(230))).selected).toBeNull();
     expect((await ask('nowhere')).selected).toBeNull();
     // By id, as a link from the community's page names it.
@@ -320,9 +309,9 @@ describe('past the cap', () => {
     core.local.push({ ...local('zz'), actor: { id, handle: 'zz', displayName: null, local: true } });
     expect((await ask(id)).selected).toBe(id);
     // What the list already holds is chosen from it, with no further read.
-    core.readCommunity.mockClear();
+    core.composerCommunity.mockClear();
     expect((await pickerFor(person(), start(name(3), name(250)))).selected).toBe(`id-${name(3)}`);
-    expect(core.readCommunity).not.toHaveBeenCalled();
+    expect(core.composerCommunity).not.toHaveBeenCalled();
   });
 
   test('follows past the first page are read at most a cap at a time', async () => {

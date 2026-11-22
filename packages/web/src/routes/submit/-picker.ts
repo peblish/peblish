@@ -1,20 +1,12 @@
-import { findCommunityId, listLocalCommunities, moderatedAmong, readCommunity } from '@peblish/core/communities/read';
-import { mayStartPostIn } from '@peblish/core/communities/start';
+import { listLocalCommunities, moderatedAmong } from '@peblish/core/communities/read';
+import { composerCommunity } from '@peblish/core/communities/start';
 import { followedCommunities } from '@peblish/core/follows/read';
-import { Uuid } from '@peblish/schema/ids';
 import type { SessionView } from '@peblish/schema/session';
 import type { PickerCommunity } from './-types.ts';
 
 // The composer's community picker (server only): which communities the person may pick, at most
 // pickerMax, and which of them take their post. Its own module, imported by -load.ts's server
 // functions alone, so none of these reads reach the browser's copy of the loader.
-
-/**
- * The age gate (C10, the feeds' rule): a sensitive or NSFL community is for someone who declared
- * 16+; to anyone else it does not exist, in the picker and in its panel alike.
- */
-export const ageAllows = (viewer: SessionView, community: { sensitive: boolean; nsfl: boolean }) =>
-  viewer.ageDeclaredAt !== null || !(community.sensitive || community.nsfl);
 
 /** Most communities the picker lists. */
 export const pickerMax = 200;
@@ -72,17 +64,17 @@ const localCandidate = ({ actor, postingRestrictedToMods, subscribers }: LocalRo
   followed,
 });
 
+/** What the person is shown in the form for this viewer: core's composerCommunity, which only asks whether they could see it. */
+export const composerViewer = (viewer: SessionView) => ({ actorId: viewer.actorId, declared: viewer.ageDeclaredAt !== null });
+
 /**
  * The community a `wanted` key (an id, or a handle with or without `!`: `name` here, `name@host`
  * elsewhere) names, looked up on its own, for one the candidates do not hold: a local community
- * past the first page, or a remote one the person does not follow. Whether it may start the form
- * is startIn's question.
+ * past the first page, or a remote one the person does not follow. Null for one they could not
+ * see (core's composerCommunity).
  */
-async function lookUp(key: string): Promise<Candidate | null> {
-  const trimmed = key.trim().replace(/^!/, '');
-  if (!trimmed) return null;
-  const id = Uuid.allows(trimmed) ? trimmed : await findCommunityId(trimmed);
-  const community = id ? await readCommunity({ id }) : null;
+async function lookUp(viewer: SessionView, key: string): Promise<Candidate | null> {
+  const community = await composerCommunity(composerViewer(viewer), key);
   if (!community) return null;
   const { actor } = community;
   return {
@@ -97,9 +89,10 @@ async function lookUp(key: string): Promise<Candidate | null> {
 }
 
 /**
- * The community the form starts in: the first of `wanted` that names one the person may start a
- * post in (core's mayStartPostIn), from the candidates or looked up on its own, however it ranks.
- * One that may not is left out of the data altogether, as if it had not been asked for.
+ * The community the form starts in: the first of `wanted` that names one the person could see,
+ * from the candidates (which hold only those) or looked up on its own, however it ranks. Whether
+ * they may post there is the form's to say (the picker's canPost, the panel, the submit). One they
+ * could not see is left out of the data altogether, as if it had not been asked for.
  */
 async function startIn(
   viewer: SessionView,
@@ -109,9 +102,9 @@ async function startIn(
   for (const key of wanted) {
     if (!key) continue;
     const held = pickFrom(listed, key);
-    const extra = held ? null : await lookUp(key);
-    const id = held ?? extra?.id;
-    if (id && (await mayStartPostIn(viewer, id))) return { id, extra: extra && !listed.some((row) => row.id === extra.id) ? extra : null };
+    if (held) return { id: held, extra: null };
+    const extra = await lookUp(viewer, key);
+    if (extra) return { id: extra.id, extra: listed.some((row) => row.id === extra.id) ? null : extra };
   }
   return null;
 }
@@ -145,7 +138,7 @@ function capPicker(rows: readonly Candidate[], keep: string | null, max = picker
 /**
  * The communities the person may pick, at most pickerMax (capPicker), and `selected`, the one the
  * form starts in, kept through the cut: an edit's own community, else the first of `wanted` the
- * person may post in (startIn), added in its place when the candidates did not hold it. A mods-only
+ * person could see (startIn), added in its place when the candidates did not hold it. A mods-only
  * community is disabled for anyone who is not staff there: one query for all of them.
  */
 export async function pickerFor(
