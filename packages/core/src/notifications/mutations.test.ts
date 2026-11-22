@@ -12,8 +12,10 @@ import { actors } from '../db/tables/actors.ts';
 import { eq } from 'drizzle-orm';
 import { grantFor, outboxEvents } from '../testing/seed-az.ts';
 import { noticeCount, noticesOf, sameTransactionAsNotice, seedInboxWorld, seedNotice } from '../testing/seed-e2.ts';
+import { seedBlock } from '../testing/seed-e1.ts';
 import { localUser } from '../testing/seed.ts';
 import { createNotification, markAllNotificationsRead, markNotification, purgeNotifications, undoMarkAllRead } from './mutations.ts';
+import { readInbox } from './read.ts';
 
 beforeEach(truncateAll);
 
@@ -190,6 +192,25 @@ describe('Undo of Mark all read', () => {
     expect((await events()).filter((e) => e.type === 'notification.read' && !e.read && e.notificationId === null)).toEqual([
       { type: 'notification.read', v: 1, recipientId: me, notificationId: null, read: false, count: 3 },
     ]);
+  });
+
+  test('Mark all read and its Undo report only the notices the inbox shows', async () => {
+    const { world, owner } = await setup();
+    const me = world.people.author.id;
+    // Hidden from the inbox: a reply by someone the owner blocks, and a mention in a removed community.
+    await seedBlock(world.people.author, world.people.reader);
+    await seedNotice({ recipientId: me, kind: 'reply', refId: uuidv7(), actorId: world.people.reader.id });
+    await seedNotice({ recipientId: me, kind: 'mention', refId: uuidv7(), communityId: world.communities.removed.id });
+    const viewer = { actorId: me, siteRole: 'user' } as const;
+    const shown = (await readInbox(viewer, { filter: 'unread' })).items.map((item) => item.id);
+    expect(shown).toHaveLength(1);
+
+    const marked = await markAllNotificationsRead(await grantFor('notification.read_all', owner, { recipientId: me }), undefined);
+    expect(marked.count).toBe(shown.length);
+    expect((await readInbox(viewer, { filter: 'unread' })).items).toEqual([]);
+    const undo = await grantFor('notification.undo_read_all', owner, { recipientId: me });
+    expect(await undoMarkAllRead(undo, { batch: marked.batch! })).toEqual({ count: shown.length });
+    expect((await readInbox(viewer, { filter: 'unread' })).items.map((item) => item.id)).toEqual(shown);
   });
 
   test('only the owner undoes, and never another person’s notices with the same stamp', async () => {

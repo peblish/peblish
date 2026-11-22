@@ -2,6 +2,7 @@ import type { Uuid } from '@peblish/schema/ids';
 import { and, eq, isNotNull, isNull, sql } from 'drizzle-orm';
 import { notifications } from './tables.ts';
 import { isReadBatch } from './view.ts';
+import { inboxVisible } from './visible.ts';
 import { defineMutation } from '../tx/mutation.ts';
 
 // The inbox's five writes. A person's marks recheck, so a site-banned person writes nothing
@@ -61,7 +62,8 @@ export const markNotification = defineMutation({
 const readStamp = sql<string>`(extract(epoch from ${notifications.readAt}) * 1000000)::bigint::text`;
 
 /**
- * Marks every unread notice of the owner read; answers how many it changed and `batch`, the
+ * Marks every unread notice of the owner read; answers `count`, how many of them the inbox shows
+ * (inboxVisible: the number the reader saw, though hidden ones are marked too), and `batch`, the
  * stamp its Undo takes (null when nothing was unread).
  */
 export const markAllNotificationsRead = defineMutation({
@@ -74,18 +76,19 @@ export const markAllNotificationsRead = defineMutation({
       .update(notifications)
       .set({ readAt: sql`now()` })
       .where(and(eq(notifications.recipientId, recipientId), isNull(notifications.readAt)))
-      .returning({ id: notifications.id, batch: readStamp });
+      .returning({ id: notifications.id, batch: readStamp, shown: inboxVisible(recipientId) });
     if (rows.length > 0) {
       await t.emit({ type: 'notification.read', v: 1, recipientId, notificationId: null, read: true, count: rows.length });
     }
-    return { count: rows.length, batch: rows[0]?.batch ?? null };
+    return { count: rows.filter((row) => row.shown).length, batch: rows[0]?.batch ?? null };
   },
 });
 
 /**
  * Undoes one Mark all read: marks unread again exactly the owner's notices it marked read that are
  * still read from it. A notice that arrived since is unread and stays so; one the owner marked
- * unread, or read again, since then carries another stamp and is left as it is. Answers how many.
+ * unread, or read again, since then carries another stamp and is left as it is. Answers how many
+ * of them the inbox shows, as Mark all read does.
  */
 export const undoMarkAllRead = defineMutation({
   action: 'notification.undo_read_all',
@@ -98,11 +101,11 @@ export const undoMarkAllRead = defineMutation({
       .update(notifications)
       .set({ readAt: null })
       .where(and(eq(notifications.recipientId, recipientId), isNotNull(notifications.readAt), sql`${readStamp} = ${input.batch}`))
-      .returning({ id: notifications.id });
+      .returning({ id: notifications.id, shown: inboxVisible(recipientId) });
     if (rows.length > 0) {
       await t.emit({ type: 'notification.read', v: 1, recipientId, notificationId: null, read: false, count: rows.length });
     }
-    return { count: rows.length };
+    return { count: rows.filter((row) => row.shown).length };
   },
 });
 
