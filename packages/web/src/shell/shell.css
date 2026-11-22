@@ -461,14 +461,6 @@
     padding: var(--muxui-semantic-layout-inset-medium) var(--muxui-semantic-layout-inset-large);
   }
 
-  /* The phone drawer's rows, its close button and Appearance's choices are 44px targets. It is a
-     portal: only a phone shows its button. */
-  .muxui-sidebar__mobile-drawer {
-    --muxui-control-size-md: var(--pb-touch);
-    --muxui-control-size-sm: var(--pb-touch);
-    --muxui-component-button-min-height: var(--pb-touch);
-  }
-
   /* Header labels give way to their icons where the header is narrow; the names stay for assistive tech. */
   @media (max-width: 959.98px) {
     .pb-top__label {
@@ -488,6 +480,21 @@
       --pb-bar-h: calc(var(--pb-touch) + var(--muxui-semantic-layout-inset-tight) + 1px);
       /* The bottom bar: a tab's height (bottom-tab-bar.css) and its hairline. */
       --pb-dock-end: calc(var(--pb-touch) + var(--muxui-semantic-layout-inset-small) + 1px);
+    }
+
+    /* The phone's targets: Mux's fields and buttons, small or medium, are 44px (its control sizes
+       stop at 40), on every page and in every portal (the drawer, menus, Appearance's choices), where Mux
+       sets its sizes again. An avatar is drawn at a control size too, but it is no target: Mux's own. */
+    :root,
+    [data-muxui-color-scheme] {
+      --muxui-control-size-sm: var(--pb-touch);
+      --muxui-control-size-md: var(--pb-touch);
+      --muxui-component-button-min-height: var(--pb-touch);
+    }
+
+    .muxui-avatar {
+      --muxui-control-size-sm: var(--muxui-semantic-control-size-sm);
+      --muxui-control-size-md: var(--muxui-semantic-control-size-md);
     }
 
     .pb-app {
@@ -552,12 +559,6 @@
       position: sticky;
       inset-block-end: 0;
       z-index: 2;
-    }
-
-    /* Appearance's choices, a portal too, opened from the drawer. */
-    .pb-theme__choices {
-      --muxui-control-size-sm: var(--pb-touch);
-      --muxui-control-size-md: var(--pb-touch);
     }
   }
 

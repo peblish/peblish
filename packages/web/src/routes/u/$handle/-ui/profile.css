@@ -2,8 +2,6 @@
    on Mux UI tokens. The tabs and sort are LinkTabs, notices are Notice, the rail is the frame's. */
 @layer app {
   .prof {
-    /* 44px phone targets, as the frame's (shell.css): Mux's control sizes stop at 40. */
-    --pb-touch: calc(var(--muxui-semantic-control-size-lg) + 2 * var(--muxui-semantic-layout-dense-gap));
     display: grid;
     gap: var(--muxui-semantic-layout-section-gap);
   }
@@ -153,15 +151,9 @@
     gap: var(--muxui-semantic-layout-action-gap);
   }
 
-  /* Phone: the person's actions, the tabs, the sort and density switches, the page links and a comment's
-     actions are 44px targets (the frame's --pb-touch, shell.css). */
+  /* Phone: the person's actions, the tabs, the sort and density switches are 44px targets as every page's
+     controls are (shell.css); the page links and a comment's actions too (the frame's --pb-touch). */
   @media (max-width: 859.98px) {
-    .prof {
-      --muxui-control-size-md: var(--pb-touch);
-      --muxui-control-size-sm: var(--pb-touch);
-      --muxui-component-button-min-height: var(--pb-touch);
-    }
-
     /* The page links (Pager) and a comment's Reply are text links: the row's height is their target, at least as wide. */
     .prof .pb-pager .muxui-link,
     .prof-comment-actions > .muxui-link {

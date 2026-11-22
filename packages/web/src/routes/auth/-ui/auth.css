@@ -113,16 +113,4 @@
   .auth-tone--error {
     color: var(--pb-error);
   }
-
-  /* A phone: the account pages' buttons and fields are 44px targets (Mux's control sizes stop at 40). */
-  @media (max-width: 859.98px) {
-    .auth-page,
-    .settings {
-      --pb-touch: calc(var(--muxui-semantic-control-size-lg) + 2 * var(--muxui-semantic-layout-dense-gap));
-      --muxui-component-button-min-height: var(--pb-touch);
-      --muxui-control-size-md: var(--pb-touch);
-      /* The rows' small buttons too (Unblock, Undo, Revoke). */
-      --muxui-control-size-sm: var(--pb-touch);
-    }
-  }
 }

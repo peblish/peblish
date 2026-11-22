@@ -55,12 +55,9 @@
     grid-column: 2;
   }
 
-  /* The phone's top bar: its medium controls grow to the 44px target. Buttons and icon buttons (Back,
-     the drawer's button) take their height from Mux's button minimum, the rest from the control size. */
+  /* The phone's top bar, as tall as its 44px controls (the app's phone targets, shell.css) and a little more. */
   @media (max-width: 859.98px) {
     .pb-vh {
-      --muxui-component-button-min-height: var(--pb-touch);
-      --muxui-control-size-md: var(--pb-touch);
       min-block-size: calc(var(--pb-touch) + var(--muxui-semantic-layout-inset-tight));
     }
   }

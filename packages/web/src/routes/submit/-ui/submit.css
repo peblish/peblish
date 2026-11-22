@@ -57,15 +57,6 @@
     border-block-start: 1px solid var(--muxui-semantic-border-faint);
   }
 
-  /* A phone: the page's buttons and fields are 44px targets (Mux's control sizes stop at 40). */
-  @media (max-width: 859.98px) {
-    .cmp-page {
-      --pb-touch: calc(var(--muxui-semantic-control-size-lg) + 2 * var(--muxui-semantic-layout-dense-gap));
-      --muxui-component-button-min-height: var(--pb-touch);
-      --muxui-control-size-md: var(--pb-touch);
-    }
-  }
-
   .cmp {
     display: grid;
     /* 280px is the rules column's layout width. */

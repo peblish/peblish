@@ -2,11 +2,6 @@
    of pages as 44px rows, Appearance and Sign out, on one ground with hairlines between the parts.
    Layout only, on Mux UI tokens. */
 @layer app {
-  /* 44px phone targets, as the frame's (shell.css): Mux's control sizes stop at 40. */
-  .you {
-    --pb-touch: calc(var(--muxui-semantic-control-size-lg) + 2 * var(--muxui-semantic-layout-dense-gap));
-  }
-
   .you-body {
     display: grid;
     gap: var(--muxui-semantic-layout-section-gap);
@@ -67,15 +62,6 @@
 
   .you-end {
     display: flex;
-  }
-
-  /* Phone: Appearance's choices and Sign out are 44px targets too. */
-  @media (max-width: 859.98px) {
-    .you {
-      --muxui-control-size-md: var(--pb-touch);
-      --muxui-control-size-sm: var(--pb-touch);
-      --muxui-component-button-min-height: var(--pb-touch);
-    }
   }
 
   /* Without scripts the choice cannot be made here (the stored scheme still renders). */

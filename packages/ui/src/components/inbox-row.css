@@ -11,8 +11,6 @@
   }
 
   .pb-notice {
-    /* 44px phone targets, from tokens: Mux's control sizes stop at 40. */
-    --pb-touch: calc(var(--muxui-semantic-control-size-lg) + 2 * var(--muxui-semantic-layout-dense-gap));
     display: grid;
     grid-template-columns: var(--muxui-semantic-layout-inset-tiny) var(--muxui-semantic-control-size-md) minmax(0, 1fr);
     column-gap: var(--muxui-semantic-layout-group-gap);
@@ -187,11 +185,6 @@
       grid-template-columns: var(--muxui-semantic-layout-tight-gap) var(--muxui-semantic-control-size-md) minmax(0, 1fr);
       column-gap: var(--muxui-semantic-layout-inset-tiny);
       padding-inline: var(--muxui-semantic-layout-inset-tight) var(--muxui-semantic-layout-inset-small);
-    }
-
-    /* The row's buttons are 44px targets on a phone. */
-    .pb-notice__actions {
-      --muxui-control-size-sm: var(--pb-touch);
     }
   }
 }

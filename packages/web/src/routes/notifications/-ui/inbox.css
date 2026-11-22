@@ -29,10 +29,5 @@
       clip-path: inset(50%);
       white-space: nowrap;
     }
-
-    .pb-inbox__all {
-      --pb-touch: calc(var(--muxui-semantic-control-size-lg) + 2 * var(--muxui-semantic-layout-dense-gap));
-      --muxui-control-size-sm: var(--pb-touch);
-    }
   }
 }

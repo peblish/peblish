@@ -60,14 +60,4 @@
   .pb-feed-skip[data-shown] {
     block-size: auto;
   }
-
-  /* A phone: 44px targets. Mux's Button takes its height from these. */
-  @media (max-width: 859.98px) {
-    .pb-feed-end,
-    .pb-feed-skip {
-      --muxui-control-size-sm: calc(var(--muxui-semantic-control-size-lg) + 2 * var(--muxui-semantic-layout-dense-gap));
-      --muxui-control-size-md: calc(var(--muxui-semantic-control-size-lg) + 2 * var(--muxui-semantic-layout-dense-gap));
-      --muxui-component-button-min-height: calc(var(--muxui-semantic-control-size-lg) + 2 * var(--muxui-semantic-layout-dense-gap));
-    }
-  }
 }
