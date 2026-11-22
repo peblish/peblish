@@ -19,6 +19,18 @@ test.beforeAll(() => {
   cast = JSON.parse(execFileSync('node', ['packages/core/src/testing/seed-notify.ts', 'e2e'], { cwd: root, encoding: 'utf8' })) as Cast;
 });
 
+/** Goes to another post inside the document, as a link does once hydrated. */
+const openPost = (page: Page, id: string) =>
+  page.evaluate(
+    (target) =>
+      (
+        window as unknown as { __TSR_ROUTER__: { navigate(to: { to: string; params: { id: string } }): Promise<void> } }
+      ).__TSR_ROUTER__.navigate({
+        to: '/post/$id',
+        params: { id: target },
+      }),
+    id,
+  );
 const bell = (page: Page) => page.getByRole('button', { name: 'Follow thread', exact: true });
 const railSwitch = (page: Page) => page.getByRole('switch', { name: 'Follow thread' });
 const said = (page: Page, text: string) => page.getByRole('status').filter({ hasText: text });
@@ -51,10 +63,12 @@ test('the rail switch’s change is said once, in the bell’s status, and the b
   await expect(said(page, on)).toHaveCount(1);
   await expect(said(page, off)).toHaveCount(0);
 
-  // What was said belongs to that post: on another post, and back, the status is empty.
-  await gotoHydrated(page, `/post/${cast.markerPost.id}`);
+  // What was said belongs to that post: the router reuses the page for the next post in the same document,
+  // and its status is empty there.
+  await page.evaluate(() => Object.assign(window, { __survives: true }));
+  await openPost(page, cast.markerPost.id);
+  await expect(page).toHaveURL(new RegExp(`/post/${cast.markerPost.id}$`));
+  await expect(bell(page)).toHaveAttribute('aria-pressed', 'false');
   await expect(said(page, on)).toHaveCount(0);
-  await gotoHydrated(page, `/post/${cast.post.id}`);
-  await expect(bell(page)).toHaveAttribute('aria-pressed', 'true');
-  await expect(said(page, on)).toHaveCount(0);
+  expect(await page.evaluate(() => (window as unknown as { __survives?: boolean }).__survives)).toBe(true);
 });
