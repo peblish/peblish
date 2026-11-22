@@ -124,7 +124,11 @@ export function BannerSection({
           if ('field' in checked) {
             event.preventDefault();
             setProblem(checked.field);
-            event.currentTarget.querySelector<HTMLElement>(`[name="${checked.field}"]:not([type="hidden"])`)?.focus();
+            // A field that posts through a hidden input (Mux's ColorField) is focused at its visible one beside it.
+            const named = event.currentTarget.querySelector<HTMLInputElement>(`[name="${checked.field}"]`);
+            const visible =
+              named?.type === 'hidden' ? named.parentElement?.querySelector<HTMLElement>('input:not([type="hidden"])') : named;
+            visible?.focus();
             return;
           }
           onSubmit(event);

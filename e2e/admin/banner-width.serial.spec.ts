@@ -184,13 +184,44 @@ test('Custom: the colour field shows for Custom only, Enter applies a colour wit
   expect(await readSetting('site.banner')).toMatchObject({ tone: 'custom', colour: '#1E3A8A', emphasis: 'solid', revision: 2 });
 });
 
+test('an empty colour for Custom is refused at the colour field; a double press of Publish publishes once', async ({ browser }) => {
+  await gotoHydrated(page, '/admin/settings');
+  const url = page.url();
+  await choose(form(page), 'Custom');
+  const colour = form(page).getByRole('textbox', { name: 'Colour' });
+  await colour.fill('');
+  await colour.press('Tab');
+  await form(page).getByRole('button', { name: 'Publish banner' }).click();
+  await expect(colour).toBeFocused();
+  await expect(colour).toHaveAttribute('aria-invalid', 'true');
+  await expect(colour).toHaveAccessibleDescription(/Custom needs a colour as #RRGGBB/);
+  expect(page.url()).toBe(url);
+  // Typed with scripts off, the colour is posted as typed and read by the server.
+  const context = await browser.newContext({ javaScriptEnabled: false, storageState: await page.context().storageState() });
+  const plain = await context.newPage();
+  await plain.goto('/admin/settings');
+  await choose(form(plain), 'Custom');
+  await form(plain).getByRole('textbox', { name: 'Colour' }).fill('#0e9f6e');
+  await form(plain).getByRole('button', { name: 'Publish banner' }).click();
+  await plain.waitForURL(/saved=banner/);
+  await context.close();
+  const before = await readSetting('site.banner');
+  expect(before).toMatchObject({ tone: 'custom', colour: '#0e9f6e' });
+  await gotoHydrated(page, '/admin/settings');
+  await form(page).getByRole('button', { name: 'Publish banner' }).dblclick();
+  await page.waitForURL(/saved=banner/);
+  await expect(page.getByRole('status').filter({ hasText: 'Banner published.' })).toBeVisible();
+  expect((await readSetting('site.banner')).revision).toBe(before.revision + 1);
+});
+
 test('dismissing hides the banner in this browser and focuses the page; a reload keeps it hidden; a new revision shows it again', async () => {
   await gotoHydrated(page, '/');
   await page.getByRole('region', { name: 'Site notice' }).getByRole('button', { name: 'Dismiss notice' }).click();
   await expect(shellBanner(page)).toHaveCount(0);
   await expect(page.locator('#pb-main main')).toBeFocused();
   const cookie = (await page.context().cookies()).find(({ name }) => name === 'peblish_banner');
-  expect(cookie?.value).toBe('2');
+  const { revision } = await readSetting('site.banner');
+  expect(cookie?.value).toBe(String(revision));
   // The server leaves a dismissed banner out, so nothing moves when the page hydrates.
   expect(await (await page.request.get('/')).text()).not.toContain('aria-label="Site notice"');
   await gotoHydrated(page, '/communities');
@@ -206,7 +237,7 @@ test('dismissing hides the banner in this browser and focuses the page; a reload
   // Publishing again, unchanged, raises the revision, so the banner shows again where it was dismissed.
   await form(page).getByRole('button', { name: 'Publish banner' }).click();
   await page.waitForURL(/saved=banner/);
-  expect((await readSetting('site.banner')).revision).toBe(3);
+  expect((await readSetting('site.banner')).revision).toBe(revision + 1);
   await expect(page.getByRole('region', { name: 'Site notice' })).toBeVisible();
 });
 
@@ -254,6 +285,10 @@ test("each width saved through the form is the frame's preset, and a staff table
     await expect(page.getByRole('status').filter({ hasText: 'Saved.' })).toBeVisible();
     expect(await readSetting('site.width')).toBe(width);
     await expect(page.locator('.pb-app')).toHaveAttribute('data-width', width);
+    // Audited as the banner is, unless the preset was already the one saved.
+    const last = settingsLog().at(-1)!;
+    if (width !== 'default')
+      expect(last).toEqual({ public: false, changes: { 'site.width': { before: expect.anything(), after: width } } });
     staff.add(await frame(browser, '/admin/reports', 1440));
   }
   expect(staff.size).toBe(1);
