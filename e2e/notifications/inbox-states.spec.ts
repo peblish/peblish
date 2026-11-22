@@ -197,6 +197,22 @@ test('a reply is sent once: Send stays held until the notice is marked read as w
   expect(sent).toEqual(['Once is enough.']);
 });
 
+test('a sensitive notice offers no reply in place: Reply leads to the thread, whose gate applies', async ({ page }) => {
+  await gotoHydrated(page, '/kit/inbox-mentions');
+  // The ordinary mention still answers in place.
+  const mention = rows(page).first();
+  await expect(mention.getByRole('button', { name: /^Reply: @kofi@fedia\.io, / })).toHaveAttribute('aria-expanded', 'false');
+  const sensitive = rows(page).filter({ hasText: 'Sensitive content' });
+  await expect(sensitive).toHaveCount(1);
+  await expect(sensitive.getByRole('button', { name: /^Reply: / })).toHaveCount(0);
+  await expect(sensitive.getByRole('link', { name: /^Reply: @kofi@fedia\.io, / })).toHaveAttribute(
+    'href',
+    '/post/00000000-0000-7000-8000-000000000100/comments/00000000-0000-7000-8000-000000000200',
+  );
+  await expect(sensitive.getByRole('textbox')).toHaveCount(0);
+  await expect(sensitive.getByRole('status')).toHaveCount(0);
+});
+
 test('without scripts Reply is a link to the comment, whose page has the reply form', async ({ browser, baseURL }) => {
   const context = await browser.newContext({ baseURL, javaScriptEnabled: false });
   const page = await context.newPage();

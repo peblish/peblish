@@ -263,9 +263,11 @@ export function NoticeRow({
     if (!item.read && hydrated) void post(readAction, '', true);
   };
 
-  // A reply or mention whose words are still there can be answered in place; a removed or deleted comment cannot.
-  const replyable =
-    (item.kind === 'reply' || item.kind === 'mention') && target !== null && item.withheld !== 'removed' && item.withheld !== 'deleted';
+  // Where Reply leads: a reply's or mention's comment (or post), unless it was removed or deleted since. Only one whose words are
+  // shown is answered in place; a sensitive one is withheld here for every viewer, so Reply leads to its thread, which applies the gate.
+  const replyTarget =
+    (item.kind === 'reply' || item.kind === 'mention') && item.withheld !== 'removed' && item.withheld !== 'deleted' ? target : null;
+  const replyable = replyTarget !== null && item.withheld === null;
   const formId = `reply-${item.id}`;
   const [open, setOpen] = useState(false);
   const [text, setText] = useState('');
@@ -301,8 +303,8 @@ export function NoticeRow({
 
   const replyName = t('notifications', 'markFor', { action: t('notifications', 'reply'), actor, subject });
   const replyControl =
-    replyable &&
-    (hydrated ? (
+    replyTarget !== null &&
+    (replyable && hydrated ? (
       <Button
         variant="ghost"
         size="sm"
@@ -321,8 +323,8 @@ export function NoticeRow({
         {t('notifications', 'reply')}
       </Button>
     ) : (
-      // Without scripts (and until the page hydrates) Reply leads to the comment, whose page has the reply form.
-      <ButtonLink variant="ghost" size="sm" href={target} aria-label={replyName}>
+      // Without scripts (and until the page hydrates), and for a sensitive notice, Reply leads to the comment, whose page has the reply form.
+      <ButtonLink variant="ghost" size="sm" href={replyTarget} aria-label={replyName}>
         <CommentsIcon aria-hidden="true" />
         {t('notifications', 'reply')}
       </ButtonLink>
