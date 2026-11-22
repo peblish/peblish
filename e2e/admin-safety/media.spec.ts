@@ -4,7 +4,7 @@ import { expect, test, type Locator, type Page } from '@playwright/test';
 import { closePools } from '../../packages/core/src/db/pools.ts';
 import { freshTotp, landed, signIn } from '../auth/support.ts';
 import { gotoHydrated } from '../support/route-marker.ts';
-import { enterDoesNothing, postFromPage, postsTo, tick, withoutScripts } from './support.ts';
+import { enterDoesNothing, hydrated, postFromPage, postsTo, tick, withoutScripts } from './support.ts';
 
 // The Media tab's three decisions (Confirm block, Hold, Release as clean) are Mux Tabs, which
 // unmount the panels not shown. What an admin set in one (keep the posts, a note) must survive a
@@ -137,6 +137,8 @@ test('Hold and Release each post their own decision', async ({ page }) => {
   expect(sent[0]!.has('removePosts')).toBe(false);
 
   await expect(d.detail).toContainText(item.sha256);
+  // The hold was a plain post: the page it answered with is the server's until it hydrates.
+  await hydrated(page);
   await choose(d.tab('Release as clean'));
   await d.releaseNote.fill('A photo of a sunset');
   await d.detail.getByRole('button', { name: 'Release as clean' }).click();

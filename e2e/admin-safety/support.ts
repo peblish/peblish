@@ -26,6 +26,12 @@ export function postsTo(page: Page, path: string): URLSearchParams[] {
   return sent;
 }
 
+/**
+ * Waits until the page a plain form opened has hydrated. The server's page shows first, so its text is there
+ * before a press on a widget (a Tabs tab) would work, and before the router writes the address it keeps.
+ */
+export const hydrated = (page: Page) => page.locator('html[data-hydrated="1"]').waitFor({ state: 'attached' });
+
 /** Presses Enter in a field and checks that nothing was posted and the page stayed where it was. */
 export async function enterDoesNothing(page: Page, field: Locator, sent: URLSearchParams[]) {
   const before = sent.length;
