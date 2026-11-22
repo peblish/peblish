@@ -25,7 +25,9 @@ export const loadDirectory = createServerFn({ method: 'GET' })
   )
   .handler(async ({ data }) => {
     const session = await pageSession();
-    const viewer = session ? { actorId: session.view.actorId, declared: session.view.ageDeclaredAt !== null } : null;
+    const viewer = session
+      ? { actorId: session.view.actorId, siteRole: session.view.siteRole, declared: session.view.ageDeclaredAt !== null }
+      : null;
     const directory = await listCommunities(data, viewer);
     return {
       ...directory,

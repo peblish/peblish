@@ -5,7 +5,7 @@ import { actors } from '../db/tables/actors.ts';
 import { writer } from '../db/write.ts';
 import { seedBlock } from '../testing/seed-e1.ts';
 import { truncateAll } from '../testing/db.ts';
-import { seedComment, seedModerator, seedPost } from '../testing/seed-az.ts';
+import { seedComment, seedCommunityRemoval, seedModerator, seedPost } from '../testing/seed-az.ts';
 import { declareAge } from '../testing/seed-b1.ts';
 import { seedFeedPost } from '../testing/seed-c1.ts';
 import { seedPerson } from '../testing/seed-f.ts';
@@ -119,6 +119,44 @@ describe('readProfile', () => {
     expect((await readProfile('rem@lemmy.test', w.as(w.viewer)))?.blocked).toBe('instance');
     expect((await readProfile('Alice', w.as(w.mod)))?.blocked).toBeNull();
     expect((await readProfile('Alice', null))?.blocked).toBeNull();
+  });
+
+  test('the counts are what the tabs list for this viewer: no removed community, nothing gated, Hide NSFW for comments', async () => {
+    const w = await world();
+    const closed = await seedActor(w.local, 'Group', 'closed');
+    await seedCommunityRemoval(closed);
+    const live = await seedPost(w.local, w.news, w.alice);
+    const flagged = await seedPost(w.local, w.news, w.alice, { sensitive: true });
+    await seedPost(w.local, w.adult, w.alice);
+    const gone = await seedPost(w.local, closed, w.alice);
+    await seedComment(w.local, live, w.alice);
+    await seedComment(w.local, flagged, w.alice);
+    await seedComment(w.local, gone, w.alice);
+    await declareAge(w.viewer);
+    const counted = async (viewer: { id: string } | null, nsfw: NsfwChoice) =>
+      (await readProfile('Alice', viewer && w.as(viewer), undefined, nsfw))?.counts;
+    const listed = async (viewer: { id: string } | null, nsfw: NsfwChoice) => {
+      const tab = async (tab: 'posts' | 'comments') =>
+        (await readActivity({ personId: w.alice.id, tab, sort: 'new', nsfw }, viewer && w.as(viewer))).items.length;
+      return { posts: await tab('posts'), comments: await tab('comments') };
+    };
+    // Signed out, or without a 16+ declaration: what nothing flags, and never the removed community.
+    expect(await counted(null, showNsfw)).toEqual({ posts: 1, comments: 1 });
+    expect(await counted(w.mod, showNsfw)).toEqual({ posts: 1, comments: 1 });
+    // Declared: flagged posts list behind their cover; a comment under one only when this browser shows it.
+    expect(await counted(w.viewer, hideNsfw)).toEqual({ posts: 3, comments: 1 });
+    expect(await counted(w.viewer, showNsfw)).toEqual({ posts: 3, comments: 2 });
+    for (const [viewer, nsfw] of [
+      [null, hideNsfw],
+      [w.mod, showNsfw],
+      [w.viewer, hideNsfw],
+      [w.viewer, showNsfw],
+    ] as const)
+      expect(await counted(viewer, nsfw)).toEqual(await listed(viewer, nsfw));
+    // Someone the viewer blocks: none of their posts, as the tab lists none.
+    await seedBlock(w.mod, w.alice);
+    expect((await counted(w.mod, showNsfw))?.posts).toBe(0);
+    expect(await counted(w.mod, showNsfw)).toEqual(await listed(w.mod, showNsfw));
   });
 
   test('moderated communities: the viewer moderates and the person has live content, at most five', async () => {

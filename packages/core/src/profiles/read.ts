@@ -28,7 +28,7 @@ export type Profile = {
   bio: PostBody | null;
   /** When the account began: the remote's own publish time when known, else when it was stored here. */
   joinedAt: string;
-  /** Live posts and comments, whoever may see them: the tabs list what this viewer is shown. */
+  /** What the Posts and Comments tabs list for this viewer (countQueries): the same conditions, so no count tells of what the viewer is not shown. */
   counts: { posts: number; comments: number };
   /** `admin` needs two-factor on, as the thread's badge does; `moderator` is any community with a current role. */
   badges: { admin: boolean; moderator: boolean; bot: boolean; you: boolean };
@@ -111,9 +111,14 @@ async function moderatedWith(q: Queryable, viewerId: Uuid, personId: Uuid): Prom
  * The profile of a Person or a Service (a bot) by handle: `name` for a local one, `name@host`
  * for a remote one already stored here. Null for an unknown handle, a community or the
  * instance actor. A deleted account is still returned, as `state: 'deleted'`, with its
- * profile text withheld.
+ * profile text withheld. `nsfw` is the browser's Hide NSFW choice, as the Comments tab takes it.
  */
-export async function readProfile(handle: string, viewer: Viewer, q: Queryable = db()): Promise<Profile | null> {
+export async function readProfile(
+  handle: string,
+  viewer: Viewer,
+  q: Queryable = db(),
+  nsfw: NsfwChoice = hideNsfw,
+): Promise<Profile | null> {
   const parsed = parseHandle(handle);
   if (!parsed) return null;
   const found = await q
@@ -138,15 +143,10 @@ export async function readProfile(handle: string, viewer: Viewer, q: Queryable =
 
   const deleted = row.deletedAt !== null;
   const isViewer = viewer?.actorId === row.id;
+  const counted = countQueries(row.id, viewer, nsfw, q);
   const [[postCount], [commentCount], [moderates], blocked, moderated] = await Promise.all([
-    q
-      .select({ n: count() })
-      .from(posts)
-      .where(and(eq(posts.authorId, row.id), isNull(posts.deletedAt), isNull(posts.removedAt))),
-    q
-      .select({ n: count() })
-      .from(comments)
-      .where(and(eq(comments.authorId, row.id), isNull(comments.deletedAt), isNull(comments.removedAt))),
+    counted.posts,
+    counted.comments,
     q
       .select({ n: count() })
       .from(communityModerators)
@@ -216,10 +216,13 @@ function after(cursor: Cursor | null, sort: ProfileSort, c: { published: SQL; sc
 const order = (sort: ProfileSort, c: { published: SQL; score: SQL; id: SQL }) =>
   sort === 'top' ? [sql`${c.score} desc`, sql`${c.id} desc`] : [sql`${c.published} desc nulls last`, sql`${c.id} desc`];
 
-/** The query for the person's posts the viewer may see: the feed's conditions, scoped to the author. */
+/** The person's posts the viewer may see: the feed's conditions, scoped to the author (the Posts tab and its count). */
+const shownPosts = (personId: Uuid, viewer: Viewer, asOf: number): SQL[] => visible('all', viewer, asOf, { authorId: personId });
+
+/** The query for the person's posts the viewer may see. */
 function postsQuery(q: Queryable, request: ActivityRequest, viewer: Viewer, cursor: Cursor | null, asOf: number, want: number) {
   const columns = { published: sql`${posts.publishedAt}`, score: sql`(${posts.upvotes} - ${posts.downvotes})`, id: sql`${posts.id}` };
-  const conditions = visible('all', viewer, asOf, { authorId: request.personId });
+  const conditions = shownPosts(request.personId, viewer, asOf);
   const next = after(cursor, request.sort, columns);
   if (next) conditions.push(next);
   return q
@@ -256,6 +259,19 @@ function nsfwShown(nsfw: NsfwChoice): SQL | undefined {
   return nsfw.once.length === 0 ? clear : sql`(${clear} or ${inArray(posts.communityId, [...nsfw.once])})`;
 }
 
+/** The person's live comments on posts the viewer may see, under Hide NSFW (the Comments tab and its count); `posts` joined. */
+function shownComments(personId: Uuid, viewer: Viewer, asOf: number, nsfw: NsfwChoice): SQL[] {
+  const conditions = [
+    eq(comments.authorId, personId),
+    isNull(comments.deletedAt),
+    isNull(comments.removedAt),
+    ...visible('all', viewer, asOf),
+  ];
+  const shown = nsfwShown(nsfw);
+  if (shown) conditions.push(shown);
+  return conditions;
+}
+
 /** The query for the person's live comments on posts the viewer may see. */
 function commentsQuery(q: Queryable, request: ActivityRequest, viewer: Viewer, cursor: Cursor | null, asOf: number, want: number) {
   const columns = {
@@ -263,14 +279,7 @@ function commentsQuery(q: Queryable, request: ActivityRequest, viewer: Viewer, c
     score: sql`(${comments.upvotes} - ${comments.downvotes})`,
     id: sql`${comments.id}`,
   };
-  const conditions = [
-    eq(comments.authorId, request.personId),
-    isNull(comments.deletedAt),
-    isNull(comments.removedAt),
-    ...visible('all', viewer, asOf),
-  ];
-  const shown = nsfwShown(request.nsfw ?? hideNsfw);
-  if (shown) conditions.push(shown);
+  const conditions = shownComments(request.personId, viewer, asOf, request.nsfw ?? hideNsfw);
   const next = after(cursor, request.sort, columns);
   if (next) conditions.push(next);
   return q
@@ -379,6 +388,25 @@ async function commentsPage(q: Queryable, request: ActivityRequest, viewer: View
       },
     ];
   });
+}
+
+/**
+ * The profile's counts: what the Posts and Comments tabs list for this viewer (shownPosts,
+ * shownComments), counted. Exported for the performance test to EXPLAIN the very statements.
+ */
+export function countQueries(personId: Uuid, viewer: Viewer, nsfw: NsfwChoice, q: Queryable = db()) {
+  const asOf = Date.now();
+  return {
+    posts: q
+      .select({ n: count() })
+      .from(posts)
+      .where(and(...shownPosts(personId, viewer, asOf))),
+    comments: q
+      .select({ n: count() })
+      .from(comments)
+      .innerJoin(posts, eq(posts.id, comments.postId))
+      .where(and(...shownComments(personId, viewer, asOf, nsfw))),
+  };
 }
 
 /**

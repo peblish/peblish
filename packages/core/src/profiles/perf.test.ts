@@ -7,7 +7,8 @@ import { seedBulk } from '../testing/seed-c1.ts';
 import { seedPerson } from '../testing/seed-f.ts';
 import { seedInstance } from '../testing/seed.ts';
 import type { ProfileSort, ProfileTab } from './input.ts';
-import { activityQueries, readActivity } from './read.ts';
+import { hideNsfw } from '../communities/gate.ts';
+import { activityQueries, countQueries, readActivity, readProfile } from './read.ts';
 
 // Opt-in, like the feed's (feeds/perf.test.ts), because it seeds 100,000 posts first:
 //   PEBLISH_FEED_PERF=1 pnpm exec vitest run --project core packages/core/src/profiles/perf.test.ts
@@ -102,6 +103,26 @@ describe.skipIf(!process.env.PEBLISH_FEED_PERF)('profile activity performance', 
         }
       }
     }
+    // The profile's counts are the tabs' conditions counted: the same author indexes.
+    const counts = countQueries(author.id, viewer, hideNsfw);
+    for (const [name, query, index] of [
+      ['posts', counts.posts, /(Index|Bitmap Index|Index Only) Scan (using|on) posts_author/],
+      ['comments', counts.comments, /(Index|Bitmap Index|Index Only) Scan (using|on) comments_author/],
+    ] as const) {
+      const { sql: text, params } = query.toSQL();
+      const plan = (await readPool().client.unsafe(`explain (analyze, buffers) ${text}`, params as never[]))
+        .map((row) => String(row['QUERY PLAN']))
+        .join('\n');
+      expect(plan, `count of ${name}`).not.toMatch(/Seq Scan on (posts|comments)\b/);
+      expect(plan, `count of ${name}`).toMatch(index);
+    }
+    const profileTimings: number[] = [];
+    for (let run = 0; run < runs + 1; run += 1) {
+      const began = performance.now();
+      await readProfile('prolific', viewer);
+      if (run > 0) profileTimings.push(performance.now() - began);
+    }
+    report.push(`profile        p95 ${percentile95(profileTimings).toFixed(1).padStart(6)} ms`);
     console.log(report.join('\n'));
     if (process.env.FEED_PERF_PLANS) writeFileSync(process.env.FEED_PERF_PLANS, report.join('\n'));
     // The newest-first pages are the ones everybody opens; they must fit the feed's budget too.
