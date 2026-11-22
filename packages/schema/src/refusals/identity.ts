@@ -6,7 +6,9 @@ export const refusals = {
   'invite.revoked': 'An admin revoked the invite.',
   'registration.capped': 'The beta cap on accounts (site setting registration.cap) is reached.',
   'age.under_16': 'The declared date of birth makes the person younger than 16.',
-  'age.declaration_required': 'Sign-up needs a complete, real date of birth to compute the age from.',
+  /** Also the write policies' age gate (core authz/state.ts: ageDenial): what a sensitive or NSFL post or community holds takes part only from someone who declared 16+. */
+  'age.declaration_required':
+    'A 16+ declaration is needed: sign-up needs a complete, real date of birth to compute the age from, and a sensitive or NSFL post or community takes no comment, vote, post or edit from a local person who has not declared.',
   'name.invalid': 'A new local name must match [A-Za-z0-9_]{1,50}.',
   'name.reserved': 'The name is reserved for the instance or its staff.',
   'name.taken': 'A local actor already has this name (case-insensitive).',

@@ -41,7 +41,7 @@ describe('castVote', () => {
     const { world, target, reader } = await setup();
     const voterId = world.people.reader.id;
 
-    expect(await cast(reader, target, { value: 1 })).toEqual({ changed: true, value: 1 });
+    expect(await cast(reader, target, { value: 1 })).toEqual({ changed: true, value: 1, tally: { upvotes: 1, downvotes: 0 } });
     const [up] = await voteRows(voterId);
     expect(up).toMatchObject({ value: 1, local: true, postId: target.id, commentId: null });
     expect(up?.apId).toMatch(/^https:\/\/feddit\.test\/ap\/activity\/[0-9a-f-]{36}$/);
@@ -72,7 +72,7 @@ describe('castVote', () => {
     const { target, reader } = await setup();
     await cast(reader, target, { value: 0 });
     await cast(reader, target, { value: 1 });
-    expect(await cast(reader, target, { value: 1 })).toEqual({ changed: false, value: 1 });
+    expect(await cast(reader, target, { value: 1 })).toEqual({ changed: false, value: 1, tally: { upvotes: 1, downvotes: 0 } });
     expect(await tally(target)).toEqual({ upvotes: 1, downvotes: 0 });
     expect(await voteEvents()).toHaveLength(1);
   });

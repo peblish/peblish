@@ -3,7 +3,7 @@ import { excerptLength } from '@peblish/schema/markdown';
 import type { ActorRef, AuthorBadge, PostView } from '@peblish/schema/views';
 import { and, eq, inArray } from 'drizzle-orm';
 import { freshModerator } from '../authz/roles.ts';
-import { hideNsfw, showNsfw, shows, type NsfwChoice } from '../communities/gate.ts';
+import { gateOf, hideNsfw, showNsfw, shows, type Gate, type NsfwChoice } from '../communities/gate.ts';
 import { db, type Queryable } from '../db/read.ts';
 import { localInstance } from '../db/local-instance.ts';
 import { actors } from '../db/tables/actors.ts';
@@ -33,13 +33,6 @@ export type PostRow = typeof posts.$inferSelect;
 
 /** What to render for the body: the web renderer takes Markdown through render, remote HTML through sanitize. */
 export type PostBody = { kind: 'markdown'; source: string } | { kind: 'html'; html: string; baseUrl: string };
-
-/**
- * Where the sensitive-content gate stands for this viewer: none (the post is not sensitive, or
- * the viewer declared 16+ and chose to show it), sign-in (signed out), age (signed in without a
- * 16+ declaration) or hidden (declared, Hide NSFW on). Every gate but none withholds the content.
- */
-export type Gate = 'none' | 'sign-in' | 'age' | 'hidden';
 
 export type PostPage = {
   view: PostView;
@@ -181,7 +174,7 @@ function describe(row: PostRow, c: Context, nsfw: NsfwChoice): PostPage {
   if (!author || !community) throw new Error(`post ${row.id} names an actor that is gone`);
   const moderator = c.moderated.has(row.communityId);
   const flagged = row.sensitive || row.nsfl || community.sensitive || community.nsfl;
-  const gate: Gate = !flagged ? 'none' : !c.viewer ? 'sign-in' : !c.declared ? 'age' : shows(nsfw, row.communityId) ? 'none' : 'hidden';
+  const gate = gateOf(flagged, c.viewer && { declared: c.declared }, shows(nsfw, row.communityId));
   const removedForViewer = row.removedAt !== null && !moderator;
   const show = row.deletedAt === null && !removedForViewer && gate === 'none';
   const body: PostBody | null = !show

@@ -1,9 +1,13 @@
+import type { ActingPrincipal } from '@peblish/schema/authz';
 import type { ContentRef, Uuid } from '@peblish/schema/ids';
 import type { RefusalReason } from '@peblish/schema/refusal';
 import { and, eq, gt, isNull, or, sql } from 'drizzle-orm';
+import { gateOf } from '../communities/gate.ts';
 import { actors } from '../db/tables/actors.ts';
 import { comments, posts } from '../db/tables/content.ts';
+import { ageDeclarations } from '../identity/tables.ts';
 import { communityBans, communityRemovals } from '../moderation/tables.ts';
+import type { Frozen } from './frozen.ts';
 import { forNoKeyUpdate, forShare, type PolicyRequest, type PolicyResult } from './policy.ts';
 
 // Owned by lane AZ. Target state for policies, read with the caller's db and lock (a recheck
@@ -27,7 +31,15 @@ export type Denial = Extract<PolicyResult, { ok: false }>;
 
 const refuse = (reason: RefusalReason): Denial => ({ ok: false, reason });
 
-export type CommunityState = { id: Uuid; apId: string; local: boolean; deleted: boolean; removed: boolean };
+export type CommunityState = {
+  id: Uuid;
+  apId: string;
+  local: boolean;
+  deleted: boolean;
+  removed: boolean;
+  /** Sensitive or NSFL: the age gate (ageDenial) covers everything in it. */
+  flagged: boolean;
+};
 
 export type PostState = {
   kind: 'post';
@@ -39,6 +51,8 @@ export type PostState = {
   removed: boolean;
   locked: boolean;
   pinned: boolean;
+  /** The post itself is sensitive or NSFL (its community's flag is community.flagged). */
+  flagged: boolean;
 };
 
 export type CommentState = {
@@ -58,7 +72,15 @@ export type ContentState = PostState | CommentState;
 export async function communityState(read: StateRead, communityId: Uuid): Promise<CommunityState | null> {
   const [community] = await forNoKeyUpdate(
     read.db
-      .select({ id: actors.id, apId: actors.apId, kind: actors.kind, local: actors.local, deletedAt: actors.deletedAt })
+      .select({
+        id: actors.id,
+        apId: actors.apId,
+        kind: actors.kind,
+        local: actors.local,
+        deletedAt: actors.deletedAt,
+        sensitive: actors.sensitive,
+        nsfl: actors.nsfl,
+      })
       .from(actors)
       .where(eq(actors.id, communityId)),
     read.lock,
@@ -71,7 +93,14 @@ export async function communityState(read: StateRead, communityId: Uuid): Promis
       .where(eq(communityRemovals.communityId, communityId)),
     read.lock,
   );
-  return { id: community.id, apId: community.apId, local: community.local, deleted: community.deletedAt !== null, removed: !!removal };
+  return {
+    id: community.id,
+    apId: community.apId,
+    local: community.local,
+    deleted: community.deletedAt !== null,
+    removed: !!removal,
+    flagged: community.sensitive || community.nsfl,
+  };
 }
 
 export async function postState(read: StateRead, postId: Uuid): Promise<PostState | null> {
@@ -90,6 +119,8 @@ export async function postState(read: StateRead, postId: Uuid): Promise<PostStat
         removedAt: posts.removedAt,
         locked: posts.locked,
         pinned: posts.featuredCommunity,
+        sensitive: posts.sensitive,
+        nsfl: posts.nsfl,
       })
       .from(posts)
       .where(eq(posts.id, postId)),
@@ -107,6 +138,7 @@ export async function postState(read: StateRead, postId: Uuid): Promise<PostStat
     removed: post.removedAt !== null,
     locked: post.locked,
     pinned: post.pinned,
+    flagged: post.sensitive || post.nsfl,
   };
 }
 
@@ -194,7 +226,8 @@ export async function participationDenial(read: StateRead, actorId: Uuid, target
   return state ? participation(read, actorId, state) : refuse('target.not_found');
 }
 
-async function participation(read: StateRead, actorId: Uuid, state: ContentState): Promise<Denial | null> {
+/** participationDenial's checks on a target already read (contentState), for a policy that needs the state too. */
+export async function participation(read: StateRead, actorId: Uuid, state: ContentState): Promise<Denial | null> {
   const closed = communityDenial(state.community);
   if (closed) return closed;
   if (await isBanned(read, state.community.id, actorId)) return refuse('community.banned');
@@ -227,4 +260,26 @@ export async function commentingDenial(
     (parent.kind === 'comment' ? liveDenial(parent) : null) ??
     (post.locked ? refuse('post.locked') : null)
   );
+}
+
+/** Whether the age gate covers a post or comment: it, its post or its community is sensitive or NSFL. */
+export const flaggedContent = (state: ContentState): boolean =>
+  (state.kind === 'comment' ? state.post.flagged : state.flagged) || state.community.flagged;
+
+/**
+ * The sensitive-content gate (C10) on taking part: a local person without a 16+ declaration may
+ * not act on what is `flagged` (flaggedContent, or a community's own flag), which the pages
+ * withhold from them (gateOf, the rule readPost and communityGate apply). Access only: the
+ * browser's Hide NSFW choice is how a page covers content, not whether its viewer may open it
+ * (media/reference.ts draws the same line). What peers send is theirs to gate, so a remote or
+ * system principal passes. Call it after the locked state reads (lock order above); the
+ * declaration is a row only ever inserted, read FOR SHARE.
+ */
+export async function ageDenial(read: StateRead, principal: Frozen<ActingPrincipal>, flagged: boolean): Promise<Denial | null> {
+  if (principal.kind !== 'local' || !flagged) return null;
+  const declared = await forShare(
+    read.db.select({ actorId: ageDeclarations.actorId }).from(ageDeclarations).where(eq(ageDeclarations.actorId, principal.actorId)),
+    read.lock,
+  );
+  return gateOf(flagged, { declared: declared.length > 0 }, true) === 'none' ? null : refuse('age.declaration_required');
 }

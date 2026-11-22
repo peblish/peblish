@@ -5,7 +5,7 @@ import { actors } from '../../db/tables/actors.ts';
 import { switchedOn } from '../../media/settings.ts';
 import { allow, deny, forNoKeyUpdate, type PolicyRequest, type PolicyResult } from '../policy.ts';
 import { communityRole, emailUnverified, ownerAuthority } from '../roles.ts';
-import { communityDenial, isBanned, postState, postingDenial, type PostState } from '../state.ts';
+import { ageDenial, communityDenial, flaggedContent, isBanned, postState, postingDenial, type PostState } from '../state.ts';
 
 // Owned by lane B1. Rows are read in the lock order of state.ts: the acting actor, the
 // community, the post. Lane AZ's guards refuse removed communities and community bans
@@ -27,7 +27,8 @@ export async function isGroupPrincipal({ principal, db }: Pick<PolicyRequest<unk
 
 /**
  * post.create. A local person needs a verified email, then the community must exist, not be
- * deleted, not be removed and not have banned them (AZ's postingDenial), then a restricted
+ * deleted, not be removed and not have banned them (AZ's postingDenial), a sensitive or NSFL
+ * community needs a local author's 16+ declaration (ageDenial), then a restricted
  * community lets only its moderators, its owner and site admins post. A remote author is
  * allowed as the owner of what they post: the inbound pipeline has matched the signer to the
  * object's attributedTo (Authority.owner); a remote community itself is refused
@@ -46,7 +47,14 @@ const create = async (request: PolicyRequest<{ communityId: Uuid }>): Promise<Po
   // (PolicyRequest.lock), so a ban and a post take turns.
   const [community] = await forNoKeyUpdate(
     db
-      .select({ kind: actors.kind, local: actors.local, deletedAt: actors.deletedAt, restricted: actors.postingRestrictedToMods })
+      .select({
+        kind: actors.kind,
+        local: actors.local,
+        deletedAt: actors.deletedAt,
+        restricted: actors.postingRestrictedToMods,
+        sensitive: actors.sensitive,
+        nsfl: actors.nsfl,
+      })
       .from(actors)
       .where(eq(actors.id, subject.communityId)),
     lock,
@@ -55,6 +63,8 @@ const create = async (request: PolicyRequest<{ communityId: Uuid }>): Promise<Po
   if (community.deletedAt) return deny('target.deleted');
   const denied = await postingDenial({ db, lock }, principal.actorId, subject.communityId);
   if (denied) return denied;
+  const gated = await ageDenial({ db, lock }, principal, community.sensitive || community.nsfl);
+  if (gated) return gated;
   const { actorId } = principal;
   // An Announce can only come from the remote community the post is in (as lane AZ's mod.* policies read it).
   if (principal.kind === 'remote' && principal.announcedBy) {
@@ -94,17 +104,25 @@ const authorAction =
     return refusal ? deny(refusal) : allow(authority);
   };
 
-/** Editing and restoring need the author to be in good standing; deleting your own post does not. */
+/**
+ * Editing and restoring need the author to be in good standing and a post the age gate does not
+ * withhold from them (ageDenial: they would write into what they cannot see); deleting your own
+ * post needs neither.
+ */
 const banned = async (request: PolicyRequest<unknown>, post: PostState): Promise<RefusalReason | null> =>
   (await isBanned(request, post.community.id, post.authorId)) ? 'community.banned' : null;
 
 const gone = (post: PostState): RefusalReason | null => (post.deleted ? 'target.deleted' : post.removed ? 'target.removed' : null);
 
+const gated = async (request: PolicyRequest<unknown>, post: PostState): Promise<RefusalReason | null> =>
+  (await ageDenial(request, request.principal, flaggedContent(post)))?.reason ?? null;
+
 export const policies = {
   'post.create': create,
-  'post.update': authorAction(async (request, post) => (await banned(request, post)) ?? gone(post)),
+  'post.update': authorAction(async (request, post) => (await banned(request, post)) ?? gone(post) ?? (await gated(request, post))),
   'post.delete': authorAction(async (_request, post) => gone(post)),
   'post.restore': authorAction(
-    async (request, post) => (await banned(request, post)) ?? (post.removed ? 'target.removed' : post.deleted ? null : 'post.not_deleted'),
+    async (request, post) =>
+      (await banned(request, post)) ?? (post.removed ? 'target.removed' : post.deleted ? await gated(request, post) : 'post.not_deleted'),
   ),
 };
