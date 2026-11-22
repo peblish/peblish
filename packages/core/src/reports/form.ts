@@ -123,7 +123,7 @@ export async function readReportForm(
     row.removedAt !== null ||
     (target.kind === 'comment' && viewer !== null && (await blockedAmong(q, viewer.actorId, [row.authorId])).has(row.authorId));
   const shown = page !== null && page.gate === 'none' && !page.view.deleted && !page.view.removed && !hidden;
-  const named = authorNamed(page, target.kind, row.deletedAt !== null);
+  const named = authorNamed(page, target.kind, row.deletedAt !== null || row.removedAt !== null);
   return {
     ok: true,
     target,
@@ -138,12 +138,13 @@ export async function readReportForm(
  * Whether the post page or its thread names the author of a post or comment to this viewer (C10
  * and the tombstones, as web's routes/post/-withheld.ts sends them): never behind the age gate,
  * an access rule that Hide NSFW plays no part in; to the moderators otherwise; and to anyone else
- * unless the comment is deleted or the post is removed (or, for the post itself, deleted).
+ * unless the comment is a tombstone (deleted or removed) or the post is removed (or, for the post
+ * itself, deleted).
  */
-function authorNamed(page: PostPage | null, target: 'post' | 'comment', commentDeleted: boolean): boolean {
+function authorNamed(page: PostPage | null, target: 'post' | 'comment', commentGone: boolean): boolean {
   if (!page || page.gate === 'sign-in' || page.gate === 'age') return false;
   if (page.moderator) return true;
-  return target === 'post' ? !page.view.deleted && !page.view.removed : !commentDeleted && !page.view.removed;
+  return target === 'post' ? !page.view.deleted && !page.view.removed : !commentGone && !page.view.removed;
 }
 
 /**
@@ -178,12 +179,13 @@ export async function readSentReport(principal: ActingPrincipal, number: number,
   }
   if (row.commentId) {
     const [comment] = await q
-      .select({ id: comments.authorId, postId: comments.postId, deletedAt: comments.deletedAt })
+      .select({ id: comments.authorId, postId: comments.postId, deletedAt: comments.deletedAt, removedAt: comments.removedAt })
       .from(comments)
       .where(eq(comments.id, row.commentId));
     personId = comment?.id ?? null;
     named =
-      comment !== undefined && authorNamed(await readPost(comment.postId, viewer, q, showNsfw), 'comment', comment.deletedAt !== null);
+      comment !== undefined &&
+      authorNamed(await readPost(comment.postId, viewer, q, showNsfw), 'comment', comment.deletedAt !== null || comment.removedAt !== null);
   }
   if (!personId || personId === viewerId || !named) return { number: row.number, blockHandle: null, forwardedTo };
   const [person] = await q.select({ kind: actors.kind }).from(actors).where(eq(actors.id, personId));

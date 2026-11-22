@@ -173,7 +173,7 @@ describe('the report form and its receipt name the author only where the post pa
     expect((await readSentReport(reporter, sent.number))?.blockHandle).toBe('author');
   });
 
-  test('the receipt drops the author once the post page would: a deleted comment, a removed or deleted post', async () => {
+  test('the receipt drops the author once the post page would: a removed or deleted comment, a removed or deleted post', async () => {
     const w = await seedModerationWorld();
     const community = w.communities.local.live;
     const post = await seedPost(w.instances.local, community, w.people.author, { title: 'Plain title' });
@@ -186,7 +186,13 @@ describe('the report form and its receipt name the author only where the post pa
     const onComment = await file(w.people.user, { kind: 'comment', id: comment.id });
     const onPost = await file(w.people.user, { kind: 'post', id: post.id });
     const byModerator = await file(w.people.moderator, { kind: 'post', id: post.id });
+    const onCommentByModerator = await file(w.people.moderator, { kind: 'comment', id: comment.id });
     expect([await onComment(), await onPost(), await byModerator()]).toEqual(['author', 'author', 'author']);
+
+    // A removed comment is a tombstone without its author in the thread, but for the moderators.
+    await writer().update(comments).set({ removedAt: new Date() }).where(eq(comments.id, comment.id));
+    expect([await onComment(), await onCommentByModerator()]).toEqual([null, 'author']);
+    await writer().update(comments).set({ removedAt: null }).where(eq(comments.id, comment.id));
 
     await writer().update(comments).set({ deletedAt: new Date() }).where(eq(comments.id, comment.id));
     expect(await onComment()).toBeNull();
