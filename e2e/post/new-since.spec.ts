@@ -1,5 +1,6 @@
-import { execFileSync } from 'node:child_process';
+import { execFile, execFileSync } from 'node:child_process';
 import { join } from 'node:path';
+import { promisify } from 'node:util';
 import { expect, test, type Browser, type Page } from '@playwright/test';
 import { landed, signIn } from '../auth/support.ts';
 import { gotoHydrated } from '../support/route-marker.ts';
@@ -20,6 +21,7 @@ type Seed = {
 type Marker = { lastVisitAt: string; previousVisitAt: string | null } | null;
 
 const root = join(import.meta.dirname, '../..');
+const execFileAsync = promisify(execFile);
 const run = (...args: string[]) =>
   execFileSync('node', ['packages/core/src/testing/seed-visits.ts', ...args], { cwd: root, encoding: 'utf8' });
 let seed: Seed;
@@ -209,4 +211,53 @@ test('a thread brought forward while its reload fails keeps what it showed, and 
   await expect(jump(tab)).toHaveText('2 new since your last visit');
   await tab.waitForTimeout(500);
   expect(marker(seed.posts.seen)!.lastVisitAt).toBe(before);
+});
+
+const sayAll = (postId: string, name: string, count: number) =>
+  Promise.all(
+    Array.from({ length: count }, () =>
+      execFileAsync('node', ['packages/core/src/testing/seed-notify.ts', 'comment', postId, name], { cwd: root, encoding: 'utf8' }),
+    ),
+  );
+/** The parent the server stored for the comment whose text is `body` ('none' when there is no such comment). */
+const storedParent = (body: string) =>
+  JSON.parse(
+    execFileSync(
+      'node',
+      [
+        '--input-type=module',
+        '-e',
+        `import { eq } from 'drizzle-orm';
+import { closePools } from './src/db/pools.ts';
+import { db } from './src/db/read.ts';
+import { comments } from './src/db/tables/content.ts';
+const [found] = await db().select({ parentId: comments.parentId }).from(comments).where(eq(comments.bodyMd, process.argv[1]));
+console.log(JSON.stringify(found ? found.parentId : 'none'));
+await closePools();`,
+        body,
+      ],
+      { cwd: join(root, 'packages/core'), encoding: 'utf8' },
+    ),
+  ) as string | null;
+
+test('a reply keeps the comment it was begun on when that comment leaves the list (another sort)', async ({ page }) => {
+  seed = JSON.parse(run('e2e')) as Seed;
+  await sayAll(seed.posts.seen, seed.reader.name, 21);
+  await signedIn(page);
+  await gotoHydrated(page, `/post/${seed.posts.seen}?sort=old`);
+  await row(page, seed.comments.old).locator('> .pb-comment__main .pb-comment__reply').click();
+  const dock = page.getByRole('form', { name: 'Reply' });
+  const body = `Across sorts ${Math.random().toString(36).slice(2, 8)}`;
+  await dock.getByRole('textbox', { name: 'Reply' }).fill(body);
+  // Newest first, the oldest comment is on the second page.
+  await page.getByRole('button', { name: 'New', exact: true }).click();
+  await expect(page).toHaveURL(/sort=new/);
+  await expect(row(page, seed.comments.old)).toHaveCount(0);
+  await expect(dock.getByRole('textbox', { name: 'Reply' })).toHaveValue(body);
+  const posted = page.waitForResponse(
+    (response) => response.url().endsWith(`/post/${seed.posts.seen}/comments`) && response.request().method() === 'POST',
+  );
+  await dock.getByRole('button', { name: 'Reply' }).click();
+  expect((await posted).ok()).toBe(true);
+  expect(storedParent(body)).toBe(seed.comments.old);
 });
