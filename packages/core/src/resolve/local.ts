@@ -166,3 +166,26 @@ export async function findHeld(lookup: Lookup, q: Queryable = readDb()): Promise
   if (comment) return comment;
   return url.origin === here.origin ? ownPath(q, url, here.host) : null;
 }
+
+/**
+ * Whether `held` is age-gated: a community flagged sensitive or NSFL, or a post flagged so or in
+ * such a community, or a comment on such a post. For someone who has not declared 16+ the
+ * resolve form answers it as not found, as the directory and the composer leave such a community
+ * out for them.
+ */
+export async function ageGated(held: Held, q: Queryable = readDb()): Promise<boolean> {
+  if ('actor' in held) {
+    if (held.kind === 'person') return false;
+    const [row] = await q
+      .select({ flagged: sql<boolean>`${actors.sensitive} or ${actors.nsfl}` })
+      .from(actors)
+      .where(eq(actors.id, held.actor.id));
+    return row?.flagged === true;
+  }
+  const [row] = await q
+    .select({ flagged: sql<boolean>`${posts.sensitive} or ${posts.nsfl} or ${actors.sensitive} or ${actors.nsfl}` })
+    .from(posts)
+    .innerJoin(actors, eq(actors.id, posts.communityId))
+    .where(eq(posts.id, held.postId));
+  return row?.flagged === true;
+}
