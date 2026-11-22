@@ -1,5 +1,6 @@
 import { DirectorySort, NsfwMode, Scope, effectiveNsfw, maxPage } from '@peblish/core/directory/input';
 import { listCommunities } from '@peblish/core/directory/read';
+import { pinsAmong } from '@peblish/core/pins/pins';
 import { parseLookup } from '@peblish/core/resolve/parse';
 import { createServerFn } from '@tanstack/react-start';
 import { getRequestHeader } from '@tanstack/react-start/server';
@@ -30,6 +31,9 @@ export const loadDirectory = createServerFn({ method: 'GET' })
     const session = await pageSession();
     const viewer = session ? { actorId: session.view.actorId, declared: session.view.ageDeclaredAt !== null } : null;
     const directory = await listCommunities(data, viewer);
+    // Pin is offered only on rows the viewer follows or asked to join, so only those are looked up.
+    const followed = directory.rows.filter((row) => row.follow !== 'none').map((row) => row.actor.id);
+    const pins = await pinsAmong(viewer?.actorId ?? null, followed);
     return {
       ...directory,
       /** The query as it was applied: a viewer who has not declared 16+ always gets Hide. */
@@ -43,6 +47,8 @@ export const loadDirectory = createServerFn({ method: 'GET' })
       lookup: data.q !== '' && parseLookup(data.q) !== null,
       /** The clock "refreshed 2h ago" is read against, so the browser prints what the server did. */
       now: new Date().toISOString(),
+      /** Which of the rows the viewer pinned (pins.ts), for each row's Pin. */
+      pinned: [...pins.keys()],
       /** List or Cards, as this browser last chose. */
       view: parseViewCookie(getRequestHeader('cookie')),
     };

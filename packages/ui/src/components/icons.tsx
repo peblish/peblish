@@ -180,3 +180,5 @@ export { BookmarkIcon } from './icons-saves.tsx';
 export const CornerDownRightIcon = icon(CornerDownRight);
 // The site banner's icons (site banner lane).
 export { AlertIcon, CalendarIcon, MegaphoneIcon, SparklesIcon, WrenchIcon } from './icons-banner.tsx';
+// The sidebar's pins and the directory's pin controls (pins lane): Pin and Move up.
+export { ChevronUpIcon, PinIcon } from './icons-pins.tsx';

@@ -1,0 +1,46 @@
+/* The directory's pin controls (pin-controls.tsx): Pin before Join on a row, the pinned group's
+   Move up, Move down and Pin side by side, and the group itself above the list, ended by a hairline. */
+@layer app {
+  .dir-pin__actions {
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-end;
+    gap: var(--muxui-semantic-layout-tight-gap);
+  }
+
+  /* Each control is its own form; the forms take no box, so the controls sit in one row. */
+  .dir-pin__form {
+    display: contents;
+  }
+
+  /* Quiet: a muted outline glyph off; on, the text colour and the glyph filled (never colour alone). */
+  .dir-pin[data-pinned] .lucide-pin {
+    fill: currentColor;
+  }
+
+  /* The frame's phone width (shell.css): Mux raises a small control's height to 44px, and these square ones
+     take the same width. */
+  @media (max-width: 859.98px) {
+    .dir-pin,
+    .dir-pin__move {
+      min-inline-size: var(--pb-touch);
+    }
+  }
+
+  .dir-pin[aria-disabled='true'],
+  .dir-pin__move[aria-busy='true'] {
+    cursor: progress;
+  }
+
+  .dir-pin__error {
+    flex-basis: 100%;
+  }
+
+  .dir-pinned {
+    display: grid;
+    gap: var(--muxui-semantic-layout-tight-gap);
+    padding-block-end: var(--muxui-semantic-layout-inset-small);
+    border-block-end: 1px solid var(--muxui-semantic-border-subtle);
+  }
+}
