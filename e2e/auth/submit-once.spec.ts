@@ -37,3 +37,26 @@ test('the recovery form takes one press until the answer is in, and a refusal ca
   await verify.click();
   await expect.poll(() => posts).toBe(2);
 });
+
+test('an address the browser will not go to frees the form for the next press; one it goes to keeps it held', async ({ page }) => {
+  await gotoHydrated(page, '/auth/two-factor?recovery=yes');
+  const form = page.getByRole('form', { name: 'Recovery code' });
+  await form.getByLabel('Recovery code').fill('aaaa-bbbb');
+  // The first answer leads to an address location.assign throws on; the second to the front page.
+  const answers = [{ redirect: 'http://[' }, { redirect: '/' }];
+  let posts = 0;
+  await page.route('**/auth/two-factor', async (route) => {
+    if (route.request().method() !== 'POST') return route.continue();
+    const answer = answers[posts]!;
+    posts += 1;
+    await route.fulfill({ contentType: 'application/json', body: JSON.stringify(answer) });
+  });
+
+  const verify = form.getByRole('button', { name: 'Verify' });
+  await verify.click();
+  await expect(form.getByRole('alert').first()).toBeVisible();
+  await expect(form).toHaveAttribute('aria-busy', 'false');
+  await verify.click();
+  await page.waitForURL('/');
+  expect(posts).toBe(2);
+});

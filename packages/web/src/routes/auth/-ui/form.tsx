@@ -105,8 +105,10 @@ export function AuthForm({
       const answer = Answer(await response.json());
       if (answer instanceof type.errors) return setError('generic');
       if (answer.redirect) {
+        window.location.assign(answer.redirect);
+        // Held only once the page is on its way: an address assign throws on frees the form, as a refusal does.
         leaving = true;
-        return window.location.assign(answer.redirect);
+        return;
       }
       setError(asFormError(answer.error) ?? 'generic');
     } catch {
