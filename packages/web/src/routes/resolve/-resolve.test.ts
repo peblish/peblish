@@ -26,6 +26,7 @@ function world(change: Partial<Deps> = {}, counted: { allowed: number } = { allo
     enabled: async () => (calls.push('enabled'), true),
     blocked: async (host) => (calls.push(`blocked ${host}`), false),
     gated: async () => (calls.push('gated'), false),
+    hostBlocked: async () => (calls.push('host blocked'), false),
     count: async () => (calls.push('count'), counted.allowed-- > 0),
     resolve: async () => (calls.push('resolve'), { ok: true, found: { kind: 'community', actor } }),
     ...change,
@@ -50,7 +51,7 @@ describe('the steps of a resolve, cheapest first', () => {
     const held: Held = { kind: 'community', actor };
     const { deps, calls } = world({ held: async () => held, enabled: async () => false });
     expect(await resolveForm(who, '!lab@lemmy.test', deps)).toEqual({ ok: true, redirect: '/c/lab@lemmy.test' });
-    expect(calls).toEqual(['blocked lemmy.test']);
+    expect(calls).toEqual(['blocked lemmy.test', 'host blocked']);
   });
 
   test('a blocked host is refused before anything held there is looked for', async () => {
@@ -71,6 +72,27 @@ describe('the steps of a resolve, cheapest first', () => {
     const declared = world({ gated: async () => true });
     expect(await resolveForm(who, '!lab@lemmy.test', declared.deps)).toEqual({ ok: true, redirect: '/c/lab@lemmy.test' });
     expect(declared.calls).not.toContain('gated');
+  });
+
+  test('what is held or found on a host this server or the person blocks is refused, whatever address named it', async () => {
+    // This server's own page for a remote community names this server's host, not the community's.
+    const held = world({ held: async () => ({ kind: 'community', actor }), hostBlocked: async () => true });
+    expect(await resolveForm(who, 'https://disc.test/c/lab@lemmy.test', held.deps)).toEqual({ ok: false, error: 'instance.blocked' });
+    const found = world({ hostBlocked: async () => true });
+    expect(await resolveForm(who, '!lab@lemmy.test', found.deps)).toEqual({ ok: false, error: 'instance.blocked' });
+    expect(found.calls).toEqual(['blocked lemmy.test', 'held', 'here', 'enabled', 'count', 'resolve']);
+    // Open hosts answer as before.
+    expect(await resolveForm(who, '!lab@lemmy.test', world().deps)).toEqual({ ok: true, redirect: '/c/lab@lemmy.test' });
+  });
+
+  test('a sensitive post the resolver refuses is not found for a person who has not declared 16+', async () => {
+    const refusing = { resolve: async () => ({ ok: false, error: 'content.nsfw_rejected' }) as const };
+    const minor: Who = { ...who, declared: false };
+    expect(await resolveForm(minor, 'https://lemmy.test/post/7', world(refusing).deps)).toEqual({ ok: false, error: 'target.not_found' });
+    expect(await resolveForm(who, 'https://lemmy.test/post/7', world(refusing).deps)).toEqual({
+      ok: false,
+      error: 'content.nsfw_rejected',
+    });
   });
 
   test('an address of this server’s own that matches nothing is not found, with no count and no fetch', async () => {
@@ -96,7 +118,7 @@ describe('the steps of a resolve, cheapest first', () => {
 
     const ok = world();
     expect(await resolveForm(who, '!lab@lemmy.test', ok.deps)).toEqual({ ok: true, redirect: '/c/lab@lemmy.test' });
-    expect(ok.calls).toEqual(['blocked lemmy.test', 'held', 'here', 'enabled', 'count', 'resolve']);
+    expect(ok.calls).toEqual(['blocked lemmy.test', 'held', 'here', 'enabled', 'count', 'resolve', 'host blocked']);
   });
 
   test('the next networked lookup past the account budget is rate.limited and makes no fetch', async () => {
