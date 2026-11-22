@@ -172,7 +172,7 @@ test('on a phone the banner sits under the top bar, after it in focus order, on 
     region.getByRole('button', { name: 'Dismiss notice' }),
   ]) {
     const box = (await control.boundingBox())!;
-    expect(Math.min(box.width, box.height), await control.textContent()).toBeGreaterThanOrEqual(44);
+    expect(Math.min(box.width, box.height), (await control.textContent()) ?? '').toBeGreaterThanOrEqual(44);
   }
   // The bar sticks at the top as the banner scrolls away under it.
   await page.mouse.wheel(0, 600);

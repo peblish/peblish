@@ -362,10 +362,11 @@ test('a member who is no admin sees no banner form and cannot write the banner o
   await expect(visitor.getByRole('alert')).toHaveText('Only site admins can use this page.');
   await expect(visitor.getByRole('heading', { name: 'Site banner' })).toHaveCount(0);
   const before = { banner: await readSetting('site.banner'), width: await readSetting('site.width') };
-  for (const body of [
+  const bodies: Record<string, string>[] = [
     { intent: 'banner', 'banner.enabled': 'on', 'banner.message': 'Not from an admin', 'banner.tone': 'danger' },
     { intent: 'width', 'site.width': 'narrow' },
-  ]) {
+  ];
+  for (const body of bodies) {
     // Posted from the page, with its cookies, as the form would.
     const landedAt = await visitor.evaluate(
       async (fields) => (await fetch('/admin/settings', { method: 'POST', body: new URLSearchParams(fields) })).url,
