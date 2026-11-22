@@ -230,6 +230,102 @@ test('a reply is sent once: Send stays held until the notice is marked read as w
   expect(sent).toEqual(['Once is enough.']);
 });
 
+/** A promise and the function that settles it, for an answer the test holds back. */
+function gate() {
+  let open!: () => void;
+  const opened = new Promise<void>((resolve) => (open = resolve));
+  return { open, opened };
+}
+
+// The one lock holds until the comment's answer comes back, whatever it is: nothing more is sent or cleared meanwhile, a
+// refused or lost reply keeps its text, and once it has answered Send works again. Nothing was saved, so nothing is marked read.
+for (const outcome of ['refused', 'lost'] as const) {
+  test(`a reply that is ${outcome} holds Send until it answers, keeps its text, and can be sent again`, async ({ page }) => {
+    await gotoHydrated(page, '/kit/inbox-replies');
+    const sent: string[] = [];
+    const arrived = gate();
+    const answer = gate();
+    await page.route('**/post/*/comments', async (route) => {
+      sent.push(new URLSearchParams(route.request().postData() ?? '').get('body') ?? '');
+      if (sent.length > 1) return route.fulfill({ status: 200, json: { ok: true, id: '00000000-0000-7000-8000-000000000400' } });
+      arrived.open();
+      await answer.opened;
+      await (outcome === 'refused' ? route.fulfill({ status: 400, json: { error: 'post.locked' } }) : route.abort());
+    });
+    const marked: string[] = [];
+    await page.route('**/notifications?*', async (route) => {
+      marked.push(new URL(route.request().url()).search);
+      await route.fulfill({ status: 200, json: { ok: true } });
+    });
+
+    await first(page)
+      .getByRole('button', { name: /^Reply: / })
+      .click();
+    const field = first(page).getByRole('textbox', { name: 'Reply to @jun@lemmy.world' });
+    await field.fill('Held until it answers.');
+    const send = first(page).getByRole('button', { name: 'Reply', exact: true });
+    await send.click();
+    await arrived.opened;
+    await send.click({ force: true });
+    await field.press('Control+Enter');
+    await field.pressSequentially(' More.');
+    await expect(field).toHaveValue('Held until it answers.');
+    await expect(send).toHaveAttribute('aria-busy', 'true');
+    expect(sent).toHaveLength(1);
+
+    answer.open();
+    const said =
+      outcome === 'refused'
+        ? 'This post is locked. It takes no new comments.'
+        : 'The request did not get through. Check your connection and try again.';
+    await expect(first(page).getByText(said)).toBeVisible();
+    await expect(field).toHaveValue('Held until it answers.');
+    await expect(field).toHaveAttribute('aria-invalid', 'true');
+    expect(marked).toEqual([]);
+
+    await send.click();
+    await expect(first(page).getByRole('status')).toHaveText('Reply posted. View reply');
+    expect(sent).toEqual(['Held until it answers.', 'Held until it answers.']);
+    expect(marked).toEqual(['?intent=read&id=00000000-0000-7000-8000-000000000001']);
+  });
+
+  // The comment is saved; the read receipt fails after it. The reply is posted, once, and the lock holds until the receipt answers.
+  test(`a reply whose read receipt is ${outcome} is posted once`, async ({ page }) => {
+    await gotoHydrated(page, '/kit/inbox-replies');
+    const sent: string[] = [];
+    await page.route('**/post/*/comments', async (route) => {
+      sent.push(new URLSearchParams(route.request().postData() ?? '').get('body') ?? '');
+      await route.fulfill({ status: 200, json: { ok: true, id: '00000000-0000-7000-8000-000000000400' } });
+    });
+    const arrived = gate();
+    const answer = gate();
+    await page.route('**/notifications?*', async (route) => {
+      arrived.open();
+      await answer.opened;
+      await (outcome === 'refused' ? route.fulfill({ status: 400, json: { error: 'notification.not_yours' } }) : route.abort());
+    });
+
+    await first(page)
+      .getByRole('button', { name: /^Reply: / })
+      .click();
+    const field = first(page).getByRole('textbox', { name: 'Reply to @jun@lemmy.world' });
+    await field.fill('Saved, then the receipt fails.');
+    const send = first(page).getByRole('button', { name: 'Reply', exact: true });
+    await send.click();
+    await arrived.opened;
+    await send.click({ force: true });
+    await field.press('Control+Enter');
+    await expect(field).toHaveValue('Saved, then the receipt fails.');
+    expect(sent).toHaveLength(1);
+
+    answer.open();
+    await expect(first(page).getByRole('status')).toHaveText('Reply posted. View reply');
+    await expect(field).toHaveCount(0);
+    await page.waitForTimeout(200);
+    expect(sent).toEqual(['Saved, then the receipt fails.']);
+  });
+}
+
 test('a reply sent once the reader has moved on leaves focus where they went', async ({ page }) => {
   await gotoHydrated(page, '/kit/inbox-replies');
   let release!: () => void;
