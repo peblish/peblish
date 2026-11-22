@@ -59,10 +59,13 @@ test('the centre column sits in the middle of what the sidebar leaves, and the s
   await gotoHydrated(page, '/');
   await page.getByRole('banner').getByRole('link', { name: 'Sign in' }).click();
   await landed(page, '**/auth/sign-in');
+  // The sign-in form, flat in the column since the account pages moved into the Commons form layout. The address
+  // changes before the page does, so the frame is measured once the form is there (the feed before it has a rail).
+  const form = page.getByRole('main').getByRole('form', { name: 'Sign in' });
+  await expect(form).toBeVisible();
   const side = (await sidebar(page).boundingBox())!;
   const centre = (await page.locator('#pb-main').boundingBox())!;
-  // The sign-in form, flat in the column since the account pages moved into the Commons form layout.
-  const card = (await page.getByRole('main').getByRole('form', { name: 'Sign in' }).boundingBox())!;
+  const card = (await form.boundingBox())!;
   const middle = (box: { x: number; width: number }) => box.x + box.width / 2;
   // The default width: a 40rem column between its hairlines.
   expect(Math.round(centre.width)).toBe(642);
