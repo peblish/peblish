@@ -1,7 +1,7 @@
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { expect, test } from 'vitest';
-import { initialIcon } from './sidebar.tsx';
+import { initialIcon } from './sidebar-communities.tsx';
 
 // A community's row in the sidebar draws its initial; a display name from another server can begin with a
 // flag or an emoji, and half of one (a code point of a flag, a UTF-16 unit of an emoji) would not hydrate.
