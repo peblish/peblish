@@ -1,6 +1,6 @@
 import type { Uuid } from '@peblish/schema/ids';
 import type { ActorRef, ReportQueueGroup } from '@peblish/schema/views';
-import { and, count, inArray, sql, type SQL } from 'drizzle-orm';
+import { count, sql, type SQL } from 'drizzle-orm';
 import { db, type Queryable } from '../db/read.ts';
 import { reports } from '../db/tables/moderation.ts';
 import type { Result } from '../identity/result.ts';
@@ -40,29 +40,28 @@ const communityKey = sql<
  */
 export async function readQueueByCommunity(viewer: ReportViewer, request: Request, q: Queryable = db()): Promise<Result<QueueByCommunity>> {
   const admin = viewer.siteRole === 'admin';
-  const communities = await readQueueCommunities(viewer, q);
   const wanted = request.community?.replace(/^!/, '');
+  const read = (chosen: ActorRef | undefined) =>
+    readQueue(
+      viewer,
+      {
+        tab: request.tab,
+        sort: request.sort,
+        ...(chosen && { communityId: chosen.id }),
+        ...(request.cursor && { cursor: request.cursor }),
+      },
+      q,
+    );
+  // The filter's choices and the page are read side by side unless the page waits on a named community.
+  const [communities, unfiltered] = await Promise.all([readQueueCommunities(viewer, q), wanted ? null : read(undefined)]);
   const chosen = wanted ? communities.find((item) => item.id === wanted || item.handle === wanted) : undefined;
-  const page = await readQueue(
-    viewer,
-    { tab: request.tab, sort: request.sort, ...(chosen && { communityId: chosen.id }), ...(request.cursor && { cursor: request.cursor }) },
-    q,
-  );
+  const page = unfiltered ?? (await read(chosen));
   if (!page.ok) return page;
   const rows = visibleRows(viewer, request.tab, chosen?.id, q);
   if (!rows) return { ok: false, reason: 'auth.admin_required' };
 
-  const [keys, totals] = await Promise.all([
-    page.groups.length === 0
-      ? []
-      : q
-          .select({ audience: reports.audience, key: targetKey, community: communityKey })
-          .from(reports)
-          .where(and(rows, inArray(targetKey, [...new Set(page.groups.map((group) => group.target.id))])))
-          .groupBy(reports.audience, targetKey),
-    countByCommunity(q, rows),
-  ]);
-  const filedUnder = new Map(keys.map((row) => [`${row.audience}.${row.key}`, row.community]));
+  const totals = await countByCommunity(q, rows, [...new Set(page.groups.map((group) => group.target.id))]);
+  const filedUnder = new Map(totals.flatMap((row) => (row.page ?? []).map((key) => [key, row.community] as const)));
   const openCount = new Map(totals.map((row) => [row.community, row.n]));
 
   // A moderator's communities are the only ones they may be shown; an admin may be shown any.
@@ -70,7 +69,7 @@ export async function readQueueByCommunity(viewer: ReportViewer, request: Reques
   const named = admin
     ? await readActors(
         q,
-        [...new Set(keys.flatMap((row) => (row.community ? [row.community] : [])))].filter((id) => !theirs.has(id)),
+        totals.flatMap((row) => (row.community && row.page?.length && !theirs.has(row.community) ? [row.community] : [])),
       )
     : new Map<Uuid, ActorRef>();
   const refOf = (id: Uuid) => theirs.get(id) ?? named.get(id);
@@ -96,13 +95,26 @@ export async function readQueueByCommunity(viewer: ReportViewer, request: Reques
   return { ok: true, communities, community: chosen?.id ?? null, groups: [...groups.values()], next: page.next };
 }
 
-/** How many target groups each community holds under `rows`, keyed as `communityKey` files them. */
-async function countByCommunity(q: Queryable, rows: SQL) {
+/**
+ * One read of every target group under `rows`, filed as `communityKey` files them: per community,
+ * how many groups it holds, and which of `pageTargets` (the page's) are among them, as
+ * `<audience>.<target id>` (a QueueGroup's key).
+ */
+async function countByCommunity(q: Queryable, rows: SQL, pageTargets: readonly Uuid[]) {
   const keyed = q
-    .select({ community: communityKey.as('community') })
+    .select({ audience: reports.audience, key: sql<Uuid>`${targetKey}`.as('key'), community: communityKey.as('community') })
     .from(reports)
     .where(rows)
     .groupBy(reports.audience, targetKey)
     .as('keyed');
-  return q.select({ community: keyed.community, n: count() }).from(keyed).groupBy(keyed.community);
+  return q
+    .select({
+      community: keyed.community,
+      n: count(),
+      page: sql<
+        string[] | null
+      >`array_agg(${keyed.audience} || '.' || ${keyed.key}) filter (where ${keyed.key} = any(${sql.param(pageTargets)}::uuid[]))`,
+    })
+    .from(keyed)
+    .groupBy(keyed.community);
 }

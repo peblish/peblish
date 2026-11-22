@@ -1,7 +1,10 @@
 import type { Principal } from '@peblish/schema/authz';
+import { sql } from 'drizzle-orm';
 import { beforeEach, describe, expect, test } from 'vitest';
+import { writer } from '../db/write.ts';
 import { truncateAll } from '../testing/db.ts';
 import { admin, seedModerationWorld, seedModerator, seedPost } from '../testing/seed-az.ts';
+import { seedBudgetWorld } from '../testing/seed-rep.ts';
 import { localUser, seedActor } from '../testing/seed.ts';
 import { createReportAs, resolveReportsAs, routeReportsAs } from './actions.ts';
 import type { ReportCategory } from './categories.ts';
@@ -119,4 +122,32 @@ describe('the queue by community', () => {
     expect(summary(theirs)).toEqual([{ community: 'announcements', openCount: 1, rows: ['admins:post'] }]);
     expect(theirs.groups[0]?.rows[0]?.categories).toEqual(['hate']);
   });
+});
+
+describe('the budget', () => {
+  test('the queue by community answers under 80 ms on 5,000 open reports in 300 communities', async () => {
+    const w = await seedBudgetWorld();
+    await writer().execute(sql`analyze reports`);
+    await writer().execute(sql`analyze community_moderators`);
+    // The 95th percentile of 20 runs, the best of three rounds, as the queue's own budget is measured (read.test.ts).
+    const time = async (run: () => Promise<unknown>) => {
+      await run();
+      const rounds: number[] = [];
+      for (let round = 0; round < 3; round++) {
+        const times: number[] = [];
+        for (let i = 0; i < 20; i++) {
+          const start = performance.now();
+          await run();
+          times.push(performance.now() - start);
+        }
+        rounds.push(times.sort((a, b) => a - b)[Math.floor(times.length * 0.95) - 1]!);
+      }
+      return Math.min(...rounds);
+    };
+    for (const who of [viewer(w.moderator), viewer(w.admin, 'admin')])
+      expect(await time(() => readQueueByCommunity(who, { tab: 'open', sort: 'oldest' }))).toBeLessThan(80);
+    // The admin's page is filed under its communities, every count over all 2,500 groups.
+    const admin = await payload(viewer(w.admin, 'admin'));
+    expect(admin.groups.reduce((sum, group) => sum + group.rows.length, 0)).toBe(50);
+  }, 60_000);
 });
