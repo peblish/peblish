@@ -1,0 +1,74 @@
+/* The site banner (site-banner.tsx), drawn by Mux UI's Banner. */
+@layer app {
+  /* Centred, Mux gives the message a 16rem basis that does not grow, so a 140-character message takes three
+     lines on any computer. Here it takes its own width, as the Commons banner does, and wraps only where the
+     row runs out; the actions follow it on the row or centre under it. */
+  .pb-banner[data-muxui-align='center'] .muxui-banner__text {
+    flex-basis: auto;
+  }
+
+  /* A phone's 44px target for the link, as for the banner's buttons (shell.css sets Mux's control sizes). */
+  @media (max-width: 859.98px) {
+    .pb-banner .muxui-banner__link {
+      display: inline-flex;
+      align-items: center;
+      min-block-size: var(--muxui-control-size-sm);
+    }
+  }
+
+  /* With scripts off the button action and the dismiss button cannot work (Mux's actions are buttons with a
+     callback), so they are left out; the banner keeps its message and its link. */
+  @media (scripting: none) {
+    .pb-banner .muxui-banner__action,
+    .pb-banner .muxui-banner__dismiss {
+      display: none;
+    }
+  }
+}
+
+/* The admin form's previews (site-settings-previews.tsx). */
+@layer app {
+  .pb-banner-previews {
+    display: grid;
+    gap: var(--muxui-semantic-layout-group-gap);
+  }
+
+  /* Each frame paints its own scheme's page under the banner, with a hairline around it. */
+  .pb-banner-preview {
+    display: grid;
+    gap: var(--muxui-semantic-layout-tight-gap);
+    margin: 0;
+    padding: var(--muxui-semantic-layout-inset-small);
+    border: 1px solid var(--muxui-semantic-border-faint);
+    border-radius: var(--muxui-semantic-control-radius);
+    background: var(--muxui-semantic-surface-background);
+    color: var(--muxui-semantic-content-default);
+  }
+
+  .pb-banner-preview__caption {
+    font-size: var(--muxui-semantic-typography-text-s-font-size);
+    color: var(--muxui-semantic-content-secondary);
+  }
+
+  .pb-width-preview {
+    padding-block: var(--muxui-semantic-layout-inset-small);
+  }
+
+  .pb-width-preview__page {
+    display: flex;
+    gap: var(--muxui-semantic-layout-tight-gap);
+    margin-inline: auto;
+    block-size: 2.5rem;
+  }
+
+  .pb-width-preview__centre,
+  .pb-width-preview__rail {
+    flex-basis: 0;
+    border: 1px solid var(--muxui-semantic-border-default);
+    border-radius: var(--muxui-semantic-control-radius);
+  }
+
+  .pb-width-preview__centre {
+    background: var(--muxui-semantic-action-neutral-background);
+  }
+}

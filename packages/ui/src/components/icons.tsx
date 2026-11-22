@@ -176,3 +176,5 @@ export function MarkIcon({ mark, className }: { mark: BrandPack['mark']; classNa
 export { HourglassIcon, LayoutGridIcon } from './icons-community.tsx';
 // The comment tree (comment-thread.tsx): the mark before the name a deep reply answers.
 export const CornerDownRightIcon = icon(CornerDownRight);
+// The site banner's icons (site banner lane).
+export { AlertIcon, CalendarIcon, MegaphoneIcon, SparklesIcon, WrenchIcon } from './icons-banner.tsx';
