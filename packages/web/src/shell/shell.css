@@ -520,7 +520,11 @@
        stop at 40), on every page and in every portal (the drawer, menus, Appearance's choices), where Mux
        sets its sizes again. An avatar is drawn at a control size too, but it is no target: Mux's own. */
     :root,
-    [data-muxui-color-scheme] {
+    [data-muxui-color-scheme],
+    [data-muxui-contrast],
+    [data-muxui-motion],
+    [data-muxui-density],
+    [data-muxui-direction] {
       --muxui-control-size-sm: var(--pb-touch);
       --muxui-control-size-md: var(--pb-touch);
       --muxui-component-button-min-height: var(--pb-touch);
