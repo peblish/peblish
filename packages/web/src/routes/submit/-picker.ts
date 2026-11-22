@@ -1,8 +1,7 @@
-import { authorize } from '@peblish/core/authz/authorize';
-import { findCommunityId, hostBlockedFor, listLocalCommunities, moderatedAmong, readCommunity } from '@peblish/core/communities/read';
+import { findCommunityId, listLocalCommunities, moderatedAmong, readCommunity } from '@peblish/core/communities/read';
+import { mayStartPostIn } from '@peblish/core/communities/start';
 import { followedCommunities } from '@peblish/core/follows/read';
 import { Uuid } from '@peblish/schema/ids';
-import type { RefusalReason } from '@peblish/schema/refusal';
 import type { SessionView } from '@peblish/schema/session';
 import type { PickerCommunity } from './-types.ts';
 
@@ -72,30 +71,17 @@ const localCandidate = ({ actor, postingRestrictedToMods, subscribers }: LocalRo
 });
 
 /**
- * Refusals of post.create that are about the person, not the community: they would refuse a post
- * anywhere, so they do not stop the form from starting in the community asked for.
- */
-const anywhere: ReadonlySet<RefusalReason> = new Set(['auth.required', 'auth.email_unverified', 'auth.site_banned', 'site.disabled']);
-
-/** Whether the person may post in the community, as post.create's precheck decides it (bans, mods-only, the age gate, a closed community). */
-async function mayPost(viewer: SessionView, communityId: string): Promise<boolean> {
-  const principal = { kind: 'local', actorId: viewer.actorId, siteRole: viewer.siteRole } as const;
-  const decision = await authorize('post.create', principal, { communityId });
-  return decision.ok || anywhere.has(decision.reason);
-}
-
-/**
  * The community a `wanted` key (an id, or a handle with or without `!`: `name` here, `name@host`
  * elsewhere) names, looked up on its own, for one the candidates do not hold: a local community
- * past the first page, or a remote one the person does not follow. Like the follows, none on a
- * host this server or the person blocks.
+ * past the first page, or a remote one the person does not follow. Whether it may start the form
+ * is startIn's question.
  */
-async function lookUp(viewer: SessionView, key: string): Promise<Candidate | null> {
+async function lookUp(key: string): Promise<Candidate | null> {
   const trimmed = key.trim().replace(/^!/, '');
   if (!trimmed) return null;
   const id = Uuid.allows(trimmed) ? trimmed : await findCommunityId(trimmed);
   const community = id ? await readCommunity({ id }) : null;
-  if (!community || (await hostBlockedFor(viewer.actorId, community.actor.id))) return null;
+  if (!community) return null;
   const { actor } = community;
   return {
     id: actor.id,
@@ -109,8 +95,9 @@ async function lookUp(viewer: SessionView, key: string): Promise<Candidate | nul
 }
 
 /**
- * The community the form starts in: the first of `wanted` that names one the person may post in
- * (mayPost), from the candidates or looked up on its own, however it ranks.
+ * The community the form starts in: the first of `wanted` that names one the person may start a
+ * post in (core's mayStartPostIn), from the candidates or looked up on its own, however it ranks.
+ * One that may not is left out of the data altogether, as if it had not been asked for.
  */
 async function startIn(
   viewer: SessionView,
@@ -120,9 +107,9 @@ async function startIn(
   for (const key of wanted) {
     if (!key) continue;
     const held = pickFrom(listed, key);
-    const extra = held ? null : await lookUp(viewer, key);
+    const extra = held ? null : await lookUp(key);
     const id = held ?? extra?.id;
-    if (id && (await mayPost(viewer, id))) return { id, extra: extra && !listed.some((row) => row.id === extra.id) ? extra : null };
+    if (id && (await mayStartPostIn(viewer, id))) return { id, extra: extra && !listed.some((row) => row.id === extra.id) ? extra : null };
   }
   return null;
 }
