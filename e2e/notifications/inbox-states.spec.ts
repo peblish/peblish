@@ -499,6 +499,30 @@ test('the new kinds read as the mock words them, with no moderator badge on an a
   await expect(page.getByRole('link', { name: 'Ask for a review' })).toHaveCount(0);
 });
 
+// Opened in this tab, a followed thread's notice has the shell's count asked for again once its read commits
+// (follows.spec.ts); opened in a new tab, this page stays as it is: nothing reloads here, and focus stays on the link.
+test('a followed thread’s notice opened in a new tab leaves this page as it is', async ({ page, context }) => {
+  await gotoHydrated(page, '/kit/inbox-follows');
+  const read = gate();
+  await page.route('**/notifications?*', async (route) => {
+    await route.fulfill({ status: 200, json: { ok: true } });
+    read.open();
+  });
+  const asked: string[] = [];
+  page.on('request', (request) => {
+    if (new URL(request.url()).pathname.startsWith('/_serverFn')) asked.push(request.url());
+  });
+  const link = rows(page).first().getByRole('link', { name: 'Weekly prompt: a window at night' });
+  const opened = context.waitForEvent('page');
+  await link.click({ modifiers: ['ControlOrMeta'] });
+  await (await opened).close();
+  await read.opened;
+  await page.waitForTimeout(500);
+  expect(asked).toEqual([]);
+  await expect(page).toHaveURL(/\/kit\/inbox-follows$/);
+  await expect(link).toBeFocused();
+});
+
 test('the date groups head their rows, newest first', async ({ page }) => {
   await gotoHydrated(page, '/kit/inbox-groups');
   await expect(page.locator('[data-kit-sample]').getByRole('heading', { level: 2 })).toHaveText([

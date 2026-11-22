@@ -16,7 +16,7 @@ import { Quote } from '@peblish/ui/components/quote';
 import { Text } from '@peblish/ui/components/text';
 import { Time } from '@peblish/ui/components/time';
 import { useHydrated } from '@peblish/ui/composer/use-hydrated.ts';
-import { useLocation, useRouter } from '@tanstack/react-router';
+import { rootRouteId, useLocation, useRouter } from '@tanstack/react-router';
 import { type } from 'arktype';
 import { useEffect, useLayoutEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { translatePlural } from '../../../i18n/translate.ts';
@@ -409,7 +409,24 @@ export function NoticeRow({
   const readAction = inboxAction({ intent: 'read', id: item.id }, page);
   // Opening an unread notice's post marks it read, as a press on its own button does; the page goes on regardless.
   const markOnOpen = () => {
-    if (!item.read && hydrated) void post(readAction, '', true);
+    // The page the press was on: the link may have started its navigation before this runs.
+    const from = (router.state.resolvedLocation ?? router.state.location).href;
+    if (!item.read && hydrated) void post(readAction, '', true).then((answer) => 'ok' in answer && countAgain(from));
+  };
+  // A followed thread's comment or an accepted follow, once its read has committed, has the shell's unread count (the root's data,
+  // kept across navigations) asked for again, after the page it opened has loaded, so the navigation does not wait for it. That
+  // page's own data reloads with it, as after any action there; a thread's New marks stay put for the whole visit (core visits).
+  // Opened in a new tab (a modified click), it went on there, not here: this page stays as it is.
+  const countAgain = (from: string) => {
+    if (item.kind !== 'thread_reply' && item.kind !== 'follow_accept') return;
+    const ask = () => {
+      if (router.state.location.href !== from) void router.invalidate({ filter: (match) => match.routeId === rootRouteId });
+    };
+    if (router.state.status === 'idle') return ask();
+    const stop = router.subscribe('onResolved', () => {
+      stop();
+      ask();
+    });
   };
 
   // Where Reply leads: a reply's or mention's comment (or post), unless it was removed or deleted since, and a followed thread's

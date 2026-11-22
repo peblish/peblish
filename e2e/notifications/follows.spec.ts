@@ -130,6 +130,44 @@ test('a remote community’s acceptance is an Account notice, and the notices si
   await expectAccessible(page);
 });
 
+/** The header's unread count, from the Inbox link's accessible name ("Inbox 3 unread"); 0 without a count. */
+const badge = async (page: Page) => Number((await inboxLink(page).ariaSnapshot()).match(/Inbox ([0-9]+) unread/)?.[1] ?? 0);
+
+test('opening a followed thread’s notice or an accepted follow marks it read, and the header’s count follows without a page load', async ({
+  page,
+}) => {
+  await signedIn(page, cast.reader.name);
+  await gotoHydrated(page, '/notifications?filter=replies');
+  const before = await badge(page);
+  expect(before).toBeGreaterThanOrEqual(2);
+  await page.evaluate(() => Object.assign(window, { stayed: true }));
+  // The read is held: the thread opens without waiting for it, and the count follows once it has committed.
+  const reads: Route[] = [];
+  await page.route(
+    (url) => url.pathname === '/notifications' && url.searchParams.get('intent') === 'read',
+    (route) => void reads.push(route),
+  );
+  await rows(page).first().getByRole('link', { name: cast.post.title }).click();
+  await expect(page).toHaveURL(new RegExp(`/post/${cast.post.id}/comments/`));
+  await expect(page.getByRole('main')).toContainText('A new comment');
+  await expect.poll(() => reads.length).toBe(1);
+  expect(await badge(page)).toBe(before);
+  await reads[0]!.continue();
+  await page.unrouteAll();
+  await expect.poll(() => badge(page)).toBe(before - 1);
+
+  await inboxLink(page).click();
+  await page
+    .getByRole('main')
+    .getByRole('link', { name: /^Account/ })
+    .click();
+  await expect(rows(page)).toHaveCount(1);
+  await rows(page).first().getByRole('link', { name: 'Open community' }).click();
+  await expect(page).toHaveURL(`/c/${cast.remote.handle}`);
+  await expect.poll(() => badge(page)).toBe(before - 2);
+  expect(await page.evaluate(() => 'stayed' in window)).toBe(true);
+});
+
 test('Undo of Mark all read restores exactly what was unread, with a notice arriving in between', async ({ page }) => {
   test.setTimeout(120_000);
   await signedIn(page, cast.marker.name);
