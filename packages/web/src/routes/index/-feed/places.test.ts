@@ -1,7 +1,7 @@
 import type { PostView } from '@peblish/schema/views';
 import { afterEach, expect, test } from 'vitest';
 import type { FeedItem } from './items.ts';
-import { firstPlace, forgetPlaces, loadNext, readPlace, updateRows, type Batch } from './places.ts';
+import { firstPlace, forgetPlaces, loadNext, readPlace, refreshPlace, updateRows, type Batch } from './places.ts';
 
 afterEach(forgetPlaces);
 
@@ -67,4 +67,63 @@ test('places are kept apart by key', () => {
   loadNext('one', first, load, messages);
   expect(readPlace('one')?.state).toBe('pending');
   expect(readPlace('two')).toBeUndefined();
+});
+
+/** Lets the loader's answer reach the place. */
+const settled = async () => {
+  await Promise.resolve();
+  await Promise.resolve();
+};
+
+/** The rows the list shows for `key`: the kept place, or the page's data where none is kept (FeedCards). */
+const shown = (key: string, data: Batch) => (readPlace(key) ?? firstPlace(data)).rows.map((row) => row.post.id);
+
+/** A place with three batches: the page's own [removed, kept], then [b1] and [b2], loaded by themselves. */
+async function threeBatches() {
+  const { load, settle } = gate();
+  const page: Batch = { items: [item('removed'), item('kept')], next: 'c1', now: '2026-11-22T10:00:00.000Z' };
+  loadNext('k', firstPlace(page), load, messages);
+  settle().resolve({ items: [item('b1')], next: 'c2', now: '2026-11-22T10:01:00.000Z' });
+  await settled();
+  loadNext('k', firstPlace(page), load, messages);
+  settle().resolve({ items: [item('b2')], next: 'c3', now: '2026-11-22T10:02:00.000Z' });
+  await settled();
+  expect(shown('k', page)).toEqual(['removed', 'kept', 'b1', 'b2']);
+}
+
+test('a fresh first batch with other posts is the truth: a removed post leaves, a new one enters', async () => {
+  await threeBatches();
+  // Back: the loader answers the first batch again, without the removed post and with a new one.
+  const fresh: Batch = { items: [item('new'), item('kept')], next: 'd1', now: '2026-11-22T10:10:00.000Z' };
+  refreshPlace('k', fresh);
+  expect(shown('k', fresh)).toEqual(['new', 'kept']);
+  expect(readPlace('k')).toBeUndefined();
+});
+
+test('a batch still loading when the place is dropped never lands on the fresh one', async () => {
+  const { asked, load, settle } = gate();
+  const page = firstPlace({ items: [item('removed'), item('kept')], next: 'c1', now: '2026-11-22T10:00:00.000Z' });
+  loadNext('k', page, load, messages);
+  const old = settle();
+  const fresh: Batch = { items: [item('new'), item('kept')], next: 'd1', now: '2026-11-22T10:10:00.000Z' };
+  refreshPlace('k', fresh);
+  // The list, now on the fresh batch, asks for its own next one before the old answer comes.
+  loadNext('k', firstPlace(fresh), load, messages);
+  expect(asked).toEqual(['c1', 'd1']);
+  old.resolve({ items: [item('stale')], next: 'c2', now: '2026-11-22T10:01:00.000Z' });
+  await settled();
+  expect(readPlace('k')).toMatchObject({ next: 'd1', state: 'pending' });
+  expect(shown('k', fresh)).toEqual(['new', 'kept']);
+});
+
+test('a fresh first batch with the same posts keeps every batch and takes the posts as they are now', async () => {
+  await threeBatches();
+  const before = readPlace('k')!;
+  const voted = { ...item('kept'), post: { ...item('kept').post, myVote: 1 as const } };
+  refreshPlace('k', { items: [voted, item('removed')], next: 'd1', now: '2026-11-22T10:10:00.000Z' });
+  const after = readPlace('k')!;
+  expect(after.rows.map((row) => row.post.id)).toEqual(['removed', 'kept', 'b1', 'b2']);
+  expect(after.rows.map((row) => row.now)).toEqual(before.rows.map((row) => row.now));
+  expect(after).toMatchObject({ next: 'c3', state: 'idle' });
+  expect(after.rows[1]!.post.myVote).toBe(1);
 });

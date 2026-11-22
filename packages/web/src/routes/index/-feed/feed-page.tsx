@@ -52,7 +52,17 @@ import { ViewHeader } from '../../../shell/view-header.tsx';
 import { castVoteFn } from '../../post/-vote.ts';
 import { loadFeed, type FeedData } from './load.ts';
 import { feedTitleKeys } from './names.ts';
-import { firstPlace, loadNext, readPlace, subscribePlaces, updateRows, type Batch, type Place, type PlaceRow } from './places.ts';
+import {
+  firstPlace,
+  loadNext,
+  readPlace,
+  refreshPlace,
+  subscribePlaces,
+  updateRows,
+  type Batch,
+  type Place,
+  type PlaceRow,
+} from './places.ts';
 import type { FeedRoute } from './route.ts';
 import { feedHref, resolveFeedSearch, type FeedSearch } from './search.ts';
 
@@ -305,11 +315,10 @@ export function FeedCards({
   const auto = more !== undefined && hydrated && typeof IntersectionObserver !== 'undefined';
 
   // A kept place shows its own rows, not the page's data. When the page's data comes again (Back reloads
-  // the first page in the background), the posts it holds are taken from it: a vote cast on the post's
-  // own page, a new comment count.
+  // the first page in the background), it is the truth for its posts (refreshPlace): the same posts take
+  // their fresh state, other posts drop the kept place.
   useEffect(() => {
-    if (!more || !readPlace(key)) return;
-    for (const item of data.items) updateRows(key, item.post.id, (row) => ({ ...row, post: item.post }));
+    if (more) refreshPlace(key, data);
   }, [data, key, more]);
   // A saved vote is written into the kept place too, so Back shows it.
   const voted = (postId: string, myVote: -1 | 0 | 1, tally: { upvotes: number; downvotes: number }) => {
