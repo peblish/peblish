@@ -583,6 +583,11 @@
       display: flex;
     }
 
+    /* Under the shell's own bar the banner is a row of the frame's grid, so the page keeps the stretching row. */
+    .pb-frame:has(> .pb-app__banner--view) {
+      grid-template-rows: auto auto minmax(0, 1fr);
+    }
+
     .pb-app__page {
       padding-inline: 0;
     }

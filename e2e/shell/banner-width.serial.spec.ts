@@ -137,7 +137,7 @@ test('on a phone the banner sits under the top bar, after it in focus order, on 
 }) => {
   const context = await browser.newContext({ baseURL, viewport: { width: 390, height: 844 }, hasTouch: true });
   const page = await context.newPage();
-  for (const path of ['/', '/communities', '/about']) {
+  for (const path of ['/', '/communities', '/about', '/auth/sign-in']) {
     await gotoHydrated(page, path);
     // One banner on a phone, as on a computer: the other place's is not drawn.
     const region = page.getByRole('region', { name: 'Site notice' });
@@ -149,6 +149,11 @@ test('on a phone the banner sits under the top bar, after it in focus order, on 
     expect(box.y - (barBox.y + barBox.height), path).toBeLessThanOrEqual(32);
     // Nothing between them: the banner is the bar's next element.
     expect(await bar.evaluate((node) => node.nextElementSibling?.matches('.pb-app__banner--view')), path).toBe(true);
+    // Where the shell draws the bar (a short page's own bar is in its main), the page starts right under the banner.
+    if (!(await page.locator('#pb-main main .pb-frame-vh').count())) {
+      const main = (await page.locator('#pb-main main').boundingBox())!;
+      expect(Math.round(main.y), path).toBe(Math.round(box.y + box.height));
+    }
     expect(Math.round(box.width), path).toBe(390);
     // In the document, so in focus order, the bar comes first.
     expect(
