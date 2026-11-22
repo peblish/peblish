@@ -5,9 +5,11 @@ import { actors } from '../../db/tables/actors.ts';
 import { deny, forShare, type PolicyRequest, type PolicyResult } from '../policy.ts';
 import { communityRole, isSiteAdmin, moderationAuthority } from '../roles.ts';
 import {
+  ageDenial,
   communityDenial,
   communityState,
   contentState,
+  flaggedContent,
   isBanned,
   liveDenial,
   postState,
@@ -43,6 +45,22 @@ const content =
   (check: (target: ContentState) => RefusalReason | null) =>
   async (request: PolicyRequest<{ target: ContentRef }>): Promise<PolicyResult> =>
     moderateContent(request, await contentState(request, request.subject.target), check);
+
+/**
+ * mod.restore clears a moderator's removal. Restoring your own removed post or comment also
+ * passes the age gate (ageDenial), as the author's own restore does (comment.restore,
+ * post.restore): a local moderator or admin without a 16+ declaration cannot put their own words
+ * back where the page withholds them. Restoring someone else's content is staff work and is not
+ * gated, as removing it is not.
+ */
+async function restore(request: PolicyRequest<{ target: ContentRef }>): Promise<PolicyResult> {
+  const target = await contentState(request, request.subject.target);
+  const decided = await moderateContent(request, target, (state) =>
+    state.deleted ? 'target.deleted' : state.removed ? null : 'target.not_removed',
+  );
+  if (!decided.ok || target?.authorId !== request.principal.actorId) return decided;
+  return (await ageDenial(request, request.principal, flaggedContent(target))) ?? decided;
+}
 
 /**
  * The post actions (lock, unlock, pin, unpin) refuse a removed or deleted post first
@@ -96,7 +114,7 @@ async function isProtectedMember(request: PolicyRequest<unknown>, community: Com
 
 export const policies = {
   'mod.remove': content((target) => live(target)),
-  'mod.restore': content((target) => (target.deleted ? 'target.deleted' : target.removed ? null : 'target.not_removed')),
+  'mod.restore': restore,
   'mod.lock': post((target) => (target.locked ? 'target.locked' : null)),
   'mod.unlock': post((target) => (target.locked ? null : 'target.not_locked')),
   'mod.pin': post((target) => (target.pinned ? 'target.pinned' : null)),

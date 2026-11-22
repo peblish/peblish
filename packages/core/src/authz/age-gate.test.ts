@@ -3,12 +3,13 @@ import type { ContentRef } from '@peblish/schema/ids';
 import { parseEvent } from '@peblish/schema/events';
 import { and, eq } from 'drizzle-orm';
 import { beforeAll, describe, expect, test } from 'vitest';
+import { restoreAs } from '../bans/service.ts';
 import { createCommentAs } from '../comments/actions.ts';
 import { comments, posts as postRows, votes } from '../db/tables/content.ts';
 import { db, type Queryable } from '../db/read.ts';
 import { writer } from '../db/write.ts';
 import { truncateAll } from '../testing/db.ts';
-import { outboxEvents, seedComment, seedPost } from '../testing/seed-az.ts';
+import { admin as siteAdmin, outboxEvents, seedAdmin, seedComment, seedModerator, seedPost } from '../testing/seed-az.ts';
 import { declareAge, seedAccount } from '../testing/seed-b1.ts';
 import { seedFollow } from '../testing/seed-c1.ts';
 import { localUser, seedActor, seedInstance } from '../testing/seed.ts';
@@ -74,7 +75,31 @@ async function world() {
     if (!cast.ok) throw new Error(cast.reason);
   }
   for (const id of [votedPost, votedThread]) await writer().update(postRows).set({ sensitive: true }).where(eq(postRows.id, id));
-  return { declared, undeclared, remote, communities: { plain, adult, gore }, posts, own, others, voted };
+  // Staff of the plain community (a moderator of it, and a site admin with two-factor, which an
+  // admin needs to count as one), and what a moderator removed of theirs and of the author's.
+  const staff = {
+    moderator: await seedAccount(local, 'moderator'),
+    declaredModerator: await seedAccount(local, 'declared_moderator'),
+    admin: await seedAdmin(local, 'site_admin'),
+  };
+  await seedModerator(plain, staff.moderator);
+  await seedModerator(plain, staff.declaredModerator);
+  await declareAge(staff.declaredModerator);
+  const removedBy = async (by: { id: string }, sensitive: boolean): Promise<ContentRef[]> => {
+    const postId = await post(plain, { sensitive, removedAt: new Date() }, by);
+    const onPost = await post(plain, { sensitive });
+    return [
+      { kind: 'post', id: postId },
+      { kind: 'comment', id: await comment(onPost, by, { removedAt: new Date() }) },
+    ];
+  };
+  const removed = {
+    moderator: { gated: await removedBy(staff.moderator, true), plain: await removedBy(staff.moderator, false) },
+    declaredModerator: { gated: await removedBy(staff.declaredModerator, true) },
+    admin: { gated: await removedBy(staff.admin, true), plain: await removedBy(staff.admin, false) },
+    author: { gated: await removedBy(author, true) },
+  };
+  return { declared, undeclared, remote, communities: { plain, adult, gore }, posts, own, others, voted, staff, removed };
 }
 
 let w: Awaited<ReturnType<typeof world>>;
@@ -176,6 +201,33 @@ describe.each([
     expect(await decide(lock, 'vote.cast', me, { target: { kind: 'post', id: w.posts.sensitive }, withdraw: true })).toBe(GATE);
   });
 
+  // mod.restore clears a moderator's removal. Restoring your own removed words where the page
+  // withholds them is gated as the author's own restore is; someone else's stays staff work.
+  test('a moderator or an admin restoring their own removed words where they cannot see them: only once declared', async () => {
+    const moderator = localUser(w.staff.moderator.id);
+    const admin = siteAdmin(w.staff.admin.id);
+    for (const target of w.removed.moderator.gated) {
+      expect([target, await decide(lock, 'mod.restore', moderator, { target })]).toEqual([target, GATE]);
+    }
+    for (const target of w.removed.admin.gated) {
+      expect([target, await decide(lock, 'mod.restore', admin, { target })]).toEqual([target, GATE]);
+    }
+    // Where nothing is flagged, as before.
+    for (const target of w.removed.moderator.plain) expect(await decide(lock, 'mod.restore', moderator, { target })).toBe(OK);
+    for (const target of w.removed.admin.plain) expect(await decide(lock, 'mod.restore', admin, { target })).toBe(OK);
+  });
+
+  test("restoring someone else's removed words, and a declared moderator's own, are as before", async () => {
+    const declaredModerator = localUser(w.staff.declaredModerator.id);
+    for (const target of [...w.removed.declaredModerator.gated, ...w.removed.author.gated]) {
+      expect([target, await decide(lock, 'mod.restore', declaredModerator, { target })]).toEqual([target, OK]);
+    }
+    for (const target of w.removed.author.gated) {
+      expect([target, await decide(lock, 'mod.restore', localUser(w.staff.moderator.id), { target })]).toEqual([target, OK]);
+      expect([target, await decide(lock, 'mod.restore', siteAdmin(w.staff.admin.id), { target })]).toEqual([target, OK]);
+    }
+  });
+
   test('a post into a flagged community', async () => {
     for (const community of [w.communities.adult, w.communities.gore]) {
       expect(await decide(lock, 'post.create', localUser(w.undeclared.id), { communityId: community.id })).toBe(GATE);
@@ -206,6 +258,17 @@ test('a direct comment request on a flagged post writes nothing; once declared, 
   expect(await createCommentAs(localUser(w.undeclared.id), where, { bodyMd: 'hello' })).toEqual({ ok: false, reason: GATE });
   expect(await db().select({ id: comments.id }).from(comments).where(eq(comments.postId, where.postId))).toEqual(before);
   expect(await createCommentAs(localUser(w.declared.id), where, { bodyMd: 'hello' })).toMatchObject({ ok: true });
+});
+
+test("a direct restore of a moderator's own removed post where they cannot see it writes nothing", async () => {
+  const [target] = w.removed.moderator.gated;
+  if (target?.kind !== 'post') throw new Error('the first removed target is a post');
+  const removedAt = async () => (await db().select({ at: postRows.removedAt }).from(postRows).where(eq(postRows.id, target.id)))[0]?.at;
+  expect(await restoreAs(localUser(w.staff.moderator.id), target, { reason: 'Mine' })).toEqual({ ok: false, reason: GATE });
+  expect(await removedAt()).not.toBeNull();
+  // A declared moderator restores it.
+  expect(await restoreAs(localUser(w.staff.declaredModerator.id), target, { reason: 'Theirs' })).toMatchObject({ ok: true });
+  expect(await removedAt()).toBeNull();
 });
 
 test('taking back a vote on gated content sends the retraction and answers with nothing of the content', async () => {
