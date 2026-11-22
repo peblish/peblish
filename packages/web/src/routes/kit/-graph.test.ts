@@ -2,14 +2,15 @@ import { join } from 'node:path';
 import { createServer, parseSync } from 'vite';
 import { expect, test } from 'vitest';
 
-// The route tree is in every page's script, so what its route files import statically is too. The
-// router's code splitter moves a route's component into a chunk of its own; what stays (beforeLoad,
-// head, loader) and its imports are shared. This runs the app's own Vite config in memory (no build,
-// no server), transforms the route tree for the browser as the dev server does, and follows every
-// import through the app's own modules, static and dynamic. Of the gallery, only its route files and
+// The client's router entry (src/router.tsx) and the route tree it loads are in every page's script, so
+// what their route files import statically is too. The router's code splitter moves a route's component
+// into a chunk of its own; what stays (beforeLoad, head, loader) and its imports are shared. This runs the
+// app's own Vite config in memory (no build, no server), transforms the router entry for the browser as
+// the dev server does, and follows every import through the app's own modules, static and dynamic. Of the gallery, only its route files and
 // their guards may be in the shared script, never its compositions, samples or pieces; and no import from
 // outside the gallery, static or dynamic, may reach into it, but the route tree's of its route files.
 // Imports from inside the gallery are its own business.
+const routerEntry = '/src/router.tsx';
 const routeTree = '/src/routeTree.gen.ts';
 const routeFiles = new Set(['/src/routes/kit/index.tsx', '/src/routes/kit/$composition.tsx']);
 const allowed = new Set([...routeFiles, '/src/routes/kit/-enabled.ts', '/src/routes/kit/-render.ts', '/src/routes/kit/-kit.css?url']);
@@ -64,8 +65,9 @@ const intrusions = (edges: readonly Edge[]) =>
   edges.filter(({ from, to, dynamic }) => !inGallery(from) && inGallery(to) && !(from === routeTree && !dynamic && routeFiles.has(to)));
 
 /** The graph of modules written here, by address. */
-const memory = (modules: Record<string, string>) => imports(routeTree, async (url) => modules[url] ?? null);
+const memory = (modules: Record<string, string>) => imports(routerEntry, async (url) => modules[url] ?? null);
 
+const router = `import { routeTree } from '/src/routeTree.gen.ts';`;
 const tree = `import '/src/routes/kit/$composition.tsx';\nimport '/src/routes/post/index.tsx';`;
 const galleryRoute = `const lazy = () => import('/src/routes/kit/$composition.tsx?tsr-split=component');`;
 const galleryPage = `import '/src/routes/kit/-samples.ts';\nconst page = () => import('/src/routes/kit/-feed.tsx');`;
@@ -73,6 +75,7 @@ const postRoute = `const lazy = () => import('/src/routes/post/index.tsx?tsr-spl
 
 test("the gallery's own imports, static and dynamic, are its business", async () => {
   const edges = await memory({
+    [routerEntry]: router,
     [routeTree]: tree,
     '/src/routes/kit/$composition.tsx': galleryRoute,
     '/src/routes/kit/$composition.tsx?tsr-split=component': galleryPage,
@@ -85,6 +88,7 @@ test("the gallery's own imports, static and dynamic, are its business", async ()
 
 test('a static import of the gallery from another route is caught', async () => {
   const edges = await memory({
+    [routerEntry]: router,
     [routeTree]: tree,
     '/src/routes/post/index.tsx': postRoute,
     '/src/routes/post/index.tsx?tsr-split=component': `import { samples } from '/src/routes/kit/-samples.ts';`,
@@ -96,6 +100,7 @@ test('a static import of the gallery from another route is caught', async () => 
 
 test('a dynamic import of the gallery from another route is caught', async () => {
   const edges = await memory({
+    [routerEntry]: router,
     [routeTree]: tree,
     '/src/routes/post/index.tsx': postRoute,
     '/src/routes/post/index.tsx?tsr-split=component': `const samples = () => import('/src/routes/kit/-samples.ts');`,
@@ -103,6 +108,14 @@ test('a dynamic import of the gallery from another route is caught', async () =>
   expect(intrusions(edges)).toEqual([
     { from: '/src/routes/post/index.tsx?tsr-split=component', to: '/src/routes/kit/-samples.ts', dynamic: true },
   ]);
+});
+
+test('a dynamic import of the gallery from the router entry is caught', async () => {
+  const edges = await memory({
+    [routerEntry]: `${router}\nconst kit = () => import('/src/routes/kit/-samples.ts');`,
+    [routeTree]: tree,
+  });
+  expect(intrusions(edges)).toEqual([{ from: routerEntry, to: '/src/routes/kit/-samples.ts', dynamic: true }]);
 });
 
 test('no part of the component gallery is in the script every page loads, and no other module imports it', async () => {
@@ -120,8 +133,9 @@ test('no part of the component gallery is in the script every page loads, and no
   });
   try {
     const client = server.environments.client;
-    const edges = await imports(routeTree, async (url) => (await client.transformRequest(url))?.code ?? null);
-    const shared = staticallyFrom(routeTree, edges);
+    const edges = await imports(routerEntry, async (url) => (await client.transformRequest(url))?.code ?? null);
+    expect(edges).toContainEqual({ from: routerEntry, to: routeTree, dynamic: false });
+    const shared = staticallyFrom(routerEntry, edges);
     expect(shared.has('/src/routes/kit/$composition.tsx')).toBe(true);
     expect([...shared].filter((url) => inGallery(url) && !allowed.has(url))).toEqual([]);
     // Every route's split component is followed.
