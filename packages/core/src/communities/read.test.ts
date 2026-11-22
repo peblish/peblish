@@ -7,7 +7,7 @@ import { seedCommunityRemoval, seedModerator } from '../testing/seed-az.ts';
 import { person, sampleCommunity, seedCommunityWorld } from '../testing/seed-f.ts';
 import { seedActor } from '../testing/seed.ts';
 import { createCommunityAs } from './create.ts';
-import { listLocalCommunities, listModerators, readCommunity } from './read.ts';
+import { listLocalCommunities, listModerators, moderatedAmong, readCommunity } from './read.ts';
 import { updateCommunityAs } from './update.ts';
 
 beforeEach(truncateAll);
@@ -163,6 +163,30 @@ describe('listLocalCommunities', () => {
       { sensitive: false, nsfl: false, postingRestrictedToMods: true, subscribers: 0 },
     ]);
     expect(names(await listLocalCommunities({ includeSensitive: true, limit: 2 }))).toEqual(['adults', 'art']);
+    // `ids` keeps only those, under the same rules: never a remote, removed or (unasked) flagged one.
+    const technology = await seedActor(instances.lemmy, 'Group', 'gadgets');
+    const ids = [...all.filter(({ actor }) => actor.name !== 'Books').map(({ actor }) => actor.id), technology.id];
+    expect(names(await listLocalCommunities({ ids }))).toEqual(['news']);
+    expect(names(await listLocalCommunities({ includeSensitive: true, ids }))).toEqual(['adults', 'art', 'news']);
+  });
+});
+
+describe('moderatedAmong', () => {
+  test('which of the communities the actor moderates or owns now, by listModerators’s rule, in one query', async () => {
+    const { people, create } = await setup();
+    const [news, art, books, quiet] = await Promise.all(['news', 'art', 'books', 'quiet'].map((name) => create(name)));
+    await seedModerator({ id: news!.id }, people.moderator);
+    await seedModerator({ id: art!.id }, people.moderator, { role: 'owner' });
+    await seedModerator({ id: books!.id }, people.moderator, { expiresAt: new Date(Date.now() - 60_000) });
+    const ids = [news!.id, art!.id, books!.id, quiet!.id];
+    expect(await moderatedAmong(people.moderator.id, ids)).toEqual(new Set([news!.id, art!.id]));
+    // The same answer listModerators gives community by community.
+    for (const id of ids)
+      expect((await listModerators(id)).some(({ actor }) => actor.id === people.moderator.id)).toBe(
+        (await moderatedAmong(people.moderator.id, [id])).has(id),
+      );
+    expect(await moderatedAmong(people.user.id, ids)).toEqual(new Set());
+    expect(await moderatedAmong(people.moderator.id, [])).toEqual(new Set());
   });
 });
 
