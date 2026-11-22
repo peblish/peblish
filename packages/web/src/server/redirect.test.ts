@@ -38,6 +38,7 @@ const { Route: twoFactor } = await import('../routes/auth/two-factor.tsx');
 const { Route: join } = await import('../routes/communities/follow.ts');
 const { Route: act } = await import('../routes/modlog/act.ts');
 const { communityPost } = await import('../routes/c/-intents.ts');
+const { Route: bans } = await import('../routes/admin/bans/index.tsx');
 
 const mira: CurrentSession = {
   view: {
@@ -79,18 +80,28 @@ function form(path: string, fields: Record<string, string>, json = false): Reque
   return new Request(`${origin}${path}`, { method: 'POST', headers, body: new URLSearchParams(fields) });
 }
 
-/** Where an answer sends the browser: the 303's Location, or the JSON answer's redirect. */
-async function destination(answer: unknown): Promise<string | null> {
+/** Where a plain form's answer sends the browser: the 303's Location. */
+function location(answer: unknown): string {
   if (!(answer instanceof Response)) throw new Error('the handler did not answer with a Response');
-  if (answer.status === 303) return answer.headers.get('location');
-  const body: unknown = await answer.json();
-  return typeof body === 'object' && body && 'redirect' in body && typeof body.redirect === 'string' ? body.redirect : null;
+  expect(answer.status).toBe(303);
+  return answer.headers.get('location')!;
 }
 
-/** The entry points, each sending `target` where it names its return address; `ok` picks the branch. */
-const entries: [name: string, send: (target: string, json: boolean) => Promise<unknown>][] = [
+/** What the enhanced form reads instead: the JSON answer's body, and no Location to follow. */
+async function jsonBody(answer: unknown): Promise<Record<string, unknown>> {
+  if (!(answer instanceof Response)) throw new Error('the handler did not answer with a Response');
+  expect([answer.headers.get('content-type'), answer.headers.get('location')]).toEqual(['application/json', null]);
+  return (await answer.json()) as Record<string, unknown>;
+}
+
+/**
+ * The entry points, each sending `target` where it names its return address. `redirects` is
+ * whether its JSON answer names a place to go (a success does); a refusal's names only the reason.
+ */
+const entries: [name: string, redirects: boolean, send: (target: string, json: boolean) => Promise<unknown>][] = [
   [
     'sign-in',
+    true,
     (target, json) =>
       Promise.resolve(
         postOf(signIn)({ request: form('/auth/sign-in', { identifier: 'mira', password: 'x'.repeat(12), redirect: target }, json) }),
@@ -98,53 +109,76 @@ const entries: [name: string, send: (target: string, json: boolean) => Promise<u
   ],
   [
     'two-factor',
+    true,
     (target, json) =>
       Promise.resolve(postOf(twoFactor)({ request: form('/auth/two-factor', { code: '123456', method: 'totp', redirect: target }, json) })),
   ],
   // Refused (signed out): back to `next` with ?error=.
   [
     'community join',
-    (target) => Promise.resolve(postOf(join)({ request: form('/communities/follow', { community: 'x', intent: 'join', next: target }) })),
+    false,
+    (target, json) =>
+      Promise.resolve(postOf(join)({ request: form('/communities/follow', { community: 'x', intent: 'join', next: target }, json) })),
   ],
   // Refused (signed out): back to `back` with ?modError=.
-  ['moderator form', (target) => Promise.resolve(postOf(act)({ request: form('/modlog/act', { intent: 'remove', back: target }) }))],
+  [
+    'moderator form',
+    false,
+    (target, json) => Promise.resolve(postOf(act)({ request: form('/modlog/act', { intent: 'remove', back: target }, json) })),
+  ],
   // Done (a Hide NSFW choice): to `redirect` as it is.
-  ['NSFW choice', (target) => communityPost(form('/c/news', { intent: 'nsfw-once', redirect: target }), 'news')],
+  ['NSFW choice', true, (target, json) => communityPost(form('/c/news', { intent: 'nsfw-once', redirect: target }, json), 'news')],
   // Refused (a follow a ban stops): back to `redirect` with ?error=.
   [
     'community follow',
-    (target) => {
+    false,
+    (target, json) => {
       signedIn.session = mira;
-      return communityPost(form('/c/news', { intent: 'follow', redirect: target }), 'news');
+      return communityPost(form('/c/news', { intent: 'follow', redirect: target }, json), 'news');
     },
   ],
 ];
 
-describe.each(entries)('%s', (_, send) => {
+/** `to` is a path on this site, and nothing of the hostile address is kept as the path to go to. */
+function onThisSite(to: string, target: string) {
+  const url = new URL(to, origin);
+  expect([target, url.origin, url.pathname.startsWith('//')]).toEqual([target, origin, false]);
+  expect(url.pathname, target).not.toContain('evil.example');
+}
+
+describe.each(entries)('%s', (_, redirects, send) => {
   test.each(hostileReturns)('%s: stays on this site', async (_, target) => {
-    for (const json of [false, true]) {
-      const to = await destination(await send(target, json));
-      expect(to, target).not.toBeNull();
-      const url = new URL(to!, origin);
-      expect([target, url.origin, url.pathname.startsWith('//')]).toEqual([target, origin, false]);
-      // Nothing of the hostile address is kept as the path to go to.
-      expect(url.pathname, target).not.toContain('evil.example');
-    }
+    onThisSite(location(await send(target, false)), target);
+    const body = await jsonBody(await send(target, true));
+    expect(['redirect' in body, target]).toEqual([redirects, target]);
+    if (typeof body.redirect === 'string') onThisSite(body.redirect, target);
+    expect(JSON.stringify(body), target).not.toContain('evil.example');
   });
 
   test.each(ordinaryReturns)('%s: kept, with its query and fragment', async (target) => {
-    const to = await destination(await send(target, false));
-    const url = new URL(to!, origin);
+    const url = new URL(location(await send(target, false)), origin);
     const wanted = new URL(target, origin);
     expect(url.pathname).toBe(wanted.pathname);
     // A refusal adds its error code to the query; everything the address had stays.
     for (const [name, value] of wanted.searchParams) expect(url.searchParams.get(name)).toBe(value);
+    const body = await jsonBody(await send(target, true));
+    if (redirects) expect(body.redirect).toBe(target);
   });
+});
+
+// Enter in a Bans panel field without scripts posts to the page itself, which only sends the
+// browser back: to its own route, whatever path the request came in on.
+test('the Bans tab goes back to itself, keeping the panel it came from', () => {
+  const back = (path: string) => location(postOf(bans)({ request: form(path, {}) }));
+  for (const path of ['//evil.example/admin/bans', '/.//evil.example/', '/%2F%2Fevil.example/admin/bans']) {
+    expect(back(`${path}?modFor=site_unban:x`), path).toBe('/admin/bans?modFor=site_unban:x');
+  }
+  expect(back('/admin/bans/?lift=019a0000-0000-7000-8000-0000000000b1')).toBe('/admin/bans?lift=019a0000-0000-7000-8000-0000000000b1');
 });
 
 test('two-factor: the way from sign-in carries only a checked address', async () => {
   api.signInEmail.mockResolvedValue({ headers: new Headers(), response: { twoFactorRedirect: true } });
-  const to = await destination(
+  const to = location(
     await postOf(signIn)({ request: form('/auth/sign-in', { identifier: 'mira', password: 'x', redirect: '/.//evil.example' }) }),
   );
   expect(to).toBe('/auth/two-factor?redirect=%2F');

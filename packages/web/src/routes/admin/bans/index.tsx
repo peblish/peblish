@@ -51,11 +51,12 @@ export const Route = createFileRoute('/admin/bans/')({
   server: {
     handlers: {
       // Only the panels' hidden first button posts here: Enter in one of their fields without
-      // scripts (NoEnterSubmit). It decides nothing and goes back to the panel it came from.
+      // scripts (NoEnterSubmit). It decides nothing and goes back to the panel it came from: to
+      // this page's own path, never the one the request names, with the query that opens the panel.
       POST: ({ request }) => {
         if (!sameOrigin(request)) return forbidden();
-        const url = new URL(request.url);
-        return new Response(null, { status: 303, headers: { location: `${url.pathname}${url.search}` } });
+        const { search } = new URL(request.url);
+        return new Response(null, { status: 303, headers: { location: `${adminPaths.bans}${search}` } });
       },
     },
   },
