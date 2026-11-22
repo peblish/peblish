@@ -275,7 +275,9 @@ function shownComments(personId: Uuid, viewer: Viewer, asOf: number, nsfw: NsfwC
     isNull(comments.removedAt),
     ...visible('all', viewer, asOf),
   ];
-  if (viewer) conditions.push(sql`not ${actorBlockedBy(viewer.actorId, sql.raw('"comments"."author_id"'))}`);
+  // Every comment here is the person's, so their block (directly or through their instance) is
+  // one answer for the whole read: asked of the id, not of each row's author_id.
+  if (viewer) conditions.push(sql`not ${actorBlockedBy(viewer.actorId, sql`${personId}::uuid`)}`);
   const shown = nsfwShown(nsfw);
   if (shown) conditions.push(shown);
   return conditions;

@@ -22,6 +22,8 @@ import { activityQueries, countQueries, readActivity, readProfile } from './read
 const runs = 20;
 const budgetMs = 50;
 const percentile95 = (values: number[]) => [...values].sort((a, b) => a - b)[Math.ceil(values.length * 0.95) - 1]!;
+/** Whether a comment scan checks its author's block row by row (a sub-plan on author_id), not once for the person. */
+const blockedPerRow = (plan: string) => /author_id = \(hashed SubPlan|EXISTS\(SubPlan/.test(plan);
 
 describe.skipIf(!process.env.PEBLISH_FEED_PERF)('profile activity performance', () => {
   let author: { id: string };
@@ -100,6 +102,8 @@ describe.skipIf(!process.env.PEBLISH_FEED_PERF)('profile activity performance', 
           const plan = await explain(queries.comments);
           expect(plan, `${tab} ${sort} comments`).not.toMatch(/Seq Scan on comments/);
           expect(plan, `${tab} ${sort} comments`).toMatch(/(Index|Bitmap Index) Scan (using|on) comments_author/);
+          // Every comment here is the person's: their block is checked once, not once a row.
+          expect(blockedPerRow(plan), `${tab} ${sort} comments`).toBe(false);
         }
       }
     }
@@ -115,6 +119,7 @@ describe.skipIf(!process.env.PEBLISH_FEED_PERF)('profile activity performance', 
         .join('\n');
       expect(plan, `count of ${name}`).not.toMatch(/Seq Scan on (posts|comments)\b/);
       expect(plan, `count of ${name}`).toMatch(index);
+      if (name === 'comments') expect(blockedPerRow(plan), 'count of comments').toBe(false);
     }
     const profileTimings: number[] = [];
     for (let run = 0; run < runs + 1; run += 1) {
