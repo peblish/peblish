@@ -307,6 +307,44 @@ test.describe('the inbox of a person who was replied to, mentioned, moderated an
     ).toBeFocused();
     await page.context().close();
   });
+
+  test('in Unread focus goes to the notice after the one marked read, though a newer one came in meanwhile', async ({ page }) => {
+    await signedIn(page, seed.busy.name);
+    await gotoHydrated(page, '/notifications');
+    const ids = await rows(page)
+      .locator('form[data-toggle]')
+      .evaluateAll((forms) => forms.slice(0, 4).map((form) => new URL((form as HTMLFormElement).action).searchParams.get('id')!));
+    const [newest, a, b, c] = ids;
+    /** Posts an inbox form by fetch, as the page does. */
+    const mark = (intent: string, id = '') =>
+      page.evaluate(
+        ([intent, id]) =>
+          fetch(`/notifications?${new URLSearchParams(id ? { intent, id } : { intent })}`, {
+            method: 'POST',
+            headers: { accept: 'application/json', 'content-type': 'application/x-www-form-urlencoded' },
+          }).then((response) => response.json()),
+        [intent, id],
+      );
+    // Everything read, then the three after the newest unread again: Unread lists them in order.
+    await mark('read_all');
+    for (const id of [a, b, c]) expect(await mark('unread', id)).toEqual({ ok: true });
+    await gotoHydrated(page, '/notifications?filter=unread');
+    await expect(rows(page)).toHaveCount(3);
+    const toggle = (id: string | undefined) => page.locator(`form[data-toggle][action*="id=${id}"] button`);
+    // While b's Mark read is on its way the newest notice is unread again, so the list b leaves is [newest, a, c].
+    await page.route(
+      (url) => url.pathname === '/notifications' && url.searchParams.get('intent') === 'read',
+      async (route) => {
+        await mark('unread', newest);
+        await route.continue();
+      },
+    );
+    await toggle(b).press('Enter');
+    await expect(rows(page)).toHaveCount(3);
+    await expect(toggle(b)).toHaveCount(0);
+    await expect(toggle(c)).toBeFocused();
+    await page.context().close();
+  });
 });
 
 test.describe('a reply written in place', () => {

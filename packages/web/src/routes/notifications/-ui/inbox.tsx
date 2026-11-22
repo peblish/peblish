@@ -133,17 +133,20 @@ const emptyId = 'pb-inbox-empty';
 /**
  * Keeps focus in the list when the row holding it leaves (the Unread filter drops a notice once it is read). Call it
  * before the change: null when focus is not in `row`. Run what it returns once the reloaded list is drawn: if the row
- * has gone and focus went with it, the row now in its place (the next one) takes focus on its Mark read or unread
- * button, else the last row (the one before), else the empty state. Focus that moved on in the meantime stays there.
+ * has gone and focus went with it, the nearest notice after it that is still listed takes focus on its Mark read or
+ * unread button, else the nearest one before it, else the list's first row, else the empty state. The notices are
+ * followed by their rows' elements, which React keeps for as long as their notice (each row's key) is listed, so a
+ * notice that came in meanwhile does not take the place. Focus that moved on in the meantime stays there.
  */
 function keepFocus(row: Element | null | undefined): (() => void) | null {
   const list = row?.parentElement;
   if (!row || !list || !row.contains(document.activeElement)) return null;
-  const index = [...list.children].indexOf(row);
+  const rows = [...list.children];
+  const at = rows.indexOf(row);
+  const nearest = [...rows.slice(at + 1), ...rows.slice(0, at).reverse()];
   return () => {
     if (row.isConnected || (document.activeElement !== null && document.activeElement !== document.body)) return;
-    const rows = list.isConnected ? [...list.children] : [];
-    const successor = rows[index] ?? rows.at(-1);
+    const successor = list.isConnected ? (nearest.find((other) => other.parentElement === list) ?? list.firstElementChild) : null;
     (successor ? successor.querySelector<HTMLElement>('form[data-toggle] button') : document.getElementById(emptyId))?.focus();
   };
 }
@@ -314,8 +317,14 @@ export function NoticeRow({
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<CommentError>();
   const [posted, setPosted] = useState<string | null>(null);
+  // Back to Reply once the field has closed, unless focus left the row before the frame came (a Tab, a press elsewhere).
   const backToReply = () =>
-    requestAnimationFrame(() => document.querySelector<HTMLElement>(`[aria-controls="${formId}"]`)?.focus({ preventScroll: true }));
+    requestAnimationFrame(() => {
+      const reply = document.querySelector<HTMLElement>(`[aria-controls="${formId}"]`);
+      const now = document.activeElement;
+      if (now !== null && now !== document.body && !reply?.closest('li')?.contains(now)) return;
+      reply?.focus({ preventScroll: true });
+    });
 
   // One lock from the press until the comment is saved and the notice marked read: Send stays pending and the field read-only throughout.
   async function sendNow() {

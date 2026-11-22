@@ -220,6 +220,36 @@ test('a reply sent once the reader has moved on leaves focus where they went', a
   await expect(elsewhere).toBeFocused();
 });
 
+test('a reply whose field closes as the reader moves on leaves focus where they went', async ({ page }) => {
+  await gotoHydrated(page, '/kit/inbox-replies');
+  await page.route('**/post/*/comments', (route) =>
+    route.fulfill({ status: 200, json: { ok: true, id: '00000000-0000-7000-8000-000000000400' } }),
+  );
+  await page.route('**/notifications?*', (route) => route.fulfill({ status: 200, json: { ok: true } }));
+  await first(page)
+    .getByRole('button', { name: /^Reply: / })
+    .click();
+  await first(page).getByRole('textbox', { name: 'Reply to @jun@lemmy.world' }).fill('Sent as I move on.');
+  // The moment the sent reply's field leaves the page, before the next frame, focus moves to the next row (a Tab would).
+  await page.evaluate(() => {
+    const [row, next] = document.querySelectorAll('[aria-label="Notices"] > li');
+    const observer = new MutationObserver(() => {
+      if (row!.querySelector('textarea')) return;
+      observer.disconnect();
+      next!.querySelector<HTMLElement>('form[data-toggle] button')!.focus();
+    });
+    observer.observe(row!, { childList: true, subtree: true });
+  });
+  await first(page).getByRole('button', { name: 'Reply', exact: true }).click();
+  await expect(first(page).getByRole('status')).toHaveText('Reply posted. View reply');
+  await page.waitForTimeout(100);
+  await expect(
+    rows(page)
+      .nth(1)
+      .getByRole('button', { name: /^Mark (un)?read/ }),
+  ).toBeFocused();
+});
+
 test('a sensitive notice offers no reply in place: Reply leads to the thread, whose gate applies', async ({ page }) => {
   await gotoHydrated(page, '/kit/inbox-mentions');
   // The ordinary mention still answers in place.
