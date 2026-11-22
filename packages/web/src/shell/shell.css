@@ -581,10 +581,11 @@
     }
 
     /* The brand on the phone's top bar: the mark, or the site's name, in a 44px target. A name is what gives
-       way in the bar: at most 40% of the window, and a longer one ends in an ellipsis, so the page never
-       scrolls sideways and the finder, the menu and a page's actions keep their size. */
+       way in the bar: at most 45% of the window (an instance's host name, "b1.peblish.test", fits whole at
+       320px), and a longer one ends in an ellipsis, so the page never scrolls sideways and the finder, the
+       menu and a page's actions keep their size. */
     .pb-bar-brand {
-      max-inline-size: 40vw;
+      max-inline-size: 45vw;
       min-block-size: var(--pb-touch);
       min-inline-size: var(--pb-touch);
       justify-content: center;
