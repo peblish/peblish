@@ -1,7 +1,8 @@
-import { FeedSkeleton, InboxSkeleton, ThreadSkeleton } from '@peblish/ui/skeleton/skeletons';
+import { FeedSkeleton, InboxSkeleton, RailSkeleton, ThreadSkeleton } from '@peblish/ui/skeleton/skeletons';
 import type { ReactNode } from 'react';
 import { useTranslate } from '../i18n/use-translate.ts';
 import { usePrefs } from './prefs.tsx';
+import { Rail } from './rail.tsx';
 import { ViewHeader } from './view-header.tsx';
 
 /**
@@ -10,7 +11,8 @@ import { ViewHeader } from './view-header.tsx';
  * coming, whose one status says what is loading. Only a navigation in the browser shows one: the server
  * waits for the data. A route that draws its own view header (`viewHeader: 'own'`) draws it in its host
  * too, from what it knows before its data, with the app's own styles only (its page's stylesheet comes with
- * the page): the shell leaves its default bar out while it loads.
+ * the page): the shell leaves its default bar out while it loads. A page that arrives with a rail has its
+ * blocks in the host, so the centre keeps its place.
  */
 function Pending({ className, children }: { className: string; children: ReactNode }) {
   return (
@@ -20,21 +22,32 @@ function Pending({ className, children }: { className: string; children: ReactNo
   );
 }
 
-/** A feed's rows, in the viewer's density, under `header` (a feed's own bar, index/-feed/feed-pending.tsx). */
+/**
+ * A feed's rows, in the viewer's density, under `header` (a feed's own bar, index/-feed/feed-pending.tsx),
+ * and the rail's blocks (a feed and a profile both have a rail).
+ */
 export function FeedPending({ header }: { header?: ReactNode }) {
   const { t } = useTranslate();
   const { prefs } = usePrefs();
   return (
-    <Pending className="pb-page">
-      {header}
-      <div className="pb-rows">
-        <FeedSkeleton density={prefs.density} label={t('shell', 'loading.posts')} />
-      </div>
-    </Pending>
+    <>
+      <Pending className="pb-page">
+        {header}
+        <div className="pb-rows">
+          <FeedSkeleton density={prefs.density} label={t('shell', 'loading.posts')} />
+        </div>
+      </Pending>
+      <Rail label={t('shell', 'loading.posts')}>
+        <RailSkeleton />
+      </Rail>
+    </>
   );
 }
 
-/** A post and the first screen of its thread, under the post page's bar (its community comes with the post). */
+/**
+ * A post and the first screen of its thread, under the post page's bar (its community comes with the post),
+ * and the rail's blocks.
+ */
 export function PostPending() {
   const { t } = useTranslate();
   return (
@@ -43,6 +56,9 @@ export function PostPending() {
       <Pending className="pb-page">
         <ThreadSkeleton label={t('shell', 'loading.post')} />
       </Pending>
+      <Rail label={t('shell', 'loading.post')}>
+        <RailSkeleton />
+      </Rail>
     </>
   );
 }

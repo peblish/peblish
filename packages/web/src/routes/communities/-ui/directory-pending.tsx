@@ -21,7 +21,7 @@ export function DirectoryPending() {
         <ViewHeader
           root
           title={
-            <Text as="h1" variant="label" size="md" className="dir-title">
+            <Text as="h1" variant="label" size="md" className="pb-frame-vh__title">
               {t('directory', 'directory.title')}
             </Text>
           }
