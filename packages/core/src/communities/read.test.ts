@@ -173,6 +173,18 @@ describe('listLocalCommunities', () => {
   });
 });
 
+describe('listLocalCommunities for a viewer', () => {
+  test('leaves out a community the viewer blocks, for them alone', async () => {
+    const { people, create } = await setup();
+    const [art] = await Promise.all(['art', 'news'].map((name) => create(name)));
+    await writer().insert(communityBlocks).values({ blockerId: people.user.id, communityId: art!.id });
+    const names = async (hiddenFrom?: string) => (await listLocalCommunities({ hiddenFrom })).map(({ actor }) => actor.name);
+    expect(await names(people.user.id)).toEqual(['news']);
+    expect(await names(people.moderator.id)).toEqual(['art', 'news']);
+    expect(await names()).toEqual(['art', 'news']);
+  });
+});
+
 describe('moderatedAmong', () => {
   test('which of the communities the actor moderates or owns now, by listModerators’s rule, in one query', async () => {
     const { people, create } = await setup();

@@ -1,4 +1,4 @@
-import { moderatedAmong, readCommunity } from '@peblish/core/communities/read';
+import { communityBlockedFor, moderatedAmong, readCommunity } from '@peblish/core/communities/read';
 import { localHandles } from '@peblish/core/identity/handles';
 import { showNsfw } from '@peblish/core/communities/gate';
 import { readPost } from '@peblish/core/posts/read';
@@ -30,8 +30,9 @@ async function canPostIn(viewer: SessionView, community: { id: string; restricte
 async function panelFor(communityId: string, viewer: SessionView, renderer: MarkdownRenderer): Promise<CommunityPanel | null> {
   if (!Uuid.allows(communityId)) return null;
   const community = await readCommunity({ id: communityId });
-  // Removed, deleted, or age-gated for someone who has not declared 16+: it does not exist for them.
-  if (!community || !ageAllows(viewer, community)) return null;
+  // Removed, deleted, age-gated for someone who has not declared 16+, or hidden by the directory's
+  // block rules (theirs, or this server's for its host): it does not exist for them.
+  if (!community || !ageAllows(viewer, community) || (await communityBlockedFor(viewer.actorId, community.actor.id))) return null;
   const restricted = community.postingRestrictedToMods;
   const content = { kind: 'actor', id: community.actor.id, apId: community.actor.apId } as const;
   const summary = community.summaryMd
@@ -121,7 +122,7 @@ export const loadComposer = createServerFn({ method: 'GET' })
 
 /**
  * The panel for a community picked in the form; `panel` is null for one that does not exist for
- * this viewer (removed, deleted, age-gated without a 16+ declaration) or without a session. Wrapped
+ * this viewer (removed, deleted, age-gated without a 16+ declaration, blocked) or without a session. Wrapped
  * because a server function that returns a bare null is answered with a 500.
  */
 export const loadCommunityPanel = createServerFn({ method: 'GET' })

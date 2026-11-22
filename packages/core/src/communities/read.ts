@@ -1,6 +1,6 @@
 import type { Uuid } from '@peblish/schema/ids';
 import type { ActorRef, CommunityView } from '@peblish/schema/views';
-import { and, asc, eq, inArray, isNull, or, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNull, not, or, sql } from 'drizzle-orm';
 import { freshModerator } from '../authz/roles.ts';
 import { communityBlockedBy } from '../blocks/predicate.ts';
 import { db as readDb, type Queryable } from '../db/read.ts';
@@ -225,9 +225,10 @@ export async function communityBlockedFor(viewerId: Uuid, communityId: Uuid, q: 
  * passes true only for a viewer who declared 16+ and has not hidden NSFW, since a signed-out
  * or undeclared viewer never sees an age-gated community listed. At most `limit` rows (200 by default, 500 at most); the beta has a handful.
  * `ids` keeps only those communities (the composer's picker fetches follows the first page left out).
+ * `hiddenFrom` leaves out the communities that person blocks (the directory's rule).
  */
 export async function listLocalCommunities(
-  options: { includeSensitive?: boolean; limit?: number; ids?: readonly Uuid[] } = {},
+  options: { includeSensitive?: boolean; limit?: number; ids?: readonly Uuid[]; hiddenFrom?: Uuid } = {},
   q: Queryable = readDb(),
 ): Promise<CommunityListItem[]> {
   const rows = await q
@@ -249,6 +250,7 @@ export async function listLocalCommunities(
         // Not safe for life implies the age gate for communities made here, but an imported one may carry only nsfl.
         options.includeSensitive ? undefined : and(eq(actors.sensitive, false), eq(actors.nsfl, false)),
         options.ids ? inArray(actors.id, [...options.ids]) : undefined,
+        options.hiddenFrom ? not(communityBlockedBy(options.hiddenFrom, { id: actors.id, instanceId: actors.instanceId })) : undefined,
       ),
     )
     .orderBy(sql`lower(${actors.name})`)

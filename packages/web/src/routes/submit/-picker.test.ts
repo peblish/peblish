@@ -181,6 +181,13 @@ describe('a person with a handful of follows', () => {
     expect(core.followedCommunities.mock.calls).toEqual([['me', { accepted: true, includeSensitive: false, limit: pickerMax + 1 }]]);
   });
 
+  test('asks core to leave out the local communities the person blocks', async () => {
+    core.local = Array.from({ length: 202 }, (_, n) => local(`c${String(n).padStart(3, '0')}`));
+    core.follows = [follow('c201', { host: 'feddit.test', local: true })];
+    await pickerFor(person(), start());
+    expect(core.listLocalCommunities.mock.calls.map(([options]) => options.hiddenFrom)).toEqual(['me', 'me']);
+  });
+
   test('a site admin posts anywhere and asks nothing about moderators', async () => {
     core.local = [local('notices', { postingRestrictedToMods: true })];
     const picker = await pickerFor(person({ siteRole: 'admin' }), start());

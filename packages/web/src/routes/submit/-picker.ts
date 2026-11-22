@@ -25,15 +25,15 @@ export type Candidate = Omit<PickerCommunity, 'canPost'> & { followed: boolean }
 /**
  * Every community the picker could list, in its order: local ones by name (the first
  * pickerMax + 1, so a cut shows, and any the person follows past them), then the remote ones the
- * person follows (accepted follows only, none on a host this server or the person blocks). A
- * community age-gated as sensitive or NSFL is listed only for someone who declared 16+, a removed
- * one never.
+ * person follows (accepted follows only). None the person blocks, itself or through its host,
+ * nor one on a host this server blocks (the directory's rule). A community age-gated as sensitive
+ * or NSFL is listed only for someone who declared 16+, a removed one never.
  */
 async function candidates(viewer: SessionView): Promise<Candidate[]> {
   const includeSensitive = viewer.ageDeclaredAt !== null;
   // The follows are read as the local communities are: the first by name, one past the cap.
   const [first, follows] = await Promise.all([
-    listLocalCommunities({ includeSensitive, limit: pickerMax + 1 }),
+    listLocalCommunities({ includeSensitive, limit: pickerMax + 1, hiddenFrom: viewer.actorId }),
     followedCommunities(viewer.actorId, { accepted: true, includeSensitive, limit: pickerMax + 1 }),
   ]);
   const followedIds = new Set(follows.map(({ id }) => id));
@@ -42,7 +42,9 @@ async function candidates(viewer: SessionView): Promise<Candidate[]> {
   // The follows come by name, and the cap keeps no more of them than it lists.
   const missing = follows.filter((community) => community.local && !listed.has(community.id)).map(({ id }) => id);
   const more =
-    missing.length > 0 ? await listLocalCommunities({ includeSensitive, ids: missing.slice(0, pickerMax), limit: pickerMax }) : [];
+    missing.length > 0
+      ? await listLocalCommunities({ includeSensitive, ids: missing.slice(0, pickerMax), limit: pickerMax, hiddenFrom: viewer.actorId })
+      : [];
   const local = [...first, ...more].map((row) => localCandidate(row, followedIds.has(row.actor.id)));
   const remote = follows
     .filter((community) => !community.local)

@@ -2,7 +2,7 @@ import type { Uuid } from '@peblish/schema/ids';
 import type { ActorRef } from '@peblish/schema/views';
 import { and, count, eq, isNull, not, sql } from 'drizzle-orm';
 import { freshModerator } from '../authz/roles.ts';
-import { instanceBlockedBy } from '../blocks/predicate.ts';
+import { communityBlockedBy } from '../blocks/predicate.ts';
 import { listLocalCommunities } from '../communities/read.ts';
 import { db, type Queryable } from '../db/read.ts';
 import { actors } from '../db/tables/actors.ts';
@@ -33,8 +33,9 @@ const open = and(
 /**
  * A signed-in viewer's communities: the ones they follow, local and remote, with a follow that
  * is still pending included (the Subscribed feed shows only the accepted ones), plus how many
- * they moderate. As everywhere else, a sensitive or NSFL one only once they declared 16+, and none
- * on a host this server or the viewer blocks. One that opted out of search is still listed: the
+ * they moderate. As everywhere else, a sensitive or NSFL one only once they declared 16+, none on
+ * a host this server blocks, and none the viewer blocks, itself or through its host (the
+ * directory's rule). One that opted out of search is still listed: the
  * choice keeps it out of the directory, and its follower found it already. A signed-out viewer
  * gets the local communities that are not age-gated.
  */
@@ -64,7 +65,7 @@ export async function sidebarCommunities(viewerId: Uuid | null, q: Queryable = d
           open,
           sql`(not (${actors.sensitive} or ${actors.nsfl}) or exists (select 1 from ${ageDeclarations} as ad where ad.actor_id = ${viewerId}))`,
           not(peerBlocked(actors.instanceId)),
-          not(instanceBlockedBy(viewerId, actors.instanceId)),
+          not(communityBlockedBy(viewerId, { id: actors.id, instanceId: actors.instanceId })),
         ),
       )
       .orderBy(sql`lower(${actors.name})`, actors.id)
