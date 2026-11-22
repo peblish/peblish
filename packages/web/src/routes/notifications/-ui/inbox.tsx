@@ -142,17 +142,20 @@ const emptyId = 'pb-inbox-empty';
  * has gone and focus went with it, the nearest notice after it that is still listed takes focus on its Mark read or
  * unread button, else the nearest one before it, else the list's first row, else the empty state. The notices are
  * followed by their rows' elements, which React keeps for as long as their notice (each row's key) is listed, so a
- * notice that came in meanwhile does not take the place. Focus that moved on in the meantime stays there.
+ * notice that came in meanwhile does not take the place. Focus that moved on in the meantime stays there. The inbox
+ * draws a list per date group (groups.tsx), so the rows are taken across all of them, in order: a group whose last
+ * notice leaves goes with it, and focus goes on to the next group.
  */
 function keepFocus(row: Element | null | undefined): (() => void) | null {
-  const list = row?.parentElement;
-  if (!row || !list || !row.contains(document.activeElement)) return null;
-  const rows = [...list.children];
+  const scope = row?.closest('.pb-notice-groups') ?? row?.parentElement;
+  if (!row || !scope || !row.contains(document.activeElement)) return null;
+  const listed = () => [...scope.querySelectorAll('.pb-notices > .pb-notice')];
+  const rows = listed();
   const at = rows.indexOf(row);
   const nearest = [...rows.slice(at + 1), ...rows.slice(0, at).reverse()];
   return () => {
     if (row.isConnected || (document.activeElement !== null && document.activeElement !== document.body)) return;
-    const successor = list.isConnected ? (nearest.find((other) => other.parentElement === list) ?? list.firstElementChild) : null;
+    const successor = scope.isConnected ? (nearest.find((other) => scope.contains(other)) ?? listed()[0]) : null;
     (successor ? successor.querySelector<HTMLElement>('form[data-toggle] button') : document.getElementById(emptyId))?.focus();
   };
 }
