@@ -14,6 +14,7 @@ import { communityRemovals } from '../moderation/tables.ts';
 import { decodeCursor, encodeCursor, type Cursor } from '../feeds/cursor.ts';
 import { defaultPageSize, maxPageSize } from '../feeds/input.ts';
 import { visible } from '../feeds/read.ts';
+import { ageClear } from '../posts/feed-predicate.ts';
 import { postViews, type PostBody, type Viewer } from '../posts/read.ts';
 import type { ProfileSort, ProfileTab } from './input.ts';
 
@@ -74,7 +75,7 @@ export const publicActorRef = (actor: ActorRef): ActorRef => ({
 const refOf = (actor: Omit<ActorRef, 'handle'> & { domain: string }): ActorRef =>
   publicActorRef({ ...actor, handle: actor.local ? actor.name : `${actor.name}@${actor.domain}` });
 
-/** Communities the viewer moderates, live (not deleted, not removed by an admin), where `personId` has a live post or comment. */
+/** Communities the viewer moderates, live (not deleted, not removed by an admin) and past their age gate, where `personId` has a live post or comment. */
 async function moderatedWith(q: Queryable, viewerId: Uuid, personId: Uuid): Promise<ActorRef[]> {
   const rows = await q
     .select({
@@ -94,6 +95,8 @@ async function moderatedWith(q: Queryable, viewerId: Uuid, personId: Uuid): Prom
         eq(communityModerators.moderatorId, viewerId),
         freshModerator,
         isNull(actors.deletedAt),
+        // The age gate the tabs beside it apply: a sensitive community only once the moderator declared 16+.
+        ageClear(sql`(${actors.sensitive} or ${actors.nsfl})`, { actorId: viewerId }),
         sql`not exists (select 1 from ${communityRemovals} where ${communityRemovals.communityId} = ${actors.id})`,
         sql`(
           exists (select 1 from ${posts} where ${posts.communityId} = ${actors.id} and ${posts.authorId} = ${personId} and ${posts.deletedAt} is null and ${posts.removedAt} is null)

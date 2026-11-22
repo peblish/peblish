@@ -9,9 +9,9 @@ import { actors } from '../db/tables/actors.ts';
 import { follows } from '../db/tables/follows.ts';
 import { instances } from '../db/tables/instances.ts';
 import { communityModerators } from '../db/tables/moderation.ts';
-import { ageDeclarations } from '../identity/tables.ts';
 import { communityRemovals } from '../moderation/tables.ts';
 import { peerBlocked } from '../peers/gate.ts';
+import { ageClear } from '../posts/feed-predicate.ts';
 
 // The lists the sidebar shows beyond its fixed links (web's shell/data.ts calls this).
 
@@ -44,6 +44,13 @@ export async function sidebarCommunities(viewerId: Uuid | null, q: Queryable = d
     const listed = await listLocalCommunities({ limit: sidebarLimit }, q);
     return { local: listed.map(({ actor }) => actor), remote: [], moderating: 0 };
   }
+  // What the joined list and the count of roles both keep to: the feeds' age gate (ageClear), and
+  // the directory's block rules (this server's for a host, the viewer's own).
+  const shown = and(
+    ageClear(sql`(${actors.sensitive} or ${actors.nsfl})`, { actorId: viewerId }),
+    not(peerBlocked(actors.instanceId)),
+    not(communityBlockedBy(viewerId, { id: actors.id, instanceId: actors.instanceId })),
+  );
   const [followed, [moderated]] = await Promise.all([
     q
       .select({
@@ -58,23 +65,14 @@ export async function sidebarCommunities(viewerId: Uuid | null, q: Queryable = d
       .from(follows)
       .innerJoin(actors, eq(actors.id, follows.followeeId))
       .innerJoin(instances, eq(instances.id, actors.instanceId))
-      .where(
-        and(
-          eq(follows.followerId, viewerId),
-          eq(actors.kind, 'Group'),
-          open,
-          sql`(not (${actors.sensitive} or ${actors.nsfl}) or exists (select 1 from ${ageDeclarations} as ad where ad.actor_id = ${viewerId}))`,
-          not(peerBlocked(actors.instanceId)),
-          not(communityBlockedBy(viewerId, { id: actors.id, instanceId: actors.instanceId })),
-        ),
-      )
+      .where(and(eq(follows.followerId, viewerId), eq(actors.kind, 'Group'), open, shown))
       .orderBy(sql`lower(${actors.name})`, actors.id)
       .limit(sidebarLimit),
     q
       .select({ moderating: count() })
       .from(communityModerators)
       .innerJoin(actors, eq(actors.id, communityModerators.communityId))
-      .where(and(eq(communityModerators.moderatorId, viewerId), eq(actors.kind, 'Group'), open, freshModerator)),
+      .where(and(eq(communityModerators.moderatorId, viewerId), eq(actors.kind, 'Group'), open, freshModerator, shown)),
   ]);
   const refs = followed.map(({ host, ...row }): ActorRef => ({ ...row, handle: row.local ? row.name : `${row.name}@${host}` }));
   return { local: refs.filter(({ local }) => local), remote: refs.filter(({ local }) => !local), moderating: moderated?.moderating ?? 0 };

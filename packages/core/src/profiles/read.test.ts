@@ -190,6 +190,18 @@ describe('readProfile', () => {
     expect((await readProfile('Alice', w.as(w.mod)))?.moderatedCommunities.map((c) => c.name)).toEqual(['news']);
   });
 
+  test('moderated communities leave out a sensitive one until the moderator declared 16+, as the tabs beside them do', async () => {
+    const w = await world();
+    for (const community of [w.news, w.adult]) {
+      await seedModerator(community, w.mod);
+      await seedPost(w.local, community, w.alice);
+    }
+    const names = async () => (await readProfile('Alice', w.as(w.mod)))?.moderatedCommunities.map((c) => c.name);
+    expect(await names()).toEqual(['news']);
+    await declareAge(w.mod);
+    expect(await names()).toEqual(['adult', 'news']);
+  });
+
   test('moderated communities: the viewer moderates and the person has live content, at most five', async () => {
     const w = await world();
     const communities = [];
