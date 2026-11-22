@@ -144,14 +144,15 @@ export function Composer({ data, error: initialError, onDone, onDiscard, keepOnC
   const [error, setError] = useState(initialError);
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState<number | null>(null);
-  const [note, setNote] = useState<'saved' | 'restored' | 'carried' | 'not-saved' | null>(null);
+  const [note, setNote] = useState<'saved' | 'restored' | 'carried' | 'carried-kept' | 'not-saved' | 'taken' | null>(null);
   const enhanced = useHydrated();
   const formElement = useRef<HTMLFormElement>(null);
   const panelRequest = useRef(0);
   // What the unmount cleanup needs to know, read at that moment.
   const latest = useRef(form);
   const finished = useRef(false);
-  // The draft laid over the form, and where it was kept: posting or discarding clears that copy as well.
+  // The form's own copy: the draft laid over it or last kept from it, and where. Posting, discarding, saving and the
+  // sheet closing touch that copy only, and only while it is still what the form left there.
   const restored = useRef<{ scope: DraftScope; draft: Draft } | null>(null);
   useEffect(() => {
     latest.current = form;
@@ -162,18 +163,19 @@ export function Composer({ data, error: initialError, onDone, onDiscard, keepOnC
   const typed = useRef(false);
 
   // Starting with nothing typed (a new post), the draft Browse carried comes back, wherever Create post was opened
-  // after it; else the starting community's saved draft. Typed words win: the form is judged as it is when the draft
-  // is laid over it.
+  // after it, and the starting community's own saved draft stays as it is (it says so); else that saved draft. Typed
+  // words win: the form is judged as it is when the draft is laid over it.
   useEffect(() => {
     removeUnscopedDrafts();
     if (edit || kept || !pristine(form)) return;
-    for (const scope of [carried(actorId), { actorId, community: form.community }]) {
+    const community = { actorId, community: form.community };
+    for (const scope of [carried(actorId), community]) {
       const draft = readDraft(scope);
       if (!draft) continue;
       setForm((current) => (pristine(current) ? { ...current, ...draft } : current));
       if (!typed.current) {
         restored.current = { scope, draft };
-        setNote('carried' in scope ? 'carried' : 'restored');
+        setNote(!('carried' in scope) ? 'restored' : readDraft(community) ? 'carried-kept' : 'carried');
       }
       return;
     }
@@ -182,23 +184,27 @@ export function Composer({ data, error: initialError, onDone, onDiscard, keepOnC
   }, []);
 
   /**
-   * Keeps the form as its community's draft. One restored from Browse's slot lives there from then on, so the next
-   * Create post does not bring back the older text.
+   * Keeps the form as a draft (Save draft, the sheet closing): over its own copy while that is still what it left
+   * there; with none, under its community, or, when another draft is kept there, in the slot read wherever Create post
+   * opens next. Never over a draft the form did not restore or keep: 'taken' when every place held one.
    */
-  function keep(last: Form): boolean {
-    const scope = { actorId, community: last.community };
-    if (!writeDraft(scope, toDraft(last))) return false;
-    const from = restored.current;
-    if (from && 'carried' in from.scope && holds(from.scope, from.draft)) clearDraft(from.scope);
-    restored.current = { scope, draft: toDraft(last) };
-    return true;
+  function keep(last: Form): 'kept' | 'refused' | 'taken' {
+    const own = restored.current;
+    const draft = toDraft(last);
+    const places = own && holds(own.scope, own.draft) ? [own.scope] : [{ actorId, community: last.community }, carried(actorId)];
+    for (const scope of places) {
+      if (scope !== own?.scope && readDraft(scope) !== null) continue;
+      if (!writeDraft(scope, draft)) return 'refused';
+      restored.current = { scope, draft };
+      return 'kept';
+    }
+    return 'taken';
   }
 
-  /** Posted or discarded: no copy is left, under its community or where it was restored from. */
+  /** Posted or discarded: the form's own copy goes, while it is still what the form left there; no other draft. */
   function forget() {
-    clearDraft({ actorId, community: form.community });
-    const from = restored.current;
-    if (from && holds(from.scope, from.draft)) clearDraft(from.scope);
+    const own = restored.current;
+    if (own && holds(own.scope, own.draft)) clearDraft(own.scope);
   }
 
   // Dismissing the sheet with writing in it keeps it as a draft, so Escape never loses a post.
@@ -324,7 +330,8 @@ export function Composer({ data, error: initialError, onDone, onDiscard, keepOnC
 
   function saveDraft() {
     if (form.type === 'image') return;
-    setNote(keep(form) ? 'saved' : 'not-saved');
+    const result = keep(form);
+    setNote(result === 'kept' ? 'saved' : result === 'taken' ? 'taken' : 'not-saved');
   }
 
   function discard() {
