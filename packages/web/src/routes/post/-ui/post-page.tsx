@@ -58,14 +58,14 @@ export function PostPage({ data, error }: { data: PostPageData; error?: string |
  * Where Save's answer lands without scripts: this page as the reader has it (the thread's sort and page
  * among its query), less an `error` an earlier answer left, so it is not shown again. The hash stays out
  * (the server never sees it, so the form would differ between the server and the browser). Past the
- * endpoint's 500 characters, the post itself. The endpoint checks it is a path here (safeRedirect).
+ * endpoint's 2,000 characters (saved/-post.ts), the post itself. The endpoint checks it is a path here (safeRedirect).
  */
 function useSaveBack(post: string): string {
   const here = useRouterState({ select: ({ location }) => `${location.pathname}${location.searchStr}` });
   const url = new URL(here, 'http://here.invalid');
   url.searchParams.delete('error');
   const back = `${url.pathname}${url.search}`;
-  return back.length <= 500 ? back : post;
+  return back.length <= 2000 ? back : post;
 }
 
 /** Where a link post goes: its picture or a box with the domain and the address, which opens it. */
