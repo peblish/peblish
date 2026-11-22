@@ -18,6 +18,10 @@ type Cast = {
   word: string;
   host: string;
   communities: Record<'brew' | 'bake' | 'kiln' | 'glaze', { id: string; handle: string; title: string }>;
+  hidden: { word: string } & Record<
+    'shown' | 'asked' | 'adult' | 'walled' | 'muted' | 'shunned' | 'fading',
+    { id: string; handle: string; title: string }
+  >;
 };
 const run = (...args: string[]) => JSON.parse(execFileSync('node', ['e2e/shell/finder-seed.ts', ...args], { cwd: root, encoding: 'utf8' }));
 
@@ -55,6 +59,36 @@ async function open(page: Page, path = '/') {
   await finderLink(page).click();
   await expect(field(page)).toBeFocused();
 }
+
+test('the finder lists only the followed communities the server lets this viewer see now, in rows, count and timing', async () => {
+  const { hidden } = cast;
+  const page = await member.newPage();
+  await gotoHydrated(page, '/');
+  // Removed once the page has loaded: what the page was sent still lists it.
+  run('remove', hidden.fading.id);
+  // Every answer is held a moment: nothing of the member's own is drawn before the server says it may be.
+  let answers = 0;
+  await page.route('**/_serverFn/**', async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 1_500));
+    await route.continue();
+    answers++;
+  });
+  await finderLink(page).click();
+  await expect(field(page)).toBeFocused();
+  await page.keyboard.type(hidden.word);
+  await page.waitForTimeout(700);
+  expect(answers).toBe(0);
+  await expect(finder(page).getByRole('option')).toHaveCount(0);
+  // Answered: the one joined and the one asked to join, though the directory's first page is full of others; none
+  // age-gated, on a blocked host, blocked by the member, on an instance they blocked, or removed.
+  await expect(rows(page, 'Joined')).toHaveText([new RegExp(`^${hidden.asked.title}`), new RegExp(`^${hidden.shown.title}`)]);
+  await expect(rows(page, 'Joined').first()).toContainText('request pending');
+  await expect(rows(page, 'More communities')).toHaveCount(25);
+  await expect(finder(page).getByRole('status')).toHaveText('27 communities');
+  for (const name of ['adult', 'walled', 'muted', 'shunned', 'fading'] as const)
+    await expect(finder(page).getByRole('option', { name: new RegExp(hidden[name].title) })).toHaveCount(0);
+  await page.close();
+});
 
 test('the link opens the finder, whose rows are in named groups, read as one list by the arrows, and Enter opens one', async () => {
   const page = await member.newPage();
