@@ -1,3 +1,4 @@
+import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Page } from '@playwright/test';
 import { prefsCookie, skipWithoutKit } from '../support/kit.ts';
 import { gotoHydrated } from '../support/route-marker.ts';
@@ -17,12 +18,10 @@ const compositions: Record<string, string[]> = {
   'inbox-reply': ['rest', 'selected', 'pending', 'invalid', 'hover', 'focus', 'pressed'],
   'inbox-undo': ['rest', 'pending', 'hover', 'focus', 'pressed'],
   'thread-follow': ['rest', 'selected', 'pending', 'hover', 'focus', 'pressed'],
-  'thread-follow-rail': ['rest', 'selected', 'pending', 'hover', 'focus', 'pressed'],
 };
 /**
  * The smallest target each page may hold on a phone. A link inside a line of text (a title, a statement)
- * is held to WCAG's 24px, the rows' buttons to 44 below; Undo and the bell are 44 themselves. The rail,
- * with its switch, is not on a phone at all (the frame hides it below 62rem).
+ * is held to WCAG's 24px, the rows' buttons to 44 below; Undo and the bell are 44 themselves.
  */
 const floor = (composition: string) => (composition === 'inbox-undo' || composition === 'thread-follow' ? 44 : 24);
 
@@ -373,3 +372,33 @@ test('the bell is one toggle named Follow thread whose pressed state and shape c
   await expect(toggle('rest')).not.toBeChecked();
   await expect(toggle('selected')).toBeChecked();
 });
+
+// The rail's switch: the helper drives hover, focus and press on a sample's first control, which for Mux's Switch
+// is its visually hidden native input, so its states are checked here instead: off, on and on its way, in light,
+// dark and forced colours, by axe; and on and off from the keyboard on the post page (follows.spec.ts). The rail
+// is not on a phone (the frame hides it below 62rem), so it has no phone target.
+for (const [scheme, forcedColors] of [
+  ['light', 'none'],
+  ['dark', 'none'],
+  ['light', 'active'],
+] as const) {
+  test(`/kit/thread-follow-rail in ${scheme}${forcedColors === 'active' ? ' under forced colours' : ''}: off, on and pending pass axe`, async ({
+    browser,
+    baseURL,
+  }) => {
+    const context = await browser.newContext({ baseURL, colorScheme: scheme, forcedColors });
+    await context.addCookies([{ ...prefsCookie('card', scheme), url: baseURL! }]);
+    const page = await context.newPage();
+    await gotoHydrated(page, '/kit/thread-follow-rail');
+    const toggle = (state: string) => page.locator(`[data-kit-state="${state}"]`).getByRole('switch', { name: 'Follow thread' });
+    await expect(toggle('rest')).not.toBeChecked();
+    await expect(toggle('selected')).toBeChecked();
+    await expect(toggle('pending')).toHaveAttribute('aria-readonly', 'true');
+    const axe = await new AxeBuilder({ page })
+      .include('[data-kit-state]')
+      .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa', 'best-practice'])
+      .analyze();
+    expect(axe.violations.map(({ id }) => id)).toEqual([]);
+    await context.close();
+  });
+}
