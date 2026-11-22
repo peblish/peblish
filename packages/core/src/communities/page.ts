@@ -12,7 +12,7 @@ import { ageDeclarations } from '../identity/tables.ts';
 import type { SanitizeHooks } from '../markdown/sanitize.ts';
 import { communityBans, communityRemovals } from '../moderation/tables.ts';
 import type { Viewer } from '../posts/read.ts';
-import { shows, type NsfwChoice } from './gate.ts';
+import { gateOf, shows, type Gate, type NsfwChoice } from './gate.ts';
 import { readCommunity, type CommunityDetail } from './read.ts';
 
 // What the community page needs beyond the shared detail (lane COMM): the local counts, where the
@@ -160,7 +160,7 @@ export async function readCommunityPage(
 }
 
 /** Where the gate stands for a community page: the same four answers as a post's `Gate`. */
-export type CommunityGate = 'none' | 'sign-in' | 'age' | 'hidden';
+export type CommunityGate = Gate;
 
 /**
  * The NSFW gate for a whole community page, decided before anything about the community is read
@@ -186,12 +186,12 @@ export async function communityGate(
       ),
     );
   if (!row) return null;
-  if (!row.sensitive && !row.nsfl) return 'none';
-  if (!viewer) return 'sign-in';
-  const [declared] = await q
-    .select({ actorId: ageDeclarations.actorId })
-    .from(ageDeclarations)
-    .where(eq(ageDeclarations.actorId, viewer.actorId));
-  if (!declared) return 'age';
-  return shows(nsfw, communityId) ? 'none' : 'hidden';
+  const flagged = row.sensitive || row.nsfl;
+  // The declaration is read only when it can matter.
+  const declared =
+    flagged && viewer
+      ? (await q.select({ actorId: ageDeclarations.actorId }).from(ageDeclarations).where(eq(ageDeclarations.actorId, viewer.actorId)))
+          .length > 0
+      : false;
+  return gateOf(flagged, viewer && { declared }, shows(nsfw, communityId));
 }
