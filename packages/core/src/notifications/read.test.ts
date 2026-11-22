@@ -220,6 +220,12 @@ describe('what a row shows', () => {
       ).id,
       gated: await reply(me, sensitive),
       gatedDeclared: await reply(moderator, sensitive),
+      // To a moderator of the community, who sees removed and deleted content's authors on the page.
+      staffUnderRemovedPost: await reply(moderator, takenDown),
+      staffDeleted: await reply(moderator, plain, { deletedAt: new Date() }),
+      staffMentionInRemovedPost: (
+        await seedNotice({ recipientId: moderator.id, kind: 'mention', refId: uuidv7(), actorId: replier.id, postId: takenDown.id })
+      ).id,
       mention: (await seedNotice({ recipientId: me.id, kind: 'mention', refId: sensitive.id, actorId: moderator.id, postId: sensitive.id }))
         .id,
       // A moderator's notice names the moderator, whatever the content.
@@ -246,6 +252,11 @@ describe('what a row shows', () => {
     expect(named(ids.mention)).toEqual([null, 'sensitive', 'sensitive']);
     expect(named(ids.gatedDeclared)).toEqual([replier.id, null, 'sensitive']);
     expect(named(ids.removal)).toEqual([moderator.id, null, 'sensitive']);
+    // The community's staff are told, as its pages tell them.
+    expect(named(ids.staffUnderRemovedPost)).toEqual([replier.id, null, 'removed']);
+    expect(named(ids.staffDeleted)).toEqual([replier.id, null, 'deleted']);
+    expect(named(ids.staffMentionInRemovedPost)).toEqual([replier.id, null, 'removed']);
+    expect(items.get(ids.staffMentionInRemovedPost)?.postId).toBe(takenDown.id);
     // Nothing else of the person rides along: no id, name, handle or address, and no comment id to
     // look the comment up by. What is left links to the thread (the post) and marks the notice read.
     const withheld = [ids.deleted, ids.deletedAndRemoved, ids.underRemovedPost, ids.mentionInRemovedPost, ids.mentionInDeletedPost];
