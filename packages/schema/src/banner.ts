@@ -8,16 +8,24 @@ import { type } from 'arktype';
 export const bannerIcons = ['none', 'info', 'megaphone', 'wrench', 'calendar', 'alert', 'sparkles'] as const;
 export const bannerTones = ['neutral', 'accent', 'success', 'warning', 'danger', 'custom'] as const;
 
+/** C0 controls, DEL and C1 controls. */
+// oxlint-disable-next-line no-control-regex -- the controls are what it finds
+const control = /[\x00-\x1f\x7f-\x9f]/;
+
 /**
  * A path on this site: one leading slash, and no second slash or backslash right after it,
- * which browsers read as another host (`//host`, `/\host`). No whitespace, backslash or control
- * character anywhere (C0, DEL and C1), nor one percent-encoded (`%00` to `%1F`, `%7F`, a lone `%80`
- * to `%9F`, and C1 as UTF-8, `%C2%80` to `%C2%9F`; a `%80` inside another UTF-8 sequence is no control).
+ * which browsers read as another host (`//host`, `/\host`). No whitespace or backslash anywhere,
+ * and no control character (C0, DEL or C1) either as it is written or once its percent escapes
+ * are decoded; escapes that do not decode as UTF-8 are refused too.
  */
-export const InternalPath = type(
-  // oxlint-disable-next-line no-control-regex -- the controls are what it refuses
-  /^\/(?![/\\])(?!.*(?:%[01][0-9a-f]|%7f|(?<!%[0-9a-f]{2})%[89][0-9a-f]|%c2%[89][0-9a-f]))[^\s\\\x00-\x1f\x7f-\x9f]*$/i,
-);
+export const InternalPath = type(/^\/(?![/\\])[^\s\\]*$/).narrow((path) => {
+  if (control.test(path)) return false;
+  try {
+    return !control.test(decodeURIComponent(path));
+  } catch {
+    return false;
+  }
+});
 
 /** A banner button (`primary`) or link (`link`): a short label and where it goes on this site. */
 export const BannerAction = type({ '+': 'reject', label: '1 <= string <= 16', href: InternalPath });

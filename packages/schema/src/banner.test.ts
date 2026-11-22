@@ -38,6 +38,8 @@ test('a path refuses control characters, raw and percent-encoded: C0, DEL and C1
   }
   // C1 as UTF-8 percent escapes.
   for (const escape of ['%C2%80', '%c2%85', '%C2%9F']) expect(InternalPath.allows(`/rules${escape}`), escape).toBe(false);
+  // A lone C1 byte after another escape, and an escape that is no UTF-8 at all.
+  for (const path of ['/rules%41%85', '/rules%20%9f', '/rules%E2%80', '/rules%zz']) expect(InternalPath.allows(path), path).toBe(false);
   // Their neighbours stay allowed.
   for (const path of ['/rules%20', '/rules%7E', '/rules%C2%A0', '/rules%E2%80%93', '/über'])
     expect(InternalPath.allows(path), path).toBe(true);
