@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
-import { expect, test, type Browser, type BrowserContext, type Locator, type Page } from '@playwright/test';
+import { expect, test, type Browser, type BrowserContext, type Locator, type Page, type Request } from '@playwright/test';
 import { expectAccessible, landed, signIn, signOut } from '../auth/support.ts';
 import { gotoHydrated } from '../support/route-marker.ts';
 
@@ -203,8 +203,9 @@ test('the finder’s code loads when it is first wanted, not with the page', asy
   const scripts: string[] = [];
   let loaded = 0;
   page.on('request', (request) => request.resourceType() === 'script' && scripts.push(request.url()));
-  for (const event of ['requestfinished', 'requestfailed'] as const)
-    page.on(event, (request) => void (request.resourceType() === 'script' && loaded++));
+  const settled = (request: Request) => void (request.resourceType() === 'script' && loaded++);
+  page.on('requestfinished', settled);
+  page.on('requestfailed', settled);
   await gotoHydrated(page, '/');
   // The popup and its data (shell/finder/), the panel (community-finder), Mux's palette, and the gallery's samples of it.
   const finderCode = (url: string) => /[/](finder|community-finder|command-palette|-finder-samples)(\.tsx|-[\w-]+\.js)/.test(url);
