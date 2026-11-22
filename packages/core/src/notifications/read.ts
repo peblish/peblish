@@ -179,7 +179,8 @@ async function describe(q: Queryable, rows: (typeof notifications.$inferSelect)[
       // The post links to the thread, which names no one here either; the comment's id would lead to its author.
       postId: row.postId,
       commentId: actorWithheld ? null : row.commentId,
-      postTitle: titleOf(post),
+      // A notice that names no one shows no title either: the title of the post it answers can name its author.
+      postTitle: actorWithheld ? null : titleOf(post),
       about: row.commentId ? 'comment' : row.postId ? 'post' : null,
       replyTo: row.kind === 'reply' ? (comment?.parentId ? 'comment' : 'post') : null,
       withheld,

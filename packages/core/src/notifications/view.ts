@@ -58,7 +58,7 @@ export type InboxItem = {
   postId: string | null;
   /** Null when `actorWithheld` is set: the row links to the post, and the comment's id stays out of the page. */
   commentId: string | null;
-  /** The post's title; null when the post is gone, removed or deleted, or the notice is sensitive. */
+  /** The post's title; null when the post is gone, removed or deleted, the notice is sensitive, or `actorWithheld` is set. */
   postTitle: string | null;
   /** What the notice's text is: the comment (when commentId is set) or the post. Null for a ban. */
   about: 'post' | 'comment' | null;
