@@ -445,6 +445,24 @@ test.describe('the directory, signed in', () => {
     await context.close();
   });
 
+  test('a Cancel or Leave sent again, once nothing is left to remove, is no error, with and without script', async ({ browser }) => {
+    const { context, page } = await as(browser, viewerState);
+    await gotoHydrated(page, search());
+    const remote = row(page, seed.communities.remote);
+    const community = await remote.locator('input[name="community"]').inputValue();
+    await remote.getByRole('button', { name: 'Join', exact: true }).click();
+    await expect(remote.getByRole('button', { name: 'Pending, Cancel the request' })).toBeVisible();
+    const body = { community, intent: 'leave', next: search() };
+    const first = await post(page, '/communities/follow', body, true);
+    const again = await post(page, '/communities/follow', body, true);
+    expect([first.status, JSON.parse(first.text), again.status, JSON.parse(again.text)]).toEqual([200, { ok: true }, 200, { ok: true }]);
+    expect(await post(page, '/communities/follow', body)).toMatchObject({ redirected: true, url: search() });
+    await gotoHydrated(page, search());
+    await expect(remote.getByRole('button', { name: 'Join', exact: true })).toBeVisible();
+    await expect(page.getByRole('alert')).toHaveCount(0);
+    await context.close();
+  });
+
   test('a refused join says why, with and without script', async ({ browser, page }) => {
     // A community that does not exist: the form post names it by a made-up id.
     const body = { community: '0192f2c0-0000-7000-8000-00000000dead', intent: 'join', next: '/communities?sort=active' };

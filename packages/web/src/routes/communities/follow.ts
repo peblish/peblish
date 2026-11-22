@@ -11,6 +11,12 @@ import { answer, type Outcome } from './-answer.ts';
 
 const Body = type({ community: 'string', intent: "'join' | 'leave'", 'next?': 'string' });
 
+/**
+ * A Leave or Cancel that finds no follow to remove did what it was asked: the person is not in the community. So a
+ * second press, a retry or a request already gone answers as done. Any other refusal stands.
+ */
+const leftAnyway = (outcome: Outcome): Outcome => (!outcome.ok && outcome.reason === 'target.not_found' ? { ok: true } : outcome);
+
 export const Route = createFileRoute('/communities/follow')({
   server: {
     handlers: {
@@ -28,7 +34,9 @@ export const Route = createFileRoute('/communities/follow')({
         }
         const principal = principalOf(session.view);
         const outcome: Outcome =
-          body.intent === 'join' ? await joinCommunityAs(principal, body.community) : await leaveCommunityAs(principal, body.community);
+          body.intent === 'join'
+            ? await joinCommunityAs(principal, body.community)
+            : leftAnyway(await leaveCommunityAs(principal, body.community));
         return answer(request, cookies, outcome, back);
       },
     },
