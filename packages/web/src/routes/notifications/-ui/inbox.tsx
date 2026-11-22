@@ -17,7 +17,7 @@ import { Time } from '@peblish/ui/components/time';
 import { useHydrated } from '@peblish/ui/composer/use-hydrated.ts';
 import { useRouter } from '@tanstack/react-router';
 import { type } from 'arktype';
-import { useState, type FormEvent, type ReactNode } from 'react';
+import { useLayoutEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { translatePlural } from '../../../i18n/translate.ts';
 import { useTranslate } from '../../../i18n/use-translate.ts';
 import { useRouteHydrated } from '../../../shell/hydration.ts';
@@ -126,6 +126,27 @@ async function post(action: string, body = '', keepalive = false): Promise<{ ok:
   }
 }
 
+/** The list's empty state, which takes focus when the last row it was in leaves (keepFocus). */
+const emptyId = 'pb-inbox-empty';
+
+/**
+ * Keeps focus in the list when the row holding it leaves (the Unread filter drops a notice once it is read). Call it
+ * before the change: null when focus is not in `row`. Run what it returns once the reloaded list is drawn: if the row
+ * has gone and focus went with it, the row now in its place (the next one) takes focus on its Mark read or unread
+ * button, else the last row (the one before), else the empty state. Focus that moved on in the meantime stays there.
+ */
+function keepFocus(row: Element | null | undefined): (() => void) | null {
+  const list = row?.parentElement;
+  if (!row || !list || !row.contains(document.activeElement)) return null;
+  const index = [...list.children].indexOf(row);
+  return () => {
+    if (row.isConnected || (document.activeElement !== null && document.activeElement !== document.body)) return;
+    const rows = list.isConnected ? [...list.children] : [];
+    const successor = rows[index] ?? rows.at(-1);
+    (successor ? successor.querySelector<HTMLElement>('form[data-toggle] button') : document.getElementById(emptyId))?.focus();
+  };
+}
+
 function SignedInbox({ data, search }: { data: Signed; search: InboxSearch }) {
   const { t } = useTranslate();
   const router = useRouter();
@@ -135,11 +156,25 @@ function SignedInbox({ data, search }: { data: Signed; search: InboxSearch }) {
   const shownError = failed ?? search.error;
   const errorKey = errorKeys.find((key) => key === shownError);
 
+  // What keepFocus returned for the reload on its way. The reloaded notices are drawn after router.invalidate()
+  // resolves (the loader runs again in the background), so it runs once they are.
+  const settle = useRef<(() => void) | null>(null);
+  const afterReload = (keep: () => void) => {
+    settle.current = keep;
+  };
+  useLayoutEffect(() => {
+    const keep = settle.current;
+    settle.current = null;
+    keep?.();
+  }, [data.items]);
+
   // Hydrated, a form posts by fetch and the page reloads its data; before that the browser posts it and follows the 303.
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    const keep = keepFocus(event.currentTarget.closest('li'));
     const answer = await post(event.currentTarget.action);
     setFailed('ok' in answer ? null : answer.error === 'network' ? 'generic' : answer.error);
+    if (keep) afterReload(keep);
     await router.invalidate();
   }
 
@@ -187,11 +222,12 @@ function SignedInbox({ data, search }: { data: Signed; search: InboxSearch }) {
           })}
         />
         {data.items.length === 0 ? (
-          <EmptyState title={t('notifications', 'empty')} />
+          // Focusable by script only: it takes focus when the last notice it was on leaves the list (keepFocus).
+          <EmptyState id={emptyId} tabIndex={-1} title={t('notifications', 'empty')} />
         ) : (
           <ul className="pb-rows pb-notices" aria-label={t('notifications', 'list')}>
             {data.items.map((item) => (
-              <NoticeRow key={item.id} item={item} now={data.now} submit={submit} page={page} />
+              <NoticeRow key={item.id} item={item} now={data.now} submit={submit} page={page} afterReload={afterReload} />
             ))}
           </ul>
         )}
@@ -219,11 +255,14 @@ export function NoticeRow({
   now,
   submit,
   page,
+  afterReload,
 }: {
   item: InboxItem;
   now: string;
   submit: (event: FormEvent<HTMLFormElement>) => void;
   page: InboxSearch;
+  /** Runs `keep` once the inbox's reloaded notices are drawn; without it (the gallery, whose rows stay) focus is left as it is. */
+  afterReload?: (keep: () => void) => void;
 }) {
   const { t, locale } = useTranslate();
   const router = useRouter();
@@ -280,6 +319,7 @@ export function NoticeRow({
   // One lock from the press until the comment is saved and the notice marked read: Send stays pending and the field read-only throughout.
   async function sendNow() {
     const body = text;
+    let keep: (() => void) | null = null;
     setPending(true);
     setError(undefined);
     try {
@@ -293,11 +333,14 @@ export function NoticeRow({
       setPosted(answer.id ?? '');
       // Only what was sent clears.
       setText((current) => (current === body ? '' : current));
+      // Back to Reply only while focus is still in the row: closing the field drops it, and a reader who moved on keeps their place.
+      keep = keepFocus(document.getElementById(formId)?.closest('li'));
       setOpen(false);
-      backToReply();
+      if (keep) backToReply();
     } finally {
       setPending(false);
     }
+    if (keep) afterReload?.(keep);
     await router.invalidate();
   }
 
@@ -377,7 +420,12 @@ export function NoticeRow({
       actions={
         <>
           {replyControl}
-          <form method="post" action={inboxAction({ intent: item.read ? 'unread' : 'read', id: item.id }, page)} onSubmit={submit}>
+          <form
+            method="post"
+            action={inboxAction({ intent: item.read ? 'unread' : 'read', id: item.id }, page)}
+            onSubmit={submit}
+            data-toggle=""
+          >
             {/* Every row has one: the name says whose notice about what ("Mark read: @ada, Her post"); the visible text stays short. */}
             <Button type="submit" variant="ghost" size="sm" aria-label={t('notifications', 'markFor', { action: toggle, actor, subject })}>
               {toggle}

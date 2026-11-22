@@ -197,6 +197,29 @@ test('a reply is sent once: Send stays held until the notice is marked read as w
   expect(sent).toEqual(['Once is enough.']);
 });
 
+test('a reply sent once the reader has moved on leaves focus where they went', async ({ page }) => {
+  await gotoHydrated(page, '/kit/inbox-replies');
+  let release!: () => void;
+  const released = new Promise<void>((resolve) => (release = resolve));
+  await page.route('**/post/*/comments', async (route) => {
+    await released;
+    await route.fulfill({ status: 200, json: { ok: true, id: '00000000-0000-7000-8000-000000000400' } });
+  });
+  await page.route('**/notifications?*', (route) => route.fulfill({ status: 200, json: { ok: true } }));
+  await first(page)
+    .getByRole('button', { name: /^Reply: / })
+    .click();
+  await first(page).getByRole('textbox', { name: 'Reply to @jun@lemmy.world' }).fill('Sent while I read on.');
+  await first(page).getByRole('button', { name: 'Reply', exact: true }).click();
+  const elsewhere = rows(page)
+    .nth(1)
+    .getByRole('button', { name: /^Mark unread/ });
+  await elsewhere.focus();
+  release();
+  await expect(first(page).getByRole('status')).toHaveText('Reply posted. View reply');
+  await expect(elsewhere).toBeFocused();
+});
+
 test('a sensitive notice offers no reply in place: Reply leads to the thread, whose gate applies', async ({ page }) => {
   await gotoHydrated(page, '/kit/inbox-mentions');
   // The ordinary mention still answers in place.

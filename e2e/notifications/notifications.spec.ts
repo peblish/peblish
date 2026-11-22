@@ -249,6 +249,50 @@ test.describe('the inbox of a person who was replied to, mentioned, moderated an
     );
     await page.context().close();
   });
+
+  test('in Unread a notice marked read leaves and focus goes to the next one, or the one before; in All it stays', async ({ page }) => {
+    await signedIn(page, seed.busy.name);
+    await gotoHydrated(page, '/notifications?filter=unread');
+    await expect(rows(page)).toHaveCount(25);
+    const markRead = (n: number) =>
+      rows(page)
+        .nth(n)
+        .getByRole('button', { name: /^Mark read/ });
+    const holdsFocus = (row: Awaited<ReturnType<Locator['elementHandle']>>) => row!.evaluate((el) => el.contains(document.activeElement));
+    const next = await rows(page).nth(1).elementHandle();
+    await markRead(0).press('Enter');
+    await expect(page.getByRole('main').getByText('29 unread', { exact: true })).toBeVisible();
+    await expect(markRead(0)).toBeFocused();
+    expect(await holdsFocus(next)).toBe(true);
+
+    // The last row of the older page has none after it: the one before takes focus.
+    await page.getByRole('link', { name: 'Older' }).click();
+    await expect(rows(page)).toHaveCount(4);
+    const before = await rows(page).nth(2).elementHandle();
+    await markRead(3).press('Enter');
+    await expect(rows(page)).toHaveCount(3);
+    await expect(markRead(2)).toBeFocused();
+    expect(await holdsFocus(before)).toBe(true);
+    // Marking the rest from the keyboard ends on the empty state, which takes focus.
+    for (const count of [2, 1]) {
+      await page.keyboard.press('Enter');
+      await expect(rows(page)).toHaveCount(count);
+      await expect(markRead(count - 1)).toBeFocused();
+    }
+    await page.keyboard.press('Enter');
+    await expect(page.getByRole('heading', { name: 'Nothing new. Replies, mentions and moderator messages land here.' })).toBeVisible();
+    await expect(page.locator('#pb-inbox-empty')).toBeFocused();
+
+    // In All the notice stays, and so does focus, on its button, now Mark unread (the first, newest, was read above).
+    await gotoHydrated(page, '/notifications');
+    await markRead(1).press('Enter');
+    await expect(
+      rows(page)
+        .nth(1)
+        .getByRole('button', { name: /^Mark unread/ }),
+    ).toBeFocused();
+    await page.context().close();
+  });
 });
 
 test.describe('a reply written in place', () => {
