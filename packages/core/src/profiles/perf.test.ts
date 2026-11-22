@@ -70,7 +70,8 @@ describe.skipIf(!process.env.PEBLISH_FEED_PERF)('profile activity performance', 
     await w.execute(
       sql`insert into instance_blocks select ${reader.id}::uuid, id from instances where not local order by random() limit 20`,
     );
-    await w.execute(sql`analyze`);
+    // As autovacuum leaves a running database: statistics, and the visibility map an index-only scan reads.
+    await w.execute(sql`vacuum analyze`);
   }, 600_000);
 
   test('every tab and sort reads through the author indexes', async () => {
@@ -107,11 +108,13 @@ describe.skipIf(!process.env.PEBLISH_FEED_PERF)('profile activity performance', 
         }
       }
     }
-    // The profile's counts are the tabs' conditions counted: the same author indexes.
+    // The profile's counts are the tabs' conditions counted: the same author indexes. The comment
+    // count reads the person's live comments from comments_author_post alone, a count per post,
+    // so each post's visibility is checked once however many of the comments are on it.
     const counts = countQueries(author.id, viewer, hideNsfw);
     for (const [name, query, index] of [
       ['posts', counts.posts, /(Index|Bitmap Index|Index Only) Scan (using|on) posts_author/],
-      ['comments', counts.comments, /(Index|Bitmap Index|Index Only) Scan (using|on) comments_author/],
+      ['comments', counts.comments, /Index Only Scan using comments_author_post on comments/],
     ] as const) {
       const { sql: text, params } = query.toSQL();
       const plan = (await readPool().client.unsafe(`explain (analyze, buffers) ${text}`, params as never[]))
