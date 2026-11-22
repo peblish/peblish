@@ -1,5 +1,6 @@
 import type { ActorRef } from '@peblish/schema/views';
-import { and, eq, inArray, isNull, notInArray, or, sql, type SQL } from 'drizzle-orm';
+import { and, eq, inArray, isNull, not, notInArray, or, sql, type SQL } from 'drizzle-orm';
+import { communityBlockedBy } from '../blocks/predicate.ts';
 import { db as readDb, type Queryable } from '../db/read.ts';
 import { actors } from '../db/tables/actors.ts';
 import { posts } from '../db/tables/content.ts';
@@ -88,6 +89,8 @@ async function conditions(query: DirectoryQuery, viewer: DirectoryViewer): Promi
     isNull(actors.deletedAt),
     sql`not exists (select 1 from ${communityRemovals} where ${communityRemovals.communityId} = ${actors.id})`,
     blocked.length > 0 ? notInArray(instances.domain, blocked) : undefined,
+    // Nor one the viewer blocks, or that is on a host they block.
+    viewer ? not(communityBlockedBy(viewer.actorId, { id: actors.id, instanceId: actors.instanceId })) : undefined,
     flaggedRule,
     term === null
       ? undefined
@@ -108,7 +111,8 @@ const order = {
 
 /**
  * One page of the directory. Listed: Groups that are discoverable, not deleted, not removed by an
- * admin and not on a blocked host; none that is flagged sensitive or nsfl unless it is local and the viewer
+ * admin, not on a host this server blocks, and not blocked by the viewer themselves or through a
+ * host they block; none that is flagged sensitive or nsfl unless it is local and the viewer
  * declared 16+ and asked for NSFW. Ordered by the sort key, then name, then id, so a page boundary
  * never repeats or skips a row; paged by offset to 500 rows. A `q` that parses as a handle or a
  * link filters nothing.
