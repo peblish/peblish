@@ -12,7 +12,9 @@
     .pb-banner .muxui-banner__link {
       display: inline-flex;
       align-items: center;
+      justify-content: center;
       min-block-size: var(--muxui-control-size-sm);
+      min-inline-size: var(--muxui-control-size-sm);
     }
   }
 
@@ -48,6 +50,16 @@
   .pb-banner-preview__caption {
     font-size: var(--muxui-semantic-typography-text-s-font-size);
     color: var(--muxui-semantic-content-secondary);
+  }
+
+  /* Under forced colours a frame scoped to the other scheme keeps that scheme's caption colour on the forced
+     Canvas (3.36:1 measured), so the caption takes the system pair itself. */
+  @media (forced-colors: active) {
+    .pb-banner-preview__caption {
+      forced-color-adjust: none;
+      background: Canvas;
+      color: CanvasText;
+    }
   }
 
   .pb-width-preview {
