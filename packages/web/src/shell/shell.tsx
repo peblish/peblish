@@ -29,6 +29,13 @@ import { DefaultViewHeader, FrameContext } from './view-header.tsx';
 
 const root = getRouteApi('__root__');
 
+declare module '@tanstack/react-router' {
+  interface StaticDataRouteOption {
+    /** 'wide': the page holds a staff table, which needs the wide centre (shell.css) to sit whole on a computer. */
+    centre?: 'wide';
+  }
+}
+
 /**
  * After a navigation that took focus with it (a drawer link, or Back with the drawer open: the
  * drawer and its button remount closed, see below), focus the new page's main landmark rather
@@ -156,6 +163,7 @@ export function Shell({ children }: { children: ReactNode }) {
       return (last?.status === 'success' || last?.status === 'pending') && last.staticData.viewHeader === 'own';
     },
   });
+  const wide = useRouterState({ select: (state) => state.matches.at(-1)?.staticData.centre === 'wide' });
   useFocusLostToPage(useRouterState({ select: (state) => state.resolvedLocation?.pathname }));
   useTapAgainForTop();
   const fold = useSideFold(side);
@@ -184,7 +192,7 @@ export function Shell({ children }: { children: ReactNode }) {
             </Sidebar.Root>
           </div>
           <div className="pb-app__page">
-            <div id="pb-main" className="pb-frame" tabIndex={-1}>
+            <div id="pb-main" className="pb-frame" data-centre={wide ? 'wide' : undefined} tabIndex={-1}>
               {!ownHeader && <DefaultViewHeader siteName={shell.siteName} root={isRootPage(pathname, session)} />}
               {children}
             </div>

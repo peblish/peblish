@@ -25,7 +25,7 @@ import { queueHref, type QueueView } from './-href.ts';
 import { QueueTable } from './-ui/queue.tsx';
 import queueCss from './-ui/queue.css?url';
 import { headTitle } from '../../../shell/title.ts';
-import { AdminPage, ownHeader } from '../-page.tsx';
+import { AdminPage, ownHeaderWide } from '../-page.tsx';
 
 // /admin/reports: the report queue, open to moderators (their communities' groups, and their
 // own escalations read only) and to admins (everything). The admin layout draws the tab bar and
@@ -73,7 +73,7 @@ export const Route = createFileRoute('/admin/reports/')({
     return data;
   },
   head: (context) => ({ meta: headTitle(context, 'reports', 'queue.title'), links: [{ rel: 'stylesheet', href: queueCss }] }),
-  staticData: ownHeader,
+  staticData: ownHeaderWide,
   component: Queue,
   server: {
     handlers: {

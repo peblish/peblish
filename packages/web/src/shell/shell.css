@@ -368,6 +368,14 @@
     border-inline-end: 0;
   }
 
+  /* A page that holds a staff table (staticData `centre: 'wide'`, shell.tsx): a centre as wide as the tables'
+     52rem in their outlined card (its small padding and hairlines) in the page's padding, so a table sits
+     whole on a computer rather than scrolling sideways. */
+  .pb-frame[data-centre='wide'] {
+    --pb-centre-w: calc(52rem + 2 * (var(--muxui-semantic-layout-inset-medium) + 1px + var(--muxui-semantic-layout-inset-large)));
+    --pb-page-max: calc(var(--pb-centre-w) + var(--pb-rail-w));
+  }
+
   /* A route's <main> keeps its own height: stretched to the frame's, a grid or flex main would spread
      its rows over the window. */
   .pb-frame > :not(.pb-rail) {
@@ -439,6 +447,22 @@
 
     .pb-rail {
       display: none;
+    }
+  }
+
+  /* Beside the wide centre the rail gives way sooner, where the two no longer fit (on a computer: the
+     phone's frame is edge to edge, and its rail gone, by the rules above and below). */
+  @media (min-width: 860px) {
+    @container page (width < 76rem) {
+      .pb-frame[data-centre='wide']:has(> .pb-rail) {
+        grid-template-columns: minmax(0, 1fr);
+        max-inline-size: var(--pb-centre-w);
+        border-inline-end: 1px solid var(--pb-rule);
+      }
+
+      .pb-frame[data-centre='wide'] > .pb-rail {
+        display: none;
+      }
     }
   }
 

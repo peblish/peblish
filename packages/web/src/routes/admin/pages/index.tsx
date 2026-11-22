@@ -21,7 +21,7 @@ import { SearchText } from '../../auth/-route.ts';
 import { accessOf } from '../settings/-access.ts';
 import { StatusCell } from './-status.tsx';
 import { adminHead } from '../settings/-head.ts';
-import { AdminPage, ownHeader } from '../-page.tsx';
+import { AdminPage, ownHeaderWide } from '../-page.tsx';
 import { AccessNotice } from '../settings/-ui.tsx';
 import { shippedPages } from './-bundled.ts';
 
@@ -54,7 +54,7 @@ export const Route = createFileRoute('/admin/pages/')({
   validateSearch: Search,
   loader: () => loadPages(),
   head: adminHead('pages.title'),
-  staticData: ownHeader,
+  staticData: ownHeaderWide,
   component: Pages,
   server: {
     handlers: {

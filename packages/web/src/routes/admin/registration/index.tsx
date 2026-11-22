@@ -31,7 +31,7 @@ import { SearchText } from '../../auth/-route.ts';
 import { useDate } from '../../auth/-ui/page.tsx';
 import { Denial } from '../-denial.tsx';
 import { accessOf } from '../settings/-access.ts';
-import { AdminPage, ownHeader } from '../-page.tsx';
+import { AdminPage, ownHeaderWide } from '../-page.tsx';
 
 // `usedBy`: the invite whose "used by" list the server renders open, for its link without scripts.
 const Search = type({ 'error?': SearchText, 'usedBy?': SearchText });
@@ -64,7 +64,7 @@ const days = { '7': 7, '30': 30, '90': 90, never: null } as const;
 export const Route = createFileRoute('/admin/registration/')({
   validateSearch: Search,
   loader: () => loadRegistration(),
-  staticData: ownHeader,
+  staticData: ownHeaderWide,
   component: Registration,
   server: {
     handlers: {

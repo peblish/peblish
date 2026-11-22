@@ -14,6 +14,9 @@ import { ViewHeader } from '../../shell/view-header.tsx';
 /** The route option for a page that draws its own view header (PageHeader). */
 export const ownHeader = { viewHeader: 'own' } as const;
 
+/** The same, for a page whose table needs the frame's wide centre to sit whole on a computer (shell.css). */
+export const ownHeaderWide = { ...ownHeader, centre: 'wide' } as const;
+
 /**
  * The frame's view header with the page's name as its h1. `root` for a top destination (the report
  * queue), which has no Back. `lang` when the name is in another language than the page around it.

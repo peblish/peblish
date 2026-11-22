@@ -72,10 +72,11 @@ for (const width of [375, 320]) {
 
 // The staff pages in the Commons frame: the page's name is the h1 in the frame's view header, the admin
 // tabs sit under it, and the rail holds the queue's communities and the modlog's filters beside a page
-// wide enough for it; where the rail gives way the modlog's filters show in the page.
+// wide enough for it (the queue's wide centre and the rail need a 1600px window with the sidebar open);
+// where the rail gives way the modlog's filters show in the page.
 test('the report queue and the modlog put their name in the view header and their places in the rail', async ({ browser }) => {
   test.setTimeout(90_000);
-  const page = await (await browser.newContext({ storageState: session, viewport: { width: 1440, height: 900 } })).newPage();
+  const page = await (await browser.newContext({ storageState: session, viewport: { width: 1600, height: 900 } })).newPage();
   await gotoHydrated(page, '/admin/reports');
   await expect(page.getByRole('navigation', { name: 'Page' }).getByRole('heading', { level: 1, name: 'Reports' })).toBeVisible();
   await expect(page.getByRole('navigation', { name: 'Admin sections' }).getByRole('link', { name: 'Reports' })).toHaveAttribute(
@@ -103,6 +104,29 @@ test('the report queue and the modlog put their name in the view header and thei
   await page.setViewportSize({ width: 960, height: 900 });
   await expect(rail).toBeHidden();
   await expect(page.getByRole('main').getByRole('region', { name: 'Filters' }).getByRole('link', { name: /^All/ })).toBeVisible();
+  await page.context().close();
+});
+
+// On a computer the staff tables sit whole in the frame's wide centre: neither the page nor a table's card
+// scrolls sideways (the sidebar folds itself at 1100px).
+test('on a computer the Bans, Peers and report queue tables sit whole in the wide centre', async ({ browser }) => {
+  test.setTimeout(90_000);
+  const page = await (await browser.newContext({ storageState: session, viewport: { width: 1440, height: 900 } })).newPage();
+  for (const width of [1440, 1280, 1100]) {
+    await page.setViewportSize({ width, height: 900 });
+    for (const path of ['/admin/bans', '/admin/peers', '/admin/reports']) {
+      await gotoHydrated(page, path);
+      await expect(page.locator('#pb-main')).toHaveAttribute('data-centre', 'wide');
+      const geometry = await page.evaluate(() => ({
+        page: document.scrollingElement!.scrollWidth - window.innerWidth,
+        cards: [...document.querySelectorAll('main .muxui-table')].map(
+          (table) => table.parentElement!.scrollWidth - table.parentElement!.clientWidth,
+        ),
+      }));
+      expect(geometry.cards.length, `${path} at ${width}px`).toBeGreaterThan(0);
+      expect(geometry, `${path} at ${width}px`).toEqual({ page: 0, cards: geometry.cards.map(() => 0) });
+    }
+  }
   await page.context().close();
 });
 

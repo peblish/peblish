@@ -22,7 +22,7 @@ import { NoEnterSubmit } from '../-no-enter-submit.tsx';
 import { type BansData, loadBans } from './-load.ts';
 import bansCss from './-ui/bans.css?url';
 import { headTitle } from '../../../shell/title.ts';
-import { AdminPage, ownHeader } from '../-page.tsx';
+import { AdminPage, ownHeaderWide } from '../-page.tsx';
 
 // /admin/bans: the Bans tab (R2 pick admin-tabs). Who is banned from this instance, a form to
 // ban someone by handle (a person of ours, or one of a peer we hold) that first shows what the
@@ -48,7 +48,7 @@ export const Route = createFileRoute('/admin/bans/')({
   loaderDeps: ({ search }) => (search.person === undefined ? {} : { person: search.person }),
   loader: ({ deps }) => loadBans({ data: deps }),
   head: (context) => ({ meta: headTitle(context, 'bans', 'title'), links: [{ rel: 'stylesheet', href: bansCss }] }),
-  staticData: ownHeader,
+  staticData: ownHeaderWide,
   component: Bans,
   server: {
     handlers: {
