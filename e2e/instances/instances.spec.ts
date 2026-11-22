@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 import { expectAccessible, expectAccessibleOnPhone } from '../auth/support.ts';
 import { prefsCookie, skipWithoutKit } from '../support/kit.ts';
 import { gotoHydrated } from '../support/route-marker.ts';
@@ -35,21 +35,34 @@ test.describe('seeded', () => {
   });
 });
 
-test('the page is reached from the site pages, scripts on and off, and is accessible in light and dark', async ({ page, browser }) => {
+/** About's own list of the site pages (not the sidebar's): it names Instances whether or not any page is published. */
+const sitePages = (page: Page) => page.getByRole('main').getByRole('navigation', { name: 'Legal and safety' });
+
+test('the page is reached from About’s own list, scripts on and off, and both are accessible in light and dark', async ({
+  page,
+  browser,
+}) => {
   await gotoHydrated(page, '/about');
-  await page.getByRole('link', { name: 'Instances', exact: true }).first().click();
+  await expectAccessible(page);
+  await sitePages(page).getByRole('link', { name: 'Instances', exact: true }).click();
   await expect(page).toHaveURL(/\/instances$/);
   await expect(page.getByRole('heading', { level: 1, name: 'Instances' })).toBeVisible();
   await expect(page).toHaveTitle(/^Instances/);
   await expectAccessible(page);
   await page.context().addCookies([{ ...prefsCookie('card', 'dark'), url: page.url() }]);
+  await gotoHydrated(page, '/about');
+  await expectAccessible(page);
   await gotoHydrated(page, '/instances');
   await expectAccessible(page);
 
   const plain = await (await browser.newContext({ javaScriptEnabled: false })).newPage();
-  await plain.goto(new URL('/instances', page.url()).href);
+  await plain.goto(new URL('/about', page.url()).href);
+  await sitePages(plain).getByRole('link', { name: 'Instances', exact: true }).click();
+  await expect(plain).toHaveURL(/\/instances$/);
   await expect(plain.getByRole('heading', { level: 1, name: 'Instances' })).toBeVisible();
-  await expect(plain.getByText(/federates with/)).toBeVisible();
+  // The intro, with peers or without ("does not federate with any instance yet").
+  await expect(plain.getByText(/federates? with/)).toBeVisible();
+  await plain.context().close();
 });
 
 test('on a phone the page does not scroll sideways and is accessible', async ({ browser, baseURL }) => {
