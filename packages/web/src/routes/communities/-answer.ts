@@ -19,7 +19,11 @@ export function answer(request: Request, cookies: readonly string[], outcome: Ou
   for (const cookie of cookies) headers.append('set-cookie', cookie);
   if (request.headers.get('accept')?.includes('application/json')) {
     headers.set('content-type', 'application/json');
-    return new Response(JSON.stringify(outcome.ok ? outcome : { error: outcome.reason }), { status: outcome.ok ? 200 : 400, headers });
+    // Only what the forms read: a core result passed as an Outcome (Join's) may carry more.
+    const sent = outcome.ok
+      ? { ok: true, ...(outcome.order && { position: outcome.position, order: outcome.order }) }
+      : { error: outcome.reason };
+    return new Response(JSON.stringify(sent), { status: outcome.ok ? 200 : 400, headers });
   }
   headers.set('location', outcome.ok ? back : backWithError(back, outcome.reason));
   return new Response(null, { status: 303, headers });
