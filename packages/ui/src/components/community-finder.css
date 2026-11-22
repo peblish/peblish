@@ -1,0 +1,79 @@
+/* The community finder (community-finder.tsx): Mux CommandPalette with its frost and its rows as shipped. */
+@layer app {
+  /* The search row's leading glyph, in the field's muted tone (Mux's SearchField is a flex row). */
+  .pb-finder__field-icon {
+    flex: none;
+    margin-inline-start: var(--muxui-semantic-layout-inset-tight);
+    color: var(--muxui-semantic-content-muted);
+    font-size: var(--muxui-semantic-typography-text-l-font-size);
+  }
+
+  /* Mux draws the palette's field with no edge and no ring, even focused (its hairline under the search row
+     separates it): the field takes the focus ring every other control has, inside the search row. */
+  .pb-finder__input:focus-visible {
+    outline: 2px solid var(--muxui-semantic-focus-ring);
+    outline-offset: 2px;
+  }
+
+  /* Mux gap: the palette's field and rows ease their colours even when the system asks for reduced motion. */
+  @media (prefers-reduced-motion: reduce) {
+    .pb-finder :is(.muxui-command-palette__input, .muxui-command-palette__item) {
+      transition: none;
+    }
+  }
+
+  /* The results keep one height whatever they hold (skeleton rows, rows, nothing, an error), so the popup and
+     everything in it stay put when an answer lands. The list scrolls inside it. */
+  .pb-finder__results {
+    display: flex;
+    flex-direction: column;
+    /* layout */
+    block-size: min(26rem, 60dvh);
+    min-block-size: 0;
+  }
+
+  .pb-finder__results > .muxui-command-palette__listbox {
+    flex: 1 1 auto;
+    max-block-size: none;
+  }
+
+  /* Skeleton rows at the rows' own height and inset, still (no sweep). */
+  .pb-finder__skeleton {
+    display: grid;
+    align-content: start;
+    padding: var(--muxui-semantic-layout-inset-tight) var(--muxui-semantic-layout-inset-small);
+  }
+
+  .pb-finder__skeleton-row {
+    display: flex;
+    align-items: center;
+    gap: var(--muxui-semantic-layout-control-gap);
+    min-block-size: var(--muxui-semantic-control-size-lg);
+    padding-inline: var(--muxui-semantic-layout-inset-small);
+  }
+
+  .pb-finder__skeleton-text {
+    display: grid;
+    flex: 1;
+    gap: var(--muxui-semantic-layout-tight-gap);
+  }
+
+  /* The phone: every row a 44px target, as the frame's controls are there. */
+  @media (max-width: 859.98px) {
+    .pb-finder {
+      --muxui-command-palette-item-size: calc(var(--muxui-semantic-control-size-lg) + 2 * var(--muxui-semantic-layout-dense-gap));
+    }
+
+    .pb-finder__skeleton-row {
+      min-block-size: calc(var(--muxui-semantic-control-size-lg) + 2 * var(--muxui-semantic-layout-dense-gap));
+    }
+  }
+
+  .pb-finder__state {
+    display: grid;
+    justify-items: center;
+    gap: var(--muxui-semantic-layout-control-gap);
+    padding: var(--muxui-semantic-layout-inset-xlarge);
+    text-align: center;
+  }
+}
