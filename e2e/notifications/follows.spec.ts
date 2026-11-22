@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
-import { expect, test, type Browser, type Page } from '@playwright/test';
+import { expect, test, type Browser, type Page, type Route } from '@playwright/test';
 import { expectAccessible, landed, signIn } from '../auth/support.ts';
 import { gotoHydrated, recordConsole } from '../support/route-marker.ts';
 
@@ -159,6 +159,85 @@ test('Undo of Mark all read restores exactly what was unread, with a notice arri
   await expect(page.getByRole('log').getByRole('img')).toHaveCount(0, { timeout: 15_000 });
   await expectAccessible(page);
   expect(log.hydrationProblems()).toEqual([]);
+});
+
+/** Holds each Undo of Mark all read on its way: `arrived` waits for one, `next` hands it over to be answered. */
+async function holdUndo(page: Page) {
+  const waiting: Route[] = [];
+  await page.route(
+    (url) => url.pathname === '/notifications' && url.searchParams.get('intent') === 'undo_read_all',
+    (route) => void waiting.push(route),
+  );
+  return { arrived: () => expect.poll(() => waiting.length).toBeGreaterThan(0), next: () => waiting.shift()! };
+}
+
+const markAllRead = (page: Page) => page.getByRole('button', { name: 'Mark all read' });
+const undoButton = (page: Page) => page.getByRole('button', { name: /^Undo: mark the [0-9]+ unread again$/ });
+
+test('a failed Undo keeps its button, focus and stamp, across a reload too, and then restores', async ({ page }) => {
+  await signedIn(page, cast.marker.name);
+  await gotoHydrated(page, '/notifications');
+  await markAllRead(page).click();
+  await expect(undoButton(page)).toBeFocused();
+  const marked = page.url();
+  const undo = await holdUndo(page);
+  await undoButton(page).click();
+  await undo.arrived();
+  await undo.next().abort();
+  await expect(page.getByRole('main').getByRole('alert')).toHaveText('Something went wrong. Try again.');
+  await expect(page).toHaveURL(marked);
+  await expect(undoButton(page)).toBeFocused();
+
+  await page.unrouteAll();
+  await gotoHydrated(page, marked);
+  await undoButton(page).click();
+  await expect(page.getByRole('status').filter({ hasText: /^[0-9]+ notices? (is|are) unread again\.$/ })).toHaveCount(1);
+  await expect(markAllRead(page)).toBeFocused();
+});
+
+test('an Undo another tab made first says there was nothing left to undo, and focus goes to Mark all read', async ({ page }) => {
+  await signedIn(page, cast.marker.name);
+  await gotoHydrated(page, '/notifications');
+  await markAllRead(page).click();
+  await expect(undoButton(page)).toBeFocused();
+  const other = await page.context().newPage();
+  await gotoHydrated(other, page.url());
+  await undoButton(other).click();
+  await expect(other.getByRole('status').filter({ hasText: /unread again/ })).toHaveCount(1);
+  await other.close();
+
+  await undoButton(page).click();
+  await expect(page.getByRole('status').filter({ hasText: 'Nothing left to undo.' })).toHaveCount(1);
+  await expect(page).toHaveURL(/\/notifications$/);
+  await expect(markAllRead(page)).toBeFocused();
+  // Said once: it goes with the next view.
+  await page
+    .getByRole('main')
+    .getByRole('link', { name: /^Unread/ })
+    .click();
+  await expect(page).toHaveURL(/\/notifications\?filter=unread$/);
+  await expect(page.getByText('Nothing left to undo.')).toHaveCount(0);
+});
+
+test('an Undo answered after the reader changed filter leaves them there, with focus where they put it', async ({ page }) => {
+  await signedIn(page, cast.marker.name);
+  await gotoHydrated(page, '/notifications');
+  await markAllRead(page).click();
+  await expect(undoButton(page)).toBeFocused();
+  const undo = await holdUndo(page);
+  await undoButton(page).click();
+  await undo.arrived();
+  const unread = page.getByRole('main').getByRole('link', { name: /^Unread/ });
+  await unread.focus();
+  await page.keyboard.press('Enter');
+  await expect(page).toHaveURL(/\/notifications\?filter=unread$/);
+  await unread.focus();
+  await undo.next().continue();
+  await expect(rows(page).first()).toBeVisible();
+  await page.waitForTimeout(300);
+  await expect(page).toHaveURL(/\/notifications\?filter=unread$/);
+  await expect(unread).toBeFocused();
+  await expect(page.getByRole('status').filter({ hasText: /unread again/ })).toHaveCount(0);
 });
 
 test('without scripts Mark all read and its Undo are plain forms', async ({ browser }) => {

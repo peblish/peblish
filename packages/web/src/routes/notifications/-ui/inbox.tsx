@@ -16,7 +16,7 @@ import { Quote } from '@peblish/ui/components/quote';
 import { Text } from '@peblish/ui/components/text';
 import { Time } from '@peblish/ui/components/time';
 import { useHydrated } from '@peblish/ui/composer/use-hydrated.ts';
-import { useRouter } from '@tanstack/react-router';
+import { useLocation, useRouter } from '@tanstack/react-router';
 import { type } from 'arktype';
 import { useEffect, useLayoutEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { translatePlural } from '../../../i18n/translate.ts';
@@ -194,33 +194,49 @@ function SignedInbox({ data, search }: { data: Signed; search: InboxSearch }) {
 
   // Mark all read and its Undo go to the address the plain form's 303 would (marked.tsx reads it), then reload the data.
   // Focus goes to Undo once it shows, and back to Mark all read once it is gone: each control disappears or disables under it.
+  // A refused or lost one leaves the address as it is, so an Undo keeps its stamp for a retry, after a reload too. An answer
+  // that comes once the reader has gone to another view only reloads the data: it neither takes them back nor moves focus.
   const [bulk, setBulk] = useState<'all' | 'undo' | null>(null);
+  const entry = useLocation({ select: (location) => location.state.__TSR_key ?? '' });
+  // The history entry where an Undo found nothing left to restore (another tab undid it first): said there, as the address has no zero.
+  const [noneAt, setNoneAt] = useState<string | null>(null);
   async function bulkSubmit(event: FormEvent<HTMLFormElement>, which: 'all' | 'undo') {
     event.preventDefault();
     if (bulk) return;
     setBulk(which);
+    const from = router.state.location.href;
     const answer = await post(event.currentTarget.action);
     setFailed('ok' in answer ? null : answer.error === 'network' ? 'generic' : answer.error);
+    const stayed = 'ok' in answer && router.state.location.href === from;
+    const count = 'ok' in answer ? (answer.count ?? 0) : 0;
+    const batch = 'ok' in answer ? answer.batch : null;
     const next =
-      'ok' in answer && which === 'all' && answer.batch && answer.count
-        ? { ...page, marked: answer.count, batch: Number(answer.batch) }
-        : 'ok' in answer && which === 'undo' && answer.count
-          ? { ...page, restored: answer.count }
+      which === 'all'
+        ? batch && count
+          ? { ...page, marked: count, batch: Number(batch) }
+          : page
+        : count
+          ? { ...page, restored: count }
           : page;
-    await router.navigate({ href: inboxHref(next), replace: true });
+    if (stayed) await router.navigate({ href: inboxHref(next), replace: true });
     await router.invalidate();
     setBulk(null);
-    if (next !== page) setFocusNext(which === 'all' ? 'undo' : 'all');
+    if (!stayed || (which === 'all' && next === page)) return;
+    const landed = router.state.location.state.__TSR_key ?? '';
+    if (which === 'undo' && !count) setNoneAt(landed);
+    setFocusNext({ control: which === 'all' ? 'undo' : 'all', entry: landed, data });
   }
-  // Once the reloaded page shows it (Undo there, or Mark all read enabled again), the control takes focus.
-  const [focusNext, setFocusNext] = useState<'undo' | 'all' | null>(null);
+  // Once the reloaded page shows it (Undo there, or Mark all read enabled again), the control takes focus, in the view the answer
+  // landed on. It is waited for until the reload is drawn (`data` is the page's before the press), not after: once the reader is
+  // on another view, or nothing is unread so Mark all read stays disabled, a later change on the page does not take focus.
+  const [focusNext, setFocusNext] = useState<{ control: 'undo' | 'all'; entry: string; data: Signed } | null>(null);
   useEffect(() => {
     if (!focusNext) return;
-    const target = document.querySelector<HTMLButtonElement>(focusNext === 'undo' ? `#${undoButtonId}` : '.pb-inbox__all button');
-    if (!target || target.disabled) return;
-    target.focus();
-    setFocusNext(null);
-  }, [focusNext, data.unread, search.marked, search.restored]);
+    const target = document.querySelector<HTMLButtonElement>(focusNext.control === 'undo' ? `#${undoButtonId}` : '.pb-inbox__all button');
+    const ready = focusNext.entry === entry && target !== null && !target.disabled;
+    if (ready) target.focus();
+    if (ready || focusNext.data !== data) setFocusNext(null);
+  }, [focusNext, entry, data, search.marked, search.restored]);
 
   return (
     <main className="pb-inbox">
@@ -242,7 +258,13 @@ function SignedInbox({ data, search }: { data: Signed; search: InboxSearch }) {
       />
       <div className="pb-page pb-inbox__body">
         <Title unread={data.unread} />
-        <MarkedStatus search={search} page={page} pending={bulk === 'undo'} onUndo={(event) => void bulkSubmit(event, 'undo')} />
+        <MarkedStatus
+          search={search}
+          page={page}
+          pending={bulk === 'undo'}
+          none={noneAt === entry}
+          onUndo={(event) => void bulkSubmit(event, 'undo')}
+        />
         {shownError !== undefined && (
           <Notice tone="danger" role="alert">
             {t('notifications', errorKey ? `error.${errorKey}` : 'error.generic')}

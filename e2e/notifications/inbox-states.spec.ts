@@ -515,7 +515,11 @@ test('Undo is named for what it undoes, and its status row speaks', async ({ pag
   await gotoHydrated(page, '/kit/inbox-undo');
   const rest = page.locator('[data-kit-state="rest"]');
   await expect(rest.getByRole('button', { name: 'Undo: mark the 3 unread again' })).toHaveText('Undo');
-  await expect(rest.getByRole('status')).toHaveText(['Marked 3 notices as read.Undo', '3 notices are unread again.']);
+  await expect(rest.getByRole('status')).toHaveText([
+    'Marked 3 notices as read.Undo',
+    '3 notices are unread again.',
+    'Nothing left to undo.',
+  ]);
   await expect(page.locator('[data-kit-state="pending"]').getByRole('button', { name: /^Undo/ })).toHaveAttribute('aria-busy', 'true');
 });
 

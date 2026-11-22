@@ -81,7 +81,8 @@
     "undo": "Undo",
     "undo.name": "Undo: mark the {count} unread again",
     "undo.restored.one": "{count} notice is unread again.",
-    "undo.restored.other": "{count} notices are unread again."
+    "undo.restored.other": "{count} notices are unread again.",
+    "undo.none": "Nothing left to undo."
   },
   "de": {
     "title": "Posteingang",
@@ -165,6 +166,7 @@
     "undo": "Rückgängig",
     "undo.name": "Rückgängig: die {count} wieder als ungelesen markieren",
     "undo.restored.one": "{count} Benachrichtigung ist wieder ungelesen.",
-    "undo.restored.other": "{count} Benachrichtigungen sind wieder ungelesen."
+    "undo.restored.other": "{count} Benachrichtigungen sind wieder ungelesen.",
+    "undo.none": "Nichts mehr rückgängig zu machen."
   }
 }

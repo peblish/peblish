@@ -229,12 +229,13 @@ function Grouped() {
   );
 }
 
-/** Mark all read's status row: Undo at rest or on its way; and, after it, how many came back. */
+/** Mark all read's status row: Undo at rest or on its way; and, after it, how many came back, or that none was left to. */
 function Undo({ pending = false }: { pending?: boolean }) {
   return (
     <>
       <MarkedStatus search={{ marked: 3, batch: 1795000000000001 }} page={{}} pending={pending} onUndo={stay} />
       {!pending && <MarkedStatus search={{ restored: 3 }} page={{}} />}
+      {!pending && <MarkedStatus search={{}} page={{}} none />}
     </>
   );
 }
