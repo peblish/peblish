@@ -5,8 +5,9 @@
     /* The fold button's width: the column the thread line hangs from and the text indents past. */
     --pb-comment-rail: var(--muxui-semantic-control-size-sm);
     /* The spine: a 2px line at 3:1 or more against the page in both schemes (a graphic that shows the
-       structure, and the fold button's pointer target). */
-    --pb-comment-spine: var(--muxui-semantic-border-strong);
+       structure, and the fold button's pointer target): the faint content colour, 4.52:1 in light and
+       5.74:1 in dark (Mux's strong border is 1.57:1 in light). */
+    --pb-comment-spine: var(--muxui-semantic-content-faint);
     min-inline-size: 0;
   }
 
