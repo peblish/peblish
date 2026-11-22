@@ -1,5 +1,5 @@
 import { DirectorySort, NsfwMode, Scope, effectiveNsfw, maxPage } from '@peblish/core/directory/input';
-import { listCommunities } from '@peblish/core/directory/read';
+import { listCommunities, listedPins } from '@peblish/core/directory/read';
 import { pinsAmong } from '@peblish/core/pins/pins';
 import { parseLookup } from '@peblish/core/resolve/parse';
 import { createServerFn } from '@tanstack/react-start';
@@ -30,7 +30,7 @@ export const loadDirectory = createServerFn({ method: 'GET' })
   .handler(async ({ data }) => {
     const session = await pageSession();
     const viewer = session ? { actorId: session.view.actorId, declared: session.view.ageDeclaredAt !== null } : null;
-    const directory = await listCommunities(data, viewer);
+    const [directory, listed] = await Promise.all([listCommunities(data, viewer), listedPins(data, viewer)]);
     // Pin is offered only on rows the viewer follows or asked to join, so only those are looked up.
     const followed = directory.rows.filter((row) => row.follow !== 'none').map((row) => row.actor.id);
     const pins = await pinsAmong(viewer?.actorId ?? null, followed);
@@ -49,6 +49,8 @@ export const loadDirectory = createServerFn({ method: 'GET' })
       now: new Date().toISOString(),
       /** Which of the rows the viewer pinned (pins.ts), for each row's Pin. */
       pinned: [...pins.keys()],
+      /** Which of the viewer's pins the Pinned group may draw: the directory's own rules, not its opt-out (listedPins). */
+      listedPins: listed,
       /** List or Cards, as this browser last chose. */
       view: parseViewCookie(getRequestHeader('cookie')),
     };

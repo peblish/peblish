@@ -13,7 +13,8 @@ import { seedActor, seedInstance } from '../../packages/core/src/testing/seed.ts
 // host, with Elm, Yew and Birch pinned in that order; Fir is not followed. Then, for `many`, 50 more local
 // communities they follow, titled "Aa 00" to "Aa 49" so they sort before every other unpinned row and push the
 // last of those past the sidebar's 50 rows; for `gated`, Oak, a sensitive local community they follow, pinned
-// last, and Yew's host blocked by this server. `node e2e/shell/pins-seed.ts many|gated` prints it as JSON.
+// last, Yew's host blocked by this server, and Birch opted out of the directory.
+// `node e2e/shell/pins-seed.ts many|gated` prints it as JSON.
 
 async function world(mode: string) {
   if (mode !== 'many' && mode !== 'gated') throw new Error(`unknown world ${mode}`);
@@ -27,7 +28,7 @@ async function world(mode: string) {
     seedActor(on, 'Group', `${name}_${suffix}`, { displayName: `${title} ${suffix}`, ...extra });
   const [ash, birch, cedar, damson, elm, fir, yew] = await Promise.all([
     make('ash', 'Ash'),
-    make('birch', 'Birch'),
+    make('birch', 'Birch', local, mode === 'gated' ? { discoverable: false } : {}),
     make('cedar', 'Cedar'),
     make('damson', 'Damson'),
     make('elm', 'Elm'),

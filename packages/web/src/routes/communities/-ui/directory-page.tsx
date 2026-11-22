@@ -80,9 +80,12 @@ export function DirectoryPage({ data, error: fromAddress }: { data: DirectoryDat
   const now = new Date(data.now);
   const pinned = new Set(data.pinned);
   // The viewer's pinned communities, in the sidebar's order, above the first page of an unfiltered list, in the
-  // list's scope: under Local, the local ones. Every pin the shell has, so a pin past this page still shows.
+  // list's scope (under Local, the local ones) and under the directory's own rules, which the loader applies to
+  // the viewer's pins (listedPins): a pin on a blocked host or behind the age gate stays out. Every pin the shell
+  // has, so a pin past this page still shows.
   const shellPins = useShellPins();
-  const pins = shellPins.filter((community) => query.scope !== 'local' || community.local);
+  const listed = new Set(data.listedPins);
+  const pins = shellPins.filter((community) => listed.has(community.id) && (query.scope !== 'local' || community.local));
   const showPins = data.signedIn && pins.length > 0 && data.page === 1 && query.q === '';
   // Where a pinned row went, said politely; kept here, as the group goes with its last pin.
   const [pinStatus, setPinStatus] = useState('');

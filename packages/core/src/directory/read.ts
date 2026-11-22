@@ -7,6 +7,7 @@ import { follows } from '../db/tables/follows.ts';
 import { instances } from '../db/tables/instances.ts';
 import { sanitizeRemoteHtml } from '../markdown/sanitize.ts';
 import { communityRemovals } from '../moderation/tables.ts';
+import { shownPins } from '../pins/shown.ts';
 import { blockedHosts } from '../resolve/blocked.ts';
 import { parseLookup } from '../resolve/parse.ts';
 import { effectiveNsfw, maxPage, pageSize, type DirectoryQuery } from './input.ts';
@@ -57,7 +58,12 @@ const flagged = sql`(${actors.sensitive} or ${actors.nsfl})`;
 /** `%`, `_` and `\` in a search are text, not patterns. */
 const like = (text: string) => `%${text.replace(/[\\%_]/g, '\\$&')}%`;
 
-async function conditions(query: DirectoryQuery, viewer: DirectoryViewer): Promise<SQL> {
+/**
+ * Whether the directory may draw a community for this viewer at all: a Group, not deleted, not removed by an
+ * admin, not on a blocked host, and flagged only as the NSFW choice and the viewer's declaration allow. The
+ * list adds the opt-out and the search (conditions); the Pinned group takes these alone (listedPins).
+ */
+async function visible(query: Pick<DirectoryQuery, 'nsfw'>, viewer: DirectoryViewer): Promise<SQL> {
   const blocked = await blockedHosts();
   const nsfw = effectiveNsfw(query, viewer);
   // A remote Group flagged sensitive or nsfl is never listed (remote NSFW is rejected by default); a local one only for a declared viewer.
@@ -67,16 +73,22 @@ async function conditions(query: DirectoryQuery, viewer: DirectoryViewer): Promi
       : nsfw === 'show'
         ? sql`(not ${flagged} or ${actors.local})`
         : sql`(${flagged} and ${actors.local})`;
-  // A search that is a handle or a link is a resolve, not a filter: the list stays whole.
-  const term = query.q !== '' && parseLookup(query.q) === null ? like(query.q) : null;
   return and(
     eq(actors.kind, 'Group'),
-    // A community that opted out of search (the form's discoverable, or a peer's) is not listed.
-    eq(actors.discoverable, true),
     isNull(actors.deletedAt),
     sql`not exists (select 1 from ${communityRemovals} where ${communityRemovals.communityId} = ${actors.id})`,
     blocked.length > 0 ? notInArray(instances.domain, blocked) : undefined,
     flaggedRule,
+  )!;
+}
+
+async function conditions(query: DirectoryQuery, viewer: DirectoryViewer): Promise<SQL> {
+  // A search that is a handle or a link is a resolve, not a filter: the list stays whole.
+  const term = query.q !== '' && parseLookup(query.q) === null ? like(query.q) : null;
+  return and(
+    await visible(query, viewer),
+    // A community that opted out of search (the form's discoverable, or a peer's) is not listed.
+    eq(actors.discoverable, true),
     term === null
       ? undefined
       : or(
@@ -85,6 +97,25 @@ async function conditions(query: DirectoryQuery, viewer: DirectoryViewer): Promi
           sql`${instances.domain} ilike ${term} escape '\\'`,
         ),
   )!;
+}
+
+/**
+ * Which of the viewer's pins the sidebar shows (pins/shown.ts) the directory's Pinned group may draw under the
+ * page's NSFW choice: the list's own rules (visible), without search or paging, so a pin past page one stays.
+ * A community that opted out of the directory stays too: the opt-out keeps it out of discovery, and the
+ * reader chose this one already. In the pins' order; none when signed out.
+ */
+export async function listedPins(query: Pick<DirectoryQuery, 'nsfw'>, viewer: DirectoryViewer, q: Queryable = readDb()): Promise<Uuid[]> {
+  if (!viewer) return [];
+  const ids = (await shownPins(q, viewer.actorId)).filter((pin) => pin.shown).map((pin) => pin.communityId);
+  if (ids.length === 0) return [];
+  const rows = await q
+    .select({ id: actors.id })
+    .from(actors)
+    .innerJoin(instances, eq(instances.id, actors.instanceId))
+    .where(and(inArray(actors.id, ids), await visible(query, viewer)));
+  const listed = new Set(rows.map((row) => row.id));
+  return ids.filter((id) => listed.has(id));
 }
 
 const order = {

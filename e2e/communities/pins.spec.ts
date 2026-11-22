@@ -24,7 +24,7 @@ const seedWorld = (): Seed =>
     execFileSync('node', ['packages/core/src/testing/seed-pins.ts', 'e2e'], { cwd: join(import.meta.dirname, '../..'), encoding: 'utf8' }),
   ) as Seed;
 
-/** The pins world with Oak, a sensitive local community, pinned last, and Yew's host blocked here (e2e/shell/pins-seed.ts). */
+/** The pins world with Oak, a sensitive local community, pinned last, Yew's host blocked here, and Birch out of the directory (e2e/shell/pins-seed.ts). */
 const seedGated = (): Seed =>
   JSON.parse(
     execFileSync('node', ['e2e/shell/pins-seed.ts', 'gated'], { cwd: join(import.meta.dirname, '../..'), encoding: 'utf8' }),
@@ -201,16 +201,19 @@ test.describe('seeded', () => {
     await context.close();
   });
 
-  // Waits for a server read: the directory's own rules for a host this server blocks and for the age gate, applied
-  // to the viewer's pins in -load.ts (this lane's report says which). Today the group draws them from the shell.
-  // A pin those rules hide takes the group's moves away too, as the scope's does.
-  test.fixme('the group leaves out a pin whose host this server blocks, and a sensitive one for a viewer who has not declared 16+', async ({
+  // The directory's own rules, applied to the viewer's pins (directory/read.ts, listedPins): a host this server
+  // blocks and the age gate hide a pin, as the list hides the community; the directory opt-out does not, as the
+  // reader chose the community already. A pin those rules hide takes the group's moves away too, as the scope's does.
+  test('the group leaves out a pin whose host this server blocks, and a sensitive one for a viewer who has not declared 16+', async ({
     browser,
   }) => {
     const seed = seedGated();
     const { context, page } = await signedIn(browser, seed);
     await gotoHydrated(page, '/communities');
+    // Birch opted out of the directory and stays.
     expect(await order(page, seed)).toEqual(['Elm', 'Birch']);
+    await expect(group(page).getByRole('button', { name: /^Move / })).toHaveCount(0);
+    await expect(group(page).getByRole('button', { name: `Pin Birch ${seed.suffix}` })).toHaveAttribute('aria-pressed', 'true');
     await context.close();
   });
 
