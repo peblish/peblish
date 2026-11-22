@@ -22,6 +22,10 @@ export function actorBlockedBy(viewerId: Uuid, actor: SQLWrapper): SQL {
   )`;
 }
 
+/** SQL true when `viewerId` blocks the instance `instanceId` names (a column of a joined query). */
+export const instanceBlockedBy = (viewerId: Uuid, instanceId: SQLWrapper): SQL =>
+  sql`exists (select 1 from ${instanceBlocks} as ib where ib.blocker_id = ${viewerId} and ib.instance_id = ${instanceId})`;
+
 // These readers are plain SQL with an alias on every table: Drizzle drops the table name
 // from a column inside a single-table select, which would make the sub-selects compare a
 // column with itself.
