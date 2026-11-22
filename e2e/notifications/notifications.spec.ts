@@ -316,15 +316,17 @@ test.describe('the inbox of a person who was replied to, mentioned, moderated an
       .evaluateAll((forms) => forms.slice(0, 4).map((form) => new URL((form as HTMLFormElement).action).searchParams.get('id')!));
     const [newest, a, b, c] = ids;
     /** Posts an inbox form by fetch, as the page does. */
-    const mark = (intent: string, id = '') =>
-      page.evaluate(
-        ([intent, id]) =>
-          fetch(`/notifications?${new URLSearchParams(id ? { intent, id } : { intent })}`, {
+    const mark = (intent: string, id = '') => {
+      const fields: Record<string, string> = id ? { intent, id } : { intent };
+      return page.evaluate(
+        (fields) =>
+          fetch(`/notifications?${new URLSearchParams(fields)}`, {
             method: 'POST',
             headers: { accept: 'application/json', 'content-type': 'application/x-www-form-urlencoded' },
           }).then((response) => response.json()),
-        [intent, id],
+        fields,
       );
+    };
     // Everything read, then the three after the newest unread again: Unread lists them in order.
     await mark('read_all');
     for (const id of [a, b, c]) expect(await mark('unread', id)).toEqual({ ok: true });
