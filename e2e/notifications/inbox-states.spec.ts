@@ -7,13 +7,24 @@ import { galleryStates, stateProblems } from '../support/states.ts';
 // draws it, and the inline reply in each state, through the shared state helper in light and dark, under
 // forced colours and reduced motion and at a phone's width, whatever brand pack site.brand names. The
 // row's forms post to the real endpoints; the reply cases answer for them here, so no database is needed.
+// Branch 5 (lane f-notify) adds the followed thread's and the accepted follow's rows, the date groups,
+// Mark all read's status row with its Undo, and the post's Follow thread bell and rail switch.
 test.beforeEach(async ({ request }) => skipWithoutKit(request));
 
-const notices = ['inbox-replies', 'inbox-mentions', 'inbox-moderation', 'inbox-account'];
+const notices = ['inbox-replies', 'inbox-mentions', 'inbox-moderation', 'inbox-account', 'inbox-follows'];
 const compositions: Record<string, string[]> = {
-  ...Object.fromEntries(notices.map((key) => [key, ['rest', 'hover', 'focus', 'pressed']])),
+  ...Object.fromEntries([...notices, 'inbox-groups'].map((key) => [key, ['rest', 'hover', 'focus', 'pressed']])),
   'inbox-reply': ['rest', 'selected', 'pending', 'invalid', 'hover', 'focus', 'pressed'],
+  'inbox-undo': ['rest', 'pending', 'hover', 'focus', 'pressed'],
+  'thread-follow': ['rest', 'selected', 'pending', 'hover', 'focus', 'pressed'],
+  'thread-follow-rail': ['rest', 'selected', 'pending', 'hover', 'focus', 'pressed'],
 };
+/**
+ * The smallest target each page may hold on a phone. A link inside a line of text (a title, a statement)
+ * is held to WCAG's 24px, the rows' buttons to 44 below; Undo and the bell are 44 themselves. The rail,
+ * with its switch, is not on a phone at all (the frame hides it below 62rem).
+ */
+const floor = (composition: string) => (composition === 'inbox-undo' || composition === 'thread-follow' ? 44 : 24);
 
 for (const [composition, states] of Object.entries(compositions)) {
   test(`/kit/${composition}: every state, scheme and condition passes`, async ({ browser, baseURL }) => {
@@ -21,8 +32,7 @@ for (const [composition, states] of Object.entries(compositions)) {
     const checks = await galleryStates(browser, baseURL!, `/kit/${composition}`);
     expect([...new Set(checks.map(({ state }) => state))]).toEqual(states);
     expect(checks).toHaveLength(states.length * 2 * 4);
-    // A link inside a line of text (a title, a statement) is held to WCAG's 24px; the row's buttons to 44 below.
-    expect(stateProblems(checks, { target: 24 })).toEqual([]);
+    expect(stateProblems(checks, { target: floor(composition) })).toEqual([]);
   });
 }
 
@@ -36,7 +46,7 @@ test('every kind of notice has a row, and unread is said in words as well as dra
     await gotoHydrated(page, `/kit/${key}`);
     for (const kind of await rows(page).evaluateAll((nodes) => nodes.map((node) => node.getAttribute('data-kind')))) kinds.add(kind);
   }
-  expect(kinds).toEqual(new Set(['reply', 'mention', 'mod_remove', 'mod_restore', 'ban', 'unban']));
+  expect(kinds).toEqual(new Set(['reply', 'mention', 'mod_remove', 'mod_restore', 'ban', 'unban', 'thread_reply', 'follow_accept']));
 
   await gotoHydrated(page, '/kit/inbox-replies');
 
@@ -300,4 +310,66 @@ test('without scripts Reply is a link to the comment, whose page has the reply f
   );
   await expect(first(page).getByRole('button', { name: /^Reply: / })).toHaveCount(0);
   await context.close();
+});
+
+test('the new kinds read as the mock words them, with no moderator badge on an accepted follow', async ({ page }) => {
+  await gotoHydrated(page, '/kit/inbox-follows');
+  const [followed, withheld, accepted] = [0, 1, 2].map((n) => rows(page).nth(n));
+  await expect(followed).toContainText('@mira commented in a thread you follow');
+  await expect(followed.getByRole('button', { name: /^Reply: @mira, / })).toBeVisible();
+  // A followed thread's comment removed since: nobody is named, and it cannot be answered.
+  await expect(withheld.locator('.pb-notice__title')).toContainText('Someone commented in a thread you follow');
+  await expect(withheld.getByRole('button', { name: /^Reply/ })).toHaveCount(0);
+  await expect(accepted).toContainText('!art accepted your request to join');
+  await expect(accepted.getByText('MOD', { exact: true })).toHaveCount(0);
+  await expect(accepted.getByRole('link', { name: 'Open community' })).toHaveAttribute('href', /^\/c\/art/);
+  // A removal names the published review address and the decision.
+  await gotoHydrated(page, '/kit/inbox-moderation');
+  await expect(rows(page).first().getByRole('link', { name: 'Ask for a review' })).toHaveAttribute(
+    'href',
+    'mailto:review@example.test?subject=Review%20of%20moderation%20decision%2000000000-0000-7000-8000-000000000300',
+  );
+  await expect(rows(page).nth(1).getByRole('link', { name: 'Ask for a review' })).toHaveCount(0);
+});
+
+test('the date groups head their rows, newest first', async ({ page }) => {
+  await gotoHydrated(page, '/kit/inbox-groups');
+  await expect(page.locator('[data-kit-sample]').getByRole('heading', { level: 2 })).toHaveText([
+    'Today',
+    'Yesterday',
+    'This week',
+    'Earlier',
+  ]);
+  for (const group of ['Today', 'Yesterday', 'This week', 'Earlier'])
+    await expect(page.getByRole('list', { name: `Notices, ${group}` }).getByRole('listitem')).toHaveCount(1);
+});
+
+test('Undo is named for what it undoes, and its status row speaks', async ({ page }) => {
+  await gotoHydrated(page, '/kit/inbox-undo');
+  const rest = page.locator('[data-kit-state="rest"]');
+  await expect(rest.getByRole('button', { name: 'Undo: mark the 3 unread again' })).toHaveText('Undo');
+  await expect(rest.getByRole('status')).toHaveText(['Marked 3 notices as read.Undo', '3 notices are unread again.']);
+  await expect(page.locator('[data-kit-state="pending"]').getByRole('button', { name: /^Undo/ })).toHaveAttribute('aria-busy', 'true');
+});
+
+test('the bell is one toggle named Follow thread whose pressed state and shape change, not only its colour', async ({ page }) => {
+  await gotoHydrated(page, '/kit/thread-follow');
+  const bell = (state: string) => page.locator(`[data-kit-state="${state}"]`).getByRole('button', { name: 'Follow thread', exact: true });
+  await expect(bell('rest')).toHaveAttribute('aria-pressed', 'false');
+  await expect(bell('selected')).toHaveAttribute('aria-pressed', 'true');
+  const shape = async (state: string) => bell(state).locator('svg').first().getAttribute('class');
+  expect(await shape('rest')).not.toEqual(await shape('selected'));
+  // Without scripts it is a form: off it posts a follow, on an unfollow, to the inbox's endpoint.
+  await expect(page.locator('[data-kit-state="rest"] form')).toHaveAttribute(
+    'action',
+    '/notifications?intent=watch&post=00000000-0000-7000-8000-000000000100',
+  );
+  await expect(page.locator('[data-kit-state="selected"] form')).toHaveAttribute(
+    'action',
+    '/notifications?intent=unwatch&post=00000000-0000-7000-8000-000000000100',
+  );
+  await gotoHydrated(page, '/kit/thread-follow-rail');
+  const toggle = (state: string) => page.locator(`[data-kit-state="${state}"]`).getByRole('switch', { name: 'Follow thread' });
+  await expect(toggle('rest')).not.toBeChecked();
+  await expect(toggle('selected')).toBeChecked();
 });
