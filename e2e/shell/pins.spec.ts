@@ -76,7 +76,10 @@ test.describe('seeded', () => {
       const { context, page } = await signedIn(browser, seed, { javaScriptEnabled, viewport: { width: 1280, height: 900 } });
       await page.goto('/local');
       if (javaScriptEnabled) await page.locator('html[data-hydrated="1"]').waitFor({ state: 'attached' });
-      const boxes = await rows(page, seed).evaluateAll((links) => links.map((link) => Math.round(link.getBoundingClientRect().top)));
+      // From the sidebar's own top: without scripts the frame lists the account pages above the sidebar.
+      const boxes = await rows(page, seed).evaluateAll((links) =>
+        links.map((link) => Math.round(link.getBoundingClientRect().top - link.closest('nav')!.getBoundingClientRect().top)),
+      );
       const list = await titles(page, seed);
       await context.close();
       return { boxes, list };
