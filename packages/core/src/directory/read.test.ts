@@ -71,6 +71,16 @@ describe('what is listed', () => {
     expect(counts.all).toBe(3);
     vi.doUnmock('../resolve/blocked.ts');
   });
+
+  test('leaves out what the viewer blocks: a community, or every one on a host they block', async () => {
+    await seedBlock(world.people.viewer, world.communities.art);
+    await seedBlock(world.people.viewer, { instance: world.instances.piefed });
+    const { rows, counts } = await list({ sort: 'name' }, declared());
+    expect(rows.map((row) => row.actor.handle)).toEqual(['News', 'technology@lemmy.test']);
+    expect(counts).toEqual({ local: 1, all: 2 });
+    // Someone else's blocks are theirs.
+    expect((await names({ sort: 'name' }, undeclared())).sort()).toEqual(['News', 'art', 'quiet@piefed.test', 'technology@lemmy.test']);
+  });
 });
 
 describe('what a row says', () => {
