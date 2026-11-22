@@ -221,6 +221,31 @@ describe('thread_reply', () => {
     });
   });
 
+  test('a replay after an early follower unfollowed tells no follower past the limit', async () => {
+    const w = await seedInboxWorld();
+    const postId = w.posts.local.normal;
+    const many = [];
+    for (let n = 0; n <= threadReplyFanOut; n++) many.push(await seedActor(w.instances.local, 'Person', `replayed_${n}`));
+    await writer()
+      .insert(threadWatches)
+      .values(many.map((person, n) => ({ ownerId: person.id, postId, since: new Date(Date.UTC(2026, 0, 1, 0, 0, n)) })));
+    const id = await say(w.people.reader, postId, 'To the many');
+    await drainNotices();
+    const last = many.at(-1)!;
+    expect(await kindsOf(last.id)).toEqual([]);
+    const told = await noticeCount();
+
+    await writer()
+      .delete(threadWatches)
+      .where(and(eq(threadWatches.ownerId, many[0]!.id), eq(threadWatches.postId, postId)));
+    await emitEvent({ type: 'comment.created', v: 1, commentId: id, postId, authorId: w.people.reader.id, local: true, parentId: null });
+    await drainNotices();
+    await writer().update(outboxCursors).set({ txId: '0', eventId: 0 }).where(eq(outboxCursors.consumer, 'notifications.create'));
+    await drainNotices();
+    expect(await kindsOf(last.id)).toEqual([]);
+    expect(await noticeCount()).toBe(told);
+  });
+
   test('a later block of its author hides it from the list and every count', async () => {
     const w = await seedInboxWorld();
     const postId = w.posts.local.normal;

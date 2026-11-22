@@ -7,6 +7,7 @@ import { comments, posts } from '../db/tables/content.ts';
 import { ageDeclarations } from '../identity/tables.ts';
 import { communityRemovals } from '../moderation/tables.ts';
 import { noticeBlocked } from '../notifications/blocked.ts';
+import { notifications } from '../notifications/tables.ts';
 import { threadWatches } from './tables.ts';
 
 // Who a new comment in a followed thread is news for (lane f-notify). The notifications consumer
@@ -22,15 +23,30 @@ export const threadReplyFanOut = 200;
 /**
  * The followers of the comment's thread who may be told of it, in one query: the comment, its post
  * and its community are live (neither deleted nor removed), and so is its author's account (a
- * deleted account's notices are cleared, identity/personal.ts, and must not come back); the follow started before this server
- * received the comment (`since` before `comments.created_at`); the follower is a live local person
- * who is not its author, not in `told` (already given a reply or mention for it), does not block
- * its author or community (noticeBlocked, the inbox's rule) nor the post's author (actorBlockedBy:
- * the notice names the post), and has declared 16+ when the post or community is sensitive or
- * NSFL. None for a comment that is gone. The inbox rechecks the same when it lists the notice
- * (notifications/visible.ts).
+ * deleted account's notices are cleared, identity/personal.ts, and must not come back); the
+ * follow started before this server received the comment (`since` before `comments.created_at`);
+ * the follower is a live local person who is not its author, not in `told` (already given a reply
+ * or mention for it), does not block its author or community (noticeBlocked, the inbox's rule)
+ * nor the post's author (actorBlockedBy: the notice names the post), and has declared 16+ when
+ * the post or community is sensitive or NSFL. The inbox rechecks the same when it lists the
+ * notice (notifications/visible.ts).
+ *
+ * None for a comment that is gone, or whose fan-out already ran: a follower of the thread holds
+ * its `thread_reply`. Those notices commit with the consumer's cursor, so they are the record of
+ * the run; a replay of the event then tells nobody, where it would otherwise let in the follower
+ * after the limit once an earlier one unfollowed. (Only if every follower it told has unfollowed
+ * since does a replay tell the next ones.)
  */
 export async function threadFollowersOf(q: Queryable, commentId: Uuid, told: readonly Uuid[]): Promise<Uuid[]> {
+  const [ran] = await q.execute<{ ran: boolean }>(sql`
+    select exists (
+      select 1 from ${comments} as c
+      join ${threadWatches} as tw on tw.post_id = c.post_id
+      join ${notifications} as n on n.recipient_id = tw.owner_id and n.ref_id = c.id
+      where c.id = ${commentId}::uuid and n.kind = 'thread_reply'
+    ) as ran
+  `);
+  if (ran?.ran) return [];
   const blocked = noticeBlocked(sql`tw.owner_id`, { actorId: sql`c.author_id`, communityId: sql`p.community_id` });
   const notTold =
     told.length === 0
