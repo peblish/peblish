@@ -62,6 +62,7 @@ test('the Saved page: newest save first, a removed post left out, two pages, no 
   await page.getByRole('link', { name: 'Saved', exact: true }).first().click();
   await landed(page, '/saved');
   await expect(page.getByRole('heading', { level: 1, name: 'Saved' })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Saved', exact: true }).first()).toHaveAttribute('aria-current', 'page');
   expect(await titles(page)).toEqual(Array.from({ length: 20 }, (_, i) => title(21 - i)));
   await expect(page.getByText(title(22))).toHaveCount(0);
   expect(await page.content()).not.toContain(seed.posts.removed);
@@ -74,6 +75,13 @@ test('the Saved page: newest save first, a removed post left out, two pages, no 
   await page.getByRole('link', { name: 'Newest saves' }).click();
   await landed(page, '/saved');
   await expect.poll(async () => (await titles(page)).length).toBe(20);
+
+  // A hand-edited address is the first page, never an error page.
+  for (const search of ['?cursor=123', `?cursor=${'a'.repeat(401)}`, '?cursor=%7B%7D', '?error=1']) {
+    const response = await page.goto(`/saved${search}`);
+    expect(response?.status()).toBe(200);
+    expect(await titles(page)).toHaveLength(20);
+  }
 });
 
 test('Unsave removes the row in place, moves focus to the next title and says so; a failure keeps the row', async ({ page }) => {
@@ -136,7 +144,8 @@ test('Save on the post page: pending, then Unsave, and the post is first on the 
 
 test('Save in a feed row’s menu, then Unsave from the same menu', async ({ page }) => {
   await signedIn(page, seed.owner);
-  await gotoHydrated(page, '/all?sort=new');
+  // The Subscribed feed holds only the seeded community, so the post is on its first page.
+  await gotoHydrated(page, '/?sort=new');
   const row = page.locator('.feed-list > li').filter({ hasText: title(24) });
   await row.getByRole('button', { name: `More actions for ${title(24)}` }).click();
   await page.getByRole('menuitem', { name: 'Save' }).click();
@@ -166,11 +175,24 @@ test('a second account sees none of the first account’s saves and cannot remov
     return response.json();
   }, seed.posts.saved[0]!);
   expect(answer).toEqual({ saved: false });
+
+  // This account's one save, unsaved on its Saved page: the empty state follows, and focus is on its link.
+  await gotoHydrated(page, `/post/${seed.posts.saved[2]}`);
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Unsave', exact: true })).toBeVisible();
+  await gotoHydrated(page, '/saved');
+  expect(await titles(page)).toEqual([title(3)]);
+  await page.getByRole('button', { name: `Unsave ${title(3)}` }).click();
+  await expect(page.getByRole('heading', { name: 'Nothing saved yet' })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Browse All', exact: true })).toBeFocused();
+  await expect(page.locator('.saved-posts > [role="status"]')).toHaveText('Removed from Saved.');
   await context.close();
 
-  // The first account's save is still there.
+  // The first account's saves are still there.
   const owner = await contextFor(browser, baseURL!, seed.owner);
   await gotoHydrated(owner.page, `/post/${seed.posts.saved[0]}`);
+  await expect(owner.page.getByRole('button', { name: 'Unsave', exact: true })).toBeVisible();
+  await gotoHydrated(owner.page, `/post/${seed.posts.saved[2]}`);
   await expect(owner.page.getByRole('button', { name: 'Unsave', exact: true })).toBeVisible();
   await owner.context.close();
 });

@@ -6,10 +6,11 @@ import { posts as postsTable } from '../db/tables/content.ts';
 import { writer } from '../db/write.ts';
 import { savedPosts } from '../saves/tables.ts';
 import { seedPost } from './seed-az.ts';
+import { seedFollow } from './seed-c1.ts';
 import { seedActor } from './seed.ts';
 
 // The saves lane's e2e world (`node packages/core/src/testing/seed-saves.ts e2e`, on the lane database):
-// two accounts, a community with 25 posts, of which the first account saved 21 at distinct times
+// two accounts, a community the first follows with 25 posts, of which the first account saved 21 at distinct times
 // (two pages of 20) plus one that a moderator removed afterwards, and two the spec saves itself. Test code only.
 
 async function e2e() {
@@ -20,6 +21,8 @@ async function e2e() {
   const [owner, other] = await Promise.all([seedAccount(`saver_${suffix}`), seedAccount(`other_${suffix}`)]);
   const author = await seedActor(instance, 'Person', `saves_author_${suffix}`);
   const community = await seedActor(instance, 'Group', `saves_${suffix}`);
+  // The owner follows it, so its posts are the owner's Subscribed feed whatever else the server holds.
+  await seedFollow({ id: owner.actorId }, community);
   const at = Date.now() - 3_600_000;
   const posts: string[] = [];
   for (let n = 1; n <= 25; n += 1)
@@ -27,8 +30,7 @@ async function e2e() {
       (
         await seedPost(instance, community, author, {
           title: `Saved ${suffix} ${String(n).padStart(2, '0')}`,
-          // The newest posts on the server, in order, so they lead the All feed sorted by New.
-          publishedAt: new Date(Date.now() - (26 - n) * 1000),
+          publishedAt: new Date(at + n * 1000),
         })
       ).id,
     );

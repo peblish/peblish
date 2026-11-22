@@ -6,15 +6,16 @@ import { failureKey, requestSave } from './save-request.ts';
 
 /**
  * A feed row menu's Save or Unsave (FeedRowActions' `save`). The row keeps the post's state itself
- * from the moment it changes, and `changed` hands it to the page (the feed writes it into the kept
- * place, so Back shows it). While a request is out the item is disabled and a second choice does
+ * from the moment it changes. While a request is out the item is disabled and a second choice does
  * nothing; `say` speaks the outcome in the row's polite status, a failure included, which leaves the
- * state as it was. The menu needs scripts, so with them off Save is on the post's own page.
+ * state as it was. The menu needs scripts, so with them off Save is on the post's own page. Known gap:
+ * the feed's kept place (Back) still holds the state the batch loaded with, until the page's data
+ * comes again; writing it there belongs to the feed's own reconciliation.
  */
-export function useRowSave(post: PostView, say: (message: string) => void, changed: (saved: boolean) => void): FeedRowSave {
+export function useRowSave(post: PostView, say: (message: string) => void): FeedRowSave {
   const { t } = useTranslate();
   // The row's own state holds only while the page's data still says what it said then: newer data
-  // (the first page reloads on Back, or the feed wrote the change into its place) wins.
+  // (the first page reloads on Back) wins.
   const given = post.saved === true;
   const [mine, setMine] = useState<{ given: boolean; saved: boolean } | null>(null);
   const saved = mine?.given === given ? mine.saved : given;
@@ -30,7 +31,6 @@ export function useRowSave(post: PostView, say: (message: string) => void, chang
       .then((outcome) => {
         if (!outcome.ok) return say(t('saves', failureKey(intent, outcome.reason)));
         setMine({ given, saved: outcome.saved });
-        changed(outcome.saved);
         say(t('saves', outcome.saved ? 'status.saved' : 'status.unsaved'));
       })
       .finally(() => {

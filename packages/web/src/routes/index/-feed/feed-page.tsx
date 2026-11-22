@@ -284,7 +284,7 @@ const focusable =
  * IntersectionObserver the next page stays a plain link. The loaded rows are kept for the visit
  * (places.ts) under the history entry, so Back finds them and the router puts the scroll position back.
  * With `rowActions`, each row gets Share (the system's share sheet where there is one, else the link is
- * copied) and a menu with Copy link, and Save or Unsave for a signed-in viewer.
+ * copied) and a menu with Copy link.
  */
 export function FeedCards({
   path,
@@ -327,10 +327,6 @@ export function FeedCards({
   // A take-back on content the gate now withholds answers no tally: the row keeps its counts.
   const voted = (postId: string, myVote: -1 | 0 | 1, tally: { upvotes: number; downvotes: number } | null) => {
     if (more) updateRows(key, postId, (row) => ({ ...row, post: { ...row.post, myVote, counts: { ...row.post.counts, ...tally } } }));
-  };
-  // So is a save (the row menu's Save, saves lane).
-  const savedChanged = (postId: string, saved: boolean) => {
-    if (more) updateRows(key, postId, (row) => ({ ...row, post: { ...row.post, saved } }));
   };
 
   const box = useRef<HTMLDivElement>(null);
@@ -426,7 +422,6 @@ export function FeedCards({
                   hydrated={hydrated}
                   voteFailed={voteFailed}
                   voted={voted}
-                  savedChanged={savedChanged}
                 />
               </li>
             ))}
@@ -474,7 +469,6 @@ function FeedRow({
   hydrated,
   voteFailed,
   voted,
-  savedChanged,
 }: {
   row: PlaceRow;
   density: Density;
@@ -483,12 +477,11 @@ function FeedRow({
   hydrated: boolean;
   voteFailed: () => void;
   voted: (postId: string, myVote: -1 | 0 | 1, tally: { upvotes: number; downvotes: number } | null) => void;
-  savedChanged: (postId: string, saved: boolean) => void;
 }) {
   const { t, locale } = useTranslate();
   const postLabels = { ...usePostCardLabels(), voteOn: (title: string) => t('posts', 'vote.on', { title }) };
   const [status, say] = useStatus();
-  const save = useRowSave(post, say, (saved) => savedChanged(post.id, saved));
+  const save = useRowSave(post, say);
   const link = () => new URL(postPath(post.id), window.location.origin).href;
   const copy = async () => say(t('feeds', (await copyLink(link())) ? 'row.copied' : 'row.copyFailed'));
   const share = async () => {
