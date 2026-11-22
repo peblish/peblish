@@ -13,7 +13,7 @@ import { pageSession, sameOrigin } from '../../server/auth.ts';
 import { createMarkdownRenderer, type MarkdownRenderer } from '../../server/markdown.ts';
 import { communityPath } from '../../shell/paths.ts';
 import { readFlash } from './-flash.ts';
-import { ageAllows, pickerFor, pickFrom } from './-picker.ts';
+import { ageAllows, pickerFor } from './-picker.ts';
 import type { CommunityPanel, ComposerData, EditTarget } from './-types.ts';
 import { input } from '../../server/input.ts';
 
@@ -95,13 +95,11 @@ export const loadComposer = createServerFn({ method: 'GET' })
     if (typeof target === 'string') return { status: 'unavailable', reason: target };
     // What a refused post had typed (without JavaScript), kept for this person by the POST handler.
     const kept = readFlash(data.flash, view.actorId);
-    // The community the words were meant for, if it is still one to pick, then the one asked for in the URL.
-    const wanted = target ? [] : [kept?.community, data.community];
-    const { communities, truncated, selected } = await pickerFor(
-      view,
-      (rows) => (target ? target.community : (pickFrom(rows, kept?.community) ?? pickFrom(rows, data.community) ?? null)),
-      wanted,
-    );
+    // An edit's own community; else the one the words were meant for, then the one asked for in the URL, where the person may post.
+    const { communities, truncated, selected } = await pickerFor(view, {
+      edit: target ? target.community : null,
+      wanted: [kept?.community, data.community],
+    });
     const [handles, uploads, panel] = await Promise.all([
       localHandles(),
       readSetting('uploads.enabled'),

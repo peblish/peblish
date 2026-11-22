@@ -160,6 +160,29 @@ describe('the communities a viewer follows, for the sidebar and the composer', (
     ]);
   });
 
+  test("the composer's read: accepted follows only, past the age gate when asked, the first by name", async () => {
+    const w = await world();
+    const gated = await seedActor(w.there, 'Group', 'gated', { sensitive: true });
+    const waiting = await seedActor(w.there, 'Group', 'waiting');
+    for (const [community, state] of [
+      [w.remote, 'accepted'],
+      [w.local, 'accepted'],
+      [w.otherRemote, 'accepted'],
+      [gated, 'accepted'],
+      [waiting, 'pending'],
+    ] as const) {
+      await writer()
+        .insert(follows)
+        .values({ followerId: w.alice.id, followeeId: community.id, apId: `https://fed-a.test/f/${community.name}`, state });
+    }
+    const names = async (options: Parameters<typeof followedCommunities>[1]) =>
+      (await followedCommunities(w.alice.id, options)).map(({ name }) => name);
+    expect(await names({})).toEqual(['gated', 'lab', 'news', 'other', 'waiting']);
+    expect(await names({ accepted: true })).toEqual(['gated', 'lab', 'news', 'other']);
+    expect(await names({ accepted: true, includeSensitive: false })).toEqual(['lab', 'news', 'other']);
+    expect(await names({ accepted: true, includeSensitive: false, limit: 2 })).toEqual(['lab', 'news']);
+  });
+
   test('communities of one name come by host, then id, the same on every read', async () => {
     const w = await world();
     const hosts = ['zeta.test', 'alpha.test', 'mid.test'];
