@@ -129,3 +129,27 @@ test('the address opens the Controls of one known host and nothing else', async 
   await expect(controls.locator('input[name="domain"]')).toHaveValue(two.peer.domain);
   expect(console.hydrationProblems()).toEqual([]);
 });
+
+test('the peer card posts one change until the answer is in, and a refused card can post again', async ({ page }) => {
+  await signedInAdmin(page, two);
+  await gotoHydrated(page, controlsHref(two.peer.domain));
+  let release = () => {};
+  const held = new Promise<void>((resolve) => (release = resolve));
+  const posted: string[] = [];
+  // Held in the browser and then refused, so the peer is never changed.
+  await page.route('**/admin/peers*', async (route) => {
+    if (route.request().method() !== 'POST') return route.continue();
+    posted.push(new URLSearchParams(route.request().postData() ?? '').get('intent') ?? '');
+    await held;
+    await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ error: 'generic' }) });
+  });
+  const controls = page.getByTestId('peer-controls');
+  await controls.getByRole('button', { name: 'Pause inbox' }).click();
+  await controls.getByRole('button', { name: 'Block' }).click({ force: true });
+  await page.waitForTimeout(300);
+  expect(posted).toEqual(['pause']);
+  release();
+  await expect(controls.getByRole('alert')).toBeVisible();
+  await controls.getByRole('button', { name: 'Block' }).click();
+  await expect.poll(() => posted).toEqual(['pause', 'block']);
+});

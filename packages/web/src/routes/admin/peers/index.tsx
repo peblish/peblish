@@ -12,7 +12,7 @@ import { Text } from '@peblish/ui/components/text';
 import { TextField } from '@peblish/ui/components/text-field';
 import { createFileRoute, useRouter } from '@tanstack/react-router';
 import { type } from 'arktype';
-import { useState, type FormEvent } from 'react';
+import { useRef, useState, type FormEvent } from 'react';
 import { useTranslate } from '../../../i18n/use-translate.ts';
 import { forbidden, formSession, principalOf, privateResponses, readForm, sameOrigin } from '../../../server/auth.ts';
 import { useRouteHydrated } from '../../../shell/hydration.ts';
@@ -88,8 +88,12 @@ function PeerForm({
   const router = useRouter();
   const [error, setError] = useState(initialError);
   const [busy, setBusy] = useState(false);
+  // From a press until its answer and the reload are in, a second press posts nothing (Purge twice).
+  const sending = useRef(false);
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (sending.current) return;
+    sending.current = true;
     const submitter = event.nativeEvent instanceof SubmitEvent ? event.nativeEvent.submitter : null;
     const body = new URLSearchParams();
     for (const [name, value] of new FormData(event.currentTarget, submitter)) if (typeof value === 'string') body.append(name, value);
@@ -106,6 +110,7 @@ function PeerForm({
       setError('network');
     } finally {
       setBusy(false);
+      sending.current = false;
     }
   }
   return (
