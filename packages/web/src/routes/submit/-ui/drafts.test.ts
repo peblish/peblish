@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
-import { clearDraft, readDraft, removeUnscopedDrafts, writeDraft } from './drafts.ts';
+import { carried, clearDraft, holds, readDraft, removeUnscopedDrafts, writeDraft } from './drafts.ts';
 
 // A Storage with the parts the module uses; the tests run in Node, which has none.
 function fakeStorage() {
@@ -36,6 +36,28 @@ test('a draft belongs to the person and the community it was written for', () =>
   expect(readDraft({ ...ann, community: null })).toBeNull();
   clearDraft(ann);
   expect(readDraft(ann)).toBeNull();
+});
+
+test('the draft Browse carries is the person’s alone, apart from every community’s and from none chosen', () => {
+  writeDraft({ ...ann, community: null }, { ...draft, title: 'Saved with none' });
+  expect(writeDraft(carried(ann.actorId), draft)).toBe(true);
+  expect(readDraft(carried(ann.actorId))).toEqual(draft);
+  expect(readDraft(carried(bob.actorId))).toBeNull();
+  expect(readDraft({ ...ann, community: null })?.title).toBe('Saved with none');
+  expect(readDraft(ann)).toBeNull();
+  clearDraft(carried(ann.actorId));
+  expect(readDraft(carried(ann.actorId))).toBeNull();
+  expect(readDraft({ ...ann, community: null })?.title).toBe('Saved with none');
+});
+
+test('a scope holds a draft until something else is written there or it is cleared', () => {
+  writeDraft(ann, draft);
+  expect(holds(ann, { ...draft })).toBe(true);
+  expect(holds(ann, { ...draft, body: 'other words' })).toBe(false);
+  writeDraft(ann, { ...draft, title: 'Newer' });
+  expect(holds(ann, draft)).toBe(false);
+  clearDraft(ann);
+  expect(holds(ann, { ...draft, title: 'Newer' })).toBe(false);
 });
 
 test('a draft from before drafts were scoped to a person is never read and is removed', () => {

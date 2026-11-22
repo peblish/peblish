@@ -1,7 +1,7 @@
 import { crc32, deflateSync } from 'node:zlib';
 import { expect, test, type BrowserContext, type Page } from '@playwright/test';
 import { gotoHydrated } from '../support/route-marker.ts';
-import { choose, chooseType, seed, type Seed, setUploads, signedIn } from './support.ts';
+import { choose, chooseType, communityField, seed, type Seed, setUploads, signedIn } from './support.ts';
 
 // The Image type: disabled, with its reason, while uploads.enabled is off (the default until
 // scanning is live), and a working upload path behind the switch. The spec flips the switch on
@@ -152,6 +152,26 @@ test('a dropped image stays in the form while other fields change, also after on
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('A dropped image, kept');
   await expect(page.locator('.post-image img')).toHaveAttribute('src', /\/media\/[0-9a-f-]{36}$/);
   expect(errors).toEqual([]);
+  await page.close();
+});
+
+test('Browse with an image chosen says the image is not kept before leaving, and stays when declined', async () => {
+  setUploads(true);
+  const page = await poster.newPage();
+  await gotoHydrated(page, '/submit');
+  await choose(page, world.communities.open.handle);
+  await chooseType(page, 'Image');
+  await page.getByLabel('Image file').setInputFiles({ name: 'pixel.png', mimeType: 'image/png', buffer: png() });
+  let asked = '';
+  page.once('dialog', (dialog) => {
+    asked = dialog.message();
+    void dialog.dismiss();
+  });
+  await communityField(page).fill('zzzz no such community');
+  await page.getByRole('option', { name: 'Browse all communities' }).click();
+  await expect.poll(() => asked).toContain('image');
+  expect(page.url()).toMatch(/\/submit$/);
+  await expect(page.getByLabel('Image file')).toHaveJSProperty('files.length', 1);
   await page.close();
 });
 
