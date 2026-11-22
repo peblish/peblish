@@ -40,13 +40,6 @@
     max-inline-size: 100%;
     min-block-size: 24px;
   }
-  /* Mux's text field eases its border and glow over 350ms even under the system's reduced motion; here it
-     changes at once (Mux gap, as the frame stills its sidebar rows). */
-  @media (prefers-reduced-motion: reduce) {
-    .auth-field .muxui-input {
-      transition: none;
-    }
-  }
   /* The end of a form (FormActions): its other ways out at the start, its submit at the end, over a rule. */
   .auth-actions {
     display: flex;
