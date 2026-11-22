@@ -57,17 +57,14 @@ for (const [layout, viewport] of [
       const banner = page.getByRole('banner');
       // The menu's button cannot open without scripts: in the desktop header it gives way to a link with the
       // same name, to the account list under the page. A phone has no header: the list is under the page,
-      // after the navigation, and You in the bottom bar is the profile.
+      // after the navigation, and You in the bottom bar is the You page.
       await expect(page.getByRole('button', { name: `Account: ${admin.name}` })).toHaveCount(0);
       await expect(page.getByRole('button', { name: 'Appearance' })).toHaveCount(0);
       const account = banner.getByRole('link', { name: `Account: ${admin.name}` });
       if (layout === 'desktop') await expect(account).toBeVisible();
       else {
         await expect(banner).toHaveCount(0);
-        await expect(page.getByRole('navigation', { name: 'Sections' }).getByRole('link', { name: 'You' })).toHaveAttribute(
-          'href',
-          `/u/${admin.name}`,
-        );
+        await expect(page.getByRole('navigation', { name: 'Sections' }).getByRole('link', { name: 'You' })).toHaveAttribute('href', '/you');
       }
       /** To the account list: by the header's link on a desktop, scrolled to on a phone. */
       const toList = async () => {

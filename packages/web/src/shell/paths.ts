@@ -40,6 +40,9 @@ export const reportQueuePath = (handle?: string) =>
 /** The inbox (lane E2). */
 export const inboxPath = '/notifications';
 
+/** The You page (Commons' You tab): the viewer, their account's pages, Appearance and the site's pages. */
+export const youPath = '/you';
+
 /** The admin tabs (admin-tabs), in their order; each tab's lane owns its route directory. */
 export const adminPaths = {
   settings: '/admin/settings',

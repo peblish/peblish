@@ -20,7 +20,7 @@ import { AccountLinks, accountPages, signOutFormId } from './account.tsx';
 import { Brand } from './brand.tsx';
 import type { ShellData } from './data.ts';
 import { TopHeader } from './header.tsx';
-import { directoryPaths, feedPaths, inboxPath, reportQueuePath, userPath } from './paths.ts';
+import { directoryPaths, feedPaths, inboxPath, reportQueuePath } from './paths.ts';
 import { useSideFold } from './side-state.ts';
 import { Navigation } from './sidebar.tsx';
 import { PhoneTabs } from './tab-bar.tsx';
@@ -84,10 +84,13 @@ function useTapAgainForTop() {
   }, []);
 }
 
-/** The top destinations, which have no Back: the feeds, the inbox, the directory, the moderation queue and the viewer's profile. */
-function isRootPage(pathname: string, session: SessionView | null) {
+/**
+ * The top destinations, which have no Back: the feeds, the inbox, the directory and the moderation queue (the
+ * You page draws its own bar). A profile, the viewer's own too, is a page under them: it has Back.
+ */
+function isRootPage(pathname: string) {
   const roots: string[] = [...Object.values(feedPaths), inboxPath, directoryPaths.browse, reportQueuePath()];
-  return roots.includes(pathname) || (session !== null && pathname === userPath({ handle: session.name }));
+  return roots.includes(pathname);
 }
 
 const accountIcons: Record<string, ComponentType<IconProps>> = {
@@ -193,7 +196,7 @@ export function Shell({ children }: { children: ReactNode }) {
           </div>
           <div className="pb-app__page">
             <div id="pb-main" className="pb-frame" data-centre={wide ? 'wide' : undefined} tabIndex={-1}>
-              {!ownHeader && <DefaultViewHeader siteName={shell.siteName} root={isRootPage(pathname, session)} />}
+              {!ownHeader && <DefaultViewHeader siteName={shell.siteName} root={isRootPage(pathname)} />}
               {children}
             </div>
           </div>

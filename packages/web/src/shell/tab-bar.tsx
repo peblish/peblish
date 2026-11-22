@@ -6,21 +6,21 @@ import { CountBadge } from '@peblish/ui/components/count-badge';
 import { CompassIcon, HouseIcon, InboxIcon, LogInIcon, SquarePenIcon } from '@peblish/ui/components/icons';
 import { useTranslate } from '../i18n/use-translate.ts';
 import type { ShellData } from './data.ts';
-import { createPostPath, directoryPaths, feedPaths, inboxPath, userPath } from './paths.ts';
+import { createPostPath, directoryPaths, feedPaths, inboxPath, youPath } from './paths.ts';
 import { badgeText } from './sidebar.tsx';
 
 const feeds: readonly string[] = Object.values(feedPaths);
 
 /**
  * The phone's five destinations (Commons): Home (the feeds), Communities (the directory and the
- * communities under it), Create, the inbox with its unread count, and You, the viewer's profile; a
- * visitor's fifth is Sign in, as there is no one to be (Create and the inbox ask them to sign in too).
+ * communities under it), Create, the inbox with its unread count, and You, the You page (the viewer, their
+ * account's pages, Appearance and the site's pages); a visitor's fifth is Sign in, as there is no one to be
+ * (Create and the inbox ask them to sign in too).
  * Plain links, so the bar works with scripts off; shown only on a phone (shell.css).
  */
 export function PhoneTabs({ session, shell, pathname }: { session: SessionView | null; shell: ShellData; pathname: string }) {
   const { t, locale } = useTranslate();
   const at = (href: string, under = false) => pathname === href || under;
-  const you = session ? userPath({ handle: session.name }) : '';
   const tabs: BottomTab[] = [
     {
       id: 'home',
@@ -56,14 +56,14 @@ export function PhoneTabs({ session, shell, pathname }: { session: SessionView |
     session
       ? {
           id: 'you',
-          href: you,
+          href: youPath,
           label: t('shell', 'nav.you'),
           icon: (
             <Avatar.Root size="sm" className="pb-app__tab-avatar">
               <Avatar.Fallback>{session.name.slice(0, 1).toUpperCase()}</Avatar.Fallback>
             </Avatar.Root>
           ),
-          current: at(you),
+          current: at(youPath),
         }
       : { id: 'sign-in', href: '/auth/sign-in', label: t('shell', 'account.signIn'), icon: <LogInIcon />, current: at('/auth/sign-in') },
   ];

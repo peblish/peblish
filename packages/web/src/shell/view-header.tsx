@@ -36,8 +36,8 @@ export const FrameContext = createContext<FrameParts | null>(null);
  * where the page's name lives), `phoneTitle` (what a phone's bar shows instead) and `trailing` actions;
  * a page whose h1 is in the page passes `quiet={useHeadingInView(pathname)}` (below) with its name as the
  * title, which then shows once that heading has scrolled under. Inside a `.pb-page` it runs the column's
- * width (shell.css). `root` is a top destination (a feed, the inbox, the directory, the queue, the
- * viewer's profile), which has no Back.
+ * width (shell.css). `root` is a top destination (a feed, the inbox, the directory, the queue, the You
+ * page), which has no Back.
  *
  * At the start: Back, once the page has hydrated and the tab's history holds a page of this site before
  * it, else on a phone the site's mark and the finder. Back needs scripts, so the server never draws it.
