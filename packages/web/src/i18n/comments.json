@@ -56,7 +56,9 @@
     "share.copied": "Link copied.",
     "share.failed": "Copy this link:",
     "inReplyTo": "in reply to",
-    "reply.posted": "Reply posted."
+    "reply.posted": "Reply posted.",
+    "reply.tooLong.one": "{count} character over the limit of {max}. Shorten the reply to send it.",
+    "reply.tooLong.other": "{count} characters over the limit of {max}. Shorten the reply to send it."
   },
   "de": {
     "heading": "Kommentare",
@@ -115,6 +117,8 @@
     "share.copied": "Link kopiert.",
     "share.failed": "Kopiere diesen Link:",
     "inReplyTo": "Antwort an",
-    "reply.posted": "Antwort veröffentlicht."
+    "reply.posted": "Antwort veröffentlicht.",
+    "reply.tooLong.one": "{count} Zeichen über der Grenze von {max}. Kürze die Antwort, um sie zu senden.",
+    "reply.tooLong.other": "{count} Zeichen über der Grenze von {max}. Kürze die Antwort, um sie zu senden."
   }
 }

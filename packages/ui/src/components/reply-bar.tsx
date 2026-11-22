@@ -37,6 +37,8 @@ export interface ReplyBarProps {
   error?: string;
   /** Sticks to the bottom of the screen (the default). False lays it out in the page, for a gallery or a test. */
   docked?: boolean;
+  /** The most characters (code points) a reply may have, and what the field says of a draft past it, given by how many. */
+  limit?: { max: number; over: (count: number) => string };
 }
 
 /** `action` with `fields` in its query string. */
@@ -65,17 +67,24 @@ export function ReplyBar({
   pending,
   error,
   docked = true,
+  limit,
 }: ReplyBarProps) {
   const [body, setBody] = useState('');
+  // A draft past the limit is not sent: from that press until the next one the field says by how much, as it is typed.
+  const [measured, setMeasured] = useState(false);
+  const over = limit ? [...body].length - limit.max : 0;
+  const problem = (measured && over > 0 && limit?.over(over)) || error;
   // A refusal marks the field invalid (React Aria sets a custom validity), which would hold the retry back
   // before `submit` runs: while one shows, the browser's check is off and `submit` refuses an empty reply
   // itself. Otherwise, and before hydration or without scripts, the browser checks the form as before.
-  const checksItself = useHydrated() && onSubmit !== undefined && error !== undefined;
+  const checksItself = useHydrated() && onSubmit !== undefined && problem !== undefined;
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     if (!onSubmit) return;
     event.preventDefault();
     if (pending || body.trim() === '') return;
+    setMeasured(over > 0);
+    if (over > 0) return;
     try {
       await onSubmit(body);
       setBody('');
@@ -184,8 +193,8 @@ export function ReplyBar({
           // Not disabled while sending: a disabled field would drop the focus it holds.
           readOnly={pending}
           required
-          invalid={error !== undefined}
-          errorMessage={error}
+          invalid={problem !== undefined}
+          errorMessage={problem}
         />
         <Button type="submit" variant="primary" className="pb-reply__send" pending={pending} showTextWhileLoading>
           {labels.submit}

@@ -152,3 +152,40 @@ test('with an on-screen keyboard over the dock, a Tab into it keeps the scroll t
   expect(now).toBe(browserScrolled);
   await context.close();
 });
+
+test('a draft over the limit is not sent, after a refusal too: the field says by how much, and once short enough it goes', async ({
+  page,
+}) => {
+  await signedIn(page);
+  // Every reply this page sends is refused, so nothing is written and each attempt is counted.
+  let sent = 0;
+  await page.route(`**${postUrl(seed.posts.thread)}/comments`, async (route) => {
+    if (route.request().method() !== 'POST') return route.fallback();
+    sent += 1;
+    await route.fulfill({ status: 400, contentType: 'application/json', body: JSON.stringify({ error: 'rate.limited' }) });
+  });
+  await gotoHydrated(page, postUrl(seed.posts.thread));
+  const dock = page.getByRole('form', { name: 'Reply' });
+  const field = dock.getByRole('textbox', { name: 'Reply' });
+  const send = dock.getByRole('button', { name: 'Reply' });
+  await field.fill(`A reply ${seed.suffix}`);
+  await send.click();
+  await expect(dock.getByRole('alert')).toHaveText('You are commenting too fast. Wait a few minutes and try again.');
+  expect(sent).toBe(1);
+
+  // 10,005 characters, a fern among them that is two UTF-16 units and one character.
+  await field.fill(`\u{1F33F}${'a'.repeat(10_004)}`);
+  await send.click();
+  await expect(dock.getByRole('alert')).toHaveText('5 characters over the limit of 10,000. Shorten the reply to send it.');
+  await field.press('ControlOrMeta+Enter');
+  await page.waitForTimeout(200);
+  expect(sent).toBe(1);
+  // The count follows the typing.
+  await field.press('End');
+  for (let n = 0; n < 4; n += 1) await field.press('Backspace');
+  await expect(dock.getByRole('alert')).toHaveText('1 character over the limit of 10,000. Shorten the reply to send it.');
+  await field.press('Backspace');
+  await expect(dock.getByText(/over the limit/)).toHaveCount(0);
+  await send.click();
+  await expect.poll(() => sent).toBe(2);
+});

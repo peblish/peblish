@@ -1,3 +1,4 @@
+import { commentMaxLength } from '@peblish/core/comments/input';
 import { threadDisplayDepth } from '@peblish/core/comments/limits';
 import { parseSort, threadSorts } from '@peblish/core/comments/sort';
 import { Button } from '@peblish/ui/components/button';
@@ -18,6 +19,7 @@ import type { CommentView } from '@peblish/schema/views';
 import { useRouter, useRouterState } from '@tanstack/react-router';
 import { type } from 'arktype';
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
+import { translatePlural } from '../../../../../i18n/translate.ts';
 import { useTranslate } from '../../../../../i18n/use-translate.ts';
 import { useCommentThreadLabels, useReplyBarLabels } from '../../../../../shell/labels.ts';
 import { commentPath, postPath, userPath } from '../../../../../shell/paths.ts';
@@ -316,6 +318,11 @@ export function ThreadSection({ data: loaded, heading }: { data: ThreadData; hea
           onCancel={() => setTargetId(null)}
           pending={pending}
           {...(error && { error: t('comments', errorKey(error)) })}
+          limit={{
+            max: commentMaxLength,
+            over: (count) =>
+              translatePlural(locale, 'comments', 'reply.tooLong', count, { max: new Intl.NumberFormat(locale).format(commentMaxLength) }),
+          }}
         />
       ) : (
         <ReplyNotice className="th-notice" icon={data.reply === 'locked' && <LockIcon />}>
