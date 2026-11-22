@@ -107,6 +107,27 @@ test('the report queue and the modlog put their name in the view header and thei
   await page.context().close();
 });
 
+// The queue's inline filter follows the address: a community chosen in the rail shows in its select, so
+// Apply keeps it rather than going back to All.
+test('a community chosen in the queue’s rail is the inline filter’s choice, and Apply keeps it', async ({ browser }) => {
+  test.setTimeout(90_000);
+  const page = await (await browser.newContext({ storageState: session, viewport: { width: 1600, height: 900 } })).newPage();
+  await gotoHydrated(page, '/admin/reports');
+  const rail = page.getByRole('complementary', { name: 'About this place' }).getByRole('region', { name: 'Communities with reports' });
+  const first = rail.getByRole('link').first();
+  const handle = (await first.textContent())!.trim();
+  await first.click();
+  await expect(page).toHaveURL(/[?&]community=/);
+  const community = new URL(page.url()).searchParams.get('community');
+  const select = page.getByRole('main').getByRole('combobox', { name: 'Community' });
+  await expect(select).toHaveValue(community!);
+  await expect(select.locator('option:checked')).toHaveText(handle);
+  await page.getByRole('main').getByRole('button', { name: 'Apply' }).click();
+  await page.waitForURL(/[?&]community=/);
+  expect(new URL(page.url()).searchParams.get('community')).toBe(community);
+  await page.context().close();
+});
+
 // On a computer the staff tables sit whole in the frame's wide centre: neither the page nor a table's card
 // scrolls sideways (the sidebar folds itself at 1100px). The spec seeds every table but Registration's and
 // the site pages list, which may hold nothing yet.

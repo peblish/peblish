@@ -150,7 +150,9 @@ function Queue() {
             active: tab === data.tab,
           }))}
         />
-        <form method="get" action="/admin/reports" className="rq-filter">
+        {/* Keyed on the address's filter: the selects start from it, and a choice in the rail is a client navigation
+            that would otherwise leave them showing the one before, so Apply would undo it. */}
+        <form method="get" action="/admin/reports" className="rq-filter" key={`${data.community ?? ''} ${data.sort}`}>
           <input type="hidden" name="tab" value={data.tab} />
           <Select
             name="community"
