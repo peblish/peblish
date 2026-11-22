@@ -11,7 +11,7 @@ import { Text } from '@peblish/ui/components/text';
 import { createFileRoute, redirect } from '@tanstack/react-router';
 import { type } from 'arktype';
 import { useTranslate } from '../../../i18n/use-translate.ts';
-import { forbidden, formSession, principalOf, readForm, sameOrigin } from '../../../server/auth.ts';
+import { forbidden, formSession, principalOf, readForm, safeRedirect, sameOrigin } from '../../../server/auth.ts';
 import { useRouteHydrated } from '../../../shell/hydration.ts';
 import { SearchText } from '../../auth/-route.ts';
 import { answer } from '../../report/-form.ts';
@@ -78,8 +78,10 @@ export const Route = createFileRoute('/admin/reports/')({
         const form = Body(await readForm(request));
         const base = '/admin/reports';
         if (form instanceof type.errors) return answer(request, cookies, { error: 'form.invalid', back: base });
-        // The way back is a queue address (its tab, community and sort); anything else goes to the queue itself.
-        const back = form.back?.startsWith(`${base}?`) || form.back === base ? form.back : base;
+        // The way back is a queue address (its tab, community and sort), serialised by safeRedirect so a
+        // Location can carry it; anything else goes to the queue itself.
+        const checked = safeRedirect(form.back, new URL(request.url).origin);
+        const back = checked.startsWith(`${base}?`) || checked === base ? checked : base;
         if (!session) return answer(request, cookies, { redirect: `/auth/sign-in?${new URLSearchParams({ redirect: back })}` });
         const parsed = Target(form.target);
         if (parsed instanceof type.errors) return answer(request, cookies, { error: 'form.invalid', back });
