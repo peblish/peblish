@@ -6487,6 +6487,12 @@
               "nulls": "last"
             },
             {
+              "expression": "since",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
               "expression": "owner_id",
               "isExpression": false,
               "asc": true,

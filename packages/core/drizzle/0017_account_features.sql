@@ -48,4 +48,4 @@ CREATE INDEX "community_pins_community" ON "community_pins" USING btree ("commun
 CREATE INDEX "saved_posts_owner_saved" ON "saved_posts" USING btree ("owner_id","saved_at" DESC NULLS LAST,"post_id" DESC NULLS LAST);--> statement-breakpoint
 CREATE INDEX "saved_posts_post" ON "saved_posts" USING btree ("post_id");--> statement-breakpoint
 CREATE INDEX "thread_visits_post" ON "thread_visits" USING btree ("post_id");--> statement-breakpoint
-CREATE INDEX "thread_watches_post" ON "thread_watches" USING btree ("post_id","owner_id");
+CREATE INDEX "thread_watches_post" ON "thread_watches" USING btree ("post_id","since","owner_id");

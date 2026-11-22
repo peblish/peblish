@@ -1,5 +1,5 @@
 import { parseEvent } from '@peblish/schema/events';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { uuidv7 } from 'uuidv7';
 import { beforeEach, describe, expect, test } from 'vitest';
 import { writer } from '../db/write.ts';
@@ -97,4 +97,9 @@ describe('owner-only', () => {
       new Set([w.posts.local.normal]),
     );
   });
+});
+
+test("the fan-out reads a post's followers in its own order, earliest follow first, from one index", async () => {
+  const [index] = await db().execute<{ def: string }>(sql`select indexdef as def from pg_indexes where indexname = 'thread_watches_post'`);
+  expect(index?.def).toBe('CREATE INDEX thread_watches_post ON public.thread_watches USING btree (post_id, since, owner_id)');
 });
