@@ -10,7 +10,7 @@ import {
   type ComponentType,
   type ReactNode,
 } from 'react';
-import { periods, sorts } from '@peblish/core/feeds/input';
+import { defaultPageSize, defaultPeriod, defaultSort, periods, sorts } from '@peblish/core/feeds/input';
 import { EmptyState } from '@peblish/ui/components/empty-state';
 import { FactList } from '@peblish/ui/components/fact-list';
 import { FeedEnd, FeedSkip, type FeedEndState } from '@peblish/ui/components/feed-end';
@@ -39,7 +39,7 @@ import { Text } from '@peblish/ui/components/text';
 import { useToast } from '@peblish/ui/components/toast';
 import { useHydrated } from '@peblish/ui/composer/use-hydrated.ts';
 import { DensityControl, densities } from '@peblish/ui/density/density-control';
-import { getRouteApi, useLocation, useRouter } from '@tanstack/react-router';
+import { getRouteApi, useRouter } from '@tanstack/react-router';
 import { translatePlural } from '../../../i18n/translate.ts';
 import { useTranslate } from '../../../i18n/use-translate.ts';
 import { openInRouter } from '../../../shell/client-links.ts';
@@ -50,23 +50,12 @@ import { usePrefs } from '../../../shell/prefs.tsx';
 import { Rail } from '../../../shell/rail.tsx';
 import { ViewHeader } from '../../../shell/view-header.tsx';
 import { castVoteFn } from '../../post/-vote.ts';
+import type { FeedItem } from './items.ts';
 import { loadFeed, type FeedData } from './load.ts';
 import { feedTitleKeys } from './names.ts';
-import {
-  firstPlace,
-  isHeld,
-  loadNext,
-  readPlace,
-  refreshPlace,
-  revalidatePlace,
-  subscribePlaces,
-  updateRows,
-  type Batch,
-  type Place,
-  type PlaceRow,
-} from './places.ts';
 import type { FeedRoute } from './route.ts';
-import { feedHref, resolveFeedSearch, type FeedSearch } from './search.ts';
+import { feedHref, maxDepth, resolveFeedSearch, type FeedPosition, type FeedSearch } from './search.ts';
+import { acknowledgedVotes, acknowledgeVote, askedNow, noVotes, recount, subscribeVotes, withVotes } from './votes.ts';
 
 // A feed (Commons): its own view header with the feed's name and the Sort and View menus (with scripts
 // off, the sort and Top period as LinkTabs instead), the posts, which load their next batch by
@@ -87,16 +76,16 @@ const feedIcons: Record<FeedName, ComponentType<IconProps>> = {
 const sortIcons: Record<Sort, ComponentType<IconProps>> = { hot: FlameIcon, new: SortNewIcon, old: SortOldIcon, top: SortTopIcon };
 const viewIcons: Record<Density, ComponentType<IconProps>> = { card: ViewCardIcon, classic: ViewClassicIcon, compact: ViewCompactIcon };
 
-export function FeedPage({ path, data, search }: { path: string; data: FeedData; search: FeedSearch }) {
+export function FeedPage({ path, data, search }: { path: string; data: FeedData & { asked: number }; search: FeedSearch }) {
   useRouteHydrated();
   const feed = feedOf(path);
-  const { sort, period, cursor: start } = resolveFeedSearch(search);
+  const { sort, period } = resolveFeedSearch(search);
   const more = useMemo<FeedMore>(
     () => ({
-      key: feedHref(path, { sort, period, cursor: start }),
-      load: (cursor) => loadFeed({ data: { feed, sort, period, cursor } }).then(({ items, next, now }) => ({ items, next, now })),
+      load: (cursor, signal) =>
+        loadFeed({ data: { feed, sort, period, cursor }, signal }).then(({ items, next, now }) => ({ items, next, now })),
     }),
-    [path, feed, sort, period, start],
+    [feed, sort, period],
   );
   return (
     <>
@@ -255,17 +244,52 @@ export function FeedToolbar({ path, search: address, children }: { path: string;
   );
 }
 
-/** What the cards need of a page's data: the posts, the clock their ages print against, the next cursor. */
-export type FeedCardsData = Pick<FeedData, 'items' | 'next' | 'now' | 'signedIn'> & { signIn?: boolean };
+/**
+ * What the cards need of a page's data: the posts, the clock their ages print against, the next cursor; and
+ * from a feed's loader, how many rows it read (`n`) and when it was asked for (`asked`, votes.ts).
+ */
+export type FeedCardsData = Pick<FeedData, 'items' | 'next' | 'now' | 'signedIn'> & { signIn?: boolean; n?: number; asked?: number };
+
+/** A batch as the list's loader answers it. */
+export interface Batch {
+  items: readonly FeedItem[];
+  next: string | null;
+  now: string;
+}
+
+/** Auto-load for FeedCards: `load` reads the batch after a cursor, until its signal aborts. */
+export interface FeedMore {
+  load: (cursor: string, signal: AbortSignal) => Promise<Batch>;
+}
+
+/** A row and the clock its age prints against (the server's, for the answer it came with). */
+type Row = FeedItem & { now: string };
+
+/** The list beyond its page's data: the batches loaded after it (each with when it was asked for), and the next one's state. */
+interface Loaded {
+  data: FeedCardsData;
+  batches: readonly (Batch & { asked: number })[];
+  next: string | null;
+  state: 'idle' | 'pending' | 'failed';
+  /** What the list's status last said: once per batch, emptied while the next one loads. */
+  said: string;
+}
+
+const loadedFrom = (data: FeedCardsData): Loaded => ({ data, batches: [], next: data.next, state: 'idle', said: '' });
 
 /**
- * Auto-load for FeedCards: `key` names the list (its address: path, sort, period, first cursor), and
- * `load` reads the batch after a cursor. FeedCards keys the place by viewer and history entry as well.
+ * Whether a location is still the list's own (path, sort, period, first cursor; `n` aside). The router's latest
+ * location is the next page's as soon as the reader heads there, while the list is still on screen.
  */
-export interface FeedMore {
-  key: string;
-  load: (cursor: string) => Promise<Batch>;
-}
+const sameList = (
+  path: string,
+  list: FeedPosition,
+  { pathname, search }: { pathname: string; search: { sort?: unknown; period?: unknown; cursor?: unknown } },
+) =>
+  pathname === path &&
+  (search.sort ?? defaultSort) === list.sort &&
+  (search.period ?? defaultPeriod) === list.period &&
+  search.cursor === list.cursor;
 
 /** What a focus target after the list can be (Skip past the posts looks for the first one). */
 const focusable =
@@ -280,8 +304,10 @@ const focusable =
  * density while it loads, a Retry row (beside the real next-page link) when it fails, and the end line
  * when there is no more. One polite status per list says what each batch did. Skip past the posts, at
  * the list's start, moves focus to what follows the list. Before hydration, without scripts or without
- * IntersectionObserver the next page stays a plain link. The loaded rows are kept for the visit
- * (places.ts) under the history entry, so Back finds them and the router puts the scroll position back.
+ * IntersectionObserver the next page stays a plain link. The page draws what its loader answered, then
+ * the batches it loads after it; after each, the list writes how many rows it has read into its own
+ * history entry's address (`n`, search.ts), so Back, Forward or a reload reads them fresh, in one answer,
+ * and the router puts the scroll position back. Nothing of the rows is kept anywhere else.
  * With `rowActions`, each row gets Share (the system's share sheet where there is one, else the link is
  * copied) and a menu with Copy link.
  */
@@ -304,29 +330,28 @@ export function FeedCards({
   const { t, locale } = useTranslate();
   const { prefs } = usePrefs();
   const hydrated = useHydrated();
+  const router = useRouter();
   const voteFailed = useVoteFailedToast();
-  const viewer = root.useLoaderData({ select: ({ session }) => session?.actorId ?? '' });
-  const entry = useLocation({ select: (location) => location.state.__TSR_key ?? '' });
-  const key = `${viewer}\n${entry}\n${more?.key ?? ''}`;
-  const first = useMemo(() => firstPlace(data), [data]);
-  const place: Place = useSyncExternalStore(
-    subscribePlaces,
-    () => (more ? (readPlace(key) ?? first) : first),
-    () => first,
-  );
+  // A new answer from the loader (a load of this entry, another sort or feed) is the list again.
+  const [list, setList] = useState(() => loadedFrom(data));
+  if (list.data !== data) setList(loadedFrom(data));
   const auto = more !== undefined && hydrated && typeof IntersectionObserver !== 'undefined';
 
-  // A kept place shows its own rows, not the page's data. When the page's data comes again (Back reloads
-  // the first page in the background), it is the truth for its posts (refreshPlace): the same posts take
-  // their fresh state, other posts drop the kept place.
-  useEffect(() => {
-    if (more) refreshPlace(key, data);
-  }, [data, key, more]);
-  // A saved vote is written into the kept place too, so Back shows it.
-  // A take-back on content the gate now withholds answers no tally: the row keeps its counts.
-  const voted = (postId: string, myVote: -1 | 0 | 1, tally: { upvotes: number; downvotes: number } | null) => {
-    if (more) updateRows(key, postId, (row) => ({ ...row, post: { ...row.post, myVote, counts: { ...row.post.counts, ...tally } } }));
-  };
+  // Each answer's rows in order, a post an earlier one holds left out (a ranking can move a post across a
+  // cursor), each with a vote acknowledged since it was asked for. Without `asked` (a community page) the
+  // answer stands as it came.
+  const votes = useSyncExternalStore(subscribeVotes, acknowledgedVotes, noVotes);
+  const rows = useMemo(() => {
+    const seen = new Set<string>();
+    const out: Row[] = [];
+    for (const answer of [{ ...data, asked: data.asked ?? Number.POSITIVE_INFINITY }, ...list.batches])
+      for (const item of withVotes(votes, answer.items, answer.asked))
+        if (!seen.has(item.post.id)) {
+          seen.add(item.post.id);
+          out.push({ ...item, now: answer.now });
+        }
+    return out;
+  }, [data, list.batches, votes]);
 
   const box = useRef<HTMLDivElement>(null);
   const end = useRef<HTMLDivElement>(null);
@@ -336,20 +361,46 @@ export function FeedCards({
     failed: t('feeds', 'more.failed'),
   };
   // What the observer and Retry read when they fire: this render's list, not the one they were made in.
-  const latest = useRef({ key, place, more, messages });
+  const latest = useRef({ list, rows, more, messages, search });
   useLayoutEffect(() => {
-    latest.current = { key, place, more, messages };
+    latest.current = { list, rows, more, messages, search };
   });
+  // The batch on its way: a new answer from the loader, or leaving the page, gives it up.
+  const asking = useRef<AbortController | null>(null);
+  useEffect(() => () => asking.current?.abort(), [data]);
   const next = useCallback(() => {
-    const { key, place, more, messages } = latest.current;
-    if (more) loadNext(key, place, more.load, messages);
-  }, []);
-  // A list that mounts on a kept place is a return (Back or Forward): its later batches are held, unseen in
-  // their space, until the server has answered each of them again (places.ts).
+    const { list, rows, more, messages, search } = latest.current;
+    // Nothing while a batch loads, at the end, or once the router is on its way to another page.
+    if (!more || list.state === 'pending' || list.next === null || !sameList(path, search, router.latestLocation)) return;
+    const stop = new AbortController();
+    asking.current = stop;
+    const asked = askedNow();
+    setList({ ...list, state: 'pending', said: '' });
+    const same = (now: Loaded) => now.data === list.data;
+    more.load(list.next, stop.signal).then(
+      (batch) => {
+        if (stop.signal.aborted) return;
+        const shown = new Set(rows.map((row) => row.post.id));
+        const said = messages.loaded(batch.items.filter((item) => !shown.has(item.post.id)).length, batch.next === null);
+        setList((now) =>
+          same(now) ? { ...now, batches: [...now.batches, { ...batch, asked }], next: batch.next, state: 'idle', said } : now,
+        );
+      },
+      () => {
+        if (!stop.signal.aborted) setList((now) => (same(now) ? { ...now, state: 'failed', said: messages.failed } : now));
+      },
+    );
+  }, [path, router]);
+  // After each batch the list's own history entry says how many rows it has read (`n`, at most 200), replaced in
+  // place: no new entry, no scroll, and no load, since `n` is not one of the loader's deps (route.ts).
+  const batches = list.batches.length;
+  const read = Math.min(maxDepth, (data.n ?? defaultPageSize) + batches * defaultPageSize);
+  const written = address.n ?? defaultPageSize;
   useEffect(() => {
-    const { more } = latest.current;
-    return more ? revalidatePlace(key, more.load) : undefined;
-  }, [key]);
+    const { search } = latest.current;
+    if (batches === 0 || read === written || !sameList(path, search, router.latestLocation)) return;
+    void router.navigate({ href: feedHref(path, { ...search, n: read }), replace: true, resetScroll: false });
+  }, [batches, read, written, path, router]);
 
   // The observer lives with the sentinel, which mounts again after every batch, so it reports at once
   // whether the end is still near. Its margin is one screen below the window.
@@ -367,21 +418,21 @@ export function FeedCards({
   // title, or back to Retry if it failed again, but only if the reader has not moved it meanwhile.
   const retried = useRef<number | null>(null);
   const retry = () => {
-    retried.current = place.rows.length;
+    retried.current = rows.length;
     end.current?.focus({ preventScroll: true });
     next();
   };
   useEffect(() => {
     const from = retried.current;
-    if (from === null || place.state === 'pending') return;
+    if (from === null || list.state === 'pending') return;
     retried.current = null;
     if (document.activeElement !== end.current) return;
     const target =
-      place.state === 'failed'
+      list.state === 'failed'
         ? end.current?.querySelector<HTMLElement>('button')
         : box.current?.querySelectorAll('.feed-list > li')[from]?.querySelector<HTMLElement>('.pb-post__title a[href]');
     target?.focus();
-  }, [place.state, place.rows.length]);
+  }, [list.state, rows.length]);
 
   const skip = () => {
     const list = box.current;
@@ -393,8 +444,8 @@ export function FeedCards({
     (after ?? end.current)?.focus();
   };
 
-  const state: FeedEndState = place.next === null ? 'end' : place.state === 'idle' ? 'more' : place.state;
-  const nextHref = place.next ? feedHref(path, { ...search, cursor: place.next }) : undefined;
+  const state: FeedEndState = list.next === null ? 'end' : list.state === 'idle' ? 'more' : list.state;
+  const nextHref = list.next ? feedHref(path, { ...search, cursor: list.next }) : undefined;
   const firstHref = search.cursor ? feedHref(path, { ...search, cursor: undefined }) : undefined;
   return (
     <div className="feed-posts" ref={box}>
@@ -405,14 +456,14 @@ export function FeedCards({
         >
           {t('feeds', 'moderating.signIn.body')}
         </EmptyState>
-      ) : place.rows.length === 0 ? (
+      ) : rows.length === 0 ? (
         empty
       ) : (
         <>
           {auto && <FeedSkip label={t('feeds', 'skip')} onSkip={skip} />}
           <ul className="feed-list pb-rows" aria-label={t('feeds', 'list.label')}>
-            {place.rows.map((row) => (
-              <li key={row.post.id} className={isHeld(place, row) ? 'feed-row--held' : undefined} inert={isHeld(place, row)}>
+            {rows.map((row) => (
+              <li key={row.post.id}>
                 <FeedRow
                   row={row}
                   density={prefs.density}
@@ -420,7 +471,7 @@ export function FeedCards({
                   actions={rowActions}
                   hydrated={hydrated}
                   voteFailed={voteFailed}
-                  voted={voted}
+                  voted={acknowledgeVote}
                 />
               </li>
             ))}
@@ -448,7 +499,7 @@ export function FeedCards({
       )}
       {more && (
         <Text role="status" className="pb-sr">
-          {place.said}
+          {list.said}
         </Text>
       )}
     </div>
@@ -469,13 +520,13 @@ function FeedRow({
   voteFailed,
   voted,
 }: {
-  row: PlaceRow;
+  row: Row;
   density: Density;
   signedIn: boolean;
   actions: boolean;
   hydrated: boolean;
   voteFailed: () => void;
-  voted: (postId: string, myVote: -1 | 0 | 1, tally: { upvotes: number; downvotes: number } | null) => void;
+  voted: (postId: string, myVote: -1 | 0 | 1, counts: Row['post']['counts']) => void;
 }) {
   const { t, locale } = useTranslate();
   const postLabels = { ...usePostCardLabels(), voteOn: (title: string) => t('posts', 'vote.on', { title }) };
@@ -498,7 +549,12 @@ function FeedRow({
         try {
           const result = await castVoteFn({ data: { target: { kind: 'post', id: post.id }, value } });
           if (!result.ok) throw new Error(result.reason);
-          voted(post.id, result.value, result.tally);
+          // A vote on content the gate now withholds answers no tally: the row keeps the others' votes and moves the reader's.
+          voted(
+            post.id,
+            result.value,
+            result.tally ? { ...post.counts, ...result.tally } : recount(post.counts, post.myVote, result.value),
+          );
         } catch (error) {
           voteFailed();
           throw error;

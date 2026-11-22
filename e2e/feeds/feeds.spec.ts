@@ -420,7 +420,8 @@ test.describe('a viewer', () => {
     expect((await titles(page))[0]).toBe(`Followed ${seed.suffix} 20`);
     await page.getByRole('link', { name: 'Back to the first page' }).click();
     await page.waitForURL('**/?sort=new');
-    expect(await titles(page)).toEqual(first);
+    // The router changes the address before the loader answers.
+    await expect.poll(() => titles(page)).toEqual(first);
   });
 
   test('Back finds the place: the batches loaded and the scroll position', async ({ page }) => {
@@ -437,11 +438,11 @@ test.describe('a viewer', () => {
     await page.waitForURL(/\/post\//);
     await expect(page.getByRole('heading', { level: 1 })).toHaveText(title!);
     await page.goBack();
-    await page.waitForURL('**/?sort=new');
+    // Three batches read: the address holds 60 rows (the feed has 46).
+    await page.waitForURL(/\/\?sort=new&n=60$/);
+    // The loader reads the rows the address holds again (n), all at once, and the router puts the position back.
     await expect(page.locator('.feed-list > li')).toHaveCount(46);
     await expect.poll(() => page.evaluate(() => scrollY)).toBe(y);
-    // The later batches show once the server has answered each again, in the same place, and the position stays.
-    await expect(page.locator('.feed-list > li.feed-row--held')).toHaveCount(0);
     await expect(page.locator('.feed-list > li').nth(30).locator('.pb-post__title a')).toHaveText(title!);
     expect(await page.evaluate(() => scrollY)).toBe(y);
     // A new visit to the same address (not Back) starts again at the first batch.
@@ -466,7 +467,7 @@ test.describe('a viewer', () => {
     await page.waitForURL(/\/post\//);
     await expect(page.getByRole('heading', { level: 1 })).toHaveText(`Followed ${seed.suffix} 30`);
     await page.goBack();
-    await page.waitForURL('**/?sort=new');
+    await page.waitForURL(/\/\?sort=new&n=\d+$/);
     await expect(up).toHaveAttribute('aria-pressed', 'true');
     await expect(card.locator('.pb-vote__score')).toHaveText(String(score + 1));
     // Taken back, so the next run starts from the same score.

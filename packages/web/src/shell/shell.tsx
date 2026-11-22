@@ -59,10 +59,20 @@ function useFocusLostToPage(pathname: string | undefined) {
 }
 
 /**
+ * An address as the page it shows: its path and search, less a feed's depth (`n`, routes/index/-feed/search.ts),
+ * which says how many rows its list has loaded, not which page it is.
+ */
+function pageOf({ pathname, search }: { pathname: string; search: string }) {
+  const params = new URLSearchParams(search);
+  params.delete('n');
+  return `${pathname}?${params}`;
+}
+
+/**
  * Tap again for top (Commons): a press on one of the frame's own links to the page already shown (the
- * sidebar's, the drawer's, the phone's tabs, the brand) puts the page at its top, without loading it
- * again, and moves focus to its first post's title, else its main landmark, so the next Tab carries on
- * from the top rather than from the link used.
+ * sidebar's, the drawer's, the phone's tabs, the brand), a feed however deep its list has loaded, puts the
+ * page at its top, without loading it again, and moves focus to its first post's title, else its main
+ * landmark, so the next Tab carries on from the top rather than from the link used.
  */
 function useTapAgainForTop() {
   useEffect(() => {
@@ -70,7 +80,7 @@ function useTapAgainForTop() {
       if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
       const link = event.target instanceof Element ? event.target.closest('a[href]') : null;
       if (!(link instanceof HTMLAnchorElement) || !link.closest('.pb-side, .pb-nav, .pb-tabbar, .pb-brand, .pb-bar-brand')) return;
-      if (link.origin !== location.origin || link.pathname + link.search !== location.pathname + location.search) return;
+      if (link.origin !== location.origin || pageOf(link) !== pageOf(location)) return;
       event.preventDefault();
       window.scrollTo({ top: 0 });
       const main = document.querySelector<HTMLElement>('#pb-main main');
