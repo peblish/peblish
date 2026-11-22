@@ -5,7 +5,7 @@ import { sql, type SQL, type SQLWrapper } from 'drizzle-orm';
 import { authorize } from '../authz/authorize.ts';
 import { db, type Queryable } from '../db/read.ts';
 import { refusedAsResult, type Result } from '../identity/result.ts';
-import { addPin, movePin, removePin } from './mutations.ts';
+import { addPin, movePin, removePin, type MoveTo } from './mutations.ts';
 import { shownPins } from './shown.ts';
 import { communityPins } from './tables.ts';
 
@@ -51,9 +51,21 @@ export async function unpinCommunityAs(principal: Principal, { communityId }: Pi
   return refusedAsResult(() => removePin(decision.grant));
 }
 
-/** Moves a pinned community to `toPosition` (from 0) in one transaction, shifting the pins between by one. */
-export async function movePinAs(principal: Principal, { communityId, toPosition }: MovePin): Promise<Result<{ position: number }>> {
-  const decision = await authorize('pin.move', principal, { communityId });
+/**
+ * A move as web sends it: `direction`, one place up or down from the committed order (the menus'
+ * Move up and Move down), or the older `toPosition` (schema's MovePin), accepted until no page
+ * sends it.
+ */
+export type PinMove = MovePin | { communityId: Uuid; direction: 'up' | 'down' };
+
+/**
+ * Moves a pinned community in one transaction, shifting the pins between by one. Answers its new
+ * shown place and the shown order as committed (community ids), so a page can draw it and place
+ * focus without trusting what it drew before.
+ */
+export async function movePinAs(principal: Principal, input: PinMove): Promise<Result<{ position: number; order: Uuid[] }>> {
+  const decision = await authorize('pin.move', principal, { communityId: input.communityId });
   if (!decision.ok) return decision;
-  return refusedAsResult(() => movePin(decision.grant, { toPosition }));
+  const to: MoveTo = 'direction' in input ? { direction: input.direction } : { toPosition: input.toPosition };
+  return refusedAsResult(() => movePin(decision.grant, to));
 }
