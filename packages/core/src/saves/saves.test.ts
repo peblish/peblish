@@ -1,10 +1,12 @@
 import { eq } from 'drizzle-orm';
 import { beforeEach, describe, expect, test } from 'vitest';
+import { authorize } from '../authz/authorize.ts';
 import { communityBlocks, instanceBlocks, personBlocks } from '../blocks/tables.ts';
 import { db } from '../db/read.ts';
 import { actors } from '../db/tables/actors.ts';
 import { posts } from '../db/tables/content.ts';
 import { writer } from '../db/write.ts';
+import { refusedAsResult } from '../identity/result.ts';
 import { ageDeclarations } from '../identity/tables.ts';
 import { peerControls } from '../peers/tables.ts';
 import { readPost } from '../posts/read.ts';
@@ -12,6 +14,7 @@ import { truncateAll } from '../testing/db.ts';
 import { outboxEvents, seedCommunityRemoval, seedPost } from '../testing/seed-az.ts';
 import { seedActor, seedInstance } from '../testing/seed.ts';
 import { person, seedPerson } from '../testing/seed-f.ts';
+import { addSave } from './mutations.ts';
 import { readSaved } from './read.ts';
 import { savedAmong, savePostAs, unsavePostAs } from './saves.ts';
 import { savedPosts } from './tables.ts';
@@ -78,6 +81,34 @@ describe('save.add and save.remove', () => {
     await writer().update(posts).set({ removedAt: new Date() }).where(eq(posts.id, post.id));
     expect(await unsavePostAs(person(w.ann.id), { postId: post.id })).toEqual({ ok: true, saved: false });
     expect(await rowsOf(w.ann.id)).toHaveLength(0);
+  });
+
+  test('a gated post is not found for someone without the 16+ declaration, then and inside the write; Unsave stays open', async () => {
+    const w = await world();
+    const dark = await seedActor(w.local, 'Group', 'dark', { sensitive: true });
+    const gated = [
+      await seedPost(w.local, w.news, w.cat, { sensitive: true }),
+      await seedPost(w.local, w.news, w.cat, { nsfl: true }),
+      await seedPost(w.local, dark, w.cat),
+    ];
+    const plain = await seedPost(w.local, w.news, w.cat);
+    // Ben has not declared: the post page would show him the age gate, so a save answers as for a missing post.
+    for (const { id } of gated)
+      expect(await savePostAs(person(w.ben.id), { postId: id })).toEqual({ ok: false, reason: 'target.not_found' });
+    expect(await savePostAs(person(w.ben.id), { postId: plain.id })).toEqual({ ok: true, saved: true });
+    // Ann has: she saves them as before.
+    for (const { id } of gated) expect(await savePostAs(person(w.ann.id), { postId: id })).toEqual({ ok: true, saved: true });
+
+    // Rechecked inside the transaction: a declaration gone between authorize() and the write refuses.
+    const late = await seedPost(w.local, w.news, w.cat, { sensitive: true });
+    const decision = await authorize('save.add', person(w.ann.id), { postId: late.id });
+    expect(decision.ok).toBe(true);
+    await writer().delete(ageDeclarations).where(eq(ageDeclarations.actorId, w.ann.id));
+    if (decision.ok) expect(await refusedAsResult(() => addSave(decision.grant))).toEqual({ ok: false, reason: 'target.not_found' });
+    // Unsave of a post she may no longer open still works by id.
+    for (const { id } of gated) expect(await unsavePostAs(person(w.ann.id), { postId: id })).toEqual({ ok: true, saved: false });
+    expect(await rowsOf(w.ann.id)).toEqual([]);
+    expect((await saveEvents()).filter((event) => (event as { postId: string }).postId === late.id)).toEqual([]);
   });
 });
 

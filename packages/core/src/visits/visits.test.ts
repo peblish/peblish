@@ -1,14 +1,18 @@
 import type { Uuid } from '@peblish/schema/ids';
 import { and, eq } from 'drizzle-orm';
 import { beforeEach, describe, expect, test } from 'vitest';
+import { authorize } from '../authz/authorize.ts';
 import { instanceBlocks, personBlocks } from '../blocks/tables.ts';
 import { readThread } from '../comments/read.ts';
 import { db } from '../db/read.ts';
 import { writer } from '../db/write.ts';
+import { refusedAsResult } from '../identity/result.ts';
+import { ageDeclarations } from '../identity/tables.ts';
 import type { Viewer } from '../posts/read.ts';
 import { truncateAll } from '../testing/db.ts';
 import { outboxEvents, seedComment, seedCommunityRemoval, seedPost } from '../testing/seed-az.ts';
 import { localUser, seedActor, seedInstance } from '../testing/seed.ts';
+import { recordVisit } from './record.ts';
 import { threadVisits } from './tables.ts';
 import { recordVisitAs, threadVisit } from './visits.ts';
 
@@ -188,5 +192,26 @@ describe('recording is refused', () => {
     await seedCommunityRemoval(news);
     expect(await recordVisitAs(localUser(alice.id), { postId: post.id })).toEqual({ ok: false, reason: 'target.not_found' });
     expect(await visitEvents()).toHaveLength(1);
+  });
+
+  test('for a gated post without the 16+ declaration, then and inside the write; a declared reader records as before', async () => {
+    const { here, alice, bob, news } = await world();
+    const dark = await seedActor(here, 'Group', 'dark', { nsfl: true });
+    const gated = [await seedPost(here, news, alice, { sensitive: true }), await seedPost(here, dark, alice)];
+    for (const { id } of gated)
+      expect(await recordVisitAs(localUser(bob.id), { postId: id })).toEqual({ ok: false, reason: 'target.not_found' });
+
+    await writer().insert(ageDeclarations).values({ actorId: bob.id });
+    for (const { id } of gated) expect(await recordVisitAs(localUser(bob.id), { postId: id })).toEqual({ ok: true, recorded: true });
+
+    // A declaration gone between authorize() and the write refuses inside the transaction.
+    const late = await seedPost(here, news, alice, { sensitive: true });
+    const decision = await authorize('visit.record', localUser(bob.id), { postId: late.id });
+    expect(decision.ok).toBe(true);
+    await writer().delete(ageDeclarations).where(eq(ageDeclarations.actorId, bob.id));
+    if (decision.ok)
+      expect(await refusedAsResult(() => recordVisit(decision.grant, undefined))).toEqual({ ok: false, reason: 'target.not_found' });
+    expect(await markerOf(bob.id, late.id)).toBeUndefined();
+    expect(await visitEvents()).toHaveLength(2);
   });
 });
