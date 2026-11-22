@@ -503,6 +503,8 @@ function FeedRow({
         actions && (
           <FeedRowActions
             labels={{ more: t('feeds', 'row.more', { title: post.title }), list: t('feeds', 'row.list'), copy: t('feeds', 'row.copy') }}
+            publishedAt={post.publishedAt}
+            locale={locale}
             onCopy={() => void copy()}
             status={status}
             disabled={!hydrated}

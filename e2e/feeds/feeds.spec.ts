@@ -544,6 +544,37 @@ test.describe('a viewer', () => {
     expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(new URL(href!, baseURL).href);
   });
 
+  test("a row's exact date and time heads its menu, by keyboard and by touch, with no stop of its own", async ({
+    page,
+    browser,
+    baseURL,
+  }) => {
+    const title = `Followed ${seed.suffix} 01`;
+    await signedIn(page, seed.viewer.name);
+    await gotoHydrated(page, '/?sort=new');
+    const card = page.locator('.feed-list article', { hasText: title });
+    const exact = (await card.locator('time').first().getAttribute('title'))!;
+    expect(exact).toMatch(/\d{4}/);
+    await card.getByRole('button', { name: `More actions for ${title}` }).focus();
+    await page.keyboard.press('Enter');
+    // Mux names the menu by its trigger.
+    const menu = page.getByRole('menu', { name: `More actions for ${title}` });
+    await expect(menu).toContainText(exact);
+    // The date is the menu's heading, not one of its actions.
+    await expect(menu.getByRole('menuitem', { name: exact })).toHaveCount(0);
+    await page.keyboard.press('Escape');
+
+    const phone = await (await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, baseURL })).newPage();
+    await signedIn(phone, seed.viewer.name);
+    await gotoHydrated(phone, '/?sort=new');
+    await phone
+      .locator('.feed-list article', { hasText: title })
+      .getByRole('button', { name: `More actions for ${title}` })
+      .tap();
+    await expect(phone.getByRole('menu', { name: `More actions for ${title}` })).toContainText(exact);
+    await phone.context().close();
+  });
+
   test('Share opens the system share sheet where there is one, and a cancel says nothing', async ({ page, baseURL }) => {
     await page.addInitScript(() => {
       const shared: unknown[] = [];

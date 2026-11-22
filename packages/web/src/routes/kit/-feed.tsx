@@ -67,7 +67,7 @@ function View({ disabled }: { disabled?: boolean }) {
 }
 
 function RowActions({ copied = false, disabled }: { copied?: boolean; disabled?: boolean }) {
-  const { t } = useTranslate();
+  const { t, locale } = useTranslate();
   return (
     <span className="pb-post__actions">
       <FeedRowActions
@@ -76,6 +76,8 @@ function RowActions({ copied = false, disabled }: { copied?: boolean; disabled?:
           list: t('feeds', 'row.list'),
           copy: t('feeds', 'row.copy'),
         }}
+        publishedAt="2026-11-03T23:30:00.000Z"
+        locale={locale}
         onCopy={() => undefined}
         status={copied ? t('feeds', 'row.copied') : ''}
         disabled={disabled}
