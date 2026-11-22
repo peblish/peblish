@@ -30,6 +30,7 @@ import { clearDraft, readDraft, removeUnscopedDrafts, writeDraft } from './draft
 import { ErrorText } from './error-text.tsx';
 import { ComposerField } from './field.tsx';
 import { ImageField } from './image-field.tsx';
+import { directoryPaths } from '../../../shell/paths.ts';
 import { useEditorLabels } from './labels.ts';
 
 const Answer = type({ 'redirect?': 'string', 'error?': 'string' });
@@ -200,6 +201,26 @@ export function Composer({ data, error: initialError, onDone, onDiscard, keepOnC
     setForm({ ...form, ...draft, community: id });
   }
 
+  /** The field emptied: no community, so no rules beside the form. */
+  function unchoose() {
+    ++panelRequest.current;
+    setPanel(null);
+    setForm((current) => ({ ...current, community: null }));
+  }
+
+  /**
+   * Off to the directory to find a community: what was typed waits in this browser's drafts under no community, where
+   * Create post opened with none chosen looks (one opened from a community's page reads that community's draft).
+   */
+  function browse() {
+    if (!edit && !pristine(form) && form.type !== 'image') {
+      writeDraft({ actorId, community: null }, { type: form.type, title: form.title, url: form.url, body: form.body, nsfw: form.nsfw });
+    }
+    // Kept here, so the sheet closing behind it does not keep a second copy under the community chosen.
+    finished.current = true;
+    onDone(directoryPaths.browse);
+  }
+
   function change(patch: Partial<Form>) {
     typed.current = true;
     setError(undefined);
@@ -305,7 +326,13 @@ export function Composer({ data, error: initialError, onDone, onDiscard, keepOnC
           </>
         ) : (
           <>
-            <CommunityPicker communities={data.communities} value={form.community} onChange={choose} error={fieldError('community')} />
+            <CommunityPicker
+              communities={data.communities}
+              value={form.community}
+              onChange={(id) => (id === null ? unchoose() : choose(id))}
+              onBrowse={browse}
+              error={fieldError('community')}
+            />
             {inlineRules}
             {/* Real radios: the choice posts without JavaScript, and the CSS shows each type's fields by the checked one. */}
             <RadioGroup

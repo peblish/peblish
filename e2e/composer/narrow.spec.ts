@@ -1,6 +1,6 @@
 import { expect, test, type BrowserContext, type Locator } from '@playwright/test';
 import { gotoHydrated } from '../support/route-marker.ts';
-import { choose, community, radioLabel, seed, type Seed, signedIn } from './support.ts';
+import { choose, community, openCommunities, seed, type Seed, signedIn } from './support.ts';
 
 // The composer on a 320px screen: a community name or handle with no break in it wraps inside
 // the picker's row and the rules aside's Card instead of running past them or being cut off.
@@ -29,13 +29,15 @@ async function inside(element: Locator, within: Locator) {
 test('a long community name or handle wraps in the picker and in the rules aside', async () => {
   const page = await poster.newPage();
   await gotoHydrated(page, '/submit');
-  const options = page.locator('.cmp__options');
+  await openCommunities(page);
+  const options = page.getByRole('listbox');
   for (const handle of [world.communities.long.handle, world.communities.farAway.handle]) {
-    const row = radioLabel(community(page, handle));
+    const row = community(page, handle);
     await row.scrollIntoViewIfNeeded();
     await inside(row.locator('.pb-handle'), options);
     await inside(row, options);
   }
+  await page.keyboard.press('Escape');
   await choose(page, world.communities.long.handle);
   const aside = page.getByRole('complementary', { name: 'Community rules' });
   // On a phone the rules sit under the picker, in Create post's rail panel (RailPanel).
