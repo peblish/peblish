@@ -17,12 +17,12 @@ import { Time } from '@peblish/ui/components/time';
 import { useHydrated } from '@peblish/ui/composer/use-hydrated.ts';
 import { useRouter } from '@tanstack/react-router';
 import { type } from 'arktype';
-import { useState, type FormEvent } from 'react';
+import { useState, type FormEvent, type ReactNode } from 'react';
 import { translatePlural } from '../../../i18n/translate.ts';
 import { useTranslate } from '../../../i18n/use-translate.ts';
 import { useRouteHydrated } from '../../../shell/hydration.ts';
-import { commentPath, communityPath, modlogEntryPath, postPath } from '../../../shell/paths.ts';
-import { ViewHeader } from '../../../shell/view-header.tsx';
+import { commentPath, communityPath, inboxPath, modlogEntryPath, postPath } from '../../../shell/paths.ts';
+import { useHeadingInView, ViewHeader } from '../../../shell/view-header.tsx';
 import { asCommentError, errorKey, type CommentError } from '../../post/$id/comments/-ui/errors.ts';
 import type { InboxData } from '../-load.ts';
 import { inboxAction, inboxHref, type InboxSearch } from '../-search.ts';
@@ -47,8 +47,8 @@ function unreadFor(filter: InboxFilter, inbox: Signed): number {
 const errorKeys = ['auth.required', 'auth.site_banned', 'notification.not_yours', 'target.not_found', 'invalid'] as const;
 
 /**
- * The page's title: the h1 and, beside it, the unread count. It heads the page rather than the view
- * header, whose title stays quiet: beside a long site name on a phone the bar has no room for it.
+ * The page's title: the h1 and, beside it, the unread count. It heads the page; the view header shows the
+ * page's name once the h1 has scrolled under it (InboxHeader).
  */
 function Title({ unread }: { unread?: number }) {
   const { t, locale } = useTranslate();
@@ -66,13 +66,31 @@ function Title({ unread }: { unread?: number }) {
   );
 }
 
+/** The inbox's view header: its name, once the page's h1 has scrolled under it, and `trailing`. */
+function InboxHeader({ trailing }: { trailing?: ReactNode }) {
+  const { t } = useTranslate();
+  const quiet = useHeadingInView(inboxPath);
+  return (
+    <ViewHeader
+      root
+      quiet={quiet}
+      title={
+        <Text variant="label" truncate className="pb-frame-vh__title">
+          {t('notifications', 'title')}
+        </Text>
+      }
+      trailing={trailing}
+    />
+  );
+}
+
 export function Inbox({ data, search }: { data: InboxData; search: InboxSearch }) {
   const { t } = useTranslate();
   useRouteHydrated();
   if (!data.signedIn)
     return (
       <main className="pb-inbox">
-        <ViewHeader root quiet />
+        <InboxHeader />
         <div className="pb-page pb-inbox__body">
           <Title />
           <EmptyState
@@ -127,9 +145,7 @@ function SignedInbox({ data, search }: { data: Signed; search: InboxSearch }) {
 
   return (
     <main className="pb-inbox">
-      <ViewHeader
-        root
-        quiet
+      <InboxHeader
         trailing={
           <form method="post" action={inboxAction({ intent: 'read_all' }, page)} onSubmit={submit} className="pb-inbox__all">
             {/* On a phone its name gives way to its icon (inbox.css); the name stays for assistive technology. */}

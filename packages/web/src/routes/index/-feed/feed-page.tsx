@@ -51,6 +51,7 @@ import { Rail } from '../../../shell/rail.tsx';
 import { ViewHeader } from '../../../shell/view-header.tsx';
 import { castVoteFn } from '../../post/-vote.ts';
 import { loadFeed, type FeedData } from './load.ts';
+import { feedTitleKeys } from './names.ts';
 import { firstPlace, loadNext, readPlace, subscribePlaces, updateRows, type Batch, type Place, type PlaceRow } from './places.ts';
 import type { FeedRoute } from './route.ts';
 import { feedHref, resolveFeedSearch, type FeedSearch } from './search.ts';
@@ -62,14 +63,6 @@ import { feedHref, resolveFeedSearch, type FeedSearch } from './search.ts';
 // and the rows' Share and Copy link (`rowActions`) only when asked, and is otherwise as it was.
 
 const root = getRouteApi('__root__');
-
-const feedTitleKeys = {
-  subscribed: 'feed.subscribed',
-  local: 'feed.local',
-  all: 'feed.all',
-  popular: 'feed.popular',
-  moderating: 'feed.moderating',
-} as const;
 
 const feedIcons: Record<FeedName, ComponentType<IconProps>> = {
   subscribed: HouseIcon,

@@ -394,6 +394,13 @@
     z-index: 2;
   }
 
+  /* A route's own view header at the head of its page (a feed's, the directory's) runs the column's width
+     from its top, through the page's padding, as the frame's own bar does. */
+  .pb-page > .pb-frame-vh:first-child {
+    margin-block-start: calc(-1 * var(--muxui-semantic-layout-inset-small));
+    margin-inline: calc(-1 * var(--muxui-semantic-layout-inset-large));
+  }
+
   .pb-frame-vh__home,
   .pb-frame-vh__menu {
     display: none;
@@ -524,7 +531,8 @@
       padding-inline: var(--muxui-semantic-layout-inset-medium);
     }
 
-    .pb-page .pb-rows {
+    .pb-page .pb-rows,
+    .pb-page > .pb-frame-vh:first-child {
       margin-inline: calc(-1 * var(--muxui-semantic-layout-inset-medium));
     }
 
@@ -539,8 +547,11 @@
       display: contents;
     }
 
-    /* The brand on the phone's top bar: the mark, or the site's name, in a 44px target. */
+    /* The brand on the phone's top bar: the mark, or the site's name, in a 44px target. A name is what gives
+       way in the bar: at most 40% of the window, and a longer one ends in an ellipsis, so the page never
+       scrolls sideways and the finder, the menu and a page's actions keep their size. */
     .pb-bar-brand {
+      max-inline-size: 40vw;
       min-block-size: var(--pb-touch);
       min-inline-size: var(--pb-touch);
       justify-content: center;

@@ -38,6 +38,15 @@
     min-inline-size: 0;
   }
 
+  /* A phone title (phoneTitle) takes the title's place below 860px; whichever shows lays out as the title. */
+  .pb-vh__title-desktop {
+    display: contents;
+  }
+
+  .pb-vh__title-phone {
+    display: none;
+  }
+
   /* Quiet, the title takes no room and nothing needs centring: the start takes what the end leaves. */
   .pb-vh__title[data-quiet] {
     display: none;
@@ -59,6 +68,14 @@
   @media (max-width: 859.98px) {
     .pb-vh {
       min-block-size: calc(var(--pb-touch) + var(--muxui-semantic-layout-inset-tight));
+    }
+
+    .pb-vh__title-desktop {
+      display: none;
+    }
+
+    .pb-vh__title-phone {
+      display: contents;
     }
   }
 }

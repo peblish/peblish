@@ -148,11 +148,12 @@ export function Shell({ children }: { children: ReactNode }) {
   const { session, shell, side } = root.useLoaderData();
   const { t } = useTranslate();
   const pathname = useRouterState({ select: (state) => state.location.pathname });
-  // A route that renders its own view header says so (view-header.tsx); a page that failed shows the error page instead.
+  // A route that renders its own view header says so (view-header.tsx), and its loading host renders one too, so
+  // the default bar never shows while it loads; a page that failed shows the error page, under the default bar.
   const ownHeader = useRouterState({
     select: (state) => {
       const last = state.matches.at(-1);
-      return last?.status === 'success' && last.staticData.viewHeader === 'own';
+      return (last?.status === 'success' || last?.status === 'pending') && last.staticData.viewHeader === 'own';
     },
   });
   useFocusLostToPage(useRouterState({ select: (state) => state.resolvedLocation?.pathname }));
