@@ -16,13 +16,14 @@ import { threadVisits } from './tables.ts';
 // (comments.created_at) after the boundary of the viewer's marker, by someone else, live, and
 // not by someone the viewer blocks.
 //
-// A visit lasts `visitWindow`: a marker written within it is this visit's, older is an earlier
-// one. The page's own read runs before its visit is recorded, and a re-sort, a next page or the
-// reload after a reply runs after, so the boundary is the marker's previous_visit_at while the
-// marker is this visit's and its last_visit_at while it is an earlier one's: either way the
-// visit before this one, and the markers stay put for the whole visit. Recording rotates
-// last_visit_at into previous_visit_at only once a window has passed. Both sides compare on the
-// database clock, in SQL, so no time loses precision in a round trip.
+// A visit lasts `visitWindow` from its start: a marker written within it is this visit's, older
+// is an earlier one. The page's own read runs before its visit is recorded, and a re-sort, a
+// next page or the reload after a reply runs after, so the boundary is the marker's
+// previous_visit_at while the marker is this visit's and its last_visit_at while it is an
+// earlier one's: either way the visit before this one, and the markers stay put for the whole
+// visit. Recording rotates last_visit_at into previous_visit_at only once the window has passed
+// (record.ts). Both sides compare on the database clock, in SQL, so no time loses precision in a
+// round trip.
 
 /** The marker row's boundary (alias `v`): the visit before the current one; null on a first visit. */
 const newBoundary = sql`case when v.last_visit_at > now() - ${visitWindow} then v.previous_visit_at else v.last_visit_at end`;
@@ -84,9 +85,10 @@ export async function threadVisit(
 }
 
 /**
- * Records that the principal opened the thread of `postId` now. `recorded` is false when the
- * marker was already written a moment ago (a reload), which writes and emits nothing. Called
- * only by web's POST from a page on screen: never by a prefetch, a HEAD or a visitor without a session.
+ * Records that the principal opened the thread of `postId` now. `recorded` is false within a
+ * visit already recorded (a reload, a return a few minutes later), which writes and emits
+ * nothing. Called only by web's POST from a page on screen: never by a prefetch, a HEAD or a
+ * visitor without a session.
  */
 export async function recordVisitAs(principal: Principal, input: { postId: Uuid }): Promise<Result<{ recorded: boolean }>> {
   const decision = await authorize('visit.record', principal, { postId: input.postId });

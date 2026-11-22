@@ -94,7 +94,7 @@ describe('a visit', () => {
     expect(await newIds(post.id, as(alice.id))).toMatchObject({ count: 1, ids: [fresh.id] });
   });
 
-  test('recording it keeps the markers for the rest of the visit, and a reload a moment later writes nothing', async () => {
+  test('recording it keeps the markers for the rest of the visit, and recording again within it writes nothing', async () => {
     const { here, alice, bob, post } = await world();
     await recordVisitAs(localUser(alice.id), { postId: post.id });
     await visitedAgo(alice.id, post.id, 120);
@@ -114,6 +114,25 @@ describe('a visit', () => {
       .set({ lastVisitAt: ago(45) })
       .where(eq(threadVisits.ownerId, alice.id));
     expect(await newIds(post.id, as(alice.id))).toMatchObject({ count: 0, ids: [] });
+  });
+
+  test('the visit counts from its start: a return within it records nothing, one after it rotates', async () => {
+    const { here, alice, bob, post } = await world();
+    await recordVisitAs(localUser(alice.id), { postId: post.id });
+    await visitedAgo(alice.id, post.id, 20);
+    const twentyAgo = await markerOf(alice.id, post.id);
+    expect(await recordVisitAs(localUser(alice.id), { postId: post.id })).toEqual({ ok: true, recorded: false });
+    expect(await markerOf(alice.id, post.id)).toEqual(twentyAgo);
+
+    // A reader who keeps coming back still gets a new visit once the window has passed since this one began.
+    const fresh = await seedComment(here, post, bob, { createdAt: ago(10) });
+    await visitedAgo(alice.id, post.id, 40);
+    expect(await newIds(post.id, as(alice.id))).toMatchObject({ count: 1, ids: [fresh.id] });
+    expect(await recordVisitAs(localUser(alice.id), { postId: post.id })).toEqual({ ok: true, recorded: true });
+    const rotated = await markerOf(alice.id, post.id);
+    expect(rotated?.previousVisitAt && Math.abs(rotated.previousVisitAt.getTime() - ago(40).getTime())).toBeLessThan(5_000);
+    expect(await newIds(post.id, as(alice.id))).toMatchObject({ count: 1, ids: [fresh.id] });
+    expect(await visitEvents()).toHaveLength(2);
   });
 
   test('the count covers the whole thread, the marks only the page given', async () => {
