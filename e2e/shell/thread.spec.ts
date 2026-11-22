@@ -106,3 +106,29 @@ test("plain links in the app's own components navigate in the page too", async (
   await page.waitForURL('**/kit');
   expect(await page.evaluate(() => (window as unknown as { __survives?: boolean }).__survives)).toBe(true);
 });
+
+test('a comment’s exact date and time is at the head of its menu, by keyboard and by touch, with no stop of its own', async ({
+  page,
+  browser,
+  baseURL,
+}) => {
+  await gotoHydrated(page, '/kit');
+  const thread = page.getByTestId('kit-thread');
+  const first = thread.locator('.pb-comment').first();
+  const exact = (await first.locator('> .pb-comment__head time').first().getAttribute('title'))!;
+  expect(exact).toMatch(/\d{4}/);
+  await first.locator('> .pb-comment__main > .pb-comment__actions').getByRole('button', { name: 'More actions' }).focus();
+  await page.keyboard.press('Enter');
+  const menu = page.getByRole('menu', { name: 'Comment actions' });
+  await expect(menu).toContainText(exact);
+  // The date is the menu's heading, not one of its actions.
+  await expect(menu.getByRole('menuitem', { name: exact })).toHaveCount(0);
+  await page.keyboard.press('Escape');
+
+  const phone = await (await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, baseURL })).newPage();
+  await gotoHydrated(phone, '/kit');
+  const row = phone.getByTestId('kit-thread').locator('.pb-comment').first();
+  await row.locator('> .pb-comment__main > .pb-comment__actions').getByRole('button', { name: 'More actions' }).tap();
+  await expect(phone.getByRole('menu', { name: 'Comment actions' })).toContainText(exact);
+  await phone.close();
+});

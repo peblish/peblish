@@ -519,18 +519,22 @@ export const CommentThread = memo(function CommentThread({
         >
           <Menu.Popup anchorRef={anchor} placement="bottom-end">
             <Menu.List aria-label={labels.menu ?? labels.more}>
-              {canCopy && (
-                <Menu.Item id="copy" textValue={labels.copyLink} onAction={() => void run('copy')}>
-                  <LinkIcon className="pb-comment__menu-icon" />
-                  {labels.copyLink}
-                </Menu.Item>
-              )}
-              {canShare && canShareNatively() && (
-                <Menu.Item id="share" textValue={labels.share} onAction={() => void run('share')}>
-                  <ShareIcon className="pb-comment__menu-icon" />
-                  {labels.share}
-                </Menu.Item>
-              )}
+              {/* The comment's exact date and time at the menu's head: the row shows its age, whose title only a
+                  pointer reaches, and the menu is already one stop per comment, by keyboard and by touch. */}
+              <Menu.Section title={<Time iso={menu.comment.publishedAt} locale={locale} format="date-time" />}>
+                {canCopy && (
+                  <Menu.Item id="copy" textValue={labels.copyLink} onAction={() => void run('copy')}>
+                    <LinkIcon className="pb-comment__menu-icon" />
+                    {labels.copyLink}
+                  </Menu.Item>
+                )}
+                {canShare && canShareNatively() && (
+                  <Menu.Item id="share" textValue={labels.share} onAction={() => void run('share')}>
+                    <ShareIcon className="pb-comment__menu-icon" />
+                    {labels.share}
+                  </Menu.Item>
+                )}
+              </Menu.Section>
             </Menu.List>
           </Menu.Popup>
         </Menu.Root>
