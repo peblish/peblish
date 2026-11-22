@@ -109,6 +109,37 @@ describe('a deleted comment', () => {
   });
 });
 
+// The thread names the author of a comment a moderator removed, and of one by someone the
+// viewer blocks: both keep their author line (the UI's own tests). Their text is withheld, so a
+// removed comment's own address, where a peer may still serve the text, is not sent either.
+describe('a removed comment, and one by someone the viewer blocks', () => {
+  const removedId = '019a0000-0000-7000-8000-00000000c003';
+  const blockedId = '019a0000-0000-7000-8000-00000000c004';
+  beforeEach(() => {
+    thread.comments = [
+      { view: comment(removedId, alice, { removed: true }), body: null, removal: null },
+      { view: comment(blockedId, alice, { blocked: true }), body: null, removal: null },
+    ];
+  });
+  const original = (id: string) => `${alice.apId}/statuses/${id}`;
+
+  test('keep their author line; the removed one goes without its own address', async () => {
+    const data = await load(pageOf({}), reader);
+    const [removed, blocked] = data?.comments ?? [];
+    expect([removed?.author, blocked?.author]).toEqual([alice, alice]);
+    expect(removed?.apId).toBe(`https://feddit.test/ap/comment/${removedId}`);
+    expect(JSON.stringify(removed)).not.toContain(original(removedId));
+    // The viewer's own block hides nothing anyone else withholds: as before.
+    expect(blocked).toEqual({ ...thread.comments[1]!.view, contentHtml: null });
+  });
+
+  test('are as before for the moderators and the author', async () => {
+    for (const data of [await load(pageOf({}, true), reader), await load(pageOf({}), alice.id)]) {
+      expect(data?.comments.map(({ apId }) => apId)).toEqual([original(removedId), original(blockedId)]);
+    }
+  });
+});
+
 describe('a deleted post', () => {
   test('its author is not named through the badge its comments would carry', async () => {
     const data = await load(pageOf({ deleted: true }), reader);
