@@ -235,16 +235,19 @@ function MoveButtons({
 
 /**
  * The viewer's pinned communities above the directory, in their order (the sidebar's), in the view the
- * page shows: each with Move up, Move down and Pin. `onStatus` takes the words of where a row went, for a
- * polite status the page keeps outside the group, as the group goes with its last pin.
+ * page shows: each with Move up and Move down unless `movable` is false (the page leaves a pin out), and
+ * Pin. `onStatus` takes the words of where a row went, for a polite status the page keeps outside the
+ * group, as the group goes with its last pin.
  */
 export function PinnedGroup({
   pinned,
+  movable = true,
   view,
   next,
   onStatus,
 }: {
   pinned: readonly ShellCommunity[];
+  movable?: boolean;
   view: CommunityView;
   next: string;
   onStatus: (message: string) => void;
@@ -264,7 +267,9 @@ export function PinnedGroup({
       meta: <Handle prefix="!" handle={community.handle} />,
       action: (
         <span className="dir-pin__actions">
-          <MoveButtons community={community} place={place} total={pinned.length} next={next} idFor={idFor} onStatus={onStatus} />
+          {movable && (
+            <MoveButtons community={community} place={place} total={pinned.length} next={next} idFor={idFor} onStatus={onStatus} />
+          )}
           <PinToggle
             community={community}
             pinned

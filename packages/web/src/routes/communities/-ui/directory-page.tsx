@@ -79,8 +79,10 @@ export function DirectoryPage({ data, error: fromAddress }: { data: DirectoryDat
   const current = directoryHref(here, query);
   const now = new Date(data.now);
   const pinned = new Set(data.pinned);
-  // The viewer's pinned communities, in the sidebar's order, above the first page of an unfiltered list.
-  const pins = useShellPins();
+  // The viewer's pinned communities, in the sidebar's order, above the first page of an unfiltered list, in the
+  // list's scope: under Local, the local ones. Every pin the shell has, so a pin past this page still shows.
+  const shellPins = useShellPins();
+  const pins = shellPins.filter((community) => query.scope !== 'local' || community.local);
   const showPins = data.signedIn && pins.length > 0 && data.page === 1 && query.q === '';
   // Where a pinned row went, said politely; kept here, as the group goes with its last pin.
   const [pinStatus, setPinStatus] = useState('');
@@ -213,7 +215,10 @@ export function DirectoryPage({ data, error: fromAddress }: { data: DirectoryDat
           </Notice>
         )}
 
-        {showPins && <PinnedGroup pinned={pins} view={view} next={current} onStatus={setPinStatus} />}
+        {showPins && (
+          // A move goes one place in the whole order: past a pin the scope hides, it would seem to do nothing.
+          <PinnedGroup pinned={pins} movable={pins.length === shellPins.length} view={view} next={current} onStatus={setPinStatus} />
+        )}
         {data.signedIn && (
           <Text role="status" className="pb-sr">
             {pinStatus}
