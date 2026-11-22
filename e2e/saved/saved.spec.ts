@@ -333,3 +333,36 @@ test('two Unsaves at once both leave the list, and focus lands on a row that sta
   await expect(page.getByRole('link', { name: third!, exact: true })).toBeFocused();
   await page.unroute('**/saved');
 });
+
+test('with scripts off, a feed row’s Save is a plain form that comes back to the same feed address', async ({ browser, baseURL }) => {
+  const { context, page } = await contextFor(browser, baseURL!, seed.owner, false);
+  const control = (name: string) => page.getByRole('button', { name: new RegExp(`^(Save|Unsave) ${name}$`) });
+  // Whichever the post's state is now, the form turns it and lands on the address it was sent from.
+  const turn = async (address: string, name: string) => {
+    await page.goto(address);
+    const before = (await control(name).getAttribute('aria-label'))!;
+    await control(name).click();
+    await expect(page).toHaveURL(address);
+    await expect(control(name)).toHaveAccessibleName(before.startsWith('Save') ? `Unsave ${name}` : `Save ${name}`);
+  };
+  await turn('/all?sort=new', title(25));
+  await turn('/all?sort=new', title(25));
+
+  // A later page of the feed, its cursor and all.
+  await page.goto('/all?sort=new');
+  await page.getByRole('link', { name: 'Next page' }).click();
+  const later = page.url().slice(baseURL!.length);
+  expect(later).toContain('cursor=');
+  const name = (await page.locator('.feed-list .pb-post__title a').first().textContent())!;
+  await turn(later, name);
+  await turn(later, name);
+  await context.close();
+
+  // With scripts, once hydrated, the menu is the one way to Save.
+  const { context: live, page: hydrated } = await contextFor(browser, baseURL!, seed.owner);
+  await gotoHydrated(hydrated, '/all?sort=new');
+  const row = hydrated.locator('.feed-list > li').filter({ hasText: title(25) });
+  await expect(row.getByRole('button', { name: new RegExp(`^(Save|Unsave) ${title(25)}$`) })).toHaveCount(0);
+  await expect(row.getByRole('button', { name: `More actions for ${title(25)}` })).toBeEnabled();
+  await live.close();
+});

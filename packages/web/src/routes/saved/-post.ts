@@ -9,7 +9,7 @@ import { savedPath } from '../../shell/paths.ts';
 // the enhanced controls ask for JSON and get { saved } or { error }. The owner is the session's
 // person and nothing else: the form names only the post.
 
-const Body = type({ intent: "'save' | 'unsave'", postId: 'string.uuid', 'back?': 'string <= 500' });
+const Body = type({ intent: "'save' | 'unsave'", postId: 'string.uuid', 'back?': 'string <= 2000' });
 
 const wantsJson = (request: Request) => request.headers.get('accept')?.includes('application/json') ?? false;
 

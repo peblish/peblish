@@ -5,8 +5,9 @@ import { galleryStates, stateProblems } from '../support/states.ts';
 
 // The saves lane's compositions through the shared state helper, in light and dark, under forced colours
 // and reduced motion and at a phone's width: the post page's Save and Unsave (saved, pending, refused), a
-// Saved row's Unsave, the feed row menu with Save, and the Saved page's empty state and page links. Controls
-// are 44px phone targets; the page links and the empty state's link are text links, held to WCAG's 24px.
+// Saved row's Unsave, the feed row menu with Save and its form before hydration, and the Saved page's empty
+// state and page links. Controls are 44px phone targets; the page links and the empty state's link are text
+// links, held to WCAG's 24px.
 test.beforeEach(async ({ request }) => skipWithoutKit(request));
 test.setTimeout(240_000);
 
@@ -15,6 +16,7 @@ const compositions: Record<string, { states: string[]; target: 44 | 24 }> = {
   'post-save': { states: ['rest', 'selected', 'pending', 'invalid', ...driven], target: 44 },
   'saved-unsave': { states: ['rest', 'pending', 'invalid', ...driven], target: 44 },
   'feed-row-save': { states: ['rest', 'selected', 'pending', 'invalid', ...driven], target: 44 },
+  'feed-row-save-form': { states: ['rest', 'selected', ...driven], target: 44 },
   'saved-empty': { states: ['rest', ...driven], target: 24 },
   'saved-pages': { states: ['rest', 'selected', ...driven], target: 24 },
 };
