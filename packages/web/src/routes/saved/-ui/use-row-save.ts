@@ -1,5 +1,6 @@
 import type { PostView } from '@peblish/schema/views';
 import type { FeedRowSave } from '@peblish/ui/components/feed-row-actions';
+import { getRouteApi, useMatch } from '@tanstack/react-router';
 import { useRef, useState } from 'react';
 import { useTranslate } from '../../../i18n/use-translate.ts';
 import { failureKey, requestSave } from './save-request.ts';
@@ -12,13 +13,29 @@ import { failureKey, requestSave } from './save-request.ts';
  * the feed's kept place (Back) still holds the state the batch loaded with, until the page's data
  * comes again; writing it there belongs to the feed's own reconciliation.
  */
+const root = getRouteApi('__root__');
+
+/** What the row itself was told, and for which data: whose page (an actor id, '' signed out), which load of it, the post's state then. */
+export type RowAnswer = { viewer: string; read: number; given: boolean; saved: boolean };
+
+/**
+ * The state the row shows: its own answer only while the page's data is still what it was then (the
+ * same viewer, the same load of the route, the same state of the post), else the data's. So another
+ * account signing in through another tab (shell/viewer-sync.ts reloads the data) never sees the first
+ * one's save, and fresh data is the truth.
+ */
+export function shownSaved(mine: RowAnswer | null, now: Omit<RowAnswer, 'saved'>): boolean {
+  const current = mine !== null && mine.viewer === now.viewer && mine.read === now.read && mine.given === now.given;
+  return current ? mine.saved : now.given;
+}
+
 export function useRowSave(post: PostView, say: (message: string) => void): FeedRowSave {
   const { t } = useTranslate();
-  // The row's own state holds only while the page's data still says what it said then: newer data
-  // (the first page reloads on Back) wins.
+  const viewer = root.useLoaderData({ select: ({ session }) => session?.actorId ?? '' });
+  const read = useMatch({ strict: false, select: (match) => match.updatedAt });
   const given = post.saved === true;
-  const [mine, setMine] = useState<{ given: boolean; saved: boolean } | null>(null);
-  const saved = mine?.given === given ? mine.saved : given;
+  const [mine, setMine] = useState<RowAnswer | null>(null);
+  const saved = shownSaved(mine, { viewer, read, given });
   const [pending, setPending] = useState(false);
   const busy = useRef(false);
 
@@ -30,7 +47,7 @@ export function useRowSave(post: PostView, say: (message: string) => void): Feed
     void requestSave(intent, post.id)
       .then((outcome) => {
         if (!outcome.ok) return say(t('saves', failureKey(intent, outcome.reason)));
-        setMine({ given, saved: outcome.saved });
+        setMine({ viewer, read, given, saved: outcome.saved });
         say(t('saves', outcome.saved ? 'status.saved' : 'status.unsaved'));
       })
       .finally(() => {

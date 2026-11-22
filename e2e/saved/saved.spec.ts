@@ -1,7 +1,7 @@
 import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
 import { expect, test, type Browser, type Page } from '@playwright/test';
-import { expectAccessible, landed, signIn } from '../auth/support.ts';
+import { expectAccessible, landed, signIn, signOut } from '../auth/support.ts';
 import { gotoHydrated } from '../support/route-marker.ts';
 
 // Saved posts end to end on the lane database: the Saved page (newest save first, two pages, a removed
@@ -231,4 +231,62 @@ test('on a phone, Save and Unsave are 44px targets and Saved is in the menu', as
   await expect(saved).toBeVisible();
   const entry = (await saved.boundingBox())!;
   expect(entry.height).toBeGreaterThanOrEqual(44);
+});
+
+/** What the browser does when the person comes back to a tab (headless pages are always "visible", so hide it first). */
+async function showAgain(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    const set = (state: string) => {
+      Object.defineProperty(document, 'visibilityState', { value: state, configurable: true });
+      document.dispatchEvent(new Event('visibilitychange'));
+    };
+    set('hidden');
+    set('visible');
+  });
+}
+
+test('a feed row’s own Save is the account’s: a second press waits, and another account in another tab sees its own state', async ({
+  browser,
+  baseURL,
+}) => {
+  const context = await browser.newContext({ baseURL });
+  const stale = await context.newPage();
+  await signedIn(stale, seed.owner);
+  await gotoHydrated(stale, '/all?sort=new');
+  const row = stale.locator('.feed-list > li').filter({ hasText: title(25) });
+  const more = row.getByRole('button', { name: `More actions for ${title(25)}` });
+
+  // While the save is out the item is disabled, and nothing more is sent.
+  let posts = 0;
+  let release = () => {};
+  await stale.route('**/saved', async (route) => {
+    if (route.request().method() !== 'POST') return route.fallback();
+    posts += 1;
+    await new Promise<void>((resolve) => (release = resolve));
+    await route.continue();
+  });
+  await more.click();
+  await stale.getByRole('menuitem', { name: 'Save' }).click();
+  await more.click();
+  await expect(stale.getByRole('menuitem', { name: 'Save' })).toHaveAttribute('aria-disabled', 'true');
+  await stale.getByRole('menuitem', { name: 'Copy link' }).press('Escape');
+  await expect(stale.getByRole('menu')).toHaveCount(0);
+  release();
+  await expect(row.locator('.pb-feed-row-status')).toHaveText('Saved.');
+  expect(posts).toBe(1);
+  await stale.unroute('**/saved');
+
+  // Another tab signs in as the second account; the first tab, shown again, loads that account's data.
+  const other = await context.newPage();
+  await signOut(other);
+  await gotoHydrated(other, '/auth/sign-in');
+  await signIn(other, `@${seed.other}`, seed.password);
+  await landed(other, '/');
+  await expect.poll(() => other.evaluate(() => localStorage.getItem('pb-viewer'))).not.toBe('');
+  await showAgain(stale);
+  await expect(stale.getByRole('banner').getByRole('button', { name: `Account: ${seed.other}` })).toBeAttached();
+  await more.click();
+  await expect(stale.getByRole('menuitem', { name: 'Save', exact: true })).toBeVisible();
+  await expect(stale.getByRole('menuitem', { name: 'Unsave' })).toHaveCount(0);
+  await context.close();
 });
