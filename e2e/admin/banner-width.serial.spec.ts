@@ -41,7 +41,7 @@ test.afterAll(async () => {
 });
 
 const form = (page: Page) => page.locator('form').filter({ has: page.getByRole('button', { name: 'Publish banner' }) });
-const shellBanner = (page: Page) => page.locator('.pb-app__banner');
+const shellBanner = (page: Page) => page.locator('.pb-app__banner:visible');
 /** The settings changes the modlog holds, oldest first (packages/core/src/testing/seed-adm.ts). */
 const settingsLog = () => seedAdm('settings-log') as { changes: Record<string, { before: unknown; after: unknown }>; public: boolean }[];
 /** Picks a Mux radio by its label, which draws it over the hidden native input. */
