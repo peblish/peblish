@@ -22,10 +22,14 @@ describe('readInbox filters', () => {
     const w = await seedInboxWorld();
     const me = w.people.author;
     const read = new Date();
+    // A followed thread's notice is listed only with a comment the viewer may read.
+    const comment = await seedComment(w.instances.local, { id: w.posts.local.normal }, w.people.reader);
+    const about = (kind: (typeof notificationKinds)[number]) =>
+      kind === 'thread_reply' ? { commentId: comment.id, postId: w.posts.local.normal } : {};
     // One read and one unread notice of every kind, oldest first.
     for (const kind of notificationKinds) {
-      await seedNotice({ recipientId: me.id, kind, refId: uuidv7(), readAt: read });
-      await seedNotice({ recipientId: me.id, kind, refId: uuidv7() });
+      await seedNotice({ recipientId: me.id, kind, refId: uuidv7(), readAt: read, ...about(kind) });
+      await seedNotice({ recipientId: me.id, kind, refId: uuidv7(), ...about(kind) });
     }
     await seedNotice({ recipientId: w.people.reader.id, kind: 'reply', refId: uuidv7() });
 

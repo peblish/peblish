@@ -108,8 +108,9 @@ export async function readInbox(
 }
 
 /**
- * A followed thread's notice (`thread_reply`) whose comment is withheld (sensitive, removed or
- * deleted since) names nobody and links no comment, so nothing on the row leads to its author.
+ * A followed thread's notice (`thread_reply`) whose comment is withheld (sensitive) names nobody
+ * and links no comment, so nothing on the row leads to its author. One whose comment is removed,
+ * deleted or gone is not listed at all (inboxVisible).
  */
 const followedThreadShown = (item: InboxItem): InboxItem =>
   item.kind === 'thread_reply' && item.withheld !== null ? { ...item, actor: null, commentId: null } : item;

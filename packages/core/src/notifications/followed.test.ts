@@ -4,12 +4,14 @@ import { and, eq } from 'drizzle-orm';
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 import { db } from '../db/read.ts';
 import { actors } from '../db/tables/actors.ts';
-import { comments } from '../db/tables/content.ts';
+import { comments, votes } from '../db/tables/content.ts';
 import { follows } from '../db/tables/follows.ts';
 import { outboxCursors } from '../db/tables/outbox.ts';
 import { writer } from '../db/write.ts';
 import { acceptFollow } from '../follows/follow.ts';
 import { followAs } from '../follows/service.ts';
+import { removeContent } from '../moderation/remove.ts';
+import { peerControls } from '../peers/tables.ts';
 import { truncateAll } from '../testing/db.ts';
 import { grantFor, outboxEvents, seedComment, seedPost } from '../testing/seed-az.ts';
 import { declareAge } from '../testing/seed-b1.ts';
@@ -157,7 +159,7 @@ describe('thread_reply', () => {
     expect(told).toEqual(many.slice(0, threadReplyFanOut).map((person) => person.id));
   });
 
-  test('a later block hides it from the list and every count; a later removal of the comment withholds who wrote it', async () => {
+  test('a later block of its author hides it from the list and every count', async () => {
     const w = await seedInboxWorld();
     const postId = w.posts.local.normal;
     await follow(w.people.reader, postId);
@@ -170,36 +172,84 @@ describe('thread_reply', () => {
     ]);
     expect([inbox.unread, inbox.unreadByGroup.replies, inbox.unreadByGroup.account]).toEqual([1, 1, 0]);
 
-    await writer().update(comments).set({ removedAt: new Date() }).where(eq(comments.id, id));
-    expect((await readInbox(viewer)).items).toMatchObject([
-      { kind: 'thread_reply', withheld: 'removed', actor: null, commentId: null, excerpt: null, postId },
-    ]);
-
     await seedBlock(w.people.reader, w.people.owner);
     expect((await readInbox(viewer)).items).toEqual([]);
     expect(await unreadCount(w.people.reader.id)).toBe(0);
   });
-  test.each(['removed', 'deleted'] as const)(
-    "a notice whose comment is %s carries no id, address or name that leads to the comment's author",
+
+  test.each(['removed', 'deleted', 'purged'] as const)(
+    'a notice whose comment is %s is left out of the list and every count, so blocking its author changes nothing',
     async (state) => {
       const w = await seedInboxWorld();
       const postId = w.posts.local.normal;
       await follow(w.people.reader, postId);
       const id = await say(w.people.owner, postId, 'Words to withhold');
+      const kept = await say(w.people.admin, postId, 'Words that stay');
       await drainNotices();
-      await writer()
-        .update(comments)
-        .set(state === 'removed' ? { removedAt: new Date() } : { deletedAt: new Date() })
-        .where(eq(comments.id, id));
-      const [comment] = await db().select({ apId: comments.apId }).from(comments).where(eq(comments.id, id));
-      const [author] = await db().select({ apId: actors.apId, name: actors.name }).from(actors).where(eq(actors.id, w.people.owner.id));
-      const [item] = (await readInbox({ actorId: w.people.reader.id, siteRole: 'user' })).items;
-      expect(item).toMatchObject({ kind: 'thread_reply', withheld: state, actor: null, commentId: null, excerpt: null, postId });
-      // What is left: the notice's own id (its read actions), the followed post, and the post's community.
-      const sent = JSON.stringify(item);
-      for (const secret of [id, comment!.apId, w.people.owner.id, author!.apId, author!.name]) expect(sent).not.toContain(secret);
+      if (state === 'removed') {
+        const moderator = { kind: 'local', actorId: w.people.moderator.id, siteRole: 'user' } as const;
+        await removeContent(await grantFor('mod.remove', moderator, { target: { kind: 'comment', id } }), { reason: 'Rule 2' });
+        await drainNotices();
+      } else if (state === 'deleted') {
+        await writer().update(comments).set({ deletedAt: new Date() }).where(eq(comments.id, id));
+      } else {
+        // Purged outright: its votes go first (they hold a key to it), then the row; the notice's comment_id goes null.
+        await writer().delete(votes).where(eq(votes.commentId, id));
+        await writer().delete(comments).where(eq(comments.id, id));
+      }
+      const viewer = { actorId: w.people.reader.id, siteRole: 'user' } as const;
+      const before = await readInbox(viewer);
+      expect(before.items).toMatchObject([{ kind: 'thread_reply', actor: { id: w.people.admin.id }, commentId: kept }]);
+      expect(before.items).toHaveLength(1);
+      expect([before.unread, before.unreadByGroup.replies, await unreadCount(w.people.reader.id)]).toEqual([1, 1, 1]);
+
+      await seedBlock(w.people.reader, w.people.owner);
+      expect(await readInbox(viewer)).toEqual(before);
+      expect(await unreadCount(w.people.reader.id)).toBe(1);
+
+      // The post's author keeps both replies, and a removal tells the comment's author why, as before.
+      expect(await kindsOf(w.people.author.id)).toEqual(['reply', 'reply']);
+      if (state === 'removed') {
+        const own = await readInbox({ actorId: w.people.owner.id, siteRole: 'user' }, { filter: 'content' });
+        expect(own.items).toMatchObject([{ kind: 'mod_remove', statement: { reason: 'Rule 2' } }]);
+      }
     },
   );
+
+  test('a withheld notice names nobody, links no comment and leads only to a community the viewer may see', async () => {
+    const w = await seedInboxWorld();
+    await declareAge(w.people.reader);
+    const local = await seedPost(w.instances.local, w.communities.open, w.people.author, { sensitive: true });
+    const remote = await seedPost(w.instances.lemmy, w.communities.remote, w.people.remoteAuthor, { sensitive: true });
+    await follow(w.people.reader, local.id);
+    await follow(w.people.reader, remote.id);
+    const id = await say(w.people.owner, local.id, 'Careful words');
+    await say(w.people.owner, remote.id, 'Careful words abroad');
+    await drainNotices();
+    const viewer = { actorId: w.people.reader.id, siteRole: 'user' } as const;
+    const inbox = await readInbox(viewer);
+    expect(inbox.items).toHaveLength(2);
+    const item = inbox.items.find((entry) => entry.postId === local.id);
+    expect(item).toMatchObject({
+      kind: 'thread_reply',
+      withheld: 'sensitive',
+      actor: null,
+      commentId: null,
+      excerpt: null,
+      community: { id: w.communities.open.id },
+    });
+    // What is left: the notice's own id (its read actions), the followed post, and the post's community.
+    const [comment] = await db().select({ apId: comments.apId }).from(comments).where(eq(comments.id, id));
+    const [author] = await db().select({ apId: actors.apId, name: actors.name }).from(actors).where(eq(actors.id, w.people.owner.id));
+    const sent = JSON.stringify(item);
+    for (const secret of [id, comment!.apId, w.people.owner.id, author!.apId, author!.name]) expect(sent).not.toContain(secret);
+
+    // The remote community's server is blocked here: its thread's notice goes from the list and every count.
+    await writer().insert(peerControls).values({ instanceId: w.instances.lemmy.id, blocked: true });
+    const after = await readInbox(viewer);
+    expect(after.items.map((entry) => entry.postId)).toEqual([local.id]);
+    expect([after.unread, after.unreadByGroup.replies, await unreadCount(w.people.reader.id)]).toEqual([1, 1, 1]);
+  });
 });
 
 describe('follow_accept', () => {
