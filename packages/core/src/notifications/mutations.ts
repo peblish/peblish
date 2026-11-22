@@ -3,7 +3,7 @@ import { and, eq, isNotNull, isNull, sql } from 'drizzle-orm';
 import { notifications } from './tables.ts';
 import { defineMutation } from '../tx/mutation.ts';
 
-// The inbox's four writes. A person's marks recheck, so a site-banned person writes nothing
+// The inbox's five writes. A person's marks recheck, so a site-banned person writes nothing
 // (auth.site_banned); the consumer's create and purge run as the instance and do not. None
 // writes the acting actor's row. Targets come from grant.subject; the context ids a notice
 // carries for rendering come in as input.
@@ -52,7 +52,20 @@ export const markNotification = defineMutation({
   },
 });
 
-/** Marks every unread notice of the owner read; answers how many it changed. */
+/**
+ * `read_at` in whole microseconds since the epoch, as text: what names a Mark all read for its
+ * Undo. Every row one Mark all read changes gets the same `now()` (the transaction's), so the
+ * stamp picks out exactly those rows; text, since a JS Date keeps only milliseconds.
+ */
+const readStamp = sql<string>`(extract(epoch from ${notifications.readAt}) * 1000000)::bigint::text`;
+
+/** A stamp as Mark all read hands it out: digits only, so it can ride in an address. */
+export const isReadBatch = (value: string): boolean => /^[1-9][0-9]{0,18}$/.test(value);
+
+/**
+ * Marks every unread notice of the owner read; answers how many it changed and `batch`, the
+ * stamp its Undo takes (null when nothing was unread).
+ */
 export const markAllNotificationsRead = defineMutation({
   action: 'notification.read_all',
   emits: ['notification.read'],
@@ -63,9 +76,33 @@ export const markAllNotificationsRead = defineMutation({
       .update(notifications)
       .set({ readAt: sql`now()` })
       .where(and(eq(notifications.recipientId, recipientId), isNull(notifications.readAt)))
-      .returning({ id: notifications.id });
+      .returning({ id: notifications.id, batch: readStamp });
     if (rows.length > 0) {
       await t.emit({ type: 'notification.read', v: 1, recipientId, notificationId: null, read: true, count: rows.length });
+    }
+    return { count: rows.length, batch: rows[0]?.batch ?? null };
+  },
+});
+
+/**
+ * Undoes one Mark all read: marks unread again exactly the owner's notices it marked read that are
+ * still read from it. A notice that arrived since is unread and stays so; one the owner marked
+ * unread, or read again, since then carries another stamp and is left as it is. Answers how many.
+ */
+export const undoMarkAllRead = defineMutation({
+  action: 'notification.undo_read_all',
+  emits: ['notification.read'],
+  recheck: true,
+  async run(t, grant, input: { batch: string }) {
+    const { recipientId } = grant.subject;
+    if (!isReadBatch(input.batch)) return { count: 0 };
+    const rows = await t.db
+      .update(notifications)
+      .set({ readAt: null })
+      .where(and(eq(notifications.recipientId, recipientId), isNotNull(notifications.readAt), sql`${readStamp} = ${input.batch}`))
+      .returning({ id: notifications.id });
+    if (rows.length > 0) {
+      await t.emit({ type: 'notification.read', v: 1, recipientId, notificationId: null, read: false, count: rows.length });
     }
     return { count: rows.length };
   },
