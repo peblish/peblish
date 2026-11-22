@@ -101,12 +101,13 @@ async function buildProfile(
       : profile.bio
         ? renderer.sanitize(profile.bio.html, { baseUrl: profile.bio.baseUrl, content: person }).html
         : null;
+  const ref = publicActorRef(profile.actor);
   return {
     profile,
     data: {
       // Only the allowlisted fields are dehydrated into the page.
-      person: publicActorRef(profile.actor),
-      initial: avatarInitial(neutraliseBidi(profile.actor.displayName || profile.actor.name, ''), ''),
+      person: ref,
+      initial: avatarInitial(neutraliseBidi(ref.displayName || ref.name, ''), ''),
       avatarSrc: renderer.image(profile.iconUrl, person),
       bioHtml: bioHtml || null,
       joinedAt: profile.joinedAt,
