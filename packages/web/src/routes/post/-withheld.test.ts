@@ -3,7 +3,7 @@ import { describe, expect, test } from 'vitest';
 import { authorWithheld, postAsShown, replyTargetName, tombstoneWord } from './-withheld.ts';
 
 // The post page's data for a removed or deleted post (loadPost sends postAsShown's answer): no
-// author, badge, own address or series for anyone but the author and the moderators.
+// author, badge or own address for anyone but the author and the moderators.
 
 const origin = 'https://feddit.test';
 const carol: ActorRef = {
@@ -47,7 +47,6 @@ const post = (extra: Partial<PostView>): PostView => ({
   removed: false,
   counts: { upvotes: 0, downvotes: 0, comments: 0 },
   myVote: 0,
-  series: { id: '019a0000-0000-7000-8000-000000000555', title: 'Carol’s diary', ordinal: 2, total: 3, previous: null, next: null },
   ...extra,
 });
 
