@@ -28,11 +28,27 @@ test.beforeAll(async ({ browser }) => {
     duration: '7',
   });
   expect(banned.status, banned.body).toBe(200);
+  // A Registration row whose label is one long word, the widest a cell gets.
+  const invited = await postFromPage(page, '/admin/registration', {
+    intent: 'create',
+    label: `narrow-${'x'.repeat(48)}`,
+    referrer: '',
+    maxUses: '3',
+    expires: 'never',
+  });
+  expect(invited.status, invited.body).toBe(200);
   session = await page.context().storageState();
   await page.context().close();
 });
 
-const pages = ['/admin/bans', '/admin/peers', '/admin/media?section=hashes', '/admin/media?section=review', '/admin/reports'];
+const pages = [
+  '/admin/bans',
+  '/admin/peers',
+  '/admin/media?section=hashes',
+  '/admin/media?section=review',
+  '/admin/reports',
+  '/admin/registration',
+];
 
 for (const width of [375, 320]) {
   test(`at ${width}px the admin safety pages do not scroll sideways`, async ({ browser }) => {
@@ -65,10 +81,41 @@ for (const width of [375, 320]) {
         expect(box.left, path).toBeGreaterThanOrEqual(0);
         expect(box.right, path).toBeLessThanOrEqual(geometry.width);
       }
+      // A card that scrolls is a region named like its table, and a keyboard stop (TableCard).
+      const grids = await page.getByRole('main').getByRole('grid').all();
+      expect(grids.length, path).toBe(geometry.tables.length);
+      for (const table of grids) {
+        const name = await table.getAttribute('aria-label');
+        const card = page.getByRole('region', { name: name!, exact: true });
+        await expect(card, path).toHaveAttribute('tabindex', '0');
+        await expect(card.getByRole('grid'), path).toHaveCount(1);
+      }
     }
     await page.context().close();
   });
 }
+
+// The queue's card scrolls by keyboard on a phone; on a computer, where it fits, it is no stop.
+test('the report queue’s card is a keyboard stop only while it scrolls', async ({ browser }) => {
+  test.setTimeout(90_000);
+  const page = await (await browser.newContext({ storageState: session, viewport: { width: 375, height: 800 } })).newPage();
+  await gotoHydrated(page, '/admin/reports');
+  const card = page.getByRole('region', { name: 'Reports', exact: true });
+  await expect(card).toHaveAttribute('tabindex', '0');
+  await card.focus();
+  await page.keyboard.press('ArrowRight');
+  await expect.poll(() => card.evaluate((node) => node.scrollLeft)).toBeGreaterThan(0);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await expect(card).not.toHaveAttribute('tabindex');
+  // The server's page has no stop: the browser adds it when it measures.
+  const plain = await (
+    await browser.newContext({ storageState: session, viewport: { width: 375, height: 800 }, javaScriptEnabled: false })
+  ).newPage();
+  await plain.goto('/admin/reports');
+  await expect(plain.getByRole('region', { name: 'Reports', exact: true })).not.toHaveAttribute('tabindex');
+  await plain.context().close();
+  await page.context().close();
+});
 
 // The staff pages in the Commons frame: the page's name is the h1 in the frame's view header, the admin
 // tabs sit under it, and the rail holds the queue's communities and the modlog's filters beside a page
@@ -128,9 +175,27 @@ test('a community chosen in the queue’s rail is the inline filter’s choice, 
   await page.context().close();
 });
 
+// At 1440 with the sidebar open the rail gives way (the queue's wide centre needs 1600): the inline filter
+// is the way to choose a community there, and Apply keeps the choice.
+test('at 1440px the queue’s inline filter chooses a community where the rail has given way', async ({ browser }) => {
+  test.setTimeout(90_000);
+  const page = await (await browser.newContext({ storageState: session, viewport: { width: 1440, height: 900 } })).newPage();
+  await gotoHydrated(page, '/admin/reports');
+  await expect(page.getByRole('complementary', { name: 'About this place' })).toBeHidden();
+  const select = page.getByRole('main').getByRole('combobox', { name: 'Community' });
+  await expect(select).toBeVisible();
+  const choice = await select.locator('option').nth(1).getAttribute('value');
+  await select.selectOption(choice!);
+  await page.getByRole('main').getByRole('button', { name: 'Apply' }).click();
+  await page.waitForURL(/[?&]community=/);
+  expect(new URL(page.url()).searchParams.get('community')).toBe(choice);
+  await expect(page.getByRole('main').getByRole('combobox', { name: 'Community' })).toHaveValue(choice!);
+  await page.context().close();
+});
+
 // On a computer the staff tables sit whole in the frame's wide centre: neither the page nor a table's card
-// scrolls sideways (the sidebar folds itself at 1100px). The spec seeds every table but Registration's and
-// the site pages list, which may hold nothing yet.
+// scrolls sideways (the sidebar folds itself at 1100px). The spec seeds every table but the site pages
+// list, which may hold nothing yet.
 test('on a computer the staff tables sit whole in the centre', async ({ browser }) => {
   test.setTimeout(120_000);
   const page = await (await browser.newContext({ storageState: session, viewport: { width: 1440, height: 900 } })).newPage();
@@ -139,8 +204,9 @@ test('on a computer the staff tables sit whole in the centre', async ({ browser 
     '/admin/peers': true,
     '/admin/reports': true,
     '/admin/media?section=hashes': true,
+    // Pages are seeded in e2e/admin/staff-tables.serial.spec.ts: a fresh instance has none (pages.serial).
     '/admin/pages': false,
-    '/admin/registration': false,
+    '/admin/registration': true,
   };
   for (const width of [1440, 1280, 1100]) {
     await page.setViewportSize({ width, height: 900 });
@@ -158,6 +224,24 @@ test('on a computer the staff tables sit whole in the centre', async ({ browser 
   }
   await page.context().close();
 });
+
+for (const width of [320, 390]) {
+  test(`at ${width}px the queue rows’ Open, Show and details links are 44px targets`, async ({ browser }) => {
+    test.setTimeout(90_000);
+    const page = await (await browser.newContext({ storageState: session, viewport: { width, height: 800 } })).newPage();
+    await gotoHydrated(page, '/admin/reports');
+    const links = page.locator('.rq-table').getByRole('link', { name: /^(Open|Show|Hide|Reporters and details)$/ });
+    const sizes = await links.evaluateAll((nodes) =>
+      nodes.map((node) => {
+        const box = node.getBoundingClientRect();
+        return { name: node.textContent, height: Math.round(box.height), width: Math.round(box.width) };
+      }),
+    );
+    expect(sizes.map((size) => size.name)).toEqual(expect.arrayContaining(['Open', 'Show', 'Reporters and details']));
+    expect(sizes.filter((size) => size.height < 44 || size.width < 44)).toEqual([]);
+    await page.context().close();
+  });
+}
 
 test('on a phone the admin tabs and the modlog filters are 44px targets', async ({ browser }) => {
   test.setTimeout(90_000);

@@ -19,10 +19,7 @@
   .peers-add .peers-error {
     grid-column: 1 / -1;
   }
-  /* Mux Table has no breakpoint: on a narrow screen the table scrolls inside its card. */
-  .peers-table {
-    overflow-x: auto;
-  }
+  /* Mux Table has no breakpoint: on a narrow screen the table scrolls inside its card (TableCard). */
   .peers-table .muxui-table {
     inline-size: 100%;
     min-inline-size: 48rem;

@@ -1,7 +1,6 @@
 import type { QueueGroup, QueueSubject } from '@peblish/core/reports/read';
 import type { QueueTab } from '@peblish/core/reports/scope';
 import { Button } from '@peblish/ui/components/button';
-import { Card } from '@peblish/ui/components/card';
 import { Handle } from '@peblish/ui/components/handle';
 import { Link } from '@peblish/ui/components/link';
 import { LinkedDisclosure } from '@peblish/ui/components/linked-disclosure';
@@ -22,6 +21,7 @@ import { useDate } from '../../../auth/-ui/page.tsx';
 import { communityPath, commentPath, postPath, userPath } from '../../../../shell/paths.ts';
 import { asReportError, errorKey, type ReportError } from '../../../report/-ui/errors.ts';
 import { queueHref, type QueueView } from '../-href.ts';
+import { TableCard } from '../../-table-card.tsx';
 
 const Answer = type({ 'redirect?': 'string', 'error?': 'string' });
 
@@ -410,7 +410,7 @@ export function QueueTable({
   const { t, locale } = useTranslate();
   useFieldKeys();
   return (
-    <Card.Root variant="outlined" padding="sm" className="rq-table">
+    <TableCard label={t('reports', 'queue.title')} className="rq-table">
       <Table
         aria-label={t('reports', 'queue.title')}
         columns={[
@@ -429,6 +429,6 @@ export function QueueTable({
           },
         }))}
       />
-    </Card.Root>
+    </TableCard>
   );
 }

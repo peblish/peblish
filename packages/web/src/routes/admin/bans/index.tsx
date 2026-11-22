@@ -23,6 +23,7 @@ import { type BansData, loadBans } from './-load.ts';
 import bansCss from './-ui/bans.css?url';
 import { headTitle } from '../../../shell/title.ts';
 import { AdminPage, ownHeaderWide } from '../-page.tsx';
+import { TableCard } from '../-table-card.tsx';
 
 // /admin/bans: the Bans tab (R2 pick admin-tabs). Who is banned from this instance, a form to
 // ban someone by handle (a person of ours, or one of a peer we hold) that first shows what the
@@ -189,7 +190,7 @@ function BansPage({
       {bans.length === 0 ? (
         <EmptyState title={t('bans', 'empty')} className="bans-empty" />
       ) : (
-        <Card.Root variant="outlined" padding="sm" className="bans-table" data-testid="bans-table">
+        <TableCard label={t('bans', 'title')} className="bans-table" data-testid="bans-table">
           <Table
             aria-label={t('bans', 'title')}
             columns={[
@@ -232,7 +233,7 @@ function BansPage({
               },
             }))}
           />
-        </Card.Root>
+        </TableCard>
       )}
       {lifting && <LiftPanel key={lifting.person.id} ban={lifting} />}
       {wanted && !lifting && !lifted && (

@@ -104,11 +104,19 @@
     gap: var(--muxui-semantic-layout-tight-gap);
   }
 
-  /* Tables scroll sideways on a phone instead of squeezing their columns. */
-  .adm-table {
+  /* A staff table's card (TableCard, -table-card.tsx): where the page is narrower than the table (a phone, or
+     beside the open sidebar at 1100px) the table scrolls sideways inside it instead of squeezing its columns,
+     and while it does the card is a keyboard stop with a focus ring. */
+  .adm-scroller {
     overflow-x: auto;
   }
 
+  .adm-scroller:focus-visible {
+    outline: 2px solid var(--muxui-semantic-focus-ring);
+    outline-offset: 2px;
+  }
+
+  /* Pages and Registration: at least this wide, scrolling inside the card where the page is narrower. */
   .adm-table > * {
     min-width: 760px;
   }

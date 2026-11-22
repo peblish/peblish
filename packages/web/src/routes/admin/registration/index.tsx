@@ -5,7 +5,6 @@ import { registrationOverview } from '@peblish/core/registration/settings';
 import { InviteCreateBody, type InviteRow, type InviteStatus } from '@peblish/schema/invite';
 import { Badge, type BadgeTone } from '@peblish/ui/components/badge';
 import { Button } from '@peblish/ui/components/button';
-import { Card } from '@peblish/ui/components/card';
 import { EmptyState } from '@peblish/ui/components/empty-state';
 import { Handle } from '@peblish/ui/components/handle';
 import { Input } from '@peblish/ui/components/input';
@@ -32,6 +31,7 @@ import { useDate } from '../../auth/-ui/page.tsx';
 import { Denial } from '../-denial.tsx';
 import { accessOf } from '../settings/-access.ts';
 import { AdminPage, ownHeaderWide } from '../-page.tsx';
+import { TableCard } from '../-table-card.tsx';
 
 // `usedBy`: the invite whose "used by" list the server renders open, for its link without scripts.
 const Search = type({ 'error?': SearchText, 'usedBy?': SearchText });
@@ -231,7 +231,7 @@ function InvitesTable({ invites, open }: { invites: InviteRow[]; open: string | 
   if (invites.length === 0) return <EmptyState title={t('invites', 'admin.empty')} />;
   const actions = t('invites', 'admin.colActions');
   return (
-    <Card.Root variant="outlined" padding="sm" className="adm-table">
+    <TableCard label={t('invites', 'admin.title')} className="adm-table">
       {/* One form for every Revoke button: each submits it with its invite's id. */}
       <form id={revokeForm} method="post" action={path} hidden>
         <Input.Input type="hidden" name="intent" value="revoke" />
@@ -297,6 +297,6 @@ function InvitesTable({ invites, open }: { invites: InviteRow[]; open: string | 
           },
         }))}
       />
-    </Card.Root>
+    </TableCard>
   );
 }

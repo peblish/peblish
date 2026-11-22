@@ -28,6 +28,7 @@ import { loadPeers } from './-load.ts';
 import peersCss from './-ui/peers.css?url';
 import { headTitle } from '../../../shell/title.ts';
 import { AdminPage, ownHeaderWide } from '../-page.tsx';
+import { TableCard } from '../-table-card.tsx';
 
 // /admin/peers: the Peers tab (R2 pick admin-tabs). Every instance we know of, with what this
 // server does about it: its media (quarantined until approved, approved, purged), its inbox
@@ -224,7 +225,7 @@ function Peers() {
       {data.peers.length === 0 ? (
         <EmptyState title={t('peers', 'empty')} />
       ) : (
-        <Card.Root variant="outlined" padding="sm" className="peers-table">
+        <TableCard label={t('peers', 'title')} className="peers-table">
           <Table
             aria-label={t('peers', 'title')}
             columns={[
@@ -255,7 +256,7 @@ function Peers() {
               },
             }))}
           />
-        </Card.Root>
+        </TableCard>
       )}
       {selected && <PeerControls key={selected.domain} peer={selected} />}
       {chosen && !selected && (

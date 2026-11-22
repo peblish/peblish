@@ -2,7 +2,6 @@ import { listPages, type PageRow } from '@peblish/core/pages/read';
 import { seedShippedPages } from '@peblish/core/pages/save';
 import { pageSlugs, type PageLanguage, type PageSlug } from '@peblish/core/pages/slugs';
 import { Button } from '@peblish/ui/components/button';
-import { Card } from '@peblish/ui/components/card';
 import { EmptyState } from '@peblish/ui/components/empty-state';
 import { Input } from '@peblish/ui/components/input';
 import { Link } from '@peblish/ui/components/link';
@@ -24,6 +23,7 @@ import { adminHead } from '../settings/-head.ts';
 import { AdminPage, ownHeaderWide } from '../-page.tsx';
 import { AccessNotice } from '../settings/-ui.tsx';
 import { shippedPages } from './-bundled.ts';
+import { TableCard } from '../-table-card.tsx';
 
 // /admin/pages (R2 pick admin-tabs, its Pages tab): the ten pages in English and German with
 // their status, an Edit link for each language and View for the live ones. A fresh instance
@@ -119,7 +119,7 @@ function PagesTable({ rows }: { rows: PageRow[] }) {
   const { t } = useTranslate();
   const view = t('admin', 'pages.view');
   return (
-    <Card.Root variant="outlined" padding="sm" className="adm-table">
+    <TableCard label={t('admin', 'pages.title')} className="adm-table">
       <Table
         aria-label={t('admin', 'pages.title')}
         columns={[
@@ -137,7 +137,7 @@ function PagesTable({ rows }: { rows: PageRow[] }) {
           ),
         )}
       />
-    </Card.Root>
+    </TableCard>
   );
 }
 
