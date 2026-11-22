@@ -38,7 +38,6 @@ export function SaveForm({
   const [said, setSaid] = useState('');
   const busyRef = useRef(false);
   const intent: SaveIntent = saved ? 'unsave' : 'save';
-  const label = t('saves', saved ? 'action.unsave' : 'action.save');
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -58,8 +57,49 @@ export function SaveForm({
   }
 
   return (
-    <form method="post" action={savedPath} aria-busy={busy} className="pb-save" onSubmit={submit}>
-      <input type="hidden" name="intent" value={intent} />
+    <SaveFormView
+      postId={postId}
+      title={title}
+      saved={saved}
+      back={back}
+      inList={inList}
+      pending={busy}
+      said={said}
+      error={error}
+      onSubmit={(event) => void submit(event)}
+    />
+  );
+}
+
+/**
+ * What SaveForm draws, for a given moment: the form, its button (pending while a request is out), the
+ * post page's polite status and a failure's alert. The gallery's state pages show it as it is.
+ */
+export function SaveFormView({
+  postId,
+  title,
+  saved,
+  back,
+  inList = false,
+  pending = false,
+  said = '',
+  error,
+  onSubmit,
+}: {
+  postId: string;
+  title: string;
+  saved: boolean;
+  back: string;
+  inList?: boolean;
+  pending?: boolean;
+  said?: string;
+  error?: string | undefined;
+  onSubmit?: (event: FormEvent<HTMLFormElement>) => void;
+}) {
+  const { t } = useTranslate();
+  return (
+    <form method="post" action={savedPath} aria-busy={pending} className="pb-save" onSubmit={onSubmit}>
+      <input type="hidden" name="intent" value={saved ? 'unsave' : 'save'} />
       <input type="hidden" name="postId" value={postId} />
       <input type="hidden" name="back" value={back} />
       <Button
@@ -67,11 +107,11 @@ export function SaveForm({
         variant="ghost"
         size="sm"
         className="pb-save__button"
-        pending={busy}
+        pending={pending}
         aria-label={inList ? t('saves', 'action.unsaveOn', { title }) : undefined}
       >
         <BookmarkIcon />
-        {label}
+        {t('saves', saved ? 'action.unsave' : 'action.save')}
       </Button>
       {!inList && (
         <Text role="status" size="sm" color="muted" className="pb-save__status">
