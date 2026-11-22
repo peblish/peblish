@@ -24,9 +24,10 @@ import { useTranslate } from '../../../i18n/use-translate.ts';
 import { useRouteHydrated } from '../../../shell/hydration.ts';
 import { commentPath, communityPath, inboxPath, modlogEntryPath, postPath } from '../../../shell/paths.ts';
 import { useHeadingInView, ViewHeader } from '../../../shell/view-header.tsx';
-import { asCommentError, errorKey, type CommentError } from '../../post/$id/comments/-ui/errors.ts';
+import { asCommentError, errorKey } from '../../post/$id/comments/-ui/errors.ts';
 import type { InboxData } from '../-load.ts';
 import { inboxAction, inboxHref, type InboxSearch } from '../-search.ts';
+import { useReplyDraft } from './drafts.tsx';
 import { NoticeGroups } from './groups.tsx';
 import { MarkedStatus, undoButtonId } from './marked.tsx';
 
@@ -400,11 +401,9 @@ export function NoticeRow({
       : null;
   const replyable = replyTarget !== null && item.withheld === null;
   const formId = `reply-${item.id}`;
-  const [open, setOpen] = useState(false);
-  const [text, setText] = useState('');
-  const [pending, setPending] = useState(false);
-  const [error, setError] = useState<CommentError>();
-  const [posted, setPosted] = useState<string | null>(null);
+  // Kept above the date groups, so a notice drawn anew in the next group keeps its reply (drafts.tsx).
+  const reply = useReplyDraft(item.id, formId);
+  const { open, text, pending, error, posted } = reply.draft;
   // Back to Reply once the field has closed, unless focus left the row before the frame came (a Tab, a press elsewhere).
   const backToReply = () =>
     requestAnimationFrame(() => {
@@ -415,33 +414,27 @@ export function NoticeRow({
     });
 
   // One lock from the press until the comment is saved and the notice marked read: Send stays pending and the field read-only throughout.
-  // The ref takes it at once, for a second submit that comes before React has drawn `pending`.
-  const sending = useRef(false);
+  // It is taken at once, for a second submit that comes before React has drawn `pending`, and kept with the draft.
   async function sendNow() {
-    if (sending.current) return;
-    sending.current = true;
+    if (!reply.lock()) return;
     const body = text;
     let keep: (() => void) | null = null;
-    setPending(true);
-    setError(undefined);
+    reply.change({ error: undefined });
     try {
       const answer = await sendReply(item, body);
       if (!('ok' in answer)) {
         // The text stays in the field, with the refusal under it.
-        setError(asCommentError(answer.error) ?? 'generic');
+        reply.change({ error: asCommentError(answer.error) ?? 'generic' });
         return;
       }
       if (!item.read) await post(readAction);
-      setPosted(answer.id ?? '');
-      // Only what was sent clears.
-      setText((current) => (current === body ? '' : current));
       // Back to Reply only while focus is still in the row: closing the field drops it, and a reader who moved on keeps their place.
       keep = keepFocus(document.getElementById(formId)?.closest('li'));
-      setOpen(false);
+      // Only what was sent clears.
+      reply.change((draft) => ({ posted: answer.id ?? '', text: draft.text === body ? '' : draft.text, open: false }));
       if (keep) backToReply();
     } finally {
-      sending.current = false;
-      setPending(false);
+      reply.unlock();
     }
     if (keep) afterReload?.(keep);
     await router.invalidate();
@@ -458,10 +451,9 @@ export function NoticeRow({
         aria-expanded={open}
         aria-controls={formId}
         onActivate={() => {
-          setPosted(null);
           // Open and empty, Reply closes the field again; holding text, it stays open and takes focus.
-          if (open && text.trim() === '') return setOpen(false);
-          setOpen(true);
+          if (open && text.trim() === '') return reply.change({ posted: null, open: false });
+          reply.change({ posted: null, open: true });
           requestAnimationFrame(() => document.querySelector<HTMLElement>(`#${formId} textarea`)?.focus());
         }}
       >
@@ -553,10 +545,10 @@ export function NoticeRow({
                 cancel: t('notifications', 'reply.cancel'),
               }}
               value={text}
-              onChange={setText}
+              onChange={(value) => reply.change({ text: value })}
               onSubmit={() => void sendNow()}
               onCancel={() => {
-                setOpen(false);
+                reply.change({ open: false });
                 backToReply();
               }}
               action={`/post/${item.postId}/comments?${new URLSearchParams({ intent: 'reply', parent: item.commentId ?? '' })}`}

@@ -326,6 +326,72 @@ for (const outcome of ['refused', 'lost'] as const) {
   });
 }
 
+// /kit/inbox-groups: a row's Mark read there brings a clock a day later, as a reload after a boundary would, so the
+// reply notice moves from Today to Yesterday and is drawn anew in that list. Posted by script, focus stays where it is.
+const group = (page: Page, name: string) => page.getByRole('list', { name: `Notices, ${name}` });
+const reloadADayLater = (page: Page) =>
+  group(page, 'Earlier')
+    .locator('form[data-toggle]')
+    .evaluate((form: HTMLFormElement) => form.requestSubmit());
+
+test('a reply being written keeps its field, text, focus and caret when a reload moves its notice into the next date group', async ({
+  page,
+}) => {
+  await gotoHydrated(page, '/kit/inbox-groups');
+  await group(page, 'Today')
+    .getByRole('button', { name: /^Reply: @jun@lemmy\.world, / })
+    .click();
+  const field = page.getByRole('textbox', { name: 'Reply to @jun@lemmy.world' });
+  await field.fill('Half thought');
+  await field.evaluate((node: HTMLTextAreaElement) => node.setSelectionRange(4, 4));
+  await reloadADayLater(page);
+  await expect(group(page, 'Today')).toHaveCount(0);
+  const moved = group(page, 'Yesterday').getByRole('listitem');
+  await expect(moved.getByRole('textbox', { name: 'Reply to @jun@lemmy.world' })).toHaveValue('Half thought');
+  await expect(moved.getByRole('button', { name: /^Reply: @jun/ })).toHaveAttribute('aria-expanded', 'true');
+  await expect(field).toBeFocused();
+  await page.keyboard.type(' a');
+  await expect(field).toHaveValue('Half a thought');
+});
+
+test('a reply on its way when a reload moves its notice into the next date group stays held, and is sent once', async ({ page }) => {
+  await gotoHydrated(page, '/kit/inbox-groups');
+  const sent: string[] = [];
+  const arrived = gate();
+  const answer = gate();
+  await page.route('**/post/*/comments', async (route) => {
+    sent.push(new URLSearchParams(route.request().postData() ?? '').get('body') ?? '');
+    arrived.open();
+    await answer.opened;
+    await route.fulfill({ status: 200, json: { ok: true, id: '00000000-0000-7000-8000-000000000400' } });
+  });
+  await page.route('**/notifications?*', (route) => route.fulfill({ status: 200, json: { ok: true } }));
+  await group(page, 'Today')
+    .getByRole('button', { name: /^Reply: @jun@lemmy\.world, / })
+    .click();
+  await page.getByRole('textbox', { name: 'Reply to @jun@lemmy.world' }).fill('Sent once, wherever it is drawn.');
+  await page.getByRole('button', { name: 'Reply', exact: true }).click();
+  await arrived.opened;
+  await reloadADayLater(page);
+
+  const moved = group(page, 'Yesterday').getByRole('listitem');
+  const field = moved.getByRole('textbox', { name: 'Reply to @jun@lemmy.world' });
+  const send = moved.getByRole('button', { name: 'Reply', exact: true });
+  await expect(field).toHaveValue('Sent once, wherever it is drawn.');
+  await expect(send).toHaveAttribute('aria-busy', 'true');
+  await expect(send).toBeFocused();
+  await send.click({ force: true });
+  await field.press('Control+Enter');
+  expect(sent).toHaveLength(1);
+
+  answer.open();
+  await expect(moved.getByRole('status')).toHaveText('Reply posted. View reply');
+  await expect(field).toHaveCount(0);
+  await expect(moved.getByRole('button', { name: /^Reply: @jun/ })).toBeFocused();
+  await page.waitForTimeout(200);
+  expect(sent).toEqual(['Sent once, wherever it is drawn.']);
+});
+
 test('a reply sent once the reader has moved on leaves focus where they went', async ({ page }) => {
   await gotoHydrated(page, '/kit/inbox-replies');
   let release!: () => void;

@@ -210,12 +210,23 @@ function Replying({ state }: { state: 'rest' | 'selected' | 'pending' | 'invalid
   );
 }
 
-/** A page of notices under their date groups: one today, yesterday, this week and earlier. */
+/**
+ * A page of notices under their date groups: one today, yesterday, this week and earlier. A row's Mark read stands for
+ * the reload that follows it in the inbox, which brings the loader's clock: here a day later, so each row but the
+ * oldest crosses into the next group, as one does when a reload comes after a boundary has passed.
+ */
 function Grouped() {
+  const [clock, setClock] = useState(now.getTime());
   const at = [2, 30, 80, 200];
   const items = [notices[0]!, notices[3]!, notices[5]!, notices[6]!].map((item, n) => ({ ...item, createdAt: ago(at[n]!) }));
-  const iso = now.toISOString();
-  return <NoticeGroups items={items} now={iso} row={(item) => <NoticeRow key={item.id} item={item} now={iso} submit={stay} page={{}} />} />;
+  const iso = new Date(clock).toISOString();
+  const reload = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setClock((time) => time + 24 * 3_600_000);
+  };
+  return (
+    <NoticeGroups items={items} now={iso} row={(item) => <NoticeRow key={item.id} item={item} now={iso} submit={reload} page={{}} />} />
+  );
 }
 
 /** Mark all read's status row: Undo at rest or on its way; and, after it, how many came back. */

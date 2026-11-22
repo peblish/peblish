@@ -2,6 +2,7 @@ import type { InboxItem } from '@peblish/core/notifications/view';
 import { Text } from '@peblish/ui/components/text';
 import type { ReactNode } from 'react';
 import { useTranslate } from '../../../i18n/use-translate.ts';
+import { ReplyDrafts } from './drafts.tsx';
 
 // The inbox's date groups (Commons' Inbox.tsx): Today, Yesterday, This week and Earlier, each a
 // heading over its own list. A notice's group is its age against the page's clock (`now`, the
@@ -32,24 +33,29 @@ export function groupNotices(items: readonly InboxItem[], now: string): { group:
   });
 }
 
-/** The page's notices under their date headings; `row` draws one notice (NoticeRow). */
+/**
+ * The page's notices under their date headings; `row` draws one notice (NoticeRow). A notice that moves to the next
+ * group is drawn anew in that group's list, so the replies are kept here, above the groups, by notice id (drafts.tsx).
+ */
 export function NoticeGroups({ items, now, row }: { items: readonly InboxItem[]; now: string; row: (item: InboxItem) => ReactNode }) {
   const { t } = useTranslate();
   return (
-    <div className="pb-notice-groups">
-      {groupNotices(items, now).map(({ group, items: list }) => {
-        const name = t('notifications', `group.${group}`);
-        return (
-          <section key={group} className="pb-notice-group">
-            <Text as="h2" variant="label" size="sm" className="pb-notice-group__title">
-              {name}
-            </Text>
-            <ul className="pb-rows pb-notices" aria-label={t('notifications', 'list.group', { group: name })}>
-              {list.map(row)}
-            </ul>
-          </section>
-        );
-      })}
-    </div>
+    <ReplyDrafts>
+      <div className="pb-notice-groups">
+        {groupNotices(items, now).map(({ group, items: list }) => {
+          const name = t('notifications', `group.${group}`);
+          return (
+            <section key={group} className="pb-notice-group">
+              <Text as="h2" variant="label" size="sm" className="pb-notice-group__title">
+                {name}
+              </Text>
+              <ul className="pb-rows pb-notices" aria-label={t('notifications', 'list.group', { group: name })}>
+                {list.map(row)}
+              </ul>
+            </section>
+          );
+        })}
+      </div>
+    </ReplyDrafts>
   );
 }
