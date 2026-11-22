@@ -29,7 +29,11 @@ const bars = (page: Page) =>
       brand: box(top.querySelector('.pb-bar-brand')!),
       finder: box(top.querySelector('.pb-find')!),
       menu: box(top.querySelector('.muxui-sidebar__mobile-trigger')!),
+      /** The bar shows the site's name (not a brand pack's mark). */
+      named: name !== null,
       nameCut: name ? name.scrollWidth > name.clientWidth : false,
+      /** The page's heading where it is in the bar (a feed's): cut short, or whole. */
+      headingCut: ((heading) => (heading ? heading.scrollWidth > heading.clientWidth : null))(top.querySelector<HTMLElement>('h1')),
       ellipsis: name ? getComputedStyle(name).textOverflow : '',
       tabs: [...document.querySelectorAll('.pb-tabbar__tab')].map(box),
     };
@@ -59,15 +63,17 @@ for (const signedIn of [false, true]) {
       for (const path of ['/', '/auth/sign-in', '/communities', ...(signedIn ? ['/notifications'] : [])]) {
         await gotoHydrated(viewer, path);
         const at = `${width} px ${path}`;
-        const { page: pageWidth, brand, finder, menu, nameCut, tabs } = await bars(viewer);
+        const { page: pageWidth, brand, finder, menu, named, nameCut, headingCut, tabs } = await bars(viewer);
         expect(pageWidth, at).toBe(width);
         // The mark or name, the finder and the menu button in that order, none overlapping, inside the bar.
         expect(brand.right, at).toBeLessThanOrEqual(finder.left);
         expect(finder.right, at).toBeLessThanOrEqual(menu.left);
         expect(menu.right, at).toBeLessThanOrEqual(width);
         for (const target of [brand, finder, menu]) expect(Math.min(target.width, target.height), at).toBeGreaterThanOrEqual(44);
-        // This instance's name ("b1.peblish.test" or the like) fits whole.
-        expect(nameCut, at).toBe(false);
+        // This instance's name ("b1.peblish.test" or the like) fits whole, but beside a feed's heading, which stays
+        // whole while the name gives way to it.
+        if (path === '/' && named) expect(headingCut, at).toBe(false);
+        else expect(nameCut, at).toBe(false);
         // Five tabs side by side across the width, each a 44px target.
         expect(tabs, at).toHaveLength(5);
         for (const [index, tab] of tabs.entries()) {
@@ -96,6 +102,32 @@ for (const signedIn of [false, true]) {
     await expect(viewer.getByRole('navigation', { name: 'Page', exact: true }).getByRole('link', { name: long })).toBeVisible();
   });
 }
+
+test("a feed's heading in the phone's bar stays whole at 320 and 360 px: the site's name gives way to it", async ({ page }) => {
+  const long = 'A community site with a very long name indeed';
+  for (const width of [320, 360]) {
+    await page.setViewportSize({ width, height: 700 });
+    for (const path of ['/all', '/popular']) {
+      await gotoHydrated(page, path);
+      const name = page.locator('.pb-frame-vh .pb-bar-brand > .muxui-text');
+      test.skip((await name.count()) === 0, 'a brand pack shows its mark, not the name, on the phone');
+      for (const text of [null, long]) {
+        if (text) await name.evaluate((element, value) => (element.textContent = value), text);
+        const at = `${width} px ${path}${text ? ', a long name' : ''}`;
+        const { page: pageWidth, brand, finder, menu, headingCut } = await bars(page);
+        expect(headingCut, at).toBe(false);
+        expect(pageWidth, at).toBe(width);
+        // The brand gives way down to its 44px target; the finder, the menus and the drawer's button keep theirs.
+        for (const target of [brand, finder, menu]) expect(Math.min(target.width, target.height), at).toBeGreaterThanOrEqual(44);
+        expect(brand.right, at).toBeLessThanOrEqual(finder.left);
+        const heading = (await page.locator('.pb-frame-vh h1').boundingBox())!;
+        const sort = (await page.locator('.pb-frame-vh .feed-menus button:visible').first().boundingBox())!;
+        expect(finder.right, at).toBeLessThanOrEqual(heading.x + 0.5);
+        expect(heading.x + heading.width, at).toBeLessThanOrEqual(sort.x + 0.5);
+      }
+    }
+  }
+});
 
 test('on a long page the header stays at the top and the sidebar under it, and the centre column runs the page height', async ({
   page,

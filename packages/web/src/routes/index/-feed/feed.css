@@ -70,6 +70,23 @@
     .feed .pb-vh:has(.pb-bar-brand > .muxui-text) .feed-menus__narrow {
       display: block;
     }
+
+    /* There the feed's name, the page's only heading, stays whole, and the site's name gives way to it: the
+       bar's start keeps the brand's and the finder's 44px targets at the least and takes what the heading
+       and the menu leave, so a long site name ends in an ellipsis first (the brand's rule, shell.css). The
+       heading is held to 5.75rem, which every feed's name fits in either language and which is what is left
+       beside those targets at 320px, so nothing is covered and the page never scrolls sideways. */
+    .feed .pb-vh:has(.pb-bar-brand > .muxui-text):has(> .pb-vh__title:not([data-quiet])) {
+      grid-template-columns: auto minmax(min-content, max-content) auto;
+    }
+
+    .feed .pb-vh:has(.pb-bar-brand > .muxui-text) > .pb-vh__leading {
+      min-inline-size: calc(2 * var(--pb-touch) + var(--muxui-semantic-layout-tight-gap));
+    }
+
+    .feed .pb-vh:has(.pb-bar-brand > .muxui-text) .feed-title {
+      max-inline-size: 5.75rem;
+    }
   }
 
   /* The phone's bar is narrow: the feed's glyph gives way to its name. */
