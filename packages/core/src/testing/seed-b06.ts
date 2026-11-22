@@ -1,8 +1,10 @@
-import { count, eq, getTableName } from 'drizzle-orm';
+import { asc, count, eq } from 'drizzle-orm';
+import { uuidv7 } from 'uuidv7';
 import { db } from '../db/read.ts';
 import { instances } from '../db/tables/instances.ts';
 import { writer } from '../db/write.ts';
-import { personalTables } from '../identity/personal.ts';
+import { notifications } from '../notifications/tables.ts';
+import type { NotificationKind } from '../notifications/view.ts';
 import { communityPins } from '../pins/tables.ts';
 import { savedPosts } from '../saves/tables.ts';
 import { threadVisits } from '../visits/tables.ts';
@@ -32,13 +34,30 @@ export async function seedPersonalRows(ownerId: string, { postId, communityId }:
   await w.insert(threadVisits).values({ ownerId, postId, lastVisitAt: new Date() });
 }
 
-/** How many rows each personal table holds for `ownerId`, by table name. */
-export async function personalRowCounts(ownerId: string): Promise<Record<string, number>> {
-  const counts = await Promise.all(
-    personalTables.map(async (table) => {
-      const [row] = await db().select({ n: count() }).from(table).where(eq(table.ownerId, ownerId));
-      return [getTableName(table), row?.n ?? 0] as const;
-    }),
-  );
-  return Object.fromEntries(counts);
+/**
+ * The four personal tables by name, written out here rather than read from personalTables, so a
+ * deletion test per table survives that list losing one, and fails.
+ */
+const byName = { saved_posts: savedPosts, community_pins: communityPins, thread_watches: threadWatches, thread_visits: threadVisits };
+export type PersonalTableName = keyof typeof byName;
+
+/** How many rows one personal table holds for `ownerId`. */
+export async function personalRowCount(name: PersonalTableName, ownerId: string): Promise<number> {
+  const table = byName[name];
+  const [row] = await db().select({ n: count() }).from(table).where(eq(table.ownerId, ownerId));
+  return row?.n ?? 0;
+}
+
+/** Notices for the deletion tests: one in `recipientId`'s inbox naming `actorId` per kind given. */
+export async function seedPersonalNotices(recipientId: string, actorId: string | null, kinds: readonly NotificationKind[]) {
+  for (const kind of kinds) await writer().insert(notifications).values({ recipientId, kind, refId: uuidv7(), actorId });
+}
+
+/** The kinds in a person's inbox with who each names, oldest first. */
+export async function noticesNaming(recipientId: string): Promise<{ kind: string; actorId: string | null }[]> {
+  return db()
+    .select({ kind: notifications.kind, actorId: notifications.actorId })
+    .from(notifications)
+    .where(eq(notifications.recipientId, recipientId))
+    .orderBy(asc(notifications.id));
 }

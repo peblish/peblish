@@ -2,6 +2,7 @@ import type { Principal } from '@peblish/schema/authz';
 import { parseEvent } from '@peblish/schema/events';
 import { and, eq } from 'drizzle-orm';
 import { beforeEach, describe, expect, test, vi } from 'vitest';
+import { authorize } from '../authz/authorize.ts';
 import { db } from '../db/read.ts';
 import { actors } from '../db/tables/actors.ts';
 import { comments, posts, votes } from '../db/tables/content.ts';
@@ -10,6 +11,7 @@ import { outboxCursors } from '../db/tables/outbox.ts';
 import { writer } from '../db/write.ts';
 import { acceptFollow } from '../follows/follow.ts';
 import { followAs } from '../follows/service.ts';
+import { deleteAccount } from '../identity/delete.ts';
 import { removeContent } from '../moderation/remove.ts';
 import { peerControls } from '../peers/tables.ts';
 import { truncateAll } from '../testing/db.ts';
@@ -122,6 +124,21 @@ describe('thread_reply', () => {
     await say(w.people.admin, sensitive.id, 'Careful');
     await drainNotices();
     expect(await kindsOf(w.people.owner.id)).toEqual(['thread_reply', 'thread_reply']);
+    expect(await kindsOf(w.people.reader.id)).toEqual([]);
+  });
+
+  test('a comment whose author deletes the account before its notices go out tells no follower, then or on a replay', async () => {
+    const w = await seedInboxWorld();
+    const postId = w.posts.local.normal;
+    await follow(w.people.reader, postId);
+    await say(w.people.owner, postId, 'Gone soon');
+    const decision = await authorize('account.delete', localUser(w.people.owner.id), { actorId: w.people.owner.id });
+    if (!decision.ok) throw new Error(decision.reason);
+    await deleteAccount(decision.grant, { reason: 'owner request' });
+    await drainNotices();
+    expect(await kindsOf(w.people.reader.id)).toEqual([]);
+    await writer().update(outboxCursors).set({ txId: '0', eventId: 0 }).where(eq(outboxCursors.consumer, 'notifications.create'));
+    await drainNotices();
     expect(await kindsOf(w.people.reader.id)).toEqual([]);
   });
 

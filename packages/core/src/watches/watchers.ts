@@ -21,7 +21,8 @@ export const threadReplyFanOut = 200;
 
 /**
  * The followers of the comment's thread who may be told of it, in one query: the comment, its post
- * and its community are live (neither deleted nor removed); the follow started before this server
+ * and its community are live (neither deleted nor removed), and so is its author's account (a
+ * deleted account's notices are cleared, identity/personal.ts, and must not come back); the follow started before this server
  * received the comment (`since` before `comments.created_at`); the follower is a live local person
  * who is not its author, not in `told` (already given a reply or mention for it), does not block
  * its author or community (noticeBlocked, the inbox's rule) nor the post's author (actorBlockedBy:
@@ -41,12 +42,13 @@ export async function threadFollowersOf(q: Queryable, commentId: Uuid, told: rea
   const rows = await q.execute<{ id: Uuid }>(sql`
     select tw.owner_id as id
     from ${comments} as c
+    join ${actors} as author on author.id = c.author_id
     join ${posts} as p on p.id = c.post_id
     join ${actors} as community on community.id = p.community_id
     join ${threadWatches} as tw on tw.post_id = p.id
     join ${actors} as follower on follower.id = tw.owner_id
     where c.id = ${commentId}::uuid
-      and c.deleted_at is null and c.removed_at is null
+      and c.deleted_at is null and c.removed_at is null and author.deleted_at is null
       and p.deleted_at is null and p.removed_at is null
       and community.deleted_at is null
       and not exists (select 1 from ${communityRemovals} as removal where removal.community_id = community.id)

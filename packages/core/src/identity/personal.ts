@@ -1,6 +1,7 @@
 import type { Uuid } from '@peblish/schema/ids';
-import { eq } from 'drizzle-orm';
+import { and, eq, inArray, or } from 'drizzle-orm';
 import type { WriteTx } from '../db/write.ts';
+import { notifications } from '../notifications/tables.ts';
 import { communityPins } from '../pins/tables.ts';
 import { savedPosts } from '../saves/tables.ts';
 import { threadVisits } from '../visits/tables.ts';
@@ -14,8 +15,26 @@ import { threadWatches } from '../watches/tables.ts';
  * A new owner-only table joins this list.
  */
 export const personalTables = [savedPosts, communityPins, threadWatches, threadVisits] as const;
+export type PersonalTable = (typeof personalTables)[number];
 
-/** Deletes everything the personal features hold for `ownerId`, in the caller's transaction. */
-export async function deletePersonalData(db: WriteTx, ownerId: Uuid): Promise<void> {
-  for (const table of personalTables) await db.delete(table).where(eq(table.ownerId, ownerId));
+/** The notice kinds the personal features write: a followed thread's comment, a remote community's Accept. */
+const personalNoticeKinds = ['thread_reply', 'follow_accept'] as const;
+
+/**
+ * Deletes everything the personal features hold for `ownerId`, in the caller's transaction: their
+ * rows in `tables` (all of personalTables unless a restored backup lacks some), and the notices of
+ * the personal kinds that are theirs or that name them (another follower's notice of their
+ * comment). Older kinds are left to the notifications consumer, as before. Both account deletion
+ * and its restore replay run this, so the two cannot drift apart.
+ */
+export async function deletePersonalData(db: WriteTx, ownerId: Uuid, tables: readonly PersonalTable[] = personalTables): Promise<void> {
+  for (const table of tables) await db.delete(table).where(eq(table.ownerId, ownerId));
+  await db
+    .delete(notifications)
+    .where(
+      and(
+        inArray(notifications.kind, [...personalNoticeKinds]),
+        or(eq(notifications.recipientId, ownerId), eq(notifications.actorId, ownerId)),
+      ),
+    );
 }

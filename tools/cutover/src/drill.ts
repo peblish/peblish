@@ -8,7 +8,7 @@ import { deletionLedger } from '@peblish/core/db/tables/site';
 import { owePurgeAfterRestore } from '@peblish/core/edge/debt';
 import type { WriteTx } from '@peblish/core/db/write';
 import { mediaEvidence } from '@peblish/core/evidence/tables';
-import { personalTables } from '@peblish/core/identity/personal';
+import { deletePersonalData, personalTables, type PersonalTable } from '@peblish/core/identity/personal';
 import { categoryOf, listBlockedHash } from '@peblish/core/mediascan/block';
 import { blockCategories } from '@peblish/core/mediascan/list';
 import { outboxEmitter } from '@peblish/core/tx/tx';
@@ -360,16 +360,20 @@ async function replayHashAdded(t: ReplayTx, row: LedgerRow): Promise<number> {
 }
 
 /**
- * A deleted account's saves, pins, thread follows and visit markers (core identity/personal.ts),
- * which a backup taken before the deletion brings back. A backup from before those tables
- * existed has none, so a table it lacks is skipped: the statement would abort the whole replay.
+ * A deleted account's saves, pins, thread follows and visit markers, and the notices of those
+ * features that are its or name it, which a backup taken before the deletion brings back: the
+ * same clean-up account deletion runs (core identity/personal.ts). A backup from before those
+ * tables existed has none, so a table it lacks is skipped: the statement would abort the whole
+ * replay.
  */
 async function deletePersonalRows(q: WriteTx, ownerId: string): Promise<void> {
+  const present: PersonalTable[] = [];
   for (const table of personalTables) {
     const name = getTableName(table);
     const [found] = await q.execute<{ present: boolean }>(sql`select to_regclass(${`public.${name}`}) is not null as present`);
-    if (found?.present) await q.delete(table).where(eq(table.ownerId, ownerId));
+    if (found?.present) present.push(table);
   }
+  await deletePersonalData(q, ownerId, present);
 }
 
 /**
