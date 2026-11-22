@@ -211,6 +211,13 @@ describe('Undo of Mark all read', () => {
     const undo = await grantFor('notification.undo_read_all', owner, { recipientId: me });
     expect(await undoMarkAllRead(undo, { batch: marked.batch! })).toEqual({ count: shown.length });
     expect((await readInbox(viewer, { filter: 'unread' })).items.map((item) => item.id)).toEqual(shown);
+
+    // With only hidden notices unread, nothing the reader sees changes: no count and nothing to undo.
+    await markNotification(await grantFor('notification.read', owner, { notificationId: shown[0]! }), { read: true });
+    expect(await markAllNotificationsRead(await grantFor('notification.read_all', owner, { recipientId: me }), undefined)).toEqual({
+      count: 0,
+      batch: null,
+    });
   });
 
   test('only the owner undoes, and never another person’s notices with the same stamp', async () => {

@@ -64,7 +64,7 @@ const readStamp = sql<string>`(extract(epoch from ${notifications.readAt}) * 100
 /**
  * Marks every unread notice of the owner read; answers `count`, how many of them the inbox shows
  * (inboxVisible: the number the reader saw, though hidden ones are marked too), and `batch`, the
- * stamp its Undo takes (null when nothing was unread).
+ * stamp its Undo takes (null when nothing the inbox shows was unread: there is nothing to undo).
  */
 export const markAllNotificationsRead = defineMutation({
   action: 'notification.read_all',
@@ -80,7 +80,8 @@ export const markAllNotificationsRead = defineMutation({
     if (rows.length > 0) {
       await t.emit({ type: 'notification.read', v: 1, recipientId, notificationId: null, read: true, count: rows.length });
     }
-    return { count: rows.filter((row) => row.shown).length, batch: rows[0]?.batch ?? null };
+    const shown = rows.filter((row) => row.shown);
+    return { count: shown.length, batch: shown[0]?.batch ?? null };
   },
 });
 
