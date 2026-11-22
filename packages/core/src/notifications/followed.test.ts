@@ -3,6 +3,7 @@ import { parseEvent } from '@peblish/schema/events';
 import { and, eq } from 'drizzle-orm';
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 import { authorize } from '../authz/authorize.ts';
+import { gateOf } from '../communities/gate.ts';
 import { db } from '../db/read.ts';
 import { actors } from '../db/tables/actors.ts';
 import { comments, posts, votes } from '../db/tables/content.ts';
@@ -24,6 +25,7 @@ import { threadWatches } from '../watches/tables.ts';
 import { threadFollowersOf, threadReplyFanOut } from '../watches/watchers.ts';
 import { watchThreadAs } from '../watches/watches.ts';
 import { readInbox } from './read.ts';
+import { markAllNotificationsReadAs } from './service.ts';
 import { unreadCount } from './unread.ts';
 
 // The two notice kinds of branch 5 (lane f-notify), written by the real consumer from the real
@@ -410,5 +412,28 @@ describe('follow_accept', () => {
     // A community deleted since: the notice is neither listed nor counted.
     await writer().update(actors).set({ deletedAt: new Date() }).where(eq(actors.id, sensitiveGroup.id));
     expect(await unreadCount(w.people.admin.id)).toBe(0);
+  });
+
+  test('a community flagged after its Accept is listed and counted only where the community gate opens it', async () => {
+    const w = await seedInboxWorld();
+    await declareAge(w.people.admin);
+    for (const person of [w.people.reader, w.people.admin]) await (await pending(w, person)).accept();
+    await drainNotices();
+    const seen = async (person: { id: string }) => {
+      const inbox = await readInbox({ actorId: person.id, siteRole: 'user' }, { filter: 'account' });
+      return [inbox.items.length, inbox.unread, inbox.unreadByGroup.account, await unreadCount(person.id)];
+    };
+    for (const flagged of [false, true]) {
+      await writer().update(actors).set({ sensitive: flagged }).where(eq(actors.id, w.communities.remote.id));
+      for (const [person, declared] of [
+        [w.people.reader, false],
+        [w.people.admin, true],
+      ] as const) {
+        const open = gateOf(flagged, { declared }, true) === 'none' ? 1 : 0;
+        expect([flagged, declared, ...(await seen(person))]).toEqual([flagged, declared, open, open, open, open]);
+      }
+    }
+    // Mark all read answers only what the inbox showed the undeclared reader: nothing.
+    expect(await markAllNotificationsReadAs(localUser(w.people.reader.id))).toEqual({ ok: true, count: 0, batch: null });
   });
 });
