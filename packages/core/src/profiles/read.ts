@@ -3,7 +3,7 @@ import type { ActorRef, CommentView, Page, PostView } from '@peblish/schema/view
 import { and, count, eq, getTableColumns, inArray, isNull, sql, type SQL } from 'drizzle-orm';
 import { freshModerator } from '../authz/roles.ts';
 import { hideNsfw, type NsfwChoice } from '../communities/gate.ts';
-import { blockOf } from '../blocks/predicate.ts';
+import { actorBlockedBy, blockOf } from '../blocks/predicate.ts';
 import { db, type Queryable } from '../db/read.ts';
 import { actors } from '../db/tables/actors.ts';
 import { authUser } from '../db/tables/auth.ts';
@@ -259,7 +259,13 @@ function nsfwShown(nsfw: NsfwChoice): SQL | undefined {
   return nsfw.once.length === 0 ? clear : sql`(${clear} or ${inArray(posts.communityId, [...nsfw.once])})`;
 }
 
-/** The person's live comments on posts the viewer may see, under Hide NSFW (the Comments tab and its count); `posts` joined. */
+/**
+ * The person's live comments on posts the viewer may see, under Hide NSFW (the Comments tab and
+ * its count); `posts` joined. `visible` applies the viewer's blocks to the post; the comment's own
+ * author is checked too (actorBlockedBy: the person, or their instance), since a blocked person's
+ * comment under someone else's post would otherwise pass. The column is spelled out, as
+ * blocks/predicate.ts asks.
+ */
 function shownComments(personId: Uuid, viewer: Viewer, asOf: number, nsfw: NsfwChoice): SQL[] {
   const conditions = [
     eq(comments.authorId, personId),
@@ -267,6 +273,7 @@ function shownComments(personId: Uuid, viewer: Viewer, asOf: number, nsfw: NsfwC
     isNull(comments.removedAt),
     ...visible('all', viewer, asOf),
   ];
+  if (viewer) conditions.push(sql`not ${actorBlockedBy(viewer.actorId, sql.raw('"comments"."author_id"'))}`);
   const shown = nsfwShown(nsfw);
   if (shown) conditions.push(shown);
   return conditions;
