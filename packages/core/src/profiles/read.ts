@@ -10,6 +10,7 @@ import { authUser } from '../db/tables/auth.ts';
 import { comments, posts, votes } from '../db/tables/content.ts';
 import { instances } from '../db/tables/instances.ts';
 import { communityModerators } from '../db/tables/moderation.ts';
+import { communityRemovals } from '../moderation/tables.ts';
 import { decodeCursor, encodeCursor, type Cursor } from '../feeds/cursor.ts';
 import { defaultPageSize, maxPageSize } from '../feeds/input.ts';
 import { visible } from '../feeds/read.ts';
@@ -73,7 +74,7 @@ export const publicActorRef = (actor: ActorRef): ActorRef => ({
 const refOf = (actor: Omit<ActorRef, 'handle'> & { domain: string }): ActorRef =>
   publicActorRef({ ...actor, handle: actor.local ? actor.name : `${actor.name}@${actor.domain}` });
 
-/** Communities the viewer moderates where `personId` has a live post or comment. */
+/** Communities the viewer moderates, live (not deleted, not removed by an admin), where `personId` has a live post or comment. */
 async function moderatedWith(q: Queryable, viewerId: Uuid, personId: Uuid): Promise<ActorRef[]> {
   const rows = await q
     .select({
@@ -93,6 +94,7 @@ async function moderatedWith(q: Queryable, viewerId: Uuid, personId: Uuid): Prom
         eq(communityModerators.moderatorId, viewerId),
         freshModerator,
         isNull(actors.deletedAt),
+        sql`not exists (select 1 from ${communityRemovals} where ${communityRemovals.communityId} = ${actors.id})`,
         sql`(
           exists (select 1 from ${posts} where ${posts.communityId} = ${actors.id} and ${posts.authorId} = ${personId} and ${posts.deletedAt} is null and ${posts.removedAt} is null)
           or exists (

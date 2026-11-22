@@ -179,6 +179,17 @@ describe('readProfile', () => {
     expect(await comments('rem@lemmy.test', w.mod)).toEqual({ counted: 1, listed: 1 });
   });
 
+  test('moderated communities leave out one an admin removed, as everything else does', async () => {
+    const w = await world();
+    const closed = await seedActor(w.local, 'Group', 'closed');
+    for (const community of [w.news, closed]) {
+      await seedModerator(community, w.mod);
+      await seedPost(w.local, community, w.alice);
+    }
+    await seedCommunityRemoval(closed);
+    expect((await readProfile('Alice', w.as(w.mod)))?.moderatedCommunities.map((c) => c.name)).toEqual(['news']);
+  });
+
   test('moderated communities: the viewer moderates and the person has live content, at most five', async () => {
     const w = await world();
     const communities = [];
