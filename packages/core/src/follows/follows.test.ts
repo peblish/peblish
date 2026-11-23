@@ -1,11 +1,13 @@
 import { eq, sql } from 'drizzle-orm';
 import { beforeEach, describe, expect, test } from 'vitest';
 import { authorize } from '../authz/authorize.ts';
+import { communityBlocks, instanceBlocks } from '../blocks/tables.ts';
 import { systemPrincipal } from '../authz/system.ts';
 import { db } from '../db/read.ts';
 import { actors } from '../db/tables/actors.ts';
 import { follows } from '../db/tables/follows.ts';
 import { writer } from '../db/write.ts';
+import { peerControls } from '../peers/tables.ts';
 import { Refused } from '../tx/refused.ts';
 import { tx } from '../tx/tx.ts';
 import { truncateAll } from '../testing/db.ts';
@@ -158,6 +160,62 @@ describe('the communities a viewer follows, for the sidebar and the composer', (
         nsfl: false,
       },
     ]);
+  });
+
+  test("the composer's read: accepted follows only, past the age gate when asked, the first by name", async () => {
+    const w = await world();
+    const gated = await seedActor(w.there, 'Group', 'gated', { sensitive: true });
+    const waiting = await seedActor(w.there, 'Group', 'waiting');
+    for (const [community, state] of [
+      [w.remote, 'accepted'],
+      [w.local, 'accepted'],
+      [w.otherRemote, 'accepted'],
+      [gated, 'accepted'],
+      [waiting, 'pending'],
+    ] as const) {
+      await writer()
+        .insert(follows)
+        .values({ followerId: w.alice.id, followeeId: community.id, apId: `https://fed-a.test/f/${community.name}`, state });
+    }
+    const names = async (options: Parameters<typeof followedCommunities>[1]) =>
+      (await followedCommunities(w.alice.id, options)).map(({ name }) => name);
+    expect(await names({})).toEqual(['gated', 'lab', 'news', 'other', 'waiting']);
+    expect(await names({ accepted: true })).toEqual(['gated', 'lab', 'news', 'other']);
+    expect(await names({ accepted: true, includeSensitive: false })).toEqual(['lab', 'news', 'other']);
+    expect(await names({ accepted: true, includeSensitive: false, limit: 2 })).toEqual(['lab', 'news']);
+  });
+
+  test("the composer's read leaves out a community on a host this server blocks or the person blocks", async () => {
+    const w = await world();
+    const shut = await seedInstance('shut.test', false);
+    const quiet = await seedInstance('quiet.test', false);
+    const walled = await seedActor(shut, 'Group', 'walled');
+    const hushed = await seedActor(quiet, 'Group', 'hushed');
+    for (const community of [w.remote, walled, hushed]) {
+      await writer()
+        .insert(follows)
+        .values({ followerId: w.alice.id, followeeId: community.id, apId: `https://fed-a.test/f/${community.name}`, state: 'accepted' });
+    }
+    await writer().insert(peerControls).values({ instanceId: shut.id, blocked: true });
+    await writer().insert(instanceBlocks).values({ blockerId: w.alice.id, instanceId: quiet.id });
+    expect((await followedCommunities(w.alice.id, { accepted: true })).map(({ name }) => name)).toEqual(['lab']);
+    // Nor one the person blocks itself, followed again since.
+    await writer().insert(communityBlocks).values({ blockerId: w.alice.id, communityId: w.remote.id });
+    expect(await followedCommunities(w.alice.id, { accepted: true })).toEqual([]);
+  });
+
+  test('communities of one name come by host, then id, the same on every read', async () => {
+    const w = await world();
+    const hosts = ['zeta.test', 'alpha.test', 'mid.test'];
+    // Followed in an order that is neither, so the read's order is its own.
+    const seeded = [];
+    for (const host of hosts) seeded.push(await seedActor(await seedInstance(host, false), 'Group', 'news'));
+    for (const community of seeded.toReversed()) {
+      await writer()
+        .insert(follows)
+        .values({ followerId: w.alice.id, followeeId: community.id, apId: `https://fed-a.test/f/${community.id}`, state: 'accepted' });
+    }
+    expect((await followedCommunities(w.alice.id)).map(({ host }) => host)).toEqual(['alpha.test', 'mid.test', 'zeta.test']);
   });
 });
 

@@ -5,14 +5,16 @@ import type { Queryable } from '../db/read.ts';
 import { actors } from '../db/tables/actors.ts';
 import { follows } from '../db/tables/follows.ts';
 import { communityRemovals } from '../moderation/tables.ts';
+import { peerBlocked } from '../peers/gate.ts';
+import { ageClear } from '../posts/feed-predicate.ts';
 import { communityPins } from './tables.ts';
 
 /**
  * Every pin of the owner in stored order, each marked `shown` when the sidebar lists it: the
  * owner still follows the community (accepted or pending), it is open (not deleted, not removed),
- * the same rule as feeds/shell.ts, and the owner does not block it (itself or its instance,
- * blocks/predicate.ts). The one eligible order: the sidebar's places (pinsAmong) and the moves
- * both count it. A hidden pin keeps its stored place and shows again once it is eligible.
+ * the age gate lets the owner see it, it is not on a host this server blocks, the same rule as
+ * feeds/shell.ts, and the owner does not block it (itself or its instance, blocks/predicate.ts).
+ * The one eligible order: the sidebar's places (pinsAmong) and the moves both count it. A hidden pin keeps its stored place and shows again once it is eligible.
  */
 export async function shownPins(q: Queryable, ownerId: Uuid) {
   const pins = await q
@@ -21,6 +23,8 @@ export async function shownPins(q: Queryable, ownerId: Uuid) {
       position: communityPins.position,
       shown: sql<boolean>`(${actors.kind} = 'Group' and ${isNull(actors.deletedAt)}
         and not exists (select 1 from ${communityRemovals} where ${communityRemovals.communityId} = ${actors.id})
+        and ${ageClear(sql`(${actors.sensitive} or ${actors.nsfl})`, { actorId: ownerId })}
+        and not ${peerBlocked(actors.instanceId)}
         and exists (select 1 from ${follows} where ${follows.followerId} = ${communityPins.ownerId} and ${follows.followeeId} = ${actors.id}))`,
     })
     .from(communityPins)

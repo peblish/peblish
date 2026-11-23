@@ -2,7 +2,6 @@ import { isImageContentType } from '@peblish/core/media/image-src';
 import type { PostPage } from '@peblish/core/posts/read';
 import type { PostView } from '@peblish/schema/views';
 import type { MarkdownRenderer } from '../../server/markdown.ts';
-import { withheldAuthor } from './-withheld.ts';
 
 // The decisions of the post page's data that need no request (-load.ts has the rest), apart from
 // the server function so they are unit tested.
@@ -47,25 +46,6 @@ export const threadVisible = ({
   view: Pick<PostView, 'removed'>;
   moderator: boolean;
 }): boolean => gate === 'none' && (!view.removed || moderator);
-
-/**
- * Whether the post's author goes to this viewer: a live post's always; a tombstone's (deleted, or removed)
- * only to staff (the community's moderators and site admins, `moderator`) and to the author, who restores
- * their own deleted post from the page.
- */
-export const authorShown = (
-  page: { view: Pick<PostView, 'deleted' | 'removed' | 'author'>; moderator: boolean },
-  viewerId: string | null,
-) => (!page.view.deleted && !page.view.removed) || page.moderator || viewerId === page.view.author.id;
-
-/**
- * The post as its page sends it to `viewerId`. A tombstone keeps its flags, community, time and counts
- * but says nothing of its author: no id, name, handle or badge, and no address of its own, since a
- * federated post's address can hold its author's handle. Where authorShown holds, core's view as it is.
- */
-export function postForViewer(page: { view: PostView; moderator: boolean }, viewerId: string | null): PostView {
-  return authorShown(page, viewerId) ? page.view : { ...page.view, apId: '', author: withheldAuthor, authorBadge: null };
-}
 
 const timeFormats = new Map<string, Intl.DateTimeFormat>();
 

@@ -1,5 +1,5 @@
 {
-  "id": "1cf2fa30-dc9f-40d2-a64e-6d8b5ae3c260",
+  "id": "6eb3ced8-4e05-44d4-b58f-f51324d925e4",
   "prevId": "f80f24b0-9568-4752-a3f4-ad1b65d7f9ed",
   "version": "7",
   "dialect": "postgresql",
@@ -1201,6 +1201,28 @@
             }
           ],
           "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "comments_author_post": {
+          "name": "comments_author_post",
+          "columns": [
+            {
+              "expression": "author_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "post_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"comments\".\"deleted_at\" is null and \"comments\".\"removed_at\" is null",
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -5914,114 +5936,6 @@
       },
       "isRLSEnabled": false
     },
-    "public.community_pins": {
-      "name": "community_pins",
-      "schema": "",
-      "columns": {
-        "owner_id": {
-          "name": "owner_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "community_id": {
-          "name": "community_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "position": {
-          "name": "position",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        }
-      },
-      "indexes": {
-        "community_pins_owner_position": {
-          "name": "community_pins_owner_position",
-          "columns": [
-            {
-              "expression": "owner_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "position",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "community_pins_community": {
-          "name": "community_pins_community",
-          "columns": [
-            {
-              "expression": "community_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "community_pins_owner_id_actors_id_fk": {
-          "name": "community_pins_owner_id_actors_id_fk",
-          "tableFrom": "community_pins",
-          "tableTo": "actors",
-          "columnsFrom": [
-            "owner_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "community_pins_community_id_actors_id_fk": {
-          "name": "community_pins_community_id_actors_id_fk",
-          "tableFrom": "community_pins",
-          "tableTo": "actors",
-          "columnsFrom": [
-            "community_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {
-        "community_pins_owner_id_community_id_pk": {
-          "name": "community_pins_owner_id_community_id_pk",
-          "columns": [
-            "owner_id",
-            "community_id"
-          ]
-        }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "community_pins_position": {
-          "name": "community_pins_position",
-          "value": "\"community_pins\".\"position\" >= 0"
-        }
-      },
-      "isRLSEnabled": false
-    },
     "public.backfills": {
       "name": "backfills",
       "schema": "",
@@ -6249,299 +6163,6 @@
       },
       "foreignKeys": {},
       "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.saved_posts": {
-      "name": "saved_posts",
-      "schema": "",
-      "columns": {
-        "owner_id": {
-          "name": "owner_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "post_id": {
-          "name": "post_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "saved_at": {
-          "name": "saved_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "saved_posts_owner_saved": {
-          "name": "saved_posts_owner_saved",
-          "columns": [
-            {
-              "expression": "owner_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "saved_at",
-              "isExpression": false,
-              "asc": false,
-              "nulls": "last"
-            },
-            {
-              "expression": "post_id",
-              "isExpression": false,
-              "asc": false,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "saved_posts_post": {
-          "name": "saved_posts_post",
-          "columns": [
-            {
-              "expression": "post_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "saved_posts_owner_id_actors_id_fk": {
-          "name": "saved_posts_owner_id_actors_id_fk",
-          "tableFrom": "saved_posts",
-          "tableTo": "actors",
-          "columnsFrom": [
-            "owner_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "saved_posts_post_id_posts_id_fk": {
-          "name": "saved_posts_post_id_posts_id_fk",
-          "tableFrom": "saved_posts",
-          "tableTo": "posts",
-          "columnsFrom": [
-            "post_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {
-        "saved_posts_owner_id_post_id_pk": {
-          "name": "saved_posts_owner_id_post_id_pk",
-          "columns": [
-            "owner_id",
-            "post_id"
-          ]
-        }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.thread_visits": {
-      "name": "thread_visits",
-      "schema": "",
-      "columns": {
-        "owner_id": {
-          "name": "owner_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "post_id": {
-          "name": "post_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "last_visit_at": {
-          "name": "last_visit_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "previous_visit_at": {
-          "name": "previous_visit_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        }
-      },
-      "indexes": {
-        "thread_visits_post": {
-          "name": "thread_visits_post",
-          "columns": [
-            {
-              "expression": "post_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "thread_visits_owner_id_actors_id_fk": {
-          "name": "thread_visits_owner_id_actors_id_fk",
-          "tableFrom": "thread_visits",
-          "tableTo": "actors",
-          "columnsFrom": [
-            "owner_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "thread_visits_post_id_posts_id_fk": {
-          "name": "thread_visits_post_id_posts_id_fk",
-          "tableFrom": "thread_visits",
-          "tableTo": "posts",
-          "columnsFrom": [
-            "post_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {
-        "thread_visits_owner_id_post_id_pk": {
-          "name": "thread_visits_owner_id_post_id_pk",
-          "columns": [
-            "owner_id",
-            "post_id"
-          ]
-        }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.thread_watches": {
-      "name": "thread_watches",
-      "schema": "",
-      "columns": {
-        "owner_id": {
-          "name": "owner_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "post_id": {
-          "name": "post_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "since": {
-          "name": "since",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "thread_watches_post": {
-          "name": "thread_watches_post",
-          "columns": [
-            {
-              "expression": "post_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "since",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "owner_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "thread_watches_owner_id_actors_id_fk": {
-          "name": "thread_watches_owner_id_actors_id_fk",
-          "tableFrom": "thread_watches",
-          "tableTo": "actors",
-          "columnsFrom": [
-            "owner_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "thread_watches_post_id_posts_id_fk": {
-          "name": "thread_watches_post_id_posts_id_fk",
-          "tableFrom": "thread_watches",
-          "tableTo": "posts",
-          "columnsFrom": [
-            "post_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {
-        "thread_watches_owner_id_post_id_pk": {
-          "name": "thread_watches_owner_id_post_id_pk",
-          "columns": [
-            "owner_id",
-            "post_id"
-          ]
-        }
-      },
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},

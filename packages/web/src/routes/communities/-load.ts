@@ -29,7 +29,9 @@ export const loadDirectory = createServerFn({ method: 'GET' })
   )
   .handler(async ({ data }) => {
     const session = await pageSession();
-    const viewer = session ? { actorId: session.view.actorId, declared: session.view.ageDeclaredAt !== null } : null;
+    const viewer = session
+      ? { actorId: session.view.actorId, siteRole: session.view.siteRole, declared: session.view.ageDeclaredAt !== null }
+      : null;
     const [directory, listed] = await Promise.all([listCommunities(data, viewer), listedPins(data, viewer)]);
     // Pin is offered only on rows the viewer follows or asked to join, so only those are looked up.
     const followed = directory.rows.filter((row) => row.follow !== 'none').map((row) => row.actor.id);

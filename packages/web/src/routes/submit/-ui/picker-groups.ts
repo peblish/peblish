@@ -3,9 +3,6 @@ import type { PickerCommunity } from '../-types.ts';
 // The one place Create post's grouped picker reads the composer loader's list (-load.ts), so the loader can change
 // under it (a bound with a `truncated` flag, the viewer's follows first) and only this function follows.
 
-/** How many local communities the loader lists at most (listLocalCommunities' default limit). */
-export const localCap = 200;
-
 export interface PickerGroups {
   joined: PickerCommunity[];
   others: PickerCommunity[];
@@ -14,13 +11,12 @@ export interface PickerGroups {
 }
 
 /**
- * Joined first (communities in `joinedIds`, the sidebar's list from the root loader, and every remote one, which the
- * loader lists only when the viewer follows it), then the rest, each by name as the loader orders them. The loader
- * does not say whether it cut its list short; a full local list is taken to mean it did.
+ * Joined first (communities in `joinedIds`, the sidebar's list from the root loader, local or remote), then the rest,
+ * each by name as the loader orders them. The rest can hold a remote community: one the loader looked up because the
+ * form starts in it, which the viewer does not follow. `truncated` is the loader's own (`pickerTruncated`).
  */
-export function pickerGroups(communities: readonly PickerCommunity[], joinedIds: ReadonlySet<string>): PickerGroups {
-  const joined = communities.filter((community) => !community.local || joinedIds.has(community.id));
-  const others = communities.filter((community) => community.local && !joinedIds.has(community.id));
-  const truncated = communities.filter((community) => community.local).length >= localCap;
+export function pickerGroups(communities: readonly PickerCommunity[], joinedIds: ReadonlySet<string>, truncated: boolean): PickerGroups {
+  const joined = communities.filter((community) => joinedIds.has(community.id));
+  const others = communities.filter((community) => !joinedIds.has(community.id));
   return { joined, others, truncated };
 }

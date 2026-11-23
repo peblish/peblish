@@ -1,5 +1,5 @@
 import type { Uuid } from '@peblish/schema/ids';
-import { and, eq, inArray, or, sql } from 'drizzle-orm';
+import { and, eq, inArray, or, sql, type SQL, type SQLWrapper } from 'drizzle-orm';
 import { db, type Queryable } from '../db/read.ts';
 import { instances } from '../db/tables/instances.ts';
 import { hostAndParents } from './domains.ts';
@@ -113,3 +113,10 @@ export async function deniedMediaDomains(q: Queryable = db()): Promise<string[]>
     );
   return rows.map((row) => row.domain);
 }
+
+/**
+ * SQL true when this server blocks the instance `instanceId` names (its peer controls): for a list
+ * of actors that leaves out those on a blocked host, as the directory does by domain.
+ */
+export const peerBlocked = (instanceId: SQLWrapper): SQL =>
+  sql`exists (select 1 from ${peerControls} as pc where pc.instance_id = ${instanceId} and pc.blocked)`;

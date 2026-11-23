@@ -1,0 +1,167 @@
+import { listLocalCommunities, moderatedAmong } from '@peblish/core/communities/read';
+import { composerCommunity } from '@peblish/core/communities/start';
+import { followedCommunities } from '@peblish/core/follows/read';
+import type { SessionView } from '@peblish/schema/session';
+import type { PickerCommunity } from './-types.ts';
+
+// The composer's community picker (server only): which communities the person may pick, at most
+// pickerMax, and which of them take their post. Its own module, imported by -load.ts's server
+// functions alone, so none of these reads reach the browser's copy of the loader.
+
+/** Most communities the picker lists. */
+export const pickerMax = 200;
+
+/** A community the picker may list, before whether it takes this person's post is known. */
+export type Candidate = Omit<PickerCommunity, 'canPost'> & { followed: boolean };
+
+/**
+ * Every community the picker could list, in its order: local ones by name (the first
+ * pickerMax + 1, so a cut shows, and any the person follows past them), then the remote ones the
+ * person follows (accepted follows only). None the person blocks, itself or through its host,
+ * nor one on a host this server blocks (the directory's rule). A community age-gated as sensitive
+ * or NSFL is listed only for someone who declared 16+, a removed one never.
+ */
+async function candidates(viewer: SessionView): Promise<Candidate[]> {
+  const includeSensitive = viewer.ageDeclaredAt !== null;
+  // The follows are read as the local communities are: the first by name, one past the cap.
+  const [first, follows] = await Promise.all([
+    listLocalCommunities({ includeSensitive, limit: pickerMax + 1, hiddenFrom: viewer.actorId }),
+    followedCommunities(viewer.actorId, { accepted: true, includeSensitive, limit: pickerMax + 1 }),
+  ]);
+  const followedIds = new Set(follows.map(({ id }) => id));
+  const listed = new Set(first.map(({ actor }) => actor.id));
+  // Only on a server with more local communities than the picker lists: names past the first page, so they sort after it.
+  // The follows come by name, and the cap keeps no more of them than it lists.
+  const missing = follows.filter((community) => community.local && !listed.has(community.id)).map(({ id }) => id);
+  const more =
+    missing.length > 0
+      ? await listLocalCommunities({ includeSensitive, ids: missing.slice(0, pickerMax), limit: pickerMax, hiddenFrom: viewer.actorId })
+      : [];
+  const local = [...first, ...more].map((row) => localCandidate(row, followedIds.has(row.actor.id)));
+  const remote = follows
+    .filter((community) => !community.local)
+    .map(({ id, name, displayName, host, postingRestrictedToMods }): Candidate => ({
+      id,
+      handle: `${name}@${host}`,
+      displayName,
+      local: false,
+      subscribers: null,
+      restricted: postingRestrictedToMods,
+      followed: true,
+    }));
+  return [...local, ...remote];
+}
+
+type LocalRow = Awaited<ReturnType<typeof listLocalCommunities>>[number];
+
+const localCandidate = ({ actor, postingRestrictedToMods, subscribers }: LocalRow, followed: boolean): Candidate => ({
+  id: actor.id,
+  handle: actor.handle,
+  displayName: actor.displayName,
+  local: true,
+  subscribers,
+  restricted: postingRestrictedToMods,
+  followed,
+});
+
+/** What the person is shown in the form for this viewer: core's composerCommunity, which only asks whether they could see it. */
+export const composerViewer = (viewer: SessionView) => ({ actorId: viewer.actorId, declared: viewer.ageDeclaredAt !== null });
+
+/**
+ * The community a `wanted` key (an id, or a handle with or without `!`: `name` here, `name@host`
+ * elsewhere) names, looked up on its own, for one the candidates do not hold: a local community
+ * past the first page, or a remote one the person does not follow. Null for one they could not
+ * see (core's composerCommunity).
+ */
+async function lookUp(viewer: SessionView, key: string): Promise<Candidate | null> {
+  const community = await composerCommunity(composerViewer(viewer), key);
+  if (!community) return null;
+  const { actor } = community;
+  return {
+    id: actor.id,
+    handle: actor.handle,
+    displayName: actor.displayName,
+    local: actor.local,
+    subscribers: actor.local ? community.subscribers : null,
+    restricted: community.postingRestrictedToMods,
+    followed: false,
+  };
+}
+
+/**
+ * The community the form starts in: the first of `wanted` that names one the person could see,
+ * from the candidates (which hold only those) or looked up on its own, however it ranks. Whether
+ * they may post there is the form's to say (the picker's canPost, the panel, the submit). One they
+ * could not see is left out of the data altogether, as if it had not been asked for.
+ */
+async function startIn(
+  viewer: SessionView,
+  listed: readonly Candidate[],
+  wanted: readonly (string | null | undefined)[],
+): Promise<{ id: string; extra: Candidate | null } | null> {
+  for (const key of wanted) {
+    if (!key) continue;
+    const held = pickFrom(listed, key);
+    if (held) return { id: held, extra: null };
+    const extra = await lookUp(viewer, key);
+    if (extra) return { id: extra.id, extra: listed.some((row) => row.id === extra.id) ? null : extra };
+  }
+  return null;
+}
+
+/** `extra` among the candidates in its place: local ones by name, before the remote ones. */
+function withCandidate(rows: readonly Candidate[], extra: Candidate): Candidate[] {
+  const name = extra.handle.toLowerCase();
+  const at = rows.findIndex((row) => !row.local || row.handle.toLowerCase() > name);
+  return at < 0 ? [...rows, extra] : [...rows.slice(0, at), extra, ...rows.slice(at)];
+}
+
+/**
+ * At most `max` of the candidates, in their order. All of them when they fit; past the cap,
+ * the community the form starts in (`keep`) and the person's own follows come first, then the
+ * other local communities by name, so the cap never drops a community the person follows to make
+ * room for one they do not. `truncated` says some were left out.
+ */
+function capPicker(rows: readonly Candidate[], keep: string | null, max = pickerMax): { rows: Candidate[]; truncated: boolean } {
+  if (rows.length <= max) return { rows: [...rows], truncated: false };
+  const rank = (community: Candidate) => (community.id === keep ? 0 : community.followed ? 1 : 2);
+  // A stable sort: within a rank the candidates keep their order.
+  const kept = new Set(
+    rows
+      .toSorted((a, b) => rank(a) - rank(b))
+      .slice(0, max)
+      .map(({ id }) => id),
+  );
+  return { rows: rows.filter(({ id }) => kept.has(id)), truncated: true };
+}
+
+/**
+ * The communities the person may pick, at most pickerMax (capPicker), and `selected`, the one the
+ * form starts in, kept through the cut: an edit's own community, else the first of `wanted` the
+ * person could see (startIn), added in its place when the candidates did not hold it. A mods-only
+ * community is disabled for anyone who is not staff there: one query for all of them.
+ */
+export async function pickerFor(
+  viewer: SessionView,
+  start: { edit: string | null; wanted: readonly (string | null | undefined)[] },
+): Promise<{ communities: PickerCommunity[]; truncated: boolean; selected: string | null }> {
+  const listed = await candidates(viewer);
+  const chosen = start.edit === null ? await startIn(viewer, listed, start.wanted) : { id: start.edit, extra: null };
+  const all = chosen?.extra ? withCandidate(listed, chosen.extra) : listed;
+  const selected = chosen?.id ?? null;
+  const { rows, truncated } = capPicker(all, selected);
+  const admin = viewer.siteRole === 'admin';
+  const staff = await moderatedAmong(viewer.actorId, admin ? [] : rows.filter(({ restricted }) => restricted).map(({ id }) => id));
+  const communities = rows.map(({ followed: _followed, ...community }): PickerCommunity => ({
+    ...community,
+    canPost: !community.restricted || admin || staff.has(community.id),
+  }));
+  return { communities, truncated, selected };
+}
+
+/** The community `key` (an id, or a handle with or without `!`) names among `rows`, if any. */
+export function pickFrom(rows: readonly Candidate[], key: string | null | undefined): string | undefined {
+  const wanted = key?.trim().toLowerCase();
+  if (!wanted) return undefined;
+  return rows.find(({ id, handle }) => id === wanted || handle.toLowerCase() === wanted.replace(/^!/, ''))?.id;
+}

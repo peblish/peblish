@@ -7,18 +7,19 @@ import type { ActorRef, CommentView } from '@peblish/schema/views';
 import { getRequest } from '@tanstack/react-start/server';
 import type { MarkdownRenderer } from '../../../../server/markdown.ts';
 import type { SlotViewer } from '../../../-actions/props.ts';
-import { authorShown } from '../../-page-data.ts';
-import { withheldAuthor } from '../../-withheld.ts';
+import { authorShown, commentForViewer } from '../../-withheld.ts';
 
 // The thread's data for a page (server only): core's read model, with each comment's text
 // rendered by the page's Markdown renderer, and what the viewer can do beside reading. The post
 // page's loader (routes/post/-load.ts) and the permalink page call loadThread; the thread
 // section calls it again, through a server function (-thread-fn.ts), when the sort changes.
+// A tombstone, and a tombstone post through the OP badge, name their author only as
+// ../-withheld.ts decides (commentForViewer, authorShown).
 
 /** What the thread section needs, all JSON. */
 export type ThreadData = {
   postId: Uuid;
-  /** The post's author, for the OP badge; null where the post is a tombstone to this viewer (-page-data.ts authorShown). */
+  /** The post's author, for the OP badge; null where the post is a tombstone to this viewer (-withheld.ts authorShown). */
   postAuthorId: Uuid | null;
   sort: ThreadSort;
   /** The `after` this was loaded for, as the page asked for it (null for the first page): the section reloads when the address names another. */
@@ -60,15 +61,7 @@ export const requestedSort = (): ThreadSort => parseSort(URL.parse(getRequest().
 /** The `after` cursor of the page being requested, in the same way. */
 export const requestedAfter = (): string | null => URL.parse(getRequest().url)?.searchParams.get('after') ?? null;
 
-/**
- * A comment as the page sends it. A tombstone (deleted or removed) says nothing of its author to a reader
- * who does not moderate the community (-withheld.ts): no author, badge or text, and no address of its own,
- * since a federated comment's address can hold its author's handle. Moderators keep it all for their
- * actions (restore, ban).
- */
-function render(renderer: MarkdownRenderer, { view, body }: ThreadComment, moderator: boolean): CommentView {
-  const tombstone = (view.deleted || view.removed) && !moderator;
-  if (tombstone) return { ...view, apId: '', author: withheldAuthor, authorBadge: null, contentHtml: null };
+function render(renderer: MarkdownRenderer, { view, body }: ThreadComment): CommentView {
   const contentHtml =
     body?.kind === 'markdown'
       ? renderer.render(body.source, { idPrefix: view.id, content: { kind: 'comment', id: view.id, apId: view.apId } }).html
@@ -123,7 +116,8 @@ export function threadData(options: {
     postAuthorId: authorShown(page, viewer?.actorId ?? null) ? page.view.author.id : null,
     sort: thread.sort,
     after,
-    comments: thread.comments.map((comment) => render(renderer, comment, page.moderator)),
+    // A tombstone goes without its author, address and text, but to the community's staff, who act on it (restore, ban).
+    comments: thread.comments.map((comment) => commentForViewer(render(renderer, comment), page.moderator)),
     now: new Date().toISOString(),
     focus: thread.focus,
     next: thread.next,

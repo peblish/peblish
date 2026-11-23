@@ -374,6 +374,7 @@ export function Composer({ data, error: initialError, onDone, onDiscard, keepOnC
           <>
             <CommunityPicker
               communities={data.communities}
+              truncated={data.pickerTruncated}
               value={form.community}
               onChange={(id) => (id === null ? unchoose() : choose(id))}
               onBrowse={browse}

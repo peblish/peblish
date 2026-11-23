@@ -27,6 +27,7 @@ const base: Omit<InboxItem, 'id' | 'kind'> = {
   read: false,
   createdAt: ago(2),
   actor: person(people.jun),
+  actorWithheld: null,
   community: person(communities.art),
   postId: id(100),
   commentId: id(200),

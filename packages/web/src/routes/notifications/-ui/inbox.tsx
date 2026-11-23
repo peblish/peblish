@@ -22,9 +22,10 @@ import { useEffect, useLayoutEffect, useRef, useState, type FormEvent, type Reac
 import { translatePlural } from '../../../i18n/translate.ts';
 import { useTranslate } from '../../../i18n/use-translate.ts';
 import { useRouteHydrated } from '../../../shell/hydration.ts';
-import { commentPath, communityPath, inboxPath, modlogEntryPath, postPath } from '../../../shell/paths.ts';
+import { commentPath, communityPath, inboxPath, modlogEntryPath } from '../../../shell/paths.ts';
 import { useHeadingInView, ViewHeader } from '../../../shell/view-header.tsx';
 import { asCommentError, errorKey } from '../../post/$id/comments/-ui/errors.ts';
+import { noticeTarget } from './target.ts';
 import type { InboxData } from '../-load.ts';
 import { inboxAction, inboxHref, type InboxSearch } from '../-search.ts';
 import { ReplyDrafts, useReplyDraft } from './drafts.tsx';
@@ -374,25 +375,22 @@ export function NoticeRow({
   const router = useRouter();
   const hydrated = useHydrated();
   const moderator = moderatorKinds.includes(item.kind);
-  // A follow's answer leads to its community (its headline already names it).
   const follow = item.kind === 'follow_accept';
-  const target = item.postId
-    ? item.commentId
-      ? commentPath(item.postId, item.commentId)
-      : postPath(item.postId)
-    : follow && item.community
-      ? communityPath(item.community)
-      : null;
+  const target = noticeTarget(item);
   const where = item.about ?? 'post';
   const community = item.community ? <Handle prefix="!" handle={item.community.handle} /> : null;
 
   const account = item.kind === 'ban' || item.kind === 'unban';
   // The ban sentences print the community's handle as plain text: drop any directional controls a remote one carries.
   const handle = item.community ? `!${neutraliseBidi(item.community.handle)}` : '';
+  // Who, when the notice may say: a reply or mention that withholds its author says "Someone", as does a followed thread's notice
+  // with nobody named; a moderator's notice whose row is gone, "A moderator". A follow's answer is its community's.
+  const nobody = t(
+    'notifications',
+    item.actorWithheld ? 'actor.withheld' : item.kind === 'thread_reply' ? 'actor.someone' : 'actor.unknown',
+  );
   // The buttons' names below are plain text too: the handle and the title lose their directional controls, as Handle shows them.
-  // Nobody named on a followed thread's withheld comment is "Someone", not "A moderator"; a follow's answer is its community's.
-  const unknown = t('notifications', item.kind === 'thread_reply' ? 'actor.someone' : 'actor.unknown');
-  const actor = item.actor ? `@${neutraliseBidi(item.actor.handle)}` : follow && handle ? handle : unknown;
+  const actor = item.actor ? `@${neutraliseBidi(item.actor.handle)}` : follow && handle ? handle : nobody;
   const subject = item.postTitle ? neutraliseBidi(item.postTitle) : handle || t('notifications', `type.${item.kind}`);
   const sentence = (() => {
     switch (item.kind) {
@@ -439,11 +437,13 @@ export function NoticeRow({
     });
   };
 
-  // Where Reply leads: a reply's or mention's comment (or post), unless it was removed or deleted since, and a followed thread's
-  // new comment only while the reader sees it (one withheld links no comment to answer). Only one whose words are shown is
-  // answered in place; a sensitive one is withheld here for every viewer, so Reply leads to its thread, which applies the gate.
+  // Where Reply leads: a reply's or mention's comment (or post), unless it was removed or deleted since, or the notice withholds
+  // it (no post id: its link goes to the community, where there is nothing to answer), and a followed thread's new comment only
+  // while the reader sees it (one withheld links no comment to answer). Only one whose words are shown is answered in place; a
+  // sensitive one is withheld here for every viewer, so Reply leads to its thread, which applies the gate.
   const replyTarget =
     (item.kind === 'reply' || item.kind === 'mention' || (item.kind === 'thread_reply' && item.withheld === null)) &&
+    item.postId !== null &&
     item.withheld !== 'removed' &&
     item.withheld !== 'deleted'
       ? target
@@ -536,7 +536,7 @@ export function NoticeRow({
             ) : follow && item.community ? (
               <Handle prefix="!" handle={item.community.handle} />
             ) : (
-              unknown
+              nobody
             )}
           </Text>
           {moderator && (

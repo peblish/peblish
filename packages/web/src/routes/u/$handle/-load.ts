@@ -66,7 +66,9 @@ async function buildProfile(
 ): Promise<{ data: ProfileData; profile: Profile } | null> {
   const session = await pageSession();
   const viewer: Viewer = session ? { actorId: session.view.actorId, siteRole: session.view.siteRole } : null;
-  const profile = await readProfile(data.handle, viewer);
+  // The browser's Hide NSFW choice: the Comments tab lists by it, and so its count counts by it.
+  const nsfw = parseNsfwChoice(getRequestHeader('cookie') ?? null);
+  const profile = await readProfile(data.handle, viewer, undefined, nsfw);
   if (!profile) return null;
   const renderer = await createMarkdownRenderer();
   const locale = negotiateLocale(getRequestHeader('accept-language'));
@@ -81,7 +83,7 @@ async function buildProfile(
           sort: data.sort,
           cursor: data.after,
           limit: defaultPageSize,
-          nsfw: parseNsfwChoice(getRequestHeader('cookie') ?? null),
+          nsfw,
         },
         viewer,
       )

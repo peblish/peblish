@@ -1,12 +1,14 @@
 import { writeFileSync } from 'node:fs';
-import { sql } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { beforeAll, describe, expect, test } from 'vitest';
 import { readPool } from '../db/pools.ts';
+import { db } from '../db/read.ts';
+import { actors } from '../db/tables/actors.ts';
 import { writer } from '../db/write.ts';
 import { seedBulk } from '../testing/seed-c1.ts';
 import { seedInstance } from '../testing/seed.ts';
 import { defaultQuery, directorySorts, nsfwModes, scopes, type DirectoryQuery } from './input.ts';
-import { listCommunities } from './read.ts';
+import { activeAuthors, listCommunities } from './read.ts';
 
 // The directory's budget: the first page of every sort and filter under 50 ms at the 95th
 // percentile over 20 runs, at 300 communities and C1's 100,000 posts, with the activity count
@@ -19,14 +21,14 @@ const budgetMs = 50;
 const percentile95 = (values: number[]) => [...values].sort((a, b) => a - b)[Math.ceil(values.length * 0.95) - 1]!;
 
 describe.skipIf(!process.env.PEBLISH_DIRECTORY_PERF)('directory performance', () => {
-  let viewer: { actorId: string; declared: true };
+  let viewer: { actorId: string; siteRole: 'user'; declared: true };
   beforeAll(async () => {
     const local = await seedInstance('feddit.test');
     const { heavy } = await seedBulk({ local });
     // Local communities for the NSFW filter to find, and a figure for the sorts to order by.
     await writer().execute(sql`update actors set sensitive = true where local and kind = 'Group' and name in ('c30', 'c60')`);
     await writer().execute(sql`analyze`);
-    viewer = { actorId: heavy.id, declared: true };
+    viewer = { actorId: heavy.id, siteRole: 'user', declared: true };
   }, 300_000);
 
   test(`the first page of every sort, scope and NSFW setting answers in under ${budgetMs} ms (p95 of ${runs})`, async () => {
@@ -52,10 +54,14 @@ describe.skipIf(!process.env.PEBLISH_DIRECTORY_PERF)('directory performance', ()
     expect(slow).toEqual([]);
   }, 600_000);
 
-  test('the activity count reads posts_community_published', async () => {
-    const plan = await readPool().client.unsafe(
-      `explain select count(distinct author_id) from posts where community_id = (select id from actors where name = 'c1') and published_at > now() - interval '7 days' and deleted_at is null and removed_at is null`,
-    );
+  test('the activity count reads posts_community_published, for a viewer with the feed conditions too', async () => {
+    // The very expression the directory selects, with the community's feed conditions for this viewer.
+    const { sql: statement, params } = db()
+      .select({ active: activeAuthors(viewer) })
+      .from(actors)
+      .where(eq(actors.name, 'c1'))
+      .toSQL();
+    const plan = await readPool().client.unsafe(`explain (analyze, buffers) ${statement}`, params as never[]);
     const text = plan.map((row) => String(row['QUERY PLAN'])).join('\n');
     if (process.env.DIRECTORY_PERF_PLANS) writeFileSync(process.env.DIRECTORY_PERF_PLANS, text);
     expect(text).toContain('posts_community_published');

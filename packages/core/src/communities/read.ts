@@ -1,7 +1,8 @@
 import type { Uuid } from '@peblish/schema/ids';
 import type { ActorRef, CommunityView } from '@peblish/schema/views';
-import { and, asc, eq, isNull, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNull, not, or, sql } from 'drizzle-orm';
 import { freshModerator } from '../authz/roles.ts';
+import { communityBlockedBy } from '../blocks/predicate.ts';
 import { db as readDb, type Queryable } from '../db/read.ts';
 import { actors, communityLanguages } from '../db/tables/actors.ts';
 import { follows } from '../db/tables/follows.ts';
@@ -9,6 +10,7 @@ import { instances } from '../db/tables/instances.ts';
 import { communityModerators } from '../db/tables/moderation.ts';
 import { sanitizeRemoteHtml, type SanitizeHooks } from '../markdown/sanitize.ts';
 import { communityRemovals } from '../moderation/tables.ts';
+import { blockedHosts } from '../resolve/blocked.ts';
 import { communityRules } from './tables.ts';
 
 // Read models of communities (lane F). A community that is deleted or removed by an admin reads
@@ -195,13 +197,38 @@ export async function findCommunityId(handle: string, q: Queryable = readDb()): 
 }
 
 /**
+ * Whether the directory's block rules (directory/read.ts) hide the community from `viewerId`: it is
+ * on a host this server blocks, or the viewer blocks it, itself or through its host. For one named
+ * on its own (the composer's start and panel).
+ */
+export async function communityBlockedFor(viewerId: Uuid, communityId: Uuid, q: Queryable = readDb()): Promise<boolean> {
+  const blocked = await blockedHosts();
+  const [row] = await q
+    .select({ id: actors.id })
+    .from(actors)
+    .innerJoin(instances, eq(instances.id, actors.instanceId))
+    .where(
+      and(
+        eq(actors.id, communityId),
+        or(
+          blocked.length > 0 ? inArray(instances.domain, blocked) : undefined,
+          communityBlockedBy(viewerId, { id: actors.id, instanceId: actors.instanceId }),
+        ),
+      ),
+    );
+  return row !== undefined;
+}
+
+/**
  * The communities of this instance (imported ones included), by name. `includeSensitive`
  * defaults to false, which leaves out every community flagged sensitive or NSFL: the caller
  * passes true only for a viewer who declared 16+ and has not hidden NSFW, since a signed-out
  * or undeclared viewer never sees an age-gated community listed. At most `limit` rows (200 by default, 500 at most); the beta has a handful.
+ * `ids` keeps only those communities (the composer's picker fetches follows the first page left out).
+ * `hiddenFrom` leaves out the communities that person blocks (the directory's rule).
  */
 export async function listLocalCommunities(
-  options: { includeSensitive?: boolean; limit?: number } = {},
+  options: { includeSensitive?: boolean; limit?: number; ids?: readonly Uuid[]; hiddenFrom?: Uuid } = {},
   q: Queryable = readDb(),
 ): Promise<CommunityListItem[]> {
   const rows = await q
@@ -222,6 +249,8 @@ export async function listLocalCommunities(
         notRemoved,
         // Not safe for life implies the age gate for communities made here, but an imported one may carry only nsfl.
         options.includeSensitive ? undefined : and(eq(actors.sensitive, false), eq(actors.nsfl, false)),
+        options.ids ? inArray(actors.id, [...options.ids]) : undefined,
+        options.hiddenFrom ? not(communityBlockedBy(options.hiddenFrom, { id: actors.id, instanceId: actors.instanceId })) : undefined,
       ),
     )
     .orderBy(sql`lower(${actors.name})`)
@@ -233,6 +262,27 @@ export async function listLocalCommunities(
     postingRestrictedToMods: row.postingRestrictedToMods,
     subscribers: row.subscribers,
   }));
+}
+
+/**
+ * Which of `communityIds` the actor moderates or owns now: listModerators's rule (a live
+ * moderator, `freshModerator`), one query for any number of communities.
+ */
+export async function moderatedAmong(actorId: Uuid, communityIds: readonly Uuid[], q: Queryable = readDb()): Promise<Set<Uuid>> {
+  if (communityIds.length === 0) return new Set();
+  const rows = await q
+    .select({ communityId: communityModerators.communityId })
+    .from(communityModerators)
+    .innerJoin(actors, eq(actors.id, communityModerators.moderatorId))
+    .where(
+      and(
+        eq(communityModerators.moderatorId, actorId),
+        inArray(communityModerators.communityId, [...communityIds]),
+        isNull(actors.deletedAt),
+        freshModerator,
+      ),
+    );
+  return new Set(rows.map(({ communityId }) => communityId));
 }
 
 /**

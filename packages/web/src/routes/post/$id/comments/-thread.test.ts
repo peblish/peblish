@@ -1,0 +1,155 @@
+import type { PostPage } from '@peblish/core/posts/read';
+import type { ActorRef, CommentView, PostView } from '@peblish/schema/views';
+import { beforeEach, describe, expect, test, vi } from 'vitest';
+import type { MarkdownRenderer } from '../../../../server/markdown.ts';
+
+// What the thread's data tells a viewer about who wrote a tombstone: a deleted or removed comment
+// names no one to anyone but the moderators, and a deleted post (through the OP badge's
+// postAuthorId) no one but its author and the moderators. Checked on the serialised data, with
+// authors whose addresses carry their handle.
+
+const thread = vi.hoisted(() => ({ comments: [] as { view: CommentView; body: null; removal: null }[] }));
+vi.mock('@peblish/core/comments/read', () => ({
+  readThread: async (postId: string) => ({ postId, sort: 'hot', comments: thread.comments, focus: null, moderator: false, next: null }),
+}));
+const { loadThread } = await import('./-thread.ts');
+
+const person = (id: string, name: string, host: string): ActorRef => ({
+  id,
+  apId: `https://${host}/users/${name}`,
+  kind: 'Person',
+  name,
+  displayName: `${name} in full`,
+  local: false,
+  handle: `${name}@${host}`,
+});
+const alice = person('019a0000-0000-7000-8000-00000000a11c', 'alice', 'social.example');
+const carol = person('019a0000-0000-7000-8000-0000000ca201', 'carol', 'other.example');
+const reader = '019a0000-0000-7000-8000-0000000eade5';
+const postId = '019a0000-0000-7000-8000-000000000b05';
+
+const comment = (id: string, author: ActorRef, extra: Partial<CommentView> = {}): CommentView => ({
+  id,
+  apId: `${author.apId}/statuses/${id}`,
+  postId,
+  parentId: null,
+  depth: 0,
+  contentHtml: null,
+  author,
+  authorBadge: 'moderator',
+  publishedAt: '2026-11-01T00:00:00.000Z',
+  editedAt: null,
+  deleted: false,
+  removed: false,
+  counts: { upvotes: 1, downvotes: 0, comments: 0 },
+  myVote: 0,
+  ...extra,
+});
+
+function pageOf(extra: Partial<PostView>, moderator = false): PostPage {
+  const view: PostView = {
+    id: postId,
+    apId: `${carol.apId}/statuses/post`,
+    title: '',
+    url: null,
+    urlContentType: null,
+    thumbnailUrl: null,
+    contentHtml: null,
+    excerpt: null,
+    author: carol,
+    authorBadge: null,
+    community: { ...person('019a0000-0000-7000-8000-0000000c0111', 'news', 'feddit.test'), kind: 'Group', local: true, handle: 'news' },
+    publishedAt: '2026-11-01T00:00:00.000Z',
+    editedAt: null,
+    sensitive: false,
+    nsfl: false,
+    locked: false,
+    featured: false,
+    deleted: false,
+    removed: false,
+    counts: { upvotes: 0, downvotes: 0, comments: 2 },
+    myVote: 0,
+    ...extra,
+  };
+  return { view, body: null, gate: 'none', moderator };
+}
+
+// Every comment here is a tombstone or has no text, so nothing is rendered.
+const rendered = { html: '', excerpt: '', links: [], truncated: false };
+const renderer: MarkdownRenderer = { render: () => ({ ...rendered, mentions: [] }), sanitize: () => rendered, image: () => null };
+const session = (actorId: string) => ({ view: { actorId, siteRole: 'user', emailVerified: true } }) as never;
+const load = (page: PostPage, viewer: string | null) =>
+  loadThread({ page, session: viewer ? session(viewer) : null, renderer, sort: 'hot', after: null });
+
+/** Every way the data could name `who`: id, name, display name, handle and address. */
+const traces = (who: ActorRef) => [who.id, who.name, who.displayName!, who.handle, who.apId];
+
+beforeEach(() => {
+  thread.comments = [
+    { view: comment('019a0000-0000-7000-8000-00000000c001', carol), body: null, removal: null },
+    { view: comment('019a0000-0000-7000-8000-00000000c002', alice, { deleted: true }), body: null, removal: null },
+  ];
+});
+
+describe('a deleted comment', () => {
+  test('names no author to a reader, signed in or out', async () => {
+    for (const viewer of [reader, null]) {
+      const text = JSON.stringify(await load(pageOf({}), viewer));
+      for (const trace of traces(alice)) expect([viewer, trace, text.includes(trace)]).toEqual([viewer, trace, false]);
+      // The live comment beside it is as before.
+      expect(text).toContain(carol.handle);
+    }
+  });
+
+  test('is as before for the moderators; its author is not told either, as its row draws no author', async () => {
+    const asModerator = await load(pageOf({}, true), reader);
+    expect(asModerator?.comments.map((row) => row.author)).toEqual([carol, alice]);
+    expect(asModerator?.comments[1]).toEqual({ ...thread.comments[1]!.view, contentHtml: null });
+    const asAuthor = JSON.stringify(await load(pageOf({}), alice.id));
+    for (const trace of traces(alice).filter((trace) => trace !== alice.id))
+      expect([trace, asAuthor.includes(trace)]).toEqual([trace, false]);
+  });
+});
+
+// A comment a moderator removed is a tombstone like a deleted one: no author, address or text but
+// to the moderators. One by someone the viewer blocks keeps its author line: only the viewer's own
+// block hides its text.
+describe('a removed comment, and one by someone the viewer blocks', () => {
+  const removedId = '019a0000-0000-7000-8000-00000000c003';
+  const blockedId = '019a0000-0000-7000-8000-00000000c004';
+  beforeEach(() => {
+    thread.comments = [
+      { view: comment(removedId, alice, { removed: true }), body: null, removal: null },
+      { view: comment(blockedId, alice, { blocked: true }), body: null, removal: null },
+    ];
+  });
+  const original = (id: string) => `${alice.apId}/statuses/${id}`;
+
+  test('the removed one goes without its author and address, the blocked one keeps them', async () => {
+    const data = await load(pageOf({}), reader);
+    const [removed, blocked] = data?.comments ?? [];
+    expect([removed?.author.handle, removed?.apId, blocked?.author]).toEqual(['', '', alice]);
+    expect(JSON.stringify(removed)).not.toContain(original(removedId));
+    // The viewer's own block hides nothing anyone else withholds: as before.
+    expect(blocked).toEqual({ ...thread.comments[1]!.view, contentHtml: null });
+  });
+
+  test('are as before for the moderators; the removed one is a tombstone to its author too', async () => {
+    expect((await load(pageOf({}, true), reader))?.comments.map(({ apId }) => apId)).toEqual([original(removedId), original(blockedId)]);
+    expect((await load(pageOf({}), alice.id))?.comments.map(({ apId }) => apId)).toEqual(['', original(blockedId)]);
+  });
+});
+
+describe('a deleted post', () => {
+  test('its author is not named through the badge its comments would carry', async () => {
+    const data = await load(pageOf({ deleted: true }), reader);
+    expect(data?.postAuthorId).not.toBe(carol.id);
+    // The live comment by the same person keeps its own author line: the thread shows it.
+    expect(data?.comments[0]?.author).toEqual(carol);
+  });
+
+  test('is as before for its author and for the moderators', async () => {
+    expect((await load(pageOf({ deleted: true }, true), reader))?.postAuthorId).toBe(carol.id);
+    expect((await load(pageOf({ deleted: true }), carol.id))?.postAuthorId).toBe(carol.id);
+  });
+});

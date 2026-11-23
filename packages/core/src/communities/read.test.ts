@@ -1,13 +1,15 @@
 import { beforeEach, describe, expect, test } from 'vitest';
+import { communityBlocks, instanceBlocks } from '../blocks/tables.ts';
 import { follows } from '../db/tables/follows.ts';
 import { writer } from '../db/write.ts';
 import { proxyUrlBuilder } from '../media/proxy-url.ts';
+import { peerControls } from '../peers/tables.ts';
 import { truncateAll } from '../testing/db.ts';
 import { seedCommunityRemoval, seedModerator } from '../testing/seed-az.ts';
 import { person, sampleCommunity, seedCommunityWorld } from '../testing/seed-f.ts';
-import { seedActor } from '../testing/seed.ts';
+import { seedActor, seedInstance } from '../testing/seed.ts';
 import { createCommunityAs } from './create.ts';
-import { listLocalCommunities, listModerators, readCommunity } from './read.ts';
+import { communityBlockedFor, listLocalCommunities, listModerators, moderatedAmong, readCommunity } from './read.ts';
 import { updateCommunityAs } from './update.ts';
 
 beforeEach(truncateAll);
@@ -163,6 +165,42 @@ describe('listLocalCommunities', () => {
       { sensitive: false, nsfl: false, postingRestrictedToMods: true, subscribers: 0 },
     ]);
     expect(names(await listLocalCommunities({ includeSensitive: true, limit: 2 }))).toEqual(['adults', 'art']);
+    // `ids` keeps only those, under the same rules: never a remote, removed or (unasked) flagged one.
+    const technology = await seedActor(instances.lemmy, 'Group', 'gadgets');
+    const ids = [...all.filter(({ actor }) => actor.name !== 'Books').map(({ actor }) => actor.id), technology.id];
+    expect(names(await listLocalCommunities({ ids }))).toEqual(['news']);
+    expect(names(await listLocalCommunities({ includeSensitive: true, ids }))).toEqual(['adults', 'art', 'news']);
+  });
+});
+
+describe('listLocalCommunities for a viewer', () => {
+  test('leaves out a community the viewer blocks, for them alone', async () => {
+    const { people, create } = await setup();
+    const [art] = await Promise.all(['art', 'news'].map((name) => create(name)));
+    await writer().insert(communityBlocks).values({ blockerId: people.user.id, communityId: art!.id });
+    const names = async (hiddenFrom?: string) => (await listLocalCommunities({ hiddenFrom })).map(({ actor }) => actor.name);
+    expect(await names(people.user.id)).toEqual(['news']);
+    expect(await names(people.moderator.id)).toEqual(['art', 'news']);
+    expect(await names()).toEqual(['art', 'news']);
+  });
+});
+
+describe('moderatedAmong', () => {
+  test('which of the communities the actor moderates or owns now, by listModerators’s rule, in one query', async () => {
+    const { people, create } = await setup();
+    const [news, art, books, quiet] = await Promise.all(['news', 'art', 'books', 'quiet'].map((name) => create(name)));
+    await seedModerator({ id: news!.id }, people.moderator);
+    await seedModerator({ id: art!.id }, people.moderator, { role: 'owner' });
+    await seedModerator({ id: books!.id }, people.moderator, { expiresAt: new Date(Date.now() - 60_000) });
+    const ids = [news!.id, art!.id, books!.id, quiet!.id];
+    expect(await moderatedAmong(people.moderator.id, ids)).toEqual(new Set([news!.id, art!.id]));
+    // The same answer listModerators gives community by community.
+    for (const id of ids)
+      expect((await listModerators(id)).some(({ actor }) => actor.id === people.moderator.id)).toBe(
+        (await moderatedAmong(people.moderator.id, [id])).has(id),
+      );
+    expect(await moderatedAmong(people.user.id, ids)).toEqual(new Set());
+    expect(await moderatedAmong(people.moderator.id, [])).toEqual(new Set());
   });
 });
 
@@ -188,5 +226,26 @@ describe('listModerators', () => {
 
     await seedModerator(community, people.other, { source: 'remote', expiresAt: new Date(Date.now() + 3_600_000) });
     expect((await listModerators(news.id)).map(({ actor }) => actor.name)).toContain('otto');
+  });
+});
+
+describe('communityBlockedFor', () => {
+  test("the directory's block rules: a host this server blocks, a community the person blocks or one on a host they block; for them alone", async () => {
+    const { people, instances } = await setup();
+    const shut = await seedInstance('shut.test', false);
+    const quiet = await seedInstance('quiet.test', false);
+    const [walled, hushed, shunned, open] = await Promise.all([
+      seedActor(shut, 'Group', 'walled'),
+      seedActor(quiet, 'Group', 'hushed'),
+      seedActor(instances.lemmy, 'Group', 'shunned'),
+      seedActor(instances.lemmy, 'Group', 'open'),
+    ]);
+    await writer().insert(peerControls).values({ instanceId: shut.id, blocked: true });
+    await writer().insert(instanceBlocks).values({ blockerId: people.user.id, instanceId: quiet.id });
+    await writer().insert(communityBlocks).values({ blockerId: people.user.id, communityId: shunned.id });
+    const blocked = async (who: { id: string }) =>
+      Promise.all([walled, hushed, shunned, open].map((community) => communityBlockedFor(who.id, community.id)));
+    expect(await blocked(people.user)).toEqual([true, true, true, false]);
+    expect(await blocked(people.moderator)).toEqual([true, false, false, false]);
   });
 });
