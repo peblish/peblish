@@ -32,9 +32,9 @@ import {
 // post or community that is sensitive or NSFL shows only that for every viewer (a notice must
 // not carry what the gate would hide), a removed or deleted comment shows only that word, and a
 // removed or deleted post loses its title too. Who wrote a reply or mention follows the thread:
-// a deleted comment, a removed or deleted post and sensitive content the viewer has not declared
-// 16+ for name no one (actorWithheldOf), and such a notice keeps no comment id to look its author
-// up by. A page is a handful of queries however many rows it lists: the notices,
+// sensitive content the viewer has not declared 16+ for (whatever became of it since), a removed
+// or deleted comment and a removed or deleted post name no one (actorWithheldOf), and such a
+// notice keeps no comment id to look its author up by. A page is a handful of queries however many rows it lists: the notices,
 // their people, their posts and comments, their modlog entries and the viewer's declaration.
 
 export const inboxPageSize = 25;
@@ -254,9 +254,10 @@ function withheldOf(subject: { comment: CommentRow | null; post: PostRow | null 
 
 /**
  * Whether a reply or mention may say who wrote it, as the thread and the post page decide for the
- * same text: a deleted or removed comment is a tombstone without its author, and a
- * sensitive post or community shows a viewer without a 16+ declaration nothing at all (gateOf,
- * the post page's rule; an access rule, so the browser's Hide NSFW plays no part). Under a post a
+ * same text: a sensitive post or community shows a viewer without a 16+ declaration nothing at
+ * all (gateOf, the post page's rule; an access rule, so the browser's Hide NSFW plays no part), so
+ * for them it is 'sensitive' whatever became of the comment or post, as for live content. Past
+ * the gate, a deleted or removed comment is a tombstone without its author. Under a post a
  * moderator removed, the page sends no comments, and a removed or deleted post names no author,
  * so a comment there and a mention in such a post name no one either. The community's staff
  * (`staff`: its moderators and the site admins) are told for removed and deleted content, as its
@@ -273,13 +274,13 @@ function actorWithheldOf(
   { declared, staff }: { declared: boolean; staff: boolean },
 ): NoticeActorWithheld | null {
   if (kind !== 'reply' && kind !== 'mention') return null;
-  if (!staff) {
-    if (comment?.deletedAt) return 'deleted';
-    if (comment?.removedAt || (comment && post?.removedAt)) return 'removed';
-    // A mention in the post itself: the post page withholds the author of a deleted or removed post.
-    if (!comment && post?.deletedAt) return 'deleted';
-    if (!comment && post?.removedAt) return 'removed';
-  }
+  // The gate first: a viewer it stops is shown nothing of the post, so not what became of it either.
   if (post && gateOf(post.hidden, { declared }, true) !== 'none') return 'sensitive';
+  if (staff) return null;
+  if (comment?.deletedAt) return 'deleted';
+  if (comment?.removedAt || (comment && post?.removedAt)) return 'removed';
+  // A mention in the post itself: the post page withholds the author of a deleted or removed post.
+  if (!comment && post?.deletedAt) return 'deleted';
+  if (!comment && post?.removedAt) return 'removed';
   return null;
 }
