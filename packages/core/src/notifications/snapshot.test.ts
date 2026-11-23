@@ -1,4 +1,5 @@
 import { eq, sql } from 'drizzle-orm';
+import postgres from 'postgres';
 import { beforeEach, expect, test, vi } from 'vitest';
 import { comments, votes } from '../db/tables/content.ts';
 import { writer } from '../db/write.ts';
@@ -12,7 +13,7 @@ import { readInbox } from './read.ts';
 // the rows are chosen and before they are described cannot leave a row that names its author and
 // links a comment the page no longer has. To land the purge exactly there, the inbox's rule is
 // made to wait, once its statement has its snapshot, on an advisory lock the purging transaction
-// holds; the purge commits while the statement waits.
+// holds; the purge commits while the statement waits. It holds on any pool size, one included.
 
 const gate = vi.hoisted(() => ({ key: 0 }));
 vi.mock('./visible.ts', async (importOriginal) => {
@@ -51,24 +52,34 @@ test('a comment purged while a page is read is described as the page chose it, f
     await t.delete(comments).where(eq(comments.id, id));
   });
   await holding;
+  // The observer has a connection of its own: the pools may hold one each, and the purge holds the writer's.
+  const observer = postgres(process.env.DATABASE_URL ?? '', { max: 1, onnotice: () => {} });
   gate.key = key;
   const reading = readInbox({ actorId: w.people.reader.id, siteRole: 'user' });
-  // The page's list (the statement that selects whole rows; the counts select count(*)) has its snapshot and waits on
-  // the lock: the purge commits now.
-  for (let tries = 0; ; tries++) {
-    const [row] = await writer().execute<{ waiting: number }>(
-      sql`select count(*)::int as waiting from pg_locks l join pg_stat_activity a on a.pid = l.pid
-        where l.locktype = 'advisory' and l.objid = ${key} and not l.granted
-          and a.datname = current_database() and a.query like 'select "id", "recipient_id"%'`,
-    );
-    if ((row?.waiting ?? 0) > 0) break;
-    if (tries > 200) throw new Error('the inbox list never reached the lock');
-    await new Promise((resolve) => setTimeout(resolve, 25));
+  let page: Awaited<typeof reading> | undefined;
+  try {
+    // The page's list (the statement that selects whole rows; the counts select count(*)) has its snapshot and waits
+    // on the lock: the purge commits now.
+    for (let tries = 0; ; tries++) {
+      const [row] = await observer<{ waiting: number }[]>`
+        select count(*)::int as waiting from pg_locks l join pg_stat_activity a on a.pid = l.pid
+        where l.locktype = 'advisory' and l.objid::bigint = ${key} and not l.granted
+          and a.datname = current_database() and a.query like 'select "id", "recipient_id"%'`;
+      if ((row?.waiting ?? 0) > 0) break;
+      if (tries > 400) throw new Error('the inbox list never reached the lock');
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+    purge();
+    await purging;
+    page = await reading;
+  } finally {
+    // Whatever happened above, nothing stays held: the purge commits, the gate opens, the read ends.
+    purge();
+    await purging.catch(() => undefined);
+    await reading.catch(() => undefined);
+    gate.key = 0;
+    await observer.end();
   }
-  purge();
-  await purging;
-  const page = await reading;
-  gate.key = 0;
   expect(page.items).toMatchObject([{ kind: 'thread_reply', commentId: id, actor: { id: w.people.owner.id }, excerpt: 'Doomed words' }]);
   // The next page, read after the purge, has no such row at all.
   expect((await readInbox({ actorId: w.people.reader.id, siteRole: 'user' })).items).toEqual([]);
