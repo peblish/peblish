@@ -18,13 +18,19 @@ import { headTitle, ownTitle } from '../../../shell/title.ts';
 // hydrated. Moderation is MODF's slot (-ui/actions/moderate.tsx), which posts elsewhere.
 
 // ?removed=1 opens "Removed by moderators" (for a browser without JavaScript; the thread section reads it).
-const Search = type({ 'error?': 'string', 'removed?': 'unknown' });
+const Search = type({ 'error?': 'string', 'removed?': 'unknown', 'sort?': 'unknown', 'after?': 'unknown' });
 const Body = type({ intent: "'delete' | 'restore'" });
 
 export const Route = createFileRoute('/post/$id/')({
   validateSearch: Search,
-  loader: async ({ params }) => {
-    const data = await loadPost({ data: { id: params.id } });
+  // The thread's sort and page come from the address, so a reload of this route (a tab brought forward, a
+  // reply posted) draws the page the reader is on. Not loaderDeps: a sort change keeps this match and its drafts.
+  loader: async ({ params, location }) => {
+    const search = Search(location.search);
+    const { sort, after } = search instanceof type.errors ? {} : search;
+    const data = await loadPost({
+      data: { id: params.id, ...(typeof sort === 'string' && { sort }), ...(typeof after === 'string' && { after }) },
+    });
     if (!data) throw notFound();
     return data;
   },

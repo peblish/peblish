@@ -100,3 +100,38 @@
     align-self: stretch;
   }
 }
+
+/* The queue by community (branch 5, groups.tsx): one section per community, its heading line over its table. */
+@layer app {
+  .rq-groups {
+    display: flex;
+    flex-direction: column;
+    gap: var(--muxui-semantic-layout-section-gap);
+  }
+  .rq-group {
+    display: flex;
+    flex-direction: column;
+    gap: var(--muxui-semantic-layout-tight-gap);
+  }
+  .rq-group__head {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--muxui-semantic-layout-micro-gap) var(--muxui-semantic-layout-control-gap);
+    align-items: baseline;
+  }
+  /* The count sits at the line's end while it fits, and wraps under the name when it does not. */
+  .rq-group__count {
+    margin-inline-start: auto;
+  }
+  /* WCAG 2.2 target size; a phone's tap target is 44px. */
+  .rq-group__title .muxui-link {
+    display: inline-flex;
+    align-items: center;
+    min-block-size: 24px;
+  }
+  @media (max-width: 859.98px) {
+    .rq-group__title .muxui-link {
+      min-block-size: var(--pb-touch);
+    }
+  }
+}

@@ -87,32 +87,57 @@ function excerptOf(body: { bodyMd: string | null; contentHtml: string | null }, 
  * inboxVisible's (no blocked author's reply or mention, nothing in a deleted or removed
  * community), shared with every count. `unread` is the shell's badge number and
  * `unreadByGroup` the filter links', both capped.
+ *
+ * The rows and what each says are read from one snapshot (inboxPage); the counts beside it, at
+ * the same time, by the same rule.
  */
 export async function readInbox(
   viewer: NonNullable<Viewer>,
   options: { filter?: InboxFilter; cursor?: string | null; limit?: number } = {},
-  q: Queryable = db(),
+  q?: Queryable,
 ): Promise<Inbox> {
-  const { filter = 'all', cursor = null, limit = inboxPageSize } = options;
+  const counted = q ?? db();
+  const [page, unread, unreadByGroup] = await Promise.all([
+    q
+      ? inboxPage(q, viewer, options)
+      : db().transaction((snapshot) => inboxPage(snapshot, viewer, options), {
+          isolationLevel: 'repeatable read',
+          accessMode: 'read only',
+        }),
+    unreadCountOf(counted, viewer.actorId),
+    groupCounts(counted, viewer.actorId),
+  ]);
+  return { ...page, unread, unreadByGroup };
+}
+
+/**
+ * One page of rows and their descriptions. readInbox runs it in a read-only REPEATABLE READ
+ * transaction: every statement in it reads the snapshot its first took, so a row is described
+ * from the same data it was chosen by, even when its comment is purged, or a block made, while the
+ * page is read. Read-only, it takes no locks and cannot fail to serialize. A caller passing its
+ * own `q` passes one snapshot.
+ */
+async function inboxPage(
+  q: Queryable,
+  viewer: NonNullable<Viewer>,
+  { filter = 'all', cursor = null, limit = inboxPageSize }: { filter?: InboxFilter; cursor?: string | null; limit?: number },
+): Promise<Pick<Inbox, 'items' | 'next'>> {
   const conditions: (SQL | undefined)[] = [
     inboxVisible(viewer.actorId),
     filter === 'all' || filter === 'unread' ? undefined : inArray(notifications.kind, [...filterKinds[filter]]),
     filter === 'unread' ? isNull(notifications.readAt) : undefined,
     cursor !== null && Uuid.allows(cursor) ? lt(notifications.id, cursor) : undefined,
   ];
-  const [rows, unread, unreadByGroup] = await Promise.all([
-    q
-      .select({ notice: notifications })
-      .from(notifications)
-      .where(and(...conditions))
-      .orderBy(desc(notifications.id))
-      .limit(limit + 1),
-    unreadCountOf(q, viewer.actorId),
-    groupCounts(q, viewer.actorId),
-  ]);
+  const rows = await q
+    .select({ notice: notifications })
+    .from(notifications)
+    .where(and(...conditions))
+    .orderBy(desc(notifications.id))
+    .limit(limit + 1);
   const page = rows.slice(0, limit).map(({ notice }) => notice);
   const next = rows.length > limit ? (page.at(-1)?.id ?? null) : null;
-  return { items: await describe(q, page, viewer), next, unread, unreadByGroup };
+  // A followed thread's notice is listed only with nothing withheld (inboxVisible), so it names its commenter as a reply does.
+  return { items: await describe(q, page, viewer), next };
 }
 
 async function groupCounts(q: Queryable, viewerId: Uuid): Promise<UnreadByGroup> {

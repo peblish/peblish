@@ -5,7 +5,12 @@ import { expect, test, vi } from 'vitest';
 // A notice row's first paint, as a browser without scripts (or before hydration) gets it: no router,
 // so the hooks the row uses are stubbed, and every key prints as itself.
 vi.mock('../../../i18n/use-translate.ts', () => ({ useTranslate: () => ({ locale: 'en', t: (_area: string, key: string) => key }) }));
-vi.mock('@tanstack/react-router', () => ({ useRouter: () => ({ invalidate: async () => {} }) }));
+vi.mock('@tanstack/react-router', () => ({
+  getRouteApi: () => ({ useLoaderData: () => '' }),
+  rootRouteId: '__root__',
+  useLocation: () => ({}),
+  useRouter: () => ({ invalidate: async () => {} }),
+}));
 vi.mock('../../../shell/hydration.ts', () => ({ useRouteHydrated: () => {} }));
 vi.mock('../../../shell/view-header.tsx', () => ({ useHeadingInView: () => false, ViewHeader: () => null }));
 

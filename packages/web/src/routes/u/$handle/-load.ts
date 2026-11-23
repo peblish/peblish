@@ -1,6 +1,8 @@
 import { parseNsfwChoice } from '@peblish/core/communities/gate';
 import { defaultPageSize } from '@peblish/core/feeds/input';
 import type { Viewer } from '@peblish/core/posts/read';
+import { peerSoftware } from '@peblish/core/peers/public';
+import { readModerates } from '@peblish/core/profiles/moderates';
 import { profileSorts, profileTabs } from '@peblish/core/profiles/input';
 import { publicActorRef, readActivity, readProfile, type Profile } from '@peblish/core/profiles/read';
 import type { Uuid } from '@peblish/schema/ids';
@@ -35,6 +37,12 @@ export type ProfileData = {
   state: Profile['state'];
   blocked: Profile['blocked'];
   moderatedCommunities: ActorRef[];
+  /** The communities the person moderates, verified here, that this viewer may see (the rail's Moderates; the contract's `moderates`). */
+  moderates: ActorRef[];
+  /** More communities than `moderates` lists. */
+  moderatesMore: boolean;
+  /** A remote person's home software from its NodeInfo, null when unknown; always null for a local person. */
+  homeSoftware: string | null;
   indexable: boolean;
   /** The signed-in person, or null. */
   viewer: { actorId: Uuid; admin: boolean } | null;
@@ -92,6 +100,14 @@ async function buildProfile(
     return { kind: 'comment', view: { ...view, contentHtml }, post, community: publicActorRef(community) };
   });
 
+  // The rail's facts: not for a deleted account, and no list of a person the viewer blocks.
+  const [moderates, homeSoftware] = await Promise.all([
+    withActivity && profile.state === 'live' && profile.blocked === null
+      ? readModerates(profile.actor.id, viewer)
+      : { communities: [], more: false },
+    withActivity && profile.home ? peerSoftware(profile.home.host) : null,
+  ]);
+
   const person = { kind: 'actor', id: profile.actor.id, apId: profile.actor.apId } as const;
   const bioHtml =
     profile.bio?.kind === 'markdown'
@@ -116,6 +132,9 @@ async function buildProfile(
       state: profile.state,
       blocked: profile.blocked,
       moderatedCommunities: profile.moderatedCommunities.map(publicActorRef),
+      moderates: moderates.communities.map(publicActorRef),
+      moderatesMore: moderates.more,
+      homeSoftware,
       indexable: profile.indexable,
       viewer: viewer && { actorId: viewer.actorId, admin: viewer.siteRole === 'admin' },
       tab: data.tab,

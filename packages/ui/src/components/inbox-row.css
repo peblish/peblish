@@ -188,3 +188,30 @@
     }
   }
 }
+
+/* The inbox's date groups (routes/notifications/-ui/groups.tsx): a label over each group's rows; and
+   Mark all read's status row with its Undo (marked.tsx). Here rather than in the route's styles, so
+   the gallery draws them the same. */
+@layer app {
+  .pb-notice-groups,
+  .pb-notice-group {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    inline-size: 100%;
+  }
+
+  .pb-notice-groups {
+    gap: var(--muxui-semantic-layout-group-gap);
+  }
+
+  .pb-notice-group__title {
+    margin: 0 0 var(--muxui-semantic-layout-tight-gap);
+  }
+
+  .pb-notice-status {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--muxui-semantic-layout-tight-gap) var(--muxui-semantic-layout-action-gap);
+  }
+}

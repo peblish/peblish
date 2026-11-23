@@ -33,11 +33,14 @@ type State = Awaited<ReturnType<ReturnType<Page['context']>['storageState']>>;
 
 const escape = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
-/** Counts the posts a page sends (form posts and fetches alike), so a test can show one was stopped. */
-function posts(page: Page): () => number {
+/**
+ * Counts the posts a page sends to `path` (form posts and fetches alike), the action of the form under test, so a test
+ * can show that one was stopped; what the page sends on its own (the post page's visit) is not counted.
+ */
+function posts(page: Page, path: string): () => number {
   let count = 0;
   page.on('request', (request) => {
-    if (request.method() === 'POST') count++;
+    if (request.method() === 'POST' && new URL(request.url()).pathname === path) count++;
   });
   return () => count;
 }
@@ -119,7 +122,7 @@ for (const locale of ['en-US', 'de-DE'] as const) {
     test('the modlog reason (text area) explains an empty and an over-long reason, then clears', async ({ browser }) => {
       const page = await pageAs(browser, moderator, locale);
       const log = recordConsole(page);
-      const sent = posts(page);
+      const sent = posts(page, '/modlog/act');
       await gotoHydrated(page, `/post/${world.posts.author}`);
       const panel = page.locator(`#comment-${world.comments.spam}`).getByTestId('mod-panel-remove');
       await panel.getByRole('button', { expanded: false }).click();
@@ -158,7 +161,7 @@ for (const locale of ['en-US', 'de-DE'] as const) {
     test('the peers domain (text field) explains an empty host, then clears', async ({ browser }) => {
       const page = await pageAs(browser, admin, locale);
       const log = recordConsole(page);
-      const sent = posts(page);
+      const sent = posts(page, '/admin/peers');
       await gotoHydrated(page, '/admin/peers');
       const domain = page.locator('input[name="domain"]');
       await domain.locator('xpath=ancestor::form[1]').locator('button[type="submit"]').click();
@@ -173,7 +176,7 @@ for (const locale of ['en-US', 'de-DE'] as const) {
 
     test('the blocks field explains an empty handle, then clears', async ({ browser }) => {
       const page = await pageAs(browser, member, locale);
-      const sent = posts(page);
+      const sent = posts(page, '/settings/blocks');
       await gotoHydrated(page, '/settings/blocks');
       const handle = page.locator('input[name="handle"]');
       // Enter in the field submits, as the button does.
@@ -188,7 +191,7 @@ for (const locale of ['en-US', 'de-DE'] as const) {
 
     test('the composer’s own message for a malformed link is linked and announced, and goes with the edit', async ({ browser }) => {
       const page = await pageAs(browser, poster, locale);
-      const sent = posts(page);
+      const sent = posts(page, '/submit');
       await gotoHydrated(page, '/submit');
       await choose(page, composerCommunity);
       await chooseType(page, 'Link');
@@ -207,7 +210,7 @@ for (const locale of ['en-US', 'de-DE'] as const) {
       const context = await browser.newContext({ locale, extraHTTPHeaders: { 'Accept-Language': locale } });
       const page = await context.newPage();
       const log = recordConsole(page);
-      const sent = posts(page);
+      const sent = posts(page, '/auth/sign-up');
       await gotoHydrated(page, '/auth/sign-up');
       const submit = page.locator('form button[type="submit"]');
       const terms = page.locator('form input[name="terms"]');
@@ -236,7 +239,7 @@ test.describe('without JavaScript', () => {
   test.use({ javaScriptEnabled: false });
 
   test('the browser still stops an unticked terms box and an empty handle, with no app message', async ({ page, browser }) => {
-    const sent = posts(page);
+    const sent = posts(page, '/auth/sign-up');
     await page.goto('/auth/sign-up');
     await fillSignUp(page, 'terms');
     const terms = page.locator('form input[name="terms"]');
@@ -248,7 +251,7 @@ test.describe('without JavaScript', () => {
 
     const context = await browser.newContext({ storageState: member, javaScriptEnabled: false });
     const blocks = await context.newPage();
-    const blocked = posts(blocks);
+    const blocked = posts(blocks, '/settings/blocks');
     await blocks.goto('/settings/blocks');
     const handle = blocks.locator('input[name="handle"]');
     await handle.locator('xpath=ancestor::form[1]').locator('button[type="submit"]').click();

@@ -5,6 +5,7 @@ import { freshModerator } from '../authz/roles.ts';
 import { hideNsfw, type NsfwChoice } from '../communities/gate.ts';
 import { actorBlockedBy, blockOf } from '../blocks/predicate.ts';
 import { db, type Queryable } from '../db/read.ts';
+import { localInstance } from '../db/local-instance.ts';
 import { actors } from '../db/tables/actors.ts';
 import { authUser } from '../db/tables/auth.ts';
 import { comments, posts, votes } from '../db/tables/content.ts';
@@ -15,6 +16,7 @@ import { decodeCursor, encodeCursor, type Cursor } from '../feeds/cursor.ts';
 import { defaultPageSize, maxPageSize } from '../feeds/input.ts';
 import { visible } from '../feeds/read.ts';
 import { ageClear } from '../posts/feed-predicate.ts';
+import { commentPermalink } from '../posts/permalink.ts';
 import { postViews, type PostBody, type Viewer } from '../posts/read.ts';
 import type { ProfileSort, ProfileTab } from './input.ts';
 
@@ -329,7 +331,7 @@ async function commentsPage(q: Queryable, request: ActivityRequest, viewer: View
   const rows = await commentsQuery(q, request, viewer, cursor, asOf, want);
   if (rows.length === 0) return [];
 
-  const [author, communities, mine] = await Promise.all([
+  const [author, communities, mine, instance] = await Promise.all([
     q
       .select({
         id: actors.id,
@@ -370,6 +372,7 @@ async function commentsPage(q: Queryable, request: ActivityRequest, viewer: View
             ),
           )
       : [],
+    localInstance(q),
   ]);
   const person = author[0] ? refOf(author[0]) : null;
   if (!person) return [];
@@ -398,6 +401,9 @@ async function commentsPage(q: Queryable, request: ActivityRequest, viewer: View
       removed: false,
       counts: { upvotes: row.upvotes, downvotes: row.downvotes, comments: row.childCount },
       myVote: myVote.get(row.id) ?? 0,
+      // Only live comments are listed, so each has its address; "new" is a thread visit's, never a profile's.
+      permalink: commentPermalink(instance.origin, row.postId, row.id),
+      isNew: false,
     };
     return [
       {

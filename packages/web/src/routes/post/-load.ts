@@ -1,3 +1,5 @@
+import { parseSort } from '@peblish/core/comments/sort';
+import { threadFacts } from '@peblish/core/posts/facts';
 import { readPost, type Viewer } from '@peblish/core/posts/read';
 import type { PostView } from '@peblish/schema/views';
 import { createServerFn } from '@tanstack/react-start';
@@ -21,15 +23,19 @@ import { input } from '../../server/input.ts';
  * and leaves out who wrote a removed or deleted post for anyone it does not tell (-withheld.ts).
  */
 export const loadPost = createServerFn({ method: 'GET' })
-  .validator(input(type({ id: 'string' })))
+  .validator(input(type({ id: 'string', 'sort?': 'string', 'after?': 'string' })))
   .handler(async ({ data }) => {
     const session = await pageSession();
     const viewer: Viewer = session ? { actorId: session.view.actorId, siteRole: session.view.siteRole } : null;
     const page = await readPost(data.id, viewer, undefined, requestNsfw());
     if (!page) return null;
-    // A flagged post that is not shown to this viewer sends the gate and nothing about the post (not even its community's name).
+    // A flagged post that is not shown to this viewer sends the gate and nothing about the post (not even its community's name);
+    // only someone who followed it before it was gated gets its id back, for their Unfollow there.
     if (page.gate !== 'none')
-      return gateData({ subject: 'post', gate: page.gate, handle: page.view.community.handle, back: postPath(page.view.id) });
+      return {
+        ...gateData({ subject: 'post', gate: page.gate, handle: page.view.community.handle, back: postPath(page.view.id) }),
+        unfollow: session && page.view.watching ? page.view.id : null,
+      };
     const renderer = await createMarkdownRenderer();
     const { body } = page;
     const contentHtml =
@@ -50,7 +56,8 @@ export const loadPost = createServerFn({ method: 'GET' })
       moderator: page.moderator,
       /** False while a moderator removed the post: the thread must not be sent either (the gate sends no post at all). */
       threadVisible: threadVisible(page),
-      thread: await loadThread({ page, session, renderer }),
+      // The thread in the sort and page the route asked for (its address), the same on a document request and a reload.
+      thread: await loadThread({ page, session, renderer, sort: parseSort(data.sort), after: data.after ?? null }),
       /** The signed-in person, or null: who may see the author's actions and the action slots. */
       viewerId: session?.view.actorId ?? null,
       /** A site admin with two-factor on, for the action slots. */
@@ -62,6 +69,8 @@ export const loadPost = createServerFn({ method: 'GET' })
       domain: view.url ? (URL.parse(view.url)?.hostname.replace(/^www\./, '') ?? null) : null,
       /** The body holds a spoiler: the post's Spoiler badge, derived from the text it already has. */
       spoiler: hasSpoiler(contentHtml),
+      /** The rail's thread facts (people, last activity, language); none for a deleted post or one withheld from this reader. */
+      facts: view.deleted || (view.removed && !page.moderator) ? null : await threadFacts(view.id, viewer),
     };
   });
 

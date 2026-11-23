@@ -1,0 +1,16 @@
+{
+  "en": {
+    "jump.one": "{count} new since your last visit",
+    "jump.other": "{count} new since your last visit",
+    "offPage": "None of them is on this page.",
+    "position": "New comment {index} of {total}",
+    "marker": "New"
+  },
+  "de": {
+    "jump.one": "{count} neu seit deinem letzten Besuch",
+    "jump.other": "{count} neu seit deinem letzten Besuch",
+    "offPage": "Keiner davon ist auf dieser Seite.",
+    "position": "Neuer Kommentar {index} von {total}",
+    "marker": "Neu"
+  }
+}

@@ -393,26 +393,29 @@ function Actions({ group, tab, admin, view }: { group: QueueGroup; tab: QueueTab
   );
 }
 
-/** One row per group: content, reports, age and the actions the viewer has here. */
+/** One row per group: content, reports, age and the actions the viewer has here; `label` names the table and its card. */
 export function QueueTable({
   groups,
   tab,
   admin,
   view,
   now,
+  label,
 }: {
   groups: QueueGroup[];
   tab: QueueTab;
   admin: boolean;
   view: QueueView;
   now: number;
+  label?: string;
 }) {
   const { t, locale } = useTranslate();
   useFieldKeys();
+  const name = label ?? t('reports', 'queue.title');
   return (
-    <TableCard label={t('reports', 'queue.title')} className="rq-table">
+    <TableCard label={name} className="rq-table">
       <Table
-        aria-label={t('reports', 'queue.title')}
+        aria-label={name}
         columns={[
           { id: 'content', label: t('reports', 'queue.col.content'), isRowHeader: true },
           { id: 'reports', label: t('reports', 'queue.col.reports') },

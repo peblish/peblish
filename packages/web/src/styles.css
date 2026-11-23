@@ -45,3 +45,6 @@
 /* The header's finder and Create post's community field (f-finder lane). */
 @import '@peblish/ui/components/community-finder.css';
 @import '@peblish/ui/components/community-field.css';
+/* The sidebar's pins and the directory's pin controls (f-pins). */
+@import './shell/pins.css';
+@import './routes/communities/-ui/pin-controls.css';

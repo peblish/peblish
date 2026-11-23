@@ -27,11 +27,11 @@ async function pageAs(browser: Browser, name?: string): Promise<Page> {
   return page;
 }
 
-/** Counts the posts a page sends. */
-function posts(page: Page): () => number {
+/** Counts the posts a page sends to `path`, the action of the form under test; what the page sends on its own (the post page's visit) is not counted. */
+function posts(page: Page, path: string): () => number {
   let count = 0;
   page.on('request', (request) => {
-    if (request.method() === 'POST') count++;
+    if (request.method() === 'POST' && new URL(request.url()).pathname === path) count++;
   });
   return () => count;
 }
@@ -63,7 +63,7 @@ async function slowPress(page: Page, button: Locator): Promise<void> {
 
 test('the modlog reason (text area): after the fix is typed, one press removes the comment', async ({ browser }) => {
   const page = await pageAs(browser, world.moderator.name);
-  const sent = posts(page);
+  const sent = posts(page, '/modlog/act');
   await gotoHydrated(page, `/post/${world.posts.author}`);
   const comment = page.locator(`#comment-${world.comments.spam}`);
   await comment.getByRole('button', { name: 'Remove comment', exact: true }).click();
@@ -85,7 +85,7 @@ test('the modlog reason (text area): after the fix is typed, one press removes t
 
 test('the blocks handle (text field): after the fix is typed, one press blocks the person', async ({ browser }) => {
   const page = await pageAs(browser, world.bystander.name);
-  const sent = posts(page);
+  const sent = posts(page, '/settings/blocks');
   await gotoHydrated(page, '/settings/blocks');
   const handle = page.getByRole('textbox', { name: 'Block a person by handle' });
   const block = page.getByRole('button', { name: 'Block', exact: true });
@@ -103,7 +103,7 @@ test('the blocks handle (text field): after the fix is typed, one press blocks t
 
 test('sign-in (the auth field): after the fixes are typed, one press signs in', async ({ browser }) => {
   const page = await pageAs(browser);
-  const sent = posts(page);
+  const sent = posts(page, '/auth/sign-in');
   await gotoHydrated(page, '/auth/sign-in');
   const signIn = page.getByRole('button', { name: 'Sign in' });
   await signIn.click();

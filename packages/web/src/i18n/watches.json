@@ -1,0 +1,16 @@
+{
+  "en": {
+    "follow": "Follow thread",
+    "follow.note": "New comments here come to your inbox.",
+    "status.on": "Following this thread. New comments come to your inbox.",
+    "status.off": "No longer following this thread.",
+    "error": "That did not work. Try again."
+  },
+  "de": {
+    "follow": "Thread folgen",
+    "follow.note": "Neue Kommentare hier kommen in deinen Posteingang.",
+    "status.on": "Du folgst diesem Thread. Neue Kommentare kommen in deinen Posteingang.",
+    "status.off": "Du folgst diesem Thread nicht mehr.",
+    "error": "Das hat nicht geklappt. Versuche es erneut."
+  }
+}

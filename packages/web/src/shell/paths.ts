@@ -40,6 +40,10 @@ export const reportQueuePath = (handle?: string) =>
 /** The inbox (lane E2). */
 export const inboxPath = '/notifications';
 
+/** The viewer's saved posts and the public Instances page (branch 5; reserved here so their lanes share no line). */
+export const savedPath = '/saved';
+export const instancesPath = '/instances';
+
 /** The You page (Commons' You tab): the viewer, their account's pages, Appearance and the site's pages. */
 export const youPath = '/you';
 

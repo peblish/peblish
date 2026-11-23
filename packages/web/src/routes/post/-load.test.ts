@@ -19,6 +19,7 @@ vi.mock('../../server/markdown.ts', () => ({
 vi.mock('../c/-gate.ts', () => ({ requestNsfw: () => ({ always: false, once: [] }), gateData: () => null }));
 vi.mock('./$id/comments/-thread.ts', () => ({ loadThread: async () => null }));
 vi.mock('@peblish/core/posts/read', () => ({ readPost: async () => page(state.moderator) }));
+vi.mock('@peblish/core/posts/facts', () => ({ threadFacts: async () => null }));
 const { loadPost } = await import('./-load.ts');
 
 const carol: ActorRef = {

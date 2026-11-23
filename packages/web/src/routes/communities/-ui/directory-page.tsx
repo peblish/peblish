@@ -27,6 +27,7 @@ import type { DirectoryData } from '../-load.ts';
 import { storeView } from '../-view.ts';
 import { asDirectoryError, errorKey, type DirectoryError } from './errors.ts';
 import { FollowForm } from './follow-form.tsx';
+import { PinnedGroup, PinToggle, rowPinId, useShellPins } from './pin-controls.tsx';
 
 // The community directory (Commons, the mock's CommunitiesView): its name in the view header, the
 // scope, sort and NSFW choices as link tabs with the List or Cards choice, one GET search form
@@ -77,6 +78,17 @@ export function DirectoryPage({ data, error: fromAddress }: { data: DirectoryDat
   // Where a join sends the browser back to (without script), and where a signed-out visitor returns after signing in.
   const current = directoryHref(here, query);
   const now = new Date(data.now);
+  const pinned = new Set(data.pinned);
+  // The viewer's pinned communities, in the sidebar's order, above the first page of an unfiltered list, in the
+  // list's scope (under Local, the local ones) and under the directory's own rules, which the loader applies to
+  // the viewer's pins (listedPins): a pin on a blocked host or behind the age gate stays out. Every pin the shell
+  // has, so a pin past this page still shows.
+  const shellPins = useShellPins();
+  const listed = new Set(data.listedPins);
+  const pins = shellPins.filter((community) => listed.has(community.id) && (query.scope !== 'local' || community.local));
+  const showPins = data.signedIn && pins.length > 0 && data.page === 1 && query.q === '';
+  // Where a pinned row went, said politely; kept here, as the group goes with its last pin.
+  const [pinStatus, setPinStatus] = useState('');
 
   const items: CommunityListItem[] = data.rows.map((row) => {
     const linkId = `dir-${row.actor.id}`;
@@ -104,6 +116,7 @@ export function DirectoryPage({ data, error: fromAddress }: { data: DirectoryDat
           row={row}
           linkId={linkId}
           signedIn={data.signedIn}
+          pinned={pinned.has(actor.id)}
           next={current}
           busy={busy.has(actor.id)}
           onBusy={busyFor(actor.id)}
@@ -205,6 +218,15 @@ export function DirectoryPage({ data, error: fromAddress }: { data: DirectoryDat
           </Notice>
         )}
 
+        {showPins && (
+          // A move goes one place in the whole order: past a pin the scope hides, it would seem to do nothing.
+          <PinnedGroup pinned={pins} movable={pins.length === shellPins.length} view={view} next={current} onStatus={setPinStatus} />
+        )}
+        {data.signedIn && (
+          <Text role="status" className="pb-sr">
+            {pinStatus}
+          </Text>
+        )}
         {data.rows.length === 0 ? (
           <EmptyState
             title={t('directory', 'directory.empty.title')}
@@ -273,6 +295,7 @@ function Action({
   row,
   linkId,
   signedIn,
+  pinned,
   next,
   busy,
   onBusy,
@@ -281,6 +304,7 @@ function Action({
   row: DirectoryRow;
   linkId: string;
   signedIn: boolean;
+  pinned: boolean;
   next: string;
   busy: boolean;
   onBusy: (busy: boolean) => void;
@@ -294,7 +318,7 @@ function Action({
       </Link>
     );
   const state = row.follow === 'accepted' ? 'joined' : row.follow === 'pending' ? 'pending' : 'none';
-  return (
+  const join = (
     <FollowForm
       community={row.actor.id}
       intent={state === 'none' ? 'join' : 'leave'}
@@ -318,5 +342,15 @@ function Action({
         }}
       />
     </FollowForm>
+  );
+  // Pin before Join, for a community the viewer follows or asked to join (pin-controls.tsx). One wrapper in
+  // every state, so joining or leaving never remounts the Join form under the press.
+  return (
+    <span className="dir-pin__actions">
+      {state === 'none' ? null : (
+        <PinToggle community={row.actor} pinned={pinned} next={next} id={rowPinId(row.actor.id)} describedBy={linkId} />
+      )}
+      {join}
+    </span>
   );
 }

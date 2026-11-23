@@ -3,6 +3,7 @@ import { actors } from '@peblish/core/db/tables/actors';
 import { activities } from '@peblish/core/db/tables/federation';
 import { defineConsumer, type ConsumerTx } from '@peblish/core/outbox/consumers';
 import type { OutboxEvent } from '@peblish/schema/events';
+import { isPersonalEventType, personalEventTypes, type PersonalEventType } from '@peblish/schema/personal';
 import { communityModerators, modlog } from '@peblish/core/db/tables/moderation';
 import { and, desc, eq, isNull, sql } from 'drizzle-orm';
 import { accept, create, follow, note, page, remove, undoDelete, undoFollow, undoVote, update, updateActor, vote } from './activities.ts';
@@ -14,9 +15,13 @@ import { actorRefs, type ActorRef, loadComment, loadPost, localActorRecord, ment
 // activities peers read, stores them in `activities`, and queues them for delivery. It runs in
 // the outbox worker's batch transaction and makes no request: the delivery job does (run.ts).
 // Remote events (local false) are never ours to send; the inbound relay (lane FED-B) asks for
-// those. Moderation events and actor.deleted are FED-B's too.
+// those. Moderation events and actor.deleted are FED-B's too. The personal features' events
+// (saves, pins, thread follows, visits; schema's personal.ts) are taken and dropped on purpose:
+// what they record never leaves this server.
 
 type Of<T extends OutboxEvent['type']> = Extract<OutboxEvent, { type: T }>;
+
+const isPersonal = (event: OutboxEvent): event is Of<PersonalEventType> => isPersonalEventType(event.type);
 
 /** The id of the Delete we sent for `objectApId`, so its Undo can embed it; a fresh id if none is stored. */
 async function sentDeleteId(t: ConsumerTx, origin: string, objectApId: string, actorApId: string): Promise<string> {
@@ -201,9 +206,11 @@ export const consumer = defineConsumer({
     'follow.accepted',
     'follow.removed',
     'actor.updated',
+    ...personalEventTypes,
   ],
   startAt: 'beginning',
   async handle(event, t) {
+    if (isPersonal(event)) return;
     const { origin } = await localInstance(t.db);
     switch (event.type) {
       case 'post.created':

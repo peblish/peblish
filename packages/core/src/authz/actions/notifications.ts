@@ -51,6 +51,13 @@ export const policies = {
     return allow({ kind: 'owner', actorId: principal.actorId });
   },
 
+  /** A local person undoes their own Mark all read (notifications/mutations.ts, undoMarkAllRead). */
+  'notification.undo_read_all': async ({ principal, subject }: PolicyRequest<{ recipientId: Uuid }>) => {
+    if (principal.kind !== 'local') return deny('auth.required');
+    if (subject.recipientId !== principal.actorId) return deny('notification.not_yours');
+    return allow({ kind: 'owner', actorId: principal.actorId });
+  },
+
   /** The consumer removes a deleted person's notices. */
   'notification.purge': async ({ principal, subject }: PolicyRequest<{ recipientId: Uuid }>) => {
     if (principal.kind !== 'system' || principal.job !== 'scheduled') return deny('auth.required');
