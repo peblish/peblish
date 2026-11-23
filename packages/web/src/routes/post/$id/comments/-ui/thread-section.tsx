@@ -18,7 +18,7 @@ import { Text } from '@peblish/ui/components/text';
 import type { CommentView } from '@peblish/schema/views';
 import { useRouter, useRouterState } from '@tanstack/react-router';
 import { type } from 'arktype';
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { translatePlural } from '../../../../../i18n/translate.ts';
 import { useTranslate } from '../../../../../i18n/use-translate.ts';
 import { useCommentThreadLabels, useReplyBarLabels } from '../../../../../shell/labels.ts';
@@ -125,39 +125,7 @@ export function ThreadSection({ data: loaded, heading }: { data: ThreadData; hea
   }, [current, loaded, wanted, wantedAfter]);
   // A fetch is drawn only for the view it was made for, so one left from another view (back on the loaded one, or on a third) never shows.
   const fetchedHere = fetched?.sort === wanted && fetched.after === wantedAfter ? fetched : null;
-  // On the loaded view a fetch shows only while it is the fresher (a refresh); a reply's reload is newer still.
-  const data = fetchedHere && (!current || Date.parse(fetchedHere.now) >= Date.parse(loaded.now)) ? fetchedHere : loaded;
-
-  // NewSince's refresh when a tab comes forward: the page on screen (this sort and cursor) fetched again, true
-  // once it is drawn. The view is read when the answer comes, so one the reader has left since is not drawn.
-  const view = useRef({ wanted, wantedAfter });
-  useLayoutEffect(() => {
-    view.current = { wanted, wantedAfter };
-  });
-  const drawn = useRef<{ data: ThreadData; done: (shown: boolean) => void } | null>(null);
-  useEffect(() => {
-    if (drawn.current?.data !== data) return;
-    drawn.current.done(true);
-    drawn.current = null;
-  }, [data]);
-  useEffect(() => () => drawn.current?.done(false), []);
-  const refresh = useCallback(async () => {
-    const asked = view.current;
-    const next = await loadThreadFn({
-      data: {
-        postId: loaded.postId,
-        sort: asked.wanted,
-        ...(asked.wantedAfter && { after: asked.wantedAfter }),
-        ...(loaded.focus && { rootId: loaded.focus.id }),
-      },
-    }).catch(() => null);
-    if (!next || view.current.wanted !== asked.wanted || view.current.wantedAfter !== asked.wantedAfter) return false;
-    return new Promise<boolean>((done) => {
-      drawn.current?.done(false);
-      drawn.current = { data: next, done };
-      setFetched(next);
-    });
-  }, [loaded.postId, loaded.focus]);
+  const data = current ? loaded : (fetchedHere ?? loaded);
   const now = useMemo(() => new Date(data.now), [data.now]);
   // The address of a page of this thread: the post's or the permalink's, in this sort.
   const here = data.focus ? commentPath(data.postId, data.focus.id) : postPath(data.postId);
@@ -276,7 +244,7 @@ export function ThreadSection({ data: loaded, heading }: { data: ThreadData; hea
           {heading ?? t('comments', 'heading')}
         </Text>
         {!data.focus && (
-          <NewSince postId={data.postId} viewerId={data.viewerId} newCount={data.newCount} comments={data.comments} refresh={refresh} />
+          <NewSince postId={data.postId} viewerId={data.viewerId} newCount={data.newCount} comments={data.comments} drawnAt={data.now} />
         )}
         <form method="get" action="#comments" onSubmit={chooseSort}>
           <ButtonGroup role="group" aria-label={t('comments', 'sort.group')} attached>
