@@ -1225,6 +1225,35 @@ test("a document's first render leaves the window to the browser and the reader,
   expect(await page.evaluate(() => Math.round(scrollY))).toBe(scrolled);
 });
 
+test('a reader who scrolls while a return loads is left where the router puts the window, not moved to the row', async ({ page }) => {
+  await signedIn(page);
+  await gotoHydrated(page, '/?sort=new');
+  await loadTo(page, 40);
+  await link(page, title(21)).scrollIntoViewIfNeeded();
+  await settled(page);
+  const count = await holding(page);
+  const y = await page.evaluate(() => Math.round(scrollY));
+  await link(page, title(21)).click();
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText(title(21));
+  // Posts arrive above, so putting the row back would move the window off where the router puts it.
+  run('arrive', seed.suffix, '3');
+  const held = await holdReads(page);
+  try {
+    await page.goBack();
+    await expect.poll(() => held.length).toBe(1);
+    await page.mouse.move(640, 400);
+    await page.mouse.wheel(0, 300);
+    held[0]!.go();
+    await expect(rows(page)).toHaveCount(count);
+    await expect(rows(page).first()).toContainText(`Depth ${seed.suffix} new 03`);
+    await settled(page);
+    // Where the reader left (a click can scroll the link a pixel into view), not three rows further down.
+    expect(Math.abs((await page.evaluate(() => Math.round(scrollY))) - y)).toBeLessThanOrEqual(1);
+  } finally {
+    run('depart', seed.suffix);
+  }
+});
+
 test('an ordinary visit to a feed reads one batch, once, and draws it', async ({ page }) => {
   await signedIn(page);
   await gotoHydrated(page, `/?sort=new`);

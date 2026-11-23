@@ -2,8 +2,8 @@
 // key for it): that row and how far it stood from the window's top. A return to the entry through the router puts
 // that row back where it stood once the fresh rows are drawn (feed-page.tsx), so posts added, removed or ranked anew
 // above it do not move what the reader comes back to. Nothing else is kept, and nothing else moves the window: any
-// other way off the list, a row not among the fresh rows and a document's first render (a reload, a first visit, a
-// return from another document) leave it to the router and the browser.
+// other way off the list, a row not among the fresh rows, a document's first render (a reload, a first visit, a
+// return from another document) and a reader who scrolls on the way back leave it to the router and the browser.
 // Rows are never kept here. In session storage, so a return through the router after a reload elsewhere (the post
 // opened) finds it too.
 
@@ -62,3 +62,26 @@ export function takePlace(entry: string): Place | undefined {
   }
   return place;
 }
+
+// The reader's own scrolling (the wheel, a touch moving, a key that scrolls) and the last traversal of history
+// (Back, Forward), in this document: a return the reader scrolls on its way is left to the router.
+let traversedAt = 0;
+let scrolledAt = -1;
+const scrollKeys = new Set(['ArrowDown', 'ArrowUp', 'PageDown', 'PageUp', 'Home', 'End', ' ']);
+if (typeof window !== 'undefined') {
+  const scrolled = () => (scrolledAt = performance.now());
+  addEventListener('popstate', () => (traversedAt = performance.now()), true);
+  addEventListener('wheel', scrolled, { capture: true, passive: true });
+  addEventListener('touchmove', scrolled, { capture: true, passive: true });
+  addEventListener(
+    'keydown',
+    (event) => {
+      const field = event.target instanceof HTMLElement && (event.target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(event.target.tagName));
+      if (scrollKeys.has(event.key) && !field) scrolled();
+    },
+    true,
+  );
+}
+
+/** Whether the reader has scrolled since the last Back or Forward. */
+export const scrolledSinceTraversal = () => scrolledAt > traversedAt;

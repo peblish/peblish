@@ -54,7 +54,7 @@ import { castVoteFn } from '../../post/-vote.ts';
 import type { FeedItem } from './items.ts';
 import { loadFeed, type FeedData } from './load.ts';
 import { feedTitleKeys } from './names.ts';
-import { dropPlace, keepPlace, takePlace } from './places.ts';
+import { dropPlace, keepPlace, scrolledSinceTraversal, takePlace } from './places.ts';
 import { grow, isGrowth, isReading, noReads, readsNow, subscribeReads } from './reads.ts';
 import type { FeedRoute } from './route.ts';
 import { depth, feedHref, resolveFeedSearch, type FeedPosition, type FeedSearch } from './search.ts';
@@ -485,7 +485,7 @@ export function FeedCards({
   // starts a link's navigation inside the click's own dispatch, so the activation is held for that task alone: a
   // click that starts no navigation there (one the page prevented) leaves nothing behind. Any other way off the list
   // (Back, Forward, the frame's links, a sort) keeps no place, and the router alone puts the window back; so it does
-  // on a document's first render and when the row is not among the fresh rows.
+  // on a document's first render, when the row is not among the fresh rows, and when the reader scrolls on the way.
   useLayoutEffect(() => {
     const list = box.current;
     if (!more || !list) return;
@@ -523,7 +523,7 @@ export function FeedCards({
       // Taken whatever follows, so it acts once at most. A document's first render comes from its own entry.
       const place = takePlace(entryOf(toLocation));
       const returned = fromLocation !== undefined && entryOf(fromLocation) !== entryOf(toLocation);
-      const row = place && returned && !reading ? rowOf(place.post) : null;
+      const row = place && returned && !reading && !scrolledSinceTraversal() ? rowOf(place.post) : null;
       if (place && row) window.scrollTo({ top: scrollY + row.getBoundingClientRect().top - place.offset, behavior: 'instant' });
     });
     return () => {
