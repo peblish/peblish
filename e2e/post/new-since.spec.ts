@@ -435,6 +435,72 @@ test('an unknown sort and a cursor that is not one, on a reload, give the defaul
   await expect(tab.locator('#comments')).toBeVisible();
 });
 
+/** A background tab in a context of its own, signed out. */
+async function signedOutBackgroundTab(browser: Browser, baseURL: string) {
+  const context = await browser.newContext({ baseURL });
+  return backgroundTab(await context.newPage());
+}
+
+/** Removes the post as a moderator would (its removal time), for the signed-out cases. */
+const removePost = (postId: string) =>
+  execFileSync(
+    'node',
+    [
+      '--input-type=module',
+      '-e',
+      `import { eq } from 'drizzle-orm';
+import { closePools } from './src/db/pools.ts';
+import { posts } from './src/db/tables/content.ts';
+import { writer } from './src/db/write.ts';
+await writer().update(posts).set({ removedAt: new Date() }).where(eq(posts.id, process.argv[1]));
+await closePools();`,
+      postId,
+    ],
+    { cwd: join(root, 'packages/core'), encoding: 'utf8' },
+  );
+
+test.describe('signed out', () => {
+  for (const change of ['removed', 'gated'] as const)
+    test(`a background tab brought forward shows the post ${change} meanwhile, as a fresh load does, and sends no visit`, async ({
+      browser,
+      baseURL,
+    }) => {
+      seed = JSON.parse(run('e2e')) as Seed;
+      const tab = await signedOutBackgroundTab(browser, baseURL!);
+      const events = journal(tab, seed.posts.seen);
+      await gotoHydrated(tab, `/post/${seed.posts.seen}`);
+      await expect(row(tab, seed.comments.first)).toBeVisible();
+      // No New marks for a visitor.
+      await expect(jump(tab)).toHaveCount(0);
+      await expect(tab.locator('.pb-comment__new')).toHaveCount(0);
+      if (change === 'removed') removePost(seed.posts.seen);
+      else makeSensitive(seed.posts.seen);
+      await show(tab);
+      if (change === 'removed') await expect(tab.getByRole('heading', { level: 1, name: 'Removed by a moderator' })).toBeVisible();
+      else await expect(tab.getByText('This post is NSFW')).toBeVisible();
+      await expect(tab.locator('#comments .pb-comment')).toHaveCount(0);
+      await settled(tab);
+      expect(events).toEqual(['reload answered']);
+      await tab.context().close();
+    });
+
+  test('offline, a background tab brought forward keeps its page, and sends no visit', async ({ browser, baseURL }) => {
+    seed = JSON.parse(run('e2e')) as Seed;
+    const tab = await signedOutBackgroundTab(browser, baseURL!);
+    const events = journal(tab, seed.posts.seen);
+    await gotoHydrated(tab, `/post/${seed.posts.seen}`);
+    await tab.context().setOffline(true);
+    const failed = tab.waitForEvent('requestfailed');
+    await show(tab);
+    await failed;
+    await settled(tab);
+    await tab.context().setOffline(false);
+    await expect(row(tab, seed.comments.first)).toBeVisible();
+    expect(events.filter((event) => event === 'visit')).toEqual([]);
+    await tab.context().close();
+  });
+});
+
 test('a post put behind the gate while its tab was in the background shows the gate when brought forward, and records nothing', async ({
   page,
 }) => {
