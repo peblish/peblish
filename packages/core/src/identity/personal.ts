@@ -35,8 +35,11 @@ export async function deletePersonalData(db: WriteTx, ownerId: Uuid, tables: rea
 /**
  * Deletes the notices of the personal kinds that are `personId`'s or name them (another
  * follower's notice of their comment). Account deletion runs it, and the notifications consumer
- * again when it reads the deletion: that consumer handles events in commit order, so it comes
- * after every fan-out that could still have been writing such a notice when the account went.
+ * again when it reads the deletion. That consumer's cursor lets one batch run at a time, so every
+ * fan-out it handled before the deletion has committed its notices by then, and the second
+ * clean-up finds them; a fan-out it handles after the deletion sees the author deleted and tells
+ * nobody (watches/watchers.ts). The worker orders events by transaction id, then event id, not
+ * by commit time; the cursor, not that order, is what makes this hold.
  */
 export async function deletePersonalNotices(db: WriteTx, personId: Uuid): Promise<void> {
   await db
