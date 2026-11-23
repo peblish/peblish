@@ -144,8 +144,13 @@ async function backgroundTab(page: Page) {
     let state: DocumentVisibilityState = 'hidden';
     Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => state });
     Object.defineProperty(document, 'hidden', { configurable: true, get: () => state === 'hidden' });
+    // The document's visibility record, as a browser keeps it: hidden from the start, then each change.
+    const record = [{ name: 'hidden', entryType: 'visibility-state', startTime: 0, duration: 0 }];
+    const real = performance.getEntriesByType.bind(performance);
+    performance.getEntriesByType = (type: string) => (type === 'visibility-state' ? ([...record] as never) : real(type));
     const set = (next: DocumentVisibilityState) => {
       state = next;
+      record.push({ name: next, entryType: 'visibility-state', startTime: performance.now(), duration: 0 });
       document.dispatchEvent(new Event('visibilitychange'));
     };
     Object.assign(window, { __show: () => set('visible'), __hide: () => set('hidden') });
@@ -499,6 +504,39 @@ test.describe('signed out', () => {
     expect(events.filter((event) => event === 'visit')).toEqual([]);
     await tab.context().close();
   });
+});
+
+test('after the tab was hidden once, a post reached in the app while it is in front is loaded once', async ({ page }) => {
+  seed = JSON.parse(run('e2e')) as Seed;
+  await signedIn(page);
+  const tab = await backgroundTab(page);
+  const visitsA = await watchVisits(tab, seed.posts.seen);
+  await gotoHydrated(tab, `/post/${seed.posts.seen}`);
+  await show(tab);
+  await visitsA.first;
+  await hide(tab);
+  await show(tab);
+  await settled(tab);
+  const loadsOfB = journal(tab, seed.posts.unseen);
+  let probes = 0;
+  tab.on('request', (request) => request.url().endsWith('/healthz') && (probes += 1));
+  await tab.evaluate(
+    (target) =>
+      (
+        window as unknown as { __TSR_ROUTER__: { navigate(to: { to: string; params: { id: string } }): Promise<void> } }
+      ).__TSR_ROUTER__.navigate({
+        to: '/post/$id',
+        params: { id: target },
+      }),
+    seed.posts.unseen,
+  );
+  await expect(row(tab, seed.comments.waiting)).toBeVisible();
+  await settled(tab);
+  // A round trip to the server from outside the page: a probe and a reload started on arrival would have gone by now.
+  await tab.request.get('/healthz');
+  await settled(tab);
+  expect(loadsOfB.filter((event) => event === 'reload answered')).toEqual(['reload answered']);
+  expect(probes).toBe(0);
 });
 
 test('a post put behind the gate while its tab was in the background shows the gate when brought forward, and records nothing', async ({
