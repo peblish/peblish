@@ -169,7 +169,7 @@ describe('who gets it', () => {
     const event = (await outboxEvents()).at(-1) as OutboxEvent;
     await tx((t) => consumer.handle(event, t));
     expect((await queued()).map((row) => row.inboxUrl)).toEqual(['https://lemmy.test/inbox']);
-    expect(await readSentReport(w.alice.id, made.number)).toMatchObject({ forwardedTo: ['lemmy.test'] });
+    expect(await readSentReport(localUser(w.alice.id), made.number)).toMatchObject({ forwardedTo: ['lemmy.test'] });
 
     // Filed while the only host is blocked: it stays here, with no Flag, and the receipt says so.
     const second = await seedPost(w.lemmy, w.lab, w.rex);
@@ -178,7 +178,7 @@ describe('who gets it', () => {
     if (typeof kept === 'string' || !kept.ok) throw new Error(String(kept));
     expect(kept.apId).toBeNull();
     await writer().delete(peerControls).where(eq(peerControls.instanceId, w.lemmy.id));
-    expect(await readSentReport(w.alice.id, kept.number)).toMatchObject({ forwardedTo: [] });
+    expect(await readSentReport(localUser(w.alice.id), kept.number)).toMatchObject({ forwardedTo: [] });
     expect(await queued()).toHaveLength(1);
   });
 });

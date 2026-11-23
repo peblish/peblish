@@ -9,14 +9,16 @@ import { createMarkdownRenderer } from '../../server/markdown.ts';
 import { postPath } from '../../shell/paths.ts';
 import { gateData, requestNsfw } from '../c/-gate.ts';
 import { loadThread } from './$id/comments/-thread.ts';
-import { hasSpoiler, postForViewer, postMedia, postTime, threadVisible } from './-page-data.ts';
+import { hasSpoiler, postMedia, postTime, threadVisible } from './-page-data.ts';
+import { postForViewer } from './-withheld.ts';
 import { input } from '../../server/input.ts';
 
 /**
  * The post page's data, for the route loader (a server function: it runs on the server for a
  * document request and over fetch for a client-side navigation). Lane D adds its one loader
  * call for the thread here, beside readPost. Everything that depends on who looks (the gate,
- * a tombstone, a removed post) is decided in core's readPost; this renders what it hands over.
+ * a tombstone, a removed post) is decided in core's readPost; this renders what it hands over,
+ * and leaves out who wrote a removed or deleted post for anyone it does not tell (-withheld.ts).
  */
 export const loadPost = createServerFn({ method: 'GET' })
   .validator(input(type({ id: 'string' })))
@@ -40,7 +42,7 @@ export const loadPost = createServerFn({ method: 'GET' })
     const { thumbnail, image } = postMedia(view, renderer);
     const locale = negotiateLocale(getRequestHeader('accept-language'));
     // The page draws `thumbnail` (through the proxy rule); the picture's own address stays out of the page data.
-    // A tombstone's author stays out too, but for staff and the author (postForViewer).
+    // A tombstone's author stays out too, but for staff and the author (-withheld.ts: postForViewer).
     const post: PostView = { ...postForViewer(page, session?.view.actorId ?? null), thumbnailUrl: null, contentHtml };
     return {
       kind: 'post' as const,

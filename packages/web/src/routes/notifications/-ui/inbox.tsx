@@ -22,9 +22,10 @@ import { useLayoutEffect, useRef, useState, type FormEvent, type ReactNode } fro
 import { translatePlural } from '../../../i18n/translate.ts';
 import { useTranslate } from '../../../i18n/use-translate.ts';
 import { useRouteHydrated } from '../../../shell/hydration.ts';
-import { commentPath, communityPath, inboxPath, modlogEntryPath, postPath } from '../../../shell/paths.ts';
+import { commentPath, communityPath, inboxPath, modlogEntryPath } from '../../../shell/paths.ts';
 import { useHeadingInView, ViewHeader } from '../../../shell/view-header.tsx';
 import { asCommentError, errorKey, type CommentError } from '../../post/$id/comments/-ui/errors.ts';
+import { noticeTarget } from './target.ts';
 import type { InboxData } from '../-load.ts';
 import { inboxAction, inboxHref, type InboxSearch } from '../-search.ts';
 
@@ -272,15 +273,17 @@ export function NoticeRow({
   const router = useRouter();
   const hydrated = useHydrated();
   const moderator = moderatorKinds.includes(item.kind);
-  const target = item.postId ? (item.commentId ? commentPath(item.postId, item.commentId) : postPath(item.postId)) : null;
+  const target = noticeTarget(item);
   const where = item.about ?? 'post';
   const community = item.community ? <Handle prefix="!" handle={item.community.handle} /> : null;
 
   const account = item.kind === 'ban' || item.kind === 'unban';
   // The ban sentences print the community's handle as plain text: drop any directional controls a remote one carries.
   const handle = item.community ? `!${neutraliseBidi(item.community.handle)}` : '';
+  // Who, when the notice may say: a reply or mention that withholds its author says "Someone"; a moderator's notice whose row is gone, "A moderator".
+  const nobody = t('notifications', item.actorWithheld ? 'actor.withheld' : 'actor.unknown');
   // The buttons' names below are plain text too: the handle and the title lose their directional controls, as Handle shows them.
-  const actor = item.actor ? `@${neutraliseBidi(item.actor.handle)}` : t('notifications', 'actor.unknown');
+  const actor = item.actor ? `@${neutraliseBidi(item.actor.handle)}` : nobody;
   const subject = item.postTitle ? neutraliseBidi(item.postTitle) : handle || t('notifications', `type.${item.kind}`);
   const sentence = (() => {
     switch (item.kind) {
@@ -306,10 +309,13 @@ export function NoticeRow({
     if (!item.read && hydrated) void post(readAction, '', true);
   };
 
-  // Where Reply leads: a reply's or mention's comment (or post), unless it was removed or deleted since. Only one whose words are
-  // shown is answered in place; a sensitive one is withheld here for every viewer, so Reply leads to its thread, which applies the gate.
+  // Where Reply leads: a reply's or mention's comment (or post), unless it was removed or deleted since, or the notice withholds
+  // it (no post id: its link goes to the community, where there is nothing to answer). Only one whose words are shown is
+  // answered in place; a sensitive one is withheld here for every viewer, so Reply leads to its thread, which applies the gate.
   const replyTarget =
-    (item.kind === 'reply' || item.kind === 'mention') && item.withheld !== 'removed' && item.withheld !== 'deleted' ? target : null;
+    (item.kind === 'reply' || item.kind === 'mention') && item.postId !== null && item.withheld !== 'removed' && item.withheld !== 'deleted'
+      ? target
+      : null;
   const replyable = replyTarget !== null && item.withheld === null;
   const formId = `reply-${item.id}`;
   const [open, setOpen] = useState(false);
@@ -402,7 +408,7 @@ export function NoticeRow({
             </Text>
           )}
           <Text variant="label" className="pb-notice__actor">
-            {item.actor ? <Handle prefix="@" handle={item.actor.handle} /> : t('notifications', 'actor.unknown')}
+            {item.actor ? <Handle prefix="@" handle={item.actor.handle} /> : nobody}
           </Text>
           {moderator && (
             <>

@@ -6,7 +6,7 @@ import type { ActorRef, CommentView, PostView } from '@peblish/schema/views';
 import { describe, expect, test } from 'vitest';
 import { createMarkdownRenderer } from '../../server/markdown.ts';
 import { threadData } from './$id/comments/-thread.ts';
-import { postForViewer } from './-page-data.ts';
+import { postForViewer } from './-withheld.ts';
 
 // What the post page's loader sends for a tombstone, as it is serialised into the page: the post
 // (postForViewer, as -load.ts calls it) and its thread (threadData, what loadThread returns for

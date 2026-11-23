@@ -15,7 +15,9 @@ beforeEach(async () => {
 });
 
 const listed = async (query: Partial<DirectoryQuery>, viewer: { actorId: string; declared: boolean }) =>
-  (await followedListed({ ...defaultQuery, ...query }, viewer)).map(({ actor, follow }) => `${actor.handle} ${follow}`);
+  (await followedListed({ ...defaultQuery, ...query }, { ...viewer, siteRole: 'user' })).map(
+    ({ actor, follow }) => `${actor.handle} ${follow}`,
+  );
 
 test('the viewer’s own communities that the directory lists them, joined or asked, by name; never removed, deleted or flagged', async () => {
   const { viewer } = world.people;

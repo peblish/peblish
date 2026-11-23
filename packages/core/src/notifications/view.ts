@@ -24,6 +24,15 @@ export const filterKinds = {
 /** Why a notice shows a word instead of the text: sensitive content for every viewer, or a comment removed or deleted since. */
 export type NoticeWithheld = 'sensitive' | 'removed' | 'deleted';
 
+/**
+ * Why a reply or mention names no one, as the thread would not: it is sensitive content the viewer
+ * has not declared 16+ for (the post page shows them nothing of it, so this comes first, whatever
+ * became of the content), its comment or post is deleted or removed (a tombstone without its
+ * author) or gone from the database, or it is in or under a post a moderator removed (whose author
+ * and comments the page withholds).
+ */
+export type NoticeActorWithheld = 'deleted' | 'removed' | 'sensitive';
+
 /** A person or community in a notice (browser-safe copy of the schema's ActorRef fields the row prints). */
 export type NoticeActor = { id: string; name: string; displayName: string | null; handle: string; local: boolean };
 
@@ -42,12 +51,16 @@ export type InboxItem = {
   kind: NotificationKind;
   read: boolean;
   createdAt: string;
-  /** Who did it: the replier, the mentioner, the moderator. Null once their row is gone. */
+  /** Who did it: the replier, the mentioner, the moderator. Null once their row is gone, or when `actorWithheld` is set. */
   actor: NoticeActor | null;
+  /** Set when a reply or mention withholds who wrote it (and then `actor` is null): the row says "someone". */
+  actorWithheld: NoticeActorWithheld | null;
   community: NoticeActor | null;
+  /** Null when `actorWithheld` is set: the row links to its community. */
   postId: string | null;
+  /** Null when `actorWithheld` is set: the comment's id stays out of the page. */
   commentId: string | null;
-  /** The post's title; null when the post is gone, removed or deleted, or the notice is sensitive. */
+  /** The post's title; null when the post is gone, removed or deleted, the notice is sensitive, or `actorWithheld` is set. */
   postTitle: string | null;
   /** What the notice's text is: the comment (when commentId is set) or the post. Null for a ban. */
   about: 'post' | 'comment' | null;

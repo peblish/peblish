@@ -5,6 +5,7 @@ import { db } from '../db/read.ts';
 import { writer } from '../db/write.ts';
 import { truncateAll } from '../testing/db.ts';
 import { seedComment, seedPost } from '../testing/seed-az.ts';
+import { declareAge } from '../testing/seed-b1.ts';
 import { seedBlock } from '../testing/seed-e1.ts';
 import { seedInboxWorld, seedModlog, seedNotice } from '../testing/seed-e2.ts';
 import { seedActor } from '../testing/seed.ts';
@@ -106,6 +107,7 @@ describe('what a row shows', () => {
       kind: 'reply',
       read: false,
       actor: { name: 'reader', handle: 'reader', local: true },
+      actorWithheld: null,
       community: { name: 'open', handle: 'open' },
       postId: post.id,
       commentId: comment.id,
@@ -167,8 +169,9 @@ describe('what a row shows', () => {
     const items = (await readInbox(viewerOf(me))).items.toReversed();
     expect(items.map((item) => [item.withheld, item.excerpt, item.postTitle])).toEqual([
       [null, 'Visible words', 'Plain'],
-      ['removed', null, 'Plain'],
-      ['deleted', null, 'Plain'],
+      // A removed or deleted reply names no one, and so no title either (actorWithheld).
+      ['removed', null, null],
+      ['deleted', null, null],
       ['sensitive', null, null],
       ['sensitive', null, null],
       ['sensitive', null, null],
@@ -178,6 +181,233 @@ describe('what a row shows', () => {
       ['removed', null, null],
     ]);
     expect(items.at(-1)?.statement).toMatchObject({ modlogId: entry.id, reason: 'Rule 3' });
+  });
+
+  test('a reply or mention names its author only where the thread would: not for a deleted comment, a removed or deleted post, nor gated content to the undeclared', async () => {
+    const w = await seedInboxWorld();
+    const { author: me, reader: replier, moderator } = w.people;
+    // `moderator` declared 16+ at sign-up; `me` is the imported kind that has no declaration.
+    await declareAge(moderator);
+    const plain = await seedPost(w.instances.local, w.communities.open, me, { title: 'Plain' });
+    const sensitive = await seedPost(w.instances.local, w.communities.open, me, { title: 'Secret', sensitive: true });
+    const gone = await seedPost(w.instances.local, w.communities.open, me, { title: 'Gone', deletedAt: new Date() });
+    const takenDown = await seedPost(w.instances.local, w.communities.open, me, { title: 'Taken down', removedAt: new Date() });
+    const reply = async (recipient: { id: string }, post: { id: string }, extra: Parameters<typeof seedComment>[3] = {}) => {
+      const comment = await seedComment(w.instances.local, post, replier, { bodyMd: 'Words', ...extra });
+      const notice = await seedNotice({
+        recipientId: recipient.id,
+        kind: 'reply',
+        refId: comment.id,
+        actorId: replier.id,
+        communityId: w.communities.open.id,
+        postId: post.id,
+        commentId: comment.id,
+      });
+      return notice.id;
+    };
+    const ids = {
+      live: await reply(me, plain),
+      removed: await reply(me, plain, { removedAt: new Date() }),
+      deleted: await reply(me, plain, { deletedAt: new Date() }),
+      deletedAndRemoved: await reply(me, plain, { deletedAt: new Date(), removedAt: new Date() }),
+      underDeletedPost: await reply(me, gone),
+      underRemovedPost: await reply(me, takenDown),
+      mentionInRemovedPost: (
+        await seedNotice({ recipientId: me.id, kind: 'mention', refId: takenDown.id, actorId: moderator.id, postId: takenDown.id })
+      ).id,
+      mentionInDeletedPost: (
+        await seedNotice({ recipientId: me.id, kind: 'mention', refId: gone.id, actorId: moderator.id, postId: gone.id })
+      ).id,
+      gated: await reply(me, sensitive),
+      gatedDeclared: await reply(moderator, sensitive),
+      // To a moderator of the community, who sees removed and deleted content's authors on the page.
+      staffUnderRemovedPost: await reply(moderator, takenDown),
+      staffDeleted: await reply(moderator, plain, { deletedAt: new Date() }),
+      staffRemoved: await reply(moderator, plain, { removedAt: new Date() }),
+      staffMentionInRemovedPost: (
+        await seedNotice({ recipientId: moderator.id, kind: 'mention', refId: takenDown.id, actorId: replier.id, postId: takenDown.id })
+      ).id,
+      mention: (await seedNotice({ recipientId: me.id, kind: 'mention', refId: sensitive.id, actorId: moderator.id, postId: sensitive.id }))
+        .id,
+      // A moderator's notice names the moderator, whatever the content.
+      removal: (await seedNotice({ recipientId: me.id, kind: 'mod_remove', refId: uuidv7(), actorId: moderator.id, postId: sensitive.id }))
+        .id,
+    };
+    const items = new Map(
+      [...(await readInbox(viewerOf(me))).items, ...(await readInbox(viewerOf(moderator))).items].map((item) => [item.id, item]),
+    );
+    const named = (id: string) => [items.get(id)?.actor?.id ?? null, items.get(id)?.actorWithheld ?? null, items.get(id)?.withheld];
+    // As the thread shows them: a live comment with its author, and one under a deleted post too.
+    expect(named(ids.live)).toEqual([replier.id, null, null]);
+    expect(named(ids.underDeletedPost)).toEqual([replier.id, null, 'deleted']);
+    // A removed comment is a tombstone without its author, as a deleted one is.
+    expect(named(ids.removed)).toEqual([null, 'removed', 'removed']);
+    // Under a post a moderator removed the page sends no comments, and a removed or deleted post names no author.
+    expect(named(ids.underRemovedPost)).toEqual([null, 'removed', 'removed']);
+    expect(named(ids.mentionInRemovedPost)).toEqual([null, 'removed', 'removed']);
+    expect(named(ids.mentionInDeletedPost)).toEqual([null, 'deleted', 'deleted']);
+    // A deleted comment is a tombstone without its author, removed as well or not.
+    expect(named(ids.deleted)).toEqual([null, 'deleted', 'deleted']);
+    expect(named(ids.deletedAndRemoved)).toEqual([null, 'deleted', 'deleted']);
+    // Gated: the post page shows an undeclared viewer nothing of the post; a declared one passes Hide NSFW on the page.
+    expect(named(ids.gated)).toEqual([null, 'sensitive', 'sensitive']);
+    expect(named(ids.mention)).toEqual([null, 'sensitive', 'sensitive']);
+    expect(named(ids.gatedDeclared)).toEqual([replier.id, null, 'sensitive']);
+    expect(named(ids.removal)).toEqual([moderator.id, null, 'sensitive']);
+    // The community's staff are told, as its pages tell them.
+    expect(named(ids.staffUnderRemovedPost)).toEqual([replier.id, null, 'removed']);
+    expect(named(ids.staffDeleted)).toEqual([replier.id, null, 'deleted']);
+    expect(named(ids.staffRemoved)).toEqual([replier.id, null, 'removed']);
+    expect(named(ids.staffMentionInRemovedPost)).toEqual([replier.id, null, 'removed']);
+    expect(items.get(ids.staffMentionInRemovedPost)?.postId).toBe(takenDown.id);
+    // Nothing else of the person rides along: no id, name, handle or address, and no comment id to
+    // look the comment up by. What is left links to the thread (the post) and marks the notice read.
+    const withheld = [
+      ids.deleted,
+      ids.deletedAndRemoved,
+      ids.removed,
+      ids.underRemovedPost,
+      ids.mentionInRemovedPost,
+      ids.mentionInDeletedPost,
+    ];
+    for (const id of [...withheld, ids.gated, ids.mention]) {
+      const item = items.get(id)!;
+      const text = JSON.stringify(item);
+      for (const leak of [replier.id, moderator.id, replier.name, moderator.name, replier.apId, moderator.apId])
+        expect([id, text.includes(leak)]).toEqual([id, false]);
+      // No comment id and no post id: the post leads to its title and its author (the modlog, the
+      // object route) as surely as a name. The row links to the community instead.
+      expect([id, item.commentId, item.postId]).toEqual([id, null, null]);
+      // Nor the title of the post it answers: a title can name its author.
+      expect([id, item.postTitle]).toEqual([id, null]);
+    }
+    expect(items.get(ids.live)?.commentId).not.toBeNull();
+    expect(items.get(ids.live)?.postTitle).toBe('Plain');
+    // A blocked author's reply is not listed at all (inboxVisible), which says less than a tombstone.
+    await seedBlock(me, replier);
+    expect((await readInbox(viewerOf(me))).items.map((item) => item.id)).not.toContain(ids.live);
+  });
+
+  test('behind the age gate a reply or mention reads the same whatever became of its comment or post', async () => {
+    const w = await seedInboxWorld();
+    const { local } = w.instances;
+    const { open } = w.communities;
+    // `moderator` and `owner` moderate `open`; no one here has declared 16+ but those told to.
+    const readers = { member: w.people.author, declaredMember: w.people.reader, staff: w.people.moderator, declaredStaff: w.people.owner };
+    await declareAge(readers.declaredMember);
+    await declareAge(readers.declaredStaff);
+    const replier = await seedActor(local, 'Person', 'replier');
+    const at = new Date();
+    // Each case is its own sensitive post: a reply to a comment in it, or a mention in the post itself.
+    const cases: {
+      kind: 'reply' | 'mention';
+      state: string;
+      post?: Parameters<typeof seedPost>[3];
+      comment?: Parameters<typeof seedComment>[3];
+    }[] = [
+      { kind: 'reply', state: 'live', comment: {} },
+      { kind: 'reply', state: 'removed', comment: { removedAt: at } },
+      { kind: 'reply', state: 'deleted', comment: { deletedAt: at } },
+      { kind: 'reply', state: 'removed and deleted', comment: { removedAt: at, deletedAt: at } },
+      { kind: 'reply', state: 'post removed', post: { removedAt: at }, comment: {} },
+      { kind: 'mention', state: 'live' },
+      { kind: 'mention', state: 'post removed', post: { removedAt: at } },
+      { kind: 'mention', state: 'post deleted', post: { deletedAt: at } },
+    ];
+    /** Each case's row as the reader's inbox sends it, but for the notice's own id and time. */
+    const rowsOf = async (reader: { id: string }) => {
+      const ids: string[] = [];
+      for (const { kind, post: postExtra, comment: commentExtra } of cases) {
+        const post = await seedPost(local, open, replier, { title: 'Secret', sensitive: true, ...postExtra });
+        const comment = commentExtra && (await seedComment(local, post, replier, { bodyMd: 'Words', ...commentExtra }));
+        const notice = await seedNotice({
+          recipientId: reader.id,
+          kind,
+          refId: comment ? comment.id : post.id,
+          actorId: replier.id,
+          communityId: open.id,
+          postId: post.id,
+          commentId: comment ? comment.id : null,
+        });
+        ids.push(notice.id);
+      }
+      const items = new Map((await readInbox(viewerOf(reader))).items.map((item) => [item.id, item]));
+      return cases.map(({ kind, state }, n) => {
+        const { id: _id, createdAt: _createdAt, ...row } = items.get(ids[n]!)!;
+        return { kind, state, row };
+      });
+    };
+
+    // Not declared 16+, staff or not: the post page shows them nothing of the post, so the row says
+    // only that it is sensitive, the same serialised row for every state of the content.
+    for (const reader of ['member', 'staff'] as const) {
+      const rows = await rowsOf(readers[reader]);
+      for (const kind of ['reply', 'mention'] as const) {
+        const states = Object.fromEntries(rows.filter((row) => row.kind === kind).map(({ state, row }) => [state, JSON.stringify(row)]));
+        const asLive = Object.fromEntries(Object.keys(states).map((state) => [state, states.live]));
+        expect([reader, kind, states]).toEqual([reader, kind, asLive]);
+      }
+      expect(rows[0]?.row).toMatchObject({
+        actor: null,
+        actorWithheld: 'sensitive',
+        withheld: 'sensitive',
+        postId: null,
+        commentId: null,
+        postTitle: null,
+        excerpt: null,
+      });
+    }
+
+    // Declared: a member is told the reasons the thread gives, staff are named the author throughout.
+    const named = async (reader: { id: string }) =>
+      Object.fromEntries(
+        (await rowsOf(reader)).map(({ kind, state, row }) => [
+          `${kind} ${state}`,
+          [row.actor?.id ?? null, row.actorWithheld, row.withheld],
+        ]),
+      );
+    expect(await named(readers.declaredMember)).toEqual({
+      'reply live': [replier.id, null, 'sensitive'],
+      'reply removed': [null, 'removed', 'sensitive'],
+      'reply deleted': [null, 'deleted', 'sensitive'],
+      'reply removed and deleted': [null, 'deleted', 'sensitive'],
+      'reply post removed': [null, 'removed', 'sensitive'],
+      'mention live': [replier.id, null, 'sensitive'],
+      'mention post removed': [null, 'removed', 'sensitive'],
+      'mention post deleted': [null, 'deleted', 'sensitive'],
+    });
+    expect(await named(readers.declaredStaff)).toEqual(
+      Object.fromEntries(cases.map(({ kind, state }) => [`${kind} ${state}`, [replier.id, null, 'sensitive']])),
+    );
+  });
+
+  test('a reply or mention whose comment or post is gone from the database names no one and quotes nothing', async () => {
+    const w = await seedInboxWorld();
+    const { author: me, reader: replier } = w.people;
+    const post = await seedPost(w.instances.local, w.communities.open, me, { title: 'Still here', bodyMd: 'The surviving post' });
+    const mentioning = await seedPost(w.instances.local, w.communities.open, replier, { title: 'Soon gone', bodyMd: 'Hi @author' });
+    const comment = await seedComment(w.instances.local, post, replier, { bodyMd: 'Words' });
+    const base = { recipientId: me.id, actorId: replier.id, communityId: w.communities.open.id };
+    const reply = await seedNotice({ ...base, kind: 'reply', refId: comment.id, postId: post.id, commentId: comment.id });
+    const mention = await seedNotice({ ...base, kind: 'mention', refId: mentioning.id, postId: mentioning.id });
+    // Purged: the notices' links go null, their ref ids stay.
+    await writer().execute(sql`delete from comments where id = ${comment.id}::uuid`);
+    await writer().execute(sql`delete from posts where id = ${mentioning.id}::uuid`);
+    const items = new Map((await readInbox(viewerOf(me))).items.map((item) => [item.id, item]));
+    for (const id of [reply.id, mention.id]) {
+      const item = items.get(id)!;
+      expect([id, item.actor, item.actorWithheld, item.excerpt, item.postTitle, item.postId]).toEqual([
+        id,
+        null,
+        'deleted',
+        null,
+        null,
+        null,
+      ]);
+      const text = JSON.stringify(item);
+      for (const leak of [replier.id, replier.name, replier.apId, 'The surviving post', 'Still here'])
+        expect([id, leak, text.includes(leak)]).toEqual([id, leak, false]);
+    }
   });
 
   test('a removal shows the statement of reasons, withheld when the moderator’s instance is not trusted', async () => {

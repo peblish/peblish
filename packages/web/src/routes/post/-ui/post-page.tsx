@@ -95,7 +95,7 @@ function PostContent({ data, error }: { data: Extract<PostPageData, { kind: 'pos
   const countLabel = count === 1 ? t('posts', 'comments.one') : t('posts', 'comments.other', { count });
   const shownError = asPostError(error);
   const badgeLabels = { admin: t('posts', 'badge.admin'), moderator: t('posts', 'badge.moderator'), op: '' };
-  // A tombstone's author comes only to staff and the author (-page-data.ts postForViewer).
+  // A tombstone's author comes only to staff and the author (-withheld.ts postForViewer).
   const withheldAuthor = isWithheld(post.author);
   // The slots get the post for a signed-in viewer; a removed or deleted post still has them for staff (a
   // moderator restores it). Where its author is withheld, as in the thread, there is no slot at all.

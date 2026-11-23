@@ -36,5 +36,5 @@ export const loadSentReport = createServerFn({ method: 'GET' })
   .handler(async ({ data }) => {
     const session = await pageSession();
     if (!session) return { signedOut: true } as const;
-    return { signedOut: false, sent: await readSentReport(session.view.actorId, data.number), back: pageBack(data.back) } as const;
+    return { signedOut: false, sent: await readSentReport(principalOf(session.view), data.number), back: pageBack(data.back) } as const;
   });
