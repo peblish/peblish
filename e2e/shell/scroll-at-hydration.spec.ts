@@ -1,4 +1,6 @@
 import { expect, test, type Page, type Route } from '@playwright/test';
+import { execFileSync } from 'node:child_process';
+import { join } from 'node:path';
 import { seedWorld, type World } from '../modlog/support.ts';
 import { gotoHydrated } from '../support/route-marker.ts';
 
@@ -16,6 +18,8 @@ test.use({ viewport: { width: 1280, height: 300 } });
 let world: World;
 test.beforeAll(() => {
   world = seedWorld();
+  // The signed-out feed scrolls further than these tests wheel it, however few posts the lane database holds.
+  execFileSync('node', ['e2e/shell/seed-scroll.ts'], { cwd: join(import.meta.dirname, '../..') });
 });
 
 /** Holds back the page's scripts until the returned function is called; later ones pass at once. */
