@@ -17,7 +17,7 @@ Until 2026-11-12 the script budget was one figure for every page, 170 kB (the `/
 
 On 2026-11-12, `main` at ccfc0db (Mux UI rc.7): a fresh `pnpm build`, then the payload specs three times, each on a freshly created lane database. The three runs printed the same figures to 0.1 kB on every page, and the same size for every chunk, so nothing varied. Each budget is the measured figure plus 5%, rounded up to 0.1 kB, and stored as that number: nothing is computed when the check runs.
 
-On 2026-11-23 the site banner, the width setting and the community finder raised 35 budgets (34 pages and `/submit` signed in). The figures come from two production builds of the same commit, CI's and a local one, which printed the same figures to 0.1 kB on every page; each budget is again the figure plus 5%, rounded up to 0.1 kB. What grew:
+On 2026-11-23 the site banner, the width setting and the community finder raised 39 budgets (38 pages and `/submit` signed in). The figures come from two production builds of the same commit, CI's and a local one, which printed the same figures to 0.1 kB on every page; each budget is again the figure plus 5%, rounded up to 0.1 kB. `/u/<handle>/edit`, `/you`, `/notifications` and `/admin/registration` are from the local build alone: in both first runs their fixture got no reset mail, since every failed page restarts a worker that seeds again and asks for one, and the server takes at most 10 reset requests an hour from one client address until a seed clears the counts. What grew:
 
 - Every page, 8.4 to 9.8 kB: Mux UI's Banner and its icons, since the server draws the site banner on every page whenever one is published, with or without scripts; and Mux UI's Skeleton in the finder's loading placeholder, which comes with the page so that a press on Find shows it at once.
 - `/admin/settings`, 75.4 kB: the banner and width form, with the colour field (Mux UI's ColorField and React Aria's colour code, about 30 kB) and the switch that no other product page uses, and its radio groups and select.
@@ -44,7 +44,7 @@ Each page prints `payload <page>: js <measured> of <budget>, css ..., fonts ...`
 
 ## Script, measured and budget (kB)
 
-Signed in means the admin session the check carries (two-factor on). Each row is dated by its `on` in `routes.ts`. `/you` carries the budget of `/settings/account` until a build measures it; it, `/u/<handle>/edit`, `/notifications` and `/admin/registration` have no figure from 2026-11-23, when their fixture timed out waiting for its mailed link. On 2026-11-23 fonts were 105.6 kB, 143.3 kB on `/settings/account` and `/u/<handle>`, 259.2 kB on `/kit`, and 112.7 kB on `/` under the feddit pack. Opening the composer sheet adds 67.7 kB of script in 22 files and 1.2 kB of CSS (of 200 kB); on 2026-11-12 it added 53.6 kB in 14 files and 1.1 kB.
+Signed in means the admin session the check carries (two-factor on). Each row is dated by its `on` in `routes.ts`. On 2026-11-23 fonts were 105.6 kB, 143.3 kB on `/settings/account`, `/you` and both `/u/<handle>` pages, 259.2 kB on `/kit`, and 112.7 kB on `/` under the feddit pack. Opening the composer sheet adds 67.7 kB of script in 22 files and 1.2 kB of CSS (of 200 kB); on 2026-11-12 it added 53.6 kB in 14 files and 1.1 kB.
 
 Mux UI CSS was 62.6 kB on every page on 2026-11-12 and 65.7 kB on `main` before 2026-11-23, already over its report-only 65 kB; the banner, finder and community field styles take it to 66.0 kB.
 
@@ -70,10 +70,10 @@ Mux UI CSS was 62.6 kB on every page on 2026-11-12 and 65.7 kB on `main` before 
 | `/settings/security`                       | yes       | 199.4    | 209.4  | 2026-11-23 |
 | `/settings/blocks`                         | yes       | 216.6    | 227.5  | 2026-11-23 |
 | `/u/<handle>`                              | no        | 201.0    | 211.1  | 2026-11-23 |
-| `/u/<handle>/edit`                         | yes       | 186.4    | 195.8  | 2026-11-12 |
-| `/you`                                     | yes       | 185.3    | 194.6  | 2026-11-12 |
-| `/notifications`                           | yes       | 182.1    | 191.3  | 2026-11-12 |
-| `/admin/registration`                      | yes       | 204.0    | 214.2  | 2026-11-12 |
+| `/u/<handle>/edit`                         | yes       | 199.7    | 209.7  | 2026-11-23 |
+| `/you`                                     | yes       | 198.5    | 208.5  | 2026-11-23 |
+| `/notifications`                           | yes       | 199.1    | 209.1  | 2026-11-23 |
+| `/admin/registration`                      | yes       | 216.6    | 227.5  | 2026-11-23 |
 | `/c/<handle>`                              | no        | 201.2    | 211.3  | 2026-11-23 |
 | `/c/new`                                   | yes       | 201.4    | 211.5  | 2026-11-23 |
 | `/c/<handle>/edit`                         | yes       | 201.4    | 211.5  | 2026-11-23 |
