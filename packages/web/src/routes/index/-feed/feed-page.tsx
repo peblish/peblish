@@ -319,7 +319,7 @@ const focusable =
  * IntersectionObserver the next page stays a plain link. The page draws what its loader answered, then
  * the batches it loads after it; after each, the list writes how many rows it has read into its own
  * history entry's address (`n`, search.ts), so Back, Forward or a reload reads them fresh, in one answer;
- * a post the reader opened from its row goes back where it stood (places.ts), else the scroll position does.
+ * the row the reader opened a post from goes back where it stood (places.ts), else the scroll position does.
  * Nothing of the rows is kept anywhere else.
  * With `rowActions`, each row gets Share (the system's share sheet where there is one, else the link is
  * copied) and a menu with Copy link.
@@ -452,34 +452,41 @@ export function FeedCards({
   }, [batches, read, written, path, router]);
 
   // Where the reader leaves the list from, as they head to another page with its rows on screen, and back to it
-  // once a return has drawn the fresh rows: after the router's own restore, in the same task (places.ts). The
-  // post they open is part of the place only when they open it from its row in this tab: a click, a tap or Enter
-  // on the row's link to it, with no modifier key (which opens it elsewhere). Any other way off the list (Back,
-  // Forward, the frame's links, a sort) keeps the scroll alone, even to a post the list holds.
+  // once a return has drawn the fresh rows: after the router's own restore, in the same task (places.ts). The place
+  // names a row only when a navigation to a post starts from the reader activating a link in that row in this tab
+  // (a click, a tap or Enter, with no modifier key), and it names that row wherever the link leads (a card's link to
+  // another post). The router starts a link's navigation inside the click's own dispatch, so the activation is held
+  // for that task alone: a click that starts no navigation there (one the page prevented) leaves nothing behind.
+  // Any other way off the list (Back, Forward, the frame's links, a sort) keeps the scroll alone.
   useLayoutEffect(() => {
     const list = box.current;
     if (!more || !list) return;
     const entryOf = (location: { href: string; state: { __TSR_key?: string } }) => location.state.__TSR_key ?? location.href;
     const rowOf = (post: string) => box.current?.querySelector(`.feed-list > li[data-post="${CSS.escape(post)}"]`) ?? null;
-    let opening: string | null = null;
-    const activated = (event: MouseEvent) => {
+    let activation: { row: string; to: string } | null = null;
+    const activate = (event: MouseEvent) => {
+      activation = null;
       const link = event.target instanceof Element ? event.target.closest('a[href]') : null;
+      const row = link?.closest<HTMLElement>('.feed-list > li[data-post]')?.dataset.post;
       const here = event.button === 0 && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey;
-      opening =
-        here && link instanceof HTMLAnchorElement && link.closest('.feed-list > li') && link.origin === location.origin && !link.target
-          ? (/^\/post\/([^/]+)$/.exec(link.pathname)?.[1] ?? null)
-          : null;
+      if (!here || !(link instanceof HTMLAnchorElement) || !row || link.origin !== location.origin || link.target) return;
+      const held = { row, to: link.pathname };
+      activation = held;
+      // The click's task is over: a navigation it started has begun by now, and one it did not start never will.
+      setTimeout(() => {
+        if (activation === held) activation = null;
+      });
     };
     // Captured on the list, before the router's link handler starts the navigation.
-    list.addEventListener('click', activated, true);
+    list.addEventListener('click', activate, true);
     const leaving = router.subscribe('onBeforeLoad', ({ fromLocation, toLocation }) => {
-      const clicked = opening;
-      opening = null;
+      const activated = activation;
+      activation = null;
       const { search, reading } = latest.current;
       if (!fromLocation || reading || !sameList(path, search, fromLocation) || sameList(path, search, toLocation)) return;
-      const opened = /^\/post\/([^/]+)/.exec(toLocation.pathname)?.[1];
-      const row = opened && opened === clicked ? rowOf(opened) : null;
-      keepPlace(entryOf(fromLocation), { y: scrollY, post: row ? opened : undefined, offset: row?.getBoundingClientRect().top });
+      const opens = activated && /^\/post\/[^/]+$/.test(toLocation.pathname) && toLocation.pathname === activated.to;
+      const row = opens ? rowOf(activated.row) : null;
+      keepPlace(entryOf(fromLocation), { y: scrollY, post: row ? activated?.row : undefined, offset: row?.getBoundingClientRect().top });
     });
     const arriving = router.subscribe('onRendered', ({ toLocation }) => {
       const { search, reading } = latest.current;
@@ -491,7 +498,7 @@ export function FeedCards({
       window.scrollTo({ top, behavior: 'instant' });
     });
     return () => {
-      list.removeEventListener('click', activated, true);
+      list.removeEventListener('click', activate, true);
       leaving();
       arriving();
     };

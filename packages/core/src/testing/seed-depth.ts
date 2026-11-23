@@ -20,7 +20,8 @@ import { seedActor, seedInstance } from './seed.ts';
 // two years old, so they lead only that community's feeds), which `depart <suffix>` removes again. `picture <true|false>
 // <title>…` makes posts image posts, or text posts again; each picture is on this instance
 // (`/depth-pictures/<id>.png` under PUBLIC_ORIGIN), so the page loads it from its own host and a spec answers for it,
-// and the run's peer has its media approved for that, as a moderator would.
+// and the run's peer has its media approved for that, as a moderator would. `link <title> [url]` makes a post a
+// link to `url`, or a text post again without one.
 const [command, ...ids] = process.argv.slice(2);
 try {
   if (command === 'remove' || command === 'restore')
@@ -32,6 +33,11 @@ try {
     await writer()
       .update(posts)
       .set({ sensitive: ids[1] === 'true' })
+      .where(eq(posts.title, ids[0]!));
+  else if (command === 'link')
+    await writer()
+      .update(posts)
+      .set({ url: ids[1] ?? null, urlContentType: null })
       .where(eq(posts.title, ids[0]!));
   else if (command === 'picture') {
     const [on, ...titles] = ids;

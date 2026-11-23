@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
-import { expect, test, type Page, type Request } from '@playwright/test';
+import { expect, test, type Locator, type Page, type Request } from '@playwright/test';
 import { landed, signIn } from '../auth/support.ts';
 import { gotoHydrated } from '../support/route-marker.ts';
 
@@ -709,6 +709,13 @@ test.describe('on a phone', () => {
   test.use({ viewport: { width: 390, height: 800 }, hasTouch: true });
 
   test('posts that arrived above do not move the post the reader opened', ({ page }) => arrivalsAbove(page));
+
+  test("a tap on a row's title puts that row back where it stood", async ({ page }) => {
+    await signedIn(page);
+    await gotoHydrated(page, '/?sort=new');
+    await loadTo(page, 40);
+    await opensFromItsRow(page, 30, (row) => row.locator('.pb-post__title a').tap());
+  });
 });
 
 // The router puts the window back by pixels on its own, so the gone row's fallback is told apart from no anchor
@@ -752,11 +759,11 @@ test('when the post the reader opened is no longer among the fresh rows, Back pu
 
 /**
  * The reader comes to the feed from a post by the sidebar's link, not by one of its rows, loads 60 rows, and goes
- * Back to that post (first, with `modified`, opening it from its row in another tab, which leaves this one where it
- * is). The feed's entry keeps its scroll alone: once the post has moved down the feed, Forward puts the window back
- * by pixels, not by the post.
+ * Back to that post. First, with `before`, they press that post's row link in a way that opens nothing in this tab:
+ * with a modifier key or the middle button (another tab), or a click the page prevented. The feed's entry keeps its
+ * scroll alone: once the post has moved down the feed, Forward puts the window back by pixels, not by the post.
  */
-async function leftForAPostNotOpened(page: Page, { modified }: { modified: boolean }) {
+async function leftForAPostNotOpened(page: Page, before?: 'modified' | 'middle' | 'prevented') {
   await signedIn(page);
   await gotoHydrated(page, '/?sort=new');
   await link(page, title(10)).click();
@@ -766,11 +773,24 @@ async function leftForAPostNotOpened(page: Page, { modified }: { modified: boole
   await loadTo(page, 60);
   await link(page, title(42)).scrollIntoViewIfNeeded();
   await settled(page);
-  if (modified) {
+  if (before === 'modified' || before === 'middle') {
     const opened = page.context().waitForEvent('page');
-    await link(page, title(10)).click({ modifiers: ['ControlOrMeta'] });
+    await link(page, title(10)).click(before === 'modified' ? { modifiers: ['ControlOrMeta'] } : { button: 'middle' });
     await (await opened).close();
     await settled(page);
+  } else if (before === 'prevented') {
+    await page.evaluate(
+      (name) =>
+        document.addEventListener(
+          'click',
+          (event) => event.target instanceof Element && event.target.closest('a')?.textContent === name && event.preventDefault(),
+          { capture: true, once: true },
+        ),
+      title(10),
+    );
+    await link(page, title(10)).click();
+    await settled(page);
+    await expect(page).toHaveURL(/\/\?n=60$/);
   }
   const count = await holding(page);
   const y = await page.evaluate(() => Math.round(scrollY));
@@ -789,9 +809,46 @@ async function leftForAPostNotOpened(page: Page, { modified }: { modified: boole
 }
 
 test('a feed left by Back for a post it did not open keeps its scroll alone: Forward puts the window back by pixels', ({ page }) =>
-  leftForAPostNotOpened(page, { modified: false }));
+  leftForAPostNotOpened(page));
 
-test('a post opened from a row in another tab is not the place of this one', ({ page }) => leftForAPostNotOpened(page, { modified: true }));
+test('a post opened from a row in another tab is not the place of this one', ({ page }) => leftForAPostNotOpened(page, 'modified'));
+
+test('a middle click on a row opens another tab and is not the place of this one', ({ page }) => leftForAPostNotOpened(page, 'middle'));
+
+test('a press on a row link that the page prevented opens nothing and leaves no place behind', ({ page }) =>
+  leftForAPostNotOpened(page, 'prevented'));
+
+test("a Card's link to another of the feed's posts makes the card the place, not that post's row", async ({ page }) => {
+  await signedIn(page);
+  await gotoHydrated(page, '/?sort=new');
+  await view(page, 'Card');
+  // Post 2 links to post 12, on this server.
+  const target = await link(page, title(12)).getAttribute('href');
+  run('link', title(2), new URL(target!, page.url()).href);
+  try {
+    await gotoHydrated(page, '/?sort=new');
+    const card = rows(page).filter({ has: page.locator('.pb-post__title a', { hasText: new RegExp(`^${title(2)}$`) }) });
+    const top = () => card.evaluate((element) => Math.round(element.getBoundingClientRect().top));
+    const offset = await top();
+    await card.locator('a.pb-post__link').click();
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText(title(12));
+    // While the reader is away three posts arrive above the card, and post 12 moves down to row 15.
+    run('arrive', seed.suffix, '3');
+    run('swap', title(12), title(15));
+    try {
+      await page.goBack();
+      await expect(rows(page)).toHaveCount(20);
+      await agrees(page);
+      await expect(rows(page).nth(17)).toContainText(title(12));
+      await expect.poll(async () => Math.abs((await top()) - offset)).toBeLessThanOrEqual(1);
+    } finally {
+      run('swap', title(12), title(15));
+      run('depart', seed.suffix);
+    }
+  } finally {
+    run('link', title(2));
+  }
+});
 
 /** Picks a view from the View menu, and waits until it is stored. */
 async function view(page: Page, density: 'Card' | 'Classic') {
@@ -885,6 +942,48 @@ test('a picture that comes after its row is drawn moves no row, in the views tha
     }
   } finally {
     run('picture', 'false', ...shown);
+  }
+});
+
+/**
+ * The reader opens post `at` from its row by `open`; three posts arrive above while they read it. Back puts that
+ * row where it stood.
+ */
+async function opensFromItsRow(page: Page, at: number, open: (row: Locator) => Promise<void>) {
+  const row = rows(page).filter({ has: page.locator('.pb-post__title a', { hasText: new RegExp(`^${title(at)}$`) }) });
+  await row.scrollIntoViewIfNeeded();
+  await settled(page);
+  const count = await holding(page);
+  const top = () => row.evaluate((element) => Math.round(element.getBoundingClientRect().top));
+  const offset = await top();
+  await open(row);
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText(title(at));
+  run('arrive', seed.suffix, '3');
+  try {
+    await page.goBack();
+    await expect(rows(page)).toHaveCount(count);
+    await expect(rows(page).first()).toContainText(`Depth ${seed.suffix} new 03`);
+    await expect.poll(async () => Math.abs((await top()) - offset)).toBeLessThanOrEqual(1);
+  } finally {
+    run('depart', seed.suffix);
+  }
+}
+
+test('every way into a post from its row puts that row back where it stood: Enter on its title, its comments link, its picture', async ({
+  page,
+}) => {
+  await signedIn(page);
+  await servePictures(page);
+  run('picture', 'true', title(27));
+  try {
+    await gotoHydrated(page, '/?sort=new');
+    await view(page, 'Card');
+    await loadTo(page, 40);
+    await opensFromItsRow(page, 21, (row) => row.locator('.pb-post__title a').press('Enter'));
+    await opensFromItsRow(page, 24, (row) => row.locator('.pb-post__comments').click());
+    await opensFromItsRow(page, 27, (row) => row.locator('.pb-post__thumb').click());
+  } finally {
+    run('picture', 'false', title(27));
   }
 });
 
