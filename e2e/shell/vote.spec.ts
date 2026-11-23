@@ -32,7 +32,10 @@ test(`the first tap on a vote arrow works at 6x CPU throttling (${attempts} cold
 test('a press on a vote arrow while the page is still hydrating makes exactly one vote', async ({ page }) => {
   // The CPU slowed 20x holds hydration open: the shell marker (React is running and listening)
   // comes about a second before the route marker (the route content is interactive). The press
-  // lands in between, on server-rendered arrows, and React must replay it once.
+  // lands in between, on server-rendered arrows, and must count once. The page takes the
+  // pointerdown at once but delivers pointerup only after the route has hydrated, and the click
+  // returns only then, so it gets the test's time, not a cap of its own: with a 10 s cap it timed
+  // out on slow runners while the page was still hydrating.
   await throttled(page, 20);
   await page.addInitScript(() => {
     document.addEventListener(
@@ -48,7 +51,7 @@ test('a press on a vote arrow while the page is still hydrating makes exactly on
   await page.locator('html[data-shell-hydrated="1"]').waitFor({ state: 'attached' });
   const slow = page.getByTestId('kit-vote-slow');
   const up = slow.getByRole('button', { name: 'Upvote' });
-  await up.click({ timeout: 10_000 });
+  await up.click();
   expect(await page.evaluate(() => (window as { pressedDuringHydration?: boolean }).pressedDuringHydration)).toBe(true);
   await page.locator('html[data-hydrated="1"]').waitFor({ state: 'attached' });
   await expect(up).toHaveAttribute('aria-pressed', 'true', { timeout: 15_000 });
