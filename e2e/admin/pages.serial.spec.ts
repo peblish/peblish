@@ -125,8 +125,8 @@ test('with the operator details filled in, rules publishes, and a signed-out vis
   await expect(reader.locator('article')).not.toContainText('{{');
   await expect(reader.locator('article')).toHaveAttribute('lang', 'en');
   await expect(reader).toHaveTitle(/^Community rules · /);
-  // The list names the live pages and nothing else.
-  await expect(reader.getByRole('navigation', { name: 'Legal and safety' }).getByRole('link')).toHaveText(['Community rules']);
+  // The list names the live pages and Instances, and nothing else.
+  await expect(reader.getByRole('navigation', { name: 'Legal and safety' }).getByRole('link')).toHaveText(['Community rules', 'Instances']);
   await expectAccessible(reader);
   expect(console.hydrationProblems()).toEqual([]);
   // A page nobody published, and a slug the instance does not have, are 404s.

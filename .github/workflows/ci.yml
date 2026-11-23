@@ -171,7 +171,9 @@ jobs:
           path: e2e/artifacts/counts
           if-no-files-found: error
           retention-days: 7
-      - if: failure()
+      # The traces and report of a failed run, or of a test that failed and then passed on the retry
+      # (e2e/run.ts writes flaky.txt then).
+      - if: failure() || hashFiles('e2e/artifacts/results/flaky.txt') != ''
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: e2e-artifacts-${{ matrix.shard }}

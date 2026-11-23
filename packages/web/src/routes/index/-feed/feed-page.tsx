@@ -51,6 +51,7 @@ import { usePrefs } from '../../../shell/prefs.tsx';
 import { Rail } from '../../../shell/rail.tsx';
 import { ViewHeader } from '../../../shell/view-header.tsx';
 import { castVoteFn } from '../../post/-vote.ts';
+import { useRowSave } from '../../saved/-ui/use-row-save.ts';
 import type { FeedItem } from './items.ts';
 import { loadFeed, type FeedData } from './load.ts';
 import { feedTitleKeys } from './names.ts';
@@ -666,6 +667,7 @@ function FeedRow({
   const { t, locale } = useTranslate();
   const postLabels = { ...usePostCardLabels(), voteOn: (title: string) => t('posts', 'vote.on', { title }) };
   const [status, say] = useStatus();
+  const save = useRowSave(post, say);
   const link = () => new URL(postPath(post.id), window.location.origin).href;
   const copy = async () => say(t('feeds', (await copyLink(link())) ? 'row.copied' : 'row.copyFailed'));
   const share = async () => {
@@ -703,6 +705,7 @@ function FeedRow({
             onCopy={() => void copy()}
             status={status}
             disabled={!hydrated}
+            save={signedIn && !post.deleted ? save : undefined}
           />
         )
       }

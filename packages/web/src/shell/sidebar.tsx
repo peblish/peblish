@@ -1,6 +1,5 @@
 import { unreadCap } from '@peblish/core/notifications/view';
 import type { SessionView } from '@peblish/schema/session';
-import { Avatar } from '@peblish/ui/components/avatar';
 import {
   CircleHelpIcon,
   ClipboardListIcon,
@@ -13,6 +12,7 @@ import {
   InfoIcon,
   LockIcon,
   MapPinIcon,
+  NetworkIcon,
   ShieldIcon,
   type IconProps,
 } from '@peblish/ui/components/icons';
@@ -21,41 +21,19 @@ import { Sidebar } from '@peblish/ui/components/sidebar';
 import { Text } from '@peblish/ui/components/text';
 import { Tooltip } from '@peblish/ui/components/tooltip';
 import { useRouter } from '@tanstack/react-router';
-import { useMemo, type ComponentType, type ReactNode } from 'react';
+import type { ComponentType, ReactNode } from 'react';
 import { useTranslate } from '../i18n/use-translate.ts';
 import { openInRouter } from './client-links.ts';
-import { communityLabel } from './community-label.ts';
 import type { ShellData } from './data.ts';
-import { communityPath, directoryPaths, feedPaths, reportQueuePath, sitePaths } from './paths.ts';
+import { directoryPaths, feedPaths, instancesPath, reportQueuePath, sitePaths } from './paths.ts';
 import { useSectionFolds, type SideSection } from './side-state.ts';
+// The Saved page's entry (saves lane).
+import { BookmarkIcon } from '@peblish/ui/components/icons';
+import { savedPath } from './paths.ts';
+import { SidebarCommunities } from './sidebar-communities.tsx';
 
 /** A count as the badges print it: "99+" from the cap on. */
 export const badgeText = (count: number) => (count >= unreadCap ? `${unreadCap - 1}+` : String(count));
-
-// A community's row draws a small Mux Avatar with its initial (the label's first character, whole, as the
-// shell's data has it from the server) as
-// Sidebar.NavItem's icon, which is a component: the shell's data has no community pictures yet, and folded into
-// the rail the row keeps a mark and its tooltip.
-const iconOf = (initial: string): ComponentType<{ className?: string }> =>
-  function CommunityInitial({ className }: { className?: string }) {
-    return (
-      <Avatar.Root size="sm" className={`${className ?? ''} pb-nav__avatar`} aria-hidden="true">
-        <Avatar.Fallback>{initial}</Avatar.Fallback>
-      </Avatar.Root>
-    );
-  };
-export const initialIcon = iconOf;
-
-/** A community's row: its icon made once for the row and its initial, so the row keeps it across renders. */
-function CommunityItem({ label, initial, href, current }: { label: string; initial: string; href: string; current: boolean }) {
-  const icon = useMemo(() => iconOf(initial), [initial]);
-  return (
-    <Sidebar.NavItem href={href} icon={icon} current={current}>
-      {/* An element with the text as its child, so Mux still reads the folded rail's tooltip from it. */}
-      <bdi>{label}</bdi>
-    </Sidebar.NavItem>
-  );
-}
 
 /** The site's own pages, in the sidebar's last section and, folded, in the rail's foot menu. */
 export type SitePage = { href: string; label: string; icon: ComponentType<IconProps> };
@@ -98,14 +76,11 @@ export function SiteMenu({ siteName, pages }: { siteName: string; pages: readonl
 
 /**
  * The sidebar's navigation (Commons): the feeds; Moderation (the queue, for moderators and admins); the
- * viewer's communities (a signed-out visitor's: the local ones), A to Z by name, then the directory; and
+ * viewer's communities (a signed-out visitor's: the local ones; sidebar-communities.tsx), then the directory; and
  * the site's own pages under the site's name. Mux's NavList names the landmark (`navLabel`). The shell
  * renders it in the column, where its sections fold (`foldable`, remembered in this browser) and, folded
  * into the rail (`folded`), the site's pages move to the foot menu; and in the phone drawer, where `extra`
  * adds the account's section and nothing folds, as Commons has it. Each marks the current page itself.
- * Pinned communities arrive with their data in a later branch: they go first in the Communities section,
- * then a Sidebar.NavDivider when unpinned rows follow, and a row's own control (Unpin, a menu) is
- * Sidebar.NavItem's `action` (the gallery's sidebar page lays both out).
  */
 export function Navigation({
   session,
@@ -122,7 +97,7 @@ export function Navigation({
   foldable?: boolean;
   folded?: boolean;
 }) {
-  const { t, locale } = useTranslate();
+  const { t } = useTranslate();
   const folds = useSectionFolds();
   // Every item has an icon: without one Mux draws the label's first letter, which is in the link's text.
   const item = (href: string, label: string, icon: ComponentType<IconProps>, badge?: ReactNode) => (
@@ -143,15 +118,12 @@ export function Navigation({
         <Text className="pb-sr"> {word}</Text>
       </>
     ) : undefined;
-  const collator = new Intl.Collator(locale);
-  const communities = [...shell.local, ...shell.remote]
-    .map((community) => ({ community, label: communityLabel(community) }))
-    .sort((a, b) => collator.compare(a.label, b.label));
   const sitePages: readonly SitePage[] = [
     { href: sitePaths.about, label: t('shell', 'footer.about'), icon: InfoIcon },
     { href: sitePaths.rules, label: t('shell', 'footer.conduct'), icon: HeartHandshakeIcon },
     { href: sitePaths.privacy, label: t('shell', 'footer.privacy'), icon: LockIcon },
     { href: sitePaths.terms, label: t('shell', 'footer.terms'), icon: FileTextIcon },
+    { href: instancesPath, label: t('facts', 'instances.nav'), icon: NetworkIcon },
   ];
 
   return (
@@ -162,16 +134,14 @@ export function Navigation({
         {item(feedPaths.all, t('shell', 'feed.all'), GlobeIcon)}
         {item(feedPaths.popular, t('shell', 'feed.popular'), FlameIcon)}
         {session && shell.moderating > 0 && item(feedPaths.moderating, t('shell', 'feed.moderating'), ShieldIcon)}
+        {session && item(savedPath, t('saves', 'nav'), BookmarkIcon)}
         {shell.reportCount !== null && (
           <Sidebar.Section {...section('moderation', t('shell', 'nav.moderation'))}>
             {item(reportQueuePath(), t('shell', 'you.queue'), ClipboardListIcon, count(shell.reportCount, t('shell', 'you.open')))}
           </Sidebar.Section>
         )}
         <Sidebar.Section {...section('communities', t('shell', 'nav.communities'))}>
-          {communities.map(({ community, label }) => {
-            const href = communityPath(community);
-            return <CommunityItem key={community.id} label={label} initial={community.initial} href={href} current={pathname === href} />;
-          })}
+          <SidebarCommunities local={shell.local} remote={shell.remote} pathname={pathname} signedIn={session !== null} />
           {item(directoryPaths.browse, t('shell', 'communities.browse'), CompassIcon)}
         </Sidebar.Section>
         <Sidebar.Section className="pb-nav__site" {...section('site', shell.siteName)}>

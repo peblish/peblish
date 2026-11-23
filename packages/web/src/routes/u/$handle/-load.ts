@@ -1,6 +1,8 @@
 import { parseNsfwChoice } from '@peblish/core/communities/gate';
 import { defaultPageSize } from '@peblish/core/feeds/input';
 import type { Viewer } from '@peblish/core/posts/read';
+import { peerSoftware } from '@peblish/core/peers/public';
+import { readModerates } from '@peblish/core/profiles/moderates';
 import { profileSorts, profileTabs } from '@peblish/core/profiles/input';
 import { publicActorRef, readActivity, readProfile, type Profile } from '@peblish/core/profiles/read';
 import type { Uuid } from '@peblish/schema/ids';
@@ -39,6 +41,12 @@ export type ProfileData = {
   state: Profile['state'];
   blocked: Profile['blocked'];
   moderatedCommunities: ActorRef[];
+  /** The communities the person moderates, verified here, that this viewer may see (the rail's Moderates; the contract's `moderates`). */
+  moderates: ActorRef[];
+  /** More communities than `moderates` lists. */
+  moderatesMore: boolean;
+  /** A remote person's home software from its NodeInfo, null when unknown; always null for a local person. */
+  homeSoftware: string | null;
   indexable: boolean;
   /** The signed-in person, or null. */
   viewer: { actorId: Uuid; admin: boolean } | null;
@@ -62,7 +70,9 @@ async function buildProfile(
 ): Promise<{ data: ProfileData; profile: Profile } | null> {
   const session = await pageSession();
   const viewer: Viewer = session ? { actorId: session.view.actorId, siteRole: session.view.siteRole } : null;
-  const profile = await readProfile(data.handle, viewer);
+  // The browser's Hide NSFW choice: the Comments tab lists by it, and so its count counts by it.
+  const nsfw = parseNsfwChoice(getRequestHeader('cookie') ?? null);
+  const profile = await readProfile(data.handle, viewer, undefined, nsfw);
   if (!profile) return null;
   const renderer = await createMarkdownRenderer();
   const locale = negotiateLocale(getRequestHeader('accept-language'));
@@ -77,7 +87,7 @@ async function buildProfile(
           sort: data.sort,
           cursor: data.after,
           limit: defaultPageSize,
-          nsfw: parseNsfwChoice(getRequestHeader('cookie') ?? null),
+          nsfw,
         },
         viewer,
       )
@@ -93,6 +103,14 @@ async function buildProfile(
           : null;
     return { kind: 'comment', view: { ...view, contentHtml }, post, community: publicActorRef(community) };
   });
+
+  // The rail's facts: not for a deleted account, and no list of a person the viewer blocks.
+  const [moderates, homeSoftware] = await Promise.all([
+    withActivity && profile.state === 'live' && profile.blocked === null
+      ? readModerates(profile.actor.id, viewer)
+      : { communities: [], more: false },
+    withActivity && profile.home ? peerSoftware(profile.home.host) : null,
+  ]);
 
   const person = { kind: 'actor', id: profile.actor.id, apId: profile.actor.apId } as const;
   const bioHtml =
@@ -120,6 +138,9 @@ async function buildProfile(
       state: profile.state,
       blocked: profile.blocked,
       moderatedCommunities: profile.moderatedCommunities.map(publicActorRef),
+      moderates: moderates.communities.map(publicActorRef),
+      moderatesMore: moderates.more,
+      homeSoftware,
       indexable: profile.indexable,
       viewer: viewer && { actorId: viewer.actorId, admin: viewer.siteRole === 'admin' },
       tab: data.tab,

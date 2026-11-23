@@ -149,7 +149,8 @@ export async function remoteSay(author: { id: string }, replyToApId: string, raw
  *
  * `me` has 11 unread: five replies (one to a post, one to a comment, a remote one, one in a
  * sensitive post, one whose comment is deleted afterwards), a mention, a removal, a removal
- * and a restore, a ban and an unban. `quiet` has none; `busy` has 30 unread mentions (two pages).
+ * and a restore, a ban and an unban. `quiet` has none; `busy` has 30 unread mentions (two pages);
+ * `dated` has two unread mentions, one today and one three days old (two date groups).
  */
 async function e2e() {
   const { seedAccount: login, PASSWORD } = await import('./seed-a.ts');
@@ -158,10 +159,10 @@ async function e2e() {
   const origin = (await localInstance(db())).origin;
   const host = new URL(origin).host;
   const instance = { ...(await localInstance(db())), domain: host, local: true };
-  const [me, replier, mod, quiet, busy] = await Promise.all(
-    ['me', 'reply', 'mod', 'quiet', 'busy'].map((role) => login(`${role}_${suffix}`)),
+  const [me, replier, mod, quiet, busy, dated] = await Promise.all(
+    ['me', 'reply', 'mod', 'quiet', 'busy', 'dated'].map((role) => login(`${role}_${suffix}`)),
   );
-  const people = { me: me!, replier: replier!, mod: mod!, quiet: quiet!, busy: busy! };
+  const people = { me: me!, replier: replier!, mod: mod!, quiet: quiet!, busy: busy!, dated: dated! };
   const community = await seedActor(instance, 'Group', `inbox_${suffix}`);
   await seedModerator(community, { id: people.mod.actorId });
   const remoteInstance = await seedInstance(`lemmy-${suffix}.test`, false);
@@ -196,6 +197,16 @@ async function e2e() {
   await writer()
     .insert(notifications)
     .values(Array.from({ length: 30 }, () => ({ recipientId: people.busy.actorId, kind: 'mention' as const, refId: uuidv7() })));
+  await writer()
+    .insert(notifications)
+    .values(
+      [new Date(Date.now() - 3 * 86_400_000), new Date()].map((createdAt) => ({
+        recipientId: people.dated.actorId,
+        kind: 'mention' as const,
+        refId: uuidv7(),
+        createdAt,
+      })),
+    );
   await drainNotices();
   // A comment deleted after its notice was written: the inbox then shows the word, not the text.
   await deleteCommentAs(localUser(people.replier.actorId), doomed);
@@ -209,6 +220,7 @@ async function e2e() {
     replier: { name: people.replier.name },
     quiet: { name: people.quiet.name },
     busy: { name: people.busy.name },
+    dated: { name: people.dated.name },
     remote: { handle: `${remy.name}@${remoteInstance.domain}` },
     firstNoticeId: first!.id,
     community: community.name,

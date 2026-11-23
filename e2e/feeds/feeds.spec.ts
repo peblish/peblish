@@ -420,7 +420,7 @@ test.describe('a viewer', () => {
     expect((await titles(page))[0]).toBe(`Followed ${seed.suffix} 20`);
     await page.getByRole('link', { name: 'Back to the first page' }).click();
     await page.waitForURL('**/?sort=new');
-    // The router changes the address before the loader answers.
+    // The address changes before the first page's rows are drawn again.
     await expect.poll(() => titles(page)).toEqual(first);
   });
 

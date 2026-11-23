@@ -1,4 +1,5 @@
-import { CopyLinkIcon, EllipsisIcon } from './icons.tsx';
+import { IconButton } from './icon-button.tsx';
+import { BookmarkIcon, CopyLinkIcon, EllipsisIcon } from './icons.tsx';
 import { Menu } from './menu.tsx';
 import { Text } from './text.tsx';
 import { Time } from './time.tsx';
@@ -12,13 +13,27 @@ export interface FeedRowActionsLabels {
 }
 
 /**
- * The end of a feed row's action row (PostRow's `actions`): a menu of more actions, today Copy link
- * (Commons' post menu; Save, Hide and Report wait for their own branches), and a polite status that
+ * The menu's Save or Unsave (saves lane): its label for the post's state, and a save on its way disables it.
+ * `form` is the same choice as a plain form (its action, its fields, and its name with the post's title),
+ * for while the menu cannot open.
+ */
+export interface FeedRowSave {
+  label: string;
+  onSave: () => void;
+  pending?: boolean;
+  form?: { action: string; fields: Readonly<Record<string, string>>; label: string };
+}
+
+/**
+ * The end of a feed row's action row (PostRow's `actions`): a menu of more actions, Save or Unsave (when
+ * `save` is given) and Copy link (Commons' post menu; Hide and Report wait for their own branches), and a polite status that
  * says what Share or Copy link did ("Link copied"), beside the controls that did it. The status is
  * always in the page, so a change to it is read out. The menu opens with the post's exact date and time
  * (`publishedAt`), which the row's age carries only in a title a pointer reaches: the menu is already one
  * stop per row, by keyboard and by touch, as a comment's is. The trigger needs scripts: disabled until the
- * page has hydrated. Mux gap: Menu.Trigger has no Button look, so it takes the feed menus' quiet one.
+ * page has hydrated. Until then, and with scripts off, a `save` with a `form` takes the trigger's place as
+ * a one-button form (a bookmark named by the post), so the row can still be saved. Mux gap: Menu.Trigger
+ * has no Button look, so it takes the feed menus' quiet one.
  */
 export function FeedRowActions({
   labels,
@@ -27,6 +42,7 @@ export function FeedRowActions({
   onCopy,
   status,
   disabled,
+  save,
 }: {
   labels: FeedRowActionsLabels;
   publishedAt: string;
@@ -34,26 +50,55 @@ export function FeedRowActions({
   onCopy: () => void;
   status: string;
   disabled?: boolean;
+  save?: FeedRowSave;
 }) {
+  const form = disabled ? save?.form : undefined;
   return (
     <>
-      <Menu.Root>
-        <Menu.Trigger className="pb-feed-menu pb-post__action" data-icon-only aria-label={labels.more} disabled={disabled}>
-          <EllipsisIcon />
-        </Menu.Trigger>
-        <Menu.Popup placement="bottom-end">
-          <Menu.List aria-label={labels.list}>
-            <Menu.Section title={<Time iso={publishedAt} locale={locale} format="date-time" />}>
-              <Menu.Item id="copy" textValue={labels.copy} onAction={onCopy}>
-                <span className="pb-feed-menu__choice">
-                  <CopyLinkIcon className="pb-feed-menu__choice-icon" />
-                  <Text className="pb-feed-menu__choice-label">{labels.copy}</Text>
-                </span>
-              </Menu.Item>
-            </Menu.Section>
-          </Menu.List>
-        </Menu.Popup>
-      </Menu.Root>
+      {form && (
+        <form method="post" action={form.action}>
+          {Object.entries(form.fields).map(([name, value]) => (
+            <input key={name} type="hidden" name={name} value={value} />
+          ))}
+          <IconButton
+            type="submit"
+            variant="ghost"
+            size="sm"
+            className="pb-feed-menu pb-post__action"
+            data-icon-only
+            aria-label={form.label}
+          >
+            <BookmarkIcon />
+          </IconButton>
+        </form>
+      )}
+      {!form && (
+        <Menu.Root>
+          <Menu.Trigger className="pb-feed-menu pb-post__action" data-icon-only aria-label={labels.more} disabled={disabled}>
+            <EllipsisIcon />
+          </Menu.Trigger>
+          <Menu.Popup placement="bottom-end">
+            <Menu.List aria-label={labels.list}>
+              <Menu.Section title={<Time iso={publishedAt} locale={locale} format="date-time" />}>
+                {save && (
+                  <Menu.Item id="save" textValue={save.label} onAction={save.onSave} disabled={save.pending}>
+                    <span className="pb-feed-menu__choice">
+                      <BookmarkIcon className="pb-feed-menu__choice-icon" />
+                      <Text className="pb-feed-menu__choice-label">{save.label}</Text>
+                    </span>
+                  </Menu.Item>
+                )}
+                <Menu.Item id="copy" textValue={labels.copy} onAction={onCopy}>
+                  <span className="pb-feed-menu__choice">
+                    <CopyLinkIcon className="pb-feed-menu__choice-icon" />
+                    <Text className="pb-feed-menu__choice-label">{labels.copy}</Text>
+                  </span>
+                </Menu.Item>
+              </Menu.Section>
+            </Menu.List>
+          </Menu.Popup>
+        </Menu.Root>
+      )}
       <Text role="status" size="sm" color="muted" className="pb-feed-row-status">
         {status}
       </Text>

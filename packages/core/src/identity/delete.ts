@@ -7,6 +7,7 @@ import { authUser } from '../db/tables/auth.ts';
 import { deletionLedger } from '../db/tables/site.ts';
 import { defineMutation } from '../tx/mutation.ts';
 import { Refused } from '../tx/refused.ts';
+import { deletePersonalData } from './personal.ts';
 import { refusedAsResult, type Result } from './result.ts';
 
 /**
@@ -14,8 +15,9 @@ import { refusedAsResult, type Result } from './result.ts';
  * The actor row stays with its ap_id, keys and content, so the modlog, the invite chain and
  * FED-B's Delete keep naming it; its profile fields are scrubbed and deleted_at set. The
  * better-auth user goes, which revokes every session and removes the email and password
- * (actors.user_id becomes null). The deletion ledger records it for re-application after a
- * backup restore, and actor.deleted is emitted, all in this one transaction.
+ * (actors.user_id becomes null). The personal features' rows go too (saves, pins, thread
+ * follows, visit markers: identity/personal.ts). The deletion ledger records it for
+ * re-application after a backup restore, and actor.deleted is emitted, all in this one transaction.
  *
  * The recheck re-reads the principal, so a site admin's grant does not outlive a demotion or
  * two-factor turned off after authorize(). The body locks the actor row and checks it is
@@ -40,6 +42,7 @@ const deleteAccountRow = defineMutation({
       .set({ displayName: null, summaryHtml: null, summaryMd: null, iconUrl: null, bannerUrl: null, deletedAt: now, updatedAt: now })
       .where(eq(actors.id, actorId));
     await t.db.delete(authUser).where(eq(authUser.id, actor.userId));
+    await deletePersonalData(t.db, actorId);
     await t.db.insert(deletionLedger).values({
       subjectKind: 'actor',
       subjectId: actorId,

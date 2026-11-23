@@ -7,6 +7,7 @@ import { actors } from '../db/tables/actors.ts';
 import { posts } from '../db/tables/content.ts';
 import { communityModerators } from '../db/tables/moderation.ts';
 import { instances } from '../db/tables/instances.ts';
+import { visible } from '../feeds/read.ts';
 import { followState, type FollowState } from '../follows/read.ts';
 import { ageDeclarations } from '../identity/tables.ts';
 import type { SanitizeHooks } from '../markdown/sanitize.ts';
@@ -37,7 +38,11 @@ export type PageModerator = {
 };
 
 export type CommunityPage = CommunityDetail & {
-  /** Live posts held on this instance (not deleted, not removed): a remote community's peer total is not stored. */
+  /**
+   * The posts held on this instance that the community's feed lists for this viewer (its own
+   * conditions, `visible`: live, the age gate, the viewer's blocks, peer controls): a remote
+   * community's peer total is not stored.
+   */
   postCount: number;
   createdAt: string;
   /** When this copy of a remote community was last fetched from its home, else null. */
@@ -53,8 +58,6 @@ export type CommunityPage = CommunityDetail & {
   /** The viewer is the community's owner or a moderator with a role that grants now, or a site admin. */
   canModerate: boolean;
 };
-
-const live = and(isNull(posts.deletedAt), isNull(posts.removedAt));
 
 function stateOf(row: { source: 'local' | 'remote'; verifiedAt: Date | null; expiresAt: Date | null }): ModeratorState {
   const expired = row.expiresAt !== null && row.expiresAt.getTime() <= Date.now();
@@ -83,7 +86,7 @@ export async function readCommunityPage(
         fetchedAt: actors.fetchedAt,
         publishedAt: actors.publishedAt,
         createdAt: actors.createdAt,
-        postCount: sql<number>`(select count(*)::int from ${posts} where ${posts.communityId} = ${actors.id} and ${live})`,
+        postCount: sql<number>`(select count(*)::int from ${posts} where ${and(...visible('all', viewer, Date.now(), { communityId: id }))})`,
       })
       .from(actors)
       .innerJoin(instances, eq(instances.id, actors.instanceId))

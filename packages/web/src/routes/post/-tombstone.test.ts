@@ -6,7 +6,7 @@ import type { ActorRef, CommentView, PostView } from '@peblish/schema/views';
 import { describe, expect, test } from 'vitest';
 import { createMarkdownRenderer } from '../../server/markdown.ts';
 import { threadData } from './$id/comments/-thread.ts';
-import { postForViewer } from './-page-data.ts';
+import { postForViewer } from './-withheld.ts';
 
 // What the post page's loader sends for a tombstone, as it is serialised into the page: the post
 // (postForViewer, as -load.ts calls it) and its thread (threadData, what loadThread returns for
@@ -106,7 +106,7 @@ const session = (who: ActorRef): { view: SessionView } => ({
 async function payload(view: PostView, viewer: ActorRef | null, moderator = false) {
   const renderer = await createMarkdownRenderer(site);
   const page: PostPage = { view, body: null, gate: 'none', moderator };
-  const thread: Thread = { postId: view.id, sort: 'top', comments, focus: null, moderator, next: null };
+  const thread: Thread = { postId: view.id, sort: 'top', comments, focus: null, moderator, next: null, previousVisitAt: null, newCount: 0 };
   const data = {
     post: postForViewer(page, viewer?.id ?? null),
     thread: threadData({ page, session: viewer && session(viewer), renderer, after: null, thread }),

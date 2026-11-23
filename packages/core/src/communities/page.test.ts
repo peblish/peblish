@@ -6,6 +6,7 @@ import { ageDeclarations } from '../identity/tables.ts';
 import { truncateAll } from '../testing/db.ts';
 import { seedBan, seedCommunityRemoval, seedModerator, seedPost } from '../testing/seed-az.ts';
 import { person, sampleCommunity, seedCommunityWorld } from '../testing/seed-f.ts';
+import { seedBlock } from '../testing/seed-e1.ts';
 import { seedActor } from '../testing/seed.ts';
 import { createCommunityAs } from './create.ts';
 import { hideNsfw } from './gate.ts';
@@ -74,6 +75,20 @@ describe('readCommunityPage', () => {
     expect(await readCommunityPage({ id: news.id }, null)).toMatchObject({ followState: 'none', canModerate: false });
     expect(await readCommunityPage({ id: news.id }, user(people.moderator))).toMatchObject({ canModerate: true });
     expect(await readCommunityPage({ id: news.id }, { actorId: people.admin.id, siteRole: 'admin' })).toMatchObject({ canModerate: true });
+  });
+
+  test('the post count is what the feed lists for this viewer: no flagged post without a 16+ declaration, none the viewer blocks', async () => {
+    const { people, instances, news } = await setup();
+    await seedPost(instances.local, news, people.other);
+    await seedPost(instances.local, news, people.other, { sensitive: true });
+    await seedPost(instances.local, news, people.member);
+    await writer().insert(ageDeclarations).values({ actorId: people.user.id });
+    const count = async (viewer: { id: string } | null) => (await readCommunityPage({ id: news.id }, viewer && user(viewer)))?.postCount;
+    expect(await count(null)).toBe(2);
+    expect(await count(people.moderator)).toBe(2);
+    expect(await count(people.user)).toBe(3);
+    await seedBlock(people.user, people.member);
+    expect(await count(people.user)).toBe(2);
   });
 
   test('restricted: only the staff may post; a banned viewer may not, and a banned moderator moderates nothing', async () => {

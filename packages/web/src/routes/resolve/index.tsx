@@ -40,7 +40,14 @@ export const Route = createFileRoute('/resolve/')({
         const cookies = session?.setCookies ?? [];
         // Nobody signed out gets their body read.
         const q = session ? await readLookupText(request) : '';
-        const who = session ? { actorId: session.view.actorId, emailVerified: session.view.emailVerified, ip: clientIp(request) } : null;
+        const who = session
+          ? {
+              actorId: session.view.actorId,
+              emailVerified: session.view.emailVerified,
+              declared: session.view.ageDeclaredAt !== null,
+              ip: clientIp(request),
+            }
+          : null;
         return answer(request, cookies, await resolveForm(who, q), q.trim().slice(0, maxLookupLength));
       },
     },

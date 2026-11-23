@@ -32,6 +32,8 @@ export const notifications = pgTable(
     createdAt: createdAt(),
   },
   (t) => [
+    // NOT VALID in the database since 0019 (rows written before it are unchecked) until the
+    // validating migration ships in a later release; Drizzle's snapshot records no validation state.
     enumCheck('notifications_kind', t.kind, notificationKinds),
     uniqueIndex('notifications_recipient_ref').on(t.recipientId, t.refId),
     index('notifications_recipient_id').on(t.recipientId, t.id.desc()),

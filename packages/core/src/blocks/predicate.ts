@@ -10,9 +10,10 @@ import { communityBlocks, instanceBlocks, personBlocks } from './tables.ts';
 /**
  * SQL that is true when `viewerId` blocked the person `actor` names (an id column or a
  * sub-select), directly or through the instance the person lives on. For joins and filters
- * such as the inbox: `not actorBlockedBy(viewer, notifications.actorId)`.
+ * such as the inbox: `not actorBlockedBy(viewer, notifications.actorId)`. The viewer can be a
+ * column too, for a query over many viewers (a thread's followers).
  */
-export function actorBlockedBy(viewerId: Uuid, actor: SQLWrapper): SQL {
+export function actorBlockedBy(viewerId: Uuid | SQLWrapper, actor: SQLWrapper): SQL {
   return sql`(
     exists (select 1 from ${personBlocks} as pb where pb.blocker_id = ${viewerId} and pb.blocked_id = ${actor})
     or exists (
@@ -21,6 +22,15 @@ export function actorBlockedBy(viewerId: Uuid, actor: SQLWrapper): SQL {
     )
   )`;
 }
+
+/** SQL true when `viewerId` blocks the instance `instanceId` names (a column of a joined query). */
+export const instanceBlockedBy = (viewerId: Uuid, instanceId: SQLWrapper): SQL =>
+  sql`exists (select 1 from ${instanceBlocks} as ib where ib.blocker_id = ${viewerId} and ib.instance_id = ${instanceId})`;
+
+/** SQL true when `viewerId` blocks the community `community` names, directly or through its instance (columns of a joined query). */
+export const communityBlockedBy = (viewerId: Uuid, community: { id: SQLWrapper; instanceId: SQLWrapper }): SQL =>
+  sql`(exists (select 1 from ${communityBlocks} as cb where cb.blocker_id = ${viewerId} and cb.community_id = ${community.id})
+    or ${instanceBlockedBy(viewerId, community.instanceId)})`;
 
 // These readers are plain SQL with an alias on every table: Drizzle drops the table name
 // from a column inside a single-table select, which would make the sub-selects compare a

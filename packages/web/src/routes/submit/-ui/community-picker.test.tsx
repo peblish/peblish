@@ -7,7 +7,9 @@ vi.mock('../../../i18n/use-translate.ts', () => ({ useTranslate: () => ({ locale
 
 const { CommunityRadios } = await import('./community-picker.tsx');
 
-const communities: PickerCommunity[] = [{ id: 'c1', handle: 'tea', local: true, subscribers: 3, canPost: true, restricted: false }];
+const communities: PickerCommunity[] = [
+  { id: 'c1', handle: 'tea', displayName: null, local: true, subscribers: 3, canPost: true, restricted: false },
+];
 const radios = (truncated: boolean) =>
   renderToString(<CommunityRadios communities={communities} truncated={truncated} value={null} describe={() => 'local'} />);
 

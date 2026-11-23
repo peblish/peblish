@@ -1,4 +1,4 @@
-import { sql } from 'drizzle-orm';
+import { sql, type SQL } from 'drizzle-orm';
 import { actors } from '../db/tables/actors.ts';
 import { posts } from '../db/tables/content.ts';
 import { ageDeclarations } from '../identity/tables.ts';
@@ -17,11 +17,23 @@ import type { FeedPredicate } from '../registry/types.ts';
 export const feedPredicate: FeedPredicate = {
   name: 'nsfw-gate',
   where(viewer) {
-    const clear = sql`not (${posts.sensitive} or ${posts.nsfl} or exists (
+    return ageClear(
+      sql`(${posts.sensitive} or ${posts.nsfl} or exists (
       select 1 from ${actors} as gated_community
       where gated_community.id = ${posts.communityId} and (gated_community.sensitive or gated_community.nsfl)
-    ))`;
-    if (!viewer) return clear;
-    return sql`(${clear} or exists (select 1 from ${ageDeclarations} where ${ageDeclarations.actorId} = ${viewer.actorId}))`;
+    ))`,
+      viewer,
+    );
   },
 };
+
+/**
+ * The gate itself, over any `flagged` expression (a post's flags above, a community's own
+ * elsewhere): true when it is not flagged, or when the viewer declared 16+. Signed out, only what
+ * is not flagged.
+ */
+export function ageClear(flagged: SQL, viewer: { actorId: string } | null): SQL {
+  const clear = sql`not ${flagged}`;
+  if (!viewer) return clear;
+  return sql`(${clear} or exists (select 1 from ${ageDeclarations} where ${ageDeclarations.actorId} = ${viewer.actorId}))`;
+}

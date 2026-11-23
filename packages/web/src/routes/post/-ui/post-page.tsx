@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { useRouterState } from '@tanstack/react-router';
 import { Badge } from '@peblish/ui/components/badge';
 import { Card } from '@peblish/ui/components/card';
 import { Group } from '@peblish/ui/components/group';
@@ -22,8 +23,10 @@ import { ThreadSection } from '../$id/comments/-ui/thread-section.tsx';
 import { PostBlock } from './actions/block.tsx';
 import { PostModerate } from './actions/moderate.tsx';
 import { PostReport } from './actions/report.tsx';
+import { PostSave } from './actions/save.tsx';
 import { ActionForm } from './action-form.tsx';
 import { asPostError, errorKey } from './errors.ts';
+import { FollowBell, FollowBellButton, FollowSwitch, useFollowThread } from './follow-thread.tsx';
 import { PostHeader } from './post-header.tsx';
 import { GateRail, PostRail } from './post-rail.tsx';
 import { PostPills } from './post-pills.tsx';
@@ -31,9 +34,10 @@ import { isWithheld } from '../-withheld.ts';
 
 // The post page (Commons' Thread.tsx, PostDetail): its view header, the post (meta line with the exact
 // time, title, flags, picture or link, body, the pill row of vote, comments, Share and Copy link, then
-// the author's own actions and the action slots: report for REP, block for E1, moderate for MODF, for a
-// signed-in viewer), the thread, and the rail. Left out on purpose: lock and pin authoring, save, hide,
-// crosspost, thread following and post series. The NSFW gate replaces the post (GateNotice, from the
+// the author's own actions and the action slots: Save, report for REP, block for E1, moderate for MODF, for
+// a signed-in viewer), the thread, and the rail. Left out on purpose: lock and pin authoring, hide,
+// crosspost and post series. Follow thread is the view header's bell and the rail's switch
+// (follow-thread.tsx). The NSFW gate replaces the post (GateNotice, from the
 // loader's `kind: 'gate'`), and tombstone states withhold their content in core (readPost); this only
 // lays out what it was given.
 
@@ -41,13 +45,28 @@ export function PostPage({ data, error }: { data: PostPageData; error?: string |
   useRouteHydrated();
   return data.kind === 'gate' ? (
     <>
-      <PostHeader handle={data.handle} />
+      {/* A follower whose thread is gated since keeps its Unfollow: a plain form, so it works without scripts. */}
+      <PostHeader handle={data.handle} trailing={data.unfollow && <FollowBellButton postId={data.unfollow} on pending={false} />} />
       <GateNotice data={data} error={error} />
       <GateRail handle={data.handle} />
     </>
   ) : (
     <PostContent data={data} error={error} />
   );
+}
+
+/**
+ * Where Save's answer lands without scripts: this page as the reader has it (the thread's sort and page
+ * among its query), less an `error` an earlier answer left, so it is not shown again. The hash stays out
+ * (the server never sees it, so the form would differ between the server and the browser). Past the
+ * endpoint's 2,000 characters (saved/-post.ts), the post itself. The endpoint checks it is a path here (safeRedirect).
+ */
+function useSaveBack(post: string): string {
+  const here = useRouterState({ select: ({ location }) => `${location.pathname}${location.searchStr}` });
+  const url = new URL(here, 'http://here.invalid');
+  url.searchParams.delete('error');
+  const back = `${url.pathname}${url.search}`;
+  return back.length <= 2000 ? back : post;
 }
 
 /** Where a link post goes: its picture or a box with the domain and the address, which opens it. */
@@ -95,8 +114,12 @@ function PostContent({ data, error }: { data: Extract<PostPageData, { kind: 'pos
   const count = post.counts.comments;
   const countLabel = count === 1 ? t('posts', 'comments.one') : t('posts', 'comments.other', { count });
   const shownError = asPostError(error);
+  // Follow thread for a signed-in reader of a live post; Unfollow stays wherever the thread is followed.
+  const followable = viewerId !== null && (post.watching === true || (!post.removed && !post.deleted));
+  const follow = useFollowThread(post.id, post.watching === true);
+  const saveBack = useSaveBack(back);
   const badgeLabels = { admin: t('posts', 'badge.admin'), moderator: t('posts', 'badge.moderator'), op: '' };
-  // A tombstone's author comes only to staff and the author (-page-data.ts postForViewer).
+  // A tombstone's author comes only to staff and the author (-withheld.ts postForViewer).
   const withheldAuthor = isWithheld(post.author);
   // The slots get the post for a signed-in viewer; a removed or deleted post still has them for staff (a
   // moderator restores it). Where its author is withheld, as in the thread, there is no slot at all.
@@ -153,7 +176,7 @@ function PostContent({ data, error }: { data: Extract<PostPageData, { kind: 'pos
 
   return (
     <>
-      <PostHeader handle={post.community.handle} />
+      <PostHeader handle={post.community.handle} trailing={followable && <FollowBell postId={post.id} follow={follow} />} />
       {/* Keyed by the post: the router reuses this component when a link goes from one post to another, and
           the vote control's optimistic vote and queue, the thread's and the forms' state belong to one post. */}
       <main key={post.id} className="pb-page post-page" data-state={withheld ?? 'visible'}>
@@ -222,6 +245,7 @@ function PostContent({ data, error }: { data: Extract<PostPageData, { kind: 'pos
               )}
               {actions && (
                 <>
+                  <PostSave post={post} withheld={withheld !== null} back={saveBack} />
                   <PostReport {...actions} />
                   <PostBlock {...actions} />
                   <PostModerate {...actions} />
@@ -237,7 +261,12 @@ function PostContent({ data, error }: { data: Extract<PostPageData, { kind: 'pos
           <div id="comments" className="post-thread" data-slot="thread" />
         )}
       </main>
-      <PostRail post={post} withheld={withheld !== null} />
+      <PostRail
+        post={post}
+        withheld={withheld !== null}
+        facts={data.facts}
+        follow={followable && <FollowSwitch postId={post.id} follow={follow} />}
+      />
     </>
   );
 }

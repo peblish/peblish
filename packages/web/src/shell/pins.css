@@ -1,0 +1,35 @@
+/* The sidebar's pins (sidebar-communities.tsx): a pending follow's dashed ring, which the folded rail
+   keeps where Mux hides the badge, and a pinned row's menu. Every rule names the sidebar's own classes. */
+@layer app {
+  .pb-nav__avatar--pending.muxui-avatar {
+    outline: 1px dashed var(--muxui-semantic-content-muted);
+    outline-offset: 1px;
+  }
+
+  /* The quiet menu trigger at a small control's size, square. */
+  .pb-feed-menu.pb-nav__pin-menu {
+    justify-content: center;
+    min-block-size: var(--muxui-semantic-control-size-sm);
+    min-inline-size: var(--muxui-semantic-control-size-sm);
+    padding-inline: 0;
+  }
+
+  /* The frame's phone width (shell.css): every target 44px, in the drawer too. */
+  @media (max-width: 859.98px) {
+    .pb-feed-menu.pb-nav__pin-menu {
+      min-block-size: var(--pb-touch);
+      min-inline-size: var(--pb-touch);
+    }
+  }
+
+  .pb-feed-menu.pb-nav__pin-menu[aria-disabled='true'] {
+    cursor: progress;
+  }
+
+  /* The menu needs scripts; without them the directory's pinned group moves and unpins with forms. */
+  @media (scripting: none) {
+    .pb-nav__pin-menu {
+      display: none;
+    }
+  }
+}

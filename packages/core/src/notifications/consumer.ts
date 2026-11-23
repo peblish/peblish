@@ -3,10 +3,15 @@ import type { Uuid } from '@peblish/schema/ids';
 import { eq, sql } from 'drizzle-orm';
 import { authorize } from '../authz/authorize.ts';
 import { systemPrincipal } from '../authz/system.ts';
+import { actors } from '../db/tables/actors.ts';
 import { comments, posts } from '../db/tables/content.ts';
+import { follows } from '../db/tables/follows.ts';
+import { ageDeclarations } from '../identity/tables.ts';
 import { findMentioned } from '../mentions/scan.ts';
+import { communityRemovals } from '../moderation/tables.ts';
 import { defineConsumer, type ConsumerTx } from '../outbox/consumers.ts';
-import { noticeBlocked } from './blocked.ts';
+import { threadFollowersOf } from '../watches/watchers.ts';
+import { noticeBlocked, peerBlocked } from './blocked.ts';
 import { createNotification, purgeNotifications, type NotificationContext } from './mutations.ts';
 import type { NotificationKind } from './view.ts';
 
@@ -20,6 +25,15 @@ import type { NotificationKind } from './view.ts';
 //   top-level comment. A mention (all four content events): a person of this instance named
 //   with the full `@name@host` or a Mention tag (mentions/scan.ts). One person gets one notice
 //   per comment or post, and a mention beats a reply.
+// - A followed thread's new comment (comment.created, lane f-notify): `thread_reply` for each
+//   follower the reply and the mentions did not already tell, by watches/watchers.ts's rules (a
+//   follow older than the comment, a comment, post and community they may still read, blocks
+//   and the 16+ declaration for sensitive content), at most threadReplyFanOut of them. Same
+//   cause, so the same unique index makes a replay write nothing.
+// - A remote community's Accept of a person's request to join (follow.accepted, remote
+//   followee): `follow_accept` for the person, once per follow, unless they block the
+//   community, it is closed, on a peer this server blocks, or sensitive to an undeclared
+//   person, or the accept is stale.
 // - Not for the author themselves, a recipient who is not a live local person, an object over a
 //   week old (a backfill must not flood the inbox), or a recipient who blocks the author.
 // - A moderator's removal or restore of someone's content and a ban or unban are told to the
@@ -110,12 +124,62 @@ async function contentNotices(t: ConsumerTx, kind: 'comment' | 'post', id: Uuid,
   if (replies && content.replyTo && content.replyTo !== content.authorId && !recipients.has(content.replyTo)) {
     recipients.set(content.replyTo, 'reply');
   }
-  if (recipients.size === 0) return;
-  const principal = await systemPrincipal(t.db, 'scheduled');
-  for (const [recipientId, noticeKind] of recipients) {
-    if (await blocks(t, recipientId, content.authorId, content.communityId)) continue;
-    await writeNotice(t, principal, { recipientId, kind: noticeKind, refId: id, context: content.context });
+  if (recipients.size > 0) {
+    const principal = await systemPrincipal(t.db, 'scheduled');
+    for (const [recipientId, noticeKind] of recipients) {
+      if (await blocks(t, recipientId, content.authorId, content.communityId)) continue;
+      await writeNotice(t, principal, { recipientId, kind: noticeKind, refId: id, context: content.context });
+    }
   }
+  if (replies && kind === 'comment') await threadReplies(t, content, [...recipients.keys()]);
+}
+
+/** The followers of the comment's thread not in `told`: one `thread_reply` each, as the reply's own. */
+async function threadReplies(t: ConsumerTx, comment: Content, told: Uuid[]): Promise<void> {
+  const followers = await threadFollowersOf(t.db, comment.id, told);
+  if (followers.length === 0) return;
+  const principal = await systemPrincipal(t.db, 'scheduled');
+  for (const recipientId of followers) {
+    await writeNotice(t, principal, { recipientId, kind: 'thread_reply', refId: comment.id, context: comment.context });
+  }
+}
+
+/** A remote community accepted the follow: tell its local follower, from the row as it is now. */
+async function followAccepted(t: ConsumerTx, followId: Uuid): Promise<void> {
+  const [row] = await t.db
+    .select({
+      followerId: follows.followerId,
+      communityId: follows.followeeId,
+      state: follows.state,
+      acceptedAt: follows.acceptedAt,
+      deletedAt: actors.deletedAt,
+      flagged: sql<boolean>`${actors.sensitive} or ${actors.nsfl}`,
+      peerBlocked: peerBlocked(actors.instanceId),
+    })
+    .from(follows)
+    .innerJoin(actors, eq(actors.id, follows.followeeId))
+    .where(eq(follows.id, followId));
+  if (!row || row.state !== 'accepted' || !row.acceptedAt || row.acceptedAt.getTime() < Date.now() - freshWindowMs) return;
+  if (row.deletedAt || row.peerBlocked) return;
+  const [removal] = await t.db
+    .select({ communityId: communityRemovals.communityId })
+    .from(communityRemovals)
+    .where(eq(communityRemovals.communityId, row.communityId));
+  if (removal) return;
+  if (await blocks(t, row.followerId, row.communityId, row.communityId)) return;
+  if (row.flagged) {
+    const [declared] = await t.db
+      .select({ actorId: ageDeclarations.actorId })
+      .from(ageDeclarations)
+      .where(eq(ageDeclarations.actorId, row.followerId));
+    if (!declared) return;
+  }
+  await writeNotice(t, await systemPrincipal(t.db, 'scheduled'), {
+    recipientId: row.followerId,
+    kind: 'follow_accept',
+    refId: followId,
+    context: { actorId: null, communityId: row.communityId, postId: null, commentId: null, modlogId: null },
+  });
 }
 
 /** The author of a post or comment, when it still exists. */
@@ -127,7 +191,16 @@ async function authorOf(t: ConsumerTx, target: { kind: 'post' | 'comment'; id: U
 
 export const consumer = defineConsumer({
   name: 'notifications.create',
-  events: ['comment.created', 'comment.updated', 'post.created', 'post.updated', 'mod.remove', 'mod.ban', 'actor.deleted'],
+  events: [
+    'comment.created',
+    'comment.updated',
+    'post.created',
+    'post.updated',
+    'mod.remove',
+    'mod.ban',
+    'actor.deleted',
+    'follow.accepted',
+  ],
   emits: ['notification.created', 'notification.purged'],
   startAt: 'beginning',
   async handle(event, t) {
@@ -168,6 +241,10 @@ export const consumer = defineConsumer({
           context: { actorId: event.moderatorId, communityId: event.communityId, postId: null, commentId: null, modlogId: event.modlogId },
         });
         return;
+      case 'follow.accepted':
+        // Only a remote community's answer is news: a local community accepts at once, and a remote person's follow of ours is not theirs to hear about.
+        if (!event.followerLocal || event.followeeLocal) return;
+        return followAccepted(t, event.followId);
       case 'actor.deleted': {
         if (!event.local || event.kind !== 'Person') return;
         const decision = await authorize(

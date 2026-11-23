@@ -41,7 +41,8 @@ test('the view header names the community, and the meta line and the rail give t
   await expect(rail.getByRole('link', { name: new RegExp(`!${seed.community.handle}`) })).toBeVisible();
   await expect(rail).toContainText('In this thread');
   await expect(rail.getByRole('link', { name: `@${seed.author.name}` })).toBeVisible();
-  await expect(rail.locator('time')).toHaveText((await posted.textContent())!);
+  // The first of the rail's times is the post's own; the thread's last activity follows it.
+  await expect(rail.locator('time').first()).toHaveText((await posted.textContent())!);
 });
 
 test.describe('Share and Copy link', () => {

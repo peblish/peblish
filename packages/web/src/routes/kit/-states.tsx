@@ -37,6 +37,14 @@ import { accountPieces } from './-account-pieces.tsx';
 import { bannerPieces } from './-banner-pieces.tsx';
 // The header's finder and Create post's community field (f-finder lane).
 import { finderPieces } from './-finder-pieces.tsx';
+// Saved posts (saves lane).
+import { savesPieces } from './-saves.tsx';
+// New since your last visit (f-visits).
+import { visitPieces } from './-visits.tsx';
+// The sidebar's pins and the directory's pin controls (f-pins).
+import { pinsPieces } from './-pins.tsx';
+// Profile, thread and Instances facts and the queue by community (f-facts lane).
+import { factsPieces } from './-facts-pieces.tsx';
 
 /**
  * The states a state page shows as samples, in the state matrix's order ('selected' stands for current, checked
@@ -204,4 +212,9 @@ export const compositions: Readonly<Record<string, Composition>> = {
   ...accountPieces,
   ...bannerPieces,
   ...finderPieces,
+  ...savesPieces,
+  ...visitPieces,
+  // The sidebar's pins and the directory's pin controls (f-pins).
+  ...pinsPieces,
+  ...factsPieces,
 };

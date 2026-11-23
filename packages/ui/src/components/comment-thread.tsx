@@ -59,6 +59,8 @@ export interface CommentTreeLabels extends CommentThreadLabels {
   copyFailed?: string;
   /** Read before the name a deep reply answers, which the screen shows as an arrow: "in reply to". */
   inReplyTo?: string;
+  /** The mark on a comment that arrived since the viewer's last visit (CommentView.isNew): "New". */
+  isNew?: string;
 }
 
 export interface CommentThreadProps {
@@ -277,6 +279,7 @@ const CommentRow = memo(function CommentRow({
       data-lined={lined || undefined}
       data-tombstone={gone || undefined}
       data-focus={focus || undefined}
+      data-new={(comment.isNew && !gone) || undefined}
     >
       <div className="pb-comment__head">
         <IconButton
@@ -314,6 +317,11 @@ const CommentRow = memo(function CommentRow({
           <Time iso={comment.publishedAt} locale={ctx.locale} now={ctx.now} />
           {comment.editedAt && ` · ${labels.edited}`}
         </Text>
+        {comment.isNew && !gone && labels.isNew && (
+          <Badge tone="success" className="pb-comment__new">
+            {labels.isNew}
+          </Badge>
+        )}
         {summary && (
           <Text size="sm" color="muted" className="pb-comment__summary">
             {summary}

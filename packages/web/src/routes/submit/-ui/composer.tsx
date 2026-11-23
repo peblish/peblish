@@ -185,13 +185,19 @@ export function Composer({ data, error: initialError, onDone, onDiscard, keepOnC
 
   /**
    * Keeps the form as a draft (Save draft, the sheet closing): over its own copy while that is still what it left
-   * there; with none, under its community, or, when another draft is kept there, in the slot read wherever Create post
-   * opens next. Never over a draft the form did not restore or keep: 'taken' when every place held one.
+   * there and is the carried one, the no-community one or its community's; otherwise under its community, or, when
+   * another draft is kept there, in the slot read wherever Create post opens next. Moved from one community to another,
+   * the copy left under the first stays as it was. Never over a draft the form did not restore or keep: 'taken' when
+   * every place held one.
    */
   function keep(last: Form): 'kept' | 'refused' | 'taken' {
     const own = restored.current;
     const draft = toDraft(last);
-    const places = own && holds(own.scope, own.draft) ? [own.scope] : [{ actorId, community: last.community }, carried(actorId)];
+    const ownHere =
+      own &&
+      holds(own.scope, own.draft) &&
+      ('carried' in own.scope || own.scope.community === null || own.scope.community === last.community);
+    const places = ownHere ? [own.scope] : [{ actorId, community: last.community }, carried(actorId)];
     for (const scope of places) {
       if (scope !== own?.scope && readDraft(scope) !== null) continue;
       if (!writeDraft(scope, draft)) return 'refused';
@@ -374,6 +380,7 @@ export function Composer({ data, error: initialError, onDone, onDiscard, keepOnC
           <>
             <CommunityPicker
               communities={data.communities}
+              truncated={data.pickerTruncated}
               value={form.community}
               onChange={(id) => (id === null ? unchoose() : choose(id))}
               onBrowse={browse}

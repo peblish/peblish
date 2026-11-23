@@ -49,11 +49,14 @@ export function ReportFormView({
   const [error, setError] = useState(initialError);
   const [busy, setBusy] = useState(false);
   const canForward = form.hosts.length > 0 && form.categories.some((option) => option.forwardable);
-  // The handles may be from other servers: each is isolated in the sentence.
-  const names: Record<string, string> = form.about.community
-    ? { handle: `@${form.about.handle}`, community: `!${form.about.community}` }
-    : { handle: `${form.about.kind === 'community' ? '!' : '@'}${form.about.handle}` };
-  const about = withNames(t('reports', form.about.community ? 'form.aboutBy' : 'form.aboutPerson', placeholders(names)), names);
+  // The handles may be from other servers: each is isolated in the sentence. Content whose author
+  // the post page would not name to this viewer names its community alone (readReportForm).
+  const { handle, community, kind } = form.about;
+  const names: Record<string, string> = community
+    ? { ...(handle !== null && { handle: `@${handle}` }), community: `!${community}` }
+    : { handle: `${kind === 'community' ? '!' : '@'}${handle ?? ''}` };
+  const sentence = !community ? 'form.aboutPerson' : handle === null ? 'form.aboutIn' : 'form.aboutBy';
+  const about = withNames(t('reports', sentence, placeholders(names)), names);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();

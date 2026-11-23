@@ -25,6 +25,8 @@ On 2026-11-23 the site banner, the width setting and the community finder raised
 
 About 3 to 4 kB of each page's growth is the vendor split making more Mux files (`/` loads 31, up from 22), each compressed on its own. That, and loading the colour field only once Custom is chosen, are left for a follow-up.
 
+On 2026-11-23 the account features measured `/saved` and `/instances` for the first time and raised `/post/<id>` by 33.0 kB, from one production build: the post page's rail draws the Follow thread switch, and Mux UI's Switch lives in its fields module with every form field (number, date, time and search fields and their React Aria code), a 29.7 kB chunk the page did not load before. Mux UI's SwitchField is a module of its own; using it, or splitting Switch out of the fields module, is left for a follow-up.
+
 ## When a page fails
 
 The failure names the page, its size, its budget and when the budget was measured, and the log lists the page's React and Mux chunks (each named after the routes that share it). Find what grew: compare with the same lines on `main`. If the growth is intended, re-measure and raise that page's `budget` (with its `measured` and `on`) in `routes.ts` in the same pull request, saying why in its description.
@@ -73,6 +75,7 @@ Mux UI CSS was 62.6 kB on every page on 2026-11-12 and 65.7 kB on `main` before 
 | `/u/<handle>/edit`                         | yes       | 199.7    | 209.7  | 2026-11-23 |
 | `/you`                                     | yes       | 198.5    | 208.5  | 2026-11-23 |
 | `/notifications`                           | yes       | 199.1    | 209.1  | 2026-11-23 |
+| `/saved`                                   | yes       | 200.9    | 211.0  | 2026-11-23 |
 | `/admin/registration`                      | yes       | 216.6    | 227.5  | 2026-11-23 |
 | `/c/<handle>`                              | no        | 201.2    | 211.3  | 2026-11-23 |
 | `/c/new`                                   | yes       | 201.4    | 211.5  | 2026-11-23 |
@@ -85,8 +88,9 @@ Mux UI CSS was 62.6 kB on every page on 2026-11-12 and 65.7 kB on `main` before 
 | `/admin/pages`                             | yes       | 217.1    | 228.0  | 2026-11-23 |
 | `/admin/pages/<slug>/<language>`           | yes       | 207.8    | 218.2  | 2026-11-23 |
 | `/about`                                   | no        | 190.8    | 200.4  | 2026-11-22 |
+| `/instances`                               | no        | 199.6    | 209.6  | 2026-11-23 |
 | `/admin/media`                             | yes       | 225.5    | 236.8  | 2026-11-23 |
-| `/post/<id>`                               | no        | 201.4    | 211.5  | 2026-11-23 |
+| `/post/<id>`                               | no        | 234.4    | 246.2  | 2026-11-23 |
 | `/post/<id>/comments/<commentId>`          | no        | 200.4    | 210.5  | 2026-11-23 |
 | `/submit` (signed out, lands on sign-in)   | no        | 198.5    | 208.5  | 2026-11-23 |
 | `/submit` (`e2e/composer/payload.spec.ts`) | yes       | 250.0    | 262.5  | 2026-11-23 |

@@ -78,11 +78,49 @@ test.describe('the Report control', () => {
     await expect(dialog).toHaveCount(0);
     await expect(post).toBeFocused();
     await comment.focus();
-    await page.keyboard.press('Enter');
-    await expect(page.getByRole('dialog', { name: 'Report this comment' }).getByRole('button', { name: 'Send report' })).toBeVisible();
+    // Enter is let go only once the dialog is up, as a slow machine delivers it: React Aria then takes the link's
+    // keyboard click for a screen reader's and moves focus into the dialog only when the page's transitions have ended,
+    // with focus on the page until then. Escape goes once the dialog has focus.
+    const reportComment = page.getByRole('dialog', { name: 'Report this comment' });
+    await page.keyboard.down('Enter');
+    await expect(reportComment.getByRole('button', { name: 'Send report' })).toBeVisible();
+    await page.keyboard.up('Enter');
+    await expect(reportComment).toBeFocused();
     await page.keyboard.press('Escape');
     await expect(page.getByRole('dialog')).toHaveCount(0);
     await expect(comment).toBeFocused();
+  });
+
+  test('Enter on a Report link puts focus in the dialog before its entrance ends, and Escape gives it back', async ({ page }) => {
+    const { post } = await onThread(page);
+    await post.focus();
+    // Which comes first: focus inside the dialog, or the end of the backdrop's entrance transition.
+    const first = page.evaluate(
+      () =>
+        new Promise<'focus' | 'entrance'>((resolve) => {
+          const options = { capture: true };
+          document.addEventListener(
+            'focusin',
+            (event) => (event.target as Element).closest('[role="dialog"]') && resolve('focus'),
+            options,
+          );
+          document.addEventListener(
+            'transitionend',
+            (event) => (event.target as Element).classList.contains('muxui-dialog__backdrop') && resolve('entrance'),
+            options,
+          );
+        }),
+    );
+    // A person holds Enter longer than the dialog takes to mount, so React Aria reads the keyless
+    // click as a virtual cursor's and would hold its focus until the entrance ends.
+    await page.keyboard.down('Enter');
+    expect(await first).toBe('focus');
+    await page.keyboard.up('Enter');
+    const dialog = page.getByRole('dialog', { name: 'Report this post' });
+    await expect(dialog.getByRole('button', { name: 'Send report' })).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    await expect(post).toBeFocused();
   });
 });
 

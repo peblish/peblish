@@ -14,8 +14,8 @@ export type SavePost = typeof SavePost.infer;
 export const PinCommunity = type({ communityId: Uuid });
 export type PinCommunity = typeof PinCommunity.infer;
 
-/** Move a pinned community to another place in the viewer's order. */
-export const MovePin = type({ communityId: Uuid, toPosition: 'number.integer >= 0' });
+/** Move a pinned community one place up or down in the viewer's order, from the order as it stands. */
+export const MovePin = type({ communityId: Uuid, direction: "'up' | 'down'" });
 export type MovePin = typeof MovePin.infer;
 
 /** Follow or stop following a thread (owner-only). */

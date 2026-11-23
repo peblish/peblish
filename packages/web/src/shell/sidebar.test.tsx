@@ -1,7 +1,7 @@
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { expect, test, vi } from 'vitest';
-import { initialIcon } from './sidebar.tsx';
+import { initialIcon } from './sidebar-communities.tsx';
 
 // A community's row draws the initial the shell's data brings from the server (data.ts), whatever its
 // label: a browser whose Unicode data is older would work out another, and the row would not hydrate.

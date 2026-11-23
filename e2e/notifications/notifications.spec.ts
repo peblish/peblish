@@ -18,6 +18,7 @@ type Seed = {
   replier: { name: string };
   quiet: { name: string };
   busy: { name: string };
+  dated: { name: string };
   remote: { handle: string };
   firstNoticeId: string;
 };
@@ -304,6 +305,25 @@ test.describe('the inbox of a person who was replied to, mentioned, moderated an
       rows(page)
         .nth(1)
         .getByRole('button', { name: /^Mark unread/ }),
+    ).toBeFocused();
+    await page.context().close();
+  });
+
+  test('in Unread, when the last notice of a date group leaves, focus goes to the first of the next group', async ({ page }) => {
+    await signedIn(page, seed.dated.name);
+    await gotoHydrated(page, '/notifications?filter=unread');
+    await expect(page.getByRole('list', { name: 'Notices, Today' }).getByRole('listitem')).toHaveCount(1);
+    await expect(rows(page)).toHaveCount(2);
+    await rows(page)
+      .first()
+      .getByRole('button', { name: /^Mark read/ })
+      .press('Enter');
+    await expect(page.getByRole('list', { name: 'Notices, Today' })).toHaveCount(0);
+    await expect(rows(page)).toHaveCount(1);
+    await expect(
+      rows(page)
+        .first()
+        .getByRole('button', { name: /^Mark read/ }),
     ).toBeFocused();
     await page.context().close();
   });

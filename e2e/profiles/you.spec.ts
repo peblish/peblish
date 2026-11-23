@@ -49,7 +49,7 @@ test("a member's You page: the account's pages, Appearance, the site's pages and
   await expect(account(page).getByRole('link', { name: 'Profile' })).toHaveAttribute('href', `/u/${seed.viewers[0]}`);
   // The page's own bar, the account's pages, then the site's pages (named by the site).
   const site = main.getByRole('navigation').last();
-  await expect(site.getByRole('link')).toHaveText(['About', 'Code of conduct', 'Privacy', 'Terms']);
+  await expect(site.getByRole('link')).toHaveText(['About', 'Code of conduct', 'Privacy', 'Terms', 'Instances']);
   await expectAccessible(page);
   expect(log.hydrationProblems()).toEqual([]);
 

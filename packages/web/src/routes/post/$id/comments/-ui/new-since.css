@@ -1,0 +1,15 @@
+/* "New since your last visit" in the thread's heading row (new-since.tsx): beside the heading, the sort at the end. */
+@layer app {
+  .th-new {
+    margin-inline-end: auto;
+  }
+
+  @media (max-width: 859.98px) {
+    /* A 44px target on a phone, as the sort's buttons are. */
+    .th-new {
+      display: inline-flex;
+      align-items: center;
+      min-block-size: calc(var(--muxui-semantic-control-size-lg) + 2 * var(--muxui-semantic-layout-dense-gap));
+    }
+  }
+}

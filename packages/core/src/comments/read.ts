@@ -4,13 +4,16 @@ import { and, eq, inArray } from 'drizzle-orm';
 import { freshModerator } from '../authz/roles.ts';
 import { blockedAmong } from '../blocks/predicate.ts';
 import { db, type Queryable } from '../db/read.ts';
+import { localInstance } from '../db/local-instance.ts';
 import { actors } from '../db/tables/actors.ts';
 import { authUser } from '../db/tables/auth.ts';
 import { comments, posts, votes } from '../db/tables/content.ts';
 import { instances } from '../db/tables/instances.ts';
 import { communityModerators } from '../db/tables/moderation.ts';
 import { readModlog } from '../modlog/read.ts';
+import { commentPermalink } from '../posts/permalink.ts';
 import type { PostBody, Viewer } from '../posts/read.ts';
+import { threadVisit } from '../visits/visits.ts';
 import { decodeCursor, encodeCursor, type ThreadCursor } from './cursor.ts';
 import { threadDisplayDepth, threadMaxComments, threadPageSize, threadReplyPreview } from './limits.ts';
 import { repliesUnder, rowColumns, siblingsPage, type Keyed, type Row } from './siblings.ts';
@@ -59,6 +62,9 @@ export type Thread = {
   moderator: boolean;
   /** The cursor for the next page of the siblings this page lists (`readThread`'s `after`), or null on the last. */
   next: string | null;
+  /** The viewer's previous visit to the thread, null on a first one, and how many comments are new since (visits.ts). */
+  previousVisitAt: string | null;
+  newCount: number;
 };
 
 /**
@@ -232,10 +238,11 @@ export async function readThread(
   const next = found.length > threadPageSize && last ? encodeCursor(cursorAfter(last, sort, rootId, asOf)) : null;
 
   const shown = await layout(q, focus, siblings, sort, asOf);
-  const [context, texts, blocked] = await Promise.all([
+  const [context, texts, blocked, instance] = await Promise.all([
     loadContext(q, postId, post.communityId, shown, viewer),
     textsOf(q, shown),
     viewer ? blockedAmong(q, viewer.actorId, [...new Set(shown.map((row) => row.authorId))]) : new Set<Uuid>(),
+    localInstance(q),
   ]);
   // A live comment by someone the viewer blocks stays in place with its text withheld and its
   // replies kept, so the parent's reply count still points at something. A permalink's own
@@ -243,6 +250,13 @@ export async function readThread(
   const hidden = (row: Row) => row.deletedAt === null && row.removedAt === null && blocked.has(row.authorId) && row.id !== focus?.id;
   const removed = new Set(shown.filter((row) => row.removedAt !== null).map((row) => row.id));
   const reasons = context.moderator && removed.size > 0 ? await removalReasons(q, post.communityId, removed) : new Map();
+  const live = (row: Row) => row.deletedAt === null && row.removedAt === null;
+  const visit = await threadVisit(
+    viewer?.actorId ?? null,
+    postId,
+    shown.map((row) => ({ id: row.id, authorId: row.authorId, shown: live(row) && !blocked.has(row.authorId) })),
+    q,
+  );
   const entries = shown.map((row): ThreadComment => {
     const author = context.authors.get(row.authorId);
     if (!author) throw new Error(`comment ${row.id} names an author that is gone`);
@@ -264,6 +278,9 @@ export async function readThread(
         counts: { upvotes: row.upvotes, downvotes: row.downvotes, comments: row.childCount },
         myVote: context.mine.get(row.id) ?? 0,
         ...(hidden(row) ? { blocked: true } : {}),
+        // A tombstone, or a comment whose text the viewer is not shown, has no address to share.
+        ...(live(row) && !hidden(row) ? { permalink: commentPermalink(instance.origin, postId, row.id) } : {}),
+        isNew: visit.newIds.has(row.id),
       },
       body: hidden(row) ? null : (texts.get(row.id) ?? null),
       removal: removed.has(row.id) && context.moderator ? { reason: reasons.get(row.id) ?? null } : null,
@@ -276,6 +293,8 @@ export async function readThread(
     focus: focus && { id: focus.id, parentId: focus.parentId },
     moderator: context.moderator,
     next,
+    previousVisitAt: visit.previousVisitAt,
+    newCount: visit.newCount,
   };
 }
 

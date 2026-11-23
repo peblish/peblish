@@ -12,8 +12,10 @@ import { actors } from '../db/tables/actors.ts';
 import { eq } from 'drizzle-orm';
 import { grantFor, outboxEvents } from '../testing/seed-az.ts';
 import { noticeCount, noticesOf, sameTransactionAsNotice, seedInboxWorld, seedNotice } from '../testing/seed-e2.ts';
+import { seedBlock } from '../testing/seed-e1.ts';
 import { localUser } from '../testing/seed.ts';
-import { createNotification, markAllNotificationsRead, markNotification, purgeNotifications } from './mutations.ts';
+import { createNotification, markAllNotificationsRead, markNotification, purgeNotifications, undoMarkAllRead } from './mutations.ts';
+import { readInbox } from './read.ts';
 
 beforeEach(truncateAll);
 
@@ -134,10 +136,10 @@ describe('marking read', () => {
     const theirs = await seedNotice({ recipientId: world.people.reader.id, kind: 'reply', refId: uuidv7() });
 
     const grant = await grantFor('notification.read_all', owner, { recipientId: world.people.author.id });
-    expect(await markAllNotificationsRead(grant, undefined)).toEqual({ count: 2 });
+    expect(await markAllNotificationsRead(grant, undefined)).toEqual({ count: 2, batch: expect.stringMatching(/^[1-9][0-9]+$/) });
     expect((await noticesOf(world.people.author.id)).every((row) => row.readAt)).toBe(true);
     expect((await noticesOf(world.people.reader.id))[0]).toMatchObject({ id: theirs.id, readAt: null });
-    expect(await markAllNotificationsRead(grant, undefined)).toEqual({ count: 0 });
+    expect(await markAllNotificationsRead(grant, undefined)).toEqual({ count: 0, batch: null });
     expect((await events()).filter((e) => e.type === 'notification.read')).toEqual([
       { type: 'notification.read', v: 1, recipientId: world.people.author.id, notificationId: null, read: true, count: 2 },
     ]);
@@ -148,6 +150,120 @@ describe('marking read', () => {
     const decision = await authorize('notification.read', other, { notificationId: notice.id });
     expect(decision).toEqual({ ok: false, reason: 'notification.not_yours' });
     expect((await noticesOf(world.people.author.id))[0]?.readAt).toBeNull();
+  });
+});
+
+describe('Undo of Mark all read', () => {
+  const readState = async (recipientId: string) =>
+    Object.fromEntries((await noticesOf(recipientId)).map((row) => [row.refId, row.readAt === null ? 'unread' : 'read']));
+
+  test('restores exactly the notices that were unread, under a notice arriving and one re-read in between', async () => {
+    const { world, owner } = await setup();
+    const me = world.people.author.id;
+    const ref = { a: uuidv7(), b: uuidv7(), c: uuidv7(), late: uuidv7(), reread: uuidv7() };
+    // Before: a, b and reread unread; c read long ago (the setup's notice is unread too).
+    await seedNotice({ recipientId: me, kind: 'reply', refId: ref.a });
+    await seedNotice({ recipientId: me, kind: 'mention', refId: ref.b });
+    await seedNotice({ recipientId: me, kind: 'thread_reply', refId: ref.c, readAt: new Date(Date.now() - 86_400_000) });
+    const reread = await seedNotice({ recipientId: me, kind: 'follow_accept', refId: ref.reread });
+    const theirs = await seedNotice({ recipientId: world.people.reader.id, kind: 'reply', refId: uuidv7(), readAt: new Date() });
+
+    const marked = await markAllNotificationsRead(await grantFor('notification.read_all', owner, { recipientId: me }), undefined);
+    expect(marked.count).toBe(4);
+    // In between: a notice arrives (unread), and one of the marked is marked unread and read again by hand.
+    await seedNotice({ recipientId: me, kind: 'thread_reply', refId: ref.late });
+    await markNotification(await grantFor('notification.read', owner, { notificationId: reread.id }), { read: false });
+    await markNotification(await grantFor('notification.read', owner, { notificationId: reread.id }), { read: true });
+
+    const undo = await grantFor('notification.undo_read_all', owner, { recipientId: me });
+    expect(await undoMarkAllRead(undo, { batch: marked.batch! })).toEqual({ count: 3 });
+    expect(await readState(me)).toMatchObject({
+      [ref.a]: 'unread',
+      [ref.b]: 'unread',
+      [ref.c]: 'read',
+      [ref.late]: 'unread',
+      [ref.reread]: 'read',
+    });
+    expect((await noticesOf(world.people.reader.id))[0]).toMatchObject({ id: theirs.id, readAt: expect.any(Date) });
+    // A second Undo, a stamp that names nothing and one that is not a stamp change nothing and emit nothing.
+    expect(await undoMarkAllRead(undo, { batch: marked.batch! })).toEqual({ count: 0 });
+    expect(await undoMarkAllRead(undo, { batch: '1' })).toEqual({ count: 0 });
+    expect(await undoMarkAllRead(undo, { batch: '1 or true' })).toEqual({ count: 0 });
+    expect((await events()).filter((e) => e.type === 'notification.read' && !e.read && e.notificationId === null)).toEqual([
+      { type: 'notification.read', v: 1, recipientId: me, notificationId: null, read: false, count: 3 },
+    ]);
+  });
+
+  test('Mark all read and its Undo report only the notices the inbox shows', async () => {
+    const { world, owner } = await setup();
+    const me = world.people.author.id;
+    // Hidden from the inbox: a reply by someone the owner blocks, and a mention in a removed community.
+    await seedBlock(world.people.author, world.people.reader);
+    await seedNotice({ recipientId: me, kind: 'reply', refId: uuidv7(), actorId: world.people.reader.id });
+    await seedNotice({ recipientId: me, kind: 'mention', refId: uuidv7(), communityId: world.communities.removed.id });
+    const viewer = { actorId: me, siteRole: 'user' } as const;
+    const shown = (await readInbox(viewer, { filter: 'unread' })).items.map((item) => item.id);
+    expect(shown).toHaveLength(1);
+
+    const marked = await markAllNotificationsRead(await grantFor('notification.read_all', owner, { recipientId: me }), undefined);
+    expect(marked.count).toBe(shown.length);
+    expect((await readInbox(viewer, { filter: 'unread' })).items).toEqual([]);
+    const undo = await grantFor('notification.undo_read_all', owner, { recipientId: me });
+    expect(await undoMarkAllRead(undo, { batch: marked.batch! })).toEqual({ count: shown.length });
+    expect((await readInbox(viewer, { filter: 'unread' })).items.map((item) => item.id)).toEqual(shown);
+
+    // With only hidden notices unread, nothing the reader sees changes: no count and nothing to undo.
+    await markNotification(await grantFor('notification.read', owner, { notificationId: shown[0]! }), { read: true });
+    expect(await markAllNotificationsRead(await grantFor('notification.read_all', owner, { recipientId: me }), undefined)).toEqual({
+      count: 0,
+      batch: null,
+    });
+  });
+
+  test('a new-kind notice the inbox hides is left out of the batch, so its Undo restores only what the reader saw', async () => {
+    const { world, owner, notice } = await setup();
+    const me = world.people.author.id;
+    // A follow's answer gated from the undeclared owner (its community is flagged), and an old kind the inbox hides: a
+    // reply by someone the owner blocks.
+    await writer().update(actors).set({ sensitive: true }).where(eq(actors.id, world.communities.remote.id));
+    const gated = await seedNotice({ recipientId: me, kind: 'follow_accept', refId: uuidv7(), communityId: world.communities.remote.id });
+    await seedBlock(world.people.author, world.people.reader);
+    const hidden = await seedNotice({ recipientId: me, kind: 'reply', refId: uuidv7(), actorId: world.people.reader.id });
+    const readAt = async (id: string) => (await noticesOf(me)).find((row) => row.id === id)?.readAt ?? null;
+
+    const marked = await markAllNotificationsRead(await grantFor('notification.read_all', owner, { recipientId: me }), undefined);
+    expect(marked.count).toBe(1);
+    expect(await readAt(notice.id)).not.toBeNull();
+    expect(await readAt(gated.id)).toBeNull();
+    // The old kind is marked as on main, hidden or not.
+    expect(await readAt(hidden.id)).not.toBeNull();
+
+    // The community opens to the owner afterwards: the Undo restores the one notice the owner saw marked.
+    await writer().update(actors).set({ sensitive: false }).where(eq(actors.id, world.communities.remote.id));
+    const undo = await grantFor('notification.undo_read_all', owner, { recipientId: me });
+    expect(await undoMarkAllRead(undo, { batch: marked.batch! })).toEqual({ count: 1 });
+    expect(await readAt(notice.id)).toBeNull();
+    expect(await readAt(gated.id)).toBeNull();
+  });
+
+  test('only the owner undoes, and never another person’s notices with the same stamp', async () => {
+    const { world, owner, other, remote } = await setup();
+    const marked = await markAllNotificationsRead(
+      await grantFor('notification.read_all', owner, { recipientId: world.people.author.id }),
+      undefined,
+    );
+    const ask = async (principal: Principal, recipientId: string) => {
+      const decision = await authorize('notification.undo_read_all', principal, { recipientId });
+      return decision.ok ? 'ok' : decision.reason;
+    };
+    expect(await ask({ kind: 'anonymous' }, world.people.author.id)).toBe('auth.required');
+    expect(await ask(remote, world.people.author.id)).toBe('auth.required');
+    expect(await ask(other, world.people.author.id)).toBe('notification.not_yours');
+    expect(await ask(owner, world.people.author.id)).toBe('ok');
+    // The other person's own Undo with the owner's stamp reaches only their own rows.
+    const theirs = await grantFor('notification.undo_read_all', other, { recipientId: world.people.reader.id });
+    expect(await undoMarkAllRead(theirs, { batch: marked.batch! })).toEqual({ count: 0 });
+    expect((await noticesOf(world.people.author.id)).every((row) => row.readAt)).toBe(true);
   });
 });
 

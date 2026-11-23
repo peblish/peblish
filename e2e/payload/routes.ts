@@ -160,6 +160,7 @@ export const routes: readonly PayloadRoute[] = [
   // The phone's You tab (Commons).
   { route: '/you/', path: '/you', js: { budget: 208.5, measured: 198.5, on: '2026-11-23' }, admin: true },
   { route: '/notifications/', path: '/notifications', js: { budget: 209.1, measured: 199.1, on: '2026-11-23' }, admin: true },
+  { route: '/saved/', path: '/saved', js: { budget: 211.0, measured: 200.9, on: '2026-11-23' }, admin: true },
   { route: '/admin/registration/', path: '/admin/registration', js: { budget: 227.5, measured: 216.6, on: '2026-11-23' }, admin: true },
   { route: '/c/$handle/', path: '/c/<handle>', js: { budget: 211.3, measured: 201.2, on: '2026-11-23' }, target: () => seededCommunity() },
   { route: '/c/new', path: '/c/new', js: { budget: 211.5, measured: 201.4, on: '2026-11-23' }, admin: true },
@@ -184,8 +185,10 @@ export const routes: readonly PayloadRoute[] = [
     admin: true,
   },
   { route: '/$slug', path: '/about', js: { budget: 200.4, measured: 190.8, on: '2026-11-22' }, target: () => '/about' },
+  { route: '/instances/', path: '/instances', js: { budget: 209.6, measured: 199.6, on: '2026-11-23' } },
   { route: '/admin/media/', path: '/admin/media', js: { budget: 236.8, measured: 225.5, on: '2026-11-23' }, admin: true },
-  { route: '/post/$id/', path: '/post/<id>', js: { budget: 211.5, measured: 201.4, on: '2026-11-23' }, target: seededPost },
+  // The rail's Follow thread switch brings Mux UI's form fields with it (PAYLOAD.md).
+  { route: '/post/$id/', path: '/post/<id>', js: { budget: 246.2, measured: 234.4, on: '2026-11-23' }, target: seededPost },
   {
     route: '/post/$id/comments/$commentId',
     path: '/post/<id>/comments/<commentId>',
@@ -232,7 +235,9 @@ export const notPages: Readonly<Record<string, string>> = {
   '/readyz': 'a probe answering plain text',
   '/auth/sign-out': 'a form post that answers with a redirect',
   '/communities/follow': 'the POST endpoint of Join and Leave; a GET answers 404',
+  '/communities/pins': 'the POST endpoint of Pin, Unpin and Move; a GET answers 404',
   '/post/$id/comments/': 'the POST endpoint of the comment forms; a GET redirects to the post page',
+  '/post/$id/visit': 'the POST endpoint that records a thread visit; a GET redirects to the post page',
   '/media/proxy/$signature/$target': 'an image endpoint, not a page',
   '/modlog/act': 'the POST endpoint of the moderator forms; it answers with a redirect or JSON',
   '/media/$id': 'an uploaded image endpoint, not a page',

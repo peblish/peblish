@@ -264,6 +264,55 @@ test('a text carried in beside a community’s own saved draft is kept apart: di
   await context.close();
 });
 
+test('a draft saved for one community, then moved to another, is saved there and leaves the first one’s draft as it was', async ({
+  browser,
+  baseURL,
+}) => {
+  const context = await freshPoster(browser, baseURL!);
+  const page = await context.newPage();
+  const { open: a, remote: b } = world.communities;
+  const title = page.getByLabel('Title');
+  const save = async () => {
+    await page.getByRole('button', { name: 'Save draft' }).click();
+    await expect(page.getByRole('status')).toHaveText('Draft saved in this browser.');
+  };
+  // Saved for A, then B chosen and the text edited: the text stays, and saving it lands under B, not over A.
+  await gotoHydrated(page, '/submit');
+  await choose(page, a.handle);
+  await title.fill('Written for A');
+  await save();
+  await toTop(page);
+  await choose(page, b.handle);
+  await expect(title).toHaveValue('Written for A');
+  await title.fill('Edited for B');
+  await save();
+  expect(await stored(page)).toEqual({ [a.id]: 'Written for A', [b.id]: 'Edited for B' });
+  await gotoHydrated(page, `/submit?community=${b.handle}`);
+  await expect(title).toHaveValue('Edited for B');
+
+  // B's draft, moved back to A, which holds its own: A's is not written over, and the text is kept where Create post
+  // finds it next.
+  await toTop(page);
+  await choose(page, a.handle);
+  await expect(title).toHaveValue('Edited for B');
+  await title.fill('Edited again for A');
+  await save();
+  expect(await stored(page)).toEqual({ [a.id]: 'Written for A', [b.id]: 'Edited for B', carried: 'Edited again for A' });
+  await gotoHydrated(page, `/submit?community=${a.handle}`);
+  await expect(title).toHaveValue('Edited again for A');
+
+  // Kept with no community yet, then given one: the same copy follows the text, so it comes back where it was kept.
+  await page.evaluate(() => localStorage.clear());
+  await gotoHydrated(page, '/submit');
+  await title.fill('First');
+  await save();
+  await choose(page, b.handle);
+  await title.fill('Second');
+  await save();
+  expect(await stored(page)).toEqual({ none: 'Second' });
+  await context.close();
+});
+
 test('closing the sheet keeps what was written without writing over a community’s other saved draft', async ({ browser, baseURL }) => {
   const context = await freshPoster(browser, baseURL!);
   const page = await context.newPage();

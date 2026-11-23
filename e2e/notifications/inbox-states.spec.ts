@@ -1,3 +1,4 @@
+import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Page } from '@playwright/test';
 import { prefsCookie, skipWithoutKit } from '../support/kit.ts';
 import { gotoHydrated } from '../support/route-marker.ts';
@@ -7,13 +8,22 @@ import { galleryStates, stateProblems } from '../support/states.ts';
 // draws it, and the inline reply in each state, through the shared state helper in light and dark, under
 // forced colours and reduced motion and at a phone's width, whatever brand pack site.brand names. The
 // row's forms post to the real endpoints; the reply cases answer for them here, so no database is needed.
+// Branch 5 (lane f-notify) adds the followed thread's and the accepted follow's rows, the date groups,
+// Mark all read's status row with its Undo, and the post's Follow thread bell and rail switch.
 test.beforeEach(async ({ request }) => skipWithoutKit(request));
 
-const notices = ['inbox-replies', 'inbox-mentions', 'inbox-moderation', 'inbox-account'];
+const notices = ['inbox-replies', 'inbox-mentions', 'inbox-moderation', 'inbox-account', 'inbox-follows'];
 const compositions: Record<string, string[]> = {
-  ...Object.fromEntries(notices.map((key) => [key, ['rest', 'hover', 'focus', 'pressed']])),
+  ...Object.fromEntries([...notices, 'inbox-groups'].map((key) => [key, ['rest', 'hover', 'focus', 'pressed']])),
   'inbox-reply': ['rest', 'selected', 'pending', 'invalid', 'hover', 'focus', 'pressed'],
+  'inbox-undo': ['rest', 'pending', 'hover', 'focus', 'pressed'],
+  'thread-follow': ['rest', 'selected', 'pending', 'hover', 'focus', 'pressed'],
 };
+/**
+ * The smallest target each page may hold on a phone. A link inside a line of text (a title, a statement)
+ * is held to WCAG's 24px, the rows' buttons to 44 below; Undo and the bell are 44 themselves.
+ */
+const floor = (composition: string) => (composition === 'inbox-undo' || composition === 'thread-follow' ? 44 : 24);
 
 for (const [composition, states] of Object.entries(compositions)) {
   test(`/kit/${composition}: every state, scheme and condition passes`, async ({ browser, baseURL }) => {
@@ -21,8 +31,7 @@ for (const [composition, states] of Object.entries(compositions)) {
     const checks = await galleryStates(browser, baseURL!, `/kit/${composition}`);
     expect([...new Set(checks.map(({ state }) => state))]).toEqual(states);
     expect(checks).toHaveLength(states.length * 2 * 4);
-    // A link inside a line of text (a title, a statement) is held to WCAG's 24px; the row's buttons to 44 below.
-    expect(stateProblems(checks, { target: 24 })).toEqual([]);
+    expect(stateProblems(checks, { target: floor(composition) })).toEqual([]);
   });
 }
 
@@ -36,7 +45,7 @@ test('every kind of notice has a row, and unread is said in words as well as dra
     await gotoHydrated(page, `/kit/${key}`);
     for (const kind of await rows(page).evaluateAll((nodes) => nodes.map((node) => node.getAttribute('data-kind')))) kinds.add(kind);
   }
-  expect(kinds).toEqual(new Set(['reply', 'mention', 'mod_remove', 'mod_restore', 'ban', 'unban']));
+  expect(kinds).toEqual(new Set(['reply', 'mention', 'mod_remove', 'mod_restore', 'ban', 'unban', 'thread_reply', 'follow_accept']));
 
   await gotoHydrated(page, '/kit/inbox-replies');
 
@@ -221,6 +230,170 @@ test('a reply is sent once: Send stays held until the notice is marked read as w
   expect(sent).toEqual(['Once is enough.']);
 });
 
+/** A promise and the function that settles it, for an answer the test holds back. */
+function gate() {
+  let open!: () => void;
+  const opened = new Promise<void>((resolve) => (open = resolve));
+  return { open, opened };
+}
+
+// The one lock holds until the comment's answer comes back, whatever it is: nothing more is sent or cleared meanwhile, a
+// refused or lost reply keeps its text, and once it has answered Send works again. Nothing was saved, so nothing is marked read.
+for (const outcome of ['refused', 'lost'] as const) {
+  test(`a reply that is ${outcome} holds Send until it answers, keeps its text, and can be sent again`, async ({ page }) => {
+    await gotoHydrated(page, '/kit/inbox-replies');
+    const sent: string[] = [];
+    const arrived = gate();
+    const answer = gate();
+    await page.route('**/post/*/comments', async (route) => {
+      sent.push(new URLSearchParams(route.request().postData() ?? '').get('body') ?? '');
+      if (sent.length > 1) return route.fulfill({ status: 200, json: { ok: true, id: '00000000-0000-7000-8000-000000000400' } });
+      arrived.open();
+      await answer.opened;
+      await (outcome === 'refused' ? route.fulfill({ status: 400, json: { error: 'post.locked' } }) : route.abort());
+    });
+    const marked: string[] = [];
+    await page.route('**/notifications?*', async (route) => {
+      marked.push(new URL(route.request().url()).search);
+      await route.fulfill({ status: 200, json: { ok: true } });
+    });
+
+    await first(page)
+      .getByRole('button', { name: /^Reply: / })
+      .click();
+    const field = first(page).getByRole('textbox', { name: 'Reply to @jun@lemmy.world' });
+    await field.fill('Held until it answers.');
+    const send = first(page).getByRole('button', { name: 'Reply', exact: true });
+    await send.click();
+    await arrived.opened;
+    await send.click({ force: true });
+    await field.press('Control+Enter');
+    await field.pressSequentially(' More.');
+    await expect(field).toHaveValue('Held until it answers.');
+    await expect(send).toHaveAttribute('aria-busy', 'true');
+    expect(sent).toHaveLength(1);
+
+    answer.open();
+    const said =
+      outcome === 'refused'
+        ? 'This post is locked. It takes no new comments.'
+        : 'The request did not get through. Check your connection and try again.';
+    await expect(first(page).getByText(said)).toBeVisible();
+    await expect(field).toHaveValue('Held until it answers.');
+    await expect(field).toHaveAttribute('aria-invalid', 'true');
+    expect(marked).toEqual([]);
+
+    // Edited, it is sent once, as it now reads.
+    await field.fill('Held until it answers, then edited.');
+    await send.click();
+    await expect(first(page).getByRole('status')).toHaveText('Reply posted. View reply');
+    expect(sent).toEqual(['Held until it answers.', 'Held until it answers, then edited.']);
+    expect(marked).toEqual(['?intent=read&id=00000000-0000-7000-8000-000000000001']);
+  });
+
+  // The comment is saved; the read receipt fails after it. The reply is posted, once, and the lock holds until the receipt answers.
+  test(`a reply whose read receipt is ${outcome} is posted once`, async ({ page }) => {
+    await gotoHydrated(page, '/kit/inbox-replies');
+    const sent: string[] = [];
+    await page.route('**/post/*/comments', async (route) => {
+      sent.push(new URLSearchParams(route.request().postData() ?? '').get('body') ?? '');
+      await route.fulfill({ status: 200, json: { ok: true, id: '00000000-0000-7000-8000-000000000400' } });
+    });
+    const arrived = gate();
+    const answer = gate();
+    await page.route('**/notifications?*', async (route) => {
+      arrived.open();
+      await answer.opened;
+      await (outcome === 'refused' ? route.fulfill({ status: 400, json: { error: 'notification.not_yours' } }) : route.abort());
+    });
+
+    await first(page)
+      .getByRole('button', { name: /^Reply: / })
+      .click();
+    const field = first(page).getByRole('textbox', { name: 'Reply to @jun@lemmy.world' });
+    await field.fill('Saved, then the receipt fails.');
+    const send = first(page).getByRole('button', { name: 'Reply', exact: true });
+    await send.click();
+    await arrived.opened;
+    await send.click({ force: true });
+    await field.press('Control+Enter');
+    await expect(field).toHaveValue('Saved, then the receipt fails.');
+    expect(sent).toHaveLength(1);
+
+    answer.open();
+    await expect(first(page).getByRole('status')).toHaveText('Reply posted. View reply');
+    await expect(field).toHaveCount(0);
+    await page.waitForTimeout(200);
+    expect(sent).toEqual(['Saved, then the receipt fails.']);
+  });
+}
+
+// /kit/inbox-groups: a row's Mark read there brings a clock a day later, as a reload after a boundary would, so the
+// reply notice moves from Today to Yesterday and is drawn anew in that list. Posted by script, focus stays where it is.
+const group = (page: Page, name: string) => page.getByRole('list', { name: `Notices, ${name}` });
+const reloadADayLater = (page: Page) =>
+  group(page, 'Earlier')
+    .locator('form[data-toggle]')
+    .evaluate((form: HTMLFormElement) => form.requestSubmit());
+
+test('a reply being written keeps its field, text, focus and caret when a reload moves its notice into the next date group', async ({
+  page,
+}) => {
+  await gotoHydrated(page, '/kit/inbox-groups');
+  await group(page, 'Today')
+    .getByRole('button', { name: /^Reply: @jun@lemmy\.world, / })
+    .click();
+  const field = page.getByRole('textbox', { name: 'Reply to @jun@lemmy.world' });
+  await field.fill('Half thought');
+  await field.evaluate((node: HTMLTextAreaElement) => node.setSelectionRange(4, 4));
+  await reloadADayLater(page);
+  await expect(group(page, 'Today')).toHaveCount(0);
+  const moved = group(page, 'Yesterday').getByRole('listitem');
+  await expect(moved.getByRole('textbox', { name: 'Reply to @jun@lemmy.world' })).toHaveValue('Half thought');
+  await expect(moved.getByRole('button', { name: /^Reply: @jun/ })).toHaveAttribute('aria-expanded', 'true');
+  await expect(field).toBeFocused();
+  await page.keyboard.type(' a');
+  await expect(field).toHaveValue('Half a thought');
+});
+
+test('a reply on its way when a reload moves its notice into the next date group stays held, and is sent once', async ({ page }) => {
+  await gotoHydrated(page, '/kit/inbox-groups');
+  const sent: string[] = [];
+  const arrived = gate();
+  const answer = gate();
+  await page.route('**/post/*/comments', async (route) => {
+    sent.push(new URLSearchParams(route.request().postData() ?? '').get('body') ?? '');
+    arrived.open();
+    await answer.opened;
+    await route.fulfill({ status: 200, json: { ok: true, id: '00000000-0000-7000-8000-000000000400' } });
+  });
+  await page.route('**/notifications?*', (route) => route.fulfill({ status: 200, json: { ok: true } }));
+  await group(page, 'Today')
+    .getByRole('button', { name: /^Reply: @jun@lemmy\.world, / })
+    .click();
+  await page.getByRole('textbox', { name: 'Reply to @jun@lemmy.world' }).fill('Sent once, wherever it is drawn.');
+  await page.getByRole('button', { name: 'Reply', exact: true }).click();
+  await arrived.opened;
+  await reloadADayLater(page);
+
+  const moved = group(page, 'Yesterday').getByRole('listitem');
+  const field = moved.getByRole('textbox', { name: 'Reply to @jun@lemmy.world' });
+  const send = moved.getByRole('button', { name: 'Reply', exact: true });
+  await expect(field).toHaveValue('Sent once, wherever it is drawn.');
+  await expect(send).toHaveAttribute('aria-busy', 'true');
+  await expect(send).toBeFocused();
+  await send.click({ force: true });
+  await field.press('Control+Enter');
+  expect(sent).toHaveLength(1);
+
+  answer.open();
+  await expect(moved.getByRole('status')).toHaveText('Reply posted. View reply');
+  await expect(field).toHaveCount(0);
+  await expect(moved.getByRole('button', { name: /^Reply: @jun/ })).toBeFocused();
+  await page.waitForTimeout(200);
+  expect(sent).toEqual(['Sent once, wherever it is drawn.']);
+});
+
 test('a reply sent once the reader has moved on leaves focus where they went', async ({ page }) => {
   await gotoHydrated(page, '/kit/inbox-replies');
   let release!: () => void;
@@ -301,3 +474,129 @@ test('without scripts Reply is a link to the comment, whose page has the reply f
   await expect(first(page).getByRole('button', { name: /^Reply: / })).toHaveCount(0);
   await context.close();
 });
+
+test('the new kinds read as the mock words them, with no moderator badge on an accepted follow', async ({ page }) => {
+  await gotoHydrated(page, '/kit/inbox-follows');
+  const followed = rows(page).nth(0);
+  const withheld = rows(page).nth(1);
+  const accepted = rows(page).nth(2);
+  await expect(followed).toContainText('@mira commented in a thread you follow');
+  await expect(followed.getByRole('button', { name: /^Reply: @mira, / })).toBeVisible();
+  // A followed thread's sensitive comment, withheld in the inbox: nobody is named, and it cannot be answered.
+  await expect(withheld.locator('.pb-notice__title')).toContainText('Someone commented in a thread you follow');
+  await expect(withheld.getByRole('button', { name: /^Reply/ })).toHaveCount(0);
+  await expect(accepted).toContainText('!art accepted your request to join');
+  await expect(accepted.getByText('MOD', { exact: true })).toHaveCount(0);
+  await expect(accepted.getByRole('link', { name: 'Open community' })).toHaveAttribute('href', /^\/c\/art/);
+  // A removal names the published review address and the decision.
+  await gotoHydrated(page, '/kit/inbox-moderation');
+  await expect(rows(page).first().getByRole('link', { name: 'Ask for a review' })).toHaveAttribute(
+    'href',
+    'mailto:review@example.test?subject=Review%20of%20moderation%20decision%2000000000-0000-7000-8000-000000000300',
+  );
+  await expect(rows(page).nth(1).getByRole('link', { name: 'Ask for a review' })).toHaveCount(0);
+  // With no published review address there is no such link, rather than a dead one.
+  await gotoHydrated(page, '/kit/inbox-groups');
+  await expect(rows(page).filter({ hasText: 'removed your comment' })).toHaveCount(1);
+  await expect(page.getByRole('link', { name: 'Ask for a review' })).toHaveCount(0);
+});
+
+// Opened in this tab, a followed thread's notice has the shell's count asked for again once its read commits
+// (follows.spec.ts); opened in a new tab, this page stays as it is: nothing reloads here, and focus stays on the link.
+test('a followed thread’s notice opened in a new tab leaves this page as it is', async ({ page, context }) => {
+  await gotoHydrated(page, '/kit/inbox-follows');
+  const read = gate();
+  await page.route('**/notifications?*', async (route) => {
+    await route.fulfill({ status: 200, json: { ok: true } });
+    read.open();
+  });
+  const asked: string[] = [];
+  page.on('request', (request) => {
+    if (new URL(request.url()).pathname.startsWith('/_serverFn')) asked.push(request.url());
+  });
+  const link = rows(page).first().getByRole('link', { name: 'Weekly prompt: a window at night' });
+  const opened = context.waitForEvent('page');
+  await link.click({ modifiers: ['ControlOrMeta'] });
+  await (await opened).close();
+  await read.opened;
+  await page.waitForTimeout(500);
+  expect(asked).toEqual([]);
+  await expect(page).toHaveURL(/\/kit\/inbox-follows$/);
+  await expect(link).toBeFocused();
+});
+
+test('the date groups head their rows, newest first', async ({ page }) => {
+  await gotoHydrated(page, '/kit/inbox-groups');
+  await expect(page.locator('[data-kit-sample]').getByRole('heading', { level: 2 })).toHaveText([
+    'Today',
+    'Yesterday',
+    'This week',
+    'Earlier',
+  ]);
+  for (const group of ['Today', 'Yesterday', 'This week', 'Earlier'])
+    await expect(page.getByRole('list', { name: `Notices, ${group}` }).getByRole('listitem')).toHaveCount(1);
+});
+
+test('Undo is named for what it undoes, and its status row speaks', async ({ page }) => {
+  await gotoHydrated(page, '/kit/inbox-undo');
+  const rest = page.locator('[data-kit-state="rest"]');
+  await expect(rest.getByRole('button', { name: 'Undo: mark the 3 unread again' })).toHaveText('Undo');
+  await expect(rest.getByRole('status')).toHaveText([
+    'Marked 3 notices as read.Undo',
+    '3 notices are unread again.',
+    'Nothing left to undo.',
+  ]);
+  await expect(page.locator('[data-kit-state="pending"]').getByRole('button', { name: /^Undo/ })).toHaveAttribute('aria-busy', 'true');
+});
+
+test('the bell is one toggle named Follow thread whose pressed state and shape change, not only its colour', async ({ page }) => {
+  await gotoHydrated(page, '/kit/thread-follow');
+  const bell = (state: string) => page.locator(`[data-kit-state="${state}"]`).getByRole('button', { name: 'Follow thread', exact: true });
+  await expect(bell('rest')).toHaveAttribute('aria-pressed', 'false');
+  await expect(bell('selected')).toHaveAttribute('aria-pressed', 'true');
+  const shape = async (state: string) => bell(state).locator('svg').first().getAttribute('class');
+  expect(await shape('rest')).not.toEqual(await shape('selected'));
+  // Without scripts it is a form: off it posts a follow, on an unfollow, to the inbox's endpoint.
+  await expect(page.locator('[data-kit-state="rest"] form')).toHaveAttribute(
+    'action',
+    '/notifications?intent=watch&post=00000000-0000-7000-8000-000000000100',
+  );
+  await expect(page.locator('[data-kit-state="selected"] form')).toHaveAttribute(
+    'action',
+    '/notifications?intent=unwatch&post=00000000-0000-7000-8000-000000000100',
+  );
+  await gotoHydrated(page, '/kit/thread-follow-rail');
+  const toggle = (state: string) => page.locator(`[data-kit-state="${state}"]`).getByRole('switch', { name: 'Follow thread' });
+  await expect(toggle('rest')).not.toBeChecked();
+  await expect(toggle('selected')).toBeChecked();
+});
+
+// The rail's switch: the helper drives hover, focus and press on a sample's first control, which for Mux's Switch
+// is its visually hidden native input, so its states are checked here instead: off, on and on its way, in light,
+// dark and forced colours, by axe; and on and off from the keyboard on the post page (follows.spec.ts). The rail
+// is not on a phone (the frame hides it below 62rem), so it has no phone target.
+for (const [scheme, forcedColors] of [
+  ['light', 'none'],
+  ['dark', 'none'],
+  ['light', 'active'],
+] as const) {
+  test(`/kit/thread-follow-rail in ${scheme}${forcedColors === 'active' ? ' under forced colours' : ''}: off, on and pending pass axe`, async ({
+    browser,
+    baseURL,
+  }) => {
+    const context = await browser.newContext({ baseURL, colorScheme: scheme, forcedColors });
+    await context.addCookies([{ ...prefsCookie('card', scheme), url: baseURL! }]);
+    const page = await context.newPage();
+    await gotoHydrated(page, '/kit/thread-follow-rail');
+    const toggle = (state: string) => page.locator(`[data-kit-state="${state}"]`).getByRole('switch', { name: 'Follow thread' });
+    await expect(toggle('rest')).not.toBeChecked();
+    await expect(toggle('selected')).toBeChecked();
+    await expect(toggle('pending')).toHaveAttribute('aria-readonly', 'true');
+    const axe = await new AxeBuilder({ page })
+      .include('[data-kit-state]')
+      .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa', 'best-practice'])
+      .analyze();
+    expect(axe.violations.map(({ id }) => id)).toEqual([]);
+    await context.close();
+  });
+}

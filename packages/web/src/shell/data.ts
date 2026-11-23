@@ -6,12 +6,12 @@ import { readSetting } from '@peblish/core/settings/read';
 import type { SessionView } from '@peblish/schema/session';
 import type { SiteBanner } from '@peblish/schema/banner';
 import type { SiteBrand, SiteWidth } from '@peblish/schema/site-settings';
-import type { ActorRef } from '@peblish/schema/views';
+import type { ShellCommunity } from '@peblish/schema/views';
 import { avatarInitial } from '@peblish/ui/components/avatar-initial.ts';
 import { communityLabel } from './community-label.ts';
 
 /** A community in the sidebar, with the initial its row draws (worked out here, on the server: avatar-initial.ts). */
-export type SidebarCommunity = ActorRef & { initial: string };
+export type SidebarCommunity = ShellCommunity & { initial: string };
 
 /**
  * What the sidebar shows beyond its fixed links, and the viewer's avatar initial. The root loader fetches it once per
@@ -67,7 +67,10 @@ export async function loadShellData(session: SessionView | null): Promise<ShellD
   ]);
   const staff = session !== null && (communities.moderating > 0 || session.siteRole === 'admin');
   const reportCount = staff ? await openReportCount({ actorId: session.actorId, siteRole: session.siteRole }) : null;
-  const withInitial = (community: ActorRef): SidebarCommunity => ({ ...community, initial: avatarInitial(communityLabel(community), '') });
+  const withInitial = (community: ShellCommunity): SidebarCommunity => ({
+    ...community,
+    initial: avatarInitial(communityLabel(community), ''),
+  });
   return {
     siteName: name || host(),
     brand,

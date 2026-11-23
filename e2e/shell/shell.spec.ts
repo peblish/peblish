@@ -203,7 +203,7 @@ test("folded into the rail, the site's pages are one menu at the rail's foot, na
   await expect(page.getByRole('tooltip')).toHaveText(site);
   await page.keyboard.press('Enter');
   const items = page.getByRole('menu', { name: site }).getByRole('menuitem');
-  await expect(items).toHaveText(['About', 'Code of conduct', 'Privacy', 'Terms']);
+  await expect(items).toHaveText(['About', 'Code of conduct', 'Privacy', 'Terms', 'Instances']);
   await page.getByRole('menuitem', { name: 'Privacy' }).click();
   await landed(page, '**/privacy');
 });

@@ -40,12 +40,15 @@ function useDescribe() {
  */
 export function CommunityPicker({
   communities,
+  truncated,
   value,
   onChange,
   onBrowse,
   error,
 }: {
   communities: readonly PickerCommunity[];
+  /** The loader cut the list at its cap (`pickerTruncated`). */
+  truncated: boolean;
   value: string | null;
   onChange: (id: string | null) => void;
   onBrowse: () => void;
@@ -54,10 +57,10 @@ export function CommunityPicker({
   const { t } = useTranslate();
   const describe = useDescribe();
   // The sidebar's communities, which the root loader already holds: the ones the viewer joined, with their display
-  // names (the composer's loader has none, so a community not joined shows its handle alone).
+  // names (the ones the composer's loader sends are not drawn here, so a community not joined shows its handle alone).
   const shell = root.useLoaderData({ select: ({ shell }) => shell });
   const names = useMemo(() => new Map([...shell.local, ...shell.remote].map(({ id, displayName }) => [id, displayName])), [shell]);
-  const groups = useMemo(() => pickerGroups(communities, new Set(names.keys())), [communities, names]);
+  const groups = useMemo(() => pickerGroups(communities, new Set(names.keys()), truncated), [communities, names, truncated]);
   const option = (community: PickerCommunity): CommunityOption => ({
     id: community.id,
     displayName: names.get(community.id) || null,

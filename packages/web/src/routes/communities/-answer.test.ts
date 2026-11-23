@@ -22,3 +22,10 @@ test('a hydrated form gets JSON', async () => {
   const refused = answer(json(), [], { ok: false, reason: 'community.removed' }, '/communities');
   expect([refused.status, await refused.json()]).toEqual([400, { error: 'community.removed' }]);
 });
+
+test("a pin move's JSON carries the committed order; a join's says only ok, whatever its core result holds", async () => {
+  const moved = answer(json(), [], { ok: true, position: 1, order: ['b', 'a'] }, '/communities');
+  expect(await moved.json()).toEqual({ ok: true, position: 1, order: ['b', 'a'] });
+  const joined = { ok: true as const, state: 'pending' };
+  expect(await answer(json(), [], joined, '/communities').json()).toEqual({ ok: true });
+});

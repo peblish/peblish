@@ -22,7 +22,7 @@ import { answer } from '../../report/-form.ts';
 import { asReportError, errorKey } from '../../report/-ui/errors.ts';
 import { loadQueue } from './-load.ts';
 import { queueHref, type QueueView } from './-href.ts';
-import { QueueTable } from './-ui/queue.tsx';
+import { QueueGroups } from './-ui/groups.tsx';
 import queueCss from './-ui/queue.css?url';
 import { headTitle } from '../../../shell/title.ts';
 import { AdminPage, ownHeaderWide } from '../-page.tsx';
@@ -185,7 +185,7 @@ function Queue() {
         {data.groups.length === 0 ? (
           <EmptyState title={t('reports', data.tab === 'open' ? 'queue.empty.open' : 'queue.empty.other')} />
         ) : (
-          <QueueTable groups={data.groups} tab={data.tab} admin={data.admin} view={view} now={data.now} />
+          <QueueGroups groups={data.groups} tab={data.tab} admin={data.admin} view={view} now={data.now} />
         )}
         {data.next && (
           <Pager

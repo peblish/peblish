@@ -30,7 +30,10 @@ export default defineConfig({
   timeout: 30_000,
   expect: { timeout: 5_000 },
   forbidOnly: Boolean(process.env.CI),
-  retries: 0,
+  // CI retries a failed test once, in a fresh worker (a serial group reruns whole), so one intermittent
+  // test does not fail the run; e2e/run.ts lists every test that passed only on the retry. Locally a
+  // failure shows the first time. retain-on-failure keeps the failed attempt's trace either way.
+  retries: process.env.CI ? 1 : 0,
   reporter: [
     ['list'],
     ...(process.env.CI ? [['html', { outputFolder: `./artifacts/report/${phase}`, open: 'never' }] as const] : []),

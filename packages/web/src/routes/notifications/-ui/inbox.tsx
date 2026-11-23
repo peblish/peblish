@@ -15,17 +15,21 @@ import { Quote } from '@peblish/ui/components/quote';
 import { Text } from '@peblish/ui/components/text';
 import { Time } from '@peblish/ui/components/time';
 import { useHydrated } from '@peblish/ui/composer/use-hydrated.ts';
-import { useRouter } from '@tanstack/react-router';
+import { getRouteApi, rootRouteId, useLocation, useRouter } from '@tanstack/react-router';
 import { type } from 'arktype';
-import { useLayoutEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { translatePlural } from '../../../i18n/translate.ts';
 import { useTranslate } from '../../../i18n/use-translate.ts';
 import { useRouteHydrated } from '../../../shell/hydration.ts';
-import { commentPath, communityPath, inboxPath, modlogEntryPath, postPath } from '../../../shell/paths.ts';
+import { commentPath, communityPath, inboxPath, modlogEntryPath } from '../../../shell/paths.ts';
 import { useHeadingInView, ViewHeader } from '../../../shell/view-header.tsx';
-import { asCommentError, errorKey, type CommentError } from '../../post/$id/comments/-ui/errors.ts';
+import { asCommentError, errorKey } from '../../post/$id/comments/-ui/errors.ts';
+import { noticeTarget } from './target.ts';
 import type { InboxData, InboxNotice } from '../-load.ts';
 import { inboxAction, inboxHref, type InboxSearch } from '../-search.ts';
+import { ReplyDrafts, useReplyDraft } from './drafts.tsx';
+import { NoticeGroups } from './groups.tsx';
+import { MarkedStatus, undoButtonId } from './marked.tsx';
 
 // The inbox (notifications-list), in Commons' layout: its own view header holding Mark all read, the
 // title with the unread count, the filter tabs with their unread badges, and one InboxRow per notice. Everything is a
@@ -84,9 +88,12 @@ function InboxHeader({ trailing }: { trailing?: ReactNode }) {
   );
 }
 
+const root = getRouteApi('__root__');
+
 export function Inbox({ data, search }: { data: InboxData; search: InboxSearch }) {
   const { t } = useTranslate();
   useRouteHydrated();
+  const viewer = root.useLoaderData({ select: ({ session }) => session?.actorId ?? '' });
   if (!data.signedIn)
     return (
       <main className="pb-inbox">
@@ -104,14 +111,24 @@ export function Inbox({ data, search }: { data: InboxData; search: InboxSearch }
         </div>
       </main>
     );
-  return <SignedInbox data={data} search={search} />;
+  // The replies in place, and their locks, last as long as the inbox does: across its filters, pages and empty state. Another
+  // account starts with none.
+  return (
+    <ReplyDrafts key={viewer}>
+      <SignedInbox data={data} search={search} />
+    </ReplyDrafts>
+  );
 }
 
-/** Inbox posts answer `{ ok }` or `{ error }` (-form.ts); the comment form adds the new comment's id. */
-const Answer = type({ ok: 'true', 'id?': 'string' }).or({ error: 'string' });
+/** Inbox posts answer `{ ok }` or `{ error }` (-form.ts), Mark all read with its count and Undo stamp; the comment form adds the new comment's id. */
+const Answer = type({ ok: 'true', 'id?': 'string', 'count?': 'number', 'batch?': 'string | null' }).or({ error: 'string' });
 
 /** A POST by fetch to one of the page's form addresses, read as JSON; a network failure or an unreadable answer is `network`. */
-async function post(action: string, body = '', keepalive = false): Promise<{ ok: true; id?: string } | { error: string }> {
+async function post(
+  action: string,
+  body = '',
+  keepalive = false,
+): Promise<{ ok: true; id?: string; count?: number; batch?: string | null } | { error: string }> {
   try {
     const response = await fetch(action, {
       method: 'POST',
@@ -135,17 +152,20 @@ const emptyId = 'pb-inbox-empty';
  * has gone and focus went with it, the nearest notice after it that is still listed takes focus on its Mark read or
  * unread button, else the nearest one before it, else the list's first row, else the empty state. The notices are
  * followed by their rows' elements, which React keeps for as long as their notice (each row's key) is listed, so a
- * notice that came in meanwhile does not take the place. Focus that moved on in the meantime stays there.
+ * notice that came in meanwhile does not take the place. Focus that moved on in the meantime stays there. The inbox
+ * draws a list per date group (groups.tsx), so the rows are taken across all of them, in order: a group whose last
+ * notice leaves goes with it, and focus goes on to the next group.
  */
 function keepFocus(row: Element | null | undefined): (() => void) | null {
-  const list = row?.parentElement;
-  if (!row || !list || !row.contains(document.activeElement)) return null;
-  const rows = [...list.children];
+  const scope = row?.closest('.pb-notice-groups') ?? row?.parentElement;
+  if (!row || !scope || !row.contains(document.activeElement)) return null;
+  const listed = () => [...scope.querySelectorAll('.pb-notices > .pb-notice')];
+  const rows = listed();
   const at = rows.indexOf(row);
   const nearest = [...rows.slice(at + 1), ...rows.slice(0, at).reverse()];
   return () => {
     if (row.isConnected || (document.activeElement !== null && document.activeElement !== document.body)) return;
-    const successor = list.isConnected ? (nearest.find((other) => other.parentElement === list) ?? list.firstElementChild) : null;
+    const successor = scope.isConnected ? (nearest.find((other) => scope.contains(other)) ?? listed()[0]) : null;
     (successor ? successor.querySelector<HTMLElement>('form[data-toggle] button') : document.getElementById(emptyId))?.focus();
   };
 }
@@ -181,13 +201,65 @@ function SignedInbox({ data, search }: { data: Signed; search: InboxSearch }) {
     await router.invalidate();
   }
 
+  // Mark all read and its Undo go to the address the plain form's 303 would (marked.tsx reads it), then reload the data.
+  // Focus goes to Undo once it shows, and back to Mark all read once it is gone: each control disappears or disables under it.
+  // A refused or lost one leaves the address as it is, so an Undo keeps its stamp for a retry, after a reload too. An answer
+  // that comes once the reader has gone to another view only reloads the data: it neither takes them back nor moves focus.
+  const [bulk, setBulk] = useState<'all' | 'undo' | null>(null);
+  const entry = useLocation({ select: (location) => location.state.__TSR_key ?? '' });
+  // The history entry where an Undo found nothing left to restore (another tab undid it first): said there. A plain form's answer says it
+  // through the address instead (restored=0).
+  const [noneAt, setNoneAt] = useState<string | null>(null);
+  async function bulkSubmit(event: FormEvent<HTMLFormElement>, which: 'all' | 'undo') {
+    event.preventDefault();
+    if (bulk) return;
+    setBulk(which);
+    const from = router.state.location.href;
+    const answer = await post(event.currentTarget.action);
+    setFailed('ok' in answer ? null : answer.error === 'network' ? 'generic' : answer.error);
+    const stayed = 'ok' in answer && router.state.location.href === from;
+    const count = 'ok' in answer ? (answer.count ?? 0) : 0;
+    const batch = 'ok' in answer ? answer.batch : null;
+    const next =
+      which === 'all'
+        ? batch && count
+          ? { ...page, marked: count, batch: Number(batch) }
+          : page
+        : count
+          ? { ...page, restored: count }
+          : page;
+    if (stayed) await router.navigate({ href: inboxHref(next), replace: true });
+    await router.invalidate();
+    setBulk(null);
+    if (!stayed || (which === 'all' && next === page)) return;
+    const landed = router.state.location.state.__TSR_key ?? '';
+    if (which === 'undo' && !count) setNoneAt(landed);
+    setFocusNext({ control: which === 'all' ? 'undo' : 'all', entry: landed, data });
+  }
+  // Once the reloaded page shows it (Undo there, or Mark all read enabled again), the control takes focus, in the view the answer
+  // landed on. It is waited for until the reload is drawn (`data` is the page's before the press), not after: once the reader is
+  // on another view, or nothing is unread so Mark all read stays disabled, a later change on the page does not take focus.
+  const [focusNext, setFocusNext] = useState<{ control: 'undo' | 'all'; entry: string; data: Signed } | null>(null);
+  useEffect(() => {
+    if (!focusNext) return;
+    const target = document.querySelector<HTMLButtonElement>(focusNext.control === 'undo' ? `#${undoButtonId}` : '.pb-inbox__all button');
+    const ready = focusNext.entry === entry && target !== null && !target.disabled;
+    if (ready) target.focus();
+    if (ready || focusNext.data !== data) setFocusNext(null);
+  }, [focusNext, entry, data, search.marked, search.restored]);
+
   return (
     <main className="pb-inbox">
       <InboxHeader
         trailing={
-          <form method="post" action={inboxAction({ intent: 'read_all' }, page)} onSubmit={submit} className="pb-inbox__all">
+          <form
+            method="post"
+            action={inboxAction({ intent: 'read_all' }, page)}
+            onSubmit={(event) => void bulkSubmit(event, 'all')}
+            className="pb-inbox__all"
+          >
             {/* On a phone its name gives way to its icon (inbox.css); the name stays for assistive technology. */}
-            <Button type="submit" variant="ghost" size="sm" disabled={data.unread === 0}>
+            <Button type="submit" variant="ghost" size="sm" disabled={data.unread === 0} pending={bulk === 'all'}>
               <CheckCheckIcon aria-hidden="true" />
               <Text className="pb-inbox__all-label">{t('notifications', 'markAllRead')}</Text>
             </Button>
@@ -196,6 +268,13 @@ function SignedInbox({ data, search }: { data: Signed; search: InboxSearch }) {
       />
       <div className="pb-page pb-inbox__body">
         <Title unread={data.unread} />
+        <MarkedStatus
+          search={search}
+          page={page}
+          pending={bulk === 'undo'}
+          none={noneAt === entry}
+          onUndo={(event) => void bulkSubmit(event, 'undo')}
+        />
         {shownError !== undefined && (
           <Notice tone="danger" role="alert">
             {t('notifications', errorKey ? `error.${errorKey}` : 'error.generic')}
@@ -228,11 +307,21 @@ function SignedInbox({ data, search }: { data: Signed; search: InboxSearch }) {
           // Focusable by script only: it takes focus when the last notice it was on leaves the list (keepFocus).
           <EmptyState id={emptyId} tabIndex={-1} title={t('notifications', 'empty')} />
         ) : (
-          <ul className="pb-rows pb-notices" aria-label={t('notifications', 'list')}>
-            {data.items.map((item) => (
-              <NoticeRow key={item.id} item={item} now={data.now} submit={submit} page={page} afterReload={afterReload} />
-            ))}
-          </ul>
+          <NoticeGroups
+            items={data.items}
+            now={data.now}
+            row={(item) => (
+              <NoticeRow
+                key={item.id}
+                item={item}
+                now={data.now}
+                submit={submit}
+                page={page}
+                afterReload={afterReload}
+                contact={data.contact}
+              />
+            )}
+          />
         )}
         <Pager
           aria-label={t('notifications', 'pages')}
@@ -243,10 +332,21 @@ function SignedInbox({ data, search }: { data: Signed; search: InboxSearch }) {
   );
 }
 
-const moderatorKinds: readonly string[] = [...filterKinds.content, ...filterKinds.account];
+// A community's acceptance of a follow is in the Account filter but is no moderator's word.
+const moderatorKinds: readonly string[] = [...filterKinds.content, ...filterKinds.account].filter((kind) => kind !== 'follow_accept');
 
 const markOf = (kind: InboxItem['kind']): InboxMark =>
-  kind === 'reply' || kind === 'mention' || kind === 'ban' || kind === 'unban' ? kind : 'moderator';
+  kind === 'reply' || kind === 'mention' || kind === 'ban' || kind === 'unban'
+    ? kind
+    : kind === 'thread_reply'
+      ? 'reply'
+      : kind === 'follow_accept'
+        ? 'follow'
+        : 'moderator';
+
+/** A mail to the review address about one decision. */
+const reviewHref = (contact: string, subject: string) =>
+  `mailto:${encodeURIComponent(contact).replace('%40', '@')}?subject=${encodeURIComponent(subject)}`;
 
 /** Sends a reply to the notice's comment (or post) through the comment form; `id` is the new comment's. */
 const sendReply = (item: InboxItem, body: string) =>
@@ -259,6 +359,7 @@ export function NoticeRow({
   submit,
   page,
   afterReload,
+  contact = '',
 }: {
   item: InboxNotice;
   now: string;
@@ -266,20 +367,29 @@ export function NoticeRow({
   page: InboxSearch;
   /** Runs `keep` once the inbox's reloaded notices are drawn; without it (the gallery, whose rows stay) focus is left as it is. */
   afterReload?: (keep: () => void) => void;
+  /** The published review address (contact.email): a removal's "Ask for a review" mails it; empty, there is no such link. */
+  contact?: string;
 }) {
   const { t, locale } = useTranslate();
   const router = useRouter();
   const hydrated = useHydrated();
   const moderator = moderatorKinds.includes(item.kind);
-  const target = item.postId ? (item.commentId ? commentPath(item.postId, item.commentId) : postPath(item.postId)) : null;
+  const follow = item.kind === 'follow_accept';
+  const target = noticeTarget(item);
   const where = item.about ?? 'post';
   const community = item.community ? <Handle prefix="!" handle={item.community.handle} /> : null;
 
   const account = item.kind === 'ban' || item.kind === 'unban';
   // The ban sentences print the community's handle as plain text: drop any directional controls a remote one carries.
   const handle = item.community ? `!${neutraliseBidi(item.community.handle)}` : '';
+  // Who, when the notice may say: a reply or mention that withholds its author says "Someone", as does a followed thread's notice
+  // with nobody named; a moderator's notice whose row is gone, "A moderator". A follow's answer is its community's.
+  const nobody = t(
+    'notifications',
+    item.actorWithheld ? 'actor.withheld' : item.kind === 'thread_reply' ? 'actor.someone' : 'actor.unknown',
+  );
   // The buttons' names below are plain text too: the handle and the title lose their directional controls, as Handle shows them.
-  const actor = item.actor ? `@${neutraliseBidi(item.actor.handle)}` : t('notifications', 'actor.unknown');
+  const actor = item.actor ? `@${neutraliseBidi(item.actor.handle)}` : follow && handle ? handle : nobody;
   const subject = item.postTitle ? neutraliseBidi(item.postTitle) : handle || t('notifications', `type.${item.kind}`);
   const sentence = (() => {
     switch (item.kind) {
@@ -295,6 +405,10 @@ export function NoticeRow({
         return item.community ? t('notifications', 'verb.ban.community', { community: handle }) : t('notifications', 'verb.ban.site');
       case 'unban':
         return item.community ? t('notifications', 'verb.unban.community', { community: handle }) : t('notifications', 'verb.unban.site');
+      case 'thread_reply':
+        return t('notifications', 'verb.thread_reply');
+      case 'follow_accept':
+        return t('notifications', 'verb.follow_accept');
     }
   })();
 
@@ -302,20 +416,42 @@ export function NoticeRow({
   const readAction = inboxAction({ intent: 'read', id: item.id }, page);
   // Opening an unread notice's post marks it read, as a press on its own button does; the page goes on regardless.
   const markOnOpen = () => {
-    if (!item.read && hydrated) void post(readAction, '', true);
+    // The page the press was on: the link may have started its navigation before this runs.
+    const from = (router.state.resolvedLocation ?? router.state.location).href;
+    if (!item.read && hydrated) void post(readAction, '', true).then((answer) => 'ok' in answer && countAgain(from));
+  };
+  // A followed thread's comment or an accepted follow, once its read has committed, has the shell's unread count (the root's data,
+  // kept across navigations) asked for again, after the page it opened has loaded, so the navigation does not wait for it. That
+  // page's own data reloads with it, as after any action there; a thread's New marks stay put for the whole visit (core visits).
+  // Opened in a new tab (a modified click), it went on there, not here: this page stays as it is.
+  const countAgain = (from: string) => {
+    if (item.kind !== 'thread_reply' && item.kind !== 'follow_accept') return;
+    const ask = () => {
+      if (router.state.location.href !== from) void router.invalidate({ filter: (match) => match.routeId === rootRouteId });
+    };
+    if (router.state.status === 'idle') return ask();
+    const stop = router.subscribe('onResolved', () => {
+      stop();
+      ask();
+    });
   };
 
-  // Where Reply leads: a reply's or mention's comment (or post), unless it was removed or deleted since. Only one whose words are
-  // shown is answered in place; a sensitive one is withheld here for every viewer, so Reply leads to its thread, which applies the gate.
+  // Where Reply leads: a reply's or mention's comment (or post), unless it was removed or deleted since, or the notice withholds
+  // it (no post id: its link goes to the community, where there is nothing to answer), and a followed thread's new comment only
+  // while the reader sees it (one withheld links no comment to answer). Only one whose words are shown is answered in place; a
+  // sensitive one is withheld here for every viewer, so Reply leads to its thread, which applies the gate.
   const replyTarget =
-    (item.kind === 'reply' || item.kind === 'mention') && item.withheld !== 'removed' && item.withheld !== 'deleted' ? target : null;
+    (item.kind === 'reply' || item.kind === 'mention' || (item.kind === 'thread_reply' && item.withheld === null)) &&
+    item.postId !== null &&
+    item.withheld !== 'removed' &&
+    item.withheld !== 'deleted'
+      ? target
+      : null;
   const replyable = replyTarget !== null && item.withheld === null;
   const formId = `reply-${item.id}`;
-  const [open, setOpen] = useState(false);
-  const [text, setText] = useState('');
-  const [pending, setPending] = useState(false);
-  const [error, setError] = useState<CommentError>();
-  const [posted, setPosted] = useState<string | null>(null);
+  // Kept above the date groups, so a notice drawn anew in the next group keeps its reply (drafts.tsx).
+  const reply = useReplyDraft(item.id, formId);
+  const { open, text, pending, error, posted } = reply.draft;
   // Back to Reply once the field has closed, unless focus left the row before the frame came (a Tab, a press elsewhere).
   const backToReply = () =>
     requestAnimationFrame(() => {
@@ -326,33 +462,27 @@ export function NoticeRow({
     });
 
   // One lock from the press until the comment is saved and the notice marked read: Send stays pending and the field read-only throughout.
-  // The ref takes it at once, for a second submit that comes before React has drawn `pending`.
-  const sending = useRef(false);
+  // It is taken at once, for a second submit that comes before React has drawn `pending`, and kept with the draft.
   async function sendNow() {
-    if (sending.current) return;
-    sending.current = true;
+    if (!reply.lock()) return;
     const body = text;
     let keep: (() => void) | null = null;
-    setPending(true);
-    setError(undefined);
+    reply.change({ error: undefined });
     try {
       const answer = await sendReply(item, body);
       if (!('ok' in answer)) {
         // The text stays in the field, with the refusal under it.
-        setError(asCommentError(answer.error) ?? 'generic');
+        reply.change({ error: asCommentError(answer.error) ?? 'generic' });
         return;
       }
       if (!item.read) await post(readAction);
-      setPosted(answer.id ?? '');
-      // Only what was sent clears.
-      setText((current) => (current === body ? '' : current));
       // Back to Reply only while focus is still in the row: closing the field drops it, and a reader who moved on keeps their place.
       keep = keepFocus(document.getElementById(formId)?.closest('li'));
-      setOpen(false);
+      // Only what was sent clears.
+      reply.change((draft) => ({ posted: answer.id ?? '', text: draft.text === body ? '' : draft.text, open: false }));
       if (keep) backToReply();
     } finally {
-      sending.current = false;
-      setPending(false);
+      reply.unlock();
     }
     if (keep) afterReload?.(keep);
     await router.invalidate();
@@ -369,10 +499,9 @@ export function NoticeRow({
         aria-expanded={open}
         aria-controls={formId}
         onActivate={() => {
-          setPosted(null);
           // Open and empty, Reply closes the field again; holding text, it stays open and takes focus.
-          if (open && text.trim() === '') return setOpen(false);
-          setOpen(true);
+          if (open && text.trim() === '') return reply.change({ posted: null, open: false });
+          reply.change({ posted: null, open: true });
           requestAnimationFrame(() => document.querySelector<HTMLElement>(`#${formId} textarea`)?.focus());
         }}
       >
@@ -401,7 +530,13 @@ export function NoticeRow({
             </Text>
           )}
           <Text variant="label" className="pb-notice__actor">
-            {item.actor ? <Handle prefix="@" handle={item.actor.handle} /> : t('notifications', 'actor.unknown')}
+            {item.actor ? (
+              <Handle prefix="@" handle={item.actor.handle} />
+            ) : follow && item.community ? (
+              <Handle prefix="!" handle={item.community.handle} />
+            ) : (
+              nobody
+            )}
           </Text>
           {moderator && (
             <>
@@ -419,10 +554,10 @@ export function NoticeRow({
           <>
             {target && (
               <Link href={target} onActivate={markOnOpen}>
-                {item.postTitle !== null ? <BidiText text={item.postTitle} /> : t('notifications', 'open')}
+                {item.postTitle !== null ? <BidiText text={item.postTitle} /> : t('notifications', follow ? 'openCommunity' : 'open')}
               </Link>
             )}
-            {community && (
+            {community && !follow && (
               <>
                 {' '}
                 {t('notifications', 'in')} {community}
@@ -458,10 +593,10 @@ export function NoticeRow({
                 cancel: t('notifications', 'reply.cancel'),
               }}
               value={text}
-              onChange={setText}
+              onChange={(value) => reply.change({ text: value })}
               onSubmit={() => void sendNow()}
               onCancel={() => {
-                setOpen(false);
+                reply.change({ open: false });
                 backToReply();
               }}
               action={`/post/${item.postId}/comments?${new URLSearchParams({ intent: 'reply', parent: item.commentId ?? '' })}`}
@@ -504,6 +639,12 @@ export function NoticeRow({
         <Text as="p" size="sm" className="pb-notice__links">
           {/* The modlog shows the entry to the person it is about, public or not. */}
           {item.statement && <Link href={modlogEntryPath(item.statement.modlogId)}>{t('notifications', 'statement')}</Link>}
+          {/* "Message moderators", first scope: the published review address, with the decision named, as the statement of reasons says. */}
+          {item.kind === 'mod_remove' && item.statement && contact && (
+            <Link href={reviewHref(contact, t('notifications', 'review.subject', { decision: item.statement.modlogId }))}>
+              {t('notifications', 'review')}
+            </Link>
+          )}
           {moderator && item.community && (
             <Link href={communityPath(item.community)}>{t('notifications', 'rules', { community: handle })}</Link>
           )}
