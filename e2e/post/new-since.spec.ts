@@ -468,6 +468,9 @@ test('a later page brought forward is reloaded as that page, and a reply begun o
   // The page's top-level comments: what must stay on screen, page two's and no others.
   const topLevel = () => tab.locator('#comments .pb-comment[data-level="0"]').evaluateAll((rows) => rows.map((found) => found.id));
   const pageTwo = await topLevel();
+  const pageTwoRows = await tab
+    .locator('#comments .pb-comment')
+    .evaluateAll((rows) => rows.map((found) => found.id.replace(/^comment-/, '')));
   const hold = await holdFirstReload(tab, seed.posts.seen);
   await row(tab, parent).locator('> .pb-comment__main .pb-comment__reply').click();
   const dock = tab.getByRole('form', { name: 'Reply' });
@@ -491,15 +494,37 @@ test('a later page brought forward is reloaded as that page, and a reply begun o
   hold.release();
   await visits.first;
   await settled(tab);
-  // The visit went with page two on screen, and page two is still what the reader sees.
+  // The visit went with page two on screen (its rows and the reply, nothing of page one), and page two is still what the reader sees.
   expect(visits.seen).toHaveLength(1);
-  expect(visits.seen[0]!.rows).toContain(parent);
-  expect(visits.seen[0]!.rows).not.toContain(seed.comments.old);
+  expect(visits.seen[0]!.rows).toEqual(expect.arrayContaining(pageTwoRows));
+  expect(visits.seen[0]!.rows.filter((id) => !pageTwoRows.includes(id))).toHaveLength(1);
   await expect(row(tab, parent)).toBeVisible();
   expect(await topLevel()).toEqual(pageTwo);
 });
 
+test('a later page brought forward is reloaded as that page and sort, and its visit goes with that page drawn', async ({ page }) => {
+  test.setTimeout(90_000);
+  seed = JSON.parse(run('e2e')) as Seed;
+  await sayAll(seed.posts.seen, seed.reader.name, 21);
+  await signedIn(page);
+  await gotoHydrated(page, `/post/${seed.posts.seen}?sort=old`);
+  const later = await page.locator('#comments a[href*="after="]').first().getAttribute('href');
+  const tab = await backgroundTab(page);
+  const visits = await watchVisits(tab, seed.posts.seen);
+  await gotoHydrated(tab, later!);
+  const pageTwo = await tab.locator('#comments .pb-comment').evaluateAll((rows) => rows.map((found) => found.id.replace(/^comment-/, '')));
+  // Oldest first, a comment that arrives now is on this page, the last.
+  const late = say(seed.posts.seen, await authorOf(tab, pageTwo[0]!));
+  await show(tab);
+  await visits.first;
+  expect(visits.seen[0]!.rows).toEqual([...pageTwo, late]);
+  expect(decodeURIComponent(tab.url())).toContain('after=');
+  await expect(tab.locator('#comments .pb-comment')).toHaveCount(pageTwo.length + 1);
+});
+
 test('a reply keeps the comment it was begun on when that comment leaves the list (another sort)', async ({ page }) => {
+  // Its seeding is 21 comments, three processes at a time.
+  test.setTimeout(90_000);
   seed = JSON.parse(run('e2e')) as Seed;
   await sayAll(seed.posts.seen, seed.reader.name, 21);
   await signedIn(page);
