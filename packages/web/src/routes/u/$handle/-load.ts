@@ -7,6 +7,8 @@ import { profileSorts, profileTabs } from '@peblish/core/profiles/input';
 import { publicActorRef, readActivity, readProfile, type Profile } from '@peblish/core/profiles/read';
 import type { Uuid } from '@peblish/schema/ids';
 import type { ActorRef, CommentView } from '@peblish/schema/views';
+import { avatarInitial } from '@peblish/ui/components/avatar-initial.ts';
+import { neutraliseBidi } from '@peblish/ui/components/handle';
 import { compactAge } from '@peblish/ui/components/time';
 import { redirect } from '@tanstack/react-router';
 import { createServerFn } from '@tanstack/react-start';
@@ -25,6 +27,8 @@ export type ProfileEntry =
 
 export type ProfileData = {
   person: ActorRef;
+  /** What the avatar shows without a picture: the name's first character, made here (avatar-initial.ts). */
+  initial: string;
   /** The avatar the page may load (own-origin path or the signed proxy), else null. */
   avatarSrc: string | null;
   /** The bio, rendered and sanitised; null when there is none. */
@@ -115,11 +119,13 @@ async function buildProfile(
       : profile.bio
         ? renderer.sanitize(profile.bio.html, { baseUrl: profile.bio.baseUrl, content: person }).html
         : null;
+  const ref = publicActorRef(profile.actor);
   return {
     profile,
     data: {
       // Only the allowlisted fields are dehydrated into the page.
-      person: publicActorRef(profile.actor),
+      person: ref,
+      initial: avatarInitial(neutraliseBidi(ref.displayName || ref.name, ''), ''),
       avatarSrc: renderer.image(profile.iconUrl, person),
       bioHtml: bioHtml || null,
       joinedAt: profile.joinedAt,

@@ -22,3 +22,8 @@ export const defaultSort: Sort = 'hot';
 export const defaultPeriod: Period = 'day';
 export const defaultPageSize = 20;
 export const maxPageSize = 50;
+/**
+ * The most rows one read of a feed gives: a feed's address asks for its rows again up to this many
+ * (`n`), so a reader deeper than this comes back to row 200 and loads on from there.
+ */
+export const maxDepth = 200;

@@ -27,6 +27,7 @@ function Styled({ href, className, children }: { href: string; className: string
 
 const person: ProfileData = {
   person: people.mira,
+  initial: 'M',
   avatarSrc: null,
   bioHtml: '<p>I walk the <strong>Blue Mountains</strong> and write about the tracks.</p>',
   joinedAt: '2024-03-02T09:00:00Z',

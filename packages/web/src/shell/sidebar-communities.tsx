@@ -1,33 +1,26 @@
-import type { ShellCommunity } from '@peblish/schema/views';
 import { useHydrated } from '@peblish/ui/composer/use-hydrated.ts';
 import { Avatar } from '@peblish/ui/components/avatar';
-import { avatarInitial } from '@peblish/ui/components/avatar-initial.ts';
-import { neutraliseBidi } from '@peblish/ui/components/handle';
 import { EllipsisIcon } from '@peblish/ui/components/icons';
 import { Menu } from '@peblish/ui/components/menu';
 import { Sidebar } from '@peblish/ui/components/sidebar';
 import { Text } from '@peblish/ui/components/text';
 import { useId, useRef, useState, type ComponentType } from 'react';
 import { useTranslate } from '../i18n/use-translate.ts';
+import { communityLabel } from './community-label.ts';
+import type { SidebarCommunity } from './data.ts';
 import { communityPath } from './paths.ts';
 import { pinErrorKey, usePinAction, type PinFields, type PinPlace } from './pin-post.ts';
 
 /** The Communities section's most rows while unpinned ones show; pinned ones always show in full (Commons). */
 export const communityRows = 50;
 
-/**
- * A community's name in the sidebar: its display name, else its name, without its directional controls; the
- * row isolates it (<bdi>), as display names from other servers are shown everywhere (BidiText).
- */
-const communityLabel = (community: ShellCommunity) => neutraliseBidi(community.displayName?.trim() || community.name, '');
-
-// A community's row draws a small Mux Avatar with its initial (the label's first character, whole:
-// avatarInitial) as Sidebar.NavItem's icon (the shell's data has no community pictures yet), so folded into
-// the rail the row keeps a mark and its tooltip. A pending follow rings it in dashes, since Mux hides a row's
-// badge in the rail. One component per initial and state, so a row keeps its icon across renders.
+// A community's row draws a small Mux Avatar with its initial (the label's first character, whole, as the
+// shell's data has it from the server: data.ts) as Sidebar.NavItem's icon (the shell's data has no community
+// pictures yet), so folded into the rail the row keeps a mark and its tooltip. A pending follow rings it in
+// dashes, since Mux hides a row's badge in the rail. One component per initial and state, so a row keeps its
+// icon across renders.
 const initialIcons = new Map<string, ComponentType<{ className?: string }>>();
-export function initialIcon(label: string, pending = false): ComponentType<{ className?: string }> {
-  const initial = avatarInitial(label, '');
+export function initialIcon(initial: string, pending = false): ComponentType<{ className?: string }> {
   const key = `${pending ? 'p' : ''}${initial}`;
   let Icon = initialIcons.get(key);
   if (!Icon) {
@@ -62,8 +55,8 @@ export function SidebarCommunities({
   pathname,
   signedIn,
 }: {
-  local: readonly ShellCommunity[];
-  remote: readonly ShellCommunity[];
+  local: readonly SidebarCommunity[];
+  remote: readonly SidebarCommunity[];
   pathname: string;
   signedIn: boolean;
 }) {
@@ -97,7 +90,7 @@ export function SidebarCommunities({
   // After the router has the new order: focus the row's menu, or its link once it is no longer pinned (the
   // row is drawn again without its menu, so wait for that, a few frames at most). A row unpinned past the
   // rows shown has no link: focus goes to the row drawn in its place, else the last row.
-  const settle = (community: ShellCommunity, message: string, unpinnedAt?: number) => () => {
+  const settle = (community: SidebarCommunity, message: string, unpinnedAt?: number) => () => {
     setStatus(message);
     const section = anchor.current?.parentElement;
     const focus = (frames: number) => {
@@ -114,7 +107,7 @@ export function SidebarCommunities({
     focus(30);
   };
   // A move says the place it committed, which a stale page may not have drawn.
-  const moved = (community: ShellCommunity, label: string) => (place: PinPlace | null) =>
+  const moved = (community: SidebarCommunity, label: string) => (place: PinPlace | null) =>
     settle(community, place ? t('pins', 'pins.place', { name: label, place: place.position + 1, total: place.order.length }) : '')();
 
   const row = ({ community, label }: (typeof rows)[number], place?: number) => {
@@ -168,7 +161,7 @@ export function SidebarCommunities({
       <Sidebar.NavItem
         key={community.id}
         href={href}
-        icon={initialIcon(label, pending)}
+        icon={initialIcon(community.initial, pending)}
         current={pathname === href}
         badge={pending ? t('pins', 'pins.pending') : undefined}
         action={menu}

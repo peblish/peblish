@@ -15,6 +15,7 @@ import { useTranslate } from '../../../i18n/use-translate.ts';
 import { useRouteHydrated } from '../../../shell/hydration.ts';
 import { communityPath, postPath, userPath } from '../../../shell/paths.ts';
 import { GateNotice, HideNsfwForm } from '../../c/-ui/gate.tsx';
+import { acknowledgeVote } from '../../index/-feed/votes.ts';
 import { castVoteFn } from '../-vote.ts';
 import type { PostPageData } from '../-load.ts';
 import type { ContentActionProps } from '../../-actions/props.ts';
@@ -224,6 +225,8 @@ function PostContent({ data, error }: { data: Extract<PostPageData, { kind: 'pos
             onVote={async (value) => {
               const result = await castVoteFn({ data: { target: { kind: 'post', id: post.id }, value } });
               if (!result.ok) throw new Error(result.reason);
+              // The feeds lay it over a read that was already on its way (index/-feed/votes.ts).
+              acknowledgeVote(post.id, result.value, result.tally);
             }}
             voteDisabled={viewerId === null || withheld !== null}
             share={!withheld}

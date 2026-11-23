@@ -1,4 +1,3 @@
-import type { InboxItem } from '@peblish/core/notifications/view';
 import { Button } from '@peblish/ui/components/button';
 import { InboxReply, InboxRow } from '@peblish/ui/components/inbox-row';
 import { Link } from '@peblish/ui/components/link';
@@ -6,6 +5,7 @@ import { Quote } from '@peblish/ui/components/quote';
 import { Text } from '@peblish/ui/components/text';
 import { useState, type FormEvent } from 'react';
 import { useTranslate } from '../../i18n/use-translate.ts';
+import type { InboxNotice } from '../notifications/-load.ts';
 import { NoticeGroups } from '../notifications/-ui/groups.tsx';
 import { NoticeRow } from '../notifications/-ui/inbox.tsx';
 import { MarkedStatus } from '../notifications/-ui/marked.tsx';
@@ -23,7 +23,8 @@ const ago = (hours: number) => new Date(now.getTime() - hours * 3_600_000).toISO
 const id = (n: number) => `00000000-0000-7000-8000-${String(n).padStart(12, '0')}`;
 const person = (ref: (typeof people)[keyof typeof people]) => ({ ...ref, displayName: null });
 
-const base: Omit<InboxItem, 'id' | 'kind'> = {
+const base: Omit<InboxNotice, 'id' | 'kind'> = {
+  initial: 'J',
   read: false,
   createdAt: ago(2),
   actor: person(people.jun),
@@ -41,26 +42,43 @@ const base: Omit<InboxItem, 'id' | 'kind'> = {
 
 const statement = { modlogId: id(300), reason: 'Rule 2: no self-promotion', reasonWithheld: false, public: true };
 
-/** One of each kind the inbox knows, some read. */
-export const notices: readonly InboxItem[] = [
+/** One of each kind the inbox knows, some read; each initial as the loader makes it from the actor's handle. */
+export const notices: readonly InboxNotice[] = [
   { ...base, id: id(1), kind: 'reply' },
-  { ...base, id: id(2), kind: 'reply', replyTo: 'comment', actor: person(people.mira), read: true, createdAt: ago(5) },
-  { ...base, id: id(3), kind: 'mention', actor: person(people.kofi), excerpt: 'Ask @andrew, he did the charcoal one last week.' },
+  { ...base, id: id(2), kind: 'reply', replyTo: 'comment', actor: person(people.mira), initial: 'M', read: true, createdAt: ago(5) },
+  {
+    ...base,
+    id: id(3),
+    kind: 'mention',
+    actor: person(people.kofi),
+    initial: 'K',
+    excerpt: 'Ask @andrew, he did the charcoal one last week.',
+  },
   {
     ...base,
     id: id(4),
     kind: 'mod_remove',
     actor: person(people.mira),
+    initial: 'M',
     excerpt: null,
     statement,
     createdAt: ago(26),
   },
-  { ...base, id: id(5), kind: 'mod_restore', actor: person(people.mira), statement: { ...statement, reason: null }, read: true },
+  {
+    ...base,
+    id: id(5),
+    kind: 'mod_restore',
+    actor: person(people.mira),
+    initial: 'M',
+    statement: { ...statement, reason: null },
+    read: true,
+  },
   {
     ...base,
     id: id(6),
     kind: 'ban',
     actor: null,
+    initial: '?',
     postId: null,
     commentId: null,
     postTitle: null,
@@ -75,6 +93,7 @@ export const notices: readonly InboxItem[] = [
     id: id(7),
     kind: 'unban',
     actor: person(people.mira),
+    initial: 'M',
     community: null,
     postId: null,
     commentId: null,
@@ -86,12 +105,13 @@ export const notices: readonly InboxItem[] = [
     read: true,
     createdAt: ago(200),
   },
-  { ...base, id: id(8), kind: 'reply', actor: person(people.kofi), withheld: 'sensitive', excerpt: null, postTitle: null },
+  { ...base, id: id(8), kind: 'reply', actor: person(people.kofi), initial: 'K', withheld: 'sensitive', excerpt: null, postTitle: null },
   {
     ...base,
     id: id(9),
     kind: 'thread_reply',
     actor: person(people.mira),
+    initial: 'M',
     replyTo: null,
     excerpt: 'I tried this with a torch held low. The shadows go long.',
   },
@@ -102,6 +122,7 @@ export const notices: readonly InboxItem[] = [
     id: id(10),
     kind: 'thread_reply',
     actor: null,
+    initial: '?',
     commentId: null,
     replyTo: null,
     withheld: 'sensitive',
@@ -114,6 +135,7 @@ export const notices: readonly InboxItem[] = [
     id: id(11),
     kind: 'follow_accept',
     actor: null,
+    initial: '?',
     postId: null,
     commentId: null,
     postTitle: null,
@@ -129,7 +151,7 @@ const contact = 'review@example.test';
 const stay = (event: FormEvent<HTMLFormElement>) => event.preventDefault();
 
 /** Rows of the inbox's own NoticeRow, a few at a time, so each page's sample fits a phone's screen. */
-function Notices({ items }: { items: readonly InboxItem[] }) {
+function Notices({ items }: { items: readonly InboxNotice[] }) {
   const { t } = useTranslate();
   return (
     <ul className="pb-notices" aria-label={t('notifications', 'list')}>

@@ -49,12 +49,6 @@
     margin: 0;
   }
 
-  /* A kept row the server has not confirmed since the reader came back: its space stays, so the scroll
-     position the router puts back still fits, but nothing of it shows or takes focus (inert). */
-  .feed-list > .feed-row--held {
-    visibility: hidden;
-  }
-
   .feed-menus {
     display: inline-flex;
     align-items: center;

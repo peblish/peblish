@@ -1,6 +1,5 @@
 import type { InboxFilter, InboxItem } from '@peblish/core/notifications/view';
 import { filterKinds, inboxFilters, unreadCap } from '@peblish/core/notifications/view';
-import { avatarInitial } from '@peblish/ui/components/avatar-initial.ts';
 import { Badge } from '@peblish/ui/components/badge';
 import { Button } from '@peblish/ui/components/button';
 import { ButtonLink } from '@peblish/ui/components/button-link';
@@ -26,7 +25,7 @@ import { commentPath, communityPath, inboxPath, modlogEntryPath } from '../../..
 import { useHeadingInView, ViewHeader } from '../../../shell/view-header.tsx';
 import { asCommentError, errorKey } from '../../post/$id/comments/-ui/errors.ts';
 import { noticeTarget } from './target.ts';
-import type { InboxData } from '../-load.ts';
+import type { InboxData, InboxNotice } from '../-load.ts';
 import { inboxAction, inboxHref, type InboxSearch } from '../-search.ts';
 import { ReplyDrafts, useReplyDraft } from './drafts.tsx';
 import { NoticeGroups } from './groups.tsx';
@@ -362,7 +361,7 @@ export function NoticeRow({
   afterReload,
   contact = '',
 }: {
-  item: InboxItem;
+  item: InboxNotice;
   now: string;
   submit: (event: FormEvent<HTMLFormElement>) => void;
   page: InboxSearch;
@@ -522,7 +521,7 @@ export function NoticeRow({
       unread={!item.read}
       kind={item.kind}
       mark={markOf(item.kind)}
-      initial={avatarInitial(neutraliseBidi(item.actor?.handle ?? '', ''), '?')}
+      initial={item.initial}
       headline={
         <>
           {!item.read && (

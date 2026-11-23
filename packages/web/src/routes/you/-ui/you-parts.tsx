@@ -1,5 +1,4 @@
 import { Avatar } from '@peblish/ui/components/avatar';
-import { avatarInitial } from '@peblish/ui/components/avatar-initial.ts';
 import { Handle } from '@peblish/ui/components/handle';
 import type { IconProps } from '@peblish/ui/components/icons';
 import { Link } from '@peblish/ui/components/link';
@@ -12,13 +11,13 @@ import { useTranslate } from '../../../i18n/use-translate.ts';
 /** One row of the You page: a page of the account or the site, with its glyph. */
 export type YouLink = { href: string; label: string; icon: ComponentType<IconProps> };
 
-/** The viewer's avatar (its initial), name and handle at the top of the You page. */
-export function YouIdentity({ name, handle }: { name: string; handle: string }) {
+/** The viewer's avatar (its initial, the server's: ShellData.initial), name and handle at the top of the You page. */
+export function YouIdentity({ name, initial, handle }: { name: string; initial: string; handle: string }) {
   return (
     <div className="you-id">
       {/* Decorative: the heading names the person. */}
       <Avatar.Root size="lg" aria-hidden="true">
-        <Avatar.Fallback>{avatarInitial(name, '')}</Avatar.Fallback>
+        <Avatar.Fallback>{initial}</Avatar.Fallback>
       </Avatar.Root>
       <div className="you-id__text">
         <Text as="h1" variant="title" size="sm" className="you-id__name">

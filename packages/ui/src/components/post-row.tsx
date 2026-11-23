@@ -150,12 +150,12 @@ export function PostRow({
   const media = compact ? null : card ? cardMedia() : picture ? thumbnail(hrefs.post) : null;
   const hidden = sensitive && !revealed && media !== null;
 
-  function thumbnail(href: string) {
+  function thumbnail(href: string, fit: 'cover' | 'contain' = 'cover') {
     // A second way in for pointer users: out of the tab order and hidden from assistive
     // technology, which reach the post (or its link) by the title and the link line.
     return (
       <Link className="pb-post__thumb" href={href} tabIndex={-1} aria-hidden="true">
-        <Image src={picture!} alt="" loading="lazy" decoding="async" fit="cover" className="pb-post__picture" />
+        <Image src={picture!} alt="" loading="lazy" decoding="async" fit={fit} className="pb-post__picture" />
       </Link>
     );
   }
@@ -171,7 +171,11 @@ export function PostRow({
     return (
       <>
         {excerpt}
-        {picture && <div className={wide ? 'pb-post__media' : 'pb-post__aside'}>{thumbnail(kind === 'link' ? post.url! : hrefs.post)}</div>}
+        {picture && (
+          <div className={wide ? 'pb-post__media' : 'pb-post__aside'}>
+            {thumbnail(kind === 'link' ? post.url! : hrefs.post, wide ? 'contain' : 'cover')}
+          </div>
+        )}
         {domain && !wide && <LinkPreview className="pb-post__link" href={post.url} domain={domain} />}
       </>
     );

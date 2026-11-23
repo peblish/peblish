@@ -1,13 +1,16 @@
 import { renderToStaticMarkup } from 'react-dom/server';
-import { expect, test } from 'vitest';
+import { expect, test, vi } from 'vitest';
 import { YouIdentity } from './you-parts.tsx';
 
-// A name that begins with an emoji: its initial must be the whole emoji. Half of it (one UTF-16 unit)
-// is a lone surrogate, which the server sends as U+FFFD while the client keeps it, so hydration fails.
-const loneSurrogate = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
+// The initial is the server's (ShellData.initial): the page draws it as it is and works none out, so no
+// browser's own Unicode data can make it differ from the server's page.
+vi.mock('@peblish/ui/components/avatar-initial.ts', () => ({
+  avatarInitial: () => {
+    throw new Error('the browser works out no initial');
+  },
+}));
 
-test("the You page's avatar shows a leading emoji whole", () => {
-  const html = renderToStaticMarkup(<YouIdentity name={'\u{1F33F} Fern'} handle="fern" />);
-  expect(html).not.toMatch(loneSurrogate);
-  expect(html).toContain('>\u{1F33F}</');
+test("the You page's avatar draws the server's initial as it is", () => {
+  const html = renderToStaticMarkup(<YouIdentity name={'각 Jun'} initial={'각'} handle="jun" />);
+  expect(html).toContain('>각</');
 });

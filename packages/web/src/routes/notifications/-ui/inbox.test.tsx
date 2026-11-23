@@ -1,6 +1,6 @@
-import type { InboxItem } from '@peblish/core/notifications/view';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { expect, test, vi } from 'vitest';
+import type { InboxNotice } from '../-load.ts';
 
 // A notice row's first paint, as a browser without scripts (or before hydration) gets it: no router,
 // so the hooks the row uses are stubbed, and every key prints as itself.
@@ -21,8 +21,9 @@ const community = { id: id(9), name: 'art', displayName: null, local: true, hand
 const jun = { id: id(8), name: 'jun', displayName: null, local: true, handle: 'jun' };
 
 /** A reply in a sensitive community, as the inbox sends it. */
-const reply = (extra: Partial<InboxItem>): InboxItem => ({
+const reply = (extra: Partial<InboxNotice>): InboxNotice => ({
   id: id(1),
+  initial: '?',
   kind: 'reply',
   read: false,
   createdAt: '2026-11-20T10:00:00.000Z',
@@ -41,7 +42,7 @@ const reply = (extra: Partial<InboxItem>): InboxItem => ({
 });
 
 /** The hrefs of the row's Reply links (a button link; the row's other links are plain). */
-const replyLinks = (item: InboxItem) => {
+const replyLinks = (item: InboxNotice) => {
   const html = renderToStaticMarkup(<NoticeRow item={item} now="2026-11-20T12:00:00.000Z" submit={() => {}} page={{}} />);
   return [...html.matchAll(/<a [^>]*class="[^"]*pb-button-link[^"]*"[^>]*href="([^"]*)"/g)].map((match) => match[1]);
 };

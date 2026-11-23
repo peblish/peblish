@@ -1,8 +1,8 @@
-import type { ShellCommunity } from '@peblish/schema/views';
 import { Notice } from '@peblish/ui/components/notice';
 import { Sidebar } from '@peblish/ui/components/sidebar';
 import { useState, type ReactNode } from 'react';
 import { useTranslate } from '../../i18n/use-translate.ts';
+import type { SidebarCommunity } from '../../shell/data.ts';
 import { SidebarCommunities } from '../../shell/sidebar-communities.tsx';
 import { MoveButton, PinButton, PinnedGroup } from '../communities/-ui/pin-controls.tsx';
 import type { Composition } from './-states.tsx';
@@ -40,7 +40,8 @@ function Move({ place, busy }: { place: 'first' | 'middle'; busy?: boolean }) {
   );
 }
 
-const community = (id: string, name: string, title: string, extra: Partial<ShellCommunity> = {}): ShellCommunity => ({
+// Each initial as the shell's data makes it, on the server, from the community's title (data.ts).
+const community = (id: string, name: string, title: string, extra: Partial<SidebarCommunity> = {}): SidebarCommunity => ({
   id: `0190a000-0000-7000-8000-00000000000${id}`,
   apId: `https://kit.example/c/${name}`,
   kind: 'Group',
@@ -51,10 +52,11 @@ const community = (id: string, name: string, title: string, extra: Partial<Shell
   followState: 'accepted',
   pinned: false,
   pinPosition: null,
+  initial: title.charAt(0),
   ...extra,
 });
 
-const followed: ShellCommunity[] = [
+const followed: SidebarCommunity[] = [
   community('1', 'tidepools', 'Tide pools', { pinned: true, pinPosition: 1 }),
   community('2', 'loomwork', 'Loomwork', { pinned: true, pinPosition: 0 }),
   community('3', 'fern_spotting', 'Fern spotting', { followState: 'pending', pinned: true, pinPosition: 2 }),

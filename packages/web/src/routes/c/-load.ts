@@ -4,6 +4,7 @@ import { defaultPageSize, Period, Sort } from '@peblish/core/feeds/input';
 import { readFeed } from '@peblish/core/feeds/read';
 import type { Viewer } from '@peblish/core/posts/read';
 import type { ActorRef } from '@peblish/schema/views';
+import { avatarInitial } from '@peblish/ui/components/avatar-initial.ts';
 import { createServerFn } from '@tanstack/react-start';
 import { getRequestHeader } from '@tanstack/react-start/server';
 import { type } from 'arktype';
@@ -71,6 +72,8 @@ export const loadCommunityPage = createServerFn({ method: 'GET' })
       handle: data.handle,
       actor: actor satisfies ActorRef,
       title: actor.displayName ?? actor.name,
+      /** The avatar's initial without an icon, and each moderator's below: made here, never in the browser (avatar-initial.ts). */
+      initial: avatarInitial(actor.displayName ?? actor.name, '?'),
       /** The full handle, name@home, without the `!`. */
       address: `${actor.name}@${page.home}`,
       nsfw: page.sensitive,
@@ -105,6 +108,7 @@ export const loadCommunityPage = createServerFn({ method: 'GET' })
       })),
       moderators: page.moderators.map(({ actor: person, role, state, verifiedAt, since }) => ({
         handle: person.handle,
+        initial: avatarInitial(person.handle, '?'),
         role: text(role === 'owner' ? 'strip.role.owner' : 'strip.role.moderator'),
         note: text(`strip.state.${state}`, { ago: agoText(locale, verifiedAt ?? since, now) }),
       })),

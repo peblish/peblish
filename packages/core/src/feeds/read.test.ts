@@ -1,4 +1,4 @@
-import { sql } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { db } from '../db/read.ts';
 import { posts } from '../db/tables/content.ts';
@@ -9,7 +9,7 @@ import { declareAge } from '../testing/seed-b1.ts';
 import { seedFeedPost, seedFeedWorld, seedFollow } from '../testing/seed-c1.ts';
 import { decodeCursor } from './cursor.ts';
 import { periods, sorts, type Period, type Sort } from './input.ts';
-import { readFeed, type FeedRequest } from './read.ts';
+import { readFeed, readFeedSnapshot, type FeedRequest } from './read.ts';
 
 // The feed read model against a real database: who sees what in each feed, the order of each
 // sort, and that a page boundary never repeats or skips a post, even when a post is added
@@ -261,6 +261,51 @@ describe('keyset pagination', () => {
       expect(paged.filter((id) => !late.some((row) => row.id === id))).toEqual(whole);
     },
   );
+
+  test('one read of up to 200 rows (a feed address at depth) is the pages it stands for: each post once, in their order', async () => {
+    const { instances, people, communities } = await seedFeedWorld();
+    const hour = 3_600_000;
+    // 140 posts over three weeks, some on one moment, scores spread: Hot reads past its week, Top breaks ties.
+    for (let n = 0; n < 140; n += 1)
+      await seedPost(instances.local, n % 2 ? communities.news : communities.remoteTech, people.author, {
+        title: `deep ${n}`,
+        publishedAt: new Date(Date.now() - (n % 7 === 0 ? 3 : n * 3.5) * hour),
+        upvotes: n % 11,
+      });
+    for (const [label, request] of requests) {
+      const pages = await walk(request, null, 20);
+      const ids = (await readFeed({ ...request, limit: 120 }, null)).items.map((item) => item.id);
+      expect(new Set(ids).size, label).toBe(ids.length);
+      expect(ids, label).toEqual(pages.slice(0, 120));
+    }
+    // Every sort without a period has more than 120 posts to give, so each answered 120 in that one read.
+    expect((await readFeed({ feed: 'all', sort: 'new', limit: 120 }, null)).items).toHaveLength(120);
+  });
+
+  test('a read of many rows is one read-only snapshot: a post removed while it runs is still in its answer', async () => {
+    const { instances, people, communities } = await seedFeedWorld();
+    // 30 posts over eleven days: Hot reads its week, then what is older (post 20 is older), in two key queries.
+    for (let n = 0; n < 30; n += 1)
+      await seedPost(instances.local, communities.news, people.author, {
+        title: `snap ${n}`,
+        publishedAt: new Date(Date.now() - n * 9 * 3_600_000),
+      });
+    // A moderator removes post 20 once the read's snapshot has begun, before any of its own statements.
+    const handle = db();
+    const begin = handle.transaction.bind(handle);
+    vi.spyOn(handle, 'transaction').mockImplementation((read, config) =>
+      begin(async (tx) => {
+        await tx.execute(sql`select 1`);
+        await writer().update(posts).set({ removedAt: new Date() }).where(eq(posts.title, 'snap 20'));
+        return read(tx);
+      }, config),
+    );
+    const ids = (await readFeedSnapshot({ feed: 'all', sort: 'hot', limit: 40 }, null)).items.map((item) => item.title);
+    vi.restoreAllMocks();
+    expect(ids).toHaveLength(30);
+    expect(ids).toContain('snap 20');
+    expect(await titles({ feed: 'all', sort: 'hot', limit: 40 }, null)).not.toContain('snap 20');
+  });
 
   test('a cursor from another sort or period is ignored, and so is a garbled one', async () => {
     const { instances, people, communities } = await seedFeedWorld();

@@ -1,6 +1,5 @@
 import { directoryHref, directorySorts, nsfwModes, scopes, type DirectoryQuery } from '@peblish/core/directory/input';
 import type { DirectoryRow } from '@peblish/core/directory/read';
-import { avatarInitial } from '@peblish/ui/components/avatar-initial.ts';
 import { Badge } from '@peblish/ui/components/badge';
 import { Button } from '@peblish/ui/components/button';
 import { CommunityList, CommunityViewControl, type CommunityListItem, type CommunityView } from '@peblish/ui/components/community-list';
@@ -98,7 +97,7 @@ export function DirectoryPage({ data, error: fromAddress }: { data: DirectoryDat
       href: communityPath(actor),
       linkId,
       title: <BidiText text={actor.displayName ?? actor.name} />,
-      initial: avatarInitial(actor.displayName ?? actor.name, '?'),
+      initial: row.initial,
       meta: (
         <>
           <Handle prefix="!" handle={actor.handle} />

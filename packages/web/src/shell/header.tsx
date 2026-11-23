@@ -155,7 +155,7 @@ export function TopHeader({
             <>
               <CreatePost />
               <InboxLink unread={shell.unread} current={pathname === inboxPath} />
-              <Account session={session} />
+              <Account session={session} initial={shell.initial} />
             </>
           ) : (
             <>

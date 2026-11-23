@@ -1,4 +1,3 @@
-import { avatarInitial } from '@peblish/ui/components/avatar-initial.ts';
 import { Badge } from '@peblish/ui/components/badge';
 import {
   CommunityList,
@@ -37,20 +36,23 @@ function Join({ state, busy, failed }: { state: JoinState; busy?: boolean; faile
   );
 }
 
+// Each initial as the directory's loader makes it from the title: the browser never works one out (avatar-initial.ts).
 const samples = [
   {
     name: 'tidepools',
     title: 'Tide pools',
+    initial: 'T',
     subscribers: '1,204 subscribers',
     about: 'Rock pools, the creatures in them, and how to visit without harming them.',
   },
   {
     name: 'loomwork@weave.example',
     title: 'Loomwork',
+    initial: 'L',
     subscribers: '88 subscribers',
     about: 'Hand looms and the cloth they make. Drafts welcome.',
   },
-  { name: 'fern_spotting', title: 'Fern spotting', subscribers: '3 subscribers', about: null, nsfw: true },
+  { name: 'fern_spotting', title: 'Fern spotting', initial: 'F', subscribers: '3 subscribers', about: null, nsfw: true },
 ];
 
 function List({ view }: { view: CommunityView }) {
@@ -68,7 +70,7 @@ function List({ view }: { view: CommunityView }) {
     href: `/c/${sample.name}`,
     linkId: `kit-${view}-${index}`,
     title: sample.title,
-    initial: avatarInitial(sample.title, '?'),
+    initial: sample.initial,
     meta: (
       <>
         <Handle prefix="!" handle={sample.name} /> · {sample.subscribers}
