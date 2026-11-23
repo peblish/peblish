@@ -747,6 +747,49 @@ test('when the post the reader opened is no longer among the fresh rows, Back pu
   }
 });
 
+/**
+ * The reader comes to the feed from a post by the sidebar's link, not by one of its rows, loads 60 rows, and goes
+ * Back to that post (first, with `modified`, opening it from its row in another tab, which leaves this one where it
+ * is). The feed's entry keeps its scroll alone: once the post has moved down the feed, Forward puts the window back
+ * by pixels, not by the post.
+ */
+async function leftForAPostNotOpened(page: Page, { modified }: { modified: boolean }) {
+  await signedIn(page);
+  await gotoHydrated(page, '/?sort=new');
+  await link(page, title(10)).click();
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText(title(10));
+  await page.getByRole('complementary', { name: 'Sidebar' }).locator('a[href="/"]').first().click();
+  await page.waitForURL((url) => url.pathname === '/' && url.search === '');
+  await loadTo(page, 60);
+  await link(page, title(42)).scrollIntoViewIfNeeded();
+  await settled(page);
+  if (modified) {
+    const opened = page.context().waitForEvent('page');
+    await link(page, title(10)).click({ modifiers: ['ControlOrMeta'] });
+    await (await opened).close();
+    await settled(page);
+  }
+  const count = await holding(page);
+  const y = await page.evaluate(() => Math.round(scrollY));
+  await page.goBack();
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText(title(10));
+  run('swap', title(10), title(50));
+  try {
+    await page.goForward();
+    await expect(rows(page)).toHaveCount(count);
+    await agrees(page);
+    await expect(rows(page).nth(49)).toContainText(title(10));
+    await expect.poll(() => page.evaluate(() => Math.round(scrollY))).toBe(y);
+  } finally {
+    run('swap', title(10), title(50));
+  }
+}
+
+test('a feed left by Back for a post it did not open keeps its scroll alone: Forward puts the window back by pixels', ({ page }) =>
+  leftForAPostNotOpened(page, { modified: false }));
+
+test('a post opened from a row in another tab is not the place of this one', ({ page }) => leftForAPostNotOpened(page, { modified: true }));
+
 test('with reduced motion, Back puts the place back in one step', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await signedIn(page);

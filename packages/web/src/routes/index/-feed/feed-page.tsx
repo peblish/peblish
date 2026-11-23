@@ -315,7 +315,7 @@ const focusable =
  * IntersectionObserver the next page stays a plain link. The page draws what its loader answered, then
  * the batches it loads after it; after each, the list writes how many rows it has read into its own
  * history entry's address (`n`, search.ts), so Back, Forward or a reload reads them fresh, in one answer;
- * the post the reader opened goes back where it stood (places.ts), else the router's scroll position does.
+ * a post the reader opened from its row goes back where it stood (places.ts), else the scroll position does.
  * Nothing of the rows is kept anywhere else.
  * With `rowActions`, each row gets Share (the system's share sheet where there is one, else the link is
  * copied) and a menu with Copy link.
@@ -448,16 +448,33 @@ export function FeedCards({
   }, [batches, read, written, path, router]);
 
   // Where the reader leaves the list from, as they head to another page with its rows on screen, and back to it
-  // once a return has drawn the fresh rows: after the router's own restore, in the same task (places.ts).
+  // once a return has drawn the fresh rows: after the router's own restore, in the same task (places.ts). The
+  // post they open is part of the place only when they open it from its row in this tab: a click, a tap or Enter
+  // on the row's link to it, with no modifier key (which opens it elsewhere). Any other way off the list (Back,
+  // Forward, the frame's links, a sort) keeps the scroll alone, even to a post the list holds.
   useLayoutEffect(() => {
-    if (!more) return;
+    const list = box.current;
+    if (!more || !list) return;
     const entryOf = (location: { href: string; state: { __TSR_key?: string } }) => location.state.__TSR_key ?? location.href;
     const rowOf = (post: string) => box.current?.querySelector(`.feed-list > li[data-post="${CSS.escape(post)}"]`) ?? null;
+    let opening: string | null = null;
+    const activated = (event: MouseEvent) => {
+      const link = event.target instanceof Element ? event.target.closest('a[href]') : null;
+      const here = event.button === 0 && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey;
+      opening =
+        here && link instanceof HTMLAnchorElement && link.closest('.feed-list > li') && link.origin === location.origin && !link.target
+          ? (/^\/post\/([^/]+)$/.exec(link.pathname)?.[1] ?? null)
+          : null;
+    };
+    // Captured on the list, before the router's link handler starts the navigation.
+    list.addEventListener('click', activated, true);
     const leaving = router.subscribe('onBeforeLoad', ({ fromLocation, toLocation }) => {
+      const clicked = opening;
+      opening = null;
       const { search, reading } = latest.current;
       if (!fromLocation || reading || !sameList(path, search, fromLocation) || sameList(path, search, toLocation)) return;
       const opened = /^\/post\/([^/]+)/.exec(toLocation.pathname)?.[1];
-      const row = opened ? rowOf(opened) : null;
+      const row = opened && opened === clicked ? rowOf(opened) : null;
       keepPlace(entryOf(fromLocation), { y: scrollY, post: row ? opened : undefined, offset: row?.getBoundingClientRect().top });
     });
     const arriving = router.subscribe('onRendered', ({ toLocation }) => {
@@ -470,6 +487,7 @@ export function FeedCards({
       window.scrollTo({ top, behavior: 'instant' });
     });
     return () => {
+      list.removeEventListener('click', activated, true);
       leaving();
       arriving();
     };
