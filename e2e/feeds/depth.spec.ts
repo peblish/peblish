@@ -23,6 +23,8 @@ test.beforeAll(() => {
 /** The seed's post `n`, 1 the newest. */
 const title = (n: number) => `Depth ${seed.suffix} ${String(n).padStart(3, '0')}`;
 const rows = (page: Page) => page.locator('.feed-list > li');
+/** The rows on screen: a page the router has suspended keeps its rows in the document, hidden. */
+const shownRows = (page: Page) => rows(page).filter({ visible: true });
 const link = (page: Page, name: string) => page.locator('.feed-list .pb-post__title a', { hasText: new RegExp(`^${name}$`) });
 
 async function signedIn(page: Page) {
@@ -76,7 +78,7 @@ async function agrees(page: Page) {
     .poll(async () => {
       const n = Number(new URL(page.url()).searchParams.get('n') ?? 20);
       const count = await rows(page).count();
-      if (n === 200) return count >= 200;
+      if (n === 200 && count >= 200) return true;
       const end = (await page.locator('.pb-feed-end').count()) ? await page.locator('.pb-feed-end').textContent() : null;
       return count === n || (count < n && end === 'That is everything for now.');
     })
@@ -88,24 +90,26 @@ const settled = (page: Page) =>
   page.evaluate(() => new Promise<void>((done) => requestAnimationFrame(() => requestAnimationFrame(() => done()))));
 
 /**
- * From the next Back, Forward or click on, whether a feed row titled `name` is ever in the page: checked on every
- * frame (what is on screen) and on every node added between frames. Returns the answer so far.
+ * From the next Back, Forward or click on, whether a feed row titled `name` is ever on screen: checked on every
+ * frame and on every node added between frames. A row the router keeps hidden (a page it has suspended) does
+ * not count. Returns the answer so far.
  */
 async function watchFor(page: Page, name: string) {
   await page.evaluate((name) => {
     const state = { seen: false };
     Object.assign(window, { watched: state });
-    const holds = (node: ParentNode) =>
-      [...node.querySelectorAll('.feed-list .pb-post__title a')].some((element) => element.textContent === name);
+    const selector = '.feed-list .pb-post__title a';
+    const holds = (node: Element | Document) =>
+      [...(node instanceof Element && node.matches(selector) ? [node] : []), ...node.querySelectorAll(selector)].some(
+        (element) => element.textContent === name && element.checkVisibility(),
+      );
     const frame = () => {
       if (holds(document)) state.seen = true;
       requestAnimationFrame(frame);
     };
     const start = () => {
       new MutationObserver((records) => {
-        for (const record of records)
-          for (const node of record.addedNodes)
-            if (node instanceof Element && (node.textContent === name || holds(node))) state.seen = true;
+        for (const record of records) for (const node of record.addedNodes) if (node instanceof Element && holds(node)) state.seen = true;
       }).observe(document.body, { childList: true, subtree: true });
       requestAnimationFrame(frame);
     };
@@ -169,7 +173,7 @@ test('signed out, with batch two still loading when the reader opens a slow post
     expect(asks(held[1]!.request, '"cursor"')).toBe(false);
     // Until the loader's fresh answer is in, no row of the feed is drawn: the feed's loading page shows.
     await expect(page.locator('#pb-main main[aria-busy="true"]').getByRole('status')).toHaveText('Loading posts');
-    await expect(rows(page)).toHaveCount(0);
+    await expect(shownRows(page)).toHaveCount(0);
     held[1]!.go();
     await expect(rows(page)).toHaveCount(20);
     await agrees(page);
@@ -403,6 +407,22 @@ test('an address deeper than 200 rows comes back with 200, and the list loads on
   await agrees(page);
 });
 
+test('an address at the cap with fewer rows left than that shows them all, and the end of the feed', async ({ page }) => {
+  await signedIn(page);
+  // The third page's address, from the second page's plain Next page link: 180 posts are left after row 40.
+  await gotoHydrated(page, '/?sort=new');
+  const nextOf = async (href: string) => {
+    const html = await page.evaluate((href) => fetch(href).then((response) => response.text()), href);
+    return /href="(\/\?sort=new&amp;cursor=[^"&]+)"/.exec(html)?.[1]?.replaceAll('&amp;', '&');
+  };
+  const third = await nextOf((await nextOf('/?sort=new'))!);
+  await gotoHydrated(page, `${third!}&n=200`);
+  await expect(rows(page)).toHaveCount(180);
+  await expect(rows(page).first()).toContainText(title(41));
+  await expect(page.locator('.pb-feed-end')).toHaveText('That is everything for now.');
+  await agrees(page);
+});
+
 test('an address with no whole number of batches is one batch', async ({ page }) => {
   await signedIn(page);
   for (const n of ['7', 'abc', '-20']) {
@@ -426,9 +446,12 @@ test('a reload at depth comes back to the same rows and place', async ({ page })
   await agrees(page);
 });
 
-test('a quick Back, while the post it opened still loads, draws none of the old rows before the fresh answer, nor a post removed meanwhile', async ({
-  page,
-}) => {
+/**
+ * Back to the feed from a post it opened, with the feed's read held: before the post has drawn (its requests are
+ * held, so it cannot draw) or after. A moderator has removed a post below the reader's place before they open
+ * the post. No row is on screen until the fresh answer, the removed post never is, and the place comes back.
+ */
+async function backFromPost(page: Page, when: 'before it draws' | 'after it draws') {
   await signedIn(page);
   await gotoHydrated(page, '/?sort=new');
   await loadTo(page, 40);
@@ -436,25 +459,22 @@ test('a quick Back, while the post it opened still loads, draws none of the old 
   await settled(page);
   const count = await holding(page);
   const y = await page.evaluate(() => Math.round(scrollY));
-  const post = await slowPages(page);
-  await link(page, title(30)).click();
-  await page.waitForURL(/\/post\//);
-  // While the post loads the list keeps its rows and place.
-  await expect(rows(page)).toHaveCount(count);
-  expect(await page.evaluate(() => Math.round(scrollY))).toBe(y);
-  // Meanwhile a moderator removes a post the list holds, below the reader's place.
   run('remove', title(38));
   try {
+    const post = when === 'before it draws' ? await slowPages(page) : () => undefined;
+    await link(page, title(30)).click();
+    await page.waitForURL(/\/post\//);
+    if (when === 'after it draws') await expect(page.getByRole('heading', { level: 1 })).toHaveText(title(30));
     const seen = await watchFor(page, title(38));
     const held = await holdReads(page);
-    // Back before the post has drawn: the list's own read goes out again, and none of its old rows stay.
     await page.goBack();
     await expect.poll(() => held.length).toBe(1);
-    await expect(rows(page)).toHaveCount(0);
-    post();
+    expect(asks(held[0]!.request, '"cursor"')).toBe(false);
+    await expect(shownRows(page)).toHaveCount(0);
     held[0]!.go();
+    post();
     await page.waitForURL(`**/?sort=new&n=${count}`);
-    await expect(rows(page)).toHaveCount(count);
+    await expect(shownRows(page)).toHaveCount(count);
     await agrees(page);
     await expect(link(page, title(38))).toHaveCount(0);
     expect(await seen()).toBe(false);
@@ -462,7 +482,13 @@ test('a quick Back, while the post it opened still loads, draws none of the old 
   } finally {
     run('restore', title(38));
   }
-});
+}
+
+test('a quick Back, before the post it opened has drawn, shows no row until the fresh answer, nor a post removed meanwhile', ({ page }) =>
+  backFromPost(page, 'before it draws'));
+
+test('Back after the post has drawn shows no row until the fresh answer, nor a post removed meanwhile', ({ page }) =>
+  backFromPost(page, 'after it draws'));
 
 test('two quick Backs, through a page still loading, draw no row from before and come back to the place', async ({ page }) => {
   await signedIn(page);
@@ -519,7 +545,7 @@ test("the sidebar's link to the feed shown, pressed while a post it opened loads
     await page.getByRole('complementary', { name: 'Sidebar' }).locator('a[href="/"]').first().click();
     await page.waitForURL((url) => url.pathname === '/' && url.search === '');
     await expect.poll(() => held.length).toBe(1);
-    await expect(rows(page)).toHaveCount(0);
+    await expect(shownRows(page)).toHaveCount(0);
     post();
     held[0]!.go();
     // The first page, fresh, and an address that says so.
@@ -624,25 +650,40 @@ test.describe('on a phone', () => {
   test('posts that arrived above do not move the post the reader opened', ({ page }) => arrivalsAbove(page));
 });
 
+// The router puts the window back by pixels on its own, so the gone row's fallback is told apart from no anchor
+// at all by the Back before it: posts arrived above, and the anchor put the opened post back where it stood.
 test('when the post the reader opened is no longer among the fresh rows, Back puts the window where it was', async ({ page }) => {
   await signedIn(page);
   await gotoHydrated(page, '/?sort=new');
   await loadTo(page, 60);
+  const top = (n: number) => link(page, title(n)).evaluate((element) => Math.round(element.getBoundingClientRect().top));
   await link(page, title(45)).scrollIntoViewIfNeeded();
   await settled(page);
   const count = await holding(page);
-  const y = await page.evaluate(() => Math.round(scrollY));
+  const offset = await top(45);
   await link(page, title(45)).click();
   await expect(page.getByRole('heading', { level: 1 })).toHaveText(title(45));
-  run('remove', title(45));
+  run('arrive', seed.suffix, '12');
   try {
     await page.goBack();
     await expect(rows(page)).toHaveCount(count);
+    await expect(rows(page).first()).toContainText(`Depth ${seed.suffix} new 12`);
+    await expect.poll(async () => Math.abs((await top(45)) - offset)).toBeLessThanOrEqual(1);
+    // From there the reader opens another post, which is removed while they read it.
+    await link(page, title(40)).scrollIntoViewIfNeeded();
+    await settled(page);
+    const y = await page.evaluate(() => Math.round(scrollY));
+    await link(page, title(40)).click();
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText(title(40));
+    run('remove', title(40));
+    await page.goBack();
+    await expect(rows(page)).toHaveCount(count);
     await agrees(page);
-    await expect(link(page, title(45))).toHaveCount(0);
+    await expect(link(page, title(40))).toHaveCount(0);
     await expect.poll(() => page.evaluate(() => Math.round(scrollY))).toBe(y);
   } finally {
-    run('restore', title(45));
+    run('restore', title(40));
+    run('depart', seed.suffix);
   }
 });
 
