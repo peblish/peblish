@@ -241,8 +241,14 @@ test('the finder’s code loads when it is first wanted, not with the page', asy
   page.on('requestfinished', settled);
   page.on('requestfailed', settled);
   await gotoHydrated(page, '/');
-  // The popup and its data (shell/finder/), the panel (community-finder), Mux's palette, and the gallery's samples of it.
-  const finderCode = (url: string) => /[/](finder|community-finder|command-palette|-finder-samples)(\.tsx|-[\w-]+\.js)/.test(url);
+  // The popup and its data (shell/finder/), the panel (community-finder) and the gallery's samples of it, by their
+  // modules in dev and their chunks in a build (name, then an 8-character hash), where the Mux chunks only they use
+  // (the palette) count too; dev serves Mux as one prebuilt file. Not the panel's loading placeholder
+  // (community-finder-pending), which comes with the page so that a press shows it at once.
+  const finderCode = (url: string) =>
+    /\/shell\/finder\/|\/(community-finder|-finder-samples)\.tsx|\/assets\/(finder|community-finder|-finder-samples)-[\w-]{8}\.js$|\/assets\/vendor-mux(~(-finder-samples|finder))+-[\w-]{8}\.js$/.test(
+      url,
+    );
   expect(scripts.filter(finderCode)).toEqual([]);
   // Hovering fetches code (whatever its chunks are named in a build), and that is all the finder needs: with every
   // further script refused, a press still opens it.
@@ -261,6 +267,8 @@ test('the finder’s code loads when it is first wanted, not with the page', asy
       { intervals: [500] },
     )
     .toBe(true);
+  // The pattern names the finder's real code, so its absence above means something.
+  expect(scripts.filter(finderCode)).not.toEqual([]);
   await page.route('**/*', (route) => (route.request().resourceType() === 'script' ? route.abort() : route.continue()));
   await finderLink(page).click();
   await expect(field(page)).toBeFocused();
