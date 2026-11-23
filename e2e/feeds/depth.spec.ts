@@ -249,6 +249,84 @@ test.describe('signed in, on a phone', () => {
   });
 });
 
+test('a load-more still out when the reader goes Back to another document draws nothing and writes no depth', async ({ page }) => {
+  await page.goto('/about');
+  await gotoHydrated(page, '/all?sort=old');
+  const held = await holdReads(page);
+  await rows(page).last().scrollIntoViewIfNeeded();
+  await expect.poll(() => held.length).toBe(1);
+  // The reader goes back up first, so the feed comes back at its top, where no batch loads by itself.
+  await page.evaluate(() => scrollTo(0, 0));
+  await settled(page);
+  // Back to the other document, whose answer is slow: the feed's document still runs when batch two answers.
+  let asked = false;
+  let answer!: () => void;
+  const slow = new Promise<void>((resolve) => (answer = resolve));
+  await page.route(
+    (url) => url.pathname === '/about',
+    async (route) => {
+      asked = true;
+      await slow;
+      await route.fallback().catch(() => undefined);
+    },
+  );
+  const back = page.goBack();
+  await expect.poll(() => asked).toBe(true);
+  held[0]!.go();
+  await (await held[0]!.request.response())?.finished();
+  // The leaving document still runs, though the page can no longer be asked anything: time for the answer to
+  // land there, if it would.
+  await page.waitForTimeout(500);
+  answer();
+  await back;
+  // Back went through (a write of the depth by the leaving page would have cancelled it), and Forward reads one batch.
+  await expect(page).toHaveURL(/\/about$/);
+  await page.goForward();
+  await expect(page).toHaveURL(/\/all\?sort=old$/);
+  await expect(shownRows(page)).toHaveCount(20);
+  await agrees(page);
+});
+
+test('a batch out while the page goes into the back-forward cache draws nothing once it is shown again; a hidden tab loads on as usual', async ({
+  page,
+}) => {
+  await gotoHydrated(page, '/all?sort=old');
+  const held = await holdReads(page);
+  await rows(page).last().scrollIntoViewIfNeeded();
+  await expect.poll(() => held.length).toBe(1);
+  // The events of a page put into the back-forward cache and shown from it again (this server's pages are
+  // no-store, so Chromium never keeps them there itself); then batch two's answer comes.
+  await page.evaluate(() => {
+    dispatchEvent(new PageTransitionEvent('pagehide', { persisted: true }));
+    dispatchEvent(new PageTransitionEvent('pageshow', { persisted: true }));
+  });
+  held[0]!.go();
+  await (await held[0]!.request.response())?.finished();
+  await settled(page);
+  await expect(shownRows(page)).toHaveCount(20);
+  expect(new URL(page.url()).search).toBe('?sort=old');
+  // Load-more goes on as usual from there.
+  await page.evaluate(() => scrollTo(0, 0));
+  await settled(page);
+  await rows(page).last().scrollIntoViewIfNeeded();
+  await expect.poll(() => held.length).toBe(2);
+  held[1]!.go();
+  await expect(rows(page)).toHaveCount(40);
+  await agrees(page);
+  // A tab hidden and shown again while a batch is out keeps it.
+  await rows(page).last().scrollIntoViewIfNeeded();
+  await expect.poll(() => held.length).toBe(3);
+  await page.evaluate(() => {
+    for (const state of ['hidden', 'visible']) {
+      Object.defineProperty(document, 'visibilityState', { value: state, configurable: true });
+      document.dispatchEvent(new Event('visibilitychange'));
+    }
+  });
+  held[2]!.go();
+  await expect(rows(page)).toHaveCount(60);
+  await agrees(page);
+});
+
 test('from 80 New rows, Back to a slow Old sort, then Forward: 80 rows, and the link the reader left from is on screen', async ({
   page,
 }) => {

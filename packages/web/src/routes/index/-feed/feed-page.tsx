@@ -384,34 +384,52 @@ export function FeedCards({
   // The batch on its way: a new answer from the loader, or leaving the page, gives it up.
   const asking = useRef<AbortController | null>(null);
   useEffect(() => () => asking.current?.abort(), [data]);
-  // The rows' generation. Any navigation but the list's own growth of `n` (a return to the list, another sort or
-  // feed, the reader leaving) ends one: the batch on its way is given up, and none starts until that navigation's
-  // answer is the list's data, which opens the next. A batch answers into its own generation or not at all, so
-  // one that answers late draws nothing, writes no depth and cannot cut the read of a return short.
+  // The rows' generation. Any departure but the list's own growth of `n` ends one: a router navigation (a return
+  // to the list, another sort or feed, the reader leaving) or the document's own (a full page load, the browser's
+  // Back to another document). The batch on its way is given up, and after a navigation none starts until its
+  // answer is the list's data, which opens the next. A batch answers into its own generation or not at all, so one
+  // that answers late draws nothing, writes no depth (a write by a leaving page can even cancel its Back) and
+  // cannot cut the read of a return short.
   const generation = useRef({ at: 0, open: true });
   useLayoutEffect(() => {
     generation.current = { at: generation.current.at + 1, open: true };
   }, [data]);
+  const endGeneration = useCallback(
+    (open: boolean) => {
+      generation.current = { at: generation.current.at + 1, open };
+      asking.current?.abort();
+      setList((now) => (now.state === 'pending' ? { ...now, state: 'idle', said: '' } : now));
+    },
+    [setList],
+  );
   useLayoutEffect(() => {
     if (!more) return;
     const ending = router.subscribe('onBeforeLoad', ({ toLocation }) => {
       const { search } = latest.current;
       const { n }: { n?: unknown } = toLocation.search;
       if (sameList(path, search, toLocation) && isGrowth(path, search, depth(n) ?? defaultPageSize)) return;
-      generation.current = { at: generation.current.at + 1, open: false };
-      asking.current?.abort();
-      setList((now) => (now.state === 'pending' ? { ...now, state: 'idle', said: '' } : now));
+      endGeneration(false);
     });
     // A navigation that lands on the list without a new answer for it (none is known; every return reads again)
     // must not leave it closed.
     const resolved = router.subscribe('onResolved', ({ toLocation }) => {
       if (sameList(path, latest.current.search, toLocation)) generation.current = { ...generation.current, open: true };
     });
+    // The document hidden on the way out, and shown again from the back-forward cache: a new generation, so a batch
+    // from before draws nothing there. A tab merely hidden fires neither.
+    const hidden = () => endGeneration(false);
+    const shown = (event: PageTransitionEvent) => {
+      if (event.persisted) generation.current = { at: generation.current.at + 1, open: true };
+    };
+    addEventListener('pagehide', hidden);
+    addEventListener('pageshow', shown);
     return () => {
       ending();
       resolved();
+      removeEventListener('pagehide', hidden);
+      removeEventListener('pageshow', shown);
     };
-  }, [more, path, router, setList]);
+  }, [more, path, router, endGeneration]);
   const next = useCallback(() => {
     const { list, rows, more, messages, search, reading } = latest.current;
     // Nothing while a batch or the list's own read loads, at the end, or once the router is on its way to another page.
@@ -424,20 +442,28 @@ export function FeedCards({
     const asked = askedNow();
     setList({ ...list, state: 'pending', said: '' });
     const same = (now: Loaded) => now.data === list.data;
-    more.load(list.next, stop.signal).then(
-      (batch) => {
-        if (!current()) return;
-        const shown = new Set(rows.map((row) => row.post.id));
-        const said = messages.loaded(batch.items.filter((item) => !shown.has(item.post.id)).length, batch.next === null);
-        setList((now) =>
-          same(now) ? { ...now, batches: [...now.batches, { ...batch, asked }], next: batch.next, state: 'idle', said } : now,
-        );
-      },
-      () => {
-        if (current()) setList((now) => (same(now) ? { ...now, state: 'failed', said: messages.failed } : now));
-      },
-    );
-  }, [path, router, setList]);
+    // The document's own way out starts well before it is hidden (the browser's Back to another document waits for
+    // that document): while this batch is out, that start gives it up. Listened for only then, so the page stays
+    // fit for the back-forward cache; the list stays open, in case the way out is stopped.
+    const leaving = () => endGeneration(true);
+    addEventListener('beforeunload', leaving);
+    void more
+      .load(list.next, stop.signal)
+      .then(
+        (batch) => {
+          if (!current()) return;
+          const shown = new Set(rows.map((row) => row.post.id));
+          const said = messages.loaded(batch.items.filter((item) => !shown.has(item.post.id)).length, batch.next === null);
+          setList((now) =>
+            same(now) ? { ...now, batches: [...now.batches, { ...batch, asked }], next: batch.next, state: 'idle', said } : now,
+          );
+        },
+        () => {
+          if (current()) setList((now) => (same(now) ? { ...now, state: 'failed', said: messages.failed } : now));
+        },
+      )
+      .finally(() => removeEventListener('beforeunload', leaving));
+  }, [path, router, setList, endGeneration]);
   // After each batch the list's own history entry says how many rows it has read (`n`, at most 200), replaced in
   // place: no new entry, no scroll, and no load (`n` is not one of the loader's deps, and the route reads nothing
   // again for the list's own growth, reads.ts).
