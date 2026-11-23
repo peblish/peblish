@@ -1088,7 +1088,8 @@ test('a picture that comes after its row is drawn moves no row, in the views tha
 
 /**
  * The reader opens post `at` from its row by `open`; three posts arrive above while they read it. Back puts that
- * row where it stood.
+ * row where it stood. Being three rows nearer the end then, the end can come within a screen, and the batch the
+ * list asks for waits until these checks are done.
  */
 async function opensFromItsRow(page: Page, at: number, open: (row: Locator) => Promise<void>) {
   const row = rows(page).filter({ has: page.locator('.pb-post__title a', { hasText: new RegExp(`^${title(at)}$`) }) });
@@ -1100,12 +1101,21 @@ async function opensFromItsRow(page: Page, at: number, open: (row: Locator) => P
   await open(row);
   await expect(page.getByRole('heading', { level: 1 })).toHaveText(title(at));
   run('arrive', seed.suffix, '3');
+  const batch = (url: URL) => isFeedRead(url) && decodeURIComponent(url.search).includes('"cursor"');
+  let release = () => {};
+  const released = new Promise<void>((resolve) => (release = resolve));
+  await page.route(batch, async (route) => {
+    await released;
+    await route.fallback().catch(() => undefined);
+  });
   try {
     await page.goBack();
     await expect(rows(page)).toHaveCount(count);
     await expect(rows(page).first()).toContainText(`Depth ${seed.suffix} new 03`);
     await expect.poll(async () => Math.abs((await top()) - offset)).toBeLessThanOrEqual(1);
   } finally {
+    release();
+    await page.unroute(batch);
     run('depart', seed.suffix);
   }
 }
