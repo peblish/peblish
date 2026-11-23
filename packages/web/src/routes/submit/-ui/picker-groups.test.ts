@@ -5,6 +5,7 @@ import { localCap, pickerGroups } from './picker-groups.ts';
 const community = (id: string, local = true): PickerCommunity => ({
   id,
   handle: local ? id : `${id}@far.example`,
+  displayName: null,
   local,
   subscribers: local ? 1 : null,
   canPost: true,

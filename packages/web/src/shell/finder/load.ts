@@ -32,7 +32,9 @@ export const findCommunities = createServerFn({ method: 'GET' })
     const session = await pageSession();
     // A leading "!" is a community handle's sigil, not part of its name: "!tea" searches for tea.
     const q = data.q.trim().replace(/^!/, '');
-    const viewer = session ? { actorId: session.view.actorId, declared: session.view.ageDeclaredAt !== null } : null;
+    const viewer = session
+      ? { actorId: session.view.actorId, siteRole: session.view.siteRole, declared: session.view.ageDeclaredAt !== null }
+      : null;
     // The directory's defaults (all servers, most joined first, NSFW hidden as there).
     const query: DirectoryQuery = { scope: 'all', sort: 'subscribers', nsfw: 'hide', q, page: 1 };
     const lookup = q !== '' && parseLookup(q) !== null;
