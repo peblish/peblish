@@ -1,3 +1,4 @@
+import { parseSort } from '@peblish/core/comments/sort';
 import { threadFacts } from '@peblish/core/posts/facts';
 import { readPost, type Viewer } from '@peblish/core/posts/read';
 import type { PostView } from '@peblish/schema/views';
@@ -20,7 +21,7 @@ import { input } from '../../server/input.ts';
  * a tombstone, a removed post) is decided in core's readPost; this renders what it hands over.
  */
 export const loadPost = createServerFn({ method: 'GET' })
-  .validator(input(type({ id: 'string' })))
+  .validator(input(type({ id: 'string', 'sort?': 'string', 'after?': 'string' })))
   .handler(async ({ data }) => {
     const session = await pageSession();
     const viewer: Viewer = session ? { actorId: session.view.actorId, siteRole: session.view.siteRole } : null;
@@ -53,7 +54,8 @@ export const loadPost = createServerFn({ method: 'GET' })
       moderator: page.moderator,
       /** False while a moderator removed the post: the thread must not be sent either (the gate sends no post at all). */
       threadVisible: threadVisible(page),
-      thread: await loadThread({ page, session, renderer }),
+      // The thread in the sort and page the route asked for (its address), the same on a document request and a reload.
+      thread: await loadThread({ page, session, renderer, sort: parseSort(data.sort), after: data.after ?? null }),
       /** The signed-in person, or null: who may see the author's actions and the action slots. */
       viewerId: session?.view.actorId ?? null,
       /** A site admin with two-factor on, for the action slots. */
