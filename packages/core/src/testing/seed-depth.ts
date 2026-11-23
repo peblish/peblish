@@ -3,6 +3,7 @@ import { ageDeclarations } from '../identity/tables.ts';
 import { uuidv7 } from 'uuidv7';
 import { closePools } from '../db/pools.ts';
 import { posts } from '../db/tables/content.ts';
+import { peerControls } from '../peers/tables.ts';
 import { writer } from '../db/write.ts';
 import { PASSWORD, seedAccount } from './seed-a.ts';
 import { seedFollow } from './seed-c1.ts';
@@ -16,7 +17,10 @@ import { seedActor, seedInstance } from './seed.ts';
 // its title, as another person or a moderator would while the reader is away: `remove <title>`,
 // `restore <title>`, `swap <title> <title>` (their publication times) and `sensitive <title> <true|false>`; and
 // `arrive <suffix> <count>` publishes that many newer posts in the run's community (`Depth <suffix> new 01` …, still
-// two years old, so they lead only that community's feeds), which `depart <suffix>` removes again.
+// two years old, so they lead only that community's feeds), which `depart <suffix>` removes again. `picture <true|false>
+// <title>…` makes posts image posts, or text posts again; each picture is on this instance
+// (`/depth-pictures/<id>.png` under PUBLIC_ORIGIN), so the page loads it from its own host and a spec answers for it,
+// and the run's peer has its media approved for that, as a moderator would.
 const [command, ...ids] = process.argv.slice(2);
 try {
   if (command === 'remove' || command === 'restore')
@@ -29,7 +33,24 @@ try {
       .update(posts)
       .set({ sensitive: ids[1] === 'true' })
       .where(eq(posts.title, ids[0]!));
-  else if (command === 'arrive') {
+  else if (command === 'picture') {
+    const [on, ...titles] = ids;
+    const found = await writer().select({ id: posts.id, instanceId: posts.instanceId }).from(posts).where(inArray(posts.title, titles));
+    for (const instanceId of new Set(on === 'true' ? found.map((post) => post.instanceId) : []))
+      await writer()
+        .insert(peerControls)
+        .values({ instanceId, media: 'approved' })
+        .onConflictDoUpdate({ target: peerControls.instanceId, set: { media: 'approved' } });
+    for (const { id } of found)
+      await writer()
+        .update(posts)
+        .set(
+          on === 'true'
+            ? { url: new URL(`/depth-pictures/${id}.png`, process.env.PUBLIC_ORIGIN).href, urlContentType: 'image/png' }
+            : { url: null, urlContentType: null },
+        )
+        .where(eq(posts.id, id));
+  } else if (command === 'arrive') {
     const [suffix, count] = ids;
     const [found] = await writer()
       .select({

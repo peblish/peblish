@@ -790,6 +790,101 @@ test('a feed left by Back for a post it did not open keeps its scroll alone: For
 
 test('a post opened from a row in another tab is not the place of this one', ({ page }) => leftForAPostNotOpened(page, { modified: true }));
 
+/** Picks a view from the View menu, and waits until it is stored. */
+async function view(page: Page, density: 'Card' | 'Classic') {
+  const stored = page.waitForResponse((response) => response.request().method() === 'POST' && response.url().includes('/_serverFn/'));
+  await page.getByRole('button', { name: /^View: / }).click();
+  await page.getByRole('menuitem', { name: density, exact: true }).click();
+  await stored;
+}
+
+/**
+ * Answers for the seed's pictures (`picture`, seed-depth.ts): a tall one, 800 by 1000, kept by no cache. While
+ * held, each waits until it is let go.
+ */
+async function servePictures(page: Page) {
+  let held = Promise.resolve();
+  let release = () => {};
+  await page.route('**/depth-pictures/**', async (route) => {
+    await held;
+    const body = '<svg xmlns="http://www.w3.org/2000/svg" width="800" height="1000"><rect width="800" height="1000" fill="#888"/></svg>';
+    await route.fulfill({ contentType: 'image/svg+xml', headers: { 'cache-control': 'no-store' }, body }).catch(() => undefined);
+  });
+  return {
+    hold: () => void (held = new Promise<void>((resolve) => (release = resolve))),
+    release: () => release(),
+  };
+}
+
+/** Whether the pictures of the posts `titles` have all loaded. */
+const picturesIn = (page: Page, titles: string[]) =>
+  page
+    .locator('.feed-list > li')
+    .evaluateAll(
+      (rows, titles) =>
+        rows
+          .filter((row) => titles.includes(row.querySelector('.pb-post__title a')?.textContent ?? ''))
+          .every(
+            (row) =>
+              [...row.querySelectorAll('img')].every((image) => image.complete && image.naturalWidth > 0) && row.querySelector('img'),
+          ),
+      titles,
+    );
+
+test('in Card view, pictures that come after Back move nothing: the post the reader opened stays where it stood', async ({ page }) => {
+  await signedIn(page);
+  const pictures = await servePictures(page);
+  await gotoHydrated(page, '/?sort=new');
+  await view(page, 'Card');
+  await loadTo(page, 40);
+  const top = () => link(page, title(30)).evaluate((element) => Math.round(element.getBoundingClientRect().top));
+  await link(page, title(30)).scrollIntoViewIfNeeded();
+  await settled(page);
+  const count = await holding(page);
+  const offset = await top();
+  await link(page, title(30)).click();
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText(title(30));
+  // While the reader is away, the four posts above theirs become picture posts; the pictures come only after Back.
+  const above = [title(26), title(27), title(28), title(29)];
+  run('picture', 'true', ...above);
+  try {
+    pictures.hold();
+    await page.goBack();
+    await expect(rows(page)).toHaveCount(count);
+    await agrees(page);
+    await expect.poll(async () => Math.abs((await top()) - offset)).toBeLessThanOrEqual(1);
+    pictures.release();
+    await expect.poll(() => picturesIn(page, above)).toBe(true);
+    await settled(page);
+    expect(Math.abs((await top()) - offset)).toBeLessThanOrEqual(1);
+  } finally {
+    run('picture', 'false', ...above);
+  }
+});
+
+test('a picture that comes after its row is drawn moves no row, in the views that draw pictures', async ({ page }) => {
+  await signedIn(page);
+  const pictures = await servePictures(page);
+  const shown = [title(2), title(3), title(4)];
+  run('picture', 'true', ...shown);
+  try {
+    for (const density of ['Card', 'Classic'] as const) {
+      await gotoHydrated(page, '/?sort=new');
+      await view(page, density);
+      pictures.hold();
+      await gotoHydrated(page, '/?sort=new');
+      const tops = () => rows(page).evaluateAll((rows) => rows.slice(0, 8).map((row) => Math.round(row.getBoundingClientRect().top)));
+      const before = await tops();
+      pictures.release();
+      await expect.poll(() => picturesIn(page, shown)).toBe(true);
+      await settled(page);
+      expect(await tops(), density).toEqual(before);
+    }
+  } finally {
+    run('picture', 'false', ...shown);
+  }
+});
+
 test('with reduced motion, Back puts the place back in one step', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await signedIn(page);

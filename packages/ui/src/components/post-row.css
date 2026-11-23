@@ -126,8 +126,10 @@
     background: var(--muxui-semantic-surface-subtle);
   }
 
+  /* An image post's picture across the row. A post carries no picture size, so its box is set before the picture
+     loads, as the thumbnails' are, and a late picture moves nothing below it; the whole picture shows in it. */
   .pb-post__media .pb-post__thumb {
-    aspect-ratio: auto;
+    aspect-ratio: 16 / 9;
     max-block-size: 32rem;
     border-radius: var(--muxui-semantic-shape-container-radius);
   }
