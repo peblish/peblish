@@ -105,7 +105,9 @@ test('the sheet starts in the community whose page is open', async () => {
   await page.goto(`/c/${world.communities.open.handle}`, { waitUntil: 'commit' });
   await page.locator('html[data-shell-hydrated="1"]').waitFor({ state: 'attached' });
   await create(page).click();
-  await expect(sheet(page).locator('input[name="community"]:checked')).toHaveValue(world.communities.open.id);
+  // The field shows it and posts its id.
+  await expect(sheet(page).getByRole('combobox', { name: 'Community' })).toHaveValue(`!${world.communities.open.handle}`);
+  await expect(sheet(page).locator('input[name="community"]')).toHaveValue(world.communities.open.id);
   await expect(sheet(page).getByRole('complementary', { name: 'Community rules' })).toContainText('Be civil');
   await page.close();
 });

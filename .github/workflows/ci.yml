@@ -81,24 +81,26 @@ jobs:
         run: pnpm db:drift
       - name: Migrations apply to a fresh database
         run: pnpm db:migrate
-      # From the build pnpm check made; the budget itself is enforced by e2e/payload on the first e2e shard.
+      # From the build pnpm check made; the budget itself is enforced by e2e/payload on one e2e shard.
       - name: Bundle size summary
         run: node scripts/bundle-report.ts >> "$GITHUB_STEP_SUMMARY"
 
-  # The Playwright suite on two runners, each with its own Postgres, Mailpit, MinIO and build.
+  # The Playwright suite on four runners, each with its own Postgres, Mailpit, MinIO and build.
   # E2E_SHARD (e2e/run.ts) gives each runner its part of the parallel project by Playwright's
-  # --shard, which keeps a spec file whole, so e2e/payload runs once, on shard 1. The serial
+  # --shard, which keeps a spec file whole, so e2e/payload runs once, on one shard. The serial
   # project runs on the last shard, which has the smaller part. e2e-shards checks the counts.
   e2e:
     name: e2e, shard ${{ matrix.shard }} of ${{ strategy.job-total }}
     runs-on: ubuntu-24.04
-    # About 7 minutes on a typical runner (12 for the whole suite on one runner before the split).
-    timeout-minutes: 25
+    # About 7 to 18 minutes of parallel tests a runner, going by the three-shard runs' times per spec
+    # file (their two slow shards took 18 to 25 minutes, and one met a 35-minute limit); the last shard
+    # also runs the serial project, 7 to 9 minutes, hence the room.
+    timeout-minutes: 45
     strategy:
-      # Both shards finish, so one run shows every failing spec.
+      # Every shard finishes, so one run shows every failing spec.
       fail-fast: false
       matrix:
-        shard: [1, 2]
+        shard: [1, 2, 3, 4]
     services:
       postgres:
         image: postgres:17.11@sha256:ff87138949ad9a46f32ff23bd6852b52ce024a13dffe9b4087be98292cdd3b4f

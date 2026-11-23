@@ -63,8 +63,10 @@ async function world() {
     ]);
   const farHost = await seedInstance(`a-very-long-instance-host-name-${suffix}.far-away.test`, false);
   const farAway = await seedActor(farHost, 'Group', `anotherlongremotecommunityname_${suffix}`);
+  // A joined one with a display name, which the picker shows over its handle.
+  const named = await seedActor(lemmy, 'Group', `kettles_${suffix}`, { displayName: 'Kettle Watchers' });
   for (const person of [poster, unverified, moderator, banned, young]) {
-    for (const followee of [remote, gated, gone, remoteStaff, farAway]) {
+    for (const followee of [remote, gated, gone, remoteStaff, farAway, named]) {
       await writer()
         .insert(follows)
         .values({ followerId: person.actorId, followeeId: followee.id, state: 'accepted', acceptedAt: new Date() });
@@ -84,6 +86,7 @@ async function world() {
       remoteStaff: { id: remoteStaff.id, handle: `${remoteStaff.name}@${lemmy.domain}` },
       long: { id: long.id, handle: long.name },
       farAway: { id: farAway.id, handle: `${farAway.name}@${farHost.domain}` },
+      named: { id: named.id, handle: `${named.name}@${lemmy.domain}` },
     },
   };
 }

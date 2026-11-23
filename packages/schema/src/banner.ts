@@ -8,11 +8,24 @@ import { type } from 'arktype';
 export const bannerIcons = ['none', 'info', 'megaphone', 'wrench', 'calendar', 'alert', 'sparkles'] as const;
 export const bannerTones = ['neutral', 'accent', 'success', 'warning', 'danger', 'custom'] as const;
 
+/** C0 controls, DEL and C1 controls. */
+// oxlint-disable-next-line no-control-regex -- the controls are what it finds
+const control = /[\x00-\x1f\x7f-\x9f]/;
+
 /**
  * A path on this site: one leading slash, and no second slash or backslash right after it,
- * which browsers read as another host (`//host`, `/\host`). No whitespace or backslash anywhere.
+ * which browsers read as another host (`//host`, `/\host`). No whitespace or backslash anywhere,
+ * and no control character (C0, DEL or C1) either as it is written or once its percent escapes
+ * are decoded; escapes that do not decode as UTF-8 are refused too.
  */
-export const InternalPath = type(/^\/(?![/\\])[^\s\\]*$/);
+export const InternalPath = type(/^\/(?![/\\])[^\s\\]*$/).narrow((path) => {
+  if (control.test(path)) return false;
+  try {
+    return !control.test(decodeURIComponent(path));
+  } catch {
+    return false;
+  }
+});
 
 /** A banner button (`primary`) or link (`link`): a short label and where it goes on this site. */
 export const BannerAction = type({ '+': 'reject', label: '1 <= string <= 16', href: InternalPath });
@@ -59,3 +72,26 @@ export const defaultBanner: SiteBanner = {
   primary: null,
   link: null,
 };
+
+const channel = (value: number) => {
+  const c = value / 255;
+  return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+};
+
+/**
+ * How a custom colour reads as a banner, by Mux UI's Banner rule: the solid fill is the colour itself in both
+ * schemes, its text, link, controls and their focus ring are white or black, whichever contrasts more, and a
+ * subtle banner lays at most a quarter of the colour over the page under the page's own text. So the lowest
+ * ratio is the solid fill's against its text: the WCAG 2 ratio returned here, which must reach 4.5 (text; the
+ * focus ring, 3, then holds too). Null for a colour that is not #RRGGBB.
+ */
+export function customBannerContrast(colour: string): number | null {
+  const hex = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(colour);
+  if (!hex) return null;
+  const [r, g, b] = hex.slice(1).map((part) => channel(Number.parseInt(part, 16)));
+  const fill = 0.2126 * r! + 0.7152 * g! + 0.0722 * b!;
+  return Math.max(1.05 / (fill + 0.05), (fill + 0.05) / 0.05);
+}
+
+/** The ratio a custom banner colour must reach in both schemes, for text; its focus ring needs 3. */
+export const customBannerMinimum = 4.5;

@@ -4,7 +4,8 @@ import { unreadCount } from '@peblish/core/notifications/unread';
 import { openReportCount } from '@peblish/core/reports/count';
 import { readSetting } from '@peblish/core/settings/read';
 import type { SessionView } from '@peblish/schema/session';
-import type { SiteBrand } from '@peblish/schema/site-settings';
+import type { SiteBanner } from '@peblish/schema/banner';
+import type { SiteBrand, SiteWidth } from '@peblish/schema/site-settings';
 import type { ActorRef } from '@peblish/schema/views';
 import { avatarInitial } from '@peblish/ui/components/avatar-initial.ts';
 import { communityLabel } from './community-label.ts';
@@ -22,6 +23,13 @@ export interface ShellData {
   siteName: string;
   /** The instance's brand pack (site setting site.brand), '' for none: the root head links its sheet and icons, and the brand shows its mark. */
   brand: SiteBrand;
+  /**
+   * The site banner (site setting site.banner) while it is on, shown across the top of every page (banner.tsx);
+   * null while it is off, so none of an unpublished draft reaches a page or its hydration data.
+   */
+  banner: SiteBanner | null;
+  /** The centre column's width preset (site setting site.width), the frame's `data-width`. */
+  width: SiteWidth;
   local: SidebarCommunity[];
   remote: SidebarCommunity[];
   /** The viewer's avatar initial, from their display name else their name ('' signed out): the account menu, the phone's You tab and the You page draw it. */
@@ -49,9 +57,11 @@ const host = () => URL.parse(publicOrigin() ?? '')?.host ?? '';
  */
 export async function loadShellData(session: SessionView | null): Promise<ShellData> {
   const viewerId = session?.actorId ?? null;
-  const [name, brand, communities, unread] = await Promise.all([
+  const [name, brand, banner, width, communities, unread] = await Promise.all([
     readSetting('site.name'),
     readSetting('site.brand'),
+    readSetting('site.banner'),
+    readSetting('site.width'),
     sidebarCommunities(viewerId),
     unreadCount(viewerId),
   ]);
@@ -61,6 +71,8 @@ export async function loadShellData(session: SessionView | null): Promise<ShellD
   return {
     siteName: name || host(),
     brand,
+    banner: banner.enabled ? banner : null,
+    width,
     ...communities,
     local: communities.local.map(withInitial),
     remote: communities.remote.map(withInitial),

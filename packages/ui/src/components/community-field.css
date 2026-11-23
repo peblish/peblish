@@ -1,0 +1,32 @@
+/* Create post's community field (community-field.tsx): Mux ComboBox with its groups as shipped. */
+@layer app {
+  /* Mux gap: the field's edge and glow ease over 350ms and its arrow turns over 400ms even under reduced motion
+     (tokens.css stills the other fields, not ComboBox's control). */
+  @media (prefers-reduced-motion: reduce) {
+    .pb-cfield :is(.muxui-combo-box__control, .muxui-combo-box__arrow) {
+      transition: none;
+    }
+  }
+
+  /* A row: the name, then the handle and what else to know, which give way first. */
+  .pb-cfield__option {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    column-gap: var(--muxui-semantic-layout-group-gap);
+    min-inline-size: 0;
+  }
+
+  .pb-cfield__meta {
+    min-inline-size: 0;
+  }
+
+  .pb-cfield__none {
+    flex-basis: 100%;
+  }
+
+  /* Mux gap: Text has no link tone. */
+  .pb-cfield__browse {
+    color: var(--muxui-semantic-content-link);
+  }
+}
