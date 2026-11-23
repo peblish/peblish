@@ -85,20 +85,21 @@ jobs:
       - name: Bundle size summary
         run: node scripts/bundle-report.ts >> "$GITHUB_STEP_SUMMARY"
 
-  # The Playwright suite on two runners, each with its own Postgres, Mailpit, MinIO and build.
+  # The Playwright suite on three runners, each with its own Postgres, Mailpit, MinIO and build.
   # E2E_SHARD (e2e/run.ts) gives each runner its part of the parallel project by Playwright's
-  # --shard, which keeps a spec file whole, so e2e/payload runs once, on shard 1. The serial
+  # --shard, which keeps a spec file whole, so e2e/payload runs once, on one shard. The serial
   # project runs on the last shard, which has the smaller part. e2e-shards checks the counts.
   e2e:
     name: e2e, shard ${{ matrix.shard }} of ${{ strategy.job-total }}
     runs-on: ubuntu-24.04
-    # About 7 minutes on a typical runner (12 for the whole suite on one runner before the split).
-    timeout-minutes: 25
+    # About 15 to 22 minutes a runner since the Commons screens' state galleries (two runners took 22 and
+    # more than 25); the last shard also runs the serial project, hence the room.
+    timeout-minutes: 35
     strategy:
-      # Both shards finish, so one run shows every failing spec.
+      # Every shard finishes, so one run shows every failing spec.
       fail-fast: false
       matrix:
-        shard: [1, 2]
+        shard: [1, 2, 3]
     services:
       postgres:
         image: postgres:17.11@sha256:ff87138949ad9a46f32ff23bd6852b52ce024a13dffe9b4087be98292cdd3b4f
