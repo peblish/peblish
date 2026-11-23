@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest';
 import type { PickerCommunity } from '../-types.ts';
-import { localCap, pickerGroups } from './picker-groups.ts';
+import { pickerGroups } from './picker-groups.ts';
 
 const community = (id: string, local = true): PickerCommunity => ({
   id,
@@ -12,15 +12,23 @@ const community = (id: string, local = true): PickerCommunity => ({
   restricted: false,
 });
 
-test('joined first (the sidebar’s locals, and every remote one, which is listed only when followed), then the rest', () => {
-  const groups = pickerGroups([community('a'), community('b'), community('c'), community('r', false)], new Set(['b']));
+test('joined first (the sidebar’s communities, local or remote), then the rest', () => {
+  const groups = pickerGroups([community('a'), community('b'), community('c'), community('r', false)], new Set(['b', 'r']), false);
   expect(groups.joined.map(({ id }) => id)).toEqual(['b', 'r']);
   expect(groups.others.map(({ id }) => id)).toEqual(['a', 'c']);
   expect(groups.truncated).toBe(false);
 });
 
-test('a full local list says it may be cut short', () => {
-  const locals = Array.from({ length: localCap }, (_, index) => community(`c${index}`));
-  expect(pickerGroups(locals, new Set()).truncated).toBe(true);
-  expect(pickerGroups(locals.slice(1), new Set()).truncated).toBe(false);
+test('a remote community the loader looked up for the form, one the viewer does not follow, is with the rest', () => {
+  const groups = pickerGroups([community('a'), community('r', false), community('lab', false)], new Set(['r']), false);
+  expect(groups.joined.map(({ id }) => id)).toEqual(['r']);
+  expect(groups.others.map(({ id }) => id)).toEqual(['a', 'lab']);
+});
+
+test('the list is cut short when the loader says so, however many of it are local', () => {
+  const locals = Array.from({ length: 190 }, (_, index) => community(`c${index}`));
+  const remotes = Array.from({ length: 10 }, (_, index) => community(`r${index}`, false));
+  expect(pickerGroups([...locals, ...remotes], new Set(), true).truncated).toBe(true);
+  const full = Array.from({ length: 200 }, (_, index) => community(`c${index}`));
+  expect(pickerGroups(full, new Set(), false).truncated).toBe(false);
 });
