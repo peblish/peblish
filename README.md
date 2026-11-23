@@ -110,6 +110,7 @@ pnpm check                         # build, typecheck, lint (boundaries, oxlint,
 pnpm e2e                           # Playwright against the build, on $PORT; BASE_URL=<url> pnpm e2e targets a running server instead (no DATABASE_URL needed)
                                    # *.serial.spec.ts (specs that save a shared site setting) run one at a time in a second run after the rest, whether or not it failed (e2e/run.ts); pnpm e2e --project serial runs them alone
                                    # E2E_SHARD=1/4 pnpm e2e runs one of CI's four runners' parts (the serial specs run on the last); scripts/e2e-shards.ts checks the parts add up
+                                   # In CI a failed test is retried once: one that passes only on the retry does not fail the run, and is listed as flaky in its shard's log and job summary, and with every other shard's in the e2e-shards job's log and summary
 pnpm dev                           # pnpm gen, then the dev server on $PORT
 ```
 
