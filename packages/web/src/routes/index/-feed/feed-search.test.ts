@@ -42,7 +42,12 @@ test('the rows an address asks for are whole batches, at most 200; anything else
 test('an address deeper than the cap reads as the cap, and a period counts only under Top', () => {
   const n = (value: unknown) => parseFeedSearch(raw({ n: value })).n;
   expect([n(201), n(250), n('1000')]).toEqual([200, 200, 200]);
-  expect(parseFeedSearch(raw({ sort: 'old', period: 'week' }))).toEqual({ sort: 'old', period: undefined, cursor: undefined, n: undefined });
+  expect(parseFeedSearch(raw({ sort: 'old', period: 'week' }))).toEqual({
+    sort: 'old',
+    period: undefined,
+    cursor: undefined,
+    n: undefined,
+  });
   expect(parseFeedSearch(raw({ period: 'week' })).period).toBeUndefined();
   expect(parseFeedSearch(raw({ sort: 'top', period: 'week' })).period).toBe('week');
   // The loader's deps: one list whatever period a sort without one is given.
