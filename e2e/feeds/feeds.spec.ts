@@ -420,7 +420,8 @@ test.describe('a viewer', () => {
     expect((await titles(page))[0]).toBe(`Followed ${seed.suffix} 20`);
     await page.getByRole('link', { name: 'Back to the first page' }).click();
     await page.waitForURL('**/?sort=new');
-    expect(await titles(page)).toEqual(first);
+    // The address changes before the first page's rows are drawn again.
+    await expect.poll(() => titles(page)).toEqual(first);
   });
 
   test('Back finds the place: the batches loaded and the scroll position', async ({ page }) => {
