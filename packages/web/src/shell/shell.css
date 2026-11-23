@@ -21,7 +21,7 @@
   .pb-app {
     --pb-rule: var(--muxui-semantic-border-faint);
     /* Column widths, the Default width preset (Mux has no content-width scale): a 40rem centre beside a
-       19.5rem rail. The admin's width setting moves --pb-page-max in a later branch. */
+       19.5rem rail. The admin's other presets move the centre (`data-width`, below). */
     --pb-centre-w: 40rem;
     --pb-rail-w: 19.5rem;
     --pb-page-max: calc(var(--pb-centre-w) + var(--pb-rail-w));
@@ -29,11 +29,40 @@
     display: grid;
     grid-template-areas:
       'top top'
+      'banner banner'
       'side page'
       'tabs tabs';
     grid-template-columns: auto minmax(0, 1fr);
-    grid-template-rows: auto minmax(0, 1fr) auto;
+    grid-template-rows: auto auto minmax(0, 1fr) auto;
     min-block-size: 100dvh;
+  }
+
+  /* The admin's width preset (site.width, shell.tsx): the centre beside the rail's own 19.5rem, 35rem at
+     Narrow and 50rem at Wide (872 and 1112px with the rail, Default's 952 between them). A staff table's
+     wide centre (data-centre, below) wins at every preset, and a phone's frame is edge to edge at all. */
+  .pb-app[data-width='narrow'] {
+    --pb-centre-w: 35rem;
+  }
+
+  .pb-app[data-width='wide'] {
+    --pb-centre-w: 50rem;
+  }
+
+  /* At Wide, post and comment text, a card's excerpt and the full-page composer keep Default's measure (its
+     centre less the gutters, 600px); media and rows take the width. */
+  .pb-app[data-width='wide'] .pb-frame:not([data-centre='wide']) :is(.pb-prose, .pb-post__excerpt, .cmp--page) {
+    max-inline-size: calc(40rem - 2 * var(--pb-gutter));
+  }
+
+  /* The site banner (banner.tsx): on a computer full width under the header, above the sidebar and the page,
+     scrolling away under the header; on a phone under the top bar (view-header.tsx), edge to edge. One is shown. */
+  .pb-app__banner {
+    grid-area: banner;
+  }
+
+  .pb-app__banner--view {
+    grid-area: auto;
+    display: none;
   }
 
   /* The frame's focus ring: Mux's ring colour is brand step 60, under 3:1 on the dark page with some
@@ -138,6 +167,27 @@
     text-decoration: none;
   }
 
+  /* Pressed, a step darker; open (the finder over the page), the hover's edge and text on the hover surface. */
+  .pb-find[data-muxui-state-pressed] {
+    border-color: var(--muxui-semantic-border-strong);
+    background: var(--muxui-semantic-surface-pressed);
+    color: var(--muxui-semantic-content-default);
+  }
+
+  .pb-find[aria-expanded='true']:not([data-muxui-state-pressed]) {
+    border-color: var(--muxui-semantic-border-strong);
+    background: var(--muxui-semantic-surface-hover);
+    color: var(--muxui-semantic-content-default);
+  }
+
+  /* Forced colours keep no background or edge of the page's own, so hover and open are drawn as outlines. */
+  @media (forced-colors: active) {
+    .pb-find:is(:hover, [data-muxui-state-hovered], [aria-expanded='true']) {
+      outline: 1px solid Highlight;
+      outline-offset: 1px;
+    }
+  }
+
   .pb-find__icon {
     flex: none;
     font-size: var(--muxui-semantic-typography-label-l-font-size);
@@ -164,6 +214,11 @@
   .pb-find--compact:is(:hover, [data-muxui-state-hovered]) {
     border-color: transparent;
     background: color-mix(in srgb, var(--muxui-semantic-color-neutral-100) 4%, transparent);
+  }
+
+  .pb-find--compact[data-muxui-state-pressed],
+  .pb-find--compact[aria-expanded='true']:not([data-muxui-state-pressed]) {
+    border-color: transparent;
   }
 
   /* The actions: Create post, Inbox, the account; a visitor's Appearance, Sign in and Sign up. */
@@ -544,8 +599,19 @@
     }
 
     .pb-top,
-    .pb-app__side {
+    .pb-app__side,
+    .pb-app__banner:not(.pb-app__banner--view) {
       display: none;
+    }
+
+    /* Under the bar, through the page's side padding where the bar is a page's own (below). */
+    .pb-app__banner--view {
+      display: flex;
+    }
+
+    /* Under the shell's own bar the banner is a row of the frame's grid, so the page keeps the stretching row. */
+    .pb-frame:has(> .pb-app__banner--view) {
+      grid-template-rows: auto auto minmax(0, 1fr);
     }
 
     .pb-app__page {
@@ -565,7 +631,8 @@
     }
 
     .pb-page .pb-rows,
-    .pb-page > .pb-frame-vh:first-child {
+    .pb-page > .pb-frame-vh:first-child,
+    .pb-page > .pb-app__banner--view {
       margin-inline: calc(-1 * var(--muxui-semantic-layout-inset-medium));
     }
 

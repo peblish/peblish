@@ -26,10 +26,11 @@ import {
 } from '../-types.ts';
 import { CommunityAside, CommunityRules } from './community-aside.tsx';
 import { CommunityPicker } from './community-picker.tsx';
-import { clearDraft, readDraft, removeUnscopedDrafts, writeDraft } from './drafts.ts';
+import { carried, clearDraft, holds, readDraft, removeUnscopedDrafts, writeDraft, type Draft, type DraftScope } from './drafts.ts';
 import { ErrorText } from './error-text.tsx';
 import { ComposerField } from './field.tsx';
 import { ImageField } from './image-field.tsx';
+import { directoryPaths } from '../../../shell/paths.ts';
 import { useEditorLabels } from './labels.ts';
 
 const Answer = type({ 'redirect?': 'string', 'error?': 'string' });
@@ -94,6 +95,8 @@ interface Form {
 }
 
 const pristine = (form: Form) => form.title === '' && form.url === '' && form.body === '';
+/** What a draft keeps of a text or link post. */
+const toDraft = ({ type, title, url, body, nsfw }: Form): Draft => ({ type: type === 'link' ? 'link' : 'text', title, url, body, nsfw });
 
 /**
  * The post being edited or an empty form, with what was typed before a refusal (without
@@ -141,13 +144,16 @@ export function Composer({ data, error: initialError, onDone, onDiscard, keepOnC
   const [error, setError] = useState(initialError);
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState<number | null>(null);
-  const [note, setNote] = useState<'saved' | 'restored' | 'not-saved' | null>(null);
+  const [note, setNote] = useState<'saved' | 'restored' | 'carried' | 'carried-kept' | 'not-saved' | 'taken' | null>(null);
   const enhanced = useHydrated();
   const formElement = useRef<HTMLFormElement>(null);
   const panelRequest = useRef(0);
   // What the unmount cleanup needs to know, read at that moment.
   const latest = useRef(form);
   const finished = useRef(false);
+  // The form's own copy: the draft laid over it or last kept from it, and where. Posting, discarding, saving and the
+  // sheet closing touch that copy only, and only while it is still what the form left there.
+  const restored = useRef<{ scope: DraftScope; draft: Draft } | null>(null);
   useEffect(() => {
     latest.current = form;
   });
@@ -156,31 +162,59 @@ export function Composer({ data, error: initialError, onDone, onDiscard, keepOnC
   // mount, before the effect below runs, while that effect still sees the first, empty form.
   const typed = useRef(false);
 
-  // Starting on a community that has a saved draft (a new post, nothing typed yet) restores it.
-  // Typed words win: the form is judged as it is when the draft is laid over it.
+  // Starting with nothing typed (a new post), the draft Browse carried comes back, wherever Create post was opened
+  // after it, and the starting community's own saved draft stays as it is (it says so); else that saved draft. Typed
+  // words win: the form is judged as it is when the draft is laid over it.
   useEffect(() => {
     removeUnscopedDrafts();
     if (edit || kept || !pristine(form)) return;
-    const draft = readDraft({ actorId, community: form.community });
-    if (draft) {
+    const community = { actorId, community: form.community };
+    for (const scope of [carried(actorId), community]) {
+      const draft = readDraft(scope);
+      if (!draft) continue;
       setForm((current) => (pristine(current) ? { ...current, ...draft } : current));
-      if (!typed.current) setNote('restored');
+      if (!typed.current) {
+        restored.current = { scope, draft };
+        setNote(!('carried' in scope) ? 'restored' : readDraft(community) ? 'carried-kept' : 'carried');
+      }
+      return;
     }
     // Once, on arrival: the community chosen later restores its draft in choose().
     // oxlint-disable-next-line react/exhaustive-deps
   }, []);
 
+  /**
+   * Keeps the form as a draft (Save draft, the sheet closing): over its own copy while that is still what it left
+   * there; with none, under its community, or, when another draft is kept there, in the slot read wherever Create post
+   * opens next. Never over a draft the form did not restore or keep: 'taken' when every place held one.
+   */
+  function keep(last: Form): 'kept' | 'refused' | 'taken' {
+    const own = restored.current;
+    const draft = toDraft(last);
+    const places = own && holds(own.scope, own.draft) ? [own.scope] : [{ actorId, community: last.community }, carried(actorId)];
+    for (const scope of places) {
+      if (scope !== own?.scope && readDraft(scope) !== null) continue;
+      if (!writeDraft(scope, draft)) return 'refused';
+      restored.current = { scope, draft };
+      return 'kept';
+    }
+    return 'taken';
+  }
+
+  /** Posted or discarded: the form's own copy goes, while it is still what the form left there; no other draft. */
+  function forget() {
+    const own = restored.current;
+    if (own && holds(own.scope, own.draft)) clearDraft(own.scope);
+  }
+
   // Dismissing the sheet with writing in it keeps it as a draft, so Escape never loses a post.
   useEffect(
     () => () => {
       const last = latest.current;
-      if (keepOnClose && !finished.current && !edit && !pristine(last) && last.type !== 'image') {
-        writeDraft(
-          { actorId, community: last.community },
-          { type: last.type, title: last.title, url: last.url, body: last.body, nsfw: last.nsfw },
-        );
-      }
+      if (keepOnClose && !finished.current && !edit && !pristine(last) && last.type !== 'image') keep(last);
     },
+    // `keep` reads refs and `actorId` only.
+    // oxlint-disable-next-line react/exhaustive-deps
     [keepOnClose, edit, actorId],
   );
 
@@ -196,8 +230,47 @@ export function Composer({ data, error: initialError, onDone, onDiscard, keepOnC
     });
     // A community with a saved draft gets it back, unless something is already typed.
     const draft = pristine(form) ? readDraft({ actorId, community: id }) : null;
-    if (draft) setNote('restored');
+    if (draft) {
+      restored.current = { scope: { actorId, community: id }, draft };
+      setNote('restored');
+    }
     setForm({ ...form, ...draft, community: id });
+  }
+
+  /** The field emptied: no community, so no rules beside the form. */
+  function unchoose() {
+    ++panelRequest.current;
+    setPanel(null);
+    setForm((current) => ({ ...current, community: null }));
+  }
+
+  /**
+   * Off to the directory to find a community. What was typed goes as the draft Browse carries (drafts.ts), which
+   * Create post takes back wherever it is opened next. It leaves once that is kept, and asks first when it cannot
+   * be: the browser refused it, another carried draft is waiting (never replaced), or the post is an image.
+   */
+  function browse() {
+    const leave = () => {
+      // Kept here (or let go when asked), so the sheet closing behind it keeps no second copy.
+      finished.current = true;
+      onDone(directoryPaths.browse);
+    };
+    if (form.type === 'image') {
+      const file = formElement.current ? new FormData(formElement.current).get('image') : null;
+      const started = !pristine(form) || form.alt !== '' || (file instanceof File && file.size > 0);
+      if (!started || window.confirm(t('composer', 'browse.image'))) leave();
+      return;
+    }
+    if (pristine(form)) return leave();
+    const slot = carried(actorId);
+    const from = restored.current;
+    const free = readDraft(slot) === null || (from !== null && 'carried' in from.scope && holds(slot, from.draft));
+    if (free && writeDraft(slot, toDraft(form))) {
+      // A community's draft restored here goes along with it: no copy stays behind under that community.
+      if (from && !('carried' in from.scope) && holds(from.scope, from.draft)) clearDraft(from.scope);
+      return leave();
+    }
+    if (window.confirm(t('composer', free ? 'browse.notKept' : 'browse.otherKept'))) leave();
   }
 
   function change(patch: Partial<Form>) {
@@ -244,7 +317,7 @@ export function Composer({ data, error: initialError, onDone, onDiscard, keepOnC
       if (!answer || answer instanceof type.errors) return setError('generic');
       if (answer.redirect) {
         finished.current = true;
-        clearDraft({ actorId, community: form.community });
+        forget();
         onDone(answer.redirect);
       } else setError(asComposerError(answer.error) ?? 'generic');
     } catch {
@@ -257,19 +330,13 @@ export function Composer({ data, error: initialError, onDone, onDiscard, keepOnC
 
   function saveDraft() {
     if (form.type === 'image') return;
-    setNote(
-      writeDraft(
-        { actorId, community: form.community },
-        { type: form.type, title: form.title, url: form.url, body: form.body, nsfw: form.nsfw },
-      )
-        ? 'saved'
-        : 'not-saved',
-    );
+    const result = keep(form);
+    setNote(result === 'kept' ? 'saved' : result === 'taken' ? 'taken' : 'not-saved');
   }
 
   function discard() {
     finished.current = true;
-    clearDraft({ actorId, community: form.community });
+    forget();
     onDiscard();
   }
 
@@ -305,7 +372,13 @@ export function Composer({ data, error: initialError, onDone, onDiscard, keepOnC
           </>
         ) : (
           <>
-            <CommunityPicker communities={data.communities} value={form.community} onChange={choose} error={fieldError('community')} />
+            <CommunityPicker
+              communities={data.communities}
+              value={form.community}
+              onChange={(id) => (id === null ? unchoose() : choose(id))}
+              onBrowse={browse}
+              error={fieldError('community')}
+            />
             {inlineRules}
             {/* Real radios: the choice posts without JavaScript, and the CSS shows each type's fields by the checked one. */}
             <RadioGroup

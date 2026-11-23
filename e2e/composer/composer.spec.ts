@@ -1,7 +1,7 @@
 import { expect, test, type BrowserContext, type Page, type Route } from '@playwright/test';
 import { expectAccessible, landed, signIn } from '../auth/support.ts';
 import { gotoHydrated, recordConsole } from '../support/route-marker.ts';
-import { choose, chooseType, community, radioLabel, seed, type Seed, signedIn } from './support.ts';
+import { choose, chooseType, community, communityField, openCommunities, seed, type Seed, signedIn } from './support.ts';
 import { siteName } from '../support/site-name.ts';
 
 // The composer as a page, end to end on the built server and the lane database: the picker and
@@ -51,12 +51,17 @@ test('the page hydrates, lists the communities and has no axe violations', async
   await expect(page.getByRole('heading', { level: 1, name: 'Create post' })).toBeVisible();
   await expect(page).toHaveTitle(`Create post \u00b7 ${await siteName(page)}`);
   // Local communities, and the remote one the person follows.
+  await openCommunities(page);
   await expect(community(page, world.communities.open.handle)).toBeEnabled();
   await expect(community(page, world.communities.remote.handle)).toBeEnabled();
   // A community restricted to moderators is disabled for a plain account, with the reason beside it.
   await expect(community(page, world.communities.staff.handle)).toBeDisabled();
   await expect(page.getByText('posting disabled for you').first()).toBeVisible();
   await expect(page.getByText(`Posting as @${world.people.poster}@`)).toBeVisible();
+  // The open list hides the rest of the page from assistive technology (React Aria), so the page is checked closed,
+  // once the list has faded out and left.
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('listbox')).toHaveCount(0);
   await expectAccessible(page);
   expect(log.hydrationProblems()).toEqual([]);
   await page.close();
@@ -66,6 +71,7 @@ test('the picker leaves out removed communities, hides age-gated ones from someo
   const { open, remote, adult, gated, gone, remoteStaff } = world.communities;
   const declared = await poster.newPage();
   await gotoHydrated(declared, '/submit');
+  await openCommunities(declared);
   await expect(community(declared, adult.handle)).toBeEnabled();
   await expect(community(declared, gated.handle)).toBeEnabled();
   await expect(community(declared, gone.handle)).toHaveCount(0);
@@ -79,6 +85,7 @@ test('the picker leaves out removed communities, hides age-gated ones from someo
 
   const minor = await young.newPage();
   await gotoHydrated(minor, '/submit');
+  await openCommunities(minor);
   await expect(community(minor, open.handle)).toBeEnabled();
   await expect(community(minor, remote.handle)).toBeEnabled();
   for (const hidden of [adult, gated, gone]) await expect(community(minor, hidden.handle)).toHaveCount(0);
@@ -129,6 +136,7 @@ test('the panel does not exist for an age-gated community when the viewer has no
 test('a moderator can pick the restricted community', async () => {
   const page = await moderator.newPage();
   await gotoHydrated(page, '/submit');
+  await openCommunities(page);
   await expect(community(page, world.communities.staff.handle)).toBeEnabled();
   await page.close();
 });
@@ -144,11 +152,11 @@ test('the chosen community shows its rules and posting warning beside the form',
   await expect(aside.getByRole('listitem')).toHaveCount(2);
   await expect(aside.getByText('Be civil')).toBeVisible();
   await expect(aside.getByText('Stay on topic')).toBeVisible();
-  // The filter narrows the list and never drops the chosen community from the form.
-  await page.getByRole('searchbox', { name: 'Search communities' }).fill('tech_');
+  // Typing narrows the list and never drops the chosen community from the form.
+  await communityField(page).fill('tech_');
   await expect(community(page, world.communities.open.handle)).toHaveCount(0);
-  await expect(radioLabel(community(page, world.communities.remote.handle))).toBeVisible();
-  await expect(page.locator('input[name="community"]:checked')).toHaveValue(world.communities.open.id);
+  await expect(community(page, world.communities.remote.handle)).toBeVisible();
+  await expect(page.locator('input[name="community"]')).toHaveValue(world.communities.open.id);
   await page.close();
 });
 
@@ -356,17 +364,9 @@ test("a draft is the signed-in person's: someone else on the same browser does n
   await shared.close();
 });
 
-test('a missing community is announced and stays in view below a list that scrolls', async () => {
+test('a missing community is announced and stays in view under the field', async () => {
   const page = await poster.newPage();
   await gotoHydrated(page, '/submit');
-  // The list is taller than its box, so it scrolls: the case where an error inside the scrolling part would be out of sight.
-  const scrolls = await community(page, world.communities.open.handle).evaluate((radio) => {
-    for (let node = radio.parentElement; node; node = node.parentElement) {
-      if (getComputedStyle(node).overflowY === 'auto') return node.scrollHeight > node.clientHeight;
-    }
-    return false;
-  });
-  expect(scrolls).toBe(true);
   await page.getByLabel('Title').fill('Nowhere to post');
   await post(page).click();
   const alert = page.getByRole('alert');
@@ -374,8 +374,9 @@ test('a missing community is announced and stays in view below a list that scrol
   // Posting scrolled the page down to the button; back at the top the error is in sight, not under the list's scroll.
   await page.evaluate(() => window.scrollTo(0, 0));
   await expect(alert).toBeInViewport();
-  // Still the group's description, so it is read with the field too.
-  await expect(page.getByRole('radiogroup', { name: 'Community' })).toHaveAccessibleDescription('Choose a community to post in.');
+  // Still the field's description, so it is read with the field too.
+  await expect(communityField(page)).toHaveAccessibleDescription(/Choose a community to post in\./);
+  await expect(communityField(page)).toHaveAttribute('aria-invalid', 'true');
   await page.close();
 });
 

@@ -20,10 +20,14 @@ declare module '@tanstack/react-router' {
   }
 }
 
-/** What the shell gives every view header: the site's mark for the phone's top bar and the phone drawer's button. */
+/**
+ * What the shell gives every view header: the site's mark for the phone's top bar, the phone drawer's button, and
+ * the site banner as a phone shows it, under the top bar (banner.tsx; a computer shows it under the header).
+ */
 export interface FrameParts {
   brand: ReactNode;
   drawer: ReactNode;
+  banner?: ReactNode;
 }
 
 export const FrameContext = createContext<FrameParts | null>(null);
@@ -66,32 +70,36 @@ export function ViewHeader({
   // A named navigation: the shell's own bar sits beside the route's <main>, so it needs a landmark of
   // its own, and a second <header> would be a second banner beside the site's header.
   return (
-    <nav className="pb-frame-vh" aria-label={t('shell', 'bar.label')}>
-      <Bar
-        leading={
-          back ? (
-            <IconButton variant="ghost" aria-label={t('shell', 'back')} onActivate={() => router.history.back()}>
-              <ChevronLeft />
-            </IconButton>
-          ) : (
-            <span className="pb-frame-vh__home">
-              {parts?.brand}
-              <FindLink compact />
-            </span>
-          )
-        }
-        title={title}
-        phoneTitle={phoneTitle}
-        quiet={quiet}
-        trailing={
-          <>
-            {trailing}
-            {/* Inside the nav, Mux's own <header> around the button is not a second banner. */}
-            <div className="pb-frame-vh__menu">{parts?.drawer}</div>
-          </>
-        }
-      />
-    </nav>
+    <>
+      <nav className="pb-frame-vh" aria-label={t('shell', 'bar.label')}>
+        <Bar
+          leading={
+            back ? (
+              <IconButton variant="ghost" aria-label={t('shell', 'back')} onActivate={() => router.history.back()}>
+                <ChevronLeft />
+              </IconButton>
+            ) : (
+              <span className="pb-frame-vh__home">
+                {parts?.brand}
+                <FindLink compact />
+              </span>
+            )
+          }
+          title={title}
+          phoneTitle={phoneTitle}
+          quiet={quiet}
+          trailing={
+            <>
+              {trailing}
+              {/* Inside the nav, Mux's own <header> around the button is not a second banner. */}
+              <div className="pb-frame-vh__menu">{parts?.drawer}</div>
+            </>
+          }
+        />
+      </nav>
+      {/* On a phone the site banner follows the top bar, in the page and in focus order, and scrolls away under it. */}
+      {parts?.banner}
+    </>
   );
 }
 

@@ -188,4 +188,28 @@
   .adm-no-enter {
     display: none;
   }
+
+  /* Settings: the site banner and the layout width (-banner-width.tsx). The banner's section follows the
+     main form, so it takes the rule between sections itself. */
+  .adm-form + .adm-banner {
+    padding-block-start: var(--muxui-semantic-layout-section-gap);
+    border-block-start: 1px solid var(--muxui-semantic-border-subtle);
+  }
+
+  /* Two short fields side by side where there is room. */
+  .adm-pair {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+    gap: var(--muxui-semantic-layout-section-gap) var(--muxui-semantic-layout-group-gap);
+    align-items: start;
+  }
+
+  /* The colour field is for Custom only; read from the tone's own radio, so it follows with scripts off too. */
+  .adm-banner__colour {
+    display: none;
+  }
+
+  .adm-banner:has(input[name='banner.tone'][value='custom']:checked) .adm-banner__colour {
+    display: block;
+  }
 }

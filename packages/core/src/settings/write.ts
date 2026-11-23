@@ -30,6 +30,12 @@ function normalised(key: SiteSettingKey, value: unknown): unknown {
   return value;
 }
 
+/** The revision of the banner stored now: its own where it still has a readable one, else 0. */
+const lastRevision = (stored: unknown) => {
+  const revision = typeof stored === 'object' && stored !== null && 'revision' in stored ? stored.revision : 0;
+  return Number.isSafeInteger(revision) && Number(revision) >= 0 ? Number(revision) : 0;
+};
+
 /** The first patched key (in sorted order) that is unknown or whose value fails its contract, else each key with its stored value. */
 function check(patch: SettingsPatch): { invalid: string } | { entries: [SiteSettingKey, unknown][] } {
   const entries: [SiteSettingKey, unknown][] = [];
@@ -62,7 +68,9 @@ export const invalidSetting = (patch: SettingsPatch): string | null => {
  * flight, see media/settings.ts and registration/settings.ts), and a reader that comes later
  * sees the new value. A patch that changes nothing writes nothing. A change writes one modlog
  * row (settings.update, no community or target, not public) with each changed key's value
- * before and after, and settings.updated, in the same transaction. A grant whose subject names
+ * before and after, and settings.updated, in the same transaction. `site.banner` is the
+ * exception to both: whatever `revision` the patch names, the stored one is raised by one on
+ * every save, so a banner save always writes. A grant whose subject names
  * `values` (the import turning the federation switch off) writes exactly those values.
  */
 export const updateSettings = defineMutation({
@@ -78,23 +86,32 @@ export const updateSettings = defineMutation({
     if (values && !entries.every(([key, value]) => Object.hasOwn(values, key) && isDeepStrictEqual(values[key], value)))
       throw new Refused('settings.update', 'settings.invalid');
     const changes: Record<string, { before: unknown; after: unknown }> = {};
-    for (const [key, after] of entries) {
+    for (const [key, value] of entries) {
       await t.db.insert(siteSettings).values({ key, value: contract[key].default }).onConflictDoNothing();
+      // The banner is published rather than set: every save raises its revision under the row's
+      // lock, a save that repeats the last one too, so two admins never share a revision and a
+      // browser that dismissed the last one shows it again.
+      const publish = key === 'site.banner';
       // A key that already has the value is left alone without taking its lock, so saving the
       // other fields of a form does not wait on a reader that holds one of them.
       const [current] = await t.db.select({ value: siteSettings.value }).from(siteSettings).where(eq(siteSettings.key, key));
-      if (current && isDeepStrictEqual(current.value, after)) continue;
+      if (!publish && current && isDeepStrictEqual(current.value, value)) continue;
       const [row] = await t.db
         .select({ value: siteSettings.value })
         .from(siteSettings)
         .where(eq(siteSettings.key, key))
         .for('no key update');
-      if (!row || isDeepStrictEqual(row.value, after)) continue;
+      if (!row) continue;
+      // A stored value that fails the contract (readers show the default in its place, read.ts) is replaced like
+      // any other; the log says it was unreadable rather than keep content nothing has checked.
+      const readable = !(contract[key].schema(row.value) instanceof type.errors);
+      const after = publish ? { ...contract['site.banner'].schema.assert(value), revision: lastRevision(row.value) + 1 } : value;
+      if (!publish && isDeepStrictEqual(row.value, after)) continue;
       await t.db
         .update(siteSettings)
         .set({ value: after, updatedBy: grant.actorId, updatedAt: sql`now()` })
         .where(eq(siteSettings.key, key));
-      changes[key] = { before: row.value, after };
+      changes[key] = { before: readable ? row.value : { unreadable: true }, after };
     }
     const changed = Object.keys(changes).filter(isKey);
     if (changed.length === 0) return { changed, modlogId: null };
