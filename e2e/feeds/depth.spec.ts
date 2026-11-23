@@ -1243,6 +1243,16 @@ test('a reader who scrolls while a return loads is left where the router puts th
     await expect.poll(() => held.length).toBe(1);
     await page.mouse.move(640, 400);
     await page.mouse.wheel(0, 300);
+    // At rest before the read is let go, so no scroll the wheel started runs on into the feed.
+    let last = -1;
+    await expect
+      .poll(async () => {
+        const now = await page.evaluate(() => scrollY);
+        const still = now === last;
+        last = now;
+        return still;
+      })
+      .toBe(true);
     held[0]!.go();
     await expect(rows(page)).toHaveCount(count);
     await expect(rows(page).first()).toContainText(`Depth ${seed.suffix} new 03`);
