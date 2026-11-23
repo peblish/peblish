@@ -50,9 +50,10 @@ async function holdReads(page: Page) {
   return held;
 }
 
-/** Scrolls to the end of the list until it holds `count` rows. */
+/** Scrolls to the end of the list until it holds `count` rows, and no further once it does (the end's batch would follow). */
 async function loadTo(page: Page, count: number) {
   await expect(async () => {
+    if ((await rows(page).count()) >= count) return;
     await rows(page).last().scrollIntoViewIfNeeded();
     expect(await rows(page).count()).toBeGreaterThanOrEqual(count);
   }).toPass({ timeout: 30_000 });
@@ -60,9 +61,14 @@ async function loadTo(page: Page, count: number) {
 
 /** How many rows the list holds once no batch is on its way and its address says so (reaching a row can load one more batch). */
 async function holding(page: Page) {
-  await expect(page.locator('.pb-feed-end[data-state="pending"]')).toHaveCount(0);
-  const count = await rows(page).count();
-  await expect(page).toHaveURL(new RegExp(`n=${count}$`));
+  let count = 0;
+  await expect
+    .poll(async () => {
+      if (await page.locator('.pb-feed-end[data-state="pending"]').count()) return false;
+      count = await rows(page).count();
+      return new URL(page.url()).searchParams.get('n') === String(count);
+    })
+    .toBe(true);
   return count;
 }
 
@@ -672,12 +678,14 @@ test('when the post the reader opened is no longer among the fresh rows, Back pu
     // From there the reader opens another post, which is removed while they read it.
     await link(page, title(40)).scrollIntoViewIfNeeded();
     await settled(page);
+    // Near the end of the list, so another batch may have come.
+    const now = await holding(page);
     const y = await page.evaluate(() => Math.round(scrollY));
     await link(page, title(40)).click();
     await expect(page.getByRole('heading', { level: 1 })).toHaveText(title(40));
     run('remove', title(40));
     await page.goBack();
-    await expect(rows(page)).toHaveCount(count);
+    await expect(rows(page)).toHaveCount(now);
     await agrees(page);
     await expect(link(page, title(40))).toHaveCount(0);
     await expect.poll(() => page.evaluate(() => Math.round(scrollY))).toBe(y);
