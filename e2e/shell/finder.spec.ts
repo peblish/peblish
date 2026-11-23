@@ -99,9 +99,11 @@ test('the link opens the finder, whose rows are in named groups, read as one lis
   await expect(rows(page, 'More communities')).toHaveText([new RegExp(bake.title), new RegExp(glaze.title)]);
   // The count, politely, once the answer is in.
   await expect(finder(page).getByRole('status')).toHaveText('4 communities');
-  await expectAccessible(page);
-  // The first row is ready for Enter; the arrows run on from one group into the next.
+  // The first row is ready for Enter, and axe reads the finder once the field names it: for a moment after the rows
+  // change, Mux UI's palette still names the row that left (pull request 97 lists it for Mux UI).
   await expect.poll(() => highlighted(page)).toContain(brew.title);
+  await expectAccessible(page);
+  // The arrows run on from one group into the next.
   for (const next of [kiln, bake, glaze]) {
     await page.keyboard.press('ArrowDown');
     await expect.poll(() => highlighted(page)).toContain(next.title);
