@@ -64,6 +64,25 @@ async function holding(page: Page) {
   return count;
 }
 
+/**
+ * The address and the rows on screen agree, once no batch and no read of the list is on its way: as many rows as
+ * the address's `n` says (one batch without it), fewer only at the end of the feed (its end line says so), and at
+ * the cap of 200 the rows the reader has loaded on below them.
+ */
+async function agrees(page: Page) {
+  await expect(page.locator('.pb-feed-end[data-state="pending"]')).toHaveCount(0);
+  await expect(page.locator('#pb-main main[aria-busy="true"], .feed-posts > .pb-rows[aria-busy="true"]')).toHaveCount(0);
+  await expect
+    .poll(async () => {
+      const n = Number(new URL(page.url()).searchParams.get('n') ?? 20);
+      const count = await rows(page).count();
+      if (n === 200) return count >= 200;
+      const end = (await page.locator('.pb-feed-end').count()) ? await page.locator('.pb-feed-end').textContent() : null;
+      return count === n || (count < n && end === 'That is everything for now.');
+    })
+    .toBe(true);
+}
+
 /** Two frames, so the scroll event of a scroll just made has reached the router (it keeps the position for Back). */
 const settled = (page: Page) =>
   page.evaluate(() => new Promise<void>((done) => requestAnimationFrame(() => requestAnimationFrame(() => done()))));
@@ -153,11 +172,13 @@ test('signed out, with batch two still loading when the reader opens a slow post
     await expect(rows(page)).toHaveCount(0);
     held[1]!.go();
     await expect(rows(page)).toHaveCount(20);
+    await agrees(page);
     // Batch two was never in the list, so it loads as usual, and fresh.
     await rows(page).last().scrollIntoViewIfNeeded();
     await expect.poll(() => held.length).toBe(3);
     held[2]!.go();
     await expect(rows(page)).toHaveCount(40);
+    await agrees(page);
     await expect(link(page, title(196))).toHaveCount(0);
     await expect(link(page, title(195))).toHaveCount(1);
     expect(await seen()).toBe(false);
@@ -188,6 +209,7 @@ test('from 80 New rows, Back to a slow Old sort, then Forward: 80 rows, and the 
   held[1]!.go();
   await expect(rows(page)).toHaveCount(count);
   await expect(link(page, title(61))).toBeInViewport();
+  await agrees(page);
 });
 
 test('two posts that swapped between batches while the reader was away are both shown once', async ({ page }) => {
@@ -204,6 +226,7 @@ test('two posts that swapped between batches while the reader was away are both 
   try {
     await page.goBack();
     await expect(rows(page)).toHaveCount(count);
+    await agrees(page);
     await expect(link(page, title(25))).toHaveCount(1);
     await expect(link(page, title(45))).toHaveCount(1);
     await expect(rows(page).nth(24)).toContainText(title(45));
@@ -257,6 +280,7 @@ test("an upvote acknowledged while the loader's reload is on its way survives th
   await expect(shown).toContainText(title(1));
   await expect(shown.getByRole('button', { name: 'Upvote' })).toHaveAttribute('aria-pressed', 'true');
   await expect(shown.locator('.pb-vote__score')).toHaveText(String(score + 1));
+  await agrees(page);
   // Taken back, so the next run starts from the same score.
   const back = page.waitForResponse((response) => isVoteOn(id)(response.request()));
   await shown.getByRole('button', { name: 'Upvote' }).click();
@@ -304,6 +328,7 @@ test('a vote cast on the post page and saved while Back is on its way shows on t
   await expect(shown).toContainText(title(3));
   await expect(shown.getByRole('button', { name: 'Upvote' })).toHaveAttribute('aria-pressed', 'true');
   await expect(shown.locator('.pb-vote__score')).toHaveText(String(score + 1));
+  await agrees(page);
   // Taken back, so the next run starts from the same score.
   const back = page.waitForResponse((response) => isVoteOn(id)(response.request()));
   await shown.getByRole('button', { name: 'Upvote' }).click();
@@ -362,6 +387,7 @@ test('Back, Forward, Back leaves no request running for an entry the reader has 
   await expect.poll(() => held.length).toBe(2);
   held[1]!.go();
   await expect(rows(page)).toHaveCount(count);
+  await agrees(page);
   expect(held).toHaveLength(2);
 });
 
@@ -370,9 +396,11 @@ test('an address deeper than 200 rows comes back with 200, and the list loads on
   await gotoHydrated(page, '/?sort=new&n=280');
   await expect(page).toHaveURL(/\/\?sort=new&n=200$/);
   await expect(rows(page)).toHaveCount(200);
+  await agrees(page);
   await expect(rows(page).last()).toContainText(title(200));
   await loadTo(page, 220);
   await expect(page.locator('.pb-feed-end')).toHaveText('That is everything for now.');
+  await agrees(page);
 });
 
 test('an address with no whole number of batches is one batch', async ({ page }) => {
@@ -381,6 +409,7 @@ test('an address with no whole number of batches is one batch', async ({ page })
     await gotoHydrated(page, `/?sort=new&n=${n}`);
     await expect(page).toHaveURL(/\/\?sort=new$/);
     await expect(rows(page)).toHaveCount(20);
+    await agrees(page);
   }
 });
 
@@ -394,6 +423,7 @@ test('a reload at depth comes back to the same rows and place', async ({ page })
   await page.reload();
   await expect(rows(page)).toHaveCount(count);
   await expect(link(page, title(61))).toBeInViewport();
+  await agrees(page);
 });
 
 test('a quick Back, while the post it opened still loads, draws none of the old rows before the fresh answer, nor a post removed meanwhile', async ({
@@ -425,6 +455,7 @@ test('a quick Back, while the post it opened still loads, draws none of the old 
     held[0]!.go();
     await page.waitForURL(`**/?sort=new&n=${count}`);
     await expect(rows(page)).toHaveCount(count);
+    await agrees(page);
     await expect(link(page, title(38))).toHaveCount(0);
     expect(await seen()).toBe(false);
     await expect.poll(() => page.evaluate(() => Math.round(scrollY))).toBe(y);
@@ -460,6 +491,7 @@ test('two quick Backs, through a page still loading, draw no row from before and
     post();
     for (const read of held) read.go();
     await expect(rows(page)).toHaveCount(count);
+    await agrees(page);
     await expect(link(page, title(58))).toHaveCount(0);
     expect(await seen()).toBe(false);
     await expect.poll(() => page.evaluate(() => Math.round(scrollY))).toBe(y);
@@ -492,12 +524,56 @@ test("the sidebar's link to the feed shown, pressed while a post it opened loads
     held[0]!.go();
     // The first page, fresh, and an address that says so.
     await expect(rows(page)).toHaveCount(20);
+    await agrees(page);
     await expect(page).toHaveURL(/\/$/);
     await expect(link(page, title(5))).toHaveCount(0);
     expect(await seen()).toBe(false);
   } finally {
     run('restore', title(5));
   }
+});
+
+test('choosing the sort already chosen, at depth, changes nothing; another sort starts again at one batch', async ({ page }) => {
+  await gotoHydrated(page, '/all?sort=old&n=100');
+  await expect(rows(page)).toHaveCount(100);
+  await agrees(page);
+  const reads: Request[] = [];
+  page.on('request', (request) => isFeedRead(new URL(request.url())) && reads.push(request));
+  await sortBy(page, 'Old');
+  await settled(page);
+  await expect(page).toHaveURL(/\/all\?sort=old&n=100$/);
+  expect(reads).toHaveLength(0);
+  await agrees(page);
+  // Row 68, then Back: the 100 rows the address still says.
+  await link(page, title(153)).click();
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText(title(153));
+  await page.goBack();
+  await expect(rows(page)).toHaveCount(100);
+  await agrees(page);
+  await sortBy(page, 'New');
+  await page.waitForURL('**/all?sort=new');
+  await expect(rows(page)).toHaveCount(20);
+  await agrees(page);
+});
+
+test('an address just past the cap reads as the cap', async ({ page }) => {
+  await signedIn(page);
+  await gotoHydrated(page, '/?sort=new&n=201');
+  await expect(page).toHaveURL(/\/\?sort=new&n=200$/);
+  await expect(rows(page)).toHaveCount(200);
+  await agrees(page);
+});
+
+test('a period under a sort that has none is dropped, and loading more reads only the batches after it', async ({ page }) => {
+  const reads: Request[] = [];
+  page.on('request', (request) => isFeedRead(new URL(request.url())) && reads.push(request));
+  await gotoHydrated(page, '/all?sort=old&period=week');
+  await expect(page).toHaveURL(/\/all\?sort=old$/);
+  await loadTo(page, 40);
+  await holding(page);
+  await agrees(page);
+  // The first page came with the document: in the browser, only the batches after it.
+  expect(reads.filter((request) => !asks(request, '"cursor"'))).toHaveLength(0);
 });
 
 test('with reduced motion, Back puts the place back in one step', async ({ page }) => {
@@ -519,6 +595,7 @@ test('with reduced motion, Back puts the place back in one step', async ({ page 
   });
   await page.goBack();
   await expect(rows(page)).toHaveCount(count);
+  await agrees(page);
   await expect.poll(() => page.evaluate(() => Math.round(scrollY))).toBe(y);
   // No position between the post page's top and the reader's place: nothing animated the way there.
   const at = await page.evaluate(() => (window as unknown as { at: number[] }).at);
@@ -535,6 +612,7 @@ test('an ordinary visit to a feed reads one batch, once, and draws it', async ({
   await page.getByRole('complementary', { name: 'Sidebar' }).getByRole('link', { name: 'All', exact: true }).click();
   await page.waitForURL('**/all');
   await expect(rows(page)).toHaveCount(20);
+  await agrees(page);
   expect(reads).toHaveLength(1);
   expect(asks(reads[0]!, '"n"')).toBe(false);
 });
@@ -553,6 +631,7 @@ test('a link back to a feed the router still holds draws none of its rows before
   await expect(page.locator('main.feed[data-feed="all"]')).toHaveCount(0);
   held[0]!.go();
   await expect(page.locator('main.feed[data-feed="all"] .feed-list > li')).toHaveCount(20);
+  await agrees(page);
 });
 
 test("a press on the frame's link to the feed shown, at depth, puts the list at its top without reading it again", async ({ page }) => {
@@ -569,6 +648,7 @@ test("a press on the frame's link to the feed shown, at depth, puts the list at 
   await expect(rows(page).first().locator('.pb-post__title a')).toBeFocused();
   await expect(page).toHaveURL(new RegExp(`/all\\?n=${count}$`));
   await expect(rows(page)).toHaveCount(count);
+  await agrees(page);
   expect(reads).toHaveLength(0);
 });
 
@@ -578,6 +658,7 @@ test.describe('without JavaScript', () => {
   test('an address with n=60 is drawn with 60 rows by the server, and the next page is a plain link', async ({ page }) => {
     await page.goto('/all?sort=old&n=60');
     await expect(rows(page)).toHaveCount(60);
+    await agrees(page);
     await expect(rows(page).first()).toContainText(title(220));
     const next = page.getByRole('link', { name: 'Next page' });
     await expect(next).toHaveAttribute('href', /^\/all\?sort=old&cursor=[^&]+$/);

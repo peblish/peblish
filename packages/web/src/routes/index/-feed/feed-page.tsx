@@ -145,7 +145,12 @@ function FeedHeader({ path, feed, search: address }: { path: string; feed: FeedN
           ? t('feeds', 'header.sortTop', { period: t('feeds', `period.${search.period}`) })
           : t('feeds', 'header.sort', { sort: sortName }),
     },
-    onChange: (sort: Sort, period?: Period) => openInRouter(router, feedHref(path, { sort, period: period ?? search.period })),
+    // The sort (and period) already chosen changes nothing: the address keeps its `n`, the list its rows.
+    // Another one is another list, from its first batch.
+    onChange: (sort: Sort, period = search.period) => {
+      if (sort === search.sort && (sort !== 'top' || period === search.period)) return;
+      openInRouter(router, feedHref(path, { sort, period }));
+    },
     disabled: !hydrated,
   };
   return (

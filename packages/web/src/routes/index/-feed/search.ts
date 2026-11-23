@@ -12,11 +12,15 @@ export type FeedSearch = { sort?: Sort | undefined; period?: Period | undefined;
 /** A feed address with the defaults filled in, as the loader's deps (`n` is read apart, so growing it loads nothing). */
 export type FeedPosition = { sort: Sort; period: Period; cursor?: string | undefined };
 
-/** `n` as the address has it: whole batches beyond the first, at most `maxDepth`; anything else is one batch (undefined). */
+/**
+ * `n` as the address has it: whole batches beyond the first, and anything beyond `maxDepth` is `maxDepth`;
+ * anything else is one batch (undefined).
+ */
 export function depth(raw: unknown): number | undefined {
   const value = typeof raw === 'number' ? raw : typeof raw === 'string' && /^\d+$/.test(raw) ? Number(raw) : Number.NaN;
-  if (!Number.isInteger(value) || value <= defaultPageSize || value % defaultPageSize !== 0) return undefined;
-  return Math.min(value, maxDepth);
+  if (!Number.isInteger(value)) return undefined;
+  if (value > maxDepth) return maxDepth;
+  return value > defaultPageSize && value % defaultPageSize === 0 ? value : undefined;
 }
 
 /**
@@ -30,15 +34,16 @@ export function parseFeedSearch(raw: { sort?: unknown; period?: unknown; cursor?
   const period = Period(raw.period);
   return {
     sort: typeof sort === 'string' ? sort : undefined,
-    period: typeof period === 'string' ? period : undefined,
+    // Only Top has a period; one given to another sort is dropped, so it is the same list and the same address.
+    period: sort === 'top' && typeof period === 'string' ? period : undefined,
     cursor: typeof raw.cursor === 'string' && raw.cursor.length > 0 && raw.cursor.length <= 400 ? raw.cursor : undefined,
     n: depth(raw.n),
   };
 }
 
-export const resolveFeedSearch = ({ sort, period, cursor }: FeedSearch): FeedPosition => ({
-  sort: sort ?? defaultSort,
-  period: period ?? defaultPeriod,
+export const resolveFeedSearch = ({ sort = defaultSort, period, cursor }: FeedSearch): FeedPosition => ({
+  sort,
+  period: sort === 'top' ? (period ?? defaultPeriod) : defaultPeriod,
   cursor,
 });
 
