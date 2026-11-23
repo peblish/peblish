@@ -123,9 +123,23 @@ const stored = (page: Page) =>
   );
 const body = (page: Page) => page.getByRole('textbox', { name: 'Body', exact: true });
 
-/** To the directory from the field. The page goes back up first: a scroll closes the field's list (React Aria). */
+/**
+ * The page back at the top before the field is typed in: a scroll closes the field's list (React Aria), and the
+ * scroll's event comes with the next frame, which a busy page can draw after the list has opened. So it waits for that
+ * frame (its scroll event comes before its animation-frame callbacks).
+ */
+const toTop = (page: Page) =>
+  page.evaluate(
+    () =>
+      new Promise<void>((done) => {
+        window.scrollTo({ top: 0, behavior: 'instant' });
+        requestAnimationFrame(() => requestAnimationFrame(() => done()));
+      }),
+  );
+
+/** To the directory from the field. */
 async function browseAway(page: Page) {
-  await page.evaluate(() => window.scrollTo({ top: 0, behavior: 'instant' }));
+  await toTop(page);
   await communityField(page).fill('zzzz no such community');
   await page.getByRole('option', { name: 'Browse all communities' }).click();
 }
@@ -142,7 +156,7 @@ test('with nothing matching it says so over Browse, which keeps the text for Cre
   await choose(page, remote.handle);
   await page.getByLabel('Title').fill('Kept while browsing');
   await body(page).fill('Words to keep');
-  await page.evaluate(() => window.scrollTo({ top: 0, behavior: 'instant' }));
+  await toTop(page);
   await communityField(page).fill('zzzz no such community');
   const browse = page.getByRole('option', { name: 'Browse all communities' });
   await expect(browse).toHaveAccessibleDescription('No community matches.');
