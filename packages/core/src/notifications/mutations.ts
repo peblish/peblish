@@ -1,5 +1,5 @@
 import type { Uuid } from '@peblish/schema/ids';
-import { and, eq, isNotNull, isNull, notInArray, or, sql } from 'drizzle-orm';
+import { and, eq, isNotNull, isNull, not, notInArray, or, sql } from 'drizzle-orm';
 import { deletePersonalNotices, personalNoticeKinds } from '../identity/personal.ts';
 import { notifications } from './tables.ts';
 import { isReadBatch } from './view.ts';
@@ -20,12 +20,30 @@ export type NotificationContext = {
   modlogId: Uuid | null;
 };
 
-/** Writes the notice, once per recipient and cause: a repeat writes nothing and emits nothing. Returns the new id, or null for a repeat. */
+/**
+ * Writes the notice, once per recipient and cause: a repeat writes nothing and emits nothing.
+ * Returns the new id, or null for a repeat. A mention takes the place of the cause's
+ * followed-thread notice when its reader is not shown that one (flagged content, say:
+ * inboxVisible), so a follower mentioned in an edit is told as anyone mentioned is; a
+ * followed-thread notice they are shown stays, as a reply does.
+ */
 export const createNotification = defineMutation({
   action: 'notification.create',
   emits: ['notification.created'],
   async run(t, grant, context: NotificationContext) {
     const { recipientId, kind, refId } = grant.subject;
+    if (kind === 'mention') {
+      await t.db
+        .delete(notifications)
+        .where(
+          and(
+            eq(notifications.recipientId, recipientId),
+            eq(notifications.refId, refId),
+            eq(notifications.kind, 'thread_reply'),
+            not(inboxVisible(recipientId)),
+          ),
+        );
+    }
     const [row] = await t.db
       .insert(notifications)
       .values({ recipientId, kind, refId, ...context })
