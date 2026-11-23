@@ -105,16 +105,30 @@ test('a link opens its page at the top, and back and forward return to where eac
   await wheel(page, 900);
   const link = page.locator('main a[href^="/post/"]').filter({ visible: true }).nth(2);
   await link.scrollIntoViewIfNeeded();
-  const feed = await scrollY(page);
-  expect(feed).toBeGreaterThan(0);
+  expect(await scrollY(page)).toBeGreaterThan(0);
   const href = (await link.getAttribute('href'))!;
+  // How far the link's row stood from the window's top as the press landed (a click can scroll first).
+  await page.evaluate(() =>
+    addEventListener(
+      'click',
+      (event) => {
+        const row = event.target instanceof Element ? event.target.closest('.feed-list > li') : null;
+        document.documentElement.dataset.leftAt = String(row?.getBoundingClientRect().top);
+      },
+      { capture: true, once: true },
+    ),
+  );
   await link.click();
   await expect(page).toHaveURL(href);
   await expect.poll(() => scrollY(page)).toBe(0);
   const post = await wheel(page, 150);
   await page.goBack();
   await expect(page).toHaveURL('/');
-  await expect.poll(() => scrollY(page)).toBe(feed);
+  // A feed puts the row the reader opened back where it stood (routes/index/-feed/places.ts): the window is where
+  // it was, unless posts arrived above that row meanwhile, as other specs' posts can.
+  const leftAt = Number(await page.evaluate(() => document.documentElement.dataset.leftAt));
+  const row = page.locator('.feed-list > li').filter({ has: page.locator(`a[href="${href}"]`) });
+  await expect.poll(() => row.evaluate((element, at) => Math.abs(element.getBoundingClientRect().top - at), leftAt)).toBeLessThanOrEqual(1);
   await page.goForward();
   await expect(page).toHaveURL(href);
   await expect.poll(() => scrollY(page)).toBe(post);
