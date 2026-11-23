@@ -50,13 +50,20 @@ async function holdReads(page: Page) {
   return held;
 }
 
-/** Scrolls to the end of the list until it holds `count` rows, and no further once it does (the end's batch would follow). */
+/**
+ * Scrolls to the last row counted, by its place in the list, until the list holds `count` rows, and no further once
+ * it does (the end's batch would follow); then it holds exactly that many.
+ */
 async function loadTo(page: Page, count: number) {
   await expect(async () => {
-    if ((await rows(page).count()) >= count) return;
-    await rows(page).last().scrollIntoViewIfNeeded();
+    const now = await rows(page).count();
+    if (now >= count) return;
+    await rows(page)
+      .nth(now - 1)
+      .scrollIntoViewIfNeeded();
     expect(await rows(page).count()).toBeGreaterThanOrEqual(count);
   }).toPass({ timeout: 30_000 });
+  await expect(rows(page)).toHaveCount(count);
 }
 
 /** How many rows the list holds once no batch is on its way and its address says so (reaching a row can load one more batch). */
@@ -220,7 +227,7 @@ async function lateBatch(page: Page, feed: string, { opened, removed }: { opened
     expect(asks(held[1]!.request, '"cursor"')).toBe(false);
     // Batch two's answer from before comes while the return's read is out.
     held[0]!.go();
-    await held[0]!.request.response();
+    await (await held[0]!.request.response())?.finished();
     await settled(page);
     held[1]!.go();
     post();
@@ -954,20 +961,32 @@ async function servePictures(page: Page) {
   };
 }
 
-/** Whether the pictures of the posts `titles` have all loaded. */
-const picturesIn = (page: Page, titles: string[]) =>
-  page
-    .locator('.feed-list > li')
-    .evaluateAll(
-      (rows, titles) =>
-        rows
-          .filter((row) => titles.includes(row.querySelector('.pb-post__title a')?.textContent ?? ''))
-          .every(
-            (row) =>
-              [...row.querySelectorAll('img')].every((image) => image.complete && image.naturalWidth > 0) && row.querySelector('img'),
-          ),
-      titles,
-    );
+/**
+ * The pictures of the posts `titles`, in order: for each, whether its row is there with a picture that has loaded,
+ * how the picture is fitted in its box, and the box's width over its height.
+ */
+const picturesOf = (page: Page, titles: string[]) =>
+  page.locator('.feed-list > li').evaluateAll(
+    (rows, titles) =>
+      titles.map((name) => {
+        const row = rows.find((row) => row.querySelector('.pb-post__title a')?.textContent === name);
+        const image = row?.querySelector('img');
+        const box = row?.querySelector('.pb-post__thumb')?.getBoundingClientRect();
+        return {
+          loaded: image ? image.complete && image.naturalWidth > 0 : false,
+          fit: image ? getComputedStyle(image).objectFit : null,
+          ratio: box ? Math.round((box.width / box.height) * 100) / 100 : null,
+        };
+      }),
+    titles,
+  );
+
+/** The pictures of `titles` once they have all loaded: each whole in a 16:9 box in Card, cropped to a 4:3 thumbnail in Classic. */
+async function picturesLoaded(page: Page, titles: string[], density: 'Card' | 'Classic') {
+  await expect.poll(async () => (await picturesOf(page, titles)).every((picture) => picture.loaded)).toBe(true);
+  const expected = density === 'Card' ? { loaded: true, fit: 'contain', ratio: 1.78 } : { loaded: true, fit: 'cover', ratio: 1.33 };
+  expect(await picturesOf(page, titles)).toEqual(titles.map(() => expected));
+}
 
 test('in Card view, pictures that come after Back move nothing: the post the reader opened stays where it stood', async ({ page }) => {
   await signedIn(page);
@@ -992,7 +1011,7 @@ test('in Card view, pictures that come after Back move nothing: the post the rea
     await agrees(page);
     await expect.poll(async () => Math.abs((await top()) - offset)).toBeLessThanOrEqual(1);
     pictures.release();
-    await expect.poll(() => picturesIn(page, above)).toBe(true);
+    await picturesLoaded(page, above, 'Card');
     await settled(page);
     expect(Math.abs((await top()) - offset)).toBeLessThanOrEqual(1);
   } finally {
@@ -1014,7 +1033,7 @@ test('a picture that comes after its row is drawn moves no row, in the views tha
       const tops = () => rows(page).evaluateAll((rows) => rows.slice(0, 8).map((row) => Math.round(row.getBoundingClientRect().top)));
       const before = await tops();
       pictures.release();
-      await expect.poll(() => picturesIn(page, shown)).toBe(true);
+      await picturesLoaded(page, shown, density);
       await settled(page);
       expect(await tops(), density).toEqual(before);
     }
