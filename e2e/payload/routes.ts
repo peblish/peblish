@@ -160,9 +160,7 @@ export const routes: readonly PayloadRoute[] = [
   // The phone's You tab (Commons).
   { route: '/you/', path: '/you', js: { budget: 208.5, measured: 198.5, on: '2026-11-23' }, admin: true },
   { route: '/notifications/', path: '/notifications', js: { budget: 209.1, measured: 199.1, on: '2026-11-23' }, admin: true },
-  // PROVISIONAL until a production build measures it (CI): the Saved page (branch 5) lists feed rows, so it
-  // carries the figures of its nearest page, the feed at /.
-  { route: '/saved/', path: '/saved', js: { budget: 192.6, measured: 183.4, on: '2026-11-12' }, admin: true },
+  { route: '/saved/', path: '/saved', js: { budget: 211.0, measured: 200.9, on: '2026-11-23' }, admin: true },
   { route: '/admin/registration/', path: '/admin/registration', js: { budget: 227.5, measured: 216.6, on: '2026-11-23' }, admin: true },
   { route: '/c/$handle/', path: '/c/<handle>', js: { budget: 211.3, measured: 201.2, on: '2026-11-23' }, target: () => seededCommunity() },
   { route: '/c/new', path: '/c/new', js: { budget: 211.5, measured: 201.4, on: '2026-11-23' }, admin: true },
@@ -187,11 +185,10 @@ export const routes: readonly PayloadRoute[] = [
     admin: true,
   },
   { route: '/$slug', path: '/about', js: { budget: 200.4, measured: 190.8, on: '2026-11-22' }, target: () => '/about' },
-  // PROVISIONAL until a production build measures it (CI): the public Instances page (branch 5) is a plain
-  // list of text, so it carries the figures of its nearest page, the site page at /about.
-  { route: '/instances/', path: '/instances', js: { budget: 200.4, measured: 190.8, on: '2026-11-22' } },
+  { route: '/instances/', path: '/instances', js: { budget: 209.6, measured: 199.6, on: '2026-11-23' } },
   { route: '/admin/media/', path: '/admin/media', js: { budget: 236.8, measured: 225.5, on: '2026-11-23' }, admin: true },
-  { route: '/post/$id/', path: '/post/<id>', js: { budget: 211.5, measured: 201.4, on: '2026-11-23' }, target: seededPost },
+  // The rail's Follow thread switch brings Mux UI's form fields with it (PAYLOAD.md).
+  { route: '/post/$id/', path: '/post/<id>', js: { budget: 246.2, measured: 234.4, on: '2026-11-23' }, target: seededPost },
   {
     route: '/post/$id/comments/$commentId',
     path: '/post/<id>/comments/<commentId>',
