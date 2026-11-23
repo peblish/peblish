@@ -1,6 +1,7 @@
 import type { Principal } from '@peblish/schema/authz';
 import { parseEvent } from '@peblish/schema/events';
 import { and, eq, sql } from 'drizzle-orm';
+import postgres from 'postgres';
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 import { authorize } from '../authz/authorize.ts';
 import { updateCommentAs } from '../comments/actions.ts';
@@ -187,8 +188,10 @@ describe('thread_reply', () => {
     const released = new Promise<void>((resolve) => (release = resolve));
     let locked!: () => void;
     const holding = new Promise<void>((resolve) => (locked = resolve));
-    const holder = writer().transaction(async (t) => {
-      await t.execute(sql`select 1 from actors where id = ${w.people.owner.id}::uuid for no key update`);
+    // The other write has a connection of its own, so the test holds on any pool size, one included.
+    const other = postgres(process.env.DATABASE_URL ?? '', { max: 1, onnotice: () => {} });
+    const holder = other.begin(async (t) => {
+      await t`select 1 from actors where id = ${w.people.owner.id}::uuid for no key update`;
       locked();
       await released;
     });
@@ -212,6 +215,7 @@ describe('thread_reply', () => {
     } finally {
       release();
       await holder;
+      await other.end();
     }
     expect(await kindsOf(w.people.reader.id)).toEqual(['thread_reply']);
   });
