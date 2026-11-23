@@ -1164,6 +1164,67 @@ test('with reduced motion, Back puts the place back in one step', async ({ page 
   expect(at.filter((value) => value !== 0 && value !== y)).toEqual([]);
 });
 
+/** Holds back every script the page asks for (the build's chunks, the dev server's modules) until the returned function is called. */
+async function holdScripts(page: Page): Promise<() => void> {
+  let release = () => {};
+  const gate = new Promise<void>((resolve) => (release = resolve));
+  await page.route('**/*', async (route) => {
+    if (route.request().resourceType() === 'script') await gate;
+    await route.fallback().catch(() => undefined);
+  });
+  return release;
+}
+
+/** Scrolls as a reader does, with the wheel, and returns where the window came to rest. */
+async function wheel(page: Page, by: number): Promise<number> {
+  const at = () => page.evaluate(() => Math.round(scrollY));
+  const before = await at();
+  await page.mouse.move(640, 400);
+  await page.mouse.wheel(0, by);
+  await expect.poll(at).toBeGreaterThan(before);
+  let last = -1;
+  await expect
+    .poll(async () => {
+      const now = await at();
+      const still = now === last;
+      last = now;
+      return still;
+    })
+    .toBe(true);
+  return last;
+}
+
+test("a document's first render leaves the window to the browser and the reader, whatever place is kept for its entry", async ({
+  page,
+}) => {
+  await signedIn(page);
+  await gotoHydrated(page, '/?sort=new');
+  await loadTo(page, 40);
+  await link(page, title(30)).scrollIntoViewIfNeeded();
+  await settled(page);
+  await holding(page);
+  await link(page, title(30)).click();
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText(title(30));
+  // The place kept for the list's entry. A browser that loads that entry as a document on Back, or a tab restored
+  // with its session, finds it there; Chromium takes this Back through the router, which uses it up, so it is put back.
+  const kept = await page.evaluate(() => sessionStorage.getItem('peblish.feed-places'));
+  expect(kept).toContain('"offset"');
+  await page.goBack();
+  await holding(page);
+  await page.evaluate((places) => sessionStorage.setItem('peblish.feed-places', places), kept!);
+  // A reload: the browser puts the window back, and the reader scrolls on before the page hydrates.
+  const scripts = await holdScripts(page);
+  await page.reload({ waitUntil: 'commit' });
+  await expect(rows(page)).toHaveCount(40);
+  const scrolled = await wheel(page, 300);
+  expect(await page.evaluate(() => document.documentElement.dataset.hydrated)).toBeUndefined();
+  scripts();
+  await page.locator('html[data-hydrated="1"]').waitFor({ state: 'attached' });
+  await settled(page);
+  await page.waitForTimeout(300);
+  expect(await page.evaluate(() => Math.round(scrollY))).toBe(scrolled);
+});
+
 test('an ordinary visit to a feed reads one batch, once, and draws it', async ({ page }) => {
   await signedIn(page);
   await gotoHydrated(page, `/?sort=new`);

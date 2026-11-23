@@ -54,7 +54,7 @@ import { castVoteFn } from '../../post/-vote.ts';
 import type { FeedItem } from './items.ts';
 import { loadFeed, type FeedData } from './load.ts';
 import { feedTitleKeys } from './names.ts';
-import { keepPlace, takePlace } from './places.ts';
+import { dropPlace, keepPlace, takePlace } from './places.ts';
 import { grow, isGrowth, isReading, noReads, readsNow, subscribeReads } from './reads.ts';
 import type { FeedRoute } from './route.ts';
 import { depth, feedHref, resolveFeedSearch, type FeedPosition, type FeedSearch } from './search.ts';
@@ -478,13 +478,14 @@ export function FeedCards({
     void router.navigate({ href: feedHref(path, { ...search, n: read }), replace: true, resetScroll: false }).finally(grown);
   }, [batches, read, written, path, router]);
 
-  // Where the reader leaves the list from, as they head to another page with its rows on screen, and back to it
-  // once a return has drawn the fresh rows: after the router's own restore, in the same task (places.ts). The place
-  // names a row only when a navigation to a post starts from the reader activating a link in that row in this tab
-  // (a click, a tap or Enter, with no modifier key), and it names that row wherever the link leads (a card's link to
-  // another post). The router starts a link's navigation inside the click's own dispatch, so the activation is held
-  // for that task alone: a click that starts no navigation there (one the page prevented) leaves nothing behind.
-  // Any other way off the list (Back, Forward, the frame's links, a sort) keeps the scroll alone.
+  // The row the reader leaves the list from for a post, and back to it once a return through the router has drawn
+  // the fresh rows: after the router's own restore, in the same task, once (places.ts). A place is kept only when a
+  // navigation to a post starts from the reader activating a link in a row in this tab (a click, a tap or Enter,
+  // with no modifier key), and it names that row wherever the link leads (a card's link to another post). The router
+  // starts a link's navigation inside the click's own dispatch, so the activation is held for that task alone: a
+  // click that starts no navigation there (one the page prevented) leaves nothing behind. Any other way off the list
+  // (Back, Forward, the frame's links, a sort) keeps no place, and the router alone puts the window back; so it does
+  // on a document's first render and when the row is not among the fresh rows.
   useLayoutEffect(() => {
     const list = box.current;
     if (!more || !list) return;
@@ -513,16 +514,17 @@ export function FeedCards({
       if (!fromLocation || reading || !sameList(path, search, fromLocation) || sameList(path, search, toLocation)) return;
       const opens = activated && /^\/post\/[^/]+$/.test(toLocation.pathname) && toLocation.pathname === activated.to;
       const row = opens ? rowOf(activated.row) : null;
-      keepPlace(entryOf(fromLocation), { y: scrollY, post: row ? activated?.row : undefined, offset: row?.getBoundingClientRect().top });
+      if (activated && row) keepPlace(entryOf(fromLocation), { post: activated.row, offset: row.getBoundingClientRect().top });
+      else dropPlace(entryOf(fromLocation));
     });
-    const arriving = router.subscribe('onRendered', ({ toLocation }) => {
+    const arriving = router.subscribe('onRendered', ({ fromLocation, toLocation }) => {
       const { search, reading } = latest.current;
-      if (reading || !sameList(path, search, toLocation)) return;
+      if (!sameList(path, search, toLocation)) return;
+      // Taken whatever follows, so it acts once at most. A document's first render comes from its own entry.
       const place = takePlace(entryOf(toLocation));
-      if (!place) return;
-      const row = place.post ? rowOf(place.post) : null;
-      const top = row && place.offset !== undefined ? scrollY + row.getBoundingClientRect().top - place.offset : place.y;
-      window.scrollTo({ top, behavior: 'instant' });
+      const returned = fromLocation !== undefined && entryOf(fromLocation) !== entryOf(toLocation);
+      const row = place && returned && !reading ? rowOf(place.post) : null;
+      if (place && row) window.scrollTo({ top: scrollY + row.getBoundingClientRect().top - place.offset, behavior: 'instant' });
     });
     return () => {
       list.removeEventListener('click', activate, true);

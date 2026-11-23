@@ -1,12 +1,14 @@
-// Where the reader left a feed's list, by history entry (the router's key for it): the row they opened a post from
-// in this tab and how far it stood from the window's top, and the window's scroll. A return to the entry
-// puts that row back where it stood once the fresh rows are drawn (feed-page.tsx), so posts added, removed or
-// ranked anew above it do not move what the reader comes back to; when that row is not among the fresh rows
-// (removed, withheld, past `n` now) or they left another way, the window goes back to the scroll it had. Rows are
-// never kept here. In session storage, so a return to the entry after a reload elsewhere finds it too.
+// Where the reader left a feed's list for a post they opened from one of its rows, by history entry (the router's
+// key for it): that row and how far it stood from the window's top. A return to the entry through the router puts
+// that row back where it stood once the fresh rows are drawn (feed-page.tsx), so posts added, removed or ranked anew
+// above it do not move what the reader comes back to. Nothing else is kept, and nothing else moves the window: any
+// other way off the list, a row not among the fresh rows and a document's first render (a reload, a first visit, a
+// return from another document) leave it to the router and the browser.
+// Rows are never kept here. In session storage, so a return through the router after a reload elsewhere (the post
+// opened) finds it too.
 
 /** `post` names the row (its post), not the page opened from it. */
-export type Place = { y: number; post?: string | undefined; offset?: number | undefined };
+export type Place = { post: string; offset: number };
 
 const storageKey = 'peblish.feed-places';
 /** A reader goes back this many entries at most; the oldest is let go past it. */
@@ -32,7 +34,7 @@ function save(all: Map<string, Place>) {
   }
 }
 
-/** The reader leaves the entry `entry` from this place. */
+/** The reader leaves the entry `entry` for a post opened from this place. */
 export function keepPlace(entry: string, place: Place): void {
   const all = load();
   all.delete(entry);
@@ -44,7 +46,13 @@ export function keepPlace(entry: string, place: Place): void {
   save(all);
 }
 
-/** The place the reader left `entry` from, once: a later arrival at it has its own. */
+/** The reader leaves the entry `entry` another way: no place from an earlier leave stays for it. */
+export function dropPlace(entry: string): void {
+  const all = load();
+  if (all.delete(entry)) save(all);
+}
+
+/** The place the reader left `entry` from, once: a later arrival at it has its own, or none. */
 export function takePlace(entry: string): Place | undefined {
   const all = load();
   const place = all.get(entry);
