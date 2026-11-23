@@ -443,9 +443,10 @@ export function FeedCards({
     setList({ ...list, state: 'pending', said: '' });
     const same = (now: Loaded) => now.data === list.data;
     // The document's own way out starts well before it is hidden (the browser's Back to another document waits for
-    // that document): while this batch is out, that start gives it up. Listened for only then, so the page stays
-    // fit for the back-forward cache; the list stays open, in case the way out is stopped.
-    const leaving = () => endGeneration(true);
+    // that document): while this batch is out, that start gives it up, and no other starts on the way out (the end
+    // may still be in view). Listened for only then, so the page stays fit for the back-forward cache. A way out
+    // that is stopped leaves the list closed until its next navigation or a showing from the back-forward cache.
+    const leaving = () => endGeneration(false);
     addEventListener('beforeunload', leaving);
     void more
       .load(list.next, stop.signal)

@@ -294,6 +294,35 @@ test('a load-more still out when the reader goes Back to another document draws 
   await agrees(page);
 });
 
+test('a reader still at the end of the list when they go Back to another document starts no other batch on the way out', async ({
+  page,
+}) => {
+  await page.goto('/about');
+  await gotoHydrated(page, '/all?sort=old');
+  const held = await holdReads(page);
+  await rows(page).last().scrollIntoViewIfNeeded();
+  await expect.poll(() => held.length).toBe(1);
+  let asked = false;
+  let answer!: () => void;
+  const slow = new Promise<void>((resolve) => (answer = resolve));
+  await page.route(
+    (url) => url.pathname === '/about',
+    async (route) => {
+      asked = true;
+      await slow;
+      await route.fallback().catch(() => undefined);
+    },
+  );
+  const back = page.goBack();
+  await expect.poll(() => asked).toBe(true);
+  // The leaving page gave batch two up; with the end still in view, it must not ask for it again.
+  await page.waitForTimeout(500);
+  expect(held).toHaveLength(1);
+  answer();
+  await back;
+  await expect(page).toHaveURL(/\/about$/);
+});
+
 test('a batch out while the page goes into the back-forward cache draws nothing once it is shown again; a hidden tab loads on as usual', async ({
   page,
 }) => {
@@ -301,8 +330,9 @@ test('a batch out while the page goes into the back-forward cache draws nothing 
   const held = await holdReads(page);
   await rows(page).last().scrollIntoViewIfNeeded();
   await expect.poll(() => held.length).toBe(1);
-  // The events of a page put into the back-forward cache and shown from it again (this server's pages are
-  // no-store, so Chromium never keeps them there itself); then batch two's answer comes.
+  // The events of a page put into the back-forward cache and shown from it again (the test browser never keeps
+  // the feed there itself: it reports the page's browsing instance, and the feed is no-store); then batch two's
+  // answer comes.
   await page.evaluate(() => {
     dispatchEvent(new PageTransitionEvent('pagehide', { persisted: true }));
     dispatchEvent(new PageTransitionEvent('pageshow', { persisted: true }));
