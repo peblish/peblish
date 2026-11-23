@@ -90,6 +90,38 @@ test.describe('the Report control', () => {
     await expect(page.getByRole('dialog')).toHaveCount(0);
     await expect(comment).toBeFocused();
   });
+
+  test('Enter on a Report link puts focus in the dialog before its entrance ends, and Escape gives it back', async ({ page }) => {
+    const { post } = await onThread(page);
+    await post.focus();
+    // Which comes first: focus inside the dialog, or the end of the backdrop's entrance transition.
+    const first = page.evaluate(
+      () =>
+        new Promise<'focus' | 'entrance'>((resolve) => {
+          const options = { capture: true };
+          document.addEventListener(
+            'focusin',
+            (event) => (event.target as Element).closest('[role="dialog"]') && resolve('focus'),
+            options,
+          );
+          document.addEventListener(
+            'transitionend',
+            (event) => (event.target as Element).classList.contains('muxui-dialog__backdrop') && resolve('entrance'),
+            options,
+          );
+        }),
+    );
+    // A person holds Enter longer than the dialog takes to mount, so React Aria reads the keyless
+    // click as a virtual cursor's and would hold its focus until the entrance ends.
+    await page.keyboard.down('Enter');
+    expect(await first).toBe('focus');
+    await page.keyboard.up('Enter');
+    const dialog = page.getByRole('dialog', { name: 'Report this post' });
+    await expect(dialog.getByRole('button', { name: 'Send report' })).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    await expect(post).toBeFocused();
+  });
 });
 
 /**
