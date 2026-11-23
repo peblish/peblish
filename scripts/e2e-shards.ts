@@ -2,7 +2,8 @@
 // writes one ShardCounts file; `node scripts/e2e-shards.ts <dir>` reads every file in <dir> and
 // fails unless the shards 1 to n each reported once and together ran the whole suite. A shard
 // that selects no test exits 0 in Playwright, so without this a typo could skip half the suite.
-import { readdirSync, readFileSync } from 'node:fs';
+// It also lists the tests that were flaky on any shard; they do not fail it.
+import { appendFileSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 export interface Shard {
@@ -22,6 +23,33 @@ export interface ShardCounts {
   suite: ProjectCounts;
   /** The tests this shard ran: passed, failed, flaky and skipped. */
   ran: ProjectCounts;
+  /** The tests that failed, then passed on CI's one retry (playwright.config.ts): they pass, but are listed. */
+  flaky: FlakyTest[];
+}
+
+/** A test by its spec's place (file relative to e2e/) and its title under its describe blocks. */
+export interface FlakyTest {
+  file: string;
+  line: number;
+  title: string;
+}
+
+/** The flaky tests of every shard, by file and line. */
+export const flakyAcross = (reports: readonly ShardCounts[]): FlakyTest[] =>
+  reports.flatMap(({ flaky }) => flaky).toSorted((a, b) => a.file.localeCompare(b.file) || a.line - b.line);
+
+/** The flaky tests under a heading, for the log (`markdown` false) or the job summary: one line when there are none. */
+export function flakyReport(heading: string, tests: readonly FlakyTest[], markdown: boolean): string {
+  if (tests.length === 0) return `${heading}: none\n`;
+  const lines = tests.map(({ file, line, title }) => (markdown ? `- \`${file}:${line}\` ${title}` : `  ${file}:${line} ${title}`));
+  return `${heading} (failed, then passed on retry):\n${markdown ? '\n' : ''}${lines.join('\n')}\n`;
+}
+
+/** Prints the flaky tests to the log and, in GitHub Actions, appends them to the job summary. */
+export function reportFlaky(heading: string, tests: readonly FlakyTest[]): void {
+  console.log(flakyReport(heading, tests, false).trimEnd());
+  const summary = process.env.GITHUB_STEP_SUMMARY;
+  if (summary) appendFileSync(summary, flakyReport(heading, tests, true));
 }
 
 /** `<current>/<total>`, 1-based, as Playwright's --shard takes it. */
@@ -69,5 +97,6 @@ if (import.meta.main) {
     const { suite } = reports[0]!;
     console.log(`e2e shards: together they ran the whole suite (${suite.parallel} parallel, ${suite.serial} serial)`);
   }
+  reportFlaky('Flaky across the shards', flakyAcross(reports));
   process.exitCode = problems.length === 0 ? 0 : 1;
 }
