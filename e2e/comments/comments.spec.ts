@@ -158,7 +158,7 @@ test.describe('anyone', () => {
     await expect(plain.getByRole('link', { name: 'More comments' })).toHaveCount(0);
     await plain.getByRole('link', { name: 'Back to the first comments' }).click();
     await expect(plain).toHaveURL(/\?sort=old#comments$/);
-    expect(await topLevel(plain)).toEqual(first);
+    await expect.poll(() => topLevel(plain)).toEqual(first);
     await plain.getByRole('link', { name: 'More comments' }).click();
     const second = plain.url();
     await plain.close();
