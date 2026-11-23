@@ -975,4 +975,24 @@ test.describe('without JavaScript', () => {
     await next.click();
     await expect(rows(page).first()).toContainText(title(160));
   });
+
+  test('the sort and Top period already chosen lead to the address shown: the rows stay, and no history entry is added', async ({
+    page,
+  }) => {
+    await page.goto('/all');
+    await page.goto('/all?sort=top&period=all&n=60');
+    await expect(rows(page)).toHaveCount(60);
+    const links = page.locator('.feed-no-script');
+    for (const name of ['Top', 'All time']) {
+      await expect(links.getByRole('link', { name, exact: true })).toHaveAttribute('aria-current', 'page');
+      await links.getByRole('link', { name, exact: true }).click();
+      await expect(page).toHaveURL(/\/all\?sort=top&period=all&n=60$/);
+      await expect(rows(page)).toHaveCount(60);
+    }
+    // Another sort or period is another list, from its first batch.
+    await expect(links.getByRole('link', { name: 'New', exact: true })).toHaveAttribute('href', '/all?sort=new');
+    await expect(links.getByRole('link', { name: 'Week', exact: true })).toHaveAttribute('href', '/all?sort=top&period=week');
+    await page.goBack();
+    await expect(page).toHaveURL(/\/all$/);
+  });
 });

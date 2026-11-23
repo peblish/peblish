@@ -195,15 +195,20 @@ function FeedHeader({ path, feed, search: address }: { path: string; feed: FeedN
         }
       />
       <div className="feed-no-script">
-        <SortLinks path={path} search={search} />
+        <SortLinks path={path} search={search} n={address.n} />
       </div>
     </>
   );
 }
 
-/** The sort and, for Top, its period as LinkTabs: real links, which work before hydration and without scripts. */
-function SortLinks({ path, search }: { path: string; search: ReturnType<typeof resolveFeedSearch> }) {
+/**
+ * The sort and, for Top, its period as LinkTabs: real links, which work before hydration and without scripts. The
+ * one already chosen leads to the address shown, its page and depth (`n`) kept, so following it changes nothing and
+ * adds no history entry; another is another list, from its first batch.
+ */
+function SortLinks({ path, search, n }: { path: string; search: ReturnType<typeof resolveFeedSearch>; n: number | undefined }) {
   const { t } = useTranslate();
+  const shown = feedHref(path, { ...search, n });
   return (
     <>
       <LinkTabs
@@ -212,7 +217,7 @@ function SortLinks({ path, search }: { path: string; search: ReturnType<typeof r
         variant="segment"
         size="sm"
         items={sorts.map((value: Sort) => ({
-          to: feedHref(path, { ...search, sort: value, cursor: undefined }),
+          to: search.sort === value ? shown : feedHref(path, { ...search, sort: value, cursor: undefined }),
           label: t('feeds', `sort.${value}`),
           active: search.sort === value,
         }))}
@@ -224,7 +229,7 @@ function SortLinks({ path, search }: { path: string; search: ReturnType<typeof r
           variant="segment"
           size="sm"
           items={periods.map((value: Period) => ({
-            to: feedHref(path, { sort: 'top', period: value }),
+            to: search.period === value ? shown : feedHref(path, { sort: 'top', period: value }),
             label: t('feeds', `period.${value}`),
             active: search.period === value,
           }))}
@@ -245,7 +250,7 @@ export function FeedToolbar({ path, search: address, children }: { path: string;
   return (
     <div className="feed-toolbar">
       {children}
-      <SortLinks path={path} search={search} />
+      <SortLinks path={path} search={search} n={address.n} />
       <span className="feed-space" />
       <DensityControl value={prefs.density} onChange={(density) => setPrefs({ density })} labels={densityLabels} />
     </div>
