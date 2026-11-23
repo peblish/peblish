@@ -282,3 +282,11 @@ export async function readFeed(request: FeedRequest, viewer: Viewer, q: Queryabl
   const ordered = page.flatMap(({ id }) => byId.get(id) ?? []);
   return { items: await postViews(ordered, viewer, q), next };
 }
+
+/**
+ * readFeed in one read-only snapshot: its key queries (Hot's two among them), its rows and their context all
+ * see the data as it stood when the read began, so a read of many rows (a feed's address at depth, up to
+ * `maxDepth`) is one read of its range. The feed routes read through this; a community page reads one page.
+ */
+export const readFeedSnapshot = (request: FeedRequest, viewer: Viewer): Promise<Page<PostView>> =>
+  db().transaction((q) => readFeed(request, viewer, q), { isolationLevel: 'repeatable read', accessMode: 'read only' });

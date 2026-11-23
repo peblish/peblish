@@ -1,5 +1,5 @@
 import { defaultPageSize, maxDepth, Period, Sort } from '@peblish/core/feeds/input';
-import { readFeed } from '@peblish/core/feeds/read';
+import { readFeedSnapshot } from '@peblish/core/feeds/read';
 import type { Viewer } from '@peblish/core/posts/read';
 import { createServerFn } from '@tanstack/react-start';
 import { type } from 'arktype';
@@ -16,8 +16,8 @@ import { input } from '../../../server/input.ts';
  * depends on who asks, so it is private (pageSession says so). Subscribed and Moderating without
  * a viewer are answered with `signIn: true` and no posts.
  *
- * `n` is how many rows to read (one batch when absent), in one read of the feed (readFeed's own query,
- * conditions and views), so a reader who comes back to row 200 gets them fresh in one answer, each post once.
+ * `n` is how many rows to read (one batch when absent), in one read of the feed in one snapshot (readFeed's own
+ * query, conditions and views), so a reader who comes back to row 200 gets them fresh in one answer, each post once.
  */
 export const loadFeed = createServerFn({ method: 'GET' })
   .validator(
@@ -40,7 +40,7 @@ export const loadFeed = createServerFn({ method: 'GET' })
     const base = { feed, signedIn: viewer !== null, now: new Date().toISOString(), n: want };
     if (!viewer && feed === 'moderating') return { ...base, signIn: true, items: [] as FeedItem[], next: null };
 
-    const page = await readFeed({ feed, sort: data.sort, period: data.period, cursor: data.cursor, limit: want }, viewer);
+    const page = await readFeedSnapshot({ feed, sort: data.sort, period: data.period, cursor: data.cursor, limit: want }, viewer);
     // Remote pictures reach the viewer only through the signed proxy (decision 5): own-origin
     // URLs pass, remote ones are signed, anything else is null. An image post shows its image.
     const renderer = await createMarkdownRenderer();
