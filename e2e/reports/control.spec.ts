@@ -78,8 +78,14 @@ test.describe('the Report control', () => {
     await expect(dialog).toHaveCount(0);
     await expect(post).toBeFocused();
     await comment.focus();
-    await page.keyboard.press('Enter');
-    await expect(page.getByRole('dialog', { name: 'Report this comment' }).getByRole('button', { name: 'Send report' })).toBeVisible();
+    // Enter is let go only once the dialog is up, as a slow machine delivers it: React Aria then takes the link's
+    // keyboard click for a screen reader's and moves focus into the dialog only when the page's transitions have ended,
+    // with focus on the page until then. Escape goes once the dialog has focus.
+    const reportComment = page.getByRole('dialog', { name: 'Report this comment' });
+    await page.keyboard.down('Enter');
+    await expect(reportComment.getByRole('button', { name: 'Send report' })).toBeVisible();
+    await page.keyboard.up('Enter');
+    await expect(reportComment).toBeFocused();
     await page.keyboard.press('Escape');
     await expect(page.getByRole('dialog')).toHaveCount(0);
     await expect(comment).toBeFocused();
