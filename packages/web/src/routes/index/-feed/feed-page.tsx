@@ -10,7 +10,7 @@ import {
   type ComponentType,
   type ReactNode,
 } from 'react';
-import { defaultPageSize, defaultPeriod, defaultSort, periods, sorts } from '@peblish/core/feeds/input';
+import { defaultPageSize, defaultPeriod, defaultSort, maxDepth, periods, sorts } from '@peblish/core/feeds/input';
 import { EmptyState } from '@peblish/ui/components/empty-state';
 import { FactList } from '@peblish/ui/components/fact-list';
 import { FeedEnd, FeedSkip, type FeedEndState } from '@peblish/ui/components/feed-end';
@@ -54,7 +54,7 @@ import type { FeedItem } from './items.ts';
 import { loadFeed, type FeedData } from './load.ts';
 import { feedTitleKeys } from './names.ts';
 import type { FeedRoute } from './route.ts';
-import { feedHref, maxDepth, resolveFeedSearch, type FeedPosition, type FeedSearch } from './search.ts';
+import { feedHref, resolveFeedSearch, type FeedPosition, type FeedSearch } from './search.ts';
 import { acknowledgedVotes, acknowledgeVote, askedNow, noVotes, recount, subscribeVotes, withVotes } from './votes.ts';
 
 // A feed (Commons): its own view header with the feed's name and the Sort and View menus (with scripts

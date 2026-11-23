@@ -262,6 +262,26 @@ describe('keyset pagination', () => {
     },
   );
 
+  test('one read of up to 200 rows (a feed address at depth) is the pages it stands for: each post once, in their order', async () => {
+    const { instances, people, communities } = await seedFeedWorld();
+    const hour = 3_600_000;
+    // 140 posts over three weeks, some on one moment, scores spread: Hot reads past its week, Top breaks ties.
+    for (let n = 0; n < 140; n += 1)
+      await seedPost(instances.local, n % 2 ? communities.news : communities.remoteTech, people.author, {
+        title: `deep ${n}`,
+        publishedAt: new Date(Date.now() - (n % 7 === 0 ? 3 : n * 3.5) * hour),
+        upvotes: n % 11,
+      });
+    for (const [label, request] of requests) {
+      const pages = await walk(request, null, 20);
+      const ids = (await readFeed({ ...request, limit: 120 }, null)).items.map((item) => item.id);
+      expect(new Set(ids).size, label).toBe(ids.length);
+      expect(ids, label).toEqual(pages.slice(0, 120));
+    }
+    // Every sort without a period has more than 120 posts to give, so each answered 120 in that one read.
+    expect((await readFeed({ feed: 'all', sort: 'new', limit: 120 }, null)).items).toHaveLength(120);
+  });
+
   test('a cursor from another sort or period is ignored, and so is a garbled one', async () => {
     const { instances, people, communities } = await seedFeedWorld();
     for (let n = 0; n < 4; n += 1)

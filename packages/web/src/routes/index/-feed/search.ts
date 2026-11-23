@@ -1,4 +1,4 @@
-import { Period, Sort, defaultPageSize, defaultPeriod, defaultSort } from '@peblish/core/feeds/input';
+import { Period, Sort, defaultPageSize, defaultPeriod, defaultSort, maxDepth } from '@peblish/core/feeds/input';
 import type { SearchSchemaInput } from '@tanstack/react-router';
 
 // A feed's address: /all?sort=top&period=week&cursor=…&n=80 . Every part is optional, and a part that
@@ -11,9 +11,6 @@ import type { SearchSchemaInput } from '@tanstack/react-router';
 export type FeedSearch = { sort?: Sort | undefined; period?: Period | undefined; cursor?: string | undefined; n?: number | undefined };
 /** A feed address with the defaults filled in, as the loader's deps (`n` is read apart, so growing it loads nothing). */
 export type FeedPosition = { sort: Sort; period: Period; cursor?: string | undefined };
-
-/** The most rows an address asks for again; a reader deeper than this comes back at row 200 and loads on from there. */
-export const maxDepth = 200;
 
 /** `n` as the address has it: whole batches beyond the first, at most `maxDepth`; anything else is one batch (undefined). */
 export function depth(raw: unknown): number | undefined {

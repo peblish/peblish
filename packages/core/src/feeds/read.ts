@@ -11,7 +11,7 @@ import { communityRemovals } from '../moderation/tables.ts';
 import { postViews, type PostRow, type Viewer } from '../posts/read.ts';
 import { feedPredicates } from '../registry/feed-predicates.gen.ts';
 import { decodeCursor, encodeCursor, periodMs, type Cursor } from './cursor.ts';
-import { defaultPageSize, defaultPeriod, maxPageSize, type FeedName, type Period, type Sort } from './input.ts';
+import { defaultPageSize, defaultPeriod, maxDepth, type FeedName, type Period, type Sort } from './input.ts';
 
 // The feed read model (D01 feeds, D02 Hot, D04 New and Old, D05 Top by period). One query
 // finds the page's keys (id and sort key, no wide columns), the posts are fetched by id, and
@@ -26,6 +26,10 @@ export type FeedRequest = {
   period?: Period;
   /** The previous page's `next`. One that does not belong to this sort and period, or is not valid, is ignored. */
   cursor?: string | undefined;
+  /**
+   * How many posts, at most `maxDepth`: a page of the list (20), or all the rows a feed's address holds,
+   * in one key query (Hot's two, over the week and what is older, never share a post), so no post comes twice.
+   */
   limit?: number;
   /** One community's posts (its page) or one author's (a profile), on top of the feed's own conditions; use with feed 'all'. */
   scope?: FeedScope;
@@ -246,7 +250,7 @@ function cursorAfter(key: Key, sort: Sort, period: Period, asOf: number): Cursor
  * follow the ones already read, except for the score of a post still ahead of the cursor.
  */
 export async function readFeed(request: FeedRequest, viewer: Viewer, q: Queryable = db()): Promise<Page<PostView>> {
-  const limit = Math.min(Math.max(Math.trunc(request.limit ?? defaultPageSize), 1), maxPageSize);
+  const limit = Math.min(Math.max(Math.trunc(request.limit ?? defaultPageSize), 1), maxDepth);
   const period = request.sort === 'top' ? (request.period ?? defaultPeriod) : 'all';
   const decoded = decodeCursor(request.cursor);
   const cursor = decoded && decoded.sort === request.sort && decoded.period === period ? decoded : null;
