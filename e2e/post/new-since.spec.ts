@@ -144,8 +144,13 @@ async function backgroundTab(page: Page) {
     let state: DocumentVisibilityState = 'hidden';
     Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => state });
     Object.defineProperty(document, 'hidden', { configurable: true, get: () => state === 'hidden' });
+    // The document's visibility record, as a browser keeps it: hidden from the start, then each change.
+    const record = [{ name: 'hidden', entryType: 'visibility-state', startTime: 0, duration: 0 }];
+    const real = performance.getEntriesByType.bind(performance);
+    performance.getEntriesByType = (type: string) => (type === 'visibility-state' ? ([...record] as never) : real(type));
     const set = (next: DocumentVisibilityState) => {
       state = next;
+      record.push({ name: next, entryType: 'visibility-state', startTime: performance.now(), duration: 0 });
       document.dispatchEvent(new Event('visibilitychange'));
     };
     Object.assign(window, { __show: () => set('visible'), __hide: () => set('hidden') });
@@ -172,25 +177,55 @@ function journal(tab: Page, postId: string) {
 /** What the page held at the moment a visit went out: the comments drawn and the thread's heading. */
 type Seen = { rows: string[]; heading: string };
 /**
- * Sends each visit of `postId` on after noting what the page held as it started (in the handler that
- * intercepts it, so a page drawn only after the request went cannot pass). `first` settles on the first.
+ * Notes what the page held as each visit of `postId` started: synchronously, in the page's own `fetch`,
+ * wrapped before the app's code runs, so a page drawn after the request went (even a microtask later)
+ * cannot pass. Install it before the tab loads. `first` settles once the first visit has gone.
  */
 async function watchVisits(tab: Page, postId: string) {
+  await tab.addInitScript((id: string) => {
+    const real = window.fetch.bind(window);
+    const taken: { rows: string[]; heading: string }[] = [];
+    Object.assign(window, { __visitsSeen: taken });
+    window.fetch = (input, init) => {
+      const address = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+      if ((init?.method ?? 'GET').toUpperCase() === 'POST' && address.endsWith(`/post/${id}/visit`))
+        taken.push({
+          rows: [...document.querySelectorAll('#comments .pb-comment')].map((found) => found.id.replace(/^comment-/, '')),
+          heading: document.querySelector('#comments-heading')?.textContent ?? '',
+        });
+      return real(input, init);
+    };
+  }, postId);
   const seen: Seen[] = [];
   let went!: () => void;
   const first = new Promise<void>((done) => (went = done));
-  await tab.route(`**/post/${postId}/visit`, async (route) => {
-    if (route.request().method() !== 'POST') return route.fallback();
-    seen.push(
-      await tab.evaluate(() => ({
-        rows: [...document.querySelectorAll('#comments .pb-comment')].map((found) => found.id.replace(/^comment-/, '')),
-        heading: document.querySelector('#comments-heading')?.textContent ?? '',
-      })),
-    );
-    went();
-    await route.fallback();
+  tab.on('request', (request) => {
+    if (!isVisit(request, postId)) return;
+    void tab
+      .evaluate(() => (window as unknown as { __visitsSeen: Seen[] }).__visitsSeen)
+      .then((all) => {
+        seen.splice(0, seen.length, ...all);
+        went();
+      });
   });
   return { seen, first };
+}
+
+/** Holds the next request to reload `postId` before it reaches the server, until `release()`: what it reads is the server after that. */
+async function holdReloadRequest(tab: Page, postId: string) {
+  let asked!: () => void;
+  const held = new Promise<void>((done) => (asked = done));
+  let release!: () => void;
+  const released = new Promise<void>((done) => (release = done));
+  let taken = false;
+  await tab.route('**/_serverFn/**', async (route) => {
+    if (taken || !isReload(route.request(), postId)) return route.fallback();
+    taken = true;
+    asked();
+    await released;
+    await route.fallback();
+  });
+  return { held, release };
 }
 
 /**
@@ -333,10 +368,15 @@ test('a tab brought forward before the page hydrated is reloaded too, before its
   });
   const events = journal(tab, seed.posts.seen);
   const visits = await watchVisits(tab, seed.posts.seen);
+  const hold = await holdReloadRequest(tab, seed.posts.seen);
   await gotoHydrated(tab, `/post/${seed.posts.seen}`);
+  // A comment that arrives after the page was drawn and before its reload reads the server.
+  await hold.held;
+  const late = say(seed.posts.seen, await authorOf(tab, seed.comments.first));
+  hold.release();
   await visits.first;
   expect(events).toEqual(['reload answered', 'visit']);
-  expect(visits.seen[0]!.rows).toContain(seed.comments.first);
+  expect(visits.seen[0]!.rows).toContain(late);
 });
 
 test('a thread brought forward while its reload fails keeps what it showed, with no error page, and records nothing', async ({ page }) => {
@@ -390,10 +430,113 @@ test('an unknown sort and a cursor that is not one, on a reload, give the defaul
   const tab = await backgroundTab(page);
   const visits = await watchVisits(tab, seed.posts.seen);
   await gotoHydrated(tab, address);
+  // Arrives after the tab's page was drawn: only the reload can bring it, so a page left as it was cannot pass.
+  const late = say(seed.posts.seen, await authorOf(tab, seed.comments.first));
   await show(tab);
   await visits.first;
-  expect(visits.seen[0]!.rows.map((id) => `comment-${id}`)).toEqual(fresh);
+  const rows = visits.seen[0]!.rows.map((id) => `comment-${id}`);
+  expect(rows).toEqual(expect.arrayContaining([...fresh, `comment-${late}`]));
+  expect(rows).toHaveLength(fresh.length + 1);
   await expect(tab.locator('#comments')).toBeVisible();
+});
+
+/** A background tab in a context of its own, signed out. */
+async function signedOutBackgroundTab(browser: Browser, baseURL: string) {
+  const context = await browser.newContext({ baseURL });
+  return backgroundTab(await context.newPage());
+}
+
+/** Removes the post as a moderator would (its removal time), for the signed-out cases. */
+const removePost = (postId: string) =>
+  execFileSync(
+    'node',
+    [
+      '--input-type=module',
+      '-e',
+      `import { eq } from 'drizzle-orm';
+import { closePools } from './src/db/pools.ts';
+import { posts } from './src/db/tables/content.ts';
+import { writer } from './src/db/write.ts';
+await writer().update(posts).set({ removedAt: new Date() }).where(eq(posts.id, process.argv[1]));
+await closePools();`,
+      postId,
+    ],
+    { cwd: join(root, 'packages/core'), encoding: 'utf8' },
+  );
+
+test.describe('signed out', () => {
+  for (const change of ['removed', 'gated'] as const)
+    test(`a background tab brought forward shows the post ${change} meanwhile, as a fresh load does, and sends no visit`, async ({
+      browser,
+      baseURL,
+    }) => {
+      seed = JSON.parse(run('e2e')) as Seed;
+      const tab = await signedOutBackgroundTab(browser, baseURL!);
+      const events = journal(tab, seed.posts.seen);
+      await gotoHydrated(tab, `/post/${seed.posts.seen}`);
+      await expect(row(tab, seed.comments.first)).toBeVisible();
+      // No New marks for a visitor.
+      await expect(jump(tab)).toHaveCount(0);
+      await expect(tab.locator('.pb-comment__new')).toHaveCount(0);
+      if (change === 'removed') removePost(seed.posts.seen);
+      else makeSensitive(seed.posts.seen);
+      await show(tab);
+      if (change === 'removed') await expect(tab.getByRole('heading', { level: 1, name: 'Removed by a moderator' })).toBeVisible();
+      else await expect(tab.getByText('This post is NSFW')).toBeVisible();
+      await expect(tab.locator('#comments .pb-comment')).toHaveCount(0);
+      await settled(tab);
+      expect(events).toEqual(['reload answered']);
+      await tab.context().close();
+    });
+
+  test('offline, a background tab brought forward keeps its page, and sends no visit', async ({ browser, baseURL }) => {
+    seed = JSON.parse(run('e2e')) as Seed;
+    const tab = await signedOutBackgroundTab(browser, baseURL!);
+    const events = journal(tab, seed.posts.seen);
+    await gotoHydrated(tab, `/post/${seed.posts.seen}`);
+    await tab.context().setOffline(true);
+    const failed = tab.waitForEvent('requestfailed');
+    await show(tab);
+    await failed;
+    await settled(tab);
+    await tab.context().setOffline(false);
+    await expect(row(tab, seed.comments.first)).toBeVisible();
+    expect(events.filter((event) => event === 'visit')).toEqual([]);
+    await tab.context().close();
+  });
+});
+
+test('after the tab was hidden once, a post reached in the app while it is in front is loaded once', async ({ page }) => {
+  seed = JSON.parse(run('e2e')) as Seed;
+  await signedIn(page);
+  const tab = await backgroundTab(page);
+  const visitsA = await watchVisits(tab, seed.posts.seen);
+  await gotoHydrated(tab, `/post/${seed.posts.seen}`);
+  await show(tab);
+  await visitsA.first;
+  await hide(tab);
+  await show(tab);
+  await settled(tab);
+  const loadsOfB = journal(tab, seed.posts.unseen);
+  let probes = 0;
+  tab.on('request', (request) => request.url().endsWith('/healthz') && (probes += 1));
+  await tab.evaluate(
+    (target) =>
+      (
+        window as unknown as { __TSR_ROUTER__: { navigate(to: { to: string; params: { id: string } }): Promise<void> } }
+      ).__TSR_ROUTER__.navigate({
+        to: '/post/$id',
+        params: { id: target },
+      }),
+    seed.posts.unseen,
+  );
+  await expect(row(tab, seed.comments.waiting)).toBeVisible();
+  await settled(tab);
+  // A round trip to the server from outside the page: a probe and a reload started on arrival would have gone by now.
+  await tab.request.get('/healthz');
+  await settled(tab);
+  expect(loadsOfB.filter((event) => event === 'reload answered')).toEqual(['reload answered']);
+  expect(probes).toBe(0);
 });
 
 test('a post put behind the gate while its tab was in the background shows the gate when brought forward, and records nothing', async ({

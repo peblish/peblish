@@ -3,6 +3,7 @@ import { ButtonLink } from '@peblish/ui/components/button-link';
 import { Text } from '@peblish/ui/components/text';
 import type { Uuid } from '@peblish/schema/ids';
 import type { CommentView } from '@peblish/schema/views';
+import { useHydrated } from '@peblish/ui/composer/use-hydrated.ts';
 import { useRouter } from '@tanstack/react-router';
 import { setFold } from '@peblish/ui/components/comment-folds.ts';
 import { buildCommentTree, type CommentNode } from '@peblish/ui/components/comment-tree.ts';
@@ -19,13 +20,15 @@ import newSinceCss from './new-since.css?url';
 // does not, so opening one branch never counts as having seen the rest of the thread.
 
 /**
- * Whether this document has been out of sight since it loaded: a tab opened in the background, or one
- * brought forward before the page hydrated (Chromium lists the document's visibility changes; elsewhere
- * a tab in front by the time scripts run counts as watched).
+ * Whether the post on screen has been out of sight since it was drawn. For the post the document
+ * loaded with (`fromDocument`, drawn by the hydration render), since the document loaded: a tab opened
+ * in the background, or one brought forward before the page hydrated (Chromium lists the document's
+ * visibility changes; elsewhere a tab in front by the time scripts run counts as watched). A post
+ * reached in the app was drawn just now, in front, so only a tab hidden now counts.
  */
-function wasHidden(): boolean {
+function wasHidden(fromDocument: boolean): boolean {
   if (document.visibilityState !== 'visible') return true;
-  if (!PerformanceObserver.supportedEntryTypes.includes('visibility-state')) return false;
+  if (!fromDocument || !PerformanceObserver.supportedEntryTypes.includes('visibility-state')) return false;
   return performance.getEntriesByType('visibility-state').some((entry) => entry.name === 'hidden');
 }
 
@@ -33,9 +36,9 @@ function wasHidden(): boolean {
  * Records the visit once the page is on screen: after hydration (so a prefetch, a preload or a
  * page without scripts records nothing), in its own POST to /post/<id>/visit (so it cannot fail
  * or slow the page), and only once the tab is visible (a page opened in the background is not a
- * visit until it is looked at).
+ * visit until it is looked at). Only a signed-in reader records one.
  *
- * A page that has been out of sight is reloaded first, by the router's own reload of the post's
+ * A page that has been out of sight is reloaded first, for every visitor, signed in or not, by the router's own reload of the post's
  * route: the loader that drew it draws it again for the same address (sort and page), so a post
  * gone or gated since shows what a fresh load would, and the heading, the rail and the thread
  * come from one answer. The visit goes once the thread that reload answered is drawn (`drawnAt`,
@@ -52,17 +55,21 @@ function wasHidden(): boolean {
  */
 function useRecordVisit(postId: Uuid, signedIn: boolean, drawnAt: string | undefined) {
   const router = useRouter();
+  // Drawn by the hydration render (the document's own post), or later, in the app.
+  const [fromDocument] = useState(!useHydrated());
   // The server's clock of the thread on screen, written after each commit.
   const drawn = useRef(drawnAt);
   useEffect(() => {
     drawn.current = drawnAt;
   }, [drawnAt]);
   useEffect(() => {
-    if (!signedIn) return;
     let live = true;
     let generation = 0;
     const visible = () => document.visibilityState === 'visible';
-    const record = () => void fetch(`${postPath(postId)}/visit`, { method: 'POST', keepalive: true }).catch(() => undefined);
+    // A visitor who is not signed in gets the same reload, and records nothing.
+    const record = () => {
+      if (signedIn) void fetch(`${postPath(postId)}/visit`, { method: 'POST', keepalive: true }).catch(() => undefined);
+    };
     // The router's match of the post page, and the server's clock of the thread in its latest answer.
     const page = () => router.state.matches.find(({ routeId }) => routeId === '/post/$id/');
     const answered = () => {
@@ -101,14 +108,14 @@ function useRecordVisit(postId: Uuid, signedIn: boolean, drawnAt: string | undef
       if (visible()) void forward();
       else generation += 1;
     };
-    if (!wasHidden()) return record();
+    if (!wasHidden(fromDocument)) return record();
     document.addEventListener('visibilitychange', onChange);
     if (visible()) void forward();
     return () => {
       live = false;
       document.removeEventListener('visibilitychange', onChange);
     };
-  }, [postId, signedIn, router]);
+  }, [postId, signedIn, router, fromDocument]);
 }
 
 /** The new comments in the order the thread draws them (the tree's, depth first). */
