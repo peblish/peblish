@@ -44,40 +44,45 @@ test('a comment purged while a page is read is described as the page chose it, f
   const purgeNow = new Promise<void>((resolve) => (purge = resolve));
   let held!: () => void;
   const holding = new Promise<void>((resolve) => (held = resolve));
-  const purging = writer().transaction(async (t) => {
-    await t.execute(sql`select pg_advisory_xact_lock(${key}::bigint)`);
-    held();
-    await purgeNow;
-    await t.delete(votes).where(eq(votes.commentId, id));
-    await t.delete(comments).where(eq(comments.id, id));
-  });
-  await holding;
   // The observer has a connection of its own: the pools may hold one each, and the purge holds the writer's.
   const observer = postgres(process.env.DATABASE_URL ?? '', { max: 1, onnotice: () => {} });
-  gate.key = key;
-  const reading = readInbox({ actorId: w.people.reader.id, siteRole: 'user' });
-  let page: Awaited<typeof reading> | undefined;
+  let page: Awaited<ReturnType<typeof readInbox>> | undefined;
   try {
-    // The page's list (the statement that selects whole rows; the counts select count(*)) has its snapshot and waits
-    // on the lock: the purge commits now.
-    for (let tries = 0; ; tries++) {
-      const [row] = await observer<{ waiting: number }[]>`
-        select count(*)::int as waiting from pg_locks l join pg_stat_activity a on a.pid = l.pid
-        where l.locktype = 'advisory' and l.objid::bigint = ${key} and not l.granted
-          and a.datname = current_database() and a.query like 'select "id", "recipient_id"%'`;
-      if ((row?.waiting ?? 0) > 0) break;
-      if (tries > 400) throw new Error('the inbox list never reached the lock');
-      await new Promise((resolve) => setTimeout(resolve, 25));
+    const purging = writer().transaction(async (t) => {
+      await t.execute(sql`select pg_advisory_xact_lock(${key}::bigint)`);
+      held();
+      await purgeNow;
+      await t.delete(votes).where(eq(votes.commentId, id));
+      await t.delete(comments).where(eq(comments.id, id));
+    });
+    let reading: ReturnType<typeof readInbox> | undefined;
+    try {
+      // A purge that fails before it holds the lock fails the test here, instead of leaving it waiting.
+      await Promise.race([holding, purging]);
+      gate.key = key;
+      reading = readInbox({ actorId: w.people.reader.id, siteRole: 'user' });
+      // The page's list (the statement that selects whole rows; the counts select count(*)) has its snapshot and waits
+      // on the lock: the purge commits now.
+      for (let tries = 0; ; tries++) {
+        const [row] = await observer<{ waiting: number }[]>`
+          select count(*)::int as waiting from pg_locks l join pg_stat_activity a on a.pid = l.pid
+          where l.locktype = 'advisory' and l.objid::bigint = ${key} and not l.granted
+            and a.datname = current_database() and a.query like 'select "id", "recipient_id"%'`;
+        if ((row?.waiting ?? 0) > 0) break;
+        if (tries > 400) throw new Error('the inbox list never reached the lock');
+        await new Promise((resolve) => setTimeout(resolve, 25));
+      }
+      purge();
+      await purging;
+      page = await reading;
+    } finally {
+      // Whatever happened above, nothing stays held: the purge commits, the gate opens, the read ends.
+      purge();
+      await purging.catch(() => undefined);
+      await reading?.catch(() => undefined);
+      gate.key = 0;
     }
-    purge();
-    await purging;
-    page = await reading;
   } finally {
-    // Whatever happened above, nothing stays held: the purge commits, the gate opens, the read ends.
-    purge();
-    await purging.catch(() => undefined);
-    await reading.catch(() => undefined);
-    gate.key = 0;
     await observer.end();
   }
   expect(page.items).toMatchObject([{ kind: 'thread_reply', commentId: id, actor: { id: w.people.owner.id }, excerpt: 'Doomed words' }]);
