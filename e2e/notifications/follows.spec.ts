@@ -135,6 +135,37 @@ test('a remote community’s acceptance is an Account notice, and the notices si
 /** The header's unread count, from the Inbox link's accessible name ("Inbox 3 unread"); 0 without a count. */
 const badge = async (page: Page) => Number((await inboxLink(page).ariaSnapshot()).match(/Inbox ([0-9]+) unread/)?.[1] ?? 0);
 
+/** The parts of the app's router (on the window) the count's reload is watched through. */
+type Watched = Window & {
+  __TSR_ROUTER__: {
+    state: { status: string; matches: { routeId: string }[]; resolvedLocation?: { pathname: string } };
+    subscribers: Set<unknown>;
+    invalidate(opts?: { filter?: (match: { routeId: string }) => boolean }): Promise<void>;
+  };
+  rootReloads: number;
+};
+/** From here on in this document, counts each reload asked of the root's data, which holds the header's count. */
+const countRootReloads = (page: Page) =>
+  page.evaluate(() => {
+    const watched = window as unknown as Watched;
+    const router = watched.__TSR_ROUTER__;
+    const invalidate = router.invalidate;
+    watched.rootReloads = 0;
+    router.invalidate = (opts) => {
+      if (router.state.matches.some((match) => match.routeId === '__root__' && (opts?.filter?.(match) ?? true))) watched.rootReloads++;
+      return invalidate(opts);
+    };
+  });
+const rootReloads = (page: Page) => page.evaluate(() => (window as unknown as Watched).rootReloads);
+/** The router's event listeners: one more while a reload waits for the page it opened to settle. */
+const listeners = (page: Page) => page.evaluate(() => (window as unknown as Watched).__TSR_ROUTER__.subscribers.size);
+/** The path the router has settled on; null while a navigation is under way. */
+const settledOn = (page: Page) =>
+  page.evaluate(() => {
+    const { status, resolvedLocation } = (window as unknown as Watched).__TSR_ROUTER__.state;
+    return status === 'idle' ? (resolvedLocation?.pathname ?? null) : null;
+  });
+
 test('opening a followed thread’s notice or an accepted follow marks it read, and the header’s count follows without a page load', async ({
   page,
 }) => {
@@ -143,21 +174,42 @@ test('opening a followed thread’s notice or an accepted follow marks it read, 
   const before = await badge(page);
   expect(before).toBeGreaterThanOrEqual(2);
   await page.evaluate(() => Object.assign(window, { stayed: true }));
-  // The read is held: the thread opens without waiting for it, and the count follows once it has committed.
+  await countRootReloads(page);
+  const idle = await listeners(page);
+  // The reads are held here, and so is the thread's data while it opens. One route serves the whole case: a route
+  // removed while the page loads can leave a request it had paused unsent.
+  const isRead = (url: URL) => url.pathname === '/notifications' && url.searchParams.get('intent') === 'read';
+  const isLoad = (url: URL) => url.pathname.startsWith('/_serverFn/');
+  let holding: 'reads and loads' | 'reads' | 'nothing' = 'reads and loads';
+  const holds = (url: URL) => (holding !== 'nothing' && isRead(url)) || (holding === 'reads and loads' && isLoad(url));
   const reads: Route[] = [];
-  await page.route(
-    (url) => url.pathname === '/notifications' && url.searchParams.get('intent') === 'read',
-    (route) => void reads.push(route),
-  );
+  const loads: Route[] = [];
+  await page.route(holds, (route) => {
+    const url = new URL(route.request().url());
+    if (!holds(url)) return route.fallback();
+    (isRead(url) ? reads : loads).push(route);
+  });
+  let readsSent = 0;
+  page.on('request', (request) => void (isRead(new URL(request.url())) && readsSent++));
+
+  // The followed thread's notice: its read is answered while the thread still loads, so the count is asked for once,
+  // when the thread has loaded.
   await rows(page).first().getByRole('link', { name: cast.post.title }).click();
   await expect(page).toHaveURL(new RegExp(`/post/${cast.post.id}/comments/`));
-  await expect(page.getByRole('main')).toContainText('A new comment');
-  await expect.poll(() => reads.length).toBe(1);
-  expect(await badge(page)).toBe(before);
-  await reads[0]!.continue();
-  await page.unrouteAll();
+  await expect.poll(() => [reads.length, loads.length > 0]).toEqual([1, true]);
+  const answered = page.waitForResponse((response) => isRead(new URL(response.url())));
+  await reads.shift()!.continue();
+  await answered;
+  await expect.poll(() => listeners(page)).toBe(idle + 1);
+  expect(await settledOn(page)).toBeNull();
+  expect([await rootReloads(page), await badge(page)]).toEqual([0, before]);
+  holding = 'reads';
+  for (const load of loads.splice(0)) await load.continue();
+  await expect.poll(() => settledOn(page)).toMatch(new RegExp(`^/post/${cast.post.id}/comments/`));
   await expect.poll(() => badge(page)).toBe(before - 1);
+  expect(await rootReloads(page)).toBe(1);
 
+  // The accepted follow: the community has loaded before its read is answered, so the count is asked for at once.
   await inboxLink(page).click();
   await page
     .getByRole('main')
@@ -165,8 +217,26 @@ test('opening a followed thread’s notice or an accepted follow marks it read, 
     .click();
   await expect(rows(page)).toHaveCount(1);
   await rows(page).first().getByRole('link', { name: 'Open community' }).click();
-  await expect(page).toHaveURL(`/c/${cast.remote.handle}`);
+  await expect.poll(() => settledOn(page)).toBe(`/c/${cast.remote.handle}`);
+  await expect.poll(() => reads.length).toBe(1);
+  expect([await rootReloads(page), await badge(page)]).toEqual([1, before - 1]);
+  holding = 'nothing';
+  await reads.shift()!.continue();
   await expect.poll(() => badge(page)).toBe(before - 2);
+  expect(await rootReloads(page)).toBe(2);
+
+  // Opened again, a read notice sends nothing and asks for no count, and nothing is left waiting on the router.
+  await inboxLink(page).click();
+  await page
+    .getByRole('main')
+    .getByRole('link', { name: /^Replies/ })
+    .click();
+  await expect.poll(() => settledOn(page)).toBe('/notifications');
+  expect(await listeners(page)).toBe(idle);
+  const sent = readsSent;
+  await rows(page).first().getByRole('link', { name: cast.post.title }).click();
+  await expect.poll(() => settledOn(page)).toMatch(new RegExp(`^/post/${cast.post.id}/comments/`));
+  expect([readsSent - sent, await rootReloads(page), await badge(page)]).toEqual([0, 2, before - 2]);
   expect(await page.evaluate(() => 'stayed' in window)).toBe(true);
 });
 
