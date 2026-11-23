@@ -71,6 +71,10 @@ export function SidebarCommunities({
   const hydrated = useHydrated();
   const prefix = useId();
   const [status, setStatus] = useState('');
+  // Counts the menus' openings, so each opening mounts a fresh popup: one opened again while it still fades out would
+  // be the same menu, and React Aria moves focus into a menu only when it mounts (opened by keyboard, it then focused
+  // nothing). The sidebar focuses a moved row's menu mid-fade when the move's answer lands before the fade ends.
+  const [openings, setOpenings] = useState(0);
   const anchor = useRef<HTMLLIElement>(null);
   const action = usePinAction();
   const collator = new Intl.Collator(locale);
@@ -115,7 +119,7 @@ export function SidebarCommunities({
     const pending = community.followState === 'pending';
     const menu =
       place === undefined ? undefined : (
-        <Menu.Root>
+        <Menu.Root onOpenChange={(open) => open && setOpenings((count) => count + 1)}>
           <Menu.Trigger
             id={triggerId(community.id)}
             className="pb-feed-menu pb-nav__pin-menu"
@@ -126,7 +130,7 @@ export function SidebarCommunities({
           >
             <EllipsisIcon />
           </Menu.Trigger>
-          <Menu.Popup placement="bottom-end">
+          <Menu.Popup key={openings} placement="bottom-end">
             <Menu.List aria-label={t('pins', 'pins.menuList')}>
               <Menu.Item
                 id="up"

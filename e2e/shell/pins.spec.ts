@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
-import { expect, test, type Browser, type Locator, type Page } from '@playwright/test';
+import { expect, test, type Browser, type Locator, type Page, type Route } from '@playwright/test';
 import { landed, signIn } from '../auth/support.ts';
 import { galleryStates, stateProblems } from '../support/states.ts';
 import { skipWithoutKit } from '../support/kit.ts';
@@ -128,9 +128,7 @@ test.describe('seeded', () => {
     await expect(menuOf(side, `Elm ${seed.suffix}`)).toBeFocused();
     await expect(status).toHaveText(`Elm ${seed.suffix}, position 2 of 3`);
 
-    // By keyboard alone: the menu opens on Enter, the arrows pick, Enter acts. The click above left the pointer
-    // where the menu opens again, over Move up; it leaves the sidebar first.
-    await page.mouse.move(0, 0);
+    // By keyboard alone: the menu opens on Enter, the arrows pick, Enter acts.
     await page.keyboard.press('Enter');
     await expect(page.getByRole('menu')).toBeVisible();
     await expect(page.getByRole('menuitem', { name: 'Move up' })).toBeFocused();
@@ -152,6 +150,48 @@ test.describe('seeded', () => {
     // The order is the account's: a fresh page draws it the same.
     await gotoHydrated(page, '/local');
     expect(await titles(page, seed)).toEqual(['Yew', 'Birch', 'Ash', 'Cedar', 'Damson', 'Elm']);
+    await context.close();
+  });
+
+  test('a pinned row’s menu opened by keyboard focuses its first item, mid-fade and while a move is out, and keeps it as the order lands', async ({
+    browser,
+  }) => {
+    const seed = seedWorld();
+    const { context, page } = await signedIn(browser, seed);
+    await gotoHydrated(page, '/local');
+    const side = page.locator('.pb-side');
+    const status = side.locator('[aria-live="polite"]').filter({ hasText: /./ });
+    const elm = menuOf(side, `Elm ${seed.suffix}`);
+    // The first move's answer is held; one route serves the whole case.
+    let holding = true;
+    const held: Route[] = [];
+    await page.route(
+      (url) => url.pathname === '/communities/pins',
+      (route) => (holding ? void held.push(route) : route.fallback()),
+    );
+    await elm.focus();
+    await page.keyboard.press('Enter');
+    await expect(page.getByRole('menuitem', { name: 'Move down' })).toBeFocused();
+    await page.keyboard.press('Enter');
+    await expect.poll(() => held.length).toBe(1);
+    // The menu is still fading out. When a move's answer lands that soon (a slow device), the sidebar focuses the row's
+    // menu then, as here; Enter opens it again with its first item focused (Move up is still disabled).
+    await elm.focus();
+    await page.keyboard.press('Enter');
+    await expect(page.getByRole('menuitem', { name: 'Move down' })).toBeFocused();
+    // The answer lands while the menu is open: the order changes behind it, and focus stays in it.
+    holding = false;
+    await held.shift()!.continue();
+    await expect.poll(() => titles(page, seed)).toEqual(['Yew', 'Elm', 'Birch', 'Ash', 'Cedar', 'Damson']);
+    await expect(status).toHaveText(`Elm ${seed.suffix}, position 2 of 3`);
+    await expect(page.getByRole('menuitem', { name: 'Move up' })).not.toHaveAttribute('aria-disabled', 'true');
+    await expect(page.getByRole('menuitem', { name: 'Move down' })).toBeFocused();
+    // Once a move has landed, focus is back on the row's menu, and Enter opens it on its first item.
+    await page.keyboard.press('Enter');
+    await expect(status).toHaveText(`Elm ${seed.suffix}, position 3 of 3`);
+    await expect(elm).toBeFocused();
+    await page.keyboard.press('Enter');
+    await expect(page.getByRole('menuitem', { name: 'Move up' })).toBeFocused();
     await context.close();
   });
 
