@@ -576,6 +576,76 @@ test('a period under a sort that has none is dropped, and loading more reads onl
   expect(reads.filter((request) => !asks(request, '"cursor"'))).toHaveLength(0);
 });
 
+/**
+ * Twelve posts arrive above the one the reader opened while they read it: Back puts that post where it stood in
+ * the window, in one step (with reduced motion, the window takes no position between the post page's top and it).
+ */
+async function arrivalsAbove(page: Page) {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await signedIn(page);
+  await gotoHydrated(page, '/?sort=new');
+  await loadTo(page, 60);
+  const opened = link(page, title(45));
+  await opened.scrollIntoViewIfNeeded();
+  await settled(page);
+  const count = await holding(page);
+  const top = () => opened.evaluate((element) => Math.round(element.getBoundingClientRect().top));
+  const offset = await top();
+  await opened.click();
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText(title(45));
+  run('arrive', seed.suffix, '12');
+  try {
+    await page.evaluate(() => {
+      const at: number[] = [];
+      Object.assign(window, { at });
+      addEventListener('scroll', () => at.push(Math.round(scrollY)));
+    });
+    await page.goBack();
+    await expect(rows(page)).toHaveCount(count);
+    await agrees(page);
+    await expect(rows(page).first()).toContainText(`Depth ${seed.suffix} new 12`);
+    await expect(opened).toBeInViewport();
+    // Within a pixel: rows lie on fractions of one, the window scrolls by whole ones.
+    await expect.poll(async () => Math.abs((await top()) - offset)).toBeLessThanOrEqual(1);
+    const y = await page.evaluate(() => Math.round(scrollY));
+    const at = await page.evaluate(() => (window as unknown as { at: number[] }).at);
+    expect(at.filter((value) => value !== 0 && value !== y)).toEqual([]);
+  } finally {
+    run('depart', seed.suffix);
+  }
+}
+
+test('posts that arrived above while the reader was away do not move the post they opened: Back puts it where it stood', ({ page }) =>
+  arrivalsAbove(page));
+
+test.describe('on a phone', () => {
+  test.use({ viewport: { width: 390, height: 800 }, hasTouch: true });
+
+  test('posts that arrived above do not move the post the reader opened', ({ page }) => arrivalsAbove(page));
+});
+
+test('when the post the reader opened is no longer among the fresh rows, Back puts the window where it was', async ({ page }) => {
+  await signedIn(page);
+  await gotoHydrated(page, '/?sort=new');
+  await loadTo(page, 60);
+  await link(page, title(45)).scrollIntoViewIfNeeded();
+  await settled(page);
+  const count = await holding(page);
+  const y = await page.evaluate(() => Math.round(scrollY));
+  await link(page, title(45)).click();
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText(title(45));
+  run('remove', title(45));
+  try {
+    await page.goBack();
+    await expect(rows(page)).toHaveCount(count);
+    await agrees(page);
+    await expect(link(page, title(45))).toHaveCount(0);
+    await expect.poll(() => page.evaluate(() => Math.round(scrollY))).toBe(y);
+  } finally {
+    run('restore', title(45));
+  }
+});
+
 test('with reduced motion, Back puts the place back in one step', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await signedIn(page);

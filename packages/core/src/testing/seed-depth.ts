@@ -14,7 +14,9 @@ import { seedActor, seedInstance } from './seed.ts';
 // at the end of every other feed, so no other spec's first pages change. The person has not declared 16+, so
 // a post marked sensitive is withheld from them. Fresh names every run. The other commands change a post, by
 // its title, as another person or a moderator would while the reader is away: `remove <title>`,
-// `restore <title>`, `swap <title> <title>` (their publication times) and `sensitive <title> <true|false>`.
+// `restore <title>`, `swap <title> <title>` (their publication times) and `sensitive <title> <true|false>`; and
+// `arrive <suffix> <count>` publishes that many newer posts in the run's community (`Depth <suffix> new 01` …, still
+// two years old, so they lead only that community's feeds), which `depart <suffix>` removes again.
 const [command, ...ids] = process.argv.slice(2);
 try {
   if (command === 'remove' || command === 'restore')
@@ -27,6 +29,40 @@ try {
       .update(posts)
       .set({ sensitive: ids[1] === 'true' })
       .where(eq(posts.title, ids[0]!));
+  else if (command === 'arrive') {
+    const [suffix, count] = ids;
+    const [found] = await writer()
+      .select({
+        instanceId: posts.instanceId,
+        authorId: posts.authorId,
+        communityId: posts.communityId,
+        publishedAt: posts.publishedAt,
+        apId: posts.apId,
+      })
+      .from(posts)
+      .where(eq(posts.title, `Depth ${suffix} 001`));
+    const { apId, ...first } = found!;
+    const domain = new URL(apId).host;
+    await writer()
+      .insert(posts)
+      .values(
+        Array.from({ length: Number(count) }, (_, index) => {
+          const id = uuidv7();
+          return {
+            ...first,
+            id,
+            apId: `https://${domain}/ap/post/${id}`,
+            local: false,
+            title: `Depth ${suffix} new ${String(index + 1).padStart(2, '0')}`,
+            publishedAt: new Date(first.publishedAt.getTime() + (index + 1) * 1000),
+          };
+        }),
+      );
+  } else if (command === 'depart')
+    await writer()
+      .update(posts)
+      .set({ removedAt: new Date() })
+      .where(sql`${posts.title} like ${`Depth ${ids[0]} new %`}`);
   else if (command === 'swap') {
     const rows = await writer()
       .select({ id: posts.id, title: posts.title, publishedAt: posts.publishedAt })

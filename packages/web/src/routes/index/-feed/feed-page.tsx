@@ -54,6 +54,7 @@ import { castVoteFn } from '../../post/-vote.ts';
 import type { FeedItem } from './items.ts';
 import { loadFeed, type FeedData } from './load.ts';
 import { feedTitleKeys } from './names.ts';
+import { keepPlace, takePlace } from './places.ts';
 import { grow, isReading, noReads, readsNow, subscribeReads } from './reads.ts';
 import type { FeedRoute } from './route.ts';
 import { feedHref, resolveFeedSearch, type FeedPosition, type FeedSearch } from './search.ts';
@@ -313,8 +314,9 @@ const focusable =
  * the list's start, moves focus to what follows the list. Before hydration, without scripts or without
  * IntersectionObserver the next page stays a plain link. The page draws what its loader answered, then
  * the batches it loads after it; after each, the list writes how many rows it has read into its own
- * history entry's address (`n`, search.ts), so Back, Forward or a reload reads them fresh, in one answer,
- * and the router puts the scroll position back. Nothing of the rows is kept anywhere else.
+ * history entry's address (`n`, search.ts), so Back, Forward or a reload reads them fresh, in one answer;
+ * the post the reader opened goes back where it stood (places.ts), else the router's scroll position does.
+ * Nothing of the rows is kept anywhere else.
  * With `rowActions`, each row gets Share (the system's share sheet where there is one, else the link is
  * copied) and a menu with Copy link.
  */
@@ -414,6 +416,34 @@ export function FeedCards({
     void router.navigate({ href: feedHref(path, { ...search, n: read }), replace: true, resetScroll: false }).finally(grown);
   }, [batches, read, written, path, router]);
 
+  // Where the reader leaves the list from, as they head to another page with its rows on screen, and back to it
+  // once a return has drawn the fresh rows: after the router's own restore, in the same task (places.ts).
+  useLayoutEffect(() => {
+    if (!more) return;
+    const entryOf = (location: { href: string; state: { __TSR_key?: string } }) => location.state.__TSR_key ?? location.href;
+    const rowOf = (post: string) => box.current?.querySelector(`.feed-list > li[data-post="${CSS.escape(post)}"]`) ?? null;
+    const leaving = router.subscribe('onBeforeLoad', ({ fromLocation, toLocation }) => {
+      const { search, reading } = latest.current;
+      if (!fromLocation || reading || !sameList(path, search, fromLocation) || sameList(path, search, toLocation)) return;
+      const opened = /^\/post\/([^/]+)/.exec(toLocation.pathname)?.[1];
+      const row = opened ? rowOf(opened) : null;
+      keepPlace(entryOf(fromLocation), { y: scrollY, post: row ? opened : undefined, offset: row?.getBoundingClientRect().top });
+    });
+    const arriving = router.subscribe('onRendered', ({ toLocation }) => {
+      const { search, reading } = latest.current;
+      if (reading || !sameList(path, search, toLocation)) return;
+      const place = takePlace(entryOf(toLocation));
+      if (!place) return;
+      const row = place.post ? rowOf(place.post) : null;
+      const top = row && place.offset !== undefined ? scrollY + row.getBoundingClientRect().top - place.offset : place.y;
+      window.scrollTo({ top, behavior: 'instant' });
+    });
+    return () => {
+      leaving();
+      arriving();
+    };
+  }, [more, path, router]);
+
   // The observer lives with the sentinel, which mounts again after every batch, so it reports at once
   // whether the end is still near. Its margin is one screen below the window.
   const sentinel = useCallback(
@@ -479,7 +509,7 @@ export function FeedCards({
           {auto && <FeedSkip label={t('feeds', 'skip')} onSkip={skip} />}
           <ul className="feed-list pb-rows" aria-label={t('feeds', 'list.label')}>
             {rows.map((row) => (
-              <li key={row.post.id}>
+              <li key={row.post.id} data-post={row.post.id}>
                 <FeedRow
                   row={row}
                   density={prefs.density}
