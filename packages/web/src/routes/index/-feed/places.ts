@@ -63,15 +63,16 @@ export function takePlace(entry: string): Place | undefined {
   return place;
 }
 
-// The reader's own scrolling (the wheel, a touch moving, a key that scrolls) and the last traversal of history
-// (Back, Forward), in this document: a return the reader scrolls on its way is left to the router.
+// The reader's own scrolling (the wheel turned up or down, a touch moving, a key that scrolls) and the last traversal
+// of history (Back, Forward), in this document: a return the reader scrolls on its way is left to the router. A
+// sideways wheel scrolls no feed: a trackpad's swipe Back is one, and its last events can come after the Back.
 let traversedAt = 0;
 let scrolledAt = -1;
 const scrollKeys = new Set(['ArrowDown', 'ArrowUp', 'PageDown', 'PageUp', 'Home', 'End', ' ']);
 if (typeof window !== 'undefined') {
   const scrolled = () => (scrolledAt = performance.now());
   addEventListener('popstate', () => (traversedAt = performance.now()), true);
-  addEventListener('wheel', scrolled, { capture: true, passive: true });
+  addEventListener('wheel', (event) => event.deltaY !== 0 && scrolled(), { capture: true, passive: true });
   addEventListener('touchmove', scrolled, { capture: true, passive: true });
   addEventListener(
     'keydown',

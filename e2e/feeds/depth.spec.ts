@@ -1164,24 +1164,31 @@ test('with reduced motion, Back puts the place back in one step', async ({ page 
   expect(at.filter((value) => value !== 0 && value !== y)).toEqual([]);
 });
 
-test('a reader who scrolls while a return loads is left where the router puts the window, not moved to the row', async ({ page }) => {
+/**
+ * The reader opens post 21 from its row, three posts arrive above, and the reader goes Back and turns the wheel by
+ * `dx`, `dy` while the return's read is held. Once the fresh rows are drawn: where the window was left and is now,
+ * and where the row stood and stands from the window's top. Putting the row back moves the window three rows down.
+ */
+async function wheelOnTheWayBack(page: Page, dx: number, dy: number) {
   await signedIn(page);
   await gotoHydrated(page, '/?sort=new');
   await loadTo(page, 40);
-  await link(page, title(21)).scrollIntoViewIfNeeded();
+  const row = rows(page).filter({ has: page.locator('.pb-post__title a', { hasText: new RegExp(`^${title(21)}$`) }) });
+  await row.scrollIntoViewIfNeeded();
   await settled(page);
   const count = await holding(page);
   const y = await page.evaluate(() => Math.round(scrollY));
+  const top = () => row.evaluate((element) => Math.round(element.getBoundingClientRect().top));
+  const offset = await top();
   await link(page, title(21)).click();
   await expect(page.getByRole('heading', { level: 1 })).toHaveText(title(21));
-  // Posts arrive above, so putting the row back would move the window off where the router puts it.
   run('arrive', seed.suffix, '3');
   const held = await holdReads(page);
   try {
     await page.goBack();
     await expect.poll(() => held.length).toBe(1);
     await page.mouse.move(640, 400);
-    await page.mouse.wheel(0, 300);
+    await page.mouse.wheel(dx, dy);
     // At rest before the read is let go, so no scroll the wheel started runs on into the feed.
     let last = -1;
     await expect
@@ -1196,11 +1203,21 @@ test('a reader who scrolls while a return loads is left where the router puts th
     await expect(rows(page)).toHaveCount(count);
     await expect(rows(page).first()).toContainText(`Depth ${seed.suffix} new 03`);
     await settled(page);
-    // Where the reader left (a click can scroll the link a pixel into view), not three rows further down.
-    expect(Math.abs((await page.evaluate(() => Math.round(scrollY))) - y)).toBeLessThanOrEqual(1);
+    return { y, now: await page.evaluate(() => Math.round(scrollY)), offset, top: await top() };
   } finally {
     run('depart', seed.suffix);
   }
+}
+
+test('a reader who scrolls while a return loads is left where the router puts the window, not moved to the row', async ({ page }) => {
+  const { y, now } = await wheelOnTheWayBack(page, 0, 300);
+  // Where the reader left (a click can scroll the link a pixel into view), not three rows further down.
+  expect(Math.abs(now - y)).toBeLessThanOrEqual(1);
+});
+
+test('a sideways wheel on the way back (a trackpad swiping Back) is no scroll: the row is put back where it stood', async ({ page }) => {
+  const { offset, top } = await wheelOnTheWayBack(page, 300, 0);
+  expect(Math.abs(top - offset)).toBeLessThanOrEqual(1);
 });
 
 test('an ordinary visit to a feed reads one batch, once, and draws it', async ({ page }) => {
