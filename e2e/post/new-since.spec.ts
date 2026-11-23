@@ -172,25 +172,55 @@ function journal(tab: Page, postId: string) {
 /** What the page held at the moment a visit went out: the comments drawn and the thread's heading. */
 type Seen = { rows: string[]; heading: string };
 /**
- * Sends each visit of `postId` on after noting what the page held as it started (in the handler that
- * intercepts it, so a page drawn only after the request went cannot pass). `first` settles on the first.
+ * Notes what the page held as each visit of `postId` started: synchronously, in the page's own `fetch`,
+ * wrapped before the app's code runs, so a page drawn after the request went (even a microtask later)
+ * cannot pass. Install it before the tab loads. `first` settles once the first visit has gone.
  */
 async function watchVisits(tab: Page, postId: string) {
+  await tab.addInitScript((id: string) => {
+    const real = window.fetch.bind(window);
+    const taken: { rows: string[]; heading: string }[] = [];
+    Object.assign(window, { __visitsSeen: taken });
+    window.fetch = (input, init) => {
+      const address = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+      if ((init?.method ?? 'GET').toUpperCase() === 'POST' && address.endsWith(`/post/${id}/visit`))
+        taken.push({
+          rows: [...document.querySelectorAll('#comments .pb-comment')].map((found) => found.id.replace(/^comment-/, '')),
+          heading: document.querySelector('#comments-heading')?.textContent ?? '',
+        });
+      return real(input, init);
+    };
+  }, postId);
   const seen: Seen[] = [];
   let went!: () => void;
   const first = new Promise<void>((done) => (went = done));
-  await tab.route(`**/post/${postId}/visit`, async (route) => {
-    if (route.request().method() !== 'POST') return route.fallback();
-    seen.push(
-      await tab.evaluate(() => ({
-        rows: [...document.querySelectorAll('#comments .pb-comment')].map((found) => found.id.replace(/^comment-/, '')),
-        heading: document.querySelector('#comments-heading')?.textContent ?? '',
-      })),
-    );
-    went();
-    await route.fallback();
+  tab.on('request', (request) => {
+    if (!isVisit(request, postId)) return;
+    void tab
+      .evaluate(() => (window as unknown as { __visitsSeen: Seen[] }).__visitsSeen)
+      .then((all) => {
+        seen.splice(0, seen.length, ...all);
+        went();
+      });
   });
   return { seen, first };
+}
+
+/** Holds the next request to reload `postId` before it reaches the server, until `release()`: what it reads is the server after that. */
+async function holdReloadRequest(tab: Page, postId: string) {
+  let asked!: () => void;
+  const held = new Promise<void>((done) => (asked = done));
+  let release!: () => void;
+  const released = new Promise<void>((done) => (release = done));
+  let taken = false;
+  await tab.route('**/_serverFn/**', async (route) => {
+    if (taken || !isReload(route.request(), postId)) return route.fallback();
+    taken = true;
+    asked();
+    await released;
+    await route.fallback();
+  });
+  return { held, release };
 }
 
 /**
@@ -333,10 +363,15 @@ test('a tab brought forward before the page hydrated is reloaded too, before its
   });
   const events = journal(tab, seed.posts.seen);
   const visits = await watchVisits(tab, seed.posts.seen);
+  const hold = await holdReloadRequest(tab, seed.posts.seen);
   await gotoHydrated(tab, `/post/${seed.posts.seen}`);
+  // A comment that arrives after the page was drawn and before its reload reads the server.
+  await hold.held;
+  const late = say(seed.posts.seen, await authorOf(tab, seed.comments.first));
+  hold.release();
   await visits.first;
   expect(events).toEqual(['reload answered', 'visit']);
-  expect(visits.seen[0]!.rows).toContain(seed.comments.first);
+  expect(visits.seen[0]!.rows).toContain(late);
 });
 
 test('a thread brought forward while its reload fails keeps what it showed, with no error page, and records nothing', async ({ page }) => {
@@ -390,9 +425,13 @@ test('an unknown sort and a cursor that is not one, on a reload, give the defaul
   const tab = await backgroundTab(page);
   const visits = await watchVisits(tab, seed.posts.seen);
   await gotoHydrated(tab, address);
+  // Arrives after the tab's page was drawn: only the reload can bring it, so a page left as it was cannot pass.
+  const late = say(seed.posts.seen, await authorOf(tab, seed.comments.first));
   await show(tab);
   await visits.first;
-  expect(visits.seen[0]!.rows.map((id) => `comment-${id}`)).toEqual(fresh);
+  const rows = visits.seen[0]!.rows.map((id) => `comment-${id}`);
+  expect(rows).toEqual(expect.arrayContaining([...fresh, `comment-${late}`]));
+  expect(rows).toHaveLength(fresh.length + 1);
   await expect(tab.locator('#comments')).toBeVisible();
 });
 
