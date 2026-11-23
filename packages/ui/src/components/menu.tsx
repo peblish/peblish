@@ -8,6 +8,7 @@ export type {
   MenuPopupProps,
   MenuRootProps,
   MenuSectionProps,
+  MenuShortcutProps,
   MenuSubmenuProps,
   MenuTriggerProps,
 } from '@muxui/react';

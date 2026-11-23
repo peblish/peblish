@@ -116,8 +116,8 @@ importers:
   packages/ui:
     dependencies:
       '@muxui/react':
-        specifier: file:../../vendor/muxui/muxui-react-0.1.0-rc.8-c3.tgz
-        version: file:vendor/muxui/muxui-react-0.1.0-rc.8-c3.tgz(@floating-ui/dom@1.8.0)(@tiptap/extensions@3.31.4(@tiptap/core@3.31.4(@tiptap/pm@3.31.4))(@tiptap/pm@3.31.4))(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@19.2.9(react@19.2.9))(react@19.2.9)
+        specifier: file:../../vendor/muxui/muxui-react-0.1.0-rc.8-c4.tgz
+        version: file:vendor/muxui/muxui-react-0.1.0-rc.8-c4.tgz(@floating-ui/dom@1.8.0)(@tiptap/extensions@3.31.4(@tiptap/core@3.31.4(@tiptap/pm@3.31.4))(@tiptap/pm@3.31.4))(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@19.2.9(react@19.2.9))(react@19.2.9)
       '@peblish/schema':
         specifier: workspace:*
         version: link:../schema
@@ -947,8 +947,8 @@ packages:
   '@multiformats/base-x@4.0.1':
     resolution: {integrity: sha512-eMk0b9ReBbV23xXU693TAIrLyeO5iTgBZGSJfpqriG8UkYvr/hC9u9pyMlAakDNHWmbhMZCDs6KQO0jzKD8OTw==}
 
-  '@muxui/react@file:vendor/muxui/muxui-react-0.1.0-rc.8-c3.tgz':
-    resolution: {integrity: sha512-XSJ4FkdmSVbPd0y7Tmg+ocFu2XVuiVSFEBlwEWnrwCqLUhUrg8z4XwtjDmeqUTRAKzIJJlUI8P50ybR/wlCoEA==, tarball: file:vendor/muxui/muxui-react-0.1.0-rc.8-c3.tgz}
+  '@muxui/react@file:vendor/muxui/muxui-react-0.1.0-rc.8-c4.tgz':
+    resolution: {integrity: sha512-72JW7g01tTKZuVK67Sf4Cji5Bc4qUennO++Dt4YQOEloSMMc0FYnRx3gpiUfTXIZELs8P9TN6iXDTycNIhoxyA==, tarball: file:vendor/muxui/muxui-react-0.1.0-rc.8-c4.tgz}
     version: 0.1.0-rc.8
     engines: {node: '>=24.19.0 <27'}
     peerDependencies:
@@ -3531,7 +3531,7 @@ snapshots:
 
   '@multiformats/base-x@4.0.1': {}
 
-  '@muxui/react@file:vendor/muxui/muxui-react-0.1.0-rc.8-c3.tgz(@floating-ui/dom@1.8.0)(@tiptap/extensions@3.31.4(@tiptap/core@3.31.4(@tiptap/pm@3.31.4))(@tiptap/pm@3.31.4))(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@19.2.9(react@19.2.9))(react@19.2.9)':
+  '@muxui/react@file:vendor/muxui/muxui-react-0.1.0-rc.8-c4.tgz(@floating-ui/dom@1.8.0)(@tiptap/extensions@3.31.4(@tiptap/core@3.31.4(@tiptap/pm@3.31.4))(@tiptap/pm@3.31.4))(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@19.2.9(react@19.2.9))(react@19.2.9)':
     dependencies:
       '@internationalized/date': 3.12.4
       '@tiptap/core': 3.31.4(@tiptap/pm@3.31.4)

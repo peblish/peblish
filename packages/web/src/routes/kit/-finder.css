@@ -1,0 +1,9 @@
+/* The finder's and the community field's state pages (-finder-pieces.tsx): each sample takes the column, up to the
+   finder popup's own width. */
+@layer app {
+  .kit-row > :is(.pb-finder-sample, .pb-cfield-sample) {
+    flex: 1 1 100%;
+    min-inline-size: 0;
+    max-inline-size: 40rem;
+  }
+}

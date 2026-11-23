@@ -1,5 +1,5 @@
 import { expect, test, type Browser, type BrowserContext, type Locator, type Page } from '@playwright/test';
-import { community, radioLabel, seed, signedIn, type Seed } from '../composer/support.ts';
+import { communityRadio, radioLabel, seed, signedIn, type Seed } from '../composer/support.ts';
 import { gotoHydrated } from '../support/route-marker.ts';
 import { drawing, pixelDiff, removeInputStateRules, ringColours, shot } from './support.ts';
 
@@ -101,8 +101,8 @@ test.describe('without JavaScript', () => {
     expect(await ringColours(radioIndicator(link))).toEqual([]);
     expect(await pixelDiff(browser, await shot(radioIndicator(text)), selected)).toBeGreaterThan(0.1);
 
-    const open_ = community(page, world.communities.open.handle);
-    const closed = community(page, world.communities.closed.handle);
+    const open_ = communityRadio(page, world.communities.open.handle);
+    const closed = communityRadio(page, world.communities.closed.handle);
     await radioLabel(open_).click();
     await expect(dot(open_)).toHaveCSS('opacity', '1');
     await radioLabel(closed).click();
@@ -117,8 +117,8 @@ test.describe('without JavaScript', () => {
     // A refused post comes back with its community and NSFW drawn as chosen by the server.
     const page = await open(browser, baseURL!, '/submit', { scripts: false, as: world.people.banned });
     const nsfw = page.getByRole('checkbox', { name: 'NSFW' });
-    const closed = community(page, world.communities.closed.handle);
-    const open_ = community(page, world.communities.open.handle);
+    const closed = communityRadio(page, world.communities.closed.handle);
+    const open_ = communityRadio(page, world.communities.open.handle);
     const empty = await shot(boxIndicator(nsfw));
     await tick(nsfw);
     await expect(nsfw).toBeChecked();
@@ -173,8 +173,9 @@ for (const scheme of ['light', 'dark'] as const) {
     ];
     for (const page of pages) {
       await expect(page.locator('html')).toHaveAttribute('data-muxui-color-scheme', scheme);
+      // Create post's community is a radio list only without scripts (a hydrated page shows the field), so the
+      // post type's radios stand for the radios here.
       await radioLabel(postType(page, 'Link')).click();
-      await radioLabel(community(page, world.communities.open.handle)).click();
       await tick(page.getByRole('checkbox', { name: 'NSFW' }));
       await expect(page.getByRole('checkbox', { name: 'NSFW' })).toBeChecked();
       // Back to Text by keyboard, so it has keyboard focus.
@@ -198,7 +199,6 @@ for (const scheme of ['light', 'dark'] as const) {
     const parts = (page: Page) => [
       radioIndicator(postType(page, 'Text')),
       radioIndicator(postType(page, 'Link')),
-      radioIndicator(community(page, world.communities.open.handle)),
       boxIndicator(page.getByRole('checkbox', { name: 'NSFW' })),
     ];
     const plainParts = parts(plain);

@@ -70,7 +70,8 @@ const flagged = sql`(${actors.sensitive} or ${actors.nsfl})`;
 /** `%`, `_` and `\` in a search are text, not patterns. */
 const like = (text: string) => `%${text.replace(/[\\%_]/g, '\\$&')}%`;
 
-async function conditions(query: DirectoryQuery, viewer: DirectoryViewer): Promise<SQL> {
+/** What the directory lists for this query and viewer, as SQL over actors joined to instances (also followed.ts). */
+export async function conditions(query: DirectoryQuery, viewer: DirectoryViewer): Promise<SQL> {
   const blocked = await blockedHosts();
   const nsfw = effectiveNsfw(query, viewer);
   // A remote Group flagged sensitive or nsfl is never listed (remote NSFW is rejected by default); a local one only for a declared viewer.

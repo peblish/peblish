@@ -14,9 +14,11 @@ import {
 import { Link } from '@peblish/ui/components/link';
 import { Sidebar } from '@peblish/ui/components/sidebar';
 import { getRouteApi, useRouterState } from '@tanstack/react-router';
-import { useEffect, useRef, type ComponentType, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, type ComponentType, type ReactNode } from 'react';
 import { useTranslate } from '../i18n/use-translate.ts';
 import { AccountLinks, accountPages, signOutFormId } from './account.tsx';
+import { ShellBanner } from './banner.tsx';
+import { useSiteLook } from './site-look.ts';
 import { Brand } from './brand.tsx';
 import type { ShellData } from './data.ts';
 import { TopHeader } from './header.tsx';
@@ -155,7 +157,7 @@ function Drawer({ session, shell, pathname }: { session: SessionView | null; she
  * the scripted layout.
  */
 export function Shell({ children }: { children: ReactNode }) {
-  const { session, shell, side } = root.useLoaderData();
+  const { session, shell, side, bannerDismissed } = root.useLoaderData();
   const { t } = useTranslate();
   const pathname = useRouterState({ select: (state) => state.location.pathname });
   // A route that renders its own view header says so (view-header.tsx), and its loading host renders one too, so
@@ -171,19 +173,23 @@ export function Shell({ children }: { children: ReactNode }) {
   useTapAgainForTop();
   const fold = useSideFold(side);
   const pack = brandPack(shell.brand);
+  // The banner and the width, rechecked when a tab comes back after a while (site-look.ts).
+  const look = useSiteLook(useMemo(() => ({ banner: shell.banner, width: shell.width }), [shell.banner, shell.width]));
   const parts = {
     brand: <Brand siteName={shell.siteName} pack={pack} className="pb-bar-brand" />,
     drawer: <Drawer session={session} shell={shell} pathname={pathname} />,
+    banner: <ShellBanner banner={look.banner} cookieRevision={bannerDismissed} placement="view" />,
   };
 
   return (
     <Sidebar.Provider collapsed={fold.collapsed} onCollapsedChange={fold.setCollapsed}>
       <FrameContext value={parts}>
-        <div className="pb-app">
+        <div className="pb-app" data-width={look.width}>
           <Link className="pb-skip pb-link-quiet" href="#pb-main">
             {t('shell', 'skip')}
           </Link>
           <TopHeader session={session} shell={shell} pack={pack} pathname={pathname} />
+          <ShellBanner banner={look.banner} cookieRevision={bannerDismissed} placement="frame" />
           <div className="pb-app__side">
             <EdgeToggle
               className="pb-app__fold"

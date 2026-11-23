@@ -1,0 +1,103 @@
+/* The site banner (site-banner.tsx), drawn by Mux UI's Banner. */
+@layer app {
+  /* Centred, Mux gives the message a 16rem basis that does not grow, so a 140-character message takes three
+     lines on any computer. Here it takes its own width, as the Commons banner does, and wraps only where the
+     row runs out; the actions follow it on the row or centre under it. */
+  .pb-banner[data-muxui-align='center'] .muxui-banner__text {
+    flex-basis: auto;
+  }
+
+  /* The actions (site-banner.tsx) follow the message in its line, or wrap under it, centred when the banner is. */
+  .pb-banner .pb-banner__actions {
+    display: inline-flex;
+    flex-wrap: wrap;
+    vertical-align: middle;
+    margin-inline-start: var(--muxui-semantic-layout-group-gap);
+  }
+
+  /* A phone's 44px target, both ways, for the actions as for the dismiss button (shell.css sets Mux's control
+     sizes; a one-letter label would leave a button or a link narrower). */
+  @media (max-width: 859.98px) {
+    .pb-banner .muxui-banner__action,
+    .pb-banner .muxui-banner__link {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-block-size: var(--muxui-control-size-sm);
+      min-inline-size: var(--muxui-control-size-sm);
+    }
+  }
+
+  /* Mux draws the banner's own focus ring (a gap of the banner's colour, then its foreground) but Mux Link's 2px
+     page ring is drawn over it, in the page's focus colour, which can be the banner's own fill (1:1 on solid
+     Accent). So the link shows the banner's ring alone; under forced colours Link keeps its system outline. */
+  @media (forced-colors: none) {
+    .pb-banner .muxui-banner__link:is(:focus-visible, [data-muxui-state-focus-visible]) {
+      outline: none;
+    }
+  }
+
+  /* With scripts off the dismiss button cannot work (it keeps a cookie), so it is left out; the actions are links. */
+  @media (scripting: none) {
+    .pb-banner .muxui-banner__dismiss {
+      display: none;
+    }
+  }
+}
+
+/* The admin form's previews (site-settings-previews.tsx). */
+@layer app {
+  .pb-banner-previews {
+    display: grid;
+    gap: var(--muxui-semantic-layout-group-gap);
+  }
+
+  /* Each frame paints its own scheme's page under the banner, with a hairline around it. */
+  .pb-banner-preview {
+    display: grid;
+    gap: var(--muxui-semantic-layout-tight-gap);
+    margin: 0;
+    padding: var(--muxui-semantic-layout-inset-small);
+    border: 1px solid var(--muxui-semantic-border-faint);
+    border-radius: var(--muxui-semantic-control-radius);
+    background: var(--muxui-semantic-surface-background);
+    color: var(--muxui-semantic-content-default);
+  }
+
+  .pb-banner-preview__caption {
+    font-size: var(--muxui-semantic-typography-text-s-font-size);
+    color: var(--muxui-semantic-content-secondary);
+  }
+
+  /* Under forced colours a frame scoped to the other scheme keeps that scheme's caption colour on the forced
+     Canvas (3.36:1 measured), so the caption takes the system pair itself. */
+  @media (forced-colors: active) {
+    .pb-banner-preview__caption {
+      forced-color-adjust: none;
+      background: Canvas;
+      color: CanvasText;
+    }
+  }
+
+  .pb-width-preview {
+    padding-block: var(--muxui-semantic-layout-inset-small);
+  }
+
+  .pb-width-preview__page {
+    display: flex;
+    gap: var(--muxui-semantic-layout-tight-gap);
+    margin-inline: auto;
+    block-size: 2.5rem;
+  }
+
+  .pb-width-preview__centre,
+  .pb-width-preview__rail {
+    flex-basis: 0;
+    border: 1px solid var(--muxui-semantic-border-default);
+    border-radius: var(--muxui-semantic-control-radius);
+  }
+
+  .pb-width-preview__centre {
+    background: var(--muxui-semantic-action-neutral-background);
+  }
+}

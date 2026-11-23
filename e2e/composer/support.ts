@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
-import { expect, type Browser, type BrowserContext, type Locator } from '@playwright/test';
+import { expect, type Browser, type BrowserContext, type Locator, type Page } from '@playwright/test';
 import { landed, signIn } from '../auth/support.ts';
 import { gotoHydrated } from '../support/route-marker.ts';
 
@@ -13,7 +13,7 @@ export type Seed = {
   password: string;
   people: { poster: string; unverified: string; moderator: string; banned: string; young: string };
   communities: Record<
-    'open' | 'staff' | 'closed' | 'remote' | 'adult' | 'gated' | 'gone' | 'remoteStaff' | 'long' | 'farAway',
+    'open' | 'staff' | 'closed' | 'remote' | 'adult' | 'gated' | 'gone' | 'remoteStaff' | 'long' | 'farAway' | 'named',
     { id: string; handle: string }
   >;
 };
@@ -39,9 +39,32 @@ export async function signedIn(browser: Browser, baseURL: string, name: string, 
 export const coldContext = async (browser: Browser, baseURL: string, context: BrowserContext) =>
   browser.newContext({ baseURL, storageState: await context.storageState() });
 
-/** The community's radio in the picker, on the page or inside the sheet. */
-export const community = (within: Pick<Locator, 'getByRole'>, handle: string) =>
-  within.getByRole('radio', { name: new RegExp(`^!${handle}`) });
+/** The page a locator is on, or the page itself. */
+const pageOf = (within: Page | Locator): Page => ('page' in within && typeof within.page === 'function' ? within.page() : (within as Page));
+
+/** `text` as a pattern that matches it literally. */
+const literally = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+/** Create post's community field (Mux ComboBox), on the page or inside the sheet. */
+export const communityField = (within: Pick<Locator, 'getByRole'>) => within.getByRole('combobox', { name: 'Community' });
+
+/** Opens the field's list (it opens on focus, and with the arrows when focused already), which shows every community when nothing is typed. */
+export async function openCommunities(within: Page | Locator) {
+  const field = communityField(within);
+  await field.click();
+  if ((await field.getAttribute('aria-expanded')) !== 'true') await field.press('ArrowDown');
+  await expect(field).toHaveAttribute('aria-expanded', 'true');
+}
+
+/** A community's row in the field's open list: a popover on the page, outside the sheet when the field is in it. */
+export const community = (within: Page | Locator, handle: string) =>
+  pageOf(within)
+    .getByRole('listbox')
+    .getByRole('option', { name: new RegExp(`^!${literally(handle)}(,| |$)`) });
+
+/** The community's radio in the list a browser without scripts gets. */
+export const communityRadio = (within: Pick<Locator, 'getByRole'>, handle: string) =>
+  within.getByRole('radio', { name: new RegExp(`^!${literally(handle)}`) });
 
 /** The label around a radio. Mux UI draws its own radio and hides the native one, so a click goes to the label, as a person's does. */
 export const radioLabel = (radio: Locator) => radio.locator('xpath=ancestor::label[1]');
@@ -52,8 +75,21 @@ async function pick(radio: Locator) {
   await expect(radio).toBeChecked();
 }
 
-/** Chooses the community in the picker by its row. */
-export const choose = (within: Pick<Locator, 'getByRole'>, handle: string) => pick(community(within, handle));
+/**
+ * Chooses the community: types its handle into the field and takes its row, as a person does; without scripts
+ * (the field hidden) clicks its radio.
+ */
+export async function choose(within: Page | Locator, handle: string) {
+  const field = communityField(within);
+  const radio = communityRadio(within, handle);
+  // The sheet loads its form after it opens: wait for whichever control this browser shows (Mux hides the native
+  // radio and draws its own in the label).
+  await expect(field.or(radioLabel(radio)).filter({ visible: true })).toHaveCount(1);
+  if (!(await field.isVisible())) return pick(radio);
+  await field.fill(handle);
+  await community(within, handle).click();
+  await expect(field).toHaveValue(`!${handle}`);
+}
 
 /** Chooses a post type (Text, Link, Image) by its label. */
 export const chooseType = (within: Pick<Locator, 'getByRole'>, name: string) => pick(within.getByRole('radio', { name, exact: true }));

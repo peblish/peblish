@@ -1,11 +1,15 @@
 import { unreadCap } from '@peblish/core/notifications/view';
 import type { SessionView } from '@peblish/schema/session';
 import type { BrandPack } from '@peblish/ui/brand/pack.ts';
+import { FinderPending } from '@peblish/ui/components/community-finder-pending';
 import { CountBadge } from '@peblish/ui/components/count-badge';
 import { HeaderNav } from '@peblish/ui/components/header-nav';
 import { InboxIcon, SearchIcon } from '@peblish/ui/components/icons';
 import { Link } from '@peblish/ui/components/link';
 import { Text } from '@peblish/ui/components/text';
+import { useHydrated } from '@peblish/ui/composer/use-hydrated.ts';
+import { getRouteApi } from '@tanstack/react-router';
+import { useId, useRef, useState, type FocusEvent, type KeyboardEvent, type MouseEvent } from 'react';
 import { useTranslate } from '../i18n/use-translate.ts';
 import { Account, SignedOutActions } from './account.tsx';
 import { Brand } from './brand.tsx';
@@ -15,24 +19,93 @@ import { directoryPaths, inboxPath } from './paths.ts';
 import { badgeText } from './sidebar.tsx';
 import { ThemeMenu } from './theme-menu.tsx';
 
+// The finder's popup, its data and Mux's CommandPalette load when it is first wanted, so no page pays for them
+// before then; pointing at the link or focusing it starts the load early.
+const loadFinder = () => import('./finder/finder.tsx');
+type FinderView = Awaited<ReturnType<typeof loadFinder>>['default'];
+const root = getRouteApi('__root__');
+
 /**
- * Find a community: for now a link to the directory, whose search is the existing community search (the
- * header's own finder, a command palette, comes in a later branch and keeps this link as its no-script
- * form). In the header it reads as a search field with its name in it, a visible label, not a
- * placeholder; on the phone's top bar (`compact`) it is the search icon alone, named for assistive tech.
+ * Find a community. A link to the directory, whose search is the community search, so with scripts off (or a
+ * modified click: a new tab) it is that page. Otherwise a press opens the finder over the page (finder/finder.tsx),
+ * which returns focus here when it closes; until its code is in, a press shows it loading (FinderPending), and code
+ * that cannot load leaves for the directory, as the link would. In the header it reads as a search field with its name in it, a visible
+ * label, not a placeholder; on the phone's top bar (`compact`) it is the search icon alone, named for assistive tech.
  */
 export function FindLink({ compact = false }: { compact?: boolean }) {
   const { t } = useTranslate();
   const label = t('shell', 'find');
-  return compact ? (
-    <Link className="pb-find pb-find--compact pb-link-quiet" href={directoryPaths.browse} aria-label={label}>
-      <SearchIcon className="pb-find__icon" />
-    </Link>
-  ) : (
-    <Link className="pb-find pb-link-quiet" href={directoryPaths.browse}>
-      <SearchIcon className="pb-find__icon" />
-      <Text className="pb-find__text">{label}</Text>
-    </Link>
+  const [open, setOpen] = useState(false);
+  const popup = useId();
+  // On the phone's top bar, where the bar ends as the finder opens: it starts there (a banner above moves the bar).
+  const [top, setTop] = useState<number | undefined>(undefined);
+  // The finder's code, once loaded.
+  const [Finder, setFinder] = useState<FinderView | null>(null);
+  const load = () => loadFinder().then(({ default: loaded }) => setFinder(() => loaded));
+  // Each press that opens the finder: one let go before its code arrived is not followed to the directory.
+  const request = useRef(0);
+  const waiting = open && !Finder;
+  const letGo = () => {
+    request.current++;
+    setOpen(false);
+  };
+  // Who the finder is for: another account (or none) gets a new finder, with nothing of the last one's (its text,
+  // its rows and their follows, a request on its way).
+  const viewer = root.useLoaderData({ select: ({ session }) => session?.actorId ?? '' });
+  // It opens a popup only once the page has hydrated; before then, and with scripts off, it is a plain link.
+  const hydrated = useHydrated();
+  const opener = {
+    href: directoryPaths.browse,
+    'aria-haspopup': hydrated ? ('dialog' as const) : undefined,
+    'aria-expanded': hydrated ? open : undefined,
+    'aria-controls': open && Finder ? popup : undefined,
+    // A load that fails here is tried again by a press.
+    onPointerEnter: () => void load().catch(() => undefined),
+    onFocus: () => void load().catch(() => undefined),
+    // A plain link: the page's client-link listener (shell/client-links.ts) skips a click this prevented.
+    onClick: (event: MouseEvent<HTMLAnchorElement>) => {
+      const modified = event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey;
+      if (modified || event.defaultPrevented) return;
+      event.preventDefault();
+      setTop(event.currentTarget.closest('.pb-frame-vh')?.getBoundingClientRect().bottom);
+      setOpen(true);
+      const press = ++request.current;
+      load().catch(() => {
+        if (press !== request.current) return;
+        setOpen(false);
+        window.location.assign(directoryPaths.browse);
+      });
+    },
+    // While the finder loads, focus is held here, as the finder will hold it (its loading panel takes none): Tab
+    // stays, and Escape, or focus taken elsewhere by a press outside, lets it go.
+    onKeyDown: (event: KeyboardEvent<HTMLAnchorElement>) => {
+      if (!waiting) return;
+      if (event.key === 'Tab') event.preventDefault();
+      if (event.key === 'Escape') letGo();
+    },
+    onBlur: (event: FocusEvent<HTMLAnchorElement>) => {
+      if (waiting && !event.currentTarget.contains(event.relatedTarget)) letGo();
+    },
+  };
+  return (
+    <>
+      {compact ? (
+        <Link className="pb-find pb-find--compact pb-link-quiet" aria-label={label} {...opener}>
+          <SearchIcon className="pb-find__icon" />
+        </Link>
+      ) : (
+        <Link className="pb-find pb-link-quiet" {...opener}>
+          <SearchIcon className="pb-find__icon" />
+          <Text className="pb-find__text">{label}</Text>
+        </Link>
+      )}
+      {open &&
+        (Finder ? (
+          <Finder key={viewer} id={popup} top={top} onClose={() => setOpen(false)} />
+        ) : (
+          <FinderPending label={t('finder', 'placeholder')} loading={t('finder', 'loading')} top={top} />
+        ))}
+    </>
   );
 }
 

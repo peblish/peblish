@@ -1,5 +1,5 @@
 import type { Principal } from '@peblish/schema/authz';
-import { eq, sql } from 'drizzle-orm';
+import { desc, eq, sql } from 'drizzle-orm';
 import { beforeEach, describe, expect, test } from 'vitest';
 import { authorize } from '../authz/authorize.ts';
 import type { SubjectOf } from '../authz/policy.ts';
@@ -13,6 +13,7 @@ import { writer } from '../db/write.ts';
 import { truncateAll } from '../testing/db.ts';
 import { grantFor, outboxEvents, writeCounts } from '../testing/seed-az.ts';
 import { person, remote, seedCommunityWorld } from '../testing/seed-f.ts';
+import { defaultBanner } from '@peblish/schema/banner';
 import { Refused } from '../tx/refused.ts';
 import { readSetting } from './read.ts';
 import { invalidSetting, updateSettings, updateSettingsAs } from './write.ts';
@@ -206,4 +207,102 @@ describe('updateSettings', () => {
 test('invalidSetting names the first key a patch would be refused for', () => {
   expect(invalidSetting({ 'site.name': 'Feddit', 'registration.cap': 3 })).toBeNull();
   expect(invalidSetting({ 'contact.email': 'nope', 'registration.cap': -2 })).toBe('contact.email');
+});
+
+describe('the banner', () => {
+  const banner = { ...defaultBanner, enabled: true, message: 'Reading works; posting pauses tonight.', revision: 0 };
+
+  test('every save raises the revision under the lock, a save that repeats the last one too, and each is audited', async () => {
+    const { people, admin } = await world();
+    for (const expected of [1, 2]) {
+      const result = await updateSettingsAs(admin, { 'site.banner': banner });
+      expect(result).toMatchObject({ ok: true, changed: ['site.banner'] });
+      expect(await readSetting('site.banner')).toEqual({ ...banner, revision: expected });
+    }
+    // Whatever revision the patch names, the server's own is raised.
+    await updateSettingsAs(admin, { 'site.banner': { ...banner, revision: 40 } });
+    expect((await readSetting('site.banner')).revision).toBe(3);
+    const rows = await db().select().from(modlog).orderBy(modlog.createdAt);
+    expect(rows).toHaveLength(3);
+    expect(rows[0]).toMatchObject({
+      action: 'settings.update',
+      actorId: people.admin.id,
+      public: false,
+      details: { public: false, changes: { 'site.banner': { before: defaultBanner, after: { ...banner, revision: 1 } } } },
+    });
+    expect(await writeCounts()).toEqual({ modlog: 3, outbox: 3 });
+  });
+
+  test('two publishes racing raise the revision by exactly two, and both are audited', async () => {
+    const { admin } = await world();
+    await updateSettingsAs(admin, { 'site.banner': banner });
+    const results = await Promise.all([
+      updateSettingsAs(admin, { 'site.banner': { ...banner, message: 'First of two.' } }),
+      updateSettingsAs(admin, { 'site.banner': { ...banner, message: 'Second of two.' } }),
+    ]);
+    expect(results.map((result) => result.ok)).toEqual([true, true]);
+    expect((await readSetting('site.banner')).revision).toBe(3);
+    const rows = await db().select({ details: modlog.details }).from(modlog).orderBy(modlog.createdAt);
+    expect(rows).toHaveLength(3);
+    for (const revision of [1, 2, 3])
+      expect(rows).toContainEqual({
+        details: expect.objectContaining({
+          changes: { 'site.banner': expect.objectContaining({ after: expect.objectContaining({ revision }) }) },
+        }),
+      });
+  });
+
+  test('a publish replaces a stored banner that is unreadable, and the log says it was unreadable without its content', async () => {
+    const { admin } = await world();
+    for (const [malformed, revision] of [
+      [{ ...banner, revision: 6, icon: 'typo', note: '<script>' }, 7],
+      ['not a banner', 1],
+    ] as const) {
+      await writer()
+        .insert(siteSettings)
+        .values({ key: 'site.banner', value: malformed })
+        .onConflictDoUpdate({ target: siteSettings.key, set: { value: malformed } });
+      expect(await updateSettingsAs(admin, { 'site.banner': banner })).toMatchObject({ ok: true, changed: ['site.banner'] });
+      // The next revision after a revision it could still read, so a browser that dismissed that one sees this one.
+      expect(await readSetting('site.banner')).toEqual({ ...banner, revision });
+      const [entry] = await db().select({ details: modlog.details }).from(modlog).orderBy(desc(modlog.createdAt)).limit(1);
+      expect(entry?.details).toMatchObject({
+        changes: { 'site.banner': { before: { unreadable: true }, after: { ...banner, revision } } },
+      });
+      expect(JSON.stringify(entry?.details)).not.toContain('<script>');
+    }
+    // A readable old banner is logged as it was, as before.
+    await updateSettingsAs(admin, { 'site.banner': { ...banner, message: 'Again.' } });
+    const [entry] = await db().select({ details: modlog.details }).from(modlog).orderBy(desc(modlog.createdAt)).limit(1);
+    expect(entry?.details).toMatchObject({ changes: { 'site.banner': { before: { ...banner, revision: 1 } } } });
+  });
+
+  test('a width stored as an unknown preset is replaced, and logged as unreadable', async () => {
+    const { admin } = await world();
+    await writer().insert(siteSettings).values({ key: 'site.width', value: 'full' });
+    expect(await updateSettingsAs(admin, { 'site.width': 'wide' })).toMatchObject({ ok: true, changed: ['site.width'] });
+    const [entry] = await db().select({ details: modlog.details }).from(modlog);
+    expect(entry?.details).toMatchObject({ changes: { 'site.width': { before: { unreadable: true }, after: 'wide' } } });
+  });
+
+  test('an outside address, a long message or an unknown tone is settings.invalid, and nothing is written', async () => {
+    const { admin } = await world();
+    for (const bad of [
+      { ...banner, link: { label: 'Status', href: 'https://example.test/status' } },
+      { ...banner, primary: { label: 'Status', href: '//example.test' } },
+      { ...banner, message: 'x'.repeat(141) },
+      { ...banner, tone: 'purple' },
+    ])
+      expect(await updateSettingsAs(admin, { 'site.banner': bad as typeof banner })).toEqual({ ok: false, reason: 'settings.invalid' });
+    expect(await writeCounts()).toEqual({ modlog: 0, outbox: 0 });
+  });
+
+  test('a member who is no admin is refused', async () => {
+    const { people } = await world();
+    expect(await updateSettingsAs(person(people.user.id), { 'site.banner': banner, 'site.width': 'wide' })).toEqual({
+      ok: false,
+      reason: 'auth.admin_required',
+    });
+    expect(await writeCounts()).toEqual({ modlog: 0, outbox: 0 });
+  });
 });

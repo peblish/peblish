@@ -40,3 +40,8 @@
 /* The staff pages' pieces (staff-pages lane). */
 @import '@peblish/ui/components/section-tabs.css';
 @import '@peblish/ui/components/rail-links.css';
+/* The site banner (banner and width lane). */
+@import '@peblish/ui/components/site-banner.css';
+/* The header's finder and Create post's community field (f-finder lane). */
+@import '@peblish/ui/components/community-finder.css';
+@import '@peblish/ui/components/community-field.css';
