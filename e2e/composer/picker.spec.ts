@@ -23,6 +23,23 @@ const group = (page: Page, name: string) => page.getByRole('listbox').getByRole(
 const posted = (page: Page) => page.locator('form input[name="community"]');
 const rules = (page: Page) => page.getByRole('complementary', { name: 'Community rules' });
 
+/**
+ * Waits until the field's list has finished opening and nothing in it moves, so colours are read at rest: Mux UI fades
+ * the list in by script, through an opacity on its popover that it removes once the list is in place, and a row's
+ * highlight eases in by transition. A fast server measures before either ends.
+ */
+const listSettled = (page: Page) =>
+  expect
+    .poll(() =>
+      page
+        .locator('.muxui-combo-box__popover')
+        .evaluate(
+          (popover: HTMLElement) =>
+            popover.style.opacity === '' && popover.getAnimations({ subtree: true }).every(({ playState }) => playState !== 'running'),
+        ),
+    )
+    .toBe(true);
+
 test('the field lists joined communities first, then the rest, then Browse, each a named group', async () => {
   const page = await poster.newPage();
   await gotoHydrated(page, '/submit');
@@ -35,8 +52,10 @@ test('the field lists joined communities first, then the rest, then Browse, each
   await expect(community(page, remoteStaff.handle)).toBeDisabled();
   await expect(community(page, remoteStaff.handle)).toContainText('posting disabled for you');
   await expect(community(page, gone.handle)).toHaveCount(0);
-  // The open list hides the rest of the page from assistive technology (React Aria), so the page is checked closed.
+  // The open list hides the rest of the page from assistive technology (React Aria), so the page is checked closed,
+  // once the list has faded out and left.
   await page.keyboard.press('Escape');
+  await expect(page.getByRole('listbox')).toHaveCount(0);
   await expectAccessible(page);
   await page.close();
 });
@@ -329,9 +348,7 @@ test('the open list passes axe, and on a phone each row is a 44px target', async
   await openCommunities(page);
   const list = page.getByRole('listbox');
   // The list fades in: axe reads colours once it has.
-  await list.evaluate((element) =>
-    Promise.all(element.ownerDocument.getAnimations().map((animation) => animation.finished.catch(() => undefined))),
-  );
+  await listSettled(page);
   const results = await new AxeBuilder({ page })
     .include('[role="listbox"]')
     .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa', 'best-practice'])
@@ -414,6 +431,7 @@ test('the open list reads at 4.5:1 or more in light and dark, at rest and highli
     const field = communityField(page);
     await field.click();
     await page.keyboard.type(world.communities.open.handle.replace(/^open_/, ''));
+    await listSettled(page);
     const list = page.getByRole('listbox');
     const texts = list.locator('.pb-cfield__title, .pb-cfield__meta');
     // At rest, every enabled row's name and description; the disabled rows are exempt (WCAG 1.4.3).
@@ -427,11 +445,15 @@ test('the open list reads at 4.5:1 or more in light and dark, at rest and highli
     // Highlighted: the first row the arrows reach.
     await page.keyboard.press('ArrowDown');
     const active = page.locator('[role="option"][data-muxui-state-focused], [role="option"][data-focused]').first();
+    await expect(active).toBeVisible();
+    await listSettled(page);
     for (const text of await active.locator('.pb-cfield__title, .pb-cfield__meta').all()) {
       expect(await contrast(text), `${colorScheme}, highlighted`).toBeGreaterThanOrEqual(4.5);
     }
     // The row to the directory, in the link colour, with nothing matching.
     await field.fill('zzzz no such community');
+    await expect(page.getByRole('option', { name: 'Browse all communities' })).toBeVisible();
+    await listSettled(page);
     expect(
       await contrast(page.getByRole('option', { name: 'Browse all communities' }).locator('.pb-cfield__browse')),
       colorScheme,
