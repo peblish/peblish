@@ -1,8 +1,10 @@
-import { sql } from 'drizzle-orm';
+import { writeFileSync } from 'node:fs';
+import { and, desc, eq, isNotNull, isNull, notInArray, or, sql } from 'drizzle-orm';
 import { uuidv7 } from 'uuidv7';
 import { beforeEach, describe, expect, test } from 'vitest';
 import { db } from '../db/read.ts';
 import { writer } from '../db/write.ts';
+import { personalNoticeKinds } from '../identity/personal.ts';
 import { truncateAll } from '../testing/db.ts';
 import { seedComment, seedPost } from '../testing/seed-az.ts';
 import { seedBlock } from '../testing/seed-e1.ts';
@@ -12,6 +14,7 @@ import { readInbox } from './read.ts';
 import { notifications } from './tables.ts';
 import { unreadCount, unreadCountQuery } from './unread.ts';
 import { filterKinds, notificationKinds, unreadCap, type InboxFilter } from './view.ts';
+import { inboxVisible } from './visible.ts';
 
 beforeEach(truncateAll);
 
@@ -332,5 +335,81 @@ describe('at scale', () => {
     }
     const p95 = Math.min(...rounds);
     expect(p95).toBeLessThan(50);
+  });
+});
+
+describe('the new kinds stay keyed lookups', () => {
+  // 200 posts, 2,001 comments, 22,001 notices over 200 people (a few unread each, ten of the
+  // viewer's being followed-thread notices), with fresh statistics. Every statement that applies
+  // inboxVisible must reach a comment or a post by its key, never read the tables whole: the
+  // unread count runs on every signed-in page load.
+  test('the counts, the list, Mark all read and its Undo never scan comments or posts', { timeout: 120_000 }, async () => {
+    const w = await seedInboxWorld();
+    const people = [w.people.author];
+    for (let n = 1; n < 200; n++) people.push(await seedActor(w.instances.local, 'Person', `bulk${n}`));
+    const ids = sql.raw(`array[${people.map((person) => `'${person.id}'`).join(',')}]::uuid[]`);
+    const local = w.instances.local.id;
+    await writer().execute(sql`insert into posts (id, ap_id, local, instance_id, author_id, community_id, title, published_at)
+      select p.id, 'https://feddit.test/post/bulk/' || p.id, true, ${local}::uuid, ${w.people.author.id}::uuid, ${w.communities.open.id}::uuid,
+        'Post ' || p.n, now()
+      from (select gen_random_uuid() as id, n from generate_series(1, 200) n) p`);
+    await writer().execute(sql`insert into comments (id, ap_id, local, instance_id, post_id, author_id, path, body_md, published_at)
+      select c.id, 'https://feddit.test/comment/bulk/' || c.id, true, ${local}::uuid,
+        (select id from posts where ap_id like 'https://feddit.test/post/bulk/%' order by id offset c.n % 200 limit 1),
+        ${w.people.reader.id}::uuid, replace(c.id::text, '-', '_')::ltree, 'A comment ' || c.n, now()
+      from (select gen_random_uuid() as id, n from generate_series(1, 2001) n) c`);
+    await writer().execute(sql`insert into notifications (id, recipient_id, kind, ref_id, read_at)
+      select gen_random_uuid(), (${ids})[1 + n % 200], (array['reply','mention','mod_remove','mod_restore','ban','unban'])[1 + n % 6],
+        gen_random_uuid(), case when n % 23 = 0 then null else now() end
+      from generate_series(1, 20000) n`);
+    await writer()
+      .execute(sql`insert into notifications (id, recipient_id, kind, ref_id, actor_id, community_id, post_id, comment_id, read_at)
+      select gen_random_uuid(), (${ids})[1 + c.n % 200], 'thread_reply', c.id, c.author_id, ${w.communities.open.id}::uuid, c.post_id, c.id,
+        case when c.n % 200 = 0 then null else now() end
+      from (select id, author_id, post_id, row_number() over (order by id) as n from comments) c`);
+    for (const table of ['notifications', 'comments', 'posts', 'actors']) await writer().execute(sql.raw(`analyze ${table}`));
+
+    const me = people[0]!.id;
+    const shown = inboxVisible(me);
+    const statements = {
+      count: unreadCountQuery(db(), me),
+      replies: unreadCountQuery(db(), me, filterKinds.replies),
+      account: unreadCountQuery(db(), me, filterKinds.account),
+      list: db().select({ notice: notifications }).from(notifications).where(shown).orderBy(desc(notifications.id)).limit(26),
+      // Mark all read's and Undo's statements, as mutations.ts writes them.
+      mark: writer()
+        .update(notifications)
+        .set({ readAt: sql`now()` })
+        .where(
+          and(
+            eq(notifications.recipientId, me),
+            isNull(notifications.readAt),
+            or(notInArray(notifications.kind, [...personalNoticeKinds]), shown),
+          ),
+        )
+        .returning({ id: notifications.id, shown }),
+      undo: writer()
+        .update(notifications)
+        .set({ readAt: null })
+        .where(and(eq(notifications.recipientId, me), isNotNull(notifications.readAt)))
+        .returning({ id: notifications.id, shown }),
+    };
+    // INBOX_PLANS=<file> also writes EXPLAIN (ANALYZE, BUFFERS) of the count and the list there.
+    if (process.env.INBOX_PLANS) {
+      const analysed = await Promise.all(
+        (['count', 'list'] as const).map(async (name) => {
+          const plan = await db().execute<{ 'QUERY PLAN': string }>(sql`explain (analyze, buffers) ${statements[name].getSQL()}`);
+          return `== ${name}\n${plan.map((row) => row['QUERY PLAN']).join('\n')}`;
+        }),
+      );
+      writeFileSync(process.env.INBOX_PLANS, analysed.join('\n\n'));
+    }
+    for (const [name, statement] of Object.entries(statements)) {
+      const plan = await writer().execute<{ 'QUERY PLAN': string }>(sql`explain ${statement.getSQL()}`);
+      const text = plan.map((row) => row['QUERY PLAN']).join('\n');
+      expect(text, name).not.toMatch(/Seq Scan on (comments|posts)\b/);
+    }
+    // And they still answer: ten of the viewer's unread notices are followed-thread ones.
+    expect(await unreadCount(me)).toBeGreaterThan(10);
   });
 });
