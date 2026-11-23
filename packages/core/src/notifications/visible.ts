@@ -19,13 +19,17 @@ import { notifications } from './tables.ts';
  * every viewer alike, so no row is ever anonymous: one would be, for a declared reader of flagged
  * content, and a block of its commenter would then tell who wrote it by the row's absence. The
  * NSFW gate is applied as a signed-out viewer meets it for that reason. Other kinds pass untouched.
+ *
+ * A scalar sub-select keyed by the notice's comment id, not an EXISTS: Postgres may run an EXISTS
+ * as one hashed pass over every comment, and the unread count, which runs on every signed-in page
+ * load, would then read the whole comments table (read.test.ts checks the plans).
  */
 const followedThreadReadable = (viewerId: Uuid): SQL => {
   const rules = feedPredicates.flatMap(
     (predicate) => predicate.where(predicate.name === nsfwGate.name ? null : { actorId: viewerId }) ?? [],
   );
-  return sql`("notifications"."kind" <> 'thread_reply' or exists (
-    select 1 from ${comments} as notice_comment
+  return sql`("notifications"."kind" <> 'thread_reply' or coalesce((
+    select true from ${comments} as notice_comment
     join ${actors} as notice_author on notice_author.id = notice_comment.author_id
     join ${posts} on ${posts.id} = notice_comment.post_id
     where notice_comment.id = "notifications"."comment_id"
@@ -33,7 +37,7 @@ const followedThreadReadable = (viewerId: Uuid): SQL => {
       and notice_author.deleted_at is null and not ${peerBlocked(sql`notice_author.instance_id`)}
       and ${posts.deletedAt} is null and ${posts.removedAt} is null
       and ${sql.join(rules, sql` and `)}
-  ))`;
+  ), false))`;
 };
 
 /**
@@ -41,16 +45,16 @@ const followedThreadReadable = (viewerId: Uuid): SQL => {
  * the community is not on a peer this server blocks (peerBlocked) and the community gate opens it
  * to them: gateOf(flagged, { declared }, true) is 'none' for a community that is not sensitive or
  * NSFL, or for a viewer who declared 16+ (followed.test.ts checks the four cases against gateOf).
- * In SQL, so rows and counts share it. Other kinds pass.
+ * In SQL, so rows and counts share it, as a sub-select keyed by the community id for the reason
+ * followedThreadReadable gives. Other kinds pass.
  */
 const followAcceptOpen = (viewerId: Uuid): SQL =>
-  sql`("notifications"."kind" <> 'follow_accept' or (not exists (
-    select 1 from ${actors} as accepted_community
-    where accepted_community.id = "notifications"."community_id" and ${peerBlocked(sql`accepted_community.instance_id`)}
-  ) and (not exists (
-    select 1 from ${actors} as accepted_community
-    where accepted_community.id = "notifications"."community_id" and (accepted_community.sensitive or accepted_community.nsfl)
-  ) or exists (select 1 from ${ageDeclarations} where ${ageDeclarations.actorId} = ${viewerId}))))`;
+  sql`("notifications"."kind" <> 'follow_accept' or coalesce((
+    select not ${peerBlocked(sql`accepted_community.instance_id`)}
+      and (not (accepted_community.sensitive or accepted_community.nsfl)
+        or exists (select 1 from ${ageDeclarations} where ${ageDeclarations.actorId} = ${viewerId}))
+    from ${actors} as accepted_community where accepted_community.id = "notifications"."community_id"
+  ), true))`;
 
 /**
  * The one condition that decides which of `viewerId`'s notices exist for them: their own, not a

@@ -1,8 +1,10 @@
 import type { Principal } from '@peblish/schema/authz';
 import { parseEvent } from '@peblish/schema/events';
 import { and, eq, sql } from 'drizzle-orm';
+import postgres from 'postgres';
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 import { authorize } from '../authz/authorize.ts';
+import { updateCommentAs } from '../comments/actions.ts';
 import { gateOf } from '../communities/gate.ts';
 import { db } from '../db/read.ts';
 import { actors } from '../db/tables/actors.ts';
@@ -29,7 +31,7 @@ import { consumer } from './consumer.ts';
 import { readInbox } from './read.ts';
 import { notifications } from './tables.ts';
 import { inboxFilters } from './view.ts';
-import { markAllNotificationsReadAs } from './service.ts';
+import { markAllNotificationsReadAs, undoMarkAllReadAs } from './service.ts';
 import { unreadCount } from './unread.ts';
 
 // The two notice kinds of branch 5 (lane f-notify), written by the real consumer from the real
@@ -186,8 +188,10 @@ describe('thread_reply', () => {
     const released = new Promise<void>((resolve) => (release = resolve));
     let locked!: () => void;
     const holding = new Promise<void>((resolve) => (locked = resolve));
-    const holder = writer().transaction(async (t) => {
-      await t.execute(sql`select 1 from actors where id = ${w.people.owner.id}::uuid for no key update`);
+    // The other write has a connection of its own, so the test holds on any pool size, one included.
+    const other = postgres(process.env.DATABASE_URL ?? '', { max: 1, onnotice: () => {} });
+    const holder = other.begin(async (t) => {
+      await t`select 1 from actors where id = ${w.people.owner.id}::uuid for no key update`;
       locked();
       await released;
     });
@@ -211,6 +215,7 @@ describe('thread_reply', () => {
     } finally {
       release();
       await holder;
+      await other.end();
     }
     expect(await kindsOf(w.people.reader.id)).toEqual(['thread_reply']);
   });
@@ -462,6 +467,62 @@ describe('thread_reply', () => {
     const inbox = await readInbox({ actorId: w.people.reader.id, siteRole: 'user' }, { filter: 'unread' });
     expect(inbox.items).toMatchObject([{ kind: 'thread_reply', commentId: there, read: false }]);
     expect(inbox.unread).toBe(1);
+  });
+  test('a mention edited into a flagged thread reaches its follower as it reaches anyone, in the slot of the notice they were not shown', async () => {
+    const w = await seedInboxWorld();
+    // The reader follows and is mentioned; the admin is mentioned without following; the moderator follows without a 16+ declaration.
+    for (const person of [w.people.reader, w.people.owner, w.people.admin]) await declareAge(person);
+    const flagged = await seedPost(w.instances.local, w.communities.open, w.people.author, { sensitive: true });
+    await follow(w.people.reader, flagged.id);
+    // Followed before the flag, as the age gate on writes refuses an undeclared follow of flagged content.
+    await writer()
+      .insert(threadWatches)
+      .values({ ownerId: w.people.moderator.id, postId: flagged.id, since: new Date(0) });
+    const id = await say(w.people.owner, flagged.id, 'Before the edit');
+    await drainNotices();
+    expect(await kindsOf(w.people.reader.id)).toEqual(['thread_reply']); // written, never listed
+    expect(await kindsOf(w.people.moderator.id)).toEqual([]);
+
+    const edited = await updateCommentAs(localUser(w.people.owner.id), id, {
+      bodyMd: 'Now with @reader@feddit.test and @admin@feddit.test',
+    });
+    if (!edited.ok) throw new Error(edited.reason);
+    await drainNotices();
+    const seen = async (person: { id: string }) => {
+      const inbox = await readInbox({ actorId: person.id, siteRole: 'user' });
+      return {
+        items: inbox.items.map(({ kind, actor, withheld, excerpt, read }) => ({ kind, actor: actor?.id, withheld, excerpt, read })),
+        counts: [inbox.unread, inbox.unreadByGroup.mentions, await unreadCount(person.id)],
+      };
+    };
+    const mentioned = { kind: 'mention', actor: w.people.owner.id, withheld: 'sensitive', excerpt: null, read: false };
+    expect(await seen(w.people.reader)).toEqual({ items: [mentioned], counts: [1, 1, 1] });
+    expect(await seen(w.people.admin)).toEqual({ items: [mentioned], counts: [1, 1, 1] });
+    expect(await kindsOf(w.people.reader.id)).toEqual(['mention']); // one notice for the cause
+    expect(await kindsOf(w.people.moderator.id)).toEqual([]);
+
+    // Mark all read and its Undo take the mention as any.
+    const marked = await markAllNotificationsReadAs(localUser(w.people.reader.id));
+    if (!marked.ok || !marked.batch) throw new Error('expected a batch');
+    expect(marked.count).toBe(1);
+    expect(await undoMarkAllReadAs(localUser(w.people.reader.id), marked.batch)).toEqual({ ok: true, count: 1 });
+    // The flag is removed later: still the one mention, now with its words.
+    await writer().update(posts).set({ sensitive: false }).where(eq(posts.id, flagged.id));
+    const words = { ...mentioned, withheld: null, excerpt: 'Now with @reader@feddit.test and @admin@feddit.test' };
+    expect(await seen(w.people.reader)).toEqual({ items: [words], counts: [1, 1, 1] });
+  });
+
+  test('a mention edited into a thread its follower is shown, or of the reply’s addressee, leaves their one notice as it was', async () => {
+    const w = await seedInboxWorld();
+    const postId = w.posts.local.normal;
+    for (const person of [w.people.reader, w.people.author]) await follow(person, postId);
+    const id = await say(w.people.owner, postId, 'Plain words');
+    await drainNotices();
+    const edited = await updateCommentAs(localUser(w.people.owner.id), id, { bodyMd: 'Plain @reader@feddit.test @author@feddit.test' });
+    if (!edited.ok) throw new Error(edited.reason);
+    await drainNotices();
+    expect(await noticesOf(w.people.reader.id)).toMatchObject([{ kind: 'thread_reply', refId: id }]);
+    expect(await noticesOf(w.people.author.id)).toMatchObject([{ kind: 'reply', refId: id }]);
   });
 });
 
