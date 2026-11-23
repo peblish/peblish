@@ -58,8 +58,10 @@ test('the page hydrates, lists the communities and has no axe violations', async
   await expect(community(page, world.communities.staff.handle)).toBeDisabled();
   await expect(page.getByText('posting disabled for you').first()).toBeVisible();
   await expect(page.getByText(`Posting as @${world.people.poster}@`)).toBeVisible();
-  // The open list hides the rest of the page from assistive technology (React Aria), so the page is checked closed.
+  // The open list hides the rest of the page from assistive technology (React Aria), so the page is checked closed,
+  // once the list has faded out and left.
   await page.keyboard.press('Escape');
+  await expect(page.getByRole('listbox')).toHaveCount(0);
   await expectAccessible(page);
   expect(log.hydrationProblems()).toEqual([]);
   await page.close();

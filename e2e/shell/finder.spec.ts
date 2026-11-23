@@ -99,9 +99,11 @@ test('the link opens the finder, whose rows are in named groups, read as one lis
   await expect(rows(page, 'More communities')).toHaveText([new RegExp(bake.title), new RegExp(glaze.title)]);
   // The count, politely, once the answer is in.
   await expect(finder(page).getByRole('status')).toHaveText('4 communities');
-  await expectAccessible(page);
-  // The first row is ready for Enter; the arrows run on from one group into the next.
+  // The first row is ready for Enter, and axe reads the finder once the field names it: for a moment after the rows
+  // change, Mux UI's palette still names the row that left (pull request 97 lists it for Mux UI).
   await expect.poll(() => highlighted(page)).toContain(brew.title);
+  await expectAccessible(page);
+  // The arrows run on from one group into the next.
   for (const next of [kiln, bake, glaze]) {
     await page.keyboard.press('ArrowDown');
     await expect.poll(() => highlighted(page)).toContain(next.title);
@@ -241,8 +243,14 @@ test('the finder’s code loads when it is first wanted, not with the page', asy
   page.on('requestfinished', settled);
   page.on('requestfailed', settled);
   await gotoHydrated(page, '/');
-  // The popup and its data (shell/finder/), the panel (community-finder), Mux's palette, and the gallery's samples of it.
-  const finderCode = (url: string) => /[/](finder|community-finder|command-palette|-finder-samples)(\.tsx|-[\w-]+\.js)/.test(url);
+  // The popup and its data (shell/finder/), the panel (community-finder) and the gallery's samples of it, by their
+  // modules in dev and their chunks in a build (name, then an 8-character hash), where the Mux chunks only they use
+  // (the palette) count too; dev serves Mux as one prebuilt file. Not the panel's loading placeholder
+  // (community-finder-pending), which comes with the page so that a press shows it at once.
+  const finderCode = (url: string) =>
+    /\/shell\/finder\/|\/(community-finder|-finder-samples)\.tsx|\/assets\/(finder|community-finder|-finder-samples)-[\w-]{8}\.js$|\/assets\/vendor-mux(~(-finder-samples|finder))+-[\w-]{8}\.js$/.test(
+      url,
+    );
   expect(scripts.filter(finderCode)).toEqual([]);
   // Hovering fetches code (whatever its chunks are named in a build), and that is all the finder needs: with every
   // further script refused, a press still opens it.
@@ -261,6 +269,8 @@ test('the finder’s code loads when it is first wanted, not with the page', asy
       { intervals: [500] },
     )
     .toBe(true);
+  // The pattern names the finder's real code, so its absence above means something.
+  expect(scripts.filter(finderCode)).not.toEqual([]);
   await page.route('**/*', (route) => (route.request().resourceType() === 'script' ? route.abort() : route.continue()));
   await finderLink(page).click();
   await expect(field(page)).toBeFocused();

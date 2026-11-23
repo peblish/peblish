@@ -17,6 +17,14 @@ Until 2026-11-12 the script budget was one figure for every page, 170 kB (the `/
 
 On 2026-11-12, `main` at ccfc0db (Mux UI rc.7): a fresh `pnpm build`, then the payload specs three times, each on a freshly created lane database. The three runs printed the same figures to 0.1 kB on every page, and the same size for every chunk, so nothing varied. Each budget is the measured figure plus 5%, rounded up to 0.1 kB, and stored as that number: nothing is computed when the check runs.
 
+On 2026-11-23 the site banner, the width setting and the community finder raised 39 budgets (38 pages and `/submit` signed in). The figures come from two production builds of the same commit, CI's and a local one, which printed the same figures to 0.1 kB on every page; each budget is again the figure plus 5%, rounded up to 0.1 kB. `/u/<handle>/edit`, `/you`, `/notifications` and `/admin/registration` are from the local build alone: in both first runs their fixture got no reset mail, since every failed page restarts a worker that seeds again and asks for one, and the server takes at most 10 reset requests an hour from one client address until a seed clears the counts. What grew:
+
+- Every page, 8.4 to 9.8 kB: Mux UI's Banner and its icons, since the server draws the site banner on every page whenever one is published, with or without scripts; and Mux UI's Skeleton in the finder's loading placeholder, which comes with the page so that a press on Find shows it at once.
+- `/admin/settings`, 75.4 kB: the banner and width form, with the colour field (Mux UI's ColorField and React Aria's colour code, about 30 kB) and the switch that no other product page uses, and its radio groups and select.
+- `/submit` signed in, 23.0 kB: Create post's community field (Mux UI's ComboBox), which takes the radio list's place as the page hydrates.
+
+About 3 to 4 kB of each page's growth is the vendor split making more Mux files (`/` loads 31, up from 22), each compressed on its own. That, and loading the colour field only once Custom is chosen, are left for a follow-up.
+
 ## When a page fails
 
 The failure names the page, its size, its budget and when the budget was measured, and the log lists the page's React and Mux chunks (each named after the routes that share it). Find what grew: compare with the same lines on `main`. If the growth is intended, re-measure and raise that page's `budget` (with its `measured` and `on`) in `routes.ts` in the same pull request, saying why in its description.
@@ -34,51 +42,54 @@ pnpm e2e e2e/payload e2e/composer/payload.spec.ts 2>&1 | grep '^payload '
 
 Each page prints `payload <page>: js <measured> of <budget>, css ..., fonts ...`; `/submit` signed in prints `payload /submit (signed in): js ...`. The new budget is the largest measured figure times 1.05, rounded up to 0.1 kB. A page added to `routes.ts` is measured the same way; `js` is required, so it cannot be added without one.
 
-## Script, measured and budget (kB, 2026-11-12)
+## Script, measured and budget (kB)
 
-Signed in means the admin session the check carries (two-factor on). CSS was 62.6 kB on every page; fonts 105.6 kB, 143.3 kB on `/settings/account` and both `/u/<handle>` pages, 259.2 kB on `/kit`. Opening the composer sheet adds 53.6 kB of script in 14 files and 1.1 kB of CSS (of 200 kB).
+Signed in means the admin session the check carries (two-factor on). Each row is dated by its `on` in `routes.ts`. On 2026-11-23 fonts were 105.6 kB, 143.3 kB on `/settings/account`, `/you` and both `/u/<handle>` pages, 259.2 kB on `/kit`, and 112.7 kB on `/` under the feddit pack. Opening the composer sheet adds 67.7 kB of script in 22 files and 1.2 kB of CSS (of 200 kB); on 2026-11-12 it added 53.6 kB in 14 files and 1.1 kB.
 
-| Page                                       | Signed in | Measured | Budget |
-| ------------------------------------------ | --------- | -------- | ------ |
-| `/`                                        | no        | 183.4    | 192.6  |
-| `/all`                                     | no        | 183.4    | 192.6  |
-| `/local`                                   | no        | 183.4    | 192.6  |
-| `/popular`                                 | no        | 183.4    | 192.6  |
-| `/moderating`                              | no        | 183.4    | 192.6  |
-| `/communities`                             | no        | 230.3    | 241.9  |
-| `/resolve`                                 | no        | 185.3    | 194.6  |
-| `/auth/sign-in`                            | no        | 185.3    | 194.6  |
-| `/auth/sign-up`                            | no        | 187.1    | 196.5  |
-| `/auth/sign-up?invite=<code>`              | no        | 187.1    | 196.5  |
-| `/auth/reset`                              | no        | 185.3    | 194.6  |
-| `/auth/reset?token=<mailed>`               | no        | 185.3    | 194.6  |
-| `/auth/two-factor`                         | no        | 185.3    | 194.6  |
-| `/auth/verify?token=<mailed>`              | no        | 185.3    | 194.6  |
-| `/auth/verify`                             | yes       | 185.3    | 194.6  |
-| `/invite/<code>`                           | no        | 185.3    | 194.6  |
-| `/settings/account`                        | yes       | 185.3    | 194.6  |
-| `/settings/security`                       | yes       | 186.1    | 195.5  |
-| `/settings/blocks`                         | yes       | 202.4    | 212.6  |
-| `/u/<handle>`                              | no        | 188.7    | 198.2  |
-| `/u/<handle>/edit`                         | yes       | 186.4    | 195.8  |
-| `/notifications`                           | yes       | 182.1    | 191.3  |
-| `/admin/registration`                      | yes       | 204.0    | 214.2  |
-| `/c/<handle>`                              | no        | 189.0    | 198.5  |
-| `/c/new`                                   | yes       | 188.0    | 197.4  |
-| `/c/<handle>/edit`                         | yes       | 188.0    | 197.4  |
-| `/admin/bans`                              | yes       | 204.9    | 215.2  |
-| `/admin/peers`                             | yes       | 204.9    | 215.2  |
-| `/modlog`                                  | no        | 181.4    | 190.5  |
-| `/admin/reports`                           | yes       | 204.0    | 214.2  |
-| `/admin/settings`                          | yes       | 186.7    | 196.1  |
-| `/admin/pages`                             | yes       | 203.0    | 213.2  |
-| `/admin/pages/<slug>/<language>`           | yes       | 194.0    | 203.7  |
-| `/about`                                   | no        | 181.4    | 190.5  |
-| `/admin/media`                             | yes       | 212.0    | 222.6  |
-| `/post/<id>`                               | no        | 189.2    | 198.7  |
-| `/post/<id>/comments/<commentId>`          | no        | 188.2    | 197.7  |
-| `/submit` (signed out, lands on sign-in)   | no        | 185.3    | 194.6  |
-| `/submit` (`e2e/composer/payload.spec.ts`) | yes       | 222.2    | 233.4  |
-| `/report?kind=post&id=<id>`                | yes       | 215.8    | 226.6  |
-| `/report/sent?n=<number>`                  | yes       | 181.4    | 190.5  |
-| `/kit`                                     | no        | 200.6    | 210.7  |
+Mux UI CSS was 62.6 kB on every page on 2026-11-12 and 65.7 kB on `main` before 2026-11-23, already over its report-only 65 kB; the banner, finder and community field styles take it to 66.0 kB.
+
+| Page                                       | Signed in | Measured | Budget | On         |
+| ------------------------------------------ | --------- | -------- | ------ | ---------- |
+| `/`                                        | no        | 199.8    | 209.8  | 2026-11-23 |
+| `/all`                                     | no        | 199.8    | 209.8  | 2026-11-23 |
+| `/local`                                   | no        | 199.8    | 209.8  | 2026-11-23 |
+| `/popular`                                 | no        | 199.8    | 209.8  | 2026-11-23 |
+| `/moderating`                              | no        | 199.8    | 209.8  | 2026-11-23 |
+| `/communities`                             | no        | 230.3    | 241.9  | 2026-11-12 |
+| `/resolve`                                 | no        | 198.5    | 208.5  | 2026-11-23 |
+| `/auth/sign-in`                            | no        | 198.5    | 208.5  | 2026-11-23 |
+| `/auth/sign-up`                            | no        | 199.4    | 209.4  | 2026-11-23 |
+| `/auth/sign-up?invite=<code>`              | no        | 199.4    | 209.4  | 2026-11-23 |
+| `/auth/reset`                              | no        | 198.5    | 208.5  | 2026-11-23 |
+| `/auth/reset?token=<mailed>`               | no        | 198.5    | 208.5  | 2026-11-23 |
+| `/auth/two-factor`                         | no        | 198.5    | 208.5  | 2026-11-23 |
+| `/auth/verify?token=<mailed>`              | no        | 198.5    | 208.5  | 2026-11-23 |
+| `/auth/verify`                             | yes       | 198.5    | 208.5  | 2026-11-23 |
+| `/invite/<code>`                           | no        | 198.5    | 208.5  | 2026-11-23 |
+| `/settings/account`                        | yes       | 198.5    | 208.5  | 2026-11-23 |
+| `/settings/security`                       | yes       | 199.4    | 209.4  | 2026-11-23 |
+| `/settings/blocks`                         | yes       | 216.6    | 227.5  | 2026-11-23 |
+| `/u/<handle>`                              | no        | 201.0    | 211.1  | 2026-11-23 |
+| `/u/<handle>/edit`                         | yes       | 199.7    | 209.7  | 2026-11-23 |
+| `/you`                                     | yes       | 198.5    | 208.5  | 2026-11-23 |
+| `/notifications`                           | yes       | 199.1    | 209.1  | 2026-11-23 |
+| `/admin/registration`                      | yes       | 216.6    | 227.5  | 2026-11-23 |
+| `/c/<handle>`                              | no        | 201.2    | 211.3  | 2026-11-23 |
+| `/c/new`                                   | yes       | 201.4    | 211.5  | 2026-11-23 |
+| `/c/<handle>/edit`                         | yes       | 201.4    | 211.5  | 2026-11-23 |
+| `/admin/bans`                              | yes       | 218.0    | 228.9  | 2026-11-23 |
+| `/admin/peers`                             | yes       | 218.0    | 228.9  | 2026-11-23 |
+| `/modlog`                                  | no        | 190.8    | 200.4  | 2026-11-22 |
+| `/admin/reports`                           | yes       | 217.1    | 228.0  | 2026-11-23 |
+| `/admin/settings`                          | yes       | 266.8    | 280.2  | 2026-11-23 |
+| `/admin/pages`                             | yes       | 217.1    | 228.0  | 2026-11-23 |
+| `/admin/pages/<slug>/<language>`           | yes       | 207.8    | 218.2  | 2026-11-23 |
+| `/about`                                   | no        | 190.8    | 200.4  | 2026-11-22 |
+| `/admin/media`                             | yes       | 225.5    | 236.8  | 2026-11-23 |
+| `/post/<id>`                               | no        | 201.4    | 211.5  | 2026-11-23 |
+| `/post/<id>/comments/<commentId>`          | no        | 200.4    | 210.5  | 2026-11-23 |
+| `/submit` (signed out, lands on sign-in)   | no        | 198.5    | 208.5  | 2026-11-23 |
+| `/submit` (`e2e/composer/payload.spec.ts`) | yes       | 250.0    | 262.5  | 2026-11-23 |
+| `/report?kind=post&id=<id>`                | yes       | 229.6    | 241.1  | 2026-11-23 |
+| `/report/sent?n=<number>`                  | yes       | 190.8    | 200.4  | 2026-11-22 |
+| `/kit`                                     | no        | 214.4    | 225.2  | 2026-11-23 |
