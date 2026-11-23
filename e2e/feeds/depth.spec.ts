@@ -875,10 +875,11 @@ test('when the post the reader opened is no longer among the fresh rows, Back pu
 /**
  * The reader comes to the feed from a post by the sidebar's link, not by one of its rows, loads 60 rows, and goes
  * Back to that post. First, with `before`, they press that post's row link in a way that opens nothing in this tab:
- * with a modifier key or the middle button (another tab), or a click the page prevented. The feed's entry keeps its
+ * with a modifier key or the middle button (another tab), a click the page prevented, or a press they took away
+ * before letting go. The feed's entry keeps its
  * scroll alone: once the post has moved down the feed, Forward puts the window back by pixels, not by the post.
  */
-async function leftForAPostNotOpened(page: Page, before?: 'modified' | 'middle' | 'prevented') {
+async function leftForAPostNotOpened(page: Page, before?: 'modified' | 'middle' | 'prevented' | 'cancelled') {
   await signedIn(page);
   await gotoHydrated(page, '/?sort=new');
   await link(page, title(10)).click();
@@ -904,6 +905,16 @@ async function leftForAPostNotOpened(page: Page, before?: 'modified' | 'middle' 
       title(10),
     );
     await link(page, title(10)).click();
+    await settled(page);
+    await expect(page).toHaveURL(/\/\?n=60$/);
+  } else if (before === 'cancelled') {
+    await link(page, title(10)).scrollIntoViewIfNeeded();
+    const pressed = (await link(page, title(10)).boundingBox())!;
+    const away = (await page.getByRole('complementary', { name: 'Sidebar' }).boundingBox())!;
+    await page.mouse.move(pressed.x + 4, pressed.y + pressed.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(away.x + away.width / 2, away.y + away.height / 2, { steps: 5 });
+    await page.mouse.up();
     await settled(page);
     await expect(page).toHaveURL(/\/\?n=60$/);
   }
@@ -932,6 +943,9 @@ test('a middle click on a row opens another tab and is not the place of this one
 
 test('a press on a row link that the page prevented opens nothing and leaves no place behind', ({ page }) =>
   leftForAPostNotOpened(page, 'prevented'));
+
+test('a press on a row link taken away before it is let go opens nothing and leaves no place behind', ({ page }) =>
+  leftForAPostNotOpened(page, 'cancelled'));
 
 test("a Card's link to another of the feed's posts makes the card the place, not that post's row", async ({ page }) => {
   await signedIn(page);
