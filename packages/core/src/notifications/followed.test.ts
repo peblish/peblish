@@ -190,31 +190,35 @@ describe('thread_reply', () => {
     const holding = new Promise<void>((resolve) => (locked = resolve));
     // The other write has a connection of its own, so the test holds on any pool size, one included.
     const other = postgres(process.env.DATABASE_URL ?? '', { max: 1, onnotice: () => {} });
-    const holder = other.begin(async (t) => {
-      await t`select 1 from actors where id = ${w.people.owner.id}::uuid for no key update`;
-      locked();
-      await released;
-    });
-    await holding;
     try {
-      // The consumer's own handler, in a transaction that fails instead of waiting on a lock (the worker's horizon is the
-      // whole server's, so its timing proves nothing here).
-      await writer().transaction(async (db) => {
-        await db.execute(sql`set local lock_timeout = '2s'`);
-        const event = {
-          type: 'comment.created',
-          v: 1,
-          commentId: id,
-          postId,
-          authorId: w.people.owner.id,
-          local: true,
-          parentId: null,
-        } as const;
-        await consumer.handle(event, { db, emit: outboxEmitter(db).emit });
+      const holder = other.begin(async (t) => {
+        await t`select 1 from actors where id = ${w.people.owner.id}::uuid for no key update`;
+        locked();
+        await released;
       });
+      try {
+        // A holder that fails before it holds the row fails the test here, instead of leaving it waiting.
+        await Promise.race([holding, holder]);
+        // The consumer's own handler, in a transaction that fails instead of waiting on a lock (the worker's horizon is the
+        // whole server's, so its timing proves nothing here).
+        await writer().transaction(async (db) => {
+          await db.execute(sql`set local lock_timeout = '2s'`);
+          const event = {
+            type: 'comment.created',
+            v: 1,
+            commentId: id,
+            postId,
+            authorId: w.people.owner.id,
+            local: true,
+            parentId: null,
+          } as const;
+          await consumer.handle(event, { db, emit: outboxEmitter(db).emit });
+        });
+      } finally {
+        release();
+        await holder;
+      }
     } finally {
-      release();
-      await holder;
       await other.end();
     }
     expect(await kindsOf(w.people.reader.id)).toEqual(['thread_reply']);
