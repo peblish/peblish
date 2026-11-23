@@ -1,5 +1,6 @@
 import { readThread, type ThreadComment } from '@peblish/core/comments/read';
 import { parseSort, type ThreadSort } from '@peblish/core/comments/sort';
+import { publicOrigin } from '@peblish/core/config';
 import type { PostPage, Viewer } from '@peblish/core/posts/read';
 import type { Uuid } from '@peblish/schema/ids';
 import type { SessionView } from '@peblish/schema/session';
@@ -7,11 +8,14 @@ import type { ActorRef, CommentView } from '@peblish/schema/views';
 import { getRequest } from '@tanstack/react-start/server';
 import type { MarkdownRenderer } from '../../../../server/markdown.ts';
 import type { SlotViewer } from '../../../-actions/props.ts';
+import { commentAsShown, postAsShown } from '../../-withheld.ts';
 
 // The thread's data for a page (server only): core's read model, with each comment's text
 // rendered by the page's Markdown renderer, and what the viewer can do beside reading. The post
 // page's loader (routes/post/-load.ts) and the permalink page call loadThread; the thread
 // section calls it again, through a server function (-thread-fn.ts), when the sort changes.
+// A deleted comment, and a deleted post through the OP badge, name their author only to that
+// author and the moderators (../-withheld.ts).
 
 /** What the thread section needs, all JSON. */
 export type ThreadData = {
@@ -91,12 +95,16 @@ export async function loadThread(options: {
   if (!thread) return null;
   const focused = thread.focus ? thread.comments.find(({ view }) => view.id === thread.focus?.id) : undefined;
   const mine = focused && viewer?.actorId === focused.view.author.id && !focused.view.deleted && !focused.view.removed;
+  const told = { id: viewer?.actorId ?? null, moderator: page.moderator };
+  // The renderer needed it too (siteMarkdown): a tombstone's local address is minted under it.
+  const origin = publicOrigin();
+  if (!origin) throw new Error('PUBLIC_ORIGIN is not set');
   return {
     postId: page.view.id,
-    postAuthorId: page.view.author.id,
+    postAuthorId: postAsShown(page.view, told, origin).author.id,
     sort: thread.sort,
     after,
-    comments: thread.comments.map((comment) => render(renderer, comment)),
+    comments: thread.comments.map((comment) => commentAsShown(render(renderer, comment), told, origin)),
     now: new Date().toISOString(),
     focus: thread.focus,
     next: thread.next,

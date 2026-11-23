@@ -17,7 +17,8 @@ import { useState, type FormEvent } from 'react';
 import { translatePlural } from '../../../i18n/translate.ts';
 import { useTranslate } from '../../../i18n/use-translate.ts';
 import { useRouteHydrated } from '../../../shell/hydration.ts';
-import { commentPath, modlogEntryPath, postPath } from '../../../shell/paths.ts';
+import { modlogEntryPath } from '../../../shell/paths.ts';
+import { noticeTarget } from './target.ts';
 import type { InboxData } from '../-load.ts';
 import { inboxAction, inboxHref, type InboxSearch } from '../-search.ts';
 
@@ -153,15 +154,17 @@ function NoticeRow({
 }) {
   const { t, locale } = useTranslate();
   const moderator = filterKinds.content.some((kind) => kind === item.kind) || filterKinds.account.some((kind) => kind === item.kind);
-  const target = item.postId ? (item.commentId ? commentPath(item.postId, item.commentId) : postPath(item.postId)) : null;
+  const target = noticeTarget(item);
   const where = item.about ?? 'post';
   const community = item.community ? <Handle prefix="!" handle={item.community.handle} /> : null;
 
   const account = item.kind === 'ban' || item.kind === 'unban';
   // The ban sentences print the community's handle as plain text: drop any directional controls a remote one carries.
   const handle = item.community ? `!${neutraliseBidi(item.community.handle)}` : '';
+  // Who, when the notice may say: a reply or mention that withholds its author says "Someone"; a moderator's notice whose row is gone, "A moderator".
+  const nobody = t('notifications', item.actorWithheld ? 'actor.withheld' : 'actor.unknown');
   // The button's name below is plain text too: the handle and the title lose their directional controls, as Handle shows them.
-  const actor = item.actor ? `@${neutraliseBidi(item.actor.handle)}` : t('notifications', 'actor.unknown');
+  const actor = item.actor ? `@${neutraliseBidi(item.actor.handle)}` : nobody;
   const sentence = (() => {
     switch (item.kind) {
       case 'reply':
@@ -200,7 +203,7 @@ function NoticeRow({
               {t('notifications', 'unread.hidden')}{' '}
             </Text>
           )}
-          <Text variant="label">{item.actor ? <Handle prefix="@" handle={item.actor.handle} /> : t('notifications', 'actor.unknown')}</Text>
+          <Text variant="label">{item.actor ? <Handle prefix="@" handle={item.actor.handle} /> : nobody}</Text>
           {moderator && (
             <>
               {' '}

@@ -1,10 +1,13 @@
 import { beforeEach, describe, expect, test } from 'vitest';
+import { instanceBlocks } from '../blocks/tables';
+import { writer } from '../db/write';
+import { peerControls } from '../peers/tables';
 import { truncateAll } from '../testing/db';
 import { seedActor, seedInstance } from '../testing/seed';
 import { seedComment, seedCommunityRemoval, seedPost } from '../testing/seed-az';
 import { seedLocalInstance } from '../testing/seed-fed-a';
-import { findHeld, pointsHere } from './local.ts';
-import type { Lookup } from './outcome.ts';
+import { ageGated, findHeld, heldHostBlocked, pointsHere } from './local.ts';
+import type { Held, Lookup } from './outcome.ts';
 import { parseLookup } from './parse.ts';
 
 const lookup = (text: string): Lookup => {
@@ -124,4 +127,49 @@ describe('a link', () => {
     await seedCommunityRemoval(world.lab);
     expect(await findHeld(lookup('https://lemmy.test/post/8'))).toBeNull();
   });
+});
+
+test('age-gated: a flagged community, a flagged post or one in a flagged community, and a comment on either; never a person', async () => {
+  const { here, lemmy, lab, mira, alice, post, comment, localPost } = world;
+  const adult = await seedActor(here, 'Group', 'adult', { sensitive: true });
+  const inAdult = await seedPost(here, adult, alice);
+  const flagged = await seedPost(lemmy, lab, mira, { nsfl: true });
+  const onFlagged = await seedComment(lemmy, flagged, mira);
+  const actor = async (text: string) => (await findHeld(lookup(text)))!;
+  const ofPost = (row: { id: string }): Held => ({ kind: 'post', postId: row.id });
+  const ofComment = (row: { id: string; postId: string }): Held => ({ kind: 'comment', postId: row.postId, commentId: row.id });
+  const gated = async (held: Held[]) => Promise.all(held.map((one) => ageGated(one)));
+  expect(await gated([await actor('!adult@held.test'), ofPost(inAdult), ofPost(flagged), ofComment(onFlagged)])).toEqual([
+    true,
+    true,
+    true,
+    true,
+  ]);
+  const open = [await actor('!lab@lemmy.test'), await actor('!news@held.test'), await actor('@mira@lemmy.test')];
+  expect(await gated([...open, ofPost(post), ofPost(localPost), ofComment(comment)])).toEqual([false, false, false, false, false, false]);
+});
+
+test("held on a host this server or the person blocks: the actor's own host, or the post's or comment's, however it was named", async () => {
+  const { lemmy, mira, alice, post, comment, localPost } = world;
+  const shut = await seedInstance('shut.test', false);
+  const walled = await seedActor(shut, 'Group', 'walled', { apId: 'https://shut.test/c/walled' });
+  await writer().insert(peerControls).values({ instanceId: shut.id, blocked: true });
+  // Named by this server's own page for it, on this server's host.
+  const viaOwnPage = (await findHeld(lookup('https://held.test/c/walled@shut.test')))!;
+  const ofPost = (row: { id: string }): Held => ({ kind: 'post', postId: row.id });
+  const ofComment = (row: { id: string; postId: string }): Held => ({ kind: 'comment', postId: row.postId, commentId: row.id });
+  expect(viaOwnPage).toMatchObject({ kind: 'community', actor: { id: walled.id } });
+  expect(await heldHostBlocked(viaOwnPage, alice.id)).toBe(true);
+  // The person's own block of lemmy.test: its community, person, post and comment; not this server's.
+  const onLemmy = [
+    (await findHeld(lookup('!lab@lemmy.test')))!,
+    (await findHeld(lookup('@mira@lemmy.test')))!,
+    ofPost(post),
+    ofComment(comment),
+  ];
+  const blocked = (who: { id: string }, held: Held[]) => Promise.all(held.map((one) => heldHostBlocked(one, who.id)));
+  expect(await blocked(alice, onLemmy)).toEqual([false, false, false, false]);
+  await writer().insert(instanceBlocks).values({ blockerId: alice.id, instanceId: lemmy.id });
+  expect(await blocked(alice, [...onLemmy, ofPost(localPost)])).toEqual([true, true, true, true, false]);
+  expect(await blocked(mira, onLemmy)).toEqual([false, false, false, false]);
 });

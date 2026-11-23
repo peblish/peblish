@@ -91,6 +91,15 @@ export async function followedCommunities(q: Queryable, viewer: NonNullable<View
 }
 
 /**
+ * The predicates every feed applies for this viewer, whatever else it asks: the registered
+ * feedPredicates (the age gate, the viewer's blocks, peer controls). Part of `visible`; exported
+ * for a count over posts whose community is already known to be open (the directory's).
+ */
+export function shownTo(viewer: Viewer): SQL[] {
+  return feedPredicates.flatMap((predicate) => predicate.where(viewer && { actorId: viewer.actorId }) ?? []);
+}
+
+/**
  * What every feed shows: live posts of open communities, published by the page's clock, past the
  * predicates. Subscribed needs `followed` from followedCommunities. Exported for the profile activity.
  */
@@ -119,10 +128,7 @@ export function visible(feed: FeedName, viewer: Viewer, asOf: number, scope?: Fe
     );
   if (scope) conditions.push('communityId' in scope ? eq(posts.communityId, scope.communityId) : eq(posts.authorId, scope.authorId));
   if (feed === 'popular') conditions.push(sql`${score} >= ${popularMinimumScore}`);
-  for (const predicate of feedPredicates) {
-    const condition = predicate.where(viewer && { actorId: viewer.actorId });
-    if (condition) conditions.push(condition);
-  }
+  conditions.push(...shownTo(viewer));
   return conditions;
 }
 

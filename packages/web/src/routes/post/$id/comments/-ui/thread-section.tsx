@@ -26,6 +26,7 @@ import { CommentModerate } from './actions/moderate.tsx';
 import { CommentReport } from './actions/report.tsx';
 import type { ContentActionProps } from '../../../../-actions/props.ts';
 import type { ThreadData } from '../-thread.ts';
+import { replyTargetName } from '../../../-withheld.ts';
 import commentsCss from './comments.css?url';
 import { asCommentError, errorKey, type CommentError } from './errors.ts';
 
@@ -266,7 +267,13 @@ export function ThreadSection({ data: loaded }: { data: ThreadData }) {
       )}
       {data.reply === 'yes' ? (
         <ReplyBar
-          target={target && { handle: `@${neutraliseBidi(target.author.handle)}`, excerpt: excerptOf(target.contentHtml) }}
+          // A deleted comment is answered as the tombstone its row shows, whoever is looking.
+          target={
+            target && {
+              handle: replyTargetName(target, labels, (raw) => `@${neutraliseBidi(raw)}`),
+              excerpt: excerptOf(target.contentHtml),
+            }
+          }
           labels={replyLabels}
           action={`/post/${data.postId}/comments`}
           fields={{ intent: 'reply', parent: target?.id ?? '', ...(data.focus && { focus: data.focus.id }) }}

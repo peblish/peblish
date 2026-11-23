@@ -11,6 +11,7 @@ export interface PickerCommunity {
   id: string;
   /** `name` for a local community, `name@host` for a remote one. */
   handle: string;
+  displayName: string | null;
   local: boolean;
   /** Null where this instance does not know (a remote community). */
   subscribers: number | null;
@@ -74,6 +75,8 @@ export type ComposerData =
       /** `@name@host`, for "Posting as". */
       me: string;
       communities: PickerCommunity[];
+      /** More communities exist than the picker lists (200): the person's own follows and the chosen one are kept first. */
+      pickerTruncated: boolean;
       /** The community chosen to start with, or null. */
       selected: string | null;
       panel: CommunityPanel | null;

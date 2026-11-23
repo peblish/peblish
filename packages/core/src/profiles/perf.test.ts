@@ -7,7 +7,8 @@ import { seedBulk } from '../testing/seed-c1.ts';
 import { seedPerson } from '../testing/seed-f.ts';
 import { seedInstance } from '../testing/seed.ts';
 import type { ProfileSort, ProfileTab } from './input.ts';
-import { activityQueries, readActivity } from './read.ts';
+import { hideNsfw } from '../communities/gate.ts';
+import { activityQueries, countQueries, readActivity, readProfile } from './read.ts';
 
 // Opt-in, like the feed's (feeds/perf.test.ts), because it seeds 100,000 posts first:
 //   PEBLISH_FEED_PERF=1 pnpm exec vitest run --project core packages/core/src/profiles/perf.test.ts
@@ -21,6 +22,8 @@ import { activityQueries, readActivity } from './read.ts';
 const runs = 20;
 const budgetMs = 50;
 const percentile95 = (values: number[]) => [...values].sort((a, b) => a - b)[Math.ceil(values.length * 0.95) - 1]!;
+/** Whether a comment scan checks its author's block row by row (a sub-plan on author_id), not once for the person. */
+const blockedPerRow = (plan: string) => /author_id = \(hashed SubPlan|EXISTS\(SubPlan/.test(plan);
 
 describe.skipIf(!process.env.PEBLISH_FEED_PERF)('profile activity performance', () => {
   let author: { id: string };
@@ -67,7 +70,8 @@ describe.skipIf(!process.env.PEBLISH_FEED_PERF)('profile activity performance', 
     await w.execute(
       sql`insert into instance_blocks select ${reader.id}::uuid, id from instances where not local order by random() limit 20`,
     );
-    await w.execute(sql`analyze`);
+    // As autovacuum leaves a running database: statistics, and the visibility map an index-only scan reads.
+    await w.execute(sql`vacuum analyze`);
   }, 600_000);
 
   test('every tab and sort reads through the author indexes', async () => {
@@ -99,9 +103,34 @@ describe.skipIf(!process.env.PEBLISH_FEED_PERF)('profile activity performance', 
           const plan = await explain(queries.comments);
           expect(plan, `${tab} ${sort} comments`).not.toMatch(/Seq Scan on comments/);
           expect(plan, `${tab} ${sort} comments`).toMatch(/(Index|Bitmap Index) Scan (using|on) comments_author/);
+          // Every comment here is the person's: their block is checked once, not once a row.
+          expect(blockedPerRow(plan), `${tab} ${sort} comments`).toBe(false);
         }
       }
     }
+    // The profile's counts are the tabs' conditions counted: the same author indexes. The comment
+    // count reads the person's live comments from comments_author_post alone, a count per post,
+    // so each post's visibility is checked once however many of the comments are on it.
+    const counts = countQueries(author.id, viewer, hideNsfw);
+    for (const [name, query, index] of [
+      ['posts', counts.posts, /(Index|Bitmap Index|Index Only) Scan (using|on) posts_author/],
+      ['comments', counts.comments, /Index Only Scan using comments_author_post on comments/],
+    ] as const) {
+      const { sql: text, params } = query.toSQL();
+      const plan = (await readPool().client.unsafe(`explain (analyze, buffers) ${text}`, params as never[]))
+        .map((row) => String(row['QUERY PLAN']))
+        .join('\n');
+      expect(plan, `count of ${name}`).not.toMatch(/Seq Scan on (posts|comments)\b/);
+      expect(plan, `count of ${name}`).toMatch(index);
+      if (name === 'comments') expect(blockedPerRow(plan), 'count of comments').toBe(false);
+    }
+    const profileTimings: number[] = [];
+    for (let run = 0; run < runs + 1; run += 1) {
+      const began = performance.now();
+      await readProfile('prolific', viewer);
+      if (run > 0) profileTimings.push(performance.now() - began);
+    }
+    report.push(`profile        p95 ${percentile95(profileTimings).toFixed(1).padStart(6)} ms`);
     console.log(report.join('\n'));
     if (process.env.FEED_PERF_PLANS) writeFileSync(process.env.FEED_PERF_PLANS, report.join('\n'));
     // The newest-first pages are the ones everybody opens; they must fit the feed's budget too.
