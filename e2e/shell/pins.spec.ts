@@ -153,45 +153,70 @@ test.describe('seeded', () => {
     await context.close();
   });
 
-  test('a pinned row’s menu opened by keyboard focuses its first item, mid-fade and while a move is out, and keeps it as the order lands', async ({
+  test('a pinned row’s menu opened by keyboard focuses its first item, also while the last one fades out, and keeps it as a move lands', async ({
     browser,
   }) => {
     const seed = seedWorld();
     const { context, page } = await signedIn(browser, seed);
     await gotoHydrated(page, '/local');
+    // As on a slow device, a closed menu takes three seconds to fade out, so a move's answer lands while it does.
+    await page.addStyleTag({
+      content:
+        '* { --muxui-semantic-motion-exit-duration: 3s !important; --muxui-semantic-motion-dismiss-transition-spring-duration: 3s !important; }',
+    });
     const side = page.locator('.pb-side');
     const status = side.locator('[aria-live="polite"]').filter({ hasText: /./ });
+    const fading = page.locator('[data-muxui-state-exiting]');
+    const item = (name: string) => page.getByRole('menuitem', { name });
     const elm = menuOf(side, `Elm ${seed.suffix}`);
-    // The first move's answer is held; one route serves the whole case.
-    let holding = true;
+    // A move's answer is held while `holding`; one route serves the whole case.
+    let holding = false;
     const held: Route[] = [];
     await page.route(
       (url) => url.pathname === '/communities/pins',
       (route) => (holding ? void held.push(route) : route.fallback()),
     );
+
+    // A move that lands while its menu fades out: focus stays in the menu until it has gone, the row's menu has it
+    // then, and Enter opens it on its first item.
     await elm.focus();
     await page.keyboard.press('Enter');
-    await expect(page.getByRole('menuitem', { name: 'Move down' })).toBeFocused();
+    await expect(item('Move down')).toBeFocused();
     await page.keyboard.press('Enter');
-    await expect.poll(() => held.length).toBe(1);
-    // The menu is still fading out. When a move's answer lands that soon (a slow device), the sidebar focuses the row's
-    // menu then, as here; Enter opens it again with its first item focused (Move up is still disabled).
-    await elm.focus();
-    await page.keyboard.press('Enter');
-    await expect(page.getByRole('menuitem', { name: 'Move down' })).toBeFocused();
-    // The answer lands while the menu is open: the order changes behind it, and focus stays in it.
-    holding = false;
-    await held.shift()!.continue();
-    await expect.poll(() => titles(page, seed)).toEqual(['Yew', 'Elm', 'Birch', 'Ash', 'Cedar', 'Damson']);
     await expect(status).toHaveText(`Elm ${seed.suffix}, position 2 of 3`);
-    await expect(page.getByRole('menuitem', { name: 'Move up' })).not.toHaveAttribute('aria-disabled', 'true');
-    await expect(page.getByRole('menuitem', { name: 'Move down' })).toBeFocused();
-    // Once a move has landed, focus is back on the row's menu, and Enter opens it on its first item.
-    await page.keyboard.press('Enter');
-    await expect(status).toHaveText(`Elm ${seed.suffix}, position 3 of 3`);
+    await expect(fading).toHaveCount(1);
+    await expect(item('Move down')).toBeFocused();
+    await expect(fading).toHaveCount(0);
     await expect(elm).toBeFocused();
     await page.keyboard.press('Enter');
-    await expect(page.getByRole('menuitem', { name: 'Move up' })).toBeFocused();
+    await expect(item('Move up')).toBeFocused();
+
+    // Tab leaves the menu, which fades out; Shift+Tab comes back to the row's menu meanwhile, and Enter opens it on its
+    // first item.
+    await page.keyboard.press('Tab');
+    await expect(elm).not.toBeFocused();
+    await expect(fading).toHaveCount(1);
+    await page.keyboard.press('Shift+Tab');
+    await expect(elm).toBeFocused();
+    await page.keyboard.press('Enter');
+    await expect(item('Move up')).toBeFocused();
+
+    // Opened again before a move's answer, the menu keeps focus as the new order lands behind it.
+    holding = true;
+    await page.keyboard.press('ArrowDown');
+    await expect(item('Move down')).toBeFocused();
+    await page.keyboard.press('Enter');
+    await expect.poll(() => held.length).toBe(1);
+    await expect(fading).toHaveCount(0);
+    await expect(elm).toBeFocused();
+    await page.keyboard.press('Enter');
+    await expect(item('Move up')).toBeFocused();
+    holding = false;
+    await held.shift()!.continue();
+    await expect(status).toHaveText(`Elm ${seed.suffix}, position 3 of 3`);
+    await expect.poll(() => titles(page, seed)).toEqual(['Yew', 'Birch', 'Elm', 'Ash', 'Cedar', 'Damson']);
+    await expect(item('Move down')).toHaveAttribute('aria-disabled', 'true');
+    await expect(item('Move up')).toBeFocused();
     await context.close();
   });
 

@@ -73,7 +73,7 @@ export function SidebarCommunities({
   const [status, setStatus] = useState('');
   // Counts the menus' openings, so each opening mounts a fresh popup: one opened again while it still fades out would
   // be the same menu, and React Aria moves focus into a menu only when it mounts (opened by keyboard, it then focused
-  // nothing). The sidebar focuses a moved row's menu mid-fade when the move's answer lands before the fade ends.
+  // nothing). Tab out of a menu and Shift+Tab back reaches its button while it fades.
   const [openings, setOpenings] = useState(0);
   const anchor = useRef<HTMLLIElement>(null);
   const action = usePinAction();
@@ -102,7 +102,10 @@ export function SidebarCommunities({
     const section = anchor.current?.parentElement;
     const focus = (frames: number) => {
       const menu = document.getElementById(triggerId(community.id));
-      if (unpinnedAt === undefined) return void menu?.focus();
+      // Focus still in the row's menu (fading out, or opened again) stays there: the menu hands it back to its button
+      // when it goes, and focusing the button meanwhile is undone by it, or leaves Enter reopening the fading menu.
+      const inMenu = document.activeElement?.closest(`[aria-labelledby="${triggerId(community.id)}"]`);
+      if (unpinnedAt === undefined) return void (inMenu || menu?.focus());
       if (menu && frames > 0) return void requestAnimationFrame(() => focus(frames - 1));
       const links = [...(section?.querySelectorAll<HTMLElement>('a[href]') ?? [])];
       const link = links.find((each) => each.getAttribute('href') === communityPath(community));
