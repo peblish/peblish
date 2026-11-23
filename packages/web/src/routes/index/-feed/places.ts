@@ -76,7 +76,8 @@ if (typeof window !== 'undefined') {
   addEventListener(
     'keydown',
     (event) => {
-      const field = event.target instanceof HTMLElement && (event.target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(event.target.tagName));
+      const field =
+        event.target instanceof HTMLElement && (event.target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(event.target.tagName));
       if (scrollKeys.has(event.key) && !field) scrolled();
     },
     true,
