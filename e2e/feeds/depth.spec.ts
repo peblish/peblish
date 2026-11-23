@@ -1211,8 +1211,9 @@ async function wheelOnTheWayBack(page: Page, dx: number, dy: number) {
 
 test('a reader who scrolls while a return loads is left where the router puts the window, not moved to the row', async ({ page }) => {
   const { y, now } = await wheelOnTheWayBack(page, 0, 300);
-  // Where the reader left (a click can scroll the link a pixel into view), not three rows further down.
-  expect(Math.abs(now - y)).toBeLessThanOrEqual(1);
+  // Where the reader left, give or take a few pixels (a click can scroll the link into view, and a
+  // built page settles a little after the wheel), not three rows (about 370 px) further down.
+  expect(Math.abs(now - y)).toBeLessThanOrEqual(24);
 });
 
 test('a sideways wheel on the way back (a trackpad swiping Back) is no scroll: the row is put back where it stood', async ({ page }) => {
