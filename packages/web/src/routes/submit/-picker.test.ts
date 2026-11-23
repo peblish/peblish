@@ -1,5 +1,7 @@
+import type { ActingPrincipal } from '@peblish/schema/authz';
 import type { SessionView } from '@peblish/schema/session';
 import { beforeEach, describe, expect, test, vi } from 'vitest';
+import type { Deps, Submission } from './-submit.ts';
 
 // The composer's community picker (pickerFor), with core's reads stubbed: local communities by
 // name, the person's follows, which of a list the person moderates, and one community on its own
@@ -33,6 +35,8 @@ const core = vi.hoisted(() => ({
   staffOf: new Set<string>(),
   /** Communities the directory's block rules hide from the person. */
   blocked: new Set<string>(),
+  /** Communities that ban the person: composerCommunity does not ask, post.create refuses (submitDeps). */
+  bannedFrom: new Set<string>(),
   listLocalCommunities: vi.fn(),
   moderatedAmong: vi.fn(),
   followedCommunities: vi.fn(),
@@ -45,6 +49,36 @@ vi.mock('@peblish/core/communities/read', () => ({
 vi.mock('@peblish/core/follows/read', () => ({ followedCommunities: core.followedCommunities }));
 vi.mock('@peblish/core/communities/start', () => ({ composerCommunity: core.composerCommunity }));
 const { pickerFor, pickerMax } = await import('./-picker.ts');
+const { parseSubmission, submit } = await import('./-submit.ts');
+
+/**
+ * The submit's calls for a text post: core's post.create, which refuses a member the community
+ * bans (authz/role-table.test.ts), stood in for by `core.bannedFrom`; the post is then created.
+ */
+const submitDeps: Deps = {
+  precheck: async (_principal, target) => ('communityId' in target && core.bannedFrom.has(target.communityId) ? 'community.banned' : null),
+  throttle: async () => true,
+  preview: async () => {
+    throw new Error('a text post fetches no preview');
+  },
+  upload: async () => {
+    throw new Error('a text post uploads nothing');
+  },
+  origin: async () => 'https://feddit.test',
+  current: async () => null,
+  createPost: async () => ({ ok: true, id: 'p1', apId: 'https://feddit.test/p1' }),
+  updatePost: async () => {
+    throw new Error('not an edit');
+  },
+};
+const principal: ActingPrincipal = { kind: 'local', actorId: '0192f5a0-1234-7abc-8def-0123456789aa', siteRole: 'user' };
+/** A text post in `community`, submitted as the form posts it. */
+const postIn = (community: string) =>
+  submit(
+    { principal, viewer: { actorId: principal.actorId, siteRole: 'user' }, ip: null },
+    parseSubmission({ community, title: 'Hello' }, null) as Submission,
+    submitDeps,
+  );
 
 const local = (name: string, extra: Partial<Local> = {}): Local => ({
   actor: { id: `id-${name}`, handle: name, displayName: `${name} in full`, local: true },
@@ -84,6 +118,7 @@ beforeEach(() => {
   core.follows = [];
   core.staffOf = new Set();
   core.blocked = new Set();
+  core.bannedFrom = new Set();
   // As core's: by name, at most `limit`, `ids` keeping only those; sensitive ones only when asked.
   core.listLocalCommunities
     .mockReset()
@@ -203,16 +238,19 @@ describe('the community the form starts in', () => {
   });
 
   test('a remote community the person does not follow is looked up and listed, one that bans them too', async () => {
+    const lab = '0192f5a0-0000-7000-8000-00000000001a';
+    const closed = '0192f5a0-0000-7000-8000-00000000001c';
     core.local = [local('art')];
     core.follows = [follow('tech')];
     core.remote = [
-      { ...local('lab'), actor: { id: 'id-lab', handle: 'lab@lemmy.test', displayName: 'The Lab', local: false } },
-      { ...local('closed'), actor: { id: 'id-closed', handle: 'closed@lemmy.test', displayName: null, local: false } },
+      { ...local('lab'), actor: { id: lab, handle: 'lab@lemmy.test', displayName: 'The Lab', local: false } },
+      { ...local('closed'), actor: { id: closed, handle: 'closed@lemmy.test', displayName: null, local: false } },
     ];
+    core.bannedFrom = new Set([closed]);
     const picker = await pickerFor(person(), start('lab@lemmy.test'));
-    expect(picker.selected).toBe('id-lab');
-    expect(picker.communities.find(({ id }) => id === 'id-lab')).toEqual({
-      id: 'id-lab',
+    expect(picker.selected).toBe(lab);
+    expect(picker.communities.find(({ id }) => id === lab)).toEqual({
+      id: lab,
       handle: 'lab@lemmy.test',
       displayName: 'The Lab',
       local: false,
@@ -220,8 +258,10 @@ describe('the community the form starts in', () => {
       restricted: false,
       canPost: true,
     });
+    expect(await postIn(lab)).toEqual({ ok: true, id: 'p1' });
     // A ban is the submit's refusal to give: the form starts there, and the post is refused by its reason.
-    expect((await pickerFor(person(), start('!closed@lemmy.test'))).selected).toBe('id-closed');
+    expect((await pickerFor(person(), start('!closed@lemmy.test'))).selected).toBe(closed);
+    expect(await postIn(closed)).toEqual({ ok: false, error: 'community.banned' });
   });
 
   test('a community the person could not see, looked up on its own, leaves nothing of itself in the data', async () => {
