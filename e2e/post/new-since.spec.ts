@@ -358,6 +358,44 @@ test('a thread brought forward while its reload fails keeps what it showed, with
   expect(marker(seed.posts.seen)!.lastVisitAt).toBe(before);
 });
 
+test('a reload that fails after the server answered the probe records nothing', async ({ page }) => {
+  seed = JSON.parse(run('e2e')) as Seed;
+  await signedIn(page);
+  const before = marker(seed.posts.seen)!.lastVisitAt;
+  const tab = await backgroundTab(page);
+  const events = journal(tab, seed.posts.seen);
+  await gotoHydrated(tab, `/post/${seed.posts.seen}`);
+  // The server answers /healthz; the reload of the post itself is cut off.
+  await tab.route('**/_serverFn/**', (route) => (isReload(route.request(), seed.posts.seen) ? route.abort() : route.fallback()));
+  const failed = tab.waitForEvent('requestfailed', (request) => isReload(request, seed.posts.seen));
+  await show(tab);
+  await failed;
+  await settled(tab);
+  // The router's error page stands in for the thread (a known limit of the probe).
+  await expect(tab.locator('#comments')).toHaveCount(0);
+  expect(events.filter((event) => event === 'visit')).toEqual([]);
+  expect(marker(seed.posts.seen)!.lastVisitAt).toBe(before);
+});
+
+test('an unknown sort and a cursor that is not one, on a reload, give the default sort’s first page, as a document request does', async ({
+  page,
+}) => {
+  seed = JSON.parse(run('e2e')) as Seed;
+  await signedIn(page);
+  const address = `/post/${seed.posts.seen}?sort=sideways&after=not-a-cursor`;
+  // What a document request draws for that address.
+  await gotoHydrated(page, address);
+  const fresh = await page.locator('#comments .pb-comment').evaluateAll((rows) => rows.map((found) => found.id));
+  expect(fresh).toContain(`comment-${seed.comments.old}`);
+  const tab = await backgroundTab(page);
+  const visits = await watchVisits(tab, seed.posts.seen);
+  await gotoHydrated(tab, address);
+  await show(tab);
+  await visits.first;
+  expect(visits.seen[0]!.rows.map((id) => `comment-${id}`)).toEqual(fresh);
+  await expect(tab.locator('#comments')).toBeVisible();
+});
+
 test('a post put behind the gate while its tab was in the background shows the gate when brought forward, and records nothing', async ({
   page,
 }) => {

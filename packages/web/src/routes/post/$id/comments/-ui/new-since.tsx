@@ -92,7 +92,8 @@ function useRecordVisit(postId: Uuid, signedIn: boolean, drawnAt: string | undef
       if (!current(mine)) return;
       // A newer reload (the reader's own reply) may have taken this one's place: its answer, once drawn, settles the visit.
       await settled(mine);
-      if (!current(mine)) return;
+      // A reload that failed after the probe leaves the router's error page: nothing was seen, nothing is recorded.
+      if (!current(mine) || page()?.status !== 'success') return;
       document.removeEventListener('visibilitychange', onChange);
       record();
     };
