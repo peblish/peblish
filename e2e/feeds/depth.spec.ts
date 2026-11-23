@@ -469,9 +469,12 @@ test('an address at the cap with fewer rows left than that shows them all, and t
   await signedIn(page);
   // The third page's address, from the second page's plain Next page link: 180 posts are left after row 40.
   await gotoHydrated(page, '/?sort=new');
+  // A page's links with a cursor are its own address and the next page's.
   const nextOf = async (href: string) => {
     const html = await page.evaluate((href) => fetch(href).then((response) => response.text()), href);
-    return /href="(\/\?sort=new&amp;cursor=[^"&]+)"/.exec(html)?.[1]?.replaceAll('&amp;', '&');
+    return [...html.matchAll(/href="(\/\?sort=new&amp;cursor=[^"&]+)"/g)]
+      .map((match) => match[1]!.replaceAll('&amp;', '&'))
+      .find((link) => link !== href);
   };
   const third = await nextOf((await nextOf('/?sort=new'))!);
   await gotoHydrated(page, `${third!}&n=200`);
