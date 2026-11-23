@@ -68,6 +68,48 @@ async function holding(page: Page) {
 const settled = (page: Page) =>
   page.evaluate(() => new Promise<void>((done) => requestAnimationFrame(() => requestAnimationFrame(() => done()))));
 
+/**
+ * From the next Back, Forward or click on, whether a feed row titled `name` is ever in the page: checked on every
+ * frame (what is on screen) and on every node added between frames. Returns the answer so far.
+ */
+async function watchFor(page: Page, name: string) {
+  await page.evaluate((name) => {
+    const state = { seen: false };
+    Object.assign(window, { watched: state });
+    const holds = (node: ParentNode) =>
+      [...node.querySelectorAll('.feed-list .pb-post__title a')].some((element) => element.textContent === name);
+    const frame = () => {
+      if (holds(document)) state.seen = true;
+      requestAnimationFrame(frame);
+    };
+    const start = () => {
+      new MutationObserver((records) => {
+        for (const record of records)
+          for (const node of record.addedNodes)
+            if (node instanceof Element && (node.textContent === name || holds(node))) state.seen = true;
+      }).observe(document.body, { childList: true, subtree: true });
+      requestAnimationFrame(frame);
+    };
+    addEventListener('popstate', start, { once: true });
+    addEventListener('click', start, { once: true, capture: true });
+  }, name);
+  return () => page.evaluate(() => (window as unknown as { watched: { seen: boolean } }).watched.seen);
+}
+
+/** Every server function but the feed's reads waits until the returned function lets them go (a slow post page). */
+async function slowPages(page: Page) {
+  let go!: () => void;
+  const slow = new Promise<void>((resolve) => (go = resolve));
+  await page.route(
+    (url) => url.pathname.includes('/_serverFn/') && !isFeedRead(url),
+    async (route) => {
+      await slow;
+      await route.fallback().catch(() => undefined);
+    },
+  );
+  return go;
+}
+
 /** Opens the Sort menu and picks a sort (Mux names the menu by its trigger, "Sort: Hot"). */
 async function sortBy(page: Page, sort: 'New' | 'Old') {
   await page.getByRole('button', { name: /^Sort: / }).click();
@@ -102,6 +144,7 @@ test('signed out, with batch two still loading when the reader opens a slow post
     post();
     await expect(page.getByRole('heading', { level: 1 })).toHaveText(title(218));
     held[0]!.go();
+    const seen = await watchFor(page, title(196));
     await page.goBack();
     await expect.poll(() => held.length).toBe(2);
     expect(asks(held[1]!.request, '"cursor"')).toBe(false);
@@ -117,6 +160,7 @@ test('signed out, with batch two still loading when the reader opens a slow post
     await expect(rows(page)).toHaveCount(40);
     await expect(link(page, title(196))).toHaveCount(0);
     await expect(link(page, title(195))).toHaveCount(1);
+    expect(await seen()).toBe(false);
   } finally {
     run('restore', title(196));
   }
@@ -352,7 +396,9 @@ test('a reload at depth comes back to the same rows and place', async ({ page })
   await expect(link(page, title(61))).toBeInViewport();
 });
 
-test('while a post it opened loads, the list keeps its rows and place, and a quick Back finds them', async ({ page }) => {
+test('a quick Back, while the post it opened still loads, draws none of the old rows before the fresh answer, nor a post removed meanwhile', async ({
+  page,
+}) => {
   await signedIn(page);
   await gotoHydrated(page, '/?sort=new');
   await loadTo(page, 40);
@@ -360,25 +406,98 @@ test('while a post it opened loads, the list keeps its rows and place, and a qui
   await settled(page);
   const count = await holding(page);
   const y = await page.evaluate(() => Math.round(scrollY));
-  let post!: () => void;
-  const slow = new Promise<void>((resolve) => (post = resolve));
-  await page.route(
-    (url) => url.pathname.includes('/_serverFn/') && !isFeedRead(url),
-    async (route) => {
-      await slow;
-      await route.fallback().catch(() => undefined);
-    },
-  );
+  const post = await slowPages(page);
   await link(page, title(30)).click();
   await page.waitForURL(/\/post\//);
+  // While the post loads the list keeps its rows and place.
   await expect(rows(page)).toHaveCount(count);
   expect(await page.evaluate(() => Math.round(scrollY))).toBe(y);
-  // Back before the post has drawn.
-  await page.goBack();
-  post();
-  await page.waitForURL(`**/?sort=new&n=${count}`);
-  await expect(rows(page)).toHaveCount(count);
-  await expect.poll(() => page.evaluate(() => Math.round(scrollY))).toBe(y);
+  // Meanwhile a moderator removes a post the list holds, below the reader's place.
+  run('remove', title(38));
+  try {
+    const seen = await watchFor(page, title(38));
+    const held = await holdReads(page);
+    // Back before the post has drawn: the list's own read goes out again, and none of its old rows stay.
+    await page.goBack();
+    await expect.poll(() => held.length).toBe(1);
+    await expect(rows(page)).toHaveCount(0);
+    post();
+    held[0]!.go();
+    await page.waitForURL(`**/?sort=new&n=${count}`);
+    await expect(rows(page)).toHaveCount(count);
+    await expect(link(page, title(38))).toHaveCount(0);
+    expect(await seen()).toBe(false);
+    await expect.poll(() => page.evaluate(() => Math.round(scrollY))).toBe(y);
+  } finally {
+    run('restore', title(38));
+  }
+});
+
+test('two quick Backs, through a page still loading, draw no row from before and come back to the place', async ({ page }) => {
+  await signedIn(page);
+  await gotoHydrated(page, '/?sort=new');
+  await loadTo(page, 60);
+  await link(page, title(45)).scrollIntoViewIfNeeded();
+  await settled(page);
+  const count = await holding(page);
+  const y = await page.evaluate(() => Math.round(scrollY));
+  await link(page, title(45)).click();
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText(title(45));
+  // On to the post's community.
+  await page.locator('#pb-main a[href^="/c/"]').first().click();
+  await page.waitForURL(/\/c\//);
+  await expect(page.locator('#pb-main main[aria-busy="true"]')).toHaveCount(0);
+  run('remove', title(58));
+  try {
+    const post = await slowPages(page);
+    const held = await holdReads(page);
+    const seen = await watchFor(page, title(58));
+    // Back to the post, still loading, and at once Back again, to the feed.
+    await page.goBack();
+    await page.goBack();
+    await page.waitForURL(`**/?sort=new&n=${count}`);
+    await expect.poll(() => held.length).toBeGreaterThan(0);
+    post();
+    for (const read of held) read.go();
+    await expect(rows(page)).toHaveCount(count);
+    await expect(link(page, title(58))).toHaveCount(0);
+    expect(await seen()).toBe(false);
+    await expect.poll(() => page.evaluate(() => Math.round(scrollY))).toBe(y);
+  } finally {
+    run('restore', title(58));
+  }
+});
+
+test("the sidebar's link to the feed shown, pressed while a post it opened loads, reads the feed again and draws none of its old rows", async ({
+  page,
+}) => {
+  await signedIn(page);
+  await gotoHydrated(page, '/');
+  await loadTo(page, 40);
+  await link(page, title(25)).scrollIntoViewIfNeeded();
+  await settled(page);
+  await holding(page);
+  const post = await slowPages(page);
+  await link(page, title(25)).click();
+  await page.waitForURL(/\/post\//);
+  run('remove', title(5));
+  try {
+    const seen = await watchFor(page, title(5));
+    const held = await holdReads(page);
+    await page.getByRole('complementary', { name: 'Sidebar' }).locator('a[href="/"]').first().click();
+    await page.waitForURL((url) => url.pathname === '/' && url.search === '');
+    await expect.poll(() => held.length).toBe(1);
+    await expect(rows(page)).toHaveCount(0);
+    post();
+    held[0]!.go();
+    // The first page, fresh, and an address that says so.
+    await expect(rows(page)).toHaveCount(20);
+    await expect(page).toHaveURL(/\/$/);
+    await expect(link(page, title(5))).toHaveCount(0);
+    expect(await seen()).toBe(false);
+  } finally {
+    run('restore', title(5));
+  }
 });
 
 test('with reduced motion, Back puts the place back in one step', async ({ page }) => {

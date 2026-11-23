@@ -4,6 +4,8 @@ import { ownTitle, pageTitle, rootTitleData } from '../../../shell/title.ts';
 import feedCss from './feed.css?url';
 import { feedPending } from './feed-pending.tsx';
 import { loadFeed } from './load.ts';
+import { defaultPageSize } from '@peblish/core/feeds/input';
+import { isGrowth, startRead } from './reads.ts';
 import { depth, parseFeedSearch, resolveFeedSearch, type FeedSearch } from './search.ts';
 import { askedNow } from './votes.ts';
 
@@ -19,11 +21,22 @@ export type FeedRoute = 'home' | 'local' | 'all' | 'popular' | 'moderating';
  * (`blocking`), as a first visit does, instead of drawing the router's kept copy while it reloads: no row
  * shows that the server has not just sent, and the router puts the scroll position back once they are all
  * there. The router's abort signal goes with the request, so a load the reader has left is given up.
+ *
+ * Any navigation that lands on the entry reads it again (`shouldReload`), also one the router would keep the
+ * page for (a quick Back while a post it opened still loads, the sidebar's link to the feed shown), but the
+ * list's own growth of `n`. While a read of the list is out, the list draws none of its rows (reads.ts).
  */
 export function feedRoute(feed: FeedRoute, title?: MessageKey<'shell'>) {
   return {
     validateSearch: parseFeedSearch,
     loaderDeps: ({ search }: { search: FeedSearch }) => resolveFeedSearch(search),
+    shouldReload: ({
+      deps,
+      location,
+    }: {
+      deps: ReturnType<typeof resolveFeedSearch>;
+      location: { pathname: string; search: { n?: unknown } };
+    }) => !isGrowth(location.pathname, deps, depth(location.search.n) ?? defaultPageSize),
     loader: {
       handler: async ({
         deps,
@@ -31,17 +44,24 @@ export function feedRoute(feed: FeedRoute, title?: MessageKey<'shell'>) {
         abortController,
       }: {
         deps: ReturnType<typeof resolveFeedSearch>;
-        location: { search: { n?: unknown } };
+        location: { pathname: string; search: { n?: unknown } };
         abortController: AbortController;
       }) => {
         const asked = askedNow();
         const n = depth(location.search.n);
-        const data = await loadFeed({
-          data: { feed, sort: deps.sort, period: deps.period, ...(deps.cursor ? { cursor: deps.cursor } : {}), ...(n ? { n } : {}) },
-          signal: abortController.signal,
-        });
-        // When it was asked for: a vote acknowledged after that may be missing from it (votes.ts).
-        return { ...data, asked };
+        const end = startRead(location.pathname, deps, asked);
+        try {
+          const data = await loadFeed({
+            data: { feed, sort: deps.sort, period: deps.period, ...(deps.cursor ? { cursor: deps.cursor } : {}), ...(n ? { n } : {}) },
+            signal: abortController.signal,
+          });
+          // A read the reader has left lands nowhere: the list it was for keeps no wait for it.
+          end(!abortController.signal.aborted);
+          // When it was asked for: a vote acknowledged after that may be missing from it (votes.ts).
+          return { ...data, asked };
+        } finally {
+          end(false);
+        }
       },
       staleReloadMode: 'blocking' as const,
     },

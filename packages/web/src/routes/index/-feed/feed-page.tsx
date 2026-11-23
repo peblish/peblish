@@ -38,6 +38,7 @@ import { RailPanel } from '@peblish/ui/components/rail-panel';
 import { Text } from '@peblish/ui/components/text';
 import { useToast } from '@peblish/ui/components/toast';
 import { useHydrated } from '@peblish/ui/composer/use-hydrated.ts';
+import { FeedSkeleton } from '@peblish/ui/skeleton/skeletons';
 import { DensityControl, densities } from '@peblish/ui/density/density-control';
 import { getRouteApi, useRouter } from '@tanstack/react-router';
 import { translatePlural } from '../../../i18n/translate.ts';
@@ -53,6 +54,7 @@ import { castVoteFn } from '../../post/-vote.ts';
 import type { FeedItem } from './items.ts';
 import { loadFeed, type FeedData } from './load.ts';
 import { feedTitleKeys } from './names.ts';
+import { grow, isReading, noReads, readsNow, subscribeReads } from './reads.ts';
 import type { FeedRoute } from './route.ts';
 import { feedHref, resolveFeedSearch, type FeedPosition, type FeedSearch } from './search.ts';
 import { acknowledgedVotes, acknowledgeVote, askedNow, noVotes, subscribeVotes, withVotes } from './votes.ts';
@@ -336,6 +338,9 @@ export function FeedCards({
   const [list, setList] = useState(() => loadedFrom(data));
   if (list.data !== data) setList(loadedFrom(data));
   const auto = more !== undefined && hydrated && typeof IntersectionObserver !== 'undefined';
+  // A read of this very list is out (a return to it): none of the rows from before are drawn until its answer is the data.
+  const reads = useSyncExternalStore(subscribeReads, readsNow, noReads);
+  const reading = more !== undefined && isReading(reads, path, search, data.asked ?? Number.POSITIVE_INFINITY);
 
   // Each answer's rows in order, a post an earlier one holds left out (a ranking can move a post across a
   // cursor), each with a vote acknowledged since it was asked for. Without `asked` (a community page) the
@@ -361,17 +366,17 @@ export function FeedCards({
     failed: t('feeds', 'more.failed'),
   };
   // What the observer and Retry read when they fire: this render's list, not the one they were made in.
-  const latest = useRef({ list, rows, more, messages, search });
+  const latest = useRef({ list, rows, more, messages, search, reading });
   useLayoutEffect(() => {
-    latest.current = { list, rows, more, messages, search };
+    latest.current = { list, rows, more, messages, search, reading };
   });
   // The batch on its way: a new answer from the loader, or leaving the page, gives it up.
   const asking = useRef<AbortController | null>(null);
   useEffect(() => () => asking.current?.abort(), [data]);
   const next = useCallback(() => {
-    const { list, rows, more, messages, search } = latest.current;
-    // Nothing while a batch loads, at the end, or once the router is on its way to another page.
-    if (!more || list.state === 'pending' || list.next === null || !sameList(path, search, router.latestLocation)) return;
+    const { list, rows, more, messages, search, reading } = latest.current;
+    // Nothing while a batch or the list's own read loads, at the end, or once the router is on its way to another page.
+    if (!more || reading || list.state === 'pending' || list.next === null || !sameList(path, search, router.latestLocation)) return;
     const stop = new AbortController();
     asking.current = stop;
     const asked = askedNow();
@@ -390,16 +395,18 @@ export function FeedCards({
         if (!stop.signal.aborted) setList((now) => (same(now) ? { ...now, state: 'failed', said: messages.failed } : now));
       },
     );
-  }, [path, router]);
+  }, [path, router, setList]);
   // After each batch the list's own history entry says how many rows it has read (`n`, at most 200), replaced in
-  // place: no new entry, no scroll, and no load, since `n` is not one of the loader's deps (route.ts).
+  // place: no new entry, no scroll, and no load (`n` is not one of the loader's deps, and the route reads nothing
+  // again for the list's own growth, reads.ts).
   const batches = list.batches.length;
   const read = Math.min(maxDepth, (data.n ?? defaultPageSize) + batches * defaultPageSize);
   const written = address.n ?? defaultPageSize;
   useEffect(() => {
     const { search } = latest.current;
     if (batches === 0 || read === written || !sameList(path, search, router.latestLocation)) return;
-    void router.navigate({ href: feedHref(path, { ...search, n: read }), replace: true, resetScroll: false });
+    const grown = grow(path, search, read);
+    void router.navigate({ href: feedHref(path, { ...search, n: read }), replace: true, resetScroll: false }).finally(grown);
   }, [batches, read, written, path, router]);
 
   // The observer lives with the sentinel, which mounts again after every batch, so it reports at once
@@ -456,6 +463,10 @@ export function FeedCards({
         >
           {t('feeds', 'moderating.signIn.body')}
         </EmptyState>
+      ) : reading ? (
+        <div className="pb-rows" aria-busy="true">
+          <FeedSkeleton density={prefs.density} label={t('shell', 'loading.posts')} />
+        </div>
       ) : rows.length === 0 ? (
         empty
       ) : (
@@ -490,7 +501,7 @@ export function FeedCards({
         </>
       )}
 
-      {!data.signIn && (
+      {!data.signIn && !reading && (
         <Pager
           aria-label={t('feeds', 'pages.label')}
           first={firstHref ? { href: firstHref, label: t('feeds', 'first') } : undefined}
