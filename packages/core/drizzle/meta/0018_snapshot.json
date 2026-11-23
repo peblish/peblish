@@ -1,6 +1,6 @@
 {
-  "id": "c67e3aa8-cc33-44e6-bdd7-feac88ba932c",
-  "prevId": "1cf2fa30-dc9f-40d2-a64e-6d8b5ae3c260",
+  "id": "1cf2fa30-dc9f-40d2-a64e-6d8b5ae3c260",
+  "prevId": "6eb3ced8-4e05-44d4-b58f-f51324d925e4",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -1201,6 +1201,28 @@
             }
           ],
           "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "comments_author_post": {
+          "name": "comments_author_post",
+          "columns": [
+            {
+              "expression": "author_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "post_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"comments\".\"deleted_at\" is null and \"comments\".\"removed_at\" is null",
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -5540,7 +5562,7 @@
       "checkConstraints": {
         "notifications_kind": {
           "name": "notifications_kind",
-          "value": "\"notifications\".\"kind\" in ('reply', 'mention', 'mod_remove', 'mod_restore', 'ban', 'unban', 'follow_accept', 'thread_reply')"
+          "value": "\"notifications\".\"kind\" in ('reply', 'mention', 'mod_remove', 'mod_restore', 'ban', 'unban')"
         }
       },
       "isRLSEnabled": false
