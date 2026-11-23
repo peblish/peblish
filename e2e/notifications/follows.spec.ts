@@ -233,6 +233,8 @@ test('opening a followed thread’s notice or an accepted follow marks it read, 
     .click();
   await expect.poll(() => settledOn(page)).toBe('/notifications');
   expect(await listeners(page)).toBe(idle);
+  // The inbox shows the rows it kept at once and its fresh ones when they arrive; by then the notice is read.
+  await expect(rows(page).first().getByRole('button', { name: /^Mark unread/ })).toBeVisible();
   const sent = readsSent;
   await rows(page).first().getByRole('link', { name: cast.post.title }).click();
   await expect.poll(() => settledOn(page)).toMatch(new RegExp(`^/post/${cast.post.id}/comments/`));
