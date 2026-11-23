@@ -301,8 +301,14 @@ test('emptying a later page points to the newest saves, not to an empty account'
   await gotoHydrated(page, '/saved');
   await page.getByRole('link', { name: 'Older saves' }).click();
   await landed(page, /\/saved\?cursor=/);
+  // The address changes before the later page is drawn: until Newest saves shows, the rows are still the first page's.
+  await expect(page.getByRole('link', { name: 'Newest saves' })).toBeVisible();
   await expect(rows(page).first()).toBeVisible();
-  for (const name of await titles(page)) await page.getByRole('button', { name: `Unsave ${name}` }).click();
+  // One at a time: each row leaves once its answer is in, and the rows below move up then.
+  for (const name of await titles(page)) {
+    await page.getByRole('button', { name: `Unsave ${name}` }).click();
+    await expect(page.getByRole('button', { name: `Unsave ${name}` })).toHaveCount(0);
+  }
   await expect(rows(page)).toHaveCount(0);
   await expect(page.getByRole('link', { name: 'Newest saves' })).toBeFocused();
   await expect(page.getByRole('heading', { name: 'Nothing saved yet' })).toHaveCount(0);

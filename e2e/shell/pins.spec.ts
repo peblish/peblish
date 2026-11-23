@@ -128,7 +128,9 @@ test.describe('seeded', () => {
     await expect(menuOf(side, `Elm ${seed.suffix}`)).toBeFocused();
     await expect(status).toHaveText(`Elm ${seed.suffix}, position 2 of 3`);
 
-    // By keyboard alone: the menu opens on Enter, the arrows pick, Enter acts.
+    // By keyboard alone: the menu opens on Enter, the arrows pick, Enter acts. The click above left the pointer
+    // where the menu opens again, over Move up; it leaves the sidebar first.
+    await page.mouse.move(0, 0);
     await page.keyboard.press('Enter');
     await expect(page.getByRole('menu')).toBeVisible();
     await expect(page.getByRole('menuitem', { name: 'Move up' })).toBeFocused();

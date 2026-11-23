@@ -95,6 +95,8 @@ test('the bell and the rail switch follow as one, and a new comment then lands o
   await page.keyboard.press('Space');
   await expect(railSwitch(page)).not.toBeChecked();
   await expect(bell(page)).toHaveAttribute('aria-pressed', 'false');
+  // Both show the change at once; the server has it once it is said.
+  await expect(page.getByRole('status').filter({ hasText: 'No longer following this thread.' })).toHaveCount(1);
   seed('comment', cast.post.id, cast.other.name);
   await gotoHydrated(page, '/notifications?filter=replies');
   await expect(rows(page)).toHaveCount(1);
@@ -178,7 +180,11 @@ test('a reply on its way is still held after a filter with nothing in it, and th
   await signedIn(page, cast.reader.name);
   // The reader follows the thread again, and a new comment there brings an unread notice to answer.
   await gotoHydrated(page, `/post/${cast.post.id}`);
-  if ((await bell(page).getAttribute('aria-pressed')) !== 'true') await bell(page).click();
+  if ((await bell(page).getAttribute('aria-pressed')) !== 'true') {
+    await bell(page).click();
+    // The bell shows the change at once; the server has it once it is said.
+    await expect(page.getByRole('status').filter({ hasText: 'Following this thread.' })).toHaveCount(1);
+  }
   await expect(bell(page)).toHaveAttribute('aria-pressed', 'true');
   const said = JSON.parse(seed('comment', cast.post.id, cast.other.name)) as { id: string };
   await gotoHydrated(page, '/notifications?filter=replies');

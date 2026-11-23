@@ -43,6 +43,14 @@ const railSwitch = (page: Page) => page.getByRole('switch', { name: 'Follow thre
 const said = (page: Page, text: string) => page.getByRole('status').filter({ hasText: text });
 const on = 'Following this thread. New comments come to your inbox.';
 const off = 'No longer following this thread.';
+/**
+ * The switch is settled on `checked`: shown from the page's reloaded data and taking presses again. Between the
+ * answer and that reload it can show the old state for a moment (follow-thread.tsx), and a press then acts on it.
+ */
+async function settled(page: Page, checked: boolean) {
+  await expect(railSwitch(page)).not.toHaveAttribute('aria-readonly', 'true');
+  await (checked ? expect(railSwitch(page)).toBeChecked() : expect(railSwitch(page)).not.toBeChecked());
+}
 
 test('the rail switch’s change is said once, in the bell’s status, and the bell’s change too', async ({ page }) => {
   // Wide enough for the rail (and its switch) beside the centre column and the open sidebar.
@@ -59,11 +67,13 @@ test('the rail switch’s change is said once, in the bell’s status, and the b
   await expect(bell(page)).toHaveAttribute('aria-pressed', 'true');
   await expect(said(page, on)).toHaveCount(1);
   await expect(railSwitch(page)).toBeFocused();
+  await settled(page, true);
 
   await page.keyboard.press('Space');
   await expect(railSwitch(page)).not.toBeChecked();
   await expect(said(page, off)).toHaveCount(1);
   await expect(said(page, on)).toHaveCount(0);
+  await settled(page, false);
 
   await bell(page).click();
   await expect(bell(page)).toHaveAttribute('aria-pressed', 'true');
