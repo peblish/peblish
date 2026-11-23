@@ -197,6 +197,58 @@ test('signed out, with batch two still loading when the reader opens a slow post
   }
 });
 
+/**
+ * Batch two is asked for and waits; the reader opens a slow post, a moderator removes a row of the first page,
+ * the reader comes Back, and only then does batch two's answer from before come. It draws nothing, writes no
+ * depth and leaves the return's read alone: the feed comes back fresh, one batch deep.
+ */
+async function lateBatch(page: Page, feed: string, { opened, removed }: { opened: number; removed: number }) {
+  await gotoHydrated(page, feed);
+  const held = await holdReads(page);
+  await rows(page).last().scrollIntoViewIfNeeded();
+  await expect.poll(() => held.length).toBe(1);
+  expect(asks(held[0]!.request, '"cursor"')).toBe(true);
+  const post = await slowPages(page);
+  await link(page, title(opened)).click();
+  await page.waitForURL(/\/post\//);
+  run('remove', title(removed));
+  try {
+    const seen = await watchFor(page, title(removed));
+    await page.goBack();
+    await page.waitForURL((url) => `${url.pathname}${url.search}` === feed);
+    await expect.poll(() => held.length).toBe(2);
+    expect(asks(held[1]!.request, '"cursor"')).toBe(false);
+    // Batch two's answer from before comes while the return's read is out.
+    held[0]!.go();
+    await held[0]!.request.response();
+    await settled(page);
+    held[1]!.go();
+    post();
+    await expect(shownRows(page)).toHaveCount(20);
+    await agrees(page);
+    expect(new URL(page.url()).search).toBe(new URL(feed, 'http://feed').search);
+    await expect(link(page, title(removed))).toHaveCount(0);
+    expect(await seen()).toBe(false);
+  } finally {
+    run('restore', title(removed));
+  }
+}
+
+test('signed out, a batch that answers only after the reader has come Back draws nothing, writes no depth and leaves the fresh read alone', ({
+  page,
+}) => lateBatch(page, '/all?sort=old', { opened: 218, removed: 205 }));
+
+test.describe('signed in, on a phone', () => {
+  test.use({ viewport: { width: 390, height: 800 }, hasTouch: true });
+
+  test('a batch that answers only after the reader has come Back draws nothing, writes no depth and leaves the fresh read alone', async ({
+    page,
+  }) => {
+    await signedIn(page);
+    await lateBatch(page, '/?sort=new', { opened: 3, removed: 10 });
+  });
+});
+
 test('from 80 New rows, Back to a slow Old sort, then Forward: 80 rows, and the link the reader left from is on screen', async ({
   page,
 }) => {

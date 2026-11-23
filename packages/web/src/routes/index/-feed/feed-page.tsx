@@ -55,9 +55,9 @@ import type { FeedItem } from './items.ts';
 import { loadFeed, type FeedData } from './load.ts';
 import { feedTitleKeys } from './names.ts';
 import { keepPlace, takePlace } from './places.ts';
-import { grow, isReading, noReads, readsNow, subscribeReads } from './reads.ts';
+import { grow, isGrowth, isReading, noReads, readsNow, subscribeReads } from './reads.ts';
 import type { FeedRoute } from './route.ts';
-import { feedHref, resolveFeedSearch, type FeedPosition, type FeedSearch } from './search.ts';
+import { depth, feedHref, resolveFeedSearch, type FeedPosition, type FeedSearch } from './search.ts';
 import { acknowledgedVotes, acknowledgeVote, askedNow, noVotes, subscribeVotes, withVotes } from './votes.ts';
 
 // A feed (Commons): its own view header with the feed's name and the Sort and View menus (with scripts
@@ -380,18 +380,49 @@ export function FeedCards({
   // The batch on its way: a new answer from the loader, or leaving the page, gives it up.
   const asking = useRef<AbortController | null>(null);
   useEffect(() => () => asking.current?.abort(), [data]);
+  // The rows' generation. Any navigation but the list's own growth of `n` (a return to the list, another sort or
+  // feed, the reader leaving) ends one: the batch on its way is given up, and none starts until that navigation's
+  // answer is the list's data, which opens the next. A batch answers into its own generation or not at all, so
+  // one that answers late draws nothing, writes no depth and cannot cut the read of a return short.
+  const generation = useRef({ at: 0, open: true });
+  useLayoutEffect(() => {
+    generation.current = { at: generation.current.at + 1, open: true };
+  }, [data]);
+  useLayoutEffect(() => {
+    if (!more) return;
+    const ending = router.subscribe('onBeforeLoad', ({ toLocation }) => {
+      const { search } = latest.current;
+      const { n }: { n?: unknown } = toLocation.search;
+      if (sameList(path, search, toLocation) && isGrowth(path, search, depth(n) ?? defaultPageSize)) return;
+      generation.current = { at: generation.current.at + 1, open: false };
+      asking.current?.abort();
+      setList((now) => (now.state === 'pending' ? { ...now, state: 'idle', said: '' } : now));
+    });
+    // A navigation that lands on the list without a new answer for it (none is known; every return reads again)
+    // must not leave it closed.
+    const resolved = router.subscribe('onResolved', ({ toLocation }) => {
+      if (sameList(path, latest.current.search, toLocation)) generation.current = { ...generation.current, open: true };
+    });
+    return () => {
+      ending();
+      resolved();
+    };
+  }, [more, path, router, setList]);
   const next = useCallback(() => {
     const { list, rows, more, messages, search, reading } = latest.current;
     // Nothing while a batch or the list's own read loads, at the end, or once the router is on its way to another page.
-    if (!more || reading || list.state === 'pending' || list.next === null || !sameList(path, search, router.latestLocation)) return;
+    if (!more || reading || !generation.current.open || list.state === 'pending' || list.next === null) return;
+    if (!sameList(path, search, router.latestLocation)) return;
     const stop = new AbortController();
     asking.current = stop;
+    const { at } = generation.current;
+    const current = () => !stop.signal.aborted && generation.current.at === at;
     const asked = askedNow();
     setList({ ...list, state: 'pending', said: '' });
     const same = (now: Loaded) => now.data === list.data;
     more.load(list.next, stop.signal).then(
       (batch) => {
-        if (stop.signal.aborted) return;
+        if (!current()) return;
         const shown = new Set(rows.map((row) => row.post.id));
         const said = messages.loaded(batch.items.filter((item) => !shown.has(item.post.id)).length, batch.next === null);
         setList((now) =>
@@ -399,7 +430,7 @@ export function FeedCards({
         );
       },
       () => {
-        if (!stop.signal.aborted) setList((now) => (same(now) ? { ...now, state: 'failed', said: messages.failed } : now));
+        if (current()) setList((now) => (same(now) ? { ...now, state: 'failed', said: messages.failed } : now));
       },
     );
   }, [path, router, setList]);
@@ -411,7 +442,7 @@ export function FeedCards({
   const written = address.n ?? defaultPageSize;
   useEffect(() => {
     const { search } = latest.current;
-    if (batches === 0 || read === written || !sameList(path, search, router.latestLocation)) return;
+    if (batches === 0 || read === written || !generation.current.open || !sameList(path, search, router.latestLocation)) return;
     const grown = grow(path, search, read);
     void router.navigate({ href: feedHref(path, { ...search, n: read }), replace: true, resetScroll: false }).finally(grown);
   }, [batches, read, written, path, router]);
