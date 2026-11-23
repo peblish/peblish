@@ -1,45 +1,53 @@
 import type { PostView } from '@peblish/schema/views';
 import { expect, test } from 'vitest';
 import type { FeedItem } from './items.ts';
-import { acknowledgedVotes, acknowledgeVote, askedNow, recount, withVotes } from './votes.ts';
+import { acknowledgedVotes, acknowledgeVote, askedNow, withVotes } from './votes.ts';
 
-const counts = (upvotes: number) => ({ upvotes, downvotes: 0, comments: 0 }) as PostView['counts'];
-const item = (id: string, myVote: PostView['myVote'], upvotes: number): FeedItem => ({
-  post: { id, title: id, myVote, counts: counts(upvotes) } as PostView,
+const item = (id: string, myVote: PostView['myVote'], upvotes: number, comments = 0): FeedItem => ({
+  post: { id, title: id, myVote, counts: { upvotes, downvotes: 0, comments } } as PostView,
   thumbnailSrc: null,
 });
 const shown = (items: FeedItem[], asked: number) =>
-  withVotes(acknowledgedVotes(), items, asked).map(({ post }) => [post.myVote, post.counts.upvotes]);
+  withVotes(acknowledgedVotes(), items, asked).map(({ post }) => [post.myVote, post.counts.upvotes, post.counts.comments]);
 
-test('a vote acknowledged after an answer was asked for is laid over it; an answer asked for after the vote stands', () => {
-  // The browser: askedNow counts only where there is a window.
+/** Runs `body` as in the browser, where askedNow counts (on the server it is always 0). */
+function inBrowser(body: () => void) {
   Object.assign(globalThis, { window: globalThis });
   try {
-    const before = askedNow();
-    acknowledgeVote('up', 1, counts(8));
-    // A take-back on content the gate withholds answers no tally: the row's counts, less the reader's vote.
-    acknowledgeVote('back', 0, recount(counts(5), 1, 0));
-    const after = askedNow();
-    const answer = [item('up', 0, 7), item('back', 1, 5), item('other', 0, 3)];
-    expect(shown(answer, before)).toEqual([
-      [1, 8],
-      [0, 4],
-      [0, 3],
-    ]);
-    // Asked for after the votes: the server's own, newer state.
-    expect(shown([item('up', 1, 9), item('back', 0, 4)], after)).toEqual([
-      [1, 9],
-      [0, 4],
-    ]);
+    body();
   } finally {
     Reflect.deleteProperty(globalThis, 'window');
   }
-});
+}
 
-test("with no tally, only the reader's own vote moves", () => {
-  const before = { upvotes: 5, downvotes: 2, comments: 3 };
-  expect(recount(before, 1, 0)).toEqual({ upvotes: 4, downvotes: 2, comments: 3 });
-  expect(recount(before, 1, -1)).toEqual({ upvotes: 4, downvotes: 3, comments: 3 });
-  expect(recount(before, 0, 1)).toEqual({ upvotes: 6, downvotes: 2, comments: 3 });
-  expect(recount(before, -1, -1)).toEqual(before);
-});
+test('a vote acknowledged after an answer was asked for is laid over it; an answer asked for after the vote stands', () =>
+  inBrowser(() => {
+    const before = askedNow();
+    acknowledgeVote('up', 1, { upvotes: 8, downvotes: 0 });
+    const after = askedNow();
+    expect(shown([item('up', 0, 7), item('other', 0, 3)], before)).toEqual([
+      [1, 8, 0],
+      [0, 3, 0],
+    ]);
+    expect(shown([item('up', 1, 9)], after)).toEqual([[1, 9, 0]]);
+  }));
+
+test("the overlay changes the vote and its tally only: the rest of the row is the fresh answer's", () =>
+  inBrowser(() => {
+    const before = askedNow();
+    acknowledgeVote('commented', 1, { upvotes: 6, downvotes: 0 });
+    // Asked for before the vote and answered after a comment: the comment count is the answer's.
+    expect(shown([item('commented', 0, 5, 1)], before)).toEqual([[1, 6, 1]]);
+  }));
+
+test("with no tally, only the reader's own vote moves, from the vote the fresh row holds", () =>
+  inBrowser(() => {
+    const before = askedNow();
+    acknowledgeVote('back', 0, null);
+    acknowledgeVote('down', -1, null);
+    // The answer still has the reader's upvote: taken back, it leaves the score.
+    expect(shown([item('back', 1, 5, 2)], before)).toEqual([[0, 4, 2]]);
+    // An answer that already holds the vote (it was saved before the read was) is not moved twice.
+    expect(shown([item('back', 0, 4)], before)).toEqual([[0, 4, 0]]);
+    expect(withVotes(acknowledgedVotes(), [item('down', 1, 5)], before)[0]!.post.counts).toEqual({ upvotes: 4, downvotes: 1, comments: 0 });
+  }));

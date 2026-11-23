@@ -13,6 +13,7 @@ import { useTranslate } from '../../../../i18n/use-translate.ts';
 import { useDensityLabels, usePostCardLabels } from '../../../../shell/labels.ts';
 import { communityPath, postPath, commentPath, userPath } from '../../../../shell/paths.ts';
 import { usePrefs } from '../../../../shell/prefs.tsx';
+import { acknowledgeVote } from '../../../index/-feed/votes.ts';
 import { castVoteFn } from '../../../post/-vote.ts';
 import { CommentBlock } from '../../../post/$id/comments/-ui/actions/block.tsx';
 import { CommentModerate } from '../../../post/$id/comments/-ui/actions/moderate.tsx';
@@ -138,6 +139,7 @@ export function Activity({ data, path }: { data: ProfileData; path: string }) {
                   onVote={async (value) => {
                     const result = await castVoteFn({ data: { target: { kind: 'post', id: entry.item.post.id }, value } });
                     if (!result.ok) throw new Error(result.reason);
+                    acknowledgeVote(entry.item.post.id, result.value, result.tally);
                   }}
                   voteDisabled={!data.viewer || entry.item.post.deleted}
                   now={new Date(data.now)}

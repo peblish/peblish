@@ -55,7 +55,7 @@ import { loadFeed, type FeedData } from './load.ts';
 import { feedTitleKeys } from './names.ts';
 import type { FeedRoute } from './route.ts';
 import { feedHref, resolveFeedSearch, type FeedPosition, type FeedSearch } from './search.ts';
-import { acknowledgedVotes, acknowledgeVote, askedNow, noVotes, recount, subscribeVotes, withVotes } from './votes.ts';
+import { acknowledgedVotes, acknowledgeVote, askedNow, noVotes, subscribeVotes, withVotes } from './votes.ts';
 
 // A feed (Commons): its own view header with the feed's name and the Sort and View menus (with scripts
 // off, the sort and Top period as LinkTabs instead), the posts, which load their next batch by
@@ -526,7 +526,7 @@ function FeedRow({
   actions: boolean;
   hydrated: boolean;
   voteFailed: () => void;
-  voted: (postId: string, myVote: -1 | 0 | 1, counts: Row['post']['counts']) => void;
+  voted: typeof acknowledgeVote;
 }) {
   const { t, locale } = useTranslate();
   const postLabels = { ...usePostCardLabels(), voteOn: (title: string) => t('posts', 'vote.on', { title }) };
@@ -549,12 +549,7 @@ function FeedRow({
         try {
           const result = await castVoteFn({ data: { target: { kind: 'post', id: post.id }, value } });
           if (!result.ok) throw new Error(result.reason);
-          // A vote on content the gate now withholds answers no tally: the row keeps the others' votes and moves the reader's.
-          voted(
-            post.id,
-            result.value,
-            result.tally ? { ...post.counts, ...result.tally } : recount(post.counts, post.myVote, result.value),
-          );
+          voted(post.id, result.value, result.tally);
         } catch (error) {
           voteFailed();
           throw error;

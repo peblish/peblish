@@ -219,6 +219,53 @@ test("an upvote acknowledged while the loader's reload is on its way survives th
   await back;
 });
 
+test('a vote cast on the post page and saved while Back is on its way shows on the feed', async ({ page }) => {
+  await signedIn(page);
+  await gotoHydrated(page, '/?sort=new');
+  const row = rows(page).nth(2);
+  await expect(row).toContainText(title(3));
+  const score = Number(await row.locator('.pb-vote__score').textContent());
+  await link(page, title(3)).click();
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText(title(3));
+  const id = new URL(page.url()).pathname.split('/').pop()!;
+  // The vote's request waits until the feed's read is on its way.
+  let vote!: () => void;
+  const voting = new Promise<void>((resolve) => (vote = resolve));
+  await page.route(
+    (url) => url.pathname.includes('/_serverFn/'),
+    async (route) => {
+      if (isVoteOn(id)(route.request())) await voting;
+      await route.fallback();
+    },
+  );
+  await page.getByRole('group', { name: 'Vote on this post' }).getByRole('button', { name: 'Upvote' }).click();
+  // Back: the server answers the feed's read before the vote reaches it, and the answer is held.
+  let fetched!: () => void;
+  const answered = new Promise<void>((resolve) => (fetched = resolve));
+  let deliver!: () => void;
+  const delivered = new Promise<void>((resolve) => (deliver = resolve));
+  await page.route(isFeedRead, async (route) => {
+    const response = await route.fetch();
+    fetched();
+    await delivered;
+    await route.fulfill({ response });
+  });
+  await page.goBack();
+  await answered;
+  const saved = page.waitForResponse((response) => isVoteOn(id)(response.request()));
+  vote();
+  await saved;
+  deliver();
+  const shown = rows(page).nth(2);
+  await expect(shown).toContainText(title(3));
+  await expect(shown.getByRole('button', { name: 'Upvote' })).toHaveAttribute('aria-pressed', 'true');
+  await expect(shown.locator('.pb-vote__score')).toHaveText(String(score + 1));
+  // Taken back, so the next run starts from the same score.
+  const back = page.waitForResponse((response) => isVoteOn(id)(response.request()));
+  await shown.getByRole('button', { name: 'Upvote' }).click();
+  await back;
+});
+
 test("a take-back that answers no tally (the post is withheld from the reader now) moves only the reader's vote out of the score", async ({
   page,
 }) => {
