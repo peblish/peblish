@@ -35,9 +35,10 @@ export function withFederation<O>(ui: Fetch<O>, federation = handleFederationReq
     if (answer) return answer;
     if (request.method !== 'GET' && request.method !== 'HEAD') return ui(request, opts);
     // A fresh Request: the server's own request class cannot be copied with new Request(request).
+    // Its signal is the client's, so the UI still learns when the client leaves.
     const headers = new Headers(request.headers);
     headers.set('accept', 'text/html');
-    return ui(new Request(request.url, { method: request.method, headers }), opts);
+    return ui(new Request(request.url, { method: request.method, headers, signal: request.signal }), opts);
   };
   return async (request: Request, opts?: O): Promise<Response> => {
     const response = await route(request, opts);
