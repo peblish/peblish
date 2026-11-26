@@ -162,6 +162,16 @@ describe('the slot is held for the whole render', () => {
     expect((await fetch(page('/u/b@x.test'))).status).toBe(200);
   });
 
+  test('a body that fails while nobody reads it frees the slot', async () => {
+    const { ui, pages } = renders();
+    const fetch = withRenderCap(ui, cap({ queue: 0 }), quiet);
+    const first = await fetch(page('/u/a@x.test'));
+    expect((await fetch(page('/u/b@x.test'))).status).toBe(503);
+    pages[0]!.fail(new Error('stream lifetime over'));
+    await vi.waitFor(async () => expect((await fetch(page('/u/b@x.test'))).status).toBe(200));
+    await expect(first.text()).rejects.toThrow('stream lifetime over');
+  });
+
   test('a render that throws gives its slot back', async () => {
     let calls = 0;
     const fetch = withRenderCap(

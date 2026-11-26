@@ -145,6 +145,15 @@ export function onBodySettled(response: Response, done: () => void, gone?: Abort
   };
   gone?.addEventListener('abort', leave, { once: true });
   const body = new ReadableStream({
+    start(controller) {
+      // A source that fails while nothing is reading (a chunk is buffered and the client, still
+      // connected, has stopped reading) is seen here, not in pull(). Erroring an already closed
+      // or errored stream does nothing.
+      reader.closed.catch((error: unknown) => {
+        settle();
+        controller.error(error);
+      });
+    },
     async pull(controller) {
       try {
         const chunk = await reader.read();
