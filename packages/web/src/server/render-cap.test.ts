@@ -1,5 +1,13 @@
 import { describe, expect, test, vi } from 'vitest';
-import { hasSessionCookie, isSignedOutPageRender, refusalLog, renderCapSetting, withRenderCap, type RenderCap } from './render-cap.ts';
+import {
+  hasSessionCookie,
+  isSignedOutPageRender,
+  refusalLog,
+  renderCapSetting,
+  withoutClientSignal,
+  withRenderCap,
+  type RenderCap,
+} from './render-cap.ts';
 
 const page = (path: string, init: RequestInit = {}) => new Request(`https://feddit.test${path}`, init);
 const signedIn = { cookie: 'theme=dark; __Secure-peblish.session_token=abc.def' };
@@ -185,6 +193,53 @@ describe('the slot is held for the whole render', () => {
     await first.text();
     expect((await next).status).toBe(200);
     expect(ui).toHaveBeenCalledTimes(2);
+  });
+
+  test('a client that leaves mid-loader keeps the slot until the loader has finished', async () => {
+    let finishLoader!: () => void;
+    const loader = new Promise<void>((resolve) => (finishLoader = resolve));
+    // As TanStack Start does: its work is raced against the request's signal, while the route's
+    // loader runs on to its end whatever the race decides.
+    const start = vi.fn(async (request: Request) => {
+      const left = new Promise<never>((_, reject) => request.signal.addEventListener('abort', () => reject(request.signal.reason)));
+      await Promise.race([loader, left]);
+      return new Response('<!doctype html>', { headers: { 'content-type': 'text/html' } });
+    });
+    const fetch = withRenderCap(start, cap({ queue: 0 }), quiet);
+    const gone = new AbortController();
+    const abandoned = fetch(page('/c/a@x.test', { signal: gone.signal }));
+    await vi.waitFor(() => expect(start).toHaveBeenCalledOnce());
+    gone.abort();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect((await fetch(page('/c/b@x.test'))).status).toBe(503);
+    finishLoader();
+    // The render ran to its end; nobody is left to read it.
+    const answered = await abandoned;
+    expect([answered.status, answered.body]).toEqual([499, null]);
+    expect((await fetch(page('/c/b@x.test'))).status).toBe(200);
+  });
+
+  test('a client that leaves mid-page frees the slot and stops the body', async () => {
+    const { ui } = renders();
+    const fetch = withRenderCap(ui, cap({ queue: 0 }), quiet);
+    const gone = new AbortController();
+    const first = await fetch(page('/u/a@x.test', { signal: gone.signal }));
+    const reader = first.body!.getReader();
+    await reader.read();
+    gone.abort();
+    expect((await reader.read()).done).toBe(true);
+    expect((await fetch(page('/u/b@x.test'))).status).toBe(200);
+  });
+
+  test('the render keeps the method, headers and address, but not the client’s signal', () => {
+    const gone = new AbortController();
+    const request = page('/u/a@x.test', { method: 'HEAD', headers: { 'accept-language': 'de' }, signal: gone.signal });
+    Object.defineProperty(request, 'ip', { value: '192.0.2.7' });
+    const render = withoutClientSignal(request);
+    gone.abort();
+    expect(render.signal.aborted).toBe(false);
+    expect([render.method, render.url, render.headers.get('accept-language')]).toEqual(['HEAD', request.url, 'de']);
+    expect('ip' in render && render.ip).toBe('192.0.2.7');
   });
 });
 

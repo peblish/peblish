@@ -118,35 +118,66 @@ export function refusalLog(log: (line: string) => void = console.warn, everyMs =
 /**
  * The response with its body passed through, calling `done` once the body has been read to its
  * end, cancelled (the server runtime cancels it when the client leaves) or has failed; at once
- * when there is no body. The headers are read now, as editable() does.
+ * when there is no body. When `gone` has fired already (the client left during the render), the
+ * body is cancelled and an empty 499 stands in for it; when it fires later, the body is cancelled
+ * too, as a backstop. The headers are read now, as editable() does.
  */
-export function onBodySettled(response: Response, done: () => void): Response {
+export function onBodySettled(response: Response, done: () => void, gone?: AbortSignal): Response {
   if (!response.body) {
     done();
     return response;
   }
+  if (gone?.aborted) {
+    // Nobody is left to read it, and a cancelled body cannot be passed on: answer as
+    // withClientAborts does.
+    response.body.cancel(gone.reason).catch(() => {});
+    done();
+    return new Response(null, { status: 499, statusText: 'Client Closed Request' });
+  }
   const reader = response.body.getReader();
+  const leave = () => {
+    reader.cancel(gone?.reason).catch(() => {});
+    settle();
+  };
+  const settle = () => {
+    gone?.removeEventListener('abort', leave);
+    done();
+  };
+  gone?.addEventListener('abort', leave, { once: true });
   const body = new ReadableStream({
     async pull(controller) {
       try {
         const chunk = await reader.read();
         if (chunk.done) {
-          done();
+          settle();
           controller.close();
         } else {
           controller.enqueue(chunk.value);
         }
       } catch (error) {
-        done();
+        settle();
         controller.error(error);
       }
     },
     cancel(reason) {
-      done();
+      settle();
       return reader.cancel(reason);
     },
   });
   return new Response(body, { status: response.status, statusText: response.statusText, headers: new Headers(response.headers) });
+}
+
+/**
+ * The request as the render sees it: the same method, address and headers, with a signal that
+ * never fires. TanStack Start races its work against the request's signal and rejects at once
+ * when the client leaves, while the route's loaders run on to their end; the slot must stay
+ * taken until they have. The connection's address is carried over, since Start's getRequestIP
+ * reads it from the request object.
+ */
+export function withoutClientSignal(request: Request): Request {
+  const render = new Request(request.url, { method: request.method, headers: request.headers });
+  if ('ip' in request && typeof request.ip === 'string') Object.defineProperty(render, 'ip', { value: request.ip });
+  return render;
 }
 
 const settingCap = renderCapSetting(process.env.PEBLISH_RENDER_CAP);
@@ -154,10 +185,11 @@ const settingCap = renderCapSetting(process.env.PEBLISH_RENDER_CAP);
 /**
  * Bounds the signed-out page renders web runs at once (src/server.ts puts it inside
  * withFederation, so federation's own answers and inbox POSTs never meet it). A render takes a
- * slot before the route's loaders start and holds it until its streamed body has ended or been
- * cancelled, or the handler has thrown. A reader who finds the queue full, or waits past
- * `waitMs`, gets a 503 with Retry-After; one who leaves while waiting gives the place up.
- * Signed-in readers, server functions, the probes and media are never counted.
+ * slot before the route's loaders start and holds it until the handler has settled (a client
+ * that leaves does not cut it short: the render gets a request whose signal never fires), then
+ * until the streamed body has ended or been cancelled. A reader who finds the queue full, or
+ * waits past `waitMs`, gets a 503 with Retry-After; one who leaves while waiting gives the place
+ * up. Signed-in readers, server functions, the probes and media are never counted.
  */
 export function withRenderCap<O>(next: Fetch<O>, cap: RenderCap | null = settingCap, refused = refusalLog()) {
   if (!cap) return next;
@@ -173,26 +205,16 @@ export function withRenderCap<O>(next: Fetch<O>, cap: RenderCap | null = setting
     }
     let held = true;
     const done = () => {
-      if (!held) return;
+      if (held) release();
       held = false;
-      request.signal.removeEventListener('abort', done);
-      release();
     };
     let response: Response;
     try {
-      response = await next(request, opts);
+      response = await next(withoutClientSignal(request), opts);
     } catch (error) {
       done();
       throw error;
     }
-    // Only now: while the handler runs its work goes on even after the client has left. Once it
-    // has answered, the runtime cancels the body when the client goes, and this is a backstop.
-    if (request.signal.aborted) {
-      void response.body?.cancel().catch(() => {});
-      done();
-      return response;
-    }
-    request.signal.addEventListener('abort', done, { once: true });
-    return onBodySettled(response, done);
+    return onBodySettled(response, done, request.signal);
   };
 }

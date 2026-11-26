@@ -746,7 +746,7 @@ export default defineConfig(({ command }) => ({
     nitro({
       preset: 'node-server',
       exportConditions: ['!unwasm'],
-      plugins: ['./src/server/log-boundary-plugin.ts', './src/server/shutdown.ts'],
+      plugins: ['./src/server/log-boundary-plugin.ts', './src/server/render-cap-plugin.ts', './src/server/shutdown.ts'],
     }),
     viteReact(),
     splitMuxSubstrate(),
